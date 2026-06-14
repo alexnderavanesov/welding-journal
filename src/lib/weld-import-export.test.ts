@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FIELD_BY_KEY, FULL_EXCEL_HEADERS, LEGACY_EXCEL_HEADERS } from './weld-fields'
 import {
+  appendImportedWelds,
   emptyToNull,
   excelSerialDateToIso,
   parseBoolean,
@@ -35,6 +36,18 @@ describe('weld import/export', () => {
 
   it('converts Excel serial dates to ISO dates', () => {
     expect(excelSerialDateToIso(45736)).toBe('2025-03-20')
+  })
+
+  it('allows only the unofficial joint status or an empty value', () => {
+    const status = label('status')
+    const result = parseWorksheetRows([
+      FULL_EXCEL_HEADERS,
+      [...FULL_EXCEL_HEADERS.map((header) => (header === label('joint') ? 'S13' : header === status ? 'неофициальный' : null))],
+      [...FULL_EXCEL_HEADERS.map((header) => (header === label('joint') ? 'S14' : header === status ? 'официальный' : null))],
+    ])
+
+    expect(result.records[0].status).toBe('неофициальный')
+    expect(result.records[1].status).toBeNull()
   })
 
   it('converts exported yes/no values to booleans', () => {
@@ -100,6 +113,26 @@ describe('weld import/export', () => {
     expect(headers).not.toContain(label('materialId1'))
     expect(headers).not.toContain(label('materialId2'))
     expect(headers).toContain(label('joint'))
+  })
+
+  it('imports the visible export shape produced by the app', () => {
+    const matrix = recordsToVisibleExportMatrix([{ joint: 'S13', line: '330-FL-02-004', hasVik: true }])
+    const result = parseWorksheetRows(matrix)
+
+    expect(result.records).toHaveLength(1)
+    expect(result.records[0].joint).toBe('S13')
+    expect(result.records[0].line).toBe('330-FL-02-004')
+    expect(result.records[0].hasVik).toBe(true)
+  })
+
+  it('appends imported rows without changing existing register rows', () => {
+    const existing = [{ id: 7, joint: 'S13', line: 'old-line', responsible: 'old-responsible' }]
+    const rows = appendImportedWelds(existing, [{ joint: 'S13', line: 'new-line', responsible: 'new-responsible' }])
+
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ id: 8, joint: 'S13', line: 'new-line', responsible: 'new-responsible' })
+    expect(rows[1]).toBe(existing[0])
+    expect(rows[1]).toMatchObject({ id: 7, joint: 'S13', line: 'old-line', responsible: 'old-responsible' })
   })
 })
 

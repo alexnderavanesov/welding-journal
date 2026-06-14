@@ -16,6 +16,7 @@ import {
   type WeldFilters,
 } from '@/server/welds'
 import {
+  appendImportedWelds,
   buildExportWorkbook,
   isMeaningfulRecord,
   normalizeWeldInput,
@@ -381,10 +382,7 @@ function deleteLocalWeld(id: number) {
 }
 
 function importLocalWelds(records: WeldInput[]) {
-  const rows = readLocalWelds()
-  let nextId = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1
-  const imported = records.map((record) => ({ id: nextId++, ...normalizeWeldInput(record) }))
-  writeLocalWelds([...imported, ...rows])
+  writeLocalWelds(appendImportedWelds(readLocalWelds(), records))
 }
 
 

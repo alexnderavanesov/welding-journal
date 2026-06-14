@@ -134,6 +134,22 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
                             </option>
                           ))}
                         </Select>
+                      ) : field.key === 'status' ? (
+                        <Select
+                          ref={(element) => {
+                            fieldRefs.current[field.key] = element
+                          }}
+                          value={getJointStatusValue(draft[field.key])}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              [field.key]: event.target.value || null,
+                            }))
+                          }
+                        >
+                          <option value="">Пусто</option>
+                          <option value="неофициальный">неофициальный</option>
+                        </Select>
                       ) : yesEmptyFieldKeys.has(field.key) ? (
                         <Select
                           ref={(element) => {
@@ -218,6 +234,10 @@ function getResultStatusValue(value: unknown) {
 function getFinalStatusValue(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
   return FINAL_STATUS_OPTIONS.includes(text as never) ? text : ''
+}
+
+function getJointStatusValue(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'неофициальный' ? 'неофициальный' : ''
 }
 
 function withCalculatedFinalStatus(value: WeldInput) {

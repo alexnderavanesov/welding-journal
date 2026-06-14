@@ -16,6 +16,22 @@ const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'finalStatus',
 ])
 
+const DUPLICATE_CHECK_FIELD_KEYS: WeldFieldKey[] = [
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'groupName',
+  'category',
+  'weldControlPercent',
+  'isometry',
+  'sheet',
+  'revisionNumber',
+  'revisionActuality',
+  'spool',
+  'spoolId',
+  'joint',
+]
+
 type WeldTableProps = {
   rows: Array<WeldInput & { id: number }>
   columnFilters: Record<string, string>
@@ -40,6 +56,7 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
   const tableMinWidth = getWeldTableWidth(filteredFields)
+  const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
   const filteredRows = useMemo(
     () =>
       rows.filter((row) =>
@@ -175,10 +192,16 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
                 </td>
               </tr>
             ) : (
-              filteredRows.map((row) => (
+              filteredRows.map((row) => {
+                const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')
+
+                return (
                 <tr
                   key={row.id}
-                  className="cursor-pointer transition-colors duration-150 hover:bg-slate-50/70"
+                  className={`cursor-pointer transition-colors duration-150 ${
+                    isDuplicate ? 'bg-amber-50/80 hover:bg-amber-100/70' : 'hover:bg-slate-50/70'
+                  }`}
+                  title={isDuplicate ? 'Возможный дубль: совпадают ключевые поля стыка' : undefined}
                 >
                   {filteredFields.map((field) => (
                     <td
@@ -247,7 +270,8 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
                     </div>
                   </td>
                 </tr>
-              ))
+                )
+              })
             )}
           </tbody>
         </table>
@@ -295,6 +319,29 @@ function getTableLabel(fieldKey: string, label: string) {
   if (fieldKey === 'orderCode1') return 'ID материала 1'
   if (fieldKey === 'orderCode2') return 'ID материала 2'
   return label
+}
+
+function getDuplicateKeys(rows: Array<WeldInput & { id: number }>) {
+  const counts = new Map<string, number>()
+
+  for (const row of rows) {
+    const key = getDuplicateKey(row)
+    if (!key) continue
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+
+  return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key))
+}
+
+function getDuplicateKey(row: WeldInput) {
+  const values = DUPLICATE_CHECK_FIELD_KEYS.map((key) => normalizeDuplicateValue(row[key]))
+  if (values.every((value) => value === '')) return null
+  return values.join('|')
+}
+
+function normalizeDuplicateValue(value: unknown) {
+  if (value === null || value === undefined) return ''
+  return String(value).replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
 function isYesText(value: unknown) {

@@ -63,6 +63,7 @@ export function parseCell(field: WeldField, value: unknown) {
   if (field.kind === 'boolean') return parseBoolean(value)
   if (field.kind === 'number') return parseNumber(value)
   if (field.kind === 'date') return parseDate(value)
+  if (field.key === 'status') return parseJointStatus(value)
   if (field.key === 'finalStatus') return parseFinalStatus(value)
   if (RESULT_FIELD_KEYS.has(field.key as never)) return parseResultStatus(value)
   return emptyToNull(value)
@@ -80,11 +81,26 @@ function parseFinalStatus(value: unknown) {
   return normalizeFinalStatus(normalized)
 }
 
+function parseJointStatus(value: unknown) {
+  const normalized = emptyToNull(value)
+  if (normalized === null) return null
+  return String(normalized).trim().toLowerCase() === 'неофициальный' ? 'неофициальный' : null
+}
+
 export function parseWorksheetRows(rows: unknown[][]): ImportResult {
   const [rawHeaders = [], ...dataRows] = rows
   const headers = normalizeImportHeaders(rawHeaders)
   const missingHeaders = FULL_EXCEL_HEADERS.filter((header) => !headers.includes(header))
-  const optionalHeaders = new Set(['ID cпула', 'наличие МКК', 'результат РФА'])
+  const optionalHeaders = new Set([
+    'ID cпула',
+    'Зона стыка',
+    'Ном. стыка',
+    'Индкес',
+    'R/W стыка',
+    'Номер спула',
+    'наличие МКК',
+    'результат РФА',
+  ])
   const acceptsLegacy = missingHeaders.length === 0 || missingHeaders.every((header) => optionalHeaders.has(header))
 
   if (!acceptsLegacy) {
@@ -229,4 +245,10 @@ export function normalizeWeldInput(input: WeldInput) {
   }
   normalized.finalStatus = calculateFinalStatus(normalized)
   return normalized
+}
+
+export function appendImportedWelds<T extends WeldInput & { id: number }>(existingRows: T[], importedRecords: WeldInput[]) {
+  let nextId = existingRows.reduce((max, row) => Math.max(max, row.id), 0) + 1
+  const importedRows = importedRecords.map((record) => ({ id: nextId++, ...normalizeWeldInput(record) }))
+  return [...importedRows, ...existingRows]
 }
