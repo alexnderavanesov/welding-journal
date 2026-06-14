@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: welding-tracker-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: welding
+      POSTGRES_PASSWORD: welding
+      POSTGRES_DB: welding_tracker
+    ports:
+      - "5432:5432"
+    volumes:
+      - welding_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U welding -d welding_tracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  welding_pg_data:
