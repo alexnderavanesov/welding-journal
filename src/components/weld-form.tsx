@@ -24,6 +24,17 @@ const yesEmptyFieldKeys = new Set([
   'hasStls',
   'hasMkk',
 ])
+const formHiddenFieldKeys = new Set<WeldFieldKey>([
+  'createdAt',
+  'pstoRequest',
+  'pstoDate',
+  'heatTreatmentDiagram',
+  'pstoResult',
+  'pstoNote',
+  'pstoBoq',
+  'pstoKs3',
+  'pstoCreatedAt',
+])
 
 type WeldFormProps = {
   value: WeldInput & { id?: number }
@@ -35,8 +46,16 @@ type WeldFormProps = {
 
 export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
+  const contentRef = useRef<HTMLDivElement | null>(null)
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | null>>>({})
-  const fieldsByGroup = useMemo(() => VISIBLE_FIELD_SECTIONS, [])
+  const fieldsByGroup = useMemo(
+    () =>
+      VISIBLE_FIELD_SECTIONS.map((group) => ({
+        ...group,
+        fields: group.fields.filter((field) => !formHiddenFieldKeys.has(field.key)),
+      })).filter((group) => group.fields.length > 0),
+    [],
+  )
   const handleSave = () => {
     if (!busy) onSave(withCalculatedFinalStatus(draft))
   }
@@ -65,16 +84,21 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
   }, [busy, draft, onCancel, onSave])
 
   useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 })
+  }, [value.id, focusField])
+
+  useEffect(() => {
     if (!focusField) return
 
-    const element = fieldRefs.current[focusField]
-    if (!element) return
+    window.requestAnimationFrame(() => {
+      const element = fieldRefs.current[focusField]
+      if (!element) return
 
-    element.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    element.focus()
-    if (element instanceof HTMLInputElement) {
-      element.select()
-    }
+      element.focus({ preventScroll: true })
+      if (element instanceof HTMLInputElement) {
+        element.select()
+      }
+    })
   }, [focusField])
 
   useEffect(() => {
@@ -85,7 +109,7 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
   }, [draft])
 
   return (
-    <div className="fixed inset-0 z-20 bg-slate-950/20 backdrop-blur-[1px]">
+    <div className="fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[1px]">
       <div className="ml-auto flex h-full w-full max-w-5xl flex-col bg-slate-50 shadow-2xl shadow-slate-950/10">
         <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-4">
           <div>
@@ -97,8 +121,13 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
           </Button>
         </div>
 
-        <div className="flex-1 overflow-auto px-6 py-6">
+        <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           <div className="space-y-8">
+            {fieldsByGroup.length === 0 ? (
+              <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                Нет доступных полей для редактирования этой записи.
+              </div>
+            ) : null}
             {fieldsByGroup.map(({ section, fields }) => (
               <section key={section}>
                 <div className="mb-4 flex items-center gap-3">

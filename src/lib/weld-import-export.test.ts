@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import * as XLSX from 'xlsx'
 import { FIELD_BY_KEY, FULL_EXCEL_HEADERS, LEGACY_EXCEL_HEADERS } from './weld-fields'
 import {
   appendImportedWelds,
+  buildExportWorkbook,
   emptyToNull,
   excelSerialDateToIso,
   parseBoolean,
+  parseWorkbook,
   parseWorksheetRows,
   recordsToExportMatrix,
   recordsToVisibleExportMatrix,
@@ -27,6 +30,24 @@ describe('weld import/export', () => {
     const result = parseWorksheetRows([LEGACY_EXCEL_HEADERS])
     expect(result.records).toHaveLength(0)
     expect(result.missingHeaders).toEqual([label('spoolId')])
+  })
+
+  it('accepts older files without per-control request columns', () => {
+    const oldHeaders = FULL_EXCEL_HEADERS.filter((header) => !header.startsWith('Заявка '))
+    const result = parseWorksheetRows([oldHeaders])
+
+    expect(result.records).toHaveLength(0)
+    expect(result.missingHeaders).toEqual([
+      'Заявка ВИК',
+      'Заявка РК',
+      'Заявка ПВК',
+      'Заявка УЗК',
+      'Заявка ПСТО',
+      'Заявка ТВМТ',
+      'Заявка РФА',
+      'Заявка СТЛС',
+      'Заявка МКК',
+    ])
   })
 
   it('converts placeholder dashes to null', () => {
@@ -56,6 +77,25 @@ describe('weld import/export', () => {
 
     expect(parseBoolean(yesValue)).toBe(true)
     expect(parseBoolean('-')).toBeNull()
+  })
+
+  it('allows only the conducted value for the PSTO result field', () => {
+    const result = parseWorksheetRows([
+      FULL_EXCEL_HEADERS,
+      FULL_EXCEL_HEADERS.map((header) =>
+        header === label('joint')
+          ? 'S13'
+          : header === label('pstoRequired')
+            ? 'да'
+            : header === label('pstoResult') || header === label('vikResult')
+              ? 'проведено'
+              : null,
+      ),
+    ])
+
+    expect(result.records[0].pstoResult).toBe('проведено')
+    expect(result.records[0].vikResult).toBeNull()
+    expect(result.records[0].finalStatus).toBe('годен')
   })
 
   it('skips service rows without a real joint, line, or isometry', () => {
@@ -112,6 +152,8 @@ describe('weld import/export', () => {
     expect(headers).not.toContain(label('spoolNumber'))
     expect(headers).not.toContain(label('materialId1'))
     expect(headers).not.toContain(label('materialId2'))
+    expect(FULL_EXCEL_HEADERS).not.toContain(label('createdAt'))
+    expect(headers).toContain(label('createdAt'))
     expect(headers).toContain(label('joint'))
   })
 
@@ -125,6 +167,32 @@ describe('weld import/export', () => {
     expect(result.records[0].hasVik).toBe(true)
   })
 
+  it('round-trips an exported workbook through the import parser', () => {
+    const workbook = buildExportWorkbook([
+      {
+        joint: 'S13',
+        line: '330-FL-02-004',
+        isometry: 'ISO-1',
+        hasVik: true,
+        vikResult: 'годен',
+        wdi: 1.25,
+      },
+    ])
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+    const result = parseWorkbook(buffer)
+
+    expect(result.records).toHaveLength(1)
+    expect(result.records[0]).toMatchObject({
+      joint: 'S13',
+      line: '330-FL-02-004',
+      isometry: 'ISO-1',
+      hasVik: true,
+      vikResult: 'годен',
+      finalStatus: 'годен',
+      wdi: 1.25,
+    })
+  })
+
   it('appends imported rows without changing existing register rows', () => {
     const existing = [{ id: 7, joint: 'S13', line: 'old-line', responsible: 'old-responsible' }]
     const rows = appendImportedWelds(existing, [{ joint: 'S13', line: 'new-line', responsible: 'new-responsible' }])
@@ -133,6 +201,21 @@ describe('weld import/export', () => {
     expect(rows[0]).toMatchObject({ id: 8, joint: 'S13', line: 'new-line', responsible: 'new-responsible' })
     expect(rows[1]).toBe(existing[0])
     expect(rows[1]).toMatchObject({ id: 7, joint: 'S13', line: 'old-line', responsible: 'old-responsible' })
+  })
+
+  it('appends records imported from an exported workbook instead of replacing the register', () => {
+    const existing = [
+      { id: 3, joint: 'OLD-1', line: 'old-line-1' },
+      { id: 4, joint: 'OLD-2', line: 'old-line-2' },
+    ]
+    const workbook = buildExportWorkbook([{ joint: 'NEW-1', line: 'new-line-1' }])
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+    const imported = parseWorkbook(buffer)
+    const rows = appendImportedWelds(existing, imported.records)
+
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toMatchObject({ id: 5, joint: 'NEW-1', line: 'new-line-1' })
+    expect(rows.slice(1)).toEqual(existing)
   })
 })
 

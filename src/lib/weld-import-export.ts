@@ -65,13 +65,22 @@ export function parseCell(field: WeldField, value: unknown) {
   if (field.kind === 'date') return parseDate(value)
   if (field.key === 'status') return parseJointStatus(value)
   if (field.key === 'finalStatus') return parseFinalStatus(value)
+  if (field.key === 'pstoResult') return parsePstoResultStatus(value)
   if (RESULT_FIELD_KEYS.has(field.key as never)) return parseResultStatus(value)
   return emptyToNull(value)
+}
+
+function parsePstoResultStatus(value: unknown) {
+  const normalized = emptyToNull(value)
+  if (normalized === null) return null
+  if (String(normalized).trim().toLowerCase() === 'проведено') return 'проведено'
+  return normalizeResultStatus(normalized)
 }
 
 function parseResultStatus(value: unknown) {
   const normalized = emptyToNull(value)
   if (normalized === null) return null
+  if (String(normalized).trim().toLowerCase() === 'проведено') return null
   return normalizeResultStatus(normalized)
 }
 
@@ -99,6 +108,20 @@ export function parseWorksheetRows(rows: unknown[][]): ImportResult {
     'R/W стыка',
     'Номер спула',
     'наличие МКК',
+    'Заявка ВИК',
+    'Заявка РК',
+    'Заявка ПВК',
+    'Заявка УЗК',
+    'Заявка ПСТО',
+    'Заявка ТВМТ',
+    'Заявка РФА',
+    'Заявка СТЛС',
+    'Заявка МКК',
+    'дата ПСТО',
+    'диаграмма термообработки',
+    'примечание',
+    'BoQ ПСТО',
+    'КС3 ПСТО',
     'результат РФА',
   ])
   const acceptsLegacy = missingHeaders.length === 0 || missingHeaders.every((header) => optionalHeaders.has(header))

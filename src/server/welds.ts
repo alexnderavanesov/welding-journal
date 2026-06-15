@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm'
-import { db } from '@/db'
+import { requireDb } from '@/db'
 import { weldJoints, type NewWeldJoint } from '@/db/schema'
 import { WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
@@ -41,10 +41,12 @@ const controlColumns = {
   СТЛС: weldJoints.hasStls,
   МКК: weldJoints.hasMkk,
 } as const
+const SYSTEM_FIELD_KEYS = new Set(['createdAt', 'updatedAt'])
 
 export const listWeldJoints = createServerFn({ method: 'GET' })
   .validator((data: WeldFilters | undefined) => data ?? {})
   .handler(async ({ data }) => {
+    const db = requireDb()
     const where = buildWhere(data)
     return db
       .select()
@@ -57,6 +59,7 @@ export const listWeldJoints = createServerFn({ method: 'GET' })
 export const createWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: WeldPayload) => data)
   .handler(async ({ data }) => {
+    const db = requireDb()
     const [created] = await db.insert(weldJoints).values(toDbInsert(data)).returning()
     return created
   })
@@ -64,6 +67,7 @@ export const createWeldJoint = createServerFn({ method: 'POST' })
 export const updateWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: WeldPayload) => data)
   .handler(async ({ data }) => {
+    const db = requireDb()
     if (!data.id) throw new Error('Не передан id записи')
     const [updated] = await db
       .update(weldJoints)
@@ -76,6 +80,7 @@ export const updateWeldJoint = createServerFn({ method: 'POST' })
 export const deleteWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: { id: number }) => data)
   .handler(async ({ data }) => {
+    const db = requireDb()
     await db.delete(weldJoints).where(eq(weldJoints.id, data.id))
     return { ok: true }
   })
@@ -83,10 +88,11 @@ export const deleteWeldJoint = createServerFn({ method: 'POST' })
 export const importWeldJoints = createServerFn({ method: 'POST' })
   .validator((data: { records: WeldInput[] }) => data)
   .handler(async ({ data }) => {
-    if (data.records.length === 0) return { inserted: 0 }
+    const db = requireDb()
+    if (data.records.length === 0) return { inserted: 0, rows: [] }
     const values = data.records.map(toDbInsert)
-    await db.insert(weldJoints).values(values)
-    return { inserted: values.length }
+    const rows = await db.insert(weldJoints).values(values).returning()
+    return { inserted: rows.length, rows }
   })
 
 function toDbInsert(input: WeldInput): NewWeldJoint {
@@ -94,10 +100,22 @@ function toDbInsert(input: WeldInput): NewWeldJoint {
   const data: Record<string, unknown> = {}
 
   for (const field of WELD_FIELDS) {
+    if (SYSTEM_FIELD_KEYS.has(field.key)) continue
+    if (field.key === 'pstoCreatedAt') {
+      data[field.key] = normalized.pstoCreatedAt ? new Date(String(normalized.pstoCreatedAt)) : null
+      continue
+    }
     data[field.key] = normalized[field.key] ?? null
+  }
+  if (isYesText(normalized.pstoRequired) && !normalized.pstoCreatedAt) {
+    data.pstoCreatedAt = new Date()
   }
 
   return data as NewWeldJoint
+}
+
+function isYesText(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'да'
 }
 
 function buildWhere(filters: WeldFilters) {

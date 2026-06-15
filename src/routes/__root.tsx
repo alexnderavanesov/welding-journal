@@ -35,6 +35,11 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       </head>
       <body>
         {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: 'window.process=window.process||{env:{}};window.process.env=window.process.env||{};',
+          }}
+        />
         <Scripts />
       </body>
     </html>

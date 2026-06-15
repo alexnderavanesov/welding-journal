@@ -36,4 +36,41 @@ describe('weld field order', () => {
       'Прочее',
     ])
   })
+
+  it('shows welding and heat treatment tracking fields in the misc section', () => {
+    const misc = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Прочее')
+
+    expect(misc?.fields.map((field) => field.label)).toEqual([
+      'BoQ сварка',
+      'КС3 сварка',
+      'Внесен сварка',
+      'BoQ ПСТО',
+      'КС3 ПСТО',
+      'Внесен ПСТО',
+    ])
+  })
+
+  it('shows request columns in the same control order as results', () => {
+    const requests = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Заявки')
+
+    expect(requests?.fields.map((field) => field.label)).toEqual([
+      'Заявка ВИК',
+      'Заявка РК',
+      'Заявка ПВК',
+      'Заявка УЗК',
+      'Заявка ПСТО',
+      'Заявка ТВМТ',
+      'Заявка РФА',
+      'Заявка СТЛС',
+      'Заявка МКК',
+      'дата ПСТО',
+    ])
+  })
+
+  it('shows heat treatment result before the generated diagram', () => {
+    const results = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Результат')
+    const labels = results?.fields.map((field) => field.label) ?? []
+
+    expect(labels.indexOf('результат ПСТО')).toBeLessThan(labels.indexOf('диаграмма термообработки'))
+  })
 })

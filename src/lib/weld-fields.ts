@@ -72,9 +72,19 @@ export const WELD_FIELDS = [
   { key: 'hasRfa', dbName: 'has_rfa', label: 'наличие РФА', kind: 'boolean', group: 'Контроль' },
   { key: 'hasStls', dbName: 'has_stls', label: 'наличие СТЛС', kind: 'boolean', group: 'Контроль' },
   { key: 'hasMkk', dbName: 'has_mkk', label: 'наличие МКК', kind: 'boolean', group: 'Контроль' },
+  { key: 'vikRequest', dbName: 'vik_request', label: 'Заявка ВИК', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'rkRequest', dbName: 'rk_request', label: 'Заявка РК', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'pvkRequest', dbName: 'pvk_request', label: 'Заявка ПВК', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'uzkRequest', dbName: 'uzk_request', label: 'Заявка УЗК', kind: 'text', group: 'Контроль', visible: true },
   { key: 'pstoRequest', dbName: 'psto_request', label: 'Заявка ПСТО', kind: 'text', group: 'Контроль', visible: true },
-  { key: 'lnkRequest', dbName: 'lnk_request', label: 'Заявка ЛНК', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'tvmtRequest', dbName: 'tvmt_request', label: 'Заявка ТВМТ', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'rfaRequest', dbName: 'rfa_request', label: 'Заявка РФА', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'stlsRequest', dbName: 'stls_request', label: 'Заявка СТЛС', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'mkkRequest', dbName: 'mkk_request', label: 'Заявка МКК', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'pstoDate', dbName: 'psto_date', label: 'дата ПСТО', kind: 'date', group: 'Контроль', visible: true },
   { key: 'pstoResult', dbName: 'psto_result', label: 'результат ПСТО', kind: 'text', group: 'Контроль' },
+  { key: 'heatTreatmentDiagram', dbName: 'heat_treatment_diagram', label: 'диаграмма термообработки', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'pstoNote', dbName: 'psto_note', label: 'примечание', kind: 'text', group: 'Контроль', visible: true },
   { key: 'vikResult', dbName: 'vik_result', label: 'результат ВИК', kind: 'text', group: 'Контроль' },
   { key: 'rkResult', dbName: 'rk_result', label: 'результат РК', kind: 'text', group: 'Контроль' },
   { key: 'pvkResult', dbName: 'pvk_result', label: 'результат ПВК', kind: 'text', group: 'Контроль' },
@@ -84,14 +94,19 @@ export const WELD_FIELDS = [
   { key: 'stlsResult', dbName: 'stls_result', label: 'результат СТЛС', kind: 'text', group: 'Контроль' },
   { key: 'mkkResult', dbName: 'mkk_result', label: 'результат МКК', kind: 'text', group: 'Контроль' },
   { key: 'finalStatus', dbName: 'final_status', label: 'Итоговый статус', kind: 'text', group: 'Статусы/отчетность', visible: true },
-  { key: 'boq', dbName: 'boq', label: 'BoQ', kind: 'text', group: 'Статусы/отчетность' },
-  { key: 'ks3', dbName: 'ks3', label: 'КС3', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'boq', dbName: 'boq', label: 'BoQ сварка', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'ks3', dbName: 'ks3', label: 'КС3 сварка', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'createdAt', dbName: 'created_at', label: 'Внесен сварка', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'pstoBoq', dbName: 'psto_boq', label: 'BoQ ПСТО', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'pstoKs3', dbName: 'psto_ks3', label: 'КС3 ПСТО', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'pstoCreatedAt', dbName: 'psto_created_at', label: 'Внесен ПСТО', kind: 'text', group: 'Статусы/отчетность' },
 ] as const satisfies readonly WeldField[]
 
 export type WeldFieldKey = (typeof WELD_FIELDS)[number]['key']
 export type WeldInput = Partial<Record<WeldFieldKey, string | number | boolean | null>>
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает'] as const
+export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
 export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'ожидает', 'ошибка'] as const
 export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikResult',
@@ -138,6 +153,7 @@ export function calculateFinalStatus(record: WeldInput) {
 export function normalizeResultStatus(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
   if (text === 'да') return 'годен'
+  if (text === 'проведено') return 'годен'
   return RESULT_STATUS_OPTIONS.includes(text as never) ? text : null
 }
 
@@ -151,7 +167,7 @@ function isEnabledControl(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'да'
 }
 
-const EXCLUDED_EXCEL_FIELD_KEYS = new Set(['materialId1', 'materialId2'])
+const EXCLUDED_EXCEL_FIELD_KEYS = new Set(['materialId1', 'materialId2', 'createdAt', 'pstoCreatedAt'])
 
 export const EXCEL_FIELDS = WELD_FIELDS.filter((field) => !EXCLUDED_EXCEL_FIELD_KEYS.has(field.key))
 export const FULL_EXCEL_HEADERS = EXCEL_FIELDS.map((field) => field.label)
@@ -218,7 +234,21 @@ const TABLE_LAYOUT = [
       'наличие МКК',
     ],
   },
-  { section: 'Заявки', columns: ['Заявка ПСТО', 'Заявка ЛНК'] },
+  {
+    section: 'Заявки',
+    columns: [
+      'Заявка ВИК',
+      'Заявка РК',
+      'Заявка ПВК',
+      'Заявка УЗК',
+      'Заявка ПСТО',
+      'Заявка ТВМТ',
+      'Заявка РФА',
+      'Заявка СТЛС',
+      'Заявка МКК',
+      'дата ПСТО',
+    ],
+  },
   {
     section: 'Результат',
     columns: [
@@ -227,14 +257,16 @@ const TABLE_LAYOUT = [
       'результат ПВК',
       'результат УЗК',
       'результат ПСТО',
+      'диаграмма термообработки',
       'результат ТВМТ',
       'результат РФА',
       'результат СТЛС',
       'результат МКК',
+      'примечание',
       'Итоговый статус',
     ],
   },
-  { section: 'Прочее', columns: ['BoQ', 'КС3'] },
+  { section: 'Прочее', columns: ['BoQ сварка', 'КС3 сварка', 'Внесен сварка', 'BoQ ПСТО', 'КС3 ПСТО', 'Внесен ПСТО'] },
 ] as const
 
 function fieldByLabel(label: string) {

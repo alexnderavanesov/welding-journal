@@ -15,6 +15,20 @@
       "when": 1781296045497,
       "tag": "0001_brainy_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781538043278,
+      "tag": "0002_left_micromacro",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781540647903,
+      "tag": "0003_giant_titanium_man",
+      "breakpoints": true
     }
   ]
 }

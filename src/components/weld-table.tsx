@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Edit2, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -6,10 +6,21 @@ import { Input } from '@/components/ui/input'
 import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth, getWeldTableWidth, isCompactWeldColumn } from '@/lib/weld-column-widths'
 import { VISIBLE_FIELD_SECTIONS, VISIBLE_SECTION_END_FIELD_KEYS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
+const SELECT_COLUMN_WIDTH = 48
+const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
+const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
+  'pstoRequired',
+  'pstoRequest',
+  'pstoDate',
+  'pstoResult',
+  'heatTreatmentDiagram',
+  'pstoNote',
+])
 const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'projectTitle',
   'subtitleCode',
   'line',
+  'spool',
   'joint',
   'wdi',
   'weldDate',
@@ -36,26 +47,113 @@ type WeldTableProps = {
   rows: Array<WeldInput & { id: number }>
   columnFilters: Record<string, string>
   onColumnFiltersChange: (filters: Record<string, string>) => void
-  onEdit: (row: WeldInput & { id: number }, fieldKey?: WeldFieldKey) => void
-  onDelete: (id: number) => void
+  onEdit?: (row: WeldInput & { id: number }, fieldKey?: WeldFieldKey) => void
+  onDelete?: (id: number) => void
   stickyLeft?: number
+  highlightedRowIds?: ReadonlySet<number>
+  highlightedCellKeys?: ReadonlySet<string>
+  readOnly?: boolean
+  editableFieldKeys?: ReadonlySet<WeldFieldKey>
+  blockedFieldKeys?: ReadonlySet<WeldFieldKey>
+  selectable?: boolean
+  selectedRowIds?: ReadonlySet<number>
+  onSelectedRowIdsChange?: (ids: Set<number>) => void
+  isRowSelectable?: (row: WeldInput & { id: number }) => boolean
+  storageKey?: string
+  hiddenFieldKeys?: ReadonlySet<WeldFieldKey>
+  mergePstoSections?: boolean
 }
 
-export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, onDelete, stickyLeft = 0 }: WeldTableProps) {
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+export function WeldTable({
+  rows,
+  columnFilters,
+  onColumnFiltersChange,
+  onEdit,
+  onDelete,
+  stickyLeft = 0,
+  highlightedRowIds = new Set(),
+  highlightedCellKeys = new Set(),
+  readOnly = false,
+  editableFieldKeys = new Set(),
+  blockedFieldKeys = new Set(),
+  selectable = false,
+  selectedRowIds = new Set(),
+  onSelectedRowIdsChange,
+  isRowSelectable = () => true,
+  storageKey = 'default',
+  hiddenFieldKeys = new Set(),
+  mergePstoSections = false,
+}: WeldTableProps) {
+  const [collapsedState, setCollapsedState] = useState(() => ({
+    storageKey,
+    sections: new Set<string>(),
+    hydrated: false,
+  }))
+  const collapsedSections = collapsedState.storageKey === storageKey ? collapsedState.sections : new Set<string>()
+
+  useEffect(() => {
+    setCollapsedState({ storageKey, sections: readCollapsedSections(storageKey), hydrated: true })
+  }, [storageKey])
+
+  useEffect(() => {
+    if (collapsedState.storageKey !== storageKey) return
+    if (!collapsedState.hydrated) return
+    writeCollapsedSections(storageKey, collapsedState.sections)
+  }, [storageKey, collapsedState])
+
+  const alwaysVisibleFieldKeys = useMemo(() => {
+    const fieldKeys = new Set(ALWAYS_VISIBLE_FIELD_KEYS)
+    if (mergePstoSections) {
+      for (const fieldKey of PSTO_SECTION_FIELD_KEYS) {
+        fieldKeys.add(fieldKey)
+      }
+    }
+    return fieldKeys
+  }, [mergePstoSections])
+  const availableSections = useMemo(
+    () => {
+      const sections = VISIBLE_FIELD_SECTIONS.map((group) => ({
+        ...group,
+        fields: group.fields.filter((field) => !hiddenFieldKeys.has(field.key)),
+      })).filter((group) => group.fields.length > 0)
+
+      if (!mergePstoSections) return sections
+
+      const pstoFields = sections.flatMap((group) => group.fields).filter((field) => PSTO_SECTION_FIELD_KEYS.has(field.key))
+      const sectionsWithoutPsto = sections
+        .map((group) => ({
+          ...group,
+          fields: group.fields.filter((field) => !PSTO_SECTION_FIELD_KEYS.has(field.key)),
+        }))
+        .filter((group) => group.fields.length > 0)
+      const miscIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Прочее')
+      const pstoSection = pstoFields.length > 0 ? [{ section: 'ПСТО', fields: pstoFields }] : []
+      if (miscIndex === -1) return [...sectionsWithoutPsto, ...pstoSection]
+
+      return [
+        ...sectionsWithoutPsto.slice(0, miscIndex),
+        ...pstoSection,
+        ...sectionsWithoutPsto.slice(miscIndex),
+      ]
+    },
+    [hiddenFieldKeys, mergePstoSections],
+  )
   const filteredSections = useMemo(
     () =>
-      VISIBLE_FIELD_SECTIONS.map((group) => ({
-        ...group,
-        collapsed: collapsedSections.has(group.section),
-        fields: collapsedSections.has(group.section)
-          ? group.fields.filter((field) => ALWAYS_VISIBLE_FIELD_KEYS.has(field.key))
-          : group.fields,
-      })).filter((group) => group.fields.length > 0),
-    [collapsedSections],
+      availableSections
+        .map((group) => ({
+          ...group,
+          collapsed: collapsedSections.has(group.section) && canCollapseSection(group.fields, alwaysVisibleFieldKeys),
+          fields: collapsedSections.has(group.section)
+            ? group.fields.filter((field) => alwaysVisibleFieldKeys.has(field.key))
+            : group.fields,
+        }))
+        .filter((group) => group.fields.length > 0),
+    [alwaysVisibleFieldKeys, availableSections, collapsedSections],
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
-  const tableMinWidth = getWeldTableWidth(filteredFields)
+  const tableMinWidth =
+    getWeldTableWidth(filteredFields) - (readOnly ? ACTIONS_COLUMN_WIDTH : 0) + (selectable ? SELECT_COLUMN_WIDTH : 0)
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
   const filteredRows = useMemo(
     () =>
@@ -70,17 +168,58 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
       ),
     [rows, columnFilters],
   )
+  const selectableVisibleRows = filteredRows.filter((row) => !selectable || isRowSelectable(row))
+  const selectedVisibleRows = selectableVisibleRows.filter((row) => selectedRowIds.has(row.id))
+  const allVisibleRowsSelected = selectableVisibleRows.length > 0 && selectedVisibleRows.length === selectableVisibleRows.length
+  const someVisibleRowsSelected = selectedVisibleRows.length > 0 && !allVisibleRowsSelected
 
   function toggleSection(section: string) {
-    setCollapsedSections((current) => {
-      const next = new Set(current)
+    setCollapsedState((current) => {
+      const currentSections =
+        current.storageKey === storageKey && current.hydrated ? current.sections : readCollapsedSections(storageKey)
+      const next = new Set(currentSections)
+      const targetSection = availableSections.find((group) => group.section === section)
+      if (!targetSection || !canCollapseSection(targetSection.fields, alwaysVisibleFieldKeys)) {
+        next.delete(section)
+        return { storageKey, sections: next, hydrated: true }
+      }
       if (next.has(section)) {
         next.delete(section)
       } else {
         next.add(section)
       }
-      return next
+      return { storageKey, sections: next, hydrated: true }
     })
+  }
+
+  function setRowSelected(row: WeldInput & { id: number }, selected: boolean) {
+    if (!isRowSelectable(row)) return
+
+    const next = new Set(selectedRowIds)
+    if (selected) {
+      next.add(row.id)
+    } else {
+      next.delete(row.id)
+    }
+    onSelectedRowIdsChange?.(next)
+  }
+
+  function setVisibleRowsSelected(selected: boolean) {
+    const next = new Set(selectedRowIds)
+    for (const row of selectableVisibleRows) {
+      if (selected) {
+        next.add(row.id)
+      } else {
+        next.delete(row.id)
+      }
+    }
+    onSelectedRowIdsChange?.(next)
+  }
+
+  function canEditField(fieldKey: WeldFieldKey) {
+    if (!onEdit) return false
+    if (!readOnly) return !blockedFieldKeys.has(fieldKey)
+    return editableFieldKeys.has(fieldKey)
   }
 
   return (
@@ -90,10 +229,11 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
         style={{ left: stickyLeft, minWidth: tableMinWidth }}
       >
         <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Разделы</span>
-        {VISIBLE_FIELD_SECTIONS.map((group) => {
-          const collapsed = collapsedSections.has(group.section)
+        {availableSections.map((group) => {
+          const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
+          const collapsed = canCollapse && collapsedSections.has(group.section)
           const visibleCount = collapsed
-            ? group.fields.filter((field) => ALWAYS_VISIBLE_FIELD_KEYS.has(field.key)).length
+            ? group.fields.filter((field) => alwaysVisibleFieldKeys.has(field.key)).length
             : group.fields.length
 
           return (
@@ -101,16 +241,21 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
               key={group.section}
               type="button"
               onClick={() => toggleSection(group.section)}
+              disabled={!canCollapse}
               className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
-                collapsed
+                !canCollapse
+                  ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-500'
+                  : collapsed
                   ? 'border-slate-100 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600'
                   : 'border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200/70'
               }`}
-              title={collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
+              title={!canCollapse ? 'Обязательные поля всегда показаны' : collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
             >
               {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               {group.section}
-              <span className="text-slate-400">{visibleCount}/{group.fields.length}</span>
+              <span className="text-slate-400">
+                {visibleCount}/{group.fields.length}
+              </span>
             </button>
           )
         })}
@@ -121,49 +266,77 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
           style={{ width: tableMinWidth }}
         >
           <colgroup>
+            {selectable ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
             {filteredFields.map((field) => (
               <col key={field.key} style={{ width: getWeldColumnWidth(field.key) }} />
             ))}
-            <col style={{ width: ACTIONS_COLUMN_WIDTH }} />
+            {!readOnly ? <col style={{ width: ACTIONS_COLUMN_WIDTH }} /> : null}
           </colgroup>
           <thead className="sticky top-0 z-10 bg-slate-50/95 text-left shadow-[inset_0_-1px_0_0_rgb(226,232,240)] backdrop-blur">
             <tr>
-              {filteredSections.map((group) => (
+              {selectable ? (
                 <th
-                  key={group.section}
-                  colSpan={group.fields.length}
-                  className={`border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)] ${
-                    group.collapsed ? 'bg-slate-50 text-slate-500' : 'text-slate-700'
-                  }`}
+                  rowSpan={3}
+                  className="border-r border-slate-200/70 px-2 py-2.5 text-center shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
                 >
-                  <button
-                    type="button"
-                    onClick={() => toggleSection(group.section)}
-                    className="inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors hover:bg-slate-100"
-                    title={group.collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
-                  >
-                    {group.collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                    {group.section}
-                  </button>
+                  <input
+                    type="checkbox"
+                    checked={allVisibleRowsSelected}
+                    disabled={selectableVisibleRows.length === 0}
+                    ref={(element) => {
+                      if (element) element.indeterminate = someVisibleRowsSelected
+                    }}
+                    onChange={(event) => setVisibleRowsSelected(event.target.checked)}
+                    aria-label="Выбрать видимые стыки"
+                    title={selectableVisibleRows.length === 0 ? 'Нет доступных стыков для новой заявки' : 'Выбрать видимые стыки'}
+                    className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
+                  />
                 </th>
-              ))}
-              <th
-                rowSpan={2}
-                className="w-24 border-r border-slate-200/70 px-3 py-2.5 text-right text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
-              >
-                Действия
-              </th>
+              ) : null}
+              {filteredSections.map((group) => {
+                const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
+                return (
+                  <th
+                    key={group.section}
+                    colSpan={group.fields.length}
+                    className={`border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)] ${
+                      group.collapsed ? 'bg-slate-50 text-slate-500' : 'text-slate-700'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(group.section)}
+                      disabled={!canCollapse}
+                      className={`inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
+                        canCollapse ? 'hover:bg-slate-100' : 'cursor-not-allowed'
+                      }`}
+                      title={!canCollapse ? 'Обязательные поля всегда показаны' : group.collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
+                    >
+                      {group.collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      {group.section}
+                    </button>
+                  </th>
+                )
+              })}
+              {!readOnly ? (
+                <th
+                  rowSpan={2}
+                  className="w-24 border-r border-slate-200/70 px-3 py-2.5 text-right text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+                >
+                  Действия
+                </th>
+              ) : null}
             </tr>
             <tr>
               {filteredFields.map((field) => (
-                <th key={field.key} className={headerCellClass(field.key)}>
+                <th key={field.key} className={headerCellClass(field.key, !canEditField(field.key))}>
                   {getTableLabel(field.key, field.label)}
                 </th>
               ))}
             </tr>
             <tr>
               {filteredFields.map((field) => (
-                <th key={`${field.key}-filter`} className={filterCellClass(field.key)}>
+                <th key={`${field.key}-filter`} className={filterCellClass(field.key, !canEditField(field.key))}>
                   <Input
                     value={columnFilters[field.key] ?? ''}
                     onChange={(event) =>
@@ -173,53 +346,92 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
                       })
                     }
                     placeholder="Фильтр"
-                    className="h-8 w-full min-w-0 rounded-md border-slate-100 bg-white/80 px-2 text-xs font-normal text-slate-600 shadow-none placeholder:text-slate-400 focus-visible:border-slate-300 focus-visible:ring-slate-100"
+                    className="h-8 w-full min-w-0 rounded-md border-slate-100 bg-white/80 px-2 text-center text-xs font-normal text-slate-600 shadow-none placeholder:text-slate-400 focus-visible:border-slate-300 focus-visible:ring-slate-100"
                   />
                 </th>
               ))}
-              <th className="border-b border-r border-slate-100 px-2 py-1.5">
-                <Button variant="ghost" size="sm" onClick={() => onColumnFiltersChange({})} className="h-8 px-2 text-xs">
-                  Сброс
-                </Button>
-              </th>
+              {!readOnly ? (
+                <th className="border-b border-r border-slate-100 px-2 py-1.5">
+                  <Button variant="ghost" size="sm" onClick={() => onColumnFiltersChange({})} className="h-8 px-2 text-xs">
+                    Сброс
+                  </Button>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
             {filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={filteredFields.length + 1} className="px-3 py-12 text-center text-muted-foreground">
+                <td
+                  colSpan={filteredFields.length + (readOnly ? 0 : 1) + (selectable ? 1 : 0)}
+                  className="px-3 py-12 text-center text-muted-foreground"
+                >
                   Записи не найдены.
                 </td>
               </tr>
             ) : (
               filteredRows.map((row) => {
                 const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')
+                const isHighlighted = highlightedRowIds.has(row.id)
+                const isSelected = selectedRowIds.has(row.id)
+                const isSelectableRow = !selectable || isRowSelectable(row)
 
                 return (
                 <tr
                   key={row.id}
-                  className={`cursor-pointer transition-colors duration-150 ${
-                    isDuplicate ? 'bg-amber-50/80 hover:bg-amber-100/70' : 'hover:bg-slate-50/70'
+                  className={`${readOnly ? '' : 'cursor-pointer'} transition-[background-color,box-shadow] duration-300 ${
+                    isHighlighted
+                      ? 'bg-emerald-100/90 shadow-[inset_4px_0_0_rgb(16,185,129)] hover:bg-emerald-100'
+                      : isSelected
+                        ? 'bg-sky-50/90 shadow-[inset_4px_0_0_rgb(14,165,233)] hover:bg-sky-50'
+                      : isDuplicate
+                        ? 'bg-amber-50/80 hover:bg-amber-100/70'
+                        : 'hover:bg-slate-50/70'
                   }`}
-                  title={isDuplicate ? 'Возможный дубль: совпадают ключевые поля стыка' : undefined}
+                  title={
+                    isHighlighted
+                      ? 'Строка недавно изменена'
+                      : isDuplicate
+                        ? 'Возможный дубль: совпадают ключевые поля стыка'
+                        : undefined
+                  }
                 >
+                  {selectable ? (
+                    <td
+                      className={`border-b border-r border-b-slate-100 border-r-slate-200 px-2 py-2.5 text-center align-top ${
+                        isSelectableRow ? '' : 'bg-slate-200/80 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.14)]'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelectableRow && isSelected}
+                        disabled={!isSelectableRow}
+                        onChange={(event) => setRowSelected(row, event.target.checked)}
+                        aria-label={`Выбрать стык ${String(row.joint ?? row.id)}`}
+                        title={isSelectableRow ? 'Выбрать стык для заявки ПСТО' : 'Заявка ПСТО уже создана'}
+                        className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
+                      />
+                    </td>
+                  ) : null}
                   {filteredFields.map((field) => (
+                    (() => {
+                      const isEditableCell = canEditField(field.key)
+                      const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
+                      return (
                     <td
                       key={field.key}
-                      className={bodyCellClass(field.key)}
+                      className={bodyCellClass(field.key, !isEditableCell, isHighlighted, isCellHighlighted)}
                       onClick={(event) => {
+                        if (!isEditableCell) return
                         event.stopPropagation()
-                        onEdit(row, field.key)
+                        onEdit?.(row, field.key)
                       }}
-                      title="Нажмите, чтобы редактировать стык"
+                      title={isEditableCell ? 'Нажмите, чтобы редактировать поле' : undefined}
                     >
-                      <button
-                        type="button"
-                        className="block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-left text-[13px] font-normal text-slate-700"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onEdit(row, field.key)
-                        }}
+                      <div
+                        className={`block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
+                          isEditableCell ? 'cursor-pointer hover:bg-slate-100/70' : 'text-slate-500'
+                        }`}
                       >
                         {field.kind === 'boolean' ? (
                           row[field.key] ? (
@@ -228,9 +440,20 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
                             ''
                           )
                         ) : (
-                          <span className={field.key === 'weldDate' ? 'whitespace-nowrap' : 'line-clamp-2'}>
-                            {field.key === 'weldDate' ? (
+                          <span
+                            className={
+                              field.key === 'weldDate' ||
+                              field.key === 'pstoDate' ||
+                              field.key === 'createdAt' ||
+                              field.key === 'pstoCreatedAt'
+                                ? 'whitespace-nowrap'
+                                : 'line-clamp-2'
+                            }
+                          >
+                            {field.key === 'weldDate' || field.key === 'pstoDate' ? (
                               formatDate(row[field.key])
+                            ) : field.key === 'createdAt' || field.key === 'pstoCreatedAt' ? (
+                              formatDateTime(row[field.key])
                             ) : field.key === 'pstoRequired' && isYesText(row[field.key]) ? (
                               <YesBadge />
                             ) : field.key === 'pstoRequired' && isNoText(row[field.key]) ? (
@@ -240,35 +463,39 @@ export function WeldTable({ rows, columnFilters, onColumnFiltersChange, onEdit, 
                             )}
                           </span>
                         )}
-                      </button>
+                      </div>
                     </td>
+                      )
+                    })()
                   ))}
-                  <td className="border-b border-slate-100 px-3 py-2 text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onEdit(row)
-                        }}
-                        aria-label="Редактировать"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onDelete(row.id)
-                        }}
-                        aria-label="Удалить"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </td>
+                  {!readOnly ? (
+                    <td className="border-b border-slate-100 px-3 py-2 text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onEdit?.(row)
+                          }}
+                          aria-label="Редактировать"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onDelete?.(row.id)
+                          }}
+                          aria-label="Удалить"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
                 )
               })
@@ -288,37 +515,65 @@ function formatDate(value: unknown) {
   return text
 }
 
-function headerCellClass(fieldKey: string) {
-  const base = 'border-b border-r px-3 py-2.5 text-[13px] font-semibold text-slate-700'
-  const width = getWidthClass(fieldKey)
-  const border = VISIBLE_SECTION_END_FIELD_KEYS.has(fieldKey as never) ? 'border-r-slate-200' : 'border-r-slate-100'
-  return `${base} ${width} ${border}`
+function formatDateTime(value: unknown) {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(String(value))
+  if (Number.isNaN(date.getTime())) return String(value)
+  const pad = (number: number) => String(number).padStart(2, '0')
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${pad(date.getFullYear() % 100)} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-function bodyCellClass(fieldKey: string) {
+function headerCellClass(fieldKey: string, isReadOnlyColumn: boolean) {
+  const base = 'border-b border-r px-3 py-2.5 text-center text-[13px] font-semibold text-slate-700'
+  const width = getWidthClass(fieldKey)
+  const border = VISIBLE_SECTION_END_FIELD_KEYS.has(fieldKey as never) ? 'border-r-slate-200' : 'border-r-slate-100'
+  const readonly = isReadOnlyColumn ? 'bg-slate-200 text-slate-500 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.12)]' : ''
+  return `${base} ${width} ${border} ${readonly}`
+}
+
+function bodyCellClass(fieldKey: string, isReadOnlyColumn: boolean, isHighlightedRow: boolean, isHighlightedCell: boolean) {
   const base = 'border-b border-r border-b-slate-100 p-0 align-top'
   const width = getWidthClass(fieldKey)
   const border = VISIBLE_SECTION_END_FIELD_KEYS.has(fieldKey as never) ? 'border-r-slate-200' : 'border-r-slate-100'
-  return `${base} ${width} ${border}`
+  const readonly = isReadOnlyColumn
+    ? isHighlightedRow
+      ? 'bg-emerald-100/80 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.18)]'
+      : 'bg-slate-200/80 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.14)]'
+    : ''
+  const highlightedRow = isHighlightedRow && !isReadOnlyColumn ? 'bg-emerald-100/70' : ''
+  const highlightedCell = isHighlightedCell ? 'bg-lime-200/95 shadow-[inset_0_0_0_9999px_rgba(190,242,100,0.2)]' : ''
+  return `${base} ${width} ${border} ${readonly} ${highlightedRow} ${highlightedCell}`
 }
 
-function filterCellClass(fieldKey: string) {
+function filterCellClass(fieldKey: string, isReadOnlyColumn: boolean) {
   const base = 'border-b border-r border-b-slate-100 bg-slate-50/70 px-2 py-1.5'
   const border = VISIBLE_SECTION_END_FIELD_KEYS.has(fieldKey as never) ? 'border-r-slate-200' : 'border-r-slate-100'
-  return `${base} ${border}`
+  const readonly = isReadOnlyColumn ? 'bg-slate-200/90 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.12)]' : ''
+  return `${base} ${border} ${readonly}`
 }
 
 function getWidthClass(fieldKey: string) {
   if (fieldKey === 'weldDate') return 'w-28 whitespace-nowrap'
+  if (fieldKey === 'pstoDate') return 'w-28 whitespace-nowrap'
+  if (fieldKey === 'createdAt' || fieldKey === 'pstoCreatedAt') return 'w-[120px] whitespace-nowrap'
   if (fieldKey === 'finalStatus') return 'w-[116px]'
   if (isCompactWeldColumn(fieldKey)) return 'w-[82px]'
   return 'max-w-72'
 }
 
+function canCollapseSection(fields: Array<{ key: WeldFieldKey }>, alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>) {
+  return fields.some((field) => !alwaysVisibleFieldKeys.has(field.key))
+}
+
 function getTableLabel(fieldKey: string, label: string) {
-  if (fieldKey === 'orderCode1') return 'ID материала 1'
-  if (fieldKey === 'orderCode2') return 'ID материала 2'
-  return label
+  const tableLabel = fieldKey === 'orderCode1' ? 'ID материала 1' : fieldKey === 'orderCode2' ? 'ID материала 2' : label
+  return capitalizeFirstLetter(tableLabel)
+}
+
+function capitalizeFirstLetter(value: string) {
+  const firstLetterIndex = value.search(/\S/)
+  if (firstLetterIndex === -1) return value
+  return `${value.slice(0, firstLetterIndex)}${value[firstLetterIndex].toLocaleUpperCase('ru-RU')}${value.slice(firstLetterIndex + 1)}`
 }
 
 function getDuplicateKeys(rows: Array<WeldInput & { id: number }>) {
@@ -337,6 +592,32 @@ function getDuplicateKey(row: WeldInput) {
   const values = DUPLICATE_CHECK_FIELD_KEYS.map((key) => normalizeDuplicateValue(row[key]))
   if (values.every((value) => value === '')) return null
   return values.join('|')
+}
+
+function getCellKey(rowId: number, fieldKey: WeldFieldKey) {
+  return `${rowId}:${fieldKey}`
+}
+
+function getCollapsedSectionsStorageKey(storageKey: string) {
+  return `${collapsedSectionsStoragePrefix}:${storageKey}`
+}
+
+function readCollapsedSections(storageKey: string) {
+  if (typeof window === 'undefined') return new Set<string>()
+
+  try {
+    const stored = window.localStorage.getItem(getCollapsedSectionsStorageKey(storageKey))
+    if (!stored) return new Set<string>()
+    const parsed = JSON.parse(stored)
+    return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === 'string')) : new Set<string>()
+  } catch {
+    return new Set<string>()
+  }
+}
+
+function writeCollapsedSections(storageKey: string, sections: ReadonlySet<string>) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(getCollapsedSectionsStorageKey(storageKey), JSON.stringify([...sections]))
 }
 
 function normalizeDuplicateValue(value: unknown) {

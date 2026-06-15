@@ -53,7 +53,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-004-S13-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -65,7 +64,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-004-S13-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-004-S13-ВИК-РК"
   },
   {
     "id": 2,
@@ -120,8 +121,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S80",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S80-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -133,7 +133,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S80-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S80-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S80-ВИК-РК-ПВК"
   },
   {
     "id": 3,
@@ -188,8 +191,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S81",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S81-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -201,7 +203,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S81-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S81-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S81-ВИК-РК-ПВК"
   },
   {
     "id": 4,
@@ -256,8 +261,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S83",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S83-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -269,7 +273,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S83-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S83-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S83-ВИК-РК-ПВК"
   },
   {
     "id": 5,
@@ -324,8 +331,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S84",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S84-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -337,7 +343,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S84-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S84-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S84-ВИК-РК-ПВК"
   },
   {
     "id": 6,
@@ -392,8 +401,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S54",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S54-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -405,7 +413,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S54-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S54-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S54-ВИК-РК-ПВК"
   },
   {
     "id": 7,
@@ -460,8 +471,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S55",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S55-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -473,7 +483,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S55-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S55-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S55-ВИК-РК-ПВК"
   },
   {
     "id": 8,
@@ -528,8 +541,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S58",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S58-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -541,7 +553,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S58-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S58-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S58-ВИК-РК-ПВК"
   },
   {
     "id": 9,
@@ -597,7 +612,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S5-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -609,7 +623,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S5-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S5-ВИК-РК"
   },
   {
     "id": 10,
@@ -665,7 +681,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S18-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -677,7 +692,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S18-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S18-ВИК-РК"
   },
   {
     "id": 11,
@@ -733,7 +750,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S9-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -745,7 +761,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S9-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S9-ВИК-РК"
   },
   {
     "id": 12,
@@ -801,7 +819,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S10-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -813,7 +830,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S10-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S10-ВИК-РК"
   },
   {
     "id": 13,
@@ -869,7 +888,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S15-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -881,7 +899,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S15-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S15-ВИК-РК"
   },
   {
     "id": 14,
@@ -937,7 +957,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S1-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -949,7 +968,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S1-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S1-ВИК-РК"
   },
   {
     "id": 15,
@@ -1005,7 +1026,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S13-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1017,7 +1037,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S13-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S13-ВИК-РК"
   },
   {
     "id": 16,
@@ -1073,7 +1095,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S14-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1085,7 +1106,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S14-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S14-ВИК-РК"
   },
   {
     "id": 17,
@@ -1140,8 +1163,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-004-20.03.25-S6",
-    "lnkRequest": "ЛНК-330-FG-05-004-S6-ВИК-РК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1153,7 +1175,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-004-S6-ВИК-РК",
+    "rkRequest": "ЛНК-330-FG-05-004-S6-ВИК-РК"
   },
   {
     "id": 18,
@@ -1208,8 +1232,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-004-20.03.25-S7",
-    "lnkRequest": "ЛНК-330-FG-05-004-S7-ВИК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1221,7 +1244,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-004-S7-ВИК"
   },
   {
     "id": 19,
@@ -1276,8 +1300,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-004-20.03.25-S8",
-    "lnkRequest": "ЛНК-330-FG-05-004-S8-ВИК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1289,7 +1312,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-004-S8-ВИК"
   },
   {
     "id": 20,
@@ -1344,8 +1368,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-003-20.03.25-S2",
-    "lnkRequest": "ЛНК-330-FG-05-003-S2-ВИК-РК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1357,7 +1380,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-003-S2-ВИК-РК",
+    "rkRequest": "ЛНК-330-FG-05-003-S2-ВИК-РК"
   },
   {
     "id": 21,
@@ -1413,7 +1438,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-029-S15-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1425,7 +1449,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-029-S15-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-029-S15-ВИК-РК"
   },
   {
     "id": 22,
@@ -1481,7 +1507,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-029-S16-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1493,7 +1518,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-029-S16-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-029-S16-ВИК-РК"
   },
   {
     "id": 23,
@@ -1548,8 +1575,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S107",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S107-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1561,7 +1587,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S107-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S107-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S107-ВИК-РК-ПВК"
   },
   {
     "id": 24,
@@ -1616,8 +1645,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-20.03.25-S108",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S108-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1629,7 +1657,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S108-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S108-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S108-ВИК-РК-ПВК"
   },
   {
     "id": 25,
@@ -1685,7 +1716,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P51-01-000-S19-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1697,7 +1727,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P51-01-000-S19-ВИК-РК",
+    "rkRequest": "ЛНК-330-P51-01-000-S19-ВИК-РК"
   },
   {
     "id": 26,
@@ -1753,7 +1785,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P51-01-000-S20-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1765,7 +1796,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P51-01-000-S20-ВИК"
   },
   {
     "id": 27,
@@ -1820,8 +1852,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-P42/P59-03-000-21.03.25-S57",
-    "lnkRequest": "ЛНК-330-P42/P59-03-000-S57-ВИК-РК-ПВК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1833,7 +1864,10 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P42/P59-03-000-S57-ВИК-РК-ПВК",
+    "rkRequest": "ЛНК-330-P42/P59-03-000-S57-ВИК-РК-ПВК",
+    "pvkRequest": "ЛНК-330-P42/P59-03-000-S57-ВИК-РК-ПВК"
   },
   {
     "id": 28,
@@ -1888,8 +1922,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-002-21.03.25-S2",
-    "lnkRequest": "ЛНК-330-FG-05-002-S2-ВИК-РК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1901,7 +1934,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-002-S2-ВИК-РК",
+    "rkRequest": "ЛНК-330-FG-05-002-S2-ВИК-РК"
   },
   {
     "id": 29,
@@ -1956,8 +1991,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-002-21.03.25-S3",
-    "lnkRequest": "ЛНК-330-FG-05-002-S3-ВИК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -1969,7 +2003,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-002-S3-ВИК"
   },
   {
     "id": 30,
@@ -2024,8 +2059,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-002-21.03.25-S5",
-    "lnkRequest": "ЛНК-330-FG-05-002-S5-ВИК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2037,7 +2071,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-002-S5-ВИК"
   },
   {
     "id": 31,
@@ -2093,7 +2128,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S17-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2105,7 +2139,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S17-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S17-ВИК-РК"
   },
   {
     "id": 32,
@@ -2161,7 +2197,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-016-S3-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2173,7 +2208,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-016-S3-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-016-S3-ВИК-РК"
   },
   {
     "id": 33,
@@ -2228,8 +2265,7 @@
     "hasTvmt": null,
     "hasRfa": null,
     "hasStls": null,
-    "pstoRequest": "ПСТО-330-FG-05-001-21.03.25-S2",
-    "lnkRequest": "ЛНК-330-FG-05-001-S2-ВИК-РК",
+    "pstoRequest": null,
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2241,7 +2277,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FG-05-001-S2-ВИК-РК",
+    "rkRequest": "ЛНК-330-FG-05-001-S2-ВИК-РК"
   },
   {
     "id": 34,
@@ -2297,7 +2335,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P51-01-000-S54-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2309,7 +2346,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P51-01-000-S54-ВИК"
   },
   {
     "id": 35,
@@ -2365,7 +2403,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P51-01-000-S55-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2377,7 +2414,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P51-01-000-S55-ВИК"
   },
   {
     "id": 36,
@@ -2433,7 +2471,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P51-01-000-S57-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2445,7 +2482,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P51-01-000-S57-ВИК"
   },
   {
     "id": 37,
@@ -2501,7 +2539,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P51-01-000-S4-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2513,7 +2550,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P51-01-000-S4-ВИК"
   },
   {
     "id": 38,
@@ -2569,7 +2607,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P50-08-000-S2-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2581,7 +2618,9 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P50-08-000-S2-ВИК-РК",
+    "rkRequest": "ЛНК-330-P50-08-000-S2-ВИК-РК"
   },
   {
     "id": 39,
@@ -2637,7 +2676,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P50-08-000-S10-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2649,7 +2687,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P50-08-000-S10-ВИК"
   },
   {
     "id": 40,
@@ -2705,7 +2744,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P50-08-000-S12-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2717,7 +2755,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P50-08-000-S12-ВИК"
   },
   {
     "id": 41,
@@ -2773,7 +2812,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-P50-08-000-S13-ВИК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2785,7 +2823,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-P50-08-000-S13-ВИК"
   },
   {
     "id": 42,
@@ -2841,7 +2880,6 @@
     "hasRfa": null,
     "hasStls": null,
     "pstoRequest": null,
-    "lnkRequest": "ЛНК-330-FL-02-021-S5-ВИК-РК",
     "pstoResult": null,
     "vikResult": null,
     "rkResult": null,
@@ -2853,6 +2891,8 @@
     "finalStatus": null,
     "boq": null,
     "ks3": null,
-    "spoolId": null
+    "spoolId": null,
+    "vikRequest": "ЛНК-330-FL-02-021-S5-ВИК-РК",
+    "rkRequest": "ЛНК-330-FL-02-021-S5-ВИК-РК"
   }
 ]
