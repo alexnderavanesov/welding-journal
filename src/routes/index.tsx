@@ -2,7 +2,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Plus, Upload, X } from 'lucide-react'
-import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -18,9 +17,11 @@ import {
   type WeldFilters,
 } from '@/server/welds'
 import {
-  buildExportWorkbook,
+  buildExportXlsxBytes,
   isMeaningfulRecord,
   normalizeWeldInput,
+  parseEditableCsv,
+  parseEditableWorkbook,
   parseCsv,
   parseWorkbook,
 } from '@/lib/weld-import-export'
@@ -28,8 +29,10 @@ import { getWeldTableWidth } from '@/lib/weld-column-widths'
 import {
   FIELD_BY_KEY,
   PSTO_RESULT_STATUS_OPTIONS,
+  VISIBLE_FIELD_SECTIONS,
   VISIBLE_FIELDS,
   calculateFinalStatus,
+  type WeldField,
   type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
@@ -41,6 +44,7 @@ export const Route = createFileRoute('/')({
 const emptyFilters: WeldFilters = {}
 const seedRows = seedWelds as Array<WeldInput & { id: number }>
 const localStorageKey = 'welding-tracker-local-welds'
+const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
   'pstoRequest',
   'pstoDate',
@@ -48,6 +52,25 @@ const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
   'pstoNote',
   'pstoBoq',
   'pstoKs3',
+])
+const heatTreatmentImportMatchFieldKeys = new Set<WeldFieldKey>(['line', 'joint'])
+const pstoSectionFieldKeys = new Set<WeldFieldKey>([
+  'pstoRequired',
+  'pstoRequest',
+  'pstoDate',
+  'pstoResult',
+  'heatTreatmentDiagram',
+  'pstoNote',
+])
+const alwaysVisibleFieldKeys = new Set<WeldFieldKey>([
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'spool',
+  'joint',
+  'wdi',
+  'weldDate',
+  'finalStatus',
 ])
 const weldingJournalBlockedFieldKeys = new Set<WeldFieldKey>(['pstoRequest', 'pstoResult', 'createdAt', 'finalStatus'])
 const weldingJournalHiddenFieldKeys = new Set<WeldFieldKey>([
@@ -114,6 +137,7 @@ function Home() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const importHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previousReportRef = useRef<ActiveReport>('weldingJournal')
   const [activeReport, setActiveReport] = useState<ActiveReport>('weldingJournal')
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [heatTreatmentFilters, setHeatTreatmentFilters] = useState<Record<string, string>>({})
@@ -157,11 +181,23 @@ function Home() {
   }, [])
 
   useEffect(() => {
+    let frameId: number | null = null
+    if (previousReportRef.current !== activeReport) {
+      previousReportRef.current = activeReport
+      frameId = window.requestAnimationFrame(() => {
+        window.scrollTo({ left: 0, top: 0, behavior: 'auto' })
+      })
+    }
+
     if (activeReport !== 'heatTreatment') {
       setSelectedHeatTreatmentIds(new Set())
       setPstoRequestEditing(null)
       setPstoResultEditing(null)
       setHeatTreatmentFieldEditing(null)
+    }
+
+    return () => {
+      if (frameId !== null) window.cancelAnimationFrame(frameId)
     }
   }, [activeReport])
 
@@ -233,6 +269,41 @@ function Home() {
     onSuccess: async (result) => {
       highlightChangedRows(result.rows)
       setMessage(`Добавлено записей: ${result.inserted}`)
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const heatTreatmentImportMutation = useMutation({
+    mutationFn: async (records: WeldInput[]) => {
+      const { updatedRows, changedFieldKeys, matched, skipped } = buildHeatTreatmentImportUpdates(records, heatTreatmentRows, rows)
+      if (updatedRows.length === 0) {
+        return { updated: 0, rows: [], changedFieldKeys, matched, skipped }
+      }
+
+      try {
+        const savedRows = await Promise.all(updatedRows.map((record) => updateWeldJoint({ data: record })))
+        if (savedRows.every(Boolean)) {
+          return {
+            updated: savedRows.length,
+            rows: savedRows as unknown as WeldRow[],
+            changedFieldKeys,
+            matched,
+            skipped,
+          }
+        }
+        updateLocalWelds(updatedRows)
+        return { updated: updatedRows.length, rows: updatedRows, changedFieldKeys, matched, skipped }
+      } catch {
+        updateLocalWelds(updatedRows)
+        return { updated: updatedRows.length, rows: updatedRows, changedFieldKeys, matched, skipped }
+      }
+    },
+    onSuccess: async (result, variables) => {
+      highlightChangedRows(result.rows, result.changedFieldKeys)
+      setMessage(`Обновлено ПСТО: ${result.updated} из ${variables.length}; пропущено: ${result.skipped}`)
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -378,16 +449,37 @@ function Home() {
 
   async function handleImport(file: File) {
     setMessage(null)
-    const result = file.name.toLowerCase().endsWith('.csv')
-      ? parseCsv(await file.text())
-      : parseWorkbook(await file.arrayBuffer())
-    await importMutation.mutateAsync(result.records)
-    setMessage(`Добавлено ${result.records.length}, пропущено служебных строк: ${result.skippedRows}`)
+    if (activeReport === 'heatTreatment') {
+      const options = {
+        editableFieldKeys: heatTreatmentEditableFieldKeys,
+        matchFieldKeys: heatTreatmentImportMatchFieldKeys,
+      }
+      const result = file.name.toLowerCase().endsWith('.csv')
+        ? parseEditableCsv(await file.text(), options)
+        : parseEditableWorkbook(await file.arrayBuffer(), options)
+      const importResult = await heatTreatmentImportMutation.mutateAsync(result.records)
+      setMessage(`Обновлено ПСТО: ${importResult.updated}; пропущено: ${importResult.skipped + result.skippedRows}`)
+      return
+    }
+
+    const result = file.name.toLowerCase().endsWith('.csv') ? parseCsv(await file.text()) : parseWorkbook(await file.arrayBuffer())
+    const importResult = await importMutation.mutateAsync(result.records)
+    setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${result.skippedRows}`)
   }
 
   function exportXlsx() {
-    const workbook = buildExportWorkbook(visibleRows)
-    XLSX.writeFile(workbook, activeReport === 'heatTreatment' ? 'heat-treatment-register.xlsx' : 'welding-register.xlsx')
+    const fields = getReportExportFields({
+      storageKey: activeReport,
+      hiddenFieldKeys: activeReport === 'heatTreatment' ? heatTreatmentHiddenFieldKeys : weldingJournalHiddenFieldKeys,
+      mergePstoSections: activeReport === 'heatTreatment',
+    })
+    const exportOptions = {
+      fields,
+      readOnlyFieldKeys: getReportReadOnlyFieldKeys(activeReport),
+      sheetName: activeTitle,
+    }
+    const bytes = buildExportXlsxBytes(visibleRows, exportOptions)
+    downloadExcelBytes(bytes, activeReport === 'heatTreatment' ? 'heat-treatment-register.xlsx' : 'welding-register.xlsx')
   }
 
   function handleCreatePstoRequest() {
@@ -575,12 +667,14 @@ function Home() {
                   event.currentTarget.value = ''
                 }}
               />
-              {activeReport === 'weldingJournal' ? (
-                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importMutation.isPending}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Импорт
-                </Button>
-              ) : null}
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importMutation.isPending || heatTreatmentImportMutation.isPending}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Импорт
+              </Button>
               <Button variant="outline" onClick={exportXlsx}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
                 Excel
@@ -843,6 +937,184 @@ function sumAcceptedWdi(rows: Array<WeldInput & { id?: number }>) {
     const value = typeof row.wdi === 'number' ? row.wdi : Number(String(row.wdi ?? '').replace(',', '.'))
     return Number.isFinite(value) ? total + value : total
   }, 0)
+}
+
+function buildHeatTreatmentImportUpdates(
+  importedRecords: WeldInput[],
+  heatTreatmentRows: Array<WeldInput & { id: number }>,
+  rows: Array<WeldInput & { id: number }>,
+) {
+  const rowsByKey = new Map<string, WeldInput & { id: number }>()
+  const duplicateKeys = new Set<string>()
+  for (const row of heatTreatmentRows) {
+    const key = getHeatTreatmentImportKey(row)
+    if (!key) continue
+    if (rowsByKey.has(key)) {
+      duplicateKeys.add(key)
+      rowsByKey.delete(key)
+      continue
+    }
+    if (!duplicateKeys.has(key)) rowsByKey.set(key, row)
+  }
+
+  const proposedRowsById = new Map<number, WeldInput & { id: number }>()
+  let matched = 0
+  let skipped = 0
+
+  for (const importedRecord of importedRecords) {
+    const key = getHeatTreatmentImportKey(importedRecord)
+    const currentRow = key ? rowsByKey.get(key) : null
+    if (!currentRow) {
+      skipped += 1
+      continue
+    }
+
+    matched += 1
+    let nextRow: WeldInput & { id: number } = { ...currentRow }
+    let changed = false
+
+    for (const fieldKey of heatTreatmentEditableFieldKeys) {
+      if (!(fieldKey in importedRecord)) continue
+      const importedValue = normalizeHeatTreatmentImportValue(fieldKey, importedRecord[fieldKey])
+      if (fieldKey === 'pstoResult' && importedValue === 'проведено' && !hasText(nextRow.pstoRequest)) continue
+      if (isSameImportValue(nextRow[fieldKey], importedValue)) continue
+
+      nextRow = { ...nextRow, [fieldKey]: importedValue }
+      changed = true
+    }
+
+    if (changed) proposedRowsById.set(currentRow.id, nextRow)
+  }
+
+  if (proposedRowsById.size === 0) {
+    return { updatedRows: [], changedFieldKeys: [], matched, skipped }
+  }
+
+  const updatedIds = new Set(proposedRowsById.keys())
+  const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
+  const rowsById = new Map(rows.map((row) => [row.id, row]))
+  const updatedRows: WeldRow[] = []
+  const changedFieldKeys = new Set<WeldFieldKey>()
+
+  for (const row of recalculatedRows) {
+    if (!updatedIds.has(row.id)) continue
+    const originalRow = rowsById.get(row.id)
+    if (!originalRow) continue
+
+    for (const fieldKey of heatTreatmentEditableFieldKeys) {
+      if (!isSameImportValue(originalRow[fieldKey], row[fieldKey])) {
+        changedFieldKeys.add(fieldKey)
+      }
+    }
+    if (!isSameImportValue(originalRow.heatTreatmentDiagram, row.heatTreatmentDiagram)) {
+      changedFieldKeys.add('heatTreatmentDiagram')
+    }
+    updatedRows.push(row as WeldRow)
+  }
+
+  return { updatedRows, changedFieldKeys: [...changedFieldKeys], matched, skipped }
+}
+
+function getHeatTreatmentImportKey(record: WeldInput) {
+  const line = normalizeImportKeyPart(record.line)
+  const joint = normalizeImportKeyPart(record.joint)
+  return line && joint ? `${line}|${joint}` : null
+}
+
+function normalizeImportKeyPart(value: unknown) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function normalizeHeatTreatmentImportValue(fieldKey: WeldFieldKey, value: unknown) {
+  if (fieldKey === 'pstoResult') return getPstoResultValue(value) || null
+  return value === undefined ? null : value
+}
+
+function isSameImportValue(left: unknown, right: unknown) {
+  return String(left ?? '').trim() === String(right ?? '').trim()
+}
+
+function downloadExcelBytes(bytes: Uint8Array, filename: string) {
+  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+  const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function getReportExportFields({
+  storageKey,
+  hiddenFieldKeys,
+  mergePstoSections,
+}: {
+  storageKey: string
+  hiddenFieldKeys: ReadonlySet<WeldFieldKey>
+  mergePstoSections: boolean
+}) {
+  const collapsedSections = readCollapsedSections(storageKey)
+  const reportAlwaysVisibleFieldKeys = new Set(alwaysVisibleFieldKeys)
+  if (mergePstoSections) {
+    for (const fieldKey of pstoSectionFieldKeys) {
+      reportAlwaysVisibleFieldKeys.add(fieldKey)
+    }
+  }
+  const availableSections = getReportExportSections(hiddenFieldKeys, mergePstoSections)
+
+  return availableSections.flatMap((group) => {
+    const isCollapsed = collapsedSections.has(group.section) && canCollapseExportSection(group.fields, reportAlwaysVisibleFieldKeys)
+    return isCollapsed ? group.fields.filter((field) => reportAlwaysVisibleFieldKeys.has(field.key)) : group.fields
+  })
+}
+
+function getReportExportSections(hiddenFieldKeys: ReadonlySet<WeldFieldKey>, mergePstoSections: boolean) {
+  const sections = VISIBLE_FIELD_SECTIONS.map((group) => ({
+    ...group,
+    fields: group.fields.filter((field) => !hiddenFieldKeys.has(field.key)),
+  })).filter((group) => group.fields.length > 0)
+
+  if (!mergePstoSections) return sections
+
+  const pstoFields = sections.flatMap((group) => group.fields).filter((field) => pstoSectionFieldKeys.has(field.key))
+  const sectionsWithoutPsto = sections
+    .map((group) => ({
+      ...group,
+      fields: group.fields.filter((field) => !pstoSectionFieldKeys.has(field.key)),
+    }))
+    .filter((group) => group.fields.length > 0)
+  const miscIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Прочее')
+  const pstoSection = pstoFields.length > 0 ? [{ section: 'ПСТО', fields: pstoFields }] : []
+  if (miscIndex === -1) return [...sectionsWithoutPsto, ...pstoSection]
+
+  return [...sectionsWithoutPsto.slice(0, miscIndex), ...pstoSection, ...sectionsWithoutPsto.slice(miscIndex)]
+}
+
+function canCollapseExportSection(fields: readonly WeldField[], reportAlwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>) {
+  return fields.some((field) => !reportAlwaysVisibleFieldKeys.has(field.key as WeldFieldKey))
+}
+
+function getReportReadOnlyFieldKeys(activeReport: ActiveReport) {
+  if (activeReport === 'weldingJournal') return weldingJournalBlockedFieldKeys
+  return new Set(
+    VISIBLE_FIELDS.map((field) => field.key as WeldFieldKey).filter((fieldKey) => !heatTreatmentEditableFieldKeys.has(fieldKey)),
+  )
+}
+
+function readCollapsedSections(storageKey: string) {
+  if (typeof window === 'undefined') return new Set<string>()
+
+  try {
+    const stored = window.localStorage.getItem(`${collapsedSectionsStoragePrefix}:${storageKey}`)
+    if (!stored) return new Set<string>()
+    const parsed = JSON.parse(stored)
+    return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === 'string')) : new Set<string>()
+  } catch {
+    return new Set<string>()
+  }
 }
 
 function formatWdiTotal(value: number) {

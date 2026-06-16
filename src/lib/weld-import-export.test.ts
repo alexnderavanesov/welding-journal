@@ -4,9 +4,12 @@ import { FIELD_BY_KEY, FULL_EXCEL_HEADERS, LEGACY_EXCEL_HEADERS } from './weld-f
 import {
   appendImportedWelds,
   buildExportWorkbook,
+  buildExportXlsxBytes,
   emptyToNull,
   excelSerialDateToIso,
   parseBoolean,
+  parseDate,
+  parseEditableWorksheetRows,
   parseWorkbook,
   parseWorksheetRows,
   recordsToExportMatrix,
@@ -57,6 +60,18 @@ describe('weld import/export', () => {
 
   it('converts Excel serial dates to ISO dates', () => {
     expect(excelSerialDateToIso(45736)).toBe('2025-03-20')
+  })
+
+  it('reads exported Russian date values back as ISO dates', () => {
+    expect(parseDate('20.03.2025')).toBe('2025-03-20')
+    expect(parseDate('20.03.25')).toBe('2025-03-20')
+  })
+
+  it('keeps WDI as a numeric Excel value during export and import', () => {
+    const [headers, row] = recordsToVisibleExportMatrix([{ joint: 'S13', wdi: '1,25' }])
+    const wdiValue = row[headers.indexOf(label('wdi'))]
+
+    expect(wdiValue).toBe(1.25)
   })
 
   it('allows only the unofficial joint status or an empty value', () => {
@@ -167,6 +182,28 @@ describe('weld import/export', () => {
     expect(result.records[0].hasVik).toBe(true)
   })
 
+  it('imports only editable heat treatment fields from a partial worksheet', () => {
+    const result = parseEditableWorksheetRows(
+      [
+        [label('line'), label('joint'), label('pstoDate'), label('pstoResult'), label('responsible'), label('weldDate')],
+        ['330-FL-02-004', 'S13', 45736, 'проведено', 'ignored responsible', 45700],
+      ],
+      {
+        editableFieldKeys: new Set(['pstoRequest', 'pstoDate', 'pstoResult', 'pstoNote', 'pstoBoq', 'pstoKs3']),
+        matchFieldKeys: new Set(['line', 'joint']),
+      },
+    )
+
+    expect(result.records).toEqual([
+      {
+        line: '330-FL-02-004',
+        joint: 'S13',
+        pstoDate: '2025-03-20',
+        pstoResult: 'проведено',
+      },
+    ])
+  })
+
   it('round-trips an exported workbook through the import parser', () => {
     const workbook = buildExportWorkbook([
       {
@@ -191,6 +228,37 @@ describe('weld import/export', () => {
       finalStatus: 'годен',
       wdi: 1.25,
     })
+  })
+
+  it('exports selected fields with report sheet name, formatted dates, and read-only styling', () => {
+    const workbook = buildExportWorkbook([{ joint: 'S13', weldDate: '2025-03-20', finalStatus: 'годен' }], {
+      fields: [FIELD_BY_KEY.get('joint')!, FIELD_BY_KEY.get('weldDate')!, FIELD_BY_KEY.get('finalStatus')!],
+      readOnlyFieldKeys: new Set(['finalStatus']),
+      sheetName: 'Термообработка',
+    })
+    const worksheet = workbook.Sheets['Термообработка']
+
+    expect(workbook.SheetNames).toEqual(['Термообработка'])
+    expect(worksheet.A1.v).toBe(label('joint'))
+    expect(worksheet.B2.v).toBe('20.03.2025')
+    expect(worksheet.C2.s.fill.fgColor.rgb).toBe('D1D5DB')
+  })
+
+  it('exports styled xlsx bytes that can be imported again', () => {
+    const bytes = buildExportXlsxBytes([{ joint: 'S13', weldDate: '2025-03-20', wdi: 1.25, finalStatus: 'годен' }], {
+      fields: [FIELD_BY_KEY.get('joint')!, FIELD_BY_KEY.get('weldDate')!, FIELD_BY_KEY.get('wdi')!, FIELD_BY_KEY.get('finalStatus')!],
+      readOnlyFieldKeys: new Set(['finalStatus']),
+      sheetName: 'Сварочный журнал',
+    })
+    const workbook = XLSX.read(bytes, { type: 'array' })
+    const worksheet = workbook.Sheets['Сварочный журнал']
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true, defval: null })
+    const payload = new TextDecoder().decode(bytes)
+
+    expect(payload).toContain('fgColor rgb="FFD1D5DB"')
+    expect(rows[1][1]).toBe('20.03.2025')
+    expect(rows[1][2]).toBe(1.25)
+    expect(parseDate(rows[1][1])).toBe('2025-03-20')
   })
 
   it('appends imported rows without changing existing register rows', () => {
