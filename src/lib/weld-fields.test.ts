@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS } from './weld-fields'
+import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus } from './weld-fields'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -33,7 +33,25 @@ describe('weld field order', () => {
       'Контроль',
       'Заявки',
       'Результат',
+      'Заключения',
       'Прочее',
+    ])
+  })
+
+  it('shows LNK conclusion columns after result columns', () => {
+    const conclusions = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Заключения')
+
+    expect(conclusions?.fields.map((field) => field.label)).toEqual([
+      'Заключение ВИК',
+      'Заключение РК',
+      'Заключение ПВК',
+      'Заключение УЗК',
+      'Заключение ТВМТ',
+      'Заключение РФА',
+      'Заключение СТЛС',
+      'Заключение МКК',
+      'Описание дефектов',
+      'Примечание',
     ])
   })
 
@@ -47,6 +65,23 @@ describe('weld field order', () => {
       'BoQ ПСТО',
       'КС3 ПСТО',
       'Внесен ПСТО',
+      'Внесен ЛНК',
+      'BoQ ВИК',
+      'КС3 ВИК',
+      'BoQ РК',
+      'КС3 РК',
+      'BoQ ПВК',
+      'КС3 ПВК',
+      'BoQ УЗК',
+      'КС3 УЗК',
+      'BoQ ТВМТ',
+      'КС3 ТВМТ',
+      'BoQ РФА',
+      'КС3 РФА',
+      'BoQ СТЛС',
+      'КС3 СТЛС',
+      'BoQ МКК',
+      'КС3 МКК',
     ])
   })
 
@@ -72,5 +107,10 @@ describe('weld field order', () => {
     const labels = results?.fields.map((field) => field.label) ?? []
 
     expect(labels.indexOf('результат ПСТО')).toBeLessThan(labels.indexOf('диаграмма термообработки'))
+  })
+
+  it('does not treat cancelled controls with old results as an error', () => {
+    expect(calculateFinalStatus({ hasPvk: 'отменен', pvkResult: 'годен' })).toBe('ожидает')
+    expect(calculateFinalStatus({ pstoRequired: 'отменен', pstoResult: 'проведено' })).toBe('ожидает')
   })
 })

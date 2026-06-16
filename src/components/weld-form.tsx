@@ -12,6 +12,7 @@ import {
   type WeldInput,
   calculateFinalStatus,
 } from '@/lib/weld-fields'
+import { withAutoVikForWeldDate } from '@/lib/weld-import-export'
 
 const yesEmptyFieldKeys = new Set([
   'pstoRequired',
@@ -34,6 +35,33 @@ const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'pstoBoq',
   'pstoKs3',
   'pstoCreatedAt',
+  'lnkCreatedAt',
+  'vikBoq',
+  'vikKs3',
+  'rkBoq',
+  'rkKs3',
+  'pvkBoq',
+  'pvkKs3',
+  'uzkBoq',
+  'uzkKs3',
+  'tvmtBoq',
+  'tvmtKs3',
+  'rfaBoq',
+  'rfaKs3',
+  'stlsBoq',
+  'stlsKs3',
+  'mkkBoq',
+  'mkkKs3',
+  'vikConclusion',
+  'rkConclusion',
+  'pvkConclusion',
+  'uzkConclusion',
+  'tvmtConclusion',
+  'rfaConclusion',
+  'stlsConclusion',
+  'mkkConclusion',
+  'lnkDefectDescription',
+  'lnkNote',
 ])
 
 type WeldFormProps = {
@@ -103,8 +131,10 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
 
   useEffect(() => {
     setDraft((current) => {
-      const nextFinalStatus = calculateFinalStatus(current)
-      return current.finalStatus === nextFinalStatus ? current : { ...current, finalStatus: nextFinalStatus }
+      const nextDraft = withAutoVikForWeldDate(current)
+      const nextFinalStatus = calculateFinalStatus(nextDraft)
+      if (current === nextDraft && current.finalStatus === nextFinalStatus) return current
+      return { ...nextDraft, finalStatus: nextFinalStatus }
     })
   }, [draft])
 
@@ -270,7 +300,8 @@ function getJointStatusValue(value: unknown) {
 }
 
 function withCalculatedFinalStatus(value: WeldInput) {
-  return { ...value, finalStatus: calculateFinalStatus(value) }
+  const nextValue = withAutoVikForWeldDate(value)
+  return { ...nextValue, finalStatus: calculateFinalStatus(nextValue) }
 }
 
 function getJointTitle(value: WeldInput) {

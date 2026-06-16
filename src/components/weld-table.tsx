@@ -55,6 +55,7 @@ type WeldTableProps = {
   readOnly?: boolean
   editableFieldKeys?: ReadonlySet<WeldFieldKey>
   blockedFieldKeys?: ReadonlySet<WeldFieldKey>
+  isCellEditable?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => boolean
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>
   onSelectedRowIdsChange?: (ids: Set<number>) => void
@@ -76,6 +77,7 @@ export function WeldTable({
   readOnly = false,
   editableFieldKeys = new Set(),
   blockedFieldKeys = new Set(),
+  isCellEditable = () => true,
   selectable = false,
   selectedRowIds = new Set(),
   onSelectedRowIdsChange,
@@ -220,6 +222,10 @@ export function WeldTable({
     if (!onEdit) return false
     if (!readOnly) return !blockedFieldKeys.has(fieldKey)
     return editableFieldKeys.has(fieldKey)
+  }
+
+  function canEditCell(row: WeldInput & { id: number }, fieldKey: WeldFieldKey) {
+    return canEditField(fieldKey) && isCellEditable(row, fieldKey)
   }
 
   return (
@@ -415,18 +421,26 @@ export function WeldTable({
                   ) : null}
                   {filteredFields.map((field) => (
                     (() => {
-                      const isEditableCell = canEditField(field.key)
+                      const isEditableColumn = canEditField(field.key)
+                      const isEditableCell = canEditCell(row, field.key)
+                      const isBlockedEditableCell = isEditableColumn && !isEditableCell
                       const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
                       return (
                     <td
                       key={field.key}
-                      className={bodyCellClass(field.key, !isEditableCell, isHighlighted, isCellHighlighted)}
+                      className={bodyCellClass(field.key, !isEditableCell, isHighlighted, isCellHighlighted, isBlockedEditableCell)}
                       onClick={(event) => {
                         if (!isEditableCell) return
                         event.stopPropagation()
                         onEdit?.(row, field.key)
                       }}
-                      title={isEditableCell ? 'Нажмите, чтобы редактировать поле' : undefined}
+                      title={
+                        isEditableCell
+                          ? 'Нажмите, чтобы редактировать поле'
+                          : isBlockedEditableCell
+                            ? 'Недоступно: отсутствует отметка "да" в соответствующем наличии'
+                            : undefined
+                      }
                     >
                       <div
                         className={`block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
@@ -434,7 +448,9 @@ export function WeldTable({
                         }`}
                       >
                         {field.kind === 'boolean' ? (
-                          row[field.key] ? (
+                          isCancelledText(row[field.key]) ? (
+                            <CancelledBadge />
+                          ) : row[field.key] ? (
                             <YesBadge />
                           ) : (
                             ''
@@ -445,15 +461,18 @@ export function WeldTable({
                               field.key === 'weldDate' ||
                               field.key === 'pstoDate' ||
                               field.key === 'createdAt' ||
-                              field.key === 'pstoCreatedAt'
+                              field.key === 'pstoCreatedAt' ||
+                              field.key === 'lnkCreatedAt'
                                 ? 'whitespace-nowrap'
                                 : 'line-clamp-2'
                             }
                           >
                             {field.key === 'weldDate' || field.key === 'pstoDate' ? (
                               formatDate(row[field.key])
-                            ) : field.key === 'createdAt' || field.key === 'pstoCreatedAt' ? (
+                            ) : field.key === 'createdAt' || field.key === 'pstoCreatedAt' || field.key === 'lnkCreatedAt' ? (
                               formatDateTime(row[field.key])
+                            ) : field.key === 'pstoRequired' && isCancelledText(row[field.key]) ? (
+                              <CancelledBadge />
                             ) : field.key === 'pstoRequired' && isYesText(row[field.key]) ? (
                               <YesBadge />
                             ) : field.key === 'pstoRequired' && isNoText(row[field.key]) ? (
@@ -531,10 +550,19 @@ function headerCellClass(fieldKey: string, isReadOnlyColumn: boolean) {
   return `${base} ${width} ${border} ${readonly}`
 }
 
-function bodyCellClass(fieldKey: string, isReadOnlyColumn: boolean, isHighlightedRow: boolean, isHighlightedCell: boolean) {
+function bodyCellClass(
+  fieldKey: string,
+  isReadOnlyColumn: boolean,
+  isHighlightedRow: boolean,
+  isHighlightedCell: boolean,
+  isBlockedEditableCell = false,
+) {
   const base = 'border-b border-r border-b-slate-100 p-0 align-top'
   const width = getWidthClass(fieldKey)
   const border = VISIBLE_SECTION_END_FIELD_KEYS.has(fieldKey as never) ? 'border-r-slate-200' : 'border-r-slate-100'
+  const blockedEditable = isBlockedEditableCell
+    ? 'bg-stone-100/90 shadow-[inset_0_0_0_9999px_rgba(120,113,108,0.08)]'
+    : ''
   const readonly = isReadOnlyColumn
     ? isHighlightedRow
       ? 'bg-emerald-100/80 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.18)]'
@@ -542,7 +570,7 @@ function bodyCellClass(fieldKey: string, isReadOnlyColumn: boolean, isHighlighte
     : ''
   const highlightedRow = isHighlightedRow && !isReadOnlyColumn ? 'bg-emerald-100/70' : ''
   const highlightedCell = isHighlightedCell ? 'bg-lime-200/95 shadow-[inset_0_0_0_9999px_rgba(190,242,100,0.2)]' : ''
-  return `${base} ${width} ${border} ${readonly} ${highlightedRow} ${highlightedCell}`
+  return `${base} ${width} ${border} ${readonly} ${blockedEditable} ${highlightedRow} ${highlightedCell}`
 }
 
 function filterCellClass(fieldKey: string, isReadOnlyColumn: boolean) {
@@ -633,6 +661,14 @@ function isNoText(value: unknown) {
   return String(value ?? '').toLowerCase() === 'нет'
 }
 
+function isCancelledText(value: unknown) {
+  return String(value ?? '').toLowerCase() === 'отменен'
+}
+
 function YesBadge() {
   return <Badge className="bg-background px-2 py-0.5 text-xs font-normal text-slate-600">да</Badge>
+}
+
+function CancelledBadge() {
+  return <Badge className="bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700">отменен</Badge>
 }

@@ -93,6 +93,16 @@ export const WELD_FIELDS = [
   { key: 'rfaResult', dbName: 'rfa_result', label: 'результат РФА', kind: 'text', group: 'Контроль' },
   { key: 'stlsResult', dbName: 'stls_result', label: 'результат СТЛС', kind: 'text', group: 'Контроль' },
   { key: 'mkkResult', dbName: 'mkk_result', label: 'результат МКК', kind: 'text', group: 'Контроль' },
+  { key: 'vikConclusion', dbName: 'vik_conclusion', label: 'Заключение ВИК', kind: 'text', group: 'Контроль' },
+  { key: 'rkConclusion', dbName: 'rk_conclusion', label: 'Заключение РК', kind: 'text', group: 'Контроль' },
+  { key: 'pvkConclusion', dbName: 'pvk_conclusion', label: 'Заключение ПВК', kind: 'text', group: 'Контроль' },
+  { key: 'uzkConclusion', dbName: 'uzk_conclusion', label: 'Заключение УЗК', kind: 'text', group: 'Контроль' },
+  { key: 'tvmtConclusion', dbName: 'tvmt_conclusion', label: 'Заключение ТВМТ', kind: 'text', group: 'Контроль' },
+  { key: 'rfaConclusion', dbName: 'rfa_conclusion', label: 'Заключение РФА', kind: 'text', group: 'Контроль' },
+  { key: 'stlsConclusion', dbName: 'stls_conclusion', label: 'Заключение СТЛС', kind: 'text', group: 'Контроль' },
+  { key: 'mkkConclusion', dbName: 'mkk_conclusion', label: 'Заключение МКК', kind: 'text', group: 'Контроль' },
+  { key: 'lnkDefectDescription', dbName: 'lnk_defect_description', label: 'Описание дефектов', kind: 'text', group: 'Контроль' },
+  { key: 'lnkNote', dbName: 'lnk_note', label: 'Примечание', kind: 'text', group: 'Контроль' },
   { key: 'finalStatus', dbName: 'final_status', label: 'Итоговый статус', kind: 'text', group: 'Статусы/отчетность', visible: true },
   { key: 'boq', dbName: 'boq', label: 'BoQ сварка', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'ks3', dbName: 'ks3', label: 'КС3 сварка', kind: 'text', group: 'Статусы/отчетность' },
@@ -100,6 +110,23 @@ export const WELD_FIELDS = [
   { key: 'pstoBoq', dbName: 'psto_boq', label: 'BoQ ПСТО', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoKs3', dbName: 'psto_ks3', label: 'КС3 ПСТО', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoCreatedAt', dbName: 'psto_created_at', label: 'Внесен ПСТО', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'lnkCreatedAt', dbName: 'lnk_created_at', label: 'Внесен ЛНК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'vikBoq', dbName: 'vik_boq', label: 'BoQ ВИК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'vikKs3', dbName: 'vik_ks3', label: 'КС3 ВИК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'rkBoq', dbName: 'rk_boq', label: 'BoQ РК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'rkKs3', dbName: 'rk_ks3', label: 'КС3 РК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'pvkBoq', dbName: 'pvk_boq', label: 'BoQ ПВК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'pvkKs3', dbName: 'pvk_ks3', label: 'КС3 ПВК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'uzkBoq', dbName: 'uzk_boq', label: 'BoQ УЗК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'uzkKs3', dbName: 'uzk_ks3', label: 'КС3 УЗК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'tvmtBoq', dbName: 'tvmt_boq', label: 'BoQ ТВМТ', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'tvmtKs3', dbName: 'tvmt_ks3', label: 'КС3 ТВМТ', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'rfaBoq', dbName: 'rfa_boq', label: 'BoQ РФА', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'rfaKs3', dbName: 'rfa_ks3', label: 'КС3 РФА', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'stlsBoq', dbName: 'stls_boq', label: 'BoQ СТЛС', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'stlsKs3', dbName: 'stls_ks3', label: 'КС3 СТЛС', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'mkkBoq', dbName: 'mkk_boq', label: 'BoQ МКК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'mkkKs3', dbName: 'mkk_ks3', label: 'КС3 МКК', kind: 'text', group: 'Статусы/отчетность' },
 ] as const satisfies readonly WeldField[]
 
 export type WeldFieldKey = (typeof WELD_FIELDS)[number]['key']
@@ -135,7 +162,8 @@ export const CONTROL_RESULT_PAIRS = [
 
 export function calculateFinalStatus(record: WeldInput) {
   const hasResultWithoutEnabledControl = CONTROL_RESULT_PAIRS.some(
-    ({ enabledKey, resultKey }) => !isEnabledControl(record[enabledKey]) && normalizeResultStatus(record[resultKey]) !== null,
+    ({ enabledKey, resultKey }) =>
+      !isEnabledControl(record[enabledKey]) && !isCancelledControl(record[enabledKey]) && normalizeResultStatus(record[resultKey]) !== null,
   )
   if (hasResultWithoutEnabledControl) return 'ошибка'
 
@@ -167,7 +195,11 @@ function isEnabledControl(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'да'
 }
 
-const EXCLUDED_EXCEL_FIELD_KEYS = new Set(['materialId1', 'materialId2', 'createdAt', 'pstoCreatedAt'])
+function isCancelledControl(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'отменен'
+}
+
+const EXCLUDED_EXCEL_FIELD_KEYS = new Set(['materialId1', 'materialId2', 'createdAt', 'pstoCreatedAt', 'lnkCreatedAt'])
 
 export const EXCEL_FIELDS = WELD_FIELDS.filter((field) => !EXCLUDED_EXCEL_FIELD_KEYS.has(field.key))
 export const FULL_EXCEL_HEADERS = EXCEL_FIELDS.map((field) => field.label)
@@ -266,7 +298,49 @@ const TABLE_LAYOUT = [
       'Итоговый статус',
     ],
   },
-  { section: 'Прочее', columns: ['BoQ сварка', 'КС3 сварка', 'Внесен сварка', 'BoQ ПСТО', 'КС3 ПСТО', 'Внесен ПСТО'] },
+  {
+    section: 'Заключения',
+    columns: [
+      'Заключение ВИК',
+      'Заключение РК',
+      'Заключение ПВК',
+      'Заключение УЗК',
+      'Заключение ТВМТ',
+      'Заключение РФА',
+      'Заключение СТЛС',
+      'Заключение МКК',
+      'Описание дефектов',
+      'Примечание',
+    ],
+  },
+  {
+    section: 'Прочее',
+    columns: [
+      'BoQ сварка',
+      'КС3 сварка',
+      'Внесен сварка',
+      'BoQ ПСТО',
+      'КС3 ПСТО',
+      'Внесен ПСТО',
+      'Внесен ЛНК',
+      'BoQ ВИК',
+      'КС3 ВИК',
+      'BoQ РК',
+      'КС3 РК',
+      'BoQ ПВК',
+      'КС3 ПВК',
+      'BoQ УЗК',
+      'КС3 УЗК',
+      'BoQ ТВМТ',
+      'КС3 ТВМТ',
+      'BoQ РФА',
+      'КС3 РФА',
+      'BoQ СТЛС',
+      'КС3 СТЛС',
+      'BoQ МКК',
+      'КС3 МКК',
+    ],
+  },
 ] as const
 
 function fieldByLabel(label: string) {

@@ -49,6 +49,7 @@ export function parseBoolean(value: unknown) {
   if (normalized === null) return null
   const text = String(normalized).toLowerCase()
   if (['да', 'yes', 'true', '1', '+'].includes(text)) return true
+  if (text === 'отменен') return 'отменен'
   if (['нет', 'no', 'false', '0', '-'].includes(text)) return false
   return Boolean(text)
 }
@@ -137,6 +138,32 @@ export function parseWorksheetRows(rows: unknown[][]): ImportResult {
     'примечание',
     'BoQ ПСТО',
     'КС3 ПСТО',
+    'BoQ ВИК',
+    'КС3 ВИК',
+    'BoQ РК',
+    'КС3 РК',
+    'BoQ ПВК',
+    'КС3 ПВК',
+    'BoQ УЗК',
+    'КС3 УЗК',
+    'BoQ ТВМТ',
+    'КС3 ТВМТ',
+    'BoQ РФА',
+    'КС3 РФА',
+    'BoQ СТЛС',
+    'КС3 СТЛС',
+    'BoQ МКК',
+    'КС3 МКК',
+    'Заключение ВИК',
+    'Заключение РК',
+    'Заключение ПВК',
+    'Заключение УЗК',
+    'Заключение ТВМТ',
+    'Заключение РФА',
+    'Заключение СТЛС',
+    'Заключение МКК',
+    'Описание дефектов',
+    'Примечание',
     'результат РФА',
   ])
   const acceptsLegacy = missingHeaders.length === 0 || missingHeaders.every((header) => optionalHeaders.has(header))
@@ -641,12 +668,18 @@ export function normalizeWeldInput(input: WeldInput) {
     if (!field) continue
     normalized[field.key as keyof WeldInput] = parseCell(field, value)
   }
-  normalized.finalStatus = calculateFinalStatus(normalized)
-  return normalized
+  const withAutoVik = withAutoVikForWeldDate(normalized)
+  withAutoVik.finalStatus = calculateFinalStatus(withAutoVik)
+  return withAutoVik
 }
 
 export function appendImportedWelds<T extends WeldInput & { id: number }>(existingRows: T[], importedRecords: WeldInput[]) {
   let nextId = existingRows.reduce((max, row) => Math.max(max, row.id), 0) + 1
   const importedRows = importedRecords.map((record) => ({ id: nextId++, ...normalizeWeldInput(record) }))
   return [...importedRows, ...existingRows]
+}
+
+export function withAutoVikForWeldDate<T extends WeldInput>(record: T): T {
+  if (String(record.hasVik ?? '').trim().toLowerCase() === 'отменен') return record
+  return emptyToNull(record.weldDate) === null ? record : ({ ...record, hasVik: true } as T)
 }

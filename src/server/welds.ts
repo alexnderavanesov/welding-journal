@@ -42,6 +42,21 @@ const controlColumns = {
   МКК: weldJoints.hasMkk,
 } as const
 const SYSTEM_FIELD_KEYS = new Set(['createdAt', 'updatedAt'])
+const lnkControlRequestPairs = [
+  { enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionKey: 'vikConclusion' },
+  { enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionKey: 'rkConclusion' },
+  { enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionKey: 'pvkConclusion' },
+  { enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult', conclusionKey: 'uzkConclusion' },
+  { enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult', conclusionKey: 'tvmtConclusion' },
+  { enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult', conclusionKey: 'rfaConclusion' },
+  { enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult', conclusionKey: 'stlsConclusion' },
+  { enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult', conclusionKey: 'mkkConclusion' },
+] as const satisfies ReadonlyArray<{
+  enabledKey: keyof WeldInput
+  requestKey: keyof WeldInput
+  resultKey: keyof WeldInput
+  conclusionKey: keyof WeldInput
+}>
 
 export const listWeldJoints = createServerFn({ method: 'GET' })
   .validator((data: WeldFilters | undefined) => data ?? {})
@@ -96,13 +111,17 @@ export const importWeldJoints = createServerFn({ method: 'POST' })
   })
 
 function toDbInsert(input: WeldInput): NewWeldJoint {
-  const normalized = normalizeWeldInput(input)
+  const normalized = clearDisabledLnkRequests(normalizeWeldInput(input))
   const data: Record<string, unknown> = {}
 
   for (const field of WELD_FIELDS) {
     if (SYSTEM_FIELD_KEYS.has(field.key)) continue
-    if (field.key === 'pstoCreatedAt') {
-      data[field.key] = normalized.pstoCreatedAt ? new Date(String(normalized.pstoCreatedAt)) : null
+    if (field.key === 'pstoCreatedAt' || field.key === 'lnkCreatedAt') {
+      data[field.key] = normalized[field.key] ? new Date(String(normalized[field.key])) : null
+      continue
+    }
+    if (field.kind === 'boolean' && isCancelledText(normalized[field.key])) {
+      data[field.key] = null
       continue
     }
     data[field.key] = normalized[field.key] ?? null
@@ -110,12 +129,46 @@ function toDbInsert(input: WeldInput): NewWeldJoint {
   if (isYesText(normalized.pstoRequired) && !normalized.pstoCreatedAt) {
     data.pstoCreatedAt = new Date()
   }
+  if (hasAnyLnkControl(normalized) && !normalized.lnkCreatedAt) {
+    data.lnkCreatedAt = new Date()
+  }
 
   return data as NewWeldJoint
 }
 
 function isYesText(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'да'
+}
+
+function isEnabledControlValue(value: unknown) {
+  if (value === true) return true
+  return String(value ?? '').trim().toLowerCase() === 'да'
+}
+
+function isCancelledText(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'отменен'
+}
+
+function hasText(value: unknown) {
+  return String(value ?? '').trim().length > 0
+}
+
+function clearDisabledLnkRequests<T extends WeldInput>(record: T): T {
+  let nextRecord: (T & Record<string, unknown>) | null = null
+  for (const pair of lnkControlRequestPairs) {
+    if (isEnabledControlValue(record[pair.enabledKey]) || hasLnkMethodReportHistory(record, pair) || !hasText(record[pair.requestKey])) continue
+    nextRecord = nextRecord ?? ({ ...record } as T & Record<string, unknown>)
+    nextRecord[pair.requestKey] = null
+  }
+  return (nextRecord ?? record) as T
+}
+
+function hasLnkMethodReportHistory(record: WeldInput, pair: (typeof lnkControlRequestPairs)[number]) {
+  return hasText(record[pair.resultKey]) && hasText(record[pair.conclusionKey])
+}
+
+function hasAnyLnkControl(record: WeldInput) {
+  return lnkControlRequestPairs.some((pair) => isEnabledControlValue(record[pair.enabledKey]))
 }
 
 function buildWhere(filters: WeldFilters) {

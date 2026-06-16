@@ -14,6 +14,7 @@ import {
   parseWorksheetRows,
   recordsToExportMatrix,
   recordsToVisibleExportMatrix,
+  normalizeWeldInput,
 } from './weld-import-export'
 
 const label = (key: string) => {
@@ -67,6 +68,20 @@ describe('weld import/export', () => {
     expect(parseDate('20.03.25')).toBe('2025-03-20')
   })
 
+  it('allows an empty welding date', () => {
+    const normalized = normalizeWeldInput({ joint: 'S13', weldDate: '' })
+
+    expect(normalized.weldDate).toBeNull()
+    expect(normalized.hasVik).toBeUndefined()
+  })
+
+  it('automatically enables VIK when the welding date is filled', () => {
+    const normalized = normalizeWeldInput({ joint: 'S13', weldDate: '2025-03-20' })
+
+    expect(normalized.weldDate).toBe('2025-03-20')
+    expect(normalized.hasVik).toBe(true)
+  })
+
   it('keeps WDI as a numeric Excel value during export and import', () => {
     const [headers, row] = recordsToVisibleExportMatrix([{ joint: 'S13', wdi: '1,25' }])
     const wdiValue = row[headers.indexOf(label('wdi'))]
@@ -92,6 +107,10 @@ describe('weld import/export', () => {
 
     expect(parseBoolean(yesValue)).toBe(true)
     expect(parseBoolean('-')).toBeNull()
+  })
+
+  it('keeps cancelled marks as a non-active control flag', () => {
+    expect(parseBoolean('отменен')).toBe('отменен')
   })
 
   it('allows only the conducted value for the PSTO result field', () => {
