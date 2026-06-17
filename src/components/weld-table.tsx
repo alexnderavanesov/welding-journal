@@ -7,7 +7,7 @@ import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth, getWeldTableWidth, isCompactW
 import { RESULT_FIELD_KEYS, VISIBLE_FIELD_SECTIONS, VISIBLE_SECTION_END_FIELD_KEYS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 const SELECT_COLUMN_WIDTH = 48
-const LNK_ROW_ACTIONS_COLUMN_WIDTH = 72
+const ROW_ACTIONS_COLUMN_WIDTH = 72
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
@@ -64,11 +64,18 @@ type WeldTableProps = {
   storageKey?: string
   hiddenFieldKeys?: ReadonlySet<WeldFieldKey>
   mergePstoSections?: boolean
-  lnkRowActions?: {
+  rowActions?: {
     onCreateRequest: (row: WeldInput & { id: number }) => void
     onAddResult: (row: WeldInput & { id: number }) => void
     canCreateRequest: (row: WeldInput & { id: number }) => boolean
     canAddResult: (row: WeldInput & { id: number }) => boolean
+    headerLabel?: string
+    createTitle?: string
+    createDisabledTitle?: string
+    createAriaLabel?: string
+    resultTitle?: string
+    resultDisabledTitle?: string
+    resultAriaLabel?: string
   }
 }
 
@@ -92,7 +99,7 @@ export function WeldTable({
   storageKey = 'default',
   hiddenFieldKeys = new Set(),
   mergePstoSections = false,
-  lnkRowActions,
+  rowActions,
 }: WeldTableProps) {
   const [collapsedState, setCollapsedState] = useState(() => ({
     storageKey,
@@ -162,12 +169,12 @@ export function WeldTable({
     [alwaysVisibleFieldKeys, availableSections, collapsedSections],
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
-  const hasLnkRowActions = Boolean(lnkRowActions)
+  const hasRowActions = Boolean(rowActions)
   const tableMinWidth =
     getWeldTableWidth(filteredFields) -
     (readOnly ? ACTIONS_COLUMN_WIDTH : 0) +
     (selectable ? SELECT_COLUMN_WIDTH : 0) +
-    (hasLnkRowActions ? LNK_ROW_ACTIONS_COLUMN_WIDTH : 0)
+    (hasRowActions ? ROW_ACTIONS_COLUMN_WIDTH : 0)
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
   const filteredRows = useMemo(
     () =>
@@ -285,7 +292,7 @@ export function WeldTable({
         >
           <colgroup>
             {selectable ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
-            {hasLnkRowActions ? <col style={{ width: LNK_ROW_ACTIONS_COLUMN_WIDTH }} /> : null}
+            {hasRowActions ? <col style={{ width: ROW_ACTIONS_COLUMN_WIDTH }} /> : null}
             {filteredFields.map((field) => (
               <col key={field.key} style={{ width: getWeldColumnWidth(field.key) }} />
             ))}
@@ -312,13 +319,13 @@ export function WeldTable({
                   />
                 </th>
               ) : null}
-              {hasLnkRowActions ? (
+              {hasRowActions ? (
                 <th
                   rowSpan={3}
                   className="border-r border-slate-200/70 bg-slate-50 px-2 py-2.5 text-center text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
-                  title="Быстрые действия ЛНК"
+                  title={rowActions?.headerLabel ?? 'Быстрые действия'}
                 >
-                  <span className="sr-only">Действия ЛНК</span>
+                  <span className="sr-only">{rowActions?.headerLabel ?? 'Действия'}</span>
                 </th>
               ) : null}
               {filteredSections.map((group) => {
@@ -391,7 +398,7 @@ export function WeldTable({
             {filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={filteredFields.length + (readOnly ? 0 : 1) + (selectable ? 1 : 0) + (hasLnkRowActions ? 1 : 0)}
+                  colSpan={filteredFields.length + (readOnly ? 0 : 1) + (selectable ? 1 : 0) + (hasRowActions ? 1 : 0)}
                   className="px-3 py-12 text-center text-muted-foreground"
                 >
                   Записи не найдены.
@@ -441,19 +448,23 @@ export function WeldTable({
                       />
                     </td>
                   ) : null}
-                  {hasLnkRowActions && lnkRowActions ? (
+                  {hasRowActions && rowActions ? (
                     <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
-                            lnkRowActions.onCreateRequest(row)
+                            rowActions.onCreateRequest(row)
                           }}
-                          disabled={!lnkRowActions.canCreateRequest(row)}
+                          disabled={!rowActions.canCreateRequest(row)}
                           className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
-                          title={lnkRowActions.canCreateRequest(row) ? 'Создать заявку ЛНК на этот стык' : 'Все заявки ЛНК по этому стыку уже созданы'}
-                          aria-label="Создать заявку ЛНК на этот стык"
+                          title={
+                            rowActions.canCreateRequest(row)
+                              ? rowActions.createTitle ?? 'Создать заявку на этот стык'
+                              : rowActions.createDisabledTitle ?? 'Заявка по этому стыку уже создана'
+                          }
+                          aria-label={rowActions.createAriaLabel ?? 'Создать заявку на этот стык'}
                         >
                           <FilePlus2 className="h-3.5 w-3.5" />
                         </button>
@@ -461,12 +472,16 @@ export function WeldTable({
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
-                            lnkRowActions.onAddResult(row)
+                            rowActions.onAddResult(row)
                           }}
-                          disabled={!lnkRowActions.canAddResult(row)}
+                          disabled={!rowActions.canAddResult(row)}
                           className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
-                          title={lnkRowActions.canAddResult(row) ? 'Добавить результат ЛНК на этот стык' : 'Сначала создайте заявку ЛНК на этот стык'}
-                          aria-label="Добавить результат ЛНК на этот стык"
+                          title={
+                            rowActions.canAddResult(row)
+                              ? rowActions.resultTitle ?? 'Добавить результат на этот стык'
+                              : rowActions.resultDisabledTitle ?? 'Сначала создайте заявку на этот стык'
+                          }
+                          aria-label={rowActions.resultAriaLabel ?? 'Добавить результат на этот стык'}
                         >
                           <ClipboardCheck className="h-3.5 w-3.5" />
                         </button>

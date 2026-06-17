@@ -52,14 +52,12 @@ const clearedLnkResultsAndConclusionsStorageKey = 'welding-tracker-cleared-lnk-r
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 const highlightDurationMs = 30000
 const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
-  'pstoRequest',
-  'pstoDate',
-  'pstoResult',
   'pstoNote',
   'pstoBoq',
   'pstoKs3',
 ])
 const heatTreatmentImportMatchFieldKeys = new Set<WeldFieldKey>(['line', 'joint'])
+const PSTO_EMPTY_RESULT_VALUE = '__empty__'
 const LNK_METHODS = [
   { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
   { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' },
@@ -79,6 +77,7 @@ const LNK_METHODS = [
 }>
 const LNK_RESULT_OPTIONS = ['годен', 'ремонт', 'вырез'] as const
 const LNK_EMPTY_RESULT_VALUE = '__empty__'
+const LNK_CUSTOM_RESULT_VALUE = '__custom__'
 const lnkReportFieldKeys = new Set<WeldFieldKey>([
   'lnkCreatedAt',
   'vikBoq',
@@ -220,14 +219,6 @@ type EditingState = {
   record: WeldInput & { id?: number }
   focusField?: WeldFieldKey
 }
-type PstoRequestEditingState = {
-  record: WeldInput & { id: number }
-  value: string
-}
-type PstoResultEditingState = {
-  record: WeldInput & { id: number }
-  value: string
-}
 type HeatTreatmentFieldEditingState = {
   record: WeldInput & { id: number }
   fieldKey: WeldFieldKey
@@ -244,9 +235,18 @@ type LnkResultDraftState = {
   requestName: string
   methodKey: WeldFieldKey | ''
   rowIds: Set<number>
+  rowResults: Record<number, string>
   controlDate: string
   result: string
   conclusionNaming: RequestNamingState
+  search: string
+}
+type PstoResultDraftState = {
+  requestName: string
+  rowIds: Set<number>
+  pstoDate: string
+  result: string
+  diagramNaming: RequestNamingState
   search: string
 }
 type RequestNamingState = {
@@ -261,14 +261,17 @@ function Home() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const importHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestHighlightRef = useRef<{
+    rows: Array<{ id?: number }>
+    fieldKeys: WeldFieldKey[]
+    createdAt: number
+  } | null>(null)
   const previousReportRef = useRef<ActiveReport>('weldingJournal')
   const [activeReport, setActiveReport] = useState<ActiveReport>('weldingJournal')
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [heatTreatmentFilters, setHeatTreatmentFilters] = useState<Record<string, string>>({})
   const [lnkFilters, setLnkFilters] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<EditingState | null>(null)
-  const [pstoRequestEditing, setPstoRequestEditing] = useState<PstoRequestEditingState | null>(null)
-  const [pstoResultEditing, setPstoResultEditing] = useState<PstoResultEditingState | null>(null)
   const [heatTreatmentFieldEditing, setHeatTreatmentFieldEditing] = useState<HeatTreatmentFieldEditingState | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(false)
@@ -277,7 +280,11 @@ function Home() {
   const [selectedHeatTreatmentIds, setSelectedHeatTreatmentIds] = useState<Set<number>>(new Set())
   const [selectedLnkIds, setSelectedLnkIds] = useState<Set<number>>(new Set())
   const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
-  const [pstoRequestNaming, setPstoRequestNaming] = useState<RequestNamingState | null>(null)
+  const [pstoRequestNaming, setPstoRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
+  const [pstoRequestSearch, setPstoRequestSearch] = useState('')
+  const [isPstoRequestModalOpen, setIsPstoRequestModalOpen] = useState(false)
+  const [isPstoResultModalOpen, setIsPstoResultModalOpen] = useState(false)
+  const [pstoResultDraft, setPstoResultDraft] = useState<PstoResultDraftState>(() => createDefaultPstoResultDraft())
   const [lnkRequestNaming, setLnkRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
   const [isLnkRequestModalOpen, setIsLnkRequestModalOpen] = useState(false)
   const [isLnkResultModalOpen, setIsLnkResultModalOpen] = useState(false)
@@ -321,14 +328,17 @@ function Home() {
       frameId = window.requestAnimationFrame(() => {
         window.scrollTo({ left: 0, top: 0, behavior: 'auto' })
       })
+      replayLatestHighlight()
     }
 
     if (activeReport !== 'heatTreatment') {
       setSelectedHeatTreatmentIds(new Set())
-      setPstoRequestEditing(null)
-      setPstoResultEditing(null)
       setHeatTreatmentFieldEditing(null)
-      setPstoRequestNaming(null)
+      setPstoRequestNaming(defaultRequestNamingState)
+      setPstoRequestSearch('')
+      setIsPstoRequestModalOpen(false)
+      setIsPstoResultModalOpen(false)
+      setPstoResultDraft(createDefaultPstoResultDraft())
     }
     if (activeReport !== 'lnk') {
       setSelectedLnkIds(new Set())
@@ -368,7 +378,7 @@ function Home() {
       }
     },
     onSuccess: async (saved, variables) => {
-      highlightChangedRows(saved ? [saved] : [], variables.id && editing?.focusField ? [editing.focusField] : [])
+      highlightChangedRows(saved ? [saved] : [variables], variables.id && editing?.focusField ? [editing.focusField] : [])
       setEditing(null)
       setMessage('Запись сохранена')
       await invalidate(queryClient)
@@ -522,7 +532,8 @@ function Home() {
       requestName: string
       mode?: 'create' | 'edit'
     }) => {
-      const updatedRecords = records.map((record) => ({ ...record, pstoRequest: requestName }))
+      const pstoUpdatedAt = new Date().toISOString()
+      const updatedRecords = records.map((record) => ({ ...record, pstoRequest: requestName, pstoCreatedAt: pstoUpdatedAt }))
       try {
         const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
         if (savedRows.every(Boolean)) return savedRows
@@ -534,15 +545,16 @@ function Home() {
       }
     },
     onSuccess: async (_result, variables) => {
-      highlightChangedRows(variables.records, ['pstoRequest'])
+      highlightChangedRows(_result, ['pstoRequest', 'pstoCreatedAt'])
       setMessage(
         variables.mode === 'edit'
           ? 'Заявка ПСТО обновлена'
           : `Заявка ${variables.requestName} создана для стыков: ${variables.records.length}`,
       )
       setSelectedHeatTreatmentIds(new Set())
-      setPstoRequestNaming(null)
-      setPstoRequestEditing(null)
+      setPstoRequestNaming(defaultRequestNamingState)
+      setPstoRequestSearch('')
+      setIsPstoRequestModalOpen(false)
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -552,33 +564,56 @@ function Home() {
 
   const pstoResultMutation = useMutation({
     mutationFn: async ({
-      record,
-      value,
+      records,
+      pstoDate,
+      result,
+      diagramName,
       rows,
     }: {
-      record: WeldInput & { id: number }
-      value: string | null
+      records: Array<WeldInput & { id: number }>
+      pstoDate: string
+      result: string
+      diagramName: string
       rows: Array<WeldInput & { id: number }>
     }) => {
-      if (value === 'проведено' && !hasText(record.pstoRequest)) {
-        throw new Error('Сначала укажите заявку ПСТО')
-      }
+      const shouldClearResult = result === PSTO_EMPTY_RESULT_VALUE
+      if (!shouldClearResult && result !== 'проведено') throw new Error('Выберите результат ПСТО')
+      if (!shouldClearResult && !pstoDate) throw new Error('Укажите дату ПСТО')
+      if (!shouldClearResult && !diagramName.trim()) throw new Error('Укажите наименование диаграммы термообработки')
+      if (records.some((record) => !hasText(record.pstoRequest))) throw new Error('Сначала укажите заявку ПСТО')
 
-      const updatedRecord = withAutoHeatTreatmentDiagram({ ...record, pstoResult: value, pstoCreatedAt: new Date().toISOString() }, rows)
+      const pstoUpdatedAt = new Date().toISOString()
+      const proposedRowsById = new Map<number, WeldInput & { id: number }>()
+      for (const record of records) {
+        proposedRowsById.set(record.id, {
+          ...record,
+          pstoDate: shouldClearResult ? null : pstoDate,
+          pstoResult: shouldClearResult ? null : 'проведено',
+          heatTreatmentDiagram: shouldClearResult ? null : diagramName.trim(),
+          pstoCreatedAt: pstoUpdatedAt,
+        })
+      }
+      const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
+      const updatedRecords = recalculatedRows.filter((row) => proposedRowsById.has(row.id))
       try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved as unknown as WeldRow
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
+        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
+        updateLocalWelds(updatedRecords)
+        return updatedRecords
       } catch {
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
+        updateLocalWelds(updatedRecords)
+        return updatedRecords
       }
     },
-    onSuccess: async (saved) => {
-      highlightChangedRows(saved ? [saved] : [], ['pstoResult', 'pstoCreatedAt'])
-      setMessage('Результат ПСТО обновлен')
-      setPstoResultEditing(null)
+    onSuccess: async (savedRows, variables) => {
+      highlightChangedRows(savedRows, ['pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      setMessage(
+        variables.result === PSTO_EMPTY_RESULT_VALUE
+          ? `Результат ПСТО аннулирован для стыков: ${savedRows.length}`
+          : `Результат ПСТО внесен для стыков: ${savedRows.length}`,
+      )
+      setIsPstoResultModalOpen(false)
+      setPstoResultDraft(createDefaultPstoResultDraft())
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -735,24 +770,27 @@ function Home() {
       records,
       methodKey,
       controlDate,
-      result,
+      resultById,
       conclusionName,
     }: {
       records: Array<WeldInput & { id: number }>
       methodKey: WeldFieldKey
       controlDate: string
-      result: string
+      resultById: Record<number, string>
       conclusionName: string
     }) => {
       const method = getLnkMethodByRequestKey(methodKey)
       if (!method) throw new Error('Выберите метод контроля')
-      const shouldClearResult = result === LNK_EMPTY_RESULT_VALUE
-      if (!shouldClearResult && !LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Выберите результат контроля')
-      if (!shouldClearResult && !controlDate) throw new Error('Укажите дату контроля')
-      if (!shouldClearResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
+      const results = records.map((record) => resultById[record.id] ?? '')
+      const hasNonEmptyResult = results.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
+      if (results.some((result) => !isValidLnkResultDraftValue(result))) throw new Error('Укажите результат для каждого выбранного стыка')
+      if (hasNonEmptyResult && !controlDate) throw new Error('Укажите дату контроля')
+      if (hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
 
       const lnkUpdatedAt = new Date().toISOString()
       const updatedRecords = records.map((record) => {
+        const result = resultById[record.id] ?? ''
+        const shouldClearResult = result === LNK_EMPTY_RESULT_VALUE
         const proposedRecord = {
           ...record,
           [method.resultKey]: shouldClearResult ? null : result,
@@ -779,8 +817,9 @@ function Home() {
         ? [method.resultKey, method.conclusionDateKey, method.conclusionKey, 'lnkCreatedAt', 'finalStatus']
         : ['lnkCreatedAt', 'finalStatus']
       highlightChangedRows(savedRows, changedFieldKeys)
+      const changedResults = Object.values(variables.resultById)
       setMessage(
-        variables.result === LNK_EMPTY_RESULT_VALUE
+        changedResults.every((result) => result === LNK_EMPTY_RESULT_VALUE)
           ? `Результат ЛНК очищен для стыков: ${savedRows.length}`
           : `Результат ЛНК внесен для стыков: ${savedRows.length}`,
       )
@@ -882,6 +921,15 @@ function Home() {
     () => rows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow).sort(compareHeatTreatmentReportRows),
     [rows],
   )
+  const availablePstoRequestRows = useMemo(() => heatTreatmentRows.filter(canCreatePstoRequest), [heatTreatmentRows])
+  const filteredPstoRequestRows = useMemo(
+    () => filterPstoRequestRows(heatTreatmentRows, pstoRequestSearch),
+    [heatTreatmentRows, pstoRequestSearch],
+  )
+  const filteredAvailablePstoRequestRows = useMemo(
+    () => filteredPstoRequestRows.filter(canCreatePstoRequest),
+    [filteredPstoRequestRows],
+  )
   const lnkRows = useMemo(() => {
     const sortedRows = rows.filter(hasAnyLnkReportControl).map(toLnkReportRow).sort(compareLnkReportRows)
     return preservedLnkOrderIds ? sortRowsByPreservedOrder(sortedRows, preservedLnkOrderIds) : sortedRows
@@ -897,8 +945,8 @@ function Home() {
   )
   const visibleRows = activeReport === 'heatTreatment' ? heatTreatmentRows : activeReport === 'lnk' ? lnkRows : rows
   const selectedHeatTreatmentRows = useMemo(
-    () => heatTreatmentRows.filter((row) => selectedHeatTreatmentIds.has(row.id) && canCreatePstoRequest(row)),
-    [heatTreatmentRows, selectedHeatTreatmentIds],
+    () => availablePstoRequestRows.filter((row) => selectedHeatTreatmentIds.has(row.id)),
+    [availablePstoRequestRows, selectedHeatTreatmentIds],
   )
   const selectedLnkRows = useMemo(
     () => availableLnkRequestRows.filter((row) => selectedLnkIds.has(row.id)),
@@ -912,11 +960,40 @@ function Home() {
   const nextPstoRequestName = useMemo(() => formatPstoRequestName(heatTreatmentRows), [heatTreatmentRows])
   const nextLnkRequestName = useMemo(() => formatLnkRequestName(rows), [rows])
   const pstoRequestOptions = useMemo(() => collectRequestNames(rows, ['pstoRequest']), [rows])
+  const pstoResultRequestOptions = useMemo(() => sortPstoRequestNamesNewestFirst(collectRequestNames(heatTreatmentRows, ['pstoRequest'])), [heatTreatmentRows])
   const lnkRequestOptions = useMemo(() => collectRequestNames(rows, lnkRequestFieldKeys), [rows])
   const lnkResultRequestOptions = useMemo(() => collectLnkResultRequestNames(lnkRows), [lnkRows])
   const nextLnkConclusionName = useMemo(
     () => formatLnkConclusionName(rows, lnkResultDraft.controlDate, lnkResultDraft.methodKey),
     [lnkResultDraft.controlDate, lnkResultDraft.methodKey, rows],
+  )
+  const nextPstoDiagramName = useMemo(
+    () => formatPstoDiagramName(rows, pstoResultDraft.pstoDate),
+    [pstoResultDraft.pstoDate, rows],
+  )
+  const selectedPstoResultRequestRows = useMemo(
+    () => filterPstoRowsByRequestName(heatTreatmentRows, pstoResultDraft.requestName),
+    [heatTreatmentRows, pstoResultDraft.requestName],
+  )
+  const pstoResultSelectedRows = useMemo(
+    () => heatTreatmentRows.filter((row) => pstoResultDraft.rowIds.has(row.id)),
+    [heatTreatmentRows, pstoResultDraft.rowIds],
+  )
+  const pstoResultAvailableRequestOptions = useMemo(() => {
+    const selectedRequestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(pstoResultSelectedRows, ['pstoRequest']))
+    return selectedRequestOptions.length > 0 ? selectedRequestOptions : pstoResultRequestOptions
+  }, [pstoResultRequestOptions, pstoResultSelectedRows])
+  const pstoResultSearchRows = pstoResultDraft.requestName ? selectedPstoResultRequestRows : heatTreatmentRows
+  const filteredPstoResultRows = useMemo(
+    () => filterPstoResultRows(pstoResultSearchRows, pstoResultDraft.search),
+    [pstoResultDraft.search, pstoResultSearchRows],
+  )
+  const selectedPstoResultRows = useMemo(
+    () =>
+      filteredPstoResultRows.filter(
+        (row) => pstoResultDraft.rowIds.has(row.id) && canSelectPstoResultRow(row, pstoResultDraft.requestName),
+      ),
+    [filteredPstoResultRows, pstoResultDraft.requestName, pstoResultDraft.rowIds],
   )
   const selectedLnkResultRequestRows = useMemo(
     () => filterLnkRowsByRequestName(lnkRows, lnkResultDraft.requestName),
@@ -961,11 +1038,25 @@ function Home() {
 
   useEffect(() => {
     setSelectedHeatTreatmentIds((current) => {
-      const selectableIds = new Set(heatTreatmentRows.filter(canCreatePstoRequest).map((row) => row.id))
+      const selectableIds = new Set(availablePstoRequestRows.map((row) => row.id))
       const next = new Set([...current].filter((id) => selectableIds.has(id)))
       return next.size === current.size ? current : next
     })
-  }, [heatTreatmentRows])
+  }, [availablePstoRequestRows])
+
+  useEffect(() => {
+    setPstoResultDraft((current) => {
+      if (!isPstoResultModalOpen) return current
+      const selectedRows = heatTreatmentRows.filter((row) => current.rowIds.has(row.id))
+      const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
+      const allowedRequestOptions = requestOptions.length > 0 ? requestOptions : pstoResultRequestOptions
+      const requestName = !current.requestName || allowedRequestOptions.includes(current.requestName) ? current.requestName : ''
+      const availableRows = filterPstoResultRows(requestName ? filterPstoRowsByRequestName(heatTreatmentRows, requestName) : heatTreatmentRows, current.search)
+      const availableIds = new Set(availableRows.filter((row) => canSelectPstoResultRow(row, requestName)).map((row) => row.id))
+      const rowIds = new Set([...current.rowIds].filter((id) => availableIds.has(id)))
+      return { ...current, requestName, rowIds }
+    })
+  }, [heatTreatmentRows, isPstoResultModalOpen, pstoResultRequestOptions])
 
   useEffect(() => {
     setSelectedLnkIds((current) => {
@@ -991,7 +1082,7 @@ function Home() {
         availableRows.filter((row) => canSelectLnkResultRow(row, requestName, methodKey)).map((row) => row.id),
       )
       const rowIds = new Set([...current.rowIds].filter((id) => availableIds.has(id)))
-      return { ...current, requestName, methodKey, rowIds }
+      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
     })
   }, [isLnkResultModalOpen, lnkRequestOptions, lnkResultRequestOptions, lnkRows])
 
@@ -1055,17 +1146,189 @@ function Home() {
       return
     }
 
+    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
+    if (!requestName) {
+      setMessage('Укажите пользовательское наименование заявки ПСТО')
+      return
+    }
+
+    pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, mode: 'create' })
+  }
+
+  function openCreatePstoRequestModal() {
+    setSelectedHeatTreatmentIds(new Set())
     setPstoRequestNaming(defaultRequestNamingState)
+    setPstoRequestSearch('')
+    setIsPstoRequestModalOpen(true)
+  }
+
+  function openCreatePstoRequestModalForRow(row: WeldInput & { id: number }) {
+    if (!canCreatePstoRequest(row)) {
+      setMessage('Заявка ПСТО для этого стыка уже создана')
+      return
+    }
+
+    setSelectedHeatTreatmentIds(new Set([row.id]))
+    setPstoRequestNaming(defaultRequestNamingState)
+    setPstoRequestSearch(String(row.joint ?? row.line ?? ''))
+    setIsPstoRequestModalOpen(true)
+  }
+
+  function closeCreatePstoRequestModal() {
+    if (pstoRequestMutation.isPending) return
+    setIsPstoRequestModalOpen(false)
   }
 
   function submitCreatePstoRequest() {
-    if (!pstoRequestNaming) return
     const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
     if (!requestName) {
       setMessage('Укажите пользовательское наименование заявки ПСТО')
       return
     }
     pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, mode: 'create' })
+  }
+
+  function openAddPstoResultModal() {
+    setPstoResultDraft(createDefaultPstoResultDraft())
+    setIsPstoResultModalOpen(true)
+  }
+
+  function openAddPstoResultModalForRow(row: WeldInput & { id: number }) {
+    const requestName = String(row.pstoRequest ?? '').trim()
+    if (!requestName) {
+      setMessage('Сначала создайте заявку ПСТО для этого стыка')
+      return
+    }
+
+    setPstoResultDraft({
+      ...createDefaultPstoResultDraft(),
+      requestName,
+      rowIds: new Set([row.id]),
+      search: String(row.joint ?? row.line ?? ''),
+    })
+    setIsPstoResultModalOpen(true)
+  }
+
+  function closeAddPstoResultModal() {
+    if (pstoResultMutation.isPending) return
+    setIsPstoResultModalOpen(false)
+  }
+
+  function changePstoResultRequest(requestName: string) {
+    setPstoResultDraft((current) => {
+      if (!requestName) return { ...current, requestName: '' }
+      const rowIds = new Set(
+        [...current.rowIds].filter((id) => {
+          const row = heatTreatmentRows.find((candidate) => candidate.id === id)
+          return row ? rowBelongsToPstoRequest(row, requestName) : false
+        }),
+      )
+      return { ...current, requestName, rowIds }
+    })
+  }
+
+  function togglePstoResultRow(rowId: number) {
+    const row = filteredPstoResultRows.find((candidate) => candidate.id === rowId)
+    if (!row || !canSelectPstoResultRow(row, pstoResultDraft.requestName)) return
+
+    setPstoResultDraft((current) => {
+      const rowIds = new Set(current.rowIds)
+      if (rowIds.has(rowId)) {
+        rowIds.delete(rowId)
+      } else {
+        rowIds.add(rowId)
+      }
+      const selectedRows = heatTreatmentRows.filter((candidate) => rowIds.has(candidate.id))
+      const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
+      const requestName =
+        current.requestName && requestOptions.includes(current.requestName)
+          ? current.requestName
+          : requestOptions.length === 1
+            ? requestOptions[0]
+            : ''
+      return { ...current, requestName, rowIds }
+    })
+  }
+
+  function toggleAllPstoResultRows() {
+    setPstoResultDraft((current) => {
+      const filteredIds = new Set(
+        filteredPstoResultRows.filter((row) => canSelectPstoResultRow(row, current.requestName)).map((row) => row.id),
+      )
+      if (filteredIds.size === 0) return current
+      const allSelected = [...filteredIds].every((id) => current.rowIds.has(id))
+      const rowIds = allSelected
+        ? new Set([...current.rowIds].filter((id) => !filteredIds.has(id)))
+        : new Set([...current.rowIds, ...filteredIds])
+      const selectedRows = heatTreatmentRows.filter((row) => rowIds.has(row.id))
+      const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
+      const requestName =
+        current.requestName && requestOptions.includes(current.requestName)
+          ? current.requestName
+          : requestOptions.length === 1
+            ? requestOptions[0]
+            : ''
+      return { ...current, requestName, rowIds }
+    })
+  }
+
+  function togglePstoRequestRow(rowId: number) {
+    setSelectedHeatTreatmentIds((current) => {
+      const next = new Set(current)
+      if (next.has(rowId)) {
+        next.delete(rowId)
+      } else {
+        next.add(rowId)
+      }
+      return next
+    })
+  }
+
+  function toggleAllPstoRequestRows() {
+    setSelectedHeatTreatmentIds((current) => {
+      const filteredIds = new Set(filteredAvailablePstoRequestRows.map((row) => row.id))
+      if (filteredIds.size === 0) return current
+      const allFilteredSelected = [...filteredIds].every((id) => current.has(id))
+      if (allFilteredSelected) {
+        return new Set([...current].filter((id) => !filteredIds.has(id)))
+      }
+      return new Set([...current, ...filteredIds])
+    })
+  }
+
+  function handleAddPstoResult() {
+    if (!pstoResultDraft.requestName) {
+      setMessage('Выберите заявку ПСТО')
+      return
+    }
+    if (selectedPstoResultRows.length === 0) {
+      setMessage('Выберите один или несколько стыков')
+      return
+    }
+    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && pstoResultDraft.result !== 'проведено') {
+      setMessage('Выберите результат ПСТО')
+      return
+    }
+    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !pstoResultDraft.pstoDate) {
+      setMessage('Укажите дату ПСТО')
+      return
+    }
+    const diagramName =
+      pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE
+        ? ''
+        : getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName)
+    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !diagramName) {
+      setMessage('Укажите наименование диаграммы термообработки')
+      return
+    }
+
+    pstoResultMutation.mutate({
+      records: selectedPstoResultRows,
+      pstoDate: pstoResultDraft.pstoDate,
+      result: pstoResultDraft.result,
+      diagramName,
+      rows,
+    })
   }
 
   function handleCreateLnkRequest() {
@@ -1159,7 +1422,7 @@ function Home() {
           return row ? rowBelongsToLnkRequest(row, requestName) : false
         }),
       )
-      return { ...current, requestName, methodKey: '', rowIds }
+      return { ...current, requestName, methodKey: '', rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
     })
   }
 
@@ -1172,7 +1435,7 @@ function Home() {
           return row ? isLnkResultRowApplicable(row, current.requestName, methodKey) : false
         }),
       )
-      return { ...current, methodKey, rowIds }
+      return { ...current, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
     })
   }
 
@@ -1198,7 +1461,7 @@ function Home() {
       const methodRows = requestName ? selectedRows.filter((candidate) => rowBelongsToLnkRequest(candidate, requestName)) : []
       const methods = getLnkRequestMethodsForRows(methodRows, requestName)
       const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds }
+      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
     })
   }
 
@@ -1225,7 +1488,20 @@ function Home() {
       const methodRows = requestName ? selectedRows.filter((row) => rowBelongsToLnkRequest(row, requestName)) : []
       const methods = getLnkRequestMethodsForRows(methodRows, requestName)
       const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds }
+      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
+    })
+  }
+
+  function setLnkResultForRow(rowId: number, result: string) {
+    setLnkResultDraft((current) => {
+      if (!current.rowIds.has(rowId)) return current
+      const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
+      const rowResults: Record<number, string> = {}
+      for (const id of current.rowIds) {
+        rowResults[id] = current.rowResults[id] || baseline
+      }
+      rowResults[rowId] = result
+      return { ...current, result: LNK_CUSTOM_RESULT_VALUE, rowResults }
     })
   }
 
@@ -1242,19 +1518,22 @@ function Home() {
       setMessage('Выберите один или несколько стыков')
       return
     }
-    if (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !lnkResultDraft.controlDate) {
+    const resultById = buildLnkResultDraftById(selectedLnkResultRows, lnkResultDraft)
+    const resultValues = Object.values(resultById)
+    if (resultValues.some((result) => !isValidLnkResultDraftValue(result))) {
+      setMessage('Укажите результат для каждого выбранного стыка')
+      return
+    }
+    const hasNonEmptyResult = resultValues.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
+    if (hasNonEmptyResult && !lnkResultDraft.controlDate) {
       setMessage('Укажите дату контроля')
       return
     }
-    if (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !LNK_RESULT_OPTIONS.includes(lnkResultDraft.result as never)) {
-      setMessage('Выберите результат контроля')
-      return
-    }
     const conclusionName =
-      lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE
+      !hasNonEmptyResult
         ? ''
         : getRequestNameFromNaming(lnkResultDraft.conclusionNaming, nextLnkConclusionName)
-    if (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !conclusionName) {
+    if (hasNonEmptyResult && !conclusionName) {
       setMessage('Укажите наименование заключения')
       return
     }
@@ -1263,7 +1542,7 @@ function Home() {
       records: selectedLnkResultRows,
       methodKey: lnkResultDraft.methodKey,
       controlDate: lnkResultDraft.controlDate,
-      result: lnkResultDraft.result,
+      resultById,
       conclusionName,
     })
   }
@@ -1318,22 +1597,14 @@ function Home() {
 
   function handleEditRecord(record: WeldInput & { id: number }, focusField?: WeldFieldKey) {
     if (activeReport === 'heatTreatment') {
-      if (focusField === 'pstoRequest') {
-        setPstoRequestEditing({ record, value: String(record.pstoRequest ?? '') })
-      } else if (focusField === 'pstoResult') {
-        setPstoResultEditing({ record, value: getPstoResultValue(record.pstoResult) })
-      } else if (focusField && heatTreatmentEditableFieldKeys.has(focusField)) {
+      if (focusField && heatTreatmentEditableFieldKeys.has(focusField)) {
         const field = FIELD_BY_KEY.get(focusField)
-        const fieldValue =
-          focusField === 'pstoDate' && !hasText(record[focusField])
-            ? formatDateInputValue(new Date())
-            : String(record[focusField] ?? '')
         setHeatTreatmentFieldEditing({
           record,
           fieldKey: focusField,
           label: field?.label ?? 'Поле ПСТО',
           kind: field?.kind === 'date' ? 'date' : 'text',
-          value: fieldValue,
+          value: String(record[focusField] ?? ''),
         })
       }
       return
@@ -1367,36 +1638,6 @@ function Home() {
     setEditing({ record, focusField })
   }
 
-  function saveEditedPstoRequest() {
-    if (!pstoRequestEditing) return
-    const value = pstoRequestEditing.value.trim()
-    if (value && !pstoRequestOptions.includes(value)) {
-      setMessage('Можно выбрать только существующую заявку ПСТО или очистить поле')
-      return
-    }
-    pstoRequestMutation.mutate({
-      records: [pstoRequestEditing.record],
-      requestName: value,
-      mode: 'edit',
-    })
-  }
-
-  function saveEditedPstoResult() {
-    if (!pstoResultEditing) return
-    const value = getPstoResultValue(pstoResultEditing.value) || null
-    if (value === 'проведено' && !hasText(pstoResultEditing.record.pstoRequest)) {
-      setMessage('Сначала укажите заявку ПСТО')
-      setPstoResultEditing(null)
-      return
-    }
-
-    pstoResultMutation.mutate({
-      record: pstoResultEditing.record,
-      value,
-      rows,
-    })
-  }
-
   function saveEditedHeatTreatmentField() {
     if (!heatTreatmentFieldEditing) return
     if (heatTreatmentFieldEditing.report === 'lnk') {
@@ -1421,6 +1662,24 @@ function Home() {
   }
 
   function highlightChangedRows(rows: Array<{ id?: number }> | undefined, cellFieldKeys: WeldFieldKey[] = []) {
+    if (rows && rows.length > 0) {
+      latestHighlightRef.current = {
+        rows,
+        fieldKeys: expandHighlightFieldKeys(cellFieldKeys),
+        createdAt: Date.now(),
+      }
+    }
+    applyChangedRowsHighlight(rows, cellFieldKeys)
+  }
+
+  function replayLatestHighlight() {
+    const latestHighlight = latestHighlightRef.current
+    if (!latestHighlight) return
+    if (Date.now() - latestHighlight.createdAt > highlightDurationMs * 4) return
+    applyChangedRowsHighlight(latestHighlight.rows, latestHighlight.fieldKeys)
+  }
+
+  function applyChangedRowsHighlight(rows: Array<{ id?: number }> | undefined, cellFieldKeys: WeldFieldKey[] = []) {
     const ids = new Set(
       (rows ?? [])
         .map((row) => row.id)
@@ -1429,8 +1688,9 @@ function Home() {
     if (ids.size === 0) return
 
     const cellKeys = new Set<string>()
+    const expandedFieldKeys = expandHighlightFieldKeys(cellFieldKeys)
     for (const id of ids) {
-      for (const fieldKey of cellFieldKeys) {
+      for (const fieldKey of expandedFieldKeys) {
         cellKeys.add(getCellKey(id, fieldKey))
       }
     }
@@ -1559,10 +1819,16 @@ function Home() {
                 Excel
               </Button>
               {activeReport === 'heatTreatment' ? (
-                <Button onClick={handleCreatePstoRequest} disabled={pstoRequestMutation.isPending}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Создать заявку ПСТО
-                </Button>
+                <>
+                  <Button onClick={openCreatePstoRequestModal} disabled={pstoRequestMutation.isPending}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Создать заявку ПСТО
+                  </Button>
+                  <Button onClick={openAddPstoResultModal} disabled={pstoResultMutation.isPending || pstoResultRequestOptions.length === 0}>
+                    <ClipboardCheck className="mr-2 h-4 w-4" />
+                    Добавить результат
+                  </Button>
+                </>
               ) : null}
               {activeReport === 'lnk' ? (
                 <>
@@ -1627,17 +1893,34 @@ function Home() {
                 ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
                 : undefined
             }
-            selectable={activeReport === 'heatTreatment'}
-            selectedRowIds={selectedHeatTreatmentIds}
-            onSelectedRowIdsChange={setSelectedHeatTreatmentIds}
-            isRowSelectable={activeReport === 'heatTreatment' ? canCreatePstoRequest : () => true}
-            lnkRowActions={
-              activeReport === 'lnk'
+            rowActions={
+              activeReport === 'heatTreatment'
+                ? {
+                    onCreateRequest: openCreatePstoRequestModalForRow,
+                    onAddResult: openAddPstoResultModalForRow,
+                    canCreateRequest: canCreatePstoRequest,
+                    canAddResult: (row) => hasText(row.pstoRequest),
+                    headerLabel: 'Действия ПСТО',
+                    createTitle: 'Создать заявку ПСТО на этот стык',
+                    createDisabledTitle: 'Заявка ПСТО по этому стыку уже создана',
+                    createAriaLabel: 'Создать заявку ПСТО на этот стык',
+                    resultTitle: 'Добавить результат ПСТО на этот стык',
+                    resultDisabledTitle: 'Сначала создайте заявку ПСТО на этот стык',
+                    resultAriaLabel: 'Добавить результат ПСТО на этот стык',
+                  }
+                : activeReport === 'lnk'
                 ? {
                     onCreateRequest: openCreateLnkRequestModalForRow,
                     onAddResult: openAddLnkResultModalForRow,
                     canCreateRequest: canCreateLnkRequest,
                     canAddResult: (row) => getLnkRowRequestNames(row).length > 0,
+                    headerLabel: 'Действия ЛНК',
+                    createTitle: 'Создать заявку ЛНК на этот стык',
+                    createDisabledTitle: 'Все заявки ЛНК по этому стыку уже созданы',
+                    createAriaLabel: 'Создать заявку ЛНК на этот стык',
+                    resultTitle: 'Добавить результат ЛНК на этот стык',
+                    resultDisabledTitle: 'Сначала создайте заявку ЛНК на этот стык',
+                    resultAriaLabel: 'Добавить результат ЛНК на этот стык',
                   }
                 : undefined
             }
@@ -1665,21 +1948,22 @@ function Home() {
         />
       ) : null}
 
-      {pstoRequestNaming ? (
+      {isPstoRequestModalOpen ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="w-full max-w-xl rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-            <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
+          <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold">Создание заявки ПСТО</h2>
                 <p className="text-sm text-muted-foreground">
-                  Стыков: {selectedHeatTreatmentRows.length} · Системное: {nextPstoRequestName}
+                  {nextPstoRequestName} · Стыков: {selectedHeatTreatmentRows.length}
                 </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setPstoRequestNaming(null)} aria-label="Закрыть">
+              <Button variant="ghost" size="icon" onClick={closeCreatePstoRequestModal} aria-label="Закрыть">
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <div className="space-y-4 px-5 py-5">
+
+            <div className="border-b border-slate-100 px-5 py-4">
               <RequestNamingControls
                 naming={pstoRequestNaming}
                 systemName={nextPstoRequestName}
@@ -1687,11 +1971,107 @@ function Home() {
                 onChange={setPstoRequestNaming}
               />
             </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-800">Термообработка</h3>
+                <p className="text-xs leading-5 text-slate-500">
+                  В заявку можно добавить один или несколько стыков, где ПСТО требуется и заявка еще не создана.
+                </p>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+                  После создания наименование заявки попадет в столбец «Заявка ПСТО», а строка обновит дату «Внесен ПСТО».
+                </div>
+              </section>
+
+              <section className="flex min-h-0 flex-col space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Стыки</h3>
+                    <p className="text-xs leading-5 text-slate-500">
+                      Галочка доступна только там, где заявка ПСТО еще не создана.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={toggleAllPstoRequestRows}>
+                    {isEveryFilteredLnkRequestRowSelected(selectedHeatTreatmentIds, filteredAvailablePstoRequestRows)
+                      ? 'Снять все'
+                      : 'Выбрать доступные'}
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <Input
+                    value={pstoRequestSearch}
+                    onChange={(event) => setPstoRequestSearch(event.target.value)}
+                    placeholder="Проект, шифр, линия, спул или стык"
+                    className="h-9 min-w-64 flex-1 bg-white"
+                  />
+                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
+                    Найдено: {filteredPstoRequestRows.length} · Доступно: {filteredAvailablePstoRequestRows.length}
+                  </span>
+                  {pstoRequestSearch ? (
+                    <Button variant="outline" size="sm" onClick={() => setPstoRequestSearch('')}>
+                      Очистить
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
+                  {filteredPstoRequestRows.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-slate-500">
+                      {heatTreatmentRows.length === 0 ? 'Нет стыков для отчета Термообработка.' : 'По фильтру ничего не найдено.'}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {filteredPstoRequestRows.map((row) => {
+                        const disabled = !canCreatePstoRequest(row)
+                        const selected = selectedHeatTreatmentIds.has(row.id)
+                        return (
+                          <label
+                            key={row.id}
+                            className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] items-center gap-3 px-4 py-3 text-sm transition-colors ${
+                              disabled
+                                ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                                : selected
+                                  ? 'cursor-pointer bg-emerald-50/80'
+                                  : 'cursor-pointer bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => togglePstoRequestRow(row.id)}
+                              disabled={disabled}
+                              className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium text-slate-900">{getJointTitle(row)}</span>
+                              <span className="block truncate text-xs text-slate-500">Спул: {String(row.spool ?? '-')}</span>
+                            </span>
+                            <span className="flex flex-wrap gap-1.5">
+                              {disabled ? (
+                                <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
+                                  {String(row.pstoRequest ?? '').trim() || 'Заявка уже создана'}
+                                </span>
+                              ) : (
+                                <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
+                                  ПСТО
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
             <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-              <Button variant="outline" onClick={() => setPstoRequestNaming(null)}>
+              <Button variant="outline" onClick={closeCreatePstoRequestModal}>
                 Отмена
               </Button>
-              <Button onClick={submitCreatePstoRequest} disabled={pstoRequestMutation.isPending}>
+              <Button onClick={submitCreatePstoRequest} disabled={pstoRequestMutation.isPending || selectedHeatTreatmentRows.length === 0}>
                 <Check className="mr-2 h-4 w-4" />
                 Создать заявку
               </Button>
@@ -1700,100 +2080,205 @@ function Home() {
         </div>
       ) : null}
 
-      {pstoRequestEditing ? (
+      {isPstoResultModalOpen ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="w-full max-w-xl rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-            <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
+          <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
               <div>
-                <h2 className="text-lg font-semibold">Заявка ПСТО</h2>
-                <p className="text-sm text-muted-foreground">{getJointTitle(pstoRequestEditing.record)}</p>
+                <h2 className="text-lg font-semibold">Добавление результата ПСТО</h2>
+                <p className="text-sm text-muted-foreground">
+                  Заявка: {pstoResultDraft.requestName || '-'} · Выбрано: {pstoResultDraft.rowIds.size}
+                </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setPstoRequestEditing(null)} aria-label="Закрыть">
+              <Button variant="ghost" size="icon" onClick={closeAddPstoResultModal} aria-label="Закрыть">
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <div className="space-y-2 px-5 py-5">
-              <label className="space-y-1.5 text-sm">
-                <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ПСТО</span>
-                <Select
-                  autoFocus
-                  value={pstoRequestEditing.value}
-                  onChange={(event) =>
-                    setPstoRequestEditing((current) =>
-                      current ? { ...current, value: event.target.value } : current,
-                    )
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') setPstoRequestEditing(null)
-                    if (event.key === 'Enter') saveEditedPstoRequest()
-                  }}
-                >
-                  <option value="">пусто</option>
-                  {withCurrentOption(pstoRequestOptions, pstoRequestEditing.value).map((requestName) => (
-                    <option key={requestName} value={requestName}>
-                      {requestName}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-              <Button variant="outline" onClick={() => setPstoRequestEditing(null)}>
-                Отмена
-              </Button>
-              <Button onClick={saveEditedPstoRequest} disabled={pstoRequestMutation.isPending}>
-                <Check className="mr-2 h-4 w-4" />
-                Сохранить
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
-      {pstoResultEditing ? (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="w-full max-w-xl rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-            <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold">Результат ПСТО</h2>
-                <p className="text-sm text-muted-foreground">{getJointTitle(pstoResultEditing.record)}</p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setPstoResultEditing(null)} aria-label="Закрыть">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="space-y-2 px-5 py-5">
-              <label className="space-y-1.5 text-sm">
-                <span className="text-[13px] font-medium leading-none text-slate-700">Результат ПСТО</span>
-                <Select
-                  autoFocus
-                  value={pstoResultEditing.value}
-                  onChange={(event) =>
-                    setPstoResultEditing((current) =>
-                      current ? { ...current, value: event.target.value } : current,
-                    )
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') setPstoResultEditing(null)
-                    if (event.key === 'Enter') saveEditedPstoResult()
-                  }}
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+              <section className="space-y-4">
+                <label className="block space-y-1.5 text-sm">
+                  <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ПСТО</span>
+                  <Select value={pstoResultDraft.requestName} onChange={(event) => changePstoResultRequest(event.target.value)}>
+                    <option value="">Выберите заявку</option>
+                    {pstoResultAvailableRequestOptions.map((requestName) => (
+                      <option key={requestName} value={requestName}>
+                        {requestName}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <label className="block space-y-1.5 text-sm">
+                    <span className="text-[13px] font-medium leading-none text-slate-700">Дата ПСТО</span>
+                    <Input
+                      type="date"
+                      value={pstoResultDraft.pstoDate}
+                      disabled={pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE}
+                      onChange={(event) => setPstoResultDraft((current) => ({ ...current, pstoDate: event.target.value }))}
+                    />
+                  </label>
+
+                  <label className="block space-y-1.5 text-sm">
+                    <span className="text-[13px] font-medium leading-none text-slate-700">Результат</span>
+                    <Select
+                      value={pstoResultDraft.result}
+                      onChange={(event) => setPstoResultDraft((current) => ({ ...current, result: event.target.value }))}
+                    >
+                      <option value="">Выберите результат</option>
+                      <option value="проведено">проведено</option>
+                      <option value={PSTO_EMPTY_RESULT_VALUE}>аннулировать</option>
+                    </Select>
+                  </label>
+                </div>
+
+                <div
+                  className={`rounded-md border border-slate-200 p-3 ${
+                    pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE ? 'bg-slate-50 opacity-60' : 'bg-white'
+                  }`}
                 >
-                  <option value="">пусто</option>
-                  {PSTO_RESULT_STATUS_OPTIONS.map((option) => (
-                    <option key={option} value={option} disabled={!hasText(pstoResultEditing.record.pstoRequest)}>
-                      {option}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+                  <RequestNamingControls
+                    naming={pstoResultDraft.diagramNaming}
+                    systemName={nextPstoDiagramName}
+                    label="Диаграмма термообработки"
+                    placeholder="Введите наименование диаграммы"
+                    disabled={pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE}
+                    onChange={(diagramNaming) => setPstoResultDraft((current) => ({ ...current, diagramNaming }))}
+                  />
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+                  Результат «проведено» заполнит дату ПСТО и диаграмму термообработки. Если выбрать «аннулировать», результат,
+                  дата и диаграмма очистятся, заявка ПСТО останется.
+                </div>
+              </section>
+
+              <section className="flex min-h-0 flex-col space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Стыки в заявке</h3>
+                    <p className="text-xs leading-5 text-slate-500">
+                      Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={toggleAllPstoResultRows} disabled={filteredPstoResultRows.length === 0}>
+                    {isEveryFilteredLnkRequestRowSelected(
+                      pstoResultDraft.rowIds,
+                      filteredPstoResultRows.filter((row) => canSelectPstoResultRow(row, pstoResultDraft.requestName)),
+                    )
+                      ? 'Снять все'
+                      : 'Выбрать все'}
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <Input
+                    value={pstoResultDraft.search}
+                    onChange={(event) => setPstoResultDraft((current) => ({ ...current, search: event.target.value }))}
+                    placeholder="Проект, шифр, линия, спул или стык"
+                    className="h-9 min-w-64 flex-1 bg-white"
+                  />
+                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
+                    Найдено: {filteredPstoResultRows.length} · Выбрано: {pstoResultDraft.rowIds.size}
+                  </span>
+                  {pstoResultDraft.search ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPstoResultDraft((current) => ({
+                          ...current,
+                          requestName: '',
+                          rowIds: new Set(),
+                          search: '',
+                        }))
+                      }
+                    >
+                      Очистить
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
+                  {filteredPstoResultRows.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-slate-500">
+                      {pstoResultDraft.search ? 'По фильтру ничего не найдено.' : 'Введите поиск или выберите заявку ПСТО.'}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {filteredPstoResultRows.map((row) => {
+                        const selected = pstoResultDraft.rowIds.has(row.id)
+                        const disabled = !canSelectPstoResultRow(row, pstoResultDraft.requestName)
+                        const requestName = String(row.pstoRequest ?? '').trim()
+                        const diagramName = String(row.heatTreatmentDiagram ?? '').trim()
+                        return (
+                          <label
+                            key={row.id}
+                            className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] gap-3 px-4 py-3 text-sm transition-colors ${
+                              disabled
+                                ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                                : selected
+                                  ? 'cursor-pointer bg-emerald-50/80'
+                                  : 'cursor-pointer bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => togglePstoResultRow(row.id)}
+                              disabled={disabled}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium text-slate-900">{getJointTitle(row)}</span>
+                              <span className="block truncate text-xs text-slate-500">
+                                Спул: {String(row.spool ?? '-')} · Текущий результат: {String(row.pstoResult ?? '-')}
+                              </span>
+                              {disabled ? (
+                                <span className="block truncate text-xs text-amber-700">
+                                  {requestName ? 'Выберите эту заявку ПСТО, чтобы отметить стык.' : 'На этот стык еще нет заявки ПСТО.'}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="flex flex-wrap content-start gap-1.5">
+                              {requestName ? (
+                                <span className={`inline-flex max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium ${getPstoResultBadgeClass(row.pstoResult)}`}>
+                                  <span className="max-w-52 truncate">ПСТО {requestName}</span>
+                                  {diagramName ? <span className="max-w-52 truncate text-[11px] text-slate-500">{diagramName}</span> : null}
+                                </span>
+                              ) : (
+                                <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+                                  Нет заявки
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </section>
             </div>
+
             <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-              <Button variant="outline" onClick={() => setPstoResultEditing(null)}>
+              <Button variant="outline" onClick={closeAddPstoResultModal}>
                 Отмена
               </Button>
-              <Button onClick={saveEditedPstoResult} disabled={pstoResultMutation.isPending}>
+              <Button
+                onClick={handleAddPstoResult}
+                disabled={
+                  pstoResultMutation.isPending ||
+                  selectedPstoResultRows.length === 0 ||
+                  !pstoResultDraft.result ||
+                  (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !pstoResultDraft.pstoDate) ||
+                  (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE &&
+                    !getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName))
+                }
+              >
                 <Check className="mr-2 h-4 w-4" />
-                Сохранить
+                Сохранить результат
               </Button>
             </div>
           </div>
@@ -1984,7 +2469,7 @@ function Home() {
 
       {isLnkResultModalOpen ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
+          <div className="flex max-h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold">Добавление результата ЛНК</h2>
@@ -1997,7 +2482,7 @@ function Home() {
               </Button>
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
               <section className="space-y-4">
                 <label className="block space-y-1.5 text-sm">
                   <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ЛНК</span>
@@ -2033,18 +2518,27 @@ function Home() {
                     <Input
                       type="date"
                       value={lnkResultDraft.controlDate}
-                      disabled={lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE}
+                      disabled={!hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft)}
                       onChange={(event) => setLnkResultDraft((current) => ({ ...current, controlDate: event.target.value }))}
                     />
                   </label>
 
                   <label className="block space-y-1.5 text-sm">
-                    <span className="text-[13px] font-medium leading-none text-slate-700">Результат</span>
+                    <span className="text-[13px] font-medium leading-none text-slate-700">Результат по умолчанию</span>
                     <Select
                       value={lnkResultDraft.result}
-                      onChange={(event) => setLnkResultDraft((current) => ({ ...current, result: event.target.value }))}
+                      onChange={(event) =>
+                        setLnkResultDraft((current) => ({
+                          ...current,
+                          result: event.target.value,
+                          rowResults: {},
+                        }))
+                      }
                     >
                       <option value="">Выберите результат</option>
+                      <option value={LNK_CUSTOM_RESULT_VALUE} disabled>
+                        пользовательский
+                      </option>
                       {LNK_RESULT_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {option}
@@ -2057,7 +2551,7 @@ function Home() {
 
                 <div
                   className={`rounded-md border border-slate-200 p-3 ${
-                    lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE ? 'bg-slate-50 opacity-60' : 'bg-white'
+                    !hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) ? 'bg-slate-50 opacity-60' : 'bg-white'
                   }`}
                 >
                   <RequestNamingControls
@@ -2065,7 +2559,7 @@ function Home() {
                     systemName={nextLnkConclusionName}
                     label="Наименование заключения"
                     placeholder="Введите наименование заключения"
-                    disabled={lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE}
+                    disabled={!hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft)}
                     onChange={(conclusionNaming) => setLnkResultDraft((current) => ({ ...current, conclusionNaming }))}
                   />
                 </div>
@@ -2085,7 +2579,12 @@ function Home() {
                       Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.
                     </p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={toggleAllLnkResultRows} disabled={filteredLnkResultRows.length === 0}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleAllLnkResultRows}
+                    disabled={!lnkResultDraft.requestName || !lnkResultDraft.methodKey || filteredLnkResultRows.length === 0}
+                  >
                     {isEveryFilteredLnkRequestRowSelected(
                       lnkResultDraft.rowIds,
                       filteredLnkResultRows.filter((row) =>
@@ -2117,6 +2616,7 @@ function Home() {
                           requestName: '',
                           methodKey: '',
                           rowIds: new Set(),
+                          rowResults: {},
                           search: '',
                         }))
                       }
@@ -2138,6 +2638,7 @@ function Home() {
                         const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
                         const disabled = !canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey)
                         const rowRequestNames = getLnkRowRequestNames(row)
+                        const rowResult = getEffectiveLnkResultDraftValue(row.id, lnkResultDraft)
                         return (
                           <label
                             key={row.id}
@@ -2159,10 +2660,12 @@ function Home() {
                             <span className="min-w-0">
                               <span className="block truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                               <span className="block truncate text-xs text-slate-500">
-                                Проект: {String(row.projectTitle ?? '-')} · Шифр: {String(row.subtitleCode ?? '-')}
+                                Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-')}</span> · Шифр:{' '}
+                                <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · Стык:{' '}
+                                <span className="font-semibold text-slate-700">{String(row.joint ?? '-')}</span>
                               </span>
                               <span className="block truncate text-xs text-slate-500">
-                                Спул: {String(row.spool ?? '-')} · Текущий результат:{' '}
+                                Спул: <span className="font-semibold text-slate-700">{String(row.spool ?? '-')}</span> · Текущий результат:{' '}
                                 {method && !disabled ? String(row[method.resultKey] ?? '-') : '-'}
                               </span>
                               <span className="block truncate text-xs text-slate-600">
@@ -2177,6 +2680,33 @@ function Home() {
                                     : !lnkResultDraft.methodKey
                                       ? 'Выберите метод контроля, чтобы отметить стык.'
                                     : 'Для выбранного метода этот стык не входит в заявку.'}
+                                </span>
+                              ) : null}
+                              {selected ? (
+                                <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                                  <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>
+                                  {[...LNK_RESULT_OPTIONS, LNK_EMPTY_RESULT_VALUE].map((option) => {
+                                    const optionLabel = option === LNK_EMPTY_RESULT_VALUE ? 'аннулировать' : option
+                                    const active = rowResult === option
+                                    return (
+                                      <button
+                                        key={option}
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.preventDefault()
+                                          event.stopPropagation()
+                                          setLnkResultForRow(row.id, option)
+                                        }}
+                                        className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
+                                          active
+                                            ? getLnkResultBadgeClass(option)
+                                            : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        {optionLabel}
+                                      </button>
+                                    )
+                                  })}
                                 </span>
                               ) : null}
                             </span>
@@ -2195,16 +2725,28 @@ function Home() {
                                       key={availableMethod.requestKey}
                                       className={`inline-flex max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium ${
                                         isSelectedMethod
-                                          ? 'border-slate-800 bg-slate-900 text-white'
+                                          ? 'border-sky-200 bg-sky-50 text-sky-900'
                                           : getLnkResultBadgeClass(row[availableMethod.resultKey])
                                       }`}
                                     >
-                                      <span className="max-w-52 truncate">
-                                        {availableMethod.code}
-                                        {requestName ? ` ${requestName}` : ''}
+                                      <span
+                                        className={`flex max-w-52 items-center gap-1.5 truncate ${
+                                          isSelectedMethod ? 'text-sky-700' : 'text-slate-500'
+                                        }`}
+                                      >
+                                        <span
+                                          className={`rounded px-1.5 py-0.5 text-[11px] font-bold leading-none ${
+                                            isSelectedMethod
+                                              ? 'bg-sky-100 text-sky-900'
+                                              : 'border border-slate-200 bg-slate-100 text-slate-700'
+                                          }`}
+                                        >
+                                          {availableMethod.code}
+                                        </span>
+                                        {requestName ? <span className="min-w-0 truncate">{requestName}</span> : null}
                                       </span>
                                       {conclusionName ? (
-                                        <span className={`max-w-52 truncate text-[11px] ${isSelectedMethod ? 'text-slate-200' : 'text-slate-500'}`}>
+                                        <span className="max-w-52 truncate">
                                           {conclusionName}
                                         </span>
                                       ) : null}
@@ -2232,9 +2774,9 @@ function Home() {
                   lnkResultMutation.isPending ||
                   selectedLnkResultRows.length === 0 ||
                   !lnkResultDraft.methodKey ||
-                  (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !lnkResultDraft.controlDate) ||
-                  !lnkResultDraft.result ||
-                  (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE &&
+                  !areLnkResultDraftRowsReady(selectedLnkResultRows, lnkResultDraft) ||
+                  (hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) && !lnkResultDraft.controlDate) ||
+                  (hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) &&
                     !getRequestNameFromNaming(lnkResultDraft.conclusionNaming, nextLnkConclusionName))
                 }
               >
@@ -2700,19 +3242,20 @@ function formatPstoRequestName(rows: Array<WeldInput & { id: number }>) {
 }
 
 function formatLnkRequestName(rows: Array<WeldInput & { id: number }>) {
-  const date = formatShortDate(new Date())
-  const prefix = `ЛНК-${date}-`
+  const date = formatLongDate(new Date())
+  const prefix = `Заявка-${date}-`
+  const maxNumber = rows
+    .flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim()))
+    .map((requestName) => parseLnkRequestName(requestName))
+    .filter((parsed): parsed is { dateValue: number; number: number } => Boolean(parsed && parsed.dateValue === parseLongDateValue(date)))
+    .reduce((max, parsed) => Math.max(max, parsed.number), 0)
   const requestNames = [
     ...new Set(
       rows
         .flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim()))
-        .filter((requestName) => requestName.startsWith(prefix)),
+        .filter((requestName) => parseLnkRequestName(requestName)?.dateValue === parseLongDateValue(date)),
     ),
   ]
-  const maxNumber = requestNames.reduce((max, requestName) => {
-    const match = requestName.match(new RegExp(`^${escapeRegExp(prefix)}(\\d{3})$`))
-    return match ? Math.max(max, Number(match[1])) : max
-  }, 0)
   const nextNumber = Math.max(maxNumber, requestNames.length) + 1
   return `${prefix}${String(nextNumber).padStart(3, '0')}`
 }
@@ -2810,6 +3353,7 @@ function createDefaultLnkResultDraft(): LnkResultDraftState {
     requestName: '',
     methodKey: '',
     rowIds: new Set(),
+    rowResults: {},
     controlDate: formatDateInputValue(new Date()),
     result: '',
     conclusionNaming: defaultRequestNamingState,
@@ -2817,20 +3361,56 @@ function createDefaultLnkResultDraft(): LnkResultDraftState {
   }
 }
 
+function createDefaultPstoResultDraft(): PstoResultDraftState {
+  return {
+    requestName: '',
+    rowIds: new Set(),
+    pstoDate: formatDateInputValue(new Date()),
+    result: '',
+    diagramNaming: defaultRequestNamingState,
+    search: '',
+  }
+}
+
+function formatPstoDiagramName(rows: WeldInput[], pstoDate: string) {
+  const date = formatPstoDiagramLongDate(pstoDate) ?? formatLongDate(new Date())
+  const prefix = `ПСТО-Д-${formatPstoDiagramShortDateFromLong(date)}-`
+  const maxNumber = rows
+    .map((row) => String(row.heatTreatmentDiagram ?? '').trim())
+    .map((value) => value.match(new RegExp(`^${escapeRegExp(prefix)}(\\d{3})$`))?.[1])
+    .reduce((max, value) => (value ? Math.max(max, Number(value)) : max), 0)
+  return `${prefix}${String(maxNumber + 1).padStart(3, '0')}`
+}
+
 function formatLnkConclusionName(rows: WeldInput[], controlDate: string, methodKey: WeldFieldKey | '') {
   const date = formatLongDate(controlDate ? new Date(`${controlDate}T00:00:00`) : new Date())
   const method = methodKey ? getLnkMethodByRequestKey(methodKey) : null
   const methodCode = method?.code ?? 'ЛНК'
-  const prefix = `${methodCode}-${date}-`
+  const prefix = `Заключение-${methodCode}-${date}-`
   const maxNumber = rows
     .flatMap((row) => LNK_METHODS.map((method) => String(row[method.conclusionKey] ?? '').trim()))
-    .map((value) => value.match(new RegExp(`^[^-]+-${escapeRegExp(date)}-(\\d{3})$`))?.[1])
+    .map((value) => value.match(new RegExp(`^(?:(?:Закл\\.|Заключение)-)?[^-]+-${escapeRegExp(date)}-(\\d{3})$`))?.[1])
     .reduce((max, value) => (value ? Math.max(max, Number(value)) : max), 0)
   return `${prefix}${String(maxNumber + 1).padStart(3, '0')}`
 }
 
 function collectLnkResultRequestNames(rows: WeldInput[]) {
   return sortLnkRequestNamesNewestFirst(collectRequestNames(rows, lnkRequestFieldKeys))
+}
+
+function sortPstoRequestNamesNewestFirst(requestNames: string[]) {
+  return [...requestNames].sort((left, right) => {
+    const leftParsed = parsePstoRequestName(left)
+    const rightParsed = parsePstoRequestName(right)
+    if (leftParsed && rightParsed) {
+      if (leftParsed.dateValue !== rightParsed.dateValue) return rightParsed.dateValue - leftParsed.dateValue
+      if (leftParsed.number !== rightParsed.number) return rightParsed.number - leftParsed.number
+      return right.localeCompare(left, 'ru', { numeric: true })
+    }
+    if (leftParsed) return -1
+    if (rightParsed) return 1
+    return right.localeCompare(left, 'ru', { numeric: true })
+  })
 }
 
 function sortLnkRequestNamesNewestFirst(requestNames: string[]) {
@@ -2849,13 +3429,30 @@ function sortLnkRequestNamesNewestFirst(requestNames: string[]) {
 }
 
 function parseLnkRequestName(value: string) {
-  const match = value.trim().match(/^ЛНК-(\d{2})\.(\d{2})\.(\d{2})-(\d{3})$/)
+  const match = value.trim().match(/^(?:ЛНК|Заявка)-(\d{2})\.(\d{2})\.(\d{2}|\d{4})-(\d{3})$/)
+  if (!match) return null
+  const [, day, month, year, number] = match
+  const fullYear = year.length === 2 ? `20${year}` : year
+  return {
+    dateValue: Number(`${fullYear}${month}${day}`),
+    number: Number(number),
+  }
+}
+
+function parsePstoRequestName(value: string) {
+  const match = value.trim().match(/^ПСТО-(\d{2})\.(\d{2})\.(\d{2})-(\d{3})$/)
   if (!match) return null
   const [, day, month, year, number] = match
   return {
     dateValue: Number(`20${year}${month}${day}`),
     number: Number(number),
   }
+}
+
+function filterPstoRowsByRequestName(rows: WeldRow[], requestName: string) {
+  const name = requestName.trim()
+  if (!name) return []
+  return rows.filter((row) => String(row.pstoRequest ?? '').trim() === name)
 }
 
 function filterLnkRowsByRequestName(rows: WeldRow[], requestName: string) {
@@ -2899,6 +3496,25 @@ function filterLnkResultRows(rows: WeldRow[], search: string) {
     .sort(compareLnkRequestRows)
 }
 
+function filterPstoResultRows(rows: WeldRow[], search: string) {
+  return filterPstoRows(rows, search).sort(compareHeatTreatmentReportRows)
+}
+
+function filterPstoRequestRows(rows: WeldRow[], search: string) {
+  return sortPstoRequestRows(filterPstoRows(rows, search))
+}
+
+function filterPstoRows(rows: WeldRow[], search: string) {
+  const query = normalizeSearchText(search)
+  const compactQuery = compactSearchText(query)
+  return rows.filter((row) => {
+    if (!query) return true
+    const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
+    const haystack = normalizeSearchText(values.map((value) => String(value ?? '')).join(' '))
+    return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
+  })
+}
+
 function normalizeSearchText(value: unknown) {
   return String(value ?? '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ')
 }
@@ -2919,10 +3535,18 @@ function formatLnkResultSummary(row: WeldInput) {
 
 function getLnkResultBadgeClass(value: unknown) {
   const result = String(value ?? '').trim().toLowerCase()
+  if (result === LNK_EMPTY_RESULT_VALUE) return 'border-slate-300 bg-slate-100 text-slate-700'
   if (result === 'годен') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-  if (result === 'ремонт' || result === 'вырез') return 'border-rose-200 bg-rose-50 text-rose-800'
+  if (result === 'ремонт') return 'border-rose-200 bg-rose-50 text-rose-800'
+  if (result === 'вырез') return 'border-red-300 bg-red-100 text-red-900'
   if (result === 'ожидает' || result === 'ожидает нк') return 'border-amber-200 bg-amber-50 text-amber-800'
   return 'border-slate-200 bg-slate-50 text-slate-600'
+}
+
+function getPstoResultBadgeClass(value: unknown) {
+  const result = String(value ?? '').trim().toLowerCase()
+  if (result === 'проведено') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  return 'border-amber-200 bg-amber-50 text-amber-800'
 }
 
 function isLnkResultRowApplicable(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
@@ -2939,6 +3563,40 @@ function canSelectLnkResultRow(row: WeldInput, requestName: string, methodKey: W
   if (requestName.trim() && methodKey) return isLnkResultRowApplicable(row, requestName, methodKey)
   if (requestName.trim()) return rowBelongsToLnkRequest(row, requestName)
   return getLnkRowRequestNames(row).length > 0
+}
+
+function getEffectiveLnkResultDraftValue(rowId: number, draft: LnkResultDraftState) {
+  return draft.rowResults[rowId] || (draft.result === LNK_CUSTOM_RESULT_VALUE ? '' : draft.result)
+}
+
+function buildLnkResultDraftById(rows: WeldRow[], draft: LnkResultDraftState) {
+  return Object.fromEntries(rows.map((row) => [row.id, getEffectiveLnkResultDraftValue(row.id, draft)]))
+}
+
+function filterLnkResultDraftRowResults(rowResults: Record<number, string>, rowIds: ReadonlySet<number>) {
+  return Object.fromEntries(Object.entries(rowResults).filter(([rowId]) => rowIds.has(Number(rowId))))
+}
+
+function isValidLnkResultDraftValue(value: string) {
+  return value === LNK_EMPTY_RESULT_VALUE || LNK_RESULT_OPTIONS.includes(value as never)
+}
+
+function areLnkResultDraftRowsReady(rows: WeldRow[], draft: LnkResultDraftState) {
+  return rows.length > 0 && rows.every((row) => isValidLnkResultDraftValue(getEffectiveLnkResultDraftValue(row.id, draft)))
+}
+
+function hasNonEmptyLnkResultDraftRows(rows: WeldRow[], draft: LnkResultDraftState) {
+  return rows.some((row) => getEffectiveLnkResultDraftValue(row.id, draft) !== LNK_EMPTY_RESULT_VALUE)
+}
+
+function rowBelongsToPstoRequest(row: WeldInput, requestName: string) {
+  const name = requestName.trim()
+  return Boolean(name && String(row.pstoRequest ?? '').trim() === name)
+}
+
+function canSelectPstoResultRow(row: WeldInput, requestName: string) {
+  if (requestName.trim()) return rowBelongsToPstoRequest(row, requestName)
+  return hasText(row.pstoRequest)
 }
 
 function RequestNamingControls({
@@ -3009,6 +3667,15 @@ function sortLnkRequestRows(rows: WeldRow[]) {
     const rightAvailable = canCreateLnkRequest(right)
     if (leftAvailable !== rightAvailable) return leftAvailable ? -1 : 1
     return compareLnkRequestRows(left, right)
+  })
+}
+
+function sortPstoRequestRows(rows: WeldRow[]) {
+  return [...rows].sort((left, right) => {
+    const leftAvailable = canCreatePstoRequest(left)
+    const rightAvailable = canCreatePstoRequest(right)
+    if (leftAvailable !== rightAvailable) return leftAvailable ? -1 : 1
+    return compareHeatTreatmentReportRows(left, right)
   })
 }
 
@@ -3144,8 +3811,8 @@ function withAutoHeatTreatmentDiagram<T extends WeldInput & { id: number }>(reco
 
   const prefix = `ПСТО-Д-${date}-`
   const currentDiagram = String(record.heatTreatmentDiagram ?? '').trim()
+  if (currentDiagram) return record
   const diagramPattern = new RegExp(`^${escapeRegExp(prefix)}(\\d{3})$`)
-  if (diagramPattern.test(currentDiagram)) return record
 
   const maxNumber = rows
     .filter((row) => row.id !== record.id)
@@ -3183,6 +3850,28 @@ function formatLongDate(date: Date) {
   return `${pad(validDate.getDate())}.${pad(validDate.getMonth() + 1)}.${validDate.getFullYear()}`
 }
 
+function parseLongDateValue(value: string) {
+  const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  return match ? Number(`${match[3]}${match[2]}${match[1]}`) : 0
+}
+
+function formatPstoDiagramLongDate(value: unknown) {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoMatch) return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`
+  const longMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  if (longMatch) return text
+  const shortMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{2})$/)
+  if (shortMatch) return `${shortMatch[1]}.${shortMatch[2]}.20${shortMatch[3]}`
+  return null
+}
+
+function formatPstoDiagramShortDateFromLong(value: string) {
+  const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  return match ? `${match[1]}.${match[2]}.${match[3].slice(2)}` : formatShortDate(new Date())
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -3195,6 +3884,36 @@ function getJointTitle(value: WeldInput) {
 
   if (!project && !subtitle && !line && !joint) return 'Проект, шифр, линия и стык не заполнены.'
   return `${project || '-'} · ${subtitle || '-'} · ${line || '-'} · ${joint || '-'}`
+}
+
+function expandHighlightFieldKeys(fieldKeys: WeldFieldKey[]) {
+  const expanded = new Set<WeldFieldKey>(fieldKeys)
+  if (expanded.has('weldDate')) {
+    expanded.add('hasVik')
+  }
+  if (
+    expanded.has('pstoRequired') ||
+    expanded.has('pstoRequest') ||
+    expanded.has('pstoDate') ||
+    expanded.has('pstoResult') ||
+    expanded.has('heatTreatmentDiagram')
+  ) {
+    expanded.add('pstoCreatedAt')
+  }
+  if (
+    LNK_METHODS.some(
+      (method) =>
+        expanded.has(method.enabledKey) ||
+        expanded.has(method.requestKey) ||
+        expanded.has(method.resultKey) ||
+        expanded.has(method.conclusionDateKey) ||
+        expanded.has(method.conclusionKey),
+    )
+  ) {
+    expanded.add('lnkCreatedAt')
+    expanded.add('finalStatus')
+  }
+  return [...expanded]
 }
 
 function getCellKey(rowId: number, fieldKey: WeldFieldKey) {
