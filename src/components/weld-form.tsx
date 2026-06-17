@@ -52,13 +52,21 @@ const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'stlsKs3',
   'mkkBoq',
   'mkkKs3',
+  'vikConclusionDate',
   'vikConclusion',
+  'rkConclusionDate',
   'rkConclusion',
+  'pvkConclusionDate',
   'pvkConclusion',
+  'uzkConclusionDate',
   'uzkConclusion',
+  'tvmtConclusionDate',
   'tvmtConclusion',
+  'rfaConclusionDate',
   'rfaConclusion',
+  'stlsConclusionDate',
   'stlsConclusion',
+  'mkkConclusionDate',
   'mkkConclusion',
   'lnkDefectDescription',
   'lnkNote',
@@ -305,9 +313,11 @@ function withCalculatedFinalStatus(value: WeldInput) {
 }
 
 function getJointTitle(value: WeldInput) {
+  const project = String(value.projectTitle ?? '').trim()
+  const subtitle = String(value.subtitleCode ?? '').trim()
   const line = String(value.line ?? '').trim()
   const joint = String(value.joint ?? '').trim()
 
-  if (!line && !joint) return 'Линия и номер стыка появятся после заполнения.'
-  return `Линия: ${line || '-'} · Стык: ${joint || '-'}`
+  if (!project && !subtitle && !line && !joint) return 'Проект, шифр, линия и стык появятся после заполнения.'
+  return `${project || '-'} · ${subtitle || '-'} · ${line || '-'} · ${joint || '-'}`
 }

@@ -93,13 +93,21 @@ export const WELD_FIELDS = [
   { key: 'rfaResult', dbName: 'rfa_result', label: 'результат РФА', kind: 'text', group: 'Контроль' },
   { key: 'stlsResult', dbName: 'stls_result', label: 'результат СТЛС', kind: 'text', group: 'Контроль' },
   { key: 'mkkResult', dbName: 'mkk_result', label: 'результат МКК', kind: 'text', group: 'Контроль' },
+  { key: 'vikConclusionDate', dbName: 'vik_conclusion_date', label: 'Дата ВИК', kind: 'date', group: 'Контроль' },
   { key: 'vikConclusion', dbName: 'vik_conclusion', label: 'Заключение ВИК', kind: 'text', group: 'Контроль' },
+  { key: 'rkConclusionDate', dbName: 'rk_conclusion_date', label: 'Дата РК', kind: 'date', group: 'Контроль' },
   { key: 'rkConclusion', dbName: 'rk_conclusion', label: 'Заключение РК', kind: 'text', group: 'Контроль' },
+  { key: 'pvkConclusionDate', dbName: 'pvk_conclusion_date', label: 'Дата ПВК', kind: 'date', group: 'Контроль' },
   { key: 'pvkConclusion', dbName: 'pvk_conclusion', label: 'Заключение ПВК', kind: 'text', group: 'Контроль' },
+  { key: 'uzkConclusionDate', dbName: 'uzk_conclusion_date', label: 'Дата УЗК', kind: 'date', group: 'Контроль' },
   { key: 'uzkConclusion', dbName: 'uzk_conclusion', label: 'Заключение УЗК', kind: 'text', group: 'Контроль' },
+  { key: 'tvmtConclusionDate', dbName: 'tvmt_conclusion_date', label: 'Дата ТВМТ', kind: 'date', group: 'Контроль' },
   { key: 'tvmtConclusion', dbName: 'tvmt_conclusion', label: 'Заключение ТВМТ', kind: 'text', group: 'Контроль' },
+  { key: 'rfaConclusionDate', dbName: 'rfa_conclusion_date', label: 'Дата РФА', kind: 'date', group: 'Контроль' },
   { key: 'rfaConclusion', dbName: 'rfa_conclusion', label: 'Заключение РФА', kind: 'text', group: 'Контроль' },
+  { key: 'stlsConclusionDate', dbName: 'stls_conclusion_date', label: 'Дата СТЛС', kind: 'date', group: 'Контроль' },
   { key: 'stlsConclusion', dbName: 'stls_conclusion', label: 'Заключение СТЛС', kind: 'text', group: 'Контроль' },
+  { key: 'mkkConclusionDate', dbName: 'mkk_conclusion_date', label: 'Дата МКК', kind: 'date', group: 'Контроль' },
   { key: 'mkkConclusion', dbName: 'mkk_conclusion', label: 'Заключение МКК', kind: 'text', group: 'Контроль' },
   { key: 'lnkDefectDescription', dbName: 'lnk_defect_description', label: 'Описание дефектов', kind: 'text', group: 'Контроль' },
   { key: 'lnkNote', dbName: 'lnk_note', label: 'Примечание', kind: 'text', group: 'Контроль' },
@@ -132,7 +140,7 @@ export const WELD_FIELDS = [
 export type WeldFieldKey = (typeof WELD_FIELDS)[number]['key']
 export type WeldInput = Partial<Record<WeldFieldKey, string | number | boolean | null>>
 
-export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает'] as const
+export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
 export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'ожидает', 'ошибка'] as const
 export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -182,7 +190,8 @@ export function normalizeResultStatus(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
   if (text === 'да') return 'годен'
   if (text === 'проведено') return 'годен'
-  return RESULT_STATUS_OPTIONS.includes(text as never) ? text : null
+  const option = RESULT_STATUS_OPTIONS.find((status) => status.toLowerCase() === text)
+  return option ?? null
 }
 
 export function normalizeFinalStatus(value: unknown) {
@@ -301,13 +310,21 @@ const TABLE_LAYOUT = [
   {
     section: 'Заключения',
     columns: [
+      'Дата ВИК',
       'Заключение ВИК',
+      'Дата РК',
       'Заключение РК',
+      'Дата ПВК',
       'Заключение ПВК',
+      'Дата УЗК',
       'Заключение УЗК',
+      'Дата ТВМТ',
       'Заключение ТВМТ',
+      'Дата РФА',
       'Заключение РФА',
+      'Дата СТЛС',
       'Заключение СТЛС',
+      'Дата МКК',
       'Заключение МКК',
       'Описание дефектов',
       'Примечание',

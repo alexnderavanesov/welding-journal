@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { weldJoints, type NewWeldJoint } from '@/db/schema'
-import { WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
+import { WELD_FIELDS, type WeldInput, calculateFinalStatus } from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
 
 export type WeldFilters = {
@@ -57,6 +57,35 @@ const lnkControlRequestPairs = [
   resultKey: keyof WeldInput
   conclusionKey: keyof WeldInput
 }>
+const lnkGeneratedFieldKeys = [
+  'vikResult',
+  'rkResult',
+  'pvkResult',
+  'uzkResult',
+  'tvmtResult',
+  'rfaResult',
+  'stlsResult',
+  'mkkResult',
+  'vikConclusionDate',
+  'rkConclusionDate',
+  'pvkConclusionDate',
+  'uzkConclusionDate',
+  'tvmtConclusionDate',
+  'rfaConclusionDate',
+  'stlsConclusionDate',
+  'mkkConclusionDate',
+  'vikConclusion',
+  'rkConclusion',
+  'pvkConclusion',
+  'uzkConclusion',
+  'tvmtConclusion',
+  'rfaConclusion',
+  'stlsConclusion',
+  'mkkConclusion',
+  'lnkDefectDescription',
+  'lnkNote',
+  'lnkCreatedAt',
+] as const satisfies ReadonlyArray<keyof WeldInput>
 
 export const listWeldJoints = createServerFn({ method: 'GET' })
   .validator((data: WeldFilters | undefined) => data ?? {})
@@ -110,8 +139,32 @@ export const importWeldJoints = createServerFn({ method: 'POST' })
     return { inserted: rows.length, rows }
   })
 
+export const clearLnkGeneratedWeldData = createServerFn({ method: 'POST' }).handler(async () => {
+  const db = requireDb()
+  const rows = await db.select().from(weldJoints).limit(5000)
+  const updatedRows = []
+
+  for (const row of rows) {
+    const cleanedRow = clearLnkGeneratedData(row as WeldInput & { id: number })
+    if (!hasLnkGeneratedDataChanged(row as WeldInput, cleanedRow)) continue
+    const updateData = lnkGeneratedFieldKeys.reduce<Record<string, null>>((data, fieldKey) => {
+      data[fieldKey] = null
+      return data
+    }, {})
+    const finalStatus = calculateFinalStatus(cleanedRow)
+    const [updated] = await db
+      .update(weldJoints)
+      .set({ ...updateData, finalStatus, updatedAt: new Date() })
+      .where(eq(weldJoints.id, row.id))
+      .returning()
+    if (updated) updatedRows.push(updated)
+  }
+
+  return updatedRows
+})
+
 function toDbInsert(input: WeldInput): NewWeldJoint {
-  const normalized = clearDisabledLnkRequests(normalizeWeldInput(input))
+  const normalized = withPendingLnkResults(clearDisabledLnkRequests(normalizeWeldInput(input)))
   const data: Record<string, unknown> = {}
 
   for (const field of WELD_FIELDS) {
@@ -129,7 +182,7 @@ function toDbInsert(input: WeldInput): NewWeldJoint {
   if (isYesText(normalized.pstoRequired) && !normalized.pstoCreatedAt) {
     data.pstoCreatedAt = new Date()
   }
-  if (hasAnyLnkControl(normalized) && !normalized.lnkCreatedAt) {
+  if (hasAnyLnkGeneratedData(normalized) && !normalized.lnkCreatedAt) {
     data.lnkCreatedAt = new Date()
   }
 
@@ -163,12 +216,34 @@ function clearDisabledLnkRequests<T extends WeldInput>(record: T): T {
   return (nextRecord ?? record) as T
 }
 
+function withPendingLnkResults<T extends WeldInput>(record: T): T {
+  let nextRecord: (T & Record<string, unknown>) | null = null
+  for (const pair of lnkControlRequestPairs) {
+    if (!hasText(record[pair.requestKey]) || hasText(record[pair.resultKey])) continue
+    nextRecord = nextRecord ?? ({ ...record } as T & Record<string, unknown>)
+    nextRecord[pair.resultKey] = 'ожидает НК'
+  }
+  return (nextRecord ?? record) as T
+}
+
 function hasLnkMethodReportHistory(record: WeldInput, pair: (typeof lnkControlRequestPairs)[number]) {
   return hasText(record[pair.resultKey]) && hasText(record[pair.conclusionKey])
 }
 
-function hasAnyLnkControl(record: WeldInput) {
-  return lnkControlRequestPairs.some((pair) => isEnabledControlValue(record[pair.enabledKey]))
+function clearLnkGeneratedData<T extends WeldInput>(row: T): T {
+  const nextRow = { ...row } as T & Record<string, unknown>
+  for (const fieldKey of lnkGeneratedFieldKeys) {
+    nextRow[fieldKey] = null
+  }
+  return nextRow as T
+}
+
+function hasLnkGeneratedDataChanged(left: WeldInput, right: WeldInput) {
+  return lnkGeneratedFieldKeys.some((fieldKey) => String(left[fieldKey] ?? '') !== String(right[fieldKey] ?? ''))
+}
+
+function hasAnyLnkGeneratedData(record: WeldInput) {
+  return lnkGeneratedFieldKeys.some((fieldKey) => fieldKey !== 'lnkCreatedAt' && hasText(record[fieldKey]))
 }
 
 function buildWhere(filters: WeldFilters) {

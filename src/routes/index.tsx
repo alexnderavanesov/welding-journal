@@ -9,6 +9,7 @@ import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
 import seedWelds from '@/data/seed-welds.json'
 import {
+  clearLnkGeneratedWeldData,
   createWeldJoint,
   deleteWeldJoint,
   importWeldJoints,
@@ -47,7 +48,9 @@ const emptyFilters: WeldFilters = {}
 const seedRows = seedWelds as Array<WeldInput & { id: number }>
 const localStorageKey = 'welding-tracker-local-welds'
 const clearedLnkRequestsStorageKey = 'welding-tracker-cleared-lnk-requests-v1'
+const clearedLnkResultsAndConclusionsStorageKey = 'welding-tracker-cleared-lnk-results-conclusions-v1'
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
+const highlightDurationMs = 30000
 const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
   'pstoRequest',
   'pstoDate',
@@ -58,21 +61,24 @@ const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
 ])
 const heatTreatmentImportMatchFieldKeys = new Set<WeldFieldKey>(['line', 'joint'])
 const LNK_METHODS = [
-  { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionKey: 'vikConclusion' },
-  { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionKey: 'rkConclusion' },
-  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionKey: 'pvkConclusion' },
-  { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult', conclusionKey: 'uzkConclusion' },
-  { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult', conclusionKey: 'tvmtConclusion' },
-  { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult', conclusionKey: 'rfaConclusion' },
-  { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult', conclusionKey: 'stlsConclusion' },
-  { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult', conclusionKey: 'mkkConclusion' },
+  { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
+  { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' },
+  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' },
+  { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' },
+  { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' },
+  { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' },
+  { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' },
+  { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult', conclusionDateKey: 'mkkConclusionDate', conclusionKey: 'mkkConclusion' },
 ] as const satisfies ReadonlyArray<{
   code: string
   enabledKey: WeldFieldKey
   requestKey: WeldFieldKey
   resultKey: WeldFieldKey
+  conclusionDateKey: WeldFieldKey
   conclusionKey: WeldFieldKey
 }>
+const LNK_RESULT_OPTIONS = ['годен', 'ремонт', 'вырез'] as const
+const LNK_EMPTY_RESULT_VALUE = '__empty__'
 const lnkReportFieldKeys = new Set<WeldFieldKey>([
   'lnkCreatedAt',
   'vikBoq',
@@ -93,24 +99,36 @@ const lnkReportFieldKeys = new Set<WeldFieldKey>([
   'mkkKs3',
 ])
 const lnkConclusionFieldKeys = new Set<WeldFieldKey>([
+  'vikConclusionDate',
   'vikConclusion',
+  'rkConclusionDate',
   'rkConclusion',
+  'pvkConclusionDate',
   'pvkConclusion',
+  'uzkConclusionDate',
   'uzkConclusion',
+  'tvmtConclusionDate',
   'tvmtConclusion',
+  'rfaConclusionDate',
   'rfaConclusion',
+  'stlsConclusionDate',
   'stlsConclusion',
+  'mkkConclusionDate',
   'mkkConclusion',
   'lnkDefectDescription',
   'lnkNote',
 ])
 const lnkEditableReportFieldKeys = new Set<WeldFieldKey>([
   ...[...lnkReportFieldKeys].filter((fieldKey) => fieldKey !== 'lnkCreatedAt'),
-  ...lnkConclusionFieldKeys,
 ])
 const lnkRequestFieldKeys = LNK_METHODS.map((method) => method.requestKey)
+const lnkGeneratedFieldKeys = new Set<WeldFieldKey>([
+  ...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]),
+  'lnkDefectDescription',
+  'lnkNote',
+  'lnkCreatedAt',
+])
 const lnkEditableFieldKeys = new Set<WeldFieldKey>([
-  ...LNK_METHODS.flatMap((method) => [method.requestKey, method.resultKey]),
   ...lnkEditableReportFieldKeys,
 ])
 const lnkImportMatchFieldKeys = new Set<WeldFieldKey>(['line', 'joint'])
@@ -222,8 +240,22 @@ type HeatTreatmentFieldEditingState = {
 type LnkRequestDraftState = {
   methods: Set<WeldFieldKey>
 }
+type LnkResultDraftState = {
+  requestName: string
+  methodKey: WeldFieldKey | ''
+  rowIds: Set<number>
+  controlDate: string
+  result: string
+  conclusionNaming: RequestNamingState
+  search: string
+}
+type RequestNamingState = {
+  mode: 'system' | 'custom'
+  customName: string
+}
 type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk'
 type WeldRow = WeldInput & { id: number }
+const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
   const queryClient = useQueryClient()
@@ -245,8 +277,13 @@ function Home() {
   const [selectedHeatTreatmentIds, setSelectedHeatTreatmentIds] = useState<Set<number>>(new Set())
   const [selectedLnkIds, setSelectedLnkIds] = useState<Set<number>>(new Set())
   const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
+  const [pstoRequestNaming, setPstoRequestNaming] = useState<RequestNamingState | null>(null)
+  const [lnkRequestNaming, setLnkRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
   const [isLnkRequestModalOpen, setIsLnkRequestModalOpen] = useState(false)
+  const [isLnkResultModalOpen, setIsLnkResultModalOpen] = useState(false)
+  const [lnkResultDraft, setLnkResultDraft] = useState<LnkResultDraftState>(() => createDefaultLnkResultDraft())
   const [lnkRequestSearch, setLnkRequestSearch] = useState('')
+  const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -291,12 +328,17 @@ function Home() {
       setPstoRequestEditing(null)
       setPstoResultEditing(null)
       setHeatTreatmentFieldEditing(null)
+      setPstoRequestNaming(null)
     }
     if (activeReport !== 'lnk') {
       setSelectedLnkIds(new Set())
       setLnkRequestDraft({ methods: new Set() })
+      setLnkRequestNaming(defaultRequestNamingState)
       setIsLnkRequestModalOpen(false)
+      setIsLnkResultModalOpen(false)
+      setLnkResultDraft(createDefaultLnkResultDraft())
       setLnkRequestSearch('')
+      setPreservedLnkOrderIds(null)
     }
 
     return () => {
@@ -441,7 +483,8 @@ function Home() {
             }
           }
           const cleanedRow = clearDisabledLnkRequests(nextRow)
-          return { ...cleanedRow, finalStatus: calculateFinalStatus(cleanedRow) }
+          const touchedRow = withTouchedLnkTimestamp(cleanedRow)
+          return { ...touchedRow, finalStatus: calculateFinalStatus(touchedRow) }
         },
       })
       if (updatedRows.length === 0) {
@@ -461,7 +504,7 @@ function Home() {
       }
     },
     onSuccess: async (result, variables) => {
-      highlightChangedRows(result.rows, result.changedFieldKeys)
+      highlightChangedRows(result.rows, result.updated > 0 ? [...result.changedFieldKeys, 'lnkCreatedAt'] : result.changedFieldKeys)
       setMessage(`Обновлено ЛНК: ${result.updated} из ${variables.length}; пропущено: ${result.skipped}`)
       await invalidate(queryClient)
     },
@@ -498,6 +541,7 @@ function Home() {
           : `Заявка ${variables.requestName} создана для стыков: ${variables.records.length}`,
       )
       setSelectedHeatTreatmentIds(new Set())
+      setPstoRequestNaming(null)
       setPstoRequestEditing(null)
       await invalidate(queryClient)
     },
@@ -520,7 +564,7 @@ function Home() {
         throw new Error('Сначала укажите заявку ПСТО')
       }
 
-      const updatedRecord = withAutoHeatTreatmentDiagram({ ...record, pstoResult: value }, rows)
+      const updatedRecord = withAutoHeatTreatmentDiagram({ ...record, pstoResult: value, pstoCreatedAt: new Date().toISOString() }, rows)
       try {
         const saved = await updateWeldJoint({ data: updatedRecord })
         if (saved) return saved as unknown as WeldRow
@@ -532,7 +576,7 @@ function Home() {
       }
     },
     onSuccess: async (saved) => {
-      highlightChangedRows(saved ? [saved] : [], ['pstoResult'])
+      highlightChangedRows(saved ? [saved] : [], ['pstoResult', 'pstoCreatedAt'])
       setMessage('Результат ПСТО обновлен')
       setPstoResultEditing(null)
       await invalidate(queryClient)
@@ -595,9 +639,12 @@ function Home() {
           if (!isEnabledControlValue(record[method.enabledKey])) continue
           if (hasText(record[method.requestKey])) continue
           nextRecord[requestKey] = requestName
+          if (!hasText(nextRecord[method.resultKey])) {
+            nextRecord[method.resultKey] = 'ожидает НК'
+          }
           changed = true
         }
-        return changed ? [nextRecord] : []
+        return changed ? [withTouchedLnkTimestamp(nextRecord)] : []
       })
 
       if (updatedRecords.length === 0) {
@@ -615,11 +662,130 @@ function Home() {
       }
     },
     onSuccess: async (savedRows, variables) => {
-      highlightChangedRows(savedRows, variables.methodKeys)
+      highlightChangedRows(savedRows, [...variables.methodKeys, 'lnkCreatedAt'])
       setMessage(`Заявка ${variables.requestName} создана для стыков: ${savedRows.length}`)
       setSelectedLnkIds(new Set())
       setLnkRequestDraft({ methods: new Set() })
+      setLnkRequestNaming(defaultRequestNamingState)
       setIsLnkRequestModalOpen(false)
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const lnkRequestCorrectionMutation = useMutation({
+    mutationFn: async ({
+      record,
+      methodKey,
+      requestName,
+    }: {
+      record: WeldInput & { id: number }
+      methodKey: WeldFieldKey
+      requestName: string | null
+    }) => {
+      const method = getLnkMethodByRequestKey(methodKey)
+      if (!method) throw new Error('Выберите вид контроля')
+      if (requestName && !isEnabledControlValue(record[method.enabledKey])) {
+        throw new Error('Нельзя указать заявку ЛНК без наличия этого вида контроля')
+      }
+
+      const proposedRecord = { ...record } as WeldInput & { id: number }
+      if (requestName) {
+        proposedRecord[method.requestKey] = requestName
+        if (!hasText(proposedRecord[method.resultKey])) {
+          proposedRecord[method.resultKey] = 'ожидает НК'
+        }
+      } else {
+        proposedRecord[method.requestKey] = null
+        proposedRecord[method.resultKey] = null
+        proposedRecord[method.conclusionDateKey] = null
+        proposedRecord[method.conclusionKey] = null
+      }
+
+      const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
+      const updatedRecord = { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
+      try {
+        const saved = await updateWeldJoint({ data: updatedRecord })
+        if (saved) return saved as unknown as WeldRow
+        updateLocalWelds([updatedRecord])
+        return updatedRecord
+      } catch {
+        updateLocalWelds([updatedRecord])
+        return updatedRecord
+      }
+    },
+    onSuccess: async (saved, variables) => {
+      const method = getLnkMethodByRequestKey(variables.methodKey)
+      const changedFieldKeys = method
+        ? [method.requestKey, method.resultKey, method.conclusionDateKey, method.conclusionKey, 'lnkCreatedAt', 'finalStatus']
+        : ['lnkCreatedAt', 'finalStatus']
+      highlightChangedRows(saved ? [saved] : [], changedFieldKeys)
+      setMessage(variables.requestName ? 'Заявка ЛНК заменена' : 'Заявка ЛНК удалена')
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const lnkResultMutation = useMutation({
+    mutationFn: async ({
+      records,
+      methodKey,
+      controlDate,
+      result,
+      conclusionName,
+    }: {
+      records: Array<WeldInput & { id: number }>
+      methodKey: WeldFieldKey
+      controlDate: string
+      result: string
+      conclusionName: string
+    }) => {
+      const method = getLnkMethodByRequestKey(methodKey)
+      if (!method) throw new Error('Выберите метод контроля')
+      const shouldClearResult = result === LNK_EMPTY_RESULT_VALUE
+      if (!shouldClearResult && !LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Выберите результат контроля')
+      if (!shouldClearResult && !controlDate) throw new Error('Укажите дату контроля')
+      if (!shouldClearResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
+
+      const lnkUpdatedAt = new Date().toISOString()
+      const updatedRecords = records.map((record) => {
+        const proposedRecord = {
+          ...record,
+          [method.resultKey]: shouldClearResult ? null : result,
+          [method.conclusionDateKey]: shouldClearResult ? null : controlDate,
+          [method.conclusionKey]: shouldClearResult ? null : conclusionName.trim(),
+          lnkCreatedAt: lnkUpdatedAt,
+        }
+        return { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
+      })
+
+      try {
+        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
+        updateLocalWelds(updatedRecords)
+        return updatedRecords
+      } catch {
+        updateLocalWelds(updatedRecords)
+        return updatedRecords
+      }
+    },
+    onSuccess: async (savedRows, variables) => {
+      const method = getLnkMethodByRequestKey(variables.methodKey)
+      const changedFieldKeys = method
+        ? [method.resultKey, method.conclusionDateKey, method.conclusionKey, 'lnkCreatedAt', 'finalStatus']
+        : ['lnkCreatedAt', 'finalStatus']
+      highlightChangedRows(savedRows, changedFieldKeys)
+      setMessage(
+        variables.result === LNK_EMPTY_RESULT_VALUE
+          ? `Результат ЛНК очищен для стыков: ${savedRows.length}`
+          : `Результат ЛНК внесен для стыков: ${savedRows.length}`,
+      )
+      setIsLnkResultModalOpen(false)
+      setLnkResultDraft(createDefaultLnkResultDraft())
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -649,7 +815,7 @@ function Home() {
         throw new Error('Можно выбрать только существующую заявку ЛНК или очистить поле')
       }
 
-      const proposedRecord = clearDisabledLnkRequests({ ...record, [fieldKey]: value })
+      const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
       const updatedRecord = { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
       try {
         const saved = await updateWeldJoint({ data: updatedRecord })
@@ -662,9 +828,37 @@ function Home() {
       }
     },
     onSuccess: async (saved, variables) => {
-      highlightChangedRows(saved ? [saved] : [], [variables.fieldKey, 'finalStatus'])
+      highlightChangedRows(saved ? [saved] : [], [variables.fieldKey, 'lnkCreatedAt', 'finalStatus'])
       setMessage('Поле ЛНК обновлено')
       setHeatTreatmentFieldEditing(null)
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const clearLnkGeneratedDataMutation = useMutation({
+    mutationFn: async (targetRows: WeldRow[]) => {
+      const updatedRows = targetRows.flatMap((row) => {
+        const cleanedRow = clearLnkGeneratedData(row)
+        return hasLnkGeneratedDataChanged(row, cleanedRow) ? [{ ...cleanedRow, finalStatus: calculateFinalStatus(cleanedRow) }] : []
+      })
+      if (updatedRows.length === 0) return []
+
+      try {
+        const savedRows = await clearLnkGeneratedWeldData()
+        if (Array.isArray(savedRows)) return savedRows as unknown as WeldRow[]
+        throw new Error('LNK cleanup server result is unavailable')
+      } catch {
+        return clearLocalLnkGeneratedData()
+      }
+    },
+    onSuccess: async (savedRows) => {
+      highlightChangedRows(savedRows, [...lnkGeneratedFieldKeys, 'finalStatus'])
+      setSelectedLnkIds(new Set())
+      setLnkResultDraft(createDefaultLnkResultDraft())
+      setMessage(savedRows.length > 0 ? `Очищены результаты и заключения ЛНК: ${savedRows.length} строк` : 'В ЛНК нечего очищать')
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -676,18 +870,22 @@ function Home() {
     () =>
       (weldsQuery.data ?? []).map((row): WeldRow => {
         const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(row as WeldRow)))
-        const withTimestamps = withLnkCreatedAt(withPstoCreatedAt([normalizedRow]))[0]
-        const withCancellationState = toControlCancellationReportRow(withTimestamps)
+        const withTimestamps = withPstoCreatedAt([normalizedRow])[0]
+        const withPendingLnk = withPendingLnkResults(withTimestamps)
+        const withCancellationState = toControlCancellationReportRow(withPendingLnk)
         return { ...withCancellationState, finalStatus: calculateFinalStatus(withCancellationState) }
       }),
     [weldsQuery.data],
   )
 
   const heatTreatmentRows = useMemo(
-    () => rows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow),
+    () => rows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow).sort(compareHeatTreatmentReportRows),
     [rows],
   )
-  const lnkRows = useMemo(() => rows.filter(hasAnyLnkReportControl).map(toLnkReportRow), [rows])
+  const lnkRows = useMemo(() => {
+    const sortedRows = rows.filter(hasAnyLnkReportControl).map(toLnkReportRow).sort(compareLnkReportRows)
+    return preservedLnkOrderIds ? sortRowsByPreservedOrder(sortedRows, preservedLnkOrderIds) : sortedRows
+  }, [preservedLnkOrderIds, rows])
   const availableLnkRequestRows = useMemo(() => lnkRows.filter(canCreateLnkRequest), [lnkRows])
   const filteredLnkRequestRows = useMemo(
     () => filterLnkRequestRows(lnkRows, lnkRequestSearch),
@@ -711,9 +909,46 @@ function Home() {
     () => countLnkRequestTargets(selectedLnkRows, selectedLnkMethodKeys),
     [selectedLnkMethodKeys, selectedLnkRows],
   )
+  const nextPstoRequestName = useMemo(() => formatPstoRequestName(heatTreatmentRows), [heatTreatmentRows])
   const nextLnkRequestName = useMemo(() => formatLnkRequestName(rows), [rows])
   const pstoRequestOptions = useMemo(() => collectRequestNames(rows, ['pstoRequest']), [rows])
   const lnkRequestOptions = useMemo(() => collectRequestNames(rows, lnkRequestFieldKeys), [rows])
+  const lnkResultRequestOptions = useMemo(() => collectLnkResultRequestNames(lnkRows), [lnkRows])
+  const nextLnkConclusionName = useMemo(
+    () => formatLnkConclusionName(rows, lnkResultDraft.controlDate, lnkResultDraft.methodKey),
+    [lnkResultDraft.controlDate, lnkResultDraft.methodKey, rows],
+  )
+  const selectedLnkResultRequestRows = useMemo(
+    () => filterLnkRowsByRequestName(lnkRows, lnkResultDraft.requestName),
+    [lnkResultDraft.requestName, lnkRows],
+  )
+  const lnkResultSelectedRows = useMemo(
+    () => lnkRows.filter((row) => lnkResultDraft.rowIds.has(row.id)),
+    [lnkResultDraft.rowIds, lnkRows],
+  )
+  const lnkResultAvailableRequestOptions = useMemo(() => {
+    const selectedRequestOptions = collectLnkResultRequestNames(lnkResultSelectedRows)
+    return selectedRequestOptions.length > 0 ? selectedRequestOptions : lnkResultRequestOptions
+  }, [lnkResultRequestOptions, lnkResultSelectedRows])
+  const lnkResultSearchRows = lnkResultDraft.requestName ? selectedLnkResultRequestRows : lnkRows
+  const lnkResultMethodRows = lnkResultDraft.rowIds.size > 0
+    ? lnkResultSelectedRows.filter((row) => rowBelongsToLnkRequest(row, lnkResultDraft.requestName))
+    : selectedLnkResultRequestRows
+  const selectedLnkResultMethods = useMemo(
+    () => getLnkRequestMethodsForRows(lnkResultMethodRows, lnkResultDraft.requestName),
+    [lnkResultDraft.requestName, lnkResultMethodRows],
+  )
+  const filteredLnkResultRows = useMemo(
+    () => filterLnkResultRows(lnkResultSearchRows, lnkResultDraft.search),
+    [lnkResultDraft.search, lnkResultSearchRows],
+  )
+  const selectedLnkResultRows = useMemo(
+    () =>
+      filteredLnkResultRows.filter(
+        (row) => lnkResultDraft.rowIds.has(row.id) && isLnkResultRowApplicable(row, lnkResultDraft.requestName, lnkResultDraft.methodKey),
+      ),
+    [filteredLnkResultRows, lnkResultDraft.methodKey, lnkResultDraft.requestName, lnkResultDraft.rowIds],
+  )
   const activeColumnFilters =
     activeReport === 'heatTreatment' ? heatTreatmentFilters : activeReport === 'lnk' ? lnkFilters : columnFilters
   const activeFiltersSetter =
@@ -739,6 +974,26 @@ function Home() {
       return next.size === current.size ? current : next
     })
   }, [availableLnkRequestRows])
+
+  useEffect(() => {
+    setLnkResultDraft((current) => {
+      if (!isLnkResultModalOpen) return current
+      const selectedRows = lnkRows.filter((row) => current.rowIds.has(row.id))
+      const requestOptions = collectLnkResultRequestNames(selectedRows)
+      const allowedRequestOptions = requestOptions.length > 0 ? requestOptions : lnkResultRequestOptions
+      const requestName = !current.requestName || allowedRequestOptions.includes(current.requestName) ? current.requestName : ''
+      const requestRows = filterLnkRowsByRequestName(lnkRows, requestName)
+      const methodRows = current.rowIds.size > 0 ? selectedRows.filter((row) => rowBelongsToLnkRequest(row, requestName)) : requestRows
+      const methods = getLnkRequestMethodsForRows(methodRows, requestName)
+      const methodKey = !current.methodKey || methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
+      const availableRows = filterLnkResultRows(requestName ? requestRows : lnkRows, current.search)
+      const availableIds = new Set(
+        availableRows.filter((row) => canSelectLnkResultRow(row, requestName, methodKey)).map((row) => row.id),
+      )
+      const rowIds = new Set([...current.rowIds].filter((id) => availableIds.has(id)))
+      return { ...current, requestName, methodKey, rowIds }
+    })
+  }, [isLnkResultModalOpen, lnkRequestOptions, lnkResultRequestOptions, lnkRows])
 
   async function handleImport(file: File) {
     setMessage(null)
@@ -800,7 +1055,16 @@ function Home() {
       return
     }
 
-    const requestName = formatPstoRequestName(heatTreatmentRows)
+    setPstoRequestNaming(defaultRequestNamingState)
+  }
+
+  function submitCreatePstoRequest() {
+    if (!pstoRequestNaming) return
+    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
+    if (!requestName) {
+      setMessage('Укажите пользовательское наименование заявки ПСТО')
+      return
+    }
     pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, mode: 'create' })
   }
 
@@ -819,19 +1083,197 @@ function Home() {
       return
     }
 
-    lnkRequestMutation.mutate({ records: selectedLnkRows, methodKeys, requestName: nextLnkRequestName })
+    const requestName = getRequestNameFromNaming(lnkRequestNaming, nextLnkRequestName)
+    if (!requestName) {
+      setMessage('Укажите пользовательское наименование заявки ЛНК')
+      return
+    }
+
+    lnkRequestMutation.mutate({ records: selectedLnkRows, methodKeys, requestName })
   }
 
   function openCreateLnkRequestModal() {
+    setPreservedLnkOrderIds(null)
     setSelectedLnkIds(new Set())
     setLnkRequestDraft({ methods: new Set() })
+    setLnkRequestNaming(defaultRequestNamingState)
     setLnkRequestSearch('')
+    setIsLnkRequestModalOpen(true)
+  }
+
+  function openCreateLnkRequestModalForRow(row: WeldInput & { id: number }) {
+    const availableMethods = getAvailableLnkRequestMethods(row)
+    if (availableMethods.length === 0) {
+      setMessage('Все заявки ЛНК для этого стыка уже созданы')
+      return
+    }
+
+    setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
+    setSelectedLnkIds(new Set([row.id]))
+    setLnkRequestDraft({ methods: new Set(availableMethods.map((method) => method.requestKey)) })
+    setLnkRequestNaming(defaultRequestNamingState)
+    setLnkRequestSearch(String(row.joint ?? row.line ?? ''))
     setIsLnkRequestModalOpen(true)
   }
 
   function closeCreateLnkRequestModal() {
     if (lnkRequestMutation.isPending) return
     setIsLnkRequestModalOpen(false)
+  }
+
+  function openAddLnkResultModal() {
+    setPreservedLnkOrderIds(null)
+    setLnkResultDraft(createDefaultLnkResultDraft())
+    setIsLnkResultModalOpen(true)
+  }
+
+  function openAddLnkResultModalForRow(row: WeldInput & { id: number }) {
+    const requestNames = getLnkRowRequestNames(row)
+    if (requestNames.length === 0) {
+      setMessage('Сначала создайте заявку ЛНК для этого стыка')
+      return
+    }
+
+    const requestName = requestNames.length === 1 ? requestNames[0] : ''
+    setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
+    setLnkResultDraft({
+      ...createDefaultLnkResultDraft(),
+      requestName,
+      rowIds: new Set([row.id]),
+      search: String(row.joint ?? row.line ?? ''),
+    })
+    setIsLnkResultModalOpen(true)
+  }
+
+  function closeAddLnkResultModal() {
+    if (lnkResultMutation.isPending) return
+    setIsLnkResultModalOpen(false)
+  }
+
+  function changeLnkResultRequest(requestName: string) {
+    setLnkResultDraft((current) => {
+      if (!requestName) return { ...current, requestName: '', methodKey: '' }
+      const rowIds = new Set(
+        [...current.rowIds].filter((id) => {
+          const row = lnkRows.find((candidate) => candidate.id === id)
+          return row ? rowBelongsToLnkRequest(row, requestName) : false
+        }),
+      )
+      return { ...current, requestName, methodKey: '', rowIds }
+    })
+  }
+
+  function changeLnkResultMethod(methodKey: WeldFieldKey | '') {
+    setLnkResultDraft((current) => {
+      if (!methodKey) return { ...current, methodKey: '' }
+      const rowIds = new Set(
+        [...current.rowIds].filter((id) => {
+          const row = lnkRows.find((candidate) => candidate.id === id)
+          return row ? isLnkResultRowApplicable(row, current.requestName, methodKey) : false
+        }),
+      )
+      return { ...current, methodKey, rowIds }
+    })
+  }
+
+  function toggleLnkResultRow(rowId: number) {
+    const row = filteredLnkResultRows.find((candidate) => candidate.id === rowId)
+    if (!row || !canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey)) return
+
+    setLnkResultDraft((current) => {
+      const rowIds = new Set(current.rowIds)
+      if (rowIds.has(rowId)) {
+        rowIds.delete(rowId)
+      } else {
+        rowIds.add(rowId)
+      }
+      const selectedRows = lnkRows.filter((candidate) => rowIds.has(candidate.id))
+      const requestOptions = collectLnkResultRequestNames(selectedRows)
+      const requestName =
+        current.requestName && requestOptions.includes(current.requestName)
+          ? current.requestName
+          : requestOptions.length === 1
+            ? requestOptions[0]
+            : ''
+      const methodRows = requestName ? selectedRows.filter((candidate) => rowBelongsToLnkRequest(candidate, requestName)) : []
+      const methods = getLnkRequestMethodsForRows(methodRows, requestName)
+      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
+      return { ...current, requestName, methodKey, rowIds }
+    })
+  }
+
+  function toggleAllLnkResultRows() {
+    setLnkResultDraft((current) => {
+      const filteredIds = new Set(
+        filteredLnkResultRows
+          .filter((row) => canSelectLnkResultRow(row, current.requestName, current.methodKey))
+          .map((row) => row.id),
+      )
+      if (filteredIds.size === 0) return current
+      const allSelected = [...filteredIds].every((id) => current.rowIds.has(id))
+      const rowIds = allSelected
+        ? new Set([...current.rowIds].filter((id) => !filteredIds.has(id)))
+        : new Set([...current.rowIds, ...filteredIds])
+      const selectedRows = lnkRows.filter((row) => rowIds.has(row.id))
+      const requestOptions = collectLnkResultRequestNames(selectedRows)
+      const requestName =
+        current.requestName && requestOptions.includes(current.requestName)
+          ? current.requestName
+          : requestOptions.length === 1
+            ? requestOptions[0]
+            : ''
+      const methodRows = requestName ? selectedRows.filter((row) => rowBelongsToLnkRequest(row, requestName)) : []
+      const methods = getLnkRequestMethodsForRows(methodRows, requestName)
+      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
+      return { ...current, requestName, methodKey, rowIds }
+    })
+  }
+
+  function handleAddLnkResult() {
+    if (!lnkResultDraft.requestName) {
+      setMessage('Выберите заявку ЛНК')
+      return
+    }
+    if (!lnkResultDraft.methodKey) {
+      setMessage('Выберите метод контроля')
+      return
+    }
+    if (selectedLnkResultRows.length === 0) {
+      setMessage('Выберите один или несколько стыков')
+      return
+    }
+    if (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !lnkResultDraft.controlDate) {
+      setMessage('Укажите дату контроля')
+      return
+    }
+    if (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !LNK_RESULT_OPTIONS.includes(lnkResultDraft.result as never)) {
+      setMessage('Выберите результат контроля')
+      return
+    }
+    const conclusionName =
+      lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE
+        ? ''
+        : getRequestNameFromNaming(lnkResultDraft.conclusionNaming, nextLnkConclusionName)
+    if (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !conclusionName) {
+      setMessage('Укажите наименование заключения')
+      return
+    }
+
+    lnkResultMutation.mutate({
+      records: selectedLnkResultRows,
+      methodKey: lnkResultDraft.methodKey,
+      controlDate: lnkResultDraft.controlDate,
+      result: lnkResultDraft.result,
+      conclusionName,
+    })
+  }
+
+  function handleClearLnkGeneratedData() {
+    const confirmed = window.confirm(
+      'Очистить результаты, даты и заключения ЛНК? Заявки ЛНК, сами стыки и отметки наличия контроля останутся.',
+    )
+    if (!confirmed) return
+    clearLnkGeneratedDataMutation.mutate(lnkRows)
   }
 
   function toggleLnkRequestMethod(requestKey: WeldFieldKey) {
@@ -844,6 +1286,10 @@ function Home() {
       }
       return { methods }
     })
+  }
+
+  function clearLnkRequestFromRow(row: WeldInput & { id: number }, methodKey: WeldFieldKey) {
+    lnkRequestCorrectionMutation.mutate({ record: row, methodKey, requestName: null })
   }
 
   function toggleLnkRequestRow(rowId: number) {
@@ -904,7 +1350,7 @@ function Home() {
           record,
           fieldKey: focusField,
           label: field?.label ?? 'Поле ЛНК',
-          kind: 'text',
+          kind: field?.kind === 'date' ? 'date' : 'text',
           value: String(record[focusField] ?? ''),
           report: 'lnk',
           mode: isLnkResultField(focusField) ? 'result' : isLnkRequestField(focusField) ? 'request' : 'text',
@@ -998,7 +1444,7 @@ function Home() {
       setHighlightedRowIds(new Set())
       setHighlightedCellKeys(new Set())
       importHighlightTimerRef.current = null
-    }, 10000)
+    }, highlightDurationMs)
   }
 
   return (
@@ -1119,10 +1565,16 @@ function Home() {
                 </Button>
               ) : null}
               {activeReport === 'lnk' ? (
-                <Button onClick={openCreateLnkRequestModal} disabled={lnkRequestMutation.isPending}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Создать заявку ЛНК
-                </Button>
+                <>
+                  <Button onClick={openCreateLnkRequestModal} disabled={lnkRequestMutation.isPending}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Создать заявку ЛНК
+                  </Button>
+                  <Button onClick={openAddLnkResultModal} disabled={lnkResultMutation.isPending || lnkResultRequestOptions.length === 0}>
+                    <ClipboardCheck className="mr-2 h-4 w-4" />
+                    Добавить результат
+                  </Button>
+                </>
               ) : null}
               {activeReport === 'weldingJournal' ? (
                 <Button onClick={() => setEditing({ record: {} })}>
@@ -1179,6 +1631,16 @@ function Home() {
             selectedRowIds={selectedHeatTreatmentIds}
             onSelectedRowIdsChange={setSelectedHeatTreatmentIds}
             isRowSelectable={activeReport === 'heatTreatment' ? canCreatePstoRequest : () => true}
+            lnkRowActions={
+              activeReport === 'lnk'
+                ? {
+                    onCreateRequest: openCreateLnkRequestModalForRow,
+                    onAddResult: openAddLnkResultModalForRow,
+                    canCreateRequest: canCreateLnkRequest,
+                    canAddResult: (row) => getLnkRowRequestNames(row).length > 0,
+                  }
+                : undefined
+            }
             storageKey={activeReport}
             hiddenFieldKeys={
               activeReport === 'heatTreatment'
@@ -1201,6 +1663,41 @@ function Home() {
           onCancel={() => setEditing(null)}
           onSave={(value) => saveMutation.mutate({ ...value, id: editing.record.id })}
         />
+      ) : null}
+
+      {pstoRequestNaming ? (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-xl rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
+            <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold">Создание заявки ПСТО</h2>
+                <p className="text-sm text-muted-foreground">
+                  Стыков: {selectedHeatTreatmentRows.length} · Системное: {nextPstoRequestName}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setPstoRequestNaming(null)} aria-label="Закрыть">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-4 px-5 py-5">
+              <RequestNamingControls
+                naming={pstoRequestNaming}
+                systemName={nextPstoRequestName}
+                label="Наименование заявки ПСТО"
+                onChange={setPstoRequestNaming}
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
+              <Button variant="outline" onClick={() => setPstoRequestNaming(null)}>
+                Отмена
+              </Button>
+              <Button onClick={submitCreatePstoRequest} disabled={pstoRequestMutation.isPending}>
+                <Check className="mr-2 h-4 w-4" />
+                Создать заявку
+              </Button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {pstoRequestEditing ? (
@@ -1305,7 +1802,7 @@ function Home() {
 
       {isLnkRequestModalOpen ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="flex max-h-[86vh] w-full max-w-6xl flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
+          <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold">Создание заявки ЛНК</h2>
@@ -1318,7 +1815,16 @@ function Home() {
               </Button>
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-5 py-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <RequestNamingControls
+                naming={lnkRequestNaming}
+                systemName={nextLnkRequestName}
+                label="Наименование заявки ЛНК"
+                onChange={setLnkRequestNaming}
+              />
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
               <section className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-slate-800">Виды контроля</h3>
@@ -1386,6 +1892,7 @@ function Home() {
                     <div className="divide-y divide-slate-100">
                       {filteredLnkRequestRows.map((row) => {
                         const availableMethods = getAvailableLnkRequestMethods(row)
+                        const existingMethods = getLnkRowRequestMethods(row, '')
                         const disabled = availableMethods.length === 0
                         const selected = selectedLnkIds.has(row.id)
                         return (
@@ -1425,6 +1932,30 @@ function Home() {
                                   Все заявки уже созданы
                                 </span>
                               )}
+                              {existingMethods.map((method) => (
+                                <span
+                                  key={`${method.requestKey}-existing`}
+                                  className="inline-flex max-w-full items-center gap-1 rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800"
+                                  title={`${method.code}: ${String(row[method.requestKey] ?? '')}`}
+                                >
+                                  <span>{method.code}</span>
+                                  <span className="max-w-32 truncate text-sky-600">{String(row[method.requestKey] ?? '')}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      clearLnkRequestFromRow(row, method.requestKey)
+                                    }}
+                                    disabled={lnkRequestCorrectionMutation.isPending}
+                                    className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded border border-rose-200 bg-white/80 text-rose-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                                    title="Удалить заявку и очистить связанные результат/дату"
+                                    aria-label={`Удалить заявку ${method.code}`}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
                             </span>
                           </label>
                         )
@@ -1445,6 +1976,270 @@ function Home() {
               >
                 <Check className="mr-2 h-4 w-4" />
                 Создать заявку
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isLnkResultModalOpen ? (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
+          <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold">Добавление результата ЛНК</h2>
+                <p className="text-sm text-muted-foreground">
+                  Заявка: {lnkResultDraft.requestName || '-'} · Выбрано: {lnkResultDraft.rowIds.size}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={closeAddLnkResultModal} aria-label="Закрыть">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+              <section className="space-y-4">
+                <label className="block space-y-1.5 text-sm">
+                  <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ЛНК</span>
+                  <Select value={lnkResultDraft.requestName} onChange={(event) => changeLnkResultRequest(event.target.value)}>
+                    <option value="">Выберите заявку</option>
+                    {lnkResultAvailableRequestOptions.map((requestName) => (
+                      <option key={requestName} value={requestName}>
+                        {requestName}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+
+                <label className="block space-y-1.5 text-sm">
+                  <span className="text-[13px] font-medium leading-none text-slate-700">Метод контроля</span>
+                  <Select
+                    value={lnkResultDraft.methodKey}
+                    onChange={(event) => changeLnkResultMethod(event.target.value as WeldFieldKey)}
+                    disabled={!lnkResultDraft.requestName}
+                  >
+                    <option value="">Выберите метод</option>
+                    {selectedLnkResultMethods.map((method) => (
+                      <option key={method.requestKey} value={method.requestKey}>
+                        {method.code}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <label className="block space-y-1.5 text-sm">
+                    <span className="text-[13px] font-medium leading-none text-slate-700">Дата контроля</span>
+                    <Input
+                      type="date"
+                      value={lnkResultDraft.controlDate}
+                      disabled={lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE}
+                      onChange={(event) => setLnkResultDraft((current) => ({ ...current, controlDate: event.target.value }))}
+                    />
+                  </label>
+
+                  <label className="block space-y-1.5 text-sm">
+                    <span className="text-[13px] font-medium leading-none text-slate-700">Результат</span>
+                    <Select
+                      value={lnkResultDraft.result}
+                      onChange={(event) => setLnkResultDraft((current) => ({ ...current, result: event.target.value }))}
+                    >
+                      <option value="">Выберите результат</option>
+                      {LNK_RESULT_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                      <option value={LNK_EMPTY_RESULT_VALUE}>аннулировать</option>
+                    </Select>
+                  </label>
+                </div>
+
+                <div
+                  className={`rounded-md border border-slate-200 p-3 ${
+                    lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE ? 'bg-slate-50 opacity-60' : 'bg-white'
+                  }`}
+                >
+                  <RequestNamingControls
+                    naming={lnkResultDraft.conclusionNaming}
+                    systemName={nextLnkConclusionName}
+                    label="Наименование заключения"
+                    placeholder="Введите наименование заключения"
+                    disabled={lnkResultDraft.result === LNK_EMPTY_RESULT_VALUE}
+                    onChange={(conclusionNaming) => setLnkResultDraft((current) => ({ ...current, conclusionNaming }))}
+                  />
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+                  Результат заменит статус «ожидает НК» в выбранном виде контроля. Наименование заключения попадет в
+                  соответствующий столбец раздела «Заключения». Если выбрать «аннулировать», результат, дата и заключение
+                  очистятся, а при наличии заявки снова будет показано «ожидает НК».
+                </div>
+              </section>
+
+              <section className="flex min-h-0 flex-col space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Стыки в заявке</h3>
+                    <p className="text-xs leading-5 text-slate-500">
+                      Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={toggleAllLnkResultRows} disabled={filteredLnkResultRows.length === 0}>
+                    {isEveryFilteredLnkRequestRowSelected(
+                      lnkResultDraft.rowIds,
+                      filteredLnkResultRows.filter((row) =>
+                        canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey),
+                      ),
+                    )
+                      ? 'Снять все'
+                      : 'Выбрать все'}
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <Input
+                    value={lnkResultDraft.search}
+                    onChange={(event) => setLnkResultDraft((current) => ({ ...current, search: event.target.value }))}
+                    placeholder="Проект, шифр, линия, спул или стык"
+                    className="h-9 min-w-64 flex-1 bg-white"
+                  />
+                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
+                    Найдено: {filteredLnkResultRows.length} · Выбрано: {lnkResultDraft.rowIds.size}
+                  </span>
+                  {lnkResultDraft.search ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setLnkResultDraft((current) => ({
+                          ...current,
+                          requestName: '',
+                          methodKey: '',
+                          rowIds: new Set(),
+                          search: '',
+                        }))
+                      }
+                    >
+                      Очистить
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
+                  {filteredLnkResultRows.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-slate-500">
+                      {lnkResultDraft.search ? 'По фильтру ничего не найдено.' : 'Введите поиск или выберите заявку ЛНК.'}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {filteredLnkResultRows.map((row) => {
+                        const selected = lnkResultDraft.rowIds.has(row.id)
+                        const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
+                        const disabled = !canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey)
+                        const rowRequestNames = getLnkRowRequestNames(row)
+                        return (
+                          <label
+                            key={row.id}
+                            className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] gap-3 px-4 py-3 text-sm transition-colors ${
+                              disabled
+                                ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                                : selected
+                                  ? 'cursor-pointer bg-emerald-50/80'
+                                  : 'cursor-pointer bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleLnkResultRow(row.id)}
+                              disabled={disabled}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium text-slate-900">{getJointTitle(row)}</span>
+                              <span className="block truncate text-xs text-slate-500">
+                                Проект: {String(row.projectTitle ?? '-')} · Шифр: {String(row.subtitleCode ?? '-')}
+                              </span>
+                              <span className="block truncate text-xs text-slate-500">
+                                Спул: {String(row.spool ?? '-')} · Текущий результат:{' '}
+                                {method && !disabled ? String(row[method.resultKey] ?? '-') : '-'}
+                              </span>
+                              <span className="block truncate text-xs text-slate-600">
+                                {formatLnkResultSummary(row)}
+                              </span>
+                              {disabled ? (
+                                <span className="block truncate text-xs text-amber-700">
+                                  {rowRequestNames.length === 0
+                                    ? 'На этот стык еще нет заявки ЛНК.'
+                                    : !lnkResultDraft.requestName
+                                      ? 'Выберите заявку и метод, чтобы отметить стык.'
+                                    : !lnkResultDraft.methodKey
+                                      ? 'Выберите метод контроля, чтобы отметить стык.'
+                                    : 'Для выбранного метода этот стык не входит в заявку.'}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="flex flex-wrap content-start gap-1.5">
+                              {rowRequestNames.length === 0 ? (
+                                <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+                                  Нет заявки
+                                </span>
+                              ) : (
+                                getLnkRowRequestMethods(row, lnkResultDraft.requestName).map((availableMethod) => {
+                                  const requestName = String(row[availableMethod.requestKey] ?? '').trim()
+                                  const conclusionName = String(row[availableMethod.conclusionKey] ?? '').trim()
+                                  const isSelectedMethod = availableMethod.requestKey === lnkResultDraft.methodKey
+                                  return (
+                                    <span
+                                      key={availableMethod.requestKey}
+                                      className={`inline-flex max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium ${
+                                        isSelectedMethod
+                                          ? 'border-slate-800 bg-slate-900 text-white'
+                                          : getLnkResultBadgeClass(row[availableMethod.resultKey])
+                                      }`}
+                                    >
+                                      <span className="max-w-52 truncate">
+                                        {availableMethod.code}
+                                        {requestName ? ` ${requestName}` : ''}
+                                      </span>
+                                      {conclusionName ? (
+                                        <span className={`max-w-52 truncate text-[11px] ${isSelectedMethod ? 'text-slate-200' : 'text-slate-500'}`}>
+                                          {conclusionName}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  )
+                                })
+                              )}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
+              <Button variant="outline" onClick={closeAddLnkResultModal}>
+                Отмена
+              </Button>
+              <Button
+                onClick={handleAddLnkResult}
+                disabled={
+                  lnkResultMutation.isPending ||
+                  selectedLnkResultRows.length === 0 ||
+                  !lnkResultDraft.methodKey ||
+                  (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE && !lnkResultDraft.controlDate) ||
+                  !lnkResultDraft.result ||
+                  (lnkResultDraft.result !== LNK_EMPTY_RESULT_VALUE &&
+                    !getRequestNameFromNaming(lnkResultDraft.conclusionNaming, nextLnkConclusionName))
+                }
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Сохранить результат
               </Button>
             </div>
           </div>
@@ -1782,7 +2577,6 @@ function normalizeHeatTreatmentImportValue(fieldKey: WeldFieldKey, value: unknow
 }
 
 function normalizeEditableImportValue(fieldKey: WeldFieldKey, value: unknown) {
-  if (isLnkResultField(fieldKey)) return normalizeLnkResultValue(value)
   return value === undefined ? null : value
 }
 
@@ -1927,8 +2721,22 @@ function hasAnyLnkControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
 }
 
+function hasAnyLnkGeneratedData(row: WeldInput) {
+  return [...lnkGeneratedFieldKeys].some((fieldKey) => hasText(row[fieldKey]))
+}
+
 function hasAnyLnkReportControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]) || isCancelledLnkControl(row, method))
+}
+
+function withPendingLnkResults<T extends WeldInput>(row: T): T {
+  let nextRow: (T & Record<string, unknown>) | null = null
+  for (const method of LNK_METHODS) {
+    if (!hasText(row[method.requestKey]) || hasText(row[method.resultKey])) continue
+    nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
+    nextRow[method.resultKey] = 'ожидает НК'
+  }
+  return (nextRow ?? row) as T
 }
 
 function toLnkReportRow<T extends WeldInput>(row: T): T {
@@ -1993,6 +2801,197 @@ function withCurrentOption(options: string[], value: string) {
   return [current, ...options]
 }
 
+function getRequestNameFromNaming(naming: RequestNamingState, systemName: string) {
+  return naming.mode === 'system' ? systemName.trim() : naming.customName.trim()
+}
+
+function createDefaultLnkResultDraft(): LnkResultDraftState {
+  return {
+    requestName: '',
+    methodKey: '',
+    rowIds: new Set(),
+    controlDate: formatDateInputValue(new Date()),
+    result: '',
+    conclusionNaming: defaultRequestNamingState,
+    search: '',
+  }
+}
+
+function formatLnkConclusionName(rows: WeldInput[], controlDate: string, methodKey: WeldFieldKey | '') {
+  const date = formatLongDate(controlDate ? new Date(`${controlDate}T00:00:00`) : new Date())
+  const method = methodKey ? getLnkMethodByRequestKey(methodKey) : null
+  const methodCode = method?.code ?? 'ЛНК'
+  const prefix = `${methodCode}-${date}-`
+  const maxNumber = rows
+    .flatMap((row) => LNK_METHODS.map((method) => String(row[method.conclusionKey] ?? '').trim()))
+    .map((value) => value.match(new RegExp(`^[^-]+-${escapeRegExp(date)}-(\\d{3})$`))?.[1])
+    .reduce((max, value) => (value ? Math.max(max, Number(value)) : max), 0)
+  return `${prefix}${String(maxNumber + 1).padStart(3, '0')}`
+}
+
+function collectLnkResultRequestNames(rows: WeldInput[]) {
+  return sortLnkRequestNamesNewestFirst(collectRequestNames(rows, lnkRequestFieldKeys))
+}
+
+function sortLnkRequestNamesNewestFirst(requestNames: string[]) {
+  return [...requestNames].sort((left, right) => {
+    const leftParsed = parseLnkRequestName(left)
+    const rightParsed = parseLnkRequestName(right)
+    if (leftParsed && rightParsed) {
+      if (leftParsed.dateValue !== rightParsed.dateValue) return rightParsed.dateValue - leftParsed.dateValue
+      if (leftParsed.number !== rightParsed.number) return rightParsed.number - leftParsed.number
+      return right.localeCompare(left, 'ru', { numeric: true })
+    }
+    if (leftParsed) return -1
+    if (rightParsed) return 1
+    return right.localeCompare(left, 'ru', { numeric: true })
+  })
+}
+
+function parseLnkRequestName(value: string) {
+  const match = value.trim().match(/^ЛНК-(\d{2})\.(\d{2})\.(\d{2})-(\d{3})$/)
+  if (!match) return null
+  const [, day, month, year, number] = match
+  return {
+    dateValue: Number(`20${year}${month}${day}`),
+    number: Number(number),
+  }
+}
+
+function filterLnkRowsByRequestName(rows: WeldRow[], requestName: string) {
+  const name = requestName.trim()
+  if (!name) return []
+  return rows.filter((row) => LNK_METHODS.some((method) => String(row[method.requestKey] ?? '').trim() === name))
+}
+
+function getLnkRequestMethodsForRows(rows: WeldInput[], requestName: string) {
+  const name = requestName.trim()
+  if (!name) return []
+  return LNK_METHODS.filter((method) => rows.some((row) => String(row[method.requestKey] ?? '').trim() === name))
+}
+
+function getLnkRowRequestNames(row: WeldInput) {
+  return [
+    ...new Set(
+      LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim()).filter((requestName) => requestName.length > 0),
+    ),
+  ]
+}
+
+function getLnkRowRequestMethods(row: WeldInput, requestName: string) {
+  const name = requestName.trim()
+  return LNK_METHODS.filter((method) => {
+    const rowRequestName = String(row[method.requestKey] ?? '').trim()
+    return name ? rowRequestName === name : rowRequestName.length > 0
+  })
+}
+
+function filterLnkResultRows(rows: WeldRow[], search: string) {
+  const query = normalizeSearchText(search)
+  const compactQuery = compactSearchText(query)
+  return rows
+    .filter((row) => {
+      if (!query) return true
+      const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
+      const haystack = normalizeSearchText(values.map((value) => String(value ?? '')).join(' '))
+      return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
+    })
+    .sort(compareLnkRequestRows)
+}
+
+function normalizeSearchText(value: unknown) {
+  return String(value ?? '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ')
+}
+
+function compactSearchText(value: string) {
+  return value.replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+function formatLnkResultSummary(row: WeldInput) {
+  const items = LNK_METHODS.filter((method) => hasText(row[method.requestKey]) || isEnabledControlValue(row[method.enabledKey])).map(
+    (method) => {
+      const result = String(row[method.resultKey] ?? '').trim() || 'ожидает'
+      return `${method.code} - ${result}`
+    },
+  )
+  return items.length > 0 ? items.join(' · ') : 'Результаты контроля: -'
+}
+
+function getLnkResultBadgeClass(value: unknown) {
+  const result = String(value ?? '').trim().toLowerCase()
+  if (result === 'годен') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  if (result === 'ремонт' || result === 'вырез') return 'border-rose-200 bg-rose-50 text-rose-800'
+  if (result === 'ожидает' || result === 'ожидает нк') return 'border-amber-200 bg-amber-50 text-amber-800'
+  return 'border-slate-200 bg-slate-50 text-slate-600'
+}
+
+function isLnkResultRowApplicable(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
+  const method = methodKey ? getLnkMethodByRequestKey(methodKey) : null
+  return Boolean(method && requestName.trim() && String(row[method.requestKey] ?? '').trim() === requestName.trim())
+}
+
+function rowBelongsToLnkRequest(row: WeldInput, requestName: string) {
+  const name = requestName.trim()
+  return Boolean(name && LNK_METHODS.some((method) => String(row[method.requestKey] ?? '').trim() === name))
+}
+
+function canSelectLnkResultRow(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
+  if (requestName.trim() && methodKey) return isLnkResultRowApplicable(row, requestName, methodKey)
+  if (requestName.trim()) return rowBelongsToLnkRequest(row, requestName)
+  return getLnkRowRequestNames(row).length > 0
+}
+
+function RequestNamingControls({
+  naming,
+  systemName,
+  label,
+  placeholder = 'Введите наименование заявки',
+  disabled = false,
+  onChange,
+}: {
+  naming: RequestNamingState
+  systemName: string
+  label: string
+  placeholder?: string
+  disabled?: boolean
+  onChange: (value: RequestNamingState) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
+        {(['system', 'custom'] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => onChange({ ...naming, mode })}
+            disabled={disabled}
+            className={`h-8 rounded px-3 text-sm font-medium transition-colors ${
+              naming.mode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            {mode === 'system' ? 'Системное' : 'Пользовательское'}
+          </button>
+        ))}
+      </div>
+
+      <label className="block space-y-1.5 text-sm">
+        <span className="text-[13px] font-medium leading-none text-slate-700">{label}</span>
+        {naming.mode === 'system' ? (
+          <Input value={systemName} readOnly disabled={disabled} className="bg-slate-50 text-slate-600" />
+        ) : (
+          <Input
+            autoFocus
+            value={naming.customName}
+            onChange={(event) => onChange({ ...naming, customName: event.target.value })}
+            placeholder={placeholder}
+            disabled={disabled}
+          />
+        )}
+      </label>
+    </div>
+  )
+}
+
 function filterLnkRequestRows(rows: WeldRow[], search: string) {
   const query = search.trim().toLowerCase()
   const sortedRows = sortLnkRequestRows(rows)
@@ -2013,10 +3012,45 @@ function sortLnkRequestRows(rows: WeldRow[]) {
   })
 }
 
+function compareHeatTreatmentReportRows(left: WeldRow, right: WeldRow) {
+  const leftTime = parseReportTimestamp(left.pstoCreatedAt)
+  const rightTime = parseReportTimestamp(right.pstoCreatedAt)
+  if (leftTime !== rightTime) return rightTime - leftTime
+  return compareReportRows(left, right)
+}
+
+function sortRowsByPreservedOrder(rows: WeldRow[], preservedIds: number[]) {
+  const orderById = new Map(preservedIds.map((id, index) => [id, index]))
+  return [...rows].sort((left, right) => {
+    const leftOrder = orderById.get(left.id)
+    const rightOrder = orderById.get(right.id)
+    if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder
+    if (leftOrder !== undefined) return -1
+    if (rightOrder !== undefined) return 1
+    return compareLnkReportRows(left, right)
+  })
+}
+
+function compareLnkReportRows(left: WeldRow, right: WeldRow) {
+  const leftTime = parseReportTimestamp(left.lnkCreatedAt)
+  const rightTime = parseReportTimestamp(right.lnkCreatedAt)
+  if (leftTime !== rightTime) return rightTime - leftTime
+  return compareReportRows(left, right)
+}
+
 function compareLnkRequestRows(left: WeldRow, right: WeldRow) {
+  return compareReportRows(left, right)
+}
+
+function compareReportRows(left: WeldRow, right: WeldRow) {
   const leftValue = [left.line, left.spool, left.joint].map((value) => String(value ?? '')).join(' ')
   const rightValue = [right.line, right.spool, right.joint].map((value) => String(value ?? '')).join(' ')
   return leftValue.localeCompare(rightValue, 'ru', { numeric: true })
+}
+
+function parseReportTimestamp(value: unknown) {
+  const time = new Date(String(value ?? '')).getTime()
+  return Number.isFinite(time) ? time : 0
 }
 
 function isEveryFilteredLnkRequestRowSelected(selectedIds: ReadonlySet<number>, rows: WeldRow[]) {
@@ -2055,6 +3089,29 @@ function getLnkMethodByResultKey(fieldKey: WeldFieldKey) {
 function isLnkRequestAllowedForRow(row: WeldInput, fieldKey: WeldFieldKey) {
   const method = getLnkMethodByRequestKey(fieldKey)
   return !method || isEnabledControlValue(row[method.enabledKey])
+}
+
+function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: WeldFieldKey, value: string | null): T {
+  const nextRecord = { ...record, [fieldKey]: value } as T & Record<string, unknown>
+  const requestMethod = getLnkMethodByRequestKey(fieldKey)
+  if (requestMethod && !hasText(value)) {
+    nextRecord[requestMethod.resultKey] = null
+    nextRecord[requestMethod.conclusionDateKey] = null
+    nextRecord[requestMethod.conclusionKey] = null
+  }
+  return nextRecord as T
+}
+
+function clearLnkGeneratedData<T extends WeldInput>(row: T): T {
+  const nextRow = { ...row } as T & Record<string, unknown>
+  for (const fieldKey of lnkGeneratedFieldKeys) {
+    nextRow[fieldKey] = null
+  }
+  return nextRow as T
+}
+
+function hasLnkGeneratedDataChanged(left: WeldInput, right: WeldInput) {
+  return [...lnkGeneratedFieldKeys].some((fieldKey) => !isSameImportValue(left[fieldKey], right[fieldKey]))
 }
 
 function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
@@ -2120,16 +3177,24 @@ function formatShortDate(date: Date) {
   return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${pad(date.getFullYear() % 100)}`
 }
 
+function formatLongDate(date: Date) {
+  const validDate = Number.isNaN(date.getTime()) ? new Date() : date
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${pad(validDate.getDate())}.${pad(validDate.getMonth() + 1)}.${validDate.getFullYear()}`
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function getJointTitle(value: WeldInput) {
+  const project = String(value.projectTitle ?? '').trim()
+  const subtitle = String(value.subtitleCode ?? '').trim()
   const line = String(value.line ?? '').trim()
   const joint = String(value.joint ?? '').trim()
 
-  if (!line && !joint) return 'Линия и номер стыка не заполнены.'
-  return `Линия: ${line || '-'} · Стык: ${joint || '-'}`
+  if (!project && !subtitle && !line && !joint) return 'Проект, шифр, линия и стык не заполнены.'
+  return `${project || '-'} · ${subtitle || '-'} · ${line || '-'} · ${joint || '-'}`
 }
 
 function getCellKey(rowId: number, fieldKey: WeldFieldKey) {
@@ -2142,8 +3207,7 @@ function canCreatePstoRequest(row: WeldInput) {
 
 function normalizePstoRequest(value: unknown) {
   const text = String(value ?? '').trim()
-  if (!text) return null
-  return /^ПСТО-\d{2}\.\d{2}\.\d{2}-/.test(text) ? text : null
+  return text || null
 }
 
 function normalizeRowPstoRequest<T extends WeldInput>(row: T) {
@@ -2169,8 +3233,9 @@ function readLocalWelds() {
 
   const stored = window.localStorage.getItem(localStorageKey)
   if (!stored) {
-    const initializedRows = withCreatedAt(seedRows.map(clearLnkRequestsFromRow))
+    const initializedRows = withCreatedAt(seedRows.map((row) => clearLnkResultAndConclusionFields(clearLnkRequestsFromRow(row))))
     window.localStorage.setItem(clearedLnkRequestsStorageKey, '1')
+    window.localStorage.setItem(clearedLnkResultsAndConclusionsStorageKey, '1')
     writeLocalWelds(initializedRows)
     return initializedRows
   }
@@ -2178,6 +3243,7 @@ function readLocalWelds() {
   try {
     const parsed = JSON.parse(stored) as Array<WeldInput & { id: number }>
     const shouldClearLegacyLnkRequests = window.localStorage.getItem(clearedLnkRequestsStorageKey) !== '1'
+    const shouldClearLnkResultsAndConclusions = window.localStorage.getItem(clearedLnkResultsAndConclusionsStorageKey) !== '1'
     const normalizedRows = parsed.map((row) => {
       const withoutNoPsto = String(row.pstoRequired ?? '').toLowerCase() === 'нет' ? { ...row, pstoRequired: null } : row
       const withoutLegacyLnkRequest = clearLegacyLnkRequestField(withoutNoPsto)
@@ -2185,10 +3251,14 @@ function readLocalWelds() {
         ? clearLnkRequestsFromRow(withoutLegacyLnkRequest)
         : withoutLegacyLnkRequest
       const withValidLnkRequests = clearDisabledLnkRequests(withClearedLnkRequests)
+      const withClearedLnkResultsAndConclusions = shouldClearLnkResultsAndConclusions
+        ? clearLnkResultAndConclusionFields(withValidLnkRequests)
+        : withValidLnkRequests
+      const withPendingLnk = withPendingLnkResults(withClearedLnkResultsAndConclusions)
       const withActualPstoRequest =
-        withValidLnkRequests.pstoRequest === normalizePstoRequest(withValidLnkRequests.pstoRequest)
-          ? withValidLnkRequests
-          : { ...withValidLnkRequests, pstoRequest: normalizePstoRequest(withValidLnkRequests.pstoRequest) }
+        withPendingLnk.pstoRequest === normalizePstoRequest(withPendingLnk.pstoRequest)
+          ? withPendingLnk
+          : { ...withPendingLnk, pstoRequest: normalizePstoRequest(withPendingLnk.pstoRequest) }
       const withTimestamp = withActualPstoRequest.createdAt
         ? withActualPstoRequest
         : { ...withActualPstoRequest, createdAt: new Date().toISOString() }
@@ -2203,10 +3273,14 @@ function readLocalWelds() {
     if (shouldClearLegacyLnkRequests) {
       window.localStorage.setItem(clearedLnkRequestsStorageKey, '1')
     }
+    if (shouldClearLnkResultsAndConclusions) {
+      window.localStorage.setItem(clearedLnkResultsAndConclusionsStorageKey, '1')
+    }
     return meaningfulRows
   } catch {
-    const initializedRows = seedRows.map(clearLnkRequestsFromRow)
+    const initializedRows = seedRows.map((row) => clearLnkResultAndConclusionFields(clearLnkRequestsFromRow(row)))
     window.localStorage.setItem(clearedLnkRequestsStorageKey, '1')
+    window.localStorage.setItem(clearedLnkResultsAndConclusionsStorageKey, '1')
     writeLocalWelds(initializedRows)
     return initializedRows
   }
@@ -2232,6 +3306,21 @@ function clearLnkRequestsFromRow<T extends WeldInput>(row: T): T {
   return nextRow as T
 }
 
+function clearLnkResultAndConclusionFields<T extends WeldInput>(row: T): T {
+  const lnkResultFieldKeys = LNK_METHODS.map((method) => method.resultKey)
+  const shouldClear = [...lnkResultFieldKeys, ...lnkConclusionFieldKeys].some((fieldKey) => hasText(row[fieldKey]))
+  if (!shouldClear) return row
+
+  const nextRow = { ...row } as T & Record<string, unknown>
+  for (const fieldKey of lnkResultFieldKeys) {
+    nextRow[fieldKey] = null
+  }
+  for (const fieldKey of lnkConclusionFieldKeys) {
+    nextRow[fieldKey] = null
+  }
+  return nextRow as T
+}
+
 function withCreatedAt(rows: Array<WeldInput & { id: number }>) {
   const createdAt = new Date().toISOString()
   return rows.map((row) => (row.createdAt ? row : { ...row, createdAt }))
@@ -2244,7 +3333,11 @@ function withPstoCreatedAt<T extends WeldInput>(rows: T[]) {
 
 function withLnkCreatedAt<T extends WeldInput>(rows: T[]) {
   const lnkCreatedAt = new Date().toISOString()
-  return rows.map((row) => (hasAnyLnkControl(row) && !row.lnkCreatedAt ? { ...row, lnkCreatedAt } : row))
+  return rows.map((row) => (hasAnyLnkGeneratedData(row) && !row.lnkCreatedAt ? { ...row, lnkCreatedAt } : row))
+}
+
+function withTouchedLnkTimestamp<T extends WeldInput>(row: T): T {
+  return { ...row, lnkCreatedAt: new Date().toISOString() }
 }
 
 function withAutoHeatTreatmentDiagrams<T extends WeldInput & { id: number }>(rows: T[]) {
@@ -2258,6 +3351,16 @@ function withAutoHeatTreatmentDiagrams<T extends WeldInput & { id: number }>(row
 function writeLocalWelds(rows: Array<WeldInput & { id: number }>) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(localStorageKey, JSON.stringify(rows))
+}
+
+function clearLocalLnkGeneratedData() {
+  const rows = readLocalWelds()
+  const cleanedRows = rows.map((row) => {
+    const cleanedRow = clearLnkGeneratedData(row)
+    return { ...cleanedRow, finalStatus: calculateFinalStatus(cleanedRow) }
+  })
+  writeLocalWelds(cleanedRows)
+  return cleanedRows.filter((row, index) => hasLnkGeneratedDataChanged(rows[index], row))
 }
 
 function saveLocalWeld(value: WeldInput & { id?: number }) {
@@ -2297,7 +3400,7 @@ function updateLocalWelds(updatedRows: Array<WeldInput & { id: number }>) {
   const updatedById = new Map(
     updatedRows.map((row) => [
       row.id,
-      withLnkCreatedAt(withPstoCreatedAt([clearDisabledLnkRequests({ ...row, pstoRequest: normalizePstoRequest(row.pstoRequest) })]))[0],
+      withLnkCreatedAt(withPstoCreatedAt([withPendingLnkResults(clearDisabledLnkRequests({ ...row, pstoRequest: normalizePstoRequest(row.pstoRequest) }))]))[0],
     ]),
   )
   const rows = withAutoHeatTreatmentDiagrams(readLocalWelds().map((row) => updatedById.get(row.id) ?? row))
@@ -2311,7 +3414,9 @@ function importLocalWelds(records: WeldInput[]) {
   const importedRows = records.map((record) => {
     const normalized = normalizeWeldInput(record)
     return withLnkCreatedAt(withPstoCreatedAt([
-      clearDisabledLnkRequests({ id: nextId++, ...normalized, pstoRequest: normalizePstoRequest(normalized.pstoRequest), createdAt: importedAt }),
+      withPendingLnkResults(
+        clearDisabledLnkRequests({ id: nextId++, ...normalized, pstoRequest: normalizePstoRequest(normalized.pstoRequest), createdAt: importedAt }),
+      ),
     ]))[0]
   })
   const nextRows = withAutoHeatTreatmentDiagrams([...importedRows, ...existingRows])

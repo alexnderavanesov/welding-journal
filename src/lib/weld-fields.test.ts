@@ -42,13 +42,21 @@ describe('weld field order', () => {
     const conclusions = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Заключения')
 
     expect(conclusions?.fields.map((field) => field.label)).toEqual([
+      'Дата ВИК',
       'Заключение ВИК',
+      'Дата РК',
       'Заключение РК',
+      'Дата ПВК',
       'Заключение ПВК',
+      'Дата УЗК',
       'Заключение УЗК',
+      'Дата ТВМТ',
       'Заключение ТВМТ',
+      'Дата РФА',
       'Заключение РФА',
+      'Дата СТЛС',
       'Заключение СТЛС',
+      'Дата МКК',
       'Заключение МКК',
       'Описание дефектов',
       'Примечание',
@@ -112,5 +120,9 @@ describe('weld field order', () => {
   it('does not treat cancelled controls with old results as an error', () => {
     expect(calculateFinalStatus({ hasPvk: 'отменен', pvkResult: 'годен' })).toBe('ожидает')
     expect(calculateFinalStatus({ pstoRequired: 'отменен', pstoResult: 'проведено' })).toBe('ожидает')
+  })
+
+  it('treats pending NDT results as waiting', () => {
+    expect(calculateFinalStatus({ hasPvk: true, pvkResult: 'ожидает НК' })).toBe('ожидает')
   })
 })

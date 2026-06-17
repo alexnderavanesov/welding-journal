@@ -280,6 +280,38 @@ describe('weld import/export', () => {
     expect(parseDate(rows[1][1])).toBe('2025-03-20')
   })
 
+  it('exports result badges as plain Excel values and imports them back', () => {
+    const fields = [
+      FIELD_BY_KEY.get('joint')!,
+      FIELD_BY_KEY.get('vikResult')!,
+      FIELD_BY_KEY.get('rkResult')!,
+      FIELD_BY_KEY.get('pstoResult')!,
+      FIELD_BY_KEY.get('finalStatus')!,
+    ]
+    const bytes = buildExportXlsxBytes(
+      [{ joint: 'S13', vikResult: 'ожидает НК', rkResult: 'ремонт', pstoResult: 'проведено', finalStatus: 'не годен' }],
+      { fields, sheetName: 'ЛНК' },
+    )
+    const workbook = XLSX.read(bytes, { type: 'array' })
+    const worksheet = workbook.Sheets['ЛНК']
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true, defval: null })
+    const payload = new TextDecoder().decode(bytes)
+    const result = parseEditableWorksheetRows(rows, {
+      editableFieldKeys: new Set(['vikResult', 'rkResult', 'pstoResult']),
+      matchFieldKeys: new Set(['joint']),
+    })
+
+    expect(payload).not.toContain('<drawing')
+    expect(payload).not.toContain('/media/')
+    expect(rows[1]).toEqual(['S13', 'ожидает НК', 'ремонт', 'проведено', 'не годен'])
+    expect(result.records[0]).toMatchObject({
+      joint: 'S13',
+      vikResult: 'ожидает НК',
+      rkResult: 'ремонт',
+      pstoResult: 'проведено',
+    })
+  })
+
   it('appends imported rows without changing existing register rows', () => {
     const existing = [{ id: 7, joint: 'S13', line: 'old-line', responsible: 'old-responsible' }]
     const rows = appendImportedWelds(existing, [{ joint: 'S13', line: 'new-line', responsible: 'new-responsible' }])

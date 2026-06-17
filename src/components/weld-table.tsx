@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Edit2, Trash2 } from 'lucide-react'
+import { ClipboardCheck, FilePlus2, ChevronDown, ChevronRight, Edit2, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth, getWeldTableWidth, isCompactWeldColumn } from '@/lib/weld-column-widths'
-import { VISIBLE_FIELD_SECTIONS, VISIBLE_SECTION_END_FIELD_KEYS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { RESULT_FIELD_KEYS, VISIBLE_FIELD_SECTIONS, VISIBLE_SECTION_END_FIELD_KEYS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 const SELECT_COLUMN_WIDTH = 48
+const LNK_ROW_ACTIONS_COLUMN_WIDTH = 72
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
@@ -63,6 +64,12 @@ type WeldTableProps = {
   storageKey?: string
   hiddenFieldKeys?: ReadonlySet<WeldFieldKey>
   mergePstoSections?: boolean
+  lnkRowActions?: {
+    onCreateRequest: (row: WeldInput & { id: number }) => void
+    onAddResult: (row: WeldInput & { id: number }) => void
+    canCreateRequest: (row: WeldInput & { id: number }) => boolean
+    canAddResult: (row: WeldInput & { id: number }) => boolean
+  }
 }
 
 export function WeldTable({
@@ -85,6 +92,7 @@ export function WeldTable({
   storageKey = 'default',
   hiddenFieldKeys = new Set(),
   mergePstoSections = false,
+  lnkRowActions,
 }: WeldTableProps) {
   const [collapsedState, setCollapsedState] = useState(() => ({
     storageKey,
@@ -154,8 +162,12 @@ export function WeldTable({
     [alwaysVisibleFieldKeys, availableSections, collapsedSections],
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
+  const hasLnkRowActions = Boolean(lnkRowActions)
   const tableMinWidth =
-    getWeldTableWidth(filteredFields) - (readOnly ? ACTIONS_COLUMN_WIDTH : 0) + (selectable ? SELECT_COLUMN_WIDTH : 0)
+    getWeldTableWidth(filteredFields) -
+    (readOnly ? ACTIONS_COLUMN_WIDTH : 0) +
+    (selectable ? SELECT_COLUMN_WIDTH : 0) +
+    (hasLnkRowActions ? LNK_ROW_ACTIONS_COLUMN_WIDTH : 0)
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
   const filteredRows = useMemo(
     () =>
@@ -273,6 +285,7 @@ export function WeldTable({
         >
           <colgroup>
             {selectable ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
+            {hasLnkRowActions ? <col style={{ width: LNK_ROW_ACTIONS_COLUMN_WIDTH }} /> : null}
             {filteredFields.map((field) => (
               <col key={field.key} style={{ width: getWeldColumnWidth(field.key) }} />
             ))}
@@ -297,6 +310,15 @@ export function WeldTable({
                     title={selectableVisibleRows.length === 0 ? 'Нет доступных стыков для новой заявки' : 'Выбрать видимые стыки'}
                     className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
                   />
+                </th>
+              ) : null}
+              {hasLnkRowActions ? (
+                <th
+                  rowSpan={3}
+                  className="border-r border-slate-200/70 bg-slate-50 px-2 py-2.5 text-center text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+                  title="Быстрые действия ЛНК"
+                >
+                  <span className="sr-only">Действия ЛНК</span>
                 </th>
               ) : null}
               {filteredSections.map((group) => {
@@ -369,7 +391,7 @@ export function WeldTable({
             {filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={filteredFields.length + (readOnly ? 0 : 1) + (selectable ? 1 : 0)}
+                  colSpan={filteredFields.length + (readOnly ? 0 : 1) + (selectable ? 1 : 0) + (hasLnkRowActions ? 1 : 0)}
                   className="px-3 py-12 text-center text-muted-foreground"
                 >
                   Записи не найдены.
@@ -419,12 +441,52 @@ export function WeldTable({
                       />
                     </td>
                   ) : null}
+                  {hasLnkRowActions && lnkRowActions ? (
+                    <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            lnkRowActions.onCreateRequest(row)
+                          }}
+                          disabled={!lnkRowActions.canCreateRequest(row)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
+                          title={lnkRowActions.canCreateRequest(row) ? 'Создать заявку ЛНК на этот стык' : 'Все заявки ЛНК по этому стыку уже созданы'}
+                          aria-label="Создать заявку ЛНК на этот стык"
+                        >
+                          <FilePlus2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            lnkRowActions.onAddResult(row)
+                          }}
+                          disabled={!lnkRowActions.canAddResult(row)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
+                          title={lnkRowActions.canAddResult(row) ? 'Добавить результат ЛНК на этот стык' : 'Сначала создайте заявку ЛНК на этот стык'}
+                          aria-label="Добавить результат ЛНК на этот стык"
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
                   {filteredFields.map((field) => (
                     (() => {
                       const isEditableColumn = canEditField(field.key)
                       const isEditableCell = canEditCell(row, field.key)
                       const isBlockedEditableCell = isEditableColumn && !isEditableCell
                       const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
+                      const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
+                      const contentClass = `block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
+                        isEditableCell
+                          ? 'cursor-pointer hover:bg-slate-100/70'
+                          : isResultField
+                            ? ''
+                            : 'text-slate-500'
+                      }`
                       return (
                     <td
                       key={field.key}
@@ -442,11 +504,7 @@ export function WeldTable({
                             : undefined
                       }
                     >
-                      <div
-                        className={`block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
-                          isEditableCell ? 'cursor-pointer hover:bg-slate-100/70' : 'text-slate-500'
-                        }`}
-                      >
+                      <div className={contentClass}>
                         {field.kind === 'boolean' ? (
                           isCancelledText(row[field.key]) ? (
                             <CancelledBadge />
@@ -458,19 +516,21 @@ export function WeldTable({
                         ) : (
                           <span
                             className={
-                              field.key === 'weldDate' ||
-                              field.key === 'pstoDate' ||
+                              field.kind === 'date' ||
                               field.key === 'createdAt' ||
                               field.key === 'pstoCreatedAt' ||
-                              field.key === 'lnkCreatedAt'
+                              field.key === 'lnkCreatedAt' ||
+                              isResultField
                                 ? 'whitespace-nowrap'
                                 : 'line-clamp-2'
                             }
                           >
-                            {field.key === 'weldDate' || field.key === 'pstoDate' ? (
+                            {field.kind === 'date' ? (
                               formatDate(row[field.key])
                             ) : field.key === 'createdAt' || field.key === 'pstoCreatedAt' || field.key === 'lnkCreatedAt' ? (
                               formatDateTime(row[field.key])
+                            ) : isResultField ? (
+                              <ResultBadge value={row[field.key]} />
                             ) : field.key === 'pstoRequired' && isCancelledText(row[field.key]) ? (
                               <CancelledBadge />
                             ) : field.key === 'pstoRequired' && isYesText(row[field.key]) ? (
@@ -584,6 +644,7 @@ function getWidthClass(fieldKey: string) {
   if (fieldKey === 'weldDate') return 'w-28 whitespace-nowrap'
   if (fieldKey === 'pstoDate') return 'w-28 whitespace-nowrap'
   if (fieldKey === 'createdAt' || fieldKey === 'pstoCreatedAt') return 'w-[120px] whitespace-nowrap'
+  if (RESULT_FIELD_KEYS.has(fieldKey as WeldFieldKey)) return 'w-28 whitespace-nowrap'
   if (fieldKey === 'finalStatus') return 'w-[116px]'
   if (isCompactWeldColumn(fieldKey)) return 'w-[82px]'
   return 'max-w-72'
@@ -671,4 +732,28 @@ function YesBadge() {
 
 function CancelledBadge() {
   return <Badge className="bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700">отменен</Badge>
+}
+
+function ResultBadge({ value }: { value: unknown }) {
+  const text = String(value ?? '').trim()
+  const normalized = text.toLowerCase()
+  if (!text) return ''
+
+  const className =
+    normalized === 'годен' || normalized === 'проведено'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      : normalized === 'ремонт' || normalized === 'вырез' || normalized === 'не годен' || normalized === 'ошибка'
+        ? 'border-rose-200 bg-rose-50 text-rose-800'
+        : normalized === 'ожидает' || normalized === 'ожидает нк'
+          ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : 'border-slate-200 bg-slate-50 text-slate-600'
+
+  return (
+    <Badge
+      variant="outline"
+      className={`inline-flex max-w-full whitespace-nowrap px-2.5 py-0.5 text-center text-xs font-normal leading-snug ${className}`}
+    >
+      {text}
+    </Badge>
+  )
 }
