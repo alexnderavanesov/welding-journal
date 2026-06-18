@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -27,11 +27,28 @@ const yesEmptyFieldKeys = new Set([
 ])
 const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'createdAt',
+  'vikRequest',
+  'rkRequest',
+  'pvkRequest',
+  'uzkRequest',
   'pstoRequest',
+  'tvmtRequest',
+  'rfaRequest',
+  'stlsRequest',
+  'mkkRequest',
   'pstoDate',
   'heatTreatmentDiagram',
+  'vikResult',
+  'rkResult',
+  'pvkResult',
+  'uzkResult',
   'pstoResult',
+  'tvmtResult',
+  'rfaResult',
+  'stlsResult',
+  'mkkResult',
   'pstoNote',
+  'finalStatus',
   'pstoBoq',
   'pstoKs3',
   'pstoCreatedAt',
@@ -82,6 +99,7 @@ type WeldFormProps = {
 
 export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | null>>>({})
   const fieldsByGroup = useMemo(
@@ -126,6 +144,16 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
   useEffect(() => {
     if (!focusField) return
 
+    const focusedSection = fieldsByGroup.find((group) => group.fields.some((field) => field.key === focusField))?.section
+    if (focusedSection) {
+      setCollapsedSections((current) => {
+        if (!current.has(focusedSection)) return current
+        const next = new Set(current)
+        next.delete(focusedSection)
+        return next
+      })
+    }
+
     window.requestAnimationFrame(() => {
       const element = fieldRefs.current[focusField]
       if (!element) return
@@ -135,7 +163,7 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
         element.select()
       }
     })
-  }, [focusField])
+  }, [fieldsByGroup, focusField])
 
   useEffect(() => {
     setDraft((current) => {
@@ -146,9 +174,21 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
     })
   }, [draft])
 
+  function toggleSection(section: string) {
+    setCollapsedSections((current) => {
+      const next = new Set(current)
+      if (next.has(section)) {
+        next.delete(section)
+      } else {
+        next.add(section)
+      }
+      return next
+    })
+  }
+
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[1px]">
-      <div className="ml-auto flex h-full w-full max-w-5xl flex-col bg-slate-50 shadow-2xl shadow-slate-950/10">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/20 px-4 py-4 backdrop-blur-[1px]">
+      <div className="flex max-h-[96vh] w-full max-w-[min(1500px,96vw)] flex-col rounded-md border border-slate-200 bg-slate-50 shadow-2xl shadow-slate-950/10">
         <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold">{value.id ? 'Редактирование стыка' : 'Новый стык'}</h2>
@@ -168,107 +208,122 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
             ) : null}
             {fieldsByGroup.map(({ section, fields }) => (
               <section key={section}>
-                <div className="mb-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section)}
+                  className="mb-4 flex w-full items-center gap-3 rounded-sm text-left transition-colors hover:text-slate-900"
+                  aria-expanded={!collapsedSections.has(section)}
+                >
+                  {collapsedSections.has(section) ? (
+                    <ChevronRight className="h-4 w-4 text-slate-500" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-slate-500" />
+                  )}
                   <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{section}</h3>
                   <div className="h-px flex-1 bg-slate-200/80" />
-                </div>
-                <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
-                  {fields.map((field) => (
-                    <label key={field.key} className="space-y-1.5 text-sm">
-                      <span className="text-[13px] font-medium leading-none text-slate-700">{field.label}</span>
-                      {RESULT_FIELD_KEYS.has(field.key) ? (
-                        <Select
-                          ref={(element) => {
-                            fieldRefs.current[field.key] = element
-                          }}
-                          value={
-                            field.key === 'finalStatus'
-                              ? getFinalStatusValue(calculateFinalStatus(draft))
-                              : getResultStatusValue(draft[field.key])
-                          }
-                          disabled={field.key === 'finalStatus'}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              [field.key]: event.target.value || null,
-                            }))
-                          }
-                        >
-                          <option value="">Пусто</option>
-                          {(field.key === 'finalStatus' ? FINAL_STATUS_OPTIONS : RESULT_STATUS_OPTIONS).map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </Select>
-                      ) : field.key === 'status' ? (
-                        <Select
-                          ref={(element) => {
-                            fieldRefs.current[field.key] = element
-                          }}
-                          value={getJointStatusValue(draft[field.key])}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              [field.key]: event.target.value || null,
-                            }))
-                          }
-                        >
-                          <option value="">Пусто</option>
-                          <option value="неофициальный">неофициальный</option>
-                        </Select>
-                      ) : yesEmptyFieldKeys.has(field.key) ? (
-                        <Select
-                          ref={(element) => {
-                            fieldRefs.current[field.key] = element
-                          }}
-                          value={isYesValue(draft[field.key]) ? 'yes' : ''}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              [field.key]: event.target.value === 'yes' ? (field.kind === 'boolean' ? true : 'да') : null,
-                            }))
-                          }
-                        >
-                          <option value="yes">да</option>
-                          <option value="">пусто</option>
-                        </Select>
-                      ) : field.kind === 'boolean' ? (
-                        <Select
-                          ref={(element) => {
-                            fieldRefs.current[field.key] = element
-                          }}
-                          value={draft[field.key] === true ? 'true' : draft[field.key] === false ? 'false' : ''}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              [field.key]: event.target.value === '' ? null : event.target.value === 'true',
-                            }))
-                          }
-                        >
-                          <option value="">Пусто</option>
-                          <option value="true">да</option>
-                          <option value="false">нет</option>
-                        </Select>
-                      ) : (
-                        <Input
-                          ref={(element) => {
-                            fieldRefs.current[field.key] = element
-                          }}
-                          type={field.kind === 'date' ? 'date' : field.kind === 'number' ? 'number' : 'text'}
-                          step={field.kind === 'number' ? '0.001' : undefined}
-                          value={String(draft[field.key] ?? '')}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              [field.key]: event.target.value,
-                            }))
-                          }
-                        />
-                      )}
-                    </label>
-                  ))}
-                </div>
+                  <span className="rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                    {collapsedSections.has(section) ? 'Скрыто' : `${fields.length}`}
+                  </span>
+                </button>
+                {collapsedSections.has(section) ? null : (
+                  <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+                    {fields.map((field) => (
+                      <label key={field.key} className="space-y-1.5 text-sm">
+                        <span className="text-[13px] font-medium leading-none text-slate-700">{field.label}</span>
+                        {RESULT_FIELD_KEYS.has(field.key) ? (
+                          <Select
+                            ref={(element) => {
+                              fieldRefs.current[field.key] = element
+                            }}
+                            value={
+                              field.key === 'finalStatus'
+                                ? getFinalStatusValue(calculateFinalStatus(draft))
+                                : getResultStatusValue(draft[field.key])
+                            }
+                            disabled={field.key === 'finalStatus'}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                [field.key]: event.target.value || null,
+                              }))
+                            }
+                          >
+                            <option value="">Пусто</option>
+                            {(field.key === 'finalStatus' ? FINAL_STATUS_OPTIONS : RESULT_STATUS_OPTIONS).map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </Select>
+                        ) : field.key === 'status' ? (
+                          <Select
+                            ref={(element) => {
+                              fieldRefs.current[field.key] = element
+                            }}
+                            value={getJointStatusValue(draft[field.key])}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                [field.key]: event.target.value || null,
+                              }))
+                            }
+                          >
+                            <option value="">Пусто</option>
+                            <option value="неофициальный">неофициальный</option>
+                          </Select>
+                        ) : yesEmptyFieldKeys.has(field.key) ? (
+                          <Select
+                            ref={(element) => {
+                              fieldRefs.current[field.key] = element
+                            }}
+                            value={isYesValue(draft[field.key]) ? 'yes' : ''}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                [field.key]: event.target.value === 'yes' ? (field.kind === 'boolean' ? true : 'да') : null,
+                              }))
+                            }
+                          >
+                            <option value="yes">да</option>
+                            <option value="">пусто</option>
+                          </Select>
+                        ) : field.kind === 'boolean' ? (
+                          <Select
+                            ref={(element) => {
+                              fieldRefs.current[field.key] = element
+                            }}
+                            value={draft[field.key] === true ? 'true' : draft[field.key] === false ? 'false' : ''}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                [field.key]: event.target.value === '' ? null : event.target.value === 'true',
+                              }))
+                            }
+                          >
+                            <option value="">Пусто</option>
+                            <option value="true">да</option>
+                            <option value="false">нет</option>
+                          </Select>
+                        ) : (
+                          <Input
+                            ref={(element) => {
+                              fieldRefs.current[field.key] = element
+                            }}
+                            type={field.kind === 'date' ? 'date' : field.kind === 'number' ? 'number' : 'text'}
+                            step={field.kind === 'number' ? '0.001' : undefined}
+                            value={String(draft[field.key] ?? '')}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                          />
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </section>
             ))}
           </div>

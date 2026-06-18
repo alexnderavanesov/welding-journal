@@ -57,6 +57,7 @@ type WeldTableProps = {
   editableFieldKeys?: ReadonlySet<WeldFieldKey>
   blockedFieldKeys?: ReadonlySet<WeldFieldKey>
   isCellEditable?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => boolean
+  getDisplayValue?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => unknown
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>
   onSelectedRowIdsChange?: (ids: Set<number>) => void
@@ -92,6 +93,7 @@ export function WeldTable({
   editableFieldKeys = new Set(),
   blockedFieldKeys = new Set(),
   isCellEditable = () => true,
+  getDisplayValue = (row, fieldKey) => row[fieldKey],
   selectable = false,
   selectedRowIds = new Set(),
   onSelectedRowIdsChange,
@@ -420,7 +422,7 @@ export function WeldTable({
                       : isSelected
                         ? 'bg-sky-50/90 shadow-[inset_4px_0_0_rgb(14,165,233)] hover:bg-sky-50'
                       : isDuplicate
-                        ? 'bg-amber-50/80 hover:bg-amber-100/70'
+                        ? 'bg-amber-100/90 shadow-[inset_4px_0_0_rgb(245,158,11)] hover:bg-amber-100'
                         : 'hover:bg-slate-50/70'
                   }`}
                   title={
@@ -495,6 +497,7 @@ export function WeldTable({
                       const isBlockedEditableCell = isEditableColumn && !isEditableCell
                       const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
                       const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
+                      const displayValue = getDisplayValue(row, field.key)
                       const contentClass = `block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
                         isEditableCell
                           ? 'cursor-pointer hover:bg-slate-100/70'
@@ -521,9 +524,9 @@ export function WeldTable({
                     >
                       <div className={contentClass}>
                         {field.kind === 'boolean' ? (
-                          isCancelledText(row[field.key]) ? (
+                          isCancelledText(displayValue) ? (
                             <CancelledBadge />
-                          ) : row[field.key] ? (
+                          ) : displayValue ? (
                             <YesBadge />
                           ) : (
                             ''
@@ -541,19 +544,19 @@ export function WeldTable({
                             }
                           >
                             {field.kind === 'date' ? (
-                              formatDate(row[field.key])
+                              formatDate(displayValue)
                             ) : field.key === 'createdAt' || field.key === 'pstoCreatedAt' || field.key === 'lnkCreatedAt' ? (
-                              formatDateTime(row[field.key])
+                              formatDateTime(displayValue)
                             ) : isResultField ? (
-                              <ResultBadge value={row[field.key]} />
-                            ) : field.key === 'pstoRequired' && isCancelledText(row[field.key]) ? (
+                              <ResultBadge value={displayValue} />
+                            ) : field.key === 'pstoRequired' && isCancelledText(displayValue) ? (
                               <CancelledBadge />
-                            ) : field.key === 'pstoRequired' && isYesText(row[field.key]) ? (
+                            ) : field.key === 'pstoRequired' && isYesText(displayValue) ? (
                               <YesBadge />
-                            ) : field.key === 'pstoRequired' && isNoText(row[field.key]) ? (
+                            ) : field.key === 'pstoRequired' && isNoText(displayValue) ? (
                               ''
                             ) : (
-                              String(row[field.key] ?? '')
+                              String(displayValue ?? '')
                             )}
                           </span>
                         )}
@@ -693,9 +696,15 @@ function getDuplicateKeys(rows: Array<WeldInput & { id: number }>) {
 }
 
 function getDuplicateKey(row: WeldInput) {
+  if (isUnofficialJoint(row)) return null
   const values = DUPLICATE_CHECK_FIELD_KEYS.map((key) => normalizeDuplicateValue(row[key]))
   if (values.every((value) => value === '')) return null
   return values.join('|')
+}
+
+function isUnofficialJoint(row: WeldInput) {
+  const status = normalizeDuplicateValue(row.status)
+  return status === 'неофициальный'
 }
 
 function getCellKey(rowId: number, fieldKey: WeldFieldKey) {
@@ -761,6 +770,8 @@ function ResultBadge({ value }: { value: unknown }) {
         ? 'border-rose-200 bg-rose-50 text-rose-800'
         : normalized === 'ожидает' || normalized === 'ожидает нк'
           ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : normalized === 'нет потребности'
+            ? 'border-slate-300 bg-slate-100 text-slate-600'
           : 'border-slate-200 bg-slate-50 text-slate-600'
 
   return (
