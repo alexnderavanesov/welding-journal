@@ -347,7 +347,15 @@ type RepeatedJointCreateTask = {
   result: 'ремонт' | 'вырез'
   suffix: 'R' | 'W'
   methodCode: string
-  methodResultKey: WeldFieldKey
+}
+type RepeatedJointCoilTask = {
+  kind: 'coil'
+  key: string
+  row: WeldRow
+  sourceJoint: string
+  targetJoints: string[]
+  result: 'ремонт' | 'вырез'
+  methodCode: string
 }
 type RepeatedJointDeleteTask = {
   kind: 'delete'
@@ -358,7 +366,7 @@ type RepeatedJointDeleteTask = {
   targetJoint: string
   suffix: 'R' | 'W'
 }
-type RepeatedJointTask = RepeatedJointCreateTask | RepeatedJointDeleteTask
+type RepeatedJointTask = RepeatedJointCreateTask | RepeatedJointCoilTask | RepeatedJointDeleteTask
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
@@ -527,19 +535,25 @@ function Home() {
   })
 
   const repeatedJointMutation = useMutation({
-    mutationFn: async (task: RepeatedJointCreateTask) => {
-      const draft = buildRepeatedJointDraft(task.row, task.targetJoint)
+    mutationFn: async (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => {
+      const targetJoints = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
+      const drafts = targetJoints.map((targetJoint) => buildRepeatedJointDraft(task.row, targetJoint))
       try {
-        const saved = await createWeldJoint({ data: draft })
-        return saved ?? saveLocalWeld(draft)
+        const savedRows = await Promise.all(drafts.map((draft) => createWeldJoint({ data: draft })))
+        if (savedRows.every(Boolean)) return savedRows as WeldRow[]
+        return drafts.map((draft) => saveLocalWeld(draft))
       } catch {
-        return saveLocalWeld(draft)
+        return drafts.map((draft) => saveLocalWeld(draft))
       }
     },
-    onSuccess: async (created, task) => {
-      highlightChangedRows(created ? [created] : [], ['joint', 'weldDate', 'finalStatus'])
+    onSuccess: async (createdRows, task) => {
+      highlightChangedRows(createdRows, ['joint', 'weldDate', 'finalStatus'])
       setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
-      setMessage(`Создан повторный стык ${task.targetJoint} для ${task.sourceJoint}`)
+      setMessage(
+        task.kind === 'coil'
+          ? `Созданы стыки катушки ${task.targetJoints.join(', ')} для ${task.sourceJoint}`
+          : `Создан повторный стык ${task.targetJoint} для ${task.sourceJoint}`,
+      )
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -1209,6 +1223,10 @@ function Home() {
       if (results.some((result) => !isValidLnkResultDraftValue(result))) throw new Error('Укажите результат для каждого выбранного стыка')
       if (hasNonEmptyResult && !controlDate) throw new Error('Укажите дату контроля')
       if (hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
+      const repairForbiddenRecord = records.find((record) => resultById[record.id] === 'ремонт' && isLnkRepairForbiddenByDiameter(record))
+      if (repairForbiddenRecord) {
+        throw new Error(`Ремонт недоступен для стыка ${String(repairForbiddenRecord.joint ?? '-')}: диаметр до 89 мм`)
+      }
 
       const lnkUpdatedAt = new Date().toISOString()
       const updatedRecords = records.map((record) => {
@@ -1268,6 +1286,9 @@ function Home() {
       const method = getLnkMethodByRequestKey(methodKey)
       if (!method) throw new Error('Выберите метод контроля')
       if (result && !LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Укажите корректный результат')
+      if (result === 'ремонт' && isLnkRepairForbiddenByDiameter(record)) {
+        throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: диаметр до 89 мм`)
+      }
       const proposedRecord = {
         ...record,
         [method.resultKey]: result,
@@ -1312,6 +1333,9 @@ function Home() {
         const method = getLnkMethodByRequestKey(methodKey)
         if (!method) throw new Error('Выберите метод контроля')
         if (!LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Укажите корректный результат')
+        if (result === 'ремонт' && isLnkRepairForbiddenByDiameter(record)) {
+          throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: диаметр до 89 мм`)
+        }
         const currentRecord = updatedById.get(record.id) ?? record
         updatedById.set(record.id, {
           ...currentRecord,
@@ -2477,6 +2501,8 @@ function Home() {
   function setLnkResultForRow(rowId: number, result: string) {
     setLnkResultDraft((current) => {
       if (!current.rowIds.has(rowId)) return current
+      const row = lnkRows.find((candidate) => candidate.id === rowId)
+      if (row && result === 'ремонт' && isLnkRepairForbiddenByDiameter(row)) return current
       const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
       const rowResults: Record<number, string> = {}
       for (const id of current.rowIds) {
@@ -2582,8 +2608,11 @@ function Home() {
     clearLnkGeneratedDataMutation.mutate(lnkRows)
   }
 
-  function createRepeatedJoint(task: RepeatedJointCreateTask) {
-    const currentTask = buildRepeatedJointTasks(rows).find((candidate): candidate is RepeatedJointCreateTask => candidate.kind === 'create' && candidate.key === task.key)
+  function createRepeatedJoint(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
+    const currentTask = buildRepeatedJointTasks(rows).find(
+      (candidate): candidate is RepeatedJointCreateTask | RepeatedJointCoilTask =>
+        (candidate.kind === 'create' || candidate.kind === 'coil') && candidate.key === task.key,
+    )
     if (!currentTask) {
       setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
       return
@@ -2613,7 +2642,13 @@ function Home() {
       writeDeclinedRepeatedJointTaskKeys(next)
       return next
     })
-    setMessage(task.kind === 'create' ? `Автосоздание ${task.targetJoint} больше не будет предлагаться` : `Удаление ${task.targetJoint} больше не будет предлагаться`)
+    setMessage(
+      task.kind === 'create'
+        ? `Автосоздание ${task.targetJoint} больше не будет предлагаться`
+        : task.kind === 'coil'
+          ? `Катушка ${task.targetJoints.join(', ')} больше не будет предлагаться`
+          : `Удаление ${task.targetJoint} больше не будет предлагаться`,
+    )
   }
 
   function toggleLnkRequestMethod(requestKey: WeldFieldKey) {
@@ -3052,18 +3087,29 @@ function Home() {
                   {repeatedJointTasks.slice(0, 8).map((task) => (
                     <div key={task.key} className="flex w-fit items-center gap-1.5 rounded-md border border-amber-200 bg-white/95 px-2 py-1.5">
                       <div className="flex min-w-0 items-center gap-1.5 text-sm">
-                        {task.kind === 'create' ? (
-                          <>
-                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-                            <span className="font-semibold text-amber-700">→</span>
-                            <span className="font-semibold text-slate-900">{task.targetJoint}</span>
-                            <span className="text-slate-400">·</span>
-                            <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
-                              {task.methodCode} - {task.result}
-                            </span>
-                          </>
-                        ) : (
-                          <>
+	                        {task.kind === 'create' ? (
+	                          <>
+	                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+	                            <span className="font-semibold text-amber-700">→</span>
+	                            <span className="font-semibold text-slate-900">{task.targetJoint}</span>
+	                            <span className="text-slate-400">·</span>
+	                            <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
+	                              {task.methodCode} - {task.result}
+	                            </span>
+	                          </>
+	                        ) : task.kind === 'coil' ? (
+	                          <>
+	                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+	                            <span className="text-slate-500">превышен лимит</span>
+	                            <span className="text-slate-400">·</span>
+	                            <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
+	                              {task.methodCode} - {task.result}
+	                            </span>
+	                            <span className="text-slate-400">·</span>
+	                            <span className="font-semibold text-slate-900">катушка {task.targetJoints.join(' + ')}</span>
+	                          </>
+	                        ) : (
+	                          <>
                             <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
                             <span className="text-slate-500">исправлен</span>
                             <span className="text-slate-400">·</span>
@@ -3072,16 +3118,16 @@ function Home() {
                         )}
                       </div>
                       <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white">
-                        {task.kind === 'create' ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => createRepeatedJoint(task)}
-                            disabled={repeatedJointMutation.isPending}
-                            className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
-                          >
-                            Создать
-                          </Button>
+	                        {task.kind === 'create' || task.kind === 'coil' ? (
+	                          <Button
+	                            type="button"
+	                            size="sm"
+	                            onClick={() => createRepeatedJoint(task)}
+	                            disabled={repeatedJointMutation.isPending}
+	                            className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+	                          >
+	                            {task.kind === 'coil' ? 'Катушка' : 'Создать'}
+	                          </Button>
                         ) : (
                           <Button
                             type="button"
@@ -3692,9 +3738,10 @@ function Home() {
                                 <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · Стык:{' '}
                                 <span className="font-semibold text-slate-700">{String(row.joint ?? '-')}</span>
                               </span>
-                              <span className="block truncate text-xs text-slate-500">
-                                Спул: <span className="font-semibold text-slate-700">{String(row.spool ?? '-')}</span>
-                              </span>
+	                              <span className="block truncate text-xs text-slate-500">
+	                                Спул: <span className="font-semibold text-slate-700">{String(row.spool ?? '-')}</span> ·{' '}
+	                                <span className="font-semibold text-slate-700">{formatJointDiameterLabel(row)}</span>
+	                              </span>
                               <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                                 <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
                                   Стык: {getJointStatusLabel(row)}
@@ -4380,25 +4427,37 @@ function Home() {
                             </div>
                             <div className="flex flex-wrap content-start justify-end gap-1.5">
                               <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
-                              {LNK_RESULT_OPTIONS.map((option) => (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  onClick={() => replaceLnkResult(row, method.requestKey, option)}
-                                  onMouseEnter={() => setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })}
-                                  onMouseLeave={() => setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current))}
-                                  onFocus={() => setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })}
-                                  onBlur={() => setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current))}
-                                  disabled={lnkResultCorrectionMutation.isPending || lnkResultReplacementMutation.isPending}
-                                  className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                                    (pendingResult || currentResult) === option
-                                      ? getLnkResultBadgeClass(option)
-                                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                  }`}
-                                >
-                                  {option}
-                                </button>
-                              ))}
+	                              {LNK_RESULT_OPTIONS.map((option) => {
+	                                const disabledByDiameter = option === 'ремонт' && isLnkRepairForbiddenByDiameter(row)
+	                                return (
+	                                  <button
+	                                    key={option}
+	                                    type="button"
+	                                    onClick={() => {
+	                                      if (!disabledByDiameter) replaceLnkResult(row, method.requestKey, option)
+	                                    }}
+	                                    onMouseEnter={() => {
+	                                      if (!disabledByDiameter) setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
+	                                    }}
+	                                    onMouseLeave={() => setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current))}
+	                                    onFocus={() => {
+	                                      if (!disabledByDiameter) setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
+	                                    }}
+	                                    onBlur={() => setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current))}
+	                                    disabled={disabledByDiameter || lnkResultCorrectionMutation.isPending || lnkResultReplacementMutation.isPending}
+	                                    title={disabledByDiameter ? getLnkRepairForbiddenReason(row) : undefined}
+	                                    className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+	                                      disabledByDiameter
+	                                        ? 'border-slate-200 bg-slate-50 text-slate-400'
+	                                        : (pendingResult || currentResult) === option
+	                                          ? getLnkResultBadgeClass(option)
+	                                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+	                                    }`}
+	                                  >
+	                                    {option}
+	                                  </button>
+	                                )
+	                              })}
                               <button
                                 type="button"
                                 onClick={() => clearLnkResult(row, method.requestKey)}
@@ -4514,27 +4573,32 @@ function Home() {
 
                   <label className="block space-y-1.5 text-sm">
                     <span className="text-[13px] font-medium leading-none text-slate-700">Результат по умолчанию</span>
-                    <Select
-                      value={lnkResultDraft.result}
-                      onChange={(event) =>
-                        setLnkResultDraft((current) => ({
-                          ...current,
-                          result: event.target.value,
-                          rowResults: {},
-                        }))
-                      }
-                    >
-                      <option value="">Выберите результат</option>
-                      <option value={LNK_CUSTOM_RESULT_VALUE} disabled>
-                        пользовательский
-                      </option>
-                      {LNK_RESULT_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
+	                    <Select
+	                      value={lnkResultDraft.result}
+	                      onChange={(event) => {
+	                        const result = event.target.value
+	                        if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbiddenByDiameter)) return
+	                        setLnkResultDraft((current) => ({
+	                          ...current,
+	                          result,
+	                          rowResults: {},
+	                        }))
+	                      }}
+	                    >
+	                      <option value="">Выберите результат</option>
+	                      <option value={LNK_CUSTOM_RESULT_VALUE} disabled>
+	                        пользовательский
+	                      </option>
+	                      {LNK_RESULT_OPTIONS.map((option) => (
+	                        <option key={option} value={option} disabled={option === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbiddenByDiameter)}>
+	                          {option}
+	                        </option>
+	                      ))}
+	                    </Select>
+	                    {selectedLnkResultRows.some(isLnkRepairForbiddenByDiameter) ? (
+	                      <span className="block text-xs text-slate-500">Ремонт недоступен для стыков с диаметром до 89 мм.</span>
+	                    ) : null}
+	                  </label>
                   </div>
                 </div>
 
@@ -4684,7 +4748,7 @@ function Home() {
                         const disabled = !canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey)
                         const selected = lnkResultDraft.rowIds.has(row.id) && !disabled
                         const rowRequestNames = getLnkRowRequestNames(row)
-                        const rowResult = getEffectiveLnkResultDraftValue(row.id, lnkResultDraft)
+	                        const rowResult = getEffectiveLnkResultDraftValueForRow(row, lnkResultDraft)
                         const hasSavedFinalResult = Boolean(
                           method && LNK_RESULT_OPTIONS.includes(String(row[method.resultKey] ?? '').trim().toLowerCase() as never),
                         )
@@ -4746,24 +4810,30 @@ function Home() {
                               ) : null}
                               {selected ? (
                                 <span className="mt-2 flex flex-wrap items-center gap-1.5">
-                                  <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>
-                                  {LNK_RESULT_OPTIONS.map((option) => {
-                                    const active = rowResult === option
-                                    return (
-                                      <button
-                                        key={option}
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.preventDefault()
-                                          event.stopPropagation()
-                                          setLnkResultForRow(row.id, option)
-                                        }}
-                                        className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
-                                          active
-                                            ? getLnkResultBadgeClass(option)
-                                            : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                                        }`}
-                                      >
+	                                  <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>
+	                                  {LNK_RESULT_OPTIONS.map((option) => {
+	                                    const active = rowResult === option
+	                                    const disabledByDiameter = option === 'ремонт' && isLnkRepairForbiddenByDiameter(row)
+	                                    return (
+	                                      <button
+	                                        key={option}
+	                                        type="button"
+	                                        onClick={(event) => {
+	                                          event.preventDefault()
+	                                          event.stopPropagation()
+	                                          if (disabledByDiameter) return
+	                                          setLnkResultForRow(row.id, option)
+	                                        }}
+	                                        disabled={disabledByDiameter}
+	                                        title={disabledByDiameter ? getLnkRepairForbiddenReason(row) : undefined}
+	                                        className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
+	                                          disabledByDiameter
+	                                            ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
+	                                            : active
+	                                            ? getLnkResultBadgeClass(option)
+	                                            : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+	                                        }`}
+	                                      >
                                         {option}
                                       </button>
                                     )
@@ -4892,7 +4962,7 @@ function Home() {
                     const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
                     const currentResult = method ? String(row[method.resultKey] ?? '').trim() || 'заявка' : '-'
                     const requestName = method ? String(row[method.requestKey] ?? '').trim() : ''
-                    const result = getEffectiveLnkResultDraftValue(row.id, lnkResultDraft)
+	                    const result = getEffectiveLnkResultDraftValueForRow(row, lnkResultDraft)
                     return (
                       <div key={row.id} className="grid grid-cols-[minmax(320px,1fr)_minmax(220px,0.45fr)] gap-4 px-4 py-3 text-sm">
                         <div className="min-w-0">
@@ -5917,6 +5987,23 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
     if (!sourceJoint) continue
 
     const suffix = rejection.result === 'ремонт' ? 'R' : 'W'
+    const parsed = parseRepeatedJointName(sourceJoint)
+    if (getRepeatedJointFailureCount(parsed) >= 3) {
+      const targetJoints = getCoilJointNames(parsed.base).filter((targetJoint) => !hasRepeatedJointTarget(rows, row, targetJoint))
+      if (targetJoints.length === 0) continue
+
+      tasks.push({
+        kind: 'coil',
+        key: `${row.id}:${rejection.method.resultKey}:${rejection.result}:coil:${targetJoints.join('+')}`,
+        row,
+        sourceJoint,
+        targetJoints,
+        result: rejection.result,
+        methodCode: rejection.method.code,
+      })
+      continue
+    }
+
     const targetJoint = getNextRepeatedJointName(sourceJoint, suffix)
     if (hasRepeatedJointTarget(rows, row, targetJoint)) continue
 
@@ -5929,7 +6016,6 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
       result: rejection.result,
       suffix,
       methodCode: rejection.method.code,
-      methodResultKey: rejection.method.resultKey,
     })
   }
   for (const row of rows) {
@@ -5951,14 +6037,17 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
 function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow) {
   const targetJoint = String(row.joint ?? '').trim()
   const parsed = parseRepeatedJointName(targetJoint)
-  if (!parsed.suffix || parsed.index < 1 || !isUnusedRepeatedJointDraft(row)) return null
-  const sourceJoint = getRepeatedJointSourceName(parsed)
-  const sourceRow = findMatchingJointRow(rows, row, sourceJoint)
-  if (!sourceRow) return null
-  const rejection = getPrimaryRejectedLnkResult(sourceRow)
-  const expectedSuffix = rejection ? (rejection.result === 'ремонт' ? 'R' : 'W') : null
-  if (expectedSuffix === parsed.suffix && getNextRepeatedJointName(sourceJoint, parsed.suffix) === targetJoint) return null
-  return { sourceRow, sourceJoint, targetJoint, suffix: parsed.suffix }
+  if (parsed.segments.length === 0 || !isUnusedRepeatedJointDraft(row)) return null
+  let obsoleteCandidate: { sourceRow: WeldRow; sourceJoint: string; targetJoint: string; suffix: 'R' | 'W' } | null = null
+  for (const candidate of getRepeatedJointSourceCandidates(parsed)) {
+    const sourceRow = findMatchingJointRow(rows, row, candidate.sourceJoint)
+    if (!sourceRow) continue
+    const rejection = getPrimaryRejectedLnkResult(sourceRow)
+    const expectedSuffix = rejection ? (rejection.result === 'ремонт' ? 'R' : 'W') : null
+    if (expectedSuffix === candidate.suffix && getNextRepeatedJointName(candidate.sourceJoint, candidate.suffix) === targetJoint) return null
+    obsoleteCandidate = obsoleteCandidate ?? { sourceRow, sourceJoint: candidate.sourceJoint, targetJoint, suffix: candidate.suffix }
+  }
+  return obsoleteCandidate
 }
 
 function isUnusedRepeatedJointDraft(row: WeldInput) {
@@ -5978,23 +6067,64 @@ function getPrimaryRejectedLnkResult(row: WeldInput) {
 
 function getNextRepeatedJointName(sourceJoint: string, suffix: 'R' | 'W') {
   const parsed = parseRepeatedJointName(sourceJoint)
-  const nextIndex = parsed.suffix === suffix ? parsed.index + 1 : 1
-  return `${parsed.base}${suffix}${nextIndex}`
-}
-
-function getRepeatedJointSourceName(parsed: ReturnType<typeof parseRepeatedJointName>) {
-  if (!parsed.suffix || parsed.index <= 1) return parsed.base
-  return `${parsed.base}${parsed.suffix}${parsed.index - 1}`
+  const segments = parsed.segments.map((segment) => ({ ...segment }))
+  const segmentIndex = findLastIndex(segments, (segment) => segment.suffix === suffix)
+  if (segmentIndex >= 0) {
+    segments[segmentIndex] = { ...segments[segmentIndex], index: segments[segmentIndex].index + 1 }
+  } else {
+    segments.push({ suffix, index: 1 })
+  }
+  return formatRepeatedJointName(parsed.base, segments)
 }
 
 function parseRepeatedJointName(joint: string) {
-  const match = joint.trim().match(/^(.*?)([RW])(\d+)$/i)
-  if (!match) return { base: joint.trim(), suffix: null as 'R' | 'W' | null, index: 0 }
-  return {
-    base: match[1],
-    suffix: match[2].toUpperCase() as 'R' | 'W',
-    index: Number(match[3]) || 0,
+  let base = joint.trim()
+  const segments: Array<{ suffix: 'R' | 'W'; index: number }> = []
+  let match = base.match(/^(.*)([RW])(\d+)$/i)
+  while (match) {
+    segments.unshift({ suffix: match[2].toUpperCase() as 'R' | 'W', index: Number(match[3]) || 0 })
+    base = match[1]
+    match = base.match(/^(.*)([RW])(\d+)$/i)
   }
+  const lastSegment = segments.at(-1)
+  return {
+    base,
+    segments,
+    suffix: lastSegment?.suffix ?? (null as 'R' | 'W' | null),
+    index: lastSegment?.index ?? 0,
+  }
+}
+
+function getRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseRepeatedJointName>) {
+  return parsed.segments.flatMap((segment, index) => {
+    if (segment.index <= 0) return []
+    const segments = parsed.segments.map((current) => ({ ...current }))
+    if (segment.index > 1) {
+      segments[index] = { ...segment, index: segment.index - 1 }
+    } else {
+      segments.splice(index, 1)
+    }
+    return [{ sourceJoint: formatRepeatedJointName(parsed.base, segments), suffix: segment.suffix }]
+  })
+}
+
+function getRepeatedJointFailureCount(parsed: ReturnType<typeof parseRepeatedJointName>) {
+  return parsed.segments.reduce((total, segment) => total + Math.max(0, segment.index), 0)
+}
+
+function getCoilJointNames(baseJoint: string) {
+  return [`${baseJoint}Y1`, `${baseJoint}Y2`]
+}
+
+function formatRepeatedJointName(base: string, segments: Array<{ suffix: 'R' | 'W'; index: number }>) {
+  return `${base}${segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) return index
+  }
+  return -1
 }
 
 function hasRepeatedJointTarget(rows: WeldRow[], sourceRow: WeldInput, targetJoint: string) {
@@ -6020,10 +6150,18 @@ function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string): WeldI
   for (const fieldKey of repeatedJointClearedFieldKeys) {
     draft[fieldKey] = null
   }
+  restoreRepeatedJointControlAvailability(draft, sourceRow)
   draft.joint = targetJoint
   draft.createdAt = new Date().toISOString()
   draft.finalStatus = calculateFinalStatus(draft)
   return draft
+}
+
+function restoreRepeatedJointControlAvailability(draft: WeldInput, sourceRow: WeldInput) {
+  draft.pstoRequired = sourceRow.pstoRequired
+  for (const method of LNK_METHODS) {
+    draft[method.enabledKey] = sourceRow[method.enabledKey]
+  }
 }
 
 function filterPstoResultRows(rows: WeldRow[], search: string) {
@@ -6051,6 +6189,38 @@ function normalizeSearchText(value: unknown) {
 
 function compactSearchText(value: string) {
   return value.replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+function parseJointDiameterValue(value: unknown) {
+  const match = String(value ?? '').trim().replace(',', '.').match(/-?\d+(?:\.\d+)?/)
+  if (!match) return null
+  const diameter = Number(match[0])
+  return Number.isFinite(diameter) ? diameter : null
+}
+
+function getMinimumJointDiameter(row: WeldInput) {
+  const diameters = [parseJointDiameterValue(row.d1), parseJointDiameterValue(row.d2)].filter(
+    (value): value is number => value !== null,
+  )
+  return diameters.length > 0 ? Math.min(...diameters) : null
+}
+
+function isLnkRepairForbiddenByDiameter(row: WeldInput) {
+  const diameter = getMinimumJointDiameter(row)
+  return diameter !== null && diameter < 89
+}
+
+function getLnkRepairForbiddenReason(row: WeldInput) {
+  return isLnkRepairForbiddenByDiameter(row) ? 'Диаметр до 89 мм' : ''
+}
+
+function formatJointDiameterLabel(row: WeldInput) {
+  const diameter = getMinimumJointDiameter(row)
+  return diameter === null ? 'D -' : `D - ${formatJointDiameterValue(diameter)}`
+}
+
+function formatJointDiameterValue(value: number) {
+  return Number.isInteger(value) ? String(value) : String(value).replace(/\.?0+$/, '')
 }
 
 function formatLnkResultSummaryItems(row: WeldInput) {
@@ -6171,12 +6341,17 @@ function getEffectiveLnkResultDraftValue(rowId: number, draft: LnkResultDraftSta
   return draft.rowResults[rowId] || (draft.result === LNK_CUSTOM_RESULT_VALUE ? '' : draft.result)
 }
 
+function getEffectiveLnkResultDraftValueForRow(row: WeldRow, draft: LnkResultDraftState) {
+  const result = getEffectiveLnkResultDraftValue(row.id, draft)
+  return result === 'ремонт' && isLnkRepairForbiddenByDiameter(row) ? '' : result
+}
+
 function getManagedLnkResultChangeKey(rowId: number, methodKey: WeldFieldKey) {
   return `${rowId}:${methodKey}`
 }
 
 function buildLnkResultDraftById(rows: WeldRow[], draft: LnkResultDraftState) {
-  return Object.fromEntries(rows.map((row) => [row.id, getEffectiveLnkResultDraftValue(row.id, draft)]))
+  return Object.fromEntries(rows.map((row) => [row.id, getEffectiveLnkResultDraftValueForRow(row, draft)]))
 }
 
 function filterLnkResultDraftRowResults(rowResults: Record<number, string>, rowIds: ReadonlySet<number>) {
@@ -6188,11 +6363,11 @@ function isValidLnkResultDraftValue(value: string) {
 }
 
 function areLnkResultDraftRowsReady(rows: WeldRow[], draft: LnkResultDraftState) {
-  return rows.length > 0 && rows.every((row) => isValidLnkResultDraftValue(getEffectiveLnkResultDraftValue(row.id, draft)))
+  return rows.length > 0 && rows.every((row) => isValidLnkResultDraftValue(getEffectiveLnkResultDraftValueForRow(row, draft)))
 }
 
 function hasNonEmptyLnkResultDraftRows(rows: WeldRow[], draft: LnkResultDraftState) {
-  return rows.some((row) => getEffectiveLnkResultDraftValue(row.id, draft) !== LNK_EMPTY_RESULT_VALUE)
+  return rows.some((row) => getEffectiveLnkResultDraftValueForRow(row, draft) !== LNK_EMPTY_RESULT_VALUE)
 }
 
 function rowBelongsToPstoRequest(row: WeldInput, requestName: string) {
