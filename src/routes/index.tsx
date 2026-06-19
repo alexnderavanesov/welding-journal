@@ -47,6 +47,7 @@ export const Route = createFileRoute('/')({
 const emptyFilters: WeldFilters = {}
 const seedRows = seedWelds as Array<WeldInput & { id: number }>
 const localStorageKey = 'welding-tracker-local-welds'
+const repeatedJointDeclinedStorageKey = 'welding-tracker-declined-repeated-joint-tasks-v1'
 const clearedLnkRequestsStorageKey = 'welding-tracker-cleared-lnk-requests-v1'
 const clearedLnkResultsAndConclusionsStorageKey = 'welding-tracker-cleared-lnk-results-conclusions-v1'
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
@@ -94,6 +95,22 @@ const LNK_CONCLUSIONS_FIELDS = [
   { key: 'controlDate', label: 'Дата контроля', kind: 'date', group: 'ЛНК', visible: true },
   { key: 'result', label: 'Результат', kind: 'text', group: 'ЛНК', visible: true },
   { key: 'conclusionName', label: 'Наименование заключения', kind: 'text', group: 'ЛНК', visible: true },
+] as unknown as WeldField[]
+const PSTO_WAITING_REQUEST_FIELDS = [
+  { key: 'projectTitle', label: 'Проект/Титул', kind: 'text', group: 'ПСТО', visible: true },
+  { key: 'subtitleCode', label: 'Шифр/Подтитул', kind: 'text', group: 'ПСТО', visible: true },
+  { key: 'line', label: 'Линия', kind: 'text', group: 'ПСТО', visible: true },
+  { key: 'spool', label: 'Спул', kind: 'text', group: 'ПСТО', visible: true },
+  { key: 'joint', label: 'Стык', kind: 'text', group: 'ПСТО', visible: true },
+  { key: 'wdi', label: 'WDI', kind: 'number', group: 'ПСТО', visible: true },
+  { key: 'weldDate', label: 'Дата сварки', kind: 'date', group: 'ПСТО', visible: true },
+  { key: 'status', label: 'Статус', kind: 'text', group: 'ПСТО', visible: true },
+] as unknown as WeldField[]
+const PSTO_RESULTS_FIELDS = [
+  ...PSTO_WAITING_REQUEST_FIELDS.filter((field) => field.key !== 'status'),
+  { key: 'pstoRequest', label: 'Номер заявки ПСТО', kind: 'text', group: 'ПСТО', visible: true },
+  { key: 'pstoDate', label: 'Дата', kind: 'date', group: 'ПСТО', visible: true },
+  { key: 'heatTreatmentDiagram', label: 'Номер диаграммы', kind: 'text', group: 'ПСТО', visible: true },
 ] as unknown as WeldField[]
 const lnkReportFieldKeys = new Set<WeldFieldKey>([
   'lnkCreatedAt',
@@ -155,6 +172,55 @@ const pstoSectionFieldKeys = new Set<WeldFieldKey>([
   'pstoResult',
   'heatTreatmentDiagram',
   'pstoNote',
+])
+const repeatedJointClearedFieldKeys = new Set<WeldFieldKey>([
+  'weldDate',
+  'responsible',
+  'stamp1K',
+  'stamp1Zo',
+  'stamp2K',
+  'stamp2Zo',
+  'stamp1KFact',
+  'stamp1ZoFact',
+  'stamp2KFact',
+  'stamp2ZoFact',
+  ...LNK_METHODS.flatMap((method) => [
+    method.requestKey,
+    method.resultKey,
+    method.conclusionDateKey,
+    method.conclusionKey,
+  ]),
+  'pstoRequest',
+  'pstoDate',
+  'pstoResult',
+  'heatTreatmentDiagram',
+  'pstoNote',
+  'boq',
+  'ks3',
+  'createdAt',
+  'pstoBoq',
+  'pstoKs3',
+  'pstoCreatedAt',
+  'lnkCreatedAt',
+  'vikBoq',
+  'vikKs3',
+  'rkBoq',
+  'rkKs3',
+  'pvkBoq',
+  'pvkKs3',
+  'uzkBoq',
+  'uzkKs3',
+  'tvmtBoq',
+  'tvmtKs3',
+  'rfaBoq',
+  'rfaKs3',
+  'stlsBoq',
+  'stlsKs3',
+  'mkkBoq',
+  'mkkKs3',
+  'lnkDefectDescription',
+  'lnkNote',
+  'finalStatus',
 ])
 const alwaysVisibleFieldKeys = new Set<WeldFieldKey>([
   'projectTitle',
@@ -272,6 +338,27 @@ type RequestNamingState = {
 }
 type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk'
 type WeldRow = WeldInput & { id: number }
+type RepeatedJointCreateTask = {
+  kind: 'create'
+  key: string
+  row: WeldRow
+  sourceJoint: string
+  targetJoint: string
+  result: 'ремонт' | 'вырез'
+  suffix: 'R' | 'W'
+  methodCode: string
+  methodResultKey: WeldFieldKey
+}
+type RepeatedJointDeleteTask = {
+  kind: 'delete'
+  key: string
+  row: WeldRow
+  sourceRow: WeldRow
+  sourceJoint: string
+  targetJoint: string
+  suffix: 'R' | 'W'
+}
+type RepeatedJointTask = RepeatedJointCreateTask | RepeatedJointDeleteTask
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
@@ -299,8 +386,14 @@ function Home() {
   const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
   const [pstoRequestNaming, setPstoRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
   const [pstoRequestSearch, setPstoRequestSearch] = useState('')
+  const [pstoResultRequestSearch, setPstoResultRequestSearch] = useState('')
   const [isPstoRequestModalOpen, setIsPstoRequestModalOpen] = useState(false)
+  const [isPstoRequestManagerOpen, setIsPstoRequestManagerOpen] = useState(false)
+  const [managedPstoRequestName, setManagedPstoRequestName] = useState('')
+  const [managedPstoRequestNameDraft, setManagedPstoRequestNameDraft] = useState('')
   const [isPstoResultModalOpen, setIsPstoResultModalOpen] = useState(false)
+  const [isPstoResultManagerOpen, setIsPstoResultManagerOpen] = useState(false)
+  const [managedPstoDiagramDrafts, setManagedPstoDiagramDrafts] = useState<Record<number, string>>({})
   const [pstoResultDraft, setPstoResultDraft] = useState<PstoResultDraftState>(() => createDefaultPstoResultDraft())
   const [lnkRequestNaming, setLnkRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
   const [isLnkRequestModalOpen, setIsLnkRequestModalOpen] = useState(false)
@@ -323,7 +416,10 @@ function Home() {
   const [managedLnkPendingResultChanges, setManagedLnkPendingResultChanges] = useState<Record<string, string>>({})
   const [lnkRequestSearch, setLnkRequestSearch] = useState('')
   const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
+  const [isPstoShowMenuOpen, setIsPstoShowMenuOpen] = useState(false)
   const [isLnkShowMenuOpen, setIsLnkShowMenuOpen] = useState(false)
+  const [dismissedRepeatedJointTaskKeys, setDismissedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
+  const [declinedRepeatedJointTaskKeys, setDeclinedRepeatedJointTaskKeys] = useState<Set<string>>(() => readDeclinedRepeatedJointTaskKeys())
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -369,9 +465,16 @@ function Home() {
       setHeatTreatmentFieldEditing(null)
       setPstoRequestNaming(defaultRequestNamingState)
       setPstoRequestSearch('')
+      setPstoResultRequestSearch('')
       setIsPstoRequestModalOpen(false)
+      setIsPstoRequestManagerOpen(false)
+      setManagedPstoRequestName('')
+      setManagedPstoRequestNameDraft('')
       setIsPstoResultModalOpen(false)
+      setIsPstoResultManagerOpen(false)
+      setManagedPstoDiagramDrafts({})
       setPstoResultDraft(createDefaultPstoResultDraft())
+      setIsPstoShowMenuOpen(false)
     }
     if (activeReport !== 'lnk') {
       setSelectedLnkIds(new Set())
@@ -416,6 +519,49 @@ function Home() {
       highlightChangedRows(saved ? [saved] : [variables], variables.id && editing?.focusField ? [editing.focusField] : [])
       setEditing(null)
       setMessage('Запись сохранена')
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const repeatedJointMutation = useMutation({
+    mutationFn: async (task: RepeatedJointCreateTask) => {
+      const draft = buildRepeatedJointDraft(task.row, task.targetJoint)
+      try {
+        const saved = await createWeldJoint({ data: draft })
+        return saved ?? saveLocalWeld(draft)
+      } catch {
+        return saveLocalWeld(draft)
+      }
+    },
+    onSuccess: async (created, task) => {
+      highlightChangedRows(created ? [created] : [], ['joint', 'weldDate', 'finalStatus'])
+      setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+      setMessage(`Создан повторный стык ${task.targetJoint} для ${task.sourceJoint}`)
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const obsoleteRepeatedJointMutation = useMutation({
+    mutationFn: async (task: RepeatedJointDeleteTask) => {
+      try {
+        const result = await deleteWeldJoint({ data: { id: task.row.id } })
+        if (result) return result
+        deleteLocalWeld(task.row.id)
+        return { ok: true }
+      } catch {
+        deleteLocalWeld(task.row.id)
+        return { ok: true }
+      }
+    },
+    onSuccess: async (_result, task) => {
+      setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+      setMessage(`Удален лишний повторный стык ${task.targetJoint}`)
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -649,6 +795,152 @@ function Home() {
       )
       setIsPstoResultModalOpen(false)
       setPstoResultDraft(createDefaultPstoResultDraft())
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const pstoRequestManagerMutation = useMutation({
+    mutationFn: async ({
+      requestName,
+      nextRequestName,
+      action,
+    }: {
+      requestName: string
+      nextRequestName?: string
+      action: 'rename' | 'delete'
+    }) => {
+      const currentName = requestName.trim()
+      const renamedName = nextRequestName?.trim() ?? ''
+      if (!currentName) throw new Error('Выберите заявку ПСТО')
+      if (action === 'rename') {
+        if (!renamedName) throw new Error('Введите новое наименование заявки')
+        if (renamedName === currentName) throw new Error('Новое наименование совпадает с текущим')
+        if (pstoRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')
+      }
+
+      const pstoUpdatedAt = new Date().toISOString()
+      const updatedRecords = heatTreatmentRows.flatMap((record) => {
+        if (String(record.pstoRequest ?? '').trim() !== currentName) return []
+        const nextRecord = {
+          ...record,
+          pstoRequest: action === 'rename' ? renamedName : null,
+          pstoDate: action === 'rename' ? record.pstoDate : null,
+          pstoResult: action === 'rename' ? record.pstoResult : null,
+          heatTreatmentDiagram: action === 'rename' ? record.heatTreatmentDiagram : null,
+          pstoCreatedAt: pstoUpdatedAt,
+        } as WeldInput & { id: number }
+        return [nextRecord]
+      })
+
+      if (updatedRecords.length === 0) throw new Error('Заявка ПСТО не найдена')
+
+      try {
+        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
+        updateLocalWelds(updatedRecords)
+        return updatedRecords
+      } catch {
+        updateLocalWelds(updatedRecords)
+        return updatedRecords
+      }
+    },
+    onSuccess: async (savedRows, variables) => {
+      highlightChangedRows(savedRows, ['pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      setMessage(
+        variables.action === 'rename'
+          ? `Заявка ${variables.requestName} переименована в ${variables.nextRequestName}`
+          : `Заявка ${variables.requestName} удалена`,
+      )
+      if (variables.action === 'rename' && variables.nextRequestName) {
+        setManagedPstoRequestName(variables.nextRequestName)
+        setManagedPstoRequestNameDraft(variables.nextRequestName)
+      } else {
+        setManagedPstoRequestName('')
+        setManagedPstoRequestNameDraft('')
+        setIsPstoRequestManagerOpen(false)
+      }
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const pstoRequestCorrectionMutation = useMutation({
+    mutationFn: async ({ record }: { record: WeldInput & { id: number } }) => {
+      const updatedRecord = {
+        ...record,
+        pstoRequest: null,
+        pstoDate: null,
+        pstoResult: null,
+        heatTreatmentDiagram: null,
+        pstoCreatedAt: new Date().toISOString(),
+      } as WeldInput & { id: number }
+
+      try {
+        const saved = await updateWeldJoint({ data: updatedRecord })
+        if (saved) return saved as unknown as WeldRow
+        updateLocalWelds([updatedRecord])
+        return updatedRecord
+      } catch {
+        updateLocalWelds([updatedRecord])
+        return updatedRecord
+      }
+    },
+    onSuccess: async (saved, variables) => {
+      const removedRequestName = String(variables.record.pstoRequest ?? '').trim()
+      highlightChangedRows(saved ? [saved] : [], ['pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      const hasRemainingRequestPositions = heatTreatmentRows.some((row) => row.id !== variables.record.id && String(row.pstoRequest ?? '').trim() === removedRequestName)
+      if (removedRequestName && !hasRemainingRequestPositions) {
+        setManagedPstoRequestName('')
+        setManagedPstoRequestNameDraft('')
+        setMessage(`Заявка ${removedRequestName} удалена, так как в ней не осталось стыков`)
+      } else {
+        setMessage('Позиция заявки ПСТО удалена')
+      }
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
+  const pstoResultCorrectionMutation = useMutation({
+    mutationFn: async ({
+      record,
+      action,
+      diagramName,
+    }: {
+      record: WeldInput & { id: number }
+      action: 'renameDiagram' | 'deleteResult'
+      diagramName?: string
+    }) => {
+      const nextDiagramName = diagramName?.trim() ?? ''
+      if (action === 'renameDiagram' && !nextDiagramName) throw new Error('Укажите наименование диаграммы')
+      const updatedRecord = {
+        ...record,
+        pstoDate: action === 'deleteResult' ? null : record.pstoDate,
+        pstoResult: action === 'deleteResult' ? null : record.pstoResult,
+        heatTreatmentDiagram: action === 'deleteResult' ? null : nextDiagramName,
+        pstoCreatedAt: new Date().toISOString(),
+      } as WeldInput & { id: number }
+
+      try {
+        const saved = await updateWeldJoint({ data: updatedRecord })
+        if (saved) return saved as unknown as WeldRow
+        updateLocalWelds([updatedRecord])
+        return updatedRecord
+      } catch {
+        updateLocalWelds([updatedRecord])
+        return updatedRecord
+      }
+    },
+    onSuccess: async (saved, variables) => {
+      highlightChangedRows(saved ? [saved] : [], ['pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      setMessage(variables.action === 'deleteResult' ? 'Результат ПСТО удален' : 'Диаграмма ПСТО переименована')
       await invalidate(queryClient)
     },
     onError: (error) => {
@@ -1201,9 +1493,15 @@ function Home() {
     [weldsQuery.data],
   )
 
+  const repeatedJointTasks = useMemo(
+    () => buildRepeatedJointTasks(rows).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key) && !declinedRepeatedJointTaskKeys.has(task.key)),
+    [declinedRepeatedJointTaskKeys, dismissedRepeatedJointTaskKeys, rows],
+  )
+
+  const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
   const heatTreatmentRows = useMemo(
-    () => rows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow).sort(compareHeatTreatmentReportRows),
-    [rows],
+    () => weldedRows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow).sort(compareHeatTreatmentReportRows),
+    [weldedRows],
   )
   const availablePstoRequestRows = useMemo(() => heatTreatmentRows.filter(canCreatePstoRequest), [heatTreatmentRows])
   const filteredPstoRequestRows = useMemo(
@@ -1215,9 +1513,9 @@ function Home() {
     [filteredPstoRequestRows],
   )
   const lnkRows = useMemo(() => {
-    const sortedRows = rows.filter(hasAnyLnkReportControl).map(toLnkReportRow).sort(compareLnkReportRows)
+    const sortedRows = weldedRows.filter(hasAnyLnkReportControl).map(toLnkReportRow).sort(compareLnkReportRows)
     return preservedLnkOrderIds ? sortRowsByPreservedOrder(sortedRows, preservedLnkOrderIds) : sortedRows
-  }, [preservedLnkOrderIds, rows])
+  }, [preservedLnkOrderIds, weldedRows])
   const availableLnkRequestRows = useMemo(() => lnkRows.filter(canCreateLnkRequest), [lnkRows])
   const filteredLnkRequestRows = useMemo(
     () => filterLnkRequestRows(lnkRows, lnkRequestSearch),
@@ -1244,6 +1542,11 @@ function Home() {
   const nextPstoRequestName = useMemo(() => formatPstoRequestName(heatTreatmentRows), [heatTreatmentRows])
   const nextLnkRequestName = useMemo(() => formatLnkRequestName(rows), [rows])
   const pstoRequestOptions = useMemo(() => collectRequestNames(rows, ['pstoRequest']), [rows])
+  const pstoRequestManagerOptions = useMemo(() => sortPstoRequestNamesNewestFirst(pstoRequestOptions), [pstoRequestOptions])
+  const managedPstoRequestRows = useMemo(
+    () => filterPstoRowsByRequestName(heatTreatmentRows, managedPstoRequestName),
+    [heatTreatmentRows, managedPstoRequestName],
+  )
   const pstoResultRequestOptions = useMemo(() => sortPstoRequestNamesNewestFirst(collectRequestNames(heatTreatmentRows, ['pstoRequest'])), [heatTreatmentRows])
   const lnkRequestOptions = useMemo(() => collectRequestNames(rows, lnkRequestFieldKeys), [rows])
   const lnkRequestManagerOptions = useMemo(() => sortLnkRequestNamesNewestFirst(lnkRequestOptions), [lnkRequestOptions])
@@ -1273,6 +1576,15 @@ function Home() {
     const selectedRequestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(pstoResultSelectedRows, ['pstoRequest']))
     return selectedRequestOptions.length > 0 ? selectedRequestOptions : pstoResultRequestOptions
   }, [pstoResultRequestOptions, pstoResultSelectedRows])
+  const filteredPstoResultRequestOptions = useMemo(() => {
+    const query = normalizeSearchText(pstoResultRequestSearch)
+    const compactQuery = compactSearchText(query)
+    if (!query) return pstoResultAvailableRequestOptions
+    return pstoResultAvailableRequestOptions.filter((requestName) => {
+      const normalized = normalizeSearchText(requestName)
+      return normalized.includes(query) || compactSearchText(normalized).includes(compactQuery)
+    })
+  }, [pstoResultAvailableRequestOptions, pstoResultRequestSearch])
   const pstoResultSearchRows = pstoResultDraft.requestName ? selectedPstoResultRequestRows : heatTreatmentRows
   const filteredPstoResultRows = useMemo(
     () => filterPstoResultRows(pstoResultSearchRows, pstoResultDraft.search),
@@ -1284,6 +1596,13 @@ function Home() {
         (row) => pstoResultDraft.rowIds.has(row.id) && canSelectPstoResultRow(row, pstoResultDraft.requestName),
       ),
     [filteredPstoResultRows, pstoResultDraft.requestName, pstoResultDraft.rowIds],
+  )
+  const managedPstoResultRows = useMemo(
+    () =>
+      heatTreatmentRows.filter(
+        (row) => pstoResultDraft.rowIds.has(row.id) && (hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate)),
+      ),
+    [heatTreatmentRows, pstoResultDraft.rowIds],
   )
   const selectedLnkResultRequestRows = useMemo(
     () => filterLnkRowsByRequestName(lnkRows, lnkResultDraft.requestName),
@@ -1503,6 +1822,13 @@ function Home() {
   }, [heatTreatmentRows, isPstoResultModalOpen, pstoResultRequestOptions])
 
   useEffect(() => {
+    if (!isPstoResultManagerOpen) return
+    setManagedPstoDiagramDrafts(
+      Object.fromEntries(managedPstoResultRows.map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()])),
+    )
+  }, [isPstoResultManagerOpen, managedPstoResultRows])
+
+  useEffect(() => {
     setSelectedLnkIds((current) => {
       const ids = new Set(availableLnkRequestRows.map((row) => row.id))
       const next = new Set([...current].filter((id) => ids.has(id)))
@@ -1652,6 +1978,52 @@ function Home() {
     reportWindow.document.close()
   }
 
+  function openPstoWaitingRequestReport() {
+    const reportRows = buildPstoWaitingRequestRows(heatTreatmentRows)
+    setIsPstoShowMenuOpen(false)
+    if (reportRows.length === 0) {
+      setMessage('Нет стыков, по которым нужно создать заявку ПСТО')
+      return
+    }
+
+    const bytes = buildExportXlsxBytes(reportRows as WeldInput[], {
+      fields: PSTO_WAITING_REQUEST_FIELDS,
+      sheetName: 'Ожидает заявку ПСТО',
+    })
+    const reportWindow = window.open('', '_blank')
+    if (!reportWindow) {
+      setMessage('Браузер заблокировал открытие новой вкладки')
+      return
+    }
+
+    reportWindow.document.open()
+    reportWindow.document.write(buildLnkReportHtml(reportRows, bytes, 'Ожидает заявку ПСТО', 'psto-waiting-request.xlsx', PSTO_WAITING_REQUEST_FIELDS))
+    reportWindow.document.close()
+  }
+
+  function openPstoResultsReport() {
+    const reportRows = buildPstoResultsRows(heatTreatmentRows)
+    setIsPstoShowMenuOpen(false)
+    if (reportRows.length === 0) {
+      setMessage('Нет результатов ПСТО для показа')
+      return
+    }
+
+    const bytes = buildExportXlsxBytes(reportRows as WeldInput[], {
+      fields: PSTO_RESULTS_FIELDS,
+      sheetName: 'Результаты ПСТО',
+    })
+    const reportWindow = window.open('', '_blank')
+    if (!reportWindow) {
+      setMessage('Браузер заблокировал открытие новой вкладки')
+      return
+    }
+
+    reportWindow.document.open()
+    reportWindow.document.write(buildLnkReportHtml(reportRows, bytes, 'Результаты ПСТО', 'psto-results.xlsx', PSTO_RESULTS_FIELDS))
+    reportWindow.document.close()
+  }
+
   function handleCreatePstoRequest() {
     if (selectedHeatTreatmentRows.length === 0) {
       setMessage('Выберите один или несколько стыков для заявки ПСТО')
@@ -1691,6 +2063,40 @@ function Home() {
     setIsPstoRequestModalOpen(false)
   }
 
+  function openPstoRequestManager() {
+    const requestName = managedPstoRequestName || pstoRequestManagerOptions[0] || ''
+    setManagedPstoRequestName(requestName)
+    setManagedPstoRequestNameDraft(requestName)
+    setIsPstoRequestManagerOpen(true)
+  }
+
+  function changeManagedPstoRequest(requestName: string) {
+    setManagedPstoRequestName(requestName)
+    setManagedPstoRequestNameDraft(requestName)
+  }
+
+  function renameManagedPstoRequest() {
+    pstoRequestManagerMutation.mutate({
+      action: 'rename',
+      requestName: managedPstoRequestName,
+      nextRequestName: managedPstoRequestNameDraft,
+    })
+  }
+
+  function deleteManagedPstoRequest() {
+    const requestName = managedPstoRequestName.trim()
+    if (!requestName) return
+    if (!confirm(`Удалить заявку ${requestName} и все связанные результаты ПСТО?`)) return
+    pstoRequestManagerMutation.mutate({ action: 'delete', requestName })
+  }
+
+  function clearManagedPstoRequestPosition(record: WeldInput & { id: number }) {
+    const requestName = String(record.pstoRequest ?? '').trim()
+    if (!requestName) return
+    if (!confirm(`Очистить заявку ${requestName} только для стыка ${String(record.joint ?? '-')}?`)) return
+    pstoRequestCorrectionMutation.mutate({ record })
+  }
+
   function submitCreatePstoRequest() {
     const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
     if (!requestName) {
@@ -1701,6 +2107,7 @@ function Home() {
   }
 
   function openAddPstoResultModal() {
+    setPstoResultRequestSearch('')
     setPstoResultDraft(createDefaultPstoResultDraft())
     setIsPstoResultModalOpen(true)
   }
@@ -1718,12 +2125,43 @@ function Home() {
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
     })
+    setPstoResultRequestSearch(requestName)
     setIsPstoResultModalOpen(true)
   }
 
   function closeAddPstoResultModal() {
     if (pstoResultMutation.isPending) return
+    setPstoResultRequestSearch('')
     setIsPstoResultModalOpen(false)
+  }
+
+  function openPstoResultManager() {
+    const selectedRows = heatTreatmentRows.filter((row) => pstoResultDraft.rowIds.has(row.id))
+    if (selectedRows.length === 0) {
+      setMessage('Выберите один или несколько стыков для редактирования результатов ПСТО')
+      return
+    }
+    setManagedPstoDiagramDrafts(
+      Object.fromEntries(
+        selectedRows
+          .filter((row) => hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate))
+          .map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()]),
+      ),
+    )
+    setIsPstoResultManagerOpen(true)
+  }
+
+  function renameManagedPstoDiagram(row: WeldInput & { id: number }) {
+    pstoResultCorrectionMutation.mutate({
+      record: row,
+      action: 'renameDiagram',
+      diagramName: managedPstoDiagramDrafts[row.id] ?? '',
+    })
+  }
+
+  function deleteManagedPstoResult(row: WeldInput & { id: number }) {
+    if (!confirm(`Удалить результат ПСТО для стыка ${String(row.joint ?? '-')}?`)) return
+    pstoResultCorrectionMutation.mutate({ record: row, action: 'deleteResult' })
   }
 
   function changePstoResultRequest(requestName: string) {
@@ -2144,6 +2582,40 @@ function Home() {
     clearLnkGeneratedDataMutation.mutate(lnkRows)
   }
 
+  function createRepeatedJoint(task: RepeatedJointCreateTask) {
+    const currentTask = buildRepeatedJointTasks(rows).find((candidate): candidate is RepeatedJointCreateTask => candidate.kind === 'create' && candidate.key === task.key)
+    if (!currentTask) {
+      setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
+      return
+    }
+    repeatedJointMutation.mutate(currentTask)
+  }
+
+  function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {
+    const currentTask = buildRepeatedJointTasks(rows).find((candidate): candidate is RepeatedJointDeleteTask => candidate.kind === 'delete' && candidate.key === task.key)
+    if (!currentTask) {
+      setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
+      return
+    }
+    const confirmed = window.confirm(`Удалить повторный стык ${task.targetJoint}? Исходный стык ${task.sourceJoint} больше не требует повтора.`)
+    if (!confirmed) return
+    obsoleteRepeatedJointMutation.mutate(currentTask)
+  }
+
+  function dismissRepeatedJointTask(task: RepeatedJointTask) {
+    setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+  }
+
+  function declineRepeatedJointTask(task: RepeatedJointTask) {
+    setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+    setDeclinedRepeatedJointTaskKeys((current) => {
+      const next = new Set([...current, task.key])
+      writeDeclinedRepeatedJointTaskKeys(next)
+      return next
+    })
+    setMessage(task.kind === 'create' ? `Автосоздание ${task.targetJoint} больше не будет предлагаться` : `Удаление ${task.targetJoint} больше не будет предлагаться`)
+  }
+
   function toggleLnkRequestMethod(requestKey: WeldFieldKey) {
     setLnkRequestDraft((current) => {
       const methods = new Set(current.methods)
@@ -2440,12 +2912,36 @@ function Home() {
                 <>
                   <Button onClick={openCreatePstoRequestModal} disabled={pstoRequestMutation.isPending}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Создать заявку ПСТО
+                    Заявка
                   </Button>
                   <Button onClick={openAddPstoResultModal} disabled={pstoResultMutation.isPending || pstoResultRequestOptions.length === 0}>
                     <ClipboardCheck className="mr-2 h-4 w-4" />
-                    Добавить результат
+                    Результат
                   </Button>
+                  <div className="relative">
+                    <Button variant="outline" onClick={() => setIsPstoShowMenuOpen((current) => !current)}>
+                      Показать
+                      <ChevronDown className="ml-2 h-4 w-4" />
+                    </Button>
+                    {isPstoShowMenuOpen ? (
+                      <div className="absolute right-0 z-50 mt-2 w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+                        <button
+                          type="button"
+                          onClick={openPstoWaitingRequestReport}
+                          className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
+                        >
+                          Ожидает заявку ПСТО
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openPstoResultsReport}
+                          className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
+                        >
+                          Результаты ПСТО
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </>
               ) : null}
               {activeReport === 'lnk' ? (
@@ -2497,7 +2993,7 @@ function Home() {
                   Новый стык
                 </Button>
               ) : null}
-              {activeReport !== 'lnk' ? (
+              {activeReport === 'weldingJournal' ? (
                 <Button
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
@@ -2530,6 +3026,102 @@ function Home() {
             </span>
             <span>{message}</span>
           </div>
+
+          {activeReport !== 'heatTreatment' && repeatedJointTasks.length > 0 ? (
+            <div
+              className="sticky z-30 max-w-[calc(100vw-2rem)] overflow-x-auto rounded-md border border-amber-200 bg-amber-50/90 px-3 py-2 shadow-sm shadow-amber-100"
+              style={{ left: stickyLeft, width: `calc(100vw - ${stickyLeft + 24}px)` }}
+            >
+              <div className="flex min-w-0 flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="text-sm font-semibold text-amber-950">Повторные стыки</span>
+                    <span className="text-xs text-amber-800">Найдено: {repeatedJointTasks.length}. Действие только после подтверждения.</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...repeatedJointTasks.map((task) => task.key)]))}
+                    className="h-8 border-amber-300 bg-white px-3 text-xs text-amber-900 hover:bg-amber-100"
+                  >
+                    Скрыть все
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {repeatedJointTasks.slice(0, 8).map((task) => (
+                    <div key={task.key} className="flex w-fit items-center gap-1.5 rounded-md border border-amber-200 bg-white/95 px-2 py-1.5">
+                      <div className="flex min-w-0 items-center gap-1.5 text-sm">
+                        {task.kind === 'create' ? (
+                          <>
+                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+                            <span className="font-semibold text-amber-700">→</span>
+                            <span className="font-semibold text-slate-900">{task.targetJoint}</span>
+                            <span className="text-slate-400">·</span>
+                            <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
+                              {task.methodCode} - {task.result}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+                            <span className="text-slate-500">исправлен</span>
+                            <span className="text-slate-400">·</span>
+                            <span className="font-semibold text-slate-900">удалить {task.targetJoint}?</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white">
+                        {task.kind === 'create' ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => createRepeatedJoint(task)}
+                            disabled={repeatedJointMutation.isPending}
+                            className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+                          >
+                            Создать
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => deleteObsoleteRepeatedJoint(task)}
+                            disabled={obsoleteRepeatedJointMutation.isPending}
+                            className="h-6 rounded-none border-0 border-r border-rose-100 px-2.5 text-xs text-rose-700 shadow-none hover:bg-rose-50"
+                          >
+                            Удалить
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => dismissRepeatedJointTask(task)}
+                          className="h-6 rounded-none border-l border-slate-200 px-2 text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+                        >
+                          Позже
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => declineRepeatedJointTask(task)}
+                          className="h-6 rounded-none border-l border-slate-200 px-2 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                        >
+                          Нет
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {repeatedJointTasks.length > 8 ? (
+                  <div className="text-xs text-amber-800">Показаны первые 8. Остальные появятся после обработки текущих.</div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <WeldTable
             rows={visibleRows as Array<WeldInput & { id: number }>}
@@ -2622,9 +3214,20 @@ function Home() {
                   {nextPstoRequestName} · Стыков: {selectedHeatTreatmentRows.length}
                 </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={closeCreatePstoRequestModal} aria-label="Закрыть">
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={openPstoRequestManager}
+                  disabled={pstoRequestManagerOptions.length === 0}
+                  className="border-sky-300 bg-sky-100 text-sky-900 shadow-sm shadow-sky-100 hover:bg-sky-200 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Управление заявками
+                </Button>
+                <Button variant="ghost" size="icon" onClick={closeCreatePstoRequestModal} aria-label="Закрыть">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             <div className="border-b border-slate-100 px-5 py-4">
@@ -2709,7 +3312,19 @@ function Home() {
                             />
                             <span className="min-w-0">
                               <span className="block truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-                              <span className="block truncate text-xs text-slate-500">Спул: {String(row.spool ?? '-')}</span>
+                              <span className="block truncate text-xs text-slate-500">
+                                Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-')}</span> · Шифр:{' '}
+                                <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · Спул:{' '}
+                                <span className="font-semibold text-slate-700">{String(row.spool ?? '-')}</span>
+                              </span>
+                              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                                <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
+                                  Стык: {getJointStatusLabel(row)}
+                                </span>
+                                <span className={`rounded border px-1.5 py-0.5 font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
+                                  ПСТО: {getPstoResultLabel(row.pstoResult)}
+                                </span>
+                              </span>
                             </span>
                             <span className="flex flex-wrap gap-1.5">
                               {disabled ? (
@@ -2744,9 +3359,141 @@ function Home() {
         </div>
       ) : null}
 
+      {isPstoRequestManagerOpen ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-[1px]">
+          <div className="flex max-h-[90vh] w-full max-w-[920px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold">Управление заявками ПСТО</h2>
+                <p className="text-sm text-muted-foreground">Переименование и удаление уже созданных заявок.</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setIsPstoRequestManagerOpen(false)} aria-label="Закрыть">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="min-h-0 space-y-4 overflow-auto px-5 py-4">
+              <label className="block space-y-1.5 text-sm">
+                <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ПСТО</span>
+                <Select value={managedPstoRequestName} onChange={(event) => changeManagedPstoRequest(event.target.value)}>
+                  <option value="">Выберите заявку</option>
+                  {pstoRequestManagerOptions.map((requestName) => (
+                    <option key={requestName} value={requestName}>
+                      {requestName}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+
+              {managedPstoRequestName ? (
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-semibold text-slate-800">Используется:</span>
+                    <span className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600">
+                      Стыков: {managedPstoRequestRows.length}
+                    </span>
+                    <span className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600">
+                      С результатом: {managedPstoRequestRows.filter((row) => hasText(row.pstoResult)).length}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  Созданных заявок ПСТО пока нет.
+                </div>
+              )}
+
+              <div className="rounded-md border border-slate-200 bg-white p-3">
+                <h3 className="mb-3 text-sm font-semibold text-slate-800">Переименовать заявку</h3>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={managedPstoRequestNameDraft}
+                    onChange={(event) => setManagedPstoRequestNameDraft(event.target.value)}
+                    placeholder="Новое наименование заявки"
+                    disabled={!managedPstoRequestName || pstoRequestManagerMutation.isPending}
+                    className="h-10 flex-1"
+                  />
+                  <Button
+                    onClick={renameManagedPstoRequest}
+                    disabled={
+                      !managedPstoRequestName ||
+                      !managedPstoRequestNameDraft.trim() ||
+                      managedPstoRequestNameDraft.trim() === managedPstoRequestName ||
+                      pstoRequestManagerMutation.isPending
+                    }
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Переименовать
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-slate-200 bg-white p-3">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-800">Очистить конкретный стык</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Можно удалить заявку только у выбранного стыка, не затрагивая остальные стыки этой заявки.
+                  </p>
+                </div>
+                {managedPstoRequestName && managedPstoRequestRows.length > 0 ? (
+                  <div className="max-h-72 overflow-auto rounded-md border border-slate-200">
+                    <div className="divide-y divide-slate-100">
+                      {managedPstoRequestRows.map((row) => (
+                        <div
+                          key={row.id}
+                          className="grid grid-cols-[minmax(220px,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-slate-900">{getJointTitle(row)}</div>
+                            <div className="truncate text-xs text-slate-500">
+                              Спул: {String(row.spool ?? '-')} · Результат: {getPstoResultLabel(row.pstoResult)}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => clearManagedPstoRequestPosition(row)}
+                            disabled={pstoRequestCorrectionMutation.isPending}
+                            className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                          >
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                            Очистить
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+                    Выберите заявку, чтобы увидеть ее стыки.
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-md border border-rose-200 bg-rose-50/60 p-3">
+                <h3 className="mb-1 text-sm font-semibold text-rose-900">Удалить заявку</h3>
+                <p className="mb-3 text-xs leading-5 text-rose-800">
+                  Будут очищены заявка, результат, дата и диаграмма ПСТО по всем стыкам, где используется выбранная заявка.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={deleteManagedPstoRequest}
+                  disabled={!managedPstoRequestName || pstoRequestManagerMutation.isPending}
+                  className="border-rose-300 bg-white text-rose-800 hover:bg-rose-50"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Удалить выбранную заявку
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {isPstoResultModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
+          <div className="flex h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold">Добавление результата ПСТО</h2>
@@ -2754,26 +3501,27 @@ function Home() {
                   Заявка: {pstoResultDraft.requestName || '-'} · Выбрано: {pstoResultDraft.rowIds.size}
                 </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={closeAddPstoResultModal} aria-label="Закрыть">
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={openPstoResultManager}
+                  disabled={pstoResultDraft.rowIds.size === 0}
+                  className="border-sky-300 bg-sky-100 text-sky-900 shadow-sm shadow-sky-100 hover:bg-sky-200 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Редактировать результаты
+                </Button>
+                <Button variant="ghost" size="icon" onClick={closeAddPstoResultModal} aria-label="Закрыть">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[380px_minmax(0,1fr)]">
-              <section className="space-y-4">
-                <label className="block space-y-1.5 text-sm">
-                  <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ПСТО</span>
-                  <Select value={pstoResultDraft.requestName} onChange={(event) => changePstoResultRequest(event.target.value)}>
-                    <option value="">Выберите заявку</option>
-                    {pstoResultAvailableRequestOptions.map((requestName) => (
-                      <option key={requestName} value={requestName}>
-                        {requestName}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+              <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <h3 className="mb-3 text-sm font-semibold text-slate-800">1. Результат ПСТО</h3>
+                  <div className="grid grid-cols-1 gap-3">
                   <label className="block space-y-1.5 text-sm">
                     <span className="text-[13px] font-medium leading-none text-slate-700">Дата ПСТО</span>
                     <Input
@@ -2795,6 +3543,7 @@ function Home() {
                       <option value={PSTO_EMPTY_RESULT_VALUE}>аннулировать</option>
                     </Select>
                   </label>
+                  </div>
                 </div>
 
                 <div
@@ -2822,12 +3571,12 @@ function Home() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-800">
-                      {lnkResultContextReady ? 'Стыки в выбранной заявке' : 'Поиск стыков'}
+                      {pstoResultDraft.requestName ? 'Стыки в выбранной заявке' : 'Стыки для результата'}
                     </h3>
                     <p className="text-xs leading-5 text-slate-500">
-                      {lnkResultContextReady
+                      {pstoResultDraft.requestName
                         ? 'Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.'
-                        : 'Найдите стык, посмотрите его заявки и выберите заявку с методом контроля слева.'}
+                        : 'Найдите стык, посмотрите его заявку ПСТО и статус стыка, затем выберите нужную заявку.'}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" onClick={toggleAllPstoResultRows} disabled={filteredPstoResultRows.length === 0}>
@@ -2845,23 +3594,57 @@ function Home() {
                     value={pstoResultDraft.search}
                     onChange={(event) => setPstoResultDraft((current) => ({ ...current, search: event.target.value }))}
                     placeholder="Проект, шифр, линия, спул или стык"
-                    className="h-9 min-w-64 flex-1 bg-white"
+                    className="h-9 min-w-56 flex-[0.8] bg-white"
                   />
+                  <Input
+                    value={pstoResultRequestSearch}
+                    onChange={(event) => setPstoResultRequestSearch(event.target.value)}
+                    placeholder="Поиск заявки"
+                    className="h-9 min-w-44 flex-[0.45] bg-white"
+                  />
+                  <Select
+                    value={pstoResultDraft.requestName}
+                    onChange={(event) => changePstoResultRequest(event.target.value)}
+                    className="h-9 min-w-48 flex-[0.5] bg-white"
+                  >
+                    <option value="">Все заявки</option>
+                    {filteredPstoResultRequestOptions.map((requestName) => (
+                      <option key={requestName} value={requestName}>
+                        {requestName}
+                      </option>
+                    ))}
+                  </Select>
+                  {pstoResultRequestSearch ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPstoResultRequestSearch('')}
+                      className="h-9 px-2"
+                      aria-label="Очистить поиск заявки"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
+                    Заявок: {filteredPstoResultRequestOptions.length}/{pstoResultAvailableRequestOptions.length}
+                  </span>
                   <span className="whitespace-nowrap px-2 text-xs text-slate-500">
                     Найдено: {filteredPstoResultRows.length} · Выбрано: {pstoResultDraft.rowIds.size}
                   </span>
-                  {pstoResultDraft.search ? (
+                  {pstoResultDraft.search || pstoResultRequestSearch ? (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() =>
+                      onClick={() => {
+                        setPstoResultRequestSearch('')
                         setPstoResultDraft((current) => ({
                           ...current,
                           requestName: '',
                           rowIds: new Set(),
                           search: '',
                         }))
-                      }
+                      }}
                     >
                       Очистить
                     </Button>
@@ -2870,8 +3653,8 @@ function Home() {
 
                 <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
                   {filteredPstoResultRows.length === 0 ? (
-                    <div className="px-4 py-6 text-sm text-slate-500">
-                      {pstoResultDraft.search ? 'По фильтру ничего не найдено.' : 'Введите поиск или выберите заявку ПСТО.'}
+                    <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+                      {pstoResultDraft.search || pstoResultRequestSearch ? 'По фильтру ничего не найдено.' : 'Нет стыков для добавления результата ПСТО.'}
                     </div>
                   ) : (
                     <div className="divide-y divide-slate-100">
@@ -2884,9 +3667,9 @@ function Home() {
 	                          <div
 	                            key={row.id}
 	                            onClick={() => {
-	                              if (!disabled && !selected) togglePstoResultRow(row.id)
+	                              if (!disabled) togglePstoResultRow(row.id)
 	                            }}
-                            className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] gap-3 px-4 py-3 text-sm transition-colors ${
+                            className={`grid grid-cols-[28px_minmax(260px,1fr)_minmax(220px,0.8fr)] gap-3 px-4 py-3 text-sm transition-colors ${
                               disabled
                                 ? 'cursor-not-allowed bg-slate-100 text-slate-400'
                                 : selected
@@ -2905,10 +3688,23 @@ function Home() {
                             <span className="min-w-0">
                               <span className="block truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                               <span className="block truncate text-xs text-slate-500">
-                                Спул: {String(row.spool ?? '-')} · Текущий результат: {String(row.pstoResult ?? '-')}
+                                Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-')}</span> · Шифр:{' '}
+                                <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · Стык:{' '}
+                                <span className="font-semibold text-slate-700">{String(row.joint ?? '-')}</span>
+                              </span>
+                              <span className="block truncate text-xs text-slate-500">
+                                Спул: <span className="font-semibold text-slate-700">{String(row.spool ?? '-')}</span>
+                              </span>
+                              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                                <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
+                                  Стык: {getJointStatusLabel(row)}
+                                </span>
+                                <span className={`rounded border px-1.5 py-0.5 font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
+                                  ПСТО: {getPstoResultLabel(row.pstoResult)}
+                                </span>
                               </span>
                               {disabled ? (
-                                <span className="block truncate text-xs text-amber-700">
+                                <span className="mt-1 block truncate text-xs text-slate-500">
                                   {requestName ? 'Выберите эту заявку ПСТО, чтобы отметить стык.' : 'На этот стык еще нет заявки ПСТО.'}
                                 </span>
                               ) : null}
@@ -2916,8 +3712,12 @@ function Home() {
                             <span className="flex flex-wrap content-start gap-1.5">
                               {requestName ? (
                                 <span className={`inline-flex max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium ${getPstoResultBadgeClass(row.pstoResult)}`}>
-                                  <span className="max-w-52 truncate">ПСТО {requestName}</span>
-                                  {diagramName ? <span className="max-w-52 truncate text-[11px] text-slate-500">{diagramName}</span> : null}
+                                  <span className="max-w-full overflow-visible break-all whitespace-normal [text-overflow:clip]">ПСТО {requestName}</span>
+                                  {diagramName ? (
+                                    <span className="max-w-full overflow-visible break-all whitespace-normal text-[11px] text-slate-500 [text-overflow:clip]">
+                                      {diagramName}
+                                    </span>
+                                  ) : null}
                                 </span>
                               ) : (
                                 <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
@@ -2952,6 +3752,138 @@ function Home() {
                 <Check className="mr-2 h-4 w-4" />
                 Сохранить результат
               </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isPstoResultManagerOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-[1px]">
+          <div className="flex max-h-[92vh] w-full max-w-[1180px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold">Редактирование результатов ПСТО</h2>
+                <p className="text-sm text-muted-foreground">
+                  Переименование диаграммы или удаление результата вместе с датой и диаграммой.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setIsPstoResultManagerOpen(false)
+                  setManagedPstoDiagramDrafts({})
+                }}
+                aria-label="Закрыть"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-5 py-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+              <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
+                <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+                  <h3 className="mb-3 text-sm font-semibold text-slate-800">Что редактируем</h3>
+                  <div className="space-y-2 text-sm text-slate-600">
+                    <div className="rounded border border-slate-200 bg-white px-3 py-2">
+                      Выбрано стыков: <span className="font-semibold text-slate-900">{managedPstoResultRows.length}</span>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-white px-3 py-2">
+                      С результатом:{' '}
+                      <span className="font-semibold text-slate-900">
+                        {managedPstoResultRows.filter((row) => hasText(row.pstoResult)).length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+                  Переименование меняет только номер диаграммы у конкретного стыка. Удаление очищает результат, дату ПСТО и
+                  диаграмму, но оставляет заявку ПСТО.
+                </div>
+              </section>
+
+              <section className="min-h-0 overflow-auto rounded-md border border-slate-200">
+                {managedPstoResultRows.length > 0 ? (
+                  <div className="divide-y divide-slate-100">
+                    {managedPstoResultRows.map((row) => {
+                      const requestName = String(row.pstoRequest ?? '').trim()
+                      const pstoDate = String(row.pstoDate ?? '').trim()
+                      const diagramName = String(row.heatTreatmentDiagram ?? '').trim()
+                      const diagramDraft = managedPstoDiagramDrafts[row.id] ?? diagramName
+                      return (
+                        <div key={row.id} className="grid grid-cols-[minmax(420px,1fr)_minmax(230px,0.45fr)] gap-4 px-4 py-3 text-sm">
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-900">{getJointTitle(row)}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <span>Спул: {String(row.spool ?? '-')}</span>
+                              <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+                                Стык: {getJointStatusLabel(row)}
+                              </span>
+                              <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
+                                ПСТО: {getPstoResultLabel(row.pstoResult)}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-slate-500">
+                              <span className="font-medium text-slate-700">Заявка:</span> <span className="break-words">{requestName || '-'}</span>
+                              <span className="mx-1 text-slate-300">·</span>
+                              <span className="font-medium text-slate-700">Дата:</span> {pstoDate || '-'}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Input
+                                value={diagramDraft}
+                                onChange={(event) =>
+                                  setManagedPstoDiagramDrafts((current) => ({ ...current, [row.id]: event.target.value }))
+                                }
+                                placeholder="Наименование диаграммы для этого стыка"
+                                disabled={pstoResultCorrectionMutation.isPending}
+                                className="h-8 min-w-72 max-w-xl flex-1 bg-white text-xs"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => renameManagedPstoDiagram(row)}
+                                disabled={
+                                  pstoResultCorrectionMutation.isPending ||
+                                  !diagramDraft.trim() ||
+                                  diagramDraft.trim() === diagramName
+                                }
+                                className="h-8"
+                              >
+                                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                Переименовать
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end justify-start gap-2">
+                            <span className={`rounded border px-2 py-1 text-xs font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
+                              Сейчас: {getPstoResultLabel(row.pstoResult)}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deleteManagedPstoResult(row)}
+                              disabled={
+                                pstoResultCorrectionMutation.isPending ||
+                                (!hasText(row.pstoResult) && !hasText(row.pstoDate) && !hasText(row.heatTreatmentDiagram))
+                              }
+                              className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                            >
+                              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                              Удалить результат
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+                    Выберите стыки с результатом ПСТО в окне добавления результата.
+                  </div>
+                )}
+              </section>
             </div>
           </div>
         </div>
@@ -4222,6 +5154,38 @@ function buildLnkConclusionsRows(rows: Array<WeldInput & { id: number }>) {
   )
 }
 
+function buildPstoWaitingRequestRows(rows: Array<WeldInput & { id: number }>) {
+  return rows
+    .filter(canCreatePstoRequest)
+    .map((row) => ({
+      projectTitle: row.projectTitle ?? '',
+      subtitleCode: row.subtitleCode ?? '',
+      line: row.line ?? '',
+      spool: row.spool ?? '',
+      joint: row.joint ?? '',
+      wdi: row.wdi ?? '',
+      weldDate: row.weldDate ?? '',
+      status: 'ожидает заявку ПСТО',
+    }))
+}
+
+function buildPstoResultsRows(rows: Array<WeldInput & { id: number }>) {
+  return rows
+    .filter((row) => hasText(row.pstoResult) || hasText(row.pstoDate) || hasText(row.heatTreatmentDiagram))
+    .map((row) => ({
+      projectTitle: row.projectTitle ?? '',
+      subtitleCode: row.subtitleCode ?? '',
+      line: row.line ?? '',
+      spool: row.spool ?? '',
+      joint: row.joint ?? '',
+      wdi: row.wdi ?? '',
+      weldDate: row.weldDate ?? '',
+      pstoRequest: row.pstoRequest ?? '',
+      pstoDate: row.pstoDate ?? '',
+      heatTreatmentDiagram: row.heatTreatmentDiagram ?? '',
+    }))
+}
+
 function buildLnkReportHtml(
   rows: WeldInput[],
   bytes: Uint8Array,
@@ -4300,7 +5264,7 @@ function buildLnkReportHtml(
 }
 
 function formatLnkReportCell(value: unknown, field: WeldField) {
-  if (field.key === 'weldDate' || field.key === 'controlDate') return formatDisplayDate(value)
+  if (field.key === 'weldDate' || field.key === 'controlDate' || field.key === 'pstoDate') return formatDisplayDate(value)
   if (field.key === 'wdi') return value ?? ''
   return value ?? ''
 }
@@ -4670,6 +5634,10 @@ function hasAnyLnkReportControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]) || isCancelledLnkControl(row, method))
 }
 
+function hasWeldDate(row: WeldInput) {
+  return hasText(row.weldDate)
+}
+
 function withPendingLnkResults<T extends WeldInput>(row: T): T {
   let nextRow: (T & Record<string, unknown>) | null = null
   for (const method of LNK_METHODS) {
@@ -4940,6 +5908,124 @@ function hasRejectedLnkResult(row: WeldInput) {
   })
 }
 
+function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
+  const tasks: RepeatedJointTask[] = []
+  for (const row of rows) {
+    const rejection = getPrimaryRejectedLnkResult(row)
+    if (!rejection) continue
+    const sourceJoint = String(row.joint ?? '').trim()
+    if (!sourceJoint) continue
+
+    const suffix = rejection.result === 'ремонт' ? 'R' : 'W'
+    const targetJoint = getNextRepeatedJointName(sourceJoint, suffix)
+    if (hasRepeatedJointTarget(rows, row, targetJoint)) continue
+
+    tasks.push({
+      kind: 'create',
+      key: `${row.id}:${rejection.method.resultKey}:${rejection.result}:${targetJoint}`,
+      row,
+      sourceJoint,
+      targetJoint,
+      result: rejection.result,
+      suffix,
+      methodCode: rejection.method.code,
+      methodResultKey: rejection.method.resultKey,
+    })
+  }
+  for (const row of rows) {
+    const repeated = getObsoleteRepeatedJointInfo(rows, row)
+    if (!repeated) continue
+    tasks.push({
+      kind: 'delete',
+      key: `obsolete:${repeated.sourceRow.id}:${row.id}:${repeated.sourceJoint}:${repeated.targetJoint}`,
+      row,
+      sourceRow: repeated.sourceRow,
+      sourceJoint: repeated.sourceJoint,
+      targetJoint: repeated.targetJoint,
+      suffix: repeated.suffix,
+    })
+  }
+  return tasks
+}
+
+function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow) {
+  const targetJoint = String(row.joint ?? '').trim()
+  const parsed = parseRepeatedJointName(targetJoint)
+  if (!parsed.suffix || parsed.index < 1 || !isUnusedRepeatedJointDraft(row)) return null
+  const sourceJoint = getRepeatedJointSourceName(parsed)
+  const sourceRow = findMatchingJointRow(rows, row, sourceJoint)
+  if (!sourceRow) return null
+  const rejection = getPrimaryRejectedLnkResult(sourceRow)
+  const expectedSuffix = rejection ? (rejection.result === 'ремонт' ? 'R' : 'W') : null
+  if (expectedSuffix === parsed.suffix && getNextRepeatedJointName(sourceJoint, parsed.suffix) === targetJoint) return null
+  return { sourceRow, sourceJoint, targetJoint, suffix: parsed.suffix }
+}
+
+function isUnusedRepeatedJointDraft(row: WeldInput) {
+  if (hasText(row.weldDate)) return false
+  return ![...lnkRequestFieldKeys, ...lnkGeneratedFieldKeys, 'pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram'].some((fieldKey) =>
+    hasText(row[fieldKey]),
+  )
+}
+
+function getPrimaryRejectedLnkResult(row: WeldInput) {
+  const cut = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'вырез')
+  if (cut) return { method: cut, result: 'вырез' as const }
+  const repair = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт')
+  if (repair) return { method: repair, result: 'ремонт' as const }
+  return null
+}
+
+function getNextRepeatedJointName(sourceJoint: string, suffix: 'R' | 'W') {
+  const parsed = parseRepeatedJointName(sourceJoint)
+  const nextIndex = parsed.suffix === suffix ? parsed.index + 1 : 1
+  return `${parsed.base}${suffix}${nextIndex}`
+}
+
+function getRepeatedJointSourceName(parsed: ReturnType<typeof parseRepeatedJointName>) {
+  if (!parsed.suffix || parsed.index <= 1) return parsed.base
+  return `${parsed.base}${parsed.suffix}${parsed.index - 1}`
+}
+
+function parseRepeatedJointName(joint: string) {
+  const match = joint.trim().match(/^(.*?)([RW])(\d+)$/i)
+  if (!match) return { base: joint.trim(), suffix: null as 'R' | 'W' | null, index: 0 }
+  return {
+    base: match[1],
+    suffix: match[2].toUpperCase() as 'R' | 'W',
+    index: Number(match[3]) || 0,
+  }
+}
+
+function hasRepeatedJointTarget(rows: WeldRow[], sourceRow: WeldInput, targetJoint: string) {
+  return Boolean(findMatchingJointRow(rows, sourceRow, targetJoint))
+}
+
+function findMatchingJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
+  const normalizedJoint = normalizeSearchText(joint)
+  return rows.find((row) => {
+    if (normalizeSearchText(row.joint) !== normalizedJoint) return false
+    return (
+      normalizeSearchText(row.projectTitle) === normalizeSearchText(sourceRow.projectTitle) &&
+      normalizeSearchText(row.subtitleCode) === normalizeSearchText(sourceRow.subtitleCode) &&
+      normalizeSearchText(row.line) === normalizeSearchText(sourceRow.line) &&
+      normalizeSearchText(row.spool) === normalizeSearchText(sourceRow.spool)
+    )
+  })
+}
+
+function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string): WeldInput {
+  const draft = { ...sourceRow } as WeldInput & { id?: number }
+  delete draft.id
+  for (const fieldKey of repeatedJointClearedFieldKeys) {
+    draft[fieldKey] = null
+  }
+  draft.joint = targetJoint
+  draft.createdAt = new Date().toISOString()
+  draft.finalStatus = calculateFinalStatus(draft)
+  return draft
+}
+
 function filterPstoResultRows(rows: WeldRow[], search: string) {
   return filterPstoRows(rows, search).sort(compareHeatTreatmentReportRows)
 }
@@ -5018,6 +6104,25 @@ function isLnkMethodNoNeed(row: WeldInput, method: (typeof LNK_METHODS)[number])
 function getPstoResultBadgeClass(value: unknown) {
   const result = String(value ?? '').trim().toLowerCase()
   if (result === 'проведено') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  return 'border-amber-200 bg-amber-50 text-amber-800'
+}
+
+function getPstoResultLabel(value: unknown) {
+  const result = String(value ?? '').trim().toLowerCase()
+  return result === 'проведено' ? 'проведено' : 'ожидает'
+}
+
+function getJointStatusLabel(row: WeldInput) {
+  const status = String(row.finalStatus ?? '').trim().toLowerCase()
+  if (status === 'годен') return 'годен'
+  if (status === 'не годен') return 'не годен'
+  return 'ожидает'
+}
+
+function getJointStatusBadgeClass(row: WeldInput) {
+  const status = getJointStatusLabel(row)
+  if (status === 'годен') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  if (status === 'не годен') return 'border-rose-200 bg-rose-50 text-rose-800'
   return 'border-amber-200 bg-amber-50 text-amber-800'
 }
 
@@ -5446,6 +6551,22 @@ function getPstoResultValue(value: unknown) {
 
 function isYesText(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'да'
+}
+
+function readDeclinedRepeatedJointTaskKeys() {
+  if (typeof window === 'undefined') return new Set<string>()
+  try {
+    const stored = window.localStorage.getItem(repeatedJointDeclinedStorageKey)
+    const parsed = stored ? JSON.parse(stored) : []
+    return new Set(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === 'string') : [])
+  } catch {
+    return new Set<string>()
+  }
+}
+
+function writeDeclinedRepeatedJointTaskKeys(keys: Set<string>) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(repeatedJointDeclinedStorageKey, JSON.stringify([...keys]))
 }
 
 function readLocalWelds() {

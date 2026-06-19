@@ -32,15 +32,7 @@ const DUPLICATE_CHECK_FIELD_KEYS: WeldFieldKey[] = [
   'projectTitle',
   'subtitleCode',
   'line',
-  'groupName',
-  'category',
-  'weldControlPercent',
-  'isometry',
-  'sheet',
-  'revisionNumber',
-  'revisionActuality',
   'spool',
-  'spoolId',
   'joint',
 ]
 
@@ -735,7 +727,7 @@ function writeCollapsedSections(storageKey: string, sections: ReadonlySet<string
 
 function normalizeDuplicateValue(value: unknown) {
   if (value === null || value === undefined) return ''
-  return String(value).replace(/\s+/g, ' ').trim().toLowerCase()
+  return String(value).replace(/\s+/g, '').trim().toLowerCase()
 }
 
 function isYesText(value: unknown) {

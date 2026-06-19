@@ -165,7 +165,6 @@ export const CONTROL_RESULT_PAIRS = [
   { enabledKey: 'hasRfa', resultKey: 'rfaResult' },
   { enabledKey: 'hasStls', resultKey: 'stlsResult' },
   { enabledKey: 'hasMkk', resultKey: 'mkkResult' },
-  { enabledKey: 'pstoRequired', resultKey: 'pstoResult' },
 ] as const satisfies ReadonlyArray<{ enabledKey: WeldFieldKey; resultKey: WeldFieldKey }>
 
 export function calculateFinalStatus(record: WeldInput) {

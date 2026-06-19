@@ -113,7 +113,7 @@ describe('weld import/export', () => {
     expect(parseBoolean('отменен')).toBe('отменен')
   })
 
-  it('allows only the conducted value for the PSTO result field', () => {
+  it('allows only the conducted value for the PSTO result field without affecting final control status', () => {
     const result = parseWorksheetRows([
       FULL_EXCEL_HEADERS,
       FULL_EXCEL_HEADERS.map((header) =>
@@ -129,7 +129,7 @@ describe('weld import/export', () => {
 
     expect(result.records[0].pstoResult).toBe('проведено')
     expect(result.records[0].vikResult).toBeNull()
-    expect(result.records[0].finalStatus).toBe('годен')
+    expect(result.records[0].finalStatus).toBe('ожидает')
   })
 
   it('skips service rows without a real joint, line, or isometry', () => {

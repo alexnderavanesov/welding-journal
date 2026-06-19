@@ -125,4 +125,17 @@ describe('weld field order', () => {
   it('treats pending NDT results as waiting', () => {
     expect(calculateFinalStatus({ hasPvk: true, pvkResult: 'ожидает НК' })).toBe('ожидает')
   })
+
+  it('does not let pending heat treatment keep a good NDT joint waiting', () => {
+    expect(
+      calculateFinalStatus({
+        hasVik: 'да',
+        vikResult: 'годен',
+        hasRk: 'да',
+        rkResult: 'годен',
+        pstoRequired: 'да',
+        pstoResult: null,
+      }),
+    ).toBe('годен')
+  })
 })
