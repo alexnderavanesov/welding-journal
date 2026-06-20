@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ClipboardCheck, FilePlus2, ChevronDown, ChevronRight, Edit2, FilterX, GitBranch, Trash2 } from 'lucide-react'
+import { ClipboardCheck, ExternalLink, FilePlus2, ChevronDown, ChevronRight, Edit2, FilterX, GitBranch, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,7 @@ import { RESULT_FIELD_KEYS, VISIBLE_FIELD_SECTIONS, VISIBLE_SECTION_END_FIELD_KE
 
 const SELECT_COLUMN_WIDTH = 48
 const ROW_ACTIONS_COLUMN_WIDTH = 72
-const CHAIN_ACTION_COLUMN_WIDTH = 48
+const CHAIN_ACTION_COLUMN_WIDTH = 76
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
@@ -52,6 +52,8 @@ type WeldTableProps = {
   isCellEditable?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => boolean
   getDisplayValue?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => unknown
   onOpenChain?: (row: WeldInput & { id: number }) => void
+  onOpenLinkedReport?: (row: WeldInput & { id: number }) => void
+  openLinkedReportTitle?: string
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>
   onSelectedRowIdsChange?: (ids: Set<number>) => void
@@ -89,6 +91,8 @@ export function WeldTable({
   isCellEditable = () => true,
   getDisplayValue = (row, fieldKey) => row[fieldKey],
   onOpenChain,
+  onOpenLinkedReport,
+  openLinkedReportTitle = 'Открыть стык в связанном отчете',
   selectable = false,
   selectedRowIds = new Set(),
   onSelectedRowIdsChange,
@@ -134,20 +138,31 @@ export function WeldTable({
       if (!mergePstoSections) return sections
 
       const pstoFields = sections.flatMap((group) => group.fields).filter((field) => PSTO_SECTION_FIELD_KEYS.has(field.key))
+      const finalStatusFields = sections.flatMap((group) => group.fields).filter((field) => field.key === 'finalStatus')
       const sectionsWithoutPsto = sections
         .map((group) => ({
           ...group,
-          fields: group.fields.filter((field) => !PSTO_SECTION_FIELD_KEYS.has(field.key)),
+          fields: group.fields.filter((field) => !PSTO_SECTION_FIELD_KEYS.has(field.key) && field.key !== 'finalStatus'),
         }))
         .filter((group) => group.fields.length > 0)
-      const miscIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Прочее')
+      const resultSection = finalStatusFields.length > 0 ? [{ section: 'Результат', fields: finalStatusFields }] : []
+      const weldingIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Сварка')
+      const sectionsWithResult =
+        weldingIndex === -1
+          ? [...sectionsWithoutPsto, ...resultSection]
+          : [
+              ...sectionsWithoutPsto.slice(0, weldingIndex + 1),
+              ...resultSection,
+              ...sectionsWithoutPsto.slice(weldingIndex + 1),
+            ]
+      const miscIndex = sectionsWithResult.findIndex((group) => group.section === 'Прочее')
       const pstoSection = pstoFields.length > 0 ? [{ section: 'ПСТО', fields: pstoFields }] : []
-      if (miscIndex === -1) return [...sectionsWithoutPsto, ...pstoSection]
+      if (miscIndex === -1) return [...sectionsWithResult, ...pstoSection]
 
       return [
-        ...sectionsWithoutPsto.slice(0, miscIndex),
+        ...sectionsWithResult.slice(0, miscIndex),
         ...pstoSection,
-        ...sectionsWithoutPsto.slice(miscIndex),
+        ...sectionsWithResult.slice(miscIndex),
       ]
     },
     [hiddenFieldKeys, mergePstoSections],
@@ -167,7 +182,7 @@ export function WeldTable({
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
   const hasRowActions = Boolean(rowActions)
-  const hasChainAction = Boolean(onOpenChain)
+  const hasChainAction = Boolean(onOpenChain || onOpenLinkedReport)
   const hasColumnFilters = Object.values(columnFilters).some((value) => value.trim())
   const tableMinWidth =
     getWeldTableWidth(filteredFields) -
@@ -328,10 +343,10 @@ export function WeldTable({
                 <th
                   rowSpan={3}
                   className="border-r border-slate-200/70 bg-slate-50 px-1.5 py-2 text-center text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
-                  title="Цепочка стыка"
+                  title="Навигация по стыку"
                 >
                   <div className="flex h-full min-h-24 flex-col items-center justify-end gap-2">
-                    <span className="sr-only">Цепочка</span>
+                    <span className="sr-only">Навигация</span>
                     <button
                       type="button"
                       onClick={() => onColumnFiltersChange({})}
@@ -482,18 +497,36 @@ export function WeldTable({
                   ) : null}
                   {hasChainAction ? (
                     <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onOpenChain?.(row)
-                        }}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-100 hover:text-sky-900"
-                        title="Показать цепочку стыка"
-                        aria-label={`Показать цепочку стыка ${String(row.joint ?? row.id)}`}
-                      >
-                        <GitBranch className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        {onOpenChain ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenChain(row)
+                            }}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-100 hover:text-sky-900"
+                            title="Показать цепочку стыка"
+                            aria-label={`Показать цепочку стыка ${String(row.joint ?? row.id)}`}
+                          >
+                            <GitBranch className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        {onOpenLinkedReport ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenLinkedReport(row)
+                            }}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800"
+                            title={openLinkedReportTitle}
+                            aria-label={`${openLinkedReportTitle}: ${String(row.joint ?? row.id)}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   ) : null}
                   {hasRowActions && rowActions ? (

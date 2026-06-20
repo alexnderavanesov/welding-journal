@@ -278,7 +278,6 @@ const heatTreatmentHiddenFieldKeys = new Set<WeldFieldKey>([
   'rfaResult',
   'stlsResult',
   'mkkResult',
-  'finalStatus',
   'boq',
   'ks3',
   'createdAt',
@@ -2809,6 +2808,26 @@ function Home() {
     setMessage(`Открыт стык ${String(row.joint ?? '-')} в текущем отчете`)
   }
 
+  function openLinkedReportRow(row: WeldInput & { id: number }) {
+    setChainRecord(null)
+    const filters = {
+      subtitleCode: String(row.subtitleCode ?? '').trim(),
+      line: String(row.line ?? '').trim(),
+      joint: makeExactColumnFilterValue(row.joint),
+    }
+    if (activeReport === 'lnk') {
+      setActiveReport('weldingJournal')
+      setColumnFilters(filters)
+      setMessage(`Открыт стык ${String(row.joint ?? '-')} в сварочном журнале`)
+      return
+    }
+    if (activeReport === 'weldingJournal') {
+      setActiveReport('lnk')
+      setLnkFilters(filters)
+      setMessage(`Открыт стык ${String(row.joint ?? '-')} в отчете ЛНК`)
+    }
+  }
+
   function openChainBaseInCurrentReport(row: WeldRow) {
     const baseJoint = parseJointChainName(String(row.joint ?? '')).base || String(row.joint ?? '').trim()
     showRepeatedJointTaskChain(row, baseJoint, `Показана вся цепочка стыка ${baseJoint}`)
@@ -3328,16 +3347,27 @@ function Home() {
                             </Button>
                           </>
                         ) : task.kind === 'delete' ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => deleteObsoleteRepeatedJoint(task)}
-                            disabled={obsoleteRepeatedJointMutation.isPending}
-                            className="h-6 rounded-none border-0 border-r border-rose-100 px-2.5 text-xs text-rose-700 shadow-none hover:bg-rose-50"
-                          >
-                            Удалить
-                          </Button>
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => deleteObsoleteRepeatedJoint(task)}
+                              disabled={obsoleteRepeatedJointMutation.isPending}
+                              className="h-6 rounded-none border-0 border-r border-rose-100 px-2.5 text-xs text-rose-700 shadow-none hover:bg-rose-50"
+                            >
+                              Удалить
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => showRepeatedJointTask(task)}
+                              className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+                            >
+                              Показать
+                            </Button>
+                          </>
                         ) : (
                           <Button
                             type="button"
@@ -3396,6 +3426,8 @@ function Home() {
             }
             getDisplayValue={activeReport === 'lnk' ? getLnkDisplayValue : undefined}
             onOpenChain={(row) => setChainRecord(row)}
+            onOpenLinkedReport={activeReport === 'weldingJournal' || activeReport === 'lnk' ? openLinkedReportRow : undefined}
+            openLinkedReportTitle={activeReport === 'lnk' ? 'Открыть стык в сварочном журнале' : 'Открыть стык в отчете ЛНК'}
             rowActions={
               activeReport === 'heatTreatment'
                 ? {
@@ -6129,17 +6161,28 @@ function getReportExportSections(hiddenFieldKeys: ReadonlySet<WeldFieldKey>, mer
   if (!mergePstoSections) return sections
 
   const pstoFields = sections.flatMap((group) => group.fields).filter((field) => pstoSectionFieldKeys.has(field.key))
+  const finalStatusFields = sections.flatMap((group) => group.fields).filter((field) => field.key === 'finalStatus')
   const sectionsWithoutPsto = sections
     .map((group) => ({
       ...group,
-      fields: group.fields.filter((field) => !pstoSectionFieldKeys.has(field.key)),
+      fields: group.fields.filter((field) => !pstoSectionFieldKeys.has(field.key) && field.key !== 'finalStatus'),
     }))
     .filter((group) => group.fields.length > 0)
-  const miscIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Прочее')
+  const resultSection = finalStatusFields.length > 0 ? [{ section: 'Результат', fields: finalStatusFields }] : []
+  const weldingIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Сварка')
+  const sectionsWithResult =
+    weldingIndex === -1
+      ? [...sectionsWithoutPsto, ...resultSection]
+      : [
+          ...sectionsWithoutPsto.slice(0, weldingIndex + 1),
+          ...resultSection,
+          ...sectionsWithoutPsto.slice(weldingIndex + 1),
+        ]
+  const miscIndex = sectionsWithResult.findIndex((group) => group.section === 'Прочее')
   const pstoSection = pstoFields.length > 0 ? [{ section: 'ПСТО', fields: pstoFields }] : []
-  if (miscIndex === -1) return [...sectionsWithoutPsto, ...pstoSection]
+  if (miscIndex === -1) return [...sectionsWithResult, ...pstoSection]
 
-  return [...sectionsWithoutPsto.slice(0, miscIndex), ...pstoSection, ...sectionsWithoutPsto.slice(miscIndex)]
+  return [...sectionsWithResult.slice(0, miscIndex), ...pstoSection, ...sectionsWithResult.slice(miscIndex)]
 }
 
 function canCollapseExportSection(fields: readonly WeldField[], reportAlwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>) {
