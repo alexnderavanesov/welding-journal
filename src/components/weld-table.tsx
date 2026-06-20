@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ClipboardCheck, FilePlus2, ChevronDown, ChevronRight, Edit2, Trash2 } from 'lucide-react'
+import { ClipboardCheck, FilePlus2, ChevronDown, ChevronRight, Edit2, FilterX, GitBranch, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,7 @@ import { RESULT_FIELD_KEYS, VISIBLE_FIELD_SECTIONS, VISIBLE_SECTION_END_FIELD_KE
 
 const SELECT_COLUMN_WIDTH = 48
 const ROW_ACTIONS_COLUMN_WIDTH = 72
+const CHAIN_ACTION_COLUMN_WIDTH = 48
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
@@ -50,6 +51,7 @@ type WeldTableProps = {
   blockedFieldKeys?: ReadonlySet<WeldFieldKey>
   isCellEditable?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => boolean
   getDisplayValue?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => unknown
+  onOpenChain?: (row: WeldInput & { id: number }) => void
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>
   onSelectedRowIdsChange?: (ids: Set<number>) => void
@@ -86,6 +88,7 @@ export function WeldTable({
   blockedFieldKeys = new Set(),
   isCellEditable = () => true,
   getDisplayValue = (row, fieldKey) => row[fieldKey],
+  onOpenChain,
   selectable = false,
   selectedRowIds = new Set(),
   onSelectedRowIdsChange,
@@ -164,11 +167,14 @@ export function WeldTable({
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
   const hasRowActions = Boolean(rowActions)
+  const hasChainAction = Boolean(onOpenChain)
+  const hasColumnFilters = Object.values(columnFilters).some((value) => value.trim())
   const tableMinWidth =
     getWeldTableWidth(filteredFields) -
     (readOnly ? ACTIONS_COLUMN_WIDTH : 0) +
     (selectable ? SELECT_COLUMN_WIDTH : 0) +
-    (hasRowActions ? ROW_ACTIONS_COLUMN_WIDTH : 0)
+    (hasRowActions ? ROW_ACTIONS_COLUMN_WIDTH : 0) +
+    (hasChainAction ? CHAIN_ACTION_COLUMN_WIDTH : 0)
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
   const filteredRows = useMemo(
     () =>
@@ -178,7 +184,11 @@ export function WeldTable({
           if (!query) return true
           const cellValue = row[key as keyof typeof row]
           const normalized = cellValue === true ? 'да' : cellValue === false || cellValue == null ? '' : String(cellValue)
-          return normalized.toLowerCase().includes(query)
+          const normalizedText = normalized.trim().toLowerCase()
+          if (query.startsWith('=')) {
+            return normalizedText === query.slice(1).trim().replace(/^["']|["']$/g, '')
+          }
+          return normalizedText.includes(query)
         }),
       ),
     [rows, columnFilters],
@@ -286,6 +296,7 @@ export function WeldTable({
         >
           <colgroup>
             {selectable ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
+            {hasChainAction ? <col style={{ width: CHAIN_ACTION_COLUMN_WIDTH }} /> : null}
             {hasRowActions ? <col style={{ width: ROW_ACTIONS_COLUMN_WIDTH }} /> : null}
             {filteredFields.map((field) => (
               <col key={field.key} style={{ width: getWeldColumnWidth(field.key) }} />
@@ -311,6 +322,27 @@ export function WeldTable({
                     title={selectableVisibleRows.length === 0 ? 'Нет доступных стыков для новой заявки' : 'Выбрать видимые стыки'}
                     className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
                   />
+                </th>
+              ) : null}
+              {hasChainAction ? (
+                <th
+                  rowSpan={3}
+                  className="border-r border-slate-200/70 bg-slate-50 px-1.5 py-2 text-center text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+                  title="Цепочка стыка"
+                >
+                  <div className="flex h-full min-h-24 flex-col items-center justify-end gap-2">
+                    <span className="sr-only">Цепочка</span>
+                    <button
+                      type="button"
+                      onClick={() => onColumnFiltersChange({})}
+                      disabled={!hasColumnFilters}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-100 hover:text-sky-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300 disabled:shadow-none"
+                      title={hasColumnFilters ? 'Сбросить все фильтры' : 'Фильтры не заданы'}
+                      aria-label="Сбросить все фильтры"
+                    >
+                      <FilterX className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </th>
               ) : null}
               {hasRowActions ? (
@@ -392,7 +424,13 @@ export function WeldTable({
             {filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={filteredFields.length + (readOnly ? 0 : 1) + (selectable ? 1 : 0) + (hasRowActions ? 1 : 0)}
+                  colSpan={
+                    filteredFields.length +
+                    (readOnly ? 0 : 1) +
+                    (selectable ? 1 : 0) +
+                    (hasChainAction ? 1 : 0) +
+                    (hasRowActions ? 1 : 0)
+                  }
                   className="px-3 py-12 text-center text-muted-foreground"
                 >
                   Записи не найдены.
@@ -440,6 +478,22 @@ export function WeldTable({
                         title={isSelectableRow ? 'Выбрать стык для заявки ПСТО' : 'Заявка ПСТО уже создана'}
                         className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
                       />
+                    </td>
+                  ) : null}
+                  {hasChainAction ? (
+                    <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onOpenChain?.(row)
+                        }}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-100 hover:text-sky-900"
+                        title="Показать цепочку стыка"
+                        aria-label={`Показать цепочку стыка ${String(row.joint ?? row.id)}`}
+                      >
+                        <GitBranch className="h-3.5 w-3.5" />
+                      </button>
                     </td>
                   ) : null}
                   {hasRowActions && rowActions ? (

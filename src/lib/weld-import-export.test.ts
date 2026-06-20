@@ -89,7 +89,7 @@ describe('weld import/export', () => {
     expect(wdiValue).toBe(1.25)
   })
 
-  it('allows only the unofficial joint status or an empty value', () => {
+  it('keeps imported joint status official until the dedicated status flow changes it', () => {
     const status = label('status')
     const result = parseWorksheetRows([
       FULL_EXCEL_HEADERS,
@@ -97,7 +97,7 @@ describe('weld import/export', () => {
       [...FULL_EXCEL_HEADERS.map((header) => (header === label('joint') ? 'S14' : header === status ? 'официальный' : null))],
     ])
 
-    expect(result.records[0].status).toBe('неофициальный')
+    expect(result.records[0].status).toBeNull()
     expect(result.records[1].status).toBeNull()
   })
 

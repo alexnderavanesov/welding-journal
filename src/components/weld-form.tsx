@@ -26,6 +26,7 @@ const yesEmptyFieldKeys = new Set([
   'hasMkk',
 ])
 const formHiddenFieldKeys = new Set<WeldFieldKey>([
+  'status',
   'createdAt',
   'vikRequest',
   'rkRequest',
@@ -192,7 +193,10 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
         <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold">{value.id ? 'Редактирование стыка' : 'Новый стык'}</h2>
-            <p className="text-sm text-muted-foreground">{getJointTitle(draft)}</p>
+            <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+              <span>{getJointTitle(draft)}</span>
+              <OfficialityBadge value={draft} />
+            </p>
           </div>
           <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Закрыть">
             <X className="h-4 w-4" />
@@ -254,22 +258,6 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
                                 {option}
                               </option>
                             ))}
-                          </Select>
-                        ) : field.key === 'status' ? (
-                          <Select
-                            ref={(element) => {
-                              fieldRefs.current[field.key] = element
-                            }}
-                            value={getJointStatusValue(draft[field.key])}
-                            onChange={(event) =>
-                              setDraft((current) => ({
-                                ...current,
-                                [field.key]: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Пусто</option>
-                            <option value="неофициальный">неофициальный</option>
                           </Select>
                         ) : yesEmptyFieldKeys.has(field.key) ? (
                           <Select
@@ -358,9 +346,15 @@ function getFinalStatusValue(value: unknown) {
   return FINAL_STATUS_OPTIONS.includes(text as never) ? text : ''
 }
 
-function getJointStatusValue(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'неофициальный' ? 'неофициальный' : ''
+function OfficialityBadge({ value }: { value: WeldInput }) {
+  if (String(value.status ?? '').trim().toLowerCase() !== 'неофициальный') return null
+  return (
+    <span className="inline-flex items-center rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
+      неофициальный
+    </span>
+  )
 }
+
 
 function withCalculatedFinalStatus(value: WeldInput) {
   const nextValue = withAutoVikForWeldDate(value)

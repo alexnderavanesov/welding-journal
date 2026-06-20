@@ -36,7 +36,7 @@ const COLUMN_WIDTHS: Partial<Record<WeldFieldKey, number>> = {
   revisionActuality: 104,
   spool: 86,
   spoolId: 90,
-  joint: 74,
+  joint: 104,
   status: 104,
   orderCode1: 112,
   orderCode2: 112,

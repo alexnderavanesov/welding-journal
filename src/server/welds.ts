@@ -182,7 +182,7 @@ function toDbInsert(input: WeldInput): NewWeldJoint {
   if (isYesText(normalized.pstoRequired) && !normalized.pstoCreatedAt) {
     data.pstoCreatedAt = new Date()
   }
-  if (hasAnyLnkGeneratedData(normalized) && !normalized.lnkCreatedAt) {
+  if ((hasLnkReportEntry(normalized) || hasAnyLnkGeneratedData(normalized)) && !normalized.lnkCreatedAt) {
     data.lnkCreatedAt = new Date()
   }
 
@@ -196,6 +196,14 @@ function isYesText(value: unknown) {
 function isEnabledControlValue(value: unknown) {
   if (value === true) return true
   return String(value ?? '').trim().toLowerCase() === 'да'
+}
+
+function hasWeldDate(record: WeldInput) {
+  return String(record.weldDate ?? '').trim().length > 0
+}
+
+function hasLnkReportEntry(record: WeldInput) {
+  return hasWeldDate(record) && lnkControlRequestPairs.some((pair) => isEnabledControlValue(record[pair.enabledKey]))
 }
 
 function isCancelledText(value: unknown) {

@@ -199,6 +199,7 @@ export function parseWorksheetRows(rows: unknown[][]): ImportResult {
     if (!('spoolId' in record)) {
       record.spoolId = null
     }
+    record.status = null
     record.finalStatus = calculateFinalStatus(record)
     records.push(record)
   }
