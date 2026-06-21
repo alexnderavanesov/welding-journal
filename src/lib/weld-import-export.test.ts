@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
 import { FIELD_BY_KEY, FULL_EXCEL_HEADERS, LEGACY_EXCEL_HEADERS } from './weld-fields'
+import { hasReservedJointSystemPart, parseJointName, validateManualJointName } from './joint-name'
 import {
   appendImportedWelds,
   buildExportWorkbook,
@@ -24,6 +25,39 @@ const label = (key: string) => {
 }
 
 describe('weld import/export', () => {
+  it('validates manual joint names without system suffixes', () => {
+    expect(validateManualJointName('S13')).toBeNull()
+    expect(validateManualJointName('F5A')).toBeNull()
+    expect(validateManualJointName('S44B')).toBeNull()
+    expect(validateManualJointName('S44R')).toContain('зарезервированы')
+    expect(validateManualJointName('F1AY1')).toContain('зарезервированы')
+    expect(validateManualJointName('S44BW2R1')).toContain('зарезервированы')
+    expect(validateManualJointName('13')).toContain('начинаться')
+    expect(hasReservedJointSystemPart('S13R1')).toBe(true)
+    expect(hasReservedJointSystemPart('S13A')).toBe(false)
+  })
+
+  it('parses system joint chains with R W Y suffixes and manual infixes', () => {
+    expect(parseJointName('F1AY1')).toMatchObject({
+      base: 'F1A',
+      segments: [{ suffix: 'Y', index: 1 }],
+    })
+    expect(parseJointName('S44BW2R1')).toMatchObject({
+      base: 'S44B',
+      segments: [
+        { suffix: 'W', index: 2 },
+        { suffix: 'R', index: 1 },
+      ],
+    })
+    expect(parseJointName('S13R2W1')).toMatchObject({
+      base: 'S13',
+      segments: [
+        { suffix: 'R', index: 2 },
+        { suffix: 'W', index: 1 },
+      ],
+    })
+  })
+
   it('recognizes the full header set', () => {
     const result = parseWorksheetRows([FULL_EXCEL_HEADERS])
     expect(result.records).toHaveLength(0)

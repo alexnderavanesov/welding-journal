@@ -28,6 +28,7 @@ import {
   withAutoVikForWeldDate,
 } from '@/lib/weld-import-export'
 import { getWeldTableWidth } from '@/lib/weld-column-widths'
+import { hasReservedJointSystemPart, normalizeJointName, parseJointName, validateManualJointName } from '@/lib/joint-name'
 import {
   FIELD_BY_KEY,
   RESULT_STATUS_OPTIONS,
@@ -370,6 +371,17 @@ type RepeatedJointDeleteTask = {
   sourceJoint: string
   targetJoint: string
   suffix: 'R' | 'W'
+  reason: string
+}
+type RepeatedJointRenameTask = {
+  kind: 'rename'
+  key: string
+  row: WeldRow
+  sourceRow: WeldRow
+  sourceJoint: string
+  currentJoint: string
+  targetJoint: string
+  baseJoint: string
 }
 type RepeatedJointCheckTask = {
   kind: 'check'
@@ -380,6 +392,7 @@ type RepeatedJointCheckTask = {
   targetJoint: string
   baseJoint: string
   suffix: 'R' | 'W'
+  reason?: string
 }
 type RepeatedJointDuplicateCheckTask = {
   kind: 'duplicate-check'
@@ -393,6 +406,7 @@ type RepeatedJointTask =
   | RepeatedJointCreateTask
   | RepeatedJointCoilTask
   | RepeatedJointDeleteTask
+  | RepeatedJointRenameTask
   | RepeatedJointCheckTask
   | RepeatedJointDuplicateCheckTask
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
@@ -546,6 +560,7 @@ function Home() {
 
   const saveMutation = useMutation({
     mutationFn: async (value: WeldInput & { id?: number }) => {
+      validateManualJointNameForSave(value, rows)
       try {
         const saved = value.id ? await updateWeldJoint({ data: value }) : await createWeldJoint({ data: value })
         return saved ?? saveLocalWeld(value)
@@ -613,6 +628,29 @@ function Home() {
     },
   })
 
+  const renameRepeatedJointMutation = useMutation({
+    mutationFn: async (task: RepeatedJointRenameTask) => {
+      const updatedRecord = { ...task.row, joint: task.targetJoint }
+      updateLocalWelds([updatedRecord])
+      try {
+        const saved = await updateWeldJoint({ data: updatedRecord })
+        if (saved) return saved
+        return updatedRecord
+      } catch {
+        return updatedRecord
+      }
+    },
+    onSuccess: async (saved, task) => {
+      highlightChangedRows(saved ? [saved] : [task.row], ['joint'])
+      setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+      setMessage(`Стык ${task.currentJoint} переименован в ${task.targetJoint}`)
+      await invalidate(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       try {
@@ -636,6 +674,7 @@ function Home() {
 
   const importMutation = useMutation({
     mutationFn: async (records: WeldInput[]) => {
+      validateManualJointNamesForImport(records)
       try {
         const result = await importWeldJoints({ data: { records } })
         if (result) return result
@@ -1311,6 +1350,12 @@ function Home() {
       records: Array<WeldInput & { id: number }>
       status: 'official' | 'unofficial'
     }) => {
+      if (status === 'unofficial') {
+        const invalidRecords = records.filter((record) => !hasRejectedLnkResult(record))
+        if (invalidRecords.length > 0) {
+          throw new Error('Неофициальный статус можно назначить только после результата контроля "ремонт" или "вырез"')
+        }
+      }
       const nextStatus = status === 'unofficial' ? 'неофициальный' : null
       const updatedRecords = records
         .map((record) => ({ ...record, status: nextStatus }))
@@ -1898,8 +1943,11 @@ function Home() {
     if (lnkOfficialityMutation.isPending) return 'Статус сохраняется, дождитесь завершения.'
     if (!lnkOfficialityDraft.status) return 'Выберите официальный или неофициальный статус.'
     if (selectedLnkOfficialityRows.length === 0) return 'Отметьте один или несколько стыков.'
+    if (lnkOfficialityDraft.status === 'unofficial' && selectedLnkOfficialityRows.some((row) => !hasRejectedLnkResult(row))) {
+      return 'Неофициальный статус можно назначить только стыкам с результатом контроля "ремонт" или "вырез".'
+    }
     return ''
-  }, [lnkOfficialityDraft.status, lnkOfficialityMutation.isPending, selectedLnkOfficialityRows.length])
+  }, [lnkOfficialityDraft.status, lnkOfficialityMutation.isPending, selectedLnkOfficialityRows])
   const isLnkOfficialitySaveDisabled = Boolean(lnkOfficialitySaveBlockReason)
   const activeColumnFilters =
     activeReport === 'heatTreatment' ? heatTreatmentFilters : activeReport === 'lnk' ? lnkFilters : columnFilters
@@ -2758,24 +2806,47 @@ function Home() {
       setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
       return
     }
+    if (!isUnusedRepeatedJointDraft(currentTask.row)) {
+      setMessage('Повторный стык уже содержит данные. Диспетчер не удаляет такие стыки автоматически, проверьте цепочку вручную.')
+      return
+    }
     const confirmed = window.confirm(`Удалить повторный стык ${task.targetJoint}? Исходный стык ${task.sourceJoint} больше не требует повтора.`)
     if (!confirmed) return
     obsoleteRepeatedJointMutation.mutate(currentTask)
   }
 
-  function showRepeatedJointTask(task: RepeatedJointCreateTask | RepeatedJointCoilTask | RepeatedJointCheckTask | RepeatedJointDuplicateCheckTask) {
-    const baseJoint = task.kind === 'check' || task.kind === 'duplicate-check' ? task.baseJoint : parseJointChainName(task.sourceJoint).base || task.sourceJoint
+  function renameObsoleteRepeatedJoint(task: RepeatedJointRenameTask) {
+    const currentTask = buildRepeatedJointTasks(rows).find(
+      (candidate): candidate is RepeatedJointRenameTask => candidate.kind === 'rename' && candidate.key === task.key,
+    )
+    if (!currentTask) {
+      setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
+      return
+    }
+    const confirmed = window.confirm(`Переименовать повторный стык ${task.currentJoint} в ${task.targetJoint}?`)
+    if (!confirmed) return
+    renameRepeatedJointMutation.mutate(currentTask)
+  }
+
+  function showRepeatedJointTask(task: RepeatedJointTask) {
+    const baseJoint =
+      task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename'
+        ? task.baseJoint
+        : parseJointChainName(task.sourceJoint).base || task.sourceJoint
     const actionText =
       task.kind === 'check'
         ? `проверьте ${task.targetJoint}`
         : task.kind === 'duplicate-check'
           ? `проверьте возможные дубли: ${task.count}`
+          : task.kind === 'rename'
+            ? `проверьте переименование ${task.currentJoint} → ${task.targetJoint}`
           : 'проверьте перед созданием'
     showRepeatedJointTaskChain(task.row, baseJoint, `Показана цепочка стыка ${baseJoint}: ${actionText}`)
   }
 
   function showRepeatedJointTaskChain(row: WeldRow, baseJoint: string, messageText: string) {
     const filters = {
+      projectTitle: String(row.projectTitle ?? '').trim(),
       subtitleCode: String(row.subtitleCode ?? '').trim(),
       line: String(row.line ?? '').trim(),
       joint: baseJoint,
@@ -2794,6 +2865,7 @@ function Home() {
   function openChainRowInCurrentReport(row: WeldRow) {
     setChainRecord(null)
     const filters = {
+      projectTitle: String(row.projectTitle ?? '').trim(),
       subtitleCode: String(row.subtitleCode ?? '').trim(),
       line: String(row.line ?? '').trim(),
       joint: makeExactColumnFilterValue(row.joint),
@@ -2811,6 +2883,7 @@ function Home() {
   function openLinkedReportRow(row: WeldInput & { id: number }) {
     setChainRecord(null)
     const filters = {
+      projectTitle: String(row.projectTitle ?? '').trim(),
       subtitleCode: String(row.subtitleCode ?? '').trim(),
       line: String(row.line ?? '').trim(),
       joint: makeExactColumnFilterValue(row.joint),
@@ -3301,14 +3374,21 @@ function Home() {
                         ) : task.kind === 'delete' ? (
                           <>
                             <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-                            <span className="text-slate-500">исправлен</span>
+                            <span className="text-slate-500">{task.reason}</span>
                             <span className="text-slate-400">·</span>
                             <span className="font-semibold text-slate-900">удалить {task.targetJoint}?</span>
+                          </>
+                        ) : task.kind === 'rename' ? (
+                          <>
+                            <span className="font-semibold text-slate-900">{task.currentJoint}</span>
+                            <span className="text-slate-500">не по правилу</span>
+                            <span className="text-slate-400">·</span>
+                            <span className="font-semibold text-slate-900">переименовать в {task.targetJoint}</span>
                           </>
                         ) : task.kind === 'check' ? (
                           <>
                             <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-                            <span className="text-slate-500">исправлен</span>
+                            <span className="text-slate-500">{task.reason ?? 'цепочка изменилась'}</span>
                             <span className="text-slate-400">·</span>
                             <span className="font-semibold text-slate-900">проверить цепочку {task.baseJoint}</span>
                           </>
@@ -3364,6 +3444,27 @@ function Home() {
                               variant="outline"
                               onClick={() => showRepeatedJointTask(task)}
                               className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+                            >
+                              Показать
+                            </Button>
+                          </>
+                        ) : task.kind === 'rename' ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => renameObsoleteRepeatedJoint(task)}
+                              disabled={renameRepeatedJointMutation.isPending}
+                              className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+                            >
+                              Переименовать
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => showRepeatedJointTask(task)}
+                              className="h-6 rounded-none border-0 border-l border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
                             >
                               Показать
                             </Button>
@@ -4920,20 +5021,31 @@ function Home() {
                       },
                     ].map((option) => {
                       const selected = lnkOfficialityDraft.status === option.value
+                      const unavailable =
+                        option.value === 'unofficial' &&
+                        selectedLnkOfficialityRows.length > 0 &&
+                        selectedLnkOfficialityRows.some((row) => !hasRejectedLnkResult(row))
                       return (
                         <button
                           key={option.value}
                           type="button"
+                          disabled={unavailable}
                           onClick={() => setLnkOfficialityDraft((current) => ({ ...current, status: option.value }))}
                           className={`w-full rounded-md border p-3 text-left transition-colors ${
-                            selected ? option.className : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50'
+                            unavailable
+                              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                              : selected
+                                ? option.className
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50'
                           }`}
                         >
                           <span className="flex items-center justify-between gap-2">
                             <span className="text-sm font-semibold">{option.title}</span>
                             {selected ? <Check className="h-4 w-4" /> : null}
                           </span>
-                          <span className="mt-1 block text-xs leading-5 opacity-80">{option.description}</span>
+                          <span className="mt-1 block text-xs leading-5 opacity-80">
+                            {unavailable ? 'Доступно только для стыков с результатом "ремонт" или "вырез".' : option.description}
+                          </span>
                         </button>
                       )
                     })}
@@ -4994,7 +5106,6 @@ function Home() {
                   ) : (
                     filteredLnkOfficialityRows.map((row) => {
                       const selected = lnkOfficialityDraft.rowIds.has(row.id)
-                      const isUnofficial = String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
                       return (
                         <button
                           key={row.id}
@@ -5018,18 +5129,12 @@ function Home() {
                             </span>
                             <span className="mt-1 block text-xs text-slate-500">
                               Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-') || '-'}</span> · Шифр:{' '}
-                              <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-') || '-'}</span> · Спул:{' '}
-                              <span className="font-semibold text-slate-700">{String(row.spool ?? '-') || '-'}</span>
+                              <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-') || '-'}</span> · <JointSpoolDiameterMeta row={row} /> · Дата сварки:{' '}
+                              <span className="font-semibold text-slate-700">{formatDisplayDate(row.weldDate) || '-'}</span>
                             </span>
                           </span>
-                          <span
-                            className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${
-                              isUnofficial
-                                ? 'border-slate-300 bg-slate-100 text-slate-700'
-                                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                            }`}
-                          >
-                            {isUnofficial ? 'неофициальный' : 'официальный'}
+                          <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+                            {getJointStatusLabel(row)}
                           </span>
                         </button>
                       )
@@ -6277,6 +6382,32 @@ function withOfficialJointStatus(record: WeldInput) {
   return { ...record, status: null }
 }
 
+function validateManualJointNameForSave(value: WeldInput & { id?: number }, rows: WeldRow[]) {
+  const currentJoint = normalizeJointName(value.joint)
+  const previousRow = value.id ? rows.find((row) => row.id === value.id) : null
+  const previousJoint = normalizeJointName(previousRow?.joint)
+  if (value.id && currentJoint === previousJoint) return
+
+  if (previousRow && hasReservedJointSystemPart(previousRow.joint)) {
+    throw new Error('Стык с системными индексами R/W/Y нельзя переименовывать вручную. Используйте подсказки диспетчера задач.')
+  }
+
+  const error = validateManualJointName(value.joint)
+  if (error) throw new Error(error)
+}
+
+function validateManualJointNamesForImport(records: WeldInput[]) {
+  const invalidRecord = records
+    .map((record, index) => ({ record, index, error: validateManualJointName(record.joint) }))
+    .find((item) => item.error)
+
+  if (!invalidRecord) return
+
+  const rowNumber = invalidRecord.index + 2
+  const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
+  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.error}`)
+}
+
 function withPendingLnkResults<T extends WeldInput>(row: T): T {
   let nextRow: (T & Record<string, unknown>) | null = null
   for (const method of LNK_METHODS) {
@@ -6575,6 +6706,11 @@ function hasRejectedLnkResult(row: WeldInput) {
 
 function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
   const tasks: RepeatedJointTask[] = []
+  const chainCheckTasks = buildJointChainConsistencyCheckTasks(rows)
+  const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
+  const blockedChainKeys = new Set(
+    [...chainCheckTasks, ...duplicateCheckTasks].map((task) => getJointChainConsistencyKey(task.row)).filter(Boolean) as string[],
+  )
   const obsoleteByRowId = new Map<number, NonNullable<ReturnType<typeof getObsoleteRepeatedJointInfo>>>()
   for (const row of rows) {
     const repeated = getObsoleteRepeatedJointInfo(rows, row)
@@ -6583,14 +6719,18 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
 
   for (const row of rows) {
     if (obsoleteByRowId.has(row.id)) continue
+    if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys)) continue
     const rejection = getPrimaryRejectedLnkResult(row)
     if (!rejection) continue
     const sourceJoint = String(row.joint ?? '').trim()
     if (!sourceJoint) continue
+    if (hasCompletedParentBranch(rows, row, sourceJoint)) continue
 
     const suffix = rejection.result === 'ремонт' ? 'R' : 'W'
     const parsed = parseRepeatedJointName(sourceJoint)
-    if (getRepeatedJointFailureCount(parsed) >= 3) {
+    const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint)
+    const lastOfficialRejectedRow = officialRejectedChainRows.at(-1)
+    if (!isUnofficialJoint(row) && officialRejectedChainRows.length > 3 && lastOfficialRejectedRow?.id === row.id) {
       const targetJoints = getCoilJointNames(parsed.base).filter((targetJoint) => !hasRepeatedJointTarget(rows, row, targetJoint))
       if (targetJoints.length === 0) continue
 
@@ -6606,7 +6746,7 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
       continue
     }
 
-    const targetJoint = getNextRepeatedJointName(sourceJoint, suffix)
+    const targetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejection.result)
     if (hasRepeatedJointTarget(rows, row, targetJoint)) continue
 
     tasks.push({
@@ -6624,7 +6764,23 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
   for (const row of rows) {
     const repeated = obsoleteByRowId.get(row.id)
     if (!repeated) continue
-    if (isUnusedRepeatedJointDraft(row)) {
+    if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys)) continue
+    if (
+      repeated.expectedTargetJoint &&
+      normalizeJointChainPart(repeated.expectedTargetJoint) !== normalizeJointChainPart(repeated.targetJoint) &&
+      !hasRepeatedJointTarget(rows, repeated.sourceRow, repeated.expectedTargetJoint)
+    ) {
+      tasks.push({
+        kind: 'rename',
+        key: `rename-obsolete:${repeated.sourceRow.id}:${row.id}:${repeated.sourceJoint}:${repeated.targetJoint}:${repeated.expectedTargetJoint}`,
+        row,
+        sourceRow: repeated.sourceRow,
+        sourceJoint: repeated.sourceJoint,
+        currentJoint: repeated.targetJoint,
+        targetJoint: repeated.expectedTargetJoint,
+        baseJoint: parseRepeatedJointName(repeated.expectedTargetJoint).base,
+      })
+    } else if (isUnusedRepeatedJointDraft(row)) {
       tasks.push({
         kind: 'delete',
         key: `obsolete:${repeated.sourceRow.id}:${row.id}:${repeated.sourceJoint}:${repeated.targetJoint}`,
@@ -6633,8 +6789,9 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
         sourceJoint: repeated.sourceJoint,
         targetJoint: repeated.targetJoint,
         suffix: repeated.suffix,
+        reason: repeated.reason,
       })
-    } else if (hasWeldDate(row)) {
+    } else {
       const identity = getJointChainIdentity(row)
       const baseJoint = parseRepeatedJointName(repeated.targetJoint).base
       const chainKey = identity
@@ -6651,11 +6808,145 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
         targetJoint: repeated.targetJoint,
         baseJoint,
         suffix: repeated.suffix,
+        reason: hasWeldDate(row) ? 'повторный стык уже заварен' : 'повторный стык содержит данные',
       })
     }
   }
-  tasks.push(...buildDuplicateJointCheckTasks(rows))
+  return [...chainCheckTasks, ...duplicateCheckTasks, ...tasks]
+}
+
+function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<string>) {
+  const chainKey = getJointChainConsistencyKey(row)
+  return Boolean(chainKey && blockedChainKeys.has(chainKey))
+}
+
+function buildJointChainConsistencyCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
+  const groups = new Map<string, WeldRow[]>()
+  const chainGroups = new Map<string, WeldRow[]>()
+  for (const row of rows) {
+    const key = getRepeatedJointBranchKey(row)
+    if (key) {
+      const group = groups.get(key) ?? []
+      group.push(row)
+      groups.set(key, group)
+    }
+
+    const chainKey = getJointChainConsistencyKey(row)
+    if (chainKey) {
+      const chainGroup = chainGroups.get(chainKey) ?? []
+      chainGroup.push(row)
+      chainGroups.set(chainKey, chainGroup)
+    }
+  }
+
+  const tasks = [...groups.entries()].flatMap(([key, group]) => {
+    const sortedGroup = [...group].sort(compareJointChainRows)
+    const firstUnofficialGood = sortedGroup.find((row) => isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
+    if (firstUnofficialGood) {
+      return [createJointChainCheckTask(firstUnofficialGood, key, 'годный стык неофициальный')]
+    }
+
+    const firstOfficialGoodIndex = sortedGroup.findIndex((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
+    if (firstOfficialGoodIndex < 0) return []
+
+    const officialGoodCount = sortedGroup.filter((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен').length
+    const hasRowsAfterOfficialGood = sortedGroup.slice(firstOfficialGoodIndex + 1).length > 0
+    if (!hasRowsAfterOfficialGood && officialGoodCount <= 1) return []
+
+    const row = sortedGroup[firstOfficialGoodIndex]
+    const reason = officialGoodCount > 1 ? 'несколько годных финалов' : 'есть продолжение после годного'
+    return [createJointChainCheckTask(row, key, reason)]
+  })
+  tasks.push(...buildObsoleteChildBranchCheckTasks(chainGroups, groups))
+  return dedupeRepeatedJointCheckTasks(tasks)
+}
+
+function buildObsoleteChildBranchCheckTasks(chainGroups: Map<string, WeldRow[]>, branchGroups: Map<string, WeldRow[]>) {
+  const tasks: RepeatedJointCheckTask[] = []
+  for (const [chainKey, chainRows] of chainGroups) {
+    const branchKeys = [...new Set(chainRows.map((row) => getRepeatedJointBranchKey(row)).filter(Boolean) as string[])]
+    const completedBranchKeys = branchKeys.filter((branchKey) => {
+      const group = branchGroups.get(branchKey) ?? []
+      return group.some((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
+    })
+
+    for (const completedBranchKey of completedBranchKeys) {
+      const completedBranchJoint = completedBranchKey.split(':').at(-1) ?? ''
+      const completedBranchHasCoil = hasJointChainSegment(completedBranchJoint, 'Y')
+      const obsoleteChildKey = branchKeys.find((branchKey) => {
+        if (branchKey === completedBranchKey) return false
+        const branchJoint = branchKey.split(':').at(-1) ?? ''
+        return completedBranchHasCoil ? branchJoint.startsWith(`${completedBranchJoint}Y`) : hasJointChainSegment(branchJoint, 'Y')
+      })
+      if (!obsoleteChildKey) continue
+
+      const sourceRow = branchGroups.get(completedBranchKey)?.find((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
+      const childRow = branchGroups.get(obsoleteChildKey)?.[0]
+      const row = childRow ?? sourceRow
+      if (!row) continue
+      tasks.push(createJointChainCheckTask(row, `${chainKey}:${completedBranchKey}:child`, 'есть лишняя ветка после годного'))
+      break
+    }
+  }
   return tasks
+}
+
+function hasJointChainSegment(joint: string, suffix: string) {
+  const normalizedSuffix = suffix.toUpperCase()
+  return parseJointChainName(joint).segments.some((segment) => segment.suffix === normalizedSuffix)
+}
+
+function hasCompletedParentBranch(rows: WeldRow[], row: WeldInput, sourceJoint: string) {
+  if (!hasJointChainSegment(sourceJoint, 'Y')) return false
+  const chainIdentity = getJointChainIdentity({ ...row, joint: sourceJoint })
+  const branchIdentity = getRepeatedJointIdentity(row, parseRepeatedJointName(sourceJoint).base)
+  if (!chainIdentity || !branchIdentity) return false
+  return rows.some((candidate) => {
+    if (isUnofficialJoint(candidate) || getJointStatusLabel(candidate) !== 'годен') return false
+    const candidateChainIdentity = getJointChainIdentity(candidate)
+    if (
+      !candidateChainIdentity ||
+      candidateChainIdentity.project !== chainIdentity.project ||
+      candidateChainIdentity.subtitle !== chainIdentity.subtitle ||
+      candidateChainIdentity.line !== chainIdentity.line ||
+      candidateChainIdentity.baseJoint !== chainIdentity.baseJoint
+    ) {
+      return false
+    }
+    const candidateBranchJoint = parseRepeatedJointName(String(candidate.joint ?? '')).base
+    const candidateBranchIdentity = getRepeatedJointIdentity(candidate, candidateBranchJoint)
+    return Boolean(
+      candidateBranchIdentity &&
+        candidateBranchIdentity.joint !== branchIdentity.joint &&
+        !hasJointChainSegment(candidateBranchJoint, 'Y'),
+    )
+  })
+}
+
+function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
+  const seen = new Set<string>()
+  return tasks.filter((task) => {
+    const key = `${task.baseJoint}:${task.reason ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function createJointChainCheckTask(row: WeldRow, key: string, reason: string): RepeatedJointCheckTask {
+  const sourceJoint = String(row.joint ?? '').trim()
+  const baseJoint = parseJointChainName(sourceJoint).base || sourceJoint
+  return {
+    kind: 'check',
+    key: `check-chain:${key}:${reason}:${row.id}`,
+    row,
+    sourceRow: row,
+    sourceJoint,
+    targetJoint: sourceJoint,
+    baseJoint,
+    suffix: 'R',
+    reason,
+  }
 }
 
 function buildDuplicateJointCheckTasks(rows: WeldRow[]): RepeatedJointDuplicateCheckTask[] {
@@ -6692,16 +6983,52 @@ function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow) {
   const targetJoint = String(row.joint ?? '').trim()
   const parsed = parseRepeatedJointName(targetJoint)
   if (parsed.segments.length === 0) return null
-  let obsoleteCandidate: { sourceRow: WeldRow; sourceJoint: string; targetJoint: string; suffix: 'R' | 'W' } | null = null
+  let obsoleteCandidate: {
+    sourceRow: WeldRow
+    sourceJoint: string
+    targetJoint: string
+    expectedTargetJoint: string
+    suffix: 'R' | 'W'
+    reason: string
+  } | null = null
   for (const candidate of getRepeatedJointSourceCandidates(parsed)) {
-    const sourceRow = findMatchingJointRow(rows, row, candidate.sourceJoint)
-    if (!sourceRow) continue
+    const sourceRows = findMatchingJointRows(rows, row, candidate.sourceJoint)
+    if (sourceRows.length === 0) continue
+    const validSource = sourceRows.find((sourceRow) => {
+      const rejection = getPrimaryRejectedLnkResult(sourceRow)
+      const expectedSuffix = rejection ? (rejection.result === 'ремонт' ? 'R' : 'W') : null
+      const expectedTargetJoint = rejection ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result) : ''
+      return expectedSuffix === candidate.suffix && normalizeJointChainPart(expectedTargetJoint) === normalizeJointChainPart(targetJoint)
+    })
+    if (validSource) return null
+    const sourceRow = sourceRows[0]
     const rejection = getPrimaryRejectedLnkResult(sourceRow)
-    const expectedSuffix = rejection ? (rejection.result === 'ремонт' ? 'R' : 'W') : null
-    if (expectedSuffix === candidate.suffix && getNextRepeatedJointName(candidate.sourceJoint, candidate.suffix) === targetJoint) return null
-    obsoleteCandidate = obsoleteCandidate ?? { sourceRow, sourceJoint: candidate.sourceJoint, targetJoint, suffix: candidate.suffix }
+    const expectedTargetJoint = rejection ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result) : ''
+    obsoleteCandidate =
+      obsoleteCandidate ?? {
+        sourceRow,
+        sourceJoint: candidate.sourceJoint,
+        targetJoint,
+        expectedTargetJoint,
+        suffix: candidate.suffix,
+        reason: getObsoleteRepeatedJointReason(sourceRow, rejection, expectedTargetJoint, targetJoint),
+      }
   }
   return obsoleteCandidate
+}
+
+function getObsoleteRepeatedJointReason(
+  sourceRow: WeldInput,
+  rejection: ReturnType<typeof getPrimaryRejectedLnkResult>,
+  expectedTargetJoint: string,
+  targetJoint: string,
+) {
+  if (!rejection) {
+    return getJointStatusLabel(sourceRow) === 'годен' ? 'исходный стык стал годным' : 'исходный стык больше не требует повтора'
+  }
+  if (isUnofficialJoint(sourceRow)) return 'исходный стык неофициальный'
+  if (expectedTargetJoint && normalizeJointChainPart(expectedTargetJoint) !== normalizeJointChainPart(targetJoint)) return 'лишний по текущим правилам'
+  return 'повторный стык не актуален'
 }
 
 function isUnusedRepeatedJointDraft(row: WeldInput) {
@@ -6731,15 +7058,45 @@ function getNextRepeatedJointName(sourceJoint: string, suffix: 'R' | 'W') {
   return formatRepeatedJointName(parsed.base, segments)
 }
 
+function getExpectedRepeatedJointName(sourceRow: WeldInput, sourceJoint: string, result: 'ремонт' | 'вырез') {
+  if (isUnofficialJoint(sourceRow)) return sourceJoint.trim()
+  return getNextRepeatedJointName(sourceJoint, result === 'ремонт' ? 'R' : 'W')
+}
+
+function getOfficialRepeatedJointFailureCount(rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) {
+  return getOfficialRejectedJointChainRows(rows, sourceRow, sourceJoint).length
+}
+
+function getOfficialRejectedJointChainRows(rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) {
+  const parsedSource = parseRepeatedJointName(sourceJoint)
+  const sourceIdentity = getRepeatedJointIdentity(sourceRow, parsedSource.base)
+  if (!sourceIdentity) return []
+  return rows
+    .filter((row) => {
+      if (isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
+      const rowJoint = String(row.joint ?? '').trim()
+      if (!rowJoint) return false
+      const rowIdentity = getRepeatedJointIdentity(row, parseRepeatedJointName(rowJoint).base)
+      if (!rowIdentity) return false
+      return (
+        rowIdentity.project === sourceIdentity.project &&
+        rowIdentity.subtitle === sourceIdentity.subtitle &&
+        rowIdentity.line === sourceIdentity.line &&
+        rowIdentity.joint === sourceIdentity.joint
+      )
+    })
+    .sort(compareJointChainRows)
+}
+
 function parseRepeatedJointName(joint: string) {
-  let base = joint.trim()
-  const segments: Array<{ suffix: 'R' | 'W'; index: number }> = []
-  let match = base.match(/^(.*)([RW])(\d+)$/i)
-  while (match) {
-    segments.unshift({ suffix: match[2].toUpperCase() as 'R' | 'W', index: Number(match[3]) || 0 })
-    base = match[1]
-    match = base.match(/^(.*)([RW])(\d+)$/i)
-  }
+  const parsed = parseJointName(joint)
+  const lastCoilIndex = findLastIndex(parsed.segments, (segment) => segment.suffix === 'Y')
+  const baseSegments = lastCoilIndex === -1 ? [] : parsed.segments.slice(0, lastCoilIndex + 1)
+  const repairSegments = parsed.segments
+    .slice(lastCoilIndex + 1)
+    .filter((segment): segment is { suffix: 'R' | 'W'; index: number } => segment.suffix === 'R' || segment.suffix === 'W')
+  const base = `${parsed.base}${baseSegments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+  const segments = repairSegments
   const lastSegment = segments.at(-1)
   return {
     base,
@@ -6788,8 +7145,14 @@ function hasRepeatedJointTarget(rows: WeldRow[], sourceRow: WeldInput, targetJoi
 function findRepeatedJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
   const sourceIdentity = getRepeatedJointIdentity(sourceRow, joint)
   if (!sourceIdentity) return null
+  const sourceId = typeof (sourceRow as { id?: unknown }).id === 'number' ? (sourceRow as { id: number }).id : null
+  const sourceJointIdentity = getRepeatedJointIdentity(sourceRow)
+  const needsOfficialSameNameTarget =
+    isUnofficialJoint(sourceRow) && sourceJointIdentity !== null && sourceJointIdentity.joint === sourceIdentity.joint
   return (
     rows.find((row) => {
+      if (sourceId !== null && row.id === sourceId) return false
+      if (needsOfficialSameNameTarget && isUnofficialJoint(row)) return false
       const rowIdentity = getRepeatedJointIdentity(row)
       return (
         rowIdentity &&
@@ -6805,8 +7168,12 @@ function findRepeatedJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: stri
 function findMatchingJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
   const repeatedMatch = findRepeatedJointRow(rows, sourceRow, joint)
   if (repeatedMatch) return repeatedMatch
+  return findMatchingJointRows(rows, sourceRow, joint)[0]
+}
+
+function findMatchingJointRows(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
   const normalizedJoint = normalizeSearchText(joint)
-  return rows.find((row) => {
+  return rows.filter((row) => {
     if (normalizeSearchText(row.joint) !== normalizedJoint) return false
     return (
       normalizeSearchText(row.projectTitle) === normalizeSearchText(sourceRow.projectTitle) &&
@@ -6829,11 +7196,26 @@ function getRepeatedJointIdentity(row: WeldInput, jointOverride?: string) {
 
 function getDuplicateJointKey(row: WeldInput) {
   if (isUnofficialJoint(row)) return null
-  const values = ['projectTitle', 'subtitleCode', 'line', 'spool', 'joint'].map((fieldKey) =>
+  const values = ['projectTitle', 'subtitleCode', 'line', 'joint'].map((fieldKey) =>
     normalizeJointChainPart(row[fieldKey as WeldFieldKey]),
   )
   if (values.every((value) => value === '')) return null
   return values.join('|')
+}
+
+function getRepeatedJointBranchKey(row: WeldInput) {
+  const joint = String(row.joint ?? '').trim()
+  if (!joint) return null
+  const branchJoint = parseRepeatedJointName(joint).base
+  const identity = getRepeatedJointIdentity(row, branchJoint)
+  if (!identity) return null
+  return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
+}
+
+function getJointChainConsistencyKey(row: WeldInput) {
+  const identity = getJointChainIdentity(row)
+  if (!identity) return null
+  return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.baseJoint}`
 }
 
 function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string): WeldInput {
@@ -6978,22 +7360,8 @@ function getJointChainIdentity(row: WeldInput) {
 }
 
 function parseJointChainName(joint: string) {
-  const normalizedJoint = joint.trim().replace(/\s+/g, '')
-  const baseMatch = normalizedJoint.match(/^([SF]\d+)/i)
-  if (!baseMatch) {
-    return { base: normalizedJoint, segments: [] as Array<{ suffix: string; index: number }> }
-  }
-
-  const base = baseMatch[1].toUpperCase()
-  const tail = normalizedJoint.slice(baseMatch[1].length)
-  const segments: Array<{ suffix: string; index: number }> = []
-  const segmentPattern = /([A-ZА-Я]+)(\d+)/gi
-  let segmentMatch = segmentPattern.exec(tail)
-  while (segmentMatch) {
-    segments.push({ suffix: segmentMatch[1].toUpperCase(), index: Number(segmentMatch[2]) || 0 })
-    segmentMatch = segmentPattern.exec(tail)
-  }
-  return { base, segments }
+  const parsed = parseJointName(joint)
+  return { base: parsed.base, segments: parsed.segments }
 }
 
 function compareJointChainRows(left: WeldRow, right: WeldRow) {

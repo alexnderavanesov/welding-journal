@@ -33,7 +33,6 @@ const DUPLICATE_CHECK_FIELD_KEYS: WeldFieldKey[] = [
   'projectTitle',
   'subtitleCode',
   'line',
-  'spool',
   'joint',
 ]
 
