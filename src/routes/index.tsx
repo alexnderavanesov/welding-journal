@@ -409,6 +409,12 @@ type RepeatedJointTask =
   | RepeatedJointRenameTask
   | RepeatedJointCheckTask
   | RepeatedJointDuplicateCheckTask
+type RepeatedJointTaskGroup = {
+  key: string
+  baseJoint: string
+  tasks: RepeatedJointTask[]
+}
+const UNOFFICIAL_REJECTED_WITH_COIL_REASON = 'катушка требует проверки после смены официальности'
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
@@ -675,6 +681,7 @@ function Home() {
   const importMutation = useMutation({
     mutationFn: async (records: WeldInput[]) => {
       validateManualJointNamesForImport(records)
+      validateWeldDatesForImport(records)
       try {
         const result = await importWeldJoints({ data: { records } })
         if (result) return result
@@ -1638,6 +1645,7 @@ function Home() {
     () => buildRepeatedJointTasks(rows).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
     [dismissedRepeatedJointTaskKeys, rows],
   )
+  const repeatedJointTaskGroups = useMemo(() => groupRepeatedJointTasks(repeatedJointTasks), [repeatedJointTasks])
 
   const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
   const heatTreatmentRows = useMemo(
@@ -1668,6 +1676,19 @@ function Home() {
   )
   const visibleRows = activeReport === 'heatTreatment' ? heatTreatmentRows : activeReport === 'lnk' ? lnkRows : rows
   const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
+  useEffect(() => {
+    if (!chainRecord) return
+
+    function handleChainKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setChainRecord(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleChainKeyDown)
+    return () => window.removeEventListener('keydown', handleChainKeyDown)
+  }, [chainRecord])
   const selectedHeatTreatmentRows = useMemo(
     () => availablePstoRequestRows.filter((row) => selectedHeatTreatmentIds.has(row.id)),
     [availablePstoRequestRows, selectedHeatTreatmentIds],
@@ -3103,6 +3124,199 @@ function Home() {
     }, highlightDurationMs)
   }
 
+  function renderRepeatedJointTaskContent(task: RepeatedJointTask) {
+    if (task.kind === 'create') {
+      return (
+        <>
+          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+          <span className="font-semibold text-amber-700">→</span>
+          <span className="font-semibold text-slate-900">{task.targetJoint}</span>
+          <span className="text-slate-400">·</span>
+          <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
+            {task.methodCode} - {task.result}
+          </span>
+        </>
+      )
+    }
+    if (task.kind === 'coil') {
+      return (
+        <>
+          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+          <span className="text-slate-500">превышен лимит</span>
+          <span className="text-slate-400">·</span>
+          <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
+            {task.methodCode} - {task.result}
+          </span>
+          <span className="text-slate-400">·</span>
+          <span className="font-semibold text-slate-900">катушка {task.targetJoints.join(' + ')}</span>
+        </>
+      )
+    }
+    if (task.kind === 'delete') {
+      return (
+        <>
+          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+          <span className="text-slate-500">{task.reason}</span>
+          <span className="text-slate-400">·</span>
+          <span className="font-semibold text-slate-900">удалить {task.targetJoint}?</span>
+        </>
+      )
+    }
+    if (task.kind === 'rename') {
+      return (
+        <>
+          <span className="font-semibold text-slate-900">{task.currentJoint}</span>
+          <span className="text-slate-500">не по правилу</span>
+          <span className="text-slate-400">·</span>
+          <span className="font-semibold text-slate-900">переименовать в {task.targetJoint}</span>
+        </>
+      )
+    }
+    if (task.kind === 'check') {
+      return (
+        <>
+          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
+          <span className="text-slate-500">{task.reason ?? 'цепочка изменилась'}</span>
+          <span className="text-slate-400">·</span>
+          <span className="font-semibold text-slate-900">проверить цепочку {task.baseJoint}</span>
+        </>
+      )
+    }
+    return (
+      <>
+        <span className="font-semibold text-slate-900">{task.baseJoint}</span>
+        <span className="text-slate-500">возможный дубль</span>
+        <span className="text-slate-400">·</span>
+        <span className="font-semibold text-slate-900">проверить цепочку</span>
+        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">{task.count}</span>
+      </>
+    )
+  }
+
+  function renderRepeatedJointTaskActions(task: RepeatedJointTask) {
+    return (
+      <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white">
+        {task.kind === 'create' || task.kind === 'coil' ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => createRepeatedJoint(task)}
+              disabled={repeatedJointMutation.isPending}
+              className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+            >
+              {task.kind === 'coil' ? 'Катушка' : 'Создать'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => showRepeatedJointTask(task)}
+              className="h-6 rounded-none border-0 border-l border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+            >
+              Показать
+            </Button>
+          </>
+        ) : task.kind === 'delete' ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => deleteObsoleteRepeatedJoint(task)}
+              disabled={obsoleteRepeatedJointMutation.isPending}
+              className="h-6 rounded-none border-0 border-r border-rose-100 px-2.5 text-xs text-rose-700 shadow-none hover:bg-rose-50"
+            >
+              Удалить
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => showRepeatedJointTask(task)}
+              className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+            >
+              Показать
+            </Button>
+          </>
+        ) : task.kind === 'rename' ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => renameObsoleteRepeatedJoint(task)}
+              disabled={renameRepeatedJointMutation.isPending}
+              className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+            >
+              Переименовать
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => showRepeatedJointTask(task)}
+              className="h-6 rounded-none border-0 border-l border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+            >
+              Показать
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => showRepeatedJointTask(task)}
+            className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+          >
+            Показать
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => dismissRepeatedJointTask(task)}
+          className="h-6 rounded-none border-l border-slate-200 px-2 text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+        >
+          Позже
+        </Button>
+      </div>
+    )
+  }
+
+  function renderRepeatedJointTaskCard(task: RepeatedJointTask, nested = false) {
+    return (
+      <div
+        key={task.key}
+        className={`flex w-fit max-w-full items-center gap-1.5 rounded-md border px-2 py-1.5 ${
+          nested ? 'border-slate-200 bg-white' : 'border-amber-200 bg-white/95'
+        }`}
+      >
+        <div className="flex min-w-0 items-center gap-1.5 text-sm">{renderRepeatedJointTaskContent(task)}</div>
+        {renderRepeatedJointTaskActions(task)}
+      </div>
+    )
+  }
+
+  function renderRepeatedJointTaskGroup(group: RepeatedJointTaskGroup) {
+    if (group.tasks.length === 1) return renderRepeatedJointTaskCard(group.tasks[0])
+    return (
+      <details key={group.key} className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-sm marker:hidden">
+          <span className="font-semibold text-slate-900">{group.baseJoint}</span>
+          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">{group.tasks.length} задачи</span>
+          <span className="ml-auto rounded border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 group-open:hidden">
+            раскрыть
+          </span>
+          <span className="ml-auto hidden rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600 group-open:inline">
+            свернуть
+          </span>
+        </summary>
+        <div className="flex max-w-full flex-col gap-1 border-t border-amber-100 p-1.5">{group.tasks.map((task) => renderRepeatedJointTaskCard(task, true))}</div>
+      </details>
+    )
+  }
+
   return (
     <main className="relative min-h-screen bg-white">
       <aside
@@ -3333,7 +3547,7 @@ function Home() {
               <div className="flex min-w-0 flex-col gap-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="text-sm font-semibold text-amber-950">Повторные стыки</span>
+                    <span className="text-sm font-semibold text-amber-950">Диспетчер задач</span>
                     <span className="text-xs text-amber-800">Найдено: {repeatedJointTasks.length}. Действие только после подтверждения.</span>
                   </div>
                   <Button
@@ -3347,154 +3561,10 @@ function Home() {
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {repeatedJointTasks.slice(0, 8).map((task) => (
-                    <div key={task.key} className="flex w-fit items-center gap-1.5 rounded-md border border-amber-200 bg-white/95 px-2 py-1.5">
-                      <div className="flex min-w-0 items-center gap-1.5 text-sm">
-                        {task.kind === 'create' ? (
-                          <>
-                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-                            <span className="font-semibold text-amber-700">→</span>
-                            <span className="font-semibold text-slate-900">{task.targetJoint}</span>
-                            <span className="text-slate-400">·</span>
-                            <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
-                              {task.methodCode} - {task.result}
-                            </span>
-                          </>
-                        ) : task.kind === 'coil' ? (
-                          <>
-                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-                            <span className="text-slate-500">превышен лимит</span>
-                            <span className="text-slate-400">·</span>
-                            <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
-                              {task.methodCode} - {task.result}
-                            </span>
-                            <span className="text-slate-400">·</span>
-                            <span className="font-semibold text-slate-900">катушка {task.targetJoints.join(' + ')}</span>
-                          </>
-                        ) : task.kind === 'delete' ? (
-                          <>
-                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-                            <span className="text-slate-500">{task.reason}</span>
-                            <span className="text-slate-400">·</span>
-                            <span className="font-semibold text-slate-900">удалить {task.targetJoint}?</span>
-                          </>
-                        ) : task.kind === 'rename' ? (
-                          <>
-                            <span className="font-semibold text-slate-900">{task.currentJoint}</span>
-                            <span className="text-slate-500">не по правилу</span>
-                            <span className="text-slate-400">·</span>
-                            <span className="font-semibold text-slate-900">переименовать в {task.targetJoint}</span>
-                          </>
-                        ) : task.kind === 'check' ? (
-                          <>
-                            <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-                            <span className="text-slate-500">{task.reason ?? 'цепочка изменилась'}</span>
-                            <span className="text-slate-400">·</span>
-                            <span className="font-semibold text-slate-900">проверить цепочку {task.baseJoint}</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="font-semibold text-slate-900">{task.baseJoint}</span>
-                            <span className="text-slate-500">возможный дубль</span>
-                            <span className="text-slate-400">·</span>
-                            <span className="font-semibold text-slate-900">проверить цепочку</span>
-                            <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
-                              {task.count}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white">
-                        {task.kind === 'create' || task.kind === 'coil' ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => createRepeatedJoint(task)}
-                              disabled={repeatedJointMutation.isPending}
-                              className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
-                            >
-                              {task.kind === 'coil' ? 'Катушка' : 'Создать'}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => showRepeatedJointTask(task)}
-                              className="h-6 rounded-none border-0 border-l border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
-                            >
-                              Показать
-                            </Button>
-                          </>
-                        ) : task.kind === 'delete' ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => deleteObsoleteRepeatedJoint(task)}
-                              disabled={obsoleteRepeatedJointMutation.isPending}
-                              className="h-6 rounded-none border-0 border-r border-rose-100 px-2.5 text-xs text-rose-700 shadow-none hover:bg-rose-50"
-                            >
-                              Удалить
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => showRepeatedJointTask(task)}
-                              className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
-                            >
-                              Показать
-                            </Button>
-                          </>
-                        ) : task.kind === 'rename' ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => renameObsoleteRepeatedJoint(task)}
-                              disabled={renameRepeatedJointMutation.isPending}
-                              className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
-                            >
-                              Переименовать
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => showRepeatedJointTask(task)}
-                              className="h-6 rounded-none border-0 border-l border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
-                            >
-                              Показать
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => showRepeatedJointTask(task)}
-                            className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
-                          >
-                            Показать
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => dismissRepeatedJointTask(task)}
-                          className="h-6 rounded-none border-l border-slate-200 px-2 text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-800"
-                        >
-                          Позже
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                  {repeatedJointTaskGroups.slice(0, 8).map((group) => renderRepeatedJointTaskGroup(group))}
                 </div>
-                {repeatedJointTasks.length > 8 ? (
-                  <div className="text-xs text-amber-800">Показаны первые 8. Остальные появятся после обработки текущих.</div>
+                {repeatedJointTaskGroups.length > 8 ? (
+                  <div className="text-xs text-amber-800">Показаны первые 8 групп. Остальные появятся после обработки текущих.</div>
                 ) : null}
               </div>
             </div>
@@ -6383,6 +6453,8 @@ function withOfficialJointStatus(record: WeldInput) {
 }
 
 function validateManualJointNameForSave(value: WeldInput & { id?: number }, rows: WeldRow[]) {
+  validateWeldDateForSave(value.weldDate)
+
   const currentJoint = normalizeJointName(value.joint)
   const previousRow = value.id ? rows.find((row) => row.id === value.id) : null
   const previousJoint = normalizeJointName(previousRow?.joint)
@@ -6396,6 +6468,11 @@ function validateManualJointNameForSave(value: WeldInput & { id?: number }, rows
   if (error) throw new Error(error)
 }
 
+function validateWeldDateForSave(value: unknown) {
+  if (!isFutureWeldDate(value)) return
+  throw new Error('Дата сварки не может быть позже сегодняшней.')
+}
+
 function validateManualJointNamesForImport(records: WeldInput[]) {
   const invalidRecord = records
     .map((record, index) => ({ record, index, error: validateManualJointName(record.joint) }))
@@ -6406,6 +6483,30 @@ function validateManualJointNamesForImport(records: WeldInput[]) {
   const rowNumber = invalidRecord.index + 2
   const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
   throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.error}`)
+}
+
+function validateWeldDatesForImport(records: WeldInput[]) {
+  const invalidRecord = records
+    .map((record, index) => ({ record, index }))
+    .find((item) => isFutureWeldDate(item.record.weldDate))
+
+  if (!invalidRecord) return
+
+  const rowNumber = invalidRecord.index + 2
+  const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
+  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". Дата сварки не может быть позже сегодняшней.`)
+}
+
+function isFutureWeldDate(value: unknown) {
+  const date = String(value ?? '').trim()
+  if (!date) return false
+  return date > getTodayIsoDate()
+}
+
+function getTodayIsoDate() {
+  const date = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 function withPendingLnkResults<T extends WeldInput>(row: T): T {
@@ -6709,7 +6810,10 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
   const chainCheckTasks = buildJointChainConsistencyCheckTasks(rows)
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
   const blockedChainKeys = new Set(
-    [...chainCheckTasks, ...duplicateCheckTasks].map((task) => getJointChainConsistencyKey(task.row)).filter(Boolean) as string[],
+    [
+      ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),
+      ...duplicateCheckTasks,
+    ].map((task) => getJointChainConsistencyKey(task.row)).filter(Boolean) as string[],
   )
   const obsoleteByRowId = new Map<number, NonNullable<ReturnType<typeof getObsoleteRepeatedJointInfo>>>()
   for (const row of rows) {
@@ -6815,6 +6919,29 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
   return [...chainCheckTasks, ...duplicateCheckTasks, ...tasks]
 }
 
+function groupRepeatedJointTasks(tasks: RepeatedJointTask[]): RepeatedJointTaskGroup[] {
+  const groups = new Map<string, RepeatedJointTaskGroup>()
+  for (const task of tasks) {
+    const key = getRepeatedJointTaskGroupKey(task)
+    const group = groups.get(key)
+    if (group) {
+      group.tasks.push(task)
+    } else {
+      groups.set(key, { key, baseJoint: getRepeatedJointTaskBaseJoint(task), tasks: [task] })
+    }
+  }
+  return [...groups.values()]
+}
+
+function getRepeatedJointTaskGroupKey(task: RepeatedJointTask) {
+  return getJointChainConsistencyKey(task.row) ?? getRepeatedJointTaskBaseJoint(task)
+}
+
+function getRepeatedJointTaskBaseJoint(task: RepeatedJointTask) {
+  if (task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename') return task.baseJoint
+  return parseJointChainName(task.sourceJoint).base || task.sourceJoint
+}
+
 function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<string>) {
   const chainKey = getJointChainConsistencyKey(row)
   return Boolean(chainKey && blockedChainKeys.has(chainKey))
@@ -6841,30 +6968,62 @@ function buildJointChainConsistencyCheckTasks(rows: WeldRow[]): RepeatedJointChe
 
   const tasks = [...groups.entries()].flatMap(([key, group]) => {
     const sortedGroup = [...group].sort(compareJointChainRows)
+    const weldDateOrderIssue = findWeldDateOrderIssue(sortedGroup)
+    const checkTasks: RepeatedJointCheckTask[] = weldDateOrderIssue
+      ? [
+          createJointChainCheckTask(
+            weldDateOrderIssue.row,
+            `${key}:weld-date-order:${weldDateOrderIssue.row.id}`,
+            'проверить даты сварки',
+          ),
+        ]
+      : []
     const firstUnofficialGood = sortedGroup.find((row) => isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
     if (firstUnofficialGood) {
-      return [createJointChainCheckTask(firstUnofficialGood, key, 'годный стык неофициальный')]
+      return [...checkTasks, createJointChainCheckTask(firstUnofficialGood, key, 'годный стык неофициальный')]
     }
 
     const firstOfficialGoodIndex = sortedGroup.findIndex((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
-    if (firstOfficialGoodIndex < 0) return []
+    if (firstOfficialGoodIndex < 0) return checkTasks
 
     const officialGoodCount = sortedGroup.filter((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен').length
-    const hasRowsAfterOfficialGood = sortedGroup.slice(firstOfficialGoodIndex + 1).length > 0
-    if (!hasRowsAfterOfficialGood && officialGoodCount <= 1) return []
+    const firstOfficialGood = sortedGroup[firstOfficialGoodIndex]
+    const hasRowsAfterOfficialGood = sortedGroup.some((row) => isJointChainRowWeldedAfter(row, firstOfficialGood))
+    if (!hasRowsAfterOfficialGood && officialGoodCount <= 1) return checkTasks
 
-    const row = sortedGroup[firstOfficialGoodIndex]
+    const row = firstOfficialGood
     const reason = officialGoodCount > 1 ? 'несколько годных финалов' : 'есть продолжение после годного'
-    return [createJointChainCheckTask(row, key, reason)]
+    return [...checkTasks, createJointChainCheckTask(row, key, reason)]
   })
-  tasks.push(...buildObsoleteChildBranchCheckTasks(chainGroups, groups))
+  tasks.push(...buildObsoleteChildBranchCheckTasks(rows, chainGroups, groups))
   return dedupeRepeatedJointCheckTasks(tasks)
 }
 
-function buildObsoleteChildBranchCheckTasks(chainGroups: Map<string, WeldRow[]>, branchGroups: Map<string, WeldRow[]>) {
+function buildObsoleteChildBranchCheckTasks(rows: WeldRow[], chainGroups: Map<string, WeldRow[]>, branchGroups: Map<string, WeldRow[]>) {
   const tasks: RepeatedJointCheckTask[] = []
   for (const [chainKey, chainRows] of chainGroups) {
     const branchKeys = [...new Set(chainRows.map((row) => getRepeatedJointBranchKey(row)).filter(Boolean) as string[])]
+    const unofficialRejectedRowWithObsoleteCoil = chainRows.find((row) => {
+      if (!isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
+      if (hasValidOfficialCoilTrigger(rows, chainRows)) return false
+      const rowBranchKey = getRepeatedJointBranchKey(row)
+      return branchKeys.some((branchKey) => {
+        if (branchKey === rowBranchKey) return false
+        const branchJoint = branchKey.split(':').at(-1) ?? ''
+        return hasJointChainSegment(branchJoint, 'Y')
+      })
+    })
+    if (unofficialRejectedRowWithObsoleteCoil) {
+      tasks.push(
+        createJointChainCheckTask(
+          unofficialRejectedRowWithObsoleteCoil,
+          `${chainKey}:unofficial-rejected-with-coil`,
+          UNOFFICIAL_REJECTED_WITH_COIL_REASON,
+        ),
+      )
+      continue
+    }
+
     const completedBranchKeys = branchKeys.filter((branchKey) => {
       const group = branchGroups.get(branchKey) ?? []
       return group.some((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
@@ -6889,6 +7048,63 @@ function buildObsoleteChildBranchCheckTasks(chainGroups: Map<string, WeldRow[]>,
     }
   }
   return tasks
+}
+
+function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
+  return task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON
+}
+
+function isJointChainRowWeldedAfter(row: WeldInput, referenceRow: WeldInput) {
+  const rowDate = String(row.weldDate ?? '').trim()
+  const referenceDate = String(referenceRow.weldDate ?? '').trim()
+  return Boolean(rowDate && referenceDate && rowDate > referenceDate)
+}
+
+function findWeldDateOrderIssue(rows: WeldRow[]) {
+  let previousDatedRow: WeldRow | null = null
+  let previousChainStepKey: string | null = null
+  for (const row of rows) {
+    const rowDate = getWeldDateOrderValue(row.weldDate)
+    if (!rowDate) continue
+    const chainStepKey = getJointChainStepKey(row)
+    if (chainStepKey === previousChainStepKey) continue
+    if (previousDatedRow) {
+      const previousDate = getWeldDateOrderValue(previousDatedRow.weldDate)
+      if (previousDate && rowDate < previousDate) {
+        return { previous: previousDatedRow, row }
+      }
+    }
+    previousDatedRow = row
+    previousChainStepKey = chainStepKey
+  }
+  return null
+}
+
+function getJointChainStepKey(row: WeldInput) {
+  const parsed = parseJointChainName(String(row.joint ?? ''))
+  return `${normalizeJointChainPart(parsed.base)}:${parsed.segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+}
+
+function getWeldDateOrderValue(value: unknown) {
+  const text = String(value ?? '').trim()
+  if (!text) return 0
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoMatch) return Number(`${isoMatch[1]}${isoMatch[2]}${isoMatch[3]}`)
+  const longMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  if (longMatch) return Number(`${longMatch[3]}${longMatch[2]}${longMatch[1]}`)
+  const shortMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{2})$/)
+  if (shortMatch) return Number(`20${shortMatch[3]}${shortMatch[2]}${shortMatch[1]}`)
+  return 0
+}
+
+function hasValidOfficialCoilTrigger(rows: WeldRow[], chainRows: WeldRow[]) {
+  return chainRows.some((row) => {
+    if (isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
+    const sourceJoint = String(row.joint ?? '').trim()
+    if (!sourceJoint) return false
+    const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint)
+    return officialRejectedChainRows.length > 3 && officialRejectedChainRows.at(-1)?.id === row.id
+  })
 }
 
 function hasJointChainSegment(joint: string, suffix: string) {

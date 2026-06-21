@@ -13,6 +13,7 @@ import {
   calculateFinalStatus,
 } from '@/lib/weld-fields'
 import { withAutoVikForWeldDate } from '@/lib/weld-import-export'
+import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
 
 const yesEmptyFieldKeys = new Set([
   'pstoRequired',
@@ -111,8 +112,9 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
       })).filter((group) => group.fields.length > 0),
     [],
   )
+  const saveBlockReason = getWeldFormSaveBlockReason(draft, value)
   const handleSave = () => {
-    if (!busy) onSave(withCalculatedFinalStatus(draft))
+    if (!busy && !saveBlockReason) onSave(withCalculatedFinalStatus(draft))
   }
 
   useEffect(() => {
@@ -136,7 +138,7 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [busy, draft, onCancel, onSave])
+  }, [busy, draft, onCancel, onSave, saveBlockReason])
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0 })
@@ -317,14 +319,19 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200/80 bg-white px-6 py-4">
-          <Button variant="outline" onClick={onCancel}>
-            Отмена
-          </Button>
-          <Button onClick={handleSave} disabled={busy}>
-            <Check className="mr-2 h-4 w-4" />
-            Сохранить
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 bg-white px-6 py-4">
+          <div className="min-h-6 text-sm text-slate-500">
+            {saveBlockReason ? <span>Чтобы сохранить: {saveBlockReason}</span> : null}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onCancel}>
+              Отмена
+            </Button>
+            <Button onClick={handleSave} disabled={busy || Boolean(saveBlockReason)} title={saveBlockReason ?? undefined}>
+              <Check className="mr-2 h-4 w-4" />
+              Сохранить
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -369,4 +376,32 @@ function getJointTitle(value: WeldInput) {
 
   if (!project && !subtitle && !line && !joint) return 'Проект, шифр, линия и стык появятся после заполнения.'
   return `${project || '-'} · ${subtitle || '-'} · ${line || '-'} · ${joint || '-'}`
+}
+
+function getWeldFormSaveBlockReason(draft: WeldInput, initialValue: WeldInput & { id?: number }) {
+  if (isFutureWeldDate(draft.weldDate)) {
+    return 'дата сварки не может быть позже сегодняшней.'
+  }
+
+  const currentJoint = normalizeJointName(draft.joint)
+  const initialJoint = normalizeJointName(initialValue.joint)
+  if (initialValue.id && currentJoint === initialJoint) return null
+
+  if (initialValue.id && hasReservedJointSystemPart(initialValue.joint)) {
+    return 'стык с системными индексами R/W/Y нельзя переименовывать вручную. Используйте подсказки диспетчера задач.'
+  }
+
+  return validateManualJointName(draft.joint)
+}
+
+function isFutureWeldDate(value: unknown) {
+  const date = String(value ?? '').trim()
+  if (!date) return false
+  return date > getTodayIsoDate()
+}
+
+function getTodayIsoDate() {
+  const date = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
