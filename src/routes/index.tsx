@@ -393,6 +393,7 @@ type RepeatedJointCheckTask = {
   baseJoint: string
   suffix: 'R' | 'W'
   reason?: string
+  details?: string
 }
 type RepeatedJointDuplicateCheckTask = {
   kind: 'duplicate-check'
@@ -478,16 +479,34 @@ function Home() {
   const [isPstoShowMenuOpen, setIsPstoShowMenuOpen] = useState(false)
   const [isLnkShowMenuOpen, setIsLnkShowMenuOpen] = useState(false)
   const [dismissedRepeatedJointTaskKeys, setDismissedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
+  const [expandedRepeatedJointTaskKeys, setExpandedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
+  const isReportModalOpen =
+    isPstoRequestModalOpen ||
+    isPstoRequestManagerOpen ||
+    isPstoResultModalOpen ||
+    isPstoResultManagerOpen ||
+    isLnkRequestModalOpen ||
+    isLnkRequestManagerOpen ||
+    isLnkResultModalOpen ||
+    isLnkResultPreviewOpen ||
+    isLnkResultManagerOpen ||
+    isLnkOfficialityModalOpen
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || editing) return
-      setColumnFilters({})
+      if (event.key !== 'Escape' || editing || isReportModalOpen) return
+      if (activeReport === 'heatTreatment') {
+        setHeatTreatmentFilters({})
+      } else if (activeReport === 'lnk') {
+        setLnkFilters({})
+      } else {
+        setColumnFilters({})
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editing])
+  }, [activeReport, editing, isReportModalOpen])
 
   useEffect(() => {
     function handleHorizontalScroll() {
@@ -1646,6 +1665,13 @@ function Home() {
     [dismissedRepeatedJointTaskKeys, rows],
   )
   const repeatedJointTaskGroups = useMemo(() => groupRepeatedJointTasks(repeatedJointTasks), [repeatedJointTasks])
+  useEffect(() => {
+    const visibleKeys = new Set(repeatedJointTasks.map((task) => task.key))
+    setExpandedRepeatedJointTaskKeys((current) => {
+      const next = new Set([...current].filter((key) => visibleKeys.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [repeatedJointTasks])
 
   const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
   const heatTreatmentRows = useMemo(
@@ -1760,6 +1786,26 @@ function Home() {
       ),
     [filteredPstoResultRows, pstoResultDraft.requestName, pstoResultDraft.rowIds],
   )
+  const pstoResultSaveBlockReason = useMemo(() => {
+    if (pstoResultMutation.isPending) return 'Результат сохраняется, дождитесь завершения.'
+    if (!pstoResultDraft.requestName) return 'Выберите заявку ПСТО.'
+    if (selectedPstoResultRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
+    if (!pstoResultDraft.result) return 'Выберите результат ПСТО.'
+    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && pstoResultDraft.result !== 'проведено') return 'Выберите результат ПСТО.'
+    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !pstoResultDraft.pstoDate) return 'Укажите дату ПСТО.'
+    const dateIssue =
+      pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE
+        ? null
+        : findFirstDateBeforeWeldDateIssue(selectedPstoResultRows, pstoResultDraft.pstoDate, 'Дата ПСТО')
+    if (dateIssue) return dateIssue
+    if (
+      pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE &&
+      !getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName)
+    ) {
+      return 'Укажите наименование диаграммы термообработки.'
+    }
+    return ''
+  }, [nextPstoDiagramName, pstoResultDraft, pstoResultMutation.isPending, selectedPstoResultRows])
   const managedPstoResultRows = useMemo(
     () =>
       heatTreatmentRows.filter(
@@ -1946,6 +1992,10 @@ function Home() {
     if (hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) && !lnkResultDraft.controlDate) {
       return 'Укажите дату контроля.'
     }
+    const dateIssue = hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft)
+      ? findFirstLnkResultDateBeforeWeldDateIssue(selectedLnkResultRows, lnkResultDraft)
+      : null
+    if (dateIssue) return dateIssue
     if (
       hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) &&
       !getRequestNameFromNaming(lnkResultDraft.conclusionNaming, nextLnkConclusionName)
@@ -2428,6 +2478,10 @@ function Home() {
   }
 
   function handleAddPstoResult() {
+    if (pstoResultSaveBlockReason) {
+      setMessage(pstoResultSaveBlockReason)
+      return
+    }
     if (!pstoResultDraft.requestName) {
       setMessage('Выберите заявку ПСТО')
       return
@@ -2560,6 +2614,96 @@ function Home() {
     if (lnkOfficialityMutation.isPending) return
     setIsLnkOfficialityModalOpen(false)
   }
+
+  useEffect(() => {
+    if (!isReportModalOpen) return
+
+    function handleReportModalKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+
+      if (isLnkResultPreviewOpen) {
+        setIsLnkResultPreviewOpen(false)
+        return
+      }
+      if (isPstoRequestManagerOpen) {
+        if (!pstoRequestManagerMutation.isPending && !pstoRequestCorrectionMutation.isPending) {
+          setIsPstoRequestManagerOpen(false)
+        }
+        return
+      }
+      if (isPstoResultManagerOpen) {
+        if (!pstoResultCorrectionMutation.isPending) {
+          setIsPstoResultManagerOpen(false)
+        }
+        return
+      }
+      if (isLnkRequestManagerOpen) {
+        if (!lnkRequestManagerMutation.isPending && !lnkRequestCorrectionMutation.isPending) {
+          setIsLnkRequestManagerOpen(false)
+        }
+        return
+      }
+      if (isLnkResultManagerOpen) {
+        if (
+          !lnkResultCorrectionMutation.isPending &&
+          !lnkResultReplacementMutation.isPending &&
+          !lnkConclusionCorrectionMutation.isPending
+        ) {
+          setIsLnkResultManagerOpen(false)
+        }
+        return
+      }
+      if (isPstoResultModalOpen) {
+        closeAddPstoResultModal()
+        return
+      }
+      if (isPstoRequestModalOpen) {
+        closeCreatePstoRequestModal()
+        return
+      }
+      if (isLnkOfficialityModalOpen) {
+        closeLnkOfficialityModal()
+        return
+      }
+      if (isLnkResultModalOpen) {
+        closeAddLnkResultModal()
+        return
+      }
+      if (isLnkRequestModalOpen) {
+        closeCreateLnkRequestModal()
+      }
+    }
+
+    window.addEventListener('keydown', handleReportModalKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', handleReportModalKeyDown, { capture: true })
+  }, [
+    isReportModalOpen,
+    isLnkResultPreviewOpen,
+    isPstoRequestManagerOpen,
+    isPstoResultManagerOpen,
+    isLnkRequestManagerOpen,
+    isLnkResultManagerOpen,
+    isPstoResultModalOpen,
+    isPstoRequestModalOpen,
+    isLnkOfficialityModalOpen,
+    isLnkResultModalOpen,
+    isLnkRequestModalOpen,
+    pstoRequestManagerMutation.isPending,
+    pstoRequestCorrectionMutation.isPending,
+    pstoResultCorrectionMutation.isPending,
+    lnkRequestManagerMutation.isPending,
+    lnkRequestCorrectionMutation.isPending,
+    lnkResultCorrectionMutation.isPending,
+    lnkResultReplacementMutation.isPending,
+    lnkConclusionCorrectionMutation.isPending,
+    pstoResultMutation.isPending,
+    pstoRequestMutation.isPending,
+    lnkOfficialityMutation.isPending,
+    lnkResultMutation.isPending,
+    lnkRequestMutation.isPending,
+  ])
 
   function toggleLnkOfficialityRow(rowId: number) {
     setLnkOfficialityDraft((current) => {
@@ -2715,6 +2859,10 @@ function Home() {
   }
 
   function handleAddLnkResult() {
+    if (lnkResultSaveBlockReason) {
+      setMessage(lnkResultSaveBlockReason)
+      return
+    }
     if (!lnkResultDraft.methodKey) {
       setMessage('Выберите метод контроля')
       return
@@ -3124,13 +3272,113 @@ function Home() {
     }, highlightDurationMs)
   }
 
+  function getRepeatedJointTaskTitle(task: RepeatedJointTask) {
+    if (task.kind === 'create') {
+      return {
+        joint: task.sourceJoint,
+        type: isUnofficialJoint(task.row) ? 'Создать официальный стык после неофициального' : 'Создать повторный стык',
+      }
+    }
+    if (task.kind === 'coil') return { joint: task.sourceJoint, type: 'Создать катушку' }
+    if (task.kind === 'delete') return { joint: task.targetJoint, type: 'Удалить лишний повторный стык' }
+    if (task.kind === 'rename') return { joint: task.currentJoint, type: 'Переименовать повторный стык' }
+    if (task.kind === 'duplicate-check') return { joint: task.baseJoint, type: 'Возможный дубль' }
+
+    const reason = task.reason ?? ''
+    if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
+    if (reason === 'проверить дату сварки и контроля') return { joint: task.sourceJoint, type: 'Проверить дату сварки и контроля' }
+    if (reason === 'годный стык неофициальный') return { joint: task.sourceJoint, type: 'Годный стык неофициальный' }
+    if (reason === 'несколько годных финалов') return { joint: task.sourceJoint, type: 'Несколько годных финалов' }
+    if (reason === 'есть продолжение после годного') return { joint: task.sourceJoint, type: 'Лишняя ветка после годного' }
+    if (reason === 'есть лишняя ветка после годного') return { joint: task.sourceJoint, type: 'Лишняя ветка после годного' }
+    if (reason === UNOFFICIAL_REJECTED_WITH_COIL_REASON) return { joint: task.sourceJoint, type: 'Проверить катушку после смены официальности' }
+    if (reason === 'повторный стык уже заварен' || reason === 'повторный стык содержит данные') {
+      return { joint: task.sourceJoint, type: 'Проверить цепочку вместо удаления' }
+    }
+    if (reason === 'исходный стык больше не требует повтора') {
+      return { joint: task.sourceJoint, type: 'Создание повторного стыка не требуется' }
+    }
+    if (reason === 'повторный стык не актуален' || reason === 'лишний по текущим правилам') {
+      return { joint: task.sourceJoint, type: 'Повторный стык не по правилу' }
+    }
+    return { joint: task.sourceJoint, type: 'Проверить цепочку' }
+  }
+
+  function getRepeatedJointTaskDetails(task: RepeatedJointTask) {
+    if (task.kind === 'create') {
+      const dateText = formatDisplayDate(task.row.weldDate) || '-'
+      const officialityText = isUnofficialJoint(task.row) ? 'неофициальный' : 'официальный'
+      const ruleText = isUnofficialJoint(task.row)
+        ? 'Так как исходный стык неофициальный, следующий стык создается с тем же номером без системного индекса R/W/Y.'
+        : 'Так как исходный стык официальный, следующий стык создается по правилу цепочки с системным индексом R или W.'
+      return `Стык ${task.sourceJoint} (${officialityText}) получил негодный результат ${task.methodCode} - ${task.result}${dateText !== '-' ? `, дата сварки ${dateText}` : ''}. ${ruleText} По правилам цепочки нужен следующий стык ${task.targetJoint}, но диспетчер не нашел его в журнале. Создание выполняется только после подтверждения.`
+    }
+    if (task.kind === 'coil') {
+      const dateText = formatDisplayDate(task.row.weldDate) || '-'
+      return `По стыку ${task.sourceJoint} достигнут лимит негодных официальных результатов: текущий результат ${task.methodCode} - ${task.result}${dateText !== '-' ? `, дата сварки ${dateText}` : ''}. Вместо очередного повторного стыка требуется катушка: ${task.targetJoints.join(' и ')}.`
+    }
+    if (task.kind === 'delete') {
+      return `Стык ${task.targetJoint} выглядит лишним для текущего состояния цепочки ${task.sourceJoint}. Причина: ${task.reason}. Дата сварки у него не заполнена, поэтому диспетчер может удалить его после подтверждения. Если есть сомнения, сначала открой цепочку.`
+    }
+    if (task.kind === 'rename') {
+      return `Стык ${task.currentJoint} больше не соответствует правилам именования этой цепочки. По текущей официальности и результатам контроля ожидается имя ${task.targetJoint}, поэтому диспетчер предлагает переименовать его после проверки.`
+    }
+    if (task.kind === 'duplicate-check') {
+      return `В журнале найдено несколько строк с одинаковыми проектом, шифром, линией и номером стыка ${task.baseJoint}. Спул при этой проверке не учитывается. Проверь, это допустимые записи или лишние дубли.`
+    }
+
+    if (task.details) return task.details
+
+    const reason = task.reason ?? 'цепочка изменилась'
+    if (reason === 'проверить даты сварки') {
+      return `В цепочке ${task.baseJoint} обнаружена дата сварки, которая нарушает последовательность системных шагов R/W/Y. Проверь даты сварки у повторных стыков.`
+    }
+    if (reason === 'проверить дату сварки и контроля') {
+      return `В цепочке ${task.baseJoint} дата контроля или ПСТО оказалась раньше даты сварки. Проверь даты в сварочном журнале, ЛНК и ПСТО.`
+    }
+    if (reason === UNOFFICIAL_REJECTED_WITH_COIL_REASON) {
+      return `В цепочке ${task.baseJoint} изменилась официальность стыка, из-за чего катушка или ветка может стать лишней либо требовать подтверждения. Проверь цепочку перед дальнейшими действиями.`
+    }
+    if (reason === 'есть продолжение после годного') {
+      return `После годного официального стыка в цепочке ${task.baseJoint} найдено продолжение с более поздней датой сварки. Проверь, не остались ли лишние стыки после финального годного.`
+    }
+    if (reason === 'есть лишняя ветка после годного') {
+      return `В цепочке ${task.baseJoint} есть ветка, которая выглядит лишней после уже полученного годного официального стыка. Открой цепочку и проверь, какие стыки нужно оставить.`
+    }
+    if (reason === 'несколько годных финалов') {
+      return `В цепочке ${task.baseJoint} найдено несколько годных официальных финалов. Нужно проверить, какой стык является актуальным завершением цепочки.`
+    }
+    if (reason === 'годный стык неофициальный') {
+      return `Стык ${task.sourceJoint} имеет годный результат, но отмечен как неофициальный. Итогом цепочки должен быть годный официальный стык, поэтому диспетчер просит проверить цепочку.`
+    }
+    return `Диспетчер обнаружил нестандартное состояние цепочки ${task.baseJoint}: ${reason}. Открой цепочку и проверь, нужны ли дополнительные действия.`
+  }
+
+  function getRepeatedJointTaskDetailsHeading(task: RepeatedJointTask) {
+    if (task.kind === 'create') return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} → ${task.targetJoint} · ${task.methodCode} - ${task.result}`
+    if (task.kind === 'coil') return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.methodCode} - ${task.result} · катушка ${task.targetJoints.join(' + ')}`
+    if (task.kind === 'delete') {
+      return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.sourceRow)} · ${task.reason} · удалить ${formatRepeatedJointTaskHeadingJoint(task.targetJoint, task.row)}`
+    }
+    if (task.kind === 'rename') return `${formatRepeatedJointTaskHeadingJoint(task.currentJoint, task.row)} → ${task.targetJoint}`
+    if (task.kind === 'duplicate-check') return `${formatRepeatedJointTaskHeadingJoint(task.baseJoint, task.row)} · найдено дублей: ${task.count}`
+    return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.reason ?? 'цепочка изменилась'}`
+  }
+
+  function formatRepeatedJointTaskHeadingJoint(joint: string, row: WeldInput) {
+    return isUnofficialJoint(row) ? `${joint} · неофициальный` : joint
+  }
+
   function renderRepeatedJointTaskContent(task: RepeatedJointTask) {
+    const title = getRepeatedJointTaskTitle(task)
     if (task.kind === 'create') {
       return (
         <>
-          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-          <span className="font-semibold text-amber-700">→</span>
-          <span className="font-semibold text-slate-900">{task.targetJoint}</span>
+          <span className="text-slate-800">{title.joint}</span>
+          <span className="text-slate-700">{title.type}</span>
+          <span className="text-slate-400">·</span>
+          <span className="text-amber-700">→</span>
+          <span className="text-slate-800">{task.targetJoint}</span>
           <span className="text-slate-400">·</span>
           <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
             {task.methodCode} - {task.result}
@@ -3141,61 +3389,74 @@ function Home() {
     if (task.kind === 'coil') {
       return (
         <>
-          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-          <span className="text-slate-500">превышен лимит</span>
+          <span className="text-slate-800">{title.joint}</span>
+          <span className="text-slate-700">{title.type}</span>
           <span className="text-slate-400">·</span>
           <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
             {task.methodCode} - {task.result}
           </span>
           <span className="text-slate-400">·</span>
-          <span className="font-semibold text-slate-900">катушка {task.targetJoints.join(' + ')}</span>
+          <span className="text-slate-800">катушка {task.targetJoints.join(' + ')}</span>
         </>
       )
     }
     if (task.kind === 'delete') {
       return (
         <>
-          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-          <span className="text-slate-500">{task.reason}</span>
-          <span className="text-slate-400">·</span>
-          <span className="font-semibold text-slate-900">удалить {task.targetJoint}?</span>
+          <span className="text-slate-800">{title.joint}</span>
+          <span className="text-slate-700">{title.type}</span>
         </>
       )
     }
     if (task.kind === 'rename') {
       return (
         <>
-          <span className="font-semibold text-slate-900">{task.currentJoint}</span>
-          <span className="text-slate-500">не по правилу</span>
+          <span className="text-slate-800">{title.joint}</span>
+          <span className="text-slate-700">{title.type}</span>
           <span className="text-slate-400">·</span>
-          <span className="font-semibold text-slate-900">переименовать в {task.targetJoint}</span>
+          <span className="text-slate-500">ожидается {task.targetJoint}</span>
         </>
       )
     }
     if (task.kind === 'check') {
       return (
         <>
-          <span className="font-semibold text-slate-900">{task.sourceJoint}</span>
-          <span className="text-slate-500">{task.reason ?? 'цепочка изменилась'}</span>
-          <span className="text-slate-400">·</span>
-          <span className="font-semibold text-slate-900">проверить цепочку {task.baseJoint}</span>
+          <span className="text-slate-800">{title.joint}</span>
+          <span className="text-slate-700">{title.type}</span>
         </>
       )
     }
     return (
       <>
-        <span className="font-semibold text-slate-900">{task.baseJoint}</span>
-        <span className="text-slate-500">возможный дубль</span>
-        <span className="text-slate-400">·</span>
-        <span className="font-semibold text-slate-900">проверить цепочку</span>
+        <span className="text-slate-800">{title.joint}</span>
+        <span className="text-slate-700">{title.type}</span>
         <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">{task.count}</span>
       </>
     )
   }
 
   function renderRepeatedJointTaskActions(task: RepeatedJointTask) {
+    const isExpanded = expandedRepeatedJointTaskKeys.has(task.key)
+    const actionButtonClass =
+      'h-6 rounded-none border-0 border-l border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-900'
+    const primaryActionButtonClass =
+      'h-6 rounded-none border-0 bg-slate-100 px-2.5 text-xs font-semibold text-slate-800 shadow-none hover:bg-slate-200 hover:text-slate-950'
+    const dangerActionButtonClass =
+      'h-6 rounded-none border-0 bg-rose-50 px-2.5 text-xs font-semibold text-rose-700 shadow-none hover:bg-rose-100 hover:text-rose-800'
+    const toggleDetails = () => {
+      setExpandedRepeatedJointTaskKeys((current) => {
+        const next = new Set(current)
+        if (next.has(task.key)) {
+          next.delete(task.key)
+        } else {
+          next.add(task.key)
+        }
+        return next
+      })
+    }
+
     return (
-      <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white">
+      <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
         {task.kind === 'create' || task.kind === 'coil' ? (
           <>
             <Button
@@ -3203,7 +3464,7 @@ function Home() {
               size="sm"
               onClick={() => createRepeatedJoint(task)}
               disabled={repeatedJointMutation.isPending}
-              className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+              className={primaryActionButtonClass}
             >
               {task.kind === 'coil' ? 'Катушка' : 'Создать'}
             </Button>
@@ -3212,9 +3473,9 @@ function Home() {
               size="sm"
               variant="outline"
               onClick={() => showRepeatedJointTask(task)}
-              className="h-6 rounded-none border-0 border-l border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+              className={actionButtonClass}
             >
-              Показать
+              Цепочка
             </Button>
           </>
         ) : task.kind === 'delete' ? (
@@ -3225,7 +3486,7 @@ function Home() {
               variant="outline"
               onClick={() => deleteObsoleteRepeatedJoint(task)}
               disabled={obsoleteRepeatedJointMutation.isPending}
-              className="h-6 rounded-none border-0 border-r border-rose-100 px-2.5 text-xs text-rose-700 shadow-none hover:bg-rose-50"
+              className={dangerActionButtonClass}
             >
               Удалить
             </Button>
@@ -3234,9 +3495,9 @@ function Home() {
               size="sm"
               variant="outline"
               onClick={() => showRepeatedJointTask(task)}
-              className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+              className={actionButtonClass}
             >
-              Показать
+              Цепочка
             </Button>
           </>
         ) : task.kind === 'rename' ? (
@@ -3246,7 +3507,7 @@ function Home() {
               size="sm"
               onClick={() => renameObsoleteRepeatedJoint(task)}
               disabled={renameRepeatedJointMutation.isPending}
-              className="h-6 rounded-none bg-slate-700 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+              className={primaryActionButtonClass}
             >
               Переименовать
             </Button>
@@ -3255,9 +3516,9 @@ function Home() {
               size="sm"
               variant="outline"
               onClick={() => showRepeatedJointTask(task)}
-              className="h-6 rounded-none border-0 border-l border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+              className={actionButtonClass}
             >
-              Показать
+              Цепочка
             </Button>
           </>
         ) : (
@@ -3266,45 +3527,55 @@ function Home() {
             size="sm"
             variant="outline"
             onClick={() => showRepeatedJointTask(task)}
-            className="h-6 rounded-none border-0 border-r border-sky-100 px-2.5 text-xs text-sky-800 shadow-none hover:bg-sky-50"
+            className="h-6 rounded-none border-0 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-900"
           >
-            Показать
+            Цепочка
           </Button>
         )}
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          onClick={() => dismissRepeatedJointTask(task)}
-          className="h-6 rounded-none border-l border-slate-200 px-2 text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+          onClick={toggleDetails}
+          className={actionButtonClass}
         >
-          Позже
+          {isExpanded ? 'Свернуть' : 'Подробнее'}
         </Button>
       </div>
     )
   }
 
   function renderRepeatedJointTaskCard(task: RepeatedJointTask, nested = false) {
+    const isExpanded = expandedRepeatedJointTaskKeys.has(task.key)
     return (
       <div
         key={task.key}
-        className={`flex w-fit max-w-full items-center gap-1.5 rounded-md border px-2 py-1.5 ${
+        className={`flex w-fit max-w-full flex-col gap-1 rounded-md border px-2 py-1.5 ${
           nested ? 'border-slate-200 bg-white' : 'border-amber-200 bg-white/95'
         }`}
       >
-        <div className="flex min-w-0 items-center gap-1.5 text-sm">{renderRepeatedJointTaskContent(task)}</div>
-        {renderRepeatedJointTaskActions(task)}
+        <div className="flex max-w-full items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">{renderRepeatedJointTaskContent(task)}</div>
+          {renderRepeatedJointTaskActions(task)}
+        </div>
+        {isExpanded ? (
+          <div className="max-w-[min(760px,calc(100vw-5rem))] rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs leading-5 text-slate-600">
+            <div className="mb-1 font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
+            <div>{getRepeatedJointTaskDetails(task)}</div>
+          </div>
+        ) : null}
       </div>
     )
   }
 
   function renderRepeatedJointTaskGroup(group: RepeatedJointTaskGroup) {
-    if (group.tasks.length === 1) return renderRepeatedJointTaskCard(group.tasks[0])
     return (
       <details key={group.key} className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-sm marker:hidden">
           <span className="font-semibold text-slate-900">{group.baseJoint}</span>
-          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">{group.tasks.length} задачи</span>
+          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+            {formatTaskCount(group.tasks.length)}
+          </span>
           <span className="ml-auto rounded border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 group-open:hidden">
             раскрыть
           </span>
@@ -3315,6 +3586,15 @@ function Home() {
         <div className="flex max-w-full flex-col gap-1 border-t border-amber-100 p-1.5">{group.tasks.map((task) => renderRepeatedJointTaskCard(task, true))}</div>
       </details>
     )
+  }
+
+  function formatTaskCount(count: number) {
+    const lastTwoDigits = count % 100
+    const lastDigit = count % 10
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${count} задач`
+    if (lastDigit === 1) return `${count} задача`
+    if (lastDigit >= 2 && lastDigit <= 4) return `${count} задачи`
+    return `${count} задач`
   }
 
   return (
@@ -3561,11 +3841,8 @@ function Home() {
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {repeatedJointTaskGroups.slice(0, 8).map((group) => renderRepeatedJointTaskGroup(group))}
+                  {repeatedJointTaskGroups.map((group) => renderRepeatedJointTaskGroup(group))}
                 </div>
-                {repeatedJointTaskGroups.length > 8 ? (
-                  <div className="text-xs text-amber-800">Показаны первые 8 групп. Остальные появятся после обработки текущих.</div>
-                ) : null}
               </div>
             </div>
           ) : null}
@@ -3876,9 +4153,12 @@ function Home() {
                                 <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                                 <OfficialityBadge row={row} compact />
                               </span>
-                              <span className="block truncate text-xs text-slate-500">
-                                Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-')}</span> · Шифр:{' '}
-                                <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · <JointSpoolDiameterMeta row={row} />
+                              <span className="block text-xs leading-5 text-slate-500">
+                                <JointProjectSubtitleMeta row={row} />
+                                <MetaSeparator />
+                                <JointSpoolDiameterMeta row={row} />
+                                <MetaSeparator />
+                                <JointWeldDateMeta row={row} />
                               </span>
                               <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                                 <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
@@ -4011,8 +4291,14 @@ function Home() {
                               <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                               <OfficialityBadge row={row} compact />
                             </div>
-                            <div className="truncate text-xs text-slate-500">
-                              <JointSpoolDiameterMeta row={row} /> · Результат: {getPstoResultLabel(row.pstoResult)}
+                            <div className="text-xs leading-5 text-slate-500">
+                              <JointProjectSubtitleMeta row={row} />
+                              <MetaSeparator />
+                              <JointSpoolDiameterMeta row={row} />
+                              <MetaSeparator />
+                              <JointWeldDateMeta row={row} />
+                              <MetaSeparator />
+                              Результат: {getPstoResultLabel(row.pstoResult)}
                             </div>
                           </div>
                           <Button
@@ -4256,13 +4542,13 @@ function Home() {
                                 <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                                 <OfficialityBadge row={row} compact />
                               </span>
-                              <span className="block truncate text-xs text-slate-500">
-                                Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-')}</span> · Шифр:{' '}
-                                <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · Стык:{' '}
-                                <span className="font-semibold text-slate-700">{String(row.joint ?? '-')}</span>
+                              <span className="block text-xs leading-5 text-slate-500">
+                                <JointProjectSubtitleMeta row={row} />
                               </span>
-	                              <span className="block truncate text-xs text-slate-500">
+	                              <span className="block text-xs leading-5 text-slate-500">
 	                                <JointSpoolDiameterMeta row={row} />
+                                  <MetaSeparator />
+                                  <JointWeldDateMeta row={row} />
 	                              </span>
                               <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                                 <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
@@ -4273,7 +4559,7 @@ function Home() {
                                 </span>
                               </span>
                               {disabled ? (
-                                <span className="mt-1 block truncate text-xs text-slate-500">
+                                <span className="mt-1 block text-xs leading-5 text-slate-500">
                                   {requestName ? 'Выберите эту заявку ПСТО, чтобы отметить стык.' : 'На этот стык еще нет заявки ПСТО.'}
                                 </span>
                               ) : null}
@@ -4303,24 +4589,29 @@ function Home() {
               </section>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200/80 px-5 py-4">
+              <div className="min-h-5 text-sm text-slate-500">
+                {pstoResultSaveBlockReason ? (
+                  <span className="text-sm text-slate-500">
+                    Чтобы сохранить: {pstoResultSaveBlockReason}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={closeAddPstoResultModal}>
                 Отмена
               </Button>
-              <Button
-                onClick={handleAddPstoResult}
-                disabled={
-                  pstoResultMutation.isPending ||
-                  selectedPstoResultRows.length === 0 ||
-                  !pstoResultDraft.result ||
-                  (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !pstoResultDraft.pstoDate) ||
-                  (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE &&
-                    !getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName))
-                }
-              >
-                <Check className="mr-2 h-4 w-4" />
-                Сохранить результат
-              </Button>
+              <span title={pstoResultSaveBlockReason || 'Можно сохранить результат'}>
+                <Button
+                  onClick={handleAddPstoResult}
+                  disabled={Boolean(pstoResultSaveBlockReason)}
+                  className={pstoResultSaveBlockReason ? 'pointer-events-none' : ''}
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Сохранить результат
+                </Button>
+              </span>
+              </div>
             </div>
           </div>
         </div>
@@ -4388,7 +4679,11 @@ function Home() {
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                               <span>
+                                <JointProjectSubtitleMeta row={row} />
+                                <MetaSeparator />
                                 <JointSpoolDiameterMeta row={row} />
+                                <MetaSeparator />
+                                <JointWeldDateMeta row={row} />
                               </span>
                               <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
                                 Стык: {getJointStatusLabel(row)}
@@ -4604,8 +4899,12 @@ function Home() {
                                 <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                                 <OfficialityBadge row={row} compact />
                               </span>
-                              <span className="block truncate text-xs text-slate-500">
+                              <span className="block text-xs leading-5 text-slate-500">
+                                <JointProjectSubtitleMeta row={row} />
+                                <MetaSeparator />
                                 <JointSpoolDiameterMeta row={row} />
+                                <MetaSeparator />
+                                <JointWeldDateMeta row={row} />
                               </span>
                             </span>
                             <span className="flex flex-wrap gap-1.5">
@@ -4775,8 +5074,12 @@ function Home() {
                                 <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                                 <OfficialityBadge row={row} compact />
                               </div>
-                              <div className="truncate text-xs text-slate-500">
-                                <JointSpoolDiameterMeta row={row} /> · Линия: {String(row.line ?? '-')}
+                              <div className="text-xs leading-5 text-slate-500">
+                                <JointProjectSubtitleMeta row={row} />
+                                <MetaSeparator />
+                                <JointSpoolDiameterMeta row={row} />
+                                <MetaSeparator />
+                                <JointWeldDateMeta row={row} />
                               </div>
                             </div>
                             <div className="flex flex-wrap justify-end gap-1.5">
@@ -4912,7 +5215,11 @@ function Home() {
                               </div>
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                 <span>
+                                  <JointProjectSubtitleMeta row={row} />
+                                  <MetaSeparator />
                                   <JointSpoolDiameterMeta row={row} />
+                                  <MetaSeparator />
+                                  <JointWeldDateMeta row={row} />
                                 </span>
                                 {changeHint || (previewResult && previewResult !== currentResult) ? (
                                   <span className="inline-flex items-center gap-1.5">
@@ -5198,9 +5505,11 @@ function Home() {
                               <OfficialityBadge row={row} compact />
                             </span>
                             <span className="mt-1 block text-xs text-slate-500">
-                              Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-') || '-'}</span> · Шифр:{' '}
-                              <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-') || '-'}</span> · <JointSpoolDiameterMeta row={row} /> · Дата сварки:{' '}
-                              <span className="font-semibold text-slate-700">{formatDisplayDate(row.weldDate) || '-'}</span>
+                              <JointProjectSubtitleMeta row={row} />
+                              <MetaSeparator />
+                              <JointSpoolDiameterMeta row={row} />
+                              <MetaSeparator />
+                              <JointWeldDateMeta row={row} />
                             </span>
                           </span>
                           <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
@@ -5496,13 +5805,13 @@ function Home() {
                                 <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
                                 <OfficialityBadge row={row} compact />
                               </span>
-                              <span className="block truncate text-xs text-slate-500">
-                                Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-')}</span> · Шифр:{' '}
-                                <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · Стык:{' '}
-                                <span className="font-semibold text-slate-700">{String(row.joint ?? '-')}</span>
+                              <span className="block text-xs leading-5 text-slate-500">
+                                <JointProjectSubtitleMeta row={row} />
                               </span>
-                              <span className="block truncate text-xs text-slate-500">
+                              <span className="block text-xs leading-5 text-slate-500">
                                 <JointSpoolDiameterMeta row={row} />
+                                <MetaSeparator />
+                                <JointWeldDateMeta row={row} />
                               </span>
                               <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
                                 {formatLnkResultSummaryItems(row).map((item) => (
@@ -5691,8 +6000,11 @@ function Home() {
                             <OfficialityBadge row={row} compact />
                           </div>
                           <div className="mt-1 text-xs text-slate-500">
-                            Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-')}</span> · Шифр:{' '}
-                            <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-')}</span> · <JointSpoolDiameterMeta row={row} />
+                            <JointProjectSubtitleMeta row={row} />
+                            <MetaSeparator />
+                            <JointSpoolDiameterMeta row={row} />
+                            <MetaSeparator />
+                            <JointWeldDateMeta row={row} />
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
                             <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-bold text-slate-700">
@@ -6807,7 +7119,7 @@ function hasRejectedLnkResult(row: WeldInput) {
 
 function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
   const tasks: RepeatedJointTask[] = []
-  const chainCheckTasks = buildJointChainConsistencyCheckTasks(rows)
+  const chainCheckTasks = [...buildJointChainConsistencyCheckTasks(rows), ...buildControlDateBeforeWeldDateCheckTasks(rows)]
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
   const blockedChainKeys = new Set(
     [
@@ -6913,6 +7225,9 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
         baseJoint,
         suffix: repeated.suffix,
         reason: hasWeldDate(row) ? 'повторный стык уже заварен' : 'повторный стык содержит данные',
+        details: hasWeldDate(row)
+          ? `Стык ${repeated.targetJoint} выглядит лишним по текущим правилам цепочки, но у него уже заполнена дата сварки ${formatDisplayDate(row.weldDate) || '-'}. Диспетчер не удаляет такие строки автоматически: открой цепочку и проверь вручную.`
+          : `Стык ${repeated.targetJoint} выглядит лишним по текущим правилам цепочки, но в нем уже есть данные. Проверь цепочку перед удалением или исправлением.`,
       })
     }
   }
@@ -6947,6 +7262,50 @@ function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<
   return Boolean(chainKey && blockedChainKeys.has(chainKey))
 }
 
+function buildControlDateBeforeWeldDateCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
+  const tasks: RepeatedJointCheckTask[] = []
+  for (const row of rows) {
+    const issues = getControlDateBeforeWeldDateIssues(row)
+    if (issues.length === 0) continue
+    const joint = String(row.joint ?? '').trim() || '-'
+    const details = issues
+      .map(
+        (issue) =>
+          `${issue.label}: ${formatDisplayDate(issue.date) || '-'} раньше даты сварки стыка ${joint} (${formatDisplayDate(row.weldDate) || '-'}).`,
+      )
+      .join(' ')
+    tasks.push(
+      createJointChainCheckTask(
+        row,
+        `${getJointChainConsistencyKey(row) ?? row.id}:control-before-weld:${row.id}`,
+        'проверить дату сварки и контроля',
+        `${details} Проверь дату сварки или дату ${issues.length === 1 ? formatDateIssueLabelForSuggestion(issues[0].label) : 'контроля/ПСТО'}.`,
+      ),
+    )
+  }
+  return tasks
+}
+
+function formatDateIssueLabelForSuggestion(label: string) {
+  const normalizedLabel = label.trim().toLowerCase()
+  if (normalizedLabel.startsWith('дата ')) return normalizedLabel.slice('дата '.length)
+  return normalizedLabel
+}
+
+function getControlDateBeforeWeldDateIssues(row: WeldInput) {
+  const issues: Array<{ label: string; date: unknown }> = []
+  for (const method of LNK_METHODS) {
+    if (!hasText(row[method.resultKey]) || !hasText(row[method.conclusionDateKey])) continue
+    if (isDateBeforeWeldDate(row[method.conclusionDateKey], row.weldDate)) {
+      issues.push({ label: `Дата контроля ${method.code}`, date: row[method.conclusionDateKey] })
+    }
+  }
+  if (hasText(row.pstoResult) && hasText(row.pstoDate) && isDateBeforeWeldDate(row.pstoDate, row.weldDate)) {
+    issues.push({ label: 'Дата ПСТО', date: row.pstoDate })
+  }
+  return issues
+}
+
 function buildJointChainConsistencyCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
   const groups = new Map<string, WeldRow[]>()
   const chainGroups = new Map<string, WeldRow[]>()
@@ -6975,12 +7334,22 @@ function buildJointChainConsistencyCheckTasks(rows: WeldRow[]): RepeatedJointChe
             weldDateOrderIssue.row,
             `${key}:weld-date-order:${weldDateOrderIssue.row.id}`,
             'проверить даты сварки',
+            `Дата стыка ${String(weldDateOrderIssue.previous.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.previous.weldDate) || '-'}) позже даты следующего системного шага ${String(weldDateOrderIssue.row.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.row.weldDate) || '-'}). Проверь последовательность дат сварки в части R/W/Y.`,
           ),
         ]
       : []
     const firstUnofficialGood = sortedGroup.find((row) => isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
     if (firstUnofficialGood) {
-      return [...checkTasks, createJointChainCheckTask(firstUnofficialGood, key, 'годный стык неофициальный')]
+      const joint = String(firstUnofficialGood.joint ?? '').trim() || '-'
+      return [
+        ...checkTasks,
+        createJointChainCheckTask(
+          firstUnofficialGood,
+          key,
+          'годный стык неофициальный',
+          `Стык ${joint} сейчас годен, но отмечен как неофициальный. Итогом цепочки должен быть годный официальный стык, поэтому нужно проверить официальность и финал цепочки.`,
+        ),
+      ]
     }
 
     const firstOfficialGoodIndex = sortedGroup.findIndex((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
@@ -6988,12 +7357,16 @@ function buildJointChainConsistencyCheckTasks(rows: WeldRow[]): RepeatedJointChe
 
     const officialGoodCount = sortedGroup.filter((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен').length
     const firstOfficialGood = sortedGroup[firstOfficialGoodIndex]
-    const hasRowsAfterOfficialGood = sortedGroup.some((row) => isJointChainRowWeldedAfter(row, firstOfficialGood))
-    if (!hasRowsAfterOfficialGood && officialGoodCount <= 1) return checkTasks
+    const rowAfterOfficialGood = sortedGroup.find((row) => isJointChainRowWeldedAfter(row, firstOfficialGood))
+    if (!rowAfterOfficialGood && officialGoodCount <= 1) return checkTasks
 
     const row = firstOfficialGood
     const reason = officialGoodCount > 1 ? 'несколько годных финалов' : 'есть продолжение после годного'
-    return [...checkTasks, createJointChainCheckTask(row, key, reason)]
+    const details =
+      officialGoodCount > 1
+        ? `В цепочке найдено ${officialGoodCount} годных официальных стыка. Нужно определить, какой из них является актуальным финалом, а какие строки лишние или требуют смены статуса.`
+        : `Стык ${String(firstOfficialGood.joint ?? '').trim() || '-'} уже годен с датой сварки ${formatDisplayDate(firstOfficialGood.weldDate) || '-'}, но после него найден стык ${String(rowAfterOfficialGood?.joint ?? '').trim() || '-'} с более поздней датой ${formatDisplayDate(rowAfterOfficialGood?.weldDate) || '-'}. Проверь, действительно ли цепочка должна продолжаться после годного стыка.`
+    return [...checkTasks, createJointChainCheckTask(row, key, reason, details)]
   })
   tasks.push(...buildObsoleteChildBranchCheckTasks(rows, chainGroups, groups))
   return dedupeRepeatedJointCheckTasks(tasks)
@@ -7019,6 +7392,7 @@ function buildObsoleteChildBranchCheckTasks(rows: WeldRow[], chainGroups: Map<st
           unofficialRejectedRowWithObsoleteCoil,
           `${chainKey}:unofficial-rejected-with-coil`,
           UNOFFICIAL_REJECTED_WITH_COIL_REASON,
+          `Стык ${String(unofficialRejectedRowWithObsoleteCoil.joint ?? '').trim() || '-'} отмечен как неофициальный, но в этой же цепочке уже есть ветка катушки Y. После смены официальности катушка может быть лишней или требовать другой логики, поэтому нужно проверить цепочку целиком.`,
         ),
       )
       continue
@@ -7043,7 +7417,14 @@ function buildObsoleteChildBranchCheckTasks(rows: WeldRow[], chainGroups: Map<st
       const childRow = branchGroups.get(obsoleteChildKey)?.[0]
       const row = childRow ?? sourceRow
       if (!row) continue
-      tasks.push(createJointChainCheckTask(row, `${chainKey}:${completedBranchKey}:child`, 'есть лишняя ветка после годного'))
+      tasks.push(
+        createJointChainCheckTask(
+          row,
+          `${chainKey}:${completedBranchKey}:child`,
+          'есть лишняя ветка после годного',
+          `Ветка ${String(childRow?.joint ?? '').trim() || '-'} выглядит лишней, потому что в цепочке уже есть годный официальный стык ${String(sourceRow?.joint ?? '').trim() || '-'}${sourceRow?.weldDate ? ` с датой сварки ${formatDisplayDate(sourceRow.weldDate)}` : ''}. Проверь, нужно ли оставлять эту ветку.`,
+        ),
+      )
       break
     }
   }
@@ -7055,8 +7436,8 @@ function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
 }
 
 function isJointChainRowWeldedAfter(row: WeldInput, referenceRow: WeldInput) {
-  const rowDate = String(row.weldDate ?? '').trim()
-  const referenceDate = String(referenceRow.weldDate ?? '').trim()
+  const rowDate = getWeldDateOrderValue(row.weldDate)
+  const referenceDate = getWeldDateOrderValue(referenceRow.weldDate)
   return Boolean(rowDate && referenceDate && rowDate > referenceDate)
 }
 
@@ -7095,6 +7476,12 @@ function getWeldDateOrderValue(value: unknown) {
   const shortMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{2})$/)
   if (shortMatch) return Number(`20${shortMatch[3]}${shortMatch[2]}${shortMatch[1]}`)
   return 0
+}
+
+function isDateBeforeWeldDate(value: unknown, weldDate: unknown) {
+  const dateValue = getWeldDateOrderValue(value)
+  const weldDateValue = getWeldDateOrderValue(weldDate)
+  return Boolean(dateValue && weldDateValue && dateValue < weldDateValue)
 }
 
 function hasValidOfficialCoilTrigger(rows: WeldRow[], chainRows: WeldRow[]) {
@@ -7149,7 +7536,7 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
   })
 }
 
-function createJointChainCheckTask(row: WeldRow, key: string, reason: string): RepeatedJointCheckTask {
+function createJointChainCheckTask(row: WeldRow, key: string, reason: string, details?: string): RepeatedJointCheckTask {
   const sourceJoint = String(row.joint ?? '').trim()
   const baseJoint = parseJointChainName(sourceJoint).base || sourceJoint
   return {
@@ -7162,6 +7549,7 @@ function createJointChainCheckTask(row: WeldRow, key: string, reason: string): R
     baseJoint,
     suffix: 'R',
     reason,
+    details,
   }
 }
 
@@ -7507,7 +7895,11 @@ function getLnkRepairForbiddenReason(row: WeldInput) {
 
 function formatJointDiameterLabel(row: WeldInput) {
   const diameter = getMinimumJointDiameter(row)
-  return diameter === null ? 'D -' : `D - ${formatJointDiameterValue(diameter)}`
+  return diameter === null ? '-' : formatJointDiameterValue(diameter)
+}
+
+function MetaSeparator() {
+  return <span className="mx-1 text-sm font-semibold leading-none text-slate-400">·</span>
 }
 
 function JointSpoolDiameterMeta({ row }: { row: WeldInput }) {
@@ -7517,10 +7909,30 @@ function JointSpoolDiameterMeta({ row }: { row: WeldInput }) {
       {spool ? (
         <>
           <span className="font-semibold text-slate-700">{spool}</span>
-          <span className="text-slate-300"> · </span>
+          <MetaSeparator />
         </>
       ) : null}
+      <span>Диаметр - </span>
       <span className="font-semibold text-slate-700">{formatJointDiameterLabel(row)}</span>
+    </>
+  )
+}
+
+function JointWeldDateMeta({ row }: { row: WeldInput }) {
+  return (
+    <>
+      Дата сварки: <span className="font-semibold text-slate-700">{formatDisplayDate(row.weldDate) || '-'}</span>
+    </>
+  )
+}
+
+function JointProjectSubtitleMeta({ row }: { row: WeldInput }) {
+  return (
+    <>
+      Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-') || '-'}</span>
+      <MetaSeparator />
+      Шифр:{' '}
+      <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-') || '-'}</span>
     </>
   )
 }
@@ -7718,6 +8130,8 @@ function getJointStatusLabel(row: WeldInput) {
   const status = String(row.finalStatus ?? '').trim().toLowerCase()
   if (status === 'годен') return 'годен'
   if (status === 'не годен') return 'не годен'
+  if (!hasWeldDate(row)) return 'ожидает сварку'
+  if (hasAnyEnabledLnkControl(row) && !hasAnyLnkRequest(row)) return 'ожидает заявку'
   return 'ожидает'
 }
 
@@ -7726,6 +8140,14 @@ function getJointStatusBadgeClass(row: WeldInput) {
   if (status === 'годен') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
   if (status === 'не годен') return 'border-rose-200 bg-rose-50 text-rose-800'
   return 'border-amber-200 bg-amber-50 text-amber-800'
+}
+
+function hasAnyEnabledLnkControl(row: WeldInput) {
+  return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
+}
+
+function hasAnyLnkRequest(row: WeldInput) {
+  return LNK_METHODS.some((method) => hasText(row[method.requestKey]))
 }
 
 function isLnkResultRowApplicable(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
@@ -7800,6 +8222,26 @@ function areLnkResultDraftRowsReady(rows: WeldRow[], draft: LnkResultDraftState)
 
 function hasNonEmptyLnkResultDraftRows(rows: WeldRow[], draft: LnkResultDraftState) {
   return rows.some((row) => getEffectiveLnkResultDraftValueForRow(row, draft) !== LNK_EMPTY_RESULT_VALUE)
+}
+
+function findFirstLnkResultDateBeforeWeldDateIssue(rows: WeldRow[], draft: LnkResultDraftState) {
+  const method = getLnkMethodByRequestKey(draft.methodKey)
+  if (!method) return null
+  const row = rows.find((candidate) => {
+    const result = getEffectiveLnkResultDraftValueForRow(candidate, draft)
+    return result !== LNK_EMPTY_RESULT_VALUE && isDateBeforeWeldDate(draft.controlDate, candidate.weldDate)
+  })
+  return row ? formatDateBeforeWeldDateSaveReason(row, draft.controlDate, `Дата контроля ${method.code}`) : null
+}
+
+function findFirstDateBeforeWeldDateIssue(rows: WeldRow[], eventDate: unknown, eventLabel: string) {
+  const row = rows.find((candidate) => isDateBeforeWeldDate(eventDate, candidate.weldDate))
+  return row ? formatDateBeforeWeldDateSaveReason(row, eventDate, eventLabel) : null
+}
+
+function formatDateBeforeWeldDateSaveReason(row: WeldInput, eventDate: unknown, eventLabel: string) {
+  const joint = String(row.joint ?? '').trim() || '-'
+  return `${eventLabel} не может быть раньше даты сварки: стык ${joint}, сварка ${formatDisplayDate(row.weldDate) || '-'}, дата ${formatDisplayDate(eventDate) || '-'}.`
 }
 
 function rowBelongsToPstoRequest(row: WeldInput, requestName: string) {
@@ -8090,13 +8532,11 @@ function escapeRegExp(value: string) {
 }
 
 function getJointTitle(value: WeldInput) {
-  const project = String(value.projectTitle ?? '').trim()
-  const subtitle = String(value.subtitleCode ?? '').trim()
   const line = String(value.line ?? '').trim()
   const joint = String(value.joint ?? '').trim()
 
-  if (!project && !subtitle && !line && !joint) return 'Проект, шифр, линия и стык не заполнены.'
-  return `${project || '-'} · ${subtitle || '-'} · ${line || '-'} · ${joint || '-'}`
+  if (!line && !joint) return 'Линия и стык не заполнены.'
+  return `${line || '-'} · ${joint || '-'}`
 }
 
 function expandHighlightFieldKeys(fieldKeys: WeldFieldKey[]) {
