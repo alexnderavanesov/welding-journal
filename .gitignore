@@ -5,3 +5,6 @@ dist/
 backups/
 *.log
 *.tmp
+
+# Local Netlify folder
+.netlify
