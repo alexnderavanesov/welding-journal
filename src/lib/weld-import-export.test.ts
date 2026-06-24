@@ -163,7 +163,7 @@ describe('weld import/export', () => {
 
     expect(result.records[0].pstoResult).toBe('проведено')
     expect(result.records[0].vikResult).toBeNull()
-    expect(result.records[0].finalStatus).toBe('ожидает')
+    expect(result.records[0].finalStatus).toBe('ожидает сварку')
   })
 
   it('skips service rows without a real joint, line, or isometry', () => {
@@ -263,6 +263,7 @@ describe('weld import/export', () => {
         joint: 'S13',
         line: '330-FL-02-004',
         isometry: 'ISO-1',
+        weldDate: '2025-03-20',
         hasVik: true,
         vikResult: 'годен',
         wdi: 1.25,
@@ -276,6 +277,7 @@ describe('weld import/export', () => {
       joint: 'S13',
       line: '330-FL-02-004',
       isometry: 'ISO-1',
+      weldDate: '2025-03-20',
       hasVik: true,
       vikResult: 'годен',
       finalStatus: 'годен',

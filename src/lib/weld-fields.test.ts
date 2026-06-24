@@ -118,17 +118,20 @@ describe('weld field order', () => {
   })
 
   it('does not treat cancelled controls with old results as an error', () => {
-    expect(calculateFinalStatus({ hasPvk: 'отменен', pvkResult: 'годен' })).toBe('ожидает')
-    expect(calculateFinalStatus({ pstoRequired: 'отменен', pstoResult: 'проведено' })).toBe('ожидает')
+    expect(calculateFinalStatus({ hasPvk: 'отменен', pvkResult: 'годен' })).toBe('ожидает сварку')
+    expect(calculateFinalStatus({ pstoRequired: 'отменен', pstoResult: 'проведено' })).toBe('ожидает сварку')
   })
 
   it('treats pending NDT results as waiting', () => {
-    expect(calculateFinalStatus({ hasPvk: true, pvkResult: 'ожидает НК' })).toBe('ожидает')
+    expect(calculateFinalStatus({ weldDate: '20.03.2025', hasPvk: true, pvkRequest: 'Заявка-1', pvkResult: 'ожидает НК' })).toBe(
+      'ожидает НК',
+    )
   })
 
   it('does not let pending heat treatment keep a good NDT joint waiting', () => {
     expect(
       calculateFinalStatus({
+        weldDate: '20.03.2025',
         hasVik: 'да',
         vikResult: 'годен',
         hasRk: 'да',

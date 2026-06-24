@@ -146,7 +146,7 @@ export type WeldInput = Partial<Record<WeldFieldKey, string | number | boolean |
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
-export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'ожидает', 'ошибка'] as const
+export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК', 'ошибка'] as const
 export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikResult',
   'rkResult',
@@ -171,6 +171,17 @@ export const CONTROL_RESULT_PAIRS = [
   { enabledKey: 'hasMkk', resultKey: 'mkkResult' },
 ] as const satisfies ReadonlyArray<{ enabledKey: WeldFieldKey; resultKey: WeldFieldKey }>
 
+const CONTROL_STATE_PAIRS = [
+  { enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult' },
+  { enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult' },
+  { enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult' },
+  { enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult' },
+  { enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult' },
+  { enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult' },
+  { enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult' },
+  { enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult' },
+] as const satisfies ReadonlyArray<{ enabledKey: WeldFieldKey; requestKey: WeldFieldKey; resultKey: WeldFieldKey }>
+
 export function calculateFinalStatus(record: WeldInput) {
   const hasResultWithoutEnabledControl = CONTROL_RESULT_PAIRS.some(
     ({ enabledKey, resultKey }) =>
@@ -178,15 +189,34 @@ export function calculateFinalStatus(record: WeldInput) {
   )
   if (hasResultWithoutEnabledControl) return 'ошибка'
 
-  const activeResults = CONTROL_RESULT_PAIRS.filter(({ enabledKey }) => isEnabledControl(record[enabledKey])).map(
-    ({ resultKey }) => normalizeResultStatus(record[resultKey]),
-  )
+  if (!hasText(record.weldDate)) return getPendingWeldFinalStatus(record)
 
-  if (activeResults.length === 0) return 'ожидает'
-  if (activeResults.includes('вырез')) return 'не годен'
-  if (activeResults.includes('ремонт')) return 'не годен'
-  if (activeResults.every((result) => result === 'годен')) return 'годен'
-  return 'ожидает'
+  let hasActiveControl = false
+  let hasMissingRequest = false
+  let hasPendingResult = false
+  let hasOnlyGoodResults = true
+
+  for (const { enabledKey, requestKey, resultKey } of CONTROL_STATE_PAIRS) {
+    if (!isEnabledControl(record[enabledKey])) continue
+    hasActiveControl = true
+
+    const result = normalizeResultStatus(record[resultKey])
+    if (result === 'вырез' || result === 'ремонт') return 'не годен'
+    if (result === 'годен') continue
+
+    hasOnlyGoodResults = false
+    if (hasText(record[requestKey])) {
+      hasPendingResult = true
+    } else {
+      hasMissingRequest = true
+    }
+  }
+
+  if (!hasActiveControl) return 'ожидает заявку'
+  if (hasOnlyGoodResults) return 'годен'
+  if (hasMissingRequest) return 'ожидает заявку'
+  if (hasPendingResult) return 'ожидает НК'
+  return 'ожидает НК'
 }
 
 export function normalizeResultStatus(value: unknown) {
@@ -199,7 +229,20 @@ export function normalizeResultStatus(value: unknown) {
 
 export function normalizeFinalStatus(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
-  return FINAL_STATUS_OPTIONS.includes(text as never) ? text : null
+  if (text === 'ожидает') return 'ожидает НК'
+  const option = FINAL_STATUS_OPTIONS.find((status) => status.toLowerCase() === text)
+  return option ?? null
+}
+
+function getPendingWeldFinalStatus(record: WeldInput) {
+  const joint = String(record.joint ?? '').replace(/\s+/g, '').toUpperCase()
+  const hasCoilSegment = /Y\d+/.test(joint)
+  const hasRepairSegment = /[RW]\d+/.test(joint)
+  return hasRepairSegment && !hasCoilSegment ? 'ожидает ремонт' : 'ожидает сварку'
+}
+
+function hasText(value: unknown) {
+  return String(value ?? '').trim().length > 0
 }
 
 function isEnabledControl(value: unknown) {

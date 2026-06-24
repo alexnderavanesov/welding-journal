@@ -31,6 +31,14 @@ const yesEmptyFieldKeys = new Set([
   'hasMkk',
 ])
 const weldingMethodOptions = ['РАД', 'РД', 'МП'] as const
+const factualWelderStampFieldKeys = new Set<WeldFieldKey>([
+  'stamp1KFact',
+  'stamp1ZFact',
+  'stamp1OFact',
+  'stamp2KFact',
+  'stamp2ZFact',
+  'stamp2OFact',
+])
 
 const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'status',
@@ -472,12 +480,14 @@ function toggleWeldingMethodValue(value: unknown, option: (typeof weldingMethodO
 
 function getResultStatusValue(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
-  return RESULT_STATUS_OPTIONS.includes(text as never) ? text : ''
+  const option = RESULT_STATUS_OPTIONS.find((status) => status.toLowerCase() === text)
+  return option ?? ''
 }
 
 function getFinalStatusValue(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
-  return FINAL_STATUS_OPTIONS.includes(text as never) ? text : ''
+  const option = FINAL_STATUS_OPTIONS.find((status) => status.toLowerCase() === text)
+  return option ?? ''
 }
 
 function OfficialityBadge({ value }: { value: WeldInput }) {
@@ -528,6 +538,8 @@ function getWeldStampSaveBlockReason(
   if (!stampSelectOptions) return null
 
   for (const [fieldKey, options] of Object.entries(stampSelectOptions) as Array<[WeldFieldKey, readonly StampSelectOption[]]>) {
+    if (factualWelderStampFieldKeys.has(fieldKey)) continue
+
     const value = getStampSelectValue(draft[fieldKey])
     if (!value) continue
 

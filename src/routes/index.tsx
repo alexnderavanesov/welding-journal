@@ -79,6 +79,7 @@ const factualWelderStampFieldKeys = [
   'stamp2ZFact',
   'stamp2OFact',
 ] as const satisfies readonly WeldFieldKey[]
+const factualWelderStampFieldKeySet = new Set<WeldFieldKey>(factualWelderStampFieldKeys)
 const welderStampFieldKeysForDisplay: readonly WeldFieldKey[] = [...officialWelderStampFieldKeys, ...factualWelderStampFieldKeys]
 const PSTO_EMPTY_RESULT_VALUE = '__empty__'
 const LNK_METHODS = [
@@ -3422,6 +3423,7 @@ function Home() {
     if (reason === 'проверить клеймо') return { joint: task.sourceJoint, type: 'Проверить клеймо' }
     if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
     if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
+    if (reason === 'дозаполнить дату сварки') return { joint: task.sourceJoint, type: 'Дозаполнить дату сварки' }
     if (reason === 'годный стык неофициальный') return { joint: task.sourceJoint, type: 'Годный стык неофициальный' }
     if (reason === 'несколько годных финалов') return { joint: task.sourceJoint, type: 'Несколько годных финалов' }
     if (reason === 'есть продолжение после годного') return { joint: task.sourceJoint, type: 'Лишняя ветка после годного' }
@@ -7313,6 +7315,8 @@ function validateWelderStampFieldsForImport(
 
   records.forEach((record, index) => {
     for (const [fieldKey, options] of entries) {
+      if (factualWelderStampFieldKeySet.has(fieldKey)) continue
+
       const value = normalizeStampSelectValue(record[fieldKey])
       if (!value) continue
 
@@ -8720,14 +8724,45 @@ function buildWelderStampCompatibilityCheckTasks(rows: WeldRow[], welderStampRec
 
 function buildIncompleteWelderStampGroupTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
   const tasks: RepeatedJointCheckTask[] = []
+  const allStampFields = WELD_STAMP_COMPLETION_GROUPS.flatMap((group) => group.fields)
   for (const row of rows) {
+    const filledStampFields = allStampFields.filter((fieldKey) => hasText(row[fieldKey]))
+    const hasWeldDate = hasText(row.weldDate)
+    const joint = String(row.joint ?? '').trim() || '-'
+    const officialityText = isUnofficialJoint(row) ? ' (неофициальный)' : ''
+
+    if (!hasWeldDate && filledStampFields.length > 0) {
+      const filledText = filledStampFields.map(formatWeldStampCompletionFieldLabel).join(', ')
+      tasks.push(
+        createJointChainCheckTask(
+          row,
+          `${getJointChainConsistencyKey(row) ?? row.id}:weld-date-required-by-stamps:${row.id}`,
+          'дозаполнить дату сварки',
+          `Стык ${joint}${officialityText}: заполнены клейма (${filledText}), но дата сварки не заполнена. Если клейма уже указаны, нужно дозаполнить дату сварки.`,
+        ),
+      )
+      continue
+    }
+
+    if (hasWeldDate && filledStampFields.length === 0) {
+      const weldDateText = formatDisplayDate(row.weldDate) || '-'
+      const group = WELD_STAMP_COMPLETION_GROUPS[0]
+      tasks.push(
+        createJointChainCheckTask(
+          row,
+          `${getJointChainConsistencyKey(row) ?? row.id}:weld-stamp-completion-empty-${group.index}:${row.id}`,
+          group.reason,
+          `Стык ${joint}${officialityText}: дата сварки ${weldDateText} заполнена, но клейма не заполнены. Нужно дозаполнить группу клейма_${group.index}.`,
+        ),
+      )
+      continue
+    }
+
     for (const group of WELD_STAMP_COMPLETION_GROUPS) {
       const filledFields = group.fields.filter((fieldKey) => hasText(row[fieldKey]))
       if (filledFields.length === 0 || filledFields.length === group.fields.length) continue
 
       const missingFields = group.fields.filter((fieldKey) => !hasText(row[fieldKey]))
-      const joint = String(row.joint ?? '').trim() || '-'
-      const officialityText = isUnofficialJoint(row) ? ' (неофициальный)' : ''
       const filledText = filledFields.map(formatWeldStampCompletionFieldLabel).join(', ')
       const missingText = missingFields.map(formatWeldStampCompletionFieldLabel).join(', ')
       tasks.push(
@@ -8748,7 +8783,7 @@ function formatWeldStampCompletionFieldLabel(fieldKey: WeldFieldKey) {
 }
 
 function isIncompleteWeldStampGroupReason(reason?: string) {
-  return reason === 'дозаполнить клейма_1' || reason === 'дозаполнить клейма_2'
+  return reason === 'дозаполнить клейма_1' || reason === 'дозаполнить клейма_2' || reason === 'дозаполнить дату сварки'
 }
 
 function formatDateIssueLabelForSuggestion(label: string) {
@@ -9597,9 +9632,21 @@ function getJointStatusLabel(row: WeldInput) {
   const status = String(row.finalStatus ?? '').trim().toLowerCase()
   if (status === 'годен') return 'годен'
   if (status === 'не годен') return 'не годен'
-  if (!hasWeldDate(row)) return 'ожидает сварку'
+  if (status === 'ожидает сварку') return 'ожидает сварку'
+  if (status === 'ожидает ремонт') return 'ожидает ремонт'
+  if (status === 'ожидает заявку') return 'ожидает заявку'
+  if (status === 'ожидает нк') return 'ожидает НК'
+  if (!hasWeldDate(row)) return getPendingWeldStatusLabel(row)
   if (hasAnyEnabledLnkControl(row) && !hasAnyLnkRequest(row)) return 'ожидает заявку'
-  return 'ожидает'
+  if (hasPendingLnkRequestResult(row)) return 'ожидает НК'
+  return 'ожидает заявку'
+}
+
+function getPendingWeldStatusLabel(row: WeldInput) {
+  const parsed = parseJointChainName(String(row.joint ?? ''))
+  const hasCoilSegment = parsed.segments.some((segment) => segment.suffix === 'Y')
+  const hasRepairSegment = parsed.segments.some((segment) => segment.suffix === 'R' || segment.suffix === 'W')
+  return hasRepairSegment && !hasCoilSegment ? 'ожидает ремонт' : 'ожидает сварку'
 }
 
 function getJointStatusBadgeClass(row: WeldInput) {
