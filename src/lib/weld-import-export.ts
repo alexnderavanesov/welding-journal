@@ -7,6 +7,7 @@ import {
   RESULT_FIELD_KEYS,
   VISIBLE_FIELDS,
   type WeldField,
+  type WeldFieldKey,
   type WeldInput,
   calculateFinalStatus,
   normalizeFinalStatus,
@@ -673,7 +674,7 @@ function formatExportNumber(value: unknown) {
 export function normalizeWeldInput(input: WeldInput) {
   const normalized: WeldInput = {}
   for (const [key, value] of Object.entries(input)) {
-    const field = FIELD_BY_KEY.get(key as keyof WeldInput)
+    const field = FIELD_BY_KEY.get(key as WeldFieldKey)
     if (!field) continue
     normalized[field.key as keyof WeldInput] = parseCell(field, value)
   }
@@ -691,4 +692,18 @@ export function appendImportedWelds<T extends WeldInput & { id: number }>(existi
 export function withAutoVikForWeldDate<T extends WeldInput>(record: T): T {
   if (String(record.hasVik ?? '').trim().toLowerCase() === 'отменен') return record
   return emptyToNull(record.weldDate) === null ? record : ({ ...record, hasVik: true } as T)
+}
+
+export function getRequiredRootStampMessage(record: WeldInput) {
+  if (emptyToNull(record.weldDate) === null || !isEmptyWeldStamp(record.stamp1K)) return null
+  return 'укажите Корень_1: при заполненной дате сварки должно быть указано хотя бы одно клеймо.'
+}
+
+function isEmptyWeldStamp(value: unknown) {
+  return normalizeWeldStamp(value) === ''
+}
+
+function normalizeWeldStamp(value: unknown) {
+  const text = String(value ?? '').trim()
+  return text.toLowerCase() === 'пусто' ? '' : text
 }

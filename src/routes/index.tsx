@@ -1,11 +1,11 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ClipboardCheck, ExternalLink, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Pencil, Plus, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
+import { Archive, Check, ChevronDown, ClipboardCheck, ExternalLink, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, ShieldCheck, Stamp, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { WeldForm } from '@/components/weld-form'
+import { WeldForm, type StampSelectOption } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
 import seedWelds from '@/data/seed-welds.json'
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/server/welds'
 import {
   buildExportXlsxBytes,
+  getRequiredRootStampMessage,
   isMeaningfulRecord,
   normalizeWeldInput,
   parseEditableCsv,
@@ -48,6 +49,10 @@ export const Route = createFileRoute('/')({
 const emptyFilters: WeldFilters = {}
 const seedRows = seedWelds as Array<WeldInput & { id: number }>
 const localStorageKey = 'welding-tracker-local-welds'
+const welderStampsStorageKey = 'welding-tracker-welder-stamps-v1'
+const welderStampWeldTypeOptions = ['РАД', 'РД', 'МП'] as const
+const welderStampExpiryReminderDays = 7
+const dayInMs = 24 * 60 * 60 * 1000
 const clearedLnkRequestsStorageKey = 'welding-tracker-cleared-lnk-requests-v1'
 const clearedLnkResultsAndConclusionsStorageKey = 'welding-tracker-cleared-lnk-results-conclusions-v1'
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
@@ -58,6 +63,23 @@ const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
   'pstoKs3',
 ])
 const heatTreatmentImportMatchFieldKeys = new Set<WeldFieldKey>(['line', 'joint'])
+const officialWelderStampFieldKeys = [
+  'stamp1K',
+  'stamp1Z',
+  'stamp1O',
+  'stamp2K',
+  'stamp2Z',
+  'stamp2O',
+] as const satisfies readonly WeldFieldKey[]
+const factualWelderStampFieldKeys = [
+  'stamp1KFact',
+  'stamp1ZFact',
+  'stamp1OFact',
+  'stamp2KFact',
+  'stamp2ZFact',
+  'stamp2OFact',
+] as const satisfies readonly WeldFieldKey[]
+const welderStampFieldKeysForDisplay: readonly WeldFieldKey[] = [...officialWelderStampFieldKeys, ...factualWelderStampFieldKeys]
 const PSTO_EMPTY_RESULT_VALUE = '__empty__'
 const LNK_METHODS = [
   { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
@@ -177,13 +199,17 @@ const repeatedJointClearedFieldKeys = new Set<WeldFieldKey>([
   'weldDate',
   'responsible',
   'stamp1K',
-  'stamp1Zo',
+  'stamp1Z',
+  'stamp1O',
   'stamp2K',
-  'stamp2Zo',
+  'stamp2Z',
+  'stamp2O',
   'stamp1KFact',
-  'stamp1ZoFact',
+  'stamp1ZFact',
+  'stamp1OFact',
   'stamp2KFact',
-  'stamp2ZoFact',
+  'stamp2ZFact',
+  'stamp2OFact',
   ...LNK_METHODS.flatMap((method) => [
     method.requestKey,
     method.resultKey,
@@ -342,7 +368,24 @@ type RequestNamingState = {
   mode: 'system' | 'custom'
   customName: string
 }
-type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk'
+type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps'
+type WelderStampRecord = {
+  id: number
+  naksStamp: string
+  internalStamp: string
+  weldType: string
+  diameterFrom: string
+  diameterTo: string
+  validFrom: string
+  validTo: string
+  archived: boolean
+}
+type WelderStampFilters = {
+  diameterFrom: string
+  diameterTo: string
+  validFrom: string
+  validTo: string
+}
 type WeldRow = WeldInput & { id: number }
 type RepeatedJointCreateTask = {
   kind: 'create'
@@ -410,10 +453,33 @@ type RepeatedJointTask =
   | RepeatedJointRenameTask
   | RepeatedJointCheckTask
   | RepeatedJointDuplicateCheckTask
+type WelderStampExpiryTask = {
+  kind: 'welder-stamp-expiry'
+  key: string
+  stamp: WelderStampRecord
+  naksStamp: string
+  validTo: string
+  daysLeft: number
+  expired: boolean
+}
+type DispatcherTask = RepeatedJointTask | WelderStampExpiryTask
+
+const WELD_STAMP_COMPLETION_GROUPS = [
+  {
+    index: 1,
+    reason: 'дозаполнить клейма_1',
+    fields: ['stamp1K', 'stamp1Z', 'stamp1O', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact'],
+  },
+  {
+    index: 2,
+    reason: 'дозаполнить клейма_2',
+    fields: ['stamp2K', 'stamp2Z', 'stamp2O', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'],
+  },
+] as const satisfies ReadonlyArray<{ index: 1 | 2; reason: string; fields: readonly WeldFieldKey[] }>
 type RepeatedJointTaskGroup = {
   key: string
   baseJoint: string
-  tasks: RepeatedJointTask[]
+  tasks: DispatcherTask[]
 }
 const UNOFFICIAL_REJECTED_WITH_COIL_REASON = 'катушка требует проверки после смены официальности'
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
@@ -480,6 +546,17 @@ function Home() {
   const [isLnkShowMenuOpen, setIsLnkShowMenuOpen] = useState(false)
   const [dismissedRepeatedJointTaskKeys, setDismissedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
   const [expandedRepeatedJointTaskKeys, setExpandedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
+  const [welderStamps, setWelderStamps] = useState<WelderStampRecord[]>(() => readWelderStampRecords())
+  const [welderStampDraft, setWelderStampDraft] = useState<WelderStampRecord>(() => createEmptyWelderStampDraft())
+  const [editingWelderStampId, setEditingWelderStampId] = useState<number | null>(null)
+  const [welderStampSearch, setWelderStampSearch] = useState('')
+  const [welderStampFilters, setWelderStampFilters] = useState<WelderStampFilters>(() => createEmptyWelderStampFilters())
+  const [showArchivedWelderStamps, setShowArchivedWelderStamps] = useState(false)
+  const weldFormStampSelectOptions = useMemo(() => buildWeldFormStampSelectOptions(welderStamps), [welderStamps])
+  const getWeldFormStampSelectOptions = useMemo(
+    () => (draft: WeldInput) => buildWeldFormStampSelectOptions(welderStamps, draft),
+    [welderStamps],
+  )
   const isReportModalOpen =
     isPstoRequestModalOpen ||
     isPstoRequestManagerOpen ||
@@ -507,6 +584,10 @@ function Home() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activeReport, editing, isReportModalOpen])
+
+  useEffect(() => {
+    writeWelderStampRecords(welderStamps)
+  }, [welderStamps])
 
   useEffect(() => {
     function handleHorizontalScroll() {
@@ -565,6 +646,11 @@ function Home() {
       setLnkRequestSearch('')
       setPreservedLnkOrderIds(null)
     }
+    if (activeReport !== 'welderStamps') {
+      setWelderStampDraft(createEmptyWelderStampDraft())
+      setEditingWelderStampId(null)
+      setWelderStampSearch('')
+    }
 
     return () => {
       if (frameId !== null) window.cancelAnimationFrame(frameId)
@@ -585,12 +671,15 @@ function Home() {
 
   const saveMutation = useMutation({
     mutationFn: async (value: WeldInput & { id?: number }) => {
-      validateManualJointNameForSave(value, rows)
+      const preparedValue = value
+      validateRequiredRootStampForSave(preparedValue)
+      validateManualJointNameForSave(preparedValue, rows)
+      validateOfficialStampCompatibilityForSave(preparedValue, welderStamps)
       try {
-        const saved = value.id ? await updateWeldJoint({ data: value }) : await createWeldJoint({ data: value })
-        return saved ?? saveLocalWeld(value)
+        const saved = preparedValue.id ? await updateWeldJoint({ data: preparedValue }) : await createWeldJoint({ data: preparedValue })
+        return saved ?? saveLocalWeld(preparedValue)
       } catch {
-        return saveLocalWeld(value)
+        return saveLocalWeld(preparedValue)
       }
     },
     onSuccess: async (saved, variables) => {
@@ -699,15 +788,20 @@ function Home() {
 
   const importMutation = useMutation({
     mutationFn: async (records: WeldInput[]) => {
-      validateManualJointNamesForImport(records)
-      validateWeldDatesForImport(records)
+      const preparedRecords = records
+      validateRequiredRootStampsForImport(preparedRecords)
+      validateManualJointNamesForImport(preparedRecords)
+      validateWeldDatesForImport(preparedRecords)
+      normalizeWeldingMethodsForImport(preparedRecords)
+      validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
+      validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps)
       try {
-        const result = await importWeldJoints({ data: { records } })
+        const result = await importWeldJoints({ data: { records: preparedRecords } })
         if (result) return result
-        const rows = importLocalWelds(records)
+        const rows = importLocalWelds(preparedRecords)
         return { inserted: rows.length, rows }
       } catch {
-        const rows = importLocalWelds(records)
+        const rows = importLocalWelds(preparedRecords)
         return { inserted: rows.length, rows }
       }
     },
@@ -1661,17 +1755,23 @@ function Home() {
   )
 
   const repeatedJointTasks = useMemo(
-    () => buildRepeatedJointTasks(rows).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
-    [dismissedRepeatedJointTaskKeys, rows],
+    () => buildRepeatedJointTasks(rows, welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
+    [dismissedRepeatedJointTaskKeys, rows, welderStamps],
+  )
+  const welderStampExpiryTasks = useMemo(
+    () => buildWelderStampExpiryTasks(welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
+    [dismissedRepeatedJointTaskKeys, welderStamps],
   )
   const repeatedJointTaskGroups = useMemo(() => groupRepeatedJointTasks(repeatedJointTasks), [repeatedJointTasks])
+  const welderStampNotificationGroups = useMemo(() => groupRepeatedJointTasks(welderStampExpiryTasks), [welderStampExpiryTasks])
   useEffect(() => {
-    const visibleKeys = new Set(repeatedJointTasks.map((task) => task.key))
+    const visibleTasks = activeReport === 'welderStamps' ? welderStampExpiryTasks : repeatedJointTasks
+    const visibleKeys = new Set(visibleTasks.map((task) => task.key))
     setExpandedRepeatedJointTaskKeys((current) => {
       const next = new Set([...current].filter((key) => visibleKeys.has(key)))
       return next.size === current.size ? current : next
     })
-  }, [repeatedJointTasks])
+  }, [activeReport, repeatedJointTasks, welderStampExpiryTasks])
 
   const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
   const heatTreatmentRows = useMemo(
@@ -1700,6 +1800,12 @@ function Home() {
     () => filteredLnkRequestRows.filter(canCreateLnkRequest),
     [filteredLnkRequestRows],
   )
+  const filteredWelderStamps = useMemo(
+    () => filterWelderStampRecords(welderStamps, welderStampSearch, welderStampFilters),
+    [welderStampFilters, welderStampSearch, welderStamps],
+  )
+  const activeWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => !record.archived), [filteredWelderStamps])
+  const archivedWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => record.archived), [filteredWelderStamps])
   const visibleRows = activeReport === 'heatTreatment' ? heatTreatmentRows : activeReport === 'lnk' ? lnkRows : rows
   const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
   useEffect(() => {
@@ -2025,10 +2131,16 @@ function Home() {
   const activeFiltersSetter =
     activeReport === 'heatTreatment' ? setHeatTreatmentFilters : activeReport === 'lnk' ? setLnkFilters : setColumnFilters
   const acceptedWdiTotal = useMemo(() => sumAcceptedWdi(rows), [rows])
-  const registerMinWidth = getWeldTableWidth(VISIBLE_FIELDS)
+  const registerMinWidth = activeReport === 'welderStamps' ? 1120 : getWeldTableWidth(VISIBLE_FIELDS)
   const stickyLeft = navCollapsed ? 80 : 288
   const activeTitle =
-    activeReport === 'heatTreatment' ? 'Термообработка' : activeReport === 'lnk' ? 'ЛНК' : 'Сварочный журнал'
+    activeReport === 'heatTreatment'
+      ? 'Термообработка'
+      : activeReport === 'lnk'
+        ? 'ЛНК'
+        : activeReport === 'welderStamps'
+          ? 'Клейма'
+          : 'Сварочный журнал'
 
   useEffect(() => {
     setSelectedHeatTreatmentIds((current) => {
@@ -2958,7 +3070,11 @@ function Home() {
   }
 
   function createRepeatedJoint(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
-    const currentTask = buildRepeatedJointTasks(rows).find(
+    if (activeReport === 'lnk') {
+      setMessage('В отчете ЛНК диспетчер только показывает цепочку. Создание стыков доступно из сварочного журнала.')
+      return
+    }
+    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
       (candidate): candidate is RepeatedJointCreateTask | RepeatedJointCoilTask =>
         (candidate.kind === 'create' || candidate.kind === 'coil') && candidate.key === task.key,
     )
@@ -2970,7 +3086,13 @@ function Home() {
   }
 
   function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {
-    const currentTask = buildRepeatedJointTasks(rows).find((candidate): candidate is RepeatedJointDeleteTask => candidate.kind === 'delete' && candidate.key === task.key)
+    if (activeReport === 'lnk') {
+      setMessage('В отчете ЛНК диспетчер только показывает цепочку. Удаление стыков доступно из сварочного журнала.')
+      return
+    }
+    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
+      (candidate): candidate is RepeatedJointDeleteTask => candidate.kind === 'delete' && candidate.key === task.key,
+    )
     if (!currentTask) {
       setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
       return
@@ -2985,7 +3107,11 @@ function Home() {
   }
 
   function renameObsoleteRepeatedJoint(task: RepeatedJointRenameTask) {
-    const currentTask = buildRepeatedJointTasks(rows).find(
+    if (activeReport === 'lnk') {
+      setMessage('В отчете ЛНК диспетчер только показывает цепочку. Переименование стыков доступно из сварочного журнала.')
+      return
+    }
+    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
       (candidate): candidate is RepeatedJointRenameTask => candidate.kind === 'rename' && candidate.key === task.key,
     )
     if (!currentTask) {
@@ -3272,7 +3398,13 @@ function Home() {
     }, highlightDurationMs)
   }
 
-  function getRepeatedJointTaskTitle(task: RepeatedJointTask) {
+  function getRepeatedJointTaskTitle(task: DispatcherTask) {
+    if (task.kind === 'welder-stamp-expiry') {
+      return {
+        joint: formatWelderStampCompactLabel(task),
+        type: task.expired ? 'Клеймо НАКС просрочено' : 'Срок НАКС заканчивается',
+      }
+    }
     if (task.kind === 'create') {
       return {
         joint: task.sourceJoint,
@@ -3287,6 +3419,9 @@ function Home() {
     const reason = task.reason ?? ''
     if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
     if (reason === 'проверить дату сварки и контроля') return { joint: task.sourceJoint, type: 'Проверить дату сварки и контроля' }
+    if (reason === 'проверить клеймо') return { joint: task.sourceJoint, type: 'Проверить клеймо' }
+    if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
+    if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
     if (reason === 'годный стык неофициальный') return { joint: task.sourceJoint, type: 'Годный стык неофициальный' }
     if (reason === 'несколько годных финалов') return { joint: task.sourceJoint, type: 'Несколько годных финалов' }
     if (reason === 'есть продолжение после годного') return { joint: task.sourceJoint, type: 'Лишняя ветка после годного' }
@@ -3304,7 +3439,15 @@ function Home() {
     return { joint: task.sourceJoint, type: 'Проверить цепочку' }
   }
 
-  function getRepeatedJointTaskDetails(task: RepeatedJointTask) {
+  function getRepeatedJointTaskDetails(task: DispatcherTask) {
+    if (task.kind === 'welder-stamp-expiry') {
+      const validTo = formatWelderStampDate(task.validTo)
+      const stampLabel = formatWelderStampTaskLabel(task)
+      if (task.expired) {
+        return `${stampLabel} просрочено: срок действия закончился ${validTo}. Перенесите клеймо в архив или актуализируйте срок действия.`
+      }
+      return `${stampLabel}: срок окончания - ${validTo}. До окончания осталось ${formatDaysLeft(task.daysLeft)}. Проверьте, нужно ли продлить срок или подготовить замену.`
+    }
     if (task.kind === 'create') {
       const dateText = formatDisplayDate(task.row.weldDate) || '-'
       const officialityText = isUnofficialJoint(task.row) ? 'неофициальный' : 'официальный'
@@ -3327,7 +3470,7 @@ function Home() {
       return `В журнале найдено несколько строк с одинаковыми проектом, шифром, линией и номером стыка ${task.baseJoint}. Спул при этой проверке не учитывается. Проверь, это допустимые записи или лишние дубли.`
     }
 
-    if (task.details) return task.details
+    if (task.details) return formatDispatcherTaskText(task.details)
 
     const reason = task.reason ?? 'цепочка изменилась'
     if (reason === 'проверить даты сварки') {
@@ -3335,6 +3478,9 @@ function Home() {
     }
     if (reason === 'проверить дату сварки и контроля') {
       return `В цепочке ${task.baseJoint} дата контроля или ПСТО оказалась раньше даты сварки. Проверь даты в сварочном журнале, ЛНК и ПСТО.`
+    }
+    if (reason === 'проверить клеймо') {
+      return `В стыке ${task.sourceJoint} найдено несоответствие официального клейма активному реестру клейм. Проверь клеймо, тип сварки, D1/D2 и срок действия допуска.`
     }
     if (reason === UNOFFICIAL_REJECTED_WITH_COIL_REASON) {
       return `В цепочке ${task.baseJoint} изменилась официальность стыка, из-за чего катушка или ветка может стать лишней либо требовать подтверждения. Проверь цепочку перед дальнейшими действиями.`
@@ -3354,7 +3500,10 @@ function Home() {
     return `Диспетчер обнаружил нестандартное состояние цепочки ${task.baseJoint}: ${reason}. Открой цепочку и проверь, нужны ли дополнительные действия.`
   }
 
-  function getRepeatedJointTaskDetailsHeading(task: RepeatedJointTask) {
+  function getRepeatedJointTaskDetailsHeading(task: DispatcherTask) {
+    if (task.kind === 'welder-stamp-expiry') {
+      return `${formatWelderStampTaskLabel(task)} · срок окончания ${formatWelderStampDate(task.validTo)}`
+    }
     if (task.kind === 'create') return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} → ${task.targetJoint} · ${task.methodCode} - ${task.result}`
     if (task.kind === 'coil') return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.methodCode} - ${task.result} · катушка ${task.targetJoints.join(' + ')}`
     if (task.kind === 'delete') {
@@ -3362,15 +3511,34 @@ function Home() {
     }
     if (task.kind === 'rename') return `${formatRepeatedJointTaskHeadingJoint(task.currentJoint, task.row)} → ${task.targetJoint}`
     if (task.kind === 'duplicate-check') return `${formatRepeatedJointTaskHeadingJoint(task.baseJoint, task.row)} · найдено дублей: ${task.count}`
-    return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.reason ?? 'цепочка изменилась'}`
+    return formatDispatcherTaskText(`${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.reason ?? 'цепочка изменилась'}`)
   }
 
   function formatRepeatedJointTaskHeadingJoint(joint: string, row: WeldInput) {
     return isUnofficialJoint(row) ? `${joint} · неофициальный` : joint
   }
 
-  function renderRepeatedJointTaskContent(task: RepeatedJointTask) {
+  function formatDispatcherTaskText(value: string) {
+    return formatWelderStampFieldKeysInText(value)
+  }
+
+  function renderRepeatedJointTaskContent(task: DispatcherTask, nested = false) {
     const title = getRepeatedJointTaskTitle(task)
+    if (task.kind === 'welder-stamp-expiry') {
+      return (
+        <>
+          <span className="text-slate-800">{nested ? formatWelderStampTaskLabel(task) : title.joint}</span>
+          <span className={task.expired ? 'text-rose-700' : 'text-slate-700'}>{title.type}</span>
+          <span
+            className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${
+              task.expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}
+          >
+            {task.expired ? 'просрочено' : `${task.daysLeft} дн.`}
+          </span>
+        </>
+      )
+    }
     if (task.kind === 'create') {
       return (
         <>
@@ -3435,8 +3603,9 @@ function Home() {
     )
   }
 
-  function renderRepeatedJointTaskActions(task: RepeatedJointTask) {
+  function renderRepeatedJointTaskActions(task: DispatcherTask) {
     const isExpanded = expandedRepeatedJointTaskKeys.has(task.key)
+    const canRunDispatcherMutation = activeReport !== 'lnk'
     const actionButtonClass =
       'h-6 rounded-none border-0 border-l border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-900'
     const primaryActionButtonClass =
@@ -3455,9 +3624,25 @@ function Home() {
       })
     }
 
+    if (task.kind === 'welder-stamp-expiry') {
+      return (
+        <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={toggleDetails}
+            className={actionButtonClass}
+          >
+            {isExpanded ? 'Свернуть' : 'Подробнее'}
+          </Button>
+        </div>
+      )
+    }
+
     return (
       <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
-        {task.kind === 'create' || task.kind === 'coil' ? (
+        {(task.kind === 'create' || task.kind === 'coil') && canRunDispatcherMutation ? (
           <>
             <Button
               type="button"
@@ -3478,7 +3663,7 @@ function Home() {
               Цепочка
             </Button>
           </>
-        ) : task.kind === 'delete' ? (
+        ) : task.kind === 'delete' && canRunDispatcherMutation ? (
           <>
             <Button
               type="button"
@@ -3500,7 +3685,7 @@ function Home() {
               Цепочка
             </Button>
           </>
-        ) : task.kind === 'rename' ? (
+        ) : task.kind === 'rename' && canRunDispatcherMutation ? (
           <>
             <Button
               type="button"
@@ -3545,7 +3730,7 @@ function Home() {
     )
   }
 
-  function renderRepeatedJointTaskCard(task: RepeatedJointTask, nested = false) {
+  function renderRepeatedJointTaskCard(task: DispatcherTask, nested = false) {
     const isExpanded = expandedRepeatedJointTaskKeys.has(task.key)
     return (
       <div
@@ -3555,7 +3740,7 @@ function Home() {
         }`}
       >
         <div className="flex max-w-full items-center gap-1.5">
-          <div className="flex min-w-0 items-center gap-1.5 text-sm">{renderRepeatedJointTaskContent(task)}</div>
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">{renderRepeatedJointTaskContent(task, nested)}</div>
           {renderRepeatedJointTaskActions(task)}
         </div>
         {isExpanded ? (
@@ -3569,12 +3754,13 @@ function Home() {
   }
 
   function renderRepeatedJointTaskGroup(group: RepeatedJointTaskGroup) {
+    const isReminderGroup = group.tasks.every((task) => task.kind === 'welder-stamp-expiry')
     return (
       <details key={group.key} className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-sm marker:hidden">
           <span className="font-semibold text-slate-900">{group.baseJoint}</span>
           <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
-            {formatTaskCount(group.tasks.length)}
+            {isReminderGroup ? formatReminderCount(group.tasks.length) : formatTaskCount(group.tasks.length)}
           </span>
           <span className="ml-auto rounded border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 group-open:hidden">
             раскрыть
@@ -3588,6 +3774,79 @@ function Home() {
     )
   }
 
+  function renderWelderStampNotificationCard(task: WelderStampExpiryTask) {
+    const isExpanded = expandedRepeatedJointTaskKeys.has(task.key)
+    const title = getRepeatedJointTaskTitle(task)
+    const toggleDetails = () => {
+      setExpandedRepeatedJointTaskKeys((current) => {
+        const next = new Set(current)
+        if (next.has(task.key)) {
+          next.delete(task.key)
+        } else {
+          next.add(task.key)
+        }
+        return next
+      })
+    }
+
+    return (
+      <div key={task.key} className="flex w-fit max-w-full flex-col gap-1 rounded-md border border-amber-200 bg-white/95 px-2 py-1.5">
+        <div className="flex max-w-full items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">
+            <span className="text-slate-800">{formatWelderStampTaskLabel(task)}</span>
+            <span className={task.expired ? 'text-rose-700' : 'text-slate-700'}>{title.type}</span>
+            <span
+              className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${
+                task.expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
+              }`}
+            >
+              {task.expired ? 'просрочено' : `${task.daysLeft} дн.`}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={toggleDetails}
+              className="h-6 rounded-none border-0 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-900"
+            >
+              {isExpanded ? 'Свернуть' : 'Подробнее'}
+            </Button>
+          </div>
+        </div>
+        {isExpanded ? (
+          <div className="max-w-[min(760px,calc(100vw-5rem))] rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs leading-5 text-slate-600">
+            <div className="mb-1 font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
+            <div>{getRepeatedJointTaskDetails(task)}</div>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  function renderWelderStampNotificationGroup(group: RepeatedJointTaskGroup) {
+    return (
+      <details key={group.key} className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-sm marker:hidden">
+          <span className="font-semibold text-slate-900">{group.baseJoint}</span>
+          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+            {formatReminderCount(group.tasks.length)}
+          </span>
+          <span className="ml-auto rounded border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 group-open:hidden">
+            раскрыть
+          </span>
+          <span className="ml-auto hidden rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600 group-open:inline">
+            свернуть
+          </span>
+        </summary>
+        <div className="flex max-w-full flex-col gap-1 border-t border-amber-100 p-1.5">
+          {group.tasks.filter((task): task is WelderStampExpiryTask => task.kind === 'welder-stamp-expiry').map((task) => renderWelderStampNotificationCard(task))}
+        </div>
+      </details>
+    )
+  }
+
   function formatTaskCount(count: number) {
     const lastTwoDigits = count % 100
     const lastDigit = count % 10
@@ -3595,6 +3854,86 @@ function Home() {
     if (lastDigit === 1) return `${count} задача`
     if (lastDigit >= 2 && lastDigit <= 4) return `${count} задачи`
     return `${count} задач`
+  }
+
+  function formatReminderCount(count: number) {
+    const lastTwoDigits = count % 100
+    const lastDigit = count % 10
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${count} напоминаний`
+    if (lastDigit === 1) return `${count} напоминание`
+    if (lastDigit >= 2 && lastDigit <= 4) return `${count} напоминания`
+    return `${count} напоминаний`
+  }
+
+  function formatDaysLeft(daysLeft: number) {
+    const days = Math.max(0, daysLeft)
+    const lastTwoDigits = days % 100
+    const lastDigit = days % 10
+    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${days} дней`
+    if (lastDigit === 1) return `${days} день`
+    if (lastDigit >= 2 && lastDigit <= 4) return `${days} дня`
+    return `${days} дней`
+  }
+
+  function updateWelderStampDraft(field: keyof WelderStampRecord, value: string) {
+    setWelderStampDraft((current) => ({ ...current, [field]: field === 'naksStamp' ? normalizeNaksStamp(value) : value }))
+  }
+
+  function resetWelderStampForm() {
+    setWelderStampDraft(createEmptyWelderStampDraft())
+    setEditingWelderStampId(null)
+  }
+
+  function saveWelderStampRecord() {
+    const draft = normalizeWelderStampRecord(welderStampDraft)
+    if (!draft.naksStamp && !draft.internalStamp) {
+      setMessage('Укажите Клеймо НАКС или Клеймо внутреннее')
+      return
+    }
+    if (draft.naksStamp && !isValidNaksStamp(draft.naksStamp)) {
+      setMessage('Клеймо НАКС должно состоять из 4 латинских букв или цифр')
+      return
+    }
+    const validationError = validateWelderStampRecord(draft)
+    if (validationError) {
+      setMessage(validationError)
+      return
+    }
+
+    if (editingWelderStampId !== null) {
+      setWelderStamps((current) =>
+        current.map((record) => (record.id === editingWelderStampId ? { ...draft, id: editingWelderStampId } : record)),
+      )
+      setMessage('Клеймо обновлено')
+    } else {
+      const nextId = Math.max(0, ...welderStamps.map((record) => record.id)) + 1
+      setWelderStamps((current) => [{ ...draft, id: nextId }, ...current])
+      setMessage('Клеймо добавлено')
+    }
+    resetWelderStampForm()
+  }
+
+  function editWelderStampRecord(record: WelderStampRecord) {
+    setWelderStampDraft(record)
+    setEditingWelderStampId(record.id)
+  }
+
+  function archiveWelderStampRecord(id: number) {
+    setWelderStamps((current) => current.map((record) => (record.id === id ? { ...record, archived: true } : record)))
+    if (editingWelderStampId === id) resetWelderStampForm()
+    setMessage('Клеймо добавлено в архив')
+  }
+
+  function restoreWelderStampRecord(id: number) {
+    setWelderStamps((current) => current.map((record) => (record.id === id ? { ...record, archived: false } : record)))
+    setMessage('Клеймо возвращено в общий список')
+  }
+
+  function deleteWelderStampRecord(id: number) {
+    if (!confirm('Удалить запись клейма?')) return
+    setWelderStamps((current) => current.filter((record) => record.id !== id))
+    if (editingWelderStampId === id) resetWelderStampForm()
+    setMessage('Клеймо удалено')
   }
 
   return (
@@ -3667,6 +4006,23 @@ function Home() {
           >
             <ClipboardCheck className="h-4 w-4 shrink-0" />
             <span className={navCollapsed ? 'sr-only' : ''}>ЛНК</span>
+          </button>
+          <button
+            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+              activeReport === 'welderStamps'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+            } ${
+              navCollapsed ? 'justify-center px-0' : ''
+            }`}
+            onClick={() => {
+              setActiveReport('welderStamps')
+              setEditing(null)
+            }}
+            title="Клейма"
+          >
+            <Stamp className="h-4 w-4 shrink-0" />
+            <span className={navCollapsed ? 'sr-only' : ''}>Клейма</span>
           </button>
         </nav>
       </aside>
@@ -3795,10 +4151,12 @@ function Home() {
                   Импорт
                 </Button>
               ) : null}
-              <Button variant="outline" onClick={exportXlsx}>
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Excel
-              </Button>
+              {activeReport !== 'welderStamps' ? (
+                <Button variant="outline" onClick={exportXlsx}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Excel
+                </Button>
+              ) : null}
             </div>
           </header>
 
@@ -3813,22 +4171,26 @@ function Home() {
                   ? `Стыков на ПСТО: ${heatTreatmentRows.length} · Выбрано: ${selectedHeatTreatmentRows.length}`
                   : activeReport === 'lnk'
                     ? `Стыков на ЛНК: ${lnkRows.length} · Доступно для новой заявки: ${availableLnkRequestRows.length}`
-                    : `Записей: ${rows.length} · WDI годных: ${formatWdiTotal(acceptedWdiTotal)}`}
+                    : activeReport === 'welderStamps'
+                      ? `Клейм: ${welderStamps.filter((record) => !record.archived).length} · Архив: ${welderStamps.filter((record) => record.archived).length} · Найдено: ${filteredWelderStamps.length}`
+                      : `Записей: ${rows.length} · WDI годных: ${formatWdiTotal(acceptedWdiTotal)}`}
               {weldsQuery.error ? ` Ошибка: ${(weldsQuery.error as Error).message}` : null}
             </span>
             <span>{message}</span>
           </div>
 
-          {activeReport !== 'heatTreatment' && repeatedJointTasks.length > 0 ? (
+          {activeReport !== 'heatTreatment' && activeReport !== 'welderStamps' && repeatedJointTasks.length > 0 ? (
             <div
               className="sticky z-30 max-w-[calc(100vw-2rem)] overflow-x-auto rounded-md border border-amber-200 bg-amber-50/90 px-3 py-2 shadow-sm shadow-amber-100"
               style={{ left: stickyLeft, width: `calc(100vw - ${stickyLeft + 24}px)` }}
             >
               <div className="flex min-w-0 flex-col gap-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="text-sm font-semibold text-amber-950">Диспетчер задач</span>
-                    <span className="text-xs text-amber-800">Найдено: {repeatedJointTasks.length}. Действие только после подтверждения.</span>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 leading-snug">
+                    <span className="shrink-0 text-sm font-semibold text-amber-950">Диспетчер задач</span>
+                    <span className="min-w-0 text-xs leading-snug text-amber-800">
+                      Найдено: {repeatedJointTasks.length}. Действие только после подтверждения.
+                    </span>
                   </div>
                   <Button
                     type="button"
@@ -3847,76 +4209,127 @@ function Home() {
             </div>
           ) : null}
 
-          <WeldTable
-            rows={visibleRows as Array<WeldInput & { id: number }>}
-            columnFilters={activeColumnFilters}
-            onColumnFiltersChange={activeFiltersSetter}
-            onEdit={handleEditRecord}
-            onDelete={(id) => {
-              if (confirm('Удалить запись стыка?')) deleteMutation.mutate(id)
-            }}
-            stickyLeft={stickyLeft}
-            highlightedRowIds={highlightedRowIds}
-            highlightedCellKeys={highlightedCellKeys}
-            readOnly={activeReport === 'heatTreatment' || activeReport === 'lnk'}
-            editableFieldKeys={
-              activeReport === 'heatTreatment'
-                ? heatTreatmentEditableFieldKeys
-                : activeReport === 'lnk'
-                  ? lnkEditableFieldKeys
+          {activeReport === 'welderStamps' && welderStampExpiryTasks.length > 0 ? (
+            <div
+              className="relative z-30 w-full max-w-full overflow-x-auto rounded-md border border-amber-200 bg-amber-50/90 px-3 py-2 shadow-sm shadow-amber-100"
+            >
+              <div className="flex min-w-0 flex-col gap-2">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 leading-snug">
+                    <span className="shrink-0 text-sm font-semibold text-amber-950">Диспетчер оповещений клейм</span>
+                    <span className="min-w-0 text-xs leading-snug text-amber-800">
+                      Найдено: {welderStampExpiryTasks.length} · Напоминания по сроку действия НАКС
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...welderStampExpiryTasks.map((task) => task.key)]))}
+                    className="h-8 border-amber-300 bg-white px-3 text-xs text-amber-900 hover:bg-amber-100"
+                  >
+                    Скрыть все
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {welderStampNotificationGroups.map((group) => renderWelderStampNotificationGroup(group))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {activeReport === 'welderStamps' ? (
+            <WelderStampsRegistry
+              records={activeWelderStamps}
+              archivedRecords={archivedWelderStamps}
+              draft={welderStampDraft}
+              search={welderStampSearch}
+              filters={welderStampFilters}
+              editingId={editingWelderStampId}
+              showArchived={showArchivedWelderStamps}
+              onSearchChange={setWelderStampSearch}
+              onFiltersChange={setWelderStampFilters}
+              onDraftChange={updateWelderStampDraft}
+              onSave={saveWelderStampRecord}
+              onReset={resetWelderStampForm}
+              onEdit={editWelderStampRecord}
+              onArchive={archiveWelderStampRecord}
+              onRestore={restoreWelderStampRecord}
+              onToggleArchived={setShowArchivedWelderStamps}
+              onDelete={deleteWelderStampRecord}
+            />
+          ) : (
+            <WeldTable
+              rows={visibleRows as Array<WeldInput & { id: number }>}
+              columnFilters={activeColumnFilters}
+              onColumnFiltersChange={activeFiltersSetter}
+              onEdit={handleEditRecord}
+              onDelete={(id) => {
+                if (confirm('Удалить запись стыка?')) deleteMutation.mutate(id)
+              }}
+              stickyLeft={stickyLeft}
+              highlightedRowIds={highlightedRowIds}
+              highlightedCellKeys={highlightedCellKeys}
+              readOnly={activeReport === 'heatTreatment' || activeReport === 'lnk'}
+              editableFieldKeys={
+                activeReport === 'heatTreatment'
+                  ? heatTreatmentEditableFieldKeys
+                  : activeReport === 'lnk'
+                    ? lnkEditableFieldKeys
+                    : undefined
+              }
+              blockedFieldKeys={activeReport === 'weldingJournal' ? weldingJournalBlockedFieldKeys : undefined}
+              isCellEditable={
+                activeReport === 'lnk'
+                  ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
                   : undefined
-            }
-            blockedFieldKeys={activeReport === 'weldingJournal' ? weldingJournalBlockedFieldKeys : undefined}
-            isCellEditable={
-              activeReport === 'lnk'
-                ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
-                : undefined
-            }
-            getDisplayValue={activeReport === 'lnk' ? getLnkDisplayValue : undefined}
-            onOpenChain={(row) => setChainRecord(row)}
-            onOpenLinkedReport={activeReport === 'weldingJournal' || activeReport === 'lnk' ? openLinkedReportRow : undefined}
-            openLinkedReportTitle={activeReport === 'lnk' ? 'Открыть стык в сварочном журнале' : 'Открыть стык в отчете ЛНК'}
-            rowActions={
-              activeReport === 'heatTreatment'
-                ? {
-                    onCreateRequest: openCreatePstoRequestModalForRow,
-                    onAddResult: openAddPstoResultModalForRow,
-                    canCreateRequest: canCreatePstoRequest,
-                    canAddResult: (row) => hasText(row.pstoRequest),
-                    headerLabel: 'Действия ПСТО',
-                    createTitle: 'Создать заявку ПСТО на этот стык',
-                    createDisabledTitle: 'Заявка ПСТО по этому стыку уже создана',
-                    createAriaLabel: 'Создать заявку ПСТО на этот стык',
-                    resultTitle: 'Добавить результат ПСТО на этот стык',
-                    resultDisabledTitle: 'Сначала создайте заявку ПСТО на этот стык',
-                    resultAriaLabel: 'Добавить результат ПСТО на этот стык',
-                  }
-                : activeReport === 'lnk'
-                ? {
-                    onCreateRequest: openCreateLnkRequestModalForRow,
-                    onAddResult: openAddLnkResultModalForRow,
-                    canCreateRequest: canCreateLnkRequest,
-                    canAddResult: (row) => getLnkRowRequestNames(row).length > 0,
-                    headerLabel: 'Действия ЛНК',
-                    createTitle: 'Создать заявку ЛНК на этот стык',
-                    createDisabledTitle: 'Все заявки ЛНК по этому стыку уже созданы',
-                    createAriaLabel: 'Создать заявку ЛНК на этот стык',
-                    resultTitle: 'Добавить результат ЛНК на этот стык',
-                    resultDisabledTitle: 'Сначала создайте заявку ЛНК на этот стык',
-                    resultAriaLabel: 'Добавить результат ЛНК на этот стык',
-                  }
-                : undefined
-            }
-            storageKey={activeReport}
-            hiddenFieldKeys={
-              activeReport === 'heatTreatment'
-                ? heatTreatmentHiddenFieldKeys
-                : activeReport === 'lnk'
-                  ? lnkHiddenFieldKeys
-                  : weldingJournalHiddenFieldKeys
-            }
-            mergePstoSections={activeReport === 'heatTreatment'}
-          />
+              }
+              getDisplayValue={activeReport === 'lnk' ? getLnkDisplayValue : undefined}
+              onOpenChain={(row) => setChainRecord(row)}
+              onOpenLinkedReport={activeReport === 'weldingJournal' || activeReport === 'lnk' ? openLinkedReportRow : undefined}
+              openLinkedReportTitle={activeReport === 'lnk' ? 'Открыть стык в сварочном журнале' : 'Открыть стык в отчете ЛНК'}
+              rowActions={
+                activeReport === 'heatTreatment'
+                  ? {
+                      onCreateRequest: openCreatePstoRequestModalForRow,
+                      onAddResult: openAddPstoResultModalForRow,
+                      canCreateRequest: canCreatePstoRequest,
+                      canAddResult: (row) => hasText(row.pstoRequest),
+                      headerLabel: 'Действия ПСТО',
+                      createTitle: 'Создать заявку ПСТО на этот стык',
+                      createDisabledTitle: 'Заявка ПСТО по этому стыку уже создана',
+                      createAriaLabel: 'Создать заявку ПСТО на этот стык',
+                      resultTitle: 'Добавить результат ПСТО на этот стык',
+                      resultDisabledTitle: 'Сначала создайте заявку ПСТО на этот стык',
+                      resultAriaLabel: 'Добавить результат ПСТО на этот стык',
+                    }
+                  : activeReport === 'lnk'
+                  ? {
+                      onCreateRequest: openCreateLnkRequestModalForRow,
+                      onAddResult: openAddLnkResultModalForRow,
+                      canCreateRequest: canCreateLnkRequest,
+                      canAddResult: (row) => getLnkRowRequestNames(row).length > 0,
+                      headerLabel: 'Действия ЛНК',
+                      createTitle: 'Создать заявку ЛНК на этот стык',
+                      createDisabledTitle: 'Все заявки ЛНК по этому стыку уже созданы',
+                      createAriaLabel: 'Создать заявку ЛНК на этот стык',
+                      resultTitle: 'Добавить результат ЛНК на этот стык',
+                      resultDisabledTitle: 'Сначала создайте заявку ЛНК на этот стык',
+                      resultAriaLabel: 'Добавить результат ЛНК на этот стык',
+                    }
+                  : undefined
+              }
+              storageKey={activeReport}
+              hiddenFieldKeys={
+                activeReport === 'heatTreatment'
+                  ? heatTreatmentHiddenFieldKeys
+                  : activeReport === 'lnk'
+                    ? lnkHiddenFieldKeys
+                    : weldingJournalHiddenFieldKeys
+              }
+              mergePstoSections={activeReport === 'heatTreatment'}
+            />
+          )}
         </div>
       </div>
 
@@ -4036,6 +4449,8 @@ function Home() {
           key={`${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}`}
           value={editing.record}
           focusField={editing.focusField}
+          stampSelectOptions={getWeldFormStampSelectOptions}
+          getExternalSaveBlockReason={(draft) => getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps)}
           busy={saveMutation.isPending}
           onCancel={() => setEditing(null)}
           onSave={(value) => saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id })}
@@ -6138,6 +6553,970 @@ function Home() {
   )
 }
 
+function WelderStampsRegistry({
+  records,
+  archivedRecords,
+  draft,
+  search,
+  filters,
+  editingId,
+  showArchived,
+  onSearchChange,
+  onFiltersChange,
+  onDraftChange,
+  onSave,
+  onReset,
+  onEdit,
+  onArchive,
+  onRestore,
+  onToggleArchived,
+  onDelete,
+}: {
+  records: WelderStampRecord[]
+  archivedRecords: WelderStampRecord[]
+  draft: WelderStampRecord
+  search: string
+  filters: WelderStampFilters
+  editingId: number | null
+  showArchived: boolean
+  onSearchChange: (value: string) => void
+  onFiltersChange: (value: WelderStampFilters) => void
+  onDraftChange: (field: keyof WelderStampRecord, value: string) => void
+  onSave: () => void
+  onReset: () => void
+  onEdit: (record: WelderStampRecord) => void
+  onArchive: (id: number) => void
+  onRestore: (id: number) => void
+  onToggleArchived: (value: boolean) => void
+  onDelete: (id: number) => void
+}) {
+  const selectedWeldTypes = splitWelderStampWeldTypes(draft.weldType)
+  const requiresPermitFields = Boolean(draft.naksStamp.trim())
+  const hasRangeFilters = hasWelderStampRangeFilters(filters)
+  const activeFilterCount = countWelderStampFilters(search, filters)
+  const hasAnyFilters = activeFilterCount > 0
+  const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(true)
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false)
+  const formHint = getWelderStampFormHint(draft)
+
+  useEffect(() => {
+    if (editingId !== null) setIsCreatePanelOpen(true)
+  }, [editingId])
+
+  function toggleWeldType(type: (typeof welderStampWeldTypeOptions)[number]) {
+    const nextTypes = selectedWeldTypes.includes(type)
+      ? selectedWeldTypes.filter((value) => value !== type)
+      : [...selectedWeldTypes, type]
+    onDraftChange('weldType', nextTypes.join(', '))
+  }
+
+  function updateFilter(field: keyof WelderStampFilters, value: string) {
+    onFiltersChange({ ...filters, [field]: value })
+  }
+
+  return (
+    <section className="max-w-[calc(100vw-7rem)] space-y-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm shadow-slate-100">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">Справочник клейм сварщиков</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Здесь хранятся клейма НАКС, внутренние клейма и допуски по типу сварки, диаметрам и сроку действия.
+          </p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-50/70">
+        <button
+          type="button"
+          onClick={() => setIsCreatePanelOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100"
+        >
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-900">Создание клейм</span>
+            {editingId !== null ? (
+              <span className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800">редактирование</span>
+            ) : null}
+          </span>
+          <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${isCreatePanelOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {isCreatePanelOpen ? (
+          <div className="border-t border-slate-200 p-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label className="space-y-1.5 text-sm font-medium text-slate-700">
+                <span>Клеймо НАКС</span>
+                <Input
+                  value={draft.naksStamp}
+                  onChange={(event) => onDraftChange('naksStamp', event.target.value)}
+                  maxLength={4}
+                  placeholder="A123"
+                />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium text-slate-700">
+                <span>Клеймо внутреннее</span>
+                <Input value={draft.internalStamp} onChange={(event) => onDraftChange('internalStamp', event.target.value)} placeholder="Например: 45" />
+              </label>
+              <div className="space-y-1.5 text-sm font-medium text-slate-700">
+                <span>Тип сварки</span>
+                <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-input bg-white px-2 py-1.5 shadow-sm shadow-slate-200/40">
+                  {welderStampWeldTypeOptions.map((type) => {
+                    const isSelected = selectedWeldTypes.includes(type)
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => toggleWeldType(type)}
+                        className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                          isSelected
+                            ? 'border-sky-300 bg-sky-50 text-sky-800'
+                            : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
+                        }`}
+                        aria-pressed={isSelected}
+                      >
+                        {type}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1.5 text-sm font-medium text-slate-700">
+                  <span>Диаметр от</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    inputMode="decimal"
+                    value={draft.diameterFrom}
+                    onChange={(event) => onDraftChange('diameterFrom', event.target.value)}
+                    placeholder="от"
+                    required={requiresPermitFields}
+                  />
+                </label>
+                <label className="space-y-1.5 text-sm font-medium text-slate-700">
+                  <span>Диаметр до</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    inputMode="decimal"
+                    value={draft.diameterTo}
+                    onChange={(event) => onDraftChange('diameterTo', event.target.value)}
+                    placeholder="без ограничения"
+                    title="Если поле пустое, верхнего ограничения по диаметру нет"
+                  />
+                </label>
+              </div>
+              <label className="space-y-1.5 text-sm font-medium text-slate-700">
+                <span>Срок действия от</span>
+                <Input
+                  type="date"
+                  value={draft.validFrom}
+                  onChange={(event) => onDraftChange('validFrom', event.target.value)}
+                  required={requiresPermitFields}
+                />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium text-slate-700">
+                <span>Срок действия до</span>
+                <Input
+                  type="date"
+                  value={draft.validTo}
+                  onChange={(event) => onDraftChange('validTo', event.target.value)}
+                  required={requiresPermitFields}
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <div
+                className={`rounded-md border px-3 py-2 text-xs leading-5 ${
+                  formHint.kind === 'error'
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : 'border-sky-100 bg-sky-50 text-sky-800'
+                }`}
+              >
+                {formHint.text}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="outline" onClick={onReset}>
+                  <X className="mr-2 h-4 w-4" />
+                  Очистить
+                </Button>
+                <Button type="button" onClick={onSave}>
+                  <Check className="mr-2 h-4 w-4" />
+                  {editingId === null ? 'Добавить клеймо' : 'Сохранить клеймо'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setIsFilterPanelOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100"
+        >
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-800">Фильтры и поиск</span>
+            {hasAnyFilters ? (
+              <span className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">
+                Активно: {activeFilterCount}
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-slate-500">Не применены</span>
+            )}
+          </span>
+          <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${isFilterPanelOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {isFilterPanelOpen ? (
+          <div className="grid items-end gap-3 bg-white p-4 xl:grid-cols-[minmax(280px,1.4fr)_minmax(110px,0.55fr)_minmax(110px,0.55fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_auto]">
+            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+              <span>Поиск</span>
+              <Input
+                value={search}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Клеймо НАКС, внутреннее клеймо, тип сварки или диаметр"
+                className="h-10"
+              />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+              <span>Диаметр от</span>
+              <Input
+                type="number"
+                min="0"
+                inputMode="decimal"
+                value={filters.diameterFrom}
+                onChange={(event) => updateFilter('diameterFrom', event.target.value)}
+                placeholder="от"
+                className="h-10"
+              />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+              <span>Диаметр до</span>
+              <Input
+                type="number"
+                min="0"
+                inputMode="decimal"
+                value={filters.diameterTo}
+                onChange={(event) => updateFilter('diameterTo', event.target.value)}
+                placeholder="до"
+                className="h-10"
+              />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+              <span>Срок от</span>
+              <Input type="date" value={filters.validFrom} onChange={(event) => updateFilter('validFrom', event.target.value)} className="h-10" />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+              <span>Срок до</span>
+              <Input type="date" value={filters.validTo} onChange={(event) => updateFilter('validTo', event.target.value)} className="h-10" />
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onSearchChange('')
+                onFiltersChange(createEmptyWelderStampFilters())
+              }}
+              disabled={!hasAnyFilters}
+              className="h-10 whitespace-nowrap"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Сбросить
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="overflow-hidden rounded-md border border-slate-200">
+        <table className="w-full min-w-[980px] border-collapse text-sm">
+          <thead className="bg-slate-100 text-center text-slate-700">
+            <tr>
+              <th className="border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
+              <th className="border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
+              <th className="border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
+              <th className="border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
+              <th className="border-r border-white px-3 py-3 font-semibold">Срок действия</th>
+              <th className="w-32 px-3 py-3 font-semibold">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                  {search.trim() || hasRangeFilters ? 'По фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
+                </td>
+              </tr>
+            ) : (
+              records.map((record) => (
+                <tr key={record.id} className={record.id === editingId ? 'bg-sky-50' : 'odd:bg-white even:bg-slate-50/60'}>
+                  <td className="border-t border-slate-200 px-3 py-3 text-center font-semibold text-slate-900">{record.naksStamp || '-'}</td>
+                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{record.internalStamp || '-'}</td>
+                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{record.weldType || '-'}</td>
+                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{formatWelderStampDiameterRange(record)}</td>
+                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{formatWelderStampValidity(record)}</td>
+                  <td className="border-t border-slate-200 px-3 py-2">
+                    <div className="flex justify-center gap-1.5">
+                      <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => onEdit(record)} title="Редактировать клеймо">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        onClick={() => onArchive(record.id)}
+                        title="Добавить в архив"
+                      >
+                        <Archive className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 border-rose-200 text-rose-700 hover:bg-rose-50"
+                        onClick={() => onDelete(record.id)}
+                        title="Удалить клеймо"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-slate-50/60">
+        <button
+          type="button"
+          onClick={() => onToggleArchived(!showArchived)}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+        >
+          <span>Архив клейм</span>
+          <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
+            {archivedRecords.length} записей
+            <ChevronDown className={`h-4 w-4 transition-transform ${showArchived ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
+        {showArchived ? (
+          <div className="border-t border-slate-200 bg-white p-3">
+            {archivedRecords.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+                {search.trim() || hasRangeFilters ? 'По фильтрам архивных клейм не найдено.' : 'Архив пока пуст.'}
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-md border border-slate-200">
+                <table className="w-full min-w-[980px] border-collapse text-sm">
+                  <thead className="bg-slate-100 text-center text-slate-700">
+                    <tr>
+                      <th className="border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
+                      <th className="border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
+                      <th className="border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
+                      <th className="border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
+                      <th className="border-r border-white px-3 py-3 font-semibold">Срок действия</th>
+                      <th className="w-40 px-3 py-3 font-semibold">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archivedRecords.map((record) => (
+                      <tr key={record.id} className="bg-slate-50 text-slate-500">
+                        <td className="border-t border-slate-200 px-3 py-3 text-center font-semibold">{record.naksStamp || '-'}</td>
+                        <td className="border-t border-slate-200 px-3 py-3 text-center">{record.internalStamp || '-'}</td>
+                        <td className="border-t border-slate-200 px-3 py-3 text-center">{record.weldType || '-'}</td>
+                        <td className="border-t border-slate-200 px-3 py-3 text-center">{formatWelderStampDiameterRange(record)}</td>
+                        <td className="border-t border-slate-200 px-3 py-3 text-center">{formatWelderStampValidity(record)}</td>
+                        <td className="border-t border-slate-200 px-3 py-2">
+                          <div className="flex justify-center gap-1.5">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 border-sky-200 text-sky-700 hover:bg-sky-50"
+                              onClick={() => onRestore(record.id)}
+                              title="Вернуть в общий список"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 border-rose-200 text-rose-700 hover:bg-rose-50"
+                              onClick={() => onDelete(record.id)}
+                              title="Удалить клеймо"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function createEmptyWelderStampDraft(): WelderStampRecord {
+  return {
+    id: 0,
+    naksStamp: '',
+    internalStamp: '',
+    weldType: '',
+    diameterFrom: '',
+    diameterTo: '',
+    validFrom: '',
+    validTo: '',
+    archived: false,
+  }
+}
+
+function createEmptyWelderStampFilters(): WelderStampFilters {
+  return {
+    diameterFrom: '',
+    diameterTo: '',
+    validFrom: '',
+    validTo: '',
+  }
+}
+
+function normalizeWelderStampRecord(record: WelderStampRecord): WelderStampRecord {
+  return {
+    ...record,
+    naksStamp: normalizeNaksStamp(record.naksStamp),
+    internalStamp: record.internalStamp.trim(),
+    weldType: normalizeWelderStampWeldType(record.weldType),
+    diameterFrom: record.diameterFrom.trim(),
+    diameterTo: record.diameterTo.trim(),
+    archived: Boolean(record.archived),
+  }
+}
+
+function readWelderStampRecords(): WelderStampRecord[] {
+  if (typeof window === 'undefined') return []
+
+  try {
+    const raw = window.localStorage.getItem(welderStampsStorageKey)
+    if (!raw) return []
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    return parsed.map((item, index) => ({
+      id: Number.isFinite(Number(item?.id)) ? Number(item.id) : index + 1,
+      naksStamp: normalizeNaksStamp(String(item?.naksStamp ?? '')),
+      internalStamp: String(item?.internalStamp ?? ''),
+      weldType: normalizeWelderStampWeldType(String(item?.weldType ?? '')),
+      diameterFrom: String(item?.diameterFrom ?? ''),
+      diameterTo: String(item?.diameterTo ?? ''),
+      validFrom: String(item?.validFrom ?? ''),
+      validTo: String(item?.validTo ?? ''),
+      archived: Boolean(item?.archived),
+    }))
+  } catch {
+    return []
+  }
+}
+
+function writeWelderStampRecords(records: WelderStampRecord[]) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(welderStampsStorageKey, JSON.stringify(records))
+  } catch {
+    // Local storage can be unavailable in private/browser-restricted modes.
+  }
+}
+
+function buildWelderStampExpiryTasks(records: WelderStampRecord[]): WelderStampExpiryTask[] {
+  const today = parseIsoDateStart(getTodayIsoDate())
+  if (!today) return []
+
+  return records.flatMap((record) => {
+    const naksStamp = record.naksStamp.trim()
+    const validTo = record.validTo.trim()
+    const validToDate = parseIsoDateStart(validTo)
+    if (record.archived || !naksStamp || !validToDate) return []
+
+    const daysLeft = Math.ceil((validToDate.getTime() - today.getTime()) / dayInMs)
+    if (daysLeft > welderStampExpiryReminderDays) return []
+
+    return [
+      {
+        kind: 'welder-stamp-expiry' as const,
+        key: `welder-stamp-expiry:${record.id}:${naksStamp}:${validTo}`,
+        stamp: record,
+        naksStamp,
+        validTo,
+        daysLeft,
+        expired: daysLeft < 0,
+      },
+    ]
+  })
+}
+
+function parseIsoDateStart(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+}
+
+function filterWelderStampRecords(records: WelderStampRecord[], search: string, filters: WelderStampFilters) {
+  const needle = search.trim().toLowerCase()
+  const diameterFrom = filters.diameterFrom ? parseWelderStampNumber(filters.diameterFrom) : null
+  const diameterTo = filters.diameterTo ? parseWelderStampNumber(filters.diameterTo) : null
+
+  return records.filter((record) =>
+    matchesWelderStampTextSearch(record, needle) &&
+    matchesWelderStampDiameterFilter(record, diameterFrom, diameterTo) &&
+    matchesWelderStampDateFilter(record, filters.validFrom, filters.validTo),
+  )
+}
+
+function matchesWelderStampTextSearch(record: WelderStampRecord, needle: string) {
+  if (!needle) return true
+
+  return [
+    record.naksStamp,
+    record.internalStamp,
+    record.weldType,
+    record.diameterFrom,
+    record.diameterTo,
+    formatWelderStampDate(record.validFrom),
+    formatWelderStampDate(record.validTo),
+  ]
+    .join(' ')
+    .toLowerCase()
+    .includes(needle)
+}
+
+function matchesWelderStampDiameterFilter(record: WelderStampRecord, filterFrom: number | null, filterTo: number | null) {
+  if (filterFrom === null && filterTo === null) return true
+
+  const recordFrom = record.diameterFrom ? parseWelderStampNumber(record.diameterFrom) : null
+  const recordTo = record.diameterTo ? parseWelderStampNumber(record.diameterTo) : null
+  if (recordFrom === null) return false
+
+  const effectiveRecordTo = recordTo ?? Number.POSITIVE_INFINITY
+  const effectiveFilterFrom = filterFrom ?? Number.NEGATIVE_INFINITY
+  const effectiveFilterTo = filterTo ?? Number.POSITIVE_INFINITY
+
+  return recordFrom <= effectiveFilterTo && effectiveRecordTo >= effectiveFilterFrom
+}
+
+function matchesWelderStampDateFilter(record: WelderStampRecord, filterFrom: string, filterTo: string) {
+  if (!filterFrom && !filterTo) return true
+  if (!record.validFrom || !record.validTo) return false
+
+  const effectiveFilterFrom = filterFrom || '0000-01-01'
+  const effectiveFilterTo = filterTo || '9999-12-31'
+
+  return record.validFrom <= effectiveFilterTo && record.validTo >= effectiveFilterFrom
+}
+
+function hasWelderStampRangeFilters(filters: WelderStampFilters) {
+  return Boolean(filters.diameterFrom || filters.diameterTo || filters.validFrom || filters.validTo)
+}
+
+function countWelderStampFilters(search: string, filters: WelderStampFilters) {
+  return [search.trim(), filters.diameterFrom, filters.diameterTo, filters.validFrom, filters.validTo].filter(Boolean).length
+}
+
+function normalizeNaksStamp(value: string) {
+  return value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()
+}
+
+function isValidNaksStamp(value: string) {
+  return /^[A-Z0-9]{4}$/.test(value)
+}
+
+function validateWelderStampRecord(record: WelderStampRecord) {
+  const hasNaksStamp = Boolean(record.naksStamp)
+
+  if (hasNaksStamp && !record.weldType) return 'Укажите Тип сварки'
+  if (hasNaksStamp && !record.diameterFrom) return 'Укажите Диаметр от'
+  if (hasNaksStamp && !record.validFrom) return 'Укажите Срок действия от'
+  if (hasNaksStamp && !record.validTo) return 'Укажите Срок действия до'
+
+  const diameterFrom = record.diameterFrom ? parseWelderStampNumber(record.diameterFrom) : null
+  const diameterTo = record.diameterTo ? parseWelderStampNumber(record.diameterTo) : null
+
+  if (diameterFrom === null && record.diameterFrom) return 'Диаметр от должен быть числом'
+  if (diameterTo === null && record.diameterTo) return 'Диаметр до должен быть числом'
+  if (diameterFrom !== null && diameterTo !== null && diameterFrom > diameterTo) {
+    return 'Диапазон диаметра заполнен некорректно: значение «от» больше значения «до»'
+  }
+  if (record.validFrom && record.validTo && record.validFrom > record.validTo) {
+    return 'Срок действия заполнен некорректно: дата «от» позже даты «до»'
+  }
+
+  return ''
+}
+
+function getWelderStampFormHint(record: WelderStampRecord) {
+  const draft = normalizeWelderStampRecord(record)
+  const defaultHint =
+    'Клеймо НАКС: 4 знака, только латинские буквы и цифры. Если заполнено только внутреннее клеймо, тип сварки, диаметры и срок действия можно не указывать.'
+
+  if (!draft.naksStamp && !draft.internalStamp) return { kind: 'info' as const, text: defaultHint }
+  if (draft.naksStamp && !isValidNaksStamp(draft.naksStamp)) {
+    return { kind: 'error' as const, text: 'Клеймо НАКС должно состоять из 4 латинских букв или цифр' }
+  }
+
+  const validationError = validateWelderStampRecord(draft)
+  return validationError ? { kind: 'error' as const, text: validationError } : { kind: 'info' as const, text: defaultHint }
+}
+
+function parseWelderStampNumber(value: string) {
+  const normalized = value.trim().replace(',', '.')
+  if (!normalized) return null
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function splitWelderStampWeldTypes(value: string) {
+  const normalized = value.toUpperCase().replace(/;/g, ',')
+  return welderStampWeldTypeOptions.filter((option) =>
+    normalized
+      .split(',')
+      .map((item) => item.trim())
+      .includes(option),
+  )
+}
+
+function normalizeWelderStampWeldType(value: string) {
+  return splitWelderStampWeldTypes(value).join(', ')
+}
+
+function formatWelderStampDiameterRange(record: WelderStampRecord) {
+  const from = record.diameterFrom.trim()
+  const to = record.diameterTo.trim()
+
+  if (from && to) return `${from} - ${to}`
+  if (from) return `от ${from}`
+  if (to) return `до ${to}`
+  return '-'
+}
+
+function formatWelderStampValidity(record: WelderStampRecord) {
+  const from = formatWelderStampDate(record.validFrom)
+  const to = formatWelderStampDate(record.validTo)
+
+  if (from && to) return `${from} - ${to}`
+  if (from) return `с ${from}`
+  if (to) return `до ${to}`
+  return '-'
+}
+
+function formatWelderStampDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : value
+}
+
+function formatWelderStampRecordLabel(record: WelderStampRecord) {
+  const naksStamp = record.naksStamp.trim() || '-'
+  const weldType = normalizeWelderStampWeldType(record.weldType)
+  return weldType ? `Клеймо ${naksStamp} (тип: ${weldType})` : `Клеймо ${naksStamp}`
+}
+
+function formatWelderStampTaskLabel(task: WelderStampExpiryTask) {
+  return formatWelderStampRecordLabel(task.stamp)
+}
+
+function formatWelderStampCompactLabel(task: WelderStampExpiryTask) {
+  return `Клеймо ${task.naksStamp.trim() || '-'}`
+}
+
+function buildWeldFormStampSelectOptions(
+  records: WelderStampRecord[],
+  draft?: WeldInput,
+): Partial<Record<WeldFieldKey, readonly StampSelectOption[]>> {
+  const activeRecords = records.filter((record) => !record.archived)
+  const officialOptions = uniqueStampValues(activeRecords.map((record) => record.naksStamp)).map((value) => {
+    const reason = draft ? getOfficialStampSelectBlockReason(value, draft, activeRecords) : null
+    return {
+      value,
+      disabled: Boolean(reason),
+      reason: reason ?? undefined,
+    }
+  })
+  const factualOptions = uniqueStampValues(
+    activeRecords.flatMap((record) => {
+      const naksStamp = normalizeStampSelectValue(record.naksStamp)
+      if (naksStamp) return [naksStamp]
+
+      const internalStamp = normalizeStampSelectValue(record.internalStamp)
+      return internalStamp ? [internalStamp] : []
+    }),
+  ).map((value) => ({ value }))
+
+  return {
+    ...Object.fromEntries(officialWelderStampFieldKeys.map((fieldKey) => [fieldKey, officialOptions])),
+    ...Object.fromEntries(factualWelderStampFieldKeys.map((fieldKey) => [fieldKey, factualOptions])),
+  }
+}
+
+function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, activeRecords: WelderStampRecord[]) {
+  const stampRecords = activeRecords.filter(
+    (record) => normalizeStampForCompare(record.naksStamp) === normalizeStampForCompare(stamp),
+  )
+  if (stampRecords.length === 0) return 'нет в активном реестре'
+
+  const methods = parseOfficialStampWeldingMethods(draft.weldingMethod)
+  const diameters = getOfficialStampJointDiameters(draft)
+  if (methods.length === 0 && diameters.length === 0) return null
+
+  if (methods.length === 0) {
+    return stampRecords.some((record) => diameters.every((diameter) => isWelderStampDiameterCompatible(diameter, record)))
+      ? null
+      : `не подходит по диаметру ${formatOfficialStampDiameterList(diameters)}`
+  }
+
+  for (const method of methods) {
+    const methodRecords = stampRecords.filter((record) => splitWelderStampWeldTypes(record.weldType).includes(method))
+    if (methodRecords.length === 0) return `не подходит по типу сварки ${method}`
+
+    if (
+      diameters.length > 0 &&
+      !methodRecords.some((record) => diameters.every((diameter) => isWelderStampDiameterCompatible(diameter, record)))
+    ) {
+      return `не подходит по диаметру ${formatOfficialStampDiameterList(diameters)}`
+    }
+  }
+
+  return null
+}
+
+function uniqueStampValues(values: readonly unknown[]) {
+  return [...new Set(values.map(normalizeStampSelectValue).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right, 'ru', { numeric: true, sensitivity: 'base' }),
+  )
+}
+
+function normalizeStampSelectValue(value: unknown) {
+  return String(value ?? '').trim()
+}
+
+function validateWelderStampFieldsForImport(
+  records: WeldInput[],
+  stampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOption[]>>,
+) {
+  const entries = Object.entries(stampSelectOptions) as Array<[WeldFieldKey, readonly StampSelectOption[]]>
+
+  records.forEach((record, index) => {
+    for (const [fieldKey, options] of entries) {
+      const value = normalizeStampSelectValue(record[fieldKey])
+      if (!value) continue
+
+      const isValid = options.some((option) => normalizeStampSelectValue(option.value) === value)
+      if (!isValid) {
+        const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
+        const fieldLabel = FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
+        throw new Error(
+          `Импорт остановлен: ${rowLabel}. Поле "${fieldLabel}" должно быть выбрано из активного реестра клейм. Значение "${value}" не найдено.`,
+        )
+      }
+    }
+  })
+}
+
+type OfficialStampCompatibilityIssue = {
+  fieldKey: WeldFieldKey
+  stamp: string
+  method: string
+  reason: 'missing-registry' | 'missing-weld-type' | 'weld-type' | 'date' | 'diameter'
+  message: string
+}
+
+function getOfficialStampCompatibilitySaveBlockReason(record: WeldInput, welderStampRecords: WelderStampRecord[]) {
+  const issue = getOfficialStampCompatibilityIssues(record, welderStampRecords)[0]
+  return issue ? formatOfficialStampCompatibilityIssue(issue) : null
+}
+
+function validateOfficialStampCompatibilityForSave(record: WeldInput, welderStampRecords: WelderStampRecord[]) {
+  const reason = getOfficialStampCompatibilitySaveBlockReason(record, welderStampRecords)
+  if (reason) throw new Error(`Сохранение невозможно: ${reason}`)
+}
+
+function validateOfficialStampCompatibilityForImport(records: WeldInput[], welderStampRecords: WelderStampRecord[]) {
+  records.forEach((record, index) => {
+    const issue = getOfficialStampCompatibilityIssues(record, welderStampRecords)[0]
+    if (!issue) return
+
+    const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
+    throw new Error(`Импорт остановлен: ${rowLabel}. ${formatOfficialStampCompatibilityIssue(issue)}`)
+  })
+}
+
+function getOfficialStampCompatibilityIssues(record: WeldInput, welderStampRecords: WelderStampRecord[]) {
+  const activeRecords = welderStampRecords.filter((stampRecord) => !stampRecord.archived)
+  const methods = parseOfficialStampWeldingMethods(record.weldingMethod)
+  const diameters = getOfficialStampJointDiameters(record)
+  const weldDateValue = getWeldDateOrderValue(record.weldDate)
+  const issues: OfficialStampCompatibilityIssue[] = []
+
+  for (const fieldKey of officialWelderStampFieldKeys) {
+    const stamp = normalizeStampSelectValue(record[fieldKey])
+    if (!stamp) continue
+
+    const stampRecords = activeRecords.filter((stampRecord) => normalizeStampForCompare(stampRecord.naksStamp) === normalizeStampForCompare(stamp))
+    if (stampRecords.length === 0) {
+      issues.push({
+        fieldKey,
+        stamp,
+        method: '',
+        reason: 'missing-registry',
+        message: `Клеймо ${stamp} не найдено в активном реестре клейм.`,
+      })
+      continue
+    }
+
+    if (methods.length === 0) {
+      issues.push({
+        fieldKey,
+        stamp,
+        method: '',
+        reason: 'missing-weld-type',
+        message: `Для клейма ${stamp} нужно указать тип сварки.`,
+      })
+      continue
+    }
+
+    for (const method of methods) {
+      const methodRecords = stampRecords.filter((stampRecord) => splitWelderStampWeldTypes(stampRecord.weldType).includes(method))
+      if (methodRecords.length === 0) {
+        issues.push({
+          fieldKey,
+          stamp,
+          method,
+          reason: 'weld-type',
+          message: `Клеймо ${stamp} (${method}) не имеет допуска на тип сварки ${method}.`,
+        })
+        continue
+      }
+
+      const dateRecords = weldDateValue
+        ? methodRecords.filter((stampRecord) => isWelderStampDateCompatible(weldDateValue, stampRecord))
+        : methodRecords
+      if (dateRecords.length === 0) {
+        issues.push({
+          fieldKey,
+          stamp,
+          method,
+          reason: 'date',
+          message: `Клеймо ${stamp} (${method}) не соответствует сроку действия на дату сварки ${formatDisplayDate(record.weldDate) || '-'}.`,
+        })
+        continue
+      }
+
+      if (diameters.length > 0 && !dateRecords.some((stampRecord) => diameters.every((diameter) => isWelderStampDiameterCompatible(diameter, stampRecord)))) {
+        issues.push({
+          fieldKey,
+          stamp,
+          method,
+          reason: 'diameter',
+          message: `Клеймо ${stamp} (${method}) не имеет допуска на диаметр ${formatOfficialStampDiameterList(diameters)}.`,
+        })
+      }
+    }
+  }
+
+  return issues
+}
+
+function formatOfficialStampCompatibilityIssue(issue: OfficialStampCompatibilityIssue) {
+  const fieldLabel = formatWelderStampFieldKeyLabel(issue.fieldKey)
+  return `${fieldLabel}: ${issue.message}`
+}
+
+function formatWelderStampFieldKeyLabel(fieldKey: WeldFieldKey) {
+  return FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
+}
+
+function formatWelderStampFieldKeysInText(value: string) {
+  return welderStampFieldKeysForDisplay.reduce((text, fieldKey) => {
+    return text.replace(new RegExp(`\\b${escapeRegExp(fieldKey)}\\b`, 'g'), formatWelderStampFieldKeyLabel(fieldKey))
+  }, value)
+}
+
+function parseOfficialStampWeldingMethods(value: unknown) {
+  const selected = new Set(
+    String(value ?? '')
+      .toUpperCase()
+      .split(/[+,;/]+/)
+      .map((part) => part.trim())
+      .filter(Boolean),
+  )
+  return welderStampWeldTypeOptions.filter((option) => selected.has(option))
+}
+
+function normalizeStampForCompare(value: unknown) {
+  return normalizeStampSelectValue(value).toUpperCase()
+}
+
+function getOfficialStampJointDiameters(record: WeldInput) {
+  const diameters = [parseJointDiameterValue(record.d1), parseJointDiameterValue(record.d2)].filter(
+    (value): value is number => value !== null,
+  )
+  return [...new Set(diameters)]
+}
+
+function formatOfficialStampDiameterList(diameters: number[]) {
+  if (diameters.length === 1) return String(diameters[0])
+  return diameters.join(', ')
+}
+
+function isWelderStampDateCompatible(weldDateValue: number, record: WelderStampRecord) {
+  const validFrom = getWeldDateOrderValue(record.validFrom)
+  const validTo = getWeldDateOrderValue(record.validTo)
+  return (!validFrom || weldDateValue >= validFrom) && (!validTo || weldDateValue <= validTo)
+}
+
+function isWelderStampDiameterCompatible(diameter: number, record: WelderStampRecord) {
+  const from = parseWelderStampNumber(record.diameterFrom) ?? 0
+  const to = parseWelderStampNumber(record.diameterTo)
+  return diameter >= from && (to === null || diameter <= to)
+}
+
+function normalizeWeldingMethodsForImport(records: WeldInput[]) {
+  records.forEach((record, index) => {
+    const rawValue = normalizeStampSelectValue(record.weldingMethod)
+    if (!rawValue) {
+      record.weldingMethod = null
+      return
+    }
+
+    const parts = rawValue
+      .split(/[+,;]+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    const invalidParts = parts.filter((part) => !welderStampWeldTypeOptions.includes(part as (typeof welderStampWeldTypeOptions)[number]))
+
+    if (parts.length === 0) {
+      record.weldingMethod = null
+      return
+    }
+
+    if (invalidParts.length > 0) {
+      const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
+      throw new Error(
+        `Импорт остановлен: ${rowLabel}. Поле "Тип сварки" должно содержать только РАД, РД или МП. Значение "${rawValue}" не подходит.`,
+      )
+    }
+
+    const selected = new Set(parts)
+    record.weldingMethod = welderStampWeldTypeOptions.filter((option) => selected.has(option)).join('+')
+  })
+}
+
 async function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
 }
@@ -6785,6 +8164,23 @@ function validateWeldDateForSave(value: unknown) {
   throw new Error('Дата сварки не может быть позже сегодняшней.')
 }
 
+function validateRequiredRootStampForSave(record: WeldInput) {
+  const message = getRequiredRootStampMessage(record)
+  if (message) throw new Error(`Сохранение невозможно: ${message}`)
+}
+
+function validateRequiredRootStampsForImport(records: WeldInput[]) {
+  const invalidRecord = records
+    .map((record, index) => ({ record, index, message: getRequiredRootStampMessage(record) }))
+    .find((item) => item.message)
+
+  if (!invalidRecord) return
+
+  const rowNumber = invalidRecord.index + 2
+  const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
+  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.message}`)
+}
+
 function validateManualJointNamesForImport(records: WeldInput[]) {
   const invalidRecord = records
     .map((record, index) => ({ record, index, error: validateManualJointName(record.joint) }))
@@ -7117,9 +8513,14 @@ function hasRejectedLnkResult(row: WeldInput) {
   })
 }
 
-function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
+function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStampRecord[] = []): RepeatedJointTask[] {
   const tasks: RepeatedJointTask[] = []
-  const chainCheckTasks = [...buildJointChainConsistencyCheckTasks(rows), ...buildControlDateBeforeWeldDateCheckTasks(rows)]
+  const chainCheckTasks = [
+    ...buildJointChainConsistencyCheckTasks(rows),
+    ...buildControlDateBeforeWeldDateCheckTasks(rows),
+    ...buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords),
+    ...buildIncompleteWelderStampGroupTasks(rows),
+  ]
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
   const blockedChainKeys = new Set(
     [
@@ -7234,7 +8635,7 @@ function buildRepeatedJointTasks(rows: WeldRow[]): RepeatedJointTask[] {
   return [...chainCheckTasks, ...duplicateCheckTasks, ...tasks]
 }
 
-function groupRepeatedJointTasks(tasks: RepeatedJointTask[]): RepeatedJointTaskGroup[] {
+function groupRepeatedJointTasks(tasks: DispatcherTask[]): RepeatedJointTaskGroup[] {
   const groups = new Map<string, RepeatedJointTaskGroup>()
   for (const task of tasks) {
     const key = getRepeatedJointTaskGroupKey(task)
@@ -7248,11 +8649,13 @@ function groupRepeatedJointTasks(tasks: RepeatedJointTask[]): RepeatedJointTaskG
   return [...groups.values()]
 }
 
-function getRepeatedJointTaskGroupKey(task: RepeatedJointTask) {
+function getRepeatedJointTaskGroupKey(task: DispatcherTask) {
+  if (task.kind === 'welder-stamp-expiry') return `welder-stamp-expiry:${task.naksStamp.trim().toLowerCase()}`
   return getJointChainConsistencyKey(task.row) ?? getRepeatedJointTaskBaseJoint(task)
 }
 
-function getRepeatedJointTaskBaseJoint(task: RepeatedJointTask) {
+function getRepeatedJointTaskBaseJoint(task: DispatcherTask) {
+  if (task.kind === 'welder-stamp-expiry') return formatWelderStampCompactLabel(task)
   if (task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename') return task.baseJoint
   return parseJointChainName(task.sourceJoint).base || task.sourceJoint
 }
@@ -7284,6 +8687,68 @@ function buildControlDateBeforeWeldDateCheckTasks(rows: WeldRow[]): RepeatedJoin
     )
   }
   return tasks
+}
+
+function buildWelderStampCompatibilityCheckTasks(rows: WeldRow[], welderStampRecords: WelderStampRecord[]): RepeatedJointCheckTask[] {
+  if (welderStampRecords.length === 0) return []
+
+  const tasks: RepeatedJointCheckTask[] = []
+  for (const row of rows) {
+    const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords)
+    if (issues.length === 0) continue
+
+    const joint = String(row.joint ?? '').trim() || '-'
+    const details = [
+      `Стык ${joint}: ${issues.map(formatOfficialStampCompatibilityIssue).join(' ')}`,
+      'Проверь официальное клеймо, тип сварки, D1/D2, дату сварки или срок действия допуска в реестре клейм.',
+    ].join(' ')
+
+    tasks.push(
+      createJointChainCheckTask(
+        row,
+        `${getJointChainConsistencyKey(row) ?? row.id}:welder-stamp:${row.id}:${issues
+          .map((issue) => `${issue.fieldKey}:${issue.stamp}:${issue.method}:${issue.reason}`)
+          .join('|')}`,
+        'проверить клеймо',
+        details,
+      ),
+    )
+  }
+
+  return tasks
+}
+
+function buildIncompleteWelderStampGroupTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
+  const tasks: RepeatedJointCheckTask[] = []
+  for (const row of rows) {
+    for (const group of WELD_STAMP_COMPLETION_GROUPS) {
+      const filledFields = group.fields.filter((fieldKey) => hasText(row[fieldKey]))
+      if (filledFields.length === 0 || filledFields.length === group.fields.length) continue
+
+      const missingFields = group.fields.filter((fieldKey) => !hasText(row[fieldKey]))
+      const joint = String(row.joint ?? '').trim() || '-'
+      const officialityText = isUnofficialJoint(row) ? ' (неофициальный)' : ''
+      const filledText = filledFields.map(formatWeldStampCompletionFieldLabel).join(', ')
+      const missingText = missingFields.map(formatWeldStampCompletionFieldLabel).join(', ')
+      tasks.push(
+        createJointChainCheckTask(
+          row,
+          `${getJointChainConsistencyKey(row) ?? row.id}:weld-stamp-completion-${group.index}:${row.id}:${missingFields.join(',')}`,
+          group.reason,
+          `Стык ${joint}${officialityText}: в группе клейма_${group.index} заполнено ${filledText}, но не заполнено ${missingText}. Если в группе заполнено хотя бы одно клеймо, нужно дозаполнить остальные поля этой группы.`,
+        ),
+      )
+    }
+  }
+  return tasks
+}
+
+function formatWeldStampCompletionFieldLabel(fieldKey: WeldFieldKey) {
+  return FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
+}
+
+function isIncompleteWeldStampGroupReason(reason?: string) {
+  return reason === 'дозаполнить клейма_1' || reason === 'дозаполнить клейма_2'
 }
 
 function formatDateIssueLabelForSuggestion(label: string) {
@@ -7432,7 +8897,7 @@ function buildObsoleteChildBranchCheckTasks(rows: WeldRow[], chainGroups: Map<st
 }
 
 function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
-  return task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON
+  return task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON && task.reason !== 'проверить клеймо' && !isIncompleteWeldStampGroupReason(task.reason)
 }
 
 function isJointChainRowWeldedAfter(row: WeldInput, referenceRow: WeldInput) {
@@ -7529,7 +8994,9 @@ function hasCompletedParentBranch(rows: WeldRow[], row: WeldInput, sourceJoint: 
 function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
   const seen = new Set<string>()
   return tasks.filter((task) => {
-    const key = `${task.baseJoint}:${task.reason ?? ''}`
+    const key = task.reason === 'проверить клеймо' || isIncompleteWeldStampGroupReason(task.reason)
+      ? task.key
+      : `${task.baseJoint}:${task.reason ?? ''}`
     if (seen.has(key)) return false
     seen.add(key)
     return true

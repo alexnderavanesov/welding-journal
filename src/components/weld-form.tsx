@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import {
+  FIELD_BY_KEY,
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
   RESULT_STATUS_OPTIONS,
@@ -12,7 +13,10 @@ import {
   type WeldInput,
   calculateFinalStatus,
 } from '@/lib/weld-fields'
-import { withAutoVikForWeldDate } from '@/lib/weld-import-export'
+import {
+  getRequiredRootStampMessage,
+  withAutoVikForWeldDate,
+} from '@/lib/weld-import-export'
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
 
 const yesEmptyFieldKeys = new Set([
@@ -26,6 +30,8 @@ const yesEmptyFieldKeys = new Set([
   'hasStls',
   'hasMkk',
 ])
+const weldingMethodOptions = ['РАД', 'РД', 'МП'] as const
+
 const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'status',
   'createdAt',
@@ -94,16 +100,26 @@ const formHiddenFieldKeys = new Set<WeldFieldKey>([
 type WeldFormProps = {
   value: WeldInput & { id?: number }
   focusField?: WeldFieldKey
+  stampSelectOptions?: StampSelectOptions | ((value: WeldInput) => StampSelectOptions)
+  getExternalSaveBlockReason?: (value: WeldInput) => string | null
   onSave: (value: WeldInput) => void
   onCancel: () => void
   busy?: boolean
 }
 
-export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldFormProps) {
+export type StampSelectOption = {
+  value: string
+  disabled?: boolean
+  reason?: string
+}
+
+export type StampSelectOptions = Partial<Record<WeldFieldKey, readonly StampSelectOption[]>>
+
+export function WeldForm({ value, focusField, stampSelectOptions, getExternalSaveBlockReason, onSave, onCancel, busy }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
   const contentRef = useRef<HTMLDivElement | null>(null)
-  const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | null>>>({})
+  const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
   const fieldsByGroup = useMemo(
     () =>
       VISIBLE_FIELD_SECTIONS.map((group) => ({
@@ -112,9 +128,16 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
       })).filter((group) => group.fields.length > 0),
     [],
   )
-  const saveBlockReason = getWeldFormSaveBlockReason(draft, value)
+  const resolvedStampSelectOptions = typeof stampSelectOptions === 'function' ? stampSelectOptions(draft) : stampSelectOptions
+  const preparedDraft = draft
+  const saveBlockReason =
+    getWeldStampSaveBlockReason(preparedDraft, resolvedStampSelectOptions) ??
+    getExternalSaveBlockReason?.(preparedDraft) ??
+    getRequiredRootStampMessage(preparedDraft) ??
+    getWeldFormSaveBlockReason(draft, value)
+  const autoFillMessages: string[] = []
   const handleSave = () => {
-    if (!busy && !saveBlockReason) onSave(withCalculatedFinalStatus(draft))
+    if (!busy && !saveBlockReason) onSave(withCalculatedFinalStatus(preparedDraft))
   }
 
   useEffect(() => {
@@ -234,9 +257,83 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
                 {collapsedSections.has(section) ? null : (
                   <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
                     {fields.map((field) => (
-                      <label key={field.key} className="space-y-1.5 text-sm">
+                      <div key={field.key} className="space-y-1.5 text-sm">
                         <span className="text-[13px] font-medium leading-none text-slate-700">{field.label}</span>
-                        {RESULT_FIELD_KEYS.has(field.key) ? (
+                        {resolvedStampSelectOptions?.[field.key] ? (
+                          <Select
+                            ref={(element) => {
+                              fieldRefs.current[field.key] = element
+                            }}
+                            value={getStampSelectValue(draft[field.key])}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                [field.key]: event.target.value || null,
+                              }))
+                            }
+                          >
+                            <option value="">Пусто</option>
+                            {resolvedStampSelectOptions[field.key]?.map((option) => (
+                              <option
+                                key={option.value}
+                                value={option.value}
+                                disabled={option.disabled}
+                                title={option.reason}
+                                className={option.disabled ? 'bg-slate-100 text-slate-400' : undefined}
+                              >
+                                {option.value}
+                              </option>
+                            ))}
+                          </Select>
+                        ) : field.key === 'weldingMethod' ? (
+                          <div
+                            className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-input bg-white px-2 py-1.5 shadow-sm"
+                            role="group"
+                            aria-label="Тип сварки"
+                          >
+                            {weldingMethodOptions.map((option, index) => {
+                              const selected = getSelectedWeldingMethods(draft.weldingMethod).includes(option)
+                              return (
+                                <button
+                                  key={option}
+                                  ref={(element) => {
+                                    if (index === 0) fieldRefs.current[field.key] = element
+                                  }}
+                                  type="button"
+                                  onClick={() =>
+                                    setDraft((current) => ({
+                                      ...current,
+                                      weldingMethod: toggleWeldingMethodValue(current.weldingMethod, option),
+                                    }))
+                                  }
+                                  className={[
+                                    'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                                    selected
+                                      ? 'border-sky-300 bg-sky-100 text-sky-900 shadow-sm'
+                                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-200 hover:bg-sky-50',
+                                  ].join(' ')}
+                                  aria-pressed={selected}
+                                >
+                                  {option}
+                                </button>
+                              )
+                            })}
+                            {getSelectedWeldingMethods(draft.weldingMethod).length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDraft((current) => ({
+                                    ...current,
+                                    weldingMethod: null,
+                                  }))
+                                }
+                                className="ml-auto rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50"
+                              >
+                                Очистить
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : RESULT_FIELD_KEYS.has(field.key) ? (
                           <Select
                             ref={(element) => {
                               fieldRefs.current[field.key] = element
@@ -310,7 +407,7 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
                             }
                           />
                         )}
-                      </label>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -319,11 +416,19 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 bg-white px-6 py-4">
-          <div className="min-h-6 text-sm text-slate-500">
-            {saveBlockReason ? <span>Чтобы сохранить: {saveBlockReason}</span> : null}
+        <div className="flex items-center justify-between gap-4 border-t border-slate-200/80 bg-white px-6 py-4">
+          <div className="min-h-6 min-w-0 flex-1 text-sm text-slate-500">
+            {saveBlockReason ? (
+              <span className="inline-flex max-w-full rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-800 shadow-sm">
+                <span className="truncate">Чтобы сохранить: {saveBlockReason}</span>
+              </span>
+            ) : autoFillMessages[0] ? (
+              <span className="inline-flex max-w-full rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-sky-800 shadow-sm">
+                <span className="truncate">{autoFillMessages[0]}</span>
+              </span>
+            ) : null}
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex shrink-0 justify-end gap-2">
             <Button variant="outline" onClick={onCancel}>
               Отмена
             </Button>
@@ -341,6 +446,28 @@ export function WeldForm({ value, focusField, onSave, onCancel, busy }: WeldForm
 function isYesValue(value: unknown) {
   if (value === true) return true
   return String(value ?? '').toLowerCase() === 'да'
+}
+
+function getSelectedWeldingMethods(value: unknown) {
+  const selected = new Set(
+    String(value ?? '')
+      .split('+')
+      .map((part) => part.trim())
+      .filter(Boolean),
+  )
+  return weldingMethodOptions.filter((option) => selected.has(option))
+}
+
+function toggleWeldingMethodValue(value: unknown, option: (typeof weldingMethodOptions)[number]) {
+  const selected = new Set(getSelectedWeldingMethods(value))
+  if (selected.has(option)) {
+    selected.delete(option)
+  } else {
+    selected.add(option)
+  }
+
+  const next = weldingMethodOptions.filter((item) => selected.has(item)).join('+')
+  return next || null
 }
 
 function getResultStatusValue(value: unknown) {
@@ -392,6 +519,34 @@ function getWeldFormSaveBlockReason(draft: WeldInput, initialValue: WeldInput & 
   }
 
   return validateManualJointName(draft.joint)
+}
+
+function getWeldStampSaveBlockReason(
+  draft: WeldInput,
+  stampSelectOptions: StampSelectOptions | undefined,
+) {
+  if (!stampSelectOptions) return null
+
+  for (const [fieldKey, options] of Object.entries(stampSelectOptions) as Array<[WeldFieldKey, readonly StampSelectOption[]]>) {
+    const value = getStampSelectValue(draft[fieldKey])
+    if (!value) continue
+
+    const selectedOption = options.find((option) => option.value.trim() === value)
+    if (!selectedOption) {
+      return `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} должно быть выбрано из активного реестра клейм.`
+    }
+    if (selectedOption.disabled) {
+      const reason = selectedOption.reason ? `: ${selectedOption.reason}` : ''
+      return `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} не подходит по реестру клейм${reason}.`
+    }
+  }
+
+  return null
+}
+
+function getStampSelectValue(value: unknown) {
+  const text = String(value ?? '').trim()
+  return text.toLowerCase() === 'пусто' ? '' : text
 }
 
 function isFutureWeldDate(value: unknown) {

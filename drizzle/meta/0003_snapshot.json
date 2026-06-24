@@ -242,8 +242,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "stamp_1_zo": {
-          "name": "stamp_1_zo",
+        "stamp_1_z": {
+          "name": "stamp_1_z",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -254,8 +254,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "stamp_2_zo": {
-          "name": "stamp_2_zo",
+        "stamp_2_z": {
+          "name": "stamp_2_z",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -266,8 +266,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "stamp_1_zo_fact": {
-          "name": "stamp_1_zo_fact",
+        "stamp_1_z_fact": {
+          "name": "stamp_1_z_fact",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -278,8 +278,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "stamp_2_zo_fact": {
-          "name": "stamp_2_zo_fact",
+        "stamp_2_z_fact": {
+          "name": "stamp_2_z_fact",
           "type": "text",
           "primaryKey": false,
           "notNull": false
