@@ -41,16 +41,12 @@ import {
   FIELD_BY_KEY,
   RESULT_STATUS_OPTIONS,
   PSTO_RESULT_STATUS_OPTIONS,
-  VISIBLE_FIELD_SECTIONS,
   VISIBLE_FIELDS,
   calculateFinalStatus,
-  type WeldField,
   type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
 import {
-  ALWAYS_VISIBLE_FIELD_KEYS as alwaysVisibleFieldKeys,
-  COLLAPSED_SECTIONS_STORAGE_PREFIX as collapsedSectionsStoragePrefix,
   HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
   HEAT_TREATMENT_HIDDEN_FIELD_KEYS as heatTreatmentHiddenFieldKeys,
   HEAT_TREATMENT_IMPORT_MATCH_FIELD_KEYS as heatTreatmentImportMatchFieldKeys,
@@ -70,7 +66,6 @@ import {
   LNK_WAITING_NK_FIELDS,
   PSTO_EMPTY_RESULT_VALUE,
   PSTO_RESULTS_FIELDS,
-  PSTO_SECTION_FIELD_KEYS as pstoSectionFieldKeys,
   PSTO_WAITING_REQUEST_FIELDS,
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
   REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
@@ -88,6 +83,7 @@ import {
   getPstoResultBadgeClass,
   getPstoResultLabel,
 } from '@/lib/report-badges'
+import { formatWdiTotal, getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
 import { buildLnkReportHtml, downloadExcelBytes } from '@/lib/report-window'
 import { groupRepeatedJointTasks } from '@/lib/dispatcher-groups'
 import { formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
@@ -6725,94 +6721,6 @@ function normalizeExistingRequestImportValue(value: unknown, allowedRequestNames
 
 function isSameImportValue(left: unknown, right: unknown) {
   return String(left ?? '').trim() === String(right ?? '').trim()
-}
-
-function getReportExportFields({
-  storageKey,
-  hiddenFieldKeys,
-  mergePstoSections,
-}: {
-  storageKey: string
-  hiddenFieldKeys: ReadonlySet<WeldFieldKey>
-  mergePstoSections: boolean
-}) {
-  const collapsedSections = readCollapsedSections(storageKey)
-  const reportAlwaysVisibleFieldKeys = new Set(alwaysVisibleFieldKeys)
-  if (mergePstoSections) {
-    for (const fieldKey of pstoSectionFieldKeys) {
-      reportAlwaysVisibleFieldKeys.add(fieldKey)
-    }
-  }
-  const availableSections = getReportExportSections(hiddenFieldKeys, mergePstoSections)
-
-  return availableSections.flatMap((group) => {
-    const isCollapsed = collapsedSections.has(group.section) && canCollapseExportSection(group.fields, reportAlwaysVisibleFieldKeys)
-    return isCollapsed ? group.fields.filter((field) => reportAlwaysVisibleFieldKeys.has(field.key)) : group.fields
-  })
-}
-
-function getReportExportSections(hiddenFieldKeys: ReadonlySet<WeldFieldKey>, mergePstoSections: boolean) {
-  const sections = VISIBLE_FIELD_SECTIONS.map((group) => ({
-    ...group,
-    fields: group.fields.filter((field) => !hiddenFieldKeys.has(field.key)),
-  })).filter((group) => group.fields.length > 0)
-
-  if (!mergePstoSections) return sections
-
-  const pstoFields = sections.flatMap((group) => group.fields).filter((field) => pstoSectionFieldKeys.has(field.key))
-  const finalStatusFields = sections.flatMap((group) => group.fields).filter((field) => field.key === 'finalStatus')
-  const sectionsWithoutPsto = sections
-    .map((group) => ({
-      ...group,
-      fields: group.fields.filter((field) => !pstoSectionFieldKeys.has(field.key) && field.key !== 'finalStatus'),
-    }))
-    .filter((group) => group.fields.length > 0)
-  const resultSection = finalStatusFields.length > 0 ? [{ section: 'Результат', fields: finalStatusFields }] : []
-  const weldingIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Сварка')
-  const sectionsWithResult =
-    weldingIndex === -1
-      ? [...sectionsWithoutPsto, ...resultSection]
-      : [
-          ...sectionsWithoutPsto.slice(0, weldingIndex + 1),
-          ...resultSection,
-          ...sectionsWithoutPsto.slice(weldingIndex + 1),
-        ]
-  const miscIndex = sectionsWithResult.findIndex((group) => group.section === 'Прочее')
-  const pstoSection = pstoFields.length > 0 ? [{ section: 'ПСТО', fields: pstoFields }] : []
-  if (miscIndex === -1) return [...sectionsWithResult, ...pstoSection]
-
-  return [...sectionsWithResult.slice(0, miscIndex), ...pstoSection, ...sectionsWithResult.slice(miscIndex)]
-}
-
-function canCollapseExportSection(fields: readonly WeldField[], reportAlwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>) {
-  return fields.some((field) => !reportAlwaysVisibleFieldKeys.has(field.key as WeldFieldKey))
-}
-
-function getReportReadOnlyFieldKeys(activeReport: ActiveReport) {
-  if (activeReport === 'weldingJournal') return weldingJournalBlockedFieldKeys
-  if (activeReport === 'lnk') {
-    return new Set(VISIBLE_FIELDS.map((field) => field.key as WeldFieldKey).filter((fieldKey) => !lnkEditableFieldKeys.has(fieldKey)))
-  }
-  return new Set(
-    VISIBLE_FIELDS.map((field) => field.key as WeldFieldKey).filter((fieldKey) => !heatTreatmentEditableFieldKeys.has(fieldKey)),
-  )
-}
-
-function readCollapsedSections(storageKey: string) {
-  if (typeof window === 'undefined') return new Set<string>()
-
-  try {
-    const stored = window.localStorage.getItem(`${collapsedSectionsStoragePrefix}:${storageKey}`)
-    if (!stored) return new Set<string>()
-    const parsed = JSON.parse(stored)
-    return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === 'string')) : new Set<string>()
-  } catch {
-    return new Set<string>()
-  }
-}
-
-function formatWdiTotal(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 
 function formatPstoRequestName(rows: Array<WeldInput & { id: number }>) {
