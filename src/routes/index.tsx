@@ -81,6 +81,12 @@ import {
   WELDING_JOURNAL_BLOCKED_FIELD_KEYS as weldingJournalBlockedFieldKeys,
   WELDING_JOURNAL_HIDDEN_FIELD_KEYS as weldingJournalHiddenFieldKeys,
 } from '@/lib/report-config'
+import {
+  getInactiveLnkRequestBadgeClass,
+  getLnkResultBadgeClass,
+  getPstoResultBadgeClass,
+  getPstoResultLabel,
+} from '@/lib/report-badges'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -9198,21 +9204,6 @@ function getLnkRequestMethodBadgeClass(row: WeldInput, method: (typeof LNK_METHO
   return getLnkResultBadgeClass(row[method.resultKey])
 }
 
-function getInactiveLnkRequestBadgeClass() {
-  return 'border-slate-300 bg-slate-100 text-slate-600'
-}
-
-function getLnkResultBadgeClass(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
-  if (result === LNK_EMPTY_RESULT_VALUE) return 'border-slate-300 bg-slate-100 text-slate-700'
-  if (result === 'годен') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-  if (result === 'ремонт') return 'border-rose-200 bg-rose-50 text-rose-800'
-  if (result === 'вырез') return 'border-red-300 bg-red-100 text-red-900'
-  if (result === 'ожидает' || result === 'ожидает нк') return 'border-amber-200 bg-amber-50 text-amber-800'
-  if (result === 'нет потребности') return getInactiveLnkRequestBadgeClass()
-  return 'border-slate-200 bg-slate-50 text-slate-600'
-}
-
 function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
   const method = getLnkMethodByResultKey(fieldKey)
   if (method && isLnkMethodNoNeed(row, method)) return 'нет потребности'
@@ -9223,17 +9214,6 @@ function isLnkMethodNoNeed(row: WeldInput, method: (typeof LNK_METHODS)[number])
   if (!hasRejectedLnkResult(row)) return false
   if (isFinalLnkResultValue(row[method.resultKey])) return false
   return hasText(row[method.requestKey]) || isEnabledControlValue(row[method.enabledKey])
-}
-
-function getPstoResultBadgeClass(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
-  if (result === 'проведено') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-  return 'border-amber-200 bg-amber-50 text-amber-800'
-}
-
-function getPstoResultLabel(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
-  return result === 'проведено' ? 'проведено' : 'ожидает'
 }
 
 function getJointStatusLabel(row: WeldInput) {
