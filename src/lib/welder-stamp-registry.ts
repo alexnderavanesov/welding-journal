@@ -16,6 +16,7 @@ import {
   normalizeWelderStampWeldType,
   splitWelderStampWeldTypes,
 } from '@/lib/welder-stamp-format'
+import { escapeRegExp } from '@/lib/string-utils'
 import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export function createEmptyWelderStampDraft(): WelderStampRecord {
@@ -515,8 +516,4 @@ function parseJointDiameterValue(value: unknown) {
   if (!match) return null
   const parsed = Number(match[0])
   return Number.isFinite(parsed) ? parsed : null
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

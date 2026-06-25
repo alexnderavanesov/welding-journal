@@ -130,6 +130,7 @@ import {
   formatWelderStampValidity,
   splitWelderStampWeldTypes,
 } from '@/lib/welder-stamp-format'
+import { escapeRegExp } from '@/lib/string-utils'
 import {
   buildWeldFormStampSelectOptions,
   buildWelderStampExpiryTasks,
@@ -8564,10 +8565,6 @@ function withAutoHeatTreatmentDiagram<T extends WeldInput & { id: number }>(reco
   const nextNumber = maxNumber + 1
 
   return { ...record, heatTreatmentDiagram: `${prefix}${String(nextNumber).padStart(3, '0')}` }
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function getJointTitle(value: WeldInput) {

@@ -12,6 +12,7 @@ import {
   formatWelderStampDate,
   formatWelderStampTaskLabel,
 } from '@/lib/welder-stamp-format'
+import { escapeRegExp } from '@/lib/string-utils'
 
 export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') {
@@ -154,8 +155,4 @@ function formatWelderStampFieldKeyLabel(fieldKey: WeldFieldKey) {
 
 function isUnofficialDispatcherJoint(row: WeldInput) {
   return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
