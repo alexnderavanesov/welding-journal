@@ -105,11 +105,8 @@ import {
 } from '@/lib/lnk-report-rows'
 import {
   canCreateLnkRequest,
-  hasAnyLnkGeneratedData,
   hasAnyLnkReportControl,
   hasHeatTreatmentReportState,
-  hasLnkMethodReportHistory,
-  hasLnkReportEntry,
   toControlCancellationReportRow,
   toHeatTreatmentReportRow,
   toLnkReportRow,
@@ -135,6 +132,12 @@ import {
   sortRowsByPreservedOrder,
   sumAcceptedWdi,
 } from '@/lib/report-row-utils'
+import {
+  expandHighlightFieldKeys,
+  getCellKey,
+  getJointTitle,
+  makeExactColumnFilterValue,
+} from '@/lib/report-ui-state'
 import {
   hasText,
   hasWeldDate,
@@ -205,6 +208,17 @@ import {
   isLnkRepairForbiddenByDiameter,
   isLnkRepairForbiddenByOfficialRepairLimit,
 } from '@/lib/lnk-result-rules'
+import {
+  applyLnkFieldUpdate,
+  clearDisabledLnkRequests,
+  clearLnkGeneratedData,
+  hasLnkGeneratedDataChanged,
+  isLnkRequestAllowedForRow,
+  isLnkRequestField,
+  isLnkResultField,
+  normalizeLnkResultValue,
+  withTouchedLnkTimestamp,
+} from '@/lib/lnk-field-updates'
 import {
   areLnkResultDraftRowsReady,
   buildLnkResultDraftById,
@@ -6799,110 +6813,4 @@ function compareJointChainRows(left: WeldRow, right: WeldRow) {
     if (leftSegment.index !== rightSegment.index) return leftSegment.index - rightSegment.index
   }
   return compareReportRows(left, right)
-}
-
-function makeExactColumnFilterValue(value: unknown) {
-  return `=${String(value ?? '').trim().toLowerCase()}`
-}
-
-function isLnkResultField(fieldKey: WeldFieldKey) {
-  return LNK_METHODS.some((method) => method.resultKey === fieldKey)
-}
-
-function isLnkRequestField(fieldKey: WeldFieldKey) {
-  return lnkRequestFieldKeys.includes(fieldKey)
-}
-
-function isLnkRequestAllowedForRow(row: WeldInput, fieldKey: WeldFieldKey) {
-  const method = getLnkMethodByRequestKey(fieldKey)
-  return !method || isEnabledControlValue(row[method.enabledKey])
-}
-
-function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: WeldFieldKey, value: string | null): T {
-  const nextRecord = { ...record, [fieldKey]: value } as T & Record<string, unknown>
-  const requestMethod = getLnkMethodByRequestKey(fieldKey)
-  if (requestMethod && !hasText(value)) {
-    nextRecord[requestMethod.resultKey] = null
-    nextRecord[requestMethod.conclusionDateKey] = null
-    nextRecord[requestMethod.conclusionKey] = null
-  }
-  return nextRecord as T
-}
-
-function clearLnkGeneratedData<T extends WeldInput>(row: T): T {
-  const nextRow = { ...row } as T & Record<string, unknown>
-  for (const fieldKey of lnkGeneratedFieldKeys) {
-    nextRow[fieldKey] = null
-  }
-  return nextRow as T
-}
-
-function hasLnkGeneratedDataChanged(left: WeldInput, right: WeldInput) {
-  return [...lnkGeneratedFieldKeys].some((fieldKey) => !isSameImportValue(left[fieldKey], right[fieldKey]))
-}
-
-function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
-  let nextRow: (T & Record<string, unknown>) | null = null
-  for (const method of LNK_METHODS) {
-    if (isEnabledControlValue(row[method.enabledKey]) || hasLnkMethodReportHistory(row, method) || !hasText(row[method.requestKey])) continue
-    nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
-    nextRow[method.requestKey] = null
-  }
-  return (nextRow ?? row) as T
-}
-
-function normalizeLnkResultValue(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return RESULT_STATUS_OPTIONS.includes(text as never) ? text : null
-}
-
-function getJointTitle(value: WeldInput) {
-  const line = String(value.line ?? '').trim()
-  const joint = String(value.joint ?? '').trim()
-
-  if (!line && !joint) return 'Линия и стык не заполнены.'
-  return `${line || '-'} · ${joint || '-'}`
-}
-
-function expandHighlightFieldKeys(fieldKeys: WeldFieldKey[]) {
-  const expanded = new Set<WeldFieldKey>(fieldKeys)
-  if (expanded.has('weldDate')) {
-    expanded.add('hasVik')
-  }
-  if (
-    expanded.has('pstoRequired') ||
-    expanded.has('pstoRequest') ||
-    expanded.has('pstoDate') ||
-    expanded.has('pstoResult') ||
-    expanded.has('heatTreatmentDiagram')
-  ) {
-    expanded.add('pstoCreatedAt')
-  }
-  if (
-    LNK_METHODS.some(
-      (method) =>
-        expanded.has(method.enabledKey) ||
-        expanded.has(method.requestKey) ||
-        expanded.has(method.resultKey) ||
-        expanded.has(method.conclusionDateKey) ||
-        expanded.has(method.conclusionKey),
-    )
-  ) {
-    expanded.add('lnkCreatedAt')
-    expanded.add('finalStatus')
-  }
-  return [...expanded]
-}
-
-function getCellKey(rowId: number, fieldKey: WeldFieldKey) {
-  return `${rowId}:${fieldKey}`
-}
-
-function withLnkCreatedAt<T extends WeldInput>(rows: T[]) {
-  const lnkCreatedAt = new Date().toISOString()
-  return rows.map((row) => ((hasLnkReportEntry(row) || hasAnyLnkGeneratedData(row)) && !row.lnkCreatedAt ? { ...row, lnkCreatedAt } : row))
-}
-
-function withTouchedLnkTimestamp<T extends WeldInput>(row: T): T {
-  return { ...row, lnkCreatedAt: new Date().toISOString() }
 }
