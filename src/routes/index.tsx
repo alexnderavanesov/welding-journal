@@ -90,6 +90,7 @@ import {
 } from '@/lib/dispatcher-text'
 import {
   compareJointChainSuffix,
+  findLastIndex,
   formatRepeatedJointName,
   getCoilJointNames,
   getRepeatedJointFailureCount,

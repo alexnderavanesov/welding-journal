@@ -67,7 +67,7 @@ export function normalizeJointChainPart(value: unknown) {
   return String(value ?? '').replace(/\s+/g, '').trim().toLowerCase()
 }
 
-function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
+export function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     if (predicate(items[index])) return index
   }
