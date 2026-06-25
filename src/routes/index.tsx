@@ -5,6 +5,13 @@ import { Archive, Check, ChevronDown, ClipboardCheck, ExternalLink, FileSpreadsh
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import {
+  JointProjectSubtitleMeta,
+  JointSpoolDiameterMeta,
+  JointWeldDateMeta,
+  MetaSeparator,
+  OfficialityBadge,
+} from '@/components/joint-meta'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
 import {
@@ -88,6 +95,7 @@ import {
   getRepeatedJointTaskDetailsHeading,
   getRepeatedJointTaskTitle,
 } from '@/lib/dispatcher-text'
+import { formatDisplayDate } from '@/lib/date-format'
 import {
   compareJointChainSuffix,
   findLastIndex,
@@ -6616,13 +6624,6 @@ function escapeJsString(value: unknown) {
   return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r')
 }
 
-function formatDisplayDate(value: unknown) {
-  const text = String(value ?? '').trim()
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!match) return text
-  return `${match[3]}.${match[2]}.${match[1]}`
-}
-
 function buildHeatTreatmentImportUpdates(
   importedRecords: WeldInput[],
   heatTreatmentRows: Array<WeldInput & { id: number }>,
@@ -8207,58 +8208,6 @@ function getLnkResultRepairForbiddenSummary(rows: WeldInput[]) {
   const reasons = new Set(rows.map(getLnkRepairForbiddenReason).filter(Boolean))
   if (reasons.size === 0) return 'выбранные стыки не проходят правила ремонта'
   return [...reasons].join('; ')
-}
-
-function MetaSeparator() {
-  return <span className="mx-1 text-sm font-semibold leading-none text-slate-400">·</span>
-}
-
-function JointSpoolDiameterMeta({ row }: { row: WeldInput }) {
-  const spool = String(row.spool ?? '').trim()
-  return (
-    <>
-      {spool ? (
-        <>
-          <span className="font-semibold text-slate-700">{spool}</span>
-          <MetaSeparator />
-        </>
-      ) : null}
-      <span>Диаметр - </span>
-      <span className="font-semibold text-slate-700">{formatJointDiameterLabel(row)}</span>
-    </>
-  )
-}
-
-function JointWeldDateMeta({ row }: { row: WeldInput }) {
-  return (
-    <>
-      Дата сварки: <span className="font-semibold text-slate-700">{formatDisplayDate(row.weldDate) || '-'}</span>
-    </>
-  )
-}
-
-function JointProjectSubtitleMeta({ row }: { row: WeldInput }) {
-  return (
-    <>
-      Проект: <span className="font-semibold text-slate-700">{String(row.projectTitle ?? '-') || '-'}</span>
-      <MetaSeparator />
-      Шифр:{' '}
-      <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-') || '-'}</span>
-    </>
-  )
-}
-
-function OfficialityBadge({ row, compact = false }: { row: WeldInput; compact?: boolean }) {
-  if (!isUnofficialJoint(row)) return null
-  return (
-    <span
-      className={`inline-flex items-center rounded border border-slate-300 bg-slate-100 font-semibold text-slate-700 ${
-        compact ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-0.5 text-xs'
-      }`}
-    >
-      неофициальный
-    </span>
-  )
 }
 
 function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
