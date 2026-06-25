@@ -108,10 +108,6 @@ import {
   formatDisplayDate,
   formatLongDate,
   formatPstoDiagramDate,
-  formatPstoDiagramLongDate,
-  formatPstoDiagramShortDateFromLong,
-  formatShortDate,
-  parseLongDateValue,
 } from '@/lib/date-format'
 import {
   compareJointChainSuffix,
@@ -133,6 +129,18 @@ import {
 } from '@/lib/joint-display'
 import { formatWelderStampTaskLabel } from '@/lib/welder-stamp-format'
 import { escapeRegExp } from '@/lib/string-utils'
+import {
+  collectLnkResultRequestNames,
+  collectRequestNames,
+  formatLnkConclusionName,
+  formatLnkRequestName,
+  formatPstoDiagramName,
+  formatPstoRequestName,
+  getRequestNameFromNaming,
+  sortLnkRequestNamesNewestFirst,
+  sortPstoRequestNamesNewestFirst,
+  withCurrentOption,
+} from '@/lib/report-naming'
 import {
   buildWeldFormStampSelectOptions,
   buildWelderStampExpiryTasks,
@@ -6310,43 +6318,6 @@ function isSameImportValue(left: unknown, right: unknown) {
   return String(left ?? '').trim() === String(right ?? '').trim()
 }
 
-function formatPstoRequestName(rows: Array<WeldInput & { id: number }>) {
-  const date = formatShortDate(new Date())
-  const prefix = `ПСТО-${date}-`
-  const requestNames = [
-    ...new Set(
-      rows
-        .map((row) => String(row.pstoRequest ?? '').trim())
-        .filter((requestName) => requestName.startsWith(prefix)),
-    ),
-  ]
-  const maxNumber = requestNames.reduce((max, requestName) => {
-    const match = requestName.match(new RegExp(`^${escapeRegExp(prefix)}(\\d{3})$`))
-    return match ? Math.max(max, Number(match[1])) : max
-  }, 0)
-  const nextNumber = Math.max(maxNumber, requestNames.length) + 1
-  return `${prefix}${String(nextNumber).padStart(3, '0')}`
-}
-
-function formatLnkRequestName(rows: Array<WeldInput & { id: number }>) {
-  const date = formatLongDate(new Date())
-  const prefix = `Заявка-${date}-`
-  const maxNumber = rows
-    .flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim()))
-    .map((requestName) => parseLnkRequestName(requestName))
-    .filter((parsed): parsed is { dateValue: number; number: number } => Boolean(parsed && parsed.dateValue === parseLongDateValue(date)))
-    .reduce((max, parsed) => Math.max(max, parsed.number), 0)
-  const requestNames = [
-    ...new Set(
-      rows
-        .flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim()))
-        .filter((requestName) => parseLnkRequestName(requestName)?.dateValue === parseLongDateValue(date)),
-    ),
-  ]
-  const nextNumber = Math.max(maxNumber, requestNames.length) + 1
-  return `${prefix}${String(nextNumber).padStart(3, '0')}`
-}
-
 function hasAnyLnkControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
 }
@@ -6503,26 +6474,6 @@ function getAvailableLnkRequestMethods(row: WeldInput) {
   return LNK_METHODS.filter((method) => isEnabledControlValue(row[method.enabledKey]) && !hasText(row[method.requestKey]))
 }
 
-function collectRequestNames(rows: WeldInput[], fieldKeys: readonly WeldFieldKey[]) {
-  return [
-    ...new Set(
-      rows
-        .flatMap((row) => fieldKeys.map((fieldKey) => String(row[fieldKey] ?? '').trim()))
-        .filter((value) => value.length > 0),
-    ),
-  ].sort((left, right) => left.localeCompare(right, 'ru'))
-}
-
-function withCurrentOption(options: string[], value: string) {
-  const current = value.trim()
-  if (!current || options.includes(current)) return options
-  return [current, ...options]
-}
-
-function getRequestNameFromNaming(naming: RequestNamingState, systemName: string) {
-  return naming.mode === 'system' ? systemName.trim() : naming.customName.trim()
-}
-
 function createDefaultLnkResultDraft(): LnkResultDraftState {
   return {
     requestName: '',
@@ -6552,83 +6503,6 @@ function createDefaultPstoResultDraft(): PstoResultDraftState {
     result: '',
     diagramNaming: defaultRequestNamingState,
     search: '',
-  }
-}
-
-function formatPstoDiagramName(rows: WeldInput[], pstoDate: string) {
-  const date = formatPstoDiagramLongDate(pstoDate) ?? formatLongDate(new Date())
-  const prefix = `ПСТО-Д-${formatPstoDiagramShortDateFromLong(date)}-`
-  const maxNumber = rows
-    .map((row) => String(row.heatTreatmentDiagram ?? '').trim())
-    .map((value) => value.match(new RegExp(`^${escapeRegExp(prefix)}(\\d{3})$`))?.[1])
-    .reduce((max, value) => (value ? Math.max(max, Number(value)) : max), 0)
-  return `${prefix}${String(maxNumber + 1).padStart(3, '0')}`
-}
-
-function formatLnkConclusionName(rows: WeldInput[], controlDate: string, methodKey: WeldFieldKey | '') {
-  const date = formatLongDate(controlDate ? new Date(`${controlDate}T00:00:00`) : new Date())
-  const method = methodKey ? getLnkMethodByRequestKey(methodKey) : null
-  const methodCode = method?.code ?? 'ЛНК'
-  const prefix = `Заключение-${methodCode}-${date}-`
-  const maxNumber = rows
-    .flatMap((row) => LNK_METHODS.map((method) => String(row[method.conclusionKey] ?? '').trim()))
-    .map((value) => value.match(new RegExp(`^(?:(?:Закл\\.|Заключение)-)?[^-]+-${escapeRegExp(date)}-(\\d{3})$`))?.[1])
-    .reduce((max, value) => (value ? Math.max(max, Number(value)) : max), 0)
-  return `${prefix}${String(maxNumber + 1).padStart(3, '0')}`
-}
-
-function collectLnkResultRequestNames(rows: WeldInput[]) {
-  return sortLnkRequestNamesNewestFirst(collectRequestNames(rows, lnkRequestFieldKeys))
-}
-
-function sortPstoRequestNamesNewestFirst(requestNames: string[]) {
-  return [...requestNames].sort((left, right) => {
-    const leftParsed = parsePstoRequestName(left)
-    const rightParsed = parsePstoRequestName(right)
-    if (leftParsed && rightParsed) {
-      if (leftParsed.dateValue !== rightParsed.dateValue) return rightParsed.dateValue - leftParsed.dateValue
-      if (leftParsed.number !== rightParsed.number) return rightParsed.number - leftParsed.number
-      return right.localeCompare(left, 'ru', { numeric: true })
-    }
-    if (leftParsed) return -1
-    if (rightParsed) return 1
-    return right.localeCompare(left, 'ru', { numeric: true })
-  })
-}
-
-function sortLnkRequestNamesNewestFirst(requestNames: string[]) {
-  return [...requestNames].sort((left, right) => {
-    const leftParsed = parseLnkRequestName(left)
-    const rightParsed = parseLnkRequestName(right)
-    if (leftParsed && rightParsed) {
-      if (leftParsed.dateValue !== rightParsed.dateValue) return rightParsed.dateValue - leftParsed.dateValue
-      if (leftParsed.number !== rightParsed.number) return rightParsed.number - leftParsed.number
-      return right.localeCompare(left, 'ru', { numeric: true })
-    }
-    if (leftParsed) return -1
-    if (rightParsed) return 1
-    return right.localeCompare(left, 'ru', { numeric: true })
-  })
-}
-
-function parseLnkRequestName(value: string) {
-  const match = value.trim().match(/^(?:ЛНК|Заявка)-(\d{2})\.(\d{2})\.(\d{2}|\d{4})-(\d{3})$/)
-  if (!match) return null
-  const [, day, month, year, number] = match
-  const fullYear = year.length === 2 ? `20${year}` : year
-  return {
-    dateValue: Number(`${fullYear}${month}${day}`),
-    number: Number(number),
-  }
-}
-
-function parsePstoRequestName(value: string) {
-  const match = value.trim().match(/^ПСТО-(\d{2})\.(\d{2})\.(\d{2})-(\d{3})$/)
-  if (!match) return null
-  const [, day, month, year, number] = match
-  return {
-    dateValue: Number(`20${year}${month}${day}`),
-    number: Number(number),
   }
 }
 
