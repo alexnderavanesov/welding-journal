@@ -216,6 +216,12 @@ type PstoResultDraftState = {
 }
 type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps'
 
+function formatRequestCreatedMessage(requestName: string, count: number) {
+  const trimmedName = requestName.trim()
+  const subject = /^заявка(?:\b|-)/i.test(trimmedName) ? trimmedName : `Заявка ${trimmedName}`
+  return `${subject} создана для стыков: ${count}`
+}
+
 function Home() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -620,7 +626,7 @@ function Home() {
       setMessage(
         variables.mode === 'edit'
           ? 'Заявка ПСТО обновлена'
-          : `Заявка ${variables.requestName} создана для стыков: ${variables.records.length}`,
+          : formatRequestCreatedMessage(variables.requestName, variables.records.length),
       )
       setSelectedHeatTreatmentIds(new Set())
       setPstoRequestNaming(defaultRequestNamingState)
@@ -880,7 +886,7 @@ function Home() {
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, [...variables.methodKeys, 'lnkCreatedAt'])
-      setMessage(`Заявка ${variables.requestName} создана для стыков: ${savedRows.length}`)
+      setMessage(formatRequestCreatedMessage(variables.requestName, savedRows.length))
       setSelectedLnkIds(new Set())
       setLnkRequestDraft({ methods: new Set() })
       setLnkRequestNaming(defaultRequestNamingState)
