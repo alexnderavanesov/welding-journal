@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '@/lib/date-format'
 import { formatDaysLeft } from '@/lib/dispatcher-format'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
 import {
@@ -149,13 +150,6 @@ function formatWelderStampFieldKeysInText(value: string) {
 
 function formatWelderStampFieldKeyLabel(fieldKey: WeldFieldKey) {
   return FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
-}
-
-function formatDisplayDate(value: unknown) {
-  const text = String(value ?? '').trim()
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!match) return text
-  return `${match[3]}.${match[2]}.${match[1]}`
 }
 
 function isUnofficialDispatcherJoint(row: WeldInput) {

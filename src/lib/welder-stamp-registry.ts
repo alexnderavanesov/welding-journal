@@ -1,4 +1,5 @@
 import type { StampSelectOption } from '@/components/weld-form'
+import { formatDisplayDate } from '@/lib/date-format'
 import type { WelderStampExpiryTask } from '@/lib/dispatcher-types'
 import {
   DAY_IN_MS as dayInMs,
@@ -496,14 +497,6 @@ function parseIsoDateStart(value: string) {
 
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10)
-}
-
-function formatDisplayDate(value: unknown) {
-  if (!value) return ''
-  const raw = String(value)
-  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (isoMatch) return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`
-  return raw
 }
 
 function getWeldDateOrderValue(value: unknown) {
