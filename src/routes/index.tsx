@@ -101,7 +101,6 @@ import {
 import { formatWdiTotal, getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
 import {
   getHeatTreatmentImportKey,
-  getPstoResultValue,
   isSameImportValue,
   normalizeEditableImportValue,
   normalizeExistingRequestImportValue,
@@ -126,12 +125,20 @@ import {
   isEnabledControlValue,
   isYesText,
 } from '@/lib/report-value-utils'
+import {
+  buildPstoResultsRows,
+  buildPstoWaitingRequestRows,
+  canCreatePstoRequest,
+  normalizeRowPstoRequest,
+  withAutoHeatTreatmentDiagram,
+  withAutoHeatTreatmentDiagrams,
+  withPstoCreatedAt,
+} from '@/lib/psto-status'
 import { buildDispatcherTaskGroups, getVisibleDispatcherTaskKeys } from '@/lib/dispatcher-view'
 import {
   formatDateInputValue,
   formatDisplayDate,
   formatLongDate,
-  formatPstoDiagramDate,
 } from '@/lib/date-format'
 import {
   compareJointChainSuffix,
@@ -151,7 +158,6 @@ import {
   getMinimumJointDiameter,
   isUnofficialJoint,
 } from '@/lib/joint-display'
-import { escapeRegExp } from '@/lib/string-utils'
 import {
   collectLnkResultRequestNames,
   collectRequestNames,
@@ -5786,38 +5792,6 @@ function buildLnkConclusionsRows(rows: Array<WeldInput & { id: number }>) {
   )
 }
 
-function buildPstoWaitingRequestRows(rows: Array<WeldInput & { id: number }>) {
-  return rows
-    .filter(canCreatePstoRequest)
-    .map((row) => ({
-      projectTitle: row.projectTitle ?? '',
-      subtitleCode: row.subtitleCode ?? '',
-      line: row.line ?? '',
-      spool: row.spool ?? '',
-      joint: row.joint ?? '',
-      wdi: row.wdi ?? '',
-      weldDate: row.weldDate ?? '',
-      status: 'ожидает заявку ПСТО',
-    }))
-}
-
-function buildPstoResultsRows(rows: Array<WeldInput & { id: number }>) {
-  return rows
-    .filter((row) => hasText(row.pstoResult) || hasText(row.pstoDate) || hasText(row.heatTreatmentDiagram))
-    .map((row) => ({
-      projectTitle: row.projectTitle ?? '',
-      subtitleCode: row.subtitleCode ?? '',
-      line: row.line ?? '',
-      spool: row.spool ?? '',
-      joint: row.joint ?? '',
-      wdi: row.wdi ?? '',
-      weldDate: row.weldDate ?? '',
-      pstoRequest: row.pstoRequest ?? '',
-      pstoDate: row.pstoDate ?? '',
-      heatTreatmentDiagram: row.heatTreatmentDiagram ?? '',
-    }))
-}
-
 function buildHeatTreatmentImportUpdates(
   importedRecords: WeldInput[],
   heatTreatmentRows: Array<WeldInput & { id: number }>,
@@ -7266,28 +7240,6 @@ function normalizeLnkResultValue(value: unknown) {
   return RESULT_STATUS_OPTIONS.includes(text as never) ? text : null
 }
 
-function withAutoHeatTreatmentDiagram<T extends WeldInput & { id: number }>(record: T, rows: Array<WeldInput & { id: number }>) {
-  if (getPstoResultValue(record.pstoResult) !== 'проведено') {
-    return { ...record, heatTreatmentDiagram: null }
-  }
-
-  const date = formatPstoDiagramDate(record.pstoDate)
-  if (!date) return record
-
-  const prefix = `ПСТО-Д-${date}-`
-  const currentDiagram = String(record.heatTreatmentDiagram ?? '').trim()
-  if (currentDiagram) return record
-  const diagramPattern = new RegExp(`^${escapeRegExp(prefix)}(\\d{3})$`)
-
-  const maxNumber = rows
-    .filter((row) => row.id !== record.id)
-    .map((row) => String(row.heatTreatmentDiagram ?? '').trim().match(diagramPattern)?.[1])
-    .reduce((max, value) => (value ? Math.max(max, Number(value)) : max), 0)
-  const nextNumber = maxNumber + 1
-
-  return { ...record, heatTreatmentDiagram: `${prefix}${String(nextNumber).padStart(3, '0')}` }
-}
-
 function getJointTitle(value: WeldInput) {
   const line = String(value.line ?? '').trim()
   const joint = String(value.joint ?? '').trim()
@@ -7330,25 +7282,6 @@ function getCellKey(rowId: number, fieldKey: WeldFieldKey) {
   return `${rowId}:${fieldKey}`
 }
 
-function canCreatePstoRequest(row: WeldInput) {
-  return !hasText(row.pstoRequest)
-}
-
-function normalizePstoRequest(value: unknown) {
-  const text = String(value ?? '').trim()
-  return text || null
-}
-
-function normalizeRowPstoRequest<T extends WeldInput>(row: T) {
-  const pstoRequest = normalizePstoRequest(row.pstoRequest)
-  return row.pstoRequest === pstoRequest ? row : { ...row, pstoRequest }
-}
-
-function withPstoCreatedAt<T extends WeldInput>(rows: T[]) {
-  const pstoCreatedAt = new Date().toISOString()
-  return rows.map((row) => (isYesText(row.pstoRequired) && !row.pstoCreatedAt ? { ...row, pstoCreatedAt } : row))
-}
-
 function withLnkCreatedAt<T extends WeldInput>(rows: T[]) {
   const lnkCreatedAt = new Date().toISOString()
   return rows.map((row) => ((hasLnkReportEntry(row) || hasAnyLnkGeneratedData(row)) && !row.lnkCreatedAt ? { ...row, lnkCreatedAt } : row))
@@ -7356,12 +7289,4 @@ function withLnkCreatedAt<T extends WeldInput>(rows: T[]) {
 
 function withTouchedLnkTimestamp<T extends WeldInput>(row: T): T {
   return { ...row, lnkCreatedAt: new Date().toISOString() }
-}
-
-function withAutoHeatTreatmentDiagrams<T extends WeldInput & { id: number }>(rows: T[]) {
-  const nextRows = [...rows]
-  for (let index = 0; index < nextRows.length; index += 1) {
-    nextRows[index] = withAutoHeatTreatmentDiagram(nextRows[index], nextRows) as T
-  }
-  return nextRows
 }
