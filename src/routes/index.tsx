@@ -88,6 +88,7 @@ import {
   getJointStatusBadgeClass,
   getJointStatusLabel,
   getLnkDisplayValue,
+  getAvailableLnkRequestMethods,
   getLnkMethodByRequestKey,
   getLnkMethodByResultKey,
   getLnkRequestMethodBadgeClass,
@@ -98,6 +99,11 @@ import {
   isFinalLnkResultValue,
   isLnkMethodNoNeed,
 } from '@/lib/lnk-status'
+import {
+  buildLnkConclusionsRows,
+  buildLnkToRequestRows,
+  buildLnkWaitingNkRows,
+} from '@/lib/lnk-report-rows'
 import { formatWdiTotal, getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
 import {
   getHeatTreatmentImportKey,
@@ -5723,75 +5729,6 @@ async function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
 }
 
-function buildLnkWaitingNkRows(rows: Array<WeldInput & { id: number }>) {
-  return rows.flatMap((row) =>
-    LNK_METHODS.flatMap((method) => {
-      const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
-      const requestName = String(row[method.requestKey] ?? '').trim()
-      if (result !== 'ожидает нк') return []
-      if (isLnkMethodNoNeed(row, method)) return []
-      return [
-        {
-          projectTitle: row.projectTitle ?? '',
-          subtitleCode: row.subtitleCode ?? '',
-          line: row.line ?? '',
-          spool: row.spool ?? '',
-          joint: row.joint ?? '',
-          wdi: row.wdi ?? '',
-          weldDate: row.weldDate ?? '',
-          requestName,
-          controlMethod: method.code,
-        },
-      ]
-    }),
-  )
-}
-
-function buildLnkToRequestRows(rows: Array<WeldInput & { id: number }>) {
-  return rows.flatMap((row) =>
-    getAvailableLnkRequestMethods(row).map((method) => ({
-      projectTitle: row.projectTitle ?? '',
-      subtitleCode: row.subtitleCode ?? '',
-      line: row.line ?? '',
-      spool: row.spool ?? '',
-      joint: row.joint ?? '',
-      wdi: row.wdi ?? '',
-      weldDate: row.weldDate ?? '',
-      requestName: '',
-      controlMethod: method.code,
-    })),
-  )
-}
-
-function buildLnkConclusionsRows(rows: Array<WeldInput & { id: number }>) {
-  return rows.flatMap((row) =>
-    LNK_METHODS.flatMap((method) => {
-      const result = String(row[method.resultKey] ?? '').trim()
-      const conclusionName = String(row[method.conclusionKey] ?? '').trim()
-      const controlDate = row[method.conclusionDateKey] ?? ''
-      if (!result && !conclusionName && !controlDate) return []
-      if (result.toLowerCase() === 'ожидает нк' && !conclusionName && !controlDate) return []
-
-      return [
-        {
-          projectTitle: row.projectTitle ?? '',
-          subtitleCode: row.subtitleCode ?? '',
-          line: row.line ?? '',
-          spool: row.spool ?? '',
-          joint: row.joint ?? '',
-          wdi: row.wdi ?? '',
-          weldDate: row.weldDate ?? '',
-          requestName: row[method.requestKey] ?? '',
-          controlMethod: method.code,
-          controlDate,
-          result,
-          conclusionName,
-        },
-      ]
-    }),
-  )
-}
-
 function buildHeatTreatmentImportUpdates(
   importedRecords: WeldInput[],
   heatTreatmentRows: Array<WeldInput & { id: number }>,
@@ -6030,11 +5967,6 @@ function hasLnkMethodReportHistory(row: WeldInput, method: (typeof LNK_METHODS)[
 function canCreateLnkRequest(row: WeldInput) {
   if (hasRejectedLnkResult(row)) return false
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]) && !hasText(row[method.requestKey]))
-}
-
-function getAvailableLnkRequestMethods(row: WeldInput) {
-  if (hasRejectedLnkResult(row)) return []
-  return LNK_METHODS.filter((method) => isEnabledControlValue(row[method.enabledKey]) && !hasText(row[method.requestKey]))
 }
 
 function createDefaultLnkResultDraft(): LnkResultDraftState {

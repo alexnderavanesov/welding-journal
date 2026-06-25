@@ -51,6 +51,11 @@ export function hasPendingLnkRequestResult(row: WeldInput) {
   )
 }
 
+export function getAvailableLnkRequestMethods(row: WeldInput) {
+  if (hasRejectedLnkResult(row)) return []
+  return LNK_METHODS.filter((method) => isEnabledControlValue(row[method.enabledKey]) && !hasText(row[method.requestKey]))
+}
+
 export function isRejectedJoint(row: WeldInput) {
   return getJointStatusLabel(row) === 'не годен'
 }
