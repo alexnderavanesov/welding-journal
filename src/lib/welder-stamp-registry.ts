@@ -7,16 +7,16 @@ import {
   FACTUAL_WELDER_STAMP_FIELD_KEYS as factualWelderStampFieldKeys,
   OFFICIAL_WELDER_STAMP_FIELD_KEYS as officialWelderStampFieldKeys,
   WELDER_STAMP_EXPIRY_REMINDER_DAYS as welderStampExpiryReminderDays,
-  WELDER_STAMP_FIELD_KEYS_FOR_DISPLAY as welderStampFieldKeysForDisplay,
   WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions,
 } from '@/lib/report-config'
-import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import {
+  formatWelderStampFieldKeyLabel,
+  formatWelderStampFieldKeysInText,
   formatWelderStampDate,
   normalizeWelderStampWeldType,
   splitWelderStampWeldTypes,
 } from '@/lib/welder-stamp-format'
-import { escapeRegExp } from '@/lib/string-utils'
 import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export function createEmptyWelderStampDraft(): WelderStampRecord {
@@ -280,7 +280,7 @@ export function validateWelderStampFieldsForImport(
       const isValid = options.some((option) => normalizeStampSelectValue(option.value) === value)
       if (!isValid) {
         const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
-        const fieldLabel = FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
+        const fieldLabel = formatWelderStampFieldKeyLabel(fieldKey)
         throw new Error(
           `Импорт остановлен: ${rowLabel}. Поле "${fieldLabel}" должно быть выбрано из активного реестра клейм. Значение "${value}" не найдено.`,
         )
@@ -409,16 +409,7 @@ export function formatOfficialStampCompatibilityIssue(issue: OfficialStampCompat
   const fieldLabel = formatWelderStampFieldKeyLabel(issue.fieldKey)
   return `${fieldLabel}: ${issue.message}`
 }
-
-function formatWelderStampFieldKeyLabel(fieldKey: WeldFieldKey) {
-  return FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
-}
-
-export function formatWelderStampFieldKeysInText(value: string) {
-  return welderStampFieldKeysForDisplay.reduce((text, fieldKey) => {
-    return text.replace(new RegExp(`\\b${escapeRegExp(fieldKey)}\\b`, 'g'), formatWelderStampFieldKeyLabel(fieldKey))
-  }, value)
-}
+export { formatWelderStampFieldKeysInText }
 
 function parseOfficialStampWeldingMethods(value: unknown) {
   const selected = new Set(

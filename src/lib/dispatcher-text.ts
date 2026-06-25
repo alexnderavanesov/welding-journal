@@ -4,15 +4,14 @@ import type { DispatcherTask } from '@/lib/dispatcher-types'
 import {
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
-  WELDER_STAMP_FIELD_KEYS_FOR_DISPLAY as welderStampFieldKeysForDisplay,
 } from '@/lib/report-config'
-import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import type { WeldInput } from '@/lib/weld-fields'
 import {
   formatWelderStampCompactLabel,
   formatWelderStampDate,
+  formatWelderStampFieldKeysInText,
   formatWelderStampTaskLabel,
 } from '@/lib/welder-stamp-format'
-import { escapeRegExp } from '@/lib/string-utils'
 
 export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') {
@@ -141,16 +140,6 @@ function formatRepeatedJointTaskHeadingJoint(joint: string, row: WeldInput) {
 
 function formatDispatcherTaskText(value: string) {
   return formatWelderStampFieldKeysInText(value)
-}
-
-function formatWelderStampFieldKeysInText(value: string) {
-  return welderStampFieldKeysForDisplay.reduce((text, fieldKey) => {
-    return text.replace(new RegExp(`\\b${escapeRegExp(fieldKey)}\\b`, 'g'), formatWelderStampFieldKeyLabel(fieldKey))
-  }, value)
-}
-
-function formatWelderStampFieldKeyLabel(fieldKey: WeldFieldKey) {
-  return FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
 }
 
 function isUnofficialDispatcherJoint(row: WeldInput) {

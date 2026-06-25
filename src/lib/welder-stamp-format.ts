@@ -1,5 +1,10 @@
-import { WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions } from '@/lib/report-config'
+import {
+  WELDER_STAMP_FIELD_KEYS_FOR_DISPLAY as welderStampFieldKeysForDisplay,
+  WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions,
+} from '@/lib/report-config'
+import { escapeRegExp } from '@/lib/string-utils'
 import type { WelderStampExpiryTask } from '@/lib/dispatcher-types'
+import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export function splitWelderStampWeldTypes(value: string) {
@@ -53,4 +58,14 @@ export function formatWelderStampTaskLabel(task: WelderStampExpiryTask) {
 
 export function formatWelderStampCompactLabel(task: WelderStampExpiryTask) {
   return `Клеймо ${task.naksStamp.trim() || '-'}`
+}
+
+export function formatWelderStampFieldKeyLabel(fieldKey: WeldFieldKey) {
+  return FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
+}
+
+export function formatWelderStampFieldKeysInText(value: string) {
+  return welderStampFieldKeysForDisplay.reduce((text, fieldKey) => {
+    return text.replace(new RegExp(`\\b${escapeRegExp(fieldKey)}\\b`, 'g'), formatWelderStampFieldKeyLabel(fieldKey))
+  }, value)
 }
