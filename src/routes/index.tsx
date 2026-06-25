@@ -96,6 +96,7 @@ import {
   compareHeatTreatmentReportRows,
   compareLnkReportRows,
   compareLnkRequestRows,
+  compareReportRows,
   filterPstoResultRows,
   filterPstoRows,
   normalizeSearchText,
