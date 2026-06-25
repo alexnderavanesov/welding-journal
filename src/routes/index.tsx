@@ -82,6 +82,22 @@ import {
   getPstoResultBadgeClass,
   getPstoResultLabel,
 } from '@/lib/report-badges'
+import {
+  formatLnkResultSummaryItems,
+  getJointChainResultItems,
+  getJointStatusBadgeClass,
+  getJointStatusLabel,
+  getLnkDisplayValue,
+  getLnkMethodByRequestKey,
+  getLnkMethodByResultKey,
+  getLnkRequestMethodBadgeClass,
+  hasAnyEnabledLnkControl,
+  hasAnyLnkRequest,
+  hasPendingLnkRequestResult,
+  hasRejectedLnkResult,
+  isFinalLnkResultValue,
+  isLnkMethodNoNeed,
+} from '@/lib/lnk-status'
 import { formatWdiTotal, getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
 import {
   getHeatTreatmentImportKey,
@@ -104,6 +120,12 @@ import {
   sortRowsByPreservedOrder,
   sumAcceptedWdi,
 } from '@/lib/report-row-utils'
+import {
+  hasText,
+  hasWeldDate,
+  isEnabledControlValue,
+  isYesText,
+} from '@/lib/report-value-utils'
 import { buildDispatcherTaskGroups, getVisibleDispatcherTaskKeys } from '@/lib/dispatcher-view'
 import {
   formatDateInputValue,
@@ -5975,10 +5997,6 @@ function hasAnyLnkReportControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]) || isCancelledLnkControl(row, method))
 }
 
-function hasWeldDate(row: WeldInput) {
-  return hasText(row.weldDate)
-}
-
 function hasLnkReportEntry(row: WeldInput) {
   return hasWeldDate(row) && hasAnyLnkReportControl(row)
 }
@@ -6173,17 +6191,6 @@ function getLnkResultEntryPriority(row: WeldInput, methodKey: WeldFieldKey | '')
   if (finalStatus === 'годен') return 1
   if (finalStatus === 'не годен') return 2
   return 3
-}
-
-function hasPendingLnkRequestResult(row: WeldInput) {
-  return LNK_METHODS.some((method) => hasText(row[method.requestKey]) && !isFinalLnkResultValue(row[method.resultKey]) && !isLnkMethodNoNeed(row, method))
-}
-
-function hasRejectedLnkResult(row: WeldInput) {
-  return LNK_METHODS.some((method) => {
-    const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
-    return result === 'ремонт' || result === 'вырез'
-  })
 }
 
 function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStampRecord[] = []): RepeatedJointTask[] {
@@ -7062,100 +7069,6 @@ function makeExactColumnFilterValue(value: unknown) {
   return `=${String(value ?? '').trim().toLowerCase()}`
 }
 
-function getJointChainResultItems(row: WeldInput) {
-  const lnkItems = formatLnkResultSummaryItems(row)
-    .filter((item) => item.result)
-    .map((item) => ({
-      label: item.method,
-      value: item.result,
-      className: item.inactive ? getInactiveLnkRequestBadgeClass() : getLnkResultBadgeClass(item.result),
-    }))
-  const pstoItems =
-    isYesText(row.pstoRequired) || hasText(row.pstoRequest) || hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram)
-      ? [
-          {
-            label: 'ПСТО',
-            value: isRejectedJoint(row) && !hasText(row.pstoResult) ? 'нет потребности' : getPstoResultLabel(row.pstoResult),
-            className: isRejectedJoint(row) && !hasText(row.pstoResult) ? getInactiveLnkRequestBadgeClass() : getPstoResultBadgeClass(row.pstoResult),
-          },
-        ]
-      : []
-  return [...lnkItems, ...pstoItems]
-}
-
-function isRejectedJoint(row: WeldInput) {
-  return getJointStatusLabel(row) === 'не годен'
-}
-
-function formatLnkResultSummaryItems(row: WeldInput) {
-  return LNK_METHODS.filter((method) => hasText(row[method.requestKey]) || isEnabledControlValue(row[method.enabledKey])).map((method) => {
-    const hasRequest = hasText(row[method.requestKey])
-    const result = isLnkMethodNoNeed(row, method)
-      ? 'нет потребности'
-      : String(row[method.resultKey] ?? '').trim() || (hasRequest ? 'ожидает НК' : 'ожидает заявку')
-    return {
-      method: method.code,
-      result,
-      inactive: isLnkMethodNoNeed(row, method),
-    }
-  })
-}
-
-function getLnkRequestMethodBadgeClass(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
-  if (isLnkMethodNoNeed(row, method)) {
-    return getInactiveLnkRequestBadgeClass()
-  }
-  return getLnkResultBadgeClass(row[method.resultKey])
-}
-
-function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
-  const method = getLnkMethodByResultKey(fieldKey)
-  if (method && isLnkMethodNoNeed(row, method)) return 'нет потребности'
-  return row[fieldKey]
-}
-
-function isLnkMethodNoNeed(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
-  if (!hasRejectedLnkResult(row)) return false
-  if (isFinalLnkResultValue(row[method.resultKey])) return false
-  return hasText(row[method.requestKey]) || isEnabledControlValue(row[method.enabledKey])
-}
-
-function getJointStatusLabel(row: WeldInput) {
-  const status = String(row.finalStatus ?? '').trim().toLowerCase()
-  if (status === 'годен') return 'годен'
-  if (status === 'не годен') return 'не годен'
-  if (status === 'ожидает сварку') return 'ожидает сварку'
-  if (status === 'ожидает ремонт') return 'ожидает ремонт'
-  if (status === 'ожидает заявку') return 'ожидает заявку'
-  if (status === 'ожидает нк') return 'ожидает НК'
-  if (!hasWeldDate(row)) return getPendingWeldStatusLabel(row)
-  if (hasAnyEnabledLnkControl(row) && !hasAnyLnkRequest(row)) return 'ожидает заявку'
-  if (hasPendingLnkRequestResult(row)) return 'ожидает НК'
-  return 'ожидает заявку'
-}
-
-function getPendingWeldStatusLabel(row: WeldInput) {
-  const parsed = parseJointChainName(String(row.joint ?? ''))
-  const hasCoilSegment = parsed.segments.some((segment) => segment.suffix === 'Y')
-  const hasRepairSegment = parsed.segments.some((segment) => segment.suffix === 'R' || segment.suffix === 'W')
-  return hasRepairSegment && !hasCoilSegment ? 'ожидает ремонт' : 'ожидает сварку'
-}
-
-function getJointStatusBadgeClass(row: WeldInput) {
-  const status = getJointStatusLabel(row)
-  if (status === 'годен') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-  if (status === 'не годен') return 'border-rose-200 bg-rose-50 text-rose-800'
-  return 'border-amber-200 bg-amber-50 text-amber-800'
-}
-
-function hasAnyEnabledLnkControl(row: WeldInput) {
-  return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
-}
-
-function hasAnyLnkRequest(row: WeldInput) {
-  return LNK_METHODS.some((method) => hasText(row[method.requestKey]))
-}
-
 function isLnkResultRowApplicable(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
   const method = methodKey ? getLnkMethodByRequestKey(methodKey) : null
   if (!method) return false
@@ -7163,10 +7076,6 @@ function isLnkResultRowApplicable(row: WeldInput, requestName: string, methodKey
   if (!rowRequestName) return false
   const name = requestName.trim()
   return !name || rowRequestName === name
-}
-
-function isFinalLnkResultValue(value: unknown) {
-  return LNK_RESULT_OPTIONS.includes(String(value ?? '').trim().toLowerCase() as never)
 }
 
 function getLnkResultMethodsForRows(rows: WeldInput[], requestName: string) {
@@ -7314,14 +7223,6 @@ function isLnkRequestField(fieldKey: WeldFieldKey) {
   return lnkRequestFieldKeys.includes(fieldKey)
 }
 
-function getLnkMethodByRequestKey(fieldKey: WeldFieldKey) {
-  return LNK_METHODS.find((method) => method.requestKey === fieldKey)
-}
-
-function getLnkMethodByResultKey(fieldKey: WeldFieldKey) {
-  return LNK_METHODS.find((method) => method.resultKey === fieldKey)
-}
-
 function isLnkRequestAllowedForRow(row: WeldInput, fieldKey: WeldFieldKey) {
   const method = getLnkMethodByRequestKey(fieldKey)
   return !method || isEnabledControlValue(row[method.enabledKey])
@@ -7363,11 +7264,6 @@ function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
 function normalizeLnkResultValue(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
   return RESULT_STATUS_OPTIONS.includes(text as never) ? text : null
-}
-
-function isEnabledControlValue(value: unknown) {
-  if (value === true) return true
-  return String(value ?? '').trim().toLowerCase() === 'да'
 }
 
 function withAutoHeatTreatmentDiagram<T extends WeldInput & { id: number }>(record: T, rows: Array<WeldInput & { id: number }>) {
@@ -7446,14 +7342,6 @@ function normalizePstoRequest(value: unknown) {
 function normalizeRowPstoRequest<T extends WeldInput>(row: T) {
   const pstoRequest = normalizePstoRequest(row.pstoRequest)
   return row.pstoRequest === pstoRequest ? row : { ...row, pstoRequest }
-}
-
-function hasText(value: unknown) {
-  return String(value ?? '').trim().length > 0
-}
-
-function isYesText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'да'
 }
 
 function withPstoCreatedAt<T extends WeldInput>(rows: T[]) {
