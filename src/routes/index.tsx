@@ -85,6 +85,16 @@ import {
 } from '@/lib/report-badges'
 import { formatWdiTotal, getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
 import { buildLnkReportHtml, downloadExcelBytes } from '@/lib/report-window'
+import {
+  compactSearchText,
+  compareHeatTreatmentReportRows,
+  compareLnkReportRows,
+  compareLnkRequestRows,
+  filterPstoResultRows,
+  filterPstoRows,
+  normalizeSearchText,
+  sortRowsByPreservedOrder,
+} from '@/lib/report-row-utils'
 import { groupRepeatedJointTasks } from '@/lib/dispatcher-groups'
 import { formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
 import {
@@ -7956,31 +7966,8 @@ function restoreRepeatedJointControlAvailability(draft: WeldInput, sourceRow: We
   }
 }
 
-function filterPstoResultRows(rows: WeldRow[], search: string) {
-  return filterPstoRows(rows, search).sort(compareHeatTreatmentReportRows)
-}
-
 function filterPstoRequestRows(rows: WeldRow[], search: string) {
   return sortPstoRequestRows(filterPstoRows(rows, search))
-}
-
-function filterPstoRows(rows: WeldRow[], search: string) {
-  const query = normalizeSearchText(search)
-  const compactQuery = compactSearchText(query)
-  return rows.filter((row) => {
-    if (!query) return true
-    const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
-    const haystack = normalizeSearchText(values.map((value) => String(value ?? '')).join(' '))
-    return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
-  })
-}
-
-function normalizeSearchText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ')
-}
-
-function compactSearchText(value: string) {
-  return value.replace(/[^\p{L}\p{N}]+/gu, '')
 }
 
 function isLnkRepairForbiddenByDiameter(row: WeldInput) {
@@ -8329,47 +8316,6 @@ function sortPstoRequestRows(rows: WeldRow[]) {
     if (leftAvailable !== rightAvailable) return leftAvailable ? -1 : 1
     return compareHeatTreatmentReportRows(left, right)
   })
-}
-
-function compareHeatTreatmentReportRows(left: WeldRow, right: WeldRow) {
-  const leftTime = parseReportTimestamp(left.pstoCreatedAt)
-  const rightTime = parseReportTimestamp(right.pstoCreatedAt)
-  if (leftTime !== rightTime) return rightTime - leftTime
-  return compareReportRows(left, right)
-}
-
-function sortRowsByPreservedOrder(rows: WeldRow[], preservedIds: number[]) {
-  const orderById = new Map(preservedIds.map((id, index) => [id, index]))
-  return [...rows].sort((left, right) => {
-    const leftOrder = orderById.get(left.id)
-    const rightOrder = orderById.get(right.id)
-    if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder
-    if (leftOrder !== undefined) return -1
-    if (rightOrder !== undefined) return 1
-    return compareLnkReportRows(left, right)
-  })
-}
-
-function compareLnkReportRows(left: WeldRow, right: WeldRow) {
-  const leftTime = parseReportTimestamp(left.lnkCreatedAt)
-  const rightTime = parseReportTimestamp(right.lnkCreatedAt)
-  if (leftTime !== rightTime) return rightTime - leftTime
-  return compareReportRows(left, right)
-}
-
-function compareLnkRequestRows(left: WeldRow, right: WeldRow) {
-  return compareReportRows(left, right)
-}
-
-function compareReportRows(left: WeldRow, right: WeldRow) {
-  const leftValue = [left.line, left.spool, left.joint].map((value) => String(value ?? '')).join(' ')
-  const rightValue = [right.line, right.spool, right.joint].map((value) => String(value ?? '')).join(' ')
-  return leftValue.localeCompare(rightValue, 'ru', { numeric: true })
-}
-
-function parseReportTimestamp(value: unknown) {
-  const time = new Date(String(value ?? '')).getTime()
-  return Number.isFinite(time) ? time : 0
 }
 
 function isEveryFilteredLnkRequestRowSelected(selectedIds: ReadonlySet<number>, rows: WeldRow[]) {
