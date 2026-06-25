@@ -68,7 +68,6 @@ import {
   PSTO_RESULTS_FIELDS,
   PSTO_WAITING_REQUEST_FIELDS,
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
-  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
   REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
   REQUEST_AND_RESULT_FIELD_KEYS as requestAndResultFieldKeys,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
@@ -179,12 +178,16 @@ import {
   formatLongDate,
 } from '@/lib/date-format'
 import {
+  findFirstDateBeforeWeldDateIssue,
+  getWeldDateOrderValue,
+  isDateBeforeWeldDate,
+} from '@/lib/report-date-rules'
+import {
   compareJointChainSuffix,
   findLastIndex,
   formatRepeatedJointName,
   getCoilJointNames,
   getRepeatedJointFailureCount,
-  getRepeatedJointRepairCount,
   normalizeJointChainPart,
   parseJointChainName,
   parseRepeatedJointName,
@@ -193,9 +196,25 @@ import {
   formatJointDiameterLabel,
   getJointChainIdentity,
   getJointChainSubtitle,
-  getMinimumJointDiameter,
   isUnofficialJoint,
 } from '@/lib/joint-display'
+import {
+  getLnkRepairForbiddenReason,
+  getLnkResultRepairForbiddenSummary,
+  isLnkRepairForbidden,
+  isLnkRepairForbiddenByDiameter,
+  isLnkRepairForbiddenByOfficialRepairLimit,
+} from '@/lib/lnk-result-rules'
+import {
+  areLnkResultDraftRowsReady,
+  buildLnkResultDraftById,
+  filterLnkResultDraftRowResults,
+  findFirstLnkResultDateBeforeWeldDateIssue,
+  getEffectiveLnkResultDraftValueForRow,
+  getManagedLnkResultChangeKey,
+  hasNonEmptyLnkResultDraftRows,
+  isValidLnkResultDraftValue,
+} from '@/lib/lnk-result-draft'
 import {
   collectLnkResultRequestNames,
   collectRequestNames,
@@ -6412,24 +6431,6 @@ function getJointChainStepKey(row: WeldInput) {
   return `${normalizeJointChainPart(parsed.base)}:${parsed.segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
 }
 
-function getWeldDateOrderValue(value: unknown) {
-  const text = String(value ?? '').trim()
-  if (!text) return 0
-  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (isoMatch) return Number(`${isoMatch[1]}${isoMatch[2]}${isoMatch[3]}`)
-  const longMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
-  if (longMatch) return Number(`${longMatch[3]}${longMatch[2]}${longMatch[1]}`)
-  const shortMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{2})$/)
-  if (shortMatch) return Number(`20${shortMatch[3]}${shortMatch[2]}${shortMatch[1]}`)
-  return 0
-}
-
-function isDateBeforeWeldDate(value: unknown, weldDate: unknown) {
-  const dateValue = getWeldDateOrderValue(value)
-  const weldDateValue = getWeldDateOrderValue(weldDate)
-  return Boolean(dateValue && weldDateValue && dateValue < weldDateValue)
-}
-
 function hasValidOfficialCoilTrigger(rows: WeldRow[], chainRows: WeldRow[]) {
   return chainRows.some((row) => {
     if (isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
@@ -6762,34 +6763,6 @@ function restoreRepeatedJointControlAvailability(draft: WeldInput, sourceRow: We
   }
 }
 
-function isLnkRepairForbiddenByDiameter(row: WeldInput) {
-  const diameter = getMinimumJointDiameter(row)
-  return diameter !== null && diameter < 89
-}
-
-function isLnkRepairForbiddenByOfficialRepairLimit(row: WeldInput) {
-  if (isUnofficialJoint(row)) return false
-  const joint = String(row.joint ?? '').trim()
-  if (!joint) return false
-  return getRepeatedJointRepairCount(parseRepeatedJointName(joint)) >= 2
-}
-
-function isLnkRepairForbidden(row: WeldInput) {
-  return isLnkRepairForbiddenByDiameter(row) || isLnkRepairForbiddenByOfficialRepairLimit(row)
-}
-
-function getLnkRepairForbiddenReason(row: WeldInput) {
-  if (isLnkRepairForbiddenByDiameter(row)) return 'Диаметр до 89 мм'
-  if (isLnkRepairForbiddenByOfficialRepairLimit(row)) return REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON
-  return ''
-}
-
-function getLnkResultRepairForbiddenSummary(rows: WeldInput[]) {
-  const reasons = new Set(rows.map(getLnkRepairForbiddenReason).filter(Boolean))
-  if (reasons.size === 0) return 'выбранные стыки не проходят правила ремонта'
-  return [...reasons].join('; ')
-}
-
 function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
   const targetIdentity = getJointChainIdentity(targetRow)
   if (!targetIdentity) return []
@@ -6830,59 +6803,6 @@ function compareJointChainRows(left: WeldRow, right: WeldRow) {
 
 function makeExactColumnFilterValue(value: unknown) {
   return `=${String(value ?? '').trim().toLowerCase()}`
-}
-
-function getEffectiveLnkResultDraftValue(rowId: number, draft: LnkResultDraftState) {
-  return draft.rowResults[rowId] || (draft.result === LNK_CUSTOM_RESULT_VALUE ? '' : draft.result)
-}
-
-function getEffectiveLnkResultDraftValueForRow(row: WeldRow, draft: LnkResultDraftState) {
-  const result = getEffectiveLnkResultDraftValue(row.id, draft)
-  return result === 'ремонт' && isLnkRepairForbidden(row) ? '' : result
-}
-
-function getManagedLnkResultChangeKey(rowId: number, methodKey: WeldFieldKey) {
-  return `${rowId}:${methodKey}`
-}
-
-function buildLnkResultDraftById(rows: WeldRow[], draft: LnkResultDraftState) {
-  return Object.fromEntries(rows.map((row) => [row.id, getEffectiveLnkResultDraftValueForRow(row, draft)]))
-}
-
-function filterLnkResultDraftRowResults(rowResults: Record<number, string>, rowIds: ReadonlySet<number>) {
-  return Object.fromEntries(Object.entries(rowResults).filter(([rowId]) => rowIds.has(Number(rowId))))
-}
-
-function isValidLnkResultDraftValue(value: string) {
-  return value === LNK_EMPTY_RESULT_VALUE || LNK_RESULT_OPTIONS.includes(value as never)
-}
-
-function areLnkResultDraftRowsReady(rows: WeldRow[], draft: LnkResultDraftState) {
-  return rows.length > 0 && rows.every((row) => isValidLnkResultDraftValue(getEffectiveLnkResultDraftValueForRow(row, draft)))
-}
-
-function hasNonEmptyLnkResultDraftRows(rows: WeldRow[], draft: LnkResultDraftState) {
-  return rows.some((row) => getEffectiveLnkResultDraftValueForRow(row, draft) !== LNK_EMPTY_RESULT_VALUE)
-}
-
-function findFirstLnkResultDateBeforeWeldDateIssue(rows: WeldRow[], draft: LnkResultDraftState) {
-  const method = getLnkMethodByRequestKey(draft.methodKey)
-  if (!method) return null
-  const row = rows.find((candidate) => {
-    const result = getEffectiveLnkResultDraftValueForRow(candidate, draft)
-    return result !== LNK_EMPTY_RESULT_VALUE && isDateBeforeWeldDate(draft.controlDate, candidate.weldDate)
-  })
-  return row ? formatDateBeforeWeldDateSaveReason(row, draft.controlDate, `Дата контроля ${method.code}`) : null
-}
-
-function findFirstDateBeforeWeldDateIssue(rows: WeldRow[], eventDate: unknown, eventLabel: string) {
-  const row = rows.find((candidate) => isDateBeforeWeldDate(eventDate, candidate.weldDate))
-  return row ? formatDateBeforeWeldDateSaveReason(row, eventDate, eventLabel) : null
-}
-
-function formatDateBeforeWeldDateSaveReason(row: WeldInput, eventDate: unknown, eventLabel: string) {
-  const joint = String(row.joint ?? '').trim() || '-'
-  return `${eventLabel} не может быть раньше даты сварки: стык ${joint}, сварка ${formatDisplayDate(row.weldDate) || '-'}, дата ${formatDisplayDate(eventDate) || '-'}.`
 }
 
 function isLnkResultField(fieldKey: WeldFieldKey) {
