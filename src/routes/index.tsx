@@ -41,286 +41,52 @@ import {
   type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
+import {
+  ALWAYS_VISIBLE_FIELD_KEYS as alwaysVisibleFieldKeys,
+  COLLAPSED_SECTIONS_STORAGE_PREFIX as collapsedSectionsStoragePrefix,
+  DAY_IN_MS as dayInMs,
+  FACTUAL_WELDER_STAMP_FIELD_KEY_SET as factualWelderStampFieldKeySet,
+  FACTUAL_WELDER_STAMP_FIELD_KEYS as factualWelderStampFieldKeys,
+  HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
+  HEAT_TREATMENT_HIDDEN_FIELD_KEYS as heatTreatmentHiddenFieldKeys,
+  HEAT_TREATMENT_IMPORT_MATCH_FIELD_KEYS as heatTreatmentImportMatchFieldKeys,
+  HIGHLIGHT_DURATION_MS as highlightDurationMs,
+  LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
+  LNK_CONCLUSIONS_FIELDS,
+  LNK_CUSTOM_RESULT_VALUE,
+  LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
+  LNK_EMPTY_RESULT_VALUE,
+  LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
+  LNK_HIDDEN_FIELD_KEYS as lnkHiddenFieldKeys,
+  LNK_IMPORT_MATCH_FIELD_KEYS as lnkImportMatchFieldKeys,
+  LNK_METHODS,
+  LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
+  LNK_REPORT_FIELD_KEYS as lnkReportFieldKeys,
+  LNK_RESULT_OPTIONS,
+  LNK_WAITING_NK_FIELDS,
+  OFFICIAL_WELDER_STAMP_FIELD_KEYS as officialWelderStampFieldKeys,
+  PSTO_EMPTY_RESULT_VALUE,
+  PSTO_RESULTS_FIELDS,
+  PSTO_SECTION_FIELD_KEYS as pstoSectionFieldKeys,
+  PSTO_WAITING_REQUEST_FIELDS,
+  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
+  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+  REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
+  REQUEST_AND_RESULT_FIELD_KEYS as requestAndResultFieldKeys,
+  UNOFFICIAL_REJECTED_WITH_COIL_REASON,
+  WELD_STAMP_COMPLETION_GROUPS,
+  WELDER_STAMP_EXPIRY_REMINDER_DAYS as welderStampExpiryReminderDays,
+  WELDER_STAMP_FIELD_KEYS_FOR_DISPLAY as welderStampFieldKeysForDisplay,
+  WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions,
+  WELDING_JOURNAL_BLOCKED_FIELD_KEYS as weldingJournalBlockedFieldKeys,
+  WELDING_JOURNAL_HIDDEN_FIELD_KEYS as weldingJournalHiddenFieldKeys,
+} from '@/lib/report-config'
 
 export const Route = createFileRoute('/')({
   component: Home,
 })
 
 const emptyFilters: WeldFilters = {}
-const welderStampWeldTypeOptions = ['РАД', 'РД', 'МП'] as const
-const welderStampExpiryReminderDays = 7
-const dayInMs = 24 * 60 * 60 * 1000
-const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
-const highlightDurationMs = 30000
-const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
-  'pstoNote',
-  'pstoBoq',
-  'pstoKs3',
-])
-const heatTreatmentImportMatchFieldKeys = new Set<WeldFieldKey>(['line', 'joint'])
-const officialWelderStampFieldKeys = [
-  'stamp1K',
-  'stamp1Z',
-  'stamp1O',
-  'stamp2K',
-  'stamp2Z',
-  'stamp2O',
-] as const satisfies readonly WeldFieldKey[]
-const factualWelderStampFieldKeys = [
-  'stamp1KFact',
-  'stamp1ZFact',
-  'stamp1OFact',
-  'stamp2KFact',
-  'stamp2ZFact',
-  'stamp2OFact',
-] as const satisfies readonly WeldFieldKey[]
-const factualWelderStampFieldKeySet = new Set<WeldFieldKey>(factualWelderStampFieldKeys)
-const welderStampFieldKeysForDisplay: readonly WeldFieldKey[] = [...officialWelderStampFieldKeys, ...factualWelderStampFieldKeys]
-const PSTO_EMPTY_RESULT_VALUE = '__empty__'
-const LNK_METHODS = [
-  { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
-  { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' },
-  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' },
-  { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' },
-  { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' },
-  { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' },
-  { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' },
-  { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult', conclusionDateKey: 'mkkConclusionDate', conclusionKey: 'mkkConclusion' },
-] as const satisfies ReadonlyArray<{
-  code: string
-  enabledKey: WeldFieldKey
-  requestKey: WeldFieldKey
-  resultKey: WeldFieldKey
-  conclusionDateKey: WeldFieldKey
-  conclusionKey: WeldFieldKey
-}>
-const LNK_RESULT_OPTIONS = ['годен', 'ремонт', 'вырез'] as const
-const LNK_EMPTY_RESULT_VALUE = '__empty__'
-const LNK_CUSTOM_RESULT_VALUE = '__custom__'
-const LNK_WAITING_NK_FIELDS = [
-  { key: 'projectTitle', label: 'Проект/Титул', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'subtitleCode', label: 'Шифр/Подтитул', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'line', label: 'Линия', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'spool', label: 'Спул', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'joint', label: 'Стык', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'wdi', label: 'WDI', kind: 'number', group: 'ЛНК', visible: true },
-  { key: 'weldDate', label: 'Дата сварки', kind: 'date', group: 'ЛНК', visible: true },
-  { key: 'requestName', label: 'Наименование заявки', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'controlMethod', label: 'Вид НК', kind: 'text', group: 'ЛНК', visible: true },
-] as unknown as WeldField[]
-const LNK_CONCLUSIONS_FIELDS = [
-  ...LNK_WAITING_NK_FIELDS,
-  { key: 'controlDate', label: 'Дата контроля', kind: 'date', group: 'ЛНК', visible: true },
-  { key: 'result', label: 'Результат', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'conclusionName', label: 'Наименование заключения', kind: 'text', group: 'ЛНК', visible: true },
-] as unknown as WeldField[]
-const PSTO_WAITING_REQUEST_FIELDS = [
-  { key: 'projectTitle', label: 'Проект/Титул', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'subtitleCode', label: 'Шифр/Подтитул', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'line', label: 'Линия', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'spool', label: 'Спул', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'joint', label: 'Стык', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'wdi', label: 'WDI', kind: 'number', group: 'ПСТО', visible: true },
-  { key: 'weldDate', label: 'Дата сварки', kind: 'date', group: 'ПСТО', visible: true },
-  { key: 'status', label: 'Статус', kind: 'text', group: 'ПСТО', visible: true },
-] as unknown as WeldField[]
-const PSTO_RESULTS_FIELDS = [
-  ...PSTO_WAITING_REQUEST_FIELDS.filter((field) => field.key !== 'status'),
-  { key: 'pstoRequest', label: 'Номер заявки ПСТО', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'pstoDate', label: 'Дата', kind: 'date', group: 'ПСТО', visible: true },
-  { key: 'heatTreatmentDiagram', label: 'Номер диаграммы', kind: 'text', group: 'ПСТО', visible: true },
-] as unknown as WeldField[]
-const lnkReportFieldKeys = new Set<WeldFieldKey>([
-  'lnkCreatedAt',
-  'vikBoq',
-  'vikKs3',
-  'rkBoq',
-  'rkKs3',
-  'pvkBoq',
-  'pvkKs3',
-  'uzkBoq',
-  'uzkKs3',
-  'tvmtBoq',
-  'tvmtKs3',
-  'rfaBoq',
-  'rfaKs3',
-  'stlsBoq',
-  'stlsKs3',
-  'mkkBoq',
-  'mkkKs3',
-])
-const lnkConclusionFieldKeys = new Set<WeldFieldKey>([
-  'vikConclusionDate',
-  'vikConclusion',
-  'rkConclusionDate',
-  'rkConclusion',
-  'pvkConclusionDate',
-  'pvkConclusion',
-  'uzkConclusionDate',
-  'uzkConclusion',
-  'tvmtConclusionDate',
-  'tvmtConclusion',
-  'rfaConclusionDate',
-  'rfaConclusion',
-  'stlsConclusionDate',
-  'stlsConclusion',
-  'mkkConclusionDate',
-  'mkkConclusion',
-  'lnkDefectDescription',
-  'lnkNote',
-])
-const lnkEditableReportFieldKeys = new Set<WeldFieldKey>([
-  ...[...lnkReportFieldKeys].filter((fieldKey) => fieldKey !== 'lnkCreatedAt'),
-])
-const lnkRequestFieldKeys = LNK_METHODS.map((method) => method.requestKey)
-const lnkGeneratedFieldKeys = new Set<WeldFieldKey>([
-  ...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]),
-  'lnkDefectDescription',
-  'lnkNote',
-  'lnkCreatedAt',
-])
-const lnkEditableFieldKeys = new Set<WeldFieldKey>([
-  ...lnkEditableReportFieldKeys,
-])
-const lnkImportMatchFieldKeys = new Set<WeldFieldKey>(['line', 'joint'])
-const pstoSectionFieldKeys = new Set<WeldFieldKey>([
-  'pstoRequired',
-  'pstoRequest',
-  'pstoDate',
-  'pstoResult',
-  'heatTreatmentDiagram',
-  'pstoNote',
-])
-const repeatedJointClearedFieldKeys = new Set<WeldFieldKey>([
-  'weldDate',
-  'responsible',
-  'stamp1K',
-  'stamp1Z',
-  'stamp1O',
-  'stamp2K',
-  'stamp2Z',
-  'stamp2O',
-  'stamp1KFact',
-  'stamp1ZFact',
-  'stamp1OFact',
-  'stamp2KFact',
-  'stamp2ZFact',
-  'stamp2OFact',
-  ...LNK_METHODS.flatMap((method) => [
-    method.requestKey,
-    method.resultKey,
-    method.conclusionDateKey,
-    method.conclusionKey,
-  ]),
-  'pstoRequest',
-  'pstoDate',
-  'pstoResult',
-  'heatTreatmentDiagram',
-  'pstoNote',
-  'boq',
-  'ks3',
-  'createdAt',
-  'pstoBoq',
-  'pstoKs3',
-  'pstoCreatedAt',
-  'lnkCreatedAt',
-  'vikBoq',
-  'vikKs3',
-  'rkBoq',
-  'rkKs3',
-  'pvkBoq',
-  'pvkKs3',
-  'uzkBoq',
-  'uzkKs3',
-  'tvmtBoq',
-  'tvmtKs3',
-  'rfaBoq',
-  'rfaKs3',
-  'stlsBoq',
-  'stlsKs3',
-  'mkkBoq',
-  'mkkKs3',
-  'lnkDefectDescription',
-  'lnkNote',
-  'finalStatus',
-  'status',
-])
-const alwaysVisibleFieldKeys = new Set<WeldFieldKey>([
-  'projectTitle',
-  'subtitleCode',
-  'line',
-  'spool',
-  'joint',
-  'wdi',
-  'weldDate',
-  'finalStatus',
-])
-const requestAndResultFieldKeys = new Set<WeldFieldKey>([
-  ...LNK_METHODS.flatMap((method) => [method.requestKey, method.resultKey]),
-  'pstoRequest',
-  'pstoResult',
-])
-const weldingJournalBlockedFieldKeys = new Set<WeldFieldKey>([
-  ...requestAndResultFieldKeys,
-  'status',
-  'createdAt',
-  'finalStatus',
-])
-const weldingJournalHiddenFieldKeys = new Set<WeldFieldKey>([
-  'pstoDate',
-  'heatTreatmentDiagram',
-  'pstoNote',
-  'pstoBoq',
-  'pstoKs3',
-  'pstoCreatedAt',
-  ...lnkReportFieldKeys,
-  ...lnkConclusionFieldKeys,
-])
-const heatTreatmentHiddenFieldKeys = new Set<WeldFieldKey>([
-  'hasVik',
-  'hasRk',
-  'hasPvk',
-  'hasUzk',
-  'hasTvmt',
-  'hasRfa',
-  'hasStls',
-  'hasMkk',
-  'vikRequest',
-  'rkRequest',
-  'pvkRequest',
-  'uzkRequest',
-  'tvmtRequest',
-  'rfaRequest',
-  'stlsRequest',
-  'mkkRequest',
-  'vikResult',
-  'rkResult',
-  'pvkResult',
-  'uzkResult',
-  'tvmtResult',
-  'rfaResult',
-  'stlsResult',
-  'mkkResult',
-  'boq',
-  'ks3',
-  'createdAt',
-  ...lnkReportFieldKeys,
-  ...lnkConclusionFieldKeys,
-])
-const lnkHiddenFieldKeys = new Set<WeldFieldKey>([
-  'pstoRequired',
-  'pstoRequest',
-  'pstoDate',
-  'pstoResult',
-  'heatTreatmentDiagram',
-  'pstoNote',
-  'pstoBoq',
-  'pstoKs3',
-  'pstoCreatedAt',
-  'boq',
-  'ks3',
-  'createdAt',
-])
 type EditingState = {
   record: WeldInput & { id?: number }
   focusField?: WeldFieldKey
@@ -460,26 +226,11 @@ type WelderStampExpiryTask = {
 }
 type DispatcherTask = RepeatedJointTask | WelderStampExpiryTask
 
-const WELD_STAMP_COMPLETION_GROUPS = [
-  {
-    index: 1,
-    reason: 'дозаполнить клейма_1',
-    fields: ['stamp1K', 'stamp1Z', 'stamp1O', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact'],
-  },
-  {
-    index: 2,
-    reason: 'дозаполнить клейма_2',
-    fields: ['stamp2K', 'stamp2Z', 'stamp2O', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'],
-  },
-] as const satisfies ReadonlyArray<{ index: 1 | 2; reason: string; fields: readonly WeldFieldKey[] }>
 type RepeatedJointTaskGroup = {
   key: string
   baseJoint: string
   tasks: DispatcherTask[]
 }
-const UNOFFICIAL_REJECTED_WITH_COIL_REASON = 'катушка требует проверки после смены официальности'
-const REPAIR_FORBIDDEN_BY_DIAMETER_REASON = 'проверить ремонт по диаметру'
-const REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON = 'после двух ремонтов доступен только вырез'
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
@@ -5868,6 +5619,7 @@ function Home() {
                       value={lnkResultDraft.methodKey}
                       onChange={(event) => changeLnkResultMethod(event.target.value as WeldFieldKey)}
                       disabled={selectedLnkResultMethods.length === 0}
+                      className={!lnkResultDraft.methodKey && selectedLnkResultMethods.length > 0 ? 'text-slate-700' : undefined}
                     >
                       <option value="">Выберите метод</option>
                       {selectedLnkResultMethods.map((method) => (
