@@ -28,7 +28,6 @@ import {
 import { listWelderStampRecords, saveWelderStampRecords } from '@/server/welder-stamps'
 import {
   buildExportXlsxBytes,
-  getRequiredRootStampMessage,
   isMeaningfulRecord,
   normalizeWeldInput,
   parseEditableCsv,
@@ -38,7 +37,6 @@ import {
   withAutoVikForWeldDate,
 } from '@/lib/weld-import-export'
 import { getWeldTableWidth } from '@/lib/weld-column-widths'
-import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
 import {
   FIELD_BY_KEY,
   RESULT_STATUS_OPTIONS,
@@ -148,6 +146,13 @@ import {
   sortPstoRequestNamesNewestFirst,
   withCurrentOption,
 } from '@/lib/report-naming'
+import {
+  validateManualJointNameForSave,
+  validateManualJointNamesForImport,
+  validateRequiredRootStampForSave,
+  validateRequiredRootStampsForImport,
+  validateWeldDatesForImport,
+} from '@/lib/weld-validation'
 import {
   buildWeldFormStampSelectOptions,
   buildWelderStampExpiryTasks,
@@ -6317,80 +6322,6 @@ function hasLnkReportEntry(row: WeldInput) {
 
 function withOfficialJointStatus(record: WeldInput) {
   return { ...record, status: null }
-}
-
-function validateManualJointNameForSave(value: WeldInput & { id?: number }, rows: WeldRow[]) {
-  validateWeldDateForSave(value.weldDate)
-
-  const currentJoint = normalizeJointName(value.joint)
-  const previousRow = value.id ? rows.find((row) => row.id === value.id) : null
-  const previousJoint = normalizeJointName(previousRow?.joint)
-  if (value.id && currentJoint === previousJoint) return
-
-  if (previousRow && hasReservedJointSystemPart(previousRow.joint)) {
-    throw new Error('Стык с системными индексами R/W/Y нельзя переименовывать вручную. Используйте подсказки диспетчера задач.')
-  }
-
-  const error = validateManualJointName(value.joint)
-  if (error) throw new Error(error)
-}
-
-function validateWeldDateForSave(value: unknown) {
-  if (!isFutureWeldDate(value)) return
-  throw new Error('Дата сварки не может быть позже сегодняшней.')
-}
-
-function validateRequiredRootStampForSave(record: WeldInput) {
-  const message = getRequiredRootStampMessage(record)
-  if (message) throw new Error(`Сохранение невозможно: ${message}`)
-}
-
-function validateRequiredRootStampsForImport(records: WeldInput[]) {
-  const invalidRecord = records
-    .map((record, index) => ({ record, index, message: getRequiredRootStampMessage(record) }))
-    .find((item) => item.message)
-
-  if (!invalidRecord) return
-
-  const rowNumber = invalidRecord.index + 2
-  const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
-  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.message}`)
-}
-
-function validateManualJointNamesForImport(records: WeldInput[]) {
-  const invalidRecord = records
-    .map((record, index) => ({ record, index, error: validateManualJointName(record.joint) }))
-    .find((item) => item.error)
-
-  if (!invalidRecord) return
-
-  const rowNumber = invalidRecord.index + 2
-  const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
-  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.error}`)
-}
-
-function validateWeldDatesForImport(records: WeldInput[]) {
-  const invalidRecord = records
-    .map((record, index) => ({ record, index }))
-    .find((item) => isFutureWeldDate(item.record.weldDate))
-
-  if (!invalidRecord) return
-
-  const rowNumber = invalidRecord.index + 2
-  const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
-  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". Дата сварки не может быть позже сегодняшней.`)
-}
-
-function isFutureWeldDate(value: unknown) {
-  const date = String(value ?? '').trim()
-  if (!date) return false
-  return date > getTodayIsoDate()
-}
-
-function getTodayIsoDate() {
-  const date = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 function withPendingLnkResults<T extends WeldInput>(row: T): T {
