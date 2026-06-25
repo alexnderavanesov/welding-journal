@@ -16,12 +16,7 @@ import { defaultRequestNamingState, RequestNamingControls, type RequestNamingSta
 import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
-import {
-  DispatcherTaskCard,
-  DispatcherTaskGroup,
-  WelderStampNotificationCard,
-  WelderStampNotificationGroup,
-} from '@/components/dispatcher-task-card'
+import { DispatcherTaskPanel, WelderStampNotificationPanel } from '@/components/dispatcher-panels'
 import {
   clearLnkGeneratedWeldData,
   createWeldJoint,
@@ -109,7 +104,7 @@ import {
   sortRowsByPreservedOrder,
   sumAcceptedWdi,
 } from '@/lib/report-row-utils'
-import { groupRepeatedJointTasks } from '@/lib/dispatcher-groups'
+import { buildDispatcherTaskGroups, getVisibleDispatcherTaskKeys } from '@/lib/dispatcher-view'
 import {
   formatDateInputValue,
   formatDisplayDate,
@@ -172,7 +167,7 @@ import {
   validateWelderStampFieldsForImport,
   validateWelderStampRecord,
 } from '@/lib/welder-stamp-registry'
-import type { DispatcherTask, RepeatedJointTask, RepeatedJointTaskGroup, WeldRow, WelderStampExpiryTask } from '@/lib/dispatcher-types'
+import type { DispatcherTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export const Route = createFileRoute('/')({
@@ -1366,17 +1361,17 @@ function Home() {
     () => buildWelderStampExpiryTasks(welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
     [dismissedRepeatedJointTaskKeys, welderStamps],
   )
-  const repeatedJointTaskGroups = useMemo(
-    () => groupRepeatedJointTasks(repeatedJointTasks, getJointChainConsistencyKey),
-    [repeatedJointTasks],
-  )
-  const welderStampNotificationGroups = useMemo(
-    () => groupRepeatedJointTasks(welderStampExpiryTasks, getJointChainConsistencyKey),
-    [welderStampExpiryTasks],
+  const { repeatedJointTaskGroups, welderStampNotificationGroups } = useMemo(
+    () =>
+      buildDispatcherTaskGroups({
+        repeatedJointTasks,
+        welderStampExpiryTasks,
+        getJointChainConsistencyKey,
+      }),
+    [repeatedJointTasks, welderStampExpiryTasks],
   )
   useEffect(() => {
-    const visibleTasks = activeReport === 'welderStamps' ? welderStampExpiryTasks : repeatedJointTasks
-    const visibleKeys = new Set(visibleTasks.map((task) => task.key))
+    const visibleKeys = getVisibleDispatcherTaskKeys(activeReport, repeatedJointTasks, welderStampExpiryTasks)
     setExpandedRepeatedJointTaskKeys((current) => {
       const next = new Set([...current].filter((key) => visibleKeys.has(key)))
       return next.size === current.size ? current : next
@@ -3038,36 +3033,6 @@ function Home() {
     isRenamePending: renameRepeatedJointMutation.isPending,
   }
 
-  function renderRepeatedJointTaskCard(task: DispatcherTask, nested = false) {
-    return <DispatcherTaskCard key={task.key} task={task} nested={nested} {...dispatcherTaskCardProps} />
-  }
-
-  function renderRepeatedJointTaskGroup(group: RepeatedJointTaskGroup) {
-    return <DispatcherTaskGroup key={group.key} group={group} {...dispatcherTaskCardProps} />
-  }
-
-  function renderWelderStampNotificationCard(task: WelderStampExpiryTask) {
-    return (
-      <WelderStampNotificationCard
-        key={task.key}
-        task={task}
-        isTaskExpanded={isRepeatedJointTaskExpanded}
-        onToggleDetails={toggleRepeatedJointTaskDetails}
-      />
-    )
-  }
-
-  function renderWelderStampNotificationGroup(group: RepeatedJointTaskGroup) {
-    return (
-      <WelderStampNotificationGroup
-        key={group.key}
-        group={group}
-        isTaskExpanded={isRepeatedJointTaskExpanded}
-        onToggleDetails={toggleRepeatedJointTaskDetails}
-      />
-    )
-  }
-
   function updateWelderStampDraft(field: keyof WelderStampRecord, value: string) {
     setWelderStampDraft((current) => ({ ...current, [field]: field === 'naksStamp' ? normalizeNaksStamp(value) : value }))
   }
@@ -3377,63 +3342,28 @@ function Home() {
             <span>{message}</span>
           </div>
 
-          {activeReport !== 'heatTreatment' && activeReport !== 'welderStamps' && repeatedJointTasks.length > 0 ? (
-            <div
-              className="sticky z-30 max-w-[calc(100vw-2rem)] overflow-x-auto rounded-md border border-amber-200 bg-amber-50/90 px-3 py-2 shadow-sm shadow-amber-100"
-              style={{ left: stickyLeft, width: `calc(100vw - ${stickyLeft + 24}px)` }}
-            >
-              <div className="flex min-w-0 flex-col gap-2">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 leading-snug">
-                    <span className="shrink-0 text-sm font-semibold text-amber-950">Диспетчер задач</span>
-                    <span className="min-w-0 text-xs leading-snug text-amber-800">
-                      Найдено: {repeatedJointTasks.length}. Действие только после подтверждения.
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...repeatedJointTasks.map((task) => task.key)]))}
-                    className="h-8 border-amber-300 bg-white px-3 text-xs text-amber-900 hover:bg-amber-100"
-                  >
-                    Скрыть все
-                  </Button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {repeatedJointTaskGroups.map((group) => renderRepeatedJointTaskGroup(group))}
-                </div>
-              </div>
-            </div>
+          {activeReport !== 'heatTreatment' && activeReport !== 'welderStamps' ? (
+            <DispatcherTaskPanel
+              tasks={repeatedJointTasks}
+              groups={repeatedJointTaskGroups}
+              stickyLeft={stickyLeft}
+              handlers={dispatcherTaskCardProps}
+              onDismissAll={(tasks) =>
+                setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...tasks.map((task) => task.key)]))
+              }
+            />
           ) : null}
 
-          {activeReport === 'welderStamps' && welderStampExpiryTasks.length > 0 ? (
-            <div
-              className="relative z-30 w-full max-w-full overflow-x-auto rounded-md border border-amber-200 bg-amber-50/90 px-3 py-2 shadow-sm shadow-amber-100"
-            >
-              <div className="flex min-w-0 flex-col gap-2">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 leading-snug">
-                    <span className="shrink-0 text-sm font-semibold text-amber-950">Диспетчер оповещений клейм</span>
-                    <span className="min-w-0 text-xs leading-snug text-amber-800">
-                      Найдено: {welderStampExpiryTasks.length} · Напоминания по сроку действия НАКС
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...welderStampExpiryTasks.map((task) => task.key)]))}
-                    className="h-8 border-amber-300 bg-white px-3 text-xs text-amber-900 hover:bg-amber-100"
-                  >
-                    Скрыть все
-                  </Button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {welderStampNotificationGroups.map((group) => renderWelderStampNotificationGroup(group))}
-                </div>
-              </div>
-            </div>
+          {activeReport === 'welderStamps' ? (
+            <WelderStampNotificationPanel
+              tasks={welderStampExpiryTasks}
+              groups={welderStampNotificationGroups}
+              isTaskExpanded={isRepeatedJointTaskExpanded}
+              onToggleDetails={toggleRepeatedJointTaskDetails}
+              onDismissAll={(tasks) =>
+                setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...tasks.map((task) => task.key)]))
+              }
+            />
           ) : null}
 
           {activeReport === 'welderStamps' ? (

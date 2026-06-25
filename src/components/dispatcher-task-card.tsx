@@ -17,7 +17,7 @@ import type {
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { formatWelderStampTaskLabel } from '@/lib/welder-stamp-format'
 
-type DispatcherTaskCardHandlers = {
+export type DispatcherTaskCardHandlers = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
   onShowTask: (task: DispatcherTask) => void
