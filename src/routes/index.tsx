@@ -100,6 +100,7 @@ import {
   filterPstoRows,
   normalizeSearchText,
   sortRowsByPreservedOrder,
+  sumAcceptedWdi,
 } from '@/lib/report-row-utils'
 import { groupRepeatedJointTasks } from '@/lib/dispatcher-groups'
 import { formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
@@ -6022,14 +6023,6 @@ function Home() {
 
 async function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
-}
-
-function sumAcceptedWdi(rows: Array<WeldInput & { id?: number }>) {
-  return rows.reduce((total, row) => {
-    if (String(row.finalStatus ?? '').trim().toLowerCase() !== 'годен') return total
-    const value = typeof row.wdi === 'number' ? row.wdi : Number(String(row.wdi ?? '').replace(',', '.'))
-    return Number.isFinite(value) ? total + value : total
-  }, 0)
 }
 
 function buildLnkWaitingNkRows(rows: Array<WeldInput & { id: number }>) {

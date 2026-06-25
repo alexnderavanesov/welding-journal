@@ -1,4 +1,13 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldInput } from '@/lib/weld-fields'
+
+export function sumAcceptedWdi(rows: Array<WeldInput & { id?: number }>) {
+  return rows.reduce((total, row) => {
+    if (String(row.finalStatus ?? '').trim().toLowerCase() !== 'годен') return total
+    const value = typeof row.wdi === 'number' ? row.wdi : Number(String(row.wdi ?? '').replace(',', '.'))
+    return Number.isFinite(value) ? total + value : total
+  }, 0)
+}
 
 export function filterPstoResultRows(rows: WeldRow[], search: string) {
   return filterPstoRows(rows, search).sort(compareHeatTreatmentReportRows)
