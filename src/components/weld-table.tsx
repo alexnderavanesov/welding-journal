@@ -741,7 +741,7 @@ function getWidthClass(fieldKey: string) {
   if (fieldKey === 'pstoDate') return 'w-28 whitespace-nowrap'
   if (fieldKey === 'createdAt' || fieldKey === 'pstoCreatedAt') return 'w-[120px] whitespace-nowrap'
   if (RESULT_FIELD_KEYS.has(fieldKey as WeldFieldKey)) return 'w-28 whitespace-nowrap'
-  if (fieldKey === 'finalStatus') return 'w-[116px]'
+  if (fieldKey === 'finalStatus') return 'w-[124px]'
   if (isCompactWeldColumn(fieldKey)) return 'w-[82px]'
   return 'max-w-72'
 }
@@ -863,7 +863,7 @@ function ResultBadge({ value }: { value: unknown }) {
   return (
     <Badge
       variant="outline"
-      className={`inline-flex max-w-full whitespace-nowrap px-2.5 py-0.5 text-center text-xs font-normal leading-snug ${className}`}
+      className={`inline-flex max-w-full justify-center whitespace-normal break-words px-1.5 py-0.5 text-center text-[11px] font-normal leading-tight ${className}`}
     >
       {text}
     </Badge>

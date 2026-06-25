@@ -78,7 +78,7 @@ const COLUMN_WIDTHS: Partial<Record<WeldFieldKey, number>> = {
   rfaRequest: 170,
   stlsRequest: 170,
   mkkRequest: 170,
-  finalStatus: 116,
+  finalStatus: 124,
   vikResult: 112,
   rkResult: 112,
   pvkResult: 112,

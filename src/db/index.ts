@@ -5,11 +5,14 @@ import * as schema from './schema'
 
 const connectionString = process.env.DATABASE_URL
 
-const pool = connectionString ? new pg.Pool({ connectionString }) : null
+if (!connectionString) {
+  throw new Error('DATABASE_URL is not configured')
+}
 
-export const db = pool ? drizzle(pool, { schema }) : null
+const pool = new pg.Pool({ connectionString })
+
+export const db = drizzle(pool, { schema })
 
 export function requireDb() {
-  if (!db) throw new Error('DATABASE_URL is not configured')
   return db
 }

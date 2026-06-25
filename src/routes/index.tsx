@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldForm, type StampSelectOption } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
-import seedWelds from '@/data/seed-welds.json'
 import {
   clearLnkGeneratedWeldData,
   createWeldJoint,
@@ -17,6 +16,7 @@ import {
   updateWeldJoint,
   type WeldFilters,
 } from '@/server/welds'
+import { listWelderStampRecords, saveWelderStampRecords } from '@/server/welder-stamps'
 import {
   buildExportXlsxBytes,
   getRequiredRootStampMessage,
@@ -47,14 +47,9 @@ export const Route = createFileRoute('/')({
 })
 
 const emptyFilters: WeldFilters = {}
-const seedRows = seedWelds as Array<WeldInput & { id: number }>
-const localStorageKey = 'welding-tracker-local-welds'
-const welderStampsStorageKey = 'welding-tracker-welder-stamps-v1'
 const welderStampWeldTypeOptions = ['РАД', 'РД', 'МП'] as const
 const welderStampExpiryReminderDays = 7
 const dayInMs = 24 * 60 * 60 * 1000
-const clearedLnkRequestsStorageKey = 'welding-tracker-cleared-lnk-requests-v1'
-const clearedLnkResultsAndConclusionsStorageKey = 'welding-tracker-cleared-lnk-results-conclusions-v1'
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 const highlightDurationMs = 30000
 const heatTreatmentEditableFieldKeys = new Set<WeldFieldKey>([
@@ -483,6 +478,8 @@ type RepeatedJointTaskGroup = {
   tasks: DispatcherTask[]
 }
 const UNOFFICIAL_REJECTED_WITH_COIL_REASON = 'катушка требует проверки после смены официальности'
+const REPAIR_FORBIDDEN_BY_DIAMETER_REASON = 'проверить ремонт по диаметру'
+const REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON = 'после двух ремонтов доступен только вырез'
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
@@ -547,12 +544,26 @@ function Home() {
   const [isLnkShowMenuOpen, setIsLnkShowMenuOpen] = useState(false)
   const [dismissedRepeatedJointTaskKeys, setDismissedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
   const [expandedRepeatedJointTaskKeys, setExpandedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
-  const [welderStamps, setWelderStamps] = useState<WelderStampRecord[]>(() => readWelderStampRecords())
+  const [welderStamps, setWelderStamps] = useState<WelderStampRecord[]>([])
   const [welderStampDraft, setWelderStampDraft] = useState<WelderStampRecord>(() => createEmptyWelderStampDraft())
   const [editingWelderStampId, setEditingWelderStampId] = useState<number | null>(null)
   const [welderStampSearch, setWelderStampSearch] = useState('')
   const [welderStampFilters, setWelderStampFilters] = useState<WelderStampFilters>(() => createEmptyWelderStampFilters())
   const [showArchivedWelderStamps, setShowArchivedWelderStamps] = useState(false)
+  const welderStampsQuery = useQuery({
+    queryKey: ['welder-stamps'],
+    queryFn: async () => listWelderStampRecords(),
+  })
+  const welderStampsMutation = useMutation({
+    mutationFn: async (records: WelderStampRecord[]) => saveWelderStampRecords({ data: { records } }),
+    onSuccess: async (records) => {
+      setWelderStamps(records)
+      await queryClient.invalidateQueries({ queryKey: ['welder-stamps'] })
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
   const weldFormStampSelectOptions = useMemo(() => buildWeldFormStampSelectOptions(welderStamps), [welderStamps])
   const getWeldFormStampSelectOptions = useMemo(
     () => (draft: WeldInput) => buildWeldFormStampSelectOptions(welderStamps, draft),
@@ -587,8 +598,10 @@ function Home() {
   }, [activeReport, editing, isReportModalOpen])
 
   useEffect(() => {
-    writeWelderStampRecords(welderStamps)
-  }, [welderStamps])
+    if (welderStampsQuery.data) {
+      setWelderStamps(welderStampsQuery.data)
+    }
+  }, [welderStampsQuery.data])
 
   useEffect(() => {
     function handleHorizontalScroll() {
@@ -660,14 +673,7 @@ function Home() {
 
   const weldsQuery = useQuery({
     queryKey: ['weld-joints', emptyFilters],
-    queryFn: async () => {
-      try {
-        const rows = await listWeldJoints({ data: emptyFilters })
-        return Array.isArray(rows) ? rows : filterLocalWelds(emptyFilters)
-      } catch {
-        return filterLocalWelds(emptyFilters)
-      }
-    },
+    queryFn: async () => listWeldJoints({ data: emptyFilters }),
   })
 
   const saveMutation = useMutation({
@@ -676,12 +682,9 @@ function Home() {
       validateRequiredRootStampForSave(preparedValue)
       validateManualJointNameForSave(preparedValue, rows)
       validateOfficialStampCompatibilityForSave(preparedValue, welderStamps)
-      try {
-        const saved = preparedValue.id ? await updateWeldJoint({ data: preparedValue }) : await createWeldJoint({ data: preparedValue })
-        return saved ?? saveLocalWeld(preparedValue)
-      } catch {
-        return saveLocalWeld(preparedValue)
-      }
+      const saved = preparedValue.id ? await updateWeldJoint({ data: preparedValue }) : await createWeldJoint({ data: preparedValue })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved
     },
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [variables], variables.id && editing?.focusField ? [editing.focusField] : [])
@@ -698,13 +701,9 @@ function Home() {
     mutationFn: async (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => {
       const targetJoints = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
       const drafts = targetJoints.map((targetJoint) => buildRepeatedJointDraft(task.row, targetJoint))
-      try {
-        const savedRows = await Promise.all(drafts.map((draft) => createWeldJoint({ data: draft })))
-        if (savedRows.every(Boolean)) return savedRows as WeldRow[]
-        return drafts.map((draft) => saveLocalWeld(draft))
-      } catch {
-        return drafts.map((draft) => saveLocalWeld(draft))
-      }
+      const savedRows = await Promise.all(drafts.map((draft) => createWeldJoint({ data: draft })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось создать повторный стык')
+      return savedRows as WeldRow[]
     },
     onSuccess: async (createdRows, task) => {
       highlightChangedRows(createdRows, ['joint', 'weldDate', 'finalStatus'])
@@ -723,15 +722,9 @@ function Home() {
 
   const obsoleteRepeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointDeleteTask) => {
-      try {
-        const result = await deleteWeldJoint({ data: { id: task.row.id } })
-        if (result) return result
-        deleteLocalWeld(task.row.id)
-        return { ok: true }
-      } catch {
-        deleteLocalWeld(task.row.id)
-        return { ok: true }
-      }
+      const result = await deleteWeldJoint({ data: { id: task.row.id } })
+      if (!result) throw new Error('Запись не найдена')
+      return result
     },
     onSuccess: async (_result, task) => {
       setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
@@ -746,14 +739,9 @@ function Home() {
   const renameRepeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointRenameTask) => {
       const updatedRecord = { ...task.row, joint: task.targetJoint }
-      updateLocalWelds([updatedRecord])
-      try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved
-        return updatedRecord
-      } catch {
-        return updatedRecord
-      }
+      const saved = await updateWeldJoint({ data: updatedRecord })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved
     },
     onSuccess: async (saved, task) => {
       highlightChangedRows(saved ? [saved] : [task.row], ['joint'])
@@ -768,15 +756,9 @@ function Home() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      try {
-        const result = await deleteWeldJoint({ data: { id } })
-        if (result) return result
-        deleteLocalWeld(id)
-        return { ok: true }
-      } catch {
-        deleteLocalWeld(id)
-        return { ok: true }
-      }
+      const result = await deleteWeldJoint({ data: { id } })
+      if (!result) throw new Error('Запись не найдена')
+      return result
     },
     onSuccess: async () => {
       setMessage('Запись удалена')
@@ -796,15 +778,7 @@ function Home() {
       normalizeWeldingMethodsForImport(preparedRecords)
       validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
       validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps)
-      try {
-        const result = await importWeldJoints({ data: { records: preparedRecords } })
-        if (result) return result
-        const rows = importLocalWelds(preparedRecords)
-        return { inserted: rows.length, rows }
-      } catch {
-        const rows = importLocalWelds(preparedRecords)
-        return { inserted: rows.length, rows }
-      }
+      return importWeldJoints({ data: { records: preparedRecords } })
     },
     onSuccess: async (result) => {
       highlightChangedRows(result.rows)
@@ -828,22 +802,14 @@ function Home() {
         return { updated: 0, rows: [], changedFieldKeys, matched, skipped }
       }
 
-      try {
-        const savedRows = await Promise.all(updatedRows.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) {
-          return {
-            updated: savedRows.length,
-            rows: savedRows as unknown as WeldRow[],
-            changedFieldKeys,
-            matched,
-            skipped,
-          }
-        }
-        updateLocalWelds(updatedRows)
-        return { updated: updatedRows.length, rows: updatedRows, changedFieldKeys, matched, skipped }
-      } catch {
-        updateLocalWelds(updatedRows)
-        return { updated: updatedRows.length, rows: updatedRows, changedFieldKeys, matched, skipped }
+      const savedRows = await Promise.all(updatedRows.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей ПСТО')
+      return {
+        updated: savedRows.length,
+        rows: savedRows as unknown as WeldRow[],
+        changedFieldKeys,
+        matched,
+        skipped,
       }
     },
     onSuccess: async (result, variables) => {
@@ -886,17 +852,9 @@ function Home() {
         return { updated: 0, rows: [], changedFieldKeys, matched, skipped }
       }
 
-      try {
-        const savedRows = await Promise.all(updatedRows.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) {
-          return { updated: savedRows.length, rows: savedRows as unknown as WeldRow[], changedFieldKeys, matched, skipped }
-        }
-        updateLocalWelds(updatedRows)
-        return { updated: updatedRows.length, rows: updatedRows, changedFieldKeys, matched, skipped }
-      } catch {
-        updateLocalWelds(updatedRows)
-        return { updated: updatedRows.length, rows: updatedRows, changedFieldKeys, matched, skipped }
-      }
+      const savedRows = await Promise.all(updatedRows.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей ЛНК')
+      return { updated: savedRows.length, rows: savedRows as unknown as WeldRow[], changedFieldKeys, matched, skipped }
     },
     onSuccess: async (result, variables) => {
       highlightChangedRows(result.rows, result.updated > 0 ? [...result.changedFieldKeys, 'lnkCreatedAt'] : result.changedFieldKeys)
@@ -919,15 +877,9 @@ function Home() {
     }) => {
       const pstoUpdatedAt = new Date().toISOString()
       const updatedRecords = records.map((record) => ({ ...record, pstoRequest: requestName, pstoCreatedAt: pstoUpdatedAt }))
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows
     },
     onSuccess: async (_result, variables) => {
       highlightChangedRows(_result, ['pstoRequest', 'pstoCreatedAt'])
@@ -980,15 +932,9 @@ function Home() {
       }
       const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
       const updatedRecords = recalculatedRows.filter((row) => proposedRowsById.has(row.id))
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, ['pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
@@ -1041,15 +987,9 @@ function Home() {
 
       if (updatedRecords.length === 0) throw new Error('Заявка ПСТО не найдена')
 
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, ['pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
@@ -1084,15 +1024,9 @@ function Home() {
         pstoCreatedAt: new Date().toISOString(),
       } as WeldInput & { id: number }
 
-      try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved as unknown as WeldRow
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      } catch {
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      }
+      const saved = await updateWeldJoint({ data: updatedRecord })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
       const removedRequestName = String(variables.record.pstoRequest ?? '').trim()
@@ -1132,15 +1066,9 @@ function Home() {
         pstoCreatedAt: new Date().toISOString(),
       } as WeldInput & { id: number }
 
-      try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved as unknown as WeldRow
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      } catch {
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      }
+      const saved = await updateWeldJoint({ data: updatedRecord })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [], ['pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
@@ -1165,15 +1093,9 @@ function Home() {
       rows: Array<WeldInput & { id: number }>
     }) => {
       const updatedRecord = withAutoHeatTreatmentDiagram({ ...record, [fieldKey]: value }, rows)
-      try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved as unknown as WeldRow
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      } catch {
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      }
+      const saved = await updateWeldJoint({ data: updatedRecord })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [], [variables.fieldKey])
@@ -1218,15 +1140,9 @@ function Home() {
         throw new Error('Нет доступных стыков или видов контроля для новой заявки ЛНК')
       }
 
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, [...variables.methodKeys, 'lnkCreatedAt'])
@@ -1273,15 +1189,9 @@ function Home() {
 
       const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
       const updatedRecord = { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
-      try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved as unknown as WeldRow
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      } catch {
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      }
+      const saved = await updateWeldJoint({ data: updatedRecord })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
       const method = getLnkMethodByRequestKey(variables.methodKey)
@@ -1355,15 +1265,9 @@ function Home() {
 
       if (updatedRecords.length === 0) throw new Error('Заявка ЛНК не найдена')
 
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       const requestFields = [...lnkRequestFieldKeys, 'lnkCreatedAt', 'finalStatus'] as WeldFieldKey[]
@@ -1413,9 +1317,9 @@ function Home() {
       if (results.some((result) => !isValidLnkResultDraftValue(result))) throw new Error('Укажите результат для каждого выбранного стыка')
       if (hasNonEmptyResult && !controlDate) throw new Error('Укажите дату контроля')
       if (hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
-      const repairForbiddenRecord = records.find((record) => resultById[record.id] === 'ремонт' && isLnkRepairForbiddenByDiameter(record))
+      const repairForbiddenRecord = records.find((record) => resultById[record.id] === 'ремонт' && isLnkRepairForbidden(record))
       if (repairForbiddenRecord) {
-        throw new Error(`Ремонт недоступен для стыка ${String(repairForbiddenRecord.joint ?? '-')}: диаметр до 89 мм`)
+        throw new Error(`Ремонт недоступен для стыка ${String(repairForbiddenRecord.joint ?? '-')}: ${getLnkRepairForbiddenReason(repairForbiddenRecord)}`)
       }
 
       const lnkUpdatedAt = new Date().toISOString()
@@ -1432,15 +1336,9 @@ function Home() {
         return { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
       })
 
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       const method = getLnkMethodByRequestKey(variables.methodKey)
@@ -1484,15 +1382,9 @@ function Home() {
 
       if (updatedRecords.length === 0) throw new Error('Выбранные стыки уже имеют такой статус')
 
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, ['status'])
@@ -1524,8 +1416,8 @@ function Home() {
       const method = getLnkMethodByRequestKey(methodKey)
       if (!method) throw new Error('Выберите метод контроля')
       if (result && !LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Укажите корректный результат')
-      if (result === 'ремонт' && isLnkRepairForbiddenByDiameter(record)) {
-        throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: диаметр до 89 мм`)
+      if (result === 'ремонт' && isLnkRepairForbidden(record)) {
+        throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: ${getLnkRepairForbiddenReason(record)}`)
       }
       const proposedRecord = {
         ...record,
@@ -1536,15 +1428,9 @@ function Home() {
       const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
       const updatedRecord = { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
 
-      try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved as unknown as WeldRow
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      } catch {
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      }
+      const saved = await updateWeldJoint({ data: updatedRecord })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
       const method = getLnkMethodByRequestKey(variables.methodKey)
@@ -1571,8 +1457,8 @@ function Home() {
         const method = getLnkMethodByRequestKey(methodKey)
         if (!method) throw new Error('Выберите метод контроля')
         if (!LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Укажите корректный результат')
-        if (result === 'ремонт' && isLnkRepairForbiddenByDiameter(record)) {
-          throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: диаметр до 89 мм`)
+        if (result === 'ремонт' && isLnkRepairForbidden(record)) {
+          throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: ${getLnkRepairForbiddenReason(record)}`)
         }
         const currentRecord = updatedById.get(record.id) ?? record
         updatedById.set(record.id, {
@@ -1585,15 +1471,9 @@ function Home() {
         return { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
       })
 
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       const changedFieldKeys = [
@@ -1648,15 +1528,9 @@ function Home() {
 
       if (updatedRecords.length === 0) throw new Error('Нет результатов для переименования заключения')
 
-      try {
-        const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-        if (savedRows.every(Boolean)) return savedRows as unknown as WeldRow[]
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      } catch {
-        updateLocalWelds(updatedRecords)
-        return updatedRecords
-      }
+      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
+      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       const method = getLnkMethodByRequestKey(variables.methodKey)
@@ -1694,15 +1568,9 @@ function Home() {
 
       const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
       const updatedRecord = { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
-      try {
-        const saved = await updateWeldJoint({ data: updatedRecord })
-        if (saved) return saved as unknown as WeldRow
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      } catch {
-        updateLocalWelds([updatedRecord])
-        return updatedRecord
-      }
+      const saved = await updateWeldJoint({ data: updatedRecord })
+      if (!saved) throw new Error('Запись не найдена')
+      return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [], [variables.fieldKey, 'lnkCreatedAt', 'finalStatus'])
@@ -1723,13 +1591,9 @@ function Home() {
       })
       if (updatedRows.length === 0) return []
 
-      try {
-        const savedRows = await clearLnkGeneratedWeldData()
-        if (Array.isArray(savedRows)) return savedRows as unknown as WeldRow[]
-        throw new Error('LNK cleanup server result is unavailable')
-      } catch {
-        return clearLocalLnkGeneratedData()
-      }
+      const savedRows = await clearLnkGeneratedWeldData()
+      if (!Array.isArray(savedRows)) throw new Error('Не удалось очистить данные ЛНК')
+      return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows) => {
       highlightChangedRows(savedRows, [...lnkGeneratedFieldKeys, 'finalStatus'])
@@ -2960,7 +2824,7 @@ function Home() {
     setLnkResultDraft((current) => {
       if (!current.rowIds.has(rowId)) return current
       const row = lnkRows.find((candidate) => candidate.id === rowId)
-      if (row && result === 'ремонт' && isLnkRepairForbiddenByDiameter(row)) return current
+      if (row && result === 'ремонт' && isLnkRepairForbidden(row)) return current
       const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
       const rowResults: Record<number, string> = {}
       for (const id of current.rowIds) {
@@ -3420,6 +3284,7 @@ function Home() {
     const reason = task.reason ?? ''
     if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
     if (reason === 'проверить дату сварки и контроля') return { joint: task.sourceJoint, type: 'Проверить дату сварки и контроля' }
+    if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON) return { joint: task.sourceJoint, type: 'Проверить ремонт по диаметру' }
     if (reason === 'проверить клеймо') return { joint: task.sourceJoint, type: 'Проверить клеймо' }
     if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
     if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
@@ -3480,6 +3345,9 @@ function Home() {
     }
     if (reason === 'проверить дату сварки и контроля') {
       return `В цепочке ${task.baseJoint} дата контроля или ПСТО оказалась раньше даты сварки. Проверь даты в сварочном журнале, ЛНК и ПСТО.`
+    }
+    if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON) {
+      return `В стыке ${task.sourceJoint} указан результат "ремонт" при диаметре до 89 мм. По правилу для такого диаметра допустим только "вырез". Проверь D1/D2 или результат контроля.`
     }
     if (reason === 'проверить клеймо') {
       return `В стыке ${task.sourceJoint} найдено несоответствие официального клейма активному реестру клейм. Проверь клеймо, тип сварки, D1/D2 и срок действия допуска.`
@@ -3886,6 +3754,11 @@ function Home() {
     setEditingWelderStampId(null)
   }
 
+  function persistWelderStampRecords(nextRecords: WelderStampRecord[]) {
+    setWelderStamps(nextRecords)
+    welderStampsMutation.mutate(nextRecords)
+  }
+
   function saveWelderStampRecord() {
     const draft = normalizeWelderStampRecord(welderStampDraft)
     if (!draft.naksStamp && !draft.internalStamp) {
@@ -3903,13 +3776,13 @@ function Home() {
     }
 
     if (editingWelderStampId !== null) {
-      setWelderStamps((current) =>
-        current.map((record) => (record.id === editingWelderStampId ? { ...draft, id: editingWelderStampId } : record)),
+      persistWelderStampRecords(
+        welderStamps.map((record) => (record.id === editingWelderStampId ? { ...draft, id: editingWelderStampId } : record)),
       )
       setMessage('Клеймо обновлено')
     } else {
       const nextId = Math.max(0, ...welderStamps.map((record) => record.id)) + 1
-      setWelderStamps((current) => [{ ...draft, id: nextId }, ...current])
+      persistWelderStampRecords([{ ...draft, id: nextId }, ...welderStamps])
       setMessage('Клеймо добавлено')
     }
     resetWelderStampForm()
@@ -3921,19 +3794,19 @@ function Home() {
   }
 
   function archiveWelderStampRecord(id: number) {
-    setWelderStamps((current) => current.map((record) => (record.id === id ? { ...record, archived: true } : record)))
+    persistWelderStampRecords(welderStamps.map((record) => (record.id === id ? { ...record, archived: true } : record)))
     if (editingWelderStampId === id) resetWelderStampForm()
     setMessage('Клеймо добавлено в архив')
   }
 
   function restoreWelderStampRecord(id: number) {
-    setWelderStamps((current) => current.map((record) => (record.id === id ? { ...record, archived: false } : record)))
+    persistWelderStampRecords(welderStamps.map((record) => (record.id === id ? { ...record, archived: false } : record)))
     setMessage('Клеймо возвращено в общий список')
   }
 
   function deleteWelderStampRecord(id: number) {
     if (!confirm('Удалить запись клейма?')) return
-    setWelderStamps((current) => current.filter((record) => record.id !== id))
+    persistWelderStampRecords(welderStamps.filter((record) => record.id !== id))
     if (editingWelderStampId === id) resetWelderStampForm()
     setMessage('Клеймо удалено')
   }
@@ -5692,26 +5565,26 @@ function Home() {
                             <div className="flex flex-wrap content-start justify-end gap-1.5">
                               <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
 	                              {LNK_RESULT_OPTIONS.map((option) => {
-	                                const disabledByDiameter = option === 'ремонт' && isLnkRepairForbiddenByDiameter(row)
+	                                const disabledByRepairRule = option === 'ремонт' && isLnkRepairForbidden(row)
 	                                return (
 	                                  <button
 	                                    key={option}
 	                                    type="button"
 	                                    onClick={() => {
-	                                      if (!disabledByDiameter) replaceLnkResult(row, method.requestKey, option)
+	                                      if (!disabledByRepairRule) replaceLnkResult(row, method.requestKey, option)
 	                                    }}
 	                                    onMouseEnter={() => {
-	                                      if (!disabledByDiameter) setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
+	                                      if (!disabledByRepairRule) setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
 	                                    }}
 	                                    onMouseLeave={() => setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current))}
 	                                    onFocus={() => {
-	                                      if (!disabledByDiameter) setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
+	                                      if (!disabledByRepairRule) setManagedLnkResultPreview({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
 	                                    }}
 	                                    onBlur={() => setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current))}
-	                                    disabled={disabledByDiameter || lnkResultCorrectionMutation.isPending || lnkResultReplacementMutation.isPending}
-	                                    title={disabledByDiameter ? getLnkRepairForbiddenReason(row) : undefined}
+	                                    disabled={disabledByRepairRule || lnkResultCorrectionMutation.isPending || lnkResultReplacementMutation.isPending}
+	                                    title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
 	                                    className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-	                                      disabledByDiameter
+	                                      disabledByRepairRule
 	                                        ? 'border-slate-200 bg-slate-50 text-slate-400'
 	                                        : (pendingResult || currentResult) === option
 	                                          ? getLnkResultBadgeClass(option)
@@ -6020,7 +5893,7 @@ function Home() {
 	                      value={lnkResultDraft.result}
 	                      onChange={(event) => {
 	                        const result = event.target.value
-	                        if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbiddenByDiameter)) return
+	                        if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
 	                        setLnkResultDraft((current) => ({
 	                          ...current,
 	                          result,
@@ -6033,13 +5906,15 @@ function Home() {
 	                        пользовательский
 	                      </option>
 	                      {LNK_RESULT_OPTIONS.map((option) => (
-	                        <option key={option} value={option} disabled={option === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbiddenByDiameter)}>
+	                        <option key={option} value={option} disabled={option === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)}>
 	                          {option}
 	                        </option>
 	                      ))}
 	                    </Select>
-	                    {selectedLnkResultRows.some(isLnkRepairForbiddenByDiameter) ? (
-	                      <span className="block text-xs text-slate-500">Ремонт недоступен для стыков с диаметром до 89 мм.</span>
+	                    {selectedLnkResultRows.some(isLnkRepairForbidden) ? (
+	                      <span className="block text-xs text-slate-500">
+                          Ремонт недоступен: {getLnkResultRepairForbiddenSummary(selectedLnkResultRows)}.
+                        </span>
 	                    ) : null}
 	                  </label>
                   </div>
@@ -6259,7 +6134,7 @@ function Home() {
 	                                  <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>
 	                                  {LNK_RESULT_OPTIONS.map((option) => {
 	                                    const active = rowResult === option
-	                                    const disabledByDiameter = option === 'ремонт' && isLnkRepairForbiddenByDiameter(row)
+	                                    const disabledByRepairRule = option === 'ремонт' && isLnkRepairForbidden(row)
 	                                    return (
 	                                      <button
 	                                        key={option}
@@ -6267,13 +6142,13 @@ function Home() {
 	                                        onClick={(event) => {
 	                                          event.preventDefault()
 	                                          event.stopPropagation()
-	                                          if (disabledByDiameter) return
+	                                          if (disabledByRepairRule) return
 	                                          setLnkResultForRow(row.id, option)
 	                                        }}
-	                                        disabled={disabledByDiameter}
-	                                        title={disabledByDiameter ? getLnkRepairForbiddenReason(row) : undefined}
+	                                        disabled={disabledByRepairRule}
+	                                        title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
 	                                        className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
-	                                          disabledByDiameter
+	                                          disabledByRepairRule
 	                                            ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
 	                                            : active
 	                                            ? getLnkResultBadgeClass(option)
@@ -7002,42 +6877,6 @@ function normalizeWelderStampRecord(record: WelderStampRecord): WelderStampRecor
   }
 }
 
-function readWelderStampRecords(): WelderStampRecord[] {
-  if (typeof window === 'undefined') return []
-
-  try {
-    const raw = window.localStorage.getItem(welderStampsStorageKey)
-    if (!raw) return []
-
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-
-    return parsed.map((item, index) => ({
-      id: Number.isFinite(Number(item?.id)) ? Number(item.id) : index + 1,
-      naksStamp: normalizeNaksStamp(String(item?.naksStamp ?? '')),
-      internalStamp: String(item?.internalStamp ?? ''),
-      weldType: normalizeWelderStampWeldType(String(item?.weldType ?? '')),
-      diameterFrom: String(item?.diameterFrom ?? ''),
-      diameterTo: String(item?.diameterTo ?? ''),
-      validFrom: String(item?.validFrom ?? ''),
-      validTo: String(item?.validTo ?? ''),
-      archived: Boolean(item?.archived),
-    }))
-  } catch {
-    return []
-  }
-}
-
-function writeWelderStampRecords(records: WelderStampRecord[]) {
-  if (typeof window === 'undefined') return
-
-  try {
-    window.localStorage.setItem(welderStampsStorageKey, JSON.stringify(records))
-  } catch {
-    // Local storage can be unavailable in private/browser-restricted modes.
-  }
-}
-
 function buildWelderStampExpiryTasks(records: WelderStampRecord[]): WelderStampExpiryTask[] {
   const today = parseIsoDateStart(getTodayIsoDate())
   if (!today) return []
@@ -7523,48 +7362,6 @@ function normalizeWeldingMethodsForImport(records: WeldInput[]) {
 
 async function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
-}
-
-function filterLocalWelds(filters: WeldFilters) {
-  return readLocalWelds().filter((row) => {
-    const search = filters.search?.trim().toLowerCase()
-    if (search) {
-      const haystack = [row.joint, row.line, row.isometry, row.spool, row.material1, row.material2, row.responsible]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      if (!haystack.includes(search)) return false
-    }
-
-    for (const key of [
-      'projectTitle',
-      'line',
-      'groupName',
-      'category',
-      'pstoRequired',
-      'weldingMethod',
-      'status',
-      'finalStatus',
-    ] as const) {
-      if (filters[key] && row[key] !== filters[key]) return false
-    }
-
-    if (filters.controlMethod) {
-      const controlKey = {
-        ВИК: 'hasVik',
-        РК: 'hasRk',
-        ПВК: 'hasPvk',
-        УЗК: 'hasUzk',
-        ТВМТ: 'hasTvmt',
-        РФА: 'hasRfa',
-        СТЛС: 'hasStls',
-        МКК: 'hasMkk',
-      }[filters.controlMethod] as keyof typeof row | undefined
-      if (controlKey && row[controlKey] !== true) return false
-    }
-
-    return true
-  })
 }
 
 function sumAcceptedWdi(rows: Array<WeldInput & { id?: number }>) {
@@ -8522,6 +8319,7 @@ function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStam
   const chainCheckTasks = [
     ...buildJointChainConsistencyCheckTasks(rows),
     ...buildControlDateBeforeWeldDateCheckTasks(rows),
+    ...buildForbiddenRepairByDiameterCheckTasks(rows),
     ...buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords),
     ...buildIncompleteWelderStampGroupTasks(rows),
   ]
@@ -8547,7 +8345,7 @@ function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStam
     if (!sourceJoint) continue
     if (hasCompletedParentBranch(rows, row, sourceJoint)) continue
 
-    const suffix = rejection.result === 'ремонт' ? 'R' : 'W'
+    const suffix = getExpectedRepeatedJointSuffix(row, rejection.result)
     const parsed = parseRepeatedJointName(sourceJoint)
     const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint)
     const lastOfficialRejectedRow = officialRejectedChainRows.at(-1)
@@ -8687,6 +8485,33 @@ function buildControlDateBeforeWeldDateCheckTasks(rows: WeldRow[]): RepeatedJoin
         `${getJointChainConsistencyKey(row) ?? row.id}:control-before-weld:${row.id}`,
         'проверить дату сварки и контроля',
         `${details} Проверь дату сварки или дату ${issues.length === 1 ? formatDateIssueLabelForSuggestion(issues[0].label) : 'контроля/ПСТО'}.`,
+      ),
+    )
+  }
+  return tasks
+}
+
+function buildForbiddenRepairByDiameterCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
+  const tasks: RepeatedJointCheckTask[] = []
+  for (const row of rows) {
+    if (!isLnkRepairForbiddenByDiameter(row)) continue
+
+    const repairMethods = LNK_METHODS.filter(
+      (method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт',
+    )
+    if (repairMethods.length === 0) continue
+
+    const joint = String(row.joint ?? '').trim() || '-'
+    const methodCodes = repairMethods.map((method) => method.code).join(', ')
+    const diameterText = formatJointDiameterLabel(row)
+    tasks.push(
+      createJointChainCheckTask(
+        row,
+        `${getJointChainConsistencyKey(row) ?? row.id}:repair-diameter:${row.id}:${repairMethods
+          .map((method) => method.resultKey)
+          .join(',')}`,
+        REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
+        `Стык ${joint}: результат ${methodCodes} - ремонт указан при минимальном диаметре ${diameterText} мм. Ремонт на стыке с диаметром меньше 89 мм недопустим; для такого диаметра выбирается только "вырез". Проверь D1/D2 или результат контроля.`,
       ),
     )
   }
@@ -9029,9 +8854,12 @@ function hasCompletedParentBranch(rows: WeldRow[], row: WeldInput, sourceJoint: 
 function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
   const seen = new Set<string>()
   return tasks.filter((task) => {
-    const key = task.reason === 'проверить клеймо' || isIncompleteWeldStampGroupReason(task.reason)
-      ? task.key
-      : `${task.baseJoint}:${task.reason ?? ''}`
+    const key =
+      task.reason === 'проверить клеймо' ||
+      task.reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON ||
+      isIncompleteWeldStampGroupReason(task.reason)
+        ? task.key
+        : `${task.baseJoint}:${task.reason ?? ''}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -9166,7 +8994,12 @@ function getNextRepeatedJointName(sourceJoint: string, suffix: 'R' | 'W') {
 
 function getExpectedRepeatedJointName(sourceRow: WeldInput, sourceJoint: string, result: 'ремонт' | 'вырез') {
   if (isUnofficialJoint(sourceRow)) return sourceJoint.trim()
-  return getNextRepeatedJointName(sourceJoint, result === 'ремонт' ? 'R' : 'W')
+  const suffix = getExpectedRepeatedJointSuffix(sourceRow, result)
+  return getNextRepeatedJointName(sourceJoint, suffix)
+}
+
+function getExpectedRepeatedJointSuffix(sourceRow: WeldInput, result: 'ремонт' | 'вырез'): 'R' | 'W' {
+  return result === 'ремонт' && !isLnkRepairForbiddenByOfficialRepairLimit(sourceRow) ? 'R' : 'W'
 }
 
 function getOfficialRepeatedJointFailureCount(rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) {
@@ -9227,6 +9060,10 @@ function getRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseRepeate
 
 function getRepeatedJointFailureCount(parsed: ReturnType<typeof parseRepeatedJointName>) {
   return parsed.segments.reduce((total, segment) => total + Math.max(0, segment.index), 0)
+}
+
+function getRepeatedJointRepairCount(parsed: ReturnType<typeof parseRepeatedJointName>) {
+  return parsed.segments.reduce((total, segment) => (segment.suffix === 'R' ? total + Math.max(0, segment.index) : total), 0)
 }
 
 function getCoilJointNames(baseJoint: string) {
@@ -9391,8 +9228,27 @@ function isLnkRepairForbiddenByDiameter(row: WeldInput) {
   return diameter !== null && diameter < 89
 }
 
+function isLnkRepairForbiddenByOfficialRepairLimit(row: WeldInput) {
+  if (isUnofficialJoint(row)) return false
+  const joint = String(row.joint ?? '').trim()
+  if (!joint) return false
+  return getRepeatedJointRepairCount(parseRepeatedJointName(joint)) >= 2
+}
+
+function isLnkRepairForbidden(row: WeldInput) {
+  return isLnkRepairForbiddenByDiameter(row) || isLnkRepairForbiddenByOfficialRepairLimit(row)
+}
+
 function getLnkRepairForbiddenReason(row: WeldInput) {
-  return isLnkRepairForbiddenByDiameter(row) ? 'Диаметр до 89 мм' : ''
+  if (isLnkRepairForbiddenByDiameter(row)) return 'Диаметр до 89 мм'
+  if (isLnkRepairForbiddenByOfficialRepairLimit(row)) return REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON
+  return ''
+}
+
+function getLnkResultRepairForbiddenSummary(rows: WeldInput[]) {
+  const reasons = new Set(rows.map(getLnkRepairForbiddenReason).filter(Boolean))
+  if (reasons.size === 0) return 'выбранные стыки не проходят правила ремонта'
+  return [...reasons].join('; ')
 }
 
 function formatJointDiameterLabel(row: WeldInput) {
@@ -9711,7 +9567,7 @@ function getEffectiveLnkResultDraftValue(rowId: number, draft: LnkResultDraftSta
 
 function getEffectiveLnkResultDraftValueForRow(row: WeldRow, draft: LnkResultDraftState) {
   const result = getEffectiveLnkResultDraftValue(row.id, draft)
-  return result === 'ремонт' && isLnkRepairForbiddenByDiameter(row) ? '' : result
+  return result === 'ремонт' && isLnkRepairForbidden(row) ? '' : result
 }
 
 function getManagedLnkResultChangeKey(rowId: number, methodKey: WeldFieldKey) {
@@ -10115,104 +9971,6 @@ function isYesText(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'да'
 }
 
-function readLocalWelds() {
-  if (typeof window === 'undefined') return seedRows
-
-  const stored = window.localStorage.getItem(localStorageKey)
-  if (!stored) {
-    const initializedRows = withCreatedAt(seedRows.map((row) => clearLnkResultAndConclusionFields(clearLnkRequestsFromRow(row))))
-    window.localStorage.setItem(clearedLnkRequestsStorageKey, '1')
-    window.localStorage.setItem(clearedLnkResultsAndConclusionsStorageKey, '1')
-    writeLocalWelds(initializedRows)
-    return initializedRows
-  }
-
-  try {
-    const parsed = JSON.parse(stored) as Array<WeldInput & { id: number }>
-    const shouldClearLegacyLnkRequests = window.localStorage.getItem(clearedLnkRequestsStorageKey) !== '1'
-    const shouldClearLnkResultsAndConclusions = window.localStorage.getItem(clearedLnkResultsAndConclusionsStorageKey) !== '1'
-    const normalizedRows = parsed.map((row) => {
-      const withoutNoPsto = String(row.pstoRequired ?? '').toLowerCase() === 'нет' ? { ...row, pstoRequired: null } : row
-      const withoutLegacyLnkRequest = clearLegacyLnkRequestField(withoutNoPsto)
-      const withClearedLnkRequests = shouldClearLegacyLnkRequests
-        ? clearLnkRequestsFromRow(withoutLegacyLnkRequest)
-        : withoutLegacyLnkRequest
-      const withValidLnkRequests = clearDisabledLnkRequests(withClearedLnkRequests)
-      const withClearedLnkResultsAndConclusions = shouldClearLnkResultsAndConclusions
-        ? clearLnkResultAndConclusionFields(withValidLnkRequests)
-        : withValidLnkRequests
-      const withPendingLnk = withPendingLnkResults(withClearedLnkResultsAndConclusions)
-      const withActualPstoRequest =
-        withPendingLnk.pstoRequest === normalizePstoRequest(withPendingLnk.pstoRequest)
-          ? withPendingLnk
-          : { ...withPendingLnk, pstoRequest: normalizePstoRequest(withPendingLnk.pstoRequest) }
-      const withTimestamp = withActualPstoRequest.createdAt
-        ? withActualPstoRequest
-        : { ...withActualPstoRequest, createdAt: new Date().toISOString() }
-      return { ...withTimestamp, finalStatus: calculateFinalStatus(withTimestamp) }
-    })
-    const meaningfulRows = withAutoHeatTreatmentDiagrams(
-      withLnkCreatedAt(withPstoCreatedAt(normalizedRows.filter((row) => isMeaningfulRecord(row)))),
-    )
-    if (meaningfulRows.length !== parsed.length || meaningfulRows.some((row, index) => row !== parsed[index])) {
-      writeLocalWelds(meaningfulRows)
-    }
-    if (shouldClearLegacyLnkRequests) {
-      window.localStorage.setItem(clearedLnkRequestsStorageKey, '1')
-    }
-    if (shouldClearLnkResultsAndConclusions) {
-      window.localStorage.setItem(clearedLnkResultsAndConclusionsStorageKey, '1')
-    }
-    return meaningfulRows
-  } catch {
-    const initializedRows = seedRows.map((row) => clearLnkResultAndConclusionFields(clearLnkRequestsFromRow(row)))
-    window.localStorage.setItem(clearedLnkRequestsStorageKey, '1')
-    window.localStorage.setItem(clearedLnkResultsAndConclusionsStorageKey, '1')
-    writeLocalWelds(initializedRows)
-    return initializedRows
-  }
-}
-
-function clearLegacyLnkRequestField<T extends WeldInput>(row: T): T {
-  if (!('lnkRequest' in (row as Record<string, unknown>))) return row
-  const nextRow = { ...row } as WeldInput & Record<string, unknown>
-  delete nextRow.lnkRequest
-  return nextRow as T
-}
-
-function clearLnkRequestsFromRow<T extends WeldInput>(row: T): T {
-  const hasLnkRequest = lnkRequestFieldKeys.some((fieldKey) => hasText(row[fieldKey]))
-  const hasLegacyRequest = 'lnkRequest' in (row as Record<string, unknown>)
-  if (!hasLnkRequest && !hasLegacyRequest) return row
-
-  const nextRow = { ...row } as WeldInput & Record<string, unknown>
-  delete nextRow.lnkRequest
-  for (const fieldKey of lnkRequestFieldKeys) {
-    nextRow[fieldKey] = null
-  }
-  return nextRow as T
-}
-
-function clearLnkResultAndConclusionFields<T extends WeldInput>(row: T): T {
-  const lnkResultFieldKeys = LNK_METHODS.map((method) => method.resultKey)
-  const shouldClear = [...lnkResultFieldKeys, ...lnkConclusionFieldKeys].some((fieldKey) => hasText(row[fieldKey]))
-  if (!shouldClear) return row
-
-  const nextRow = { ...row } as T & Record<string, unknown>
-  for (const fieldKey of lnkResultFieldKeys) {
-    nextRow[fieldKey] = null
-  }
-  for (const fieldKey of lnkConclusionFieldKeys) {
-    nextRow[fieldKey] = null
-  }
-  return nextRow as T
-}
-
-function withCreatedAt(rows: Array<WeldInput & { id: number }>) {
-  const createdAt = new Date().toISOString()
-  return rows.map((row) => (row.createdAt ? row : { ...row, createdAt }))
-}
-
 function withPstoCreatedAt<T extends WeldInput>(rows: T[]) {
   const pstoCreatedAt = new Date().toISOString()
   return rows.map((row) => (isYesText(row.pstoRequired) && !row.pstoCreatedAt ? { ...row, pstoCreatedAt } : row))
@@ -10233,80 +9991,4 @@ function withAutoHeatTreatmentDiagrams<T extends WeldInput & { id: number }>(row
     nextRows[index] = withAutoHeatTreatmentDiagram(nextRows[index], nextRows) as T
   }
   return nextRows
-}
-
-function writeLocalWelds(rows: Array<WeldInput & { id: number }>) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(localStorageKey, JSON.stringify(rows))
-}
-
-function clearLocalLnkGeneratedData() {
-  const rows = readLocalWelds()
-  const cleanedRows = rows.map((row) => {
-    const cleanedRow = clearLnkGeneratedData(row)
-    return { ...cleanedRow, finalStatus: calculateFinalStatus(cleanedRow) }
-  })
-  writeLocalWelds(cleanedRows)
-  return cleanedRows.filter((row, index) => hasLnkGeneratedDataChanged(rows[index], row))
-}
-
-function saveLocalWeld(value: WeldInput & { id?: number }) {
-  const rows = readLocalWelds()
-  const normalized = normalizeWeldInput(value)
-  const normalizedWithActualPstoRequest = clearDisabledLnkRequests({
-    ...normalized,
-    pstoRequest: normalizePstoRequest(normalized.pstoRequest),
-  })
-
-  if (!isMeaningfulRecord(normalizedWithActualPstoRequest)) {
-    throw new Error('Заполните хотя бы Стык, Линию или Изометрию')
-  }
-
-	if (value.id) {
-	  const updated = withAutoHeatTreatmentDiagrams(
-	    rows.map((row) =>
-	      row.id === value.id ? withLnkCreatedAt(withPstoCreatedAt([{ ...row, ...normalizedWithActualPstoRequest, id: value.id }]))[0] : row,
-	    ),
-	  )
-    writeLocalWelds(updated)
-    return updated.find((row) => row.id === value.id)!
-  }
-
-	const nextId = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1
-	const created = withLnkCreatedAt(withPstoCreatedAt([{ id: nextId, ...normalizedWithActualPstoRequest, createdAt: new Date().toISOString() }]))[0]
-  const nextRows = withAutoHeatTreatmentDiagrams([created, ...rows])
-  writeLocalWelds(nextRows)
-  return nextRows[0]
-}
-
-function deleteLocalWeld(id: number) {
-  writeLocalWelds(readLocalWelds().filter((row) => row.id !== id))
-}
-
-function updateLocalWelds(updatedRows: Array<WeldInput & { id: number }>) {
-  const updatedById = new Map(
-    updatedRows.map((row) => [
-      row.id,
-      withLnkCreatedAt(withPstoCreatedAt([withPendingLnkResults(clearDisabledLnkRequests({ ...row, pstoRequest: normalizePstoRequest(row.pstoRequest) }))]))[0],
-    ]),
-  )
-  const rows = withAutoHeatTreatmentDiagrams(readLocalWelds().map((row) => updatedById.get(row.id) ?? row))
-  writeLocalWelds(rows)
-}
-
-function importLocalWelds(records: WeldInput[]) {
-  const existingRows = readLocalWelds()
-  let nextId = existingRows.reduce((max, row) => Math.max(max, row.id), 0) + 1
-  const importedAt = new Date().toISOString()
-  const importedRows = records.map((record) => {
-    const normalized = normalizeWeldInput(record)
-    return withLnkCreatedAt(withPstoCreatedAt([
-      withPendingLnkResults(
-        clearDisabledLnkRequests({ id: nextId++, ...normalized, pstoRequest: normalizePstoRequest(normalized.pstoRequest), createdAt: importedAt }),
-      ),
-    ]))[0]
-  })
-  const nextRows = withAutoHeatTreatmentDiagrams([...importedRows, ...existingRows])
-  writeLocalWelds(nextRows)
-  return nextRows.slice(0, importedRows.length)
 }

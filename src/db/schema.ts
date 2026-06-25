@@ -129,3 +129,20 @@ export const weldJoints = pgTable('weld_joints', {
 
 export type WeldJoint = typeof weldJoints.$inferSelect
 export type NewWeldJoint = typeof weldJoints.$inferInsert
+
+export const welderStamps = pgTable('welder_stamps', {
+  id: serial('id').primaryKey(),
+  naksStamp: text('naks_stamp'),
+  internalStamp: text('internal_stamp'),
+  weldType: text('weld_type'),
+  diameterFrom: text('diameter_from'),
+  diameterTo: text('diameter_to'),
+  validFrom: date('valid_from'),
+  validTo: date('valid_to'),
+  archived: boolean('archived').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type WelderStamp = typeof welderStamps.$inferSelect
+export type NewWelderStamp = typeof welderStamps.$inferInsert

@@ -3,6 +3,9 @@ dist/
 .tanstack/
 .env
 backups/
+data/
+outputs/
+.pnpm-store/
 *.log
 *.tmp
 

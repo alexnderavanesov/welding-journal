@@ -91,6 +91,7 @@ export const listWeldJoints = createServerFn({ method: 'GET' })
   .validator((data: WeldFilters | undefined) => data ?? {})
   .handler(async ({ data }) => {
     const db = requireDb()
+
     const where = buildWhere(data)
     return db
       .select()
@@ -111,11 +112,13 @@ export const createWeldJoint = createServerFn({ method: 'POST' })
 export const updateWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: WeldPayload) => data)
   .handler(async ({ data }) => {
-    const db = requireDb()
     if (!data.id) throw new Error('Не передан id записи')
+    const insertData = toDbInsert(data)
+    const db = requireDb()
+
     const [updated] = await db
       .update(weldJoints)
-      .set({ ...toDbInsert(data), updatedAt: new Date() })
+      .set({ ...insertData, updatedAt: new Date() })
       .where(eq(weldJoints.id, data.id))
       .returning()
     return updated
@@ -125,6 +128,7 @@ export const deleteWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: { id: number }) => data)
   .handler(async ({ data }) => {
     const db = requireDb()
+
     await db.delete(weldJoints).where(eq(weldJoints.id, data.id))
     return { ok: true }
   })
@@ -132,9 +136,10 @@ export const deleteWeldJoint = createServerFn({ method: 'POST' })
 export const importWeldJoints = createServerFn({ method: 'POST' })
   .validator((data: { records: WeldInput[] }) => data)
   .handler(async ({ data }) => {
-    const db = requireDb()
     if (data.records.length === 0) return { inserted: 0, rows: [] }
     const values = data.records.map(toDbInsert)
+    const db = requireDb()
+
     const rows = await db.insert(weldJoints).values(values).returning()
     return { inserted: rows.length, rows }
   })
