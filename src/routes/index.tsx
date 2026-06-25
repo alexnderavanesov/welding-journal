@@ -87,6 +87,18 @@ import {
   getPstoResultBadgeClass,
   getPstoResultLabel,
 } from '@/lib/report-badges'
+import { formatDaysLeft, formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
+import {
+  formatWelderStampCompactLabel,
+  formatWelderStampDate,
+  formatWelderStampDiameterRange,
+  formatWelderStampTaskLabel,
+  formatWelderStampValidity,
+  normalizeWelderStampWeldType,
+  splitWelderStampWeldTypes,
+} from '@/lib/welder-stamp-format'
+import type { DispatcherTask, RepeatedJointTask, RepeatedJointTaskGroup, WeldRow } from '@/lib/dispatcher-types'
+import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -137,106 +149,6 @@ type RequestNamingState = {
   customName: string
 }
 type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps'
-type WelderStampRecord = {
-  id: number
-  naksStamp: string
-  internalStamp: string
-  weldType: string
-  diameterFrom: string
-  diameterTo: string
-  validFrom: string
-  validTo: string
-  archived: boolean
-}
-type WelderStampFilters = {
-  diameterFrom: string
-  diameterTo: string
-  validFrom: string
-  validTo: string
-}
-type WeldRow = WeldInput & { id: number }
-type RepeatedJointCreateTask = {
-  kind: 'create'
-  key: string
-  row: WeldRow
-  sourceJoint: string
-  targetJoint: string
-  result: 'ремонт' | 'вырез'
-  suffix: 'R' | 'W'
-  methodCode: string
-}
-type RepeatedJointCoilTask = {
-  kind: 'coil'
-  key: string
-  row: WeldRow
-  sourceJoint: string
-  targetJoints: string[]
-  result: 'ремонт' | 'вырез'
-  methodCode: string
-}
-type RepeatedJointDeleteTask = {
-  kind: 'delete'
-  key: string
-  row: WeldRow
-  sourceRow: WeldRow
-  sourceJoint: string
-  targetJoint: string
-  suffix: 'R' | 'W'
-  reason: string
-}
-type RepeatedJointRenameTask = {
-  kind: 'rename'
-  key: string
-  row: WeldRow
-  sourceRow: WeldRow
-  sourceJoint: string
-  currentJoint: string
-  targetJoint: string
-  baseJoint: string
-}
-type RepeatedJointCheckTask = {
-  kind: 'check'
-  key: string
-  row: WeldRow
-  sourceRow: WeldRow
-  sourceJoint: string
-  targetJoint: string
-  baseJoint: string
-  suffix: 'R' | 'W'
-  reason?: string
-  details?: string
-}
-type RepeatedJointDuplicateCheckTask = {
-  kind: 'duplicate-check'
-  key: string
-  row: WeldRow
-  sourceJoint: string
-  baseJoint: string
-  count: number
-}
-type RepeatedJointTask =
-  | RepeatedJointCreateTask
-  | RepeatedJointCoilTask
-  | RepeatedJointDeleteTask
-  | RepeatedJointRenameTask
-  | RepeatedJointCheckTask
-  | RepeatedJointDuplicateCheckTask
-type WelderStampExpiryTask = {
-  kind: 'welder-stamp-expiry'
-  key: string
-  stamp: WelderStampRecord
-  naksStamp: string
-  validTo: string
-  daysLeft: number
-  expired: boolean
-}
-type DispatcherTask = RepeatedJointTask | WelderStampExpiryTask
-
-type RepeatedJointTaskGroup = {
-  key: string
-  baseJoint: string
-  tasks: DispatcherTask[]
-}
 const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
@@ -3472,34 +3384,6 @@ function Home() {
         </div>
       </details>
     )
-  }
-
-  function formatTaskCount(count: number) {
-    const lastTwoDigits = count % 100
-    const lastDigit = count % 10
-    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${count} задач`
-    if (lastDigit === 1) return `${count} задача`
-    if (lastDigit >= 2 && lastDigit <= 4) return `${count} задачи`
-    return `${count} задач`
-  }
-
-  function formatReminderCount(count: number) {
-    const lastTwoDigits = count % 100
-    const lastDigit = count % 10
-    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${count} напоминаний`
-    if (lastDigit === 1) return `${count} напоминание`
-    if (lastDigit >= 2 && lastDigit <= 4) return `${count} напоминания`
-    return `${count} напоминаний`
-  }
-
-  function formatDaysLeft(daysLeft: number) {
-    const days = Math.max(0, daysLeft)
-    const lastTwoDigits = days % 100
-    const lastDigit = days % 10
-    if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${days} дней`
-    if (lastDigit === 1) return `${days} день`
-    if (lastDigit >= 2 && lastDigit <= 4) return `${days} дня`
-    return `${days} дней`
   }
 
   function updateWelderStampDraft(field: keyof WelderStampRecord, value: string) {
@@ -6781,59 +6665,6 @@ function parseWelderStampNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function splitWelderStampWeldTypes(value: string) {
-  const normalized = value.toUpperCase().replace(/;/g, ',')
-  return welderStampWeldTypeOptions.filter((option) =>
-    normalized
-      .split(',')
-      .map((item) => item.trim())
-      .includes(option),
-  )
-}
-
-function normalizeWelderStampWeldType(value: string) {
-  return splitWelderStampWeldTypes(value).join(', ')
-}
-
-function formatWelderStampDiameterRange(record: WelderStampRecord) {
-  const from = record.diameterFrom.trim()
-  const to = record.diameterTo.trim()
-
-  if (from && to) return `${from} - ${to}`
-  if (from) return `от ${from}`
-  if (to) return `до ${to}`
-  return '-'
-}
-
-function formatWelderStampValidity(record: WelderStampRecord) {
-  const from = formatWelderStampDate(record.validFrom)
-  const to = formatWelderStampDate(record.validTo)
-
-  if (from && to) return `${from} - ${to}`
-  if (from) return `с ${from}`
-  if (to) return `до ${to}`
-  return '-'
-}
-
-function formatWelderStampDate(value: string) {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  return match ? `${match[3]}.${match[2]}.${match[1]}` : value
-}
-
-function formatWelderStampRecordLabel(record: WelderStampRecord) {
-  const naksStamp = record.naksStamp.trim() || '-'
-  const weldType = normalizeWelderStampWeldType(record.weldType)
-  return weldType ? `Клеймо ${naksStamp} (тип: ${weldType})` : `Клеймо ${naksStamp}`
-}
-
-function formatWelderStampTaskLabel(task: WelderStampExpiryTask) {
-  return formatWelderStampRecordLabel(task.stamp)
-}
-
-function formatWelderStampCompactLabel(task: WelderStampExpiryTask) {
-  return `Клеймо ${task.naksStamp.trim() || '-'}`
-}
-
 function buildWeldFormStampSelectOptions(
   records: WelderStampRecord[],
   draft?: WeldInput,
@@ -6937,6 +6768,10 @@ type OfficialStampCompatibilityIssue = {
   message: string
 }
 
+type OfficialStampCompatibilityOptions = {
+  ignoreArchivedMissingRegistry?: boolean
+}
+
 function getOfficialStampCompatibilitySaveBlockReason(record: WeldInput, welderStampRecords: WelderStampRecord[]) {
   const issue = getOfficialStampCompatibilityIssues(record, welderStampRecords)[0]
   return issue ? formatOfficialStampCompatibilityIssue(issue) : null
@@ -6957,8 +6792,13 @@ function validateOfficialStampCompatibilityForImport(records: WeldInput[], welde
   })
 }
 
-function getOfficialStampCompatibilityIssues(record: WeldInput, welderStampRecords: WelderStampRecord[]) {
+function getOfficialStampCompatibilityIssues(
+  record: WeldInput,
+  welderStampRecords: WelderStampRecord[],
+  options: OfficialStampCompatibilityOptions = {},
+) {
   const activeRecords = welderStampRecords.filter((stampRecord) => !stampRecord.archived)
+  const archivedRecords = welderStampRecords.filter((stampRecord) => stampRecord.archived)
   const methods = parseOfficialStampWeldingMethods(record.weldingMethod)
   const diameters = getOfficialStampJointDiameters(record)
   const weldDateValue = getWeldDateOrderValue(record.weldDate)
@@ -6970,6 +6810,9 @@ function getOfficialStampCompatibilityIssues(record: WeldInput, welderStampRecor
 
     const stampRecords = activeRecords.filter((stampRecord) => normalizeStampForCompare(stampRecord.naksStamp) === normalizeStampForCompare(stamp))
     if (stampRecords.length === 0) {
+      const isArchivedStamp = archivedRecords.some((stampRecord) => normalizeStampForCompare(stampRecord.naksStamp) === normalizeStampForCompare(stamp))
+      if (options.ignoreArchivedMissingRegistry && isArchivedStamp) continue
+
       issues.push({
         fieldKey,
         stamp,
@@ -8281,7 +8124,7 @@ function buildWelderStampCompatibilityCheckTasks(rows: WeldRow[], welderStampRec
 
   const tasks: RepeatedJointCheckTask[] = []
   for (const row of rows) {
-    const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords)
+    const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, { ignoreArchivedMissingRegistry: true })
     if (issues.length === 0) continue
 
     const joint = String(row.joint ?? '').trim() || '-'
