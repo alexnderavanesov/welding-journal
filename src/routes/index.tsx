@@ -42,7 +42,6 @@ import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName
 import {
   FIELD_BY_KEY,
   RESULT_STATUS_OPTIONS,
-  PSTO_RESULT_STATUS_OPTIONS,
   VISIBLE_FIELDS,
   calculateFinalStatus,
   type WeldFieldKey,
@@ -85,6 +84,14 @@ import {
   getPstoResultLabel,
 } from '@/lib/report-badges'
 import { formatWdiTotal, getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
+import {
+  getHeatTreatmentImportKey,
+  getPstoResultValue,
+  isSameImportValue,
+  normalizeEditableImportValue,
+  normalizeExistingRequestImportValue,
+  normalizeHeatTreatmentImportValue,
+} from '@/lib/report-import'
 import { buildLnkReportHtml, downloadExcelBytes } from '@/lib/report-window'
 import {
   compactSearchText,
@@ -6288,36 +6295,6 @@ function buildEditableImportUpdates({
   return { updatedRows, changedFieldKeys: [...changedFieldKeys], matched, skipped }
 }
 
-function getHeatTreatmentImportKey(record: WeldInput) {
-  const line = normalizeImportKeyPart(record.line)
-  const joint = normalizeImportKeyPart(record.joint)
-  return line && joint ? `${line}|${joint}` : null
-}
-
-function normalizeImportKeyPart(value: unknown) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
-}
-
-function normalizeHeatTreatmentImportValue(fieldKey: WeldFieldKey, value: unknown) {
-  if (fieldKey === 'pstoResult') return getPstoResultValue(value) || null
-  return value === undefined ? null : value
-}
-
-function normalizeEditableImportValue(fieldKey: WeldFieldKey, value: unknown) {
-  return value === undefined ? null : value
-}
-
-function normalizeExistingRequestImportValue(value: unknown, allowedRequestNames: ReadonlySet<string>) {
-  const requestName = String(value ?? '').trim()
-  if (!requestName) return { skip: false, value: null }
-  if (!allowedRequestNames.has(requestName)) return { skip: true, value: null }
-  return { skip: false, value: requestName }
-}
-
-function isSameImportValue(left: unknown, right: unknown) {
-  return String(left ?? '').trim() === String(right ?? '').trim()
-}
-
 function hasAnyLnkControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
 }
@@ -7879,11 +7856,6 @@ function normalizeRowPstoRequest<T extends WeldInput>(row: T) {
 
 function hasText(value: unknown) {
   return String(value ?? '').trim().length > 0
-}
-
-function getPstoResultValue(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return PSTO_RESULT_STATUS_OPTIONS.includes(text as never) ? text : ''
 }
 
 function isYesText(value: unknown) {
