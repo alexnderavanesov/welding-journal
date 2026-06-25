@@ -100,6 +100,13 @@ import {
   parseRepeatedJointName,
 } from '@/lib/joint-chain'
 import {
+  formatJointDiameterLabel,
+  getJointChainIdentity,
+  getJointChainSubtitle,
+  getMinimumJointDiameter,
+  isUnofficialJoint,
+} from '@/lib/joint-display'
+import {
   formatWelderStampDiameterRange,
   formatWelderStampTaskLabel,
   formatWelderStampValidity,
@@ -8174,20 +8181,6 @@ function compactSearchText(value: string) {
   return value.replace(/[^\p{L}\p{N}]+/gu, '')
 }
 
-function parseJointDiameterValue(value: unknown) {
-  const match = String(value ?? '').trim().replace(',', '.').match(/-?\d+(?:\.\d+)?/)
-  if (!match) return null
-  const diameter = Number(match[0])
-  return Number.isFinite(diameter) ? diameter : null
-}
-
-function getMinimumJointDiameter(row: WeldInput) {
-  const diameters = [parseJointDiameterValue(row.d1), parseJointDiameterValue(row.d2)].filter(
-    (value): value is number => value !== null,
-  )
-  return diameters.length > 0 ? Math.min(...diameters) : null
-}
-
 function isLnkRepairForbiddenByDiameter(row: WeldInput) {
   const diameter = getMinimumJointDiameter(row)
   return diameter !== null && diameter < 89
@@ -8214,11 +8207,6 @@ function getLnkResultRepairForbiddenSummary(rows: WeldInput[]) {
   const reasons = new Set(rows.map(getLnkRepairForbiddenReason).filter(Boolean))
   if (reasons.size === 0) return 'выбранные стыки не проходят правила ремонта'
   return [...reasons].join('; ')
-}
-
-function formatJointDiameterLabel(row: WeldInput) {
-  const diameter = getMinimumJointDiameter(row)
-  return diameter === null ? '-' : formatJointDiameterValue(diameter)
 }
 
 function MetaSeparator() {
@@ -8273,14 +8261,6 @@ function OfficialityBadge({ row, compact = false }: { row: WeldInput; compact?: 
   )
 }
 
-function isUnofficialJoint(row: WeldInput) {
-  return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
-}
-
-function formatJointDiameterValue(value: number) {
-  return Number.isInteger(value) ? String(value) : String(value).replace(/\.?0+$/, '')
-}
-
 function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
   const targetIdentity = getJointChainIdentity(targetRow)
   if (!targetIdentity) return []
@@ -8296,18 +8276,6 @@ function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
       )
     })
     .sort(compareJointChainRows)
-}
-
-function getJointChainIdentity(row: WeldInput) {
-  const joint = String(row.joint ?? '').trim()
-  if (!joint) return null
-  const parsed = parseJointChainName(joint)
-  return {
-    project: normalizeJointChainPart(row.projectTitle),
-    subtitle: normalizeJointChainPart(row.subtitleCode),
-    line: normalizeJointChainPart(row.line),
-    baseJoint: normalizeJointChainPart(parsed.base),
-  }
 }
 
 function compareJointChainRows(left: WeldRow, right: WeldRow) {
@@ -8333,14 +8301,6 @@ function compareJointChainRows(left: WeldRow, right: WeldRow) {
 
 function makeExactColumnFilterValue(value: unknown) {
   return `=${String(value ?? '').trim().toLowerCase()}`
-}
-
-function getJointChainSubtitle(row: WeldInput) {
-  const project = String(row.projectTitle ?? '').trim() || '-'
-  const subtitle = String(row.subtitleCode ?? '').trim() || '-'
-  const line = String(row.line ?? '').trim() || '-'
-  const base = parseJointChainName(String(row.joint ?? '')).base || '-'
-  return `${project} · ${subtitle} · ${line} · базовый стык ${base}`
 }
 
 function getJointChainResultItems(row: WeldInput) {
