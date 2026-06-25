@@ -117,6 +117,8 @@ import {
   getOfficialStampCompatibilitySaveBlockReason,
   getWelderStampFormHint,
   hasWelderStampRangeFilters,
+  isValidNaksStamp,
+  normalizeNaksStamp,
   normalizeWelderStampRecord,
   normalizeWeldingMethodsForImport,
   validateOfficialStampCompatibilityForImport,
@@ -279,7 +281,7 @@ function Home() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || editing || isReportModalOpen) return
+      if (event.key !== 'Escape' || editing || isReportModalOpen || chainRecord) return
       if (activeReport === 'heatTreatment') {
         setHeatTreatmentFilters({})
       } else if (activeReport === 'lnk') {
@@ -291,7 +293,7 @@ function Home() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeReport, editing, isReportModalOpen])
+  }, [activeReport, chainRecord, editing, isReportModalOpen])
 
   useEffect(() => {
     if (welderStampsQuery.data) {
@@ -1381,6 +1383,7 @@ function Home() {
     function handleChainKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
+        event.stopImmediatePropagation()
         setChainRecord(null)
       }
     }

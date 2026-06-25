@@ -140,11 +140,11 @@ export function countWelderStampFilters(search: string, filters: WelderStampFilt
   return [search.trim(), filters.diameterFrom, filters.diameterTo, filters.validFrom, filters.validTo].filter(Boolean).length
 }
 
-function normalizeNaksStamp(value: string) {
+export function normalizeNaksStamp(value: string) {
   return value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()
 }
 
-function isValidNaksStamp(value: string) {
+export function isValidNaksStamp(value: string) {
   return /^[A-Z0-9]{4}$/.test(value)
 }
 
