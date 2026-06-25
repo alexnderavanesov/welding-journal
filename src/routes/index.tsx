@@ -29,7 +29,7 @@ import {
   withAutoVikForWeldDate,
 } from '@/lib/weld-import-export'
 import { getWeldTableWidth } from '@/lib/weld-column-widths'
-import { hasReservedJointSystemPart, normalizeJointName, parseJointName, validateManualJointName } from '@/lib/joint-name'
+import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
 import {
   FIELD_BY_KEY,
   RESULT_STATUS_OPTIONS,
@@ -87,7 +87,18 @@ import {
   getPstoResultBadgeClass,
   getPstoResultLabel,
 } from '@/lib/report-badges'
+import { groupRepeatedJointTasks } from '@/lib/dispatcher-groups'
 import { formatDaysLeft, formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
+import {
+  compareJointChainSuffix,
+  formatRepeatedJointName,
+  getCoilJointNames,
+  getRepeatedJointFailureCount,
+  getRepeatedJointRepairCount,
+  normalizeJointChainPart,
+  parseJointChainName,
+  parseRepeatedJointName,
+} from '@/lib/joint-chain'
 import {
   formatWelderStampCompactLabel,
   formatWelderStampDate,
@@ -1296,8 +1307,14 @@ function Home() {
     () => buildWelderStampExpiryTasks(welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
     [dismissedRepeatedJointTaskKeys, welderStamps],
   )
-  const repeatedJointTaskGroups = useMemo(() => groupRepeatedJointTasks(repeatedJointTasks), [repeatedJointTasks])
-  const welderStampNotificationGroups = useMemo(() => groupRepeatedJointTasks(welderStampExpiryTasks), [welderStampExpiryTasks])
+  const repeatedJointTaskGroups = useMemo(
+    () => groupRepeatedJointTasks(repeatedJointTasks, getJointChainConsistencyKey),
+    [repeatedJointTasks],
+  )
+  const welderStampNotificationGroups = useMemo(
+    () => groupRepeatedJointTasks(welderStampExpiryTasks, getJointChainConsistencyKey),
+    [welderStampExpiryTasks],
+  )
   useEffect(() => {
     const visibleTasks = activeReport === 'welderStamps' ? welderStampExpiryTasks : repeatedJointTasks
     const visibleKeys = new Set(visibleTasks.map((task) => task.key))
@@ -8038,31 +8055,6 @@ function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStam
   return [...chainCheckTasks, ...duplicateCheckTasks, ...tasks]
 }
 
-function groupRepeatedJointTasks(tasks: DispatcherTask[]): RepeatedJointTaskGroup[] {
-  const groups = new Map<string, RepeatedJointTaskGroup>()
-  for (const task of tasks) {
-    const key = getRepeatedJointTaskGroupKey(task)
-    const group = groups.get(key)
-    if (group) {
-      group.tasks.push(task)
-    } else {
-      groups.set(key, { key, baseJoint: getRepeatedJointTaskBaseJoint(task), tasks: [task] })
-    }
-  }
-  return [...groups.values()]
-}
-
-function getRepeatedJointTaskGroupKey(task: DispatcherTask) {
-  if (task.kind === 'welder-stamp-expiry') return `welder-stamp-expiry:${task.naksStamp.trim().toLowerCase()}`
-  return getJointChainConsistencyKey(task.row) ?? getRepeatedJointTaskBaseJoint(task)
-}
-
-function getRepeatedJointTaskBaseJoint(task: DispatcherTask) {
-  if (task.kind === 'welder-stamp-expiry') return formatWelderStampCompactLabel(task)
-  if (task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename') return task.baseJoint
-  return parseJointChainName(task.sourceJoint).base || task.sourceJoint
-}
-
 function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<string>) {
   const chainKey = getJointChainConsistencyKey(row)
   return Boolean(chainKey && blockedChainKeys.has(chainKey))
@@ -8628,24 +8620,6 @@ function getOfficialRejectedJointChainRows(rows: WeldRow[], sourceRow: WeldInput
     .sort(compareJointChainRows)
 }
 
-function parseRepeatedJointName(joint: string) {
-  const parsed = parseJointName(joint)
-  const lastCoilIndex = findLastIndex(parsed.segments, (segment) => segment.suffix === 'Y')
-  const baseSegments = lastCoilIndex === -1 ? [] : parsed.segments.slice(0, lastCoilIndex + 1)
-  const repairSegments = parsed.segments
-    .slice(lastCoilIndex + 1)
-    .filter((segment): segment is { suffix: 'R' | 'W'; index: number } => segment.suffix === 'R' || segment.suffix === 'W')
-  const base = `${parsed.base}${baseSegments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
-  const segments = repairSegments
-  const lastSegment = segments.at(-1)
-  return {
-    base,
-    segments,
-    suffix: lastSegment?.suffix ?? (null as 'R' | 'W' | null),
-    index: lastSegment?.index ?? 0,
-  }
-}
-
 function getRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseRepeatedJointName>) {
   return parsed.segments.flatMap((segment, index) => {
     if (segment.index <= 0) return []
@@ -8657,29 +8631,6 @@ function getRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseRepeate
     }
     return [{ sourceJoint: formatRepeatedJointName(parsed.base, segments), suffix: segment.suffix }]
   })
-}
-
-function getRepeatedJointFailureCount(parsed: ReturnType<typeof parseRepeatedJointName>) {
-  return parsed.segments.reduce((total, segment) => total + Math.max(0, segment.index), 0)
-}
-
-function getRepeatedJointRepairCount(parsed: ReturnType<typeof parseRepeatedJointName>) {
-  return parsed.segments.reduce((total, segment) => (segment.suffix === 'R' ? total + Math.max(0, segment.index) : total), 0)
-}
-
-function getCoilJointNames(baseJoint: string) {
-  return [`${baseJoint}Y1`, `${baseJoint}Y2`]
-}
-
-function formatRepeatedJointName(base: string, segments: Array<{ suffix: 'R' | 'W'; index: number }>) {
-  return `${base}${segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
-}
-
-function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (predicate(items[index])) return index
-  }
-  return -1
 }
 
 function hasRepeatedJointTarget(rows: WeldRow[], sourceRow: WeldInput, targetJoint: string) {
@@ -8946,11 +8897,6 @@ function getJointChainIdentity(row: WeldInput) {
   }
 }
 
-function parseJointChainName(joint: string) {
-  const parsed = parseJointName(joint)
-  return { base: parsed.base, segments: parsed.segments }
-}
-
 function compareJointChainRows(left: WeldRow, right: WeldRow) {
   const leftParsed = parseJointChainName(String(left.joint ?? ''))
   const rightParsed = parseJointChainName(String(right.joint ?? ''))
@@ -8970,23 +8916,6 @@ function compareJointChainRows(left: WeldRow, right: WeldRow) {
     if (leftSegment.index !== rightSegment.index) return leftSegment.index - rightSegment.index
   }
   return compareReportRows(left, right)
-}
-
-function compareJointChainSuffix(left: string, right: string) {
-  const orderDiff = getJointChainSuffixOrder(left) - getJointChainSuffixOrder(right)
-  if (orderDiff !== 0) return orderDiff
-  return left.localeCompare(right, 'ru', { numeric: true })
-}
-
-function getJointChainSuffixOrder(suffix: string) {
-  if (suffix === 'R') return 1
-  if (suffix === 'W') return 2
-  if (suffix === 'Y') return 3
-  return 10
-}
-
-function normalizeJointChainPart(value: unknown) {
-  return String(value ?? '').replace(/\s+/g, '').trim().toLowerCase()
 }
 
 function makeExactColumnFilterValue(value: unknown) {
