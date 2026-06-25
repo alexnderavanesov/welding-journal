@@ -12,6 +12,7 @@ import {
   MetaSeparator,
   OfficialityBadge,
 } from '@/components/joint-meta'
+import { defaultRequestNamingState, RequestNamingControls, type RequestNamingState } from '@/components/request-naming-controls'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
 import {
@@ -205,12 +206,7 @@ type PstoResultDraftState = {
   diagramNaming: RequestNamingState
   search: string
 }
-type RequestNamingState = {
-  mode: 'system' | 'custom'
-  customName: string
-}
 type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps'
-const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
 
 function Home() {
   const queryClient = useQueryClient()
@@ -8236,57 +8232,6 @@ function rowBelongsToPstoRequest(row: WeldInput, requestName: string) {
 function canSelectPstoResultRow(row: WeldInput, requestName: string) {
   if (requestName.trim()) return rowBelongsToPstoRequest(row, requestName)
   return hasText(row.pstoRequest)
-}
-
-function RequestNamingControls({
-  naming,
-  systemName,
-  label,
-  placeholder = 'Введите наименование заявки',
-  disabled = false,
-  onChange,
-}: {
-  naming: RequestNamingState
-  systemName: string
-  label: string
-  placeholder?: string
-  disabled?: boolean
-  onChange: (value: RequestNamingState) => void
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
-        {(['system', 'custom'] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => onChange({ ...naming, mode })}
-            disabled={disabled}
-            className={`h-8 rounded px-3 text-sm font-medium transition-colors ${
-              naming.mode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            } disabled:cursor-not-allowed disabled:opacity-50`}
-          >
-            {mode === 'system' ? 'Системное' : 'Пользовательское'}
-          </button>
-        ))}
-      </div>
-
-      <label className="block space-y-1.5 text-sm">
-        <span className="text-[13px] font-medium leading-none text-slate-700">{label}</span>
-        {naming.mode === 'system' ? (
-          <Input value={systemName} readOnly disabled={disabled} className="bg-slate-50 text-slate-600" />
-        ) : (
-          <Input
-            autoFocus
-            value={naming.customName}
-            onChange={(event) => onChange({ ...naming, customName: event.target.value })}
-            placeholder={placeholder}
-            disabled={disabled}
-          />
-        )}
-      </label>
-    </div>
-  )
 }
 
 function filterLnkRequestRows(rows: WeldRow[], search: string) {
