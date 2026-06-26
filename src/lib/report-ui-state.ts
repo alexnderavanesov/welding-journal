@@ -157,6 +157,17 @@ export function getActiveColumnFilters(
   return weldingFilters
 }
 
+export function getActiveReportFilterSetter<T>(
+  activeReport: ActiveReport,
+  weldingFilterSetter: T,
+  heatTreatmentFilterSetter: T,
+  lnkFilterSetter: T,
+) {
+  if (activeReport === 'heatTreatment') return heatTreatmentFilterSetter
+  if (activeReport === 'lnk') return lnkFilterSetter
+  return weldingFilterSetter
+}
+
 export function makeExactColumnFilterValue(value: unknown) {
   return `=${String(value ?? '').trim().toLowerCase()}`
 }

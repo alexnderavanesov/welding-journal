@@ -127,6 +127,7 @@ import {
 import { getReportRowActions } from '@/lib/report-row-actions'
 import {
   getActiveColumnFilters,
+  getActiveReportFilterSetter,
   buildHighlightSets,
   canOpenLinkedReport,
   expandHighlightFieldKeys,
@@ -414,13 +415,7 @@ function Home() {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape' || editing || isReportModalOpen || chainRecord) return
-      if (activeReport === 'heatTreatment') {
-        setHeatTreatmentFilters({})
-      } else if (activeReport === 'lnk') {
-        setLnkFilters({})
-      } else {
-        setColumnFilters({})
-      }
+      getActiveReportFilterSetter(activeReport, setColumnFilters, setHeatTreatmentFilters, setLnkFilters)({})
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -1829,8 +1824,7 @@ function Home() {
   }, [lnkOfficialityDraft.status, lnkOfficialityMutation.isPending, selectedLnkOfficialityRows])
   const isLnkOfficialitySaveDisabled = Boolean(lnkOfficialitySaveBlockReason)
   const activeColumnFilters = getActiveColumnFilters(activeReport, columnFilters, heatTreatmentFilters, lnkFilters)
-  const activeFiltersSetter =
-    activeReport === 'heatTreatment' ? setHeatTreatmentFilters : activeReport === 'lnk' ? setLnkFilters : setColumnFilters
+  const activeFiltersSetter = getActiveReportFilterSetter(activeReport, setColumnFilters, setHeatTreatmentFilters, setLnkFilters)
   const acceptedWdiTotal = useMemo(() => sumAcceptedWdi(rows), [rows])
   const registerMinWidth = getReportRegisterMinWidth(activeReport, getWeldTableWidth(VISIBLE_FIELDS))
   const stickyLeft = navCollapsed ? 80 : 288
