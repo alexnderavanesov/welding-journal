@@ -103,7 +103,7 @@ import {
   withOfficialJointStatus,
   withPendingLnkResults,
 } from '@/lib/report-control-state'
-import { formatWdiTotal, getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
+import { formatWdiTotal } from '@/lib/report-export'
 import {
   normalizeEditableImportValue,
   normalizeExistingRequestImportValue,
@@ -133,6 +133,7 @@ import {
   getReportBlockedFieldKeys,
   getReportEditableFieldKeys,
   getReportExportFilename,
+  getReportExportOptions,
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
   getReportRegisterMinWidth,
@@ -1902,17 +1903,7 @@ function Home() {
   }
 
   function exportXlsx() {
-    const fields = getReportExportFields({
-      storageKey: activeReport,
-      hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
-      mergePstoSections: shouldMergePstoSections(activeReport),
-    })
-    const exportOptions = {
-      fields,
-      readOnlyFieldKeys: getReportReadOnlyFieldKeys(activeReport),
-      sheetName: activeTitle,
-    }
-    const bytes = buildExportXlsxBytes(visibleRows, exportOptions)
+    const bytes = buildExportXlsxBytes(visibleRows, getReportExportOptions(activeReport, activeTitle))
     downloadExcelBytes(bytes, getReportExportFilename(activeReport))
   }
 

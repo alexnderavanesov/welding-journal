@@ -9,6 +9,7 @@ import {
   WELDING_JOURNAL_BLOCKED_FIELD_KEYS,
   WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
 } from '@/lib/report-config'
+import { getReportExportFields, getReportReadOnlyFieldKeys } from '@/lib/report-export'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
@@ -77,6 +78,18 @@ export function getReportSummaryText({
 
 export function getReportExportFilename(activeReport: ActiveReport) {
   return REPORT_EXPORT_FILENAMES[activeReport]
+}
+
+export function getReportExportOptions(activeReport: ActiveReport, sheetName: string) {
+  return {
+    fields: getReportExportFields({
+      storageKey: activeReport,
+      hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
+      mergePstoSections: shouldMergePstoSections(activeReport),
+    }),
+    readOnlyFieldKeys: getReportReadOnlyFieldKeys(activeReport),
+    sheetName,
+  }
 }
 
 export function getEditableReportImportLabel(activeReport: ActiveReport) {
