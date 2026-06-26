@@ -5,10 +5,9 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ReportHeaderActions } from '@/components/report-header-actions'
+import { ReportMainContent } from '@/components/report-main-content'
 import { ReportSummaryBar } from '@/components/report-summary-bar'
-import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
-import { WeldTable } from '@/components/weld-table'
 import { ReportTaskPanels } from '@/components/report-task-panels'
 import { JointChainDialog } from '@/components/joint-chain-dialog'
 import { LnkOfficialityDialog } from '@/components/lnk-officiality-dialog'
@@ -3026,51 +3025,50 @@ function Home() {
             }
           />
 
-          {activeReport === 'welderStamps' ? (
-            <WelderStampsRegistry
-              records={activeWelderStamps}
-              archivedRecords={archivedWelderStamps}
-              draft={welderStampDraft}
-              search={welderStampSearch}
-              filters={welderStampFilters}
-              editingId={editingWelderStampId}
-              showArchived={showArchivedWelderStamps}
-              onSearchChange={setWelderStampSearch}
-              onFiltersChange={setWelderStampFilters}
-              onDraftChange={updateWelderStampDraft}
-              onSave={saveWelderStampRecord}
-              onReset={resetWelderStampForm}
-              onEdit={editWelderStampRecord}
-              onArchive={archiveWelderStampRecord}
-              onRestore={restoreWelderStampRecord}
-              onToggleArchived={setShowArchivedWelderStamps}
-              onDelete={deleteWelderStampRecord}
-            />
-          ) : (
-            <WeldTable
-              rows={visibleRows as Array<WeldInput & { id: number }>}
-              columnFilters={activeColumnFilters}
-              onColumnFiltersChange={activeFiltersSetter}
-              onEdit={handleEditRecord}
-              onDelete={(id) => {
+          <ReportMainContent
+            activeReport={activeReport}
+            welderStampsRegistryProps={{
+              records: activeWelderStamps,
+              archivedRecords: archivedWelderStamps,
+              draft: welderStampDraft,
+              search: welderStampSearch,
+              filters: welderStampFilters,
+              editingId: editingWelderStampId,
+              showArchived: showArchivedWelderStamps,
+              onSearchChange: setWelderStampSearch,
+              onFiltersChange: setWelderStampFilters,
+              onDraftChange: updateWelderStampDraft,
+              onSave: saveWelderStampRecord,
+              onReset: resetWelderStampForm,
+              onEdit: editWelderStampRecord,
+              onArchive: archiveWelderStampRecord,
+              onRestore: restoreWelderStampRecord,
+              onToggleArchived: setShowArchivedWelderStamps,
+              onDelete: deleteWelderStampRecord,
+            }}
+            weldTableProps={{
+              rows: visibleRows as Array<WeldInput & { id: number }>,
+              columnFilters: activeColumnFilters,
+              onColumnFiltersChange: activeFiltersSetter,
+              onEdit: handleEditRecord,
+              onDelete: (id) => {
                 if (confirm('Удалить запись стыка?')) deleteMutation.mutate(id)
-              }}
-              stickyLeft={stickyLeft}
-              highlightedRowIds={highlightedRowIds}
-              highlightedCellKeys={highlightedCellKeys}
-              readOnly={isReadOnlyReport(activeReport)}
-              editableFieldKeys={getReportEditableFieldKeys(activeReport)}
-              blockedFieldKeys={getReportBlockedFieldKeys(activeReport)}
-              isCellEditable={
+              },
+              stickyLeft,
+              highlightedRowIds,
+              highlightedCellKeys,
+              readOnly: isReadOnlyReport(activeReport),
+              editableFieldKeys: getReportEditableFieldKeys(activeReport),
+              blockedFieldKeys: getReportBlockedFieldKeys(activeReport),
+              isCellEditable:
                 activeReport === 'lnk'
                   ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
-                  : undefined
-              }
-              getDisplayValue={activeReport === 'lnk' ? getLnkDisplayValue : undefined}
-              onOpenChain={(row) => setChainRecord(row)}
-              onOpenLinkedReport={canOpenLinkedReport(activeReport) ? openLinkedReportRow : undefined}
-              openLinkedReportTitle={getOpenLinkedReportTitle(activeReport)}
-              rowActions={getReportRowActions(activeReport, {
+                  : undefined,
+              getDisplayValue: activeReport === 'lnk' ? getLnkDisplayValue : undefined,
+              onOpenChain: (row) => setChainRecord(row),
+              onOpenLinkedReport: canOpenLinkedReport(activeReport) ? openLinkedReportRow : undefined,
+              openLinkedReportTitle: getOpenLinkedReportTitle(activeReport),
+              rowActions: getReportRowActions(activeReport, {
                 openCreatePstoRequestModalForRow,
                 openAddPstoResultModalForRow,
                 canCreatePstoRequest,
@@ -3079,12 +3077,12 @@ function Home() {
                 openAddLnkResultModalForRow,
                 canCreateLnkRequest,
                 canAddLnkResult: (row) => getLnkRowRequestNames(row).length > 0,
-              })}
-              storageKey={activeReport}
-              hiddenFieldKeys={getReportHiddenFieldKeys(activeReport)}
-              mergePstoSections={shouldMergePstoSections(activeReport)}
-            />
-          )}
+              }),
+              storageKey: activeReport,
+              hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
+              mergePstoSections: shouldMergePstoSections(activeReport),
+            }}
+          />
         </div>
       </div>
 
