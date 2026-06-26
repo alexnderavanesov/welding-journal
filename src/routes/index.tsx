@@ -103,6 +103,7 @@ import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
+import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -245,15 +246,22 @@ const emptyFilters: WeldFilters = {}
 function Home() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [activeReport, setActiveReport] = useState<ActiveReport>('weldingJournal')
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
-  const [heatTreatmentFilters, setHeatTreatmentFilters] = useState<Record<string, string>>({})
-  const [lnkFilters, setLnkFilters] = useState<Record<string, string>>({})
+  const {
+    activeReport,
+    columnFilters,
+    heatTreatmentFilters,
+    lnkFilters,
+    navCollapsed,
+    setActiveReport,
+    setColumnFilters,
+    setHeatTreatmentFilters,
+    setLnkFilters,
+    setNavCollapsed,
+  } = useReportFilterState()
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [chainRecord, setChainRecord] = useState<WeldRow | null>(null)
   const [heatTreatmentFieldEditing, setHeatTreatmentFieldEditing] = useState<HeatTreatmentFieldEditingState | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [navCollapsed, setNavCollapsed] = useState(false)
   const {
     highlightedRowIds,
     highlightedCellKeys,
