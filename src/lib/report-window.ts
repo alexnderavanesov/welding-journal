@@ -11,6 +11,11 @@ type OpenTabularReportWindowOptions = {
   filename: string
 }
 
+type OpenNonEmptyTabularReportWindowOptions = OpenTabularReportWindowOptions & {
+  emptyMessage: string
+  blockedMessage?: string
+}
+
 export function buildLnkReportHtml(
   rows: WeldInput[],
   bytes: Uint8Array,
@@ -97,6 +102,21 @@ export function openTabularReportWindow({ rows, fields, sheetName, title, filena
   reportWindow.document.write(buildLnkReportHtml(rows, bytes, title, filename, fields))
   reportWindow.document.close()
   return true
+}
+
+export function openNonEmptyTabularReportWindow({
+  rows,
+  fields,
+  sheetName,
+  title,
+  filename,
+  emptyMessage,
+  blockedMessage = 'Браузер заблокировал открытие новой вкладки',
+}: OpenNonEmptyTabularReportWindowOptions) {
+  if (rows.length === 0) return { ok: false as const, message: emptyMessage }
+
+  const opened = openTabularReportWindow({ rows, fields, sheetName, title, filename })
+  return opened ? { ok: true as const } : { ok: false as const, message: blockedMessage }
 }
 
 export function downloadExcelBytes(bytes: Uint8Array, filename: string) {

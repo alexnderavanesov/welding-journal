@@ -119,7 +119,7 @@ import {
   normalizeExistingRequestImportValue,
 } from '@/lib/report-import'
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
-import { downloadExcelBytes, openTabularReportWindow } from '@/lib/report-window'
+import { downloadExcelBytes, openNonEmptyTabularReportWindow } from '@/lib/report-window'
 import {
   compactSearchText,
   compareHeatTreatmentReportRows,
@@ -1944,101 +1944,71 @@ function Home() {
   function openLnkWaitingNkReport() {
     const reportRows = buildLnkWaitingNkRows(lnkRows)
     setIsLnkShowMenuOpen(false)
-    if (reportRows.length === 0) {
-      setMessage('Нет стыков со статусом «ожидает НК»')
-      return
-    }
-
-    const opened = openTabularReportWindow({
+    const result = openNonEmptyTabularReportWindow({
       rows: reportRows as WeldInput[],
       fields: LNK_WAITING_NK_FIELDS,
       sheetName: 'Ожидание НК',
       title: 'Ожидание НК',
       filename: 'lnk-waiting-nk.xlsx',
+      emptyMessage: 'Нет стыков со статусом «ожидает НК»',
     })
-    if (!opened) {
-      setMessage('Браузер заблокировал открытие новой вкладки')
-    }
+    if (!result.ok) setMessage(result.message)
   }
 
   function openLnkToRequestReport() {
     const reportRows = buildLnkToRequestRows(lnkRows)
     setIsLnkShowMenuOpen(false)
-    if (reportRows.length === 0) {
-      setMessage('Нет стыков, по которым нужно создать заявку ЛНК')
-      return
-    }
-
-    const opened = openTabularReportWindow({
+    const result = openNonEmptyTabularReportWindow({
       rows: reportRows as WeldInput[],
       fields: LNK_WAITING_NK_FIELDS,
       sheetName: 'Ожидание заявки',
       title: 'Ожидание заявки',
       filename: 'lnk-waiting-request.xlsx',
+      emptyMessage: 'Нет стыков, по которым нужно создать заявку ЛНК',
     })
-    if (!opened) {
-      setMessage('Браузер заблокировал открытие новой вкладки')
-    }
+    if (!result.ok) setMessage(result.message)
   }
 
   function openLnkConclusionsReport() {
     const reportRows = buildLnkConclusionsRows(lnkRows)
     setIsLnkShowMenuOpen(false)
-    if (reportRows.length === 0) {
-      setMessage('Нет заключений ЛНК для показа')
-      return
-    }
-
-    const opened = openTabularReportWindow({
+    const result = openNonEmptyTabularReportWindow({
       rows: reportRows as WeldInput[],
       fields: LNK_CONCLUSIONS_FIELDS,
       sheetName: 'Заключения ЛНК',
       title: 'Заключения ЛНК',
       filename: 'lnk-conclusions.xlsx',
+      emptyMessage: 'Нет заключений ЛНК для показа',
     })
-    if (!opened) {
-      setMessage('Браузер заблокировал открытие новой вкладки')
-    }
+    if (!result.ok) setMessage(result.message)
   }
 
   function openPstoWaitingRequestReport() {
     const reportRows = buildPstoWaitingRequestRows(heatTreatmentRows)
     setIsPstoShowMenuOpen(false)
-    if (reportRows.length === 0) {
-      setMessage('Нет стыков, по которым нужно создать заявку ПСТО')
-      return
-    }
-
-    const opened = openTabularReportWindow({
+    const result = openNonEmptyTabularReportWindow({
       rows: reportRows as WeldInput[],
       fields: PSTO_WAITING_REQUEST_FIELDS,
       sheetName: 'Ожидает заявку ПСТО',
       title: 'Ожидает заявку ПСТО',
       filename: 'psto-waiting-request.xlsx',
+      emptyMessage: 'Нет стыков, по которым нужно создать заявку ПСТО',
     })
-    if (!opened) {
-      setMessage('Браузер заблокировал открытие новой вкладки')
-    }
+    if (!result.ok) setMessage(result.message)
   }
 
   function openPstoResultsReport() {
     const reportRows = buildPstoResultsRows(heatTreatmentRows)
     setIsPstoShowMenuOpen(false)
-    if (reportRows.length === 0) {
-      setMessage('Нет результатов ПСТО для показа')
-      return
-    }
-
-    const opened = openTabularReportWindow({
+    const result = openNonEmptyTabularReportWindow({
       rows: reportRows as WeldInput[],
       fields: PSTO_RESULTS_FIELDS,
       sheetName: 'Результаты ПСТО',
       title: 'Результаты ПСТО',
       filename: 'psto-results.xlsx',
+      emptyMessage: 'Нет результатов ПСТО для показа',
     })
-    if (!opened) {
-      setMessage('Браузер заблокировал открытие новой вкладки')
-    }
+    if (!result.ok) setMessage(result.message)
   }
 
   function handleCreatePstoRequest() {
