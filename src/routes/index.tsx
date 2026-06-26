@@ -98,6 +98,7 @@ import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
+import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
   getEditableReportImportLabel,
@@ -107,7 +108,6 @@ import {
   getReportEditableFieldKeys,
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
-  isAnyReportModalOpen,
   isReadOnlyReport,
   setNumberSetValues,
   shouldMergePstoSections,
@@ -331,7 +331,7 @@ function Home() {
     restoreWelderStampRecord,
     deleteWelderStampRecord,
   } = useWelderStampRegistryState({ setMessage })
-  const isReportModalOpen = isAnyReportModalOpen([
+  const isReportModalOpen = getReportModalOpenState({
     isPstoRequestModalOpen,
     isPstoRequestManagerOpen,
     isPstoResultModalOpen,
@@ -342,7 +342,7 @@ function Home() {
     isLnkResultPreviewOpen,
     isLnkResultManagerOpen,
     isLnkOfficialityModalOpen,
-  ])
+  })
 
   useEscapeToClearReportFilters({
     activeReport,
