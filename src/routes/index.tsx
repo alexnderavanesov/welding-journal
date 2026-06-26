@@ -9,7 +9,7 @@ import { ReportSummaryBar } from '@/components/report-summary-bar'
 import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
-import { DispatcherTaskPanel, WelderStampNotificationPanel } from '@/components/dispatcher-panels'
+import { ReportTaskPanels } from '@/components/report-task-panels'
 import { JointChainDialog } from '@/components/joint-chain-dialog'
 import { LnkOfficialityDialog } from '@/components/lnk-officiality-dialog'
 import { LnkRequestDialog } from '@/components/lnk-request-dialog'
@@ -3011,29 +3011,20 @@ function Home() {
             message={message}
           />
 
-          {activeReport !== 'heatTreatment' && activeReport !== 'welderStamps' ? (
-            <DispatcherTaskPanel
-              tasks={repeatedJointTasks}
-              groups={repeatedJointTaskGroups}
-              stickyLeft={stickyLeft}
-              handlers={dispatcherTaskCardProps}
-              onDismissAll={(tasks) =>
-                setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...tasks.map((task) => task.key)]))
-              }
-            />
-          ) : null}
-
-          {activeReport === 'welderStamps' ? (
-            <WelderStampNotificationPanel
-              tasks={welderStampExpiryTasks}
-              groups={welderStampNotificationGroups}
-              isTaskExpanded={isRepeatedJointTaskExpanded}
-              onToggleDetails={toggleRepeatedJointTaskDetails}
-              onDismissAll={(tasks) =>
-                setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...tasks.map((task) => task.key)]))
-              }
-            />
-          ) : null}
+          <ReportTaskPanels
+            activeReport={activeReport}
+            repeatedJointTasks={repeatedJointTasks}
+            repeatedJointTaskGroups={repeatedJointTaskGroups}
+            welderStampExpiryTasks={welderStampExpiryTasks}
+            welderStampNotificationGroups={welderStampNotificationGroups}
+            stickyLeft={stickyLeft}
+            handlers={dispatcherTaskCardProps}
+            isTaskExpanded={isRepeatedJointTaskExpanded}
+            onToggleDetails={toggleRepeatedJointTaskDetails}
+            onDismissTasks={(tasks) =>
+              setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...tasks.map((task) => task.key)]))
+            }
+          />
 
           {activeReport === 'welderStamps' ? (
             <WelderStampsRegistry
