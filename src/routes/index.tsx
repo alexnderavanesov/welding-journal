@@ -67,7 +67,6 @@ import {
   hasAnyEnabledLnkControl,
   hasAnyLnkRequest,
   hasPendingLnkRequestResult,
-  hasRejectedLnkResult,
   isFinalLnkResultValue,
 } from '@/lib/lnk-status'
 import {
@@ -99,6 +98,7 @@ import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
 import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
+import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -127,7 +127,6 @@ import {
 import {
   canSelectLnkResultRow,
   canSelectPstoResultRow,
-  filterLnkOfficialityRows,
   filterLnkResultRows,
   filterLnkRowsByRequestName,
   filterPstoRowsByRequestName,
@@ -1563,14 +1562,6 @@ function Home() {
       ),
     [lnkResultDraft.methodKey, lnkResultDraft.rowIds, lnkRows],
   )
-  const filteredLnkOfficialityRows = useMemo(
-    () => filterLnkOfficialityRows(lnkRows, lnkOfficialityDraft.search, lnkOfficialityDraft.rowIds),
-    [lnkOfficialityDraft.rowIds, lnkOfficialityDraft.search, lnkRows],
-  )
-  const selectedLnkOfficialityRows = useMemo(
-    () => lnkRows.filter((row) => lnkOfficialityDraft.rowIds.has(row.id)),
-    [lnkOfficialityDraft.rowIds, lnkRows],
-  )
   const lnkResultSaveBlockReason = useMemo(() => {
     if (lnkResultMutation.isPending) return 'Результат сохраняется, дождитесь завершения.'
     if (!lnkResultDraft.methodKey) return 'Выберите метод контроля.'
@@ -1597,16 +1588,16 @@ function Home() {
     selectedLnkResultRows,
   ])
   const isLnkResultSaveDisabled = Boolean(lnkResultSaveBlockReason)
-  const lnkOfficialitySaveBlockReason = useMemo(() => {
-    if (lnkOfficialityMutation.isPending) return 'Статус сохраняется, дождитесь завершения.'
-    if (!lnkOfficialityDraft.status) return 'Выберите официальный или неофициальный статус.'
-    if (selectedLnkOfficialityRows.length === 0) return 'Отметьте один или несколько стыков.'
-    if (lnkOfficialityDraft.status === 'unofficial' && selectedLnkOfficialityRows.some((row) => !hasRejectedLnkResult(row))) {
-      return 'Неофициальный статус можно назначить только стыкам с результатом контроля "ремонт" или "вырез".'
-    }
-    return ''
-  }, [lnkOfficialityDraft.status, lnkOfficialityMutation.isPending, selectedLnkOfficialityRows])
-  const isLnkOfficialitySaveDisabled = Boolean(lnkOfficialitySaveBlockReason)
+  const {
+    filteredLnkOfficialityRows,
+    selectedLnkOfficialityRows,
+    lnkOfficialitySaveBlockReason,
+    isLnkOfficialitySaveDisabled,
+  } = useLnkOfficialityDerivedState({
+    lnkRows,
+    lnkOfficialityDraft,
+    isLnkOfficialitySaving: lnkOfficialityMutation.isPending,
+  })
   const {
     acceptedWdiTotal,
     activeColumnFilters,
