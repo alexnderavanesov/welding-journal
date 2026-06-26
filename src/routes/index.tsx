@@ -94,6 +94,7 @@ import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
+import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
 import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
@@ -233,7 +234,7 @@ import {
   validateOfficialStampCompatibilityForSave,
   validateWelderStampFieldsForImport,
 } from '@/lib/welder-stamp-registry'
-import type { DispatcherTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
+import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -298,8 +299,15 @@ function Home() {
   const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
   const [isPstoShowMenuOpen, setIsPstoShowMenuOpen] = useState(false)
   const [isLnkShowMenuOpen, setIsLnkShowMenuOpen] = useState(false)
-  const [dismissedRepeatedJointTaskKeys, setDismissedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
-  const [expandedRepeatedJointTaskKeys, setExpandedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
+  const {
+    dismissedRepeatedJointTaskKeys,
+    dismissRepeatedJointTask,
+    dismissRepeatedJointTasks,
+    isRepeatedJointTaskExpanded,
+    resetDismissedRepeatedJointTasks,
+    setExpandedRepeatedJointTaskKeys,
+    toggleRepeatedJointTaskDetails,
+  } = useDispatcherTaskUiState()
   const {
     welderStamps,
     welderStampDraft,
@@ -414,7 +422,7 @@ function Home() {
     },
     onSuccess: async (createdRows, task) => {
       highlightChangedRows(createdRows, ['joint', 'weldDate', 'finalStatus'])
-      setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+      dismissRepeatedJointTask(task)
       setMessage(
         task.kind === 'coil'
           ? `Созданы стыки катушки ${task.targetJoints.join(', ')} для ${task.sourceJoint}`
@@ -434,7 +442,7 @@ function Home() {
       return result
     },
     onSuccess: async (_result, task) => {
-      setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+      dismissRepeatedJointTask(task)
       setMessage(`Удален лишний повторный стык ${task.targetJoint}`)
       await invalidate(queryClient)
     },
@@ -452,7 +460,7 @@ function Home() {
     },
     onSuccess: async (saved, task) => {
       highlightChangedRows(saved ? [saved] : [task.row], ['joint'])
-      setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
+      dismissRepeatedJointTask(task)
       setMessage(`Стык ${task.currentJoint} переименован в ${task.targetJoint}`)
       await invalidate(queryClient)
     },
@@ -1095,7 +1103,7 @@ function Home() {
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, ['status'])
-      setDismissedRepeatedJointTaskKeys(new Set())
+      resetDismissedRepeatedJointTasks()
       setMessage(
         variables.status === 'unofficial'
           ? `Статус "неофициальный" установлен для стыков: ${savedRows.length}`
@@ -2257,10 +2265,6 @@ function Home() {
     showRepeatedJointTaskChain(row, baseJoint, `Показана вся цепочка стыка ${baseJoint}`)
   }
 
-  function dismissRepeatedJointTask(task: RepeatedJointTask) {
-    setDismissedRepeatedJointTaskKeys((current) => new Set([...current, task.key]))
-  }
-
   function toggleLnkRequestMethod(requestKey: WeldFieldKey) {
     setLnkRequestDraft((current) => {
       const methods = new Set(current.methods)
@@ -2392,22 +2396,6 @@ function Home() {
     })
   }
 
-  function isRepeatedJointTaskExpanded(task: DispatcherTask) {
-    return expandedRepeatedJointTaskKeys.has(task.key)
-  }
-
-  function toggleRepeatedJointTaskDetails(task: DispatcherTask) {
-    setExpandedRepeatedJointTaskKeys((current) => {
-      const next = new Set(current)
-      if (next.has(task.key)) {
-        next.delete(task.key)
-      } else {
-        next.add(task.key)
-      }
-      return next
-    })
-  }
-
   const dispatcherTaskCardProps = {
     isTaskExpanded: isRepeatedJointTaskExpanded,
     onToggleDetails: toggleRepeatedJointTaskDetails,
@@ -2494,9 +2482,7 @@ function Home() {
             handlers={dispatcherTaskCardProps}
             isTaskExpanded={isRepeatedJointTaskExpanded}
             onToggleDetails={toggleRepeatedJointTaskDetails}
-            onDismissTasks={(tasks) =>
-              setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...tasks.map((task) => task.key)]))
-            }
+            onDismissTasks={dismissRepeatedJointTasks}
           />
 
           <ReportMainContent
