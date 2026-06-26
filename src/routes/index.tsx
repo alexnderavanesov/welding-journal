@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
@@ -27,7 +27,6 @@ import {
   parseCsv,
   parseWorkbook,
 } from '@/lib/weld-import-export'
-import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import {
   FIELD_BY_KEY,
   calculateFinalStatus,
@@ -93,6 +92,7 @@ import { useReportHighlights } from '@/lib/use-report-highlights'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
+import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
@@ -150,7 +150,6 @@ import {
 import {
   buildRepeatedJointDraft,
   buildRepeatedJointTasks,
-  getJointChainRows,
 } from '@/lib/repeated-joint-tasks'
 import {
   formatDateInputValue,
@@ -1348,11 +1347,10 @@ function Home() {
     pstoRequestSearch,
     lnkRequestSearch,
   })
-  const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
-  useWindowEscapeKey(Boolean(chainRecord), (event) => {
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    setChainRecord(null)
+  const { chainRows } = useJointChainDialogState({
+    rows,
+    chainRecord,
+    onClose: () => setChainRecord(null),
   })
   const {
     selectedHeatTreatmentRows,
