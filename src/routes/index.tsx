@@ -245,6 +245,7 @@ import {
 import {
   collectLnkResultRequestNames,
   collectRequestNames,
+  formatRequestCreatedMessage,
   formatLnkConclusionName,
   formatLnkRequestName,
   formatPstoDiagramName,
@@ -258,6 +259,7 @@ import {
   defaultRequestNamingState,
   type RequestNamingState,
 } from '@/lib/request-naming-state'
+import type { ActiveReport, EditingState, HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import {
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
@@ -291,26 +293,6 @@ export const Route = createFileRoute('/')({
 })
 
 const emptyFilters: WeldFilters = {}
-type EditingState = {
-  record: WeldInput & { id?: number }
-  focusField?: WeldFieldKey
-}
-type HeatTreatmentFieldEditingState = {
-  record: WeldInput & { id: number }
-  fieldKey: WeldFieldKey
-  label: string
-  kind: 'text' | 'date'
-  value: string
-  report?: 'heatTreatment' | 'lnk'
-  mode?: 'text' | 'request' | 'result'
-}
-type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps'
-
-function formatRequestCreatedMessage(requestName: string, count: number) {
-  const trimmedName = requestName.trim()
-  const subject = /^заявка(?:\b|-)/i.test(trimmedName) ? trimmedName : `Заявка ${trimmedName}`
-  return `${subject} создана для стыков: ${count}`
-}
 
 function Home() {
   const queryClient = useQueryClient()

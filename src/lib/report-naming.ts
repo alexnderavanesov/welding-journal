@@ -67,6 +67,12 @@ export function getRequestNameFromNaming(naming: RequestNamingState, systemName:
   return naming.mode === 'system' ? systemName.trim() : naming.customName.trim()
 }
 
+export function formatRequestCreatedMessage(requestName: string, count: number) {
+  const trimmedName = requestName.trim()
+  const subject = /^заявка(?:\b|-)/i.test(trimmedName) ? trimmedName : `Заявка ${trimmedName}`
+  return `${subject} создана для стыков: ${count}`
+}
+
 export function formatPstoDiagramName(rows: WeldInput[], pstoDate: string) {
   const date = formatPstoDiagramLongDate(pstoDate) ?? formatLongDate(new Date())
   const prefix = `ПСТО-Д-${formatPstoDiagramShortDateFromLong(date)}-`
