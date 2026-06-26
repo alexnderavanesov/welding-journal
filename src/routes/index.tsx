@@ -284,6 +284,8 @@ import {
   normalizeNaksStamp,
   normalizeWeldingMethodsForImport,
   prepareWelderStampSave,
+  removeWelderStampRecord,
+  setWelderStampRecordArchived,
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
   validateWelderStampFieldsForImport,
@@ -3106,19 +3108,19 @@ function Home() {
   }
 
   function archiveWelderStampRecord(id: number) {
-    persistWelderStampRecords(welderStamps.map((record) => (record.id === id ? { ...record, archived: true } : record)))
+    persistWelderStampRecords(setWelderStampRecordArchived(welderStamps, id, true))
     if (editingWelderStampId === id) resetWelderStampForm()
     setMessage('Клеймо добавлено в архив')
   }
 
   function restoreWelderStampRecord(id: number) {
-    persistWelderStampRecords(welderStamps.map((record) => (record.id === id ? { ...record, archived: false } : record)))
+    persistWelderStampRecords(setWelderStampRecordArchived(welderStamps, id, false))
     setMessage('Клеймо возвращено в общий список')
   }
 
   function deleteWelderStampRecord(id: number) {
     if (!confirm('Удалить запись клейма?')) return
-    persistWelderStampRecords(welderStamps.filter((record) => record.id !== id))
+    persistWelderStampRecords(removeWelderStampRecord(welderStamps, id))
     if (editingWelderStampId === id) resetWelderStampForm()
     setMessage('Клеймо удалено')
   }

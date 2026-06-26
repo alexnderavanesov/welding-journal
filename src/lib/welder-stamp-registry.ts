@@ -205,6 +205,14 @@ export function prepareWelderStampSave(
   }
 }
 
+export function setWelderStampRecordArchived(records: WelderStampRecord[], id: number, archived: boolean) {
+  return records.map((record) => (record.id === id ? { ...record, archived } : record))
+}
+
+export function removeWelderStampRecord(records: WelderStampRecord[], id: number) {
+  return records.filter((record) => record.id !== id)
+}
+
 export function getWelderStampFormHint(record: WelderStampRecord) {
   const draft = normalizeWelderStampRecord(record)
   const defaultHint =
