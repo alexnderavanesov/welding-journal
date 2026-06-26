@@ -109,6 +109,7 @@ import { useLnkResultModalState } from '@/lib/use-lnk-result-modal-state'
 import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
+import { useReportPageUiState } from '@/lib/use-report-page-ui-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -216,7 +217,7 @@ import {
   sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
 import { defaultRequestNamingState } from '@/lib/request-naming-state'
-import type { ActiveReport, EditingState, HeatTreatmentFieldEditingState } from '@/lib/home-state'
+import type { ActiveReport } from '@/lib/home-state'
 import {
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
@@ -256,10 +257,16 @@ function Home() {
     setLnkFilters,
     setNavCollapsed,
   } = useReportFilterState()
-  const [editing, setEditing] = useState<EditingState | null>(null)
-  const [chainRecord, setChainRecord] = useState<WeldRow | null>(null)
-  const [heatTreatmentFieldEditing, setHeatTreatmentFieldEditing] = useState<HeatTreatmentFieldEditingState | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const {
+    editing,
+    chainRecord,
+    heatTreatmentFieldEditing,
+    message,
+    setEditing,
+    setChainRecord,
+    setHeatTreatmentFieldEditing,
+    setMessage,
+  } = useReportPageUiState()
   const {
     highlightedRowIds,
     highlightedCellKeys,
