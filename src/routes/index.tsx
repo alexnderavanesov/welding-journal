@@ -38,6 +38,7 @@ import {
   withAutoVikForWeldDate,
 } from '@/lib/weld-import-export'
 import { getWeldTableWidth } from '@/lib/weld-column-widths'
+import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import {
   FIELD_BY_KEY,
   RESULT_STATUS_OPTIONS,
@@ -1494,20 +1495,11 @@ function Home() {
   const archivedWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => record.archived), [filteredWelderStamps])
   const visibleRows = getVisibleReportRows(activeReport, rows, heatTreatmentRows, lnkRows)
   const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
-  useEffect(() => {
-    if (!chainRecord) return
-
-    function handleChainKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        event.stopImmediatePropagation()
-        setChainRecord(null)
-      }
-    }
-
-    window.addEventListener('keydown', handleChainKeyDown)
-    return () => window.removeEventListener('keydown', handleChainKeyDown)
-  }, [chainRecord])
+  useWindowEscapeKey(Boolean(chainRecord), (event) => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    setChainRecord(null)
+  })
   const selectedHeatTreatmentRows = useMemo(
     () => availablePstoRequestRows.filter((row) => selectedHeatTreatmentIds.has(row.id)),
     [availablePstoRequestRows, selectedHeatTreatmentIds],
