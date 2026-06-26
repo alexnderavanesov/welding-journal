@@ -105,6 +105,7 @@ import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-de
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
 import { useLnkRequestModalState } from '@/lib/use-lnk-request-modal-state'
+import { useLnkResultModalState } from '@/lib/use-lnk-result-modal-state'
 import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
@@ -207,8 +208,6 @@ import {
   createDefaultLnkOfficialityDraft,
   createDefaultLnkResultDraft,
   createDefaultPstoResultDraft,
-  type LnkOfficialityDraftState,
-  type LnkResultDraftState,
 } from '@/lib/report-draft-state'
 import {
   collectRequestNames,
@@ -313,23 +312,42 @@ function Home() {
     setManagedPstoDiagramDrafts,
     setPstoResultDraft,
   } = usePstoModalState()
-  const [isLnkResultModalOpen, setIsLnkResultModalOpen] = useState(false)
-  const [isLnkResultPreviewOpen, setIsLnkResultPreviewOpen] = useState(false)
-  const [shouldPinPreviewedLnkResultRows, setShouldPinPreviewedLnkResultRows] = useState(false)
-  const [lnkResultDraft, setLnkResultDraft] = useState<LnkResultDraftState>(() => createDefaultLnkResultDraft())
-  const [lnkResultRequestSearch, setLnkResultRequestSearch] = useState('')
-  const [isLnkOfficialityModalOpen, setIsLnkOfficialityModalOpen] = useState(false)
-  const [lnkOfficialityDraft, setLnkOfficialityDraft] = useState<LnkOfficialityDraftState>(() => createDefaultLnkOfficialityDraft())
-  const [isLnkResultManagerOpen, setIsLnkResultManagerOpen] = useState(false)
-  const [managedLnkResultRequestName, setManagedLnkResultRequestName] = useState('')
-  const [managedLnkResultMethodKey, setManagedLnkResultMethodKey] = useState<WeldFieldKey | ''>('')
-  const [managedLnkResultRequestSearch, setManagedLnkResultRequestSearch] = useState('')
-  const [managedLnkConclusionDrafts, setManagedLnkConclusionDrafts] = useState<Record<string, string>>({})
-  const [managedLnkResultOrderIds, setManagedLnkResultOrderIds] = useState<number[] | null>(null)
-  const [managedLnkResultPreview, setManagedLnkResultPreview] = useState<{ changeKey: string; rowId: number; methodKey: WeldFieldKey; result: string } | null>(null)
-  const [managedLnkResultChangeHint, setManagedLnkResultChangeHint] = useState<{ changeKey: string; rowId: number; methodKey: WeldFieldKey; from: string; to: string } | null>(null)
-  const [managedLnkPendingResultChanges, setManagedLnkPendingResultChanges] = useState<Record<string, string>>({})
-  const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
+  const {
+    isLnkResultModalOpen,
+    isLnkResultPreviewOpen,
+    shouldPinPreviewedLnkResultRows,
+    lnkResultDraft,
+    lnkResultRequestSearch,
+    isLnkOfficialityModalOpen,
+    lnkOfficialityDraft,
+    isLnkResultManagerOpen,
+    managedLnkResultRequestName,
+    managedLnkResultMethodKey,
+    managedLnkResultRequestSearch,
+    managedLnkConclusionDrafts,
+    managedLnkResultOrderIds,
+    managedLnkResultPreview,
+    managedLnkResultChangeHint,
+    managedLnkPendingResultChanges,
+    preservedLnkOrderIds,
+    setIsLnkResultModalOpen,
+    setIsLnkResultPreviewOpen,
+    setShouldPinPreviewedLnkResultRows,
+    setLnkResultDraft,
+    setLnkResultRequestSearch,
+    setIsLnkOfficialityModalOpen,
+    setLnkOfficialityDraft,
+    setIsLnkResultManagerOpen,
+    setManagedLnkResultRequestName,
+    setManagedLnkResultMethodKey,
+    setManagedLnkResultRequestSearch,
+    setManagedLnkConclusionDrafts,
+    setManagedLnkResultOrderIds,
+    setManagedLnkResultPreview,
+    setManagedLnkResultChangeHint,
+    setManagedLnkPendingResultChanges,
+    setPreservedLnkOrderIds,
+  } = useLnkResultModalState()
   const {
     isPstoShowMenuOpen,
     isLnkShowMenuOpen,
