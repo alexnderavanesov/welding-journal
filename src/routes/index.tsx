@@ -101,6 +101,7 @@ import { useWelderStampRegistryState } from '@/lib/use-welder-stamp-registry-sta
 import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import { useReportHighlights } from '@/lib/use-report-highlights'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
+import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
@@ -155,7 +156,6 @@ import {
   sortLnkRequestRows,
   sortPstoRequestRows,
 } from '@/lib/report-modal-rows'
-import { buildDispatcherTaskGroups, getVisibleDispatcherTaskKeys } from '@/lib/dispatcher-view'
 import {
   buildExactJointFilters,
   buildJointChainFilters,
@@ -166,7 +166,6 @@ import {
 import {
   buildRepeatedJointDraft,
   buildRepeatedJointTasks,
-  getJointChainConsistencyKey,
   getJointChainRows,
 } from '@/lib/repeated-joint-tasks'
 import {
@@ -255,7 +254,6 @@ import {
   validateWeldDatesForImport,
 } from '@/lib/weld-validation'
 import {
-  buildWelderStampExpiryTasks,
   formatOfficialStampCompatibilityIssue,
   getOfficialStampCompatibilityIssues,
   getOfficialStampCompatibilitySaveBlockReason,
@@ -1357,30 +1355,18 @@ function Home() {
     [weldsQuery.data],
   )
 
-  const repeatedJointTasks = useMemo(
-    () => buildRepeatedJointTasks(rows, welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
-    [dismissedRepeatedJointTaskKeys, rows, welderStamps],
-  )
-  const welderStampExpiryTasks = useMemo(
-    () => buildWelderStampExpiryTasks(welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
-    [dismissedRepeatedJointTaskKeys, welderStamps],
-  )
-  const { repeatedJointTaskGroups, welderStampNotificationGroups } = useMemo(
-    () =>
-      buildDispatcherTaskGroups({
-        repeatedJointTasks,
-        welderStampExpiryTasks,
-        getJointChainConsistencyKey,
-      }),
-    [repeatedJointTasks, welderStampExpiryTasks],
-  )
-  useEffect(() => {
-    const visibleKeys = getVisibleDispatcherTaskKeys(activeReport, repeatedJointTasks, welderStampExpiryTasks)
-    setExpandedRepeatedJointTaskKeys((current) => {
-      const next = new Set([...current].filter((key) => visibleKeys.has(key)))
-      return next.size === current.size ? current : next
-    })
-  }, [activeReport, repeatedJointTasks, welderStampExpiryTasks])
+  const {
+    repeatedJointTaskGroups,
+    repeatedJointTasks,
+    welderStampExpiryTasks,
+    welderStampNotificationGroups,
+  } = useDispatcherTasks({
+    activeReport,
+    dismissedRepeatedJointTaskKeys,
+    rows,
+    setExpandedRepeatedJointTaskKeys,
+    welderStamps,
+  })
 
   const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
   const heatTreatmentRows = useMemo(
