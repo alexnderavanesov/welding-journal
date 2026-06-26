@@ -26,7 +26,6 @@ import {
   parseEditableWorkbook,
   parseCsv,
   parseWorkbook,
-  withAutoVikForWeldDate,
 } from '@/lib/weld-import-export'
 import { getWeldTableWidth } from '@/lib/weld-column-widths'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
@@ -75,9 +74,7 @@ import {
 } from '@/lib/lnk-status'
 import {
   canCreateLnkRequest,
-  toControlCancellationReportRow,
   withOfficialJointStatus,
-  withPendingLnkResults,
 } from '@/lib/report-control-state'
 import { formatWdiTotal } from '@/lib/report-export'
 import {
@@ -102,6 +99,7 @@ import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import { useReportHighlights } from '@/lib/use-report-highlights'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
+import { useReportRows } from '@/lib/use-report-rows'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
@@ -130,10 +128,8 @@ import {
 } from '@/lib/report-value-utils'
 import {
   canCreatePstoRequest,
-  normalizeRowPstoRequest,
   withAutoHeatTreatmentDiagram,
   withAutoHeatTreatmentDiagrams,
-  withPstoCreatedAt,
 } from '@/lib/psto-status'
 import {
   canSelectLnkResultRow,
@@ -1343,17 +1339,7 @@ function Home() {
     },
   })
 
-  const rows = useMemo(
-    () =>
-      (weldsQuery.data ?? []).map((row): WeldRow => {
-        const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(row as WeldRow)))
-        const withTimestamps = withPstoCreatedAt([normalizedRow])[0]
-        const withPendingLnk = withPendingLnkResults(withTimestamps)
-        const withCancellationState = toControlCancellationReportRow(withPendingLnk)
-        return { ...withCancellationState, finalStatus: calculateFinalStatus(withCancellationState) }
-      }),
-    [weldsQuery.data],
-  )
+  const rows = useReportRows(weldsQuery.data)
 
   const {
     repeatedJointTaskGroups,
