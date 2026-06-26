@@ -104,6 +104,11 @@ import {
 } from '@/lib/report-row-utils'
 import { getReportRowActions } from '@/lib/report-row-actions'
 import {
+  useAutoCollapseNavOnHorizontalScroll,
+  useClearTimerOnUnmount,
+  useEscapeToClearReportFilters,
+} from '@/lib/report-page-effects'
+import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
   buildHighlightSets,
@@ -387,15 +392,15 @@ function Home() {
     isLnkOfficialityModalOpen,
   ])
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || editing || isReportModalOpen || chainRecord) return
-      getActiveReportFilterSetter(activeReport, setColumnFilters, setHeatTreatmentFilters, setLnkFilters)({})
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeReport, chainRecord, editing, isReportModalOpen])
+  useEscapeToClearReportFilters({
+    activeReport,
+    editingOpen: Boolean(editing),
+    isReportModalOpen,
+    chainOpen: Boolean(chainRecord),
+    setColumnFilters,
+    setHeatTreatmentFilters,
+    setLnkFilters,
+  })
 
   useEffect(() => {
     if (welderStampsQuery.data) {
@@ -403,24 +408,8 @@ function Home() {
     }
   }, [welderStampsQuery.data])
 
-  useEffect(() => {
-    function handleHorizontalScroll() {
-      if (window.scrollX > 8) {
-        setNavCollapsed(true)
-      }
-    }
-
-    window.addEventListener('scroll', handleHorizontalScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleHorizontalScroll)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (importHighlightTimerRef.current) {
-        clearTimeout(importHighlightTimerRef.current)
-      }
-    }
-  }, [])
+  useAutoCollapseNavOnHorizontalScroll(setNavCollapsed)
+  useClearTimerOnUnmount(importHighlightTimerRef)
 
   useEffect(() => {
     let frameId: number | null = null
