@@ -98,6 +98,7 @@ import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
 import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
+import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -127,7 +128,6 @@ import {
 import {
   canSelectLnkResultRow,
   canSelectPstoResultRow,
-  filterLnkResultRows,
   filterLnkRowsByRequestName,
   filterPstoRowsByRequestName,
   getLnkInputMethodsForRows,
@@ -192,13 +192,10 @@ import {
   withTouchedLnkTimestamp,
 } from '@/lib/lnk-field-updates'
 import {
-  areLnkResultDraftRowsReady,
   buildLnkResultDraftById,
   filterLnkResultDraftRowResults,
-  findFirstLnkResultDateBeforeWeldDateIssue,
   getEffectiveLnkResultDraftValueForRow,
   getManagedLnkResultChangeKey,
-  hasNonEmptyLnkResultDraftRows,
   isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import {
@@ -215,7 +212,6 @@ import {
   filterRequestNamesBySearch,
   formatRequestCreatedMessage,
   getRequestNameFromNaming,
-  sortLnkRequestNamesNewestFirst,
   sortPstoRequestNamesNewestFirst,
   withCurrentOption,
 } from '@/lib/report-naming'
@@ -1413,30 +1409,29 @@ function Home() {
     nextPstoDiagramName,
     isPstoResultSaving: pstoResultMutation.isPending,
   })
-  const lnkResultMethodRequestOptions = useMemo(() => {
-    const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
-    if (!method) return lnkResultRequestOptions
-    return sortLnkRequestNamesNewestFirst([
-      ...new Set(
-        lnkRows.flatMap((row) => {
-          const requestName = String(row[method.requestKey] ?? '').trim()
-          if (!requestName || isFinalLnkResultValue(row[method.resultKey])) return []
-          return [requestName]
-        }),
-      ),
-    ])
-  }, [lnkResultDraft.methodKey, lnkResultRequestOptions, lnkRows])
-  const lnkResultAvailableRequestOptions = useMemo(() => {
-    return lnkResultMethodRequestOptions
-  }, [lnkResultMethodRequestOptions])
-  const filteredLnkResultRequestOptions = useMemo(
-    () =>
-      withCurrentOption(
-        filterRequestNamesBySearch(lnkResultAvailableRequestOptions, lnkResultRequestSearch),
-        lnkResultDraft.requestName,
-      ),
-    [lnkResultAvailableRequestOptions, lnkResultDraft.requestName, lnkResultRequestSearch],
-  )
+  const {
+    lnkResultAvailableRequestOptions,
+    filteredLnkResultRequestOptions,
+    selectedLnkResultMethods,
+    filteredLnkResultRows,
+    lnkResultContextReady,
+    visibleLnkResultRows,
+    selectableVisibleLnkResultRows,
+    canBulkToggleLnkResultRows,
+    selectedLnkResultRows,
+    lnkResultSaveBlockReason,
+    isLnkResultSaveDisabled,
+  } = useLnkResultDerivedState({
+    lnkRows,
+    lnkResultSelectedRows,
+    lnkResultRequestOptions,
+    lnkResultRequestSearch,
+    selectedLnkResultRequestRows,
+    lnkResultDraft,
+    nextLnkConclusionName,
+    shouldPinPreviewedLnkResultRows,
+    isLnkResultSaving: lnkResultMutation.isPending,
+  })
   const filteredManagedLnkResultRequestOptions = useMemo(
     () =>
       withCurrentOption(
@@ -1513,81 +1508,6 @@ function Home() {
       setManagedLnkResultMethodKey('')
     }
   }, [isLnkResultManagerOpen, managedLnkResultMethodKey, managedLnkResultMethods, managedLnkResultRequestName])
-  const lnkResultSearchRows = useMemo(() => {
-    const baseRows = lnkResultDraft.requestName ? selectedLnkResultRequestRows : lnkRows
-    const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
-    if (!method) return baseRows
-    return baseRows.filter(
-      (row) => isLnkResultRowApplicable(row, lnkResultDraft.requestName, lnkResultDraft.methodKey) && !isFinalLnkResultValue(row[method.resultKey]),
-    )
-  }, [lnkResultDraft.methodKey, lnkResultDraft.requestName, lnkRows, selectedLnkResultRequestRows])
-  const lnkResultMethodRows =
-    lnkResultDraft.rowIds.size > 0
-      ? lnkResultSelectedRows
-      : lnkResultDraft.requestName
-        ? selectedLnkResultRequestRows
-        : lnkRows
-  const selectedLnkResultMethods = useMemo(
-    () => getLnkInputMethodsForRows(lnkResultMethodRows, ''),
-    [lnkResultMethodRows],
-  )
-  const filteredLnkResultRows = useMemo(
-    () => filterLnkResultRows(lnkResultSearchRows, lnkResultDraft.search, lnkResultDraft.methodKey),
-    [lnkResultDraft.methodKey, lnkResultDraft.search, lnkResultSearchRows],
-  )
-  const lnkResultContextReady = Boolean(lnkResultDraft.methodKey)
-  const visibleLnkResultRows = useMemo(() => {
-    if (!shouldPinPreviewedLnkResultRows || lnkResultDraft.rowIds.size === 0) return filteredLnkResultRows
-
-    return [...filteredLnkResultRows].sort((left, right) => {
-      const leftSelected = lnkResultDraft.rowIds.has(left.id)
-      const rightSelected = lnkResultDraft.rowIds.has(right.id)
-      if (leftSelected === rightSelected) return 0
-      return leftSelected ? -1 : 1
-    })
-  }, [filteredLnkResultRows, lnkResultDraft.rowIds, shouldPinPreviewedLnkResultRows])
-  const selectableVisibleLnkResultRows = useMemo(
-    () => visibleLnkResultRows.filter((row) => canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey)),
-    [lnkResultDraft.methodKey, lnkResultDraft.requestName, visibleLnkResultRows],
-  )
-  const canBulkToggleLnkResultRows = Boolean(
-    lnkResultDraft.methodKey &&
-      selectableVisibleLnkResultRows.length > 0 &&
-      (lnkResultDraft.requestName || lnkResultDraft.search.trim() || visibleLnkResultRows.length <= 20),
-  )
-  const selectedLnkResultRows = useMemo(
-    () =>
-      lnkRows.filter(
-        (row) => lnkResultDraft.rowIds.has(row.id) && canSelectLnkResultRow(row, '', lnkResultDraft.methodKey),
-      ),
-    [lnkResultDraft.methodKey, lnkResultDraft.rowIds, lnkRows],
-  )
-  const lnkResultSaveBlockReason = useMemo(() => {
-    if (lnkResultMutation.isPending) return 'Результат сохраняется, дождитесь завершения.'
-    if (!lnkResultDraft.methodKey) return 'Выберите метод контроля.'
-    if (selectedLnkResultRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
-    if (!areLnkResultDraftRowsReady(selectedLnkResultRows, lnkResultDraft)) return 'Укажите результат для каждого выбранного стыка.'
-    if (hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) && !lnkResultDraft.controlDate) {
-      return 'Укажите дату контроля.'
-    }
-    const dateIssue = hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft)
-      ? findFirstLnkResultDateBeforeWeldDateIssue(selectedLnkResultRows, lnkResultDraft)
-      : null
-    if (dateIssue) return dateIssue
-    if (
-      hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) &&
-      !getRequestNameFromNaming(lnkResultDraft.conclusionNaming, nextLnkConclusionName)
-    ) {
-      return 'Укажите наименование заключения.'
-    }
-    return ''
-  }, [
-    lnkResultDraft,
-    lnkResultMutation.isPending,
-    nextLnkConclusionName,
-    selectedLnkResultRows,
-  ])
-  const isLnkResultSaveDisabled = Boolean(lnkResultSaveBlockReason)
   const {
     filteredLnkOfficialityRows,
     selectedLnkOfficialityRows,
