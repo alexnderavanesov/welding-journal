@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth, getWeldTableWidth, isCompactWeldColumn } from '@/lib/weld-column-widths'
+import type { ReportRowActions } from '@/lib/report-row-actions'
 import { RESULT_FIELD_KEYS, VISIBLE_FIELD_SECTIONS, VISIBLE_SECTION_END_FIELD_KEYS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 const SELECT_COLUMN_WIDTH = 48
@@ -60,19 +61,7 @@ type WeldTableProps = {
   storageKey?: string
   hiddenFieldKeys?: ReadonlySet<WeldFieldKey>
   mergePstoSections?: boolean
-  rowActions?: {
-    onCreateRequest: (row: WeldInput & { id: number }) => void
-    onAddResult: (row: WeldInput & { id: number }) => void
-    canCreateRequest: (row: WeldInput & { id: number }) => boolean
-    canAddResult: (row: WeldInput & { id: number }) => boolean
-    headerLabel?: string
-    createTitle?: string
-    createDisabledTitle?: string
-    createAriaLabel?: string
-    resultTitle?: string
-    resultDisabledTitle?: string
-    resultAriaLabel?: string
-  }
+  rowActions?: ReportRowActions
 }
 
 export function WeldTable({

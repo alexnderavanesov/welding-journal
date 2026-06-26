@@ -124,6 +124,7 @@ import {
   sortRowsByPreservedOrder,
   sumAcceptedWdi,
 } from '@/lib/report-row-utils'
+import { getReportRowActions } from '@/lib/report-row-actions'
 import {
   getActiveColumnFilters,
   buildHighlightSets,
@@ -3335,37 +3336,16 @@ function Home() {
               onOpenChain={(row) => setChainRecord(row)}
               onOpenLinkedReport={canOpenLinkedReport(activeReport) ? openLinkedReportRow : undefined}
               openLinkedReportTitle={getOpenLinkedReportTitle(activeReport)}
-              rowActions={
-                activeReport === 'heatTreatment'
-                  ? {
-                      onCreateRequest: openCreatePstoRequestModalForRow,
-                      onAddResult: openAddPstoResultModalForRow,
-                      canCreateRequest: canCreatePstoRequest,
-                      canAddResult: (row) => hasText(row.pstoRequest),
-                      headerLabel: 'Действия ПСТО',
-                      createTitle: 'Создать заявку ПСТО на этот стык',
-                      createDisabledTitle: 'Заявка ПСТО по этому стыку уже создана',
-                      createAriaLabel: 'Создать заявку ПСТО на этот стык',
-                      resultTitle: 'Добавить результат ПСТО на этот стык',
-                      resultDisabledTitle: 'Сначала создайте заявку ПСТО на этот стык',
-                      resultAriaLabel: 'Добавить результат ПСТО на этот стык',
-                    }
-                  : activeReport === 'lnk'
-                  ? {
-                      onCreateRequest: openCreateLnkRequestModalForRow,
-                      onAddResult: openAddLnkResultModalForRow,
-                      canCreateRequest: canCreateLnkRequest,
-                      canAddResult: (row) => getLnkRowRequestNames(row).length > 0,
-                      headerLabel: 'Действия ЛНК',
-                      createTitle: 'Создать заявку ЛНК на этот стык',
-                      createDisabledTitle: 'Все заявки ЛНК по этому стыку уже созданы',
-                      createAriaLabel: 'Создать заявку ЛНК на этот стык',
-                      resultTitle: 'Добавить результат ЛНК на этот стык',
-                      resultDisabledTitle: 'Сначала создайте заявку ЛНК на этот стык',
-                      resultAriaLabel: 'Добавить результат ЛНК на этот стык',
-                    }
-                  : undefined
-              }
+              rowActions={getReportRowActions(activeReport, {
+                openCreatePstoRequestModalForRow,
+                openAddPstoResultModalForRow,
+                canCreatePstoRequest,
+                canAddPstoResult: (row) => hasText(row.pstoRequest),
+                openCreateLnkRequestModalForRow,
+                openAddLnkResultModalForRow,
+                canCreateLnkRequest,
+                canAddLnkResult: (row) => getLnkRowRequestNames(row).length > 0,
+              })}
               storageKey={activeReport}
               hiddenFieldKeys={getReportHiddenFieldKeys(activeReport)}
               mergePstoSections={shouldMergePstoSections(activeReport)}
