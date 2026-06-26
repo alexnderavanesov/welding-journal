@@ -7,6 +7,7 @@ import {
 } from '@/lib/date-format'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/lib/report-config'
+import { compactSearchText, normalizeSearchText } from '@/lib/report-row-utils'
 import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
@@ -61,6 +62,16 @@ export function withCurrentOption(options: string[], value: string) {
   const current = value.trim()
   if (!current || options.includes(current)) return options
   return [current, ...options]
+}
+
+export function filterRequestNamesBySearch(requestNames: string[], search: string) {
+  const query = normalizeSearchText(search)
+  const compactQuery = compactSearchText(query)
+  if (!query) return requestNames
+  return requestNames.filter((requestName) => {
+    const normalized = normalizeSearchText(requestName)
+    return normalized.includes(query) || compactSearchText(normalized).includes(compactQuery)
+  })
 }
 
 export function getRequestNameFromNaming(naming: RequestNamingState, systemName: string) {

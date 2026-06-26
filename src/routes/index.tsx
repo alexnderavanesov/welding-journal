@@ -111,9 +111,7 @@ import {
 import {
   buildHeatTreatmentReportRows,
   buildLnkReportRows,
-  compactSearchText,
   filterPstoResultRows,
-  normalizeSearchText,
   sortRowsByPreservedOrder,
   sumAcceptedWdi,
 } from '@/lib/report-row-utils'
@@ -257,6 +255,7 @@ import {
 import {
   collectLnkResultRequestNames,
   collectRequestNames,
+  filterRequestNamesBySearch,
   formatRequestCreatedMessage,
   formatLnkConclusionName,
   formatLnkRequestName,
@@ -1559,15 +1558,10 @@ function Home() {
     const selectedRequestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(pstoResultSelectedRows, ['pstoRequest']))
     return selectedRequestOptions.length > 0 ? selectedRequestOptions : pstoResultRequestOptions
   }, [pstoResultRequestOptions, pstoResultSelectedRows])
-  const filteredPstoResultRequestOptions = useMemo(() => {
-    const query = normalizeSearchText(pstoResultRequestSearch)
-    const compactQuery = compactSearchText(query)
-    if (!query) return pstoResultAvailableRequestOptions
-    return pstoResultAvailableRequestOptions.filter((requestName) => {
-      const normalized = normalizeSearchText(requestName)
-      return normalized.includes(query) || compactSearchText(normalized).includes(compactQuery)
-    })
-  }, [pstoResultAvailableRequestOptions, pstoResultRequestSearch])
+  const filteredPstoResultRequestOptions = useMemo(
+    () => filterRequestNamesBySearch(pstoResultAvailableRequestOptions, pstoResultRequestSearch),
+    [pstoResultAvailableRequestOptions, pstoResultRequestSearch],
+  )
   const pstoResultSearchRows = pstoResultDraft.requestName ? selectedPstoResultRequestRows : heatTreatmentRows
   const filteredPstoResultRows = useMemo(
     () => filterPstoResultRows(pstoResultSearchRows, pstoResultDraft.search),
@@ -1631,28 +1625,22 @@ function Home() {
   const lnkResultAvailableRequestOptions = useMemo(() => {
     return lnkResultMethodRequestOptions
   }, [lnkResultMethodRequestOptions])
-  const filteredLnkResultRequestOptions = useMemo(() => {
-    const query = normalizeSearchText(lnkResultRequestSearch)
-    const compactQuery = compactSearchText(query)
-    const options = !query
-      ? lnkResultAvailableRequestOptions
-      : lnkResultAvailableRequestOptions.filter((requestName) => {
-          const haystack = normalizeSearchText(requestName)
-          return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
-        })
-    return withCurrentOption(options, lnkResultDraft.requestName)
-  }, [lnkResultAvailableRequestOptions, lnkResultDraft.requestName, lnkResultRequestSearch])
-  const filteredManagedLnkResultRequestOptions = useMemo(() => {
-    const query = normalizeSearchText(managedLnkResultRequestSearch)
-    const compactQuery = compactSearchText(query)
-    const options = !query
-      ? lnkResultRequestOptions
-      : lnkResultRequestOptions.filter((requestName) => {
-          const haystack = normalizeSearchText(requestName)
-          return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
-        })
-    return withCurrentOption(options, managedLnkResultRequestName)
-  }, [lnkResultRequestOptions, managedLnkResultRequestName, managedLnkResultRequestSearch])
+  const filteredLnkResultRequestOptions = useMemo(
+    () =>
+      withCurrentOption(
+        filterRequestNamesBySearch(lnkResultAvailableRequestOptions, lnkResultRequestSearch),
+        lnkResultDraft.requestName,
+      ),
+    [lnkResultAvailableRequestOptions, lnkResultDraft.requestName, lnkResultRequestSearch],
+  )
+  const filteredManagedLnkResultRequestOptions = useMemo(
+    () =>
+      withCurrentOption(
+        filterRequestNamesBySearch(lnkResultRequestOptions, managedLnkResultRequestSearch),
+        managedLnkResultRequestName,
+      ),
+    [lnkResultRequestOptions, managedLnkResultRequestName, managedLnkResultRequestSearch],
+  )
   const managedLnkResultRows = useMemo(
     () => {
       if (managedLnkResultOrderIds) {
