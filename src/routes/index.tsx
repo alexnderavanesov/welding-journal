@@ -9,7 +9,7 @@ import { ReportMainContent } from '@/components/report-main-content'
 import { ReportSummaryBar } from '@/components/report-summary-bar'
 import { WeldForm } from '@/components/weld-form'
 import { ReportTaskPanels } from '@/components/report-task-panels'
-import { JointChainDialog } from '@/components/joint-chain-dialog'
+import { ReportChainDialog } from '@/components/report-chain-dialog'
 import { LnkOfficialityDialog } from '@/components/lnk-officiality-dialog'
 import { LnkRequestDialog } from '@/components/lnk-request-dialog'
 import { LnkRequestManagerDialog } from '@/components/lnk-request-manager-dialog'
@@ -3086,15 +3086,19 @@ function Home() {
         </div>
       </div>
 
-      {chainRecord ? (
-        <JointChainDialog
-          record={chainRecord}
-          rows={chainRows}
-          onClose={() => setChainRecord(null)}
-          onOpenBase={openChainBaseInCurrentReport}
-          onOpenRow={openChainRowInCurrentReport}
-        />
-      ) : null}
+      <ReportChainDialog
+        dialogProps={
+          chainRecord
+            ? {
+                record: chainRecord,
+                rows: chainRows,
+                onClose: () => setChainRecord(null),
+                onOpenBase: openChainBaseInCurrentReport,
+                onOpenRow: openChainRowInCurrentReport,
+              }
+            : null
+        }
+      />
 
       {editing ? (
         <WeldForm
