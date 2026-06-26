@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ClipboardCheck, ExternalLink, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Pencil, Plus, ShieldCheck, Stamp, Trash2, Upload, X } from 'lucide-react'
+import { Check, ChevronDown, ClipboardCheck, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Pencil, Plus, ShieldCheck, Stamp, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -17,6 +17,8 @@ import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
 import { DispatcherTaskPanel, WelderStampNotificationPanel } from '@/components/dispatcher-panels'
+import { JointChainDialog } from '@/components/joint-chain-dialog'
+import { LnkResultPreviewDialog } from '@/components/lnk-result-preview-dialog'
 import {
   clearLnkGeneratedWeldData,
   createWeldJoint,
@@ -193,7 +195,6 @@ import {
 } from '@/lib/repeated-joint-tasks'
 import {
   formatDateInputValue,
-  formatDisplayDate,
   formatLongDate,
 } from '@/lib/date-format'
 import {
@@ -213,7 +214,6 @@ import {
 import {
   formatJointDiameterLabel,
   getJointChainIdentity,
-  getJointChainSubtitle,
   isUnofficialJoint,
 } from '@/lib/joint-display'
 import {
@@ -3275,114 +3275,13 @@ function Home() {
       </div>
 
       {chainRecord ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/25 px-4 backdrop-blur-[1px]">
-          <div className="flex max-h-[82vh] w-full max-w-4xl flex-col rounded-lg border border-slate-200 bg-white shadow-2xl shadow-slate-950/15">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-semibold text-slate-900">Цепочка стыка {String(chainRecord.joint ?? '-')}</h2>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openChainBaseInCurrentReport(chainRecord)}
-                    className="h-7 border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
-                  >
-                    Показать всю цепочку
-                  </Button>
-                </div>
-                <p className="mt-1 text-sm text-slate-500">{getJointChainSubtitle(chainRecord)}</p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setChainRecord(null)} aria-label="Закрыть цепочку стыка">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {chainRows.length === 0 ? (
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                  По этому стыку цепочка не найдена.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {chainRows.map((row, index) => {
-                    const isCurrent = row.id === chainRecord.id
-                    return (
-                      <div
-                        key={row.id}
-                        className={`rounded-md border px-4 py-3 ${
-                          isCurrent ? 'border-sky-200 bg-sky-50/70 shadow-sm shadow-sky-100' : 'border-slate-200 bg-white'
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-600">
-                                {index + 1}
-                              </span>
-                              <span className="text-base font-semibold text-slate-900">{String(row.joint ?? '-')}</span>
-                              <button
-                                type="button"
-                                onClick={() => openChainRowInCurrentReport(row)}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
-                                title="Открыть только этот стык в текущем отчете"
-                                aria-label={`Открыть стык ${String(row.joint ?? '-')} в текущем отчете`}
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </button>
-                              {isCurrent ? (
-                                <span className="rounded border border-sky-200 bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
-                                  текущий
-                                </span>
-                              ) : null}
-                              <OfficialityBadge row={row} />
-                            </div>
-                            <div className="mt-1 text-sm text-slate-600">{getJointTitle(row)}</div>
-                            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                              <span>
-                                Дата сварки:{' '}
-                                <span className="font-semibold text-slate-700">{formatDisplayDate(row.weldDate) || '-'}</span>
-                              </span>
-                              <span>
-                                Статус:{' '}
-                                <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
-                                  {getJointStatusLabel(row)}
-                                </span>
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex max-w-[420px] flex-wrap justify-end gap-1.5">
-                            {getJointChainResultItems(row).length > 0 ? (
-                              getJointChainResultItems(row).map((item) => (
-                                <span
-                                  key={`${row.id}:${item.label}:${item.value}`}
-                                  className={`rounded border px-2 py-1 text-xs font-semibold ${item.className}`}
-                                >
-                                  {item.label} {item.value}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
-                                результатов пока нет
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end border-t border-slate-200 px-5 py-4">
-              <Button variant="outline" onClick={() => setChainRecord(null)}>
-                Закрыть
-              </Button>
-            </div>
-          </div>
-        </div>
+        <JointChainDialog
+          record={chainRecord}
+          rows={chainRows}
+          onClose={() => setChainRecord(null)}
+          onOpenBase={openChainBaseInCurrentReport}
+          onOpenRow={openChainRowInCurrentReport}
+        />
       ) : null}
 
       {editing ? (
@@ -5326,78 +5225,11 @@ function Home() {
       ) : null}
 
       {isLnkResultPreviewOpen ? (
-        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/25 px-4 backdrop-blur-[1px]">
-          <div className="flex max-h-[86vh] w-full max-w-4xl flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold">Предпросмотр выбранных стыков</h2>
-                <p className="text-sm text-muted-foreground">
-                  Метод: {getLnkMethodByRequestKey(lnkResultDraft.methodKey)?.code || '-'} · Выбрано: {selectedLnkResultRows.length}
-                </p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setIsLnkResultPreviewOpen(false)} aria-label="Закрыть предпросмотр">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-5">
-              {selectedLnkResultRows.length === 0 ? (
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                  Нет выбранных стыков.
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
-                  {selectedLnkResultRows.map((row) => {
-                    const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
-                    const currentResult = method ? String(row[method.resultKey] ?? '').trim() || 'заявка' : '-'
-                    const requestName = method ? String(row[method.requestKey] ?? '').trim() : ''
-	                    const result = getEffectiveLnkResultDraftValueForRow(row, lnkResultDraft)
-                    return (
-                      <div key={row.id} className="grid grid-cols-[minmax(320px,1fr)_minmax(220px,0.45fr)] gap-4 px-4 py-3 text-sm">
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <span className="font-medium text-slate-900">{getJointTitle(row)}</span>
-                            <OfficialityBadge row={row} compact />
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            <JointProjectSubtitleMeta row={row} />
-                            <MetaSeparator />
-                            <JointSpoolDiameterMeta row={row} />
-                            <MetaSeparator />
-                            <JointWeldDateMeta row={row} />
-                          </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                            <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-bold text-slate-700">
-                              {method?.code || '-'}
-                            </span>
-                            {requestName ? (
-                              <span className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-medium text-sky-800">
-                                {requestName}
-                              </span>
-                            ) : null}
-                            <span className={`rounded border px-1.5 py-0.5 font-semibold ${getLnkResultBadgeClass(currentResult)}`}>
-                              Сейчас: {currentResult}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end justify-start gap-1.5">
-                          <span className="text-xs font-medium text-slate-500">Будет записано:</span>
-                          <span className={`rounded border px-2 py-1 text-xs font-semibold ${getLnkResultBadgeClass(result)}`}>
-                            {result || '-'}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-              <Button variant="outline" onClick={() => setIsLnkResultPreviewOpen(false)}>
-                Закрыть
-              </Button>
-            </div>
-          </div>
-        </div>
+        <LnkResultPreviewDialog
+          rows={selectedLnkResultRows}
+          draft={lnkResultDraft}
+          onClose={() => setIsLnkResultPreviewOpen(false)}
+        />
       ) : null}
 
       {heatTreatmentFieldEditing ? (
