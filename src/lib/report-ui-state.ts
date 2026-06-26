@@ -1,5 +1,28 @@
 import { LNK_METHODS } from '@/lib/report-config'
+import type { ActiveReport } from '@/lib/home-state'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+
+const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
+  weldingJournal: 'Сварочный журнал',
+  heatTreatment: 'Термообработка',
+  lnk: 'ЛНК',
+  welderStamps: 'Клейма',
+}
+
+export function getActiveReportTitle(activeReport: ActiveReport) {
+  return ACTIVE_REPORT_TITLES[activeReport]
+}
+
+export function getVisibleReportRows<T>(
+  activeReport: ActiveReport,
+  weldingRows: T[],
+  heatTreatmentRows: T[],
+  lnkRows: T[],
+) {
+  if (activeReport === 'heatTreatment') return heatTreatmentRows
+  if (activeReport === 'lnk') return lnkRows
+  return weldingRows
+}
 
 export function makeExactColumnFilterValue(value: unknown) {
   return `=${String(value ?? '').trim().toLowerCase()}`

@@ -133,7 +133,9 @@ import {
 import {
   buildHighlightSets,
   expandHighlightFieldKeys,
+  getActiveReportTitle,
   getJointTitle,
+  getVisibleReportRows,
   setNumberSetValues,
   toggleNumberSetValue,
   toggleNumberSetValues,
@@ -1497,7 +1499,7 @@ function Home() {
   )
   const activeWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => !record.archived), [filteredWelderStamps])
   const archivedWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => record.archived), [filteredWelderStamps])
-  const visibleRows = activeReport === 'heatTreatment' ? heatTreatmentRows : activeReport === 'lnk' ? lnkRows : rows
+  const visibleRows = getVisibleReportRows(activeReport, rows, heatTreatmentRows, lnkRows)
   const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
   useEffect(() => {
     if (!chainRecord) return
@@ -1825,14 +1827,7 @@ function Home() {
   const acceptedWdiTotal = useMemo(() => sumAcceptedWdi(rows), [rows])
   const registerMinWidth = activeReport === 'welderStamps' ? 1120 : getWeldTableWidth(VISIBLE_FIELDS)
   const stickyLeft = navCollapsed ? 80 : 288
-  const activeTitle =
-    activeReport === 'heatTreatment'
-      ? 'Термообработка'
-      : activeReport === 'lnk'
-        ? 'ЛНК'
-        : activeReport === 'welderStamps'
-          ? 'Клейма'
-          : 'Сварочный журнал'
+  const activeTitle = getActiveReportTitle(activeReport)
 
   useEffect(() => {
     setSelectedHeatTreatmentIds((current) => {
