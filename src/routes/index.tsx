@@ -133,10 +133,14 @@ import {
 import {
   getActiveColumnFilters,
   buildHighlightSets,
+  canOpenLinkedReport,
   expandHighlightFieldKeys,
   getActiveReportTitle,
   getJointTitle,
+  getOpenLinkedReportTitle,
+  getReportRegisterMinWidth,
   getVisibleReportRows,
+  isReadOnlyReport,
   setNumberSetValues,
   toggleNumberSetValue,
   toggleNumberSetValues,
@@ -1825,7 +1829,7 @@ function Home() {
   const activeFiltersSetter =
     activeReport === 'heatTreatment' ? setHeatTreatmentFilters : activeReport === 'lnk' ? setLnkFilters : setColumnFilters
   const acceptedWdiTotal = useMemo(() => sumAcceptedWdi(rows), [rows])
-  const registerMinWidth = activeReport === 'welderStamps' ? 1120 : getWeldTableWidth(VISIBLE_FIELDS)
+  const registerMinWidth = getReportRegisterMinWidth(activeReport, getWeldTableWidth(VISIBLE_FIELDS))
   const stickyLeft = navCollapsed ? 80 : 288
   const activeTitle = getActiveReportTitle(activeReport)
 
@@ -3334,7 +3338,7 @@ function Home() {
               stickyLeft={stickyLeft}
               highlightedRowIds={highlightedRowIds}
               highlightedCellKeys={highlightedCellKeys}
-              readOnly={activeReport === 'heatTreatment' || activeReport === 'lnk'}
+              readOnly={isReadOnlyReport(activeReport)}
               editableFieldKeys={
                 activeReport === 'heatTreatment'
                   ? heatTreatmentEditableFieldKeys
@@ -3350,8 +3354,8 @@ function Home() {
               }
               getDisplayValue={activeReport === 'lnk' ? getLnkDisplayValue : undefined}
               onOpenChain={(row) => setChainRecord(row)}
-              onOpenLinkedReport={activeReport === 'weldingJournal' || activeReport === 'lnk' ? openLinkedReportRow : undefined}
-              openLinkedReportTitle={activeReport === 'lnk' ? 'Открыть стык в сварочном журнале' : 'Открыть стык в отчете ЛНК'}
+              onOpenLinkedReport={canOpenLinkedReport(activeReport) ? openLinkedReportRow : undefined}
+              openLinkedReportTitle={getOpenLinkedReportTitle(activeReport)}
               rowActions={
                 activeReport === 'heatTreatment'
                   ? {

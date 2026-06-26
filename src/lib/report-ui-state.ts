@@ -24,6 +24,22 @@ export function getVisibleReportRows<T>(
   return weldingRows
 }
 
+export function getReportRegisterMinWidth(activeReport: ActiveReport, defaultMinWidth: number) {
+  return activeReport === 'welderStamps' ? 1120 : defaultMinWidth
+}
+
+export function isReadOnlyReport(activeReport: ActiveReport) {
+  return activeReport === 'heatTreatment' || activeReport === 'lnk'
+}
+
+export function canOpenLinkedReport(activeReport: ActiveReport) {
+  return activeReport === 'weldingJournal' || activeReport === 'lnk'
+}
+
+export function getOpenLinkedReportTitle(activeReport: ActiveReport) {
+  return activeReport === 'lnk' ? 'Открыть стык в сварочном журнале' : 'Открыть стык в отчете ЛНК'
+}
+
 export function getActiveColumnFilters(
   activeReport: ActiveReport,
   weldingFilters: Record<string, string>,
