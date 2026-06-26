@@ -281,14 +281,12 @@ import {
   formatOfficialStampCompatibilityIssue,
   getOfficialStampCompatibilityIssues,
   getOfficialStampCompatibilitySaveBlockReason,
-  isValidNaksStamp,
   normalizeNaksStamp,
-  normalizeWelderStampRecord,
   normalizeWeldingMethodsForImport,
+  prepareWelderStampSave,
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
   validateWelderStampFieldsForImport,
-  validateWelderStampRecord,
 } from '@/lib/welder-stamp-registry'
 import type { DispatcherTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
@@ -3091,31 +3089,14 @@ function Home() {
   }
 
   function saveWelderStampRecord() {
-    const draft = normalizeWelderStampRecord(welderStampDraft)
-    if (!draft.naksStamp && !draft.internalStamp) {
-      setMessage('Укажите Клеймо НАКС или Клеймо внутреннее')
-      return
-    }
-    if (draft.naksStamp && !isValidNaksStamp(draft.naksStamp)) {
-      setMessage('Клеймо НАКС должно состоять из 4 латинских букв или цифр')
-      return
-    }
-    const validationError = validateWelderStampRecord(draft)
-    if (validationError) {
-      setMessage(validationError)
+    const preparedSave = prepareWelderStampSave(welderStamps, welderStampDraft, editingWelderStampId)
+    if (!preparedSave.ok) {
+      setMessage(preparedSave.message)
       return
     }
 
-    if (editingWelderStampId !== null) {
-      persistWelderStampRecords(
-        welderStamps.map((record) => (record.id === editingWelderStampId ? { ...draft, id: editingWelderStampId } : record)),
-      )
-      setMessage('Клеймо обновлено')
-    } else {
-      const nextId = Math.max(0, ...welderStamps.map((record) => record.id)) + 1
-      persistWelderStampRecords([{ ...draft, id: nextId }, ...welderStamps])
-      setMessage('Клеймо добавлено')
-    }
+    persistWelderStampRecords(preparedSave.nextRecords)
+    setMessage(preparedSave.message)
     resetWelderStampForm()
   }
 

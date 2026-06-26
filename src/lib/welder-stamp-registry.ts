@@ -173,6 +173,38 @@ export function validateWelderStampRecord(record: WelderStampRecord) {
   return ''
 }
 
+export function prepareWelderStampSave(
+  records: WelderStampRecord[],
+  record: WelderStampRecord,
+  editingId: number | null,
+) {
+  const draft = normalizeWelderStampRecord(record)
+  if (!draft.naksStamp && !draft.internalStamp) {
+    return { ok: false as const, message: 'Укажите Клеймо НАКС или Клеймо внутреннее' }
+  }
+  if (draft.naksStamp && !isValidNaksStamp(draft.naksStamp)) {
+    return { ok: false as const, message: 'Клеймо НАКС должно состоять из 4 латинских букв или цифр' }
+  }
+
+  const validationError = validateWelderStampRecord(draft)
+  if (validationError) return { ok: false as const, message: validationError }
+
+  if (editingId !== null) {
+    return {
+      ok: true as const,
+      nextRecords: records.map((current) => (current.id === editingId ? { ...draft, id: editingId } : current)),
+      message: 'Клеймо обновлено',
+    }
+  }
+
+  const nextId = Math.max(0, ...records.map((current) => current.id)) + 1
+  return {
+    ok: true as const,
+    nextRecords: [{ ...draft, id: nextId }, ...records],
+    message: 'Клеймо добавлено',
+  }
+}
+
 export function getWelderStampFormHint(record: WelderStampRecord) {
   const draft = normalizeWelderStampRecord(record)
   const defaultHint =
