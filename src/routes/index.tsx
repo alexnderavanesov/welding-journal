@@ -27,11 +27,9 @@ import {
   parseCsv,
   parseWorkbook,
 } from '@/lib/weld-import-export'
-import { getWeldTableWidth } from '@/lib/weld-column-widths'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import {
   FIELD_BY_KEY,
-  VISIBLE_FIELDS,
   calculateFinalStatus,
   type WeldFieldKey,
   type WeldInput,
@@ -85,7 +83,6 @@ import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/l
 import {
   filterPstoResultRows,
   sortRowsByPreservedOrder,
-  sumAcceptedWdi,
 } from '@/lib/report-row-utils'
 import { getReportRowActions } from '@/lib/report-row-actions'
 import {
@@ -100,11 +97,9 @@ import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
+import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
 import {
-  getActiveColumnFilters,
-  getActiveReportFilterSetter,
   canOpenLinkedReport,
-  getActiveReportTitle,
   getEditableReportImportLabel,
   getJointTitle,
   getOpenLinkedReportTitle,
@@ -112,7 +107,6 @@ import {
   getReportEditableFieldKeys,
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
-  getReportRegisterMinWidth,
   isAnyReportModalOpen,
   isReadOnlyReport,
   setNumberSetValues,
@@ -1643,12 +1637,24 @@ function Home() {
     return ''
   }, [lnkOfficialityDraft.status, lnkOfficialityMutation.isPending, selectedLnkOfficialityRows])
   const isLnkOfficialitySaveDisabled = Boolean(lnkOfficialitySaveBlockReason)
-  const activeColumnFilters = getActiveColumnFilters(activeReport, columnFilters, heatTreatmentFilters, lnkFilters)
-  const activeFiltersSetter = getActiveReportFilterSetter(activeReport, setColumnFilters, setHeatTreatmentFilters, setLnkFilters)
-  const acceptedWdiTotal = useMemo(() => sumAcceptedWdi(rows), [rows])
-  const registerMinWidth = getReportRegisterMinWidth(activeReport, getWeldTableWidth(VISIBLE_FIELDS))
-  const stickyLeft = navCollapsed ? 80 : 288
-  const activeTitle = getActiveReportTitle(activeReport)
+  const {
+    acceptedWdiTotal,
+    activeColumnFilters,
+    activeFiltersSetter,
+    activeTitle,
+    registerMinWidth,
+    stickyLeft,
+  } = useActiveReportLayoutState({
+    activeReport,
+    columnFilters,
+    heatTreatmentFilters,
+    lnkFilters,
+    navCollapsed,
+    rows,
+    setColumnFilters,
+    setHeatTreatmentFilters,
+    setLnkFilters,
+  })
   const {
     exportXlsx,
     openLnkConclusionsReport,
