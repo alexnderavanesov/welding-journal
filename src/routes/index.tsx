@@ -104,6 +104,7 @@ import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
+import { useLnkRequestModalState } from '@/lib/use-lnk-request-modal-state'
 import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
@@ -207,9 +208,7 @@ import {
   createDefaultLnkResultDraft,
   createDefaultPstoResultDraft,
   type LnkOfficialityDraftState,
-  type LnkRequestDraftState,
   type LnkResultDraftState,
-  type PstoResultDraftState,
 } from '@/lib/report-draft-state'
 import {
   collectRequestNames,
@@ -217,10 +216,7 @@ import {
   getRequestNameFromNaming,
   sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
-import {
-  defaultRequestNamingState,
-  type RequestNamingState,
-} from '@/lib/request-naming-state'
+import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import type { ActiveReport, EditingState, HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import {
   validateManualJointNameForSave,
@@ -277,7 +273,22 @@ function Home() {
     setSelectedHeatTreatmentIds,
     setSelectedLnkIds,
   } = useReportSelectionState()
-  const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
+  const {
+    lnkRequestDraft,
+    lnkRequestNaming,
+    isLnkRequestModalOpen,
+    isLnkRequestManagerOpen,
+    managedLnkRequestName,
+    managedLnkRequestNameDraft,
+    lnkRequestSearch,
+    setLnkRequestDraft,
+    setLnkRequestNaming,
+    setIsLnkRequestModalOpen,
+    setIsLnkRequestManagerOpen,
+    setManagedLnkRequestName,
+    setManagedLnkRequestNameDraft,
+    setLnkRequestSearch,
+  } = useLnkRequestModalState()
   const {
     pstoRequestNaming,
     pstoRequestSearch,
@@ -302,11 +313,6 @@ function Home() {
     setManagedPstoDiagramDrafts,
     setPstoResultDraft,
   } = usePstoModalState()
-  const [lnkRequestNaming, setLnkRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
-  const [isLnkRequestModalOpen, setIsLnkRequestModalOpen] = useState(false)
-  const [isLnkRequestManagerOpen, setIsLnkRequestManagerOpen] = useState(false)
-  const [managedLnkRequestName, setManagedLnkRequestName] = useState('')
-  const [managedLnkRequestNameDraft, setManagedLnkRequestNameDraft] = useState('')
   const [isLnkResultModalOpen, setIsLnkResultModalOpen] = useState(false)
   const [isLnkResultPreviewOpen, setIsLnkResultPreviewOpen] = useState(false)
   const [shouldPinPreviewedLnkResultRows, setShouldPinPreviewedLnkResultRows] = useState(false)
@@ -323,7 +329,6 @@ function Home() {
   const [managedLnkResultPreview, setManagedLnkResultPreview] = useState<{ changeKey: string; rowId: number; methodKey: WeldFieldKey; result: string } | null>(null)
   const [managedLnkResultChangeHint, setManagedLnkResultChangeHint] = useState<{ changeKey: string; rowId: number; methodKey: WeldFieldKey; from: string; to: string } | null>(null)
   const [managedLnkPendingResultChanges, setManagedLnkPendingResultChanges] = useState<Record<string, string>>({})
-  const [lnkRequestSearch, setLnkRequestSearch] = useState('')
   const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
   const {
     isPstoShowMenuOpen,
