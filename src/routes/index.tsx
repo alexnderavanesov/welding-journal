@@ -50,7 +50,6 @@ import {
   HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
   HIGHLIGHT_DURATION_MS as highlightDurationMs,
   LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
-  LNK_CONCLUSIONS_FIELDS,
   LNK_CUSTOM_RESULT_VALUE,
   LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
   LNK_EMPTY_RESULT_VALUE,
@@ -59,10 +58,7 @@ import {
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
   LNK_REPORT_FIELD_KEYS as lnkReportFieldKeys,
   LNK_RESULT_OPTIONS,
-  LNK_WAITING_NK_FIELDS,
   PSTO_EMPTY_RESULT_VALUE,
-  PSTO_RESULTS_FIELDS,
-  PSTO_WAITING_REQUEST_FIELDS,
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
   REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
   REQUEST_AND_RESULT_FIELD_KEYS as requestAndResultFieldKeys,
@@ -93,11 +89,6 @@ import {
   isLnkMethodNoNeed,
 } from '@/lib/lnk-status'
 import {
-  buildLnkConclusionsRows,
-  buildLnkToRequestRows,
-  buildLnkWaitingNkRows,
-} from '@/lib/lnk-report-rows'
-import {
   canCreateLnkRequest,
   toControlCancellationReportRow,
   withOfficialJointStatus,
@@ -109,7 +100,14 @@ import {
   normalizeExistingRequestImportValue,
 } from '@/lib/report-import'
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
-import { downloadExcelBytes, openNonEmptyTabularReportWindow } from '@/lib/report-window'
+import { downloadExcelBytes } from '@/lib/report-window'
+import {
+  openLnkConclusionsReportWindow,
+  openLnkToRequestReportWindow,
+  openLnkWaitingNkReportWindow,
+  openPstoResultsReportWindow,
+  openPstoWaitingRequestReportWindow,
+} from '@/lib/report-show-windows'
 import {
   buildHeatTreatmentReportRows,
   buildLnkReportRows,
@@ -151,8 +149,6 @@ import {
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
 import {
-  buildPstoResultsRows,
-  buildPstoWaitingRequestRows,
   canCreatePstoRequest,
   normalizeRowPstoRequest,
   withAutoHeatTreatmentDiagram,
@@ -1908,72 +1904,32 @@ function Home() {
   }
 
   function openLnkWaitingNkReport() {
-    const reportRows = buildLnkWaitingNkRows(lnkRows)
     setIsLnkShowMenuOpen(false)
-    const result = openNonEmptyTabularReportWindow({
-      rows: reportRows as WeldInput[],
-      fields: LNK_WAITING_NK_FIELDS,
-      sheetName: 'Ожидание НК',
-      title: 'Ожидание НК',
-      filename: 'lnk-waiting-nk.xlsx',
-      emptyMessage: 'Нет стыков со статусом «ожидает НК»',
-    })
+    const result = openLnkWaitingNkReportWindow(lnkRows)
     if (!result.ok) setMessage(result.message)
   }
 
   function openLnkToRequestReport() {
-    const reportRows = buildLnkToRequestRows(lnkRows)
     setIsLnkShowMenuOpen(false)
-    const result = openNonEmptyTabularReportWindow({
-      rows: reportRows as WeldInput[],
-      fields: LNK_WAITING_NK_FIELDS,
-      sheetName: 'Ожидание заявки',
-      title: 'Ожидание заявки',
-      filename: 'lnk-waiting-request.xlsx',
-      emptyMessage: 'Нет стыков, по которым нужно создать заявку ЛНК',
-    })
+    const result = openLnkToRequestReportWindow(lnkRows)
     if (!result.ok) setMessage(result.message)
   }
 
   function openLnkConclusionsReport() {
-    const reportRows = buildLnkConclusionsRows(lnkRows)
     setIsLnkShowMenuOpen(false)
-    const result = openNonEmptyTabularReportWindow({
-      rows: reportRows as WeldInput[],
-      fields: LNK_CONCLUSIONS_FIELDS,
-      sheetName: 'Заключения ЛНК',
-      title: 'Заключения ЛНК',
-      filename: 'lnk-conclusions.xlsx',
-      emptyMessage: 'Нет заключений ЛНК для показа',
-    })
+    const result = openLnkConclusionsReportWindow(lnkRows)
     if (!result.ok) setMessage(result.message)
   }
 
   function openPstoWaitingRequestReport() {
-    const reportRows = buildPstoWaitingRequestRows(heatTreatmentRows)
     setIsPstoShowMenuOpen(false)
-    const result = openNonEmptyTabularReportWindow({
-      rows: reportRows as WeldInput[],
-      fields: PSTO_WAITING_REQUEST_FIELDS,
-      sheetName: 'Ожидает заявку ПСТО',
-      title: 'Ожидает заявку ПСТО',
-      filename: 'psto-waiting-request.xlsx',
-      emptyMessage: 'Нет стыков, по которым нужно создать заявку ПСТО',
-    })
+    const result = openPstoWaitingRequestReportWindow(heatTreatmentRows)
     if (!result.ok) setMessage(result.message)
   }
 
   function openPstoResultsReport() {
-    const reportRows = buildPstoResultsRows(heatTreatmentRows)
     setIsPstoShowMenuOpen(false)
-    const result = openNonEmptyTabularReportWindow({
-      rows: reportRows as WeldInput[],
-      fields: PSTO_RESULTS_FIELDS,
-      sheetName: 'Результаты ПСТО',
-      title: 'Результаты ПСТО',
-      filename: 'psto-results.xlsx',
-      emptyMessage: 'Нет результатов ПСТО для показа',
-    })
+    const result = openPstoResultsReportWindow(heatTreatmentRows)
     if (!result.ok) setMessage(result.message)
   }
 
