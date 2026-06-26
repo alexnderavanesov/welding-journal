@@ -131,8 +131,8 @@ import {
   sumAcceptedWdi,
 } from '@/lib/report-row-utils'
 import {
+  buildHighlightSets,
   expandHighlightFieldKeys,
-  getCellKey,
   getJointTitle,
   setNumberSetValues,
   toggleNumberSetValue,
@@ -2947,23 +2947,11 @@ function Home() {
   }
 
   function applyChangedRowsHighlight(rows: Array<{ id?: number }> | undefined, cellFieldKeys: WeldFieldKey[] = []) {
-    const ids = new Set(
-      (rows ?? [])
-        .map((row) => row.id)
-        .filter((id): id is number => typeof id === 'number' && Number.isFinite(id)),
-    )
-    if (ids.size === 0) return
+    const highlightSets = buildHighlightSets(rows, cellFieldKeys)
+    if (!highlightSets) return
 
-    const cellKeys = new Set<string>()
-    const expandedFieldKeys = expandHighlightFieldKeys(cellFieldKeys)
-    for (const id of ids) {
-      for (const fieldKey of expandedFieldKeys) {
-        cellKeys.add(getCellKey(id, fieldKey))
-      }
-    }
-
-    setHighlightedRowIds(ids)
-    setHighlightedCellKeys(cellKeys)
+    setHighlightedRowIds(highlightSets.rowIds)
+    setHighlightedCellKeys(highlightSets.cellKeys)
     if (importHighlightTimerRef.current) {
       clearTimeout(importHighlightTimerRef.current)
     }

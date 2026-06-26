@@ -47,6 +47,25 @@ export function getCellKey(rowId: number, fieldKey: WeldFieldKey) {
   return `${rowId}:${fieldKey}`
 }
 
+export function buildHighlightSets(rows: Array<{ id?: number }> | undefined, cellFieldKeys: WeldFieldKey[] = []) {
+  const rowIds = new Set(
+    (rows ?? [])
+      .map((row) => row.id)
+      .filter((id): id is number => typeof id === 'number' && Number.isFinite(id)),
+  )
+  if (rowIds.size === 0) return null
+
+  const cellKeys = new Set<string>()
+  const expandedFieldKeys = expandHighlightFieldKeys(cellFieldKeys)
+  for (const id of rowIds) {
+    for (const fieldKey of expandedFieldKeys) {
+      cellKeys.add(getCellKey(id, fieldKey))
+    }
+  }
+
+  return { rowIds, cellKeys }
+}
+
 export function toggleNumberSetValue(current: ReadonlySet<number>, value: number) {
   const next = new Set(current)
   if (next.has(value)) {
