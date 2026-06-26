@@ -119,7 +119,7 @@ import {
   normalizeExistingRequestImportValue,
 } from '@/lib/report-import'
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
-import { buildLnkReportHtml, downloadExcelBytes } from '@/lib/report-window'
+import { downloadExcelBytes, openTabularReportWindow } from '@/lib/report-window'
 import {
   compactSearchText,
   compareHeatTreatmentReportRows,
@@ -1962,19 +1962,16 @@ function Home() {
       return
     }
 
-    const bytes = buildExportXlsxBytes(reportRows as WeldInput[], {
+    const opened = openTabularReportWindow({
+      rows: reportRows as WeldInput[],
       fields: LNK_WAITING_NK_FIELDS,
       sheetName: 'Ожидание НК',
+      title: 'Ожидание НК',
+      filename: 'lnk-waiting-nk.xlsx',
     })
-    const reportWindow = window.open('', '_blank')
-    if (!reportWindow) {
+    if (!opened) {
       setMessage('Браузер заблокировал открытие новой вкладки')
-      return
     }
-
-    reportWindow.document.open()
-    reportWindow.document.write(buildLnkReportHtml(reportRows, bytes))
-    reportWindow.document.close()
   }
 
   function openLnkToRequestReport() {
@@ -1985,19 +1982,16 @@ function Home() {
       return
     }
 
-    const bytes = buildExportXlsxBytes(reportRows as WeldInput[], {
+    const opened = openTabularReportWindow({
+      rows: reportRows as WeldInput[],
       fields: LNK_WAITING_NK_FIELDS,
       sheetName: 'Ожидание заявки',
+      title: 'Ожидание заявки',
+      filename: 'lnk-waiting-request.xlsx',
     })
-    const reportWindow = window.open('', '_blank')
-    if (!reportWindow) {
+    if (!opened) {
       setMessage('Браузер заблокировал открытие новой вкладки')
-      return
     }
-
-    reportWindow.document.open()
-    reportWindow.document.write(buildLnkReportHtml(reportRows, bytes, 'Ожидание заявки', 'lnk-waiting-request.xlsx'))
-    reportWindow.document.close()
   }
 
   function openLnkConclusionsReport() {
@@ -2008,19 +2002,16 @@ function Home() {
       return
     }
 
-    const bytes = buildExportXlsxBytes(reportRows as WeldInput[], {
+    const opened = openTabularReportWindow({
+      rows: reportRows as WeldInput[],
       fields: LNK_CONCLUSIONS_FIELDS,
       sheetName: 'Заключения ЛНК',
+      title: 'Заключения ЛНК',
+      filename: 'lnk-conclusions.xlsx',
     })
-    const reportWindow = window.open('', '_blank')
-    if (!reportWindow) {
+    if (!opened) {
       setMessage('Браузер заблокировал открытие новой вкладки')
-      return
     }
-
-    reportWindow.document.open()
-    reportWindow.document.write(buildLnkReportHtml(reportRows, bytes, 'Заключения ЛНК', 'lnk-conclusions.xlsx', LNK_CONCLUSIONS_FIELDS))
-    reportWindow.document.close()
   }
 
   function openPstoWaitingRequestReport() {
@@ -2031,19 +2022,16 @@ function Home() {
       return
     }
 
-    const bytes = buildExportXlsxBytes(reportRows as WeldInput[], {
+    const opened = openTabularReportWindow({
+      rows: reportRows as WeldInput[],
       fields: PSTO_WAITING_REQUEST_FIELDS,
       sheetName: 'Ожидает заявку ПСТО',
+      title: 'Ожидает заявку ПСТО',
+      filename: 'psto-waiting-request.xlsx',
     })
-    const reportWindow = window.open('', '_blank')
-    if (!reportWindow) {
+    if (!opened) {
       setMessage('Браузер заблокировал открытие новой вкладки')
-      return
     }
-
-    reportWindow.document.open()
-    reportWindow.document.write(buildLnkReportHtml(reportRows, bytes, 'Ожидает заявку ПСТО', 'psto-waiting-request.xlsx', PSTO_WAITING_REQUEST_FIELDS))
-    reportWindow.document.close()
   }
 
   function openPstoResultsReport() {
@@ -2054,19 +2042,16 @@ function Home() {
       return
     }
 
-    const bytes = buildExportXlsxBytes(reportRows as WeldInput[], {
+    const opened = openTabularReportWindow({
+      rows: reportRows as WeldInput[],
       fields: PSTO_RESULTS_FIELDS,
       sheetName: 'Результаты ПСТО',
+      title: 'Результаты ПСТО',
+      filename: 'psto-results.xlsx',
     })
-    const reportWindow = window.open('', '_blank')
-    if (!reportWindow) {
+    if (!opened) {
       setMessage('Браузер заблокировал открытие новой вкладки')
-      return
     }
-
-    reportWindow.document.open()
-    reportWindow.document.write(buildLnkReportHtml(reportRows, bytes, 'Результаты ПСТО', 'psto-results.xlsx', PSTO_RESULTS_FIELDS))
-    reportWindow.document.close()
   }
 
   function handleCreatePstoRequest() {

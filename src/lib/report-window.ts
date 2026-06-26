@@ -1,6 +1,15 @@
 import { formatDisplayDate } from '@/lib/date-format'
 import { LNK_WAITING_NK_FIELDS } from '@/lib/report-config'
+import { buildExportXlsxBytes, type ExportWorkbookOptions } from '@/lib/weld-import-export'
 import type { WeldField, WeldInput } from '@/lib/weld-fields'
+
+type OpenTabularReportWindowOptions = {
+  rows: WeldInput[]
+  fields: NonNullable<ExportWorkbookOptions['fields']>
+  sheetName: string
+  title: string
+  filename: string
+}
 
 export function buildLnkReportHtml(
   rows: WeldInput[],
@@ -77,6 +86,17 @@ export function buildLnkReportHtml(
   </script>
 </body>
 </html>`
+}
+
+export function openTabularReportWindow({ rows, fields, sheetName, title, filename }: OpenTabularReportWindowOptions) {
+  const bytes = buildExportXlsxBytes(rows, { fields, sheetName })
+  const reportWindow = window.open('', '_blank')
+  if (!reportWindow) return false
+
+  reportWindow.document.open()
+  reportWindow.document.write(buildLnkReportHtml(rows, bytes, title, filename, fields))
+  reportWindow.document.close()
+  return true
 }
 
 export function downloadExcelBytes(bytes: Uint8Array, filename: string) {
