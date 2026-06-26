@@ -92,6 +92,7 @@ import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import { useReportHighlights } from '@/lib/use-report-highlights'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
+import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
@@ -1444,20 +1445,6 @@ function Home() {
     managedLnkResultMethodKey,
     managedLnkPendingResultChanges,
   })
-  useEffect(() => {
-    if (!isLnkResultManagerOpen) return
-    setManagedLnkConclusionDrafts(
-      Object.fromEntries(
-        managedLnkResultEntries.map(({ row, method, changeKey }) => [changeKey, String(row[method.conclusionKey] ?? '').trim()]),
-      ),
-    )
-  }, [isLnkResultManagerOpen, managedLnkResultEntries])
-  useEffect(() => {
-    if (!isLnkResultManagerOpen) return
-    if (managedLnkResultMethodKey && !managedLnkResultMethods.some((method) => method.requestKey === managedLnkResultMethodKey)) {
-      setManagedLnkResultMethodKey('')
-    }
-  }, [isLnkResultManagerOpen, managedLnkResultMethodKey, managedLnkResultMethods, managedLnkResultRequestName])
   const {
     filteredLnkOfficialityRows,
     selectedLnkOfficialityRows,
@@ -1503,62 +1490,31 @@ function Home() {
     setMessage,
     visibleRows,
   })
-
-  useEffect(() => {
-    setSelectedHeatTreatmentIds((current) => {
-      const selectableIds = new Set(availablePstoRequestRows.map((row) => row.id))
-      const next = new Set([...current].filter((id) => selectableIds.has(id)))
-      return next.size === current.size ? current : next
-    })
-  }, [availablePstoRequestRows])
-
-  useEffect(() => {
-    setPstoResultDraft((current) => {
-      if (!isPstoResultModalOpen) return current
-      const selectedRows = heatTreatmentRows.filter((row) => current.rowIds.has(row.id))
-      const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
-      const allowedRequestOptions = requestOptions.length > 0 ? requestOptions : pstoResultRequestOptions
-      const requestName = !current.requestName || allowedRequestOptions.includes(current.requestName) ? current.requestName : ''
-      const availableRows = filterPstoResultRows(requestName ? filterPstoRowsByRequestName(heatTreatmentRows, requestName) : heatTreatmentRows, current.search)
-      const availableIds = new Set(availableRows.filter((row) => canSelectPstoResultRow(row, requestName)).map((row) => row.id))
-      const rowIds = new Set([...current.rowIds].filter((id) => availableIds.has(id)))
-      return { ...current, requestName, rowIds }
-    })
-  }, [heatTreatmentRows, isPstoResultModalOpen, pstoResultRequestOptions])
-
-  useEffect(() => {
-    if (!isPstoResultManagerOpen) return
-    setManagedPstoDiagramDrafts(
-      Object.fromEntries(managedPstoResultRows.map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()])),
-    )
-  }, [isPstoResultManagerOpen, managedPstoResultRows])
-
-  useEffect(() => {
-    setSelectedLnkIds((current) => {
-      const ids = new Set(availableLnkRequestRows.map((row) => row.id))
-      const next = new Set([...current].filter((id) => ids.has(id)))
-      return next.size === current.size ? current : next
-    })
-  }, [availableLnkRequestRows])
-
-  useEffect(() => {
-    setLnkResultDraft((current) => {
-      if (!isLnkResultModalOpen) return current
-      const selectedRows = lnkRows.filter((row) => current.rowIds.has(row.id))
-      const requestName = !current.requestName || lnkResultRequestOptions.includes(current.requestName) ? current.requestName : ''
-      const requestRows = filterLnkRowsByRequestName(lnkRows, requestName)
-      const methodRows = current.rowIds.size > 0 ? [...selectedRows, ...requestRows] : requestName ? requestRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, '')
-      const methodKey = !current.methodKey || methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      const rowIds = new Set(
-        [...current.rowIds].filter((id) => {
-          const row = lnkRows.find((candidate) => candidate.id === id)
-          return row ? !methodKey || canSelectLnkResultRow(row, '', methodKey) : false
-        }),
-      )
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
-    })
-  }, [isLnkResultModalOpen, lnkRequestOptions, lnkResultRequestOptions, lnkRows])
+  useReportModalSyncEffects({
+    availableLnkRequestRows,
+    availablePstoRequestRows,
+    heatTreatmentRows,
+    isLnkResultManagerOpen,
+    isLnkResultModalOpen,
+    isPstoResultManagerOpen,
+    isPstoResultModalOpen,
+    lnkRequestOptions,
+    lnkResultRequestOptions,
+    lnkRows,
+    managedLnkResultEntries,
+    managedLnkResultMethodKey,
+    managedLnkResultMethods,
+    managedLnkResultRequestName,
+    managedPstoResultRows,
+    pstoResultRequestOptions,
+    setLnkResultDraft,
+    setManagedLnkConclusionDrafts,
+    setManagedLnkResultMethodKey,
+    setManagedPstoDiagramDrafts,
+    setPstoResultDraft,
+    setSelectedHeatTreatmentIds,
+    setSelectedLnkIds,
+  })
 
   async function handleImport(file: File) {
     setMessage(null)
