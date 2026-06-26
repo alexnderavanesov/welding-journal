@@ -140,6 +140,7 @@ import {
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
   getReportRegisterMinWidth,
+  getReportSummaryText,
   getVisibleReportRows,
   isReadOnlyReport,
   setNumberSetValues,
@@ -3254,15 +3255,19 @@ function Home() {
             style={{ left: stickyLeft, minWidth: registerMinWidth }}
           >
             <span>
-              {weldsQuery.isLoading
-                ? 'Загрузка...'
-                : activeReport === 'heatTreatment'
-                  ? `Стыков на ПСТО: ${heatTreatmentRows.length} · Выбрано: ${selectedHeatTreatmentRows.length}`
-                  : activeReport === 'lnk'
-                    ? `Стыков на ЛНК: ${lnkRows.length} · Доступно для новой заявки: ${availableLnkRequestRows.length}`
-                    : activeReport === 'welderStamps'
-                      ? `Клейм: ${welderStamps.filter((record) => !record.archived).length} · Архив: ${welderStamps.filter((record) => record.archived).length} · Найдено: ${filteredWelderStamps.length}`
-                      : `Записей: ${rows.length} · WDI годных: ${formatWdiTotal(acceptedWdiTotal)}`}
+              {getReportSummaryText({
+                activeReport,
+                isLoading: weldsQuery.isLoading,
+                weldingRowCount: rows.length,
+                acceptedWdiTotalText: formatWdiTotal(acceptedWdiTotal),
+                heatTreatmentRowCount: heatTreatmentRows.length,
+                selectedHeatTreatmentRowCount: selectedHeatTreatmentRows.length,
+                lnkRowCount: lnkRows.length,
+                availableLnkRequestRowCount: availableLnkRequestRows.length,
+                activeWelderStampCount: welderStamps.filter((record) => !record.archived).length,
+                archivedWelderStampCount: welderStamps.filter((record) => record.archived).length,
+                filteredWelderStampCount: filteredWelderStamps.length,
+              })}
               {weldsQuery.error ? ` Ошибка: ${(weldsQuery.error as Error).message}` : null}
             </span>
             <span>{message}</span>
