@@ -40,7 +40,6 @@ import {
 } from '@/lib/weld-fields'
 import {
   HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
-  HIGHLIGHT_DURATION_MS as highlightDurationMs,
   LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
   LNK_CUSTOM_RESULT_VALUE,
   LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
@@ -105,17 +104,15 @@ import {
 import { getReportRowActions } from '@/lib/report-row-actions'
 import {
   useAutoCollapseNavOnHorizontalScroll,
-  useClearTimerOnUnmount,
   useEscapeToClearReportFilters,
 } from '@/lib/report-page-effects'
 import { useWelderStampRegistryState } from '@/lib/use-welder-stamp-registry-state'
 import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
+import { useReportHighlights } from '@/lib/use-report-highlights'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
-  buildHighlightSets,
   canOpenLinkedReport,
-  expandHighlightFieldKeys,
   getActiveReportTitle,
   getEditableReportImportLabel,
   getJointTitle,
@@ -288,12 +285,6 @@ const emptyFilters: WeldFilters = {}
 function Home() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const importHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const latestHighlightRef = useRef<{
-    rows: Array<{ id?: number }>
-    fieldKeys: WeldFieldKey[]
-    createdAt: number
-  } | null>(null)
   const [activeReport, setActiveReport] = useState<ActiveReport>('weldingJournal')
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [heatTreatmentFilters, setHeatTreatmentFilters] = useState<Record<string, string>>({})
@@ -303,8 +294,12 @@ function Home() {
   const [heatTreatmentFieldEditing, setHeatTreatmentFieldEditing] = useState<HeatTreatmentFieldEditingState | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(false)
-  const [highlightedRowIds, setHighlightedRowIds] = useState<Set<number>>(new Set())
-  const [highlightedCellKeys, setHighlightedCellKeys] = useState<Set<string>>(new Set())
+  const {
+    highlightedRowIds,
+    highlightedCellKeys,
+    highlightChangedRows,
+    replayLatestHighlight,
+  } = useReportHighlights()
   const [selectedHeatTreatmentIds, setSelectedHeatTreatmentIds] = useState<Set<number>>(new Set())
   const [selectedLnkIds, setSelectedLnkIds] = useState<Set<number>>(new Set())
   const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
@@ -393,7 +388,6 @@ function Home() {
   })
 
   useAutoCollapseNavOnHorizontalScroll(setNavCollapsed)
-  useClearTimerOnUnmount(importHighlightTimerRef)
   useReportSwitchReset({
     activeReport,
     replayLatestHighlight,
@@ -2756,40 +2750,6 @@ function Home() {
       value: heatTreatmentFieldEditing.value.trim() || null,
       rows,
     })
-  }
-
-  function highlightChangedRows(rows: Array<{ id?: number }> | undefined, cellFieldKeys: WeldFieldKey[] = []) {
-    if (rows && rows.length > 0) {
-      latestHighlightRef.current = {
-        rows,
-        fieldKeys: expandHighlightFieldKeys(cellFieldKeys),
-        createdAt: Date.now(),
-      }
-    }
-    applyChangedRowsHighlight(rows, cellFieldKeys)
-  }
-
-  function replayLatestHighlight() {
-    const latestHighlight = latestHighlightRef.current
-    if (!latestHighlight) return
-    if (Date.now() - latestHighlight.createdAt > highlightDurationMs * 4) return
-    applyChangedRowsHighlight(latestHighlight.rows, latestHighlight.fieldKeys)
-  }
-
-  function applyChangedRowsHighlight(rows: Array<{ id?: number }> | undefined, cellFieldKeys: WeldFieldKey[] = []) {
-    const highlightSets = buildHighlightSets(rows, cellFieldKeys)
-    if (!highlightSets) return
-
-    setHighlightedRowIds(highlightSets.rowIds)
-    setHighlightedCellKeys(highlightSets.cellKeys)
-    if (importHighlightTimerRef.current) {
-      clearTimeout(importHighlightTimerRef.current)
-    }
-    importHighlightTimerRef.current = setTimeout(() => {
-      setHighlightedRowIds(new Set())
-      setHighlightedCellKeys(new Set())
-      importHighlightTimerRef.current = null
-    }, highlightDurationMs)
   }
 
   function isRepeatedJointTaskExpanded(task: DispatcherTask) {
