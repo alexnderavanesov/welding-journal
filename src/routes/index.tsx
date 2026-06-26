@@ -20,7 +20,7 @@ import { PstoRequestDialog } from '@/components/psto-request-dialog'
 import { PstoRequestManagerDialog } from '@/components/psto-request-manager-dialog'
 import { PstoResultDialog } from '@/components/psto-result-dialog'
 import { PstoResultManagerDialog } from '@/components/psto-result-manager-dialog'
-import { ReportFieldEditDialog } from '@/components/report-field-edit-dialog'
+import { ReportFieldEditor } from '@/components/report-field-editor'
 import {
   clearLnkGeneratedWeldData,
   createWeldJoint,
@@ -3388,20 +3388,23 @@ function Home() {
         />
       ) : null}
 
-      {heatTreatmentFieldEditing ? (
-        <ReportFieldEditDialog
-          editing={heatTreatmentFieldEditing}
-          requestOptions={lnkRequestOptions}
-          isSaving={heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending}
-          onChange={(value) =>
-            setHeatTreatmentFieldEditing((current) =>
-              current ? { ...current, value } : current,
-            )
-          }
-          onClose={() => setHeatTreatmentFieldEditing(null)}
-          onSave={saveEditedHeatTreatmentField}
-        />
-      ) : null}
+      <ReportFieldEditor
+        dialogProps={
+          heatTreatmentFieldEditing
+            ? {
+                editing: heatTreatmentFieldEditing,
+                requestOptions: lnkRequestOptions,
+                isSaving: heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending,
+                onChange: (value) =>
+                  setHeatTreatmentFieldEditing((current) =>
+                    current ? { ...current, value } : current,
+                  ),
+                onClose: () => setHeatTreatmentFieldEditing(null),
+                onSave: saveEditedHeatTreatmentField,
+              }
+            : null
+        }
+      />
     </main>
   )
 }
