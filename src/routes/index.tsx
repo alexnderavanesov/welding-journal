@@ -91,6 +91,7 @@ import { useWelderStampRegistryState } from '@/lib/use-welder-stamp-registry-sta
 import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import { useReportHighlights } from '@/lib/use-report-highlights'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
+import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
@@ -1926,70 +1927,7 @@ function Home() {
     setIsLnkOfficialityModalOpen(false)
   }
 
-  useEffect(() => {
-    if (!isReportModalOpen) return
-
-    function handleReportModalKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-
-      if (isLnkResultPreviewOpen) {
-        setIsLnkResultPreviewOpen(false)
-        return
-      }
-      if (isPstoRequestManagerOpen) {
-        if (!pstoRequestManagerMutation.isPending && !pstoRequestCorrectionMutation.isPending) {
-          setIsPstoRequestManagerOpen(false)
-        }
-        return
-      }
-      if (isPstoResultManagerOpen) {
-        if (!pstoResultCorrectionMutation.isPending) {
-          setIsPstoResultManagerOpen(false)
-        }
-        return
-      }
-      if (isLnkRequestManagerOpen) {
-        if (!lnkRequestManagerMutation.isPending && !lnkRequestCorrectionMutation.isPending) {
-          setIsLnkRequestManagerOpen(false)
-        }
-        return
-      }
-      if (isLnkResultManagerOpen) {
-        if (
-          !lnkResultCorrectionMutation.isPending &&
-          !lnkResultReplacementMutation.isPending &&
-          !lnkConclusionCorrectionMutation.isPending
-        ) {
-          setIsLnkResultManagerOpen(false)
-        }
-        return
-      }
-      if (isPstoResultModalOpen) {
-        closeAddPstoResultModal()
-        return
-      }
-      if (isPstoRequestModalOpen) {
-        closeCreatePstoRequestModal()
-        return
-      }
-      if (isLnkOfficialityModalOpen) {
-        closeLnkOfficialityModal()
-        return
-      }
-      if (isLnkResultModalOpen) {
-        closeAddLnkResultModal()
-        return
-      }
-      if (isLnkRequestModalOpen) {
-        closeCreateLnkRequestModal()
-      }
-    }
-
-    window.addEventListener('keydown', handleReportModalKeyDown, { capture: true })
-    return () => window.removeEventListener('keydown', handleReportModalKeyDown, { capture: true })
-  }, [
+  useReportModalEscapeKey({
     isReportModalOpen,
     isLnkResultPreviewOpen,
     isPstoRequestManagerOpen,
@@ -2001,20 +1939,24 @@ function Home() {
     isLnkOfficialityModalOpen,
     isLnkResultModalOpen,
     isLnkRequestModalOpen,
-    pstoRequestManagerMutation.isPending,
-    pstoRequestCorrectionMutation.isPending,
-    pstoResultCorrectionMutation.isPending,
-    lnkRequestManagerMutation.isPending,
-    lnkRequestCorrectionMutation.isPending,
-    lnkResultCorrectionMutation.isPending,
-    lnkResultReplacementMutation.isPending,
-    lnkConclusionCorrectionMutation.isPending,
-    pstoResultMutation.isPending,
-    pstoRequestMutation.isPending,
-    lnkOfficialityMutation.isPending,
-    lnkResultMutation.isPending,
-    lnkRequestMutation.isPending,
-  ])
+    canClosePstoRequestManager: !pstoRequestManagerMutation.isPending && !pstoRequestCorrectionMutation.isPending,
+    canClosePstoResultManager: !pstoResultCorrectionMutation.isPending,
+    canCloseLnkRequestManager: !lnkRequestManagerMutation.isPending && !lnkRequestCorrectionMutation.isPending,
+    canCloseLnkResultManager:
+      !lnkResultCorrectionMutation.isPending &&
+      !lnkResultReplacementMutation.isPending &&
+      !lnkConclusionCorrectionMutation.isPending,
+    onCloseLnkResultPreview: () => setIsLnkResultPreviewOpen(false),
+    onClosePstoRequestManager: () => setIsPstoRequestManagerOpen(false),
+    onClosePstoResultManager: () => setIsPstoResultManagerOpen(false),
+    onCloseLnkRequestManager: () => setIsLnkRequestManagerOpen(false),
+    onCloseLnkResultManager: () => setIsLnkResultManagerOpen(false),
+    onClosePstoResultModal: closeAddPstoResultModal,
+    onClosePstoRequestModal: closeCreatePstoRequestModal,
+    onCloseLnkOfficialityModal: closeLnkOfficialityModal,
+    onCloseLnkResultModal: closeAddLnkResultModal,
+    onCloseLnkRequestModal: closeCreateLnkRequestModal,
+  })
 
   function toggleLnkOfficialityRow(rowId: number) {
     setLnkOfficialityDraft((current) => {
