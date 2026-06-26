@@ -1,4 +1,10 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import {
+  hasAnyLnkReportControl,
+  hasHeatTreatmentReportState,
+  toHeatTreatmentReportRow,
+  toLnkReportRow,
+} from '@/lib/report-control-state'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export function sumAcceptedWdi(rows: Array<WeldInput & { id?: number }>) {
@@ -11,6 +17,15 @@ export function sumAcceptedWdi(rows: Array<WeldInput & { id?: number }>) {
 
 export function filterPstoResultRows(rows: WeldRow[], search: string) {
   return filterPstoRows(rows, search).sort(compareHeatTreatmentReportRows)
+}
+
+export function buildHeatTreatmentReportRows(rows: WeldRow[]) {
+  return rows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow).sort(compareHeatTreatmentReportRows)
+}
+
+export function buildLnkReportRows(rows: WeldRow[], preservedIds?: number[] | null) {
+  const sortedRows = rows.filter(hasAnyLnkReportControl).map(toLnkReportRow).sort(compareLnkReportRows)
+  return preservedIds ? sortRowsByPreservedOrder(sortedRows, preservedIds) : sortedRows
 }
 
 export function filterPstoRows(rows: WeldRow[], search: string) {

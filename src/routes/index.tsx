@@ -99,11 +99,7 @@ import {
 } from '@/lib/lnk-report-rows'
 import {
   canCreateLnkRequest,
-  hasAnyLnkReportControl,
-  hasHeatTreatmentReportState,
   toControlCancellationReportRow,
-  toHeatTreatmentReportRow,
-  toLnkReportRow,
   withOfficialJointStatus,
   withPendingLnkResults,
 } from '@/lib/report-control-state'
@@ -115,10 +111,9 @@ import {
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
 import { downloadExcelBytes, openNonEmptyTabularReportWindow } from '@/lib/report-window'
 import {
+  buildHeatTreatmentReportRows,
+  buildLnkReportRows,
   compactSearchText,
-  compareHeatTreatmentReportRows,
-  compareLnkReportRows,
-  compareReportRows,
   filterPstoResultRows,
   normalizeSearchText,
   sortRowsByPreservedOrder,
@@ -1471,7 +1466,7 @@ function Home() {
 
   const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
   const heatTreatmentRows = useMemo(
-    () => weldedRows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow).sort(compareHeatTreatmentReportRows),
+    () => buildHeatTreatmentReportRows(weldedRows),
     [weldedRows],
   )
   const availablePstoRequestRows = useMemo(() => heatTreatmentRows.filter(canCreatePstoRequest), [heatTreatmentRows])
@@ -1483,10 +1478,7 @@ function Home() {
     () => filteredPstoRequestRows.filter(canCreatePstoRequest),
     [filteredPstoRequestRows],
   )
-  const lnkRows = useMemo(() => {
-    const sortedRows = weldedRows.filter(hasAnyLnkReportControl).map(toLnkReportRow).sort(compareLnkReportRows)
-    return preservedLnkOrderIds ? sortRowsByPreservedOrder(sortedRows, preservedLnkOrderIds) : sortedRows
-  }, [preservedLnkOrderIds, weldedRows])
+  const lnkRows = useMemo(() => buildLnkReportRows(weldedRows, preservedLnkOrderIds), [preservedLnkOrderIds, weldedRows])
   const availableLnkRequestRows = useMemo(() => lnkRows.filter(canCreateLnkRequest), [lnkRows])
   const filteredLnkRequestRows = useMemo(
     () => filterLnkRequestRows(lnkRows, lnkRequestSearch),
