@@ -109,6 +109,7 @@ import {
   useEscapeToClearReportFilters,
 } from '@/lib/report-page-effects'
 import { useWelderStampRegistryState } from '@/lib/use-welder-stamp-registry-state'
+import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
@@ -293,7 +294,6 @@ function Home() {
     fieldKeys: WeldFieldKey[]
     createdAt: number
   } | null>(null)
-  const previousReportRef = useRef<ActiveReport>('weldingJournal')
   const [activeReport, setActiveReport] = useState<ActiveReport>('weldingJournal')
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
   const [heatTreatmentFilters, setHeatTreatmentFilters] = useState<Record<string, string>>({})
@@ -394,54 +394,36 @@ function Home() {
 
   useAutoCollapseNavOnHorizontalScroll(setNavCollapsed)
   useClearTimerOnUnmount(importHighlightTimerRef)
-
-  useEffect(() => {
-    let frameId: number | null = null
-    if (previousReportRef.current !== activeReport) {
-      previousReportRef.current = activeReport
-      frameId = window.requestAnimationFrame(() => {
-        window.scrollTo({ left: 0, top: 0, behavior: 'auto' })
-      })
-      replayLatestHighlight()
-    }
-
-    if (activeReport !== 'heatTreatment') {
-      setSelectedHeatTreatmentIds(new Set())
-      setHeatTreatmentFieldEditing(null)
-      setPstoRequestNaming(defaultRequestNamingState)
-      setPstoRequestSearch('')
-      setPstoResultRequestSearch('')
-      setIsPstoRequestModalOpen(false)
-      setIsPstoRequestManagerOpen(false)
-      setManagedPstoRequestName('')
-      setManagedPstoRequestNameDraft('')
-      setIsPstoResultModalOpen(false)
-      setIsPstoResultManagerOpen(false)
-      setManagedPstoDiagramDrafts({})
-      setPstoResultDraft(createDefaultPstoResultDraft())
-      setIsPstoShowMenuOpen(false)
-    }
-    if (activeReport !== 'lnk') {
-      setSelectedLnkIds(new Set())
-      setLnkRequestDraft({ methods: new Set() })
-      setLnkRequestNaming(defaultRequestNamingState)
-      setIsLnkRequestModalOpen(false)
-      setIsLnkResultModalOpen(false)
-      setIsLnkResultPreviewOpen(false)
-      setShouldPinPreviewedLnkResultRows(false)
-      setLnkResultDraft(createDefaultLnkResultDraft())
-      setLnkRequestSearch('')
-      setPreservedLnkOrderIds(null)
-    }
-    if (activeReport !== 'welderStamps') {
-      resetWelderStampForm()
-      setWelderStampSearch('')
-    }
-
-    return () => {
-      if (frameId !== null) window.cancelAnimationFrame(frameId)
-    }
-  }, [activeReport])
+  useReportSwitchReset({
+    activeReport,
+    replayLatestHighlight,
+    resetWelderStampForm,
+    setHeatTreatmentFieldEditing,
+    setIsLnkRequestModalOpen,
+    setIsLnkResultModalOpen,
+    setIsLnkResultPreviewOpen,
+    setIsPstoRequestManagerOpen,
+    setIsPstoRequestModalOpen,
+    setIsPstoResultManagerOpen,
+    setIsPstoResultModalOpen,
+    setIsPstoShowMenuOpen,
+    setLnkRequestDraft,
+    setLnkRequestNaming,
+    setLnkRequestSearch,
+    setLnkResultDraft,
+    setManagedPstoDiagramDrafts,
+    setManagedPstoRequestName,
+    setManagedPstoRequestNameDraft,
+    setPreservedLnkOrderIds,
+    setPstoRequestNaming,
+    setPstoRequestSearch,
+    setPstoResultDraft,
+    setPstoResultRequestSearch,
+    setSelectedHeatTreatmentIds,
+    setSelectedLnkIds,
+    setShouldPinPreviewedLnkResultRows,
+    setWelderStampSearch,
+  })
 
   const weldsQuery = useQuery({
     queryKey: ['weld-joints', emptyFilters],
