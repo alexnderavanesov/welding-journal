@@ -48,7 +48,6 @@ import {
 } from '@/lib/weld-fields'
 import {
   HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
-  HEAT_TREATMENT_HIDDEN_FIELD_KEYS as heatTreatmentHiddenFieldKeys,
   HEAT_TREATMENT_IMPORT_MATCH_FIELD_KEYS as heatTreatmentImportMatchFieldKeys,
   HIGHLIGHT_DURATION_MS as highlightDurationMs,
   LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
@@ -57,7 +56,6 @@ import {
   LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
   LNK_EMPTY_RESULT_VALUE,
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
-  LNK_HIDDEN_FIELD_KEYS as lnkHiddenFieldKeys,
   LNK_IMPORT_MATCH_FIELD_KEYS as lnkImportMatchFieldKeys,
   LNK_METHODS,
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
@@ -72,8 +70,6 @@ import {
   REQUEST_AND_RESULT_FIELD_KEYS as requestAndResultFieldKeys,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
   WELD_STAMP_COMPLETION_GROUPS,
-  WELDING_JOURNAL_BLOCKED_FIELD_KEYS as weldingJournalBlockedFieldKeys,
-  WELDING_JOURNAL_HIDDEN_FIELD_KEYS as weldingJournalHiddenFieldKeys,
 } from '@/lib/report-config'
 import {
   getInactiveLnkRequestBadgeClass,
@@ -138,10 +134,14 @@ import {
   getActiveReportTitle,
   getJointTitle,
   getOpenLinkedReportTitle,
+  getReportBlockedFieldKeys,
+  getReportEditableFieldKeys,
+  getReportHiddenFieldKeys,
   getReportRegisterMinWidth,
   getVisibleReportRows,
   isReadOnlyReport,
   setNumberSetValues,
+  shouldMergePstoSections,
   toggleNumberSetValue,
   toggleNumberSetValues,
 } from '@/lib/report-ui-state'
@@ -1919,13 +1919,8 @@ function Home() {
   function exportXlsx() {
     const fields = getReportExportFields({
       storageKey: activeReport,
-      hiddenFieldKeys:
-        activeReport === 'heatTreatment'
-          ? heatTreatmentHiddenFieldKeys
-          : activeReport === 'lnk'
-            ? lnkHiddenFieldKeys
-            : weldingJournalHiddenFieldKeys,
-      mergePstoSections: activeReport === 'heatTreatment',
+      hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
+      mergePstoSections: shouldMergePstoSections(activeReport),
     })
     const exportOptions = {
       fields,
@@ -3339,14 +3334,8 @@ function Home() {
               highlightedRowIds={highlightedRowIds}
               highlightedCellKeys={highlightedCellKeys}
               readOnly={isReadOnlyReport(activeReport)}
-              editableFieldKeys={
-                activeReport === 'heatTreatment'
-                  ? heatTreatmentEditableFieldKeys
-                  : activeReport === 'lnk'
-                    ? lnkEditableFieldKeys
-                    : undefined
-              }
-              blockedFieldKeys={activeReport === 'weldingJournal' ? weldingJournalBlockedFieldKeys : undefined}
+              editableFieldKeys={getReportEditableFieldKeys(activeReport)}
+              blockedFieldKeys={getReportBlockedFieldKeys(activeReport)}
               isCellEditable={
                 activeReport === 'lnk'
                   ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
@@ -3388,14 +3377,8 @@ function Home() {
                   : undefined
               }
               storageKey={activeReport}
-              hiddenFieldKeys={
-                activeReport === 'heatTreatment'
-                  ? heatTreatmentHiddenFieldKeys
-                  : activeReport === 'lnk'
-                    ? lnkHiddenFieldKeys
-                    : weldingJournalHiddenFieldKeys
-              }
-              mergePstoSections={activeReport === 'heatTreatment'}
+              hiddenFieldKeys={getReportHiddenFieldKeys(activeReport)}
+              mergePstoSections={shouldMergePstoSections(activeReport)}
             />
           )}
         </div>

@@ -1,4 +1,12 @@
-import { LNK_METHODS } from '@/lib/report-config'
+import {
+  HEAT_TREATMENT_EDITABLE_FIELD_KEYS,
+  HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+  LNK_EDITABLE_FIELD_KEYS,
+  LNK_HIDDEN_FIELD_KEYS,
+  LNK_METHODS,
+  WELDING_JOURNAL_BLOCKED_FIELD_KEYS,
+  WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+} from '@/lib/report-config'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
@@ -26,6 +34,26 @@ export function getVisibleReportRows<T>(
 
 export function getReportRegisterMinWidth(activeReport: ActiveReport, defaultMinWidth: number) {
   return activeReport === 'welderStamps' ? 1120 : defaultMinWidth
+}
+
+export function getReportEditableFieldKeys(activeReport: ActiveReport) {
+  if (activeReport === 'heatTreatment') return HEAT_TREATMENT_EDITABLE_FIELD_KEYS
+  if (activeReport === 'lnk') return LNK_EDITABLE_FIELD_KEYS
+  return undefined
+}
+
+export function getReportHiddenFieldKeys(activeReport: ActiveReport) {
+  if (activeReport === 'heatTreatment') return HEAT_TREATMENT_HIDDEN_FIELD_KEYS
+  if (activeReport === 'lnk') return LNK_HIDDEN_FIELD_KEYS
+  return WELDING_JOURNAL_HIDDEN_FIELD_KEYS
+}
+
+export function getReportBlockedFieldKeys(activeReport: ActiveReport) {
+  return activeReport === 'weldingJournal' ? WELDING_JOURNAL_BLOCKED_FIELD_KEYS : undefined
+}
+
+export function shouldMergePstoSections(activeReport: ActiveReport) {
+  return activeReport === 'heatTreatment'
 }
 
 export function isReadOnlyReport(activeReport: ActiveReport) {
