@@ -103,6 +103,7 @@ import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
+import { usePstoModalState } from '@/lib/use-psto-modal-state'
 import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
@@ -277,17 +278,30 @@ function Home() {
     setSelectedLnkIds,
   } = useReportSelectionState()
   const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
-  const [pstoRequestNaming, setPstoRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
-  const [pstoRequestSearch, setPstoRequestSearch] = useState('')
-  const [pstoResultRequestSearch, setPstoResultRequestSearch] = useState('')
-  const [isPstoRequestModalOpen, setIsPstoRequestModalOpen] = useState(false)
-  const [isPstoRequestManagerOpen, setIsPstoRequestManagerOpen] = useState(false)
-  const [managedPstoRequestName, setManagedPstoRequestName] = useState('')
-  const [managedPstoRequestNameDraft, setManagedPstoRequestNameDraft] = useState('')
-  const [isPstoResultModalOpen, setIsPstoResultModalOpen] = useState(false)
-  const [isPstoResultManagerOpen, setIsPstoResultManagerOpen] = useState(false)
-  const [managedPstoDiagramDrafts, setManagedPstoDiagramDrafts] = useState<Record<number, string>>({})
-  const [pstoResultDraft, setPstoResultDraft] = useState<PstoResultDraftState>(() => createDefaultPstoResultDraft())
+  const {
+    pstoRequestNaming,
+    pstoRequestSearch,
+    pstoResultRequestSearch,
+    isPstoRequestModalOpen,
+    isPstoRequestManagerOpen,
+    managedPstoRequestName,
+    managedPstoRequestNameDraft,
+    isPstoResultModalOpen,
+    isPstoResultManagerOpen,
+    managedPstoDiagramDrafts,
+    pstoResultDraft,
+    setPstoRequestNaming,
+    setPstoRequestSearch,
+    setPstoResultRequestSearch,
+    setIsPstoRequestModalOpen,
+    setIsPstoRequestManagerOpen,
+    setManagedPstoRequestName,
+    setManagedPstoRequestNameDraft,
+    setIsPstoResultModalOpen,
+    setIsPstoResultManagerOpen,
+    setManagedPstoDiagramDrafts,
+    setPstoResultDraft,
+  } = usePstoModalState()
   const [lnkRequestNaming, setLnkRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
   const [isLnkRequestModalOpen, setIsLnkRequestModalOpen] = useState(false)
   const [isLnkRequestManagerOpen, setIsLnkRequestManagerOpen] = useState(false)
