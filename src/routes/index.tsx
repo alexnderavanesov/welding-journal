@@ -98,6 +98,7 @@ import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
+import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -157,7 +158,6 @@ import {
   formatLongDate,
 } from '@/lib/date-format'
 import {
-  findFirstDateBeforeWeldDateIssue,
   getWeldDateOrderValue,
   isDateBeforeWeldDate,
 } from '@/lib/report-date-rules'
@@ -1397,53 +1397,23 @@ function Home() {
     managedPstoRequestName,
     managedLnkRequestName,
   })
-  const pstoResultAvailableRequestOptions = useMemo(() => {
-    const selectedRequestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(pstoResultSelectedRows, ['pstoRequest']))
-    return selectedRequestOptions.length > 0 ? selectedRequestOptions : pstoResultRequestOptions
-  }, [pstoResultRequestOptions, pstoResultSelectedRows])
-  const filteredPstoResultRequestOptions = useMemo(
-    () => filterRequestNamesBySearch(pstoResultAvailableRequestOptions, pstoResultRequestSearch),
-    [pstoResultAvailableRequestOptions, pstoResultRequestSearch],
-  )
-  const pstoResultSearchRows = pstoResultDraft.requestName ? selectedPstoResultRequestRows : heatTreatmentRows
-  const filteredPstoResultRows = useMemo(
-    () => filterPstoResultRows(pstoResultSearchRows, pstoResultDraft.search),
-    [pstoResultDraft.search, pstoResultSearchRows],
-  )
-  const selectedPstoResultRows = useMemo(
-    () =>
-      filteredPstoResultRows.filter(
-        (row) => pstoResultDraft.rowIds.has(row.id) && canSelectPstoResultRow(row, pstoResultDraft.requestName),
-      ),
-    [filteredPstoResultRows, pstoResultDraft.requestName, pstoResultDraft.rowIds],
-  )
-  const pstoResultSaveBlockReason = useMemo(() => {
-    if (pstoResultMutation.isPending) return 'Результат сохраняется, дождитесь завершения.'
-    if (!pstoResultDraft.requestName) return 'Выберите заявку ПСТО.'
-    if (selectedPstoResultRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
-    if (!pstoResultDraft.result) return 'Выберите результат ПСТО.'
-    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && pstoResultDraft.result !== 'проведено') return 'Выберите результат ПСТО.'
-    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !pstoResultDraft.pstoDate) return 'Укажите дату ПСТО.'
-    const dateIssue =
-      pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE
-        ? null
-        : findFirstDateBeforeWeldDateIssue(selectedPstoResultRows, pstoResultDraft.pstoDate, 'Дата ПСТО')
-    if (dateIssue) return dateIssue
-    if (
-      pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE &&
-      !getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName)
-    ) {
-      return 'Укажите наименование диаграммы термообработки.'
-    }
-    return ''
-  }, [nextPstoDiagramName, pstoResultDraft, pstoResultMutation.isPending, selectedPstoResultRows])
-  const managedPstoResultRows = useMemo(
-    () =>
-      heatTreatmentRows.filter(
-        (row) => pstoResultDraft.rowIds.has(row.id) && (hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate)),
-      ),
-    [heatTreatmentRows, pstoResultDraft.rowIds],
-  )
+  const {
+    pstoResultAvailableRequestOptions,
+    filteredPstoResultRequestOptions,
+    filteredPstoResultRows,
+    selectedPstoResultRows,
+    pstoResultSaveBlockReason,
+    managedPstoResultRows,
+  } = usePstoResultDerivedState({
+    heatTreatmentRows,
+    pstoResultSelectedRows,
+    pstoResultRequestOptions,
+    pstoResultRequestSearch,
+    selectedPstoResultRequestRows,
+    pstoResultDraft,
+    nextPstoDiagramName,
+    isPstoResultSaving: pstoResultMutation.isPending,
+  })
   const lnkResultMethodRequestOptions = useMemo(() => {
     const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
     if (!method) return lnkResultRequestOptions
