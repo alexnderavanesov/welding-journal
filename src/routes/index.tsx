@@ -134,6 +134,9 @@ import {
   expandHighlightFieldKeys,
   getCellKey,
   getJointTitle,
+  setNumberSetValues,
+  toggleNumberSetValue,
+  toggleNumberSetValues,
 } from '@/lib/report-ui-state'
 import {
   hasText,
@@ -2210,27 +2213,11 @@ function Home() {
   }
 
   function togglePstoRequestRow(rowId: number) {
-    setSelectedHeatTreatmentIds((current) => {
-      const next = new Set(current)
-      if (next.has(rowId)) {
-        next.delete(rowId)
-      } else {
-        next.add(rowId)
-      }
-      return next
-    })
+    setSelectedHeatTreatmentIds((current) => toggleNumberSetValue(current, rowId))
   }
 
   function toggleAllPstoRequestRows() {
-    setSelectedHeatTreatmentIds((current) => {
-      const filteredIds = new Set(filteredAvailablePstoRequestRows.map((row) => row.id))
-      if (filteredIds.size === 0) return current
-      const allFilteredSelected = [...filteredIds].every((id) => current.has(id))
-      if (allFilteredSelected) {
-        return new Set([...current].filter((id) => !filteredIds.has(id)))
-      }
-      return new Set([...current, ...filteredIds])
-    })
+    setSelectedHeatTreatmentIds((current) => toggleNumberSetValues(current, filteredAvailablePstoRequestRows.map((row) => row.id)))
   }
 
   function handleAddPstoResult() {
@@ -2463,27 +2450,13 @@ function Home() {
 
   function toggleLnkOfficialityRow(rowId: number) {
     setLnkOfficialityDraft((current) => {
-      const rowIds = new Set(current.rowIds)
-      if (rowIds.has(rowId)) {
-        rowIds.delete(rowId)
-      } else {
-        rowIds.add(rowId)
-      }
-      return { ...current, rowIds }
+      return { ...current, rowIds: toggleNumberSetValue(current.rowIds, rowId) }
     })
   }
 
   function setVisibleLnkOfficialityRowsSelected(selected: boolean) {
     setLnkOfficialityDraft((current) => {
-      const rowIds = new Set(current.rowIds)
-      for (const row of filteredLnkOfficialityRows) {
-        if (selected) {
-          rowIds.add(row.id)
-        } else {
-          rowIds.delete(row.id)
-        }
-      }
-      return { ...current, rowIds }
+      return { ...current, rowIds: setNumberSetValues(current.rowIds, filteredLnkOfficialityRows.map((row) => row.id), selected) }
     })
   }
 
@@ -2882,27 +2855,11 @@ function Home() {
   }
 
   function toggleLnkRequestRow(rowId: number) {
-    setSelectedLnkIds((current) => {
-      const next = new Set(current)
-      if (next.has(rowId)) {
-        next.delete(rowId)
-      } else {
-        next.add(rowId)
-      }
-      return next
-    })
+    setSelectedLnkIds((current) => toggleNumberSetValue(current, rowId))
   }
 
   function toggleAllLnkRequestRows() {
-    setSelectedLnkIds((current) => {
-      const filteredIds = new Set(filteredAvailableLnkRequestRows.map((row) => row.id))
-      if (filteredIds.size === 0) return current
-      const allFilteredSelected = [...filteredIds].every((id) => current.has(id))
-      if (allFilteredSelected) {
-        return new Set([...current].filter((id) => !filteredIds.has(id)))
-      }
-      return new Set([...current, ...filteredIds])
-    })
+    setSelectedLnkIds((current) => toggleNumberSetValues(current, filteredAvailableLnkRequestRows.map((row) => row.id)))
   }
 
   function handleEditRecord(record: WeldInput & { id: number }, focusField?: WeldFieldKey) {
