@@ -24,6 +24,17 @@ export function getVisibleReportRows<T>(
   return weldingRows
 }
 
+export function getActiveColumnFilters(
+  activeReport: ActiveReport,
+  weldingFilters: Record<string, string>,
+  heatTreatmentFilters: Record<string, string>,
+  lnkFilters: Record<string, string>,
+) {
+  if (activeReport === 'heatTreatment') return heatTreatmentFilters
+  if (activeReport === 'lnk') return lnkFilters
+  return weldingFilters
+}
+
 export function makeExactColumnFilterValue(value: unknown) {
   return `=${String(value ?? '').trim().toLowerCase()}`
 }

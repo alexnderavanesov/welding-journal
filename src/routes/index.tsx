@@ -131,6 +131,7 @@ import {
   sumAcceptedWdi,
 } from '@/lib/report-row-utils'
 import {
+  getActiveColumnFilters,
   buildHighlightSets,
   expandHighlightFieldKeys,
   getActiveReportTitle,
@@ -1820,8 +1821,7 @@ function Home() {
     return ''
   }, [lnkOfficialityDraft.status, lnkOfficialityMutation.isPending, selectedLnkOfficialityRows])
   const isLnkOfficialitySaveDisabled = Boolean(lnkOfficialitySaveBlockReason)
-  const activeColumnFilters =
-    activeReport === 'heatTreatment' ? heatTreatmentFilters : activeReport === 'lnk' ? lnkFilters : columnFilters
+  const activeColumnFilters = getActiveColumnFilters(activeReport, columnFilters, heatTreatmentFilters, lnkFilters)
   const activeFiltersSetter =
     activeReport === 'heatTreatment' ? setHeatTreatmentFilters : activeReport === 'lnk' ? setLnkFilters : setColumnFilters
   const acceptedWdiTotal = useMemo(() => sumAcceptedWdi(rows), [rows])
