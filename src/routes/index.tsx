@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ReportHeaderActions } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
+import { ReportPageHeader } from '@/components/report-page-header'
 import { ReportSummaryBar } from '@/components/report-summary-bar'
 import { ReportTaskPanels } from '@/components/report-task-panels'
 import { ReportDialogs } from '@/components/report-dialogs'
@@ -2926,13 +2927,7 @@ function Home() {
       onNavCollapsedChange={setNavCollapsed}
       onReportChange={changeActiveReport}
     >
-          <header
-            className="sticky z-40 flex w-full items-start gap-4 bg-white pb-1"
-            style={{ left: stickyLeft, minWidth: registerMinWidth }}
-          >
-            <div className="shrink-0">
-              <h1 className="text-2xl font-semibold tracking-tight">{activeTitle}</h1>
-            </div>
+          <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={registerMinWidth}>
             <ReportHeaderActions
               activeReport={activeReport}
               fileInputRef={fileInputRef}
@@ -2960,7 +2955,7 @@ function Home() {
               onOpenLnkWaitingNkReport={openLnkWaitingNkReport}
               onOpenLnkConclusionsReport={openLnkConclusionsReport}
             />
-          </header>
+          </ReportPageHeader>
 
           <ReportSummaryBar
             activeReport={activeReport}
