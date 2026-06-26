@@ -7,12 +7,8 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { ReportHeaderActions } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
 import { ReportSummaryBar } from '@/components/report-summary-bar'
-import { ReportWeldEditor } from '@/components/report-weld-editor'
 import { ReportTaskPanels } from '@/components/report-task-panels'
-import { ReportChainDialog } from '@/components/report-chain-dialog'
-import { ReportLnkDialogs } from '@/components/report-lnk-dialogs'
-import { ReportPstoDialogs } from '@/components/report-psto-dialogs'
-import { ReportFieldEditor } from '@/components/report-field-editor'
+import { ReportDialogs } from '@/components/report-dialogs'
 import {
   clearLnkGeneratedWeldData,
   createWeldJoint,
@@ -3078,9 +3074,9 @@ function Home() {
         </div>
       </div>
 
-      <ReportChainDialog
-        dialogProps={
-          chainRecord
+      <ReportDialogs
+        chainDialogProps={{
+          dialogProps: chainRecord
             ? {
                 record: chainRecord,
                 rows: chainRows,
@@ -3088,14 +3084,11 @@ function Home() {
                 onOpenBase: openChainBaseInCurrentReport,
                 onOpenRow: openChainRowInCurrentReport,
               }
-            : null
-        }
-      />
-
-      <ReportWeldEditor
-        formKey={editing ? `${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}` : null}
-        formProps={
-          editing
+            : null,
+        }}
+        weldEditorProps={{
+          formKey: editing ? `${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}` : null,
+          formProps: editing
             ? {
                 value: editing.record,
                 focusField: editing.focusField,
@@ -3106,13 +3099,10 @@ function Home() {
                 onSave: (value) =>
                   saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id }),
               }
-            : null
-        }
-      />
-
-      <ReportPstoDialogs
-        requestDialogProps={
-          isPstoRequestModalOpen
+            : null,
+        }}
+        pstoDialogsProps={{
+          requestDialogProps: isPstoRequestModalOpen
             ? {
                 nextRequestName: nextPstoRequestName,
                 selectedRows: selectedHeatTreatmentRows,
@@ -3137,10 +3127,8 @@ function Home() {
                 onToggleRow: togglePstoRequestRow,
                 onSubmit: submitCreatePstoRequest,
               }
-            : null
-        }
-        requestManagerDialogProps={
-          isPstoRequestManagerOpen
+            : null,
+          requestManagerDialogProps: isPstoRequestManagerOpen
             ? {
                 requestName: managedPstoRequestName,
                 requestOptions: pstoRequestManagerOptions,
@@ -3155,10 +3143,8 @@ function Home() {
                 onClearPosition: clearManagedPstoRequestPosition,
                 onDeleteRequest: deleteManagedPstoRequest,
               }
-            : null
-        }
-        resultDialogProps={
-          isPstoResultModalOpen
+            : null,
+          resultDialogProps: isPstoResultModalOpen
             ? {
                 draft: pstoResultDraft,
                 requestSearch: pstoResultRequestSearch,
@@ -3190,10 +3176,8 @@ function Home() {
                 onClose: closeAddPstoResultModal,
                 onSave: handleAddPstoResult,
               }
-            : null
-        }
-        resultManagerDialogProps={
-          isPstoResultManagerOpen
+            : null,
+          resultManagerDialogProps: isPstoResultManagerOpen
             ? {
                 rows: managedPstoResultRows,
                 diagramDrafts: managedPstoDiagramDrafts,
@@ -3207,13 +3191,10 @@ function Home() {
                 onRenameDiagram: renameManagedPstoDiagram,
                 onDeleteResult: deleteManagedPstoResult,
               }
-            : null
-        }
-      />
-
-      <ReportLnkDialogs
-        requestDialogProps={
-          isLnkRequestModalOpen
+            : null,
+        }}
+        lnkDialogsProps={{
+          requestDialogProps: isLnkRequestModalOpen
             ? {
                 nextRequestName: nextLnkRequestName,
                 selectedRowsCount: selectedLnkRows.length,
@@ -3237,10 +3218,8 @@ function Home() {
                 onToggleRow: toggleLnkRequestRow,
                 onSubmit: handleCreateLnkRequest,
               }
-            : null
-        }
-        requestManagerDialogProps={
-          isLnkRequestManagerOpen
+            : null,
+          requestManagerDialogProps: isLnkRequestManagerOpen
             ? {
                 requestName: managedLnkRequestName,
                 requestOptions: lnkRequestManagerOptions,
@@ -3256,10 +3235,8 @@ function Home() {
                 onClearPosition: clearManagedLnkRequestPosition,
                 onDeleteRequest: deleteManagedLnkRequest,
               }
-            : null
-        }
-        resultManagerDialogProps={
-          isLnkResultManagerOpen
+            : null,
+          resultManagerDialogProps: isLnkResultManagerOpen
             ? {
                 rows: managedLnkResultRows,
                 methods: managedLnkResultMethods,
@@ -3301,10 +3278,8 @@ function Home() {
                 },
                 onSaveChanges: saveManagedLnkResultChanges,
               }
-            : null
-        }
-        officialityDialogProps={
-          isLnkOfficialityModalOpen
+            : null,
+          officialityDialogProps: isLnkOfficialityModalOpen
             ? {
                 draft: lnkOfficialityDraft,
                 filteredRows: filteredLnkOfficialityRows,
@@ -3317,10 +3292,8 @@ function Home() {
                 onToggleRow: toggleLnkOfficialityRow,
                 onSetVisibleRowsSelected: setVisibleLnkOfficialityRowsSelected,
               }
-            : null
-        }
-        resultDialogProps={
-          isLnkResultModalOpen
+            : null,
+          resultDialogProps: isLnkResultModalOpen
             ? {
                 draft: lnkResultDraft,
                 requestSearch: lnkResultRequestSearch,
@@ -3384,35 +3357,28 @@ function Home() {
                 },
                 onSave: handleAddLnkResult,
               }
-            : null
-        }
-        resultPreviewDialogProps={
-          isLnkResultPreviewOpen
+            : null,
+          resultPreviewDialogProps: isLnkResultPreviewOpen
             ? {
                 rows: selectedLnkResultRows,
                 draft: lnkResultDraft,
                 onClose: () => setIsLnkResultPreviewOpen(false),
               }
-            : null
-        }
-      />
-
-      <ReportFieldEditor
-        dialogProps={
-          heatTreatmentFieldEditing
+            : null,
+        }}
+        fieldEditorProps={{
+          dialogProps: heatTreatmentFieldEditing
             ? {
                 editing: heatTreatmentFieldEditing,
                 requestOptions: lnkRequestOptions,
                 isSaving: heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending,
                 onChange: (value) =>
-                  setHeatTreatmentFieldEditing((current) =>
-                    current ? { ...current, value } : current,
-                  ),
+                  setHeatTreatmentFieldEditing((current) => (current ? { ...current, value } : current)),
                 onClose: () => setHeatTreatmentFieldEditing(null),
                 onSave: saveEditedHeatTreatmentField,
               }
-            : null
-        }
+            : null,
+        }}
       />
     </main>
   )
