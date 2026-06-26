@@ -83,8 +83,6 @@ import {
 } from '@/lib/report-import'
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
 import {
-  buildHeatTreatmentReportRows,
-  buildLnkReportRows,
   filterPstoResultRows,
   sortRowsByPreservedOrder,
   sumAcceptedWdi,
@@ -100,6 +98,7 @@ import { useReportHighlights } from '@/lib/use-report-highlights'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useReportRows } from '@/lib/use-report-rows'
+import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
@@ -113,7 +112,6 @@ import {
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
   getReportRegisterMinWidth,
-  getVisibleReportRows,
   isAnyReportModalOpen,
   isReadOnlyReport,
   setNumberSetValues,
@@ -123,7 +121,6 @@ import {
 } from '@/lib/report-ui-state'
 import {
   hasText,
-  hasWeldDate,
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
 import {
@@ -136,10 +133,8 @@ import {
   canSelectPstoResultRow,
   countLnkRequestTargets,
   filterLnkOfficialityRows,
-  filterLnkRequestRows,
   filterLnkResultRows,
   filterLnkRowsByRequestName,
-  filterPstoRequestRows,
   filterPstoRowsByRequestName,
   getLnkInputMethodsForRows,
   getLnkRequestMethodsForRows,
@@ -1354,31 +1349,24 @@ function Home() {
     welderStamps,
   })
 
-  const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
-  const heatTreatmentRows = useMemo(
-    () => buildHeatTreatmentReportRows(weldedRows),
-    [weldedRows],
-  )
-  const availablePstoRequestRows = useMemo(() => heatTreatmentRows.filter(canCreatePstoRequest), [heatTreatmentRows])
-  const filteredPstoRequestRows = useMemo(
-    () => filterPstoRequestRows(heatTreatmentRows, pstoRequestSearch),
-    [heatTreatmentRows, pstoRequestSearch],
-  )
-  const filteredAvailablePstoRequestRows = useMemo(
-    () => filteredPstoRequestRows.filter(canCreatePstoRequest),
-    [filteredPstoRequestRows],
-  )
-  const lnkRows = useMemo(() => buildLnkReportRows(weldedRows, preservedLnkOrderIds), [preservedLnkOrderIds, weldedRows])
-  const availableLnkRequestRows = useMemo(() => lnkRows.filter(canCreateLnkRequest), [lnkRows])
-  const filteredLnkRequestRows = useMemo(
-    () => filterLnkRequestRows(lnkRows, lnkRequestSearch),
-    [lnkRequestSearch, lnkRows],
-  )
-  const filteredAvailableLnkRequestRows = useMemo(
-    () => filteredLnkRequestRows.filter(canCreateLnkRequest),
-    [filteredLnkRequestRows],
-  )
-  const visibleRows = getVisibleReportRows(activeReport, rows, heatTreatmentRows, lnkRows)
+  const {
+    weldedRows,
+    heatTreatmentRows,
+    availablePstoRequestRows,
+    filteredPstoRequestRows,
+    filteredAvailablePstoRequestRows,
+    lnkRows,
+    availableLnkRequestRows,
+    filteredLnkRequestRows,
+    filteredAvailableLnkRequestRows,
+    visibleRows,
+  } = usePreparedReportRows({
+    activeReport,
+    rows,
+    preservedLnkOrderIds,
+    pstoRequestSearch,
+    lnkRequestSearch,
+  })
   const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
   useWindowEscapeKey(Boolean(chainRecord), (event) => {
     event.preventDefault()
