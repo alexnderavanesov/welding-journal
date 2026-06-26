@@ -1,10 +1,11 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ClipboardCheck, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Stamp, Trash2, Upload, X } from 'lucide-react'
+import { ChevronDown, ClipboardCheck, FileSpreadsheet, Plus, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { AppSidebar } from '@/components/app-sidebar'
 import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
@@ -2935,96 +2936,21 @@ function Home() {
     setMessage('Клеймо удалено')
   }
 
+  function changeActiveReport(report: ActiveReport) {
+    setActiveReport(report)
+    if (report === 'heatTreatment' || report === 'lnk' || report === 'welderStamps') {
+      setEditing(null)
+    }
+  }
+
   return (
     <main className="relative min-h-screen bg-white">
-      <aside
-        className={`fixed left-0 top-0 z-30 h-screen border-r border-slate-100 bg-white px-3 py-5 transition-[width] duration-200 ${
-          navCollapsed ? 'w-16' : 'w-48 lg:w-64 lg:px-4'
-        }`}
-      >
-        <div
-          className={`mb-3 flex items-start ${navCollapsed ? 'justify-center [&>div]:sr-only' : 'justify-between gap-3'}`}
-        >
-          <div className="text-lg font-semibold tracking-tight">Сварка</div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setNavCollapsed((value) => !value)}
-            aria-label={navCollapsed ? 'Раскрыть меню' : 'Скрыть меню'}
-            title={navCollapsed ? 'Раскрыть меню' : 'Скрыть меню'}
-            className="h-9 w-9 shrink-0"
-          >
-            {navCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </Button>
-        </div>
-        <nav className="space-y-1">
-          <button
-            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-              activeReport === 'weldingJournal'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-            } ${
-              navCollapsed ? 'justify-center px-0' : ''
-            }`}
-            onClick={() => setActiveReport('weldingJournal')}
-            title="Сварочный журнал"
-          >
-            <NotebookTabs className="h-4 w-4 shrink-0" />
-            <span className={navCollapsed ? 'sr-only' : ''}>Сварочный журнал</span>
-          </button>
-          <button
-            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-              activeReport === 'heatTreatment'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-            } ${
-              navCollapsed ? 'justify-center px-0' : ''
-            }`}
-            onClick={() => {
-              setActiveReport('heatTreatment')
-              setEditing(null)
-            }}
-            title="Термообработка"
-          >
-            <Flame className="h-4 w-4 shrink-0" />
-            <span className={navCollapsed ? 'sr-only' : ''}>Термообработка</span>
-          </button>
-          <button
-            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-              activeReport === 'lnk'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-            } ${
-              navCollapsed ? 'justify-center px-0' : ''
-            }`}
-            onClick={() => {
-              setActiveReport('lnk')
-              setEditing(null)
-            }}
-            title="ЛНК"
-          >
-            <ClipboardCheck className="h-4 w-4 shrink-0" />
-            <span className={navCollapsed ? 'sr-only' : ''}>ЛНК</span>
-          </button>
-          <button
-            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-              activeReport === 'welderStamps'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-            } ${
-              navCollapsed ? 'justify-center px-0' : ''
-            }`}
-            onClick={() => {
-              setActiveReport('welderStamps')
-              setEditing(null)
-            }}
-            title="Клейма"
-          >
-            <Stamp className="h-4 w-4 shrink-0" />
-            <span className={navCollapsed ? 'sr-only' : ''}>Клейма</span>
-          </button>
-        </nav>
-      </aside>
+      <AppSidebar
+        activeReport={activeReport}
+        collapsed={navCollapsed}
+        onCollapsedChange={setNavCollapsed}
+        onReportChange={changeActiveReport}
+      />
 
       <div
         className={`min-w-0 bg-white py-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
