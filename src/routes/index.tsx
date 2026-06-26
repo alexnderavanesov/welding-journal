@@ -22,6 +22,7 @@ import { LnkOfficialityDialog } from '@/components/lnk-officiality-dialog'
 import { LnkResultPreviewDialog } from '@/components/lnk-result-preview-dialog'
 import { PstoRequestDialog } from '@/components/psto-request-dialog'
 import { PstoRequestManagerDialog } from '@/components/psto-request-manager-dialog'
+import { PstoResultDialog } from '@/components/psto-result-dialog'
 import { PstoResultManagerDialog } from '@/components/psto-result-manager-dialog'
 import { ReportFieldEditDialog } from '@/components/report-field-edit-dialog'
 import {
@@ -3343,277 +3344,37 @@ function Home() {
       ) : null}
 
       {isPstoResultModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="flex h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold">Добавление результата ПСТО</h2>
-                <p className="text-sm text-muted-foreground">
-                  Заявка: {pstoResultDraft.requestName || '-'} · Выбрано: {pstoResultDraft.rowIds.size}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={openPstoResultManager}
-                  disabled={pstoResultDraft.rowIds.size === 0}
-                  className="border-sky-300 bg-sky-100 text-sky-900 shadow-sm shadow-sky-100 hover:bg-sky-200 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Редактировать результаты
-                </Button>
-                <Button variant="ghost" size="icon" onClick={closeAddPstoResultModal} aria-label="Закрыть">
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-              <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-                <div className="rounded-md border border-slate-200 bg-white p-3">
-                  <h3 className="mb-3 text-sm font-semibold text-slate-800">1. Результат ПСТО</h3>
-                  <div className="grid grid-cols-1 gap-3">
-                  <label className="block space-y-1.5 text-sm">
-                    <span className="text-[13px] font-medium leading-none text-slate-700">Дата ПСТО</span>
-                    <Input
-                      type="date"
-                      value={pstoResultDraft.pstoDate}
-                      disabled={pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE}
-                      onChange={(event) => setPstoResultDraft((current) => ({ ...current, pstoDate: event.target.value }))}
-                    />
-                  </label>
-
-                  <label className="block space-y-1.5 text-sm">
-                    <span className="text-[13px] font-medium leading-none text-slate-700">Результат</span>
-                    <Select
-                      value={pstoResultDraft.result}
-                      onChange={(event) => setPstoResultDraft((current) => ({ ...current, result: event.target.value }))}
-                    >
-                      <option value="">Выберите результат</option>
-                      <option value="проведено">проведено</option>
-                      <option value={PSTO_EMPTY_RESULT_VALUE}>аннулировать</option>
-                    </Select>
-                  </label>
-                  </div>
-                </div>
-
-                <div
-                  className={`rounded-md border border-slate-200 p-3 ${
-                    pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE ? 'bg-slate-50 opacity-60' : 'bg-white'
-                  }`}
-                >
-                  <RequestNamingControls
-                    naming={pstoResultDraft.diagramNaming}
-                    systemName={nextPstoDiagramName}
-                    label="Диаграмма термообработки"
-                    placeholder="Введите наименование диаграммы"
-                    disabled={pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE}
-                    onChange={(diagramNaming) => setPstoResultDraft((current) => ({ ...current, diagramNaming }))}
-                  />
-                </div>
-
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
-                  Результат «проведено» заполнит дату ПСТО и диаграмму термообработки. Если выбрать «аннулировать», результат,
-                  дата и диаграмма очистятся, заявка ПСТО останется.
-                </div>
-              </section>
-
-              <section className="flex min-h-0 flex-col space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-800">
-                      {pstoResultDraft.requestName ? 'Стыки в выбранной заявке' : 'Стыки для результата'}
-                    </h3>
-                    <p className="text-xs leading-5 text-slate-500">
-                      {pstoResultDraft.requestName
-                        ? 'Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.'
-                        : 'Найдите стык, посмотрите его заявку ПСТО и статус стыка, затем выберите нужную заявку.'}
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={toggleAllPstoResultRows} disabled={filteredPstoResultRows.length === 0}>
-                    {isEveryFilteredLnkRequestRowSelected(
-                      pstoResultDraft.rowIds,
-                      filteredPstoResultRows.filter((row) => canSelectPstoResultRow(row, pstoResultDraft.requestName)),
-                    )
-                      ? 'Снять все'
-                      : 'Выбрать все'}
-                  </Button>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-                  <Input
-                    value={pstoResultDraft.search}
-                    onChange={(event) => setPstoResultDraft((current) => ({ ...current, search: event.target.value }))}
-                    placeholder="Проект, шифр, линия, спул или стык"
-                    className="h-9 min-w-56 flex-[0.8] bg-white"
-                  />
-                  <Input
-                    value={pstoResultRequestSearch}
-                    onChange={(event) => setPstoResultRequestSearch(event.target.value)}
-                    placeholder="Поиск заявки"
-                    className="h-9 min-w-44 flex-[0.45] bg-white"
-                  />
-                  <Select
-                    value={pstoResultDraft.requestName}
-                    onChange={(event) => changePstoResultRequest(event.target.value)}
-                    className="h-9 min-w-48 flex-[0.5] bg-white"
-                  >
-                    <option value="">Все заявки</option>
-                    {filteredPstoResultRequestOptions.map((requestName) => (
-                      <option key={requestName} value={requestName}>
-                        {requestName}
-                      </option>
-                    ))}
-                  </Select>
-                  {pstoResultRequestSearch ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPstoResultRequestSearch('')}
-                      className="h-9 px-2"
-                      aria-label="Очистить поиск заявки"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  ) : null}
-                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                    Заявок: {filteredPstoResultRequestOptions.length}/{pstoResultAvailableRequestOptions.length}
-                  </span>
-                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                    Найдено: {filteredPstoResultRows.length} · Выбрано: {pstoResultDraft.rowIds.size}
-                  </span>
-                  {pstoResultDraft.search || pstoResultRequestSearch ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setPstoResultRequestSearch('')
-                        setPstoResultDraft((current) => ({
-                          ...current,
-                          requestName: '',
-                          rowIds: new Set(),
-                          search: '',
-                        }))
-                      }}
-                    >
-                      Очистить
-                    </Button>
-                  ) : null}
-                </div>
-
-                <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
-                  {filteredPstoResultRows.length === 0 ? (
-                    <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
-                      {pstoResultDraft.search || pstoResultRequestSearch ? 'По фильтру ничего не найдено.' : 'Нет стыков для добавления результата ПСТО.'}
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {filteredPstoResultRows.map((row) => {
-                        const selected = pstoResultDraft.rowIds.has(row.id)
-                        const disabled = !canSelectPstoResultRow(row, pstoResultDraft.requestName)
-                        const requestName = String(row.pstoRequest ?? '').trim()
-                        const diagramName = String(row.heatTreatmentDiagram ?? '').trim()
-                        return (
-	                          <div
-	                            key={row.id}
-	                            onClick={() => {
-	                              if (!disabled) togglePstoResultRow(row.id)
-	                            }}
-                            className={`grid grid-cols-[28px_minmax(260px,1fr)_minmax(220px,0.8fr)] gap-3 px-4 py-3 text-sm transition-colors ${
-                              disabled
-                                ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-                                : selected
-                                  ? 'cursor-pointer border-l-4 border-emerald-400 bg-emerald-100/80 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.35)]'
-                                  : 'cursor-pointer bg-white hover:bg-slate-50'
-                            }`}
-                          >
-	                            <input
-	                              type="checkbox"
-	                              checked={selected}
-	                              onClick={(event) => event.stopPropagation()}
-	                              onChange={() => togglePstoResultRow(row.id)}
-	                              disabled={disabled}
-	                              className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
-                            />
-                            <span className="min-w-0">
-                              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-                                <OfficialityBadge row={row} compact />
-                              </span>
-                              <span className="block text-xs leading-5 text-slate-500">
-                                <JointProjectSubtitleMeta row={row} />
-                              </span>
-	                              <span className="block text-xs leading-5 text-slate-500">
-	                                <JointSpoolDiameterMeta row={row} />
-                                  <MetaSeparator />
-                                  <JointWeldDateMeta row={row} />
-	                              </span>
-                              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                                <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
-                                  Стык: {getJointStatusLabel(row)}
-                                </span>
-                                <span className={`rounded border px-1.5 py-0.5 font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
-                                  ПСТО: {getPstoResultLabel(row.pstoResult)}
-                                </span>
-                              </span>
-                              {disabled ? (
-                                <span className="mt-1 block text-xs leading-5 text-slate-500">
-                                  {requestName ? 'Выберите эту заявку ПСТО, чтобы отметить стык.' : 'На этот стык еще нет заявки ПСТО.'}
-                                </span>
-                              ) : null}
-                            </span>
-                            <span className="flex flex-wrap content-start gap-1.5">
-                              {requestName ? (
-                                <span className={`inline-flex max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium ${getPstoResultBadgeClass(row.pstoResult)}`}>
-                                  <span className="max-w-full overflow-visible break-all whitespace-normal [text-overflow:clip]">ПСТО {requestName}</span>
-                                  {diagramName ? (
-                                    <span className="max-w-full overflow-visible break-all whitespace-normal text-[11px] text-slate-500 [text-overflow:clip]">
-                                      {diagramName}
-                                    </span>
-                                  ) : null}
-                                </span>
-                              ) : (
-                                <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
-                                  Нет заявки
-                                </span>
-                              )}
-                            </span>
-	                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 border-t border-slate-200/80 px-5 py-4">
-              <div className="min-h-5 text-sm text-slate-500">
-                {pstoResultSaveBlockReason ? (
-                  <span className="text-sm text-slate-500">
-                    Чтобы сохранить: {pstoResultSaveBlockReason}
-                  </span>
-                ) : null}
-              </div>
-              <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={closeAddPstoResultModal}>
-                Отмена
-              </Button>
-              <span title={pstoResultSaveBlockReason || 'Можно сохранить результат'}>
-                <Button
-                  onClick={handleAddPstoResult}
-                  disabled={Boolean(pstoResultSaveBlockReason)}
-                  className={pstoResultSaveBlockReason ? 'pointer-events-none' : ''}
-                >
-                  <Check className="mr-2 h-4 w-4" />
-                  Сохранить результат
-                </Button>
-              </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PstoResultDialog
+          draft={pstoResultDraft}
+          requestSearch={pstoResultRequestSearch}
+          nextDiagramName={nextPstoDiagramName}
+          filteredRows={filteredPstoResultRows}
+          filteredRequestOptions={filteredPstoResultRequestOptions}
+          availableRequestOptions={pstoResultAvailableRequestOptions}
+          saveBlockReason={pstoResultSaveBlockReason}
+          allFilteredSelectableRowsSelected={isEveryFilteredLnkRequestRowSelected(
+            pstoResultDraft.rowIds,
+            filteredPstoResultRows.filter((row) => canSelectPstoResultRow(row, pstoResultDraft.requestName)),
+          )}
+          canSelectRow={canSelectPstoResultRow}
+          onDraftChange={setPstoResultDraft}
+          onRequestSearchChange={setPstoResultRequestSearch}
+          onRequestChange={changePstoResultRequest}
+          onClearFilters={() => {
+            setPstoResultRequestSearch('')
+            setPstoResultDraft((current) => ({
+              ...current,
+              requestName: '',
+              rowIds: new Set(),
+              search: '',
+            }))
+          }}
+          onToggleAll={toggleAllPstoResultRows}
+          onToggleRow={togglePstoResultRow}
+          onOpenManager={openPstoResultManager}
+          onClose={closeAddPstoResultModal}
+          onSave={handleAddPstoResult}
+        />
       ) : null}
 
       {isPstoResultManagerOpen ? (
