@@ -19,7 +19,6 @@ import {
   updateWeldJoint,
   type WeldFilters,
 } from '@/server/welds'
-import { listWelderStampRecords, saveWelderStampRecords } from '@/server/welder-stamps'
 import {
   buildExportXlsxBytes,
   isMeaningfulRecord,
@@ -109,6 +108,7 @@ import {
   useClearTimerOnUnmount,
   useEscapeToClearReportFilters,
 } from '@/lib/report-page-effects'
+import { useWelderStampRegistryState } from '@/lib/use-welder-stamp-registry-state'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
@@ -267,25 +267,16 @@ import {
   validateWeldDatesForImport,
 } from '@/lib/weld-validation'
 import {
-  buildWeldFormStampSelectOptions,
   buildWelderStampExpiryTasks,
-  createEmptyWelderStampDraft,
-  createEmptyWelderStampFilters,
-  filterWelderStampRecords,
   formatOfficialStampCompatibilityIssue,
   getOfficialStampCompatibilityIssues,
   getOfficialStampCompatibilitySaveBlockReason,
-  normalizeNaksStamp,
   normalizeWeldingMethodsForImport,
-  prepareWelderStampSave,
-  removeWelderStampRecord,
-  setWelderStampRecordArchived,
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
   validateWelderStampFieldsForImport,
 } from '@/lib/welder-stamp-registry'
 import type { DispatcherTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
-import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -355,31 +346,29 @@ function Home() {
   const [isLnkShowMenuOpen, setIsLnkShowMenuOpen] = useState(false)
   const [dismissedRepeatedJointTaskKeys, setDismissedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
   const [expandedRepeatedJointTaskKeys, setExpandedRepeatedJointTaskKeys] = useState<Set<string>>(new Set())
-  const [welderStamps, setWelderStamps] = useState<WelderStampRecord[]>([])
-  const [welderStampDraft, setWelderStampDraft] = useState<WelderStampRecord>(() => createEmptyWelderStampDraft())
-  const [editingWelderStampId, setEditingWelderStampId] = useState<number | null>(null)
-  const [welderStampSearch, setWelderStampSearch] = useState('')
-  const [welderStampFilters, setWelderStampFilters] = useState<WelderStampFilters>(() => createEmptyWelderStampFilters())
-  const [showArchivedWelderStamps, setShowArchivedWelderStamps] = useState(false)
-  const welderStampsQuery = useQuery({
-    queryKey: ['welder-stamps'],
-    queryFn: async () => listWelderStampRecords(),
-  })
-  const welderStampsMutation = useMutation({
-    mutationFn: async (records: WelderStampRecord[]) => saveWelderStampRecords({ data: { records } }),
-    onSuccess: async (records) => {
-      setWelderStamps(records)
-      await queryClient.invalidateQueries({ queryKey: ['welder-stamps'] })
-    },
-    onError: (error) => {
-      setMessage((error as Error).message)
-    },
-  })
-  const weldFormStampSelectOptions = useMemo(() => buildWeldFormStampSelectOptions(welderStamps), [welderStamps])
-  const getWeldFormStampSelectOptions = useMemo(
-    () => (draft: WeldInput) => buildWeldFormStampSelectOptions(welderStamps, draft),
-    [welderStamps],
-  )
+  const {
+    welderStamps,
+    welderStampDraft,
+    welderStampSearch,
+    welderStampFilters,
+    editingWelderStampId,
+    showArchivedWelderStamps,
+    filteredWelderStamps,
+    activeWelderStamps,
+    archivedWelderStamps,
+    weldFormStampSelectOptions,
+    getWeldFormStampSelectOptions,
+    setWelderStampSearch,
+    setWelderStampFilters,
+    setShowArchivedWelderStamps,
+    updateWelderStampDraft,
+    resetWelderStampForm,
+    saveWelderStampRecord,
+    editWelderStampRecord,
+    archiveWelderStampRecord,
+    restoreWelderStampRecord,
+    deleteWelderStampRecord,
+  } = useWelderStampRegistryState({ setMessage })
   const isReportModalOpen = isAnyReportModalOpen([
     isPstoRequestModalOpen,
     isPstoRequestManagerOpen,
@@ -402,12 +391,6 @@ function Home() {
     setHeatTreatmentFilters,
     setLnkFilters,
   })
-
-  useEffect(() => {
-    if (welderStampsQuery.data) {
-      setWelderStamps(welderStampsQuery.data)
-    }
-  }, [welderStampsQuery.data])
 
   useAutoCollapseNavOnHorizontalScroll(setNavCollapsed)
   useClearTimerOnUnmount(importHighlightTimerRef)
@@ -451,8 +434,7 @@ function Home() {
       setPreservedLnkOrderIds(null)
     }
     if (activeReport !== 'welderStamps') {
-      setWelderStampDraft(createEmptyWelderStampDraft())
-      setEditingWelderStampId(null)
+      resetWelderStampForm()
       setWelderStampSearch('')
     }
 
@@ -1458,12 +1440,6 @@ function Home() {
     () => filteredLnkRequestRows.filter(canCreateLnkRequest),
     [filteredLnkRequestRows],
   )
-  const filteredWelderStamps = useMemo(
-    () => filterWelderStampRecords(welderStamps, welderStampSearch, welderStampFilters),
-    [welderStampFilters, welderStampSearch, welderStamps],
-  )
-  const activeWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => !record.archived), [filteredWelderStamps])
-  const archivedWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => record.archived), [filteredWelderStamps])
   const visibleRows = getVisibleReportRows(activeReport, rows, heatTreatmentRows, lnkRows)
   const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
   useWindowEscapeKey(Boolean(chainRecord), (event) => {
@@ -2861,55 +2837,6 @@ function Home() {
     isCreatePending: repeatedJointMutation.isPending,
     isDeletePending: obsoleteRepeatedJointMutation.isPending,
     isRenamePending: renameRepeatedJointMutation.isPending,
-  }
-
-  function updateWelderStampDraft(field: keyof WelderStampRecord, value: string) {
-    setWelderStampDraft((current) => ({ ...current, [field]: field === 'naksStamp' ? normalizeNaksStamp(value) : value }))
-  }
-
-  function resetWelderStampForm() {
-    setWelderStampDraft(createEmptyWelderStampDraft())
-    setEditingWelderStampId(null)
-  }
-
-  function persistWelderStampRecords(nextRecords: WelderStampRecord[]) {
-    setWelderStamps(nextRecords)
-    welderStampsMutation.mutate(nextRecords)
-  }
-
-  function saveWelderStampRecord() {
-    const preparedSave = prepareWelderStampSave(welderStamps, welderStampDraft, editingWelderStampId)
-    if (!preparedSave.ok) {
-      setMessage(preparedSave.message)
-      return
-    }
-
-    persistWelderStampRecords(preparedSave.nextRecords)
-    setMessage(preparedSave.message)
-    resetWelderStampForm()
-  }
-
-  function editWelderStampRecord(record: WelderStampRecord) {
-    setWelderStampDraft(record)
-    setEditingWelderStampId(record.id)
-  }
-
-  function archiveWelderStampRecord(id: number) {
-    persistWelderStampRecords(setWelderStampRecordArchived(welderStamps, id, true))
-    if (editingWelderStampId === id) resetWelderStampForm()
-    setMessage('Клеймо добавлено в архив')
-  }
-
-  function restoreWelderStampRecord(id: number) {
-    persistWelderStampRecords(setWelderStampRecordArchived(welderStamps, id, false))
-    setMessage('Клеймо возвращено в общий список')
-  }
-
-  function deleteWelderStampRecord(id: number) {
-    if (!confirm('Удалить запись клейма?')) return
-    persistWelderStampRecords(removeWelderStampRecord(welderStamps, id))
-    if (editingWelderStampId === id) resetWelderStampForm()
-    setMessage('Клеймо удалено')
   }
 
   function changeActiveReport(report: ActiveReport) {
