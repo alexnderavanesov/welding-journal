@@ -48,7 +48,6 @@ import {
 } from '@/lib/weld-fields'
 import {
   HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
-  HEAT_TREATMENT_IMPORT_MATCH_FIELD_KEYS as heatTreatmentImportMatchFieldKeys,
   HIGHLIGHT_DURATION_MS as highlightDurationMs,
   LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
   LNK_CONCLUSIONS_FIELDS,
@@ -56,7 +55,6 @@ import {
   LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
   LNK_EMPTY_RESULT_VALUE,
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
-  LNK_IMPORT_MATCH_FIELD_KEYS as lnkImportMatchFieldKeys,
   LNK_METHODS,
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
   LNK_REPORT_FIELD_KEYS as lnkReportFieldKeys,
@@ -137,6 +135,7 @@ import {
   getReportBlockedFieldKeys,
   getReportEditableFieldKeys,
   getReportHiddenFieldKeys,
+  getReportImportFieldKeys,
   getReportRegisterMinWidth,
   getVisibleReportRows,
   isReadOnlyReport,
@@ -1892,12 +1891,8 @@ function Home() {
   async function handleImport(file: File) {
     setMessage(null)
     if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
-      const editableFieldKeys = activeReport === 'heatTreatment' ? heatTreatmentEditableFieldKeys : lnkEditableFieldKeys
-      const matchFieldKeys = activeReport === 'heatTreatment' ? heatTreatmentImportMatchFieldKeys : lnkImportMatchFieldKeys
-      const options = {
-        editableFieldKeys,
-        matchFieldKeys,
-      }
+      const options = getReportImportFieldKeys(activeReport)
+      if (!options) return
       const result = file.name.toLowerCase().endsWith('.csv')
         ? parseEditableCsv(await file.text(), options)
         : parseEditableWorkbook(await file.arrayBuffer(), options)
