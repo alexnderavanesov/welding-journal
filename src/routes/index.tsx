@@ -3,12 +3,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { AppSidebar } from '@/components/app-sidebar'
 import { ReportHeaderActions } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
 import { ReportSummaryBar } from '@/components/report-summary-bar'
 import { ReportTaskPanels } from '@/components/report-task-panels'
 import { ReportDialogs } from '@/components/report-dialogs'
+import { ReportWorkspace } from '@/components/report-workspace'
 import {
   clearLnkGeneratedWeldData,
   createWeldJoint,
@@ -2930,20 +2930,13 @@ function Home() {
   }
 
   return (
-    <main className="relative min-h-screen bg-white">
-      <AppSidebar
-        activeReport={activeReport}
-        collapsed={navCollapsed}
-        onCollapsedChange={setNavCollapsed}
-        onReportChange={changeActiveReport}
-      />
-
-      <div
-        className={`min-w-0 bg-white py-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
-          navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72'
-        }`}
-      >
-        <div className="min-w-full w-max space-y-4 bg-white" style={{ minWidth: registerMinWidth }}>
+    <ReportWorkspace
+      activeReport={activeReport}
+      navCollapsed={navCollapsed}
+      registerMinWidth={registerMinWidth}
+      onNavCollapsedChange={setNavCollapsed}
+      onReportChange={changeActiveReport}
+    >
           <header
             className="sticky z-40 flex w-full items-start gap-4 bg-white pb-1"
             style={{ left: stickyLeft, minWidth: registerMinWidth }}
@@ -3071,8 +3064,6 @@ function Home() {
               mergePstoSections: shouldMergePstoSections(activeReport),
             }}
           />
-        </div>
-      </div>
 
       <ReportDialogs
         chainDialogProps={{
@@ -3380,7 +3371,7 @@ function Home() {
             : null,
         }}
       />
-    </main>
+    </ReportWorkspace>
   )
 }
 
