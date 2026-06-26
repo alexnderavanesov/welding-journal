@@ -105,6 +105,7 @@ import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-de
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
+import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -310,8 +311,12 @@ function Home() {
   const [managedLnkPendingResultChanges, setManagedLnkPendingResultChanges] = useState<Record<string, string>>({})
   const [lnkRequestSearch, setLnkRequestSearch] = useState('')
   const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
-  const [isPstoShowMenuOpen, setIsPstoShowMenuOpen] = useState(false)
-  const [isLnkShowMenuOpen, setIsLnkShowMenuOpen] = useState(false)
+  const {
+    isPstoShowMenuOpen,
+    isLnkShowMenuOpen,
+    setIsPstoShowMenuOpen,
+    setIsLnkShowMenuOpen,
+  } = useReportShowMenuState()
   const {
     dismissedRepeatedJointTaskKeys,
     dismissRepeatedJointTask,
