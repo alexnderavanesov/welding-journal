@@ -20,7 +20,6 @@ import {
   type WeldFilters,
 } from '@/server/welds'
 import {
-  buildExportXlsxBytes,
   isMeaningfulRecord,
   normalizeWeldInput,
   parseEditableCsv,
@@ -86,14 +85,6 @@ import {
   normalizeExistingRequestImportValue,
 } from '@/lib/report-import'
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
-import { downloadExcelBytes } from '@/lib/report-window'
-import {
-  openLnkConclusionsReportWindow,
-  openLnkToRequestReportWindow,
-  openLnkWaitingNkReportWindow,
-  openPstoResultsReportWindow,
-  openPstoWaitingRequestReportWindow,
-} from '@/lib/report-show-windows'
 import {
   buildHeatTreatmentReportRows,
   buildLnkReportRows,
@@ -109,6 +100,7 @@ import {
 import { useWelderStampRegistryState } from '@/lib/use-welder-stamp-registry-state'
 import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import { useReportHighlights } from '@/lib/use-report-highlights'
+import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
@@ -119,8 +111,6 @@ import {
   getOpenLinkedReportTitle,
   getReportBlockedFieldKeys,
   getReportEditableFieldKeys,
-  getReportExportFilename,
-  getReportExportOptions,
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
   getReportRegisterMinWidth,
@@ -1723,6 +1713,23 @@ function Home() {
   const registerMinWidth = getReportRegisterMinWidth(activeReport, getWeldTableWidth(VISIBLE_FIELDS))
   const stickyLeft = navCollapsed ? 80 : 288
   const activeTitle = getActiveReportTitle(activeReport)
+  const {
+    exportXlsx,
+    openLnkConclusionsReport,
+    openLnkToRequestReport,
+    openLnkWaitingNkReport,
+    openPstoResultsReport,
+    openPstoWaitingRequestReport,
+  } = useReportOutputActions({
+    activeReport,
+    activeTitle,
+    heatTreatmentRows,
+    lnkRows,
+    setIsLnkShowMenuOpen,
+    setIsPstoShowMenuOpen,
+    setMessage,
+    visibleRows,
+  })
 
   useEffect(() => {
     setSelectedHeatTreatmentIds((current) => {
@@ -1801,41 +1808,6 @@ function Home() {
     const result = file.name.toLowerCase().endsWith('.csv') ? parseCsv(await file.text()) : parseWorkbook(await file.arrayBuffer())
     const importResult = await importMutation.mutateAsync(result.records.map(withOfficialJointStatus))
     setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${result.skippedRows}`)
-  }
-
-  function exportXlsx() {
-    const bytes = buildExportXlsxBytes(visibleRows, getReportExportOptions(activeReport, activeTitle))
-    downloadExcelBytes(bytes, getReportExportFilename(activeReport))
-  }
-
-  function openLnkWaitingNkReport() {
-    setIsLnkShowMenuOpen(false)
-    const result = openLnkWaitingNkReportWindow(lnkRows)
-    if (!result.ok) setMessage(result.message)
-  }
-
-  function openLnkToRequestReport() {
-    setIsLnkShowMenuOpen(false)
-    const result = openLnkToRequestReportWindow(lnkRows)
-    if (!result.ok) setMessage(result.message)
-  }
-
-  function openLnkConclusionsReport() {
-    setIsLnkShowMenuOpen(false)
-    const result = openLnkConclusionsReportWindow(lnkRows)
-    if (!result.ok) setMessage(result.message)
-  }
-
-  function openPstoWaitingRequestReport() {
-    setIsPstoShowMenuOpen(false)
-    const result = openPstoWaitingRequestReportWindow(heatTreatmentRows)
-    if (!result.ok) setMessage(result.message)
-  }
-
-  function openPstoResultsReport() {
-    setIsPstoShowMenuOpen(false)
-    const result = openPstoResultsReportWindow(heatTreatmentRows)
-    if (!result.ok) setMessage(result.message)
   }
 
   function handleCreatePstoRequest() {
