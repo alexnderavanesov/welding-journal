@@ -71,11 +71,6 @@ import {
 } from '@/lib/report-control-state'
 import { formatWdiTotal } from '@/lib/report-export'
 import {
-  normalizeEditableImportValue,
-  normalizeExistingRequestImportValue,
-} from '@/lib/report-import'
-import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
-import {
   filterPstoResultRows,
 } from '@/lib/report-row-utils'
 import { getReportRowActions } from '@/lib/report-row-actions'
@@ -107,6 +102,7 @@ import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
 import { useReportPageUiState } from '@/lib/use-report-page-ui-state'
+import { useReportImportMutations } from '@/lib/use-report-import-mutations'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -455,80 +451,14 @@ function Home() {
     dismissRepeatedJointTask,
   })
 
-  const heatTreatmentImportMutation = useMutation({
-    mutationFn: async (records: WeldInput[]) => {
-      const { updatedRows, changedFieldKeys, matched, skipped } = buildHeatTreatmentImportUpdates(
-        records,
-        heatTreatmentRows,
-        rows,
-        new Set(pstoRequestOptions),
-      )
-      if (updatedRows.length === 0) {
-        return { updated: 0, rows: [], changedFieldKeys, matched, skipped }
-      }
-
-      const savedRows = await Promise.all(updatedRows.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей ПСТО')
-      return {
-        updated: savedRows.length,
-        rows: savedRows as unknown as WeldRow[],
-        changedFieldKeys,
-        matched,
-        skipped,
-      }
-    },
-    onSuccess: async (result, variables) => {
-      highlightChangedRows(result.rows, result.changedFieldKeys)
-      setMessage(`Обновлено ПСТО: ${result.updated} из ${variables.length}; пропущено: ${result.skipped}`)
-      await invalidate(queryClient)
-    },
-    onError: (error) => {
-      setMessage((error as Error).message)
-    },
-  })
-
-  const lnkImportMutation = useMutation({
-    mutationFn: async (records: WeldInput[]) => {
-      const { updatedRows, changedFieldKeys, matched, skipped } = buildEditableImportUpdates({
-        importedRecords: records,
-        targetRows: lnkRows,
-        rows,
-        editableFieldKeys: lnkEditableFieldKeys,
-        normalizeValue: (fieldKey, value, currentRow) => {
-          if (isLnkRequestField(fieldKey)) {
-            if (!isLnkRequestAllowedForRow(currentRow, fieldKey)) return { skip: true, value: null }
-            return normalizeExistingRequestImportValue(value, new Set(lnkRequestOptions))
-          }
-          return { skip: false, value: normalizeEditableImportValue(fieldKey, value) }
-        },
-        transformRow: (row) => {
-          const nextRow = { ...row }
-          for (const method of LNK_METHODS) {
-            if (hasText(nextRow[method.resultKey]) && !hasText(nextRow[method.requestKey])) {
-              nextRow[method.resultKey] = null
-            }
-          }
-          const cleanedRow = clearDisabledLnkRequests(nextRow)
-          const touchedRow = withTouchedLnkTimestamp(cleanedRow)
-          return { ...touchedRow, finalStatus: calculateFinalStatus(touchedRow) }
-        },
-      })
-      if (updatedRows.length === 0) {
-        return { updated: 0, rows: [], changedFieldKeys, matched, skipped }
-      }
-
-      const savedRows = await Promise.all(updatedRows.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей ЛНК')
-      return { updated: savedRows.length, rows: savedRows as unknown as WeldRow[], changedFieldKeys, matched, skipped }
-    },
-    onSuccess: async (result, variables) => {
-      highlightChangedRows(result.rows, result.updated > 0 ? [...result.changedFieldKeys, 'lnkCreatedAt'] : result.changedFieldKeys)
-      setMessage(`Обновлено ЛНК: ${result.updated} из ${variables.length}; пропущено: ${result.skipped}`)
-      await invalidate(queryClient)
-    },
-    onError: (error) => {
-      setMessage((error as Error).message)
-    },
+  const { heatTreatmentImportMutation, lnkImportMutation } = useReportImportMutations({
+    rows,
+    heatTreatmentRows,
+    lnkRows,
+    pstoRequestOptions,
+    lnkRequestOptions,
+    setMessage,
+    highlightChangedRows,
   })
 
   const pstoRequestMutation = useMutation({
