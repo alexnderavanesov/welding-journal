@@ -19,8 +19,28 @@ const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   welderStamps: 'Клейма',
 }
 
+const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
+  weldingJournal: 'welding-register.xlsx',
+  heatTreatment: 'heat-treatment-register.xlsx',
+  lnk: 'lnk-register.xlsx',
+  welderStamps: 'welder-stamps-register.xlsx',
+}
+
+const EDITABLE_REPORT_IMPORT_LABELS: Partial<Record<ActiveReport, string>> = {
+  heatTreatment: 'ПСТО',
+  lnk: 'ЛНК',
+}
+
 export function getActiveReportTitle(activeReport: ActiveReport) {
   return ACTIVE_REPORT_TITLES[activeReport]
+}
+
+export function getReportExportFilename(activeReport: ActiveReport) {
+  return REPORT_EXPORT_FILENAMES[activeReport]
+}
+
+export function getEditableReportImportLabel(activeReport: ActiveReport) {
+  return EDITABLE_REPORT_IMPORT_LABELS[activeReport] ?? getActiveReportTitle(activeReport)
 }
 
 export function getVisibleReportRows<T>(

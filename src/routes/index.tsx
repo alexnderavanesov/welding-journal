@@ -130,10 +130,12 @@ import {
   canOpenLinkedReport,
   expandHighlightFieldKeys,
   getActiveReportTitle,
+  getEditableReportImportLabel,
   getJointTitle,
   getOpenLinkedReportTitle,
   getReportBlockedFieldKeys,
   getReportEditableFieldKeys,
+  getReportExportFilename,
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
   getReportRegisterMinWidth,
@@ -1901,7 +1903,7 @@ function Home() {
           ? await heatTreatmentImportMutation.mutateAsync(result.records)
           : await lnkImportMutation.mutateAsync(result.records)
       setMessage(
-        `Обновлено ${activeReport === 'heatTreatment' ? 'ПСТО' : 'ЛНК'}: ${importResult.updated}; пропущено: ${importResult.skipped + result.skippedRows}`,
+        `Обновлено ${getEditableReportImportLabel(activeReport)}: ${importResult.updated}; пропущено: ${importResult.skipped + result.skippedRows}`,
       )
       return
     }
@@ -1923,14 +1925,7 @@ function Home() {
       sheetName: activeTitle,
     }
     const bytes = buildExportXlsxBytes(visibleRows, exportOptions)
-    downloadExcelBytes(
-      bytes,
-      activeReport === 'heatTreatment'
-        ? 'heat-treatment-register.xlsx'
-        : activeReport === 'lnk'
-          ? 'lnk-register.xlsx'
-          : 'welding-register.xlsx',
-    )
+    downloadExcelBytes(bytes, getReportExportFilename(activeReport))
   }
 
   function openLnkWaitingNkReport() {
