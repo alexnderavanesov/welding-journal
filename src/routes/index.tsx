@@ -1,18 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ClipboardCheck, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Pencil, Plus, ShieldCheck, Stamp, Trash2, Upload, X } from 'lucide-react'
+import { ChevronDown, ClipboardCheck, FileSpreadsheet, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Plus, ShieldCheck, Stamp, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
-  JointWeldDateMeta,
-  MetaSeparator,
-  OfficialityBadge,
-} from '@/components/joint-meta'
-import { RequestNamingControls } from '@/components/request-naming-controls'
 import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
@@ -22,6 +14,7 @@ import { LnkOfficialityDialog } from '@/components/lnk-officiality-dialog'
 import { LnkRequestDialog } from '@/components/lnk-request-dialog'
 import { LnkRequestManagerDialog } from '@/components/lnk-request-manager-dialog'
 import { LnkResultManagerDialog } from '@/components/lnk-result-manager-dialog'
+import { LnkResultDialog } from '@/components/lnk-result-dialog'
 import { LnkResultPreviewDialog } from '@/components/lnk-result-preview-dialog'
 import { PstoRequestDialog } from '@/components/psto-request-dialog'
 import { PstoRequestManagerDialog } from '@/components/psto-request-manager-dialog'
@@ -77,13 +70,10 @@ import {
   WELD_STAMP_COMPLETION_GROUPS,
 } from '@/lib/report-config'
 import {
-  getInactiveLnkRequestBadgeClass,
-  getLnkResultBadgeClass,
   getPstoResultBadgeClass,
   getPstoResultLabel,
 } from '@/lib/report-badges'
 import {
-  formatLnkResultSummaryItems,
   getJointChainResultItems,
   getJointStatusBadgeClass,
   getJointStatusLabel,
@@ -91,13 +81,11 @@ import {
   getAvailableLnkRequestMethods,
   getLnkMethodByRequestKey,
   getLnkMethodByResultKey,
-  getLnkRequestMethodBadgeClass,
   hasAnyEnabledLnkControl,
   hasAnyLnkRequest,
   hasPendingLnkRequestResult,
   hasRejectedLnkResult,
   isFinalLnkResultValue,
-  isLnkMethodNoNeed,
 } from '@/lib/lnk-status'
 import {
   canCreateLnkRequest,
@@ -178,7 +166,6 @@ import {
   getLnkInputMethodsForRows,
   getLnkRequestMethodsForRows,
   getLnkResultMethodsForRows,
-  getLnkRowRequestMethods,
   getLnkRowRequestNames,
   isEveryFilteredLnkRequestRowSelected,
   isLnkResultRowApplicable,
@@ -226,7 +213,6 @@ import {
 } from '@/lib/joint-display'
 import {
   getLnkRepairForbiddenReason,
-  getLnkResultRepairForbiddenSummary,
   isLnkRepairForbidden,
   isLnkRepairForbiddenByDiameter,
   isLnkRepairForbiddenByOfficialRepairLimit,
@@ -3503,431 +3489,68 @@ function Home() {
       ) : null}
 
       {isLnkResultModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="flex h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold">Добавление результата ЛНК</h2>
-                <p className="text-sm text-muted-foreground">
-                  Заявка: {lnkResultDraft.requestName || '-'} · Выбрано: {lnkResultDraft.rowIds.size}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={openLnkResultManager}
-                  disabled={lnkResultDraft.rowIds.size === 0}
-                  className="border-sky-300 bg-sky-100 text-sky-900 shadow-sm shadow-sky-100 hover:bg-sky-200 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Редактировать результаты
-                </Button>
-                <Button variant="ghost" size="icon" onClick={closeAddLnkResultModal} aria-label="Закрыть">
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-              <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-                <div className="rounded-md border border-slate-200 bg-white p-3">
-                  <h3 className="mb-3 text-sm font-semibold text-slate-800">1. Метод и результат</h3>
-                  <div className="grid grid-cols-1 gap-3">
-                  <label className="block space-y-1.5 text-sm">
-                    <span className="text-[13px] font-medium leading-none text-slate-700">Метод контроля</span>
-                    <Select
-                      value={lnkResultDraft.methodKey}
-                      onChange={(event) => changeLnkResultMethod(event.target.value as WeldFieldKey)}
-                      disabled={selectedLnkResultMethods.length === 0}
-                      className={!lnkResultDraft.methodKey && selectedLnkResultMethods.length > 0 ? 'text-slate-700' : undefined}
-                    >
-                      <option value="">Выберите метод</option>
-                      {selectedLnkResultMethods.map((method) => (
-                        <option key={method.requestKey} value={method.requestKey}>
-                          {method.code}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                  <label className="block space-y-1.5 text-sm">
-                    <span className="text-[13px] font-medium leading-none text-slate-700">Дата контроля</span>
-                    <Input
-                      type="date"
-                      value={lnkResultDraft.controlDate}
-                      disabled={!hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft)}
-                      onChange={(event) => setLnkResultDraft((current) => ({ ...current, controlDate: event.target.value }))}
-                    />
-                  </label>
-
-                  <label className="block space-y-1.5 text-sm">
-                    <span className="text-[13px] font-medium leading-none text-slate-700">Результат по умолчанию</span>
-	                    <Select
-	                      value={lnkResultDraft.result}
-	                      onChange={(event) => {
-	                        const result = event.target.value
-	                        if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
-	                        setLnkResultDraft((current) => ({
-	                          ...current,
-	                          result,
-	                          rowResults: {},
-	                        }))
-	                      }}
-	                    >
-	                      <option value="">Выберите результат</option>
-	                      <option value={LNK_CUSTOM_RESULT_VALUE} disabled>
-	                        пользовательский
-	                      </option>
-	                      {LNK_RESULT_OPTIONS.map((option) => (
-	                        <option key={option} value={option} disabled={option === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)}>
-	                          {option}
-	                        </option>
-	                      ))}
-	                    </Select>
-	                    {selectedLnkResultRows.some(isLnkRepairForbidden) ? (
-	                      <span className="block text-xs text-slate-500">
-                          Ремонт недоступен: {getLnkResultRepairForbiddenSummary(selectedLnkResultRows)}.
-                        </span>
-	                    ) : null}
-	                  </label>
-                  </div>
-                </div>
-
-                <div
-                  className={`rounded-md border border-slate-200 p-3 ${
-                    !hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft) ? 'bg-slate-50 opacity-60' : 'bg-white'
-                  }`}
-                >
-                  <h3 className="mb-3 text-sm font-semibold text-slate-800">2. Заключение</h3>
-                  <RequestNamingControls
-                    naming={lnkResultDraft.conclusionNaming}
-                    systemName={nextLnkConclusionName}
-                    label="Наименование заключения"
-                    placeholder="Введите наименование заключения"
-                    disabled={!hasNonEmptyLnkResultDraftRows(selectedLnkResultRows, lnkResultDraft)}
-                    onChange={(conclusionNaming) => setLnkResultDraft((current) => ({ ...current, conclusionNaming }))}
-                  />
-                </div>
-
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
-                  Результат заменит статус «ожидает НК» в выбранном виде контроля. Наименование заключения попадет в
-                  соответствующий столбец раздела «Заключения». Уже внесенные результаты изменяются только через
-                  «Редактировать результаты».
-                </div>
-              </section>
-
-              <section className="flex min-h-0 flex-col space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-800">Стыки для результата</h3>
-                    <p className="text-xs leading-5 text-slate-500">
-                      Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {lnkResultDraft.rowIds.size > 0 ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setShouldPinPreviewedLnkResultRows(false)
-                          setLnkResultDraft((current) => ({
-                            ...current,
-                            rowIds: new Set(),
-                            rowResults: {},
-                          }))
-                        }}
-                      >
-                        Снять выбор
-                      </Button>
-                    ) : null}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={toggleAllLnkResultRows}
-                      disabled={!canBulkToggleLnkResultRows}
-                    >
-                      {!lnkResultContextReady
-                        ? 'Выберите метод'
-                        : !canBulkToggleLnkResultRows
-                          ? 'Сузьте поиск'
-                        : isEveryFilteredLnkRequestRowSelected(
-                        lnkResultDraft.rowIds,
-                        selectableVisibleLnkResultRows,
-                      )
-                        ? 'Снять все'
-                        : 'Выбрать все доступные'}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-                  <Input
-                    value={lnkResultDraft.search}
-                    onChange={(event) => setLnkResultDraft((current) => ({ ...current, search: event.target.value }))}
-                    placeholder="Проект, шифр, линия, спул или стык"
-                    className="h-9 min-w-56 flex-[0.85] bg-white"
-                  />
-                  <Input
-                    value={lnkResultRequestSearch}
-                    onChange={(event) => setLnkResultRequestSearch(event.target.value)}
-                    placeholder="Поиск заявки"
-                    className="h-9 min-w-44 flex-[0.45] bg-white"
-                  />
-                  <Select
-                    value={lnkResultDraft.requestName}
-                    onChange={(event) => changeLnkResultRequest(event.target.value)}
-                    className="h-9 min-w-48 flex-[0.5] bg-white"
-                  >
-                    <option value="">Все заявки</option>
-                    {filteredLnkResultRequestOptions.map((requestName) => (
-                      <option key={requestName} value={requestName}>
-                        {requestName}
-                      </option>
-                    ))}
-                  </Select>
-                  {lnkResultRequestSearch ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setLnkResultRequestSearch('')}
-                      className="h-9 px-2"
-                      aria-label="Очистить поиск заявки"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  ) : null}
-                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                    Заявок: {filteredLnkResultRequestOptions.length}/{lnkResultAvailableRequestOptions.length}
-                  </span>
-                  <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                    Найдено: {visibleLnkResultRows.length} · Выбрано: {lnkResultDraft.rowIds.size}
-                  </span>
-                  {lnkResultDraft.search ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setLnkResultRequestSearch('')
-                        setShouldPinPreviewedLnkResultRows(false)
-                        setLnkResultDraft((current) => ({
-                          ...current,
-                          requestName: '',
-                          rowIds: new Set(),
-                          rowResults: {},
-                          search: '',
-                        }))
-                      }}
-                    >
-                      Очистить
-                    </Button>
-                  ) : null}
-                </div>
-
-                <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
-                  {visibleLnkResultRows.length === 0 ? (
-                    <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
-                      {lnkResultDraft.search
-                          ? 'По фильтру ничего не найдено.'
-                          : 'По выбранному методу нет стыков для добавления результата.'}
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {visibleLnkResultRows.map((row) => {
-                        const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
-                        const disabled = !canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey)
-                        const selected = lnkResultDraft.rowIds.has(row.id) && !disabled
-                        const rowRequestNames = getLnkRowRequestNames(row)
-	                        const rowResult = getEffectiveLnkResultDraftValueForRow(row, lnkResultDraft)
-                        const hasSavedFinalResult = Boolean(
-                          method && LNK_RESULT_OPTIONS.includes(String(row[method.resultKey] ?? '').trim().toLowerCase() as never),
-                        )
-                        return (
-	                          <div
-	                            key={row.id}
-	                            onClick={() => {
-	                              if (!disabled) toggleLnkResultRow(row.id)
-	                            }}
-	                            className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] gap-3 px-4 py-3 text-sm transition-colors ${
-                              disabled
-                                ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-                                : selected
-                                  ? 'cursor-pointer bg-emerald-50/80'
-                                  : 'cursor-pointer bg-white hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={() => toggleLnkResultRow(row.id)}
-                              disabled={disabled}
-                              className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
-                            />
-                            <span className="min-w-0">
-                              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-                                <OfficialityBadge row={row} compact />
-                              </span>
-                              <span className="block text-xs leading-5 text-slate-500">
-                                <JointProjectSubtitleMeta row={row} />
-                              </span>
-                              <span className="block text-xs leading-5 text-slate-500">
-                                <JointSpoolDiameterMeta row={row} />
-                                <MetaSeparator />
-                                <JointWeldDateMeta row={row} />
-                              </span>
-                              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
-                                {formatLnkResultSummaryItems(row).map((item) => (
-                                  <span
-                                    key={item.method}
-                                    className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium ${item.inactive ? getInactiveLnkRequestBadgeClass() : getLnkResultBadgeClass(item.result)}`}
-                                  >
-                                    <span className="font-bold">{item.method}</span>
-                                    <span>{item.result}</span>
-                                  </span>
-                                ))}
-                              </span>
-                              {disabled ? (
-                                <span className="block truncate text-xs text-amber-700">
-                                  {rowRequestNames.length === 0
-                                    ? 'На этот стык еще нет заявки ЛНК.'
-                                    : !lnkResultDraft.methodKey
-                                      ? 'Выберите метод контроля, чтобы отметить стык.'
-                                    : hasSavedFinalResult
-                                      ? 'Результат уже внесен. Используйте «Редактировать результаты».'
-                                    : lnkResultDraft.requestName
-                                      ? 'Для выбранных заявки и метода этот стык не подходит.'
-                                      : 'На выбранный метод по этому стыку нет заявки ЛНК.'}
-                                </span>
-                              ) : null}
-                              {selected ? (
-                                <span className="mt-2 flex flex-wrap items-center gap-1.5">
-	                                  <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>
-	                                  {LNK_RESULT_OPTIONS.map((option) => {
-	                                    const active = rowResult === option
-	                                    const disabledByRepairRule = option === 'ремонт' && isLnkRepairForbidden(row)
-	                                    return (
-	                                      <button
-	                                        key={option}
-	                                        type="button"
-	                                        onClick={(event) => {
-	                                          event.preventDefault()
-	                                          event.stopPropagation()
-	                                          if (disabledByRepairRule) return
-	                                          setLnkResultForRow(row.id, option)
-	                                        }}
-	                                        disabled={disabledByRepairRule}
-	                                        title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
-	                                        className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
-	                                          disabledByRepairRule
-	                                            ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
-	                                            : active
-	                                            ? getLnkResultBadgeClass(option)
-	                                            : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-	                                        }`}
-	                                      >
-                                        {option}
-                                      </button>
-                                    )
-                                  })}
-                                </span>
-                              ) : null}
-                            </span>
-                            <span className="flex flex-wrap content-start gap-1.5">
-                              {rowRequestNames.length === 0 ? (
-                                <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
-                                  Нет заявки
-                                </span>
-                              ) : (
-                                getLnkRowRequestMethods(row, lnkResultDraft.requestName).map((availableMethod) => {
-                                  const requestName = String(row[availableMethod.requestKey] ?? '').trim()
-                                  const conclusionName = String(row[availableMethod.conclusionKey] ?? '').trim()
-                                  const hasNoNeed = isLnkMethodNoNeed(row, availableMethod)
-                                  const isSelectedMethod = availableMethod.requestKey === lnkResultDraft.methodKey
-                                  const isSelectedRowMethod = selected && isSelectedMethod
-                                  return (
-                                    <span
-                                      key={availableMethod.requestKey}
-                                      className={`inline-flex max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium ${
-                                        isSelectedRowMethod
-                                          ? 'border-sky-200 bg-sky-50 text-sky-900'
-                                          : getLnkRequestMethodBadgeClass(row, availableMethod)
-                                      }`}
-                                    >
-                                      <span
-                                        className={`flex max-w-full items-center gap-1.5 whitespace-normal break-words ${
-                                          isSelectedRowMethod ? 'text-sky-700' : 'text-slate-500'
-                                        }`}
-                                      >
-                                        <span
-                                          className={`rounded px-1.5 py-0.5 text-[11px] font-bold leading-none ${
-                                            isSelectedRowMethod
-                                              ? 'bg-sky-100 text-sky-900'
-                                              : 'border border-slate-200 bg-slate-100 text-slate-700'
-                                          }`}
-                                        >
-                                          {availableMethod.code}
-                                        </span>
-                                        <span className="min-w-0 overflow-visible break-all whitespace-normal [text-overflow:clip]">
-                                          {hasNoNeed ? 'нет потребности' : requestName}
-                                        </span>
-                                      </span>
-                                      {conclusionName && !hasNoNeed ? (
-                                        <span className="max-w-full overflow-visible break-all whitespace-normal [text-overflow:clip]">
-                                          {conclusionName}
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                  )
-                                })
-                              )}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-
-            <div className="flex items-end justify-between gap-4 border-t border-slate-200/80 px-5 py-4">
-              <div className="min-h-5 text-sm text-slate-500">
-                {lnkResultSaveBlockReason ? (
-                  <span className="text-sm text-slate-500">
-                    Чтобы сохранить: {lnkResultSaveBlockReason}
-                  </span>
-                ) : null}
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={closeAddLnkResultModal}>
-                  Отмена
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShouldPinPreviewedLnkResultRows(true)
-                    setIsLnkResultPreviewOpen(true)
-                  }}
-                  disabled={selectedLnkResultRows.length === 0}
-                >
-                  Предпросмотр ({selectedLnkResultRows.length})
-                </Button>
-                <span title={lnkResultSaveBlockReason || 'Можно сохранить результат'}>
-                  <Button
-                    onClick={handleAddLnkResult}
-                    disabled={isLnkResultSaveDisabled}
-                    className={isLnkResultSaveDisabled ? 'pointer-events-none' : ''}
-                  >
-                    <Check className="mr-2 h-4 w-4" />
-                    Сохранить результат
-                  </Button>
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <LnkResultDialog
+          draft={lnkResultDraft}
+          requestSearch={lnkResultRequestSearch}
+          selectedMethods={selectedLnkResultMethods}
+          selectedRows={selectedLnkResultRows}
+          visibleRows={visibleLnkResultRows}
+          filteredRequestOptions={filteredLnkResultRequestOptions}
+          availableRequestOptions={lnkResultAvailableRequestOptions}
+          nextConclusionName={nextLnkConclusionName}
+          saveBlockReason={lnkResultSaveBlockReason}
+          isSaveDisabled={isLnkResultSaveDisabled}
+          contextReady={lnkResultContextReady}
+          canBulkToggleRows={canBulkToggleLnkResultRows}
+          areAllFilteredRowsSelected={isEveryFilteredLnkRequestRowSelected(
+            lnkResultDraft.rowIds,
+            selectableVisibleLnkResultRows,
+          )}
+          onClose={closeAddLnkResultModal}
+          onOpenManager={openLnkResultManager}
+          onMethodChange={changeLnkResultMethod}
+          onControlDateChange={(controlDate) => setLnkResultDraft((current) => ({ ...current, controlDate }))}
+          onDefaultResultChange={(result) => {
+            if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
+            setLnkResultDraft((current) => ({
+              ...current,
+              result,
+              rowResults: {},
+            }))
+          }}
+          onConclusionNamingChange={(conclusionNaming) => setLnkResultDraft((current) => ({ ...current, conclusionNaming }))}
+          onClearSelection={() => {
+            setShouldPinPreviewedLnkResultRows(false)
+            setLnkResultDraft((current) => ({
+              ...current,
+              rowIds: new Set(),
+              rowResults: {},
+            }))
+          }}
+          onToggleAllRows={toggleAllLnkResultRows}
+          onSearchChange={(search) => setLnkResultDraft((current) => ({ ...current, search }))}
+          onRequestSearchChange={setLnkResultRequestSearch}
+          onRequestChange={changeLnkResultRequest}
+          onClearRequestSearch={() => setLnkResultRequestSearch('')}
+          onClearSearch={() => {
+            setLnkResultRequestSearch('')
+            setShouldPinPreviewedLnkResultRows(false)
+            setLnkResultDraft((current) => ({
+              ...current,
+              requestName: '',
+              rowIds: new Set(),
+              rowResults: {},
+              search: '',
+            }))
+          }}
+          onToggleRow={toggleLnkResultRow}
+          onSetRowResult={setLnkResultForRow}
+          onOpenPreview={() => {
+            setShouldPinPreviewedLnkResultRows(true)
+            setIsLnkResultPreviewOpen(true)
+          }}
+          onSave={handleAddLnkResult}
+        />
       ) : null}
 
       {isLnkResultPreviewOpen ? (
