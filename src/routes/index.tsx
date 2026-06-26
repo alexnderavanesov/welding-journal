@@ -19,6 +19,7 @@ import { WeldTable } from '@/components/weld-table'
 import { DispatcherTaskPanel, WelderStampNotificationPanel } from '@/components/dispatcher-panels'
 import { JointChainDialog } from '@/components/joint-chain-dialog'
 import { LnkResultPreviewDialog } from '@/components/lnk-result-preview-dialog'
+import { ReportFieldEditDialog } from '@/components/report-field-edit-dialog'
 import {
   clearLnkGeneratedWeldData,
   createWeldJoint,
@@ -43,7 +44,6 @@ import { getWeldTableWidth } from '@/lib/weld-column-widths'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import {
   FIELD_BY_KEY,
-  RESULT_STATUS_OPTIONS,
   VISIBLE_FIELDS,
   calculateFinalStatus,
   type WeldFieldKey,
@@ -5233,97 +5233,18 @@ function Home() {
       ) : null}
 
       {heatTreatmentFieldEditing ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-          <div className="w-full max-w-xl rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-            <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold">{heatTreatmentFieldEditing.label}</h2>
-                <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-                  <span>{getJointTitle(heatTreatmentFieldEditing.record)}</span>
-                  <OfficialityBadge row={heatTreatmentFieldEditing.record} compact />
-                </p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setHeatTreatmentFieldEditing(null)} aria-label="Закрыть">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="space-y-2 px-5 py-5">
-              <label className="space-y-1.5 text-sm">
-                <span className="text-[13px] font-medium leading-none text-slate-700">{heatTreatmentFieldEditing.label}</span>
-                {heatTreatmentFieldEditing.mode === 'result' ? (
-                  <Select
-                    autoFocus
-                    value={heatTreatmentFieldEditing.value}
-                    onChange={(event) =>
-                      setHeatTreatmentFieldEditing((current) =>
-                        current ? { ...current, value: event.target.value } : current,
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') setHeatTreatmentFieldEditing(null)
-                      if (event.key === 'Enter') saveEditedHeatTreatmentField()
-                    }}
-                  >
-                    <option value="">пусто</option>
-                    {RESULT_STATUS_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Select>
-                ) : heatTreatmentFieldEditing.mode === 'request' ? (
-                  <Select
-                    autoFocus
-                    value={heatTreatmentFieldEditing.value}
-                    onChange={(event) =>
-                      setHeatTreatmentFieldEditing((current) =>
-                        current ? { ...current, value: event.target.value } : current,
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') setHeatTreatmentFieldEditing(null)
-                      if (event.key === 'Enter') saveEditedHeatTreatmentField()
-                    }}
-                  >
-                    <option value="">пусто</option>
-                    {withCurrentOption(lnkRequestOptions, heatTreatmentFieldEditing.value).map((requestName) => (
-                      <option key={requestName} value={requestName}>
-                        {requestName}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input
-                    autoFocus
-                    type={heatTreatmentFieldEditing.kind}
-                    value={heatTreatmentFieldEditing.value}
-                    onChange={(event) =>
-                      setHeatTreatmentFieldEditing((current) =>
-                        current ? { ...current, value: event.target.value } : current,
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') setHeatTreatmentFieldEditing(null)
-                      if (event.key === 'Enter') saveEditedHeatTreatmentField()
-                    }}
-                  />
-                )}
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-              <Button variant="outline" onClick={() => setHeatTreatmentFieldEditing(null)}>
-                Отмена
-              </Button>
-              <Button
-                onClick={saveEditedHeatTreatmentField}
-                disabled={heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending}
-              >
-                <Check className="mr-2 h-4 w-4" />
-                Сохранить
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ReportFieldEditDialog
+          editing={heatTreatmentFieldEditing}
+          requestOptions={lnkRequestOptions}
+          isSaving={heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending}
+          onChange={(value) =>
+            setHeatTreatmentFieldEditing((current) =>
+              current ? { ...current, value } : current,
+            )
+          }
+          onClose={() => setHeatTreatmentFieldEditing(null)}
+          onSave={saveEditedHeatTreatmentField}
+        />
       ) : null}
     </main>
   )
