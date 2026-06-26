@@ -104,6 +104,7 @@ import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { useReportFilterState } from '@/lib/use-report-filter-state'
+import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -268,8 +269,12 @@ function Home() {
     highlightChangedRows,
     replayLatestHighlight,
   } = useReportHighlights()
-  const [selectedHeatTreatmentIds, setSelectedHeatTreatmentIds] = useState<Set<number>>(new Set())
-  const [selectedLnkIds, setSelectedLnkIds] = useState<Set<number>>(new Set())
+  const {
+    selectedHeatTreatmentIds,
+    selectedLnkIds,
+    setSelectedHeatTreatmentIds,
+    setSelectedLnkIds,
+  } = useReportSelectionState()
   const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
   const [pstoRequestNaming, setPstoRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
   const [pstoRequestSearch, setPstoRequestSearch] = useState('')
