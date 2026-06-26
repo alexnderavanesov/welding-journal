@@ -432,59 +432,6 @@ function Home() {
     queryFn: async () => listWeldJoints({ data: emptyFilters }),
   })
 
-  const {
-    deleteMutation,
-    importMutation,
-    obsoleteRepeatedJointMutation,
-    renameRepeatedJointMutation,
-    repeatedJointMutation,
-    saveMutation,
-  } = useWeldJournalMutations({
-    rows,
-    welderStamps,
-    weldFormStampSelectOptions,
-    editingFocusField: editing?.focusField,
-    setEditing,
-    setMessage,
-    highlightChangedRows,
-    dismissRepeatedJointTask,
-  })
-
-  const { heatTreatmentImportMutation, lnkImportMutation } = useReportImportMutations({
-    rows,
-    heatTreatmentRows,
-    lnkRows,
-    pstoRequestOptions,
-    lnkRequestOptions,
-    setMessage,
-    highlightChangedRows,
-  })
-
-  const {
-    pstoRequestMutation,
-    pstoResultMutation,
-    pstoRequestManagerMutation,
-    pstoRequestCorrectionMutation,
-    pstoResultCorrectionMutation,
-    heatTreatmentFieldMutation,
-  } = usePstoReportMutations({
-    rows,
-    heatTreatmentRows,
-    pstoRequestOptions,
-    setMessage,
-    highlightChangedRows,
-    setSelectedHeatTreatmentIds,
-    setPstoRequestNaming,
-    setPstoRequestSearch,
-    setIsPstoRequestModalOpen,
-    setIsPstoResultModalOpen,
-    setPstoResultDraft,
-    setManagedPstoRequestName,
-    setManagedPstoRequestNameDraft,
-    setIsPstoRequestManagerOpen,
-    setHeatTreatmentFieldEditing,
-  })
-
   const lnkRequestMutation = useMutation({
     mutationFn: async ({
       records,
@@ -1057,6 +1004,58 @@ function Home() {
     lnkResultDraft,
     managedPstoRequestName,
     managedLnkRequestName,
+  })
+  const {
+    deleteMutation,
+    importMutation,
+    obsoleteRepeatedJointMutation,
+    renameRepeatedJointMutation,
+    repeatedJointMutation,
+    saveMutation,
+  } = useWeldJournalMutations({
+    rows,
+    welderStamps,
+    weldFormStampSelectOptions,
+    editingFocusField: editing?.focusField,
+    setEditing,
+    setMessage,
+    highlightChangedRows,
+    dismissRepeatedJointTask,
+  })
+
+  const { heatTreatmentImportMutation, lnkImportMutation } = useReportImportMutations({
+    rows,
+    heatTreatmentRows,
+    lnkRows,
+    pstoRequestOptions,
+    lnkRequestOptions,
+    setMessage,
+    highlightChangedRows,
+  })
+
+  const {
+    pstoRequestMutation,
+    pstoResultMutation,
+    pstoRequestManagerMutation,
+    pstoRequestCorrectionMutation,
+    pstoResultCorrectionMutation,
+    heatTreatmentFieldMutation,
+  } = usePstoReportMutations({
+    rows,
+    heatTreatmentRows,
+    pstoRequestOptions,
+    setMessage,
+    highlightChangedRows,
+    setSelectedHeatTreatmentIds,
+    setPstoRequestNaming,
+    setPstoRequestSearch,
+    setIsPstoRequestModalOpen,
+    setIsPstoResultModalOpen,
+    setPstoResultDraft,
+    setManagedPstoRequestName,
+    setManagedPstoRequestNameDraft,
+    setIsPstoRequestManagerOpen,
+    setHeatTreatmentFieldEditing,
   })
   const {
     pstoResultAvailableRequestOptions,
