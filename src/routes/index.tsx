@@ -7,7 +7,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { ReportHeaderActions } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
 import { ReportSummaryBar } from '@/components/report-summary-bar'
-import { WeldForm } from '@/components/weld-form'
+import { ReportWeldEditor } from '@/components/report-weld-editor'
 import { ReportTaskPanels } from '@/components/report-task-panels'
 import { ReportChainDialog } from '@/components/report-chain-dialog'
 import { LnkOfficialityDialog } from '@/components/lnk-officiality-dialog'
@@ -3100,18 +3100,23 @@ function Home() {
         }
       />
 
-      {editing ? (
-        <WeldForm
-          key={`${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}`}
-          value={editing.record}
-          focusField={editing.focusField}
-          stampSelectOptions={getWeldFormStampSelectOptions}
-          getExternalSaveBlockReason={(draft) => getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps)}
-          busy={saveMutation.isPending}
-          onCancel={() => setEditing(null)}
-          onSave={(value) => saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id })}
-        />
-      ) : null}
+      <ReportWeldEditor
+        formKey={editing ? `${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}` : null}
+        formProps={
+          editing
+            ? {
+                value: editing.record,
+                focusField: editing.focusField,
+                stampSelectOptions: getWeldFormStampSelectOptions,
+                getExternalSaveBlockReason: (draft) => getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps),
+                busy: saveMutation.isPending,
+                onCancel: () => setEditing(null),
+                onSave: (value) =>
+                  saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id }),
+              }
+            : null
+        }
+      />
 
       {isPstoRequestModalOpen ? (
         <PstoRequestDialog
