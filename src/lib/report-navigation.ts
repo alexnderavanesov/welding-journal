@@ -1,0 +1,45 @@
+import { parseJointChainName } from '@/lib/joint-chain'
+import { makeExactColumnFilterValue } from '@/lib/report-ui-state'
+import type { RepeatedJointTask } from '@/lib/dispatcher-types'
+import type { WeldInput } from '@/lib/weld-fields'
+
+function trimRowText(value: unknown) {
+  return String(value ?? '').trim()
+}
+
+export function buildJointChainFilters(row: WeldInput, baseJoint: string) {
+  return {
+    projectTitle: trimRowText(row.projectTitle),
+    subtitleCode: trimRowText(row.subtitleCode),
+    line: trimRowText(row.line),
+    joint: baseJoint,
+  }
+}
+
+export function buildExactJointFilters(row: WeldInput) {
+  return {
+    projectTitle: trimRowText(row.projectTitle),
+    subtitleCode: trimRowText(row.subtitleCode),
+    line: trimRowText(row.line),
+    joint: makeExactColumnFilterValue(row.joint),
+  }
+}
+
+export function getJointBaseFromRow(row: WeldInput) {
+  const joint = trimRowText(row.joint)
+  return parseJointChainName(joint).base || joint
+}
+
+export function getRepeatedJointTaskBaseJoint(task: RepeatedJointTask) {
+  if (task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename') {
+    return task.baseJoint
+  }
+  return parseJointChainName(task.sourceJoint).base || task.sourceJoint
+}
+
+export function getRepeatedJointTaskActionText(task: RepeatedJointTask) {
+  if (task.kind === 'check') return `проверьте ${task.targetJoint}`
+  if (task.kind === 'duplicate-check') return `проверьте возможные дубли: ${task.count}`
+  if (task.kind === 'rename') return `проверьте переименование ${task.currentJoint} → ${task.targetJoint}`
+  return 'проверьте перед созданием'
+}

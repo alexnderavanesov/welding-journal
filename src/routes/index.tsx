@@ -134,7 +134,6 @@ import {
   expandHighlightFieldKeys,
   getCellKey,
   getJointTitle,
-  makeExactColumnFilterValue,
 } from '@/lib/report-ui-state'
 import {
   hasText,
@@ -174,6 +173,13 @@ import {
 } from '@/lib/report-modal-rows'
 import { buildDispatcherTaskGroups, getVisibleDispatcherTaskKeys } from '@/lib/dispatcher-view'
 import {
+  buildExactJointFilters,
+  buildJointChainFilters,
+  getJointBaseFromRow,
+  getRepeatedJointTaskActionText,
+  getRepeatedJointTaskBaseJoint,
+} from '@/lib/report-navigation'
+import {
   buildRepeatedJointDraft,
   buildRepeatedJointTasks,
   getJointChainConsistencyKey,
@@ -196,7 +202,6 @@ import {
   getCoilJointNames,
   getRepeatedJointFailureCount,
   normalizeJointChainPart,
-  parseJointChainName,
   parseRepeatedJointName,
 } from '@/lib/joint-chain'
 import {
@@ -2793,28 +2798,13 @@ function Home() {
   }
 
   function showRepeatedJointTask(task: RepeatedJointTask) {
-    const baseJoint =
-      task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename'
-        ? task.baseJoint
-        : parseJointChainName(task.sourceJoint).base || task.sourceJoint
-    const actionText =
-      task.kind === 'check'
-        ? `проверьте ${task.targetJoint}`
-        : task.kind === 'duplicate-check'
-          ? `проверьте возможные дубли: ${task.count}`
-          : task.kind === 'rename'
-            ? `проверьте переименование ${task.currentJoint} → ${task.targetJoint}`
-          : 'проверьте перед созданием'
+    const baseJoint = getRepeatedJointTaskBaseJoint(task)
+    const actionText = getRepeatedJointTaskActionText(task)
     showRepeatedJointTaskChain(task.row, baseJoint, `Показана цепочка стыка ${baseJoint}: ${actionText}`)
   }
 
   function showRepeatedJointTaskChain(row: WeldRow, baseJoint: string, messageText: string) {
-    const filters = {
-      projectTitle: String(row.projectTitle ?? '').trim(),
-      subtitleCode: String(row.subtitleCode ?? '').trim(),
-      line: String(row.line ?? '').trim(),
-      joint: baseJoint,
-    }
+    const filters = buildJointChainFilters(row, baseJoint)
     if (activeReport === 'lnk') {
       setActiveReport('lnk')
       setLnkFilters(filters)
@@ -2828,12 +2818,7 @@ function Home() {
 
   function openChainRowInCurrentReport(row: WeldRow) {
     setChainRecord(null)
-    const filters = {
-      projectTitle: String(row.projectTitle ?? '').trim(),
-      subtitleCode: String(row.subtitleCode ?? '').trim(),
-      line: String(row.line ?? '').trim(),
-      joint: makeExactColumnFilterValue(row.joint),
-    }
+    const filters = buildExactJointFilters(row)
     if (activeReport === 'lnk') {
       setActiveReport('lnk')
       setLnkFilters(filters)
@@ -2846,12 +2831,7 @@ function Home() {
 
   function openLinkedReportRow(row: WeldInput & { id: number }) {
     setChainRecord(null)
-    const filters = {
-      projectTitle: String(row.projectTitle ?? '').trim(),
-      subtitleCode: String(row.subtitleCode ?? '').trim(),
-      line: String(row.line ?? '').trim(),
-      joint: makeExactColumnFilterValue(row.joint),
-    }
+    const filters = buildExactJointFilters(row)
     if (activeReport === 'lnk') {
       setActiveReport('weldingJournal')
       setColumnFilters(filters)
@@ -2866,7 +2846,7 @@ function Home() {
   }
 
   function openChainBaseInCurrentReport(row: WeldRow) {
-    const baseJoint = parseJointChainName(String(row.joint ?? '')).base || String(row.joint ?? '').trim()
+    const baseJoint = getJointBaseFromRow(row)
     showRepeatedJointTaskChain(row, baseJoint, `Показана вся цепочка стыка ${baseJoint}`)
   }
 
