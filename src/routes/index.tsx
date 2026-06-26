@@ -81,7 +81,6 @@ import {
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
 import {
   filterPstoResultRows,
-  sortRowsByPreservedOrder,
 } from '@/lib/report-row-utils'
 import { getReportRowActions } from '@/lib/report-row-actions'
 import {
@@ -99,6 +98,7 @@ import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-s
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
 import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
+import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -131,10 +131,8 @@ import {
   filterLnkRowsByRequestName,
   filterPstoRowsByRequestName,
   getLnkInputMethodsForRows,
-  getLnkResultMethodsForRows,
   getLnkRowRequestNames,
   isEveryFilteredLnkRequestRowSelected,
-  isLnkResultRowApplicable,
   rowBelongsToLnkRequest,
   rowBelongsToPstoRequest,
   sortLnkRequestRows,
@@ -209,11 +207,9 @@ import {
 } from '@/lib/report-draft-state'
 import {
   collectRequestNames,
-  filterRequestNamesBySearch,
   formatRequestCreatedMessage,
   getRequestNameFromNaming,
   sortPstoRequestNamesNewestFirst,
-  withCurrentOption,
 } from '@/lib/report-naming'
 import {
   defaultRequestNamingState,
@@ -1432,68 +1428,21 @@ function Home() {
     shouldPinPreviewedLnkResultRows,
     isLnkResultSaving: lnkResultMutation.isPending,
   })
-  const filteredManagedLnkResultRequestOptions = useMemo(
-    () =>
-      withCurrentOption(
-        filterRequestNamesBySearch(lnkResultRequestOptions, managedLnkResultRequestSearch),
-        managedLnkResultRequestName,
-      ),
-    [lnkResultRequestOptions, managedLnkResultRequestName, managedLnkResultRequestSearch],
-  )
-  const managedLnkResultRows = useMemo(
-    () => {
-      if (managedLnkResultOrderIds) {
-        const selectedIds = new Set(managedLnkResultOrderIds)
-        return sortRowsByPreservedOrder(
-          lnkRows.filter((row) => selectedIds.has(row.id)),
-          managedLnkResultOrderIds,
-        )
-      }
-      const requestRows = filterLnkRowsByRequestName(lnkRows, managedLnkResultRequestName)
-      return requestRows
-    },
-    [lnkRows, managedLnkResultOrderIds, managedLnkResultRequestName],
-  )
-  const managedLnkResultMethods = useMemo(
-    () => getLnkResultMethodsForRows(managedLnkResultRows, managedLnkResultRequestName),
-    [managedLnkResultRequestName, managedLnkResultRows],
-  )
-  const managedLnkResultMethodRows = useMemo(
-    () =>
-      managedLnkResultRows.filter((row) => {
-        const method = getLnkMethodByRequestKey(managedLnkResultMethodKey)
-        return Boolean(
-          method &&
-            isLnkResultRowApplicable(row, managedLnkResultRequestName, managedLnkResultMethodKey) &&
-            isFinalLnkResultValue(row[method.resultKey]),
-        )
-      }),
-    [managedLnkResultMethodKey, managedLnkResultRequestName, managedLnkResultRows],
-  )
-  const managedLnkResultEntries = useMemo(
-    () =>
-      (managedLnkResultMethodKey
-        ? managedLnkResultMethodRows.flatMap((row) => {
-            const method = getLnkMethodByRequestKey(managedLnkResultMethodKey)
-            return method ? [{ row, method, changeKey: getManagedLnkResultChangeKey(row.id, method.requestKey) }] : []
-          })
-        : managedLnkResultRows.flatMap((row) =>
-            LNK_METHODS.flatMap((method) =>
-              isLnkResultRowApplicable(row, managedLnkResultRequestName, method.requestKey) &&
-              isFinalLnkResultValue(row[method.resultKey])
-                ? [{ row, method, changeKey: getManagedLnkResultChangeKey(row.id, method.requestKey) }]
-                : [],
-            ),
-          )),
-    [managedLnkResultMethodKey, managedLnkResultMethodRows, managedLnkResultRequestName, managedLnkResultRows],
-  )
-  const managedLnkPendingResultRows = useMemo(() => {
-    return managedLnkResultEntries.filter(({ row, method, changeKey }) => {
-      const nextResult = managedLnkPendingResultChanges[changeKey]
-      const currentResult = String(row[method.resultKey] ?? '').trim()
-      return Boolean(nextResult && nextResult !== currentResult)
-    })
-  }, [managedLnkPendingResultChanges, managedLnkResultEntries])
+  const {
+    filteredManagedLnkResultRequestOptions,
+    managedLnkResultRows,
+    managedLnkResultMethods,
+    managedLnkResultEntries,
+    managedLnkPendingResultRows,
+  } = useManagedLnkResultDerivedState({
+    lnkRows,
+    lnkResultRequestOptions,
+    managedLnkResultRequestSearch,
+    managedLnkResultRequestName,
+    managedLnkResultOrderIds,
+    managedLnkResultMethodKey,
+    managedLnkPendingResultChanges,
+  })
   useEffect(() => {
     if (!isLnkResultManagerOpen) return
     setManagedLnkConclusionDrafts(
