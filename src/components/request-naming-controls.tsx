@@ -1,11 +1,5 @@
 import { Input } from '@/components/ui/input'
-
-export type RequestNamingState = {
-  mode: 'system' | 'custom'
-  customName: string
-}
-
-export const defaultRequestNamingState: RequestNamingState = { mode: 'system', customName: '' }
+import type { RequestNamingState } from '@/lib/request-naming-state'
 
 export function RequestNamingControls({
   naming,

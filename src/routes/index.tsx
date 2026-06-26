@@ -12,7 +12,7 @@ import {
   MetaSeparator,
   OfficialityBadge,
 } from '@/components/joint-meta'
-import { defaultRequestNamingState, RequestNamingControls, type RequestNamingState } from '@/components/request-naming-controls'
+import { RequestNamingControls } from '@/components/request-naming-controls'
 import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
@@ -230,6 +230,15 @@ import {
   isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import {
+  createDefaultLnkOfficialityDraft,
+  createDefaultLnkResultDraft,
+  createDefaultPstoResultDraft,
+  type LnkOfficialityDraftState,
+  type LnkRequestDraftState,
+  type LnkResultDraftState,
+  type PstoResultDraftState,
+} from '@/lib/report-draft-state'
+import {
   collectLnkResultRequestNames,
   collectRequestNames,
   formatLnkConclusionName,
@@ -241,6 +250,10 @@ import {
   sortPstoRequestNamesNewestFirst,
   withCurrentOption,
 } from '@/lib/report-naming'
+import {
+  defaultRequestNamingState,
+  type RequestNamingState,
+} from '@/lib/request-naming-state'
 import {
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
@@ -286,32 +299,6 @@ type HeatTreatmentFieldEditingState = {
   value: string
   report?: 'heatTreatment' | 'lnk'
   mode?: 'text' | 'request' | 'result'
-}
-type LnkRequestDraftState = {
-  methods: Set<WeldFieldKey>
-}
-type LnkResultDraftState = {
-  requestName: string
-  methodKey: WeldFieldKey | ''
-  rowIds: Set<number>
-  rowResults: Record<number, string>
-  controlDate: string
-  result: string
-  conclusionNaming: RequestNamingState
-  search: string
-}
-type LnkOfficialityDraftState = {
-  rowIds: Set<number>
-  search: string
-  status: 'official' | 'unofficial' | ''
-}
-type PstoResultDraftState = {
-  requestName: string
-  rowIds: Set<number>
-  pstoDate: string
-  result: string
-  diagramNaming: RequestNamingState
-  search: string
 }
 type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps'
 
@@ -5959,38 +5946,6 @@ function buildEditableImportUpdates({
   }
 
   return { updatedRows, changedFieldKeys: [...changedFieldKeys], matched, skipped }
-}
-
-function createDefaultLnkResultDraft(): LnkResultDraftState {
-  return {
-    requestName: '',
-    methodKey: '',
-    rowIds: new Set(),
-    rowResults: {},
-    controlDate: formatDateInputValue(new Date()),
-    result: '',
-    conclusionNaming: defaultRequestNamingState,
-    search: '',
-  }
-}
-
-function createDefaultLnkOfficialityDraft(): LnkOfficialityDraftState {
-  return {
-    rowIds: new Set(),
-    search: '',
-    status: '',
-  }
-}
-
-function createDefaultPstoResultDraft(): PstoResultDraftState {
-  return {
-    requestName: '',
-    rowIds: new Set(),
-    pstoDate: formatDateInputValue(new Date()),
-    result: '',
-    diagramNaming: defaultRequestNamingState,
-    search: '',
-  }
 }
 
 function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStampRecord[] = []): RepeatedJointTask[] {

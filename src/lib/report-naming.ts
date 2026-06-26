@@ -1,4 +1,3 @@
-import type { RequestNamingState } from '@/components/request-naming-controls'
 import {
   formatLongDate,
   formatPstoDiagramLongDate,
@@ -6,6 +5,7 @@ import {
   formatShortDate,
   parseLongDateValue,
 } from '@/lib/date-format'
+import type { RequestNamingState } from '@/lib/request-naming-state'
 import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/lib/report-config'
 import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
