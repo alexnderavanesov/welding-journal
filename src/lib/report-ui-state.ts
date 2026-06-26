@@ -151,6 +151,13 @@ export function isReadOnlyReport(activeReport: ActiveReport) {
   return activeReport === 'heatTreatment' || activeReport === 'lnk'
 }
 
+export function isAnyReportModalOpen(modalOpenStates: Iterable<boolean>) {
+  for (const isOpen of modalOpenStates) {
+    if (isOpen) return true
+  }
+  return false
+}
+
 export function canOpenLinkedReport(activeReport: ActiveReport) {
   return activeReport === 'weldingJournal' || activeReport === 'lnk'
 }

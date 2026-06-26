@@ -137,6 +137,7 @@ import {
   getReportRegisterMinWidth,
   getReportSummaryText,
   getVisibleReportRows,
+  isAnyReportModalOpen,
   isReadOnlyReport,
   setNumberSetValues,
   shouldMergePstoSections,
@@ -392,17 +393,18 @@ function Home() {
     () => (draft: WeldInput) => buildWeldFormStampSelectOptions(welderStamps, draft),
     [welderStamps],
   )
-  const isReportModalOpen =
-    isPstoRequestModalOpen ||
-    isPstoRequestManagerOpen ||
-    isPstoResultModalOpen ||
-    isPstoResultManagerOpen ||
-    isLnkRequestModalOpen ||
-    isLnkRequestManagerOpen ||
-    isLnkResultModalOpen ||
-    isLnkResultPreviewOpen ||
-    isLnkResultManagerOpen ||
-    isLnkOfficialityModalOpen
+  const isReportModalOpen = isAnyReportModalOpen([
+    isPstoRequestModalOpen,
+    isPstoRequestManagerOpen,
+    isPstoResultModalOpen,
+    isPstoResultManagerOpen,
+    isLnkRequestModalOpen,
+    isLnkRequestManagerOpen,
+    isLnkResultModalOpen,
+    isLnkResultPreviewOpen,
+    isLnkResultManagerOpen,
+    isLnkOfficialityModalOpen,
+  ])
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
