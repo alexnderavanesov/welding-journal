@@ -1,11 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ClipboardCheck, FileSpreadsheet, Plus, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { AppSidebar } from '@/components/app-sidebar'
+import { ReportHeaderActions } from '@/components/report-header-actions'
 import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
@@ -2965,124 +2964,33 @@ function Home() {
             <div className="shrink-0">
               <h1 className="text-2xl font-semibold tracking-tight">{activeTitle}</h1>
             </div>
-            <div className="flex flex-wrap gap-2 lg:pt-0.5">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  if (file) void handleImport(file)
-                  event.currentTarget.value = ''
-                }}
-              />
-              {activeReport === 'heatTreatment' ? (
-                <>
-                  <Button onClick={openCreatePstoRequestModal} disabled={pstoRequestMutation.isPending}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Заявка
-                  </Button>
-                  <Button onClick={openAddPstoResultModal} disabled={pstoResultMutation.isPending || pstoResultRequestOptions.length === 0}>
-                    <ClipboardCheck className="mr-2 h-4 w-4" />
-                    Результат
-                  </Button>
-                  <div className="relative">
-                    <Button variant="outline" onClick={() => setIsPstoShowMenuOpen((current) => !current)}>
-                      Показать
-                      <ChevronDown className="ml-2 h-4 w-4" />
-                    </Button>
-                    {isPstoShowMenuOpen ? (
-                      <div className="absolute right-0 z-50 mt-2 w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-                        <button
-                          type="button"
-                          onClick={openPstoWaitingRequestReport}
-                          className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                        >
-                          Ожидает заявку ПСТО
-                        </button>
-                        <button
-                          type="button"
-                          onClick={openPstoResultsReport}
-                          className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                        >
-                          Результаты ПСТО
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </>
-              ) : null}
-              {activeReport === 'lnk' ? (
-                <>
-                  <Button onClick={openCreateLnkRequestModal} disabled={lnkRequestMutation.isPending}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Заявка
-                  </Button>
-                  <Button onClick={openAddLnkResultModal} disabled={lnkResultMutation.isPending || lnkResultRequestOptions.length === 0}>
-                    <ClipboardCheck className="mr-2 h-4 w-4" />
-                    Результат
-                  </Button>
-                  <Button variant="outline" onClick={openLnkOfficialityModal} disabled={lnkOfficialityMutation.isPending}>
-                    <ShieldCheck className="mr-2 h-4 w-4" />
-                    Официальность
-                  </Button>
-                  <div className="relative">
-                    <Button variant="outline" onClick={() => setIsLnkShowMenuOpen((current) => !current)}>
-                      Показать
-                      <ChevronDown className="ml-2 h-4 w-4" />
-                    </Button>
-                    {isLnkShowMenuOpen ? (
-                      <div className="absolute right-0 z-50 mt-2 w-52 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-                        <button
-                          type="button"
-                          onClick={openLnkToRequestReport}
-                          className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                        >
-                          Ожидание заявки
-                        </button>
-                        <button
-                          type="button"
-                          onClick={openLnkWaitingNkReport}
-                          className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                        >
-                          Ожидание НК
-                        </button>
-                        <button
-                          type="button"
-                          onClick={openLnkConclusionsReport}
-                          className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                        >
-                          Показать заключения
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </>
-              ) : null}
-              {activeReport === 'weldingJournal' ? (
-                <Button onClick={() => setEditing({ record: {} })}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Новый стык
-                </Button>
-              ) : null}
-              {activeReport === 'weldingJournal' ? (
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Импорт
-                </Button>
-              ) : null}
-              {activeReport !== 'welderStamps' ? (
-                <Button variant="outline" onClick={exportXlsx}>
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Excel
-                </Button>
-              ) : null}
-            </div>
+            <ReportHeaderActions
+              activeReport={activeReport}
+              fileInputRef={fileInputRef}
+              onImportFile={(file) => void handleImport(file)}
+              onExportXlsx={exportXlsx}
+              onCreateWeldJoint={() => setEditing({ record: {} })}
+              importDisabled={importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending}
+              onCreatePstoRequest={openCreatePstoRequestModal}
+              pstoRequestPending={pstoRequestMutation.isPending}
+              onAddPstoResult={openAddPstoResultModal}
+              pstoResultDisabled={pstoResultMutation.isPending || pstoResultRequestOptions.length === 0}
+              isPstoShowMenuOpen={isPstoShowMenuOpen}
+              onTogglePstoShowMenu={() => setIsPstoShowMenuOpen((current) => !current)}
+              onOpenPstoWaitingRequestReport={openPstoWaitingRequestReport}
+              onOpenPstoResultsReport={openPstoResultsReport}
+              onCreateLnkRequest={openCreateLnkRequestModal}
+              lnkRequestPending={lnkRequestMutation.isPending}
+              onAddLnkResult={openAddLnkResultModal}
+              lnkResultDisabled={lnkResultMutation.isPending || lnkResultRequestOptions.length === 0}
+              onOpenLnkOfficiality={openLnkOfficialityModal}
+              lnkOfficialityPending={lnkOfficialityMutation.isPending}
+              isLnkShowMenuOpen={isLnkShowMenuOpen}
+              onToggleLnkShowMenu={() => setIsLnkShowMenuOpen((current) => !current)}
+              onOpenLnkToRequestReport={openLnkToRequestReport}
+              onOpenLnkWaitingNkReport={openLnkWaitingNkReport}
+              onOpenLnkConclusionsReport={openLnkConclusionsReport}
+            />
           </header>
 
           <div
