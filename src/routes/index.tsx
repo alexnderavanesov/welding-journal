@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ReportHeaderActions } from '@/components/report-header-actions'
+import { ReportSummaryBar } from '@/components/report-summary-bar'
 import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
 import { WeldForm } from '@/components/weld-form'
 import { WeldTable } from '@/components/weld-table'
@@ -132,7 +133,6 @@ import {
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
   getReportRegisterMinWidth,
-  getReportSummaryText,
   getVisibleReportRows,
   isAnyReportModalOpen,
   isReadOnlyReport,
@@ -2993,28 +2993,23 @@ function Home() {
             />
           </header>
 
-          <div
-            className="sticky z-20 flex min-h-6 w-full items-center justify-between bg-white text-sm text-muted-foreground"
-            style={{ left: stickyLeft, minWidth: registerMinWidth }}
-          >
-            <span>
-              {getReportSummaryText({
-                activeReport,
-                isLoading: weldsQuery.isLoading,
-                weldingRowCount: rows.length,
-                acceptedWdiTotalText: formatWdiTotal(acceptedWdiTotal),
-                heatTreatmentRowCount: heatTreatmentRows.length,
-                selectedHeatTreatmentRowCount: selectedHeatTreatmentRows.length,
-                lnkRowCount: lnkRows.length,
-                availableLnkRequestRowCount: availableLnkRequestRows.length,
-                activeWelderStampCount: welderStamps.filter((record) => !record.archived).length,
-                archivedWelderStampCount: welderStamps.filter((record) => record.archived).length,
-                filteredWelderStampCount: filteredWelderStamps.length,
-              })}
-              {weldsQuery.error ? ` Ошибка: ${(weldsQuery.error as Error).message}` : null}
-            </span>
-            <span>{message}</span>
-          </div>
+          <ReportSummaryBar
+            activeReport={activeReport}
+            left={stickyLeft}
+            minWidth={registerMinWidth}
+            isLoading={weldsQuery.isLoading}
+            weldingRowCount={rows.length}
+            acceptedWdiTotalText={formatWdiTotal(acceptedWdiTotal)}
+            heatTreatmentRowCount={heatTreatmentRows.length}
+            selectedHeatTreatmentRowCount={selectedHeatTreatmentRows.length}
+            lnkRowCount={lnkRows.length}
+            availableLnkRequestRowCount={availableLnkRequestRows.length}
+            activeWelderStampCount={welderStamps.filter((record) => !record.archived).length}
+            archivedWelderStampCount={welderStamps.filter((record) => record.archived).length}
+            filteredWelderStampCount={filteredWelderStamps.length}
+            errorMessage={weldsQuery.error ? (weldsQuery.error as Error).message : null}
+            message={message}
+          />
 
           {activeReport !== 'heatTreatment' && activeReport !== 'welderStamps' ? (
             <DispatcherTaskPanel
