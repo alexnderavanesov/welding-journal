@@ -6,6 +6,7 @@ import { WeldTableFieldHeaderRows } from '@/components/weld-table-field-header-r
 import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
 import { WeldTableSectionHeaderRow } from '@/components/weld-table-section-header-row'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
+import { filterWeldRowsByColumns, hasColumnFilters as getHasColumnFilters } from '@/lib/weld-table-filtering'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import {
@@ -169,7 +170,7 @@ export function WeldTable({
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
   const hasRowActions = Boolean(rowActions)
   const hasChainAction = Boolean(onOpenChain || onOpenLinkedReport)
-  const hasColumnFilters = Object.values(columnFilters).some((value) => value.trim())
+  const hasColumnFilters = getHasColumnFilters(columnFilters)
   const tableColumnSpan = getWeldTableColumnSpan({
     fieldCount: filteredFields.length,
     readOnly,
@@ -185,23 +186,7 @@ export function WeldTable({
     hasChainAction,
   })
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
-  const filteredRows = useMemo(
-    () =>
-      rows.filter((row) =>
-        Object.entries(columnFilters).every(([key, value]) => {
-          const query = value.trim().toLowerCase()
-          if (!query) return true
-          const cellValue = row[key as keyof typeof row]
-          const normalized = cellValue === true ? 'да' : cellValue === false || cellValue == null ? '' : String(cellValue)
-          const normalizedText = normalized.trim().toLowerCase()
-          if (query.startsWith('=')) {
-            return normalizedText === query.slice(1).trim().replace(/^["']|["']$/g, '')
-          }
-          return normalizedText.includes(query)
-        }),
-      ),
-    [rows, columnFilters],
-  )
+  const filteredRows = useMemo(() => filterWeldRowsByColumns(rows, columnFilters), [rows, columnFilters])
   const selectableVisibleRows = filteredRows.filter((row) => !selectable || isRowSelectable(row))
   const selectedVisibleRows = selectableVisibleRows.filter((row) => selectedRowIds.has(row.id))
   const allVisibleRowsSelected = selectableVisibleRows.length > 0 && selectedVisibleRows.length === selectableVisibleRows.length
