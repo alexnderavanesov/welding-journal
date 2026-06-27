@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { WelderStampsArchivePanel } from '@/components/welder-stamps-archive-panel'
 import { WelderStampsCreatePanel } from '@/components/welder-stamps-create-panel'
 import { WelderStampsFiltersPanel } from '@/components/welder-stamps-filters-panel'
 import { WelderStampsRecordsTable } from '@/components/welder-stamps-records-table'
@@ -45,6 +45,7 @@ export function WelderStampsRegistry({
   onDelete,
 }: WelderStampsRegistryProps) {
   const hasRangeFilters = hasWelderStampRangeFilters(filters)
+  const hasSearchOrRangeFilters = Boolean(search.trim()) || hasRangeFilters
 
   return (
     <section className="max-w-[calc(100vw-7rem)] space-y-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm shadow-slate-100">
@@ -70,7 +71,7 @@ export function WelderStampsRegistry({
       <div className="overflow-hidden rounded-md border border-slate-200">
         <WelderStampsRecordsTable
           records={records}
-          emptyMessage={search.trim() || hasRangeFilters ? 'По фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
+          emptyMessage={hasSearchOrRangeFilters ? 'По фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
           editingId={editingId}
           onEdit={onEdit}
           onArchive={onArchive}
@@ -78,38 +79,14 @@ export function WelderStampsRegistry({
         />
       </div>
 
-      <div className="rounded-md border border-slate-200 bg-slate-50/60">
-        <button
-          type="button"
-          onClick={() => onToggleArchived(!showArchived)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100"
-        >
-          <span>Архив клейм</span>
-          <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
-            {archivedRecords.length} записей
-            <ChevronDown className={`h-4 w-4 transition-transform ${showArchived ? 'rotate-180' : ''}`} />
-          </span>
-        </button>
-        {showArchived ? (
-          <div className="border-t border-slate-200 bg-white p-3">
-            {archivedRecords.length === 0 ? (
-              <div className="rounded-md border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-                {search.trim() || hasRangeFilters ? 'По фильтрам архивных клейм не найдено.' : 'Архив пока пуст.'}
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-md border border-slate-200">
-                <WelderStampsRecordsTable
-                  records={archivedRecords}
-                  emptyMessage=""
-                  archived
-                  onRestore={onRestore}
-                  onDelete={onDelete}
-                />
-              </div>
-            )}
-          </div>
-        ) : null}
-      </div>
+      <WelderStampsArchivePanel
+        archivedRecords={archivedRecords}
+        showArchived={showArchived}
+        hasSearchOrRangeFilters={hasSearchOrRangeFilters}
+        onRestore={onRestore}
+        onToggleArchived={onToggleArchived}
+        onDelete={onDelete}
+      />
     </section>
   )
 }
