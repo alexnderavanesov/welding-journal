@@ -91,6 +91,7 @@ import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actio
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { createWeldTableProps } from '@/lib/weld-table-props'
 import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-props'
+import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -982,6 +983,34 @@ function Home() {
     onDelete: deleteWelderStampRecord,
   })
 
+  const reportHeaderActionsProps = createReportHeaderActionsProps({
+    activeReport,
+    fileInputRef,
+    onImportFile: (file) => void handleImport(file),
+    onExportXlsx: exportXlsx,
+    onCreateWeldJoint: () => setEditing({ record: {} }),
+    importDisabled: importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending,
+    onCreatePstoRequest: openCreatePstoRequestModal,
+    pstoRequestPending: pstoRequestMutation.isPending,
+    onAddPstoResult: openAddPstoResultModal,
+    pstoResultDisabled: pstoResultMutation.isPending || pstoResultRequestOptions.length === 0,
+    isPstoShowMenuOpen,
+    onTogglePstoShowMenu: () => setIsPstoShowMenuOpen((current) => !current),
+    onOpenPstoWaitingRequestReport: openPstoWaitingRequestReport,
+    onOpenPstoResultsReport: openPstoResultsReport,
+    onCreateLnkRequest: openCreateLnkRequestModal,
+    lnkRequestPending: lnkRequestMutation.isPending,
+    onAddLnkResult: openAddLnkResultModal,
+    lnkResultDisabled: lnkResultMutation.isPending || lnkResultRequestOptions.length === 0,
+    onOpenLnkOfficiality: openLnkOfficialityModal,
+    lnkOfficialityPending: lnkOfficialityMutation.isPending,
+    isLnkShowMenuOpen,
+    onToggleLnkShowMenu: () => setIsLnkShowMenuOpen((current) => !current),
+    onOpenLnkToRequestReport: openLnkToRequestReport,
+    onOpenLnkWaitingNkReport: openLnkWaitingNkReport,
+    onOpenLnkConclusionsReport: openLnkConclusionsReport,
+  })
+
   return (
     <ReportWorkspace
       activeReport={activeReport}
@@ -991,33 +1020,7 @@ function Home() {
       onReportChange={changeActiveReport}
     >
           <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={registerMinWidth}>
-            <ReportHeaderActions
-              activeReport={activeReport}
-              fileInputRef={fileInputRef}
-              onImportFile={(file) => void handleImport(file)}
-              onExportXlsx={exportXlsx}
-              onCreateWeldJoint={() => setEditing({ record: {} })}
-              importDisabled={importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending}
-              onCreatePstoRequest={openCreatePstoRequestModal}
-              pstoRequestPending={pstoRequestMutation.isPending}
-              onAddPstoResult={openAddPstoResultModal}
-              pstoResultDisabled={pstoResultMutation.isPending || pstoResultRequestOptions.length === 0}
-              isPstoShowMenuOpen={isPstoShowMenuOpen}
-              onTogglePstoShowMenu={() => setIsPstoShowMenuOpen((current) => !current)}
-              onOpenPstoWaitingRequestReport={openPstoWaitingRequestReport}
-              onOpenPstoResultsReport={openPstoResultsReport}
-              onCreateLnkRequest={openCreateLnkRequestModal}
-              lnkRequestPending={lnkRequestMutation.isPending}
-              onAddLnkResult={openAddLnkResultModal}
-              lnkResultDisabled={lnkResultMutation.isPending || lnkResultRequestOptions.length === 0}
-              onOpenLnkOfficiality={openLnkOfficialityModal}
-              lnkOfficialityPending={lnkOfficialityMutation.isPending}
-              isLnkShowMenuOpen={isLnkShowMenuOpen}
-              onToggleLnkShowMenu={() => setIsLnkShowMenuOpen((current) => !current)}
-              onOpenLnkToRequestReport={openLnkToRequestReport}
-              onOpenLnkWaitingNkReport={openLnkWaitingNkReport}
-              onOpenLnkConclusionsReport={openLnkConclusionsReport}
-            />
+            <ReportHeaderActions {...reportHeaderActionsProps} />
           </ReportPageHeader>
 
           <ReportSummaryBar

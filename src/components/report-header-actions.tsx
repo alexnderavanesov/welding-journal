@@ -3,7 +3,7 @@ import { ChevronDown, ClipboardCheck, FileSpreadsheet, Plus, ShieldCheck, Upload
 import { Button } from '@/components/ui/button'
 import type { ActiveReport } from '@/lib/home-state'
 
-type ReportHeaderActionsProps = {
+export type ReportHeaderActionsProps = {
   activeReport: ActiveReport
   fileInputRef: RefObject<HTMLInputElement | null>
   onImportFile: (file: File) => void
