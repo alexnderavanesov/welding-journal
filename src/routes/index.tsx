@@ -94,6 +94,7 @@ import { createReportHeaderActionsProps } from '@/lib/report-header-actions-prop
 import { createReportSummaryBarProps } from '@/lib/report-summary-props'
 import { createReportTaskPanelsProps } from '@/lib/report-task-panels-props'
 import { createReportChainDialogProps } from '@/lib/report-chain-dialog-props'
+import { createReportWeldEditorProps } from '@/lib/report-weld-editor-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -1049,6 +1050,15 @@ function Home() {
     onOpenBase: openChainBaseInCurrentReport,
     onOpenRow: openChainRowInCurrentReport,
   })
+  const reportWeldEditorProps = createReportWeldEditorProps({
+    editing,
+    stampSelectOptions: getWeldFormStampSelectOptions,
+    getExternalSaveBlockReason: (draft) => getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps),
+    isSaving: saveMutation.isPending,
+    onCancel: () => setEditing(null),
+    onSave: (value) =>
+      editing && saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id }),
+  })
 
   return (
     <ReportWorkspace
@@ -1074,21 +1084,7 @@ function Home() {
 
       <ReportDialogs
         chainDialogProps={reportChainDialogProps}
-        weldEditorProps={{
-          formKey: editing ? `${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}` : null,
-          formProps: editing
-            ? {
-                value: editing.record,
-                focusField: editing.focusField,
-                stampSelectOptions: getWeldFormStampSelectOptions,
-                getExternalSaveBlockReason: (draft) => getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps),
-                busy: saveMutation.isPending,
-                onCancel: () => setEditing(null),
-                onSave: (value) =>
-                  saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id }),
-              }
-            : null,
-        }}
+        weldEditorProps={reportWeldEditorProps}
         pstoDialogsProps={{
           requestDialogProps: isPstoRequestModalOpen
             ? {

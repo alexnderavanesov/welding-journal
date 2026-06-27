@@ -3,7 +3,7 @@ import { WeldForm } from '@/components/weld-form'
 
 type WeldFormProps = ComponentProps<typeof WeldForm>
 
-type ReportWeldEditorProps = {
+export type ReportWeldEditorProps = {
   formKey: string | null
   formProps: WeldFormProps | null
 }
