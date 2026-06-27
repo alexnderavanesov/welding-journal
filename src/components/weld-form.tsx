@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { WeldFormFooter } from '@/components/weld-form-footer'
+import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
 import {
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
@@ -165,23 +167,12 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
             ) : null}
             {fieldsByGroup.map(({ section, fields }) => (
               <section key={section}>
-                <button
-                  type="button"
-                  onClick={() => toggleSection(section)}
-                  className="mb-4 flex w-full items-center gap-3 rounded-sm text-left transition-colors hover:text-slate-900"
-                  aria-expanded={!collapsedSections.has(section)}
-                >
-                  {collapsedSections.has(section) ? (
-                    <ChevronRight className="h-4 w-4 text-slate-500" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-slate-500" />
-                  )}
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{section}</h3>
-                  <div className="h-px flex-1 bg-slate-200/80" />
-                  <span className="rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                    {collapsedSections.has(section) ? 'Скрыто' : `${fields.length}`}
-                  </span>
-                </button>
+                <WeldFormSectionHeader
+                  section={section}
+                  fieldsCount={fields.length}
+                  collapsed={collapsedSections.has(section)}
+                  onToggle={() => toggleSection(section)}
+                />
                 {collapsedSections.has(section) ? null : (
                   <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
                     {fields.map((field) => (
@@ -344,28 +335,13 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4 border-t border-slate-200/80 bg-white px-6 py-4">
-          <div className="min-h-6 min-w-0 flex-1 text-sm text-slate-500">
-            {saveBlockReason ? (
-              <span className="inline-flex max-w-full rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-800 shadow-sm">
-                <span className="truncate">Чтобы сохранить: {saveBlockReason}</span>
-              </span>
-            ) : autoFillMessages[0] ? (
-              <span className="inline-flex max-w-full rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-sky-800 shadow-sm">
-                <span className="truncate">{autoFillMessages[0]}</span>
-              </span>
-            ) : null}
-          </div>
-          <div className="flex shrink-0 justify-end gap-2">
-            <Button variant="outline" onClick={onCancel}>
-              Отмена
-            </Button>
-            <Button onClick={handleSave} disabled={busy || Boolean(saveBlockReason)} title={saveBlockReason ?? undefined}>
-              <Check className="mr-2 h-4 w-4" />
-              Сохранить
-            </Button>
-          </div>
-        </div>
+        <WeldFormFooter
+          busy={busy}
+          saveBlockReason={saveBlockReason}
+          autoFillMessage={autoFillMessages[0]}
+          onCancel={onCancel}
+          onSave={handleSave}
+        />
       </div>
     </div>
   )
