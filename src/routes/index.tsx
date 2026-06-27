@@ -50,7 +50,6 @@ import {
   getJointStatusBadgeClass,
   getJointStatusLabel,
   getLnkDisplayValue,
-  getLnkMethodByRequestKey,
   hasAnyEnabledLnkControl,
   hasAnyLnkRequest,
   hasPendingLnkRequestResult,
@@ -90,6 +89,7 @@ import { useJointChainActions } from '@/lib/use-joint-chain-actions'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
 import { useLnkResultActions } from '@/lib/use-lnk-result-actions'
+import { useManagedLnkRequestActions } from '@/lib/use-managed-lnk-request-actions'
 import { useManagedLnkResultActions } from '@/lib/use-managed-lnk-result-actions'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
 import { useLnkRequestModalState } from '@/lib/use-lnk-request-modal-state'
@@ -533,6 +533,23 @@ function Home() {
     setPreservedOrderIds: setPreservedLnkOrderIds,
     setSearch: setLnkRequestSearch,
     setSelectedIds: setSelectedLnkIds,
+  })
+  const {
+    changeManagedLnkRequest,
+    clearManagedLnkRequestPosition,
+    closeLnkRequestManager,
+    deleteManagedLnkRequest,
+    openLnkRequestManager,
+    renameManagedLnkRequest,
+  } = useManagedLnkRequestActions({
+    lnkRequestManagerOptions,
+    managedLnkRequestName,
+    managedLnkRequestNameDraft,
+    lnkRequestCorrectionMutation,
+    lnkRequestManagerMutation,
+    setIsLnkRequestManagerOpen,
+    setManagedLnkRequestName,
+    setManagedLnkRequestNameDraft,
   })
   const {
     changeLnkResultMethod,
@@ -1026,51 +1043,6 @@ function Home() {
     renameRepeatedJointMutation.mutate(currentTask)
   }
 
-  function clearLnkRequestFromRow(row: WeldInput & { id: number }, methodKey: WeldFieldKey) {
-    lnkRequestCorrectionMutation.mutate({ record: row, methodKey, requestName: null })
-  }
-
-  function openLnkRequestManager() {
-    const requestName = managedLnkRequestName || lnkRequestManagerOptions[0] || ''
-    setManagedLnkRequestName(requestName)
-    setManagedLnkRequestNameDraft(requestName)
-    setIsLnkRequestManagerOpen(true)
-  }
-
-  function changeManagedLnkRequest(requestName: string) {
-    setManagedLnkRequestName(requestName)
-    setManagedLnkRequestNameDraft(requestName)
-  }
-
-  function renameManagedLnkRequest() {
-    lnkRequestManagerMutation.mutate({
-      action: 'rename',
-      requestName: managedLnkRequestName,
-      nextRequestName: managedLnkRequestNameDraft,
-    })
-  }
-
-  function deleteManagedLnkRequest() {
-    const requestName = managedLnkRequestName.trim()
-    if (!requestName) return
-    const confirmed = window.confirm(
-      `Удалить заявку ${requestName}? Будут очищены связанные заявки, результаты, даты и заключения ЛНК для этой заявки.`,
-    )
-    if (!confirmed) return
-    lnkRequestManagerMutation.mutate({ action: 'delete', requestName })
-  }
-
-  function clearManagedLnkRequestPosition(row: WeldInput & { id: number }, methodKey: WeldFieldKey) {
-    const method = getLnkMethodByRequestKey(methodKey)
-    if (!method) return
-    const requestName = String(row[method.requestKey] ?? '').trim()
-    const confirmed = window.confirm(
-      `Очистить ${method.code} по стыку ${String(row.joint ?? '-')} из заявки ${requestName}? Будут очищены заявка, результат, дата и заключение только для этой позиции.`,
-    )
-    if (!confirmed) return
-    clearLnkRequestFromRow(row, methodKey)
-  }
-
   function handleEditRecord(record: WeldInput & { id: number }, focusField?: WeldFieldKey) {
     if (activeReport === 'heatTreatment') {
       if (focusField && heatTreatmentEditableFieldKeys.has(focusField)) {
@@ -1439,7 +1411,7 @@ function Home() {
                 requestNameDraft: managedLnkRequestNameDraft,
                 isManagerPending: lnkRequestManagerMutation.isPending,
                 isCorrectionPending: lnkRequestCorrectionMutation.isPending,
-                onClose: () => setIsLnkRequestManagerOpen(false),
+                onClose: closeLnkRequestManager,
                 onChangeRequest: changeManagedLnkRequest,
                 onRequestNameDraftChange: setManagedLnkRequestNameDraft,
                 onRenameRequest: renameManagedLnkRequest,
