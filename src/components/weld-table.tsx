@@ -15,6 +15,7 @@ import {
 } from '@/lib/weld-table-sections'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import { useWeldTableCollapsedSections } from '@/lib/use-weld-table-collapsed-sections'
+import { useWeldTableEditability } from '@/lib/use-weld-table-editability'
 import { useWeldTableSelection } from '@/lib/use-weld-table-selection'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
@@ -119,16 +120,13 @@ export function WeldTable({
     onSelectedRowIdsChange,
     isRowSelectable,
   })
-
-  function canEditField(fieldKey: WeldFieldKey) {
-    if (!onEdit) return false
-    if (!readOnly) return !blockedFieldKeys.has(fieldKey)
-    return editableFieldKeys.has(fieldKey)
-  }
-
-  function canEditCell(row: WeldInput & { id: number }, fieldKey: WeldFieldKey) {
-    return canEditField(fieldKey) && isCellEditable(row, fieldKey)
-  }
+  const { canEditField, canEditCell } = useWeldTableEditability({
+    onEdit,
+    readOnly,
+    editableFieldKeys,
+    blockedFieldKeys,
+    isCellEditable,
+  })
 
   return (
     <div className="w-max space-y-3" style={{ minWidth: tableMinWidth }}>
