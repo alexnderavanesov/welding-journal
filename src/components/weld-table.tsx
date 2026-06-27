@@ -3,18 +3,17 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
+import { WeldTableBodyCell } from '@/components/weld-table-body-cell'
 import { WeldTableColumns } from '@/components/weld-table-columns'
 import { WeldTableEditActionsCell } from '@/components/weld-table-edit-actions-cell'
 import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
 import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
 import { WeldTableRowSelectCell } from '@/components/weld-table-row-select-cell'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
-import { WeldTableValue } from '@/components/weld-table-value'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import { getWeldTableRowClassName, getWeldTableRowTitle } from '@/lib/weld-table-row-state'
 import {
-  bodyCellClass,
   canCollapseSection,
   filterCellClass,
   getCellKey,
@@ -421,34 +420,19 @@ export function WeldTable({
                       const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
                       const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
                       const displayValue = getDisplayValue(row, field.key)
-                      const contentClass = `block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
-                        isEditableCell
-                          ? 'cursor-pointer hover:bg-slate-100/70'
-                          : isResultField
-                            ? ''
-                            : 'text-slate-500'
-                      }`
                       return (
-                    <td
-                      key={field.key}
-                      className={bodyCellClass(field.key, !isEditableCell, isHighlighted, isCellHighlighted, isBlockedEditableCell)}
-                      onClick={(event) => {
-                        if (!isEditableCell) return
-                        event.stopPropagation()
-                        onEdit?.(row, field.key)
-                      }}
-                      title={
-                        isEditableCell
-                          ? 'Нажмите, чтобы редактировать поле'
-                          : isBlockedEditableCell
-                            ? 'Недоступно: отсутствует отметка "да" в соответствующем наличии'
-                            : undefined
-                      }
-                    >
-                      <div className={contentClass}>
-                        <WeldTableValue field={field} value={displayValue} isResultField={isResultField} />
-                      </div>
-                    </td>
+                        <WeldTableBodyCell
+                          key={field.key}
+                          row={row}
+                          field={field}
+                          displayValue={displayValue}
+                          isEditableCell={isEditableCell}
+                          isBlockedEditableCell={isBlockedEditableCell}
+                          isHighlightedRow={isHighlighted}
+                          isHighlightedCell={isCellHighlighted}
+                          isResultField={isResultField}
+                          onEdit={onEdit}
+                        />
                       )
                     })()
                   ))}
