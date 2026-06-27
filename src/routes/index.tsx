@@ -92,6 +92,7 @@ import { createWeldTableProps } from '@/lib/weld-table-props'
 import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-props'
 import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
 import { createReportSummaryBarProps } from '@/lib/report-summary-props'
+import { createReportTaskPanelsProps } from '@/lib/report-task-panels-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -1028,6 +1029,19 @@ function Home() {
     message,
   })
 
+  const reportTaskPanelsProps = createReportTaskPanelsProps({
+    activeReport,
+    repeatedJointTasks,
+    repeatedJointTaskGroups,
+    welderStampExpiryTasks,
+    welderStampNotificationGroups,
+    stickyLeft,
+    handlers: dispatcherTaskCardProps,
+    isTaskExpanded: isRepeatedJointTaskExpanded,
+    onToggleDetails: toggleRepeatedJointTaskDetails,
+    onDismissTasks: dismissRepeatedJointTasks,
+  })
+
   return (
     <ReportWorkspace
       activeReport={activeReport}
@@ -1042,18 +1056,7 @@ function Home() {
 
           <ReportSummaryBar {...reportSummaryBarProps} />
 
-          <ReportTaskPanels
-            activeReport={activeReport}
-            repeatedJointTasks={repeatedJointTasks}
-            repeatedJointTaskGroups={repeatedJointTaskGroups}
-            welderStampExpiryTasks={welderStampExpiryTasks}
-            welderStampNotificationGroups={welderStampNotificationGroups}
-            stickyLeft={stickyLeft}
-            handlers={dispatcherTaskCardProps}
-            isTaskExpanded={isRepeatedJointTaskExpanded}
-            onToggleDetails={toggleRepeatedJointTaskDetails}
-            onDismissTasks={dismissRepeatedJointTasks}
-          />
+          <ReportTaskPanels {...reportTaskPanelsProps} />
 
           <ReportMainContent
             activeReport={activeReport}
