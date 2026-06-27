@@ -90,6 +90,7 @@ import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
 import { useReportPageUiState } from '@/lib/use-report-page-ui-state'
 import { useReportImportMutations } from '@/lib/use-report-import-mutations'
 import { useReportImportActions } from '@/lib/use-report-import-actions'
+import { useReportChangeActions } from '@/lib/use-report-change-actions'
 import { usePstoReportMutations } from '@/lib/use-psto-report-mutations'
 import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
@@ -905,6 +906,11 @@ function Home() {
     setMessage,
   })
 
+  const { changeActiveReport } = useReportChangeActions({
+    setActiveReport,
+    setEditing,
+  })
+
   useReportModalEscapeKey({
     isReportModalOpen,
     isLnkResultPreviewOpen,
@@ -947,13 +953,6 @@ function Home() {
     isCreatePending: repeatedJointMutation.isPending,
     isDeletePending: obsoleteRepeatedJointMutation.isPending,
     isRenamePending: renameRepeatedJointMutation.isPending,
-  }
-
-  function changeActiveReport(report: ActiveReport) {
-    setActiveReport(report)
-    if (report === 'heatTreatment' || report === 'lnk' || report === 'welderStamps') {
-      setEditing(null)
-    }
   }
 
   return (
