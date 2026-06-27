@@ -50,7 +50,6 @@ import {
   getJointStatusBadgeClass,
   getJointStatusLabel,
   getLnkDisplayValue,
-  getAvailableLnkRequestMethods,
   getLnkMethodByRequestKey,
   hasAnyEnabledLnkControl,
   hasAnyLnkRequest,
@@ -88,6 +87,7 @@ import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
+import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
 import { useLnkRequestModalState } from '@/lib/use-lnk-request-modal-state'
 import { useLnkResultModalState } from '@/lib/use-lnk-result-modal-state'
@@ -111,8 +111,6 @@ import {
   getReportImportFieldKeys,
   isReadOnlyReport,
   shouldMergePstoSections,
-  toggleNumberSetValue,
-  toggleNumberSetValues,
 } from '@/lib/report-ui-state'
 import {
   hasText,
@@ -190,7 +188,6 @@ import {
   getRequestNameFromNaming,
   sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
-import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import type { ActiveReport } from '@/lib/home-state'
 import {
   formatOfficialStampCompatibilityIssue,
@@ -524,6 +521,32 @@ function Home() {
     setHeatTreatmentFieldEditing,
   })
   const {
+    closeCreateLnkRequestModal,
+    handleCreateLnkRequest,
+    openCreateLnkRequestModal,
+    openCreateLnkRequestModalForRow,
+    toggleAllLnkRequestRows,
+    toggleLnkRequestMethod,
+    toggleLnkRequestRow,
+  } = useLnkRequestActions({
+    draft: lnkRequestDraft,
+    filteredRows: filteredAvailableLnkRequestRows,
+    lnkRows,
+    naming: lnkRequestNaming,
+    nextRequestName: nextLnkRequestName,
+    selectedMethodKeys: selectedLnkMethodKeys,
+    selectedRows: selectedLnkRows,
+    selectedTargetCount: selectedLnkRequestTargetCount,
+    mutation: lnkRequestMutation,
+    setDraft: setLnkRequestDraft,
+    setIsOpen: setIsLnkRequestModalOpen,
+    setMessage,
+    setNaming: setLnkRequestNaming,
+    setPreservedOrderIds: setPreservedLnkOrderIds,
+    setSearch: setLnkRequestSearch,
+    setSelectedIds: setSelectedLnkIds,
+  })
+  const {
     deleteMutation,
     importMutation,
     obsoleteRepeatedJointMutation,
@@ -796,59 +819,6 @@ function Home() {
     const result = file.name.toLowerCase().endsWith('.csv') ? parseCsv(await file.text()) : parseWorkbook(await file.arrayBuffer())
     const importResult = await importMutation.mutateAsync(result.records.map(withOfficialJointStatus))
     setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${result.skippedRows}`)
-  }
-
-  function handleCreateLnkRequest() {
-    const methodKeys = selectedLnkMethodKeys
-    if (selectedLnkRows.length === 0) {
-      setMessage('Выберите один или несколько стыков для заявки ЛНК')
-      return
-    }
-    if (methodKeys.length === 0) {
-      setMessage('Выберите один или несколько видов контроля для заявки ЛНК')
-      return
-    }
-    if (selectedLnkRequestTargetCount === 0) {
-      setMessage('Нет доступных комбинаций стыков и видов контроля для заявки ЛНК')
-      return
-    }
-
-    const requestName = getRequestNameFromNaming(lnkRequestNaming, nextLnkRequestName)
-    if (!requestName) {
-      setMessage('Укажите пользовательское наименование заявки ЛНК')
-      return
-    }
-
-    lnkRequestMutation.mutate({ records: selectedLnkRows, methodKeys, requestName })
-  }
-
-  function openCreateLnkRequestModal() {
-    setPreservedLnkOrderIds(null)
-    setSelectedLnkIds(new Set())
-    setLnkRequestDraft({ methods: new Set() })
-    setLnkRequestNaming(defaultRequestNamingState)
-    setLnkRequestSearch('')
-    setIsLnkRequestModalOpen(true)
-  }
-
-  function openCreateLnkRequestModalForRow(row: WeldInput & { id: number }) {
-    const availableMethods = getAvailableLnkRequestMethods(row)
-    if (availableMethods.length === 0) {
-      setMessage('Все заявки ЛНК для этого стыка уже созданы')
-      return
-    }
-
-    setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
-    setSelectedLnkIds(new Set([row.id]))
-    setLnkRequestDraft({ methods: new Set(availableMethods.map((method) => method.requestKey)) })
-    setLnkRequestNaming(defaultRequestNamingState)
-    setLnkRequestSearch(String(row.joint ?? row.line ?? ''))
-    setIsLnkRequestModalOpen(true)
-  }
-
-  function closeCreateLnkRequestModal() {
-    if (lnkRequestMutation.isPending) return
-    setIsLnkRequestModalOpen(false)
   }
 
   function openAddLnkResultModal() {
@@ -1243,18 +1213,6 @@ function Home() {
     showRepeatedJointTaskChain(row, baseJoint, `Показана вся цепочка стыка ${baseJoint}`)
   }
 
-  function toggleLnkRequestMethod(requestKey: WeldFieldKey) {
-    setLnkRequestDraft((current) => {
-      const methods = new Set(current.methods)
-      if (methods.has(requestKey)) {
-        methods.delete(requestKey)
-      } else {
-        methods.add(requestKey)
-      }
-      return { methods }
-    })
-  }
-
   function clearLnkRequestFromRow(row: WeldInput & { id: number }, methodKey: WeldFieldKey) {
     lnkRequestCorrectionMutation.mutate({ record: row, methodKey, requestName: null })
   }
@@ -1298,14 +1256,6 @@ function Home() {
     )
     if (!confirmed) return
     clearLnkRequestFromRow(row, methodKey)
-  }
-
-  function toggleLnkRequestRow(rowId: number) {
-    setSelectedLnkIds((current) => toggleNumberSetValue(current, rowId))
-  }
-
-  function toggleAllLnkRequestRows() {
-    setSelectedLnkIds((current) => toggleNumberSetValues(current, filteredAvailableLnkRequestRows.map((row) => row.id)))
   }
 
   function handleEditRecord(record: WeldInput & { id: number }, focusField?: WeldFieldKey) {
