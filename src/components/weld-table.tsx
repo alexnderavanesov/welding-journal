@@ -5,7 +5,13 @@ import { Input } from '@/components/ui/input'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { WeldTableValue } from '@/components/weld-table-value'
-import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth, getWeldTableWidth } from '@/lib/weld-column-widths'
+import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth } from '@/lib/weld-column-widths'
+import {
+  CHAIN_ACTION_COLUMN_WIDTH,
+  ROW_ACTIONS_COLUMN_WIDTH,
+  SELECT_COLUMN_WIDTH,
+  getWeldTableMinWidth,
+} from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import {
   bodyCellClass,
@@ -20,9 +26,6 @@ import {
 } from '@/lib/weld-table-utils'
 import { RESULT_FIELD_KEYS, VISIBLE_FIELD_SECTIONS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
-const SELECT_COLUMN_WIDTH = 48
-const ROW_ACTIONS_COLUMN_WIDTH = 72
-const CHAIN_ACTION_COLUMN_WIDTH = 76
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
   'pstoRequest',
@@ -177,12 +180,13 @@ export function WeldTable({
   const hasRowActions = Boolean(rowActions)
   const hasChainAction = Boolean(onOpenChain || onOpenLinkedReport)
   const hasColumnFilters = Object.values(columnFilters).some((value) => value.trim())
-  const tableMinWidth =
-    getWeldTableWidth(filteredFields) -
-    (readOnly ? ACTIONS_COLUMN_WIDTH : 0) +
-    (selectable ? SELECT_COLUMN_WIDTH : 0) +
-    (hasRowActions ? ROW_ACTIONS_COLUMN_WIDTH : 0) +
-    (hasChainAction ? CHAIN_ACTION_COLUMN_WIDTH : 0)
+  const tableMinWidth = getWeldTableMinWidth({
+    fields: filteredFields,
+    readOnly,
+    selectable,
+    hasRowActions,
+    hasChainAction,
+  })
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
   const filteredRows = useMemo(
     () =>
