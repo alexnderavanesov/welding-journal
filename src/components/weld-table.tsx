@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { WeldTableFilterResetHeader } from '@/components/weld-table-actions'
 import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { WeldTableColumns } from '@/components/weld-table-columns'
@@ -14,12 +14,8 @@ import {
   getFilteredWeldTableSections,
 } from '@/lib/weld-table-sections'
 import type { ReportRowActions } from '@/lib/report-row-actions'
-import {
-  canCollapseSection,
-  getDuplicateKeys,
-  readCollapsedSections,
-  writeCollapsedSections,
-} from '@/lib/weld-table-utils'
+import { useWeldTableCollapsedSections } from '@/lib/use-weld-table-collapsed-sections'
+import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 export type WeldTableProps = {
@@ -75,28 +71,16 @@ export function WeldTable({
   mergePstoSections = false,
   rowActions,
 }: WeldTableProps) {
-  const [collapsedState, setCollapsedState] = useState(() => ({
-    storageKey,
-    sections: new Set<string>(),
-    hydrated: false,
-  }))
-  const collapsedSections = collapsedState.storageKey === storageKey ? collapsedState.sections : new Set<string>()
-
-  useEffect(() => {
-    setCollapsedState({ storageKey, sections: readCollapsedSections(storageKey), hydrated: true })
-  }, [storageKey])
-
-  useEffect(() => {
-    if (collapsedState.storageKey !== storageKey) return
-    if (!collapsedState.hydrated) return
-    writeCollapsedSections(storageKey, collapsedState.sections)
-  }, [storageKey, collapsedState])
-
   const alwaysVisibleFieldKeys = useMemo(() => getAlwaysVisibleFieldKeys(mergePstoSections), [mergePstoSections])
   const availableSections = useMemo(
     () => getAvailableWeldTableSections({ hiddenFieldKeys, mergePstoSections }),
     [hiddenFieldKeys, mergePstoSections],
   )
+  const { collapsedSections, toggleSection } = useWeldTableCollapsedSections({
+    storageKey,
+    availableSections,
+    alwaysVisibleFieldKeys,
+  })
   const filteredSections = useMemo(
     () => getFilteredWeldTableSections({ availableSections, collapsedSections, alwaysVisibleFieldKeys }),
     [alwaysVisibleFieldKeys, availableSections, collapsedSections],
@@ -125,25 +109,6 @@ export function WeldTable({
   const selectedVisibleRows = selectableVisibleRows.filter((row) => selectedRowIds.has(row.id))
   const allVisibleRowsSelected = selectableVisibleRows.length > 0 && selectedVisibleRows.length === selectableVisibleRows.length
   const someVisibleRowsSelected = selectedVisibleRows.length > 0 && !allVisibleRowsSelected
-
-  function toggleSection(section: string) {
-    setCollapsedState((current) => {
-      const currentSections =
-        current.storageKey === storageKey && current.hydrated ? current.sections : readCollapsedSections(storageKey)
-      const next = new Set(currentSections)
-      const targetSection = availableSections.find((group) => group.section === section)
-      if (!targetSection || !canCollapseSection(targetSection.fields, alwaysVisibleFieldKeys)) {
-        next.delete(section)
-        return { storageKey, sections: next, hydrated: true }
-      }
-      if (next.has(section)) {
-        next.delete(section)
-      } else {
-        next.add(section)
-      }
-      return { storageKey, sections: next, hydrated: true }
-    })
-  }
 
   function setRowSelected(row: WeldInput & { id: number }, selected: boolean) {
     if (!isRowSelectable(row)) return
