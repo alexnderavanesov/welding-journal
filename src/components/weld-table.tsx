@@ -9,6 +9,7 @@ import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar
 import { WeldTableValue } from '@/components/weld-table-value'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
+import { getWeldTableRowClassName, getWeldTableRowTitle } from '@/lib/weld-table-row-state'
 import {
   bodyCellClass,
   canCollapseSection,
@@ -400,22 +401,8 @@ export function WeldTable({
                 return (
                 <tr
                   key={row.id}
-                  className={`${readOnly ? '' : 'cursor-pointer'} transition-[background-color,box-shadow] duration-300 ${
-                    isHighlighted
-                      ? 'bg-emerald-100/90 shadow-[inset_4px_0_0_rgb(16,185,129)] hover:bg-emerald-100'
-                      : isSelected
-                        ? 'bg-sky-50/90 shadow-[inset_4px_0_0_rgb(14,165,233)] hover:bg-sky-50'
-                      : isDuplicate
-                        ? 'bg-amber-100/90 shadow-[inset_4px_0_0_rgb(245,158,11)] hover:bg-amber-100'
-                        : 'hover:bg-slate-50/70'
-                  }`}
-                  title={
-                    isHighlighted
-                      ? 'Строка недавно изменена'
-                      : isDuplicate
-                        ? 'Возможный дубль: совпадают ключевые поля стыка'
-                        : undefined
-                  }
+                  className={getWeldTableRowClassName({ readOnly, isHighlighted, isSelected, isDuplicate })}
+                  title={getWeldTableRowTitle({ isHighlighted, isDuplicate })}
                 >
                   {selectable ? (
                     <td
