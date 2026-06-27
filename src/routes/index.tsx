@@ -1,7 +1,5 @@
-﻿import { useEffect, useRef, useState } from 'react'
+﻿import { useRef } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import { ReportHeaderActions } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
 import { ReportPageHeader } from '@/components/report-page-header'
@@ -41,9 +39,6 @@ import {
 import {
   canCreateLnkRequest,
 } from '@/lib/report-control-state'
-import {
-  filterPstoResultRows,
-} from '@/lib/report-row-utils'
 import {
   useAutoCollapseNavOnHorizontalScroll,
   useEscapeToClearReportFilters,
@@ -101,20 +96,13 @@ import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
-  getJointTitle,
-} from '@/lib/report-ui-state'
-import {
   hasText,
 } from '@/lib/report-value-utils'
 import {
   canCreatePstoRequest,
 } from '@/lib/psto-status'
 import {
-  filterPstoRowsByRequestName,
   getLnkRowRequestNames,
-  rowBelongsToPstoRequest,
-  sortLnkRequestRows,
-  sortPstoRequestRows,
 } from '@/lib/report-modal-rows'
 import {
   formatDateInputValue,
@@ -139,25 +127,13 @@ import {
   isUnofficialJoint,
 } from '@/lib/joint-display'
 import {
-  getLnkRepairForbiddenReason,
   isLnkRepairForbidden,
-  isLnkRepairForbiddenByDiameter,
-  isLnkRepairForbiddenByOfficialRepairLimit,
 } from '@/lib/lnk-result-rules'
-import {
-  getEffectiveLnkResultDraftValueForRow,
-} from '@/lib/lnk-result-draft'
-import {
-  createDefaultPstoResultDraft,
-} from '@/lib/report-draft-state'
 import {
   collectRequestNames,
   sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
-import type { ActiveReport } from '@/lib/home-state'
 import {
-  formatOfficialStampCompatibilityIssue,
-  getOfficialStampCompatibilityIssues,
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-registry'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
@@ -389,7 +365,6 @@ function Home() {
   })
 
   const {
-    weldedRows,
     heatTreatmentRows,
     availablePstoRequestRows,
     filteredPstoRequestRows,
@@ -546,7 +521,6 @@ function Home() {
   })
   const {
     handleAddLnkResult,
-    handleClearLnkGeneratedData,
     setLnkResultForRow,
   } = useLnkResultSaveActions({
     lnkRows,
@@ -679,7 +653,6 @@ function Home() {
     isLnkResultSaving: lnkResultMutation.isPending,
   })
   const {
-    filteredManagedLnkResultRequestOptions,
     managedLnkResultRows,
     managedLnkResultMethods,
     managedLnkResultEntries,
@@ -696,7 +669,6 @@ function Home() {
   const {
     changeManagedLnkConclusionDraft,
     changeManagedLnkResultMethod,
-    changeManagedLnkResultRequest,
     clearLnkResult,
     closeLnkResultManager,
     leaveManagedLnkPreview,
@@ -820,7 +792,6 @@ function Home() {
     deleteManagedPstoRequest,
     deleteManagedPstoResult,
     handleAddPstoResult,
-    handleCreatePstoRequest,
     openAddPstoResultModal,
     openAddPstoResultModalForRow,
     openCreatePstoRequestModal,
