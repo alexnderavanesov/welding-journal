@@ -1,6 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ReportHeaderActions } from '@/components/report-header-actions'
@@ -10,10 +9,6 @@ import { ReportSummaryBar } from '@/components/report-summary-bar'
 import { ReportTaskPanels } from '@/components/report-task-panels'
 import { ReportDialogs } from '@/components/report-dialogs'
 import { ReportWorkspace } from '@/components/report-workspace'
-import {
-  listWeldJoints,
-  type WeldFilters,
-} from '@/server/welds'
 import {
   isMeaningfulRecord,
   normalizeWeldInput,
@@ -96,6 +91,7 @@ import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
+import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -175,8 +171,6 @@ import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 export const Route = createFileRoute('/')({
   component: Home,
 })
-
-const emptyFilters: WeldFilters = {}
 
 function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -383,10 +377,7 @@ function Home() {
     setWelderStampSearch,
   })
 
-  const weldsQuery = useQuery({
-    queryKey: ['weld-joints', emptyFilters],
-    queryFn: async () => listWeldJoints({ data: emptyFilters }),
-  })
+  const weldsQuery = useWeldsQuery()
 
   const rows = useReportRows(weldsQuery.data)
 
