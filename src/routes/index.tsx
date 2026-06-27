@@ -17,10 +17,6 @@ import {
 import {
   isMeaningfulRecord,
   normalizeWeldInput,
-  parseEditableCsv,
-  parseEditableWorkbook,
-  parseCsv,
-  parseWorkbook,
 } from '@/lib/weld-import-export'
 import {
   type WeldInput,
@@ -50,7 +46,6 @@ import {
 } from '@/lib/lnk-status'
 import {
   canCreateLnkRequest,
-  withOfficialJointStatus,
 } from '@/lib/report-control-state'
 import { formatWdiTotal } from '@/lib/report-export'
 import {
@@ -94,6 +89,7 @@ import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
 import { useReportPageUiState } from '@/lib/use-report-page-ui-state'
 import { useReportImportMutations } from '@/lib/use-report-import-mutations'
+import { useReportImportActions } from '@/lib/use-report-import-actions'
 import { usePstoReportMutations } from '@/lib/use-psto-report-mutations'
 import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
@@ -101,13 +97,11 @@ import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actio
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
-  getEditableReportImportLabel,
   getJointTitle,
   getOpenLinkedReportTitle,
   getReportBlockedFieldKeys,
   getReportEditableFieldKeys,
   getReportHiddenFieldKeys,
-  getReportImportFieldKeys,
   isReadOnlyReport,
   shouldMergePstoSections,
 } from '@/lib/report-ui-state'
@@ -903,28 +897,13 @@ function Home() {
     setMessage,
   })
 
-  async function handleImport(file: File) {
-    setMessage(null)
-    if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
-      const options = getReportImportFieldKeys(activeReport)
-      if (!options) return
-      const result = file.name.toLowerCase().endsWith('.csv')
-        ? parseEditableCsv(await file.text(), options)
-        : parseEditableWorkbook(await file.arrayBuffer(), options)
-      const importResult =
-        activeReport === 'heatTreatment'
-          ? await heatTreatmentImportMutation.mutateAsync(result.records)
-          : await lnkImportMutation.mutateAsync(result.records)
-      setMessage(
-        `Обновлено ${getEditableReportImportLabel(activeReport)}: ${importResult.updated}; пропущено: ${importResult.skipped + result.skippedRows}`,
-      )
-      return
-    }
-
-    const result = file.name.toLowerCase().endsWith('.csv') ? parseCsv(await file.text()) : parseWorkbook(await file.arrayBuffer())
-    const importResult = await importMutation.mutateAsync(result.records.map(withOfficialJointStatus))
-    setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${result.skippedRows}`)
-  }
+  const { handleImport } = useReportImportActions({
+    activeReport,
+    heatTreatmentImportMutation,
+    lnkImportMutation,
+    importMutation,
+    setMessage,
+  })
 
   useReportModalEscapeKey({
     isReportModalOpen,
