@@ -23,19 +23,14 @@ import {
   parseWorkbook,
 } from '@/lib/weld-import-export'
 import {
-  FIELD_BY_KEY,
-  type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
 import {
-  HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
   LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
-  LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
   LNK_REPORT_FIELD_KEYS as lnkReportFieldKeys,
   PSTO_EMPTY_RESULT_VALUE,
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
   REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
-  REQUEST_AND_RESULT_FIELD_KEYS as requestAndResultFieldKeys,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
   WELD_STAMP_COMPLETION_GROUPS,
 } from '@/lib/report-config'
@@ -88,6 +83,7 @@ import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
 import { useLnkResultActions } from '@/lib/use-lnk-result-actions'
 import { useLnkResultSaveActions } from '@/lib/use-lnk-result-save-actions'
+import { useReportEditActions } from '@/lib/use-report-edit-actions'
 import { useManagedLnkRequestActions } from '@/lib/use-managed-lnk-request-actions'
 import { useManagedLnkResultActions } from '@/lib/use-managed-lnk-result-actions'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
@@ -161,7 +157,6 @@ import {
 import {
   isLnkRequestAllowedForRow,
   isLnkRequestField,
-  isLnkResultField,
 } from '@/lib/lnk-field-updates'
 import {
   getEffectiveLnkResultDraftValueForRow,
@@ -649,6 +644,20 @@ function Home() {
     setHeatTreatmentFieldEditing,
   })
   const {
+    handleEditRecord,
+    saveEditedHeatTreatmentField,
+  } = useReportEditActions({
+    activeReport,
+    heatTreatmentFieldEditing,
+    heatTreatmentFieldMutation,
+    lnkFieldMutation,
+    lnkRequestOptions,
+    rows,
+    setEditing,
+    setHeatTreatmentFieldEditing,
+    setMessage,
+  })
+  const {
     pstoResultAvailableRequestOptions,
     filteredPstoResultRequestOptions,
     filteredPstoResultRows,
@@ -947,72 +956,6 @@ function Home() {
     onCloseLnkResultModal: closeAddLnkResultModal,
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
   })
-
-  function handleEditRecord(record: WeldInput & { id: number }, focusField?: WeldFieldKey) {
-    if (activeReport === 'heatTreatment') {
-      if (focusField && heatTreatmentEditableFieldKeys.has(focusField)) {
-        const field = FIELD_BY_KEY.get(focusField)
-        setHeatTreatmentFieldEditing({
-          record,
-          fieldKey: focusField,
-          label: field?.label ?? 'Поле ПСТО',
-          kind: field?.kind === 'date' ? 'date' : 'text',
-          value: String(record[focusField] ?? ''),
-        })
-      }
-      return
-    }
-
-    if (activeReport === 'lnk') {
-      if (focusField && lnkEditableFieldKeys.has(focusField)) {
-        if (isLnkRequestField(focusField) && !isLnkRequestAllowedForRow(record, focusField)) {
-          setMessage('Сначала укажите наличие этого вида контроля в сварочном журнале')
-          return
-        }
-        const field = FIELD_BY_KEY.get(focusField)
-        setHeatTreatmentFieldEditing({
-          record,
-          fieldKey: focusField,
-          label: field?.label ?? 'Поле ЛНК',
-          kind: field?.kind === 'date' ? 'date' : 'text',
-          value: String(record[focusField] ?? ''),
-          report: 'lnk',
-          mode: isLnkResultField(focusField) ? 'result' : isLnkRequestField(focusField) ? 'request' : 'text',
-        })
-      }
-      return
-    }
-
-    if (focusField && requestAndResultFieldKeys.has(focusField)) {
-      setMessage('Поля заявок и результатов редактируются только в отчетах Термообработка и ЛНК')
-      return
-    }
-
-    setEditing({ record, focusField })
-  }
-
-  function saveEditedHeatTreatmentField() {
-    if (!heatTreatmentFieldEditing) return
-    if (heatTreatmentFieldEditing.report === 'lnk') {
-      const value = heatTreatmentFieldEditing.value.trim()
-      if (heatTreatmentFieldEditing.mode === 'request' && value && !lnkRequestOptions.includes(value)) {
-        setMessage('Можно выбрать только существующую заявку ЛНК или очистить поле')
-        return
-      }
-      lnkFieldMutation.mutate({
-        record: heatTreatmentFieldEditing.record,
-        fieldKey: heatTreatmentFieldEditing.fieldKey,
-        value: value || null,
-      })
-      return
-    }
-    heatTreatmentFieldMutation.mutate({
-      record: heatTreatmentFieldEditing.record,
-      fieldKey: heatTreatmentFieldEditing.fieldKey,
-      value: heatTreatmentFieldEditing.value.trim() || null,
-      rows,
-    })
-  }
 
   const dispatcherTaskCardProps = {
     isTaskExpanded: isRepeatedJointTaskExpanded,
