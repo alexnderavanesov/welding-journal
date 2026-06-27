@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
 import { WeldTableBodyCell } from '@/components/weld-table-body-cell'
 import { WeldTableColumns } from '@/components/weld-table-columns'
@@ -8,6 +7,7 @@ import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
 import { WeldTableFieldHeaderRows } from '@/components/weld-table-field-header-rows'
 import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
 import { WeldTableRowSelectCell } from '@/components/weld-table-row-select-cell'
+import { WeldTableSectionHeaderRow } from '@/components/weld-table-section-header-row'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
@@ -307,39 +307,12 @@ export function WeldTable({
                   screenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
                 />
               ) : null}
-              {filteredSections.map((group) => {
-                const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
-                return (
-                  <th
-                    key={group.section}
-                    colSpan={group.fields.length}
-                    className={`border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)] ${
-                      group.collapsed ? 'bg-slate-50 text-slate-500' : 'text-slate-700'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggleSection(group.section)}
-                      disabled={!canCollapse}
-                      className={`inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
-                        canCollapse ? 'hover:bg-slate-100' : 'cursor-not-allowed'
-                      }`}
-                      title={!canCollapse ? 'Обязательные поля всегда показаны' : group.collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
-                    >
-                      {group.collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                      {group.section}
-                    </button>
-                  </th>
-                )
-              })}
-              {!readOnly ? (
-                <th
-                  rowSpan={2}
-                  className="w-24 border-r border-slate-200/70 px-3 py-2.5 text-right text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
-                >
-                  Действия
-                </th>
-              ) : null}
+              <WeldTableSectionHeaderRow
+                sections={filteredSections}
+                alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
+                readOnly={readOnly}
+                onToggleSection={toggleSection}
+              />
             </tr>
             <WeldTableFieldHeaderRows
               fields={filteredFields}
