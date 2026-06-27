@@ -110,7 +110,7 @@ export function getDuplicateKeys(rows: Array<WeldInput & { id: number }>) {
   return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key))
 }
 
-function getDuplicateKey(row: WeldInput) {
+export function getDuplicateKey(row: WeldInput) {
   if (isUnofficialJoint(row)) return null
   const values = DUPLICATE_CHECK_FIELD_KEYS.map((key) => normalizeDuplicateValue(row[key]))
   if (values.every((value) => value === '')) return null

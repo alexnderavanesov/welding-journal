@@ -1,25 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
-import { WeldTableBodyCell } from '@/components/weld-table-body-cell'
+import { WeldTableFilterResetHeader } from '@/components/weld-table-actions'
+import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { WeldTableColumns } from '@/components/weld-table-columns'
-import { WeldTableEditActionsCell } from '@/components/weld-table-edit-actions-cell'
-import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
 import { WeldTableFieldHeaderRows } from '@/components/weld-table-field-header-rows'
 import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
-import { WeldTableRowSelectCell } from '@/components/weld-table-row-select-cell'
 import { WeldTableSectionHeaderRow } from '@/components/weld-table-section-header-row'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
-import { getWeldTableRowClassName, getWeldTableRowTitle } from '@/lib/weld-table-row-state'
 import {
   canCollapseSection,
-  getCellKey,
   getDuplicateKeys,
   readCollapsedSections,
   writeCollapsedSections,
 } from '@/lib/weld-table-utils'
-import { RESULT_FIELD_KEYS, VISIBLE_FIELD_SECTIONS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { VISIBLE_FIELD_SECTIONS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
@@ -323,69 +318,30 @@ export function WeldTable({
             />
           </thead>
           <tbody>
-            {filteredRows.length === 0 ? (
-              <WeldTableEmptyRow colSpan={tableColumnSpan} />
-            ) : (
-              filteredRows.map((row) => {
-                const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')
-                const isHighlighted = highlightedRowIds.has(row.id)
-                const isSelected = selectedRowIds.has(row.id)
-                const isSelectableRow = !selectable || isRowSelectable(row)
-
-                return (
-                <tr
-                  key={row.id}
-                  className={getWeldTableRowClassName({ readOnly, isHighlighted, isSelected, isDuplicate })}
-                  title={getWeldTableRowTitle({ isHighlighted, isDuplicate })}
-                >
-                  {selectable ? (
-                    <WeldTableRowSelectCell
-                      label={String(row.joint ?? row.id)}
-                      checked={isSelectableRow && isSelected}
-                      disabled={!isSelectableRow}
-                      onChange={(selected) => setRowSelected(row, selected)}
-                    />
-                  ) : null}
-                  {hasChainAction ? (
-                    <WeldTableRowNavigation
-                      row={row}
-                      onOpenChain={onOpenChain}
-                      onOpenLinkedReport={onOpenLinkedReport}
-                      openLinkedReportTitle={openLinkedReportTitle}
-                    />
-                  ) : null}
-                  {hasRowActions && rowActions ? (
-                    <WeldTableRowActions row={row} rowActions={rowActions} />
-                  ) : null}
-                  {filteredFields.map((field) => (
-                    (() => {
-                      const isEditableColumn = canEditField(field.key)
-                      const isEditableCell = canEditCell(row, field.key)
-                      const isBlockedEditableCell = isEditableColumn && !isEditableCell
-                      const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
-                      const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
-                      const displayValue = getDisplayValue(row, field.key)
-                      return (
-                        <WeldTableBodyCell
-                          key={field.key}
-                          row={row}
-                          field={field}
-                          displayValue={displayValue}
-                          isEditableCell={isEditableCell}
-                          isBlockedEditableCell={isBlockedEditableCell}
-                          isHighlightedRow={isHighlighted}
-                          isHighlightedCell={isCellHighlighted}
-                          isResultField={isResultField}
-                          onEdit={onEdit}
-                        />
-                      )
-                    })()
-                  ))}
-                  {!readOnly ? <WeldTableEditActionsCell row={row} onEdit={onEdit} onDelete={onDelete} /> : null}
-                </tr>
-                )
-              })
-            )}
+            <WeldTableBodyRows
+              rows={filteredRows}
+              fields={filteredFields}
+              colSpan={tableColumnSpan}
+              readOnly={readOnly}
+              selectable={selectable}
+              selectedRowIds={selectedRowIds}
+              onSetRowSelected={setRowSelected}
+              isRowSelectable={isRowSelectable}
+              hasChainAction={hasChainAction}
+              onOpenChain={onOpenChain}
+              onOpenLinkedReport={onOpenLinkedReport}
+              openLinkedReportTitle={openLinkedReportTitle}
+              hasRowActions={hasRowActions}
+              rowActions={rowActions}
+              duplicateKeys={duplicateKeys}
+              highlightedRowIds={highlightedRowIds}
+              highlightedCellKeys={highlightedCellKeys}
+              canEditField={canEditField}
+              canEditCell={canEditCell}
+              getDisplayValue={getDisplayValue}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </tbody>
         </table>
       </div>
