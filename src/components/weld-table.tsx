@@ -37,7 +37,7 @@ const DUPLICATE_CHECK_FIELD_KEYS: WeldFieldKey[] = [
   'joint',
 ]
 
-type WeldTableProps = {
+export type WeldTableProps = {
   rows: Array<WeldInput & { id: number }>
   columnFilters: Record<string, string>
   onColumnFiltersChange: (filters: Record<string, string>) => void

@@ -17,7 +17,7 @@ export type ReportRowActions = {
   resultAriaLabel?: string
 }
 
-type ReportRowActionHandlers = {
+export type ReportRowActionHandlers = {
   openCreatePstoRequestModalForRow: (row: ReportRow) => void
   openAddPstoResultModalForRow: (row: ReportRow) => void
   canCreatePstoRequest: (row: ReportRow) => boolean

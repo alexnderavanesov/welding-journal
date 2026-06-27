@@ -33,7 +33,6 @@ import {
   getJointChainResultItems,
   getJointStatusBadgeClass,
   getJointStatusLabel,
-  getLnkDisplayValue,
   hasAnyEnabledLnkControl,
   hasAnyLnkRequest,
   hasPendingLnkRequestResult,
@@ -46,7 +45,6 @@ import { formatWdiTotal } from '@/lib/report-export'
 import {
   filterPstoResultRows,
 } from '@/lib/report-row-utils'
-import { getReportRowActions } from '@/lib/report-row-actions'
 import {
   useAutoCollapseNavOnHorizontalScroll,
   useEscapeToClearReportFilters,
@@ -91,17 +89,11 @@ import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
+import { createWeldTableProps } from '@/lib/weld-table-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
-  canOpenLinkedReport,
   getJointTitle,
-  getOpenLinkedReportTitle,
-  getReportBlockedFieldKeys,
-  getReportEditableFieldKeys,
-  getReportHiddenFieldKeys,
-  isReadOnlyReport,
-  shouldMergePstoSections,
 } from '@/lib/report-ui-state'
 import {
   hasText,
@@ -146,10 +138,6 @@ import {
   isLnkRepairForbiddenByDiameter,
   isLnkRepairForbiddenByOfficialRepairLimit,
 } from '@/lib/lnk-result-rules'
-import {
-  isLnkRequestAllowedForRow,
-  isLnkRequestField,
-} from '@/lib/lnk-field-updates'
 import {
   getEffectiveLnkResultDraftValueForRow,
 } from '@/lib/lnk-result-draft'
@@ -947,6 +935,32 @@ function Home() {
     isRenamePending: renameRepeatedJointMutation.isPending,
   })
 
+  const weldTableProps = createWeldTableProps({
+    activeReport,
+    rows: visibleRows as Array<WeldInput & { id: number }>,
+    columnFilters: activeColumnFilters,
+    onColumnFiltersChange: activeFiltersSetter,
+    onEdit: handleEditRecord,
+    onDelete: (id) => {
+      if (confirm('Удалить запись стыка?')) deleteMutation.mutate(id)
+    },
+    stickyLeft,
+    highlightedRowIds,
+    highlightedCellKeys,
+    onOpenChain: (row) => setChainRecord(row),
+    onOpenLinkedReport: openLinkedReportRow,
+    rowActionHandlers: {
+      openCreatePstoRequestModalForRow,
+      openAddPstoResultModalForRow,
+      canCreatePstoRequest,
+      canAddPstoResult: (row) => hasText(row.pstoRequest),
+      openCreateLnkRequestModalForRow,
+      openAddLnkResultModalForRow,
+      canCreateLnkRequest,
+      canAddLnkResult: (row) => getLnkRowRequestNames(row).length > 0,
+    },
+  })
+
   return (
     <ReportWorkspace
       activeReport={activeReport}
@@ -1037,42 +1051,7 @@ function Home() {
               onToggleArchived: setShowArchivedWelderStamps,
               onDelete: deleteWelderStampRecord,
             }}
-            weldTableProps={{
-              rows: visibleRows as Array<WeldInput & { id: number }>,
-              columnFilters: activeColumnFilters,
-              onColumnFiltersChange: activeFiltersSetter,
-              onEdit: handleEditRecord,
-              onDelete: (id) => {
-                if (confirm('Удалить запись стыка?')) deleteMutation.mutate(id)
-              },
-              stickyLeft,
-              highlightedRowIds,
-              highlightedCellKeys,
-              readOnly: isReadOnlyReport(activeReport),
-              editableFieldKeys: getReportEditableFieldKeys(activeReport),
-              blockedFieldKeys: getReportBlockedFieldKeys(activeReport),
-              isCellEditable:
-                activeReport === 'lnk'
-                  ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
-                  : undefined,
-              getDisplayValue: activeReport === 'lnk' ? getLnkDisplayValue : undefined,
-              onOpenChain: (row) => setChainRecord(row),
-              onOpenLinkedReport: canOpenLinkedReport(activeReport) ? openLinkedReportRow : undefined,
-              openLinkedReportTitle: getOpenLinkedReportTitle(activeReport),
-              rowActions: getReportRowActions(activeReport, {
-                openCreatePstoRequestModalForRow,
-                openAddPstoResultModalForRow,
-                canCreatePstoRequest,
-                canAddPstoResult: (row) => hasText(row.pstoRequest),
-                openCreateLnkRequestModalForRow,
-                openAddLnkResultModalForRow,
-                canCreateLnkRequest,
-                canAddLnkResult: (row) => getLnkRowRequestNames(row).length > 0,
-              }),
-              storageKey: activeReport,
-              hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
-              mergePstoSections: shouldMergePstoSections(activeReport),
-            }}
+            weldTableProps={weldTableProps}
           />
 
       <ReportDialogs
