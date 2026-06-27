@@ -7,14 +7,14 @@ import {
   type LnkResultDraftState,
 } from '@/lib/report-draft-state'
 
-type ManagedLnkResultPreviewState = {
+export type ManagedLnkResultPreviewState = {
   changeKey: string
   rowId: number
   methodKey: WeldFieldKey
   result: string
 } | null
 
-type ManagedLnkResultChangeHintState = {
+export type ManagedLnkResultChangeHintState = {
   changeKey: string
   rowId: number
   methodKey: WeldFieldKey

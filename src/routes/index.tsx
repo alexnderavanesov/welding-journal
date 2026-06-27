@@ -90,6 +90,7 @@ import { useJointChainActions } from '@/lib/use-joint-chain-actions'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
 import { useLnkResultActions } from '@/lib/use-lnk-result-actions'
+import { useManagedLnkResultActions } from '@/lib/use-managed-lnk-result-actions'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
 import { useLnkRequestModalState } from '@/lib/use-lnk-request-modal-state'
 import { useLnkResultModalState } from '@/lib/use-lnk-result-modal-state'
@@ -122,7 +123,6 @@ import {
 } from '@/lib/psto-status'
 import {
   canSelectPstoResultRow,
-  filterLnkRowsByRequestName,
   filterPstoRowsByRequestName,
   getLnkRowRequestNames,
   isEveryFilteredLnkRequestRowSelected,
@@ -167,7 +167,6 @@ import {
 import {
   buildLnkResultDraftById,
   getEffectiveLnkResultDraftValueForRow,
-  getManagedLnkResultChangeKey,
   isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import {
@@ -664,6 +663,38 @@ function Home() {
     managedLnkPendingResultChanges,
   })
   const {
+    changeManagedLnkConclusionDraft,
+    changeManagedLnkResultMethod,
+    changeManagedLnkResultRequest,
+    clearLnkResult,
+    closeLnkResultManager,
+    leaveManagedLnkPreview,
+    openLnkResultManager,
+    renameManagedLnkConclusionForRow,
+    replaceLnkResult,
+    resetManagedLnkResultChanges,
+    saveManagedLnkResultChanges,
+  } = useManagedLnkResultActions({
+    lnkRows,
+    selectedLnkResultRowIds: lnkResultDraft.rowIds,
+    managedLnkConclusionDrafts,
+    managedLnkPendingResultChanges,
+    managedLnkPendingResultRows,
+    lnkResultCorrectionMutation,
+    lnkResultReplacementMutation,
+    lnkConclusionCorrectionMutation,
+    setMessage,
+    setIsLnkResultManagerOpen,
+    setManagedLnkResultRequestName,
+    setManagedLnkResultMethodKey,
+    setManagedLnkResultRequestSearch,
+    setManagedLnkConclusionDrafts,
+    setManagedLnkResultOrderIds,
+    setManagedLnkResultPreview,
+    setManagedLnkResultChangeHint,
+    setManagedLnkPendingResultChanges,
+  })
+  const {
     filteredLnkOfficialityRows,
     selectedLnkOfficialityRows,
     lnkOfficialitySaveBlockReason,
@@ -868,47 +899,13 @@ function Home() {
     onClosePstoRequestManager: () => setIsPstoRequestManagerOpen(false),
     onClosePstoResultManager: () => setIsPstoResultManagerOpen(false),
     onCloseLnkRequestManager: () => setIsLnkRequestManagerOpen(false),
-    onCloseLnkResultManager: () => setIsLnkResultManagerOpen(false),
+    onCloseLnkResultManager: closeLnkResultManager,
     onClosePstoResultModal: closeAddPstoResultModal,
     onClosePstoRequestModal: closeCreatePstoRequestModal,
     onCloseLnkOfficialityModal: closeLnkOfficialityModal,
     onCloseLnkResultModal: closeAddLnkResultModal,
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
   })
-
-  function openLnkResultManager() {
-    const selectedRows = lnkRows.filter((row) => lnkResultDraft.rowIds.has(row.id))
-    if (selectedRows.length === 0) {
-      setMessage('Выберите один или несколько стыков для редактирования результатов')
-      return
-    }
-    setManagedLnkResultRequestName('')
-    setManagedLnkResultMethodKey('')
-    setManagedLnkResultRequestSearch('')
-    setManagedLnkResultOrderIds(selectedRows.map((row) => row.id))
-    setManagedLnkPendingResultChanges({})
-    setManagedLnkResultChangeHint(null)
-    setManagedLnkResultPreview(null)
-    setIsLnkResultManagerOpen(true)
-  }
-
-  function changeManagedLnkResultRequest(requestName: string) {
-    const rowsForRequest = filterLnkRowsByRequestName(lnkRows, requestName)
-    setManagedLnkResultRequestName(requestName)
-    setManagedLnkResultMethodKey('')
-    setManagedLnkResultOrderIds(rowsForRequest.map((row) => row.id))
-    setManagedLnkPendingResultChanges({})
-    setManagedLnkResultChangeHint(null)
-    setManagedLnkResultPreview(null)
-  }
-
-  function renameManagedLnkConclusionForRow(row: WeldInput & { id: number }, methodKey: WeldFieldKey) {
-    lnkConclusionCorrectionMutation.mutate({
-      records: [row],
-      methodKey,
-      conclusionName: managedLnkConclusionDrafts[getManagedLnkResultChangeKey(row.id, methodKey)] ?? '',
-    })
-  }
 
   function setLnkResultForRow(rowId: number, result: string) {
     setLnkResultDraft((current) => {
@@ -965,55 +962,6 @@ function Home() {
       resultById,
       conclusionName,
     })
-  }
-
-  function replaceLnkResult(row: WeldInput & { id: number }, methodKey: WeldFieldKey, result: string) {
-    const method = getLnkMethodByRequestKey(methodKey)
-    const currentResult = method ? String(row[method.resultKey] ?? '').trim() : ''
-    const changeKey = getManagedLnkResultChangeKey(row.id, methodKey)
-    setManagedLnkResultPreview(null)
-    if (currentResult && currentResult !== result) {
-      setManagedLnkResultChangeHint({ changeKey, rowId: row.id, methodKey, from: currentResult, to: result })
-      setManagedLnkPendingResultChanges((current) => ({ ...current, [changeKey]: result }))
-    } else {
-      setManagedLnkResultChangeHint(null)
-      setManagedLnkPendingResultChanges((current) => {
-        const next = { ...current }
-        delete next[changeKey]
-        return next
-      })
-    }
-  }
-
-  function saveManagedLnkResultChanges() {
-    if (managedLnkPendingResultRows.length === 0) {
-      setMessage('Нет изменений результата для сохранения')
-      return
-    }
-    const updates = managedLnkPendingResultRows.map(({ row, method, changeKey }) => ({
-      record: row,
-      methodKey: method.requestKey,
-      result: managedLnkPendingResultChanges[changeKey],
-    }))
-    lnkResultReplacementMutation.mutate({
-      updates,
-    })
-  }
-
-  function clearLnkResult(row: WeldInput & { id: number }, methodKey: WeldFieldKey) {
-    const method = getLnkMethodByRequestKey(methodKey)
-    if (!method) return
-    setManagedLnkPendingResultChanges((current) => {
-      const next = { ...current }
-      delete next[row.id]
-      return next
-    })
-    const confirmed = window.confirm(
-      `Удалить результат ${method.code} по стыку ${String(row.joint ?? '-')}? Заключение и дата контроля по этому методу тоже будут очищены.`,
-    )
-    if (!confirmed) return
-    setManagedLnkResultChangeHint(null)
-    lnkResultCorrectionMutation.mutate({ record: row, methodKey, result: null })
   }
 
   function handleClearLnkGeneratedData() {
@@ -1513,32 +1461,15 @@ function Home() {
                 isResultCorrectionPending: lnkResultCorrectionMutation.isPending,
                 isResultReplacementPending: lnkResultReplacementMutation.isPending,
                 isConclusionCorrectionPending: lnkConclusionCorrectionMutation.isPending,
-                onClose: () => {
-                  setIsLnkResultManagerOpen(false)
-                  setManagedLnkResultOrderIds(null)
-                  setManagedLnkResultPreview(null)
-                  setManagedLnkResultChangeHint(null)
-                  setManagedLnkPendingResultChanges({})
-                },
-                onMethodChange: (nextMethodKey) => {
-                  setManagedLnkResultMethodKey(nextMethodKey)
-                  setManagedLnkPendingResultChanges({})
-                  setManagedLnkResultChangeHint(null)
-                  setManagedLnkResultPreview(null)
-                },
-                onConclusionDraftChange: (changeKey, value) =>
-                  setManagedLnkConclusionDrafts((current) => ({ ...current, [changeKey]: value })),
+                onClose: closeLnkResultManager,
+                onMethodChange: changeManagedLnkResultMethod,
+                onConclusionDraftChange: changeManagedLnkConclusionDraft,
                 onRenameConclusion: renameManagedLnkConclusionForRow,
                 onReplaceResult: replaceLnkResult,
                 onClearResult: clearLnkResult,
                 onPreviewEnter: setManagedLnkResultPreview,
-                onPreviewLeave: (changeKey) =>
-                  setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current)),
-                onResetPendingChanges: () => {
-                  setManagedLnkPendingResultChanges({})
-                  setManagedLnkResultChangeHint(null)
-                  setManagedLnkResultPreview(null)
-                },
+                onPreviewLeave: leaveManagedLnkPreview,
+                onResetPendingChanges: resetManagedLnkResultChanges,
                 onSaveChanges: saveManagedLnkResultChanges,
               }
             : null,
