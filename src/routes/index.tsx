@@ -1068,6 +1068,98 @@ function Home() {
     onClose: () => setHeatTreatmentFieldEditing(null),
     onSave: saveEditedHeatTreatmentField,
   })
+  const reportPstoDialogsProps = {
+    requestDialogProps: isPstoRequestModalOpen
+      ? {
+          nextRequestName: nextPstoRequestName,
+          selectedRows: selectedHeatTreatmentRows,
+          requestNaming: pstoRequestNaming,
+          requestSearch: pstoRequestSearch,
+          requestManagerOptions: pstoRequestManagerOptions,
+          heatTreatmentRowsCount: heatTreatmentRows.length,
+          filteredRows: filteredPstoRequestRows,
+          availableRowsCount: filteredAvailablePstoRequestRows.length,
+          selectedIds: selectedHeatTreatmentIds,
+          areAllAvailableRowsSelected: isEveryFilteredLnkRequestRowSelected(
+            selectedHeatTreatmentIds,
+            filteredAvailablePstoRequestRows,
+          ),
+          isPending: pstoRequestMutation.isPending,
+          canCreateRequest: canCreatePstoRequest,
+          onClose: closeCreatePstoRequestModal,
+          onOpenRequestManager: openPstoRequestManager,
+          onRequestNamingChange: setPstoRequestNaming,
+          onRequestSearchChange: setPstoRequestSearch,
+          onToggleAllRows: toggleAllPstoRequestRows,
+          onToggleRow: togglePstoRequestRow,
+          onSubmit: submitCreatePstoRequest,
+        }
+      : null,
+    requestManagerDialogProps: isPstoRequestManagerOpen
+      ? {
+          requestName: managedPstoRequestName,
+          requestOptions: pstoRequestManagerOptions,
+          requestRows: managedPstoRequestRows,
+          requestNameDraft: managedPstoRequestNameDraft,
+          isManagerPending: pstoRequestManagerMutation.isPending,
+          isCorrectionPending: pstoRequestCorrectionMutation.isPending,
+          onClose: () => setIsPstoRequestManagerOpen(false),
+          onChangeRequest: changeManagedPstoRequest,
+          onRequestNameDraftChange: setManagedPstoRequestNameDraft,
+          onRenameRequest: renameManagedPstoRequest,
+          onClearPosition: clearManagedPstoRequestPosition,
+          onDeleteRequest: deleteManagedPstoRequest,
+        }
+      : null,
+    resultDialogProps: isPstoResultModalOpen
+      ? {
+          draft: pstoResultDraft,
+          requestSearch: pstoResultRequestSearch,
+          nextDiagramName: nextPstoDiagramName,
+          filteredRows: filteredPstoResultRows,
+          filteredRequestOptions: filteredPstoResultRequestOptions,
+          availableRequestOptions: pstoResultAvailableRequestOptions,
+          saveBlockReason: pstoResultSaveBlockReason,
+          allFilteredSelectableRowsSelected: isEveryFilteredLnkRequestRowSelected(
+            pstoResultDraft.rowIds,
+            filteredPstoResultRows.filter((row) => canSelectPstoResultRow(row, pstoResultDraft.requestName)),
+          ),
+          canSelectRow: canSelectPstoResultRow,
+          onDraftChange: setPstoResultDraft,
+          onRequestSearchChange: setPstoResultRequestSearch,
+          onRequestChange: changePstoResultRequest,
+          onClearFilters: () => {
+            setPstoResultRequestSearch('')
+            setPstoResultDraft((current) => ({
+              ...current,
+              requestName: '',
+              rowIds: new Set(),
+              search: '',
+            }))
+          },
+          onToggleAll: toggleAllPstoResultRows,
+          onToggleRow: togglePstoResultRow,
+          onOpenManager: openPstoResultManager,
+          onClose: closeAddPstoResultModal,
+          onSave: handleAddPstoResult,
+        }
+      : null,
+    resultManagerDialogProps: isPstoResultManagerOpen
+      ? {
+          rows: managedPstoResultRows,
+          diagramDrafts: managedPstoDiagramDrafts,
+          isPending: pstoResultCorrectionMutation.isPending,
+          onClose: () => {
+            setIsPstoResultManagerOpen(false)
+            setManagedPstoDiagramDrafts({})
+          },
+          onDiagramDraftChange: (rowId, value) =>
+            setManagedPstoDiagramDrafts((current) => ({ ...current, [rowId]: value })),
+          onRenameDiagram: renameManagedPstoDiagram,
+          onDeleteResult: deleteManagedPstoResult,
+        }
+      : null,
+  }
 
   return (
     <ReportWorkspace
@@ -1094,98 +1186,7 @@ function Home() {
       <ReportDialogs
         chainDialogProps={reportChainDialogProps}
         weldEditorProps={reportWeldEditorProps}
-        pstoDialogsProps={{
-          requestDialogProps: isPstoRequestModalOpen
-            ? {
-                nextRequestName: nextPstoRequestName,
-                selectedRows: selectedHeatTreatmentRows,
-                requestNaming: pstoRequestNaming,
-                requestSearch: pstoRequestSearch,
-                requestManagerOptions: pstoRequestManagerOptions,
-                heatTreatmentRowsCount: heatTreatmentRows.length,
-                filteredRows: filteredPstoRequestRows,
-                availableRowsCount: filteredAvailablePstoRequestRows.length,
-                selectedIds: selectedHeatTreatmentIds,
-                areAllAvailableRowsSelected: isEveryFilteredLnkRequestRowSelected(
-                  selectedHeatTreatmentIds,
-                  filteredAvailablePstoRequestRows,
-                ),
-                isPending: pstoRequestMutation.isPending,
-                canCreateRequest: canCreatePstoRequest,
-                onClose: closeCreatePstoRequestModal,
-                onOpenRequestManager: openPstoRequestManager,
-                onRequestNamingChange: setPstoRequestNaming,
-                onRequestSearchChange: setPstoRequestSearch,
-                onToggleAllRows: toggleAllPstoRequestRows,
-                onToggleRow: togglePstoRequestRow,
-                onSubmit: submitCreatePstoRequest,
-              }
-            : null,
-          requestManagerDialogProps: isPstoRequestManagerOpen
-            ? {
-                requestName: managedPstoRequestName,
-                requestOptions: pstoRequestManagerOptions,
-                requestRows: managedPstoRequestRows,
-                requestNameDraft: managedPstoRequestNameDraft,
-                isManagerPending: pstoRequestManagerMutation.isPending,
-                isCorrectionPending: pstoRequestCorrectionMutation.isPending,
-                onClose: () => setIsPstoRequestManagerOpen(false),
-                onChangeRequest: changeManagedPstoRequest,
-                onRequestNameDraftChange: setManagedPstoRequestNameDraft,
-                onRenameRequest: renameManagedPstoRequest,
-                onClearPosition: clearManagedPstoRequestPosition,
-                onDeleteRequest: deleteManagedPstoRequest,
-              }
-            : null,
-          resultDialogProps: isPstoResultModalOpen
-            ? {
-                draft: pstoResultDraft,
-                requestSearch: pstoResultRequestSearch,
-                nextDiagramName: nextPstoDiagramName,
-                filteredRows: filteredPstoResultRows,
-                filteredRequestOptions: filteredPstoResultRequestOptions,
-                availableRequestOptions: pstoResultAvailableRequestOptions,
-                saveBlockReason: pstoResultSaveBlockReason,
-                allFilteredSelectableRowsSelected: isEveryFilteredLnkRequestRowSelected(
-                  pstoResultDraft.rowIds,
-                  filteredPstoResultRows.filter((row) => canSelectPstoResultRow(row, pstoResultDraft.requestName)),
-                ),
-                canSelectRow: canSelectPstoResultRow,
-                onDraftChange: setPstoResultDraft,
-                onRequestSearchChange: setPstoResultRequestSearch,
-                onRequestChange: changePstoResultRequest,
-                onClearFilters: () => {
-                  setPstoResultRequestSearch('')
-                  setPstoResultDraft((current) => ({
-                    ...current,
-                    requestName: '',
-                    rowIds: new Set(),
-                    search: '',
-                  }))
-                },
-                onToggleAll: toggleAllPstoResultRows,
-                onToggleRow: togglePstoResultRow,
-                onOpenManager: openPstoResultManager,
-                onClose: closeAddPstoResultModal,
-                onSave: handleAddPstoResult,
-              }
-            : null,
-          resultManagerDialogProps: isPstoResultManagerOpen
-            ? {
-                rows: managedPstoResultRows,
-                diagramDrafts: managedPstoDiagramDrafts,
-                isPending: pstoResultCorrectionMutation.isPending,
-                onClose: () => {
-                  setIsPstoResultManagerOpen(false)
-                  setManagedPstoDiagramDrafts({})
-                },
-                onDiagramDraftChange: (rowId, value) =>
-                  setManagedPstoDiagramDrafts((current) => ({ ...current, [rowId]: value })),
-                onRenameDiagram: renameManagedPstoDiagram,
-                onDeleteResult: deleteManagedPstoResult,
-              }
-            : null,
-        }}
+        pstoDialogsProps={reportPstoDialogsProps}
         lnkDialogsProps={{
           requestDialogProps: isLnkRequestModalOpen
             ? {
