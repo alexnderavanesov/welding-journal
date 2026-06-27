@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
 import { WeldTableColumns } from '@/components/weld-table-columns'
 import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
+import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { WeldTableValue } from '@/components/weld-table-value'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
@@ -292,35 +293,22 @@ export function WeldTable({
           <thead className="sticky top-0 z-10 bg-slate-50/95 text-left shadow-[inset_0_-1px_0_0_rgb(226,232,240)] backdrop-blur">
             <tr>
               {selectable ? (
-                <th
-                  rowSpan={3}
-                  className="border-r border-slate-200/70 px-2 py-2.5 text-center shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={allVisibleRowsSelected}
-                    disabled={selectableVisibleRows.length === 0}
-                    ref={(element) => {
-                      if (element) element.indeterminate = someVisibleRowsSelected
-                    }}
-                    onChange={(event) => setVisibleRowsSelected(event.target.checked)}
-                    aria-label="Выбрать видимые стыки"
-                    title={selectableVisibleRows.length === 0 ? 'Нет доступных стыков для новой заявки' : 'Выбрать видимые стыки'}
-                    className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
-                  />
-                </th>
+                <WeldTableSelectAllHeader
+                  checked={allVisibleRowsSelected}
+                  indeterminate={someVisibleRowsSelected}
+                  disabled={selectableVisibleRows.length === 0}
+                  title={selectableVisibleRows.length === 0 ? 'Нет доступных стыков для новой заявки' : 'Выбрать видимые стыки'}
+                  onChange={setVisibleRowsSelected}
+                />
               ) : null}
               {hasChainAction ? (
                 <WeldTableFilterResetHeader hasColumnFilters={hasColumnFilters} onReset={() => onColumnFiltersChange({})} />
               ) : null}
               {hasRowActions ? (
-                <th
-                  rowSpan={3}
-                  className="border-r border-slate-200/70 bg-slate-50 px-2 py-2.5 text-center text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
-                  title={rowActions?.headerLabel ?? 'Быстрые действия'}
-                >
-                  <span className="sr-only">{rowActions?.headerLabel ?? 'Действия'}</span>
-                </th>
+                <WeldTableRowActionsHeader
+                  label={rowActions?.headerLabel ?? 'Быстрые действия'}
+                  screenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
+                />
               ) : null}
               {filteredSections.map((group) => {
                 const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
