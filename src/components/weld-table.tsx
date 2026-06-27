@@ -3,24 +3,17 @@ import { ChevronDown, ChevronRight, Edit2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
+import { WeldTableValue } from '@/components/weld-table-value'
 import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth, getWeldTableWidth } from '@/lib/weld-column-widths'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import {
-  CancelledBadge,
-  ResultBadge,
-  YesBadge,
   bodyCellClass,
   canCollapseSection,
   filterCellClass,
-  formatDate,
-  formatDateTime,
   getCellKey,
   getDuplicateKeys,
   getTableLabel,
   headerCellClass,
-  isCancelledText,
-  isNoText,
-  isYesText,
   readCollapsedSections,
   writeCollapsedSections,
 } from '@/lib/weld-table-utils'
@@ -520,43 +513,7 @@ export function WeldTable({
                       }
                     >
                       <div className={contentClass}>
-                        {field.kind === 'boolean' ? (
-                          isCancelledText(displayValue) ? (
-                            <CancelledBadge />
-                          ) : displayValue ? (
-                            <YesBadge />
-                          ) : (
-                            ''
-                          )
-                        ) : (
-                          <span
-                            className={
-                              field.kind === 'date' ||
-                              field.key === 'createdAt' ||
-                              field.key === 'pstoCreatedAt' ||
-                              field.key === 'lnkCreatedAt' ||
-                              isResultField
-                                ? 'whitespace-nowrap'
-                                : 'line-clamp-2'
-                            }
-                          >
-                            {field.kind === 'date' ? (
-                              formatDate(displayValue)
-                            ) : field.key === 'createdAt' || field.key === 'pstoCreatedAt' || field.key === 'lnkCreatedAt' ? (
-                              formatDateTime(displayValue)
-                            ) : isResultField ? (
-                              <ResultBadge value={displayValue} />
-                            ) : field.key === 'pstoRequired' && isCancelledText(displayValue) ? (
-                              <CancelledBadge />
-                            ) : field.key === 'pstoRequired' && isYesText(displayValue) ? (
-                              <YesBadge />
-                            ) : field.key === 'pstoRequired' && isNoText(displayValue) ? (
-                              ''
-                            ) : (
-                              String(displayValue ?? '')
-                            )}
-                          </span>
-                        )}
+                        <WeldTableValue field={field} value={displayValue} isResultField={isResultField} />
                       </div>
                     </td>
                       )
