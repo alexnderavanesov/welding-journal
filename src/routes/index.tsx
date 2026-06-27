@@ -95,6 +95,7 @@ import { usePstoReportMutations } from '@/lib/use-psto-report-mutations'
 import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
+import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -942,18 +943,18 @@ function Home() {
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
   })
 
-  const dispatcherTaskCardProps = {
+  const dispatcherTaskCardProps = createDispatcherTaskCardHandlers({
+    activeReport,
     isTaskExpanded: isRepeatedJointTaskExpanded,
     onToggleDetails: toggleRepeatedJointTaskDetails,
     onShowTask: showRepeatedJointTask,
     onCreateTask: createRepeatedJoint,
     onDeleteTask: deleteObsoleteRepeatedJoint,
     onRenameTask: renameObsoleteRepeatedJoint,
-    canRunDispatcherMutation: activeReport !== 'lnk',
     isCreatePending: repeatedJointMutation.isPending,
     isDeletePending: obsoleteRepeatedJointMutation.isPending,
     isRenamePending: renameRepeatedJointMutation.isPending,
-  }
+  })
 
   return (
     <ReportWorkspace
