@@ -88,6 +88,7 @@ import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-de
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
+import { useLnkResultActions } from '@/lib/use-lnk-result-actions'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
 import { useLnkRequestModalState } from '@/lib/use-lnk-request-modal-state'
 import { useLnkResultModalState } from '@/lib/use-lnk-result-modal-state'
@@ -119,14 +120,11 @@ import {
   canCreatePstoRequest,
 } from '@/lib/psto-status'
 import {
-  canSelectLnkResultRow,
   canSelectPstoResultRow,
   filterLnkRowsByRequestName,
   filterPstoRowsByRequestName,
-  getLnkInputMethodsForRows,
   getLnkRowRequestNames,
   isEveryFilteredLnkRequestRowSelected,
-  rowBelongsToLnkRequest,
   rowBelongsToPstoRequest,
   sortLnkRequestRows,
   sortPstoRequestRows,
@@ -174,13 +172,11 @@ import {
 } from '@/lib/lnk-field-updates'
 import {
   buildLnkResultDraftById,
-  filterLnkResultDraftRowResults,
   getEffectiveLnkResultDraftValueForRow,
   getManagedLnkResultChangeKey,
   isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import {
-  createDefaultLnkResultDraft,
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
 import {
@@ -547,6 +543,27 @@ function Home() {
     setSelectedIds: setSelectedLnkIds,
   })
   const {
+    changeLnkResultMethod,
+    changeLnkResultRequest,
+    closeAddLnkResultModal,
+    openAddLnkResultModal,
+    openAddLnkResultModalForRow,
+    toggleAllLnkResultRows,
+    toggleLnkResultRow,
+  } = useLnkResultActions({
+    filteredRows: filteredLnkResultRows,
+    lnkRows,
+    draft: lnkResultDraft,
+    mutation: lnkResultMutation,
+    setDraft: setLnkResultDraft,
+    setIsModalOpen: setIsLnkResultModalOpen,
+    setIsPreviewOpen: setIsLnkResultPreviewOpen,
+    setMessage,
+    setPreservedOrderIds: setPreservedLnkOrderIds,
+    setRequestSearch: setLnkResultRequestSearch,
+    setShouldPinPreviewedRows: setShouldPinPreviewedLnkResultRows,
+  })
+  const {
     deleteMutation,
     importMutation,
     obsoleteRepeatedJointMutation,
@@ -821,42 +838,6 @@ function Home() {
     setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${result.skippedRows}`)
   }
 
-  function openAddLnkResultModal() {
-    setPreservedLnkOrderIds(null)
-    setLnkResultRequestSearch('')
-    setLnkResultDraft(createDefaultLnkResultDraft())
-    setShouldPinPreviewedLnkResultRows(false)
-    setIsLnkResultModalOpen(true)
-  }
-
-  function openAddLnkResultModalForRow(row: WeldInput & { id: number }) {
-    const requestNames = getLnkRowRequestNames(row)
-    if (requestNames.length === 0) {
-      setMessage('Сначала создайте заявку ЛНК для этого стыка')
-      return
-    }
-
-    const requestName = requestNames.length === 1 ? requestNames[0] : ''
-    setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
-    setLnkResultRequestSearch(requestName)
-    setLnkResultDraft({
-      ...createDefaultLnkResultDraft(),
-      requestName,
-      rowIds: new Set([row.id]),
-      search: String(row.joint ?? row.line ?? ''),
-    })
-    setShouldPinPreviewedLnkResultRows(false)
-    setIsLnkResultModalOpen(true)
-  }
-
-  function closeAddLnkResultModal() {
-    if (lnkResultMutation.isPending) return
-    setLnkResultRequestSearch('')
-    setIsLnkResultPreviewOpen(false)
-    setShouldPinPreviewedLnkResultRows(false)
-    setIsLnkResultModalOpen(false)
-  }
-
   useReportModalEscapeKey({
     isReportModalOpen,
     isLnkResultPreviewOpen,
@@ -919,76 +900,6 @@ function Home() {
       records: [row],
       methodKey,
       conclusionName: managedLnkConclusionDrafts[getManagedLnkResultChangeKey(row.id, methodKey)] ?? '',
-    })
-  }
-
-  function changeLnkResultRequest(requestName: string) {
-    setLnkResultDraft((current) => {
-      const rowIds = new Set(current.rowIds)
-      const selectedRows = lnkRows.filter((row) => rowIds.has(row.id))
-      const requestRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : []
-      const methodRows = selectedRows.length > 0 ? [...selectedRows, ...requestRows] : requestName ? requestRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, '')
-      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
-    })
-  }
-
-  function changeLnkResultMethod(methodKey: WeldFieldKey | '') {
-    setLnkResultDraft((current) => {
-      if (!methodKey) return { ...current, methodKey: '' }
-      const rowIds = new Set(
-        [...current.rowIds].filter((id) => {
-          const row = lnkRows.find((candidate) => candidate.id === id)
-          return row ? canSelectLnkResultRow(row, '', methodKey) : false
-        }),
-      )
-      return { ...current, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
-    })
-  }
-
-  function toggleLnkResultRow(rowId: number) {
-    const row = filteredLnkResultRows.find((candidate) => candidate.id === rowId)
-    if (!row || !canSelectLnkResultRow(row, lnkResultDraft.requestName, lnkResultDraft.methodKey)) return
-
-    setLnkResultDraft((current) => {
-      const rowIds = new Set(current.rowIds)
-      if (rowIds.has(rowId)) {
-        rowIds.delete(rowId)
-      } else {
-        rowIds.add(rowId)
-      }
-      const selectedRows = lnkRows.filter((candidate) => rowIds.has(candidate.id))
-      const requestName = current.requestName && selectedRows.some((candidate) => rowBelongsToLnkRequest(candidate, current.requestName))
-        ? current.requestName
-        : ''
-      const methodRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : selectedRows.length > 0 ? selectedRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, requestName)
-      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
-    })
-  }
-
-  function toggleAllLnkResultRows() {
-    setLnkResultDraft((current) => {
-      const filteredIds = new Set(
-        filteredLnkResultRows
-          .filter((row) => canSelectLnkResultRow(row, current.requestName, current.methodKey))
-          .map((row) => row.id),
-      )
-      if (filteredIds.size === 0) return current
-      const allSelected = [...filteredIds].every((id) => current.rowIds.has(id))
-      const rowIds = allSelected
-        ? new Set([...current.rowIds].filter((id) => !filteredIds.has(id)))
-        : new Set([...current.rowIds, ...filteredIds])
-      const selectedRows = lnkRows.filter((row) => rowIds.has(row.id))
-      const requestName = current.requestName && selectedRows.some((row) => rowBelongsToLnkRequest(row, current.requestName))
-        ? current.requestName
-        : ''
-      const methodRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : selectedRows.length > 0 ? selectedRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, requestName)
-      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
     })
   }
 
