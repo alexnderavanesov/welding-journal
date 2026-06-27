@@ -1,8 +1,13 @@
 import { Button } from '@/components/ui/button'
-import { formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
 import {
-  getRepeatedJointTaskDetails,
-  getRepeatedJointTaskDetailsHeading,
+  DispatcherTaskDetails,
+  DispatcherTaskGroupFrame,
+  dispatcherActionButtonClass,
+  dispatcherDangerActionButtonClass,
+  dispatcherPrimaryActionButtonClass,
+  dispatcherStandaloneActionButtonClass,
+} from '@/components/dispatcher-task-ui'
+import {
   getRepeatedJointTaskTitle,
 } from '@/lib/dispatcher-text'
 import type {
@@ -50,15 +55,6 @@ type WelderStampNotificationGroupProps = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
 }
-
-const actionButtonClass =
-  'h-6 rounded-none border-0 border-l border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-900'
-const standaloneActionButtonClass =
-  'h-6 rounded-none border-0 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-900'
-const primaryActionButtonClass =
-  'h-6 rounded-none border-0 bg-slate-100 px-2.5 text-xs font-semibold text-slate-800 shadow-none hover:bg-slate-200 hover:text-slate-950'
-const dangerActionButtonClass =
-  'h-6 rounded-none border-0 bg-rose-50 px-2.5 text-xs font-semibold text-rose-700 shadow-none hover:bg-rose-100 hover:text-rose-800'
 
 function RepeatedJointTaskContent({ task, nested = false }: { task: DispatcherTask; nested?: boolean }) {
   const title = getRepeatedJointTaskTitle(task)
@@ -159,7 +155,7 @@ function RepeatedJointTaskActions({
   if (task.kind === 'welder-stamp-expiry') {
     return (
       <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
-        <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={actionButtonClass}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherActionButtonClass}>
           {isExpanded ? 'Свернуть' : 'Подробнее'}
         </Button>
       </div>
@@ -170,37 +166,37 @@ function RepeatedJointTaskActions({
     <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
       {(task.kind === 'create' || task.kind === 'coil') && canRunDispatcherMutation ? (
         <>
-          <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={primaryActionButtonClass}>
+          <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
             {task.kind === 'coil' ? 'Катушка' : 'Создать'}
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={actionButtonClass}>
+          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
             Цепочка
           </Button>
         </>
       ) : task.kind === 'delete' && canRunDispatcherMutation ? (
         <>
-          <Button type="button" size="sm" variant="outline" onClick={() => onDeleteTask(task)} disabled={isDeletePending} className={dangerActionButtonClass}>
+          <Button type="button" size="sm" variant="outline" onClick={() => onDeleteTask(task)} disabled={isDeletePending} className={dispatcherDangerActionButtonClass}>
             Удалить
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={actionButtonClass}>
+          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
             Цепочка
           </Button>
         </>
       ) : task.kind === 'rename' && canRunDispatcherMutation ? (
         <>
-          <Button type="button" size="sm" onClick={() => onRenameTask(task)} disabled={isRenamePending} className={primaryActionButtonClass}>
+          <Button type="button" size="sm" onClick={() => onRenameTask(task)} disabled={isRenamePending} className={dispatcherPrimaryActionButtonClass}>
             Переименовать
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={actionButtonClass}>
+          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
             Цепочка
           </Button>
         </>
       ) : (
-        <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={standaloneActionButtonClass}>
+        <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
           Цепочка
         </Button>
       )}
-      <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={actionButtonClass}>
+      <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherActionButtonClass}>
         {isExpanded ? 'Свернуть' : 'Подробнее'}
       </Button>
     </div>
@@ -223,10 +219,7 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
         <RepeatedJointTaskActions task={task} nested={nested} {...handlers} />
       </div>
       {isExpanded ? (
-        <div className="max-w-[min(760px,calc(100vw-5rem))] rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs leading-5 text-slate-600">
-          <div className="mb-1 font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
-          <div>{getRepeatedJointTaskDetails(task)}</div>
-        </div>
+        <DispatcherTaskDetails task={task} />
       ) : null}
     </div>
   )
@@ -235,25 +228,11 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
 export function DispatcherTaskGroup({ group, ...handlers }: DispatcherTaskGroupProps) {
   const isReminderGroup = group.tasks.every((task) => task.kind === 'welder-stamp-expiry')
   return (
-    <details key={group.key} className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-sm marker:hidden">
-        <span className="font-semibold text-slate-900">{group.baseJoint}</span>
-        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
-          {isReminderGroup ? formatReminderCount(group.tasks.length) : formatTaskCount(group.tasks.length)}
-        </span>
-        <span className="ml-auto rounded border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 group-open:hidden">
-          раскрыть
-        </span>
-        <span className="ml-auto hidden rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600 group-open:inline">
-          свернуть
-        </span>
-      </summary>
-      <div className="flex max-w-full flex-col gap-1 border-t border-amber-100 p-1.5">
-        {group.tasks.map((task) => (
-          <DispatcherTaskCard key={task.key} task={task} nested {...handlers} />
-        ))}
-      </div>
-    </details>
+    <DispatcherTaskGroupFrame group={group} reminder={isReminderGroup}>
+      {group.tasks.map((task) => (
+        <DispatcherTaskCard key={task.key} task={task} nested {...handlers} />
+      ))}
+    </DispatcherTaskGroupFrame>
   )
 }
 
@@ -276,16 +255,13 @@ export function WelderStampNotificationCard({ task, isTaskExpanded, onToggleDeta
           </span>
         </div>
         <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
-          <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={standaloneActionButtonClass}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherStandaloneActionButtonClass}>
             {isExpanded ? 'Свернуть' : 'Подробнее'}
           </Button>
         </div>
       </div>
       {isExpanded ? (
-        <div className="max-w-[min(760px,calc(100vw-5rem))] rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs leading-5 text-slate-600">
-          <div className="mb-1 font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
-          <div>{getRepeatedJointTaskDetails(task)}</div>
-        </div>
+        <DispatcherTaskDetails task={task} />
       ) : null}
     </div>
   )
@@ -293,26 +269,12 @@ export function WelderStampNotificationCard({ task, isTaskExpanded, onToggleDeta
 
 export function WelderStampNotificationGroup({ group, isTaskExpanded, onToggleDetails }: WelderStampNotificationGroupProps) {
   return (
-    <details key={group.key} className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-sm marker:hidden">
-        <span className="font-semibold text-slate-900">{group.baseJoint}</span>
-        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
-          {formatReminderCount(group.tasks.length)}
-        </span>
-        <span className="ml-auto rounded border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 group-open:hidden">
-          раскрыть
-        </span>
-        <span className="ml-auto hidden rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600 group-open:inline">
-          свернуть
-        </span>
-      </summary>
-      <div className="flex max-w-full flex-col gap-1 border-t border-amber-100 p-1.5">
-        {group.tasks
-          .filter((task): task is WelderStampExpiryTask => task.kind === 'welder-stamp-expiry')
-          .map((task) => (
-            <WelderStampNotificationCard key={task.key} task={task} isTaskExpanded={isTaskExpanded} onToggleDetails={onToggleDetails} />
-          ))}
-      </div>
-    </details>
+    <DispatcherTaskGroupFrame group={group} reminder>
+      {group.tasks
+        .filter((task): task is WelderStampExpiryTask => task.kind === 'welder-stamp-expiry')
+        .map((task) => (
+          <WelderStampNotificationCard key={task.key} task={task} isTaskExpanded={isTaskExpanded} onToggleDetails={onToggleDetails} />
+        ))}
+    </DispatcherTaskGroupFrame>
   )
 }
