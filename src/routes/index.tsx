@@ -86,6 +86,7 @@ import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
+import { useJointChainActions } from '@/lib/use-joint-chain-actions'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
 import { useLnkResultActions } from '@/lib/use-lnk-result-actions'
@@ -129,13 +130,6 @@ import {
   sortLnkRequestRows,
   sortPstoRequestRows,
 } from '@/lib/report-modal-rows'
-import {
-  buildExactJointFilters,
-  buildJointChainFilters,
-  getJointBaseFromRow,
-  getRepeatedJointTaskActionText,
-  getRepeatedJointTaskBaseJoint,
-} from '@/lib/report-navigation'
 import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
 import {
   formatDateInputValue,
@@ -190,7 +184,6 @@ import {
   getOfficialStampCompatibilityIssues,
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-registry'
-import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 
 export const Route = createFileRoute('/')({
@@ -815,6 +808,20 @@ function Home() {
     setSelectedHeatTreatmentIds,
   })
 
+  const {
+    openChainBaseInCurrentReport,
+    openChainRowInCurrentReport,
+    openLinkedReportRow,
+    showRepeatedJointTask,
+  } = useJointChainActions({
+    activeReport,
+    setActiveReport,
+    setChainRecord,
+    setColumnFilters,
+    setLnkFilters,
+    setMessage,
+  })
+
   async function handleImport(file: File) {
     setMessage(null)
     if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
@@ -1069,59 +1076,6 @@ function Home() {
     const confirmed = window.confirm(`Переименовать повторный стык ${task.currentJoint} в ${task.targetJoint}?`)
     if (!confirmed) return
     renameRepeatedJointMutation.mutate(currentTask)
-  }
-
-  function showRepeatedJointTask(task: RepeatedJointTask) {
-    const baseJoint = getRepeatedJointTaskBaseJoint(task)
-    const actionText = getRepeatedJointTaskActionText(task)
-    showRepeatedJointTaskChain(task.row, baseJoint, `Показана цепочка стыка ${baseJoint}: ${actionText}`)
-  }
-
-  function showRepeatedJointTaskChain(row: WeldRow, baseJoint: string, messageText: string) {
-    const filters = buildJointChainFilters(row, baseJoint)
-    if (activeReport === 'lnk') {
-      setActiveReport('lnk')
-      setLnkFilters(filters)
-    } else {
-      setActiveReport('weldingJournal')
-      setColumnFilters(filters)
-    }
-    setChainRecord(row)
-    setMessage(messageText)
-  }
-
-  function openChainRowInCurrentReport(row: WeldRow) {
-    setChainRecord(null)
-    const filters = buildExactJointFilters(row)
-    if (activeReport === 'lnk') {
-      setActiveReport('lnk')
-      setLnkFilters(filters)
-    } else {
-      setActiveReport('weldingJournal')
-      setColumnFilters(filters)
-    }
-    setMessage(`Открыт стык ${String(row.joint ?? '-')} в текущем отчете`)
-  }
-
-  function openLinkedReportRow(row: WeldInput & { id: number }) {
-    setChainRecord(null)
-    const filters = buildExactJointFilters(row)
-    if (activeReport === 'lnk') {
-      setActiveReport('weldingJournal')
-      setColumnFilters(filters)
-      setMessage(`Открыт стык ${String(row.joint ?? '-')} в сварочном журнале`)
-      return
-    }
-    if (activeReport === 'weldingJournal') {
-      setActiveReport('lnk')
-      setLnkFilters(filters)
-      setMessage(`Открыт стык ${String(row.joint ?? '-')} в отчете ЛНК`)
-    }
-  }
-
-  function openChainBaseInCurrentReport(row: WeldRow) {
-    const baseJoint = getJointBaseFromRow(row)
-    showRepeatedJointTaskChain(row, baseJoint, `Показана вся цепочка стыка ${baseJoint}`)
   }
 
   function clearLnkRequestFromRow(row: WeldInput & { id: number }, methodKey: WeldFieldKey) {
