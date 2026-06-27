@@ -41,7 +41,6 @@ import {
 import {
   canCreateLnkRequest,
 } from '@/lib/report-control-state'
-import { formatWdiTotal } from '@/lib/report-export'
 import {
   filterPstoResultRows,
 } from '@/lib/report-row-utils'
@@ -92,6 +91,7 @@ import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-pro
 import { createWeldTableProps } from '@/lib/weld-table-props'
 import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-props'
 import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
+import { createReportSummaryBarProps } from '@/lib/report-summary-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -1011,6 +1011,23 @@ function Home() {
     onOpenLnkConclusionsReport: openLnkConclusionsReport,
   })
 
+  const reportSummaryBarProps = createReportSummaryBarProps({
+    activeReport,
+    left: stickyLeft,
+    minWidth: registerMinWidth,
+    isLoading: weldsQuery.isLoading,
+    weldingRows: rows,
+    acceptedWdiTotal,
+    heatTreatmentRows,
+    selectedHeatTreatmentRows,
+    lnkRows,
+    availableLnkRequestRows,
+    welderStamps,
+    filteredWelderStamps,
+    errorMessage: weldsQuery.error ? (weldsQuery.error as Error).message : null,
+    message,
+  })
+
   return (
     <ReportWorkspace
       activeReport={activeReport}
@@ -1023,23 +1040,7 @@ function Home() {
             <ReportHeaderActions {...reportHeaderActionsProps} />
           </ReportPageHeader>
 
-          <ReportSummaryBar
-            activeReport={activeReport}
-            left={stickyLeft}
-            minWidth={registerMinWidth}
-            isLoading={weldsQuery.isLoading}
-            weldingRowCount={rows.length}
-            acceptedWdiTotalText={formatWdiTotal(acceptedWdiTotal)}
-            heatTreatmentRowCount={heatTreatmentRows.length}
-            selectedHeatTreatmentRowCount={selectedHeatTreatmentRows.length}
-            lnkRowCount={lnkRows.length}
-            availableLnkRequestRowCount={availableLnkRequestRows.length}
-            activeWelderStampCount={welderStamps.filter((record) => !record.archived).length}
-            archivedWelderStampCount={welderStamps.filter((record) => record.archived).length}
-            filteredWelderStampCount={filteredWelderStamps.length}
-            errorMessage={weldsQuery.error ? (weldsQuery.error as Error).message : null}
-            message={message}
-          />
+          <ReportSummaryBar {...reportSummaryBarProps} />
 
           <ReportTaskPanels
             activeReport={activeReport}

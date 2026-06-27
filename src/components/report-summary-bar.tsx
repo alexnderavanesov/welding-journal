@@ -1,7 +1,7 @@
 import type { ActiveReport } from '@/lib/home-state'
 import { getReportSummaryText } from '@/lib/report-ui-state'
 
-type ReportSummaryBarProps = {
+export type ReportSummaryBarProps = {
   activeReport: ActiveReport
   left: number
   minWidth: number
