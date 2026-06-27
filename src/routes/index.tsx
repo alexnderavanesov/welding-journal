@@ -1160,6 +1160,162 @@ function Home() {
         }
       : null,
   }
+  const reportLnkDialogsProps = {
+    requestDialogProps: isLnkRequestModalOpen
+      ? {
+          nextRequestName: nextLnkRequestName,
+          selectedRowsCount: selectedLnkRows.length,
+          selectedTargetCount: selectedLnkRequestTargetCount,
+          requestNaming: lnkRequestNaming,
+          requestManagerOptions: lnkRequestManagerOptions,
+          selectedMethodKeys: selectedLnkMethodKeys,
+          selectedMethods: lnkRequestDraft.methods,
+          requestSearch: lnkRequestSearch,
+          lnkRowsCount: lnkRows.length,
+          filteredRows: filteredLnkRequestRows,
+          filteredAvailableRows: filteredAvailableLnkRequestRows,
+          selectedIds: selectedLnkIds,
+          isPending: lnkRequestMutation.isPending,
+          onClose: closeCreateLnkRequestModal,
+          onOpenRequestManager: openLnkRequestManager,
+          onRequestNamingChange: setLnkRequestNaming,
+          onToggleMethod: toggleLnkRequestMethod,
+          onRequestSearchChange: setLnkRequestSearch,
+          onToggleAllRows: toggleAllLnkRequestRows,
+          onToggleRow: toggleLnkRequestRow,
+          onSubmit: handleCreateLnkRequest,
+        }
+      : null,
+    requestManagerDialogProps: isLnkRequestManagerOpen
+      ? {
+          requestName: managedLnkRequestName,
+          requestOptions: lnkRequestManagerOptions,
+          requestRows: managedLnkRequestRows,
+          requestMethods: managedLnkRequestMethods,
+          requestNameDraft: managedLnkRequestNameDraft,
+          isManagerPending: lnkRequestManagerMutation.isPending,
+          isCorrectionPending: lnkRequestCorrectionMutation.isPending,
+          onClose: closeLnkRequestManager,
+          onChangeRequest: changeManagedLnkRequest,
+          onRequestNameDraftChange: setManagedLnkRequestNameDraft,
+          onRenameRequest: renameManagedLnkRequest,
+          onClearPosition: clearManagedLnkRequestPosition,
+          onDeleteRequest: deleteManagedLnkRequest,
+        }
+      : null,
+    resultManagerDialogProps: isLnkResultManagerOpen
+      ? {
+          rows: managedLnkResultRows,
+          methods: managedLnkResultMethods,
+          entries: managedLnkResultEntries,
+          pendingEntries: managedLnkPendingResultRows,
+          methodKey: managedLnkResultMethodKey,
+          conclusionDrafts: managedLnkConclusionDrafts,
+          pendingResultChanges: managedLnkPendingResultChanges,
+          preview: managedLnkResultPreview,
+          changeHint: managedLnkResultChangeHint,
+          isResultCorrectionPending: lnkResultCorrectionMutation.isPending,
+          isResultReplacementPending: lnkResultReplacementMutation.isPending,
+          isConclusionCorrectionPending: lnkConclusionCorrectionMutation.isPending,
+          onClose: closeLnkResultManager,
+          onMethodChange: changeManagedLnkResultMethod,
+          onConclusionDraftChange: changeManagedLnkConclusionDraft,
+          onRenameConclusion: renameManagedLnkConclusionForRow,
+          onReplaceResult: replaceLnkResult,
+          onClearResult: clearLnkResult,
+          onPreviewEnter: setManagedLnkResultPreview,
+          onPreviewLeave: leaveManagedLnkPreview,
+          onResetPendingChanges: resetManagedLnkResultChanges,
+          onSaveChanges: saveManagedLnkResultChanges,
+        }
+      : null,
+    officialityDialogProps: isLnkOfficialityModalOpen
+      ? {
+          draft: lnkOfficialityDraft,
+          filteredRows: filteredLnkOfficialityRows,
+          selectedRows: selectedLnkOfficialityRows,
+          saveBlockReason: lnkOfficialitySaveBlockReason,
+          isSaveDisabled: isLnkOfficialitySaveDisabled,
+          onClose: closeLnkOfficialityModal,
+          onSave: saveLnkOfficiality,
+          onDraftChange: setLnkOfficialityDraft,
+          onToggleRow: toggleLnkOfficialityRow,
+          onSetVisibleRowsSelected: setVisibleLnkOfficialityRowsSelected,
+        }
+      : null,
+    resultDialogProps: isLnkResultModalOpen
+      ? {
+          draft: lnkResultDraft,
+          requestSearch: lnkResultRequestSearch,
+          selectedMethods: selectedLnkResultMethods,
+          selectedRows: selectedLnkResultRows,
+          visibleRows: visibleLnkResultRows,
+          filteredRequestOptions: filteredLnkResultRequestOptions,
+          availableRequestOptions: lnkResultAvailableRequestOptions,
+          nextConclusionName: nextLnkConclusionName,
+          saveBlockReason: lnkResultSaveBlockReason,
+          isSaveDisabled: isLnkResultSaveDisabled,
+          contextReady: lnkResultContextReady,
+          canBulkToggleRows: canBulkToggleLnkResultRows,
+          areAllFilteredRowsSelected: isEveryFilteredLnkRequestRowSelected(
+            lnkResultDraft.rowIds,
+            selectableVisibleLnkResultRows,
+          ),
+          onClose: closeAddLnkResultModal,
+          onOpenManager: openLnkResultManager,
+          onMethodChange: changeLnkResultMethod,
+          onControlDateChange: (controlDate) => setLnkResultDraft((current) => ({ ...current, controlDate })),
+          onDefaultResultChange: (result) => {
+            if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
+            setLnkResultDraft((current) => ({
+              ...current,
+              result,
+              rowResults: {},
+            }))
+          },
+          onConclusionNamingChange: (conclusionNaming) =>
+            setLnkResultDraft((current) => ({ ...current, conclusionNaming })),
+          onClearSelection: () => {
+            setShouldPinPreviewedLnkResultRows(false)
+            setLnkResultDraft((current) => ({
+              ...current,
+              rowIds: new Set(),
+              rowResults: {},
+            }))
+          },
+          onToggleAllRows: toggleAllLnkResultRows,
+          onSearchChange: (search) => setLnkResultDraft((current) => ({ ...current, search })),
+          onRequestSearchChange: setLnkResultRequestSearch,
+          onRequestChange: changeLnkResultRequest,
+          onClearRequestSearch: () => setLnkResultRequestSearch(''),
+          onClearSearch: () => {
+            setLnkResultRequestSearch('')
+            setShouldPinPreviewedLnkResultRows(false)
+            setLnkResultDraft((current) => ({
+              ...current,
+              requestName: '',
+              rowIds: new Set(),
+              rowResults: {},
+              search: '',
+            }))
+          },
+          onToggleRow: toggleLnkResultRow,
+          onSetRowResult: setLnkResultForRow,
+          onOpenPreview: () => {
+            setShouldPinPreviewedLnkResultRows(true)
+            setIsLnkResultPreviewOpen(true)
+          },
+          onSave: handleAddLnkResult,
+        }
+      : null,
+    resultPreviewDialogProps: isLnkResultPreviewOpen
+      ? {
+          rows: selectedLnkResultRows,
+          draft: lnkResultDraft,
+          onClose: () => setIsLnkResultPreviewOpen(false),
+        }
+      : null,
+  }
 
   return (
     <ReportWorkspace
@@ -1187,162 +1343,7 @@ function Home() {
         chainDialogProps={reportChainDialogProps}
         weldEditorProps={reportWeldEditorProps}
         pstoDialogsProps={reportPstoDialogsProps}
-        lnkDialogsProps={{
-          requestDialogProps: isLnkRequestModalOpen
-            ? {
-                nextRequestName: nextLnkRequestName,
-                selectedRowsCount: selectedLnkRows.length,
-                selectedTargetCount: selectedLnkRequestTargetCount,
-                requestNaming: lnkRequestNaming,
-                requestManagerOptions: lnkRequestManagerOptions,
-                selectedMethodKeys: selectedLnkMethodKeys,
-                selectedMethods: lnkRequestDraft.methods,
-                requestSearch: lnkRequestSearch,
-                lnkRowsCount: lnkRows.length,
-                filteredRows: filteredLnkRequestRows,
-                filteredAvailableRows: filteredAvailableLnkRequestRows,
-                selectedIds: selectedLnkIds,
-                isPending: lnkRequestMutation.isPending,
-                onClose: closeCreateLnkRequestModal,
-                onOpenRequestManager: openLnkRequestManager,
-                onRequestNamingChange: setLnkRequestNaming,
-                onToggleMethod: toggleLnkRequestMethod,
-                onRequestSearchChange: setLnkRequestSearch,
-                onToggleAllRows: toggleAllLnkRequestRows,
-                onToggleRow: toggleLnkRequestRow,
-                onSubmit: handleCreateLnkRequest,
-              }
-            : null,
-          requestManagerDialogProps: isLnkRequestManagerOpen
-            ? {
-                requestName: managedLnkRequestName,
-                requestOptions: lnkRequestManagerOptions,
-                requestRows: managedLnkRequestRows,
-                requestMethods: managedLnkRequestMethods,
-                requestNameDraft: managedLnkRequestNameDraft,
-                isManagerPending: lnkRequestManagerMutation.isPending,
-                isCorrectionPending: lnkRequestCorrectionMutation.isPending,
-                onClose: closeLnkRequestManager,
-                onChangeRequest: changeManagedLnkRequest,
-                onRequestNameDraftChange: setManagedLnkRequestNameDraft,
-                onRenameRequest: renameManagedLnkRequest,
-                onClearPosition: clearManagedLnkRequestPosition,
-                onDeleteRequest: deleteManagedLnkRequest,
-              }
-            : null,
-          resultManagerDialogProps: isLnkResultManagerOpen
-            ? {
-                rows: managedLnkResultRows,
-                methods: managedLnkResultMethods,
-                entries: managedLnkResultEntries,
-                pendingEntries: managedLnkPendingResultRows,
-                methodKey: managedLnkResultMethodKey,
-                conclusionDrafts: managedLnkConclusionDrafts,
-                pendingResultChanges: managedLnkPendingResultChanges,
-                preview: managedLnkResultPreview,
-                changeHint: managedLnkResultChangeHint,
-                isResultCorrectionPending: lnkResultCorrectionMutation.isPending,
-                isResultReplacementPending: lnkResultReplacementMutation.isPending,
-                isConclusionCorrectionPending: lnkConclusionCorrectionMutation.isPending,
-                onClose: closeLnkResultManager,
-                onMethodChange: changeManagedLnkResultMethod,
-                onConclusionDraftChange: changeManagedLnkConclusionDraft,
-                onRenameConclusion: renameManagedLnkConclusionForRow,
-                onReplaceResult: replaceLnkResult,
-                onClearResult: clearLnkResult,
-                onPreviewEnter: setManagedLnkResultPreview,
-                onPreviewLeave: leaveManagedLnkPreview,
-                onResetPendingChanges: resetManagedLnkResultChanges,
-                onSaveChanges: saveManagedLnkResultChanges,
-              }
-            : null,
-          officialityDialogProps: isLnkOfficialityModalOpen
-            ? {
-                draft: lnkOfficialityDraft,
-                filteredRows: filteredLnkOfficialityRows,
-                selectedRows: selectedLnkOfficialityRows,
-                saveBlockReason: lnkOfficialitySaveBlockReason,
-                isSaveDisabled: isLnkOfficialitySaveDisabled,
-                onClose: closeLnkOfficialityModal,
-                onSave: saveLnkOfficiality,
-                onDraftChange: setLnkOfficialityDraft,
-                onToggleRow: toggleLnkOfficialityRow,
-                onSetVisibleRowsSelected: setVisibleLnkOfficialityRowsSelected,
-              }
-            : null,
-          resultDialogProps: isLnkResultModalOpen
-            ? {
-                draft: lnkResultDraft,
-                requestSearch: lnkResultRequestSearch,
-                selectedMethods: selectedLnkResultMethods,
-                selectedRows: selectedLnkResultRows,
-                visibleRows: visibleLnkResultRows,
-                filteredRequestOptions: filteredLnkResultRequestOptions,
-                availableRequestOptions: lnkResultAvailableRequestOptions,
-                nextConclusionName: nextLnkConclusionName,
-                saveBlockReason: lnkResultSaveBlockReason,
-                isSaveDisabled: isLnkResultSaveDisabled,
-                contextReady: lnkResultContextReady,
-                canBulkToggleRows: canBulkToggleLnkResultRows,
-                areAllFilteredRowsSelected: isEveryFilteredLnkRequestRowSelected(
-                  lnkResultDraft.rowIds,
-                  selectableVisibleLnkResultRows,
-                ),
-                onClose: closeAddLnkResultModal,
-                onOpenManager: openLnkResultManager,
-                onMethodChange: changeLnkResultMethod,
-                onControlDateChange: (controlDate) => setLnkResultDraft((current) => ({ ...current, controlDate })),
-                onDefaultResultChange: (result) => {
-                  if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
-                  setLnkResultDraft((current) => ({
-                    ...current,
-                    result,
-                    rowResults: {},
-                  }))
-                },
-                onConclusionNamingChange: (conclusionNaming) =>
-                  setLnkResultDraft((current) => ({ ...current, conclusionNaming })),
-                onClearSelection: () => {
-                  setShouldPinPreviewedLnkResultRows(false)
-                  setLnkResultDraft((current) => ({
-                    ...current,
-                    rowIds: new Set(),
-                    rowResults: {},
-                  }))
-                },
-                onToggleAllRows: toggleAllLnkResultRows,
-                onSearchChange: (search) => setLnkResultDraft((current) => ({ ...current, search })),
-                onRequestSearchChange: setLnkResultRequestSearch,
-                onRequestChange: changeLnkResultRequest,
-                onClearRequestSearch: () => setLnkResultRequestSearch(''),
-                onClearSearch: () => {
-                  setLnkResultRequestSearch('')
-                  setShouldPinPreviewedLnkResultRows(false)
-                  setLnkResultDraft((current) => ({
-                    ...current,
-                    requestName: '',
-                    rowIds: new Set(),
-                    rowResults: {},
-                    search: '',
-                  }))
-                },
-                onToggleRow: toggleLnkResultRow,
-                onSetRowResult: setLnkResultForRow,
-                onOpenPreview: () => {
-                  setShouldPinPreviewedLnkResultRows(true)
-                  setIsLnkResultPreviewOpen(true)
-                },
-                onSave: handleAddLnkResult,
-              }
-            : null,
-          resultPreviewDialogProps: isLnkResultPreviewOpen
-            ? {
-                rows: selectedLnkResultRows,
-                draft: lnkResultDraft,
-                onClose: () => setIsLnkResultPreviewOpen(false),
-              }
-            : null,
-        }}
+        lnkDialogsProps={reportLnkDialogsProps}
         fieldEditorProps={reportFieldEditorProps}
       />
     </ReportWorkspace>
