@@ -3,15 +3,10 @@ import { ChevronDown, ChevronRight, Edit2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
+import { WeldTableColumns } from '@/components/weld-table-columns'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { WeldTableValue } from '@/components/weld-table-value'
-import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth } from '@/lib/weld-column-widths'
-import {
-  CHAIN_ACTION_COLUMN_WIDTH,
-  ROW_ACTIONS_COLUMN_WIDTH,
-  SELECT_COLUMN_WIDTH,
-  getWeldTableMinWidth,
-} from '@/lib/weld-table-layout'
+import { getWeldTableMinWidth } from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import {
   bodyCellClass,
@@ -278,15 +273,13 @@ export function WeldTable({
           className="table-fixed border-separate border-spacing-0 text-sm text-slate-700 [&_td]:outline-none [&_th]:outline-none"
           style={{ width: tableMinWidth }}
         >
-          <colgroup>
-            {selectable ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
-            {hasChainAction ? <col style={{ width: CHAIN_ACTION_COLUMN_WIDTH }} /> : null}
-            {hasRowActions ? <col style={{ width: ROW_ACTIONS_COLUMN_WIDTH }} /> : null}
-            {filteredFields.map((field) => (
-              <col key={field.key} style={{ width: getWeldColumnWidth(field.key) }} />
-            ))}
-            {!readOnly ? <col style={{ width: ACTIONS_COLUMN_WIDTH }} /> : null}
-          </colgroup>
+          <WeldTableColumns
+            fields={filteredFields}
+            readOnly={readOnly}
+            selectable={selectable}
+            hasRowActions={hasRowActions}
+            hasChainAction={hasChainAction}
+          />
           <thead className="sticky top-0 z-10 bg-slate-50/95 text-left shadow-[inset_0_-1px_0_0_rgb(226,232,240)] backdrop-blur">
             <tr>
               {selectable ? (
