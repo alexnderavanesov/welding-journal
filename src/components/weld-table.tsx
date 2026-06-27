@@ -15,6 +15,7 @@ import {
 } from '@/lib/weld-table-sections'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import { useWeldTableCollapsedSections } from '@/lib/use-weld-table-collapsed-sections'
+import { useWeldTableSelection } from '@/lib/use-weld-table-selection'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
@@ -105,34 +106,19 @@ export function WeldTable({
   })
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
   const filteredRows = useMemo(() => filterWeldRowsByColumns(rows, columnFilters), [rows, columnFilters])
-  const selectableVisibleRows = filteredRows.filter((row) => !selectable || isRowSelectable(row))
-  const selectedVisibleRows = selectableVisibleRows.filter((row) => selectedRowIds.has(row.id))
-  const allVisibleRowsSelected = selectableVisibleRows.length > 0 && selectedVisibleRows.length === selectableVisibleRows.length
-  const someVisibleRowsSelected = selectedVisibleRows.length > 0 && !allVisibleRowsSelected
-
-  function setRowSelected(row: WeldInput & { id: number }, selected: boolean) {
-    if (!isRowSelectable(row)) return
-
-    const next = new Set(selectedRowIds)
-    if (selected) {
-      next.add(row.id)
-    } else {
-      next.delete(row.id)
-    }
-    onSelectedRowIdsChange?.(next)
-  }
-
-  function setVisibleRowsSelected(selected: boolean) {
-    const next = new Set(selectedRowIds)
-    for (const row of selectableVisibleRows) {
-      if (selected) {
-        next.add(row.id)
-      } else {
-        next.delete(row.id)
-      }
-    }
-    onSelectedRowIdsChange?.(next)
-  }
+  const {
+    selectableVisibleRows,
+    allVisibleRowsSelected,
+    someVisibleRowsSelected,
+    setRowSelected,
+    setVisibleRowsSelected,
+  } = useWeldTableSelection({
+    filteredRows,
+    selectable,
+    selectedRowIds,
+    onSelectedRowIdsChange,
+    isRowSelectable,
+  })
 
   function canEditField(fieldKey: WeldFieldKey) {
     if (!onEdit) return false
