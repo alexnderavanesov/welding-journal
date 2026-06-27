@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Check, ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { WelderStampPermitFields } from '@/components/welder-stamp-permit-fields'
+import { WelderStampWeldTypeSelector } from '@/components/welder-stamp-weld-type-selector'
 import { WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions } from '@/lib/report-config'
 import { splitWelderStampWeldTypes } from '@/lib/welder-stamp-format'
 import { getWelderStampFormHint } from '@/lib/welder-stamp-registry'
@@ -78,71 +80,9 @@ export function WelderStampsCreatePanel({
             </label>
             <div className="space-y-1.5 text-sm font-medium text-slate-700">
               <span>Тип сварки</span>
-              <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-input bg-white px-2 py-1.5 shadow-sm shadow-slate-200/40">
-                {welderStampWeldTypeOptions.map((type) => {
-                  const isSelected = selectedWeldTypes.includes(type)
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => toggleWeldType(type)}
-                      className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-                        isSelected
-                          ? 'border-sky-300 bg-sky-50 text-sky-800'
-                          : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
-                      }`}
-                      aria-pressed={isSelected}
-                    >
-                      {type}
-                    </button>
-                  )
-                })}
-              </div>
+              <WelderStampWeldTypeSelector selectedWeldTypes={selectedWeldTypes} onToggleWeldType={toggleWeldType} />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1.5 text-sm font-medium text-slate-700">
-                <span>Диаметр от</span>
-                <Input
-                  type="number"
-                  min="0"
-                  inputMode="decimal"
-                  value={draft.diameterFrom}
-                  onChange={(event) => onDraftChange('diameterFrom', event.target.value)}
-                  placeholder="от"
-                  required={requiresPermitFields}
-                />
-              </label>
-              <label className="space-y-1.5 text-sm font-medium text-slate-700">
-                <span>Диаметр до</span>
-                <Input
-                  type="number"
-                  min="0"
-                  inputMode="decimal"
-                  value={draft.diameterTo}
-                  onChange={(event) => onDraftChange('diameterTo', event.target.value)}
-                  placeholder="без ограничения"
-                  title="Если поле пустое, верхнего ограничения по диаметру нет"
-                />
-              </label>
-            </div>
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
-              <span>Срок действия от</span>
-              <Input
-                type="date"
-                value={draft.validFrom}
-                onChange={(event) => onDraftChange('validFrom', event.target.value)}
-                required={requiresPermitFields}
-              />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
-              <span>Срок действия до</span>
-              <Input
-                type="date"
-                value={draft.validTo}
-                onChange={(event) => onDraftChange('validTo', event.target.value)}
-                required={requiresPermitFields}
-              />
-            </label>
+            <WelderStampPermitFields draft={draft} requiresPermitFields={requiresPermitFields} onDraftChange={onDraftChange} />
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div
