@@ -673,10 +673,6 @@ function getExpectedRepeatedJointSuffix(sourceRow: WeldInput, result: 'ремо�
   return result === 'ремонт' && !isLnkRepairForbiddenByOfficialRepairLimit(sourceRow) ? 'R' : 'W'
 }
 
-function getOfficialRepeatedJointFailureCount(rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) {
-  return getOfficialRejectedJointChainRows(rows, sourceRow, sourceJoint).length
-}
-
 function getOfficialRejectedJointChainRows(rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) {
   const parsedSource = parseRepeatedJointName(sourceJoint)
   const sourceIdentity = getRepeatedJointIdentity(sourceRow, parsedSource.base)
@@ -736,12 +732,6 @@ function findRepeatedJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: stri
       )
     }) ?? null
   )
-}
-
-function findMatchingJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
-  const repeatedMatch = findRepeatedJointRow(rows, sourceRow, joint)
-  if (repeatedMatch) return repeatedMatch
-  return findMatchingJointRows(rows, sourceRow, joint)[0]
 }
 
 function findMatchingJointRows(rows: WeldRow[], sourceRow: WeldInput, joint: string) {

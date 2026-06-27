@@ -8,34 +8,8 @@ import { ReportTaskPanels } from '@/components/report-task-panels'
 import { ReportDialogs } from '@/components/report-dialogs'
 import { ReportWorkspace } from '@/components/report-workspace'
 import {
-  isMeaningfulRecord,
-  normalizeWeldInput,
-} from '@/lib/weld-import-export'
-import {
   type WeldInput,
 } from '@/lib/weld-fields'
-import {
-  LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
-  LNK_REPORT_FIELD_KEYS as lnkReportFieldKeys,
-  PSTO_EMPTY_RESULT_VALUE,
-  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
-  REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
-  UNOFFICIAL_REJECTED_WITH_COIL_REASON,
-  WELD_STAMP_COMPLETION_GROUPS,
-} from '@/lib/report-config'
-import {
-  getPstoResultBadgeClass,
-  getPstoResultLabel,
-} from '@/lib/report-badges'
-import {
-  getJointChainResultItems,
-  getJointStatusBadgeClass,
-  getJointStatusLabel,
-  hasAnyEnabledLnkControl,
-  hasAnyLnkRequest,
-  hasPendingLnkRequestResult,
-  isFinalLnkResultValue,
-} from '@/lib/lnk-status'
 import {
   canCreateLnkRequest,
 } from '@/lib/report-control-state'
@@ -105,34 +79,8 @@ import {
   getLnkRowRequestNames,
 } from '@/lib/report-modal-rows'
 import {
-  formatDateInputValue,
-  formatLongDate,
-} from '@/lib/date-format'
-import {
-  getWeldDateOrderValue,
-  isDateBeforeWeldDate,
-} from '@/lib/report-date-rules'
-import {
-  compareJointChainSuffix,
-  findLastIndex,
-  formatRepeatedJointName,
-  getCoilJointNames,
-  getRepeatedJointFailureCount,
-  normalizeJointChainPart,
-  parseRepeatedJointName,
-} from '@/lib/joint-chain'
-import {
-  formatJointDiameterLabel,
-  getJointChainIdentity,
-  isUnofficialJoint,
-} from '@/lib/joint-display'
-import {
   isLnkRepairForbidden,
 } from '@/lib/lnk-result-rules'
-import {
-  collectRequestNames,
-  sortPstoRequestNamesNewestFirst,
-} from '@/lib/report-naming'
 import {
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-registry'
