@@ -636,7 +636,7 @@ function getObsoleteRepeatedJointReason(
   return 'повторный стык не актуален'
 }
 
-function isUnusedRepeatedJointDraft(row: WeldInput) {
+export function isUnusedRepeatedJointDraft(row: WeldInput) {
   if (hasText(row.weldDate)) return false
   return ![...lnkRequestFieldKeys, ...lnkGeneratedFieldKeys, 'pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram'].some((fieldKey) =>
     hasText(row[fieldKey]),

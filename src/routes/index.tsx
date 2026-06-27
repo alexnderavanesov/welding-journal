@@ -102,6 +102,7 @@ import { useReportImportMutations } from '@/lib/use-report-import-mutations'
 import { usePstoReportMutations } from '@/lib/use-psto-report-mutations'
 import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
+import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   canOpenLinkedReport,
@@ -130,7 +131,6 @@ import {
   sortLnkRequestRows,
   sortPstoRequestRows,
 } from '@/lib/report-modal-rows'
-import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
 import {
   formatDateInputValue,
   formatLongDate,
@@ -589,6 +589,19 @@ function Home() {
     highlightChangedRows,
     dismissRepeatedJointTask,
   })
+  const {
+    createRepeatedJoint,
+    deleteObsoleteRepeatedJoint,
+    renameObsoleteRepeatedJoint,
+  } = useRepeatedJointTaskActions({
+    activeReport,
+    rows,
+    welderStamps,
+    repeatedJointMutation,
+    obsoleteRepeatedJointMutation,
+    renameRepeatedJointMutation,
+    setMessage,
+  })
 
   const { heatTreatmentImportMutation, lnkImportMutation } = useReportImportMutations({
     rows,
@@ -987,60 +1000,6 @@ function Home() {
     )
     if (!confirmed) return
     clearLnkGeneratedDataMutation.mutate(lnkRows)
-  }
-
-  function createRepeatedJoint(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
-    if (activeReport === 'lnk') {
-      setMessage('В отчете ЛНК диспетчер только показывает цепочку. Создание стыков доступно из сварочного журнала.')
-      return
-    }
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
-      (candidate): candidate is RepeatedJointCreateTask | RepeatedJointCoilTask =>
-        (candidate.kind === 'create' || candidate.kind === 'coil') && candidate.key === task.key,
-    )
-    if (!currentTask) {
-      setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
-      return
-    }
-    repeatedJointMutation.mutate(currentTask)
-  }
-
-  function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {
-    if (activeReport === 'lnk') {
-      setMessage('В отчете ЛНК диспетчер только показывает цепочку. Удаление стыков доступно из сварочного журнала.')
-      return
-    }
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
-      (candidate): candidate is RepeatedJointDeleteTask => candidate.kind === 'delete' && candidate.key === task.key,
-    )
-    if (!currentTask) {
-      setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
-      return
-    }
-    if (!isUnusedRepeatedJointDraft(currentTask.row)) {
-      setMessage('Повторный стык уже содержит данные. Диспетчер не удаляет такие стыки автоматически, проверьте цепочку вручную.')
-      return
-    }
-    const confirmed = window.confirm(`Удалить повторный стык ${task.targetJoint}? Исходный стык ${task.sourceJoint} больше не требует повтора.`)
-    if (!confirmed) return
-    obsoleteRepeatedJointMutation.mutate(currentTask)
-  }
-
-  function renameObsoleteRepeatedJoint(task: RepeatedJointRenameTask) {
-    if (activeReport === 'lnk') {
-      setMessage('В отчете ЛНК диспетчер только показывает цепочку. Переименование стыков доступно из сварочного журнала.')
-      return
-    }
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
-      (candidate): candidate is RepeatedJointRenameTask => candidate.kind === 'rename' && candidate.key === task.key,
-    )
-    if (!currentTask) {
-      setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
-      return
-    }
-    const confirmed = window.confirm(`Переименовать повторный стык ${task.currentJoint} в ${task.targetJoint}?`)
-    if (!confirmed) return
-    renameRepeatedJointMutation.mutate(currentTask)
   }
 
   function handleEditRecord(record: WeldInput & { id: number }, focusField?: WeldFieldKey) {
