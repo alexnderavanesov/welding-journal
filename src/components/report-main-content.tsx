@@ -1,12 +1,11 @@
-import type { ComponentProps } from 'react'
-import { WelderStampsRegistry } from '@/components/welder-stamps-registry'
-import { WeldTable } from '@/components/weld-table'
+import { WelderStampsRegistry, type WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
+import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { ActiveReport } from '@/lib/home-state'
 
 type ReportMainContentProps = {
   activeReport: ActiveReport
-  welderStampsRegistryProps: ComponentProps<typeof WelderStampsRegistry>
-  weldTableProps: ComponentProps<typeof WeldTable>
+  welderStampsRegistryProps: WelderStampsRegistryProps
+  weldTableProps: WeldTableProps
 }
 
 export function ReportMainContent({
