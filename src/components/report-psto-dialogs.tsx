@@ -9,7 +9,7 @@ type PstoRequestManagerDialogProps = ComponentProps<typeof PstoRequestManagerDia
 type PstoResultDialogProps = ComponentProps<typeof PstoResultDialog>
 type PstoResultManagerDialogProps = ComponentProps<typeof PstoResultManagerDialog>
 
-type ReportPstoDialogsProps = {
+export type ReportPstoDialogsProps = {
   requestDialogProps: PstoRequestDialogProps | null
   requestManagerDialogProps: PstoRequestManagerDialogProps | null
   resultDialogProps: PstoResultDialogProps | null

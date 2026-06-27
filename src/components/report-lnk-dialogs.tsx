@@ -13,7 +13,7 @@ type LnkOfficialityDialogProps = ComponentProps<typeof LnkOfficialityDialog>
 type LnkResultDialogProps = ComponentProps<typeof LnkResultDialog>
 type LnkResultPreviewDialogProps = ComponentProps<typeof LnkResultPreviewDialog>
 
-type ReportLnkDialogsProps = {
+export type ReportLnkDialogsProps = {
   requestDialogProps: LnkRequestDialogProps | null
   requestManagerDialogProps: LnkRequestManagerDialogProps | null
   resultManagerDialogProps: LnkResultManagerDialogProps | null
