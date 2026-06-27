@@ -1,11 +1,5 @@
 import { useRef } from 'react'
-import { ReportHeaderActions } from '@/components/report-header-actions'
-import { ReportMainContent } from '@/components/report-main-content'
-import { ReportPageHeader } from '@/components/report-page-header'
-import { ReportSummaryBar } from '@/components/report-summary-bar'
-import { ReportTaskPanels } from '@/components/report-task-panels'
-import { ReportDialogs } from '@/components/report-dialogs'
-import { ReportWorkspace } from '@/components/report-workspace'
+import { HomePageView } from '@/components/home-page-view'
 import {
   type WeldInput,
 } from '@/lib/weld-fields'
@@ -1210,34 +1204,24 @@ export function HomePage() {
   })
 
   return (
-    <ReportWorkspace
+    <HomePageView
       activeReport={activeReport}
+      activeTitle={activeTitle}
       navCollapsed={navCollapsed}
       registerMinWidth={registerMinWidth}
+      stickyLeft={stickyLeft}
       onNavCollapsedChange={setNavCollapsed}
       onReportChange={changeActiveReport}
-    >
-          <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={registerMinWidth}>
-            <ReportHeaderActions {...reportHeaderActionsProps} />
-          </ReportPageHeader>
-
-          <ReportSummaryBar {...reportSummaryBarProps} />
-
-          <ReportTaskPanels {...reportTaskPanelsProps} />
-
-          <ReportMainContent
-            activeReport={activeReport}
-            welderStampsRegistryProps={welderStampsRegistryProps}
-            weldTableProps={weldTableProps}
-          />
-
-      <ReportDialogs
-        chainDialogProps={reportChainDialogProps}
-        weldEditorProps={reportWeldEditorProps}
-        pstoDialogsProps={reportPstoDialogsProps}
-        lnkDialogsProps={reportLnkDialogsProps}
-        fieldEditorProps={reportFieldEditorProps}
-      />
-    </ReportWorkspace>
+      reportHeaderActionsProps={reportHeaderActionsProps}
+      reportSummaryBarProps={reportSummaryBarProps}
+      reportTaskPanelsProps={reportTaskPanelsProps}
+      welderStampsRegistryProps={welderStampsRegistryProps}
+      weldTableProps={weldTableProps}
+      reportChainDialogProps={reportChainDialogProps}
+      reportWeldEditorProps={reportWeldEditorProps}
+      reportPstoDialogsProps={reportPstoDialogsProps}
+      reportLnkDialogsProps={reportLnkDialogsProps}
+      reportFieldEditorProps={reportFieldEditorProps}
+    />
   )
 }
