@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldFormFooter } from '@/components/weld-form-footer'
 import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
+import { WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import {
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
@@ -21,13 +22,10 @@ import {
   getFinalStatusValue,
   getJointTitle,
   getResultStatusValue,
-  getSelectedWeldingMethods,
   getStampSelectValue,
   getWeldFormSaveBlockReason,
   getWeldStampSaveBlockReason,
   isYesValue,
-  toggleWeldingMethodValue,
-  weldingMethodOptions,
   withCalculatedFinalStatus,
   yesEmptyFieldKeys,
   type StampSelectOptions,
@@ -205,53 +203,18 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
                             ))}
                           </Select>
                         ) : field.key === 'weldingMethod' ? (
-                          <div
-                            className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-input bg-white px-2 py-1.5 shadow-sm"
-                            role="group"
-                            aria-label="Тип сварки"
-                          >
-                            {weldingMethodOptions.map((option, index) => {
-                              const selected = getSelectedWeldingMethods(draft.weldingMethod).includes(option)
-                              return (
-                                <button
-                                  key={option}
-                                  ref={(element) => {
-                                    if (index === 0) fieldRefs.current[field.key] = element
-                                  }}
-                                  type="button"
-                                  onClick={() =>
-                                    setDraft((current) => ({
-                                      ...current,
-                                      weldingMethod: toggleWeldingMethodValue(current.weldingMethod, option),
-                                    }))
-                                  }
-                                  className={[
-                                    'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
-                                    selected
-                                      ? 'border-sky-300 bg-sky-100 text-sky-900 shadow-sm'
-                                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-200 hover:bg-sky-50',
-                                  ].join(' ')}
-                                  aria-pressed={selected}
-                                >
-                                  {option}
-                                </button>
-                              )
-                            })}
-                            {getSelectedWeldingMethods(draft.weldingMethod).length > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setDraft((current) => ({
-                                    ...current,
-                                    weldingMethod: null,
-                                  }))
-                                }
-                                className="ml-auto rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50"
-                              >
-                                Очистить
-                              </button>
-                            ) : null}
-                          </div>
+                          <WeldFormWeldingMethodField
+                            value={draft.weldingMethod}
+                            inputRef={(element) => {
+                              fieldRefs.current[field.key] = element
+                            }}
+                            onChange={(weldingMethod) =>
+                              setDraft((current) => ({
+                                ...current,
+                                weldingMethod,
+                              }))
+                            }
+                          />
                         ) : RESULT_FIELD_KEYS.has(field.key) ? (
                           <Select
                             ref={(element) => {
