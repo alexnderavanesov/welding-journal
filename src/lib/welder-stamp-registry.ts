@@ -1,4 +1,4 @@
-import type { StampSelectOption } from '@/components/weld-form'
+import type { StampSelectOption } from '@/lib/weld-form-utils'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WelderStampExpiryTask } from '@/lib/dispatcher-types'
 import {
