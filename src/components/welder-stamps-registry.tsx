@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Archive, Check, ChevronDown, Pencil, RotateCcw, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, X } from 'lucide-react'
+import { WelderStampsRecordsTable } from '@/components/welder-stamps-records-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions } from '@/lib/report-config'
-import { formatWelderStampDiameterRange, formatWelderStampValidity, splitWelderStampWeldTypes } from '@/lib/welder-stamp-format'
+import { splitWelderStampWeldTypes } from '@/lib/welder-stamp-format'
 import { countWelderStampFilters, createEmptyWelderStampFilters, getWelderStampFormHint, hasWelderStampRangeFilters } from '@/lib/welder-stamp-registry'
 import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -285,64 +286,14 @@ export function WelderStampsRegistry({
       </div>
 
       <div className="overflow-hidden rounded-md border border-slate-200">
-        <table className="w-full min-w-[980px] border-collapse text-sm">
-          <thead className="bg-slate-100 text-center text-slate-700">
-            <tr>
-              <th className="border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
-              <th className="border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
-              <th className="border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
-              <th className="border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
-              <th className="border-r border-white px-3 py-3 font-semibold">Срок действия</th>
-              <th className="w-32 px-3 py-3 font-semibold">Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {records.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
-                  {search.trim() || hasRangeFilters ? 'По фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
-                </td>
-              </tr>
-            ) : (
-              records.map((record) => (
-                <tr key={record.id} className={record.id === editingId ? 'bg-sky-50' : 'odd:bg-white even:bg-slate-50/60'}>
-                  <td className="border-t border-slate-200 px-3 py-3 text-center font-semibold text-slate-900">{record.naksStamp || '-'}</td>
-                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{record.internalStamp || '-'}</td>
-                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{record.weldType || '-'}</td>
-                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{formatWelderStampDiameterRange(record)}</td>
-                  <td className="border-t border-slate-200 px-3 py-3 text-center text-slate-700">{formatWelderStampValidity(record)}</td>
-                  <td className="border-t border-slate-200 px-3 py-2">
-                    <div className="flex justify-center gap-1.5">
-                      <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => onEdit(record)} title="Редактировать клеймо">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                        onClick={() => onArchive(record.id)}
-                        title="Добавить в архив"
-                      >
-                        <Archive className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8 border-rose-200 text-rose-700 hover:bg-rose-50"
-                        onClick={() => onDelete(record.id)}
-                        title="Удалить клеймо"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <WelderStampsRecordsTable
+          records={records}
+          emptyMessage={search.trim() || hasRangeFilters ? 'По фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
+          editingId={editingId}
+          onEdit={onEdit}
+          onArchive={onArchive}
+          onDelete={onDelete}
+        />
       </div>
 
       <div className="rounded-md border border-slate-200 bg-slate-50/60">
@@ -365,53 +316,13 @@ export function WelderStampsRegistry({
               </div>
             ) : (
               <div className="overflow-hidden rounded-md border border-slate-200">
-                <table className="w-full min-w-[980px] border-collapse text-sm">
-                  <thead className="bg-slate-100 text-center text-slate-700">
-                    <tr>
-                      <th className="border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
-                      <th className="border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
-                      <th className="border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
-                      <th className="border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
-                      <th className="border-r border-white px-3 py-3 font-semibold">Срок действия</th>
-                      <th className="w-40 px-3 py-3 font-semibold">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {archivedRecords.map((record) => (
-                      <tr key={record.id} className="bg-slate-50 text-slate-500">
-                        <td className="border-t border-slate-200 px-3 py-3 text-center font-semibold">{record.naksStamp || '-'}</td>
-                        <td className="border-t border-slate-200 px-3 py-3 text-center">{record.internalStamp || '-'}</td>
-                        <td className="border-t border-slate-200 px-3 py-3 text-center">{record.weldType || '-'}</td>
-                        <td className="border-t border-slate-200 px-3 py-3 text-center">{formatWelderStampDiameterRange(record)}</td>
-                        <td className="border-t border-slate-200 px-3 py-3 text-center">{formatWelderStampValidity(record)}</td>
-                        <td className="border-t border-slate-200 px-3 py-2">
-                          <div className="flex justify-center gap-1.5">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8 border-sky-200 text-sky-700 hover:bg-sky-50"
-                              onClick={() => onRestore(record.id)}
-                              title="Вернуть в общий список"
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8 border-rose-200 text-rose-700 hover:bg-rose-50"
-                              onClick={() => onDelete(record.id)}
-                              title="Удалить клеймо"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <WelderStampsRecordsTable
+                  records={archivedRecords}
+                  emptyMessage=""
+                  archived
+                  onRestore={onRestore}
+                  onDelete={onDelete}
+                />
               </div>
             )}
           </div>
