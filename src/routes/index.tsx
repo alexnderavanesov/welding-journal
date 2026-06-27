@@ -87,6 +87,7 @@ import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
+import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
 import { useLnkRequestModalState } from '@/lib/use-lnk-request-modal-state'
 import { useLnkResultModalState } from '@/lib/use-lnk-result-modal-state'
@@ -109,7 +110,6 @@ import {
   getReportHiddenFieldKeys,
   getReportImportFieldKeys,
   isReadOnlyReport,
-  setNumberSetValues,
   shouldMergePstoSections,
   toggleNumberSetValue,
   toggleNumberSetValues,
@@ -182,7 +182,6 @@ import {
   isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import {
-  createDefaultLnkOfficialityDraft,
   createDefaultLnkResultDraft,
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
@@ -642,6 +641,21 @@ function Home() {
     isLnkOfficialitySaving: lnkOfficialityMutation.isPending,
   })
   const {
+    openLnkOfficialityModal,
+    closeLnkOfficialityModal,
+    toggleLnkOfficialityRow,
+    setVisibleLnkOfficialityRowsSelected,
+    saveLnkOfficiality,
+  } = useLnkOfficialityActions({
+    draft: lnkOfficialityDraft,
+    filteredRows: filteredLnkOfficialityRows,
+    selectedRows: selectedLnkOfficialityRows,
+    isSaveDisabled: isLnkOfficialitySaveDisabled,
+    mutation: lnkOfficialityMutation,
+    setDraft: setLnkOfficialityDraft,
+    setIsOpen: setIsLnkOfficialityModalOpen,
+  })
+  const {
     acceptedWdiTotal,
     activeColumnFilters,
     activeFiltersSetter,
@@ -873,16 +887,6 @@ function Home() {
     setIsLnkResultModalOpen(false)
   }
 
-  function openLnkOfficialityModal() {
-    setLnkOfficialityDraft(createDefaultLnkOfficialityDraft())
-    setIsLnkOfficialityModalOpen(true)
-  }
-
-  function closeLnkOfficialityModal() {
-    if (lnkOfficialityMutation.isPending) return
-    setIsLnkOfficialityModalOpen(false)
-  }
-
   useReportModalEscapeKey({
     isReportModalOpen,
     isLnkResultPreviewOpen,
@@ -913,26 +917,6 @@ function Home() {
     onCloseLnkResultModal: closeAddLnkResultModal,
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
   })
-
-  function toggleLnkOfficialityRow(rowId: number) {
-    setLnkOfficialityDraft((current) => {
-      return { ...current, rowIds: toggleNumberSetValue(current.rowIds, rowId) }
-    })
-  }
-
-  function setVisibleLnkOfficialityRowsSelected(selected: boolean) {
-    setLnkOfficialityDraft((current) => {
-      return { ...current, rowIds: setNumberSetValues(current.rowIds, filteredLnkOfficialityRows.map((row) => row.id), selected) }
-    })
-  }
-
-  function saveLnkOfficiality() {
-    if (isLnkOfficialitySaveDisabled) return
-    lnkOfficialityMutation.mutate({
-      records: selectedLnkOfficialityRows,
-      status: lnkOfficialityDraft.status as 'official' | 'unofficial',
-    })
-  }
 
   function openLnkResultManager() {
     const selectedRows = lnkRows.filter((row) => lnkResultDraft.rowIds.has(row.id))
