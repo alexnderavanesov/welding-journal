@@ -18,7 +18,7 @@ import { getJointTitle } from '@/lib/report-ui-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
-type LnkRequestDialogProps = {
+export type LnkRequestDialogProps = {
   nextRequestName: string
   selectedRowsCount: number
   selectedTargetCount: number

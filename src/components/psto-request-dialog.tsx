@@ -16,7 +16,7 @@ import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges
 import { getJointTitle } from '@/lib/report-ui-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 
-type PstoRequestDialogProps = {
+export type PstoRequestDialogProps = {
   nextRequestName: string
   selectedRows: WeldRow[]
   requestNaming: RequestNamingState

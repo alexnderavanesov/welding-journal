@@ -13,7 +13,7 @@ import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { getJointTitle } from '@/lib/report-ui-state'
 
-type LnkResultPreviewDialogProps = {
+export type LnkResultPreviewDialogProps = {
   rows: WeldRow[]
   draft: LnkResultDraftLike
   onClose: () => void

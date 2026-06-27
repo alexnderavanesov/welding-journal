@@ -1,13 +1,13 @@
-import type { ComponentProps } from 'react'
-import { PstoRequestDialog } from '@/components/psto-request-dialog'
-import { PstoRequestManagerDialog } from '@/components/psto-request-manager-dialog'
-import { PstoResultDialog } from '@/components/psto-result-dialog'
-import { PstoResultManagerDialog } from '@/components/psto-result-manager-dialog'
-
-type PstoRequestDialogProps = ComponentProps<typeof PstoRequestDialog>
-type PstoRequestManagerDialogProps = ComponentProps<typeof PstoRequestManagerDialog>
-type PstoResultDialogProps = ComponentProps<typeof PstoResultDialog>
-type PstoResultManagerDialogProps = ComponentProps<typeof PstoResultManagerDialog>
+import { PstoRequestDialog, type PstoRequestDialogProps } from '@/components/psto-request-dialog'
+import {
+  PstoRequestManagerDialog,
+  type PstoRequestManagerDialogProps,
+} from '@/components/psto-request-manager-dialog'
+import { PstoResultDialog, type PstoResultDialogProps } from '@/components/psto-result-dialog'
+import {
+  PstoResultManagerDialog,
+  type PstoResultManagerDialogProps,
+} from '@/components/psto-result-manager-dialog'
 
 export type ReportPstoDialogsProps = {
   requestDialogProps: PstoRequestDialogProps | null

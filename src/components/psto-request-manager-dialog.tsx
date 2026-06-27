@@ -15,7 +15,7 @@ import { getPstoResultLabel } from '@/lib/report-badges'
 import { getJointTitle } from '@/lib/report-ui-state'
 import { hasText } from '@/lib/report-value-utils'
 
-type PstoRequestManagerDialogProps = {
+export type PstoRequestManagerDialogProps = {
   requestName: string
   requestOptions: string[]
   requestRows: WeldRow[]

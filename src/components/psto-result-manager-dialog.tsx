@@ -15,7 +15,7 @@ import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges
 import { getJointTitle } from '@/lib/report-ui-state'
 import { hasText } from '@/lib/report-value-utils'
 
-type PstoResultManagerDialogProps = {
+export type PstoResultManagerDialogProps = {
   rows: WeldRow[]
   diagramDrafts: Record<number, string>
   isPending: boolean

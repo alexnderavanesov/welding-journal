@@ -1,17 +1,9 @@
-import type { ComponentProps } from 'react'
-import { LnkOfficialityDialog } from '@/components/lnk-officiality-dialog'
-import { LnkRequestDialog } from '@/components/lnk-request-dialog'
-import { LnkRequestManagerDialog } from '@/components/lnk-request-manager-dialog'
-import { LnkResultDialog } from '@/components/lnk-result-dialog'
-import { LnkResultManagerDialog } from '@/components/lnk-result-manager-dialog'
-import { LnkResultPreviewDialog } from '@/components/lnk-result-preview-dialog'
-
-type LnkRequestDialogProps = ComponentProps<typeof LnkRequestDialog>
-type LnkRequestManagerDialogProps = ComponentProps<typeof LnkRequestManagerDialog>
-type LnkResultManagerDialogProps = ComponentProps<typeof LnkResultManagerDialog>
-type LnkOfficialityDialogProps = ComponentProps<typeof LnkOfficialityDialog>
-type LnkResultDialogProps = ComponentProps<typeof LnkResultDialog>
-type LnkResultPreviewDialogProps = ComponentProps<typeof LnkResultPreviewDialog>
+import { LnkOfficialityDialog, type LnkOfficialityDialogProps } from '@/components/lnk-officiality-dialog'
+import { LnkRequestDialog, type LnkRequestDialogProps } from '@/components/lnk-request-dialog'
+import { LnkRequestManagerDialog, type LnkRequestManagerDialogProps } from '@/components/lnk-request-manager-dialog'
+import { LnkResultDialog, type LnkResultDialogProps } from '@/components/lnk-result-dialog'
+import { LnkResultManagerDialog, type LnkResultManagerDialogProps } from '@/components/lnk-result-manager-dialog'
+import { LnkResultPreviewDialog, type LnkResultPreviewDialogProps } from '@/components/lnk-result-preview-dialog'
 
 export type ReportLnkDialogsProps = {
   requestDialogProps: LnkRequestDialogProps | null

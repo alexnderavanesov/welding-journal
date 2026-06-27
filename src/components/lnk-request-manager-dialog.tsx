@@ -17,7 +17,7 @@ import { getJointTitle } from '@/lib/report-ui-state'
 
 type LnkRequestMethod = (typeof LNK_METHODS)[number]
 
-type LnkRequestManagerDialogProps = {
+export type LnkRequestManagerDialogProps = {
   requestName: string
   requestOptions: string[]
   requestRows: WeldRow[]

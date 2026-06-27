@@ -14,7 +14,7 @@ import type { LnkOfficialityDraftState } from '@/lib/report-draft-state'
 import { getJointTitle } from '@/lib/report-ui-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-type LnkOfficialityDialogProps = {
+export type LnkOfficialityDialogProps = {
   draft: LnkOfficialityDraftState
   filteredRows: WeldRow[]
   selectedRows: WeldRow[]

@@ -19,7 +19,7 @@ import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
 import { getJointTitle } from '@/lib/report-ui-state'
 
-type PstoResultDialogProps = {
+export type PstoResultDialogProps = {
   draft: PstoResultDraftState
   requestSearch: string
   nextDiagramName: string

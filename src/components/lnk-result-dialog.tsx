@@ -41,7 +41,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
-type LnkResultDialogProps = {
+export type LnkResultDialogProps = {
   draft: LnkResultDraftState
   requestSearch: string
   selectedMethods: LnkResultMethod[]

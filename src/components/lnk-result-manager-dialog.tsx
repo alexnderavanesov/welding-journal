@@ -39,7 +39,7 @@ type LnkResultChangeHintState = {
   to: string
 } | null
 
-type LnkResultManagerDialogProps = {
+export type LnkResultManagerDialogProps = {
   rows: WeldRow[]
   methods: LnkResultMethod[]
   entries: LnkResultManagerEntry[]
