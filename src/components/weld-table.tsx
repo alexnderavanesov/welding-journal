@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
 import { WeldTableColumns } from '@/components/weld-table-columns'
+import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { WeldTableValue } from '@/components/weld-table-value'
-import { getWeldTableMinWidth } from '@/lib/weld-table-layout'
+import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import {
   bodyCellClass,
@@ -175,6 +176,13 @@ export function WeldTable({
   const hasRowActions = Boolean(rowActions)
   const hasChainAction = Boolean(onOpenChain || onOpenLinkedReport)
   const hasColumnFilters = Object.values(columnFilters).some((value) => value.trim())
+  const tableColumnSpan = getWeldTableColumnSpan({
+    fieldCount: filteredFields.length,
+    readOnly,
+    selectable,
+    hasRowActions,
+    hasChainAction,
+  })
   const tableMinWidth = getWeldTableMinWidth({
     fields: filteredFields,
     readOnly,
@@ -381,20 +389,7 @@ export function WeldTable({
           </thead>
           <tbody>
             {filteredRows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={
-                    filteredFields.length +
-                    (readOnly ? 0 : 1) +
-                    (selectable ? 1 : 0) +
-                    (hasChainAction ? 1 : 0) +
-                    (hasRowActions ? 1 : 0)
-                  }
-                  className="px-3 py-12 text-center text-muted-foreground"
-                >
-                  Записи не найдены.
-                </td>
-              </tr>
+              <WeldTableEmptyRow colSpan={tableColumnSpan} />
             ) : (
               filteredRows.map((row) => {
                 const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')

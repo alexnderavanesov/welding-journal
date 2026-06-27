@@ -24,5 +24,27 @@ export function getWeldTableMinWidth({
     (selectable ? SELECT_COLUMN_WIDTH : 0) +
     (hasRowActions ? ROW_ACTIONS_COLUMN_WIDTH : 0) +
     (hasChainAction ? CHAIN_ACTION_COLUMN_WIDTH : 0)
+    )
+}
+
+export function getWeldTableColumnSpan({
+  fieldCount,
+  readOnly,
+  selectable,
+  hasRowActions,
+  hasChainAction,
+}: {
+  fieldCount: number
+  readOnly: boolean
+  selectable: boolean
+  hasRowActions: boolean
+  hasChainAction: boolean
+}) {
+  return (
+    fieldCount +
+    (readOnly ? 0 : 1) +
+    (selectable ? 1 : 0) +
+    (hasChainAction ? 1 : 0) +
+    (hasRowActions ? 1 : 0)
   )
 }
