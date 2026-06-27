@@ -93,6 +93,7 @@ import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-pr
 import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
 import { createReportSummaryBarProps } from '@/lib/report-summary-props'
 import { createReportTaskPanelsProps } from '@/lib/report-task-panels-props'
+import { createReportChainDialogProps } from '@/lib/report-chain-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -1041,6 +1042,13 @@ function Home() {
     onToggleDetails: toggleRepeatedJointTaskDetails,
     onDismissTasks: dismissRepeatedJointTasks,
   })
+  const reportChainDialogProps = createReportChainDialogProps({
+    chainRecord,
+    chainRows,
+    onClose: () => setChainRecord(null),
+    onOpenBase: openChainBaseInCurrentReport,
+    onOpenRow: openChainRowInCurrentReport,
+  })
 
   return (
     <ReportWorkspace
@@ -1065,17 +1073,7 @@ function Home() {
           />
 
       <ReportDialogs
-        chainDialogProps={{
-          dialogProps: chainRecord
-            ? {
-                record: chainRecord,
-                rows: chainRows,
-                onClose: () => setChainRecord(null),
-                onOpenBase: openChainBaseInCurrentReport,
-                onOpenRow: openChainRowInCurrentReport,
-              }
-            : null,
-        }}
+        chainDialogProps={reportChainDialogProps}
         weldEditorProps={{
           formKey: editing ? `${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}` : null,
           formProps: editing

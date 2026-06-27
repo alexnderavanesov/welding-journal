@@ -3,7 +3,7 @@ import { JointChainDialog } from '@/components/joint-chain-dialog'
 
 type JointChainDialogProps = ComponentProps<typeof JointChainDialog>
 
-type ReportChainDialogProps = {
+export type ReportChainDialogProps = {
   dialogProps: JointChainDialogProps | null
 }
 
