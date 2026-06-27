@@ -90,6 +90,7 @@ import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { createWeldTableProps } from '@/lib/weld-table-props'
+import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -961,6 +962,26 @@ function Home() {
     },
   })
 
+  const welderStampsRegistryProps = createWelderStampsRegistryProps({
+    activeRecords: activeWelderStamps,
+    archivedRecords: archivedWelderStamps,
+    draft: welderStampDraft,
+    search: welderStampSearch,
+    filters: welderStampFilters,
+    editingId: editingWelderStampId,
+    showArchived: showArchivedWelderStamps,
+    onSearchChange: setWelderStampSearch,
+    onFiltersChange: setWelderStampFilters,
+    onDraftChange: updateWelderStampDraft,
+    onSave: saveWelderStampRecord,
+    onReset: resetWelderStampForm,
+    onEdit: editWelderStampRecord,
+    onArchive: archiveWelderStampRecord,
+    onRestore: restoreWelderStampRecord,
+    onToggleArchived: setShowArchivedWelderStamps,
+    onDelete: deleteWelderStampRecord,
+  })
+
   return (
     <ReportWorkspace
       activeReport={activeReport}
@@ -1032,25 +1053,7 @@ function Home() {
 
           <ReportMainContent
             activeReport={activeReport}
-            welderStampsRegistryProps={{
-              records: activeWelderStamps,
-              archivedRecords: archivedWelderStamps,
-              draft: welderStampDraft,
-              search: welderStampSearch,
-              filters: welderStampFilters,
-              editingId: editingWelderStampId,
-              showArchived: showArchivedWelderStamps,
-              onSearchChange: setWelderStampSearch,
-              onFiltersChange: setWelderStampFilters,
-              onDraftChange: updateWelderStampDraft,
-              onSave: saveWelderStampRecord,
-              onReset: resetWelderStampForm,
-              onEdit: editWelderStampRecord,
-              onArchive: archiveWelderStampRecord,
-              onRestore: restoreWelderStampRecord,
-              onToggleArchived: setShowArchivedWelderStamps,
-              onDelete: deleteWelderStampRecord,
-            }}
+            welderStampsRegistryProps={welderStampsRegistryProps}
             weldTableProps={weldTableProps}
           />
 

@@ -7,6 +7,26 @@ import { formatWelderStampDiameterRange, formatWelderStampValidity, splitWelderS
 import { countWelderStampFilters, createEmptyWelderStampFilters, getWelderStampFormHint, hasWelderStampRangeFilters } from '@/lib/welder-stamp-registry'
 import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
+export type WelderStampsRegistryProps = {
+  records: WelderStampRecord[]
+  archivedRecords: WelderStampRecord[]
+  draft: WelderStampRecord
+  search: string
+  filters: WelderStampFilters
+  editingId: number | null
+  showArchived: boolean
+  onSearchChange: (value: string) => void
+  onFiltersChange: (value: WelderStampFilters) => void
+  onDraftChange: (field: keyof WelderStampRecord, value: string) => void
+  onSave: () => void
+  onReset: () => void
+  onEdit: (record: WelderStampRecord) => void
+  onArchive: (id: number) => void
+  onRestore: (id: number) => void
+  onToggleArchived: (value: boolean) => void
+  onDelete: (id: number) => void
+}
+
 export function WelderStampsRegistry({
   records,
   archivedRecords,
@@ -25,25 +45,7 @@ export function WelderStampsRegistry({
   onRestore,
   onToggleArchived,
   onDelete,
-}: {
-  records: WelderStampRecord[]
-  archivedRecords: WelderStampRecord[]
-  draft: WelderStampRecord
-  search: string
-  filters: WelderStampFilters
-  editingId: number | null
-  showArchived: boolean
-  onSearchChange: (value: string) => void
-  onFiltersChange: (value: WelderStampFilters) => void
-  onDraftChange: (field: keyof WelderStampRecord, value: string) => void
-  onSave: () => void
-  onReset: () => void
-  onEdit: (record: WelderStampRecord) => void
-  onArchive: (id: number) => void
-  onRestore: (id: number) => void
-  onToggleArchived: (value: boolean) => void
-  onDelete: (id: number) => void
-}) {
+}: WelderStampsRegistryProps) {
   const selectedWeldTypes = splitWelderStampWeldTypes(draft.weldType)
   const requiresPermitFields = Boolean(draft.naksStamp.trim())
   const hasRangeFilters = hasWelderStampRangeFilters(filters)
@@ -418,4 +420,3 @@ export function WelderStampsRegistry({
     </section>
   )
 }
-
