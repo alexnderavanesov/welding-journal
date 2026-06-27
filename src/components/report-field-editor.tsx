@@ -3,7 +3,7 @@ import { ReportFieldEditDialog } from '@/components/report-field-edit-dialog'
 
 type ReportFieldEditDialogProps = ComponentProps<typeof ReportFieldEditDialog>
 
-type ReportFieldEditorProps = {
+export type ReportFieldEditorProps = {
   dialogProps: ReportFieldEditDialogProps | null
 }
 

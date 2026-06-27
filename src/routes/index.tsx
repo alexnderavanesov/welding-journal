@@ -95,6 +95,7 @@ import { createReportSummaryBarProps } from '@/lib/report-summary-props'
 import { createReportTaskPanelsProps } from '@/lib/report-task-panels-props'
 import { createReportChainDialogProps } from '@/lib/report-chain-dialog-props'
 import { createReportWeldEditorProps } from '@/lib/report-weld-editor-props'
+import { createReportFieldEditorProps } from '@/lib/report-field-editor-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -1059,6 +1060,14 @@ function Home() {
     onSave: (value) =>
       editing && saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id }),
   })
+  const reportFieldEditorProps = createReportFieldEditorProps({
+    editing: heatTreatmentFieldEditing,
+    requestOptions: lnkRequestOptions,
+    isSaving: heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending,
+    onChange: (value) => setHeatTreatmentFieldEditing((current) => (current ? { ...current, value } : current)),
+    onClose: () => setHeatTreatmentFieldEditing(null),
+    onSave: saveEditedHeatTreatmentField,
+  })
 
   return (
     <ReportWorkspace
@@ -1333,19 +1342,7 @@ function Home() {
               }
             : null,
         }}
-        fieldEditorProps={{
-          dialogProps: heatTreatmentFieldEditing
-            ? {
-                editing: heatTreatmentFieldEditing,
-                requestOptions: lnkRequestOptions,
-                isSaving: heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending,
-                onChange: (value) =>
-                  setHeatTreatmentFieldEditing((current) => (current ? { ...current, value } : current)),
-                onClose: () => setHeatTreatmentFieldEditing(null),
-                onSave: saveEditedHeatTreatmentField,
-              }
-            : null,
-        }}
+        fieldEditorProps={reportFieldEditorProps}
       />
     </ReportWorkspace>
   )
