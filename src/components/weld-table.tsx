@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Edit2, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WeldTableFilterResetHeader, WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
 import { WeldTableColumns } from '@/components/weld-table-columns'
+import { WeldTableEditActionsCell } from '@/components/weld-table-edit-actions-cell'
 import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
 import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
+import { WeldTableRowSelectCell } from '@/components/weld-table-row-select-cell'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { WeldTableValue } from '@/components/weld-table-value'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
@@ -393,21 +395,12 @@ export function WeldTable({
                   title={getWeldTableRowTitle({ isHighlighted, isDuplicate })}
                 >
                   {selectable ? (
-                    <td
-                      className={`border-b border-r border-b-slate-100 border-r-slate-200 px-2 py-2.5 text-center align-top ${
-                        isSelectableRow ? '' : 'bg-slate-200/80 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.14)]'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelectableRow && isSelected}
-                        disabled={!isSelectableRow}
-                        onChange={(event) => setRowSelected(row, event.target.checked)}
-                        aria-label={`Выбрать стык ${String(row.joint ?? row.id)}`}
-                        title={isSelectableRow ? 'Выбрать стык для заявки ПСТО' : 'Заявка ПСТО уже создана'}
-                        className="h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
-                      />
-                    </td>
+                    <WeldTableRowSelectCell
+                      label={String(row.joint ?? row.id)}
+                      checked={isSelectableRow && isSelected}
+                      disabled={!isSelectableRow}
+                      onChange={(selected) => setRowSelected(row, selected)}
+                    />
                   ) : null}
                   {hasChainAction ? (
                     <WeldTableRowNavigation
@@ -459,34 +452,7 @@ export function WeldTable({
                       )
                     })()
                   ))}
-                  {!readOnly ? (
-                    <td className="border-b border-slate-100 px-3 py-2 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onEdit?.(row)
-                          }}
-                          aria-label="Редактировать"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onDelete?.(row.id)
-                          }}
-                          aria-label="Удалить"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  ) : null}
+                  {!readOnly ? <WeldTableEditActionsCell row={row} onEdit={onEdit} onDelete={onDelete} /> : null}
                 </tr>
                 )
               })
