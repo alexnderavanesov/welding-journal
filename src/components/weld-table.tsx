@@ -8,6 +8,11 @@ import { WeldTableSectionHeaderRow } from '@/components/weld-table-section-heade
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { filterWeldRowsByColumns, hasColumnFilters as getHasColumnFilters } from '@/lib/weld-table-filtering'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
+import {
+  getAlwaysVisibleFieldKeys,
+  getAvailableWeldTableSections,
+  getFilteredWeldTableSections,
+} from '@/lib/weld-table-sections'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import {
   canCollapseSection,
@@ -15,26 +20,7 @@ import {
   readCollapsedSections,
   writeCollapsedSections,
 } from '@/lib/weld-table-utils'
-import { VISIBLE_FIELD_SECTIONS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-
-const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
-  'pstoRequired',
-  'pstoRequest',
-  'pstoDate',
-  'pstoResult',
-  'heatTreatmentDiagram',
-  'pstoNote',
-])
-const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
-  'projectTitle',
-  'subtitleCode',
-  'line',
-  'spool',
-  'joint',
-  'wdi',
-  'weldDate',
-  'finalStatus',
-])
+import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 export type WeldTableProps = {
   rows: Array<WeldInput & { id: number }>
@@ -106,65 +92,13 @@ export function WeldTable({
     writeCollapsedSections(storageKey, collapsedState.sections)
   }, [storageKey, collapsedState])
 
-  const alwaysVisibleFieldKeys = useMemo(() => {
-    const fieldKeys = new Set(ALWAYS_VISIBLE_FIELD_KEYS)
-    if (mergePstoSections) {
-      for (const fieldKey of PSTO_SECTION_FIELD_KEYS) {
-        fieldKeys.add(fieldKey)
-      }
-    }
-    return fieldKeys
-  }, [mergePstoSections])
+  const alwaysVisibleFieldKeys = useMemo(() => getAlwaysVisibleFieldKeys(mergePstoSections), [mergePstoSections])
   const availableSections = useMemo(
-    () => {
-      const sections = VISIBLE_FIELD_SECTIONS.map((group) => ({
-        ...group,
-        fields: group.fields.filter((field) => !hiddenFieldKeys.has(field.key)),
-      })).filter((group) => group.fields.length > 0)
-
-      if (!mergePstoSections) return sections
-
-      const pstoFields = sections.flatMap((group) => group.fields).filter((field) => PSTO_SECTION_FIELD_KEYS.has(field.key))
-      const finalStatusFields = sections.flatMap((group) => group.fields).filter((field) => field.key === 'finalStatus')
-      const sectionsWithoutPsto = sections
-        .map((group) => ({
-          ...group,
-          fields: group.fields.filter((field) => !PSTO_SECTION_FIELD_KEYS.has(field.key) && field.key !== 'finalStatus'),
-        }))
-        .filter((group) => group.fields.length > 0)
-      const resultSection = finalStatusFields.length > 0 ? [{ section: 'Результат', fields: finalStatusFields }] : []
-      const weldingIndex = sectionsWithoutPsto.findIndex((group) => group.section === 'Сварка')
-      const sectionsWithResult =
-        weldingIndex === -1
-          ? [...sectionsWithoutPsto, ...resultSection]
-          : [
-              ...sectionsWithoutPsto.slice(0, weldingIndex + 1),
-              ...resultSection,
-              ...sectionsWithoutPsto.slice(weldingIndex + 1),
-            ]
-      const miscIndex = sectionsWithResult.findIndex((group) => group.section === 'Прочее')
-      const pstoSection = pstoFields.length > 0 ? [{ section: 'ПСТО', fields: pstoFields }] : []
-      if (miscIndex === -1) return [...sectionsWithResult, ...pstoSection]
-
-      return [
-        ...sectionsWithResult.slice(0, miscIndex),
-        ...pstoSection,
-        ...sectionsWithResult.slice(miscIndex),
-      ]
-    },
+    () => getAvailableWeldTableSections({ hiddenFieldKeys, mergePstoSections }),
     [hiddenFieldKeys, mergePstoSections],
   )
   const filteredSections = useMemo(
-    () =>
-      availableSections
-        .map((group) => ({
-          ...group,
-          collapsed: collapsedSections.has(group.section) && canCollapseSection(group.fields, alwaysVisibleFieldKeys),
-          fields: collapsedSections.has(group.section)
-            ? group.fields.filter((field) => alwaysVisibleFieldKeys.has(field.key))
-            : group.fields,
-        }))
-        .filter((group) => group.fields.length > 0),
+    () => getFilteredWeldTableSections({ availableSections, collapsedSections, alwaysVisibleFieldKeys }),
     [alwaysVisibleFieldKeys, availableSections, collapsedSections],
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
