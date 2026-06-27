@@ -30,9 +30,7 @@ import {
 import {
   HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
   LNK_CONCLUSION_FIELD_KEYS as lnkConclusionFieldKeys,
-  LNK_CUSTOM_RESULT_VALUE,
   LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
-  LNK_EMPTY_RESULT_VALUE,
   LNK_REPORT_FIELD_KEYS as lnkReportFieldKeys,
   PSTO_EMPTY_RESULT_VALUE,
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
@@ -89,6 +87,7 @@ import { useJointChainActions } from '@/lib/use-joint-chain-actions'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
 import { useLnkResultActions } from '@/lib/use-lnk-result-actions'
+import { useLnkResultSaveActions } from '@/lib/use-lnk-result-save-actions'
 import { useManagedLnkRequestActions } from '@/lib/use-managed-lnk-request-actions'
 import { useManagedLnkResultActions } from '@/lib/use-managed-lnk-result-actions'
 import { usePstoModalState } from '@/lib/use-psto-modal-state'
@@ -165,16 +164,13 @@ import {
   isLnkResultField,
 } from '@/lib/lnk-field-updates'
 import {
-  buildLnkResultDraftById,
   getEffectiveLnkResultDraftValueForRow,
-  isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import {
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
 import {
   collectRequestNames,
-  getRequestNameFromNaming,
   sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
 import type { ActiveReport } from '@/lib/home-state'
@@ -573,6 +569,21 @@ function Home() {
     setShouldPinPreviewedRows: setShouldPinPreviewedLnkResultRows,
   })
   const {
+    handleAddLnkResult,
+    handleClearLnkGeneratedData,
+    setLnkResultForRow,
+  } = useLnkResultSaveActions({
+    lnkRows,
+    draft: lnkResultDraft,
+    selectedRows: selectedLnkResultRows,
+    saveBlockReason: lnkResultSaveBlockReason,
+    nextConclusionName: nextLnkConclusionName,
+    resultMutation: lnkResultMutation,
+    clearGeneratedDataMutation: clearLnkGeneratedDataMutation,
+    setDraft: setLnkResultDraft,
+    setMessage,
+  })
+  const {
     deleteMutation,
     importMutation,
     obsoleteRepeatedJointMutation,
@@ -936,71 +947,6 @@ function Home() {
     onCloseLnkResultModal: closeAddLnkResultModal,
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
   })
-
-  function setLnkResultForRow(rowId: number, result: string) {
-    setLnkResultDraft((current) => {
-      if (!current.rowIds.has(rowId)) return current
-      const row = lnkRows.find((candidate) => candidate.id === rowId)
-      if (row && result === 'ремонт' && isLnkRepairForbidden(row)) return current
-      const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
-      const rowResults: Record<number, string> = {}
-      for (const id of current.rowIds) {
-        rowResults[id] = current.rowResults[id] || baseline
-      }
-      rowResults[rowId] = result
-      return { ...current, result: LNK_CUSTOM_RESULT_VALUE, rowResults }
-    })
-  }
-
-  function handleAddLnkResult() {
-    if (lnkResultSaveBlockReason) {
-      setMessage(lnkResultSaveBlockReason)
-      return
-    }
-    if (!lnkResultDraft.methodKey) {
-      setMessage('Выберите метод контроля')
-      return
-    }
-    if (selectedLnkResultRows.length === 0) {
-      setMessage('Выберите один или несколько стыков')
-      return
-    }
-    const resultById = buildLnkResultDraftById(selectedLnkResultRows, lnkResultDraft)
-    const resultValues = Object.values(resultById)
-    if (resultValues.some((result) => !isValidLnkResultDraftValue(result))) {
-      setMessage('Укажите результат для каждого выбранного стыка')
-      return
-    }
-    const hasNonEmptyResult = resultValues.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
-    if (hasNonEmptyResult && !lnkResultDraft.controlDate) {
-      setMessage('Укажите дату контроля')
-      return
-    }
-    const conclusionName =
-      !hasNonEmptyResult
-        ? ''
-        : getRequestNameFromNaming(lnkResultDraft.conclusionNaming, nextLnkConclusionName)
-    if (hasNonEmptyResult && !conclusionName) {
-      setMessage('Укажите наименование заключения')
-      return
-    }
-
-    lnkResultMutation.mutate({
-      records: selectedLnkResultRows,
-      methodKey: lnkResultDraft.methodKey,
-      controlDate: lnkResultDraft.controlDate,
-      resultById,
-      conclusionName,
-    })
-  }
-
-  function handleClearLnkGeneratedData() {
-    const confirmed = window.confirm(
-      'Очистить результаты, даты и заключения ЛНК? Заявки ЛНК, сами стыки и отметки наличия контроля останутся.',
-    )
-    if (!confirmed) return
-    clearLnkGeneratedDataMutation.mutate(lnkRows)
-  }
 
   function handleEditRecord(record: WeldInput & { id: number }, focusField?: WeldFieldKey) {
     if (activeReport === 'heatTreatment') {
