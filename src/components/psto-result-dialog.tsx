@@ -1,9 +1,9 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { Check } from 'lucide-react'
 
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
 import { PstoResultSettings } from '@/components/psto-result-settings'
+import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -118,22 +118,12 @@ export function PstoResultDialog({
           </section>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-slate-200/80 px-5 py-4">
-          <div className="min-h-5 text-sm text-slate-500">
-            {saveBlockReason ? <span className="text-sm text-slate-500">Чтобы сохранить: {saveBlockReason}</span> : null}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Отмена
-            </Button>
-            <span title={saveBlockReason || 'Можно сохранить результат'}>
-              <Button onClick={onSave} disabled={Boolean(saveBlockReason)} className={saveBlockReason ? 'pointer-events-none' : ''}>
-                <Check className="mr-2 h-4 w-4" />
-                Сохранить результат
-              </Button>
-            </span>
-          </div>
-        </div>
+        <ResultDialogFooter
+          saveBlockReason={saveBlockReason}
+          isSaveDisabled={Boolean(saveBlockReason)}
+          onClose={onClose}
+          onSave={onSave}
+        />
       </div>
     </div>
   )
