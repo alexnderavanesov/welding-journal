@@ -3,12 +3,9 @@ import { Check, Pencil, X } from 'lucide-react'
 
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
-import { RequestNamingControls } from '@/components/request-naming-controls'
+import { PstoResultSettings } from '@/components/psto-result-settings'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 
 export type PstoResultDialogProps = {
@@ -79,54 +76,7 @@ export function PstoResultDialog({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-            <div className="rounded-md border border-slate-200 bg-white p-3">
-              <h3 className="mb-3 text-sm font-semibold text-slate-800">1. Результат ПСТО</h3>
-              <div className="grid grid-cols-1 gap-3">
-                <label className="block space-y-1.5 text-sm">
-                  <span className="text-[13px] font-medium leading-none text-slate-700">Дата ПСТО</span>
-                  <Input
-                    type="date"
-                    value={draft.pstoDate}
-                    disabled={draft.result === PSTO_EMPTY_RESULT_VALUE}
-                    onChange={(event) => onDraftChange((current) => ({ ...current, pstoDate: event.target.value }))}
-                  />
-                </label>
-
-                <label className="block space-y-1.5 text-sm">
-                  <span className="text-[13px] font-medium leading-none text-slate-700">Результат</span>
-                  <Select
-                    value={draft.result}
-                    onChange={(event) => onDraftChange((current) => ({ ...current, result: event.target.value }))}
-                  >
-                    <option value="">Выберите результат</option>
-                    <option value="проведено">проведено</option>
-                    <option value={PSTO_EMPTY_RESULT_VALUE}>аннулировать</option>
-                  </Select>
-                </label>
-              </div>
-            </div>
-
-            <div
-              className={`rounded-md border border-slate-200 p-3 ${
-                draft.result === PSTO_EMPTY_RESULT_VALUE ? 'bg-slate-50 opacity-60' : 'bg-white'
-              }`}
-            >
-              <RequestNamingControls
-                naming={draft.diagramNaming}
-                systemName={nextDiagramName}
-                label="Диаграмма термообработки"
-                placeholder="Введите наименование диаграммы"
-                disabled={draft.result === PSTO_EMPTY_RESULT_VALUE}
-                onChange={(diagramNaming) => onDraftChange((current) => ({ ...current, diagramNaming }))}
-              />
-            </div>
-
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
-              Результат «проведено» заполнит дату ПСТО и диаграмму термообработки. Если выбрать «аннулировать»,
-              результат, дата и диаграмма очистятся, заявка ПСТО останется.
-            </div>
-          </section>
+          <PstoResultSettings draft={draft} nextDiagramName={nextDiagramName} onDraftChange={onDraftChange} />
 
           <section className="flex min-h-0 flex-col space-y-3">
             <div className="flex items-center justify-between gap-3">
