@@ -1,11 +1,11 @@
 import { HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys } from '@/lib/report-config'
 import {
-  getHeatTreatmentImportKey,
   isSameImportValue,
   normalizeEditableImportValue,
   normalizeExistingRequestImportValue,
   normalizeHeatTreatmentImportValue,
 } from '@/lib/report-import'
+import { buildUniqueRowsByHeatTreatmentImportKey } from '@/lib/report-import-row-match'
 import { hasText } from '@/lib/report-value-utils'
 import { withAutoHeatTreatmentDiagrams } from '@/lib/psto-status'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -19,18 +19,7 @@ export function buildHeatTreatmentImportUpdates(
   rows: RowWithId[],
   allowedPstoRequestNames: ReadonlySet<string>,
 ) {
-  const rowsByKey = new Map<string, RowWithId>()
-  const duplicateKeys = new Set<string>()
-  for (const row of heatTreatmentRows) {
-    const key = getHeatTreatmentImportKey(row)
-    if (!key) continue
-    if (rowsByKey.has(key)) {
-      duplicateKeys.add(key)
-      rowsByKey.delete(key)
-      continue
-    }
-    if (!duplicateKeys.has(key)) rowsByKey.set(key, row)
-  }
+  const rowsByKey = buildUniqueRowsByHeatTreatmentImportKey(heatTreatmentRows)
 
   const proposedRowsById = new Map<number, RowWithId>()
   let matched = 0
@@ -114,18 +103,7 @@ export function buildEditableImportUpdates({
   ) => { skip: boolean; value: unknown }
   transformRow?: (row: RowWithId) => RowWithId
 }) {
-  const rowsByKey = new Map<string, RowWithId>()
-  const duplicateKeys = new Set<string>()
-  for (const row of targetRows) {
-    const key = getHeatTreatmentImportKey(row)
-    if (!key) continue
-    if (rowsByKey.has(key)) {
-      duplicateKeys.add(key)
-      rowsByKey.delete(key)
-      continue
-    }
-    if (!duplicateKeys.has(key)) rowsByKey.set(key, row)
-  }
+  const rowsByKey = buildUniqueRowsByHeatTreatmentImportKey(targetRows)
 
   const proposedRowsById = new Map<number, RowWithId>()
   let matched = 0
