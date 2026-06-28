@@ -1,3 +1,4 @@
+import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
@@ -78,106 +79,109 @@ export function LnkResultDialog({
   onSave,
 }: LnkResultDialogProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
-      <div className="flex h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-        <ResultDialogHeader
-          title="Добавление результата ЛНК"
-          requestName={draft.requestName}
-          selectedCount={draft.rowIds.size}
-          managerDisabled={draft.rowIds.size === 0}
-          onOpenManager={onOpenManager}
-          onClose={onClose}
+    <LargeDialogShell
+      maxWidthClassName="max-w-[1480px]"
+      maxHeightClassName="h-[94vh]"
+      overlayClassName="z-50 bg-slate-950/20"
+      panelShadowClassName="shadow-slate-950/10"
+    >
+      <ResultDialogHeader
+        title="Добавление результата ЛНК"
+        requestName={draft.requestName}
+        selectedCount={draft.rowIds.size}
+        managerDisabled={draft.rowIds.size === 0}
+        onOpenManager={onOpenManager}
+        onClose={onClose}
+      />
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <LnkResultSettings
+          draft={draft}
+          selectedMethods={selectedMethods}
+          selectedRows={selectedRows}
+          nextConclusionName={nextConclusionName}
+          onMethodChange={onMethodChange}
+          onControlDateChange={onControlDateChange}
+          onDefaultResultChange={onDefaultResultChange}
+          onConclusionNamingChange={onConclusionNamingChange}
         />
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <LnkResultSettings
-            draft={draft}
-            selectedMethods={selectedMethods}
-            selectedRows={selectedRows}
-            nextConclusionName={nextConclusionName}
-            onMethodChange={onMethodChange}
-            onControlDateChange={onControlDateChange}
-            onDefaultResultChange={onDefaultResultChange}
-            onConclusionNamingChange={onConclusionNamingChange}
+        <section className="flex min-h-0 flex-col space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Стыки для результата</h3>
+              <p className="text-xs leading-5 text-slate-500">
+                Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {draft.rowIds.size > 0 ? (
+                <Button variant="outline" size="sm" onClick={onClearSelection}>
+                  Снять выбор
+                </Button>
+              ) : null}
+              <Button variant="outline" size="sm" onClick={onToggleAllRows} disabled={!canBulkToggleRows}>
+                {!contextReady
+                  ? 'Выберите метод'
+                  : !canBulkToggleRows
+                    ? 'Сузьте поиск'
+                    : areAllFilteredRowsSelected
+                      ? 'Снять все'
+                      : 'Выбрать все доступные'}
+              </Button>
+            </div>
+          </div>
+
+          <LnkResultFilters
+            search={draft.search}
+            requestSearch={requestSearch}
+            requestName={draft.requestName}
+            filteredRequestOptions={filteredRequestOptions}
+            availableRequestOptionsCount={availableRequestOptions.length}
+            filteredRowsCount={visibleRows.length}
+            selectedRowsCount={draft.rowIds.size}
+            onSearchChange={onSearchChange}
+            onRequestSearchChange={onRequestSearchChange}
+            onRequestChange={onRequestChange}
+            onClearRequestSearch={onClearRequestSearch}
+            onClearSearch={onClearSearch}
           />
 
-          <section className="flex min-h-0 flex-col space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800">Стыки для результата</h3>
-                <p className="text-xs leading-5 text-slate-500">
-                  Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.
-                </p>
+          <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
+            {visibleRows.length === 0 ? (
+              <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+                {draft.search
+                  ? 'По фильтру ничего не найдено.'
+                  : 'По выбранному методу нет стыков для добавления результата.'}
               </div>
-              <div className="flex items-center gap-2">
-                {draft.rowIds.size > 0 ? (
-                  <Button variant="outline" size="sm" onClick={onClearSelection}>
-                    Снять выбор
-                  </Button>
-                ) : null}
-                <Button variant="outline" size="sm" onClick={onToggleAllRows} disabled={!canBulkToggleRows}>
-                  {!contextReady
-                    ? 'Выберите метод'
-                    : !canBulkToggleRows
-                      ? 'Сузьте поиск'
-                      : areAllFilteredRowsSelected
-                        ? 'Снять все'
-                        : 'Выбрать все доступные'}
-                </Button>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {visibleRows.map((row) => (
+                  <LnkResultRow
+                    key={row.id}
+                    row={row}
+                    draft={draft}
+                    onToggleRow={onToggleRow}
+                    onSetRowResult={onSetRowResult}
+                  />
+                ))}
               </div>
-            </div>
-
-            <LnkResultFilters
-              search={draft.search}
-              requestSearch={requestSearch}
-              requestName={draft.requestName}
-              filteredRequestOptions={filteredRequestOptions}
-              availableRequestOptionsCount={availableRequestOptions.length}
-              filteredRowsCount={visibleRows.length}
-              selectedRowsCount={draft.rowIds.size}
-              onSearchChange={onSearchChange}
-              onRequestSearchChange={onRequestSearchChange}
-              onRequestChange={onRequestChange}
-              onClearRequestSearch={onClearRequestSearch}
-              onClearSearch={onClearSearch}
-            />
-
-            <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
-              {visibleRows.length === 0 ? (
-                <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
-                  {draft.search
-                    ? 'По фильтру ничего не найдено.'
-                    : 'По выбранному методу нет стыков для добавления результата.'}
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {visibleRows.map((row) => (
-                    <LnkResultRow
-                      key={row.id}
-                      row={row}
-                      draft={draft}
-                      onToggleRow={onToggleRow}
-                      onSetRowResult={onSetRowResult}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-
-        <ResultDialogFooter
-          saveBlockReason={saveBlockReason}
-          isSaveDisabled={isSaveDisabled}
-          onClose={onClose}
-          onSave={onSave}
-          preview={{
-            label: `Предпросмотр (${selectedRows.length})`,
-            disabled: selectedRows.length === 0,
-            onClick: onOpenPreview,
-          }}
-        />
+            )}
+          </div>
+        </section>
       </div>
-    </div>
+
+      <ResultDialogFooter
+        saveBlockReason={saveBlockReason}
+        isSaveDisabled={isSaveDisabled}
+        onClose={onClose}
+        onSave={onSave}
+        preview={{
+          label: `Предпросмотр (${selectedRows.length})`,
+          disabled: selectedRows.length === 0,
+          onClick: onOpenPreview,
+        }}
+      />
+    </LargeDialogShell>
   )
 }
