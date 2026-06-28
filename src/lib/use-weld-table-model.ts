@@ -107,6 +107,7 @@ export function useWeldTableModel({
   return {
     alwaysVisibleFieldKeys,
     availableSections,
+    collapsedSections,
     duplicateKeys,
     filteredFields,
     filteredRows,

@@ -1,5 +1,6 @@
 import { HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys } from '@/lib/report-config'
 import {
+  getHeatTreatmentImportKey,
   isSameImportValue,
   normalizeEditableImportValue,
   normalizeExistingRequestImportValue,
