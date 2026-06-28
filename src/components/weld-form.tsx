@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X } from 'lucide-react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
-import { Button } from '@/components/ui/button'
 import { WeldFormFooter } from '@/components/weld-form-footer'
 import { WeldFormField } from '@/components/weld-form-field'
+import { WeldFormHeader } from '@/components/weld-form-header'
 import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
 import {
   VISIBLE_FIELD_SECTIONS,
@@ -13,9 +12,7 @@ import {
 } from '@/lib/weld-fields'
 import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-import-export'
 import {
-  OfficialityBadge,
   formHiddenFieldKeys,
-  getJointTitle,
   getWeldFormSaveBlockReason,
   getWeldStampSaveBlockReason,
   withCalculatedFinalStatus,
@@ -139,18 +136,7 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
       panelShadowClassName="shadow-slate-950/10"
       panelClassName="bg-slate-50"
     >
-      <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-4">
-        <div>
-          <h2 className="text-lg font-semibold">{value.id ? 'Редактирование стыка' : 'Новый стык'}</h2>
-          <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-            <span>{getJointTitle(draft)}</span>
-            <OfficialityBadge value={draft} />
-          </p>
-        </div>
-        <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Закрыть">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+      <WeldFormHeader draft={draft} isEditing={Boolean(value.id)} onCancel={onCancel} />
 
       <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="space-y-8">
