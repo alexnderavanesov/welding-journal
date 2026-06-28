@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { DialogHeader } from '@/components/dialog-header'
 import { LnkResultPreviewRow } from '@/components/lnk-result-preview-row'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -17,17 +17,12 @@ export function LnkResultPreviewDialog({ rows, draft, onClose }: LnkResultPrevie
   return (
     <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/25 px-4 backdrop-blur-[1px]">
       <div className="flex max-h-[86vh] w-full max-w-4xl flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Предпросмотр выбранных стыков</h2>
-            <p className="text-sm text-muted-foreground">
-              Метод: {method?.code || '-'} · Выбрано: {rows.length}
-            </p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть предпросмотр">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <DialogHeader
+          title="Предпросмотр выбранных стыков"
+          subtitle={`Метод: ${method?.code || '-'} · Выбрано: ${rows.length}`}
+          onClose={onClose}
+          closeLabel="Закрыть предпросмотр"
+        />
         <div className="min-h-0 flex-1 overflow-auto p-5">
           {rows.length === 0 ? (
             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">

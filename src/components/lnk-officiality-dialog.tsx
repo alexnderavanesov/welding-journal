@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { Check, X } from 'lucide-react'
+import { Check } from 'lucide-react'
 
+import { DialogHeader } from '@/components/dialog-header'
 import { LnkOfficialityRow } from '@/components/lnk-officiality-row'
 import { Button } from '@/components/ui/button'
 import { hasRejectedLnkResult } from '@/lib/lnk-status'
@@ -50,15 +51,7 @@ export function LnkOfficialityDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
       <div className="flex h-[86vh] w-full max-w-[1180px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Официальность стыков</h2>
-            <p className="text-sm text-muted-foreground">Выбрано: {draft.rowIds.size}</p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <DialogHeader title="Официальность стыков" subtitle={`Выбрано: ${draft.rowIds.size}`} onClose={onClose} />
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="space-y-3">

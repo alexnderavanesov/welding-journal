@@ -1,5 +1,6 @@
-import { Pencil, X } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 
+import { DialogHeader } from '@/components/dialog-header'
 import { Button } from '@/components/ui/button'
 
 type ResultDialogHeaderProps = {
@@ -20,14 +21,11 @@ export function ResultDialogHeader({
   onClose,
 }: ResultDialogHeaderProps) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-      <div>
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="text-sm text-muted-foreground">
-          Заявка: {requestName || '-'} · Выбрано: {selectedCount}
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
+    <DialogHeader
+      title={title}
+      subtitle={`Заявка: ${requestName || '-'} · Выбрано: ${selectedCount}`}
+      onClose={onClose}
+      actions={
         <Button
           variant="outline"
           onClick={onOpenManager}
@@ -37,10 +35,7 @@ export function ResultDialogHeader({
           <Pencil className="mr-2 h-4 w-4" />
           Редактировать результаты
         </Button>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
+      }
+    />
   )
 }
