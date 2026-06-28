@@ -1,4 +1,4 @@
-import { calculateFinalStatus, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { calculateFinalStatus, type WeldInput } from '@/lib/weld-fields'
 import {
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
   LNK_METHODS,
@@ -8,12 +8,11 @@ import {
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
 import { getJointStatusLabel } from '@/lib/lnk-status'
-import { compareReportRows, normalizeSearchText } from '@/lib/report-row-utils'
+import { normalizeSearchText } from '@/lib/report-row-utils'
 import { hasText, hasWeldDate } from '@/lib/report-value-utils'
 import { formatDisplayDate } from '@/lib/date-format'
 import { getWeldDateOrderValue } from '@/lib/report-date-rules'
 import {
-  compareJointChainSuffix,
   findLastIndex,
   formatRepeatedJointName,
   getCoilJointNames,
@@ -32,7 +31,9 @@ import {
   createJointChainCheckTask,
   isIncompleteWeldStampGroupReason,
 } from '@/lib/repeated-joint-check-tasks'
-import type { RepeatedJointCheckTask, RepeatedJointDuplicateCheckTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
+import { buildDuplicateJointCheckTasks } from '@/lib/repeated-joint-duplicate-tasks'
+import { compareJointChainRows, getRepeatedJointBranchKey, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
+import type { RepeatedJointCheckTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
@@ -382,36 +383,6 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
   })
 }
 
-function buildDuplicateJointCheckTasks(rows: WeldRow[]): RepeatedJointDuplicateCheckTask[] {
-  const groups = new Map<string, WeldRow[]>()
-  for (const row of rows) {
-    const key = getDuplicateJointKey(row)
-    if (!key) continue
-    const group = groups.get(key) ?? []
-    group.push(row)
-    groups.set(key, group)
-  }
-
-  return [...groups.entries()].flatMap(([key, group]) => {
-    if (group.length < 2) return []
-    const sortedGroup = [...group].sort(compareJointChainRows)
-    const row = sortedGroup[0]
-    const sourceJoint = String(row.joint ?? '').trim()
-    if (!sourceJoint) return []
-    const baseJoint = parseJointChainName(sourceJoint).base || sourceJoint
-    return [
-      {
-        kind: 'duplicate-check' as const,
-        key: `duplicate-check:${key}`,
-        row,
-        sourceJoint,
-        baseJoint,
-        count: group.length,
-      },
-    ]
-  })
-}
-
 function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow) {
   const targetJoint = String(row.joint ?? '').trim()
   const parsed = parseRepeatedJointName(targetJoint)
@@ -574,35 +545,6 @@ function findMatchingJointRows(rows: WeldRow[], sourceRow: WeldInput, joint: str
   })
 }
 
-function getRepeatedJointIdentity(row: WeldInput, jointOverride?: string) {
-  const joint = String(jointOverride ?? row.joint ?? '').trim()
-  if (!joint) return null
-  return {
-    project: normalizeJointChainPart(row.projectTitle),
-    subtitle: normalizeJointChainPart(row.subtitleCode),
-    line: normalizeJointChainPart(row.line),
-    joint: normalizeJointChainPart(joint),
-  }
-}
-
-function getDuplicateJointKey(row: WeldInput) {
-  if (isUnofficialJoint(row)) return null
-  const values = ['projectTitle', 'subtitleCode', 'line', 'joint'].map((fieldKey) =>
-    normalizeJointChainPart(row[fieldKey as WeldFieldKey]),
-  )
-  if (values.every((value) => value === '')) return null
-  return values.join('|')
-}
-
-function getRepeatedJointBranchKey(row: WeldInput) {
-  const joint = String(row.joint ?? '').trim()
-  if (!joint) return null
-  const branchJoint = parseRepeatedJointName(joint).base
-  const identity = getRepeatedJointIdentity(row, branchJoint)
-  if (!identity) return null
-  return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
-}
-
 export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string): WeldInput {
   const draft = { ...sourceRow } as WeldInput & { id?: number }
   delete draft.id
@@ -639,25 +581,4 @@ export function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
       )
     })
     .sort(compareJointChainRows)
-}
-
-function compareJointChainRows(left: WeldRow, right: WeldRow) {
-  const leftParsed = parseJointChainName(String(left.joint ?? ''))
-  const rightParsed = parseJointChainName(String(right.joint ?? ''))
-  const leftBase = normalizeJointChainPart(leftParsed.base)
-  const rightBase = normalizeJointChainPart(rightParsed.base)
-  if (leftBase !== rightBase) return leftBase.localeCompare(rightBase, 'ru', { numeric: true })
-
-  const maxLength = Math.max(leftParsed.segments.length, rightParsed.segments.length)
-  for (let index = 0; index < maxLength; index += 1) {
-    const leftSegment = leftParsed.segments[index]
-    const rightSegment = rightParsed.segments[index]
-    if (!leftSegment && rightSegment) return -1
-    if (leftSegment && !rightSegment) return 1
-    if (!leftSegment || !rightSegment) continue
-    const suffixDiff = compareJointChainSuffix(leftSegment.suffix, rightSegment.suffix)
-    if (suffixDiff !== 0) return suffixDiff
-    if (leftSegment.index !== rightSegment.index) return leftSegment.index - rightSegment.index
-  }
-  return compareReportRows(left, right)
 }
