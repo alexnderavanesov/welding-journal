@@ -1,8 +1,8 @@
 import { collectRequestNames, sortPstoRequestNamesNewestFirst } from '@/lib/report-naming'
 import { hasText } from '@/lib/report-value-utils'
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldRow } from '@/lib/dispatcher-types'
 
-type RowWithId = WeldInput & { id: number }
+type RowWithId = WeldRow
 
 export function getPstoResultRequestName(currentRequestName: string, selectedRows: RowWithId[]) {
   const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))

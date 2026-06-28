@@ -5,13 +5,14 @@ import {
   formatShortDate,
   parseLongDateValue,
 } from '@/lib/date-format'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/lib/report-config'
 import { compactSearchText, normalizeSearchText } from '@/lib/report-row-utils'
 import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
-export function formatPstoRequestName(rows: Array<WeldInput & { id: number }>) {
+export function formatPstoRequestName(rows: WeldRow[]) {
   const date = formatShortDate(new Date())
   const prefix = `ПСТО-${date}-`
   const requestNames = [
@@ -29,7 +30,7 @@ export function formatPstoRequestName(rows: Array<WeldInput & { id: number }>) {
   return `${prefix}${String(nextNumber).padStart(3, '0')}`
 }
 
-export function formatLnkRequestName(rows: Array<WeldInput & { id: number }>) {
+export function formatLnkRequestName(rows: WeldRow[]) {
   const date = formatLongDate(new Date())
   const prefix = `Заявка-${date}-`
   const maxNumber = rows

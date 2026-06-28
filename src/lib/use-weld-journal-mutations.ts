@@ -52,7 +52,7 @@ export function useWeldJournalMutations({
       validateManualJointNameForSave(preparedValue, rows)
       validateOfficialStampCompatibilityForSave(preparedValue, welderStamps)
       return preparedValue.id
-        ? updateWeldRowOrThrow(preparedValue as WeldInput & { id: number })
+        ? updateWeldRowOrThrow(preparedValue as WeldRow)
         : createWeldRowOrThrow(preparedValue)
     },
     onSuccess: async (saved, variables) => {

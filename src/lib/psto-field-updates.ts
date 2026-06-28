@@ -1,6 +1,6 @@
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldRow } from '@/lib/dispatcher-types'
 
-type PstoRow = WeldInput & { id: number }
+type PstoRow = WeldRow
 
 export type PstoRequestManagerAction = 'rename' | 'delete'
 export type PstoResultCorrectionAction = 'renameDiagram' | 'deleteResult'

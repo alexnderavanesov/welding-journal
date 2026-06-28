@@ -6,14 +6,15 @@ import {
   getAvailableWeldTableSections,
   getFilteredWeldTableSections,
 } from '@/lib/weld-table-sections'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import { useWeldTableCollapsedSections } from '@/lib/use-weld-table-collapsed-sections'
 import { useWeldTableEditability } from '@/lib/use-weld-table-editability'
 import { useWeldTableSelection } from '@/lib/use-weld-table-selection'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
-type RowWithId = WeldInput & { id: number }
+type RowWithId = WeldRow
 
 type UseWeldTableModelOptions = {
   rows: RowWithId[]

@@ -1,9 +1,10 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ManagedLnkResultChangeHintState } from '@/lib/use-lnk-result-modal-state'
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
-type RowWithId = WeldInput & { id: number }
+type RowWithId = WeldRow
 
 export type ManagedLnkPendingResultRow = {
   row: RowWithId

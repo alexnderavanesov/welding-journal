@@ -1,3 +1,4 @@
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
 export type EditingState = {
@@ -6,7 +7,7 @@ export type EditingState = {
 }
 
 export type HeatTreatmentFieldEditingState = {
-  record: WeldInput & { id: number }
+  record: WeldRow
   fieldKey: WeldFieldKey
   label: string
   kind: 'text' | 'date'

@@ -1,7 +1,7 @@
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ActiveReport } from '@/lib/home-state'
-import type { WeldInput } from '@/lib/weld-fields'
 
-export type ReportRow = WeldInput & { id: number }
+export type ReportRow = WeldRow
 
 export type ReportRowActions = {
   onCreateRequest: (row: ReportRow) => void

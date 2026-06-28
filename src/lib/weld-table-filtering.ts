@@ -1,6 +1,4 @@
-import type { WeldInput } from '@/lib/weld-fields'
-
-type WeldRow = WeldInput & { id: number }
+import type { WeldRow } from '@/lib/dispatcher-types'
 
 export function hasColumnFilters(columnFilters: Record<string, string>) {
   return Object.values(columnFilters).some((value) => value.trim())

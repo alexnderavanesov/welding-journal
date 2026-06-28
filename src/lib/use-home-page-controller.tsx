@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   useAutoCollapseNavOnHorizontalScroll,
   useEscapeToClearReportFilters,
@@ -840,7 +840,7 @@ export function useHomePageController() {
 
   const weldTableProps = createWeldTableProps({
     activeReport,
-    rows: visibleRows as Array<WeldInput & { id: number }>,
+    rows: visibleRows as WeldRow[],
     columnFilters: activeColumnFilters,
     onColumnFiltersChange: activeFiltersSetter,
     onEdit: handleEditRecord,

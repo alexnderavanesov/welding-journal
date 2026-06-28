@@ -9,7 +9,8 @@ import {
   canSelectLnkResultRow,
   getLnkRowRequestNames,
 } from '@/lib/report-modal-rows'
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export function useLnkResultActions({
   filteredRows,
@@ -32,7 +33,7 @@ export function useLnkResultActions({
     setIsModalOpen(true)
   }
 
-  function openAddLnkResultModalForRow(row: WeldInput & { id: number }) {
+  function openAddLnkResultModalForRow(row: WeldRow) {
     const requestNames = getLnkRowRequestNames(row)
     if (requestNames.length === 0) {
       setMessage('Сначала создайте заявку ЛНК для этого стыка')

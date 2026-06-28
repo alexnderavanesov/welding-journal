@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import { isCompactWeldColumn } from '@/lib/weld-column-widths'
 import { RESULT_FIELD_KEYS, VISIBLE_SECTION_END_FIELD_KEYS, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
@@ -98,7 +99,7 @@ function capitalizeFirstLetter(value: string) {
   return `${value.slice(0, firstLetterIndex)}${value[firstLetterIndex].toLocaleUpperCase('ru-RU')}${value.slice(firstLetterIndex + 1)}`
 }
 
-export function getDuplicateKeys(rows: Array<WeldInput & { id: number }>) {
+export function getDuplicateKeys(rows: WeldRow[]) {
   const counts = new Map<string, number>()
 
   for (const row of rows) {

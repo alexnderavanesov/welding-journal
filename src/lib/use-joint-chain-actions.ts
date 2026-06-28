@@ -2,7 +2,6 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { WeldFilters } from '@/server/welds'
 import type { ActiveReport } from '@/lib/home-state'
 import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
-import type { WeldInput } from '@/lib/weld-fields'
 import {
   buildExactJointFilters,
   buildJointChainFilters,
@@ -61,7 +60,7 @@ export function useJointChainActions({
     setMessage(`Открыт стык ${String(row.joint ?? '-')} в текущем отчете`)
   }
 
-  function openLinkedReportRow(row: WeldInput & { id: number }) {
+  function openLinkedReportRow(row: WeldRow) {
     setChainRecord(null)
     const filters = buildExactJointFilters(row)
     if (activeReport === 'lnk') {

@@ -3,12 +3,11 @@ import { WeldTableBodyCell } from '@/components/weld-table-body-cell'
 import { WeldTableEditActionsCell } from '@/components/weld-table-edit-actions-cell'
 import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
 import { WeldTableRowSelectCell } from '@/components/weld-table-row-select-cell'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import { getWeldTableRowClassName, getWeldTableRowTitle } from '@/lib/weld-table-row-state'
 import { getCellKey, getDuplicateKey } from '@/lib/weld-table-utils'
-import { RESULT_FIELD_KEYS, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-
-type WeldRow = WeldInput & { id: number }
+import { RESULT_FIELD_KEYS, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
 
 type WeldTableBodyRowsProps = {
   rows: WeldRow[]

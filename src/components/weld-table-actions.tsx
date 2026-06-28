@@ -1,9 +1,7 @@
 import { ClipboardCheck, ExternalLink, FilePlus2, FilterX, GitBranch } from 'lucide-react'
 
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
-import type { WeldInput } from '@/lib/weld-fields'
-
-type WeldRow = WeldInput & { id: number }
 
 export function WeldTableFilterResetHeader({
   hasColumnFilters,

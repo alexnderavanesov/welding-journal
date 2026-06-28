@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   FIELD_BY_KEY,
   EXCEL_FIELDS,
@@ -277,7 +278,7 @@ export function normalizeWeldInput(input: WeldInput) {
   return withAutoVik
 }
 
-export function appendImportedWelds<T extends WeldInput & { id: number }>(existingRows: T[], importedRecords: WeldInput[]) {
+export function appendImportedWelds<T extends WeldRow>(existingRows: T[], importedRecords: WeldInput[]) {
   let nextId = existingRows.reduce((max, row) => Math.max(max, row.id), 0) + 1
   const importedRows = importedRecords.map((record) => ({ id: nextId++, ...normalizeWeldInput(record) }))
   return [...importedRows, ...existingRows]

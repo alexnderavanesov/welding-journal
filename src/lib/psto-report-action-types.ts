@@ -1,9 +1,9 @@
 import type { Dispatch, SetStateAction } from 'react'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
-import type { WeldInput } from '@/lib/weld-fields'
 
-export type RowWithId = WeldInput & { id: number }
+export type RowWithId = WeldRow
 
 export type MutationLike<TVariables> = {
   isPending: boolean

@@ -1,9 +1,10 @@
 import { WeldTableValue } from '@/components/weld-table-value'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import { bodyCellClass } from '@/lib/weld-table-utils'
-import type { WeldField, WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
 
 type WeldTableBodyCellProps = {
-  row: WeldInput & { id: number }
+  row: WeldRow
   field: WeldField
   displayValue: unknown
   isEditableCell: boolean
@@ -11,7 +12,7 @@ type WeldTableBodyCellProps = {
   isHighlightedRow: boolean
   isHighlightedCell: boolean
   isResultField: boolean
-  onEdit?: (row: WeldInput & { id: number }, fieldKey?: WeldFieldKey) => void
+  onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
 }
 
 export function WeldTableBodyCell({

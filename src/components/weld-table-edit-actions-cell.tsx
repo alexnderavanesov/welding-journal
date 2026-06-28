@@ -1,10 +1,11 @@
 import { Edit2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type WeldTableEditActionsCellProps = {
-  row: WeldInput & { id: number }
-  onEdit?: (row: WeldInput & { id: number }, fieldKey?: WeldFieldKey) => void
+  row: WeldRow
+  onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onDelete?: (id: number) => void
 }
 

@@ -2,15 +2,16 @@ import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { WeldTableColumns } from '@/components/weld-table-columns'
 import { WeldTableHeader } from '@/components/weld-table-header'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
-import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type WeldTableProps = {
-  rows: Array<WeldInput & { id: number }>
+  rows: WeldRow[]
   columnFilters: Record<string, string>
   onColumnFiltersChange: (filters: Record<string, string>) => void
-  onEdit?: (row: WeldInput & { id: number }, fieldKey?: WeldFieldKey) => void
+  onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onDelete?: (id: number) => void
   stickyLeft?: number
   highlightedRowIds?: ReadonlySet<number>
@@ -18,15 +19,15 @@ export type WeldTableProps = {
   readOnly?: boolean
   editableFieldKeys?: ReadonlySet<WeldFieldKey>
   blockedFieldKeys?: ReadonlySet<WeldFieldKey>
-  isCellEditable?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => boolean
-  getDisplayValue?: (row: WeldInput & { id: number }, fieldKey: WeldFieldKey) => unknown
-  onOpenChain?: (row: WeldInput & { id: number }) => void
-  onOpenLinkedReport?: (row: WeldInput & { id: number }) => void
+  isCellEditable?: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
+  getDisplayValue?: (row: WeldRow, fieldKey: WeldFieldKey) => unknown
+  onOpenChain?: (row: WeldRow) => void
+  onOpenLinkedReport?: (row: WeldRow) => void
   openLinkedReportTitle?: string
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>
   onSelectedRowIdsChange?: (ids: Set<number>) => void
-  isRowSelectable?: (row: WeldInput & { id: number }) => boolean
+  isRowSelectable?: (row: WeldRow) => boolean
   storageKey?: string
   hiddenFieldKeys?: ReadonlySet<WeldFieldKey>
   mergePstoSections?: boolean

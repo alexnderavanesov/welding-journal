@@ -9,7 +9,7 @@ import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-type RowWithId = WeldInput & { id: number }
+type RowWithId = WeldRow
 
 type UseReportImportMutationsOptions = {
   rows: WeldRow[]

@@ -1,7 +1,8 @@
 import { createWeldJoint, updateWeldJoint } from '@/server/welds'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
 
-type RowWithId = WeldInput & { id: number }
+type RowWithId = WeldRow
 
 export async function createWeldRowOrThrow<T extends WeldInput>(
   record: T,

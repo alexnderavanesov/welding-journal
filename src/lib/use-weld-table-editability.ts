@@ -1,6 +1,7 @@
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
-type WeldTableRow = WeldInput & { id: number }
+type WeldTableRow = WeldRow
 
 type UseWeldTableEditabilityParams = {
   onEdit?: (row: WeldTableRow, fieldKey?: WeldFieldKey) => void

@@ -1,4 +1,5 @@
 import { formatPstoDiagramDate } from '@/lib/date-format'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import { getPstoResultValue } from '@/lib/report-import'
 import { hasText, isYesText } from '@/lib/report-value-utils'
 import { escapeRegExp } from '@/lib/string-utils'
@@ -8,7 +9,7 @@ export function canCreatePstoRequest(row: WeldInput) {
   return !hasText(row.pstoRequest)
 }
 
-export function buildPstoWaitingRequestRows(rows: Array<WeldInput & { id: number }>) {
+export function buildPstoWaitingRequestRows(rows: WeldRow[]) {
   return rows
     .filter(canCreatePstoRequest)
     .map((row) => ({
@@ -23,7 +24,7 @@ export function buildPstoWaitingRequestRows(rows: Array<WeldInput & { id: number
     }))
 }
 
-export function buildPstoResultsRows(rows: Array<WeldInput & { id: number }>) {
+export function buildPstoResultsRows(rows: WeldRow[]) {
   return rows
     .filter((row) => hasText(row.pstoResult) || hasText(row.pstoDate) || hasText(row.heatTreatmentDiagram))
     .map((row) => ({
@@ -40,7 +41,7 @@ export function buildPstoResultsRows(rows: Array<WeldInput & { id: number }>) {
     }))
 }
 
-export function withAutoHeatTreatmentDiagram<T extends WeldInput & { id: number }>(record: T, rows: Array<WeldInput & { id: number }>) {
+export function withAutoHeatTreatmentDiagram<T extends WeldRow>(record: T, rows: WeldRow[]) {
   if (getPstoResultValue(record.pstoResult) !== 'проведено') {
     return { ...record, heatTreatmentDiagram: null }
   }
@@ -77,7 +78,7 @@ export function withPstoCreatedAt<T extends WeldInput>(rows: T[]) {
   return rows.map((row) => (isYesText(row.pstoRequired) && !row.pstoCreatedAt ? { ...row, pstoCreatedAt } : row))
 }
 
-export function withAutoHeatTreatmentDiagrams<T extends WeldInput & { id: number }>(rows: T[]) {
+export function withAutoHeatTreatmentDiagrams<T extends WeldRow>(rows: T[]) {
   const nextRows = [...rows]
   for (let index = 0; index < nextRows.length; index += 1) {
     nextRows[index] = withAutoHeatTreatmentDiagram(nextRows[index], nextRows) as T

@@ -11,7 +11,7 @@ import { withAutoHeatTreatmentDiagrams } from '@/lib/psto-status'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-type RowWithId = WeldInput & { id: number }
+type RowWithId = WeldRow
 
 export function buildHeatTreatmentImportUpdates(
   importedRecords: WeldInput[],

@@ -1,6 +1,6 @@
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldRow } from '@/lib/dispatcher-types'
 
-type WeldTableRow = WeldInput & { id: number }
+type WeldTableRow = WeldRow
 
 type UseWeldTableSelectionParams = {
   filteredRows: WeldTableRow[]
