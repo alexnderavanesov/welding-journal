@@ -1,6 +1,5 @@
-import { X } from 'lucide-react'
-
 import { LnkRequestManagerPosition } from '@/components/lnk-request-manager-position'
+import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
   RequestDeletePanel,
   RequestManagerEmptyState,
@@ -9,7 +8,6 @@ import {
   RequestManagerUsagePanel,
   RequestRenamePanel,
 } from '@/components/request-manager-panels'
-import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
@@ -55,15 +53,11 @@ export function LnkRequestManagerDialog({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-[1px]">
       <div className="flex max-h-[90vh] w-full max-w-[920px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Управление заявками ЛНК</h2>
-            <p className="text-sm text-muted-foreground">Переименование и удаление уже созданных заявок.</p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <RequestDialogHeader
+          title="Управление заявками ЛНК"
+          subtitle="Переименование и удаление уже созданных заявок."
+          onClose={onClose}
+        />
 
         <div className="min-h-0 space-y-4 overflow-auto px-5 py-4">
           <RequestManagerSelect
