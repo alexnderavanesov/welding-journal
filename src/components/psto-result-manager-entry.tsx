@@ -4,11 +4,14 @@ import {
   JointFullMeta,
   JointTitleLine,
 } from '@/components/joint-meta'
+import {
+  PstoCurrentResultBadge,
+  PstoManagerJointStatusBadge,
+  PstoManagerResultStatusBadge,
+} from '@/components/psto-status-badges'
 import { ResultManagerDocumentEditor } from '@/components/result-manager-document-editor'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
-import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
 import { hasText } from '@/lib/report-value-utils'
 
 export type PstoResultManagerEntryProps = {
@@ -40,12 +43,8 @@ export function PstoResultManagerEntry({
           <span>
             <JointFullMeta row={row} />
           </span>
-          <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
-            Стык: {getJointStatusLabel(row)}
-          </span>
-          <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
-            ПСТО: {getPstoResultLabel(row.pstoResult)}
-          </span>
+          <PstoManagerJointStatusBadge row={row} />
+          <PstoManagerResultStatusBadge row={row} />
         </div>
         <div className="mt-1 text-xs leading-5 text-slate-500">
           <span className="font-medium text-slate-700">Заявка:</span>{' '}
@@ -63,9 +62,7 @@ export function PstoResultManagerEntry({
         />
       </div>
       <div className="flex flex-col items-end justify-start gap-2">
-        <span className={`rounded border px-2 py-1 text-xs font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
-          Сейчас: {getPstoResultLabel(row.pstoResult)}
-        </span>
+        <PstoCurrentResultBadge row={row} />
         <Button
           type="button"
           variant="outline"

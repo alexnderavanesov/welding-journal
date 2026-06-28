@@ -1,7 +1,7 @@
 import { ResultRowJointHeading } from '@/components/result-row-joint-heading'
+import { PstoJointStatusBadge, PstoResultStatusBadge } from '@/components/psto-status-badges'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
-import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
+import { getPstoResultBadgeClass } from '@/lib/report-badges'
 
 type PstoResultRowProps = {
   row: WeldRow
@@ -38,12 +38,8 @@ export function PstoResultRow({ row, selected, disabled, onToggle }: PstoResultR
       <span className="min-w-0">
         <ResultRowJointHeading row={row} />
         <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-          <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
-            Стык: {getJointStatusLabel(row)}
-          </span>
-          <span className={`rounded border px-1.5 py-0.5 font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
-            ПСТО: {getPstoResultLabel(row.pstoResult)}
-          </span>
+          <PstoJointStatusBadge row={row} />
+          <PstoResultStatusBadge row={row} />
         </span>
         {disabled ? (
           <span className="mt-1 block text-xs leading-5 text-slate-500">

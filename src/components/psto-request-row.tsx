@@ -1,6 +1,5 @@
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
-import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
-import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
+import { PstoJointStatusBadge, PstoResultStatusBadge } from '@/components/psto-status-badges'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 type PstoRequestRowProps = {
@@ -31,12 +30,8 @@ export function PstoRequestRow({ row, selected, disabled, onToggleRow }: PstoReq
       <span className="min-w-0">
         <RequestRowJointHeading row={row} />
         <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-          <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
-            Стык: {getJointStatusLabel(row)}
-          </span>
-          <span className={`rounded border px-1.5 py-0.5 font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
-            ПСТО: {getPstoResultLabel(row.pstoResult)}
-          </span>
+          <PstoJointStatusBadge row={row} />
+          <PstoResultStatusBadge row={row} />
         </span>
       </span>
       <span className="flex flex-wrap gap-1.5">
