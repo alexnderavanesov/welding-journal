@@ -1,8 +1,9 @@
-import { Pencil, X } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 
 import { PstoRequestAside } from '@/components/psto-request-aside'
 import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
+import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
@@ -55,14 +56,11 @@ export function PstoRequestDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
       <div className="flex h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Создание заявки ПСТО</h2>
-            <p className="text-sm text-muted-foreground">
-              {nextRequestName} · Стыков: {selectedRows.length}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+        <RequestDialogHeader
+          title="Создание заявки ПСТО"
+          subtitle={`${nextRequestName} · Стыков: ${selectedRows.length}`}
+          onClose={onClose}
+          actions={
             <Button
               variant="outline"
               onClick={onOpenRequestManager}
@@ -72,11 +70,8 @@ export function PstoRequestDialog({
               <Pencil className="mr-2 h-4 w-4" />
               Управление заявками
             </Button>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+          }
+        />
 
         <div className="border-b border-slate-100 px-5 py-4">
           <RequestNamingControls

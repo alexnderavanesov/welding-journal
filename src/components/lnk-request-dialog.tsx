@@ -1,8 +1,9 @@
-import { Pencil, X } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 
 import { LnkRequestMethods } from '@/components/lnk-request-methods'
 import { LnkRequestRow } from '@/components/lnk-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
+import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
@@ -64,17 +65,11 @@ export function LnkRequestDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
       <div className="flex max-h-[92vh] w-full max-w-[1320px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Создание заявки ЛНК</h2>
-            <p className="text-sm text-muted-foreground">
-              {nextRequestName} · Стыков: {selectedRowsCount} · Позиций: {selectedTargetCount}
-            </p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <RequestDialogHeader
+          title="Создание заявки ЛНК"
+          subtitle={`${nextRequestName} · Стыков: ${selectedRowsCount} · Позиций: ${selectedTargetCount}`}
+          onClose={onClose}
+        />
 
         <div className="border-b border-slate-100 px-5 py-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
