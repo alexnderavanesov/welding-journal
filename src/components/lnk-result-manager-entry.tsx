@@ -1,11 +1,9 @@
-import { Pencil } from 'lucide-react'
-
 import {
   JointFullMeta,
   JointTitleLine,
 } from '@/components/joint-meta'
+import { ResultManagerDocumentEditor } from '@/components/result-manager-document-editor'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { isLnkRepairForbidden, getLnkRepairForbiddenReason } from '@/lib/lnk-result-rules'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
@@ -117,30 +115,18 @@ export function LnkResultManagerEntry({
             <span className="font-medium text-slate-700">Дата:</span> {conclusionDate || '-'}
           </div>
         ) : null}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Input
-            value={conclusionDraft}
-            onChange={(event) => onConclusionDraftChange(changeKey, event.target.value)}
-            placeholder="Наименование заключения для этого стыка"
-            disabled={isConclusionCorrectionPending}
-            className="h-8 min-w-72 max-w-xl flex-1 bg-white text-xs"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onRenameConclusion(row, method.requestKey)}
-            disabled={
-              isConclusionCorrectionPending ||
-              !conclusionDraft.trim() ||
-              conclusionDraft.trim() === conclusionName
-            }
-            className="h-8"
-          >
-            <Pencil className="mr-1.5 h-3.5 w-3.5" />
-            Переименовать
-          </Button>
-        </div>
+        <ResultManagerDocumentEditor
+          value={conclusionDraft}
+          placeholder="Наименование заключения для этого стыка"
+          disabled={isConclusionCorrectionPending}
+          canRename={
+            !isConclusionCorrectionPending &&
+            Boolean(conclusionDraft.trim()) &&
+            conclusionDraft.trim() !== conclusionName
+          }
+          onChange={(value) => onConclusionDraftChange(changeKey, value)}
+          onRename={() => onRenameConclusion(row, method.requestKey)}
+        />
       </div>
       <div className="flex flex-wrap content-start justify-end gap-1.5">
         <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>

@@ -1,11 +1,11 @@
-import { Pencil, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 
 import {
   JointFullMeta,
   JointTitleLine,
 } from '@/components/joint-meta'
+import { ResultManagerDocumentEditor } from '@/components/result-manager-document-editor'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
@@ -53,26 +53,14 @@ export function PstoResultManagerEntry({
           <span className="mx-1 text-slate-300">·</span>
           <span className="font-medium text-slate-700">Дата:</span> {pstoDate || '-'}
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Input
-            value={diagramDraft}
-            onChange={(event) => onDiagramDraftChange(row.id, event.target.value)}
-            placeholder="Наименование диаграммы для этого стыка"
-            disabled={isPending}
-            className="h-8 min-w-72 max-w-xl flex-1 bg-white text-xs"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onRenameDiagram(row)}
-            disabled={isPending || !diagramDraft.trim() || diagramDraft.trim() === diagramName}
-            className="h-8"
-          >
-            <Pencil className="mr-1.5 h-3.5 w-3.5" />
-            Переименовать
-          </Button>
-        </div>
+        <ResultManagerDocumentEditor
+          value={diagramDraft}
+          placeholder="Наименование диаграммы для этого стыка"
+          disabled={isPending}
+          canRename={!isPending && Boolean(diagramDraft.trim()) && diagramDraft.trim() !== diagramName}
+          onChange={(value) => onDiagramDraftChange(row.id, value)}
+          onRename={() => onRenameDiagram(row)}
+        />
       </div>
       <div className="flex flex-col items-end justify-start gap-2">
         <span className={`rounded border px-2 py-1 text-xs font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
