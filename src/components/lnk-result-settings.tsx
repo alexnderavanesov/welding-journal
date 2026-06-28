@@ -1,5 +1,6 @@
 import { DialogHelpNote } from '@/components/dialog-help-note'
 import { RequestNamingControls } from '@/components/request-naming-controls'
+import { ResultSettingsCard } from '@/components/result-settings-card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -41,8 +42,7 @@ export function LnkResultSettings({
 
   return (
     <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-      <div className="rounded-md border border-slate-200 bg-white p-3">
-        <h3 className="mb-3 text-sm font-semibold text-slate-800">1. Метод и результат</h3>
+      <ResultSettingsCard title="1. Метод и результат">
         <div className="grid grid-cols-1 gap-3">
           <label className="block space-y-1.5 text-sm">
             <span className="text-[13px] font-medium leading-none text-slate-700">Метод контроля</span>
@@ -90,10 +90,9 @@ export function LnkResultSettings({
             ) : null}
           </label>
         </div>
-      </div>
+      </ResultSettingsCard>
 
-      <div className={`rounded-md border border-slate-200 p-3 ${!hasNonEmptyRows ? 'bg-slate-50 opacity-60' : 'bg-white'}`}>
-        <h3 className="mb-3 text-sm font-semibold text-slate-800">2. Заключение</h3>
+      <ResultSettingsCard title="2. Заключение" muted={!hasNonEmptyRows}>
         <RequestNamingControls
           naming={draft.conclusionNaming}
           systemName={nextConclusionName}
@@ -102,7 +101,7 @@ export function LnkResultSettings({
           disabled={!hasNonEmptyRows}
           onChange={onConclusionNamingChange}
         />
-      </div>
+      </ResultSettingsCard>
 
       <DialogHelpNote>
         Результат заменит статус «ожидает НК» в выбранном виде контроля. Наименование заключения попадет в

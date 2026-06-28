@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import { DialogHelpNote } from '@/components/dialog-help-note'
 import { RequestNamingControls } from '@/components/request-naming-controls'
+import { ResultSettingsCard } from '@/components/result-settings-card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
@@ -16,8 +17,7 @@ type PstoResultSettingsProps = {
 export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: PstoResultSettingsProps) {
   return (
     <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-      <div className="rounded-md border border-slate-200 bg-white p-3">
-        <h3 className="mb-3 text-sm font-semibold text-slate-800">1. Результат ПСТО</h3>
+      <ResultSettingsCard title="1. Результат ПСТО">
         <div className="grid grid-cols-1 gap-3">
           <label className="block space-y-1.5 text-sm">
             <span className="text-[13px] font-medium leading-none text-slate-700">Дата ПСТО</span>
@@ -38,9 +38,9 @@ export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: Ps
             </Select>
           </label>
         </div>
-      </div>
+      </ResultSettingsCard>
 
-      <div className={`rounded-md border border-slate-200 p-3 ${draft.result === PSTO_EMPTY_RESULT_VALUE ? 'bg-slate-50 opacity-60' : 'bg-white'}`}>
+      <ResultSettingsCard muted={draft.result === PSTO_EMPTY_RESULT_VALUE}>
         <RequestNamingControls
           naming={draft.diagramNaming}
           systemName={nextDiagramName}
@@ -49,7 +49,7 @@ export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: Ps
           disabled={draft.result === PSTO_EMPTY_RESULT_VALUE}
           onChange={(diagramNaming) => onDraftChange((current) => ({ ...current, diagramNaming }))}
         />
-      </div>
+      </ResultSettingsCard>
 
       <DialogHelpNote>
         Результат «проведено» заполнит дату ПСТО и диаграмму термообработки. Если выбрать «аннулировать», результат,
