@@ -1,25 +1,6 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-
-type RowWithId = WeldInput & { id: number }
-
-type MutationLike<TVariables> = {
-  mutate: (variables: TVariables) => void
-}
-
-type UseManagedLnkRequestActionsOptions = {
-  lnkRequestManagerOptions: string[]
-  managedLnkRequestName: string
-  managedLnkRequestNameDraft: string
-  lnkRequestCorrectionMutation: MutationLike<{ record: RowWithId; methodKey: WeldFieldKey; requestName: string | null }>
-  lnkRequestManagerMutation: MutationLike<
-    | { action: 'rename'; requestName: string; nextRequestName: string }
-    | { action: 'delete'; requestName: string }
-  >
-  setIsLnkRequestManagerOpen: (value: boolean) => void
-  setManagedLnkRequestName: (value: string) => void
-  setManagedLnkRequestNameDraft: (value: string) => void
-}
+import type { RowWithId, UseManagedLnkRequestActionsOptions } from '@/lib/managed-lnk-request-action-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export function useManagedLnkRequestActions({
   lnkRequestManagerOptions,
