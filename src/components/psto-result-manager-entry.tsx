@@ -3,16 +3,15 @@ import { Pencil, Trash2 } from 'lucide-react'
 import {
   JointProjectSubtitleMeta,
   JointSpoolDiameterMeta,
+  JointTitleLine,
   JointWeldDateMeta,
   MetaSeparator,
-  OfficialityBadge,
 } from '@/components/joint-meta'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
-import { getJointTitle } from '@/lib/report-ui-state'
 import { hasText } from '@/lib/report-value-utils'
 
 export type PstoResultManagerEntryProps = {
@@ -39,10 +38,7 @@ export function PstoResultManagerEntry({
   return (
     <div className="grid grid-cols-[minmax(420px,1fr)_minmax(230px,0.45fr)] gap-4 px-4 py-3 text-sm">
       <div className="min-w-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="font-medium text-slate-900">{getJointTitle(row)}</span>
-          <OfficialityBadge row={row} compact />
-        </div>
+        <JointTitleLine row={row} />
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>
             <JointProjectSubtitleMeta row={row} />

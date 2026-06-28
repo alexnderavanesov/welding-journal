@@ -1,5 +1,7 @@
 import { formatDisplayDate } from '@/lib/date-format'
 import { formatJointDiameterLabel, isUnofficialJoint } from '@/lib/joint-display'
+import { getJointTitle } from '@/lib/report-ui-state'
+import { cn } from '@/lib/utils'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export function MetaSeparator() {
@@ -38,6 +40,25 @@ export function JointProjectSubtitleMeta({ row }: { row: WeldInput }) {
       Шифр:{' '}
       <span className="font-semibold text-slate-700">{String(row.subtitleCode ?? '-') || '-'}</span>
     </>
+  )
+}
+
+export function JointTitleLine({
+  row,
+  className,
+  truncate = false,
+}: {
+  row: WeldInput
+  className?: string
+  truncate?: boolean
+}) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className={cn(truncate && 'truncate', className ?? 'font-medium text-slate-900')}>
+        {getJointTitle(row)}
+      </span>
+      <OfficialityBadge row={row} compact />
+    </span>
   )
 }
 

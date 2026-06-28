@@ -1,13 +1,12 @@
 import {
   JointProjectSubtitleMeta,
   JointSpoolDiameterMeta,
+  JointTitleLine,
   JointWeldDateMeta,
   MetaSeparator,
-  OfficialityBadge,
 } from '@/components/joint-meta'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
-import { getJointTitle } from '@/lib/report-ui-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 type PstoRequestRowProps = {
@@ -36,10 +35,7 @@ export function PstoRequestRow({ row, selected, disabled, onToggleRow }: PstoReq
         className="h-4 w-4 rounded border-slate-300 text-slate-900"
       />
       <span className="min-w-0">
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-          <OfficialityBadge row={row} compact />
-        </span>
+        <JointTitleLine row={row} truncate />
         <span className="block text-xs leading-5 text-slate-500">
           <JointProjectSubtitleMeta row={row} />
           <MetaSeparator />

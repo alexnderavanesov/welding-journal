@@ -3,9 +3,9 @@ import { Pencil } from 'lucide-react'
 import {
   JointProjectSubtitleMeta,
   JointSpoolDiameterMeta,
+  JointTitleLine,
   JointWeldDateMeta,
   MetaSeparator,
-  OfficialityBadge,
 } from '@/components/joint-meta'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,7 +13,6 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { isLnkRepairForbidden, getLnkRepairForbiddenReason } from '@/lib/lnk-result-rules'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
-import { getJointTitle } from '@/lib/report-ui-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type LnkResultMethod = (typeof LNK_METHODS)[number]
@@ -89,10 +88,7 @@ export function LnkResultManagerEntry({
   return (
     <div className="grid grid-cols-[minmax(520px,1fr)_minmax(260px,0.5fr)] gap-4 px-4 py-3 text-sm">
       <div className="min-w-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="font-medium text-slate-900">{getJointTitle(row)}</span>
-          <OfficialityBadge row={row} compact />
-        </div>
+        <JointTitleLine row={row} />
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>
             <JointProjectSubtitleMeta row={row} />

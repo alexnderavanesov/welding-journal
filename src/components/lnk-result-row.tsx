@@ -1,9 +1,9 @@
 import {
   JointProjectSubtitleMeta,
   JointSpoolDiameterMeta,
+  JointTitleLine,
   JointWeldDateMeta,
   MetaSeparator,
-  OfficialityBadge,
 } from '@/components/joint-meta'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getEffectiveLnkResultDraftValueForRow } from '@/lib/lnk-result-draft'
@@ -22,7 +22,6 @@ import {
 import { getInactiveLnkRequestBadgeClass, getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
-import { getJointTitle } from '@/lib/report-ui-state'
 
 type LnkResultRowProps = {
   row: WeldRow
@@ -63,10 +62,7 @@ export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkRes
         className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
       />
       <span className="min-w-0">
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-          <OfficialityBadge row={row} compact />
-        </span>
+        <JointTitleLine row={row} truncate />
         <span className="block text-xs leading-5 text-slate-500">
           <JointProjectSubtitleMeta row={row} />
         </span>

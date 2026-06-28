@@ -1,13 +1,12 @@
 import {
   JointProjectSubtitleMeta,
   JointSpoolDiameterMeta,
+  JointTitleLine,
   JointWeldDateMeta,
   MetaSeparator,
-  OfficialityBadge,
 } from '@/components/joint-meta'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
-import { getJointTitle } from '@/lib/report-ui-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -41,10 +40,7 @@ export function LnkRequestRow({ row, selected, selectedMethods, onToggleRow }: L
         className="h-4 w-4 rounded border-slate-300 text-slate-900"
       />
       <span className="min-w-0">
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-          <OfficialityBadge row={row} compact />
-        </span>
+        <JointTitleLine row={row} truncate />
         <span className="block text-xs leading-5 text-slate-500">
           <JointProjectSubtitleMeta row={row} />
           <MetaSeparator />
