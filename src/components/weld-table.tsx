@@ -63,6 +63,7 @@ export function WeldTable({
   const {
     alwaysVisibleFieldKeys,
     availableSections,
+    collapsedSections,
     duplicateKeys,
     filteredFields,
     filteredRows,
