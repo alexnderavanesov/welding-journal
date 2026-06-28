@@ -1,14 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import {
   createDefaultPstoResultDraft,
-  type PstoResultDraftState,
 } from '@/lib/report-draft-state'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
 import {
   defaultRequestNamingState,
-  type RequestNamingState,
 } from '@/lib/request-naming-state'
 import { hasText } from '@/lib/report-value-utils'
 import {
@@ -27,27 +24,7 @@ import {
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-
-type RowWithId = WeldInput & { id: number }
-
-type UsePstoReportMutationsOptions = {
-  rows: RowWithId[]
-  heatTreatmentRows: RowWithId[]
-  pstoRequestOptions: string[]
-  setMessage: (value: string) => void
-  highlightChangedRows: (rows: WeldRow[], fieldKeys?: WeldFieldKey[]) => void
-  setSelectedHeatTreatmentIds: (value: Set<number>) => void
-  setPstoRequestNaming: (value: RequestNamingState) => void
-  setPstoRequestSearch: (value: string) => void
-  setIsPstoRequestModalOpen: (value: boolean) => void
-  setIsPstoResultModalOpen: (value: boolean) => void
-  setPstoResultDraft: (value: PstoResultDraftState) => void
-  setManagedPstoRequestName: (value: string) => void
-  setManagedPstoRequestNameDraft: (value: string) => void
-  setIsPstoRequestManagerOpen: (value: boolean) => void
-  setHeatTreatmentFieldEditing: (value: HeatTreatmentFieldEditingState | null) => void
-}
+import type { RowWithId, UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
 
 export function usePstoReportMutations({
   rows,
