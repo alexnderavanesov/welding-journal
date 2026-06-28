@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
-import { ChevronDown, ClipboardCheck, FileSpreadsheet, Plus, ShieldCheck, Upload } from 'lucide-react'
+import { ClipboardCheck, FileSpreadsheet, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ReportShowMenu } from '@/components/report-show-menu'
 import type { ActiveReport } from '@/lib/home-state'
 
 export type ReportHeaderActionsProps = {
@@ -81,30 +82,15 @@ export function ReportHeaderActions({
             <ClipboardCheck className="mr-2 h-4 w-4" />
             Результат
           </Button>
-          <div className="relative">
-            <Button variant="outline" onClick={onTogglePstoShowMenu}>
-              Показать
-              <ChevronDown className="ml-2 h-4 w-4" />
-            </Button>
-            {isPstoShowMenuOpen ? (
-              <div className="absolute right-0 z-50 mt-2 w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-                <button
-                  type="button"
-                  onClick={onOpenPstoWaitingRequestReport}
-                  className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                >
-                  Ожидает заявку ПСТО
-                </button>
-                <button
-                  type="button"
-                  onClick={onOpenPstoResultsReport}
-                  className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                >
-                  Результаты ПСТО
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <ReportShowMenu
+            isOpen={isPstoShowMenuOpen}
+            onToggle={onTogglePstoShowMenu}
+            widthClassName="w-56"
+            items={[
+              { label: 'Ожидает заявку ПСТО', onClick: onOpenPstoWaitingRequestReport },
+              { label: 'Результаты ПСТО', onClick: onOpenPstoResultsReport },
+            ]}
+          />
         </>
       ) : null}
       {activeReport === 'lnk' ? (
@@ -121,37 +107,15 @@ export function ReportHeaderActions({
             <ShieldCheck className="mr-2 h-4 w-4" />
             Официальность
           </Button>
-          <div className="relative">
-            <Button variant="outline" onClick={onToggleLnkShowMenu}>
-              Показать
-              <ChevronDown className="ml-2 h-4 w-4" />
-            </Button>
-            {isLnkShowMenuOpen ? (
-              <div className="absolute right-0 z-50 mt-2 w-52 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-                <button
-                  type="button"
-                  onClick={onOpenLnkToRequestReport}
-                  className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                >
-                  Ожидание заявки
-                </button>
-                <button
-                  type="button"
-                  onClick={onOpenLnkWaitingNkReport}
-                  className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                >
-                  Ожидание НК
-                </button>
-                <button
-                  type="button"
-                  onClick={onOpenLnkConclusionsReport}
-                  className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
-                >
-                  Показать заключения
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <ReportShowMenu
+            isOpen={isLnkShowMenuOpen}
+            onToggle={onToggleLnkShowMenu}
+            items={[
+              { label: 'Ожидание заявки', onClick: onOpenLnkToRequestReport },
+              { label: 'Ожидание НК', onClick: onOpenLnkWaitingNkReport },
+              { label: 'Показать заключения', onClick: onOpenLnkConclusionsReport },
+            ]}
+          />
         </>
       ) : null}
       {activeReport === 'weldingJournal' ? (
