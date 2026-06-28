@@ -1,4 +1,5 @@
 import { LnkRequestManagerPosition } from '@/components/lnk-request-manager-position'
+import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
   RequestDeletePanel,
@@ -51,91 +52,84 @@ export function LnkRequestManagerDialog({
   )
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-[1px]">
-      <div className="flex max-h-[90vh] w-full max-w-[920px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
-        <RequestDialogHeader
-          title="Управление заявками ЛНК"
-          subtitle="Переименование и удаление уже созданных заявок."
-          onClose={onClose}
+    <LargeDialogShell maxWidthClassName="max-w-[920px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[60] bg-slate-950/30">
+      <RequestDialogHeader
+        title="Управление заявками ЛНК"
+        subtitle="Переименование и удаление уже созданных заявок."
+        onClose={onClose}
+      />
+
+      <div className="min-h-0 space-y-4 overflow-auto px-5 py-4">
+        <RequestManagerSelect label="Заявка ЛНК" value={requestName} options={requestOptions} onChange={onChangeRequest} />
+
+        {requestName ? (
+          <RequestManagerUsagePanel>
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-slate-800">Используется:</span>
+              <RequestManagerUsageBadge>Стыков: {requestRows.length}</RequestManagerUsageBadge>
+              <RequestManagerUsageBadge>Позиций: {positionCount}</RequestManagerUsageBadge>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {requestMethods.map((method) => (
+                <span
+                  key={method.requestKey}
+                  className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800"
+                >
+                  {method.code}: {requestRows.filter((row) => String(row[method.requestKey] ?? '').trim() === requestName).length}
+                </span>
+              ))}
+            </div>
+          </RequestManagerUsagePanel>
+        ) : (
+          <RequestManagerEmptyState>Созданных заявок ЛНК пока нет.</RequestManagerEmptyState>
+        )}
+
+        <RequestRenamePanel
+          value={requestNameDraft}
+          placeholder="Новое наименование заявки"
+          disabled={!requestName || isManagerPending}
+          canRename={Boolean(requestName && requestNameDraft.trim() && requestNameDraft.trim() !== requestName && !isManagerPending)}
+          onChange={onRequestNameDraftChange}
+          onRename={onRenameRequest}
         />
 
-        <div className="min-h-0 space-y-4 overflow-auto px-5 py-4">
-          <RequestManagerSelect
-            label="Заявка ЛНК"
-            value={requestName}
-            options={requestOptions}
-            onChange={onChangeRequest}
-          />
-
-          {requestName ? (
-            <RequestManagerUsagePanel>
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-semibold text-slate-800">Используется:</span>
-                <RequestManagerUsageBadge>Стыков: {requestRows.length}</RequestManagerUsageBadge>
-                <RequestManagerUsageBadge>Позиций: {positionCount}</RequestManagerUsageBadge>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {requestMethods.map((method) => (
-                  <span
-                    key={method.requestKey}
-                    className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800"
-                  >
-                    {method.code}: {requestRows.filter((row) => String(row[method.requestKey] ?? '').trim() === requestName).length}
-                  </span>
-                ))}
-              </div>
-            </RequestManagerUsagePanel>
-          ) : (
-            <RequestManagerEmptyState>Созданных заявок ЛНК пока нет.</RequestManagerEmptyState>
-          )}
-
-          <RequestRenamePanel
-            value={requestNameDraft}
-            placeholder="Новое наименование заявки"
-            disabled={!requestName || isManagerPending}
-            canRename={Boolean(requestName && requestNameDraft.trim() && requestNameDraft.trim() !== requestName && !isManagerPending)}
-            onChange={onRequestNameDraftChange}
-            onRename={onRenameRequest}
-          />
-
-          <div className="rounded-md border border-slate-200 bg-white p-3">
-            <div className="mb-3">
-              <h3 className="text-sm font-semibold text-slate-800">Очистить конкретную позицию</h3>
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                Можно удалить заявку только у выбранного стыка и метода контроля, не затрагивая остальные позиции заявки.
-              </p>
-            </div>
-            {requestName && requestRows.length > 0 ? (
-              <div className="max-h-72 overflow-auto rounded-md border border-slate-200">
-                <div className="divide-y divide-slate-100">
-                  {requestRows.map((row) => {
-                    const methods = getLnkRowRequestMethods(row, requestName)
-                    return (
-                      <LnkRequestManagerPosition
-                        key={row.id}
-                        row={row}
-                        methods={methods}
-                        isCorrectionPending={isCorrectionPending}
-                        onClearPosition={onClearPosition}
-                      />
-                    )
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
-                Выберите заявку, чтобы увидеть ее стыки и методы контроля.
-              </div>
-            )}
+        <div className="rounded-md border border-slate-200 bg-white p-3">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-slate-800">Очистить конкретную позицию</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Можно удалить заявку только у выбранного стыка и метода контроля, не затрагивая остальные позиции заявки.
+            </p>
           </div>
-
-          <RequestDeletePanel
-            description="Будут очищены заявка, результат, дата и заключение ЛНК по всем стыкам, где используется выбранная заявка."
-            disabled={!requestName || isManagerPending}
-            onDelete={onDeleteRequest}
-          />
+          {requestName && requestRows.length > 0 ? (
+            <div className="max-h-72 overflow-auto rounded-md border border-slate-200">
+              <div className="divide-y divide-slate-100">
+                {requestRows.map((row) => {
+                  const methods = getLnkRowRequestMethods(row, requestName)
+                  return (
+                    <LnkRequestManagerPosition
+                      key={row.id}
+                      row={row}
+                      methods={methods}
+                      isCorrectionPending={isCorrectionPending}
+                      onClearPosition={onClearPosition}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+              Выберите заявку, чтобы увидеть ее стыки и методы контроля.
+            </div>
+          )}
         </div>
+
+        <RequestDeletePanel
+          description="Будут очищены заявка, результат, дата и заключение ЛНК по всем стыкам, где используется выбранная заявка."
+          disabled={!requestName || isManagerPending}
+          onDelete={onDeleteRequest}
+        />
       </div>
-    </div>
+    </LargeDialogShell>
   )
 }
