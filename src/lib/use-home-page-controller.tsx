@@ -3,9 +3,6 @@ import {
   type WeldInput,
 } from '@/lib/weld-fields'
 import {
-  canCreateLnkRequest,
-} from '@/lib/report-control-state'
-import {
   useAutoCollapseNavOnHorizontalScroll,
   useEscapeToClearReportFilters,
 } from '@/lib/report-page-effects'
@@ -49,6 +46,7 @@ import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
+import { createReportRowActionHandlers } from '@/lib/report-row-action-handlers'
 import { createWeldTableProps } from '@/lib/weld-table-props'
 import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-props'
 import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
@@ -61,15 +59,6 @@ import { createReportPstoDialogsProps } from '@/lib/report-psto-dialog-props'
 import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
-import {
-  hasText,
-} from '@/lib/report-value-utils'
-import {
-  canCreatePstoRequest,
-} from '@/lib/psto-status'
-import {
-  getLnkRowRequestNames,
-} from '@/lib/report-modal-rows'
 import {
   isLnkRepairForbidden,
 } from '@/lib/lnk-result-rules'
@@ -848,6 +837,13 @@ export function useHomePageController() {
     isRenamePending: renameRepeatedJointMutation.isPending,
   })
 
+  const rowActionHandlers = createReportRowActionHandlers({
+    openCreatePstoRequestModalForRow,
+    openAddPstoResultModalForRow,
+    openCreateLnkRequestModalForRow,
+    openAddLnkResultModalForRow,
+  })
+
   const weldTableProps = createWeldTableProps({
     activeReport,
     rows: visibleRows as Array<WeldInput & { id: number }>,
@@ -862,16 +858,7 @@ export function useHomePageController() {
     highlightedCellKeys,
     onOpenChain: (row) => setChainRecord(row),
     onOpenLinkedReport: openLinkedReportRow,
-    rowActionHandlers: {
-      openCreatePstoRequestModalForRow,
-      openAddPstoResultModalForRow,
-      canCreatePstoRequest,
-      canAddPstoResult: (row) => hasText(row.pstoRequest),
-      openCreateLnkRequestModalForRow,
-      openAddLnkResultModalForRow,
-      canCreateLnkRequest,
-      canAddLnkResult: (row) => getLnkRowRequestNames(row).length > 0,
-    },
+    rowActionHandlers,
   })
 
   const welderStampsRegistryProps = createWelderStampsRegistryProps({
