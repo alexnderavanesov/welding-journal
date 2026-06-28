@@ -1,15 +1,11 @@
 import { Check } from 'lucide-react'
 
 import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
-  JointWeldDateMeta,
-  MetaSeparator,
-  OfficialityBadge,
+  JointFullMeta,
+  JointTitleLine,
 } from '@/components/joint-meta'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
-import { getJointTitle } from '@/lib/report-ui-state'
 
 export type LnkOfficialityRowProps = {
   row: WeldRow
@@ -34,16 +30,9 @@ export function LnkOfficialityRow({ row, selected, onToggle }: LnkOfficialityRow
         {selected ? <Check className="h-3 w-3" /> : null}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="text-sm font-semibold text-slate-900">{getJointTitle(row)}</span>
-          <OfficialityBadge row={row} compact />
-        </span>
+        <JointTitleLine row={row} className="text-sm font-semibold text-slate-900" />
         <span className="mt-1 block text-xs text-slate-500">
-          <JointProjectSubtitleMeta row={row} />
-          <MetaSeparator />
-          <JointSpoolDiameterMeta row={row} />
-          <MetaSeparator />
-          <JointWeldDateMeta row={row} />
+          <JointFullMeta row={row} />
         </span>
       </span>
       <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>

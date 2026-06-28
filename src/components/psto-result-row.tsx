@@ -1,9 +1,7 @@
 import {
   JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
+  JointSpoolDateMeta,
   JointTitleLine,
-  JointWeldDateMeta,
-  MetaSeparator,
 } from '@/components/joint-meta'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
@@ -47,9 +45,7 @@ export function PstoResultRow({ row, selected, disabled, onToggle }: PstoResultR
           <JointProjectSubtitleMeta row={row} />
         </span>
         <span className="block text-xs leading-5 text-slate-500">
-          <JointSpoolDiameterMeta row={row} />
-          <MetaSeparator />
-          <JointWeldDateMeta row={row} />
+          <JointSpoolDateMeta row={row} />
         </span>
         <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
           <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>

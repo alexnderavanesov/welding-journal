@@ -43,6 +43,26 @@ export function JointProjectSubtitleMeta({ row }: { row: WeldInput }) {
   )
 }
 
+export function JointSpoolDateMeta({ row }: { row: WeldInput }) {
+  return (
+    <>
+      <JointSpoolDiameterMeta row={row} />
+      <MetaSeparator />
+      <JointWeldDateMeta row={row} />
+    </>
+  )
+}
+
+export function JointFullMeta({ row }: { row: WeldInput }) {
+  return (
+    <>
+      <JointProjectSubtitleMeta row={row} />
+      <MetaSeparator />
+      <JointSpoolDateMeta row={row} />
+    </>
+  )
+}
+
 export function JointTitleLine({
   row,
   className,

@@ -1,9 +1,6 @@
 import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
+  JointFullMeta,
   JointTitleLine,
-  JointWeldDateMeta,
-  MetaSeparator,
 } from '@/components/joint-meta'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
@@ -37,11 +34,7 @@ export function PstoRequestRow({ row, selected, disabled, onToggleRow }: PstoReq
       <span className="min-w-0">
         <JointTitleLine row={row} truncate />
         <span className="block text-xs leading-5 text-slate-500">
-          <JointProjectSubtitleMeta row={row} />
-          <MetaSeparator />
-          <JointSpoolDiameterMeta row={row} />
-          <MetaSeparator />
-          <JointWeldDateMeta row={row} />
+          <JointFullMeta row={row} />
         </span>
         <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
           <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>

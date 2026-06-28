@@ -1,15 +1,11 @@
 import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
-  JointWeldDateMeta,
-  MetaSeparator,
-  OfficialityBadge,
+  JointFullMeta,
+  JointTitleLine,
 } from '@/components/joint-meta'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getEffectiveLnkResultDraftValueForRow, type LnkResultDraftLike } from '@/lib/lnk-result-draft'
 import type { LnkMethod } from '@/lib/lnk-status'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
-import { getJointTitle } from '@/lib/report-ui-state'
 
 type LnkResultPreviewRowProps = {
   row: WeldRow
@@ -25,16 +21,9 @@ export function LnkResultPreviewRow({ row, method, draft }: LnkResultPreviewRowP
   return (
     <div className="grid grid-cols-[minmax(320px,1fr)_minmax(220px,0.45fr)] gap-4 px-4 py-3 text-sm">
       <div className="min-w-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="font-medium text-slate-900">{getJointTitle(row)}</span>
-          <OfficialityBadge row={row} compact />
-        </div>
+        <JointTitleLine row={row} />
         <div className="mt-1 text-xs text-slate-500">
-          <JointProjectSubtitleMeta row={row} />
-          <MetaSeparator />
-          <JointSpoolDiameterMeta row={row} />
-          <MetaSeparator />
-          <JointWeldDateMeta row={row} />
+          <JointFullMeta row={row} />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
           <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-bold text-slate-700">

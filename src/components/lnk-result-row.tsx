@@ -1,9 +1,7 @@
 import {
   JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
+  JointSpoolDateMeta,
   JointTitleLine,
-  JointWeldDateMeta,
-  MetaSeparator,
 } from '@/components/joint-meta'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getEffectiveLnkResultDraftValueForRow } from '@/lib/lnk-result-draft'
@@ -67,9 +65,7 @@ export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkRes
           <JointProjectSubtitleMeta row={row} />
         </span>
         <span className="block text-xs leading-5 text-slate-500">
-          <JointSpoolDiameterMeta row={row} />
-          <MetaSeparator />
-          <JointWeldDateMeta row={row} />
+          <JointSpoolDateMeta row={row} />
         </span>
         <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
           {formatLnkResultSummaryItems(row).map((item) => (

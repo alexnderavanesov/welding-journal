@@ -1,9 +1,6 @@
 import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
+  JointFullMeta,
   JointTitleLine,
-  JointWeldDateMeta,
-  MetaSeparator,
 } from '@/components/joint-meta'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
@@ -42,11 +39,7 @@ export function LnkRequestRow({ row, selected, selectedMethods, onToggleRow }: L
       <span className="min-w-0">
         <JointTitleLine row={row} truncate />
         <span className="block text-xs leading-5 text-slate-500">
-          <JointProjectSubtitleMeta row={row} />
-          <MetaSeparator />
-          <JointSpoolDiameterMeta row={row} />
-          <MetaSeparator />
-          <JointWeldDateMeta row={row} />
+          <JointFullMeta row={row} />
         </span>
       </span>
       <span className="flex flex-wrap gap-1.5">
