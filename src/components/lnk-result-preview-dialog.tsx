@@ -1,7 +1,7 @@
+import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultPreviewRow } from '@/components/lnk-result-preview-row'
-import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LnkResultDraftLike } from '@/lib/lnk-result-draft'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
@@ -40,11 +40,7 @@ export function LnkResultPreviewDialog({ rows, draft, onClose }: LnkResultPrevie
           </div>
         )}
       </div>
-      <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-        <Button variant="outline" onClick={onClose}>
-          Закрыть
-        </Button>
-      </div>
+      <DialogCloseFooter onClose={onClose} />
     </LargeDialogShell>
   )
 }

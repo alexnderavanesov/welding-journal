@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 
+import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { JointChainCard } from '@/components/joint-chain-card'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
@@ -58,11 +59,7 @@ export function JointChainDialog({ record, rows, onClose, onOpenBase, onOpenRow 
         )}
       </div>
 
-      <div className="flex justify-end border-t border-slate-200 px-5 py-4">
-        <Button variant="outline" onClick={onClose}>
-          Закрыть
-        </Button>
-      </div>
+      <DialogCloseFooter onClose={onClose} borderClassName="border-slate-200" />
     </LargeDialogShell>
   )
 }
