@@ -1,10 +1,9 @@
-import { Check } from 'lucide-react'
-
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogSummaryPanel, DialogSummaryStat } from '@/components/dialog-summary-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { LnkResultManagerFooter } from '@/components/lnk-result-manager-footer'
 import {
   LnkResultManagerEntry,
   type LnkResultChangeHintState,
@@ -12,7 +11,6 @@ import {
   type LnkResultMethod,
   type LnkResultPreviewState,
 } from '@/components/lnk-result-manager-entry'
-import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -135,30 +133,12 @@ export function LnkResultManagerDialog({
           )}
         </section>
       </div>
-      <div className="flex items-center justify-between gap-4 border-t border-slate-200/80 px-5 py-4">
-        <div className="text-sm text-slate-500">
-          {pendingEntries.length > 0 ? (
-            <span className="inline-flex rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800">
-              Подготовлено изменений: {pendingEntries.length}
-            </span>
-          ) : (
-            <span className="text-xs">Выберите новый результат, затем сохраните изменения.</span>
-          )}
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={onResetPendingChanges}
-            disabled={pendingEntries.length === 0 || isResultReplacementPending}
-          >
-            Отменить изменения
-          </Button>
-          <Button onClick={onSaveChanges} disabled={pendingEntries.length === 0 || isResultReplacementPending}>
-            <Check className="mr-2 h-4 w-4" />
-            Сохранить изменения
-          </Button>
-        </div>
-      </div>
+      <LnkResultManagerFooter
+        pendingEntriesCount={pendingEntries.length}
+        isResultReplacementPending={isResultReplacementPending}
+        onResetPendingChanges={onResetPendingChanges}
+        onSaveChanges={onSaveChanges}
+      />
     </LargeDialogShell>
   )
 }
