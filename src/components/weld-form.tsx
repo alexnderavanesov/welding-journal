@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import { WeldFormFooter } from '@/components/weld-form-footer'
+import { WeldFormField } from '@/components/weld-form-field'
 import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
-import { WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import {
-  FINAL_STATUS_OPTIONS,
-  RESULT_FIELD_KEYS,
-  RESULT_STATUS_OPTIONS,
   VISIBLE_FIELD_SECTIONS,
   type WeldFieldKey,
   type WeldInput,
@@ -19,15 +14,10 @@ import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-
 import {
   OfficialityBadge,
   formHiddenFieldKeys,
-  getFinalStatusValue,
   getJointTitle,
-  getResultStatusValue,
-  getStampSelectValue,
   getWeldFormSaveBlockReason,
   getWeldStampSaveBlockReason,
-  isYesValue,
   withCalculatedFinalStatus,
-  yesEmptyFieldKeys,
   type StampSelectOptions,
 } from '@/lib/weld-form-utils'
 
@@ -174,122 +164,14 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
                 {collapsedSections.has(section) ? null : (
                   <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
                     {fields.map((field) => (
-                      <div key={field.key} className="space-y-1.5 text-sm">
-                        <span className="text-[13px] font-medium leading-none text-slate-700">{field.label}</span>
-                        {resolvedStampSelectOptions?.[field.key] ? (
-                          <Select
-                            ref={(element) => {
-                              fieldRefs.current[field.key] = element
-                            }}
-                            value={getStampSelectValue(draft[field.key])}
-                            onChange={(event) =>
-                              setDraft((current) => ({
-                                ...current,
-                                [field.key]: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Пусто</option>
-                            {resolvedStampSelectOptions[field.key]?.map((option) => (
-                              <option
-                                key={option.value}
-                                value={option.value}
-                                disabled={option.disabled}
-                                title={option.reason}
-                                className={option.disabled ? 'bg-slate-100 text-slate-400' : undefined}
-                              >
-                                {option.value}
-                              </option>
-                            ))}
-                          </Select>
-                        ) : field.key === 'weldingMethod' ? (
-                          <WeldFormWeldingMethodField
-                            value={draft.weldingMethod}
-                            inputRef={(element) => {
-                              fieldRefs.current[field.key] = element
-                            }}
-                            onChange={(weldingMethod) =>
-                              setDraft((current) => ({
-                                ...current,
-                                weldingMethod,
-                              }))
-                            }
-                          />
-                        ) : RESULT_FIELD_KEYS.has(field.key) ? (
-                          <Select
-                            ref={(element) => {
-                              fieldRefs.current[field.key] = element
-                            }}
-                            value={
-                              field.key === 'finalStatus'
-                                ? getFinalStatusValue(calculateFinalStatus(draft))
-                                : getResultStatusValue(draft[field.key])
-                            }
-                            disabled={field.key === 'finalStatus'}
-                            onChange={(event) =>
-                              setDraft((current) => ({
-                                ...current,
-                                [field.key]: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Пусто</option>
-                            {(field.key === 'finalStatus' ? FINAL_STATUS_OPTIONS : RESULT_STATUS_OPTIONS).map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </Select>
-                        ) : yesEmptyFieldKeys.has(field.key) ? (
-                          <Select
-                            ref={(element) => {
-                              fieldRefs.current[field.key] = element
-                            }}
-                            value={isYesValue(draft[field.key]) ? 'yes' : ''}
-                            onChange={(event) =>
-                              setDraft((current) => ({
-                                ...current,
-                                [field.key]: event.target.value === 'yes' ? (field.kind === 'boolean' ? true : 'да') : null,
-                              }))
-                            }
-                          >
-                            <option value="yes">да</option>
-                            <option value="">пусто</option>
-                          </Select>
-                        ) : field.kind === 'boolean' ? (
-                          <Select
-                            ref={(element) => {
-                              fieldRefs.current[field.key] = element
-                            }}
-                            value={draft[field.key] === true ? 'true' : draft[field.key] === false ? 'false' : ''}
-                            onChange={(event) =>
-                              setDraft((current) => ({
-                                ...current,
-                                [field.key]: event.target.value === '' ? null : event.target.value === 'true',
-                              }))
-                            }
-                          >
-                            <option value="">Пусто</option>
-                            <option value="true">да</option>
-                            <option value="false">нет</option>
-                          </Select>
-                        ) : (
-                          <Input
-                            ref={(element) => {
-                              fieldRefs.current[field.key] = element
-                            }}
-                            type={field.kind === 'date' ? 'date' : field.kind === 'number' ? 'number' : 'text'}
-                            step={field.kind === 'number' ? '0.001' : undefined}
-                            value={String(draft[field.key] ?? '')}
-                            onChange={(event) =>
-                              setDraft((current) => ({
-                                ...current,
-                                [field.key]: event.target.value,
-                              }))
-                            }
-                          />
-                        )}
-                      </div>
+                      <WeldFormField
+                        key={field.key}
+                        field={field}
+                        draft={draft}
+                        stampSelectOptions={resolvedStampSelectOptions}
+                        fieldRefs={fieldRefs}
+                        setDraft={setDraft}
+                      />
                     ))}
                   </div>
                 )}
