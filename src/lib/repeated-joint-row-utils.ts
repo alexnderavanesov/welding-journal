@@ -1,7 +1,7 @@
 import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { compareReportRows } from '@/lib/report-row-utils'
 import { compareJointChainSuffix, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
-import { isUnofficialJoint } from '@/lib/joint-display'
+import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 export function getRepeatedJointIdentity(row: WeldInput, jointOverride?: string) {
@@ -52,4 +52,21 @@ export function compareJointChainRows(left: WeldRow, right: WeldRow) {
     if (leftSegment.index !== rightSegment.index) return leftSegment.index - rightSegment.index
   }
   return compareReportRows(left, right)
+}
+
+export function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
+  const targetIdentity = getJointChainIdentity(targetRow)
+  if (!targetIdentity) return []
+  return rows
+    .filter((row) => {
+      const identity = getJointChainIdentity(row)
+      return (
+        identity &&
+        identity.project === targetIdentity.project &&
+        identity.subtitle === targetIdentity.subtitle &&
+        identity.line === targetIdentity.line &&
+        identity.baseJoint === targetIdentity.baseJoint
+      )
+    })
+    .sort(compareJointChainRows)
 }

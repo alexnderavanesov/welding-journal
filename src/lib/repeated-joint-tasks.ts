@@ -1,10 +1,9 @@
-import { calculateFinalStatus, type WeldInput } from '@/lib/weld-fields'
+import { type WeldInput } from '@/lib/weld-fields'
 import {
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
   LNK_METHODS,
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
-  REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
 import { getJointStatusLabel } from '@/lib/lnk-status'
@@ -543,42 +542,4 @@ function findMatchingJointRows(rows: WeldRow[], sourceRow: WeldInput, joint: str
       normalizeSearchText(row.line) === normalizeSearchText(sourceRow.line)
     )
   })
-}
-
-export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string): WeldInput {
-  const draft = { ...sourceRow } as WeldInput & { id?: number }
-  delete draft.id
-  for (const fieldKey of repeatedJointClearedFieldKeys) {
-    draft[fieldKey] = null
-  }
-  restoreRepeatedJointControlAvailability(draft, sourceRow)
-  draft.joint = targetJoint
-  draft.status = null
-  draft.createdAt = new Date().toISOString()
-  draft.finalStatus = calculateFinalStatus(draft)
-  return draft
-}
-
-function restoreRepeatedJointControlAvailability(draft: WeldInput, sourceRow: WeldInput) {
-  draft.pstoRequired = sourceRow.pstoRequired
-  for (const method of LNK_METHODS) {
-    draft[method.enabledKey] = sourceRow[method.enabledKey]
-  }
-}
-
-export function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
-  const targetIdentity = getJointChainIdentity(targetRow)
-  if (!targetIdentity) return []
-  return rows
-    .filter((row) => {
-      const identity = getJointChainIdentity(row)
-      return (
-        identity &&
-        identity.project === targetIdentity.project &&
-        identity.subtitle === targetIdentity.subtitle &&
-        identity.line === targetIdentity.line &&
-        identity.baseJoint === targetIdentity.baseJoint
-      )
-    })
-    .sort(compareJointChainRows)
 }

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { getJointChainRows } from '@/lib/repeated-joint-tasks'
+import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import type { WeldRow } from '@/lib/dispatcher-types'
 

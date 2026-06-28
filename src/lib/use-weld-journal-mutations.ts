@@ -5,7 +5,7 @@ import {
   importWeldJoints,
   updateWeldJoint,
 } from '@/server/welds'
-import { buildRepeatedJointDraft } from '@/lib/repeated-joint-tasks'
+import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import {
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
