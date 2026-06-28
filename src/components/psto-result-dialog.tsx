@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 
+import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
@@ -103,9 +104,9 @@ export function PstoResultDialog({
 
           <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
             {filteredRows.length === 0 ? (
-              <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+              <DialogEmptyState>
                 {draft.search || requestSearch ? 'По фильтру ничего не найдено.' : 'Нет стыков для добавления результата ПСТО.'}
-              </div>
+              </DialogEmptyState>
             ) : (
               <div className="divide-y divide-slate-100">
                 {filteredRows.map((row) => (

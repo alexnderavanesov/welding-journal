@@ -1,3 +1,4 @@
+import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
@@ -149,11 +150,11 @@ export function LnkResultDialog({
 
           <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
             {visibleRows.length === 0 ? (
-              <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+              <DialogEmptyState>
                 {draft.search
                   ? 'По фильтру ничего не найдено.'
                   : 'По выбранному методу нет стыков для добавления результата.'}
-              </div>
+              </DialogEmptyState>
             ) : (
               <div className="divide-y divide-slate-100">
                 {visibleRows.map((row) => (

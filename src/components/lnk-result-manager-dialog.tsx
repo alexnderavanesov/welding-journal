@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 
+import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -128,11 +129,11 @@ export function LnkResultManagerDialog({
               ))}
             </div>
           ) : (
-            <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+            <DialogEmptyState>
               {rows.length === 0
                 ? 'Выберите стыки в окне добавления результата.'
                 : 'По выбранным стыкам нет внесенных результатов для редактирования.'}
-            </div>
+            </DialogEmptyState>
           )}
         </section>
       </div>

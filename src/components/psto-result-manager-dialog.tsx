@@ -1,4 +1,5 @@
 import { DialogHelpNote } from '@/components/dialog-help-note'
+import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoResultManagerEntry } from '@/components/psto-result-manager-entry'
@@ -70,9 +71,9 @@ export function PstoResultManagerDialog({
               ))}
             </div>
           ) : (
-            <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+            <DialogEmptyState>
               Выберите стыки с результатом ПСТО в окне добавления результата.
-            </div>
+            </DialogEmptyState>
           )}
         </section>
       </div>
