@@ -2,6 +2,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export type WeldRow = WeldInput & { id: number }
+export type WeldDraft = WeldInput & { id?: number }
 
 export type RepeatedJointCreateTask = {
   kind: 'create'

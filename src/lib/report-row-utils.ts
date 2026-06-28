@@ -1,13 +1,12 @@
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import {
   hasAnyLnkReportControl,
   hasHeatTreatmentReportState,
   toHeatTreatmentReportRow,
   toLnkReportRow,
 } from '@/lib/report-control-state'
-import type { WeldInput } from '@/lib/weld-fields'
 
-export function sumAcceptedWdi(rows: Array<WeldInput & { id?: number }>) {
+export function sumAcceptedWdi(rows: WeldDraft[]) {
   return rows.reduce((total, row) => {
     if (String(row.finalStatus ?? '').trim().toLowerCase() !== 'годен') return total
     const value = typeof row.wdi === 'number' ? row.wdi : Number(String(row.wdi ?? '').replace(',', '.'))

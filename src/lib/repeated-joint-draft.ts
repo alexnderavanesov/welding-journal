@@ -3,10 +3,10 @@ import {
   LNK_METHODS,
   REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
 } from '@/lib/report-config'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 
 export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string): WeldInput {
-  const draft = { ...sourceRow } as WeldInput & { id?: number }
+  const draft = { ...sourceRow } as WeldDraft
   delete draft.id
   for (const fieldKey of repeatedJointClearedFieldKeys) {
     draft[fieldKey] = null

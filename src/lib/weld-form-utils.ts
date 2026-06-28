@@ -6,6 +6,7 @@ import {
   type WeldInput,
   calculateFinalStatus,
 } from '@/lib/weld-fields'
+import type { WeldDraft } from '@/lib/dispatcher-types'
 import { withAutoVikForWeldDate } from '@/lib/weld-import-export'
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
 
@@ -159,7 +160,7 @@ export function getJointTitle(value: WeldInput) {
   return `${project || '-'} · ${subtitle || '-'} · ${line || '-'} · ${joint || '-'}`
 }
 
-export function getWeldFormSaveBlockReason(draft: WeldInput, initialValue: WeldInput & { id?: number }) {
+export function getWeldFormSaveBlockReason(draft: WeldInput, initialValue: WeldDraft) {
   if (isFutureWeldDate(draft.weldDate)) {
     return 'дата сварки не может быть позже сегодняшней.'
   }

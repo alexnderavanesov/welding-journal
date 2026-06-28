@@ -22,6 +22,7 @@ import type {
   RepeatedJointCreateTask,
   RepeatedJointDeleteTask,
   RepeatedJointRenameTask,
+  WeldDraft,
   WeldRow,
 } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -46,7 +47,7 @@ export function useWeldJournalMutations({
   const queryClient = useQueryClient()
 
   const saveMutation = useMutation({
-    mutationFn: async (value: WeldInput & { id?: number }) => {
+    mutationFn: async (value: WeldDraft) => {
       const preparedValue = value
       validateRequiredRootStampForSave(preparedValue)
       validateManualJointNameForSave(preparedValue, rows)

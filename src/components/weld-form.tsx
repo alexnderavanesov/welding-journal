@@ -10,6 +10,7 @@ import {
   calculateFinalStatus,
 } from '@/lib/weld-fields'
 import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-import-export'
+import type { WeldDraft } from '@/lib/dispatcher-types'
 import {
   formHiddenFieldKeys,
   getWeldFormSaveBlockReason,
@@ -21,7 +22,7 @@ import {
 export type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-utils'
 
 type WeldFormProps = {
-  value: WeldInput & { id?: number }
+  value: WeldDraft
   focusField?: WeldFieldKey
   stampSelectOptions?: StampSelectOptions | ((value: WeldInput) => StampSelectOptions)
   getExternalSaveBlockReason?: (value: WeldInput) => string | null

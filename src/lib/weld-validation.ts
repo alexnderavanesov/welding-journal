@@ -1,9 +1,9 @@
 import { getRequiredRootStampMessage } from '@/lib/weld-import-export'
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
 
-export function validateManualJointNameForSave(value: WeldInput & { id?: number }, rows: WeldRow[]) {
+export function validateManualJointNameForSave(value: WeldDraft, rows: WeldRow[]) {
   validateWeldDateForSave(value.weldDate)
 
   const currentJoint = normalizeJointName(value.joint)

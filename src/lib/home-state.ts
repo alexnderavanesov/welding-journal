@@ -1,8 +1,8 @@
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
 export type EditingState = {
-  record: WeldInput & { id?: number }
+  record: WeldDraft
   focusField?: WeldFieldKey
 }
 

@@ -4,6 +4,7 @@ import { requireDb } from '@/db'
 import { weldJoints, type NewWeldJoint } from '@/db/schema'
 import { WELD_FIELDS, type WeldInput, calculateFinalStatus } from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
+import type { WeldDraft } from '@/lib/dispatcher-types'
 
 export type WeldFilters = {
   search?: string
@@ -18,7 +19,7 @@ export type WeldFilters = {
   controlMethod?: string
 }
 
-export type WeldPayload = WeldInput & { id?: number }
+export type WeldPayload = WeldDraft
 
 const filterKeys = [
   'projectTitle',
