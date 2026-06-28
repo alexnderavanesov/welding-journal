@@ -11,10 +11,7 @@ import {
   validateRequiredRootStampsForImport,
   validateWeldDatesForImport,
 } from '@/lib/weld-validation'
-import {
-  normalizeWeldingMethodsForImport,
-  validateWelderStampFieldsForImport,
-} from '@/lib/welder-stamp-registry'
+import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
 import {
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
