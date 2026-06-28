@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Check, Pencil, X } from 'lucide-react'
 
+import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { Button } from '@/components/ui/button'
@@ -144,55 +145,19 @@ export function PstoResultDialog({
               </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-              <Input
-                value={draft.search}
-                onChange={(event) => onDraftChange((current) => ({ ...current, search: event.target.value }))}
-                placeholder="Проект, шифр, линия, спул или стык"
-                className="h-9 min-w-56 flex-[0.8] bg-white"
-              />
-              <Input
-                value={requestSearch}
-                onChange={(event) => onRequestSearchChange(event.target.value)}
-                placeholder="Поиск заявки"
-                className="h-9 min-w-44 flex-[0.45] bg-white"
-              />
-              <Select
-                value={draft.requestName}
-                onChange={(event) => onRequestChange(event.target.value)}
-                className="h-9 min-w-48 flex-[0.5] bg-white"
-              >
-                <option value="">Все заявки</option>
-                {filteredRequestOptions.map((requestName) => (
-                  <option key={requestName} value={requestName}>
-                    {requestName}
-                  </option>
-                ))}
-              </Select>
-              {requestSearch ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onRequestSearchChange('')}
-                  className="h-9 px-2"
-                  aria-label="Очистить поиск заявки"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              ) : null}
-              <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                Заявок: {filteredRequestOptions.length}/{availableRequestOptions.length}
-              </span>
-              <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                Найдено: {filteredRows.length} · Выбрано: {draft.rowIds.size}
-              </span>
-              {draft.search || requestSearch ? (
-                <Button variant="outline" size="sm" onClick={onClearFilters}>
-                  Очистить
-                </Button>
-              ) : null}
-            </div>
+            <PstoResultFilters
+              search={draft.search}
+              requestSearch={requestSearch}
+              requestName={draft.requestName}
+              filteredRequestOptions={filteredRequestOptions}
+              availableRequestOptionsCount={availableRequestOptions.length}
+              filteredRowsCount={filteredRows.length}
+              selectedRowsCount={draft.rowIds.size}
+              onSearchChange={(search) => onDraftChange((current) => ({ ...current, search }))}
+              onRequestSearchChange={onRequestSearchChange}
+              onRequestChange={onRequestChange}
+              onClearFilters={onClearFilters}
+            />
 
             <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
               {filteredRows.length === 0 ? (
