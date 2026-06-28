@@ -1,12 +1,15 @@
 import { useMemo } from 'react'
-import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
-import { findFirstDateBeforeWeldDateIssue } from '@/lib/report-date-rules'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
-import { collectRequestNames, filterRequestNamesBySearch, getRequestNameFromNaming, sortPstoRequestNamesNewestFirst } from '@/lib/report-naming'
-import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
-import { filterPstoResultRows } from '@/lib/report-row-utils'
-import { hasText } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import {
+  getFilteredPstoResultRequestOptions,
+  getFilteredPstoResultRows,
+  getManagedPstoResultRows,
+  getPstoResultAvailableRequestOptions,
+  getPstoResultSaveBlockReason,
+  getPstoResultSearchRows,
+  getSelectedPstoResultRows,
+} from '@/lib/psto-result-derived-utils'
 
 type PstoResultDerivedStateParams = {
   heatTreatmentRows: WeldRow[]
@@ -29,57 +32,45 @@ export function usePstoResultDerivedState({
   nextPstoDiagramName,
   isPstoResultSaving,
 }: PstoResultDerivedStateParams) {
-  const pstoResultAvailableRequestOptions = useMemo(() => {
-    const selectedRequestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(pstoResultSelectedRows, ['pstoRequest']))
-    return selectedRequestOptions.length > 0 ? selectedRequestOptions : pstoResultRequestOptions
-  }, [pstoResultRequestOptions, pstoResultSelectedRows])
+  const pstoResultAvailableRequestOptions = useMemo(
+    () => getPstoResultAvailableRequestOptions(pstoResultSelectedRows, pstoResultRequestOptions),
+    [pstoResultRequestOptions, pstoResultSelectedRows],
+  )
 
   const filteredPstoResultRequestOptions = useMemo(
-    () => filterRequestNamesBySearch(pstoResultAvailableRequestOptions, pstoResultRequestSearch),
+    () => getFilteredPstoResultRequestOptions(pstoResultAvailableRequestOptions, pstoResultRequestSearch),
     [pstoResultAvailableRequestOptions, pstoResultRequestSearch],
   )
 
-  const pstoResultSearchRows = pstoResultDraft.requestName ? selectedPstoResultRequestRows : heatTreatmentRows
+  const pstoResultSearchRows = getPstoResultSearchRows({
+    heatTreatmentRows,
+    selectedRequestRows: selectedPstoResultRequestRows,
+    draft: pstoResultDraft,
+  })
 
   const filteredPstoResultRows = useMemo(
-    () => filterPstoResultRows(pstoResultSearchRows, pstoResultDraft.search),
-    [pstoResultDraft.search, pstoResultSearchRows],
+    () => getFilteredPstoResultRows(pstoResultSearchRows, pstoResultDraft),
+    [pstoResultDraft, pstoResultSearchRows],
   )
 
   const selectedPstoResultRows = useMemo(
-    () =>
-      filteredPstoResultRows.filter(
-        (row) => pstoResultDraft.rowIds.has(row.id) && canSelectPstoResultRow(row, pstoResultDraft.requestName),
-      ),
+    () => getSelectedPstoResultRows(filteredPstoResultRows, pstoResultDraft),
     [filteredPstoResultRows, pstoResultDraft.requestName, pstoResultDraft.rowIds],
   )
 
-  const pstoResultSaveBlockReason = useMemo(() => {
-    if (isPstoResultSaving) return 'Результат сохраняется, дождитесь завершения.'
-    if (!pstoResultDraft.requestName) return 'Выберите заявку ПСТО.'
-    if (selectedPstoResultRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
-    if (!pstoResultDraft.result) return 'Выберите результат ПСТО.'
-    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && pstoResultDraft.result !== 'проведено') return 'Выберите результат ПСТО.'
-    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !pstoResultDraft.pstoDate) return 'Укажите дату ПСТО.'
-    const dateIssue =
-      pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE
-        ? null
-        : findFirstDateBeforeWeldDateIssue(selectedPstoResultRows, pstoResultDraft.pstoDate, 'Дата ПСТО')
-    if (dateIssue) return dateIssue
-    if (
-      pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE &&
-      !getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName)
-    ) {
-      return 'Укажите наименование диаграммы термообработки.'
-    }
-    return ''
-  }, [isPstoResultSaving, nextPstoDiagramName, pstoResultDraft, selectedPstoResultRows])
+  const pstoResultSaveBlockReason = useMemo(
+    () =>
+      getPstoResultSaveBlockReason({
+        draft: pstoResultDraft,
+        isSaving: isPstoResultSaving,
+        nextDiagramName: nextPstoDiagramName,
+        selectedRows: selectedPstoResultRows,
+      }),
+    [isPstoResultSaving, nextPstoDiagramName, pstoResultDraft, selectedPstoResultRows],
+  )
 
   const managedPstoResultRows = useMemo(
-    () =>
-      heatTreatmentRows.filter(
-        (row) => pstoResultDraft.rowIds.has(row.id) && (hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate)),
-      ),
+    () => getManagedPstoResultRows(heatTreatmentRows, pstoResultDraft.rowIds),
     [heatTreatmentRows, pstoResultDraft.rowIds],
   )
 
