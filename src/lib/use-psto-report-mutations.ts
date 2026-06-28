@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { updateWeldJoint } from '@/server/welds'
 import type { HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import {
@@ -17,6 +16,7 @@ import {
   withAutoHeatTreatmentDiagrams,
 } from '@/lib/psto-status'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
@@ -70,8 +70,7 @@ export function usePstoReportMutations({
     }) => {
       const pstoUpdatedAt = new Date().toISOString()
       const updatedRecords = records.map((record) => ({ ...record, pstoRequest: requestName, pstoCreatedAt: pstoUpdatedAt }))
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows
     },
     onSuccess: async (_result, variables) => {
@@ -125,8 +124,7 @@ export function usePstoReportMutations({
       }
       const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
       const updatedRecords = recalculatedRows.filter((row) => proposedRowsById.has(row.id))
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -180,8 +178,7 @@ export function usePstoReportMutations({
 
       if (updatedRecords.length === 0) throw new Error('Заявка ПСТО не найдена')
 
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -217,8 +214,7 @@ export function usePstoReportMutations({
         pstoCreatedAt: new Date().toISOString(),
       } as RowWithId
 
-      const saved = await updateWeldJoint({ data: updatedRecord })
-      if (!saved) throw new Error('Запись не найдена')
+      const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
@@ -259,8 +255,7 @@ export function usePstoReportMutations({
         pstoCreatedAt: new Date().toISOString(),
       } as RowWithId
 
-      const saved = await updateWeldJoint({ data: updatedRecord })
-      if (!saved) throw new Error('Запись не найдена')
+      const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
@@ -286,8 +281,7 @@ export function usePstoReportMutations({
       rows: RowWithId[]
     }) => {
       const updatedRecord = withAutoHeatTreatmentDiagram({ ...record, [fieldKey]: value }, rows)
-      const saved = await updateWeldJoint({ data: updatedRecord })
-      if (!saved) throw new Error('Запись не найдена')
+      const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {

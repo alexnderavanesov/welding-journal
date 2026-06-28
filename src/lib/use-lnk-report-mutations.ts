@@ -2,7 +2,6 @@ import type { Dispatch, SetStateAction } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   clearLnkGeneratedWeldData,
-  updateWeldJoint,
 } from '@/server/welds'
 import type { HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import {
@@ -50,6 +49,7 @@ import {
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import {
   calculateFinalStatus,
   type WeldFieldKey,
@@ -153,8 +153,7 @@ export function useLnkReportMutations({
         throw new Error('Нет доступных стыков или видов контроля для новой заявки ЛНК')
       }
 
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -202,8 +201,7 @@ export function useLnkReportMutations({
 
       const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
       const updatedRecord = { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
-      const saved = await updateWeldJoint({ data: updatedRecord })
-      if (!saved) throw new Error('Запись не найдена')
+      const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
@@ -278,8 +276,7 @@ export function useLnkReportMutations({
 
       if (updatedRecords.length === 0) throw new Error('Заявка ЛНК не найдена')
 
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -349,8 +346,7 @@ export function useLnkReportMutations({
         return { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
       })
 
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -395,8 +391,7 @@ export function useLnkReportMutations({
 
       if (updatedRecords.length === 0) throw new Error('Выбранные стыки уже имеют такой статус')
 
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -441,8 +436,7 @@ export function useLnkReportMutations({
       const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
       const updatedRecord = { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
 
-      const saved = await updateWeldJoint({ data: updatedRecord })
-      if (!saved) throw new Error('Запись не найдена')
+      const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
@@ -484,8 +478,7 @@ export function useLnkReportMutations({
         return { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
       })
 
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -541,8 +534,7 @@ export function useLnkReportMutations({
 
       if (updatedRecords.length === 0) throw new Error('Нет результатов для переименования заключения')
 
-      const savedRows = await Promise.all(updatedRecords.map((record) => updateWeldJoint({ data: record })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось сохранить часть записей')
+      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -581,8 +573,7 @@ export function useLnkReportMutations({
 
       const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
       const updatedRecord = { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
-      const saved = await updateWeldJoint({ data: updatedRecord })
-      if (!saved) throw new Error('Запись не найдена')
+      const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
