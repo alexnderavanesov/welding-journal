@@ -1,10 +1,7 @@
 import { useMemo } from 'react'
-import { WeldTableFilterResetHeader } from '@/components/weld-table-actions'
 import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { WeldTableColumns } from '@/components/weld-table-columns'
-import { WeldTableFieldHeaderRows } from '@/components/weld-table-field-header-rows'
-import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
-import { WeldTableSectionHeaderRow } from '@/components/weld-table-section-header-row'
+import { WeldTableHeader } from '@/components/weld-table-header'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import { filterWeldRowsByColumns, hasColumnFilters as getHasColumnFilters } from '@/lib/weld-table-filtering'
 import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
@@ -150,41 +147,27 @@ export function WeldTable({
             hasRowActions={hasRowActions}
             hasChainAction={hasChainAction}
           />
-          <thead className="sticky top-0 z-10 bg-slate-50/95 text-left shadow-[inset_0_-1px_0_0_rgb(226,232,240)] backdrop-blur">
-            <tr>
-              {selectable ? (
-                <WeldTableSelectAllHeader
-                  checked={allVisibleRowsSelected}
-                  indeterminate={someVisibleRowsSelected}
-                  disabled={selectableVisibleRows.length === 0}
-                  title={selectableVisibleRows.length === 0 ? 'Нет доступных стыков для новой заявки' : 'Выбрать видимые стыки'}
-                  onChange={setVisibleRowsSelected}
-                />
-              ) : null}
-              {hasChainAction ? (
-                <WeldTableFilterResetHeader hasColumnFilters={hasColumnFilters} onReset={() => onColumnFiltersChange({})} />
-              ) : null}
-              {hasRowActions ? (
-                <WeldTableRowActionsHeader
-                  label={rowActions?.headerLabel ?? 'Быстрые действия'}
-                  screenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
-                />
-              ) : null}
-              <WeldTableSectionHeaderRow
-                sections={filteredSections}
-                alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
-                readOnly={readOnly}
-                onToggleSection={toggleSection}
-              />
-            </tr>
-            <WeldTableFieldHeaderRows
-              fields={filteredFields}
-              columnFilters={columnFilters}
-              readOnly={readOnly}
-              canEditField={canEditField}
-              onColumnFiltersChange={onColumnFiltersChange}
-            />
-          </thead>
+          <WeldTableHeader
+            selectable={selectable}
+            allVisibleRowsSelected={allVisibleRowsSelected}
+            someVisibleRowsSelected={someVisibleRowsSelected}
+            selectableVisibleRowsCount={selectableVisibleRows.length}
+            onSetVisibleRowsSelected={setVisibleRowsSelected}
+            hasChainAction={hasChainAction}
+            hasColumnFilters={hasColumnFilters}
+            onResetColumnFilters={() => onColumnFiltersChange({})}
+            hasRowActions={hasRowActions}
+            rowActionsHeaderLabel={rowActions?.headerLabel ?? 'Быстрые действия'}
+            rowActionsScreenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
+            filteredSections={filteredSections}
+            alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
+            readOnly={readOnly}
+            onToggleSection={toggleSection}
+            filteredFields={filteredFields}
+            columnFilters={columnFilters}
+            canEditField={canEditField}
+            onColumnFiltersChange={onColumnFiltersChange}
+          />
           <tbody>
             <WeldTableBodyRows
               rows={filteredRows}
