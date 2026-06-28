@@ -1,5 +1,6 @@
 import { Check, Pencil, X } from 'lucide-react'
 
+import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { Button } from '@/components/ui/button'
@@ -210,51 +211,20 @@ export function LnkResultDialog({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-              <Input
-                value={draft.search}
-                onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Проект, шифр, линия, спул или стык"
-                className="h-9 min-w-56 flex-[0.85] bg-white"
-              />
-              <Input
-                value={requestSearch}
-                onChange={(event) => onRequestSearchChange(event.target.value)}
-                placeholder="Поиск заявки"
-                className="h-9 min-w-44 flex-[0.45] bg-white"
-              />
-              <Select value={draft.requestName} onChange={(event) => onRequestChange(event.target.value)} className="h-9 min-w-48 flex-[0.5] bg-white">
-                <option value="">Все заявки</option>
-                {filteredRequestOptions.map((requestName) => (
-                  <option key={requestName} value={requestName}>
-                    {requestName}
-                  </option>
-                ))}
-              </Select>
-              {requestSearch ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onClearRequestSearch}
-                  className="h-9 px-2"
-                  aria-label="Очистить поиск заявки"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              ) : null}
-              <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                Заявок: {filteredRequestOptions.length}/{availableRequestOptions.length}
-              </span>
-              <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                Найдено: {visibleRows.length} · Выбрано: {draft.rowIds.size}
-              </span>
-              {draft.search ? (
-                <Button variant="outline" size="sm" onClick={onClearSearch}>
-                  Очистить
-                </Button>
-              ) : null}
-            </div>
+            <LnkResultFilters
+              search={draft.search}
+              requestSearch={requestSearch}
+              requestName={draft.requestName}
+              filteredRequestOptions={filteredRequestOptions}
+              availableRequestOptionsCount={availableRequestOptions.length}
+              filteredRowsCount={visibleRows.length}
+              selectedRowsCount={draft.rowIds.size}
+              onSearchChange={onSearchChange}
+              onRequestSearchChange={onRequestSearchChange}
+              onRequestChange={onRequestChange}
+              onClearRequestSearch={onClearRequestSearch}
+              onClearSearch={onClearSearch}
+            />
 
             <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
               {visibleRows.length === 0 ? (
