@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { WeldFormFooter } from '@/components/weld-form-footer'
-import { WeldFormField } from '@/components/weld-form-field'
 import { WeldFormHeader } from '@/components/weld-form-header'
-import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
+import { WeldFormSections } from '@/components/weld-form-sections'
 import {
   VISIBLE_FIELD_SECTIONS,
   type WeldFieldKey,
@@ -139,37 +138,15 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
       <WeldFormHeader draft={draft} isEditing={Boolean(value.id)} onCancel={onCancel} />
 
       <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="space-y-8">
-          {fieldsByGroup.length === 0 ? (
-            <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-              Нет доступных полей для редактирования этой записи.
-            </div>
-          ) : null}
-          {fieldsByGroup.map(({ section, fields }) => (
-            <section key={section}>
-              <WeldFormSectionHeader
-                section={section}
-                fieldsCount={fields.length}
-                collapsed={collapsedSections.has(section)}
-                onToggle={() => toggleSection(section)}
-              />
-              {collapsedSections.has(section) ? null : (
-                <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
-                  {fields.map((field) => (
-                    <WeldFormField
-                      key={field.key}
-                      field={field}
-                      draft={draft}
-                      stampSelectOptions={resolvedStampSelectOptions}
-                      fieldRefs={fieldRefs}
-                      setDraft={setDraft}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          ))}
-        </div>
+        <WeldFormSections
+          fieldsByGroup={fieldsByGroup}
+          collapsedSections={collapsedSections}
+          draft={draft}
+          stampSelectOptions={resolvedStampSelectOptions}
+          fieldRefs={fieldRefs}
+          onToggleSection={toggleSection}
+          setDraft={setDraft}
+        />
       </div>
 
       <WeldFormFooter
