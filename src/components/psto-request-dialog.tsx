@@ -1,19 +1,11 @@
 import { Check, Pencil, X } from 'lucide-react'
 
-import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
-  JointWeldDateMeta,
-  MetaSeparator,
-  OfficialityBadge,
-} from '@/components/joint-meta'
+import { PstoRequestAside } from '@/components/psto-request-aside'
+import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestNamingControls } from '@/components/request-naming-controls'
+import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
-import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
-import { getJointTitle } from '@/lib/report-ui-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 
 export type PstoRequestDialogProps = {
@@ -95,15 +87,7 @@ export function PstoRequestDialog({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-            <h3 className="text-sm font-semibold text-slate-800">Термообработка</h3>
-            <p className="text-xs leading-5 text-slate-500">
-              В заявку можно добавить один или несколько стыков, где ПСТО требуется и заявка еще не создана.
-            </p>
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
-              После создания наименование заявки попадет в столбец «Заявка ПСТО», а строка обновит дату «Внесен ПСТО».
-            </div>
-          </section>
+          <PstoRequestAside />
 
           <section className="flex min-h-0 flex-col space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -116,22 +100,13 @@ export function PstoRequestDialog({
               </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-              <Input
-                value={requestSearch}
-                onChange={(event) => onRequestSearchChange(event.target.value)}
-                placeholder="Проект, шифр, линия, спул или стык"
-                className="h-9 min-w-64 flex-1 bg-white"
-              />
-              <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                Найдено: {filteredRows.length} · Доступно: {availableRowsCount}
-              </span>
-              {requestSearch ? (
-                <Button variant="outline" size="sm" onClick={() => onRequestSearchChange('')}>
-                  Очистить
-                </Button>
-              ) : null}
-            </div>
+            <RequestRowsSearch
+              value={requestSearch}
+              placeholder="Проект, шифр, линия, спул или стык"
+              filteredCount={filteredRows.length}
+              availableCount={availableRowsCount}
+              onChange={onRequestSearchChange}
+            />
 
             <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
               {filteredRows.length === 0 ? (
@@ -144,56 +119,13 @@ export function PstoRequestDialog({
                     const disabled = !canCreateRequest(row)
                     const selected = selectedIds.has(row.id)
                     return (
-                      <label
+                      <PstoRequestRow
                         key={row.id}
-                        className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] items-center gap-3 px-4 py-3 text-sm transition-colors ${
-                          disabled
-                            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-                            : selected
-                              ? 'cursor-pointer bg-sky-50/80'
-                              : 'cursor-pointer bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => onToggleRow(row.id)}
-                          disabled={disabled}
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                        />
-                        <span className="min-w-0">
-                          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-                            <OfficialityBadge row={row} compact />
-                          </span>
-                          <span className="block text-xs leading-5 text-slate-500">
-                            <JointProjectSubtitleMeta row={row} />
-                            <MetaSeparator />
-                            <JointSpoolDiameterMeta row={row} />
-                            <MetaSeparator />
-                            <JointWeldDateMeta row={row} />
-                          </span>
-                          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                            <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
-                              Стык: {getJointStatusLabel(row)}
-                            </span>
-                            <span className={`rounded border px-1.5 py-0.5 font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
-                              ПСТО: {getPstoResultLabel(row.pstoResult)}
-                            </span>
-                          </span>
-                        </span>
-                        <span className="flex flex-wrap gap-1.5">
-                          {disabled ? (
-                            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
-                              {String(row.pstoRequest ?? '').trim() || 'Заявка уже создана'}
-                            </span>
-                          ) : (
-                            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
-                              ПСТО
-                            </span>
-                          )}
-                        </span>
-                      </label>
+                        row={row}
+                        selected={selected}
+                        disabled={disabled}
+                        onToggleRow={onToggleRow}
+                      />
                     )
                   })}
                 </div>

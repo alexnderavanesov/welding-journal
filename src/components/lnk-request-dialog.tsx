@@ -1,20 +1,12 @@
 import { Check, Pencil, X } from 'lucide-react'
 
-import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
-  JointWeldDateMeta,
-  MetaSeparator,
-  OfficialityBadge,
-} from '@/components/joint-meta'
+import { LnkRequestMethods } from '@/components/lnk-request-methods'
+import { LnkRequestRow } from '@/components/lnk-request-row'
 import { RequestNamingControls } from '@/components/request-naming-controls'
+import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { LNK_METHODS } from '@/lib/report-config'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
-import { getLnkRowRequestMethods, isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
-import { getJointTitle } from '@/lib/report-ui-state'
+import { isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
@@ -106,31 +98,11 @@ export function LnkRequestDialog({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-slate-800">Виды контроля</h3>
-              <span className="text-xs text-slate-500">
-                {selectedMethodKeys.length}/{LNK_METHODS.length}
-              </span>
-            </div>
-            <p className="text-xs leading-5 text-slate-500">Выберите один или несколько видов контроля для этой заявки.</p>
-            <div className="grid grid-cols-2 gap-2">
-              {LNK_METHODS.map((method) => (
-                <button
-                  key={method.requestKey}
-                  type="button"
-                  onClick={() => onToggleMethod(method.requestKey)}
-                  className={`inline-flex h-10 items-center justify-center rounded-md border px-3 text-sm font-medium transition-colors ${
-                    selectedMethods.has(method.requestKey)
-                      ? 'border-sky-300 bg-sky-100 text-sky-900 shadow-sm shadow-sky-100'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  {method.code}
-                </button>
-              ))}
-            </div>
-          </section>
+          <LnkRequestMethods
+            selectedMethodKeys={selectedMethodKeys}
+            selectedMethods={selectedMethods}
+            onToggleMethod={onToggleMethod}
+          />
 
           <section className="flex min-h-0 flex-col space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -151,22 +123,13 @@ export function LnkRequestDialog({
               </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-              <Input
-                value={requestSearch}
-                onChange={(event) => onRequestSearchChange(event.target.value)}
-                placeholder="Линия, спул или стык"
-                className="h-9 min-w-64 flex-1 bg-white"
-              />
-              <span className="whitespace-nowrap px-2 text-xs text-slate-500">
-                Найдено: {filteredRows.length} · Доступно: {filteredAvailableRows.length}
-              </span>
-              {requestSearch ? (
-                <Button variant="outline" size="sm" onClick={() => onRequestSearchChange('')}>
-                  Очистить
-                </Button>
-              ) : null}
-            </div>
+            <RequestRowsSearch
+              value={requestSearch}
+              placeholder="Линия, спул или стык"
+              filteredCount={filteredRows.length}
+              availableCount={filteredAvailableRows.length}
+              onChange={onRequestSearchChange}
+            />
 
             <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
               {filteredAvailableRows.length === 0 ? (
@@ -179,81 +142,15 @@ export function LnkRequestDialog({
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {filteredAvailableRows.map((row) => {
-                    const availableMethods = getAvailableLnkRequestMethods(row)
-                    const existingMethods = getLnkRowRequestMethods(row, '')
-                    const disabled = availableMethods.length === 0
-                    const selected = selectedIds.has(row.id)
-
-                    return (
-                      <label
-                        key={row.id}
-                        className={`grid grid-cols-[28px_minmax(180px,1fr)_minmax(220px,1.4fr)] items-center gap-3 px-4 py-3 text-sm transition-colors ${
-                          disabled
-                            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-                            : selected
-                              ? 'cursor-pointer bg-emerald-50/80'
-                              : 'cursor-pointer bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => onToggleRow(row.id)}
-                          disabled={disabled}
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                        />
-                        <span className="min-w-0">
-                          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
-                            <OfficialityBadge row={row} compact />
-                          </span>
-                          <span className="block text-xs leading-5 text-slate-500">
-                            <JointProjectSubtitleMeta row={row} />
-                            <MetaSeparator />
-                            <JointSpoolDiameterMeta row={row} />
-                            <MetaSeparator />
-                            <JointWeldDateMeta row={row} />
-                          </span>
-                        </span>
-                        <span className="flex flex-wrap gap-1.5">
-                          {availableMethods.length > 0 ? (
-                            availableMethods.map((method) => {
-                              const isSelectedMethod = selected && selectedMethods.has(method.requestKey)
-                              return (
-                                <span
-                                  key={method.requestKey}
-                                  className={`rounded border px-2 py-1 text-xs font-medium ${
-                                    isSelectedMethod
-                                      ? 'border-sky-300 bg-sky-100 text-sky-900'
-                                      : 'border-slate-200 bg-slate-50 text-slate-600'
-                                  }`}
-                                >
-                                  {method.code}
-                                </span>
-                              )
-                            })
-                          ) : (
-                            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
-                              Все заявки уже созданы
-                            </span>
-                          )}
-                          {existingMethods.map((method) => (
-                            <span
-                              key={`${method.requestKey}-existing`}
-                              className="inline-flex max-w-full flex-wrap items-center gap-1 overflow-visible rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800"
-                              title={`${method.code}: ${String(row[method.requestKey] ?? '')}`}
-                            >
-                              <span>{method.code}</span>
-                              <span className="overflow-visible break-all whitespace-normal text-sky-600 [text-overflow:clip]">
-                                {String(row[method.requestKey] ?? '')}
-                              </span>
-                            </span>
-                          ))}
-                        </span>
-                      </label>
-                    )
-                  })}
+                  {filteredAvailableRows.map((row) => (
+                    <LnkRequestRow
+                      key={row.id}
+                      row={row}
+                      selected={selectedIds.has(row.id)}
+                      selectedMethods={selectedMethods}
+                      onToggleRow={onToggleRow}
+                    />
+                  ))}
                 </div>
               )}
             </div>

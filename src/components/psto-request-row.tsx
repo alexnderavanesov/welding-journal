@@ -1,0 +1,72 @@
+import {
+  JointProjectSubtitleMeta,
+  JointSpoolDiameterMeta,
+  JointWeldDateMeta,
+  MetaSeparator,
+  OfficialityBadge,
+} from '@/components/joint-meta'
+import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
+import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
+import { getJointTitle } from '@/lib/report-ui-state'
+import type { WeldRow } from '@/lib/dispatcher-types'
+
+type PstoRequestRowProps = {
+  row: WeldRow
+  selected: boolean
+  disabled: boolean
+  onToggleRow: (rowId: number) => void
+}
+
+export function PstoRequestRow({ row, selected, disabled, onToggleRow }: PstoRequestRowProps) {
+  return (
+    <label
+      className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] items-center gap-3 px-4 py-3 text-sm transition-colors ${
+        disabled
+          ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+          : selected
+            ? 'cursor-pointer bg-sky-50/80'
+            : 'cursor-pointer bg-white hover:bg-slate-50'
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggleRow(row.id)}
+        disabled={disabled}
+        className="h-4 w-4 rounded border-slate-300 text-slate-900"
+      />
+      <span className="min-w-0">
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="truncate font-medium text-slate-900">{getJointTitle(row)}</span>
+          <OfficialityBadge row={row} compact />
+        </span>
+        <span className="block text-xs leading-5 text-slate-500">
+          <JointProjectSubtitleMeta row={row} />
+          <MetaSeparator />
+          <JointSpoolDiameterMeta row={row} />
+          <MetaSeparator />
+          <JointWeldDateMeta row={row} />
+        </span>
+        <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
+            Стык: {getJointStatusLabel(row)}
+          </span>
+          <span className={`rounded border px-1.5 py-0.5 font-semibold ${getPstoResultBadgeClass(row.pstoResult)}`}>
+            ПСТО: {getPstoResultLabel(row.pstoResult)}
+          </span>
+        </span>
+      </span>
+      <span className="flex flex-wrap gap-1.5">
+        {disabled ? (
+          <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
+            {String(row.pstoRequest ?? '').trim() || 'Заявка уже создана'}
+          </span>
+        ) : (
+          <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
+            ПСТО
+          </span>
+        )}
+      </span>
+    </label>
+  )
+}
