@@ -1,9 +1,6 @@
 import { Trash2 } from 'lucide-react'
 
-import {
-  JointFullMeta,
-  JointTitleLine,
-} from '@/components/joint-meta'
+import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 
@@ -25,10 +22,7 @@ export function LnkRequestManagerPosition({
   return (
     <div className="grid grid-cols-[minmax(220px,1fr)_minmax(220px,1.2fr)] gap-3 px-3 py-2.5 text-sm">
       <div className="min-w-0">
-        <JointTitleLine row={row} truncate />
-        <div className="text-xs leading-5 text-slate-500">
-          <JointFullMeta row={row} />
-        </div>
+        <ManagerRowJointHeading row={row} metaClassName="text-xs leading-5 text-slate-500" truncate />
       </div>
       <div className="flex flex-wrap justify-end gap-1.5">
         {methods.map((method) => (

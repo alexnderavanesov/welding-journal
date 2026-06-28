@@ -1,9 +1,6 @@
 import { Check } from 'lucide-react'
 
-import {
-  JointFullMeta,
-  JointTitleLine,
-} from '@/components/joint-meta'
+import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 
@@ -30,10 +27,12 @@ export function LnkOfficialityRow({ row, selected, onToggle }: LnkOfficialityRow
         {selected ? <Check className="h-3 w-3" /> : null}
       </span>
       <span className="min-w-0 flex-1">
-        <JointTitleLine row={row} className="text-sm font-semibold text-slate-900" />
-        <span className="mt-1 block text-xs text-slate-500">
-          <JointFullMeta row={row} />
-        </span>
+        <ManagerRowJointHeading
+          row={row}
+          titleClassName="text-sm font-semibold text-slate-900"
+          metaClassName="mt-1 block text-xs text-slate-500"
+          metaElement="span"
+        />
       </span>
       <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
         {getJointStatusLabel(row)}

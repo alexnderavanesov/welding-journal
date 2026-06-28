@@ -1,7 +1,4 @@
-import {
-  JointFullMeta,
-  JointTitleLine,
-} from '@/components/joint-meta'
+import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getEffectiveLnkResultDraftValueForRow, type LnkResultDraftLike } from '@/lib/lnk-result-draft'
 import type { LnkMethod } from '@/lib/lnk-status'
@@ -21,10 +18,7 @@ export function LnkResultPreviewRow({ row, method, draft }: LnkResultPreviewRowP
   return (
     <div className="grid grid-cols-[minmax(320px,1fr)_minmax(220px,0.45fr)] gap-4 px-4 py-3 text-sm">
       <div className="min-w-0">
-        <JointTitleLine row={row} />
-        <div className="mt-1 text-xs text-slate-500">
-          <JointFullMeta row={row} />
-        </div>
+        <ManagerRowJointHeading row={row} />
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
           <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-bold text-slate-700">
             {method?.code || '-'}
