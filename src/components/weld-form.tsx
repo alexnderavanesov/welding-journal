@@ -50,7 +50,6 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
     getExternalSaveBlockReason?.(preparedDraft) ??
     getRequiredRootStampMessage(preparedDraft) ??
     getWeldFormSaveBlockReason(draft, value)
-  const autoFillMessages: string[] = []
   const handleSave = () => {
     if (!busy && !saveBlockReason) onSave(withCalculatedFinalStatus(preparedDraft))
   }
@@ -152,7 +151,6 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
       <WeldFormFooter
         busy={busy}
         saveBlockReason={saveBlockReason}
-        autoFillMessage={autoFillMessages[0]}
         onCancel={onCancel}
         onSave={handleSave}
       />

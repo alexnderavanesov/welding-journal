@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
+import { OfficialityBadge } from '@/components/joint-meta'
 import { Button } from '@/components/ui/button'
-import { OfficialityBadge, getJointTitle } from '@/lib/weld-form-utils'
+import { getJointTitle } from '@/lib/weld-form-utils'
 import type { WeldInput } from '@/lib/weld-fields'
 
 type WeldFormHeaderProps = {
@@ -16,7 +17,7 @@ export function WeldFormHeader({ draft, isEditing, onCancel }: WeldFormHeaderPro
         <h2 className="text-lg font-semibold">{isEditing ? 'Редактирование стыка' : 'Новый стык'}</h2>
         <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
           <span>{getJointTitle(draft)}</span>
-          <OfficialityBadge value={draft} />
+          <OfficialityBadge row={draft} />
         </p>
       </div>
       <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Закрыть">

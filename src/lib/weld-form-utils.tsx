@@ -144,15 +144,6 @@ export function getFinalStatusValue(value: unknown) {
   return option ?? ''
 }
 
-export function OfficialityBadge({ value }: { value: WeldInput }) {
-  if (String(value.status ?? '').trim().toLowerCase() !== 'неофициальный') return null
-  return (
-    <span className="inline-flex items-center rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
-      неофициальный
-    </span>
-  )
-}
-
 export function withCalculatedFinalStatus(value: WeldInput) {
   const nextValue = withAutoVikForWeldDate(value)
   return { ...nextValue, finalStatus: calculateFinalStatus(nextValue) }
