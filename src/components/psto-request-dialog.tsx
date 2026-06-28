@@ -1,7 +1,8 @@
-import { Check, Pencil, X } from 'lucide-react'
+import { Pencil, X } from 'lucide-react'
 
 import { PstoRequestAside } from '@/components/psto-request-aside'
 import { PstoRequestRow } from '@/components/psto-request-row'
+import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
@@ -134,15 +135,12 @@ export function PstoRequestDialog({
           </section>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-          <Button variant="outline" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button onClick={onSubmit} disabled={isPending || selectedRows.length === 0}>
-            <Check className="mr-2 h-4 w-4" />
-            Создать заявку
-          </Button>
-        </div>
+        <RequestDialogFooter
+          isPending={isPending}
+          isCreateDisabled={selectedRows.length === 0}
+          onClose={onClose}
+          onSubmit={onSubmit}
+        />
       </div>
     </div>
   )
