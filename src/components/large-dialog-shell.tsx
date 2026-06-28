@@ -9,6 +9,7 @@ type LargeDialogShellProps = {
   overlayClassName?: string
   panelShadowClassName?: string
   panelRadiusClassName?: string
+  panelClassName?: string
 }
 
 export function LargeDialogShell({
@@ -18,6 +19,7 @@ export function LargeDialogShell({
   overlayClassName = 'z-[70] bg-slate-950/30',
   panelShadowClassName = 'shadow-slate-950/20',
   panelRadiusClassName = 'rounded-md',
+  panelClassName,
 }: LargeDialogShellProps) {
   return (
     <div className={cn('fixed inset-0 flex items-center justify-center px-4 backdrop-blur-[1px]', overlayClassName)}>
@@ -28,6 +30,7 @@ export function LargeDialogShell({
           maxWidthClassName,
           panelRadiusClassName,
           panelShadowClassName,
+          panelClassName,
         )}
       >
         {children}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
+import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
 import { WeldFormFooter } from '@/components/weld-form-footer'
 import { WeldFormField } from '@/components/weld-form-field'
@@ -131,63 +132,67 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/20 px-4 py-4 backdrop-blur-[1px]">
-      <div className="flex max-h-[96vh] w-full max-w-[min(1500px,96vw)] flex-col rounded-md border border-slate-200 bg-slate-50 shadow-2xl shadow-slate-950/10">
-        <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">{value.id ? 'Редактирование стыка' : 'Новый стык'}</h2>
-            <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-              <span>{getJointTitle(draft)}</span>
-              <OfficialityBadge value={draft} />
-            </p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Закрыть">
-            <X className="h-4 w-4" />
-          </Button>
+    <LargeDialogShell
+      maxWidthClassName="max-w-[min(1500px,96vw)]"
+      maxHeightClassName="max-h-[96vh]"
+      overlayClassName="z-40 bg-slate-950/20 py-4"
+      panelShadowClassName="shadow-slate-950/10"
+      panelClassName="bg-slate-50"
+    >
+      <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-4">
+        <div>
+          <h2 className="text-lg font-semibold">{value.id ? 'Редактирование стыка' : 'Новый стык'}</h2>
+          <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+            <span>{getJointTitle(draft)}</span>
+            <OfficialityBadge value={draft} />
+          </p>
         </div>
-
-        <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-          <div className="space-y-8">
-            {fieldsByGroup.length === 0 ? (
-              <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                Нет доступных полей для редактирования этой записи.
-              </div>
-            ) : null}
-            {fieldsByGroup.map(({ section, fields }) => (
-              <section key={section}>
-                <WeldFormSectionHeader
-                  section={section}
-                  fieldsCount={fields.length}
-                  collapsed={collapsedSections.has(section)}
-                  onToggle={() => toggleSection(section)}
-                />
-                {collapsedSections.has(section) ? null : (
-                  <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
-                    {fields.map((field) => (
-                      <WeldFormField
-                        key={field.key}
-                        field={field}
-                        draft={draft}
-                        stampSelectOptions={resolvedStampSelectOptions}
-                        fieldRefs={fieldRefs}
-                        setDraft={setDraft}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            ))}
-          </div>
-        </div>
-
-        <WeldFormFooter
-          busy={busy}
-          saveBlockReason={saveBlockReason}
-          autoFillMessage={autoFillMessages[0]}
-          onCancel={onCancel}
-          onSave={handleSave}
-        />
+        <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Закрыть">
+          <X className="h-4 w-4" />
+        </Button>
       </div>
-    </div>
+
+      <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        <div className="space-y-8">
+          {fieldsByGroup.length === 0 ? (
+            <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+              Нет доступных полей для редактирования этой записи.
+            </div>
+          ) : null}
+          {fieldsByGroup.map(({ section, fields }) => (
+            <section key={section}>
+              <WeldFormSectionHeader
+                section={section}
+                fieldsCount={fields.length}
+                collapsed={collapsedSections.has(section)}
+                onToggle={() => toggleSection(section)}
+              />
+              {collapsedSections.has(section) ? null : (
+                <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+                  {fields.map((field) => (
+                    <WeldFormField
+                      key={field.key}
+                      field={field}
+                      draft={draft}
+                      stampSelectOptions={resolvedStampSelectOptions}
+                      fieldRefs={fieldRefs}
+                      setDraft={setDraft}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      </div>
+
+      <WeldFormFooter
+        busy={busy}
+        saveBlockReason={saveBlockReason}
+        autoFillMessage={autoFillMessages[0]}
+        onCancel={onCancel}
+        onSave={handleSave}
+      />
+    </LargeDialogShell>
   )
 }
