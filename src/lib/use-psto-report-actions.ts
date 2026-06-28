@@ -9,15 +9,16 @@ import {
   rowBelongsToPstoRequest,
 } from '@/lib/report-modal-rows'
 import {
-  collectRequestNames,
   getRequestNameFromNaming,
-  sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
+import {
+  buildManagedPstoDiagramDrafts,
+  getPstoResultRequestName,
+} from '@/lib/psto-report-action-utils'
 import {
   toggleNumberSetValue,
   toggleNumberSetValues,
 } from '@/lib/report-ui-state'
-import { hasText } from '@/lib/report-value-utils'
 import { canCreatePstoRequest } from '@/lib/psto-status'
 import {
   defaultRequestNamingState,
@@ -250,13 +251,7 @@ export function usePstoReportActions({
       setMessage('Выберите один или несколько стыков для редактирования результатов ПСТО')
       return
     }
-    setManagedPstoDiagramDrafts(
-      Object.fromEntries(
-        selectedRows
-          .filter((row) => hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate))
-          .map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()]),
-      ),
-    )
+    setManagedPstoDiagramDrafts(buildManagedPstoDiagramDrafts(selectedRows))
     setIsPstoResultManagerOpen(true)
   }
 
@@ -298,13 +293,7 @@ export function usePstoReportActions({
         rowIds.add(rowId)
       }
       const selectedRows = heatTreatmentRows.filter((candidate) => rowIds.has(candidate.id))
-      const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
-      const requestName =
-        current.requestName && requestOptions.includes(current.requestName)
-          ? current.requestName
-          : requestOptions.length === 1
-            ? requestOptions[0]
-            : ''
+      const requestName = getPstoResultRequestName(current.requestName, selectedRows)
       return { ...current, requestName, rowIds }
     })
   }
@@ -320,13 +309,7 @@ export function usePstoReportActions({
         ? new Set([...current.rowIds].filter((id) => !filteredIds.has(id)))
         : new Set([...current.rowIds, ...filteredIds])
       const selectedRows = heatTreatmentRows.filter((row) => rowIds.has(row.id))
-      const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
-      const requestName =
-        current.requestName && requestOptions.includes(current.requestName)
-          ? current.requestName
-          : requestOptions.length === 1
-            ? requestOptions[0]
-            : ''
+      const requestName = getPstoResultRequestName(current.requestName, selectedRows)
       return { ...current, requestName, rowIds }
     })
   }
