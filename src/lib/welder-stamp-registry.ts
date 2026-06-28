@@ -1,12 +1,9 @@
 import type { StampSelectOption } from '@/lib/weld-form-utils'
 import { formatDisplayDate } from '@/lib/date-format'
-import type { WelderStampExpiryTask } from '@/lib/dispatcher-types'
 import {
-  DAY_IN_MS as dayInMs,
   FACTUAL_WELDER_STAMP_FIELD_KEY_SET as factualWelderStampFieldKeySet,
   FACTUAL_WELDER_STAMP_FIELD_KEYS as factualWelderStampFieldKeys,
   OFFICIAL_WELDER_STAMP_FIELD_KEYS as officialWelderStampFieldKeys,
-  WELDER_STAMP_EXPIRY_REMINDER_DAYS as welderStampExpiryReminderDays,
   WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions,
 } from '@/lib/report-config'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -44,33 +41,6 @@ export function normalizeWelderStampRecord(record: WelderStampRecord): WelderSta
     diameterTo: record.diameterTo.trim(),
     archived: Boolean(record.archived),
   }
-}
-
-export function buildWelderStampExpiryTasks(records: WelderStampRecord[]): WelderStampExpiryTask[] {
-  const today = parseIsoDateStart(getTodayIsoDate())
-  if (!today) return []
-
-  return records.flatMap((record) => {
-    const naksStamp = record.naksStamp.trim()
-    const validTo = record.validTo.trim()
-    const validToDate = parseIsoDateStart(validTo)
-    if (record.archived || !naksStamp || !validToDate) return []
-
-    const daysLeft = Math.ceil((validToDate.getTime() - today.getTime()) / dayInMs)
-    if (daysLeft > welderStampExpiryReminderDays) return []
-
-    return [
-      {
-        kind: 'welder-stamp-expiry' as const,
-        key: `welder-stamp-expiry:${record.id}:${naksStamp}:${validTo}`,
-        stamp: record,
-        naksStamp,
-        validTo,
-        daysLeft,
-        expired: daysLeft < 0,
-      },
-    ]
-  })
 }
 
 export function normalizeNaksStamp(value: string) {
@@ -443,16 +413,6 @@ export function normalizeWeldingMethodsForImport(records: WeldInput[]) {
     const selected = new Set(parts)
     record.weldingMethod = welderStampWeldTypeOptions.filter((option) => selected.has(option)).join('+')
   })
-}
-
-function parseIsoDateStart(value: string) {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!match) return null
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-}
-
-function getTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10)
 }
 
 function getWeldDateOrderValue(value: unknown) {

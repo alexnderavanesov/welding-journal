@@ -6,9 +6,7 @@ import {
   buildRepeatedJointTasks,
   getJointChainConsistencyKey,
 } from '@/lib/repeated-joint-tasks'
-import {
-  buildWelderStampExpiryTasks,
-} from '@/lib/welder-stamp-registry'
+import { buildWelderStampExpiryTasks } from '@/lib/welder-stamp-expiry-tasks'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type UseDispatcherTasksInput = {
