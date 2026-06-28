@@ -1,9 +1,7 @@
-import type { Dispatch, SetStateAction } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   clearLnkGeneratedWeldData,
 } from '@/server/welds'
-import type { HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import {
   LNK_EMPTY_RESULT_VALUE,
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
@@ -37,13 +35,9 @@ import {
 import {
   createDefaultLnkOfficialityDraft,
   createDefaultLnkResultDraft,
-  type LnkOfficialityDraftState,
-  type LnkRequestDraftState,
-  type LnkResultDraftState,
 } from '@/lib/report-draft-state'
 import {
   defaultRequestNamingState,
-  type RequestNamingState,
 } from '@/lib/request-naming-state'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
 import {
@@ -52,51 +46,9 @@ import {
 } from '@/lib/report-value-utils'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
-import {
-  type WeldFieldKey,
-  type WeldInput,
-} from '@/lib/weld-fields'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
-
-type RowWithId = WeldInput & { id: number }
-
-type ManagedLnkResultPreviewState = {
-  changeKey: string
-  rowId: number
-  methodKey: WeldFieldKey
-  result: string
-} | null
-
-type ManagedLnkResultChangeHintState = {
-  changeKey: string
-  rowId: number
-  methodKey: WeldFieldKey
-  from: string
-  to: string
-} | null
-
-type UseLnkReportMutationsOptions = {
-  lnkRows: RowWithId[]
-  lnkRequestOptions: string[]
-  setMessage: (value: string) => void
-  highlightChangedRows: (rows: WeldRow[], fieldKeys?: WeldFieldKey[]) => void
-  setSelectedLnkIds: (value: Set<number>) => void
-  setLnkRequestDraft: Dispatch<SetStateAction<LnkRequestDraftState>>
-  setLnkRequestNaming: (value: RequestNamingState) => void
-  setIsLnkRequestModalOpen: (value: boolean) => void
-  setManagedLnkRequestName: (value: string) => void
-  setManagedLnkRequestNameDraft: (value: string) => void
-  setIsLnkRequestManagerOpen: (value: boolean) => void
-  setIsLnkResultModalOpen: (value: boolean) => void
-  setLnkResultDraft: Dispatch<SetStateAction<LnkResultDraftState>>
-  setLnkOfficialityDraft: Dispatch<SetStateAction<LnkOfficialityDraftState>>
-  setIsLnkOfficialityModalOpen: (value: boolean) => void
-  resetDismissedRepeatedJointTasks: () => void
-  setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string>>>
-  setManagedLnkResultChangeHint: (value: ManagedLnkResultChangeHintState) => void
-  setManagedLnkResultPreview: (value: ManagedLnkResultPreviewState) => void
-  setHeatTreatmentFieldEditing: (value: HeatTreatmentFieldEditingState | null) => void
-}
+import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 
 export function useLnkReportMutations({
   lnkRows,
