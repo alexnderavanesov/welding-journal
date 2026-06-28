@@ -56,22 +56,28 @@ type WelderStampNotificationGroupProps = {
   onToggleDetails: (task: DispatcherTask) => void
 }
 
+function WelderStampTaskContent({ task, label }: { task: WelderStampExpiryTask; label: string }) {
+  const title = getRepeatedJointTaskTitle(task)
+
+  return (
+    <>
+      <span className="text-slate-800">{label}</span>
+      <span className={task.expired ? 'text-rose-700' : 'text-slate-700'}>{title.type}</span>
+      <span
+        className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${
+          task.expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
+        }`}
+      >
+        {task.expired ? 'просрочено' : `${task.daysLeft} дн.`}
+      </span>
+    </>
+  )
+}
+
 function RepeatedJointTaskContent({ task, nested = false }: { task: DispatcherTask; nested?: boolean }) {
   const title = getRepeatedJointTaskTitle(task)
   if (task.kind === 'welder-stamp-expiry') {
-    return (
-      <>
-        <span className="text-slate-800">{nested ? formatWelderStampTaskLabel(task) : title.joint}</span>
-        <span className={task.expired ? 'text-rose-700' : 'text-slate-700'}>{title.type}</span>
-        <span
-          className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${
-            task.expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
-          }`}
-        >
-          {task.expired ? 'просрочено' : `${task.daysLeft} дн.`}
-        </span>
-      </>
-    )
+    return <WelderStampTaskContent task={task} label={nested ? formatWelderStampTaskLabel(task) : title.joint} />
   }
   if (task.kind === 'create') {
     return (
@@ -238,21 +244,12 @@ export function DispatcherTaskGroup({ group, ...handlers }: DispatcherTaskGroupP
 
 export function WelderStampNotificationCard({ task, isTaskExpanded, onToggleDetails }: WelderStampNotificationCardProps) {
   const isExpanded = isTaskExpanded(task)
-  const title = getRepeatedJointTaskTitle(task)
 
   return (
     <div key={task.key} className="flex w-fit max-w-full flex-col gap-1 rounded-md border border-amber-200 bg-white/95 px-2 py-1.5">
       <div className="flex max-w-full items-center gap-1.5">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
-          <span className="text-slate-800">{formatWelderStampTaskLabel(task)}</span>
-          <span className={task.expired ? 'text-rose-700' : 'text-slate-700'}>{title.type}</span>
-          <span
-            className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${
-              task.expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
-            }`}
-          >
-            {task.expired ? 'просрочено' : `${task.daysLeft} дн.`}
-          </span>
+          <WelderStampTaskContent task={task} label={formatWelderStampTaskLabel(task)} />
         </div>
         <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
           <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherStandaloneActionButtonClass}>
