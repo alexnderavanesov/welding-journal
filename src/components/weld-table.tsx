@@ -1,20 +1,9 @@
-import { useMemo } from 'react'
 import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { WeldTableColumns } from '@/components/weld-table-columns'
 import { WeldTableHeader } from '@/components/weld-table-header'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
-import { filterWeldRowsByColumns, hasColumnFilters as getHasColumnFilters } from '@/lib/weld-table-filtering'
-import { getWeldTableColumnSpan, getWeldTableMinWidth } from '@/lib/weld-table-layout'
-import {
-  getAlwaysVisibleFieldKeys,
-  getAvailableWeldTableSections,
-  getFilteredWeldTableSections,
-} from '@/lib/weld-table-sections'
 import type { ReportRowActions } from '@/lib/report-row-actions'
-import { useWeldTableCollapsedSections } from '@/lib/use-weld-table-collapsed-sections'
-import { useWeldTableEditability } from '@/lib/use-weld-table-editability'
-import { useWeldTableSelection } from '@/lib/use-weld-table-selection'
-import { getDuplicateKeys } from '@/lib/weld-table-utils'
+import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 export type WeldTableProps = {
@@ -70,59 +59,44 @@ export function WeldTable({
   mergePstoSections = false,
   rowActions,
 }: WeldTableProps) {
-  const alwaysVisibleFieldKeys = useMemo(() => getAlwaysVisibleFieldKeys(mergePstoSections), [mergePstoSections])
-  const availableSections = useMemo(
-    () => getAvailableWeldTableSections({ hiddenFieldKeys, mergePstoSections }),
-    [hiddenFieldKeys, mergePstoSections],
-  )
-  const { collapsedSections, toggleSection } = useWeldTableCollapsedSections({
-    storageKey,
-    availableSections,
-    alwaysVisibleFieldKeys,
-  })
-  const filteredSections = useMemo(
-    () => getFilteredWeldTableSections({ availableSections, collapsedSections, alwaysVisibleFieldKeys }),
-    [alwaysVisibleFieldKeys, availableSections, collapsedSections],
-  )
-  const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
-  const hasRowActions = Boolean(rowActions)
-  const hasChainAction = Boolean(onOpenChain || onOpenLinkedReport)
-  const hasColumnFilters = getHasColumnFilters(columnFilters)
-  const tableColumnSpan = getWeldTableColumnSpan({
-    fieldCount: filteredFields.length,
-    readOnly,
-    selectable,
-    hasRowActions,
-    hasChainAction,
-  })
-  const tableMinWidth = getWeldTableMinWidth({
-    fields: filteredFields,
-    readOnly,
-    selectable,
-    hasRowActions,
-    hasChainAction,
-  })
-  const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
-  const filteredRows = useMemo(() => filterWeldRowsByColumns(rows, columnFilters), [rows, columnFilters])
   const {
+    alwaysVisibleFieldKeys,
+    availableSections,
+    duplicateKeys,
+    filteredFields,
+    filteredRows,
+    filteredSections,
+    hasChainAction,
+    hasColumnFilters,
+    hasRowActions,
+    tableColumnSpan,
+    tableMinWidth,
+    toggleSection,
     selectableVisibleRows,
     allVisibleRowsSelected,
     someVisibleRowsSelected,
     setRowSelected,
     setVisibleRowsSelected,
-  } = useWeldTableSelection({
-    filteredRows,
-    selectable,
-    selectedRowIds,
-    onSelectedRowIdsChange,
-    isRowSelectable,
-  })
-  const { canEditField, canEditCell } = useWeldTableEditability({
+    canEditField,
+    canEditCell,
+  } = useWeldTableModel({
+    rows,
+    columnFilters,
     onEdit,
     readOnly,
     editableFieldKeys,
     blockedFieldKeys,
     isCellEditable,
+    onOpenChain,
+    onOpenLinkedReport,
+    selectable,
+    selectedRowIds,
+    onSelectedRowIdsChange,
+    isRowSelectable,
+    storageKey,
+    hiddenFieldKeys,
+    mergePstoSections,
+    rowActions,
   })
 
   return (
