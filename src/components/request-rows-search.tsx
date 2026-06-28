@@ -1,3 +1,4 @@
+import { FilterStatText } from '@/components/filter-stat-text'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -18,9 +19,9 @@ export function RequestRowsSearch({ value, placeholder, filteredCount, available
         placeholder={placeholder}
         className="h-9 min-w-64 flex-1 bg-white"
       />
-      <span className="whitespace-nowrap px-2 text-xs text-slate-500">
+      <FilterStatText>
         Найдено: {filteredCount} · Доступно: {availableCount}
-      </span>
+      </FilterStatText>
       {value ? (
         <Button variant="outline" size="sm" onClick={() => onChange('')}>
           Очистить

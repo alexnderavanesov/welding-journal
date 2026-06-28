@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 
+import { FilterStatText } from '@/components/filter-stat-text'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -71,12 +72,12 @@ export function ResultFilters({
           <X className="h-4 w-4" />
         </Button>
       ) : null}
-      <span className="whitespace-nowrap px-2 text-xs text-slate-500">
+      <FilterStatText>
         Заявок: {filteredRequestOptions.length}/{availableRequestOptionsCount}
-      </span>
-      <span className="whitespace-nowrap px-2 text-xs text-slate-500">
+      </FilterStatText>
+      <FilterStatText>
         Найдено: {filteredRowsCount} · Выбрано: {selectedRowsCount}
-      </span>
+      </FilterStatText>
       {showClearFilters ? (
         <Button variant="outline" size="sm" onClick={onClearFilters}>
           Очистить
