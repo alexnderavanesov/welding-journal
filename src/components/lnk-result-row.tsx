@@ -1,8 +1,8 @@
 import { LnkResultRowRequestBadges } from '@/components/lnk-result-row-request-badges'
+import { LnkResultRowResultPicker } from '@/components/lnk-result-row-result-picker'
 import { ResultRowJointHeading } from '@/components/result-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getEffectiveLnkResultDraftValueForRow } from '@/lib/lnk-result-draft'
-import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
   formatLnkResultSummaryItems,
   getLnkMethodByRequestKey,
@@ -82,36 +82,7 @@ export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkRes
           </span>
         ) : null}
         {selected ? (
-          <span className="mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>
-            {LNK_RESULT_OPTIONS.map((option) => {
-              const active = rowResult === option
-              const disabledByRepairRule = option === 'ремонт' && isLnkRepairForbidden(row)
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (disabledByRepairRule) return
-                    onSetRowResult(row.id, option)
-                  }}
-                  disabled={disabledByRepairRule}
-                  title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
-                  className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
-                    disabledByRepairRule
-                      ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
-                      : active
-                        ? getLnkResultBadgeClass(option)
-                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                  }`}
-                >
-                  {option}
-                </button>
-              )
-            })}
-          </span>
+          <LnkResultRowResultPicker row={row} rowResult={rowResult} onSetRowResult={onSetRowResult} />
         ) : null}
       </span>
       <span className="flex flex-wrap content-start gap-1.5">
