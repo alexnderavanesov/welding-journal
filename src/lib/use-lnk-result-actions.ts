@@ -1,13 +1,14 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
-import { filterLnkResultDraftRowResults } from '@/lib/lnk-result-draft'
+import {
+  resolveLnkResultDraftAfterMethodChange,
+  resolveLnkResultDraftAfterRequestChange,
+  resolveLnkResultDraftAfterRowIdsChange,
+} from '@/lib/lnk-result-action-utils'
 import {
   canSelectLnkResultRow,
-  filterLnkRowsByRequestName,
-  getLnkInputMethodsForRows,
   getLnkRowRequestNames,
-  rowBelongsToLnkRequest,
 } from '@/lib/report-modal-rows'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -80,28 +81,11 @@ export function useLnkResultActions({
   }
 
   function changeLnkResultRequest(requestName: string) {
-    setDraft((current) => {
-      const rowIds = new Set(current.rowIds)
-      const selectedRows = lnkRows.filter((row) => rowIds.has(row.id))
-      const requestRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : []
-      const methodRows = selectedRows.length > 0 ? [...selectedRows, ...requestRows] : requestName ? requestRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, '')
-      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
-    })
+    setDraft((current) => resolveLnkResultDraftAfterRequestChange(current, lnkRows, requestName))
   }
 
   function changeLnkResultMethod(methodKey: WeldFieldKey | '') {
-    setDraft((current) => {
-      if (!methodKey) return { ...current, methodKey: '' }
-      const rowIds = new Set(
-        [...current.rowIds].filter((id) => {
-          const row = lnkRows.find((candidate) => candidate.id === id)
-          return row ? canSelectLnkResultRow(row, '', methodKey) : false
-        }),
-      )
-      return { ...current, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
-    })
+    setDraft((current) => resolveLnkResultDraftAfterMethodChange(current, lnkRows, methodKey))
   }
 
   function toggleLnkResultRow(rowId: number) {
@@ -115,14 +99,7 @@ export function useLnkResultActions({
       } else {
         rowIds.add(rowId)
       }
-      const selectedRows = lnkRows.filter((candidate) => rowIds.has(candidate.id))
-      const requestName = current.requestName && selectedRows.some((candidate) => rowBelongsToLnkRequest(candidate, current.requestName))
-        ? current.requestName
-        : ''
-      const methodRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : selectedRows.length > 0 ? selectedRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, requestName)
-      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
+      return resolveLnkResultDraftAfterRowIdsChange(current, lnkRows, rowIds)
     })
   }
 
@@ -138,14 +115,7 @@ export function useLnkResultActions({
       const rowIds = allSelected
         ? new Set([...current.rowIds].filter((id) => !filteredIds.has(id)))
         : new Set([...current.rowIds, ...filteredIds])
-      const selectedRows = lnkRows.filter((row) => rowIds.has(row.id))
-      const requestName = current.requestName && selectedRows.some((row) => rowBelongsToLnkRequest(row, current.requestName))
-        ? current.requestName
-        : ''
-      const methodRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : selectedRows.length > 0 ? selectedRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, requestName)
-      const methodKey = current.methodKey && methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
+      return resolveLnkResultDraftAfterRowIdsChange(current, lnkRows, rowIds)
     })
   }
 
