@@ -13,10 +13,9 @@ import {
   buildPstoResultsRows,
   buildPstoWaitingRequestRows,
 } from '@/lib/psto-status'
+import type { ReportRow } from '@/lib/report-row-actions'
 import { openNonEmptyTabularReportWindow } from '@/lib/report-window'
 import type { WeldInput } from '@/lib/weld-fields'
-
-type ReportRow = WeldInput & { id: number }
 
 export function openLnkWaitingNkReportWindow(rows: ReportRow[]) {
   return openNonEmptyTabularReportWindow({

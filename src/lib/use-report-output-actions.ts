@@ -9,11 +9,10 @@ import {
   openPstoResultsReportWindow,
   openPstoWaitingRequestReportWindow,
 } from '@/lib/report-show-windows'
+import type { ReportRow } from '@/lib/report-row-actions'
 import { buildExportXlsxBytes } from '@/lib/weld-import-export'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldInput } from '@/lib/weld-fields'
-
-type ReportRow = WeldInput & { id: number }
 
 type UseReportOutputActionsParams = {
   activeReport: ActiveReport
