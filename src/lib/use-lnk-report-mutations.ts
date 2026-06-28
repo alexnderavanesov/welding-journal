@@ -10,24 +10,21 @@ import {
 } from '@/lib/report-config'
 import {
   getLnkMethodByRequestKey,
-  getLnkMethodByResultKey,
-  hasRejectedLnkResult,
 } from '@/lib/lnk-status'
 import {
-  applyLnkFieldUpdate,
-  clearDisabledLnkRequests,
-  clearLnkGeneratedData,
-  hasLnkGeneratedDataChanged,
-  isLnkRequestField,
-  withLnkFinalStatus,
-  withTouchedLnkFinalStatus,
-  withTouchedLnkTimestamp,
-} from '@/lib/lnk-field-updates'
+  buildClearLnkGeneratedRows,
+  buildLnkConclusionCorrectionRows,
+  buildLnkFieldRow,
+  buildLnkOfficialityRows,
+  buildLnkRequestCorrectionRow,
+  buildLnkRequestManagerRows,
+  buildLnkRequestRows,
+  buildLnkResultCorrectionRow,
+  buildLnkResultReplacementRows,
+  buildLnkResultRows,
+} from '@/lib/lnk-report-mutation-updates'
 import {
-  assertLnkRepairAllowed,
-  assertValidLnkResultValue,
   getManagedLnkResultChangeKey,
-  isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import {
   createDefaultLnkOfficialityDraft,
@@ -37,10 +34,6 @@ import {
   defaultRequestNamingState,
 } from '@/lib/request-naming-state'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
-import {
-  hasText,
-  isEnabledControlValue,
-} from '@/lib/report-value-utils'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -81,23 +74,7 @@ export function useLnkReportMutations({
       methodKeys: WeldFieldKey[]
       requestName: string
     }) => {
-      const updatedRecords = records.flatMap((record) => {
-        const nextRecord = { ...record }
-        let changed = false
-        for (const requestKey of methodKeys) {
-          const method = getLnkMethodByRequestKey(requestKey)
-          if (!method) continue
-          if (!isEnabledControlValue(record[method.enabledKey])) continue
-          const existingRequestName = String(record[method.requestKey] ?? '').trim()
-          if (existingRequestName) continue
-          nextRecord[method.requestKey] = requestName
-          if (!hasText(nextRecord[method.resultKey])) {
-            nextRecord[method.resultKey] = 'ожидает НК'
-          }
-          changed = true
-        }
-        return changed ? [withTouchedLnkTimestamp(nextRecord)] : []
-      })
+      const updatedRecords = buildLnkRequestRows({ records, methodKeys, requestName })
 
       if (updatedRecords.length === 0) {
         throw new Error('Нет доступных стыков или видов контроля для новой заявки ЛНК')
@@ -130,26 +107,7 @@ export function useLnkReportMutations({
       methodKey: WeldFieldKey
       requestName: string | null
     }) => {
-      const method = getLnkMethodByRequestKey(methodKey)
-      if (!method) throw new Error('Выберите вид контроля')
-      if (requestName && !isEnabledControlValue(record[method.enabledKey])) {
-        throw new Error('Нельзя указать заявку ЛНК без наличия этого вида контроля')
-      }
-
-      const proposedRecord = { ...record } as RowWithId
-      if (requestName) {
-        proposedRecord[method.requestKey] = requestName
-        if (!hasText(proposedRecord[method.resultKey])) {
-          proposedRecord[method.resultKey] = 'ожидает НК'
-        }
-      } else {
-        proposedRecord[method.requestKey] = null
-        proposedRecord[method.resultKey] = null
-        proposedRecord[method.conclusionDateKey] = null
-        proposedRecord[method.conclusionKey] = null
-      }
-
-      const updatedRecord = withTouchedLnkFinalStatus(proposedRecord)
+      const updatedRecord = buildLnkRequestCorrectionRow({ record, methodKey, requestName })
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
@@ -203,23 +161,11 @@ export function useLnkReportMutations({
         if (lnkRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')
       }
 
-      const updatedRecords = lnkRows.flatMap((record) => {
-        const nextRecord = { ...record } as RowWithId
-        let changed = false
-        for (const method of LNK_METHODS) {
-          if (String(record[method.requestKey] ?? '').trim() !== currentName) continue
-          if (action === 'rename') {
-            nextRecord[method.requestKey] = renamedName
-          } else {
-            nextRecord[method.requestKey] = null
-            nextRecord[method.resultKey] = null
-            nextRecord[method.conclusionDateKey] = null
-            nextRecord[method.conclusionKey] = null
-          }
-          changed = true
-        }
-        if (!changed) return []
-        return [withTouchedLnkFinalStatus(nextRecord)]
+      const updatedRecords = buildLnkRequestManagerRows({
+        records: lnkRows,
+        requestName: currentName,
+        nextRequestName: renamedName,
+        action,
       })
 
       if (updatedRecords.length === 0) throw new Error('Заявка ЛНК не найдена')
@@ -268,28 +214,7 @@ export function useLnkReportMutations({
       resultById: Record<number, string>
       conclusionName: string
     }) => {
-      const method = getLnkMethodByRequestKey(methodKey)
-      if (!method) throw new Error('Выберите метод контроля')
-      const results = records.map((record) => resultById[record.id] ?? '')
-      const hasNonEmptyResult = results.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
-      if (results.some((result) => !isValidLnkResultDraftValue(result))) throw new Error('Укажите результат для каждого выбранного стыка')
-      if (hasNonEmptyResult && !controlDate) throw new Error('Укажите дату контроля')
-      if (hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
-      records.forEach((record) => assertLnkRepairAllowed(record, resultById[record.id] ?? ''))
-
-      const lnkUpdatedAt = new Date().toISOString()
-      const updatedRecords = records.map((record) => {
-        const result = resultById[record.id] ?? ''
-        const shouldClearResult = result === LNK_EMPTY_RESULT_VALUE
-        const proposedRecord = {
-          ...record,
-          [method.resultKey]: shouldClearResult ? null : result,
-          [method.conclusionDateKey]: shouldClearResult ? null : controlDate,
-          [method.conclusionKey]: shouldClearResult ? null : conclusionName.trim(),
-          lnkCreatedAt: lnkUpdatedAt,
-        }
-        return withLnkFinalStatus(proposedRecord)
-      })
+      const updatedRecords = buildLnkResultRows({ records, methodKey, controlDate, resultById, conclusionName })
 
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
@@ -323,16 +248,7 @@ export function useLnkReportMutations({
       records: RowWithId[]
       status: 'official' | 'unofficial'
     }) => {
-      if (status === 'unofficial') {
-        const invalidRecords = records.filter((record) => !hasRejectedLnkResult(record))
-        if (invalidRecords.length > 0) {
-          throw new Error('Неофициальный статус можно назначить только после результата контроля "ремонт" или "вырез"')
-        }
-      }
-      const nextStatus = status === 'unofficial' ? 'неофициальный' : null
-      const updatedRecords = records
-        .map((record) => ({ ...record, status: nextStatus }))
-        .filter((record, index) => String(records[index].status ?? '').trim() !== String(nextStatus ?? '').trim()) as RowWithId[]
+      const updatedRecords = buildLnkOfficialityRows({ records, status })
 
       if (updatedRecords.length === 0) throw new Error('Выбранные стыки уже имеют такой статус')
 
@@ -366,18 +282,7 @@ export function useLnkReportMutations({
       methodKey: WeldFieldKey
       result: string | null
     }) => {
-      const method = getLnkMethodByRequestKey(methodKey)
-      if (!method) throw new Error('Выберите метод контроля')
-      if (result) assertValidLnkResultValue(result)
-      assertLnkRepairAllowed(record, result)
-      const proposedRecord = {
-        ...record,
-        [method.resultKey]: result,
-        [method.conclusionDateKey]: result ? record[method.conclusionDateKey] : null,
-        [method.conclusionKey]: result ? record[method.conclusionKey] : null,
-      } as RowWithId
-      const updatedRecord = withTouchedLnkFinalStatus(proposedRecord)
-
+      const updatedRecord = buildLnkResultCorrectionRow({ record, methodKey, result })
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
@@ -401,21 +306,7 @@ export function useLnkReportMutations({
     }: {
       updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string }>
     }) => {
-      const updatedById = new Map<number, RowWithId>()
-      for (const { record, methodKey, result } of updates) {
-        const method = getLnkMethodByRequestKey(methodKey)
-        if (!method) throw new Error('Выберите метод контроля')
-        assertValidLnkResultValue(result)
-        assertLnkRepairAllowed(record, result)
-        const currentRecord = updatedById.get(record.id) ?? record
-        updatedById.set(record.id, {
-          ...currentRecord,
-          [method.resultKey]: result,
-        } as RowWithId)
-      }
-      const updatedRecords = [...updatedById.values()].map((record) => {
-        return withTouchedLnkFinalStatus(record)
-      })
+      const updatedRecords = buildLnkResultReplacementRows({ updates })
 
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
@@ -455,20 +346,7 @@ export function useLnkReportMutations({
       methodKey: WeldFieldKey
       conclusionName: string
     }) => {
-      const method = getLnkMethodByRequestKey(methodKey)
-      const nextConclusionName = conclusionName.trim()
-      if (!method) throw new Error('Выберите метод контроля')
-      if (!nextConclusionName) throw new Error('Укажите наименование заключения')
-
-      const updatedRecords = records
-        .filter((record) => hasText(record[method.resultKey]))
-        .map((record) => {
-          const proposedRecord = {
-            ...record,
-            [method.conclusionKey]: nextConclusionName,
-          } as RowWithId
-          return withTouchedLnkFinalStatus(proposedRecord)
-        })
+      const updatedRecords = buildLnkConclusionCorrectionRows({ records, methodKey, conclusionName })
 
       if (updatedRecords.length === 0) throw new Error('Нет результатов для переименования заключения')
 
@@ -497,20 +375,7 @@ export function useLnkReportMutations({
       fieldKey: WeldFieldKey
       value: string | null
     }) => {
-      const method = getLnkMethodByResultKey(fieldKey)
-      if (method && value && !hasText(record[method.requestKey])) {
-        throw new Error('Сначала создайте заявку ЛНК для этого вида контроля')
-      }
-      const requestMethod = getLnkMethodByRequestKey(fieldKey)
-      if (requestMethod && value && !isEnabledControlValue(record[requestMethod.enabledKey])) {
-        throw new Error('Нельзя указать заявку ЛНК без наличия этого вида контроля')
-      }
-      if (isLnkRequestField(fieldKey) && value && !lnkRequestOptions.includes(value)) {
-        throw new Error('Можно выбрать только существующую заявку ЛНК или очистить поле')
-      }
-
-      const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
-      const updatedRecord = withLnkFinalStatus(proposedRecord)
+      const updatedRecord = buildLnkFieldRow({ record, fieldKey, value, lnkRequestOptions })
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
@@ -527,10 +392,7 @@ export function useLnkReportMutations({
 
   const clearLnkGeneratedDataMutation = useMutation({
     mutationFn: async (targetRows: WeldRow[]) => {
-      const updatedRows = targetRows.flatMap((row) => {
-        const cleanedRow = clearLnkGeneratedData(row)
-        return hasLnkGeneratedDataChanged(row, cleanedRow) ? [withLnkFinalStatus(cleanedRow)] : []
-      })
+      const updatedRows = buildClearLnkGeneratedRows(targetRows)
       if (updatedRows.length === 0) return []
 
       const savedRows = await clearLnkGeneratedWeldData()
