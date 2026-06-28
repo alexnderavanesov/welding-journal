@@ -6,7 +6,7 @@ import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestNamingControls } from '@/components/request-naming-controls'
-import { RequestRowsSearch } from '@/components/request-rows-search'
+import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestNamingState } from '@/lib/request-naming-state'
@@ -90,49 +90,32 @@ export function PstoRequestDialog({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <PstoRequestAside />
 
-        <section className="flex min-h-0 flex-col space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">Стыки</h3>
-              <p className="text-xs leading-5 text-slate-500">Галочка доступна только там, где заявка ПСТО еще не создана.</p>
-            </div>
+        <RequestRowsPanel
+          title="Стыки"
+          description="Галочка доступна только там, где заявка ПСТО еще не создана."
+          action={
             <Button variant="outline" size="sm" onClick={onToggleAllRows}>
               {areAllAvailableRowsSelected ? 'Снять все' : 'Выбрать доступные'}
             </Button>
+          }
+          searchValue={requestSearch}
+          searchPlaceholder="Проект, шифр, линия, спул или стык"
+          filteredCount={filteredRows.length}
+          availableCount={availableRowsCount}
+          isEmpty={filteredRows.length === 0}
+          emptyMessage={
+            heatTreatmentRowsCount === 0 ? 'Нет стыков для отчета Термообработка.' : 'По фильтру ничего не найдено.'
+          }
+          onSearchChange={onRequestSearchChange}
+        >
+          <div className="divide-y divide-slate-100">
+            {filteredRows.map((row) => {
+              const disabled = !canCreateRequest(row)
+              const selected = selectedIds.has(row.id)
+              return <PstoRequestRow key={row.id} row={row} selected={selected} disabled={disabled} onToggleRow={onToggleRow} />
+            })}
           </div>
-
-          <RequestRowsSearch
-            value={requestSearch}
-            placeholder="Проект, шифр, линия, спул или стык"
-            filteredCount={filteredRows.length}
-            availableCount={availableRowsCount}
-            onChange={onRequestSearchChange}
-          />
-
-          <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
-            {filteredRows.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-500">
-                {heatTreatmentRowsCount === 0 ? 'Нет стыков для отчета Термообработка.' : 'По фильтру ничего не найдено.'}
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {filteredRows.map((row) => {
-                  const disabled = !canCreateRequest(row)
-                  const selected = selectedIds.has(row.id)
-                  return (
-                    <PstoRequestRow
-                      key={row.id}
-                      row={row}
-                      selected={selected}
-                      disabled={disabled}
-                      onToggleRow={onToggleRow}
-                    />
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </section>
+        </RequestRowsPanel>
       </div>
 
       <RequestDialogFooter

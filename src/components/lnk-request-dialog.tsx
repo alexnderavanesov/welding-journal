@@ -6,7 +6,7 @@ import { LnkRequestRow } from '@/components/lnk-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestNamingControls } from '@/components/request-naming-controls'
-import { RequestRowsSearch } from '@/components/request-rows-search'
+import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
@@ -100,14 +100,10 @@ export function LnkRequestDialog({
           onToggleMethod={onToggleMethod}
         />
 
-        <section className="flex min-h-0 flex-col space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">Стыки</h3>
-              <p className="text-xs leading-5 text-slate-500">
-                Галочка доступна только там, где есть хотя бы один вид контроля без заявки.
-              </p>
-            </div>
+        <RequestRowsPanel
+          title="Стыки"
+          description="Галочка доступна только там, где есть хотя бы один вид контроля без заявки."
+          action={
             <Button
               variant="outline"
               size="sm"
@@ -117,40 +113,33 @@ export function LnkRequestDialog({
             >
               {allFilteredRowsSelected ? 'Снять все' : 'Выбрать доступные'}
             </Button>
+          }
+          searchValue={requestSearch}
+          searchPlaceholder="Линия, спул или стык"
+          filteredCount={filteredRows.length}
+          availableCount={filteredAvailableRows.length}
+          isEmpty={filteredAvailableRows.length === 0}
+          emptyMessage={
+            lnkRowsCount === 0
+              ? 'Нет стыков для отчета ЛНК.'
+              : filteredRows.length === 0
+                ? 'По фильтру ничего не найдено.'
+                : 'По найденным стыкам нет доступных методов для новой заявки.'
+          }
+          onSearchChange={onRequestSearchChange}
+        >
+          <div className="divide-y divide-slate-100">
+            {filteredAvailableRows.map((row) => (
+              <LnkRequestRow
+                key={row.id}
+                row={row}
+                selected={selectedIds.has(row.id)}
+                selectedMethods={selectedMethods}
+                onToggleRow={onToggleRow}
+              />
+            ))}
           </div>
-
-          <RequestRowsSearch
-            value={requestSearch}
-            placeholder="Линия, спул или стык"
-            filteredCount={filteredRows.length}
-            availableCount={filteredAvailableRows.length}
-            onChange={onRequestSearchChange}
-          />
-
-          <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
-            {filteredAvailableRows.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-500">
-                {lnkRowsCount === 0
-                  ? 'Нет стыков для отчета ЛНК.'
-                  : filteredRows.length === 0
-                    ? 'По фильтру ничего не найдено.'
-                    : 'По найденным стыкам нет доступных методов для новой заявки.'}
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {filteredAvailableRows.map((row) => (
-                  <LnkRequestRow
-                    key={row.id}
-                    row={row}
-                    selected={selectedIds.has(row.id)}
-                    selectedMethods={selectedMethods}
-                    onToggleRow={onToggleRow}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+        </RequestRowsPanel>
       </div>
 
       <RequestDialogFooter
