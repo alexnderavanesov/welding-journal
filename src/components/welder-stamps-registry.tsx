@@ -2,7 +2,7 @@ import { WelderStampsArchivePanel } from '@/components/welder-stamps-archive-pan
 import { WelderStampsCreatePanel } from '@/components/welder-stamps-create-panel'
 import { WelderStampsFiltersPanel } from '@/components/welder-stamps-filters-panel'
 import { WelderStampsRecordsTable } from '@/components/welder-stamps-records-table'
-import { hasWelderStampRangeFilters } from '@/lib/welder-stamp-registry'
+import { hasWelderStampRangeFilters } from '@/lib/welder-stamp-filters'
 import type { WelderStampFilters, WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export type WelderStampsRegistryProps = {

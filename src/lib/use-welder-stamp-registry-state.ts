@@ -2,11 +2,10 @@ import { useMemo, useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listWelderStampRecords, saveWelderStampRecords } from '@/server/welder-stamps'
 import type { WeldInput } from '@/lib/weld-fields'
+import { createEmptyWelderStampFilters, filterWelderStampRecords } from '@/lib/welder-stamp-filters'
 import {
   buildWeldFormStampSelectOptions,
   createEmptyWelderStampDraft,
-  createEmptyWelderStampFilters,
-  filterWelderStampRecords,
   normalizeNaksStamp,
   prepareWelderStampSave,
   removeWelderStampRecord,
