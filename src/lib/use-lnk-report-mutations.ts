@@ -12,6 +12,12 @@ import {
   getLnkMethodByRequestKey,
 } from '@/lib/lnk-status'
 import {
+  getLnkConclusionHighlightFields,
+  getLnkRequestPositionHighlightFields,
+  getLnkResultHighlightFields,
+  getLnkResultReplacementHighlightFields,
+} from '@/lib/lnk-report-mutation-highlight-fields'
+import {
   buildClearLnkGeneratedRows,
   buildLnkConclusionCorrectionRows,
   buildLnkFieldRow,
@@ -113,10 +119,7 @@ export function useLnkReportMutations({
     },
     onSuccess: async (saved, variables) => {
       const method = getLnkMethodByRequestKey(variables.methodKey)
-      const changedFieldKeys = method
-        ? [method.requestKey, method.resultKey, method.conclusionDateKey, method.conclusionKey, 'lnkCreatedAt', 'finalStatus']
-        : ['lnkCreatedAt', 'finalStatus']
-      highlightChangedRows(saved ? [saved] : [], changedFieldKeys)
+      highlightChangedRows(saved ? [saved] : [], getLnkRequestPositionHighlightFields(variables.methodKey))
       if (!variables.requestName && method) {
         const removedRequestName = String(variables.record[method.requestKey] ?? '').trim()
         const hasRemainingRequestPositions = lnkRows.some((row) =>
@@ -220,11 +223,7 @@ export function useLnkReportMutations({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      const method = getLnkMethodByRequestKey(variables.methodKey)
-      const changedFieldKeys = method
-        ? [method.resultKey, method.conclusionDateKey, method.conclusionKey, 'lnkCreatedAt', 'finalStatus']
-        : ['lnkCreatedAt', 'finalStatus']
-      highlightChangedRows(savedRows, changedFieldKeys)
+      highlightChangedRows(savedRows, getLnkResultHighlightFields(variables.methodKey))
       const changedResults = Object.values(variables.resultById)
       setMessage(
         changedResults.every((result) => result === LNK_EMPTY_RESULT_VALUE)
@@ -287,11 +286,7 @@ export function useLnkReportMutations({
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
-      const method = getLnkMethodByRequestKey(variables.methodKey)
-      const changedFieldKeys = method
-        ? [method.resultKey, method.conclusionDateKey, method.conclusionKey, 'lnkCreatedAt', 'finalStatus']
-        : ['lnkCreatedAt', 'finalStatus']
-      highlightChangedRows(saved ? [saved] : [], changedFieldKeys)
+      highlightChangedRows(saved ? [saved] : [], getLnkResultHighlightFields(variables.methodKey))
       setMessage(variables.result ? 'Результат ЛНК изменен' : 'Результат ЛНК удален')
       await invalidateWeldJoints(queryClient)
     },
@@ -312,16 +307,7 @@ export function useLnkReportMutations({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      const changedFieldKeys = [
-        ...new Set(
-          variables.updates
-            .map(({ methodKey }) => getLnkMethodByRequestKey(methodKey)?.resultKey)
-            .filter(Boolean) as WeldFieldKey[],
-        ),
-        'lnkCreatedAt',
-        'finalStatus',
-      ]
-      highlightChangedRows(savedRows, changedFieldKeys)
+      highlightChangedRows(savedRows, getLnkResultReplacementHighlightFields(variables.updates))
       const savedKeys = new Set(variables.updates.map(({ record, methodKey }) => getManagedLnkResultChangeKey(record.id, methodKey)))
       setManagedLnkPendingResultChanges((current) =>
         Object.fromEntries(Object.entries(current).filter(([changeKey]) => !savedKeys.has(changeKey))),
@@ -354,9 +340,7 @@ export function useLnkReportMutations({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      const method = getLnkMethodByRequestKey(variables.methodKey)
-      const changedFieldKeys = method ? [method.conclusionKey, 'lnkCreatedAt', 'finalStatus'] : ['lnkCreatedAt', 'finalStatus']
-      highlightChangedRows(savedRows, changedFieldKeys)
+      highlightChangedRows(savedRows, getLnkConclusionHighlightFields(variables.methodKey))
       setMessage(`Заключение переименовано для позиций: ${savedRows.length}`)
       await invalidateWeldJoints(queryClient)
     },
