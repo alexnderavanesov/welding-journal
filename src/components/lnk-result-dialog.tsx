@@ -1,10 +1,10 @@
-import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
+import { ResultDialogRowsPanel } from '@/components/result-dialog-rows-panel'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
@@ -107,15 +107,11 @@ export function LnkResultDialog({
           onConclusionNamingChange={onConclusionNamingChange}
         />
 
-        <section className="flex min-h-0 flex-col space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">Стыки для результата</h3>
-              <p className="text-xs leading-5 text-slate-500">
-                Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
+        <ResultDialogRowsPanel
+          title="Стыки для результата"
+          description="Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением."
+          actions={
+            <>
               {draft.rowIds.size > 0 ? (
                 <Button variant="outline" size="sm" onClick={onClearSelection}>
                   Снять выбор
@@ -130,46 +126,41 @@ export function LnkResultDialog({
                       ? 'Снять все'
                       : 'Выбрать все доступные'}
               </Button>
-            </div>
+            </>
+          }
+          filters={
+            <LnkResultFilters
+              search={draft.search}
+              requestSearch={requestSearch}
+              requestName={draft.requestName}
+              filteredRequestOptions={filteredRequestOptions}
+              availableRequestOptionsCount={availableRequestOptions.length}
+              filteredRowsCount={visibleRows.length}
+              selectedRowsCount={draft.rowIds.size}
+              onSearchChange={onSearchChange}
+              onRequestSearchChange={onRequestSearchChange}
+              onRequestChange={onRequestChange}
+              onClearRequestSearch={onClearRequestSearch}
+              onClearSearch={onClearSearch}
+            />
+          }
+          isEmpty={visibleRows.length === 0}
+          emptyMessage={
+            draft.search ? 'По фильтру ничего не найдено.' : 'По выбранному методу нет стыков для добавления результата.'
+          }
+        >
+          <div className="divide-y divide-slate-100">
+            {visibleRows.map((row) => (
+              <LnkResultRow
+                key={row.id}
+                row={row}
+                draft={draft}
+                onToggleRow={onToggleRow}
+                onSetRowResult={onSetRowResult}
+              />
+            ))}
           </div>
-
-          <LnkResultFilters
-            search={draft.search}
-            requestSearch={requestSearch}
-            requestName={draft.requestName}
-            filteredRequestOptions={filteredRequestOptions}
-            availableRequestOptionsCount={availableRequestOptions.length}
-            filteredRowsCount={visibleRows.length}
-            selectedRowsCount={draft.rowIds.size}
-            onSearchChange={onSearchChange}
-            onRequestSearchChange={onRequestSearchChange}
-            onRequestChange={onRequestChange}
-            onClearRequestSearch={onClearRequestSearch}
-            onClearSearch={onClearSearch}
-          />
-
-          <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
-            {visibleRows.length === 0 ? (
-              <DialogEmptyState>
-                {draft.search
-                  ? 'По фильтру ничего не найдено.'
-                  : 'По выбранному методу нет стыков для добавления результата.'}
-              </DialogEmptyState>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {visibleRows.map((row) => (
-                  <LnkResultRow
-                    key={row.id}
-                    row={row}
-                    draft={draft}
-                    onToggleRow={onToggleRow}
-                    onSetRowResult={onSetRowResult}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+        </ResultDialogRowsPanel>
       </div>
 
       <ResultDialogFooter

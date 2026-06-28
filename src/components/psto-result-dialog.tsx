@@ -1,12 +1,12 @@
 import type { Dispatch, SetStateAction } from 'react'
 
-import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
 import { PstoResultSettings } from '@/components/psto-result-settings'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
+import { ResultDialogRowsPanel } from '@/components/result-dialog-rows-panel'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
@@ -71,57 +71,52 @@ export function PstoResultDialog({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         <PstoResultSettings draft={draft} nextDiagramName={nextDiagramName} onDraftChange={onDraftChange} />
 
-        <section className="flex min-h-0 flex-col space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800">
-                {draft.requestName ? 'Стыки в выбранной заявке' : 'Стыки для результата'}
-              </h3>
-              <p className="text-xs leading-5 text-slate-500">
-                {draft.requestName
-                  ? 'Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.'
-                  : 'Найдите стык, посмотрите его заявку ПСТО и статус стыка, затем выберите нужную заявку.'}
-              </p>
-            </div>
+        <ResultDialogRowsPanel
+          title={draft.requestName ? 'Стыки в выбранной заявке' : 'Стыки для результата'}
+          description={
+            draft.requestName
+              ? 'Видны проект, шифр, линия, спул и номер стыка для проверки перед сохранением.'
+              : 'Найдите стык, посмотрите его заявку ПСТО и статус стыка, затем выберите нужную заявку.'
+          }
+          actions={
             <Button variant="outline" size="sm" onClick={onToggleAll} disabled={filteredRows.length === 0}>
               {allFilteredSelectableRowsSelected ? 'Снять все' : 'Выбрать все'}
             </Button>
+          }
+          filters={
+            <PstoResultFilters
+              search={draft.search}
+              requestSearch={requestSearch}
+              requestName={draft.requestName}
+              filteredRequestOptions={filteredRequestOptions}
+              availableRequestOptionsCount={availableRequestOptions.length}
+              filteredRowsCount={filteredRows.length}
+              selectedRowsCount={draft.rowIds.size}
+              onSearchChange={(search) => onDraftChange((current) => ({ ...current, search }))}
+              onRequestSearchChange={onRequestSearchChange}
+              onRequestChange={onRequestChange}
+              onClearFilters={onClearFilters}
+            />
+          }
+          isEmpty={filteredRows.length === 0}
+          emptyMessage={
+            draft.search || requestSearch
+              ? 'По фильтру ничего не найдено.'
+              : 'Нет стыков для добавления результата ПСТО.'
+          }
+        >
+          <div className="divide-y divide-slate-100">
+            {filteredRows.map((row) => (
+              <PstoResultRow
+                key={row.id}
+                row={row}
+                selected={draft.rowIds.has(row.id)}
+                disabled={!canSelectRow(row, draft.requestName)}
+                onToggle={onToggleRow}
+              />
+            ))}
           </div>
-
-          <PstoResultFilters
-            search={draft.search}
-            requestSearch={requestSearch}
-            requestName={draft.requestName}
-            filteredRequestOptions={filteredRequestOptions}
-            availableRequestOptionsCount={availableRequestOptions.length}
-            filteredRowsCount={filteredRows.length}
-            selectedRowsCount={draft.rowIds.size}
-            onSearchChange={(search) => onDraftChange((current) => ({ ...current, search }))}
-            onRequestSearchChange={onRequestSearchChange}
-            onRequestChange={onRequestChange}
-            onClearFilters={onClearFilters}
-          />
-
-          <div className="min-h-0 overflow-auto rounded-md border border-slate-200">
-            {filteredRows.length === 0 ? (
-              <DialogEmptyState>
-                {draft.search || requestSearch ? 'По фильтру ничего не найдено.' : 'Нет стыков для добавления результата ПСТО.'}
-              </DialogEmptyState>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {filteredRows.map((row) => (
-                  <PstoResultRow
-                    key={row.id}
-                    row={row}
-                    selected={draft.rowIds.has(row.id)}
-                    disabled={!canSelectRow(row, draft.requestName)}
-                    onToggle={onToggleRow}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+        </ResultDialogRowsPanel>
       </div>
 
       <ResultDialogFooter
