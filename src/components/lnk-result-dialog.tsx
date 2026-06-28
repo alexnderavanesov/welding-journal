@@ -2,17 +2,10 @@ import { Check, Pencil, X } from 'lucide-react'
 
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
-import { RequestNamingControls } from '@/components/request-naming-controls'
+import { LnkResultSettings } from '@/components/lnk-result-settings'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { hasNonEmptyLnkResultDraftRows } from '@/lib/lnk-result-draft'
-import {
-  getLnkResultRepairForbiddenSummary,
-  isLnkRepairForbidden,
-} from '@/lib/lnk-result-rules'
-import { LNK_CUSTOM_RESULT_VALUE, LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
+import { LNK_METHODS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -84,9 +77,6 @@ export function LnkResultDialog({
   onOpenPreview,
   onSave,
 }: LnkResultDialogProps) {
-  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft)
-  const hasRepairForbiddenRows = selectedRows.some(isLnkRepairForbidden)
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
       <div className="flex h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
@@ -114,76 +104,16 @@ export function LnkResultDialog({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-            <div className="rounded-md border border-slate-200 bg-white p-3">
-              <h3 className="mb-3 text-sm font-semibold text-slate-800">1. Метод и результат</h3>
-              <div className="grid grid-cols-1 gap-3">
-                <label className="block space-y-1.5 text-sm">
-                  <span className="text-[13px] font-medium leading-none text-slate-700">Метод контроля</span>
-                  <Select
-                    value={draft.methodKey}
-                    onChange={(event) => onMethodChange(event.target.value as WeldFieldKey)}
-                    disabled={selectedMethods.length === 0}
-                    className={!draft.methodKey && selectedMethods.length > 0 ? 'text-slate-700' : undefined}
-                  >
-                    <option value="">Выберите метод</option>
-                    {selectedMethods.map((method) => (
-                      <option key={method.requestKey} value={method.requestKey}>
-                        {method.code}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <label className="block space-y-1.5 text-sm">
-                  <span className="text-[13px] font-medium leading-none text-slate-700">Дата контроля</span>
-                  <Input
-                    type="date"
-                    value={draft.controlDate}
-                    disabled={!hasNonEmptyRows}
-                    onChange={(event) => onControlDateChange(event.target.value)}
-                  />
-                </label>
-
-                <label className="block space-y-1.5 text-sm">
-                  <span className="text-[13px] font-medium leading-none text-slate-700">Результат по умолчанию</span>
-                  <Select value={draft.result} onChange={(event) => onDefaultResultChange(event.target.value)}>
-                    <option value="">Выберите результат</option>
-                    <option value={LNK_CUSTOM_RESULT_VALUE} disabled>
-                      пользовательский
-                    </option>
-                    {LNK_RESULT_OPTIONS.map((option) => (
-                      <option key={option} value={option} disabled={option === 'ремонт' && hasRepairForbiddenRows}>
-                        {option}
-                      </option>
-                    ))}
-                  </Select>
-                  {hasRepairForbiddenRows ? (
-                    <span className="block text-xs text-slate-500">
-                      Ремонт недоступен: {getLnkResultRepairForbiddenSummary(selectedRows)}.
-                    </span>
-                  ) : null}
-                </label>
-              </div>
-            </div>
-
-            <div className={`rounded-md border border-slate-200 p-3 ${!hasNonEmptyRows ? 'bg-slate-50 opacity-60' : 'bg-white'}`}>
-              <h3 className="mb-3 text-sm font-semibold text-slate-800">2. Заключение</h3>
-              <RequestNamingControls
-                naming={draft.conclusionNaming}
-                systemName={nextConclusionName}
-                label="Наименование заключения"
-                placeholder="Введите наименование заключения"
-                disabled={!hasNonEmptyRows}
-                onChange={onConclusionNamingChange}
-              />
-            </div>
-
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
-              Результат заменит статус «ожидает НК» в выбранном виде контроля. Наименование заключения попадет в
-              соответствующий столбец раздела «Заключения». Уже внесенные результаты изменяются только через
-              «Редактировать результаты».
-            </div>
-          </section>
+          <LnkResultSettings
+            draft={draft}
+            selectedMethods={selectedMethods}
+            selectedRows={selectedRows}
+            nextConclusionName={nextConclusionName}
+            onMethodChange={onMethodChange}
+            onControlDateChange={onControlDateChange}
+            onDefaultResultChange={onDefaultResultChange}
+            onConclusionNamingChange={onConclusionNamingChange}
+          />
 
           <section className="flex min-h-0 flex-col space-y-3">
             <div className="flex items-center justify-between gap-3">
