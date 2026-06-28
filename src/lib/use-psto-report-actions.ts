@@ -4,14 +4,15 @@ import {
 } from '@/lib/report-draft-state'
 import {
   canSelectPstoResultRow,
-  rowBelongsToPstoRequest,
 } from '@/lib/report-modal-rows'
 import {
   getRequestNameFromNaming,
 } from '@/lib/report-naming'
 import {
   buildManagedPstoDiagramDrafts,
-  getPstoResultRequestName,
+  resolvePstoResultDraftAfterBulkToggle,
+  resolvePstoResultDraftAfterRequestChange,
+  resolvePstoResultDraftAfterRowToggle,
 } from '@/lib/psto-report-action-utils'
 import {
   toggleNumberSetValue,
@@ -193,49 +194,20 @@ export function usePstoReportActions({
   }
 
   function changePstoResultRequest(requestName: string) {
-    setPstoResultDraft((current) => {
-      if (!requestName) return { ...current, requestName: '' }
-      const rowIds = new Set(
-        [...current.rowIds].filter((id) => {
-          const row = heatTreatmentRows.find((candidate) => candidate.id === id)
-          return row ? rowBelongsToPstoRequest(row, requestName) : false
-        }),
-      )
-      return { ...current, requestName, rowIds }
-    })
+    setPstoResultDraft((current) => resolvePstoResultDraftAfterRequestChange(current, heatTreatmentRows, requestName))
   }
 
   function togglePstoResultRow(rowId: number) {
     const row = filteredPstoResultRows.find((candidate) => candidate.id === rowId)
     if (!row || !canSelectPstoResultRow(row, pstoResultDraft.requestName)) return
 
-    setPstoResultDraft((current) => {
-      const rowIds = new Set(current.rowIds)
-      if (rowIds.has(rowId)) {
-        rowIds.delete(rowId)
-      } else {
-        rowIds.add(rowId)
-      }
-      const selectedRows = heatTreatmentRows.filter((candidate) => rowIds.has(candidate.id))
-      const requestName = getPstoResultRequestName(current.requestName, selectedRows)
-      return { ...current, requestName, rowIds }
-    })
+    setPstoResultDraft((current) => resolvePstoResultDraftAfterRowToggle(current, heatTreatmentRows, rowId))
   }
 
   function toggleAllPstoResultRows() {
-    setPstoResultDraft((current) => {
-      const filteredIds = new Set(
-        filteredPstoResultRows.filter((row) => canSelectPstoResultRow(row, current.requestName)).map((row) => row.id),
-      )
-      if (filteredIds.size === 0) return current
-      const allSelected = [...filteredIds].every((id) => current.rowIds.has(id))
-      const rowIds = allSelected
-        ? new Set([...current.rowIds].filter((id) => !filteredIds.has(id)))
-        : new Set([...current.rowIds, ...filteredIds])
-      const selectedRows = heatTreatmentRows.filter((row) => rowIds.has(row.id))
-      const requestName = getPstoResultRequestName(current.requestName, selectedRows)
-      return { ...current, requestName, rowIds }
-    })
+    setPstoResultDraft((current) =>
+      resolvePstoResultDraftAfterBulkToggle(current, filteredPstoResultRows, heatTreatmentRows),
+    )
   }
 
   function togglePstoRequestRow(rowId: number) {
