@@ -1,7 +1,4 @@
-import {
-  JointFullMeta,
-  JointTitleLine,
-} from '@/components/joint-meta'
+import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import { getPstoResultBadgeClass, getPstoResultLabel } from '@/lib/report-badges'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -32,10 +29,7 @@ export function PstoRequestRow({ row, selected, disabled, onToggleRow }: PstoReq
         className="h-4 w-4 rounded border-slate-300 text-slate-900"
       />
       <span className="min-w-0">
-        <JointTitleLine row={row} truncate />
-        <span className="block text-xs leading-5 text-slate-500">
-          <JointFullMeta row={row} />
-        </span>
+        <RequestRowJointHeading row={row} />
         <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
           <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
             Стык: {getJointStatusLabel(row)}

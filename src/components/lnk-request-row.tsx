@@ -1,7 +1,4 @@
-import {
-  JointFullMeta,
-  JointTitleLine,
-} from '@/components/joint-meta'
+import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -37,10 +34,7 @@ export function LnkRequestRow({ row, selected, selectedMethods, onToggleRow }: L
         className="h-4 w-4 rounded border-slate-300 text-slate-900"
       />
       <span className="min-w-0">
-        <JointTitleLine row={row} truncate />
-        <span className="block text-xs leading-5 text-slate-500">
-          <JointFullMeta row={row} />
-        </span>
+        <RequestRowJointHeading row={row} />
       </span>
       <span className="flex flex-wrap gap-1.5">
         {availableMethods.length > 0 ? (
