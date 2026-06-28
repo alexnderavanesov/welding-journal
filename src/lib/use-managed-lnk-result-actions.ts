@@ -1,20 +1,17 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
+import {
+  buildManagedLnkResultReplacementUpdates,
+  getManagedLnkResultChangeHint,
+  type ManagedLnkPendingResultRow,
+} from '@/lib/managed-lnk-result-utils'
 import { filterLnkRowsByRequestName } from '@/lib/report-modal-rows'
 import type { ManagedLnkResultChangeHintState, ManagedLnkResultPreviewState } from '@/lib/use-lnk-result-modal-state'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 type RowWithId = WeldInput & { id: number }
-
-type ManagedLnkPendingResultRow = {
-  row: RowWithId
-  method: {
-    requestKey: WeldFieldKey
-  }
-  changeKey: string
-}
 
 type MutationLike<TVariables> = {
   mutate: (variables: TVariables) => void
@@ -127,12 +124,11 @@ export function useManagedLnkResultActions({
   }
 
   function replaceLnkResult(row: RowWithId, methodKey: WeldFieldKey, result: string) {
-    const method = getLnkMethodByRequestKey(methodKey)
-    const currentResult = method ? String(row[method.resultKey] ?? '').trim() : ''
     const changeKey = getManagedLnkResultChangeKey(row.id, methodKey)
+    const changeHint = getManagedLnkResultChangeHint(row, methodKey, result)
     setManagedLnkResultPreview(null)
-    if (currentResult && currentResult !== result) {
-      setManagedLnkResultChangeHint({ changeKey, rowId: row.id, methodKey, from: currentResult, to: result })
+    if (changeHint) {
+      setManagedLnkResultChangeHint(changeHint)
       setManagedLnkPendingResultChanges((current) => ({ ...current, [changeKey]: result }))
     } else {
       setManagedLnkResultChangeHint(null)
@@ -149,11 +145,7 @@ export function useManagedLnkResultActions({
       setMessage('Нет изменений результата для сохранения')
       return
     }
-    const updates = managedLnkPendingResultRows.map(({ row, method, changeKey }) => ({
-      record: row,
-      methodKey: method.requestKey,
-      result: managedLnkPendingResultChanges[changeKey],
-    }))
+    const updates = buildManagedLnkResultReplacementUpdates(managedLnkPendingResultRows, managedLnkPendingResultChanges)
     lnkResultReplacementMutation.mutate({ updates })
   }
 
