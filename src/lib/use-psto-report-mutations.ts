@@ -12,6 +12,15 @@ import {
 } from '@/lib/request-naming-state'
 import { hasText } from '@/lib/report-value-utils'
 import {
+  applyPstoRequestManagerAction,
+  applyPstoResult,
+  applyPstoResultCorrection,
+  assignPstoRequest,
+  clearPstoRequestPosition,
+  type PstoRequestManagerAction,
+  type PstoResultCorrectionAction,
+} from '@/lib/psto-field-updates'
+import {
   withAutoHeatTreatmentDiagram,
   withAutoHeatTreatmentDiagrams,
 } from '@/lib/psto-status'
@@ -69,7 +78,7 @@ export function usePstoReportMutations({
       mode?: 'create' | 'edit'
     }) => {
       const pstoUpdatedAt = new Date().toISOString()
-      const updatedRecords = records.map((record) => ({ ...record, pstoRequest: requestName, pstoCreatedAt: pstoUpdatedAt }))
+      const updatedRecords = assignPstoRequest(records, requestName, pstoUpdatedAt)
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows
     },
@@ -114,13 +123,7 @@ export function usePstoReportMutations({
       const pstoUpdatedAt = new Date().toISOString()
       const proposedRowsById = new Map<number, RowWithId>()
       for (const record of records) {
-        proposedRowsById.set(record.id, {
-          ...record,
-          pstoDate: shouldClearResult ? null : pstoDate,
-          pstoResult: shouldClearResult ? null : 'проведено',
-          heatTreatmentDiagram: shouldClearResult ? null : diagramName.trim(),
-          pstoCreatedAt: pstoUpdatedAt,
-        })
+        proposedRowsById.set(record.id, applyPstoResult({ record, shouldClearResult, pstoDate, diagramName, pstoCreatedAt: pstoUpdatedAt }))
       }
       const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
       const updatedRecords = recalculatedRows.filter((row) => proposedRowsById.has(row.id))
@@ -151,7 +154,7 @@ export function usePstoReportMutations({
     }: {
       requestName: string
       nextRequestName?: string
-      action: 'rename' | 'delete'
+      action: PstoRequestManagerAction
     }) => {
       const currentName = requestName.trim()
       const renamedName = nextRequestName?.trim() ?? ''
@@ -165,14 +168,7 @@ export function usePstoReportMutations({
       const pstoUpdatedAt = new Date().toISOString()
       const updatedRecords = heatTreatmentRows.flatMap((record) => {
         if (String(record.pstoRequest ?? '').trim() !== currentName) return []
-        const nextRecord = {
-          ...record,
-          pstoRequest: action === 'rename' ? renamedName : null,
-          pstoDate: action === 'rename' ? record.pstoDate : null,
-          pstoResult: action === 'rename' ? record.pstoResult : null,
-          heatTreatmentDiagram: action === 'rename' ? record.heatTreatmentDiagram : null,
-          pstoCreatedAt: pstoUpdatedAt,
-        } as RowWithId
+        const nextRecord = applyPstoRequestManagerAction({ record, nextRequestName: renamedName, action, pstoCreatedAt: pstoUpdatedAt }) as RowWithId
         return [nextRecord]
       })
 
@@ -205,14 +201,7 @@ export function usePstoReportMutations({
 
   const pstoRequestCorrectionMutation = useMutation({
     mutationFn: async ({ record }: { record: RowWithId }) => {
-      const updatedRecord = {
-        ...record,
-        pstoRequest: null,
-        pstoDate: null,
-        pstoResult: null,
-        heatTreatmentDiagram: null,
-        pstoCreatedAt: new Date().toISOString(),
-      } as RowWithId
+      const updatedRecord = clearPstoRequestPosition(record) as RowWithId
 
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
@@ -242,18 +231,12 @@ export function usePstoReportMutations({
       diagramName,
     }: {
       record: RowWithId
-      action: 'renameDiagram' | 'deleteResult'
+      action: PstoResultCorrectionAction
       diagramName?: string
     }) => {
       const nextDiagramName = diagramName?.trim() ?? ''
       if (action === 'renameDiagram' && !nextDiagramName) throw new Error('Укажите наименование диаграммы')
-      const updatedRecord = {
-        ...record,
-        pstoDate: action === 'deleteResult' ? null : record.pstoDate,
-        pstoResult: action === 'deleteResult' ? null : record.pstoResult,
-        heatTreatmentDiagram: action === 'deleteResult' ? null : nextDiagramName,
-        pstoCreatedAt: new Date().toISOString(),
-      } as RowWithId
+      const updatedRecord = applyPstoResultCorrection({ record, action, diagramName: nextDiagramName }) as RowWithId
 
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
