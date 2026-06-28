@@ -1,13 +1,11 @@
-import { Button } from '@/components/ui/button'
+import { RepeatedJointTaskActions } from '@/components/dispatcher-task-actions'
 import { RepeatedJointTaskContent, WelderStampTaskContent } from '@/components/dispatcher-task-content'
 import {
   DispatcherTaskDetails,
   DispatcherTaskGroupFrame,
-  dispatcherActionButtonClass,
-  dispatcherDangerActionButtonClass,
-  dispatcherPrimaryActionButtonClass,
   dispatcherStandaloneActionButtonClass,
 } from '@/components/dispatcher-task-ui'
+import { Button } from '@/components/ui/button'
 import type {
   DispatcherTask,
   RepeatedJointCoilTask,
@@ -53,72 +51,6 @@ type WelderStampNotificationGroupProps = {
   onToggleDetails: (task: DispatcherTask) => void
 }
 
-function RepeatedJointTaskActions({
-  task,
-  isTaskExpanded,
-  onToggleDetails,
-  onShowTask,
-  onCreateTask,
-  onDeleteTask,
-  onRenameTask,
-  canRunDispatcherMutation,
-  isCreatePending,
-  isDeletePending,
-  isRenamePending,
-}: DispatcherTaskCardProps) {
-  const isExpanded = isTaskExpanded(task)
-
-  if (task.kind === 'welder-stamp-expiry') {
-    return (
-      <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
-        <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherActionButtonClass}>
-          {isExpanded ? 'Свернуть' : 'Подробнее'}
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
-      {(task.kind === 'create' || task.kind === 'coil') && canRunDispatcherMutation ? (
-        <>
-          <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
-            {task.kind === 'coil' ? 'Катушка' : 'Создать'}
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Цепочка
-          </Button>
-        </>
-      ) : task.kind === 'delete' && canRunDispatcherMutation ? (
-        <>
-          <Button type="button" size="sm" variant="outline" onClick={() => onDeleteTask(task)} disabled={isDeletePending} className={dispatcherDangerActionButtonClass}>
-            Удалить
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Цепочка
-          </Button>
-        </>
-      ) : task.kind === 'rename' && canRunDispatcherMutation ? (
-        <>
-          <Button type="button" size="sm" onClick={() => onRenameTask(task)} disabled={isRenamePending} className={dispatcherPrimaryActionButtonClass}>
-            Переименовать
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Цепочка
-          </Button>
-        </>
-      ) : (
-        <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
-          Цепочка
-        </Button>
-      )}
-      <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherActionButtonClass}>
-        {isExpanded ? 'Свернуть' : 'Подробнее'}
-      </Button>
-    </div>
-  )
-}
-
 export function DispatcherTaskCard({ task, nested = false, ...handlers }: DispatcherTaskCardProps) {
   const isExpanded = handlers.isTaskExpanded(task)
   return (
@@ -132,7 +64,7 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           <RepeatedJointTaskContent task={task} nested={nested} />
         </div>
-        <RepeatedJointTaskActions task={task} nested={nested} {...handlers} />
+        <RepeatedJointTaskActions task={task} {...handlers} />
       </div>
       {isExpanded ? (
         <DispatcherTaskDetails task={task} />
