@@ -3,19 +3,12 @@ import {
   deleteWeldJoint,
   importWeldJoints,
 } from '@/server/welds'
-import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import {
-  validateManualJointNameForSave,
-  validateManualJointNamesForImport,
-  validateRequiredRootStampForSave,
-  validateRequiredRootStampsForImport,
-  validateWeldDatesForImport,
-} from '@/lib/weld-validation'
-import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
-import {
-  validateOfficialStampCompatibilityForImport,
-  validateOfficialStampCompatibilityForSave,
-} from '@/lib/welder-stamp-compatibility'
+  buildRenamedRepeatedJointRow,
+  buildRepeatedJointRows,
+  prepareImportedWeldRecords,
+  prepareWeldSaveValue,
+} from '@/lib/weld-journal-mutation-updates'
 import type {
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
@@ -47,10 +40,7 @@ export function useWeldJournalMutations({
 
   const saveMutation = useMutation({
     mutationFn: async (value: WeldDraft) => {
-      const preparedValue = value
-      validateRequiredRootStampForSave(preparedValue)
-      validateManualJointNameForSave(preparedValue, rows)
-      validateOfficialStampCompatibilityForSave(preparedValue, welderStamps)
+      const preparedValue = prepareWeldSaveValue({ value, rows, welderStamps })
       return preparedValue.id
         ? updateWeldRowOrThrow(preparedValue as WeldRow)
         : createWeldRowOrThrow(preparedValue)
@@ -68,8 +58,7 @@ export function useWeldJournalMutations({
 
   const repeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => {
-      const targetJoints = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
-      const drafts = targetJoints.map((targetJoint) => buildRepeatedJointDraft(task.row, targetJoint))
+      const drafts = buildRepeatedJointRows(task)
       const savedRows = await createWeldRowsOrThrow(drafts, 'Не удалось создать повторный стык')
       return savedRows as WeldRow[]
     },
@@ -106,7 +95,7 @@ export function useWeldJournalMutations({
 
   const renameRepeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointRenameTask) => {
-      const updatedRecord = { ...task.row, joint: task.targetJoint }
+      const updatedRecord = buildRenamedRepeatedJointRow(task)
       return updateWeldRowOrThrow(updatedRecord)
     },
     onSuccess: async (saved, task) => {
@@ -137,13 +126,7 @@ export function useWeldJournalMutations({
 
   const importMutation = useMutation({
     mutationFn: async (records: WeldInput[]) => {
-      const preparedRecords = records
-      validateRequiredRootStampsForImport(preparedRecords)
-      validateManualJointNamesForImport(preparedRecords)
-      validateWeldDatesForImport(preparedRecords)
-      normalizeWeldingMethodsForImport(preparedRecords)
-      validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
-      validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps)
+      const preparedRecords = prepareImportedWeldRecords({ records, weldFormStampSelectOptions, welderStamps })
       return importWeldJoints({ data: { records: preparedRecords } })
     },
     onSuccess: async (result) => {
