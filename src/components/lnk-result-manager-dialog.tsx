@@ -1,7 +1,5 @@
 import { DialogEmptyState } from '@/components/dialog-empty-state'
-import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogHeader } from '@/components/dialog-header'
-import { DialogSummaryPanel, DialogSummaryStat } from '@/components/dialog-summary-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultManagerFooter } from '@/components/lnk-result-manager-footer'
 import {
@@ -11,7 +9,7 @@ import {
   type LnkResultMethod,
   type LnkResultPreviewState,
 } from '@/components/lnk-result-manager-entry'
-import { Select } from '@/components/ui/select'
+import { LnkResultManagerScopePanel } from '@/components/lnk-result-manager-scope-panel'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
@@ -73,33 +71,12 @@ export function LnkResultManagerDialog({
       />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-5 py-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-          <DialogSummaryPanel title="Что редактируем">
-            <div className="space-y-3">
-              <DialogSummaryStat label="Выбрано стыков" value={rows.length} />
-
-              <label className="block space-y-1.5 text-sm">
-                <span className="text-[13px] font-medium leading-none text-slate-700">Метод контроля</span>
-                <Select
-                  value={methodKey}
-                  onChange={(event) => onMethodChange(event.target.value as WeldFieldKey)}
-                  disabled={methods.length === 0}
-                >
-                  <option value="">Все методы</option>
-                  {methods.map((method) => (
-                    <option key={method.requestKey} value={method.requestKey}>
-                      {method.code}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            </div>
-          </DialogSummaryPanel>
-          <DialogHelpNote>
-            Замена меняет только результат и сохраняет существующее заключение. Наименование заключения редактируется отдельно у
-            конкретного стыка. Удаление очищает результат, дату контроля и заключение.
-          </DialogHelpNote>
-        </section>
+        <LnkResultManagerScopePanel
+          selectedRowsCount={rows.length}
+          methods={methods}
+          methodKey={methodKey}
+          onMethodChange={onMethodChange}
+        />
 
         <section className="min-h-0 overflow-auto rounded-md border border-slate-200">
           {entries.length > 0 ? (
