@@ -22,32 +22,16 @@ import type {
   RepeatedJointCreateTask,
   RepeatedJointDeleteTask,
   RepeatedJointRenameTask,
-  RepeatedJointTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import {
   createWeldRowOrThrow,
   createWeldRowsOrThrow,
   updateWeldRowOrThrow,
 } from '@/lib/weld-save-utils'
-
-type StampSelectOptionLike = {
-  value: string
-}
-
-type UseWeldJournalMutationsOptions = {
-  rows: WeldRow[]
-  welderStamps: WelderStampRecord[]
-  weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
-  editingFocusField?: WeldFieldKey
-  setEditing: (value: null) => void
-  setMessage: (value: string) => void
-  highlightChangedRows: (rows: WeldInput[], fieldKeys?: WeldFieldKey[]) => void
-  dismissRepeatedJointTask: (task: RepeatedJointTask) => void
-}
+import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation-types'
 
 export function useWeldJournalMutations({
   rows,
