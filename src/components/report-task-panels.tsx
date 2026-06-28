@@ -1,5 +1,6 @@
-import { DispatcherTaskPanel, WelderStampNotificationPanel } from '@/components/dispatcher-panels'
+import { DispatcherTaskPanel } from '@/components/dispatcher-panels'
 import type { DispatcherTaskCardHandlers } from '@/components/dispatcher-task-card'
+import { WelderStampNotificationPanel } from '@/components/welder-stamp-notification-panel'
 import type { ActiveReport } from '@/lib/home-state'
 import type { DispatcherTask, RepeatedJointTask, RepeatedJointTaskGroup, WelderStampExpiryTask } from '@/lib/dispatcher-types'
 
