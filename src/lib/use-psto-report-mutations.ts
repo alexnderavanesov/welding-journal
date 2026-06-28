@@ -7,20 +7,18 @@ import { formatRequestCreatedMessage } from '@/lib/report-naming'
 import {
   defaultRequestNamingState,
 } from '@/lib/request-naming-state'
-import { hasText } from '@/lib/report-value-utils'
 import {
-  applyPstoRequestManagerAction,
-  applyPstoResult,
-  applyPstoResultCorrection,
-  assignPstoRequest,
-  clearPstoRequestPosition,
   type PstoRequestManagerAction,
   type PstoResultCorrectionAction,
 } from '@/lib/psto-field-updates'
 import {
-  withAutoHeatTreatmentDiagram,
-  withAutoHeatTreatmentDiagrams,
-} from '@/lib/psto-status'
+  buildHeatTreatmentFieldRow,
+  buildPstoRequestCorrectionRow,
+  buildPstoRequestManagerRows,
+  buildPstoRequestRows,
+  buildPstoResultCorrectionRow,
+  buildPstoResultRows,
+} from '@/lib/psto-report-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -54,8 +52,7 @@ export function usePstoReportMutations({
       requestName: string
       mode?: 'create' | 'edit'
     }) => {
-      const pstoUpdatedAt = new Date().toISOString()
-      const updatedRecords = assignPstoRequest(records, requestName, pstoUpdatedAt)
+      const updatedRecords = buildPstoRequestRows({ records, requestName })
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows
     },
@@ -91,19 +88,7 @@ export function usePstoReportMutations({
       diagramName: string
       rows: RowWithId[]
     }) => {
-      const shouldClearResult = result === PSTO_EMPTY_RESULT_VALUE
-      if (!shouldClearResult && result !== 'проведено') throw new Error('Выберите результат ПСТО')
-      if (!shouldClearResult && !pstoDate) throw new Error('Укажите дату ПСТО')
-      if (!shouldClearResult && !diagramName.trim()) throw new Error('Укажите наименование диаграммы термообработки')
-      if (records.some((record) => !hasText(record.pstoRequest))) throw new Error('Сначала укажите заявку ПСТО')
-
-      const pstoUpdatedAt = new Date().toISOString()
-      const proposedRowsById = new Map<number, RowWithId>()
-      for (const record of records) {
-        proposedRowsById.set(record.id, applyPstoResult({ record, shouldClearResult, pstoDate, diagramName, pstoCreatedAt: pstoUpdatedAt }))
-      }
-      const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
-      const updatedRecords = recalculatedRows.filter((row) => proposedRowsById.has(row.id))
+      const updatedRecords = buildPstoResultRows({ records, pstoDate, result, diagramName, rows })
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
@@ -142,11 +127,11 @@ export function usePstoReportMutations({
         if (pstoRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')
       }
 
-      const pstoUpdatedAt = new Date().toISOString()
-      const updatedRecords = heatTreatmentRows.flatMap((record) => {
-        if (String(record.pstoRequest ?? '').trim() !== currentName) return []
-        const nextRecord = applyPstoRequestManagerAction({ record, nextRequestName: renamedName, action, pstoCreatedAt: pstoUpdatedAt }) as RowWithId
-        return [nextRecord]
+      const updatedRecords = buildPstoRequestManagerRows({
+        heatTreatmentRows,
+        requestName: currentName,
+        nextRequestName: renamedName,
+        action,
       })
 
       if (updatedRecords.length === 0) throw new Error('Заявка ПСТО не найдена')
@@ -178,7 +163,7 @@ export function usePstoReportMutations({
 
   const pstoRequestCorrectionMutation = useMutation({
     mutationFn: async ({ record }: { record: RowWithId }) => {
-      const updatedRecord = clearPstoRequestPosition(record) as RowWithId
+      const updatedRecord = buildPstoRequestCorrectionRow(record)
 
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
@@ -211,9 +196,7 @@ export function usePstoReportMutations({
       action: PstoResultCorrectionAction
       diagramName?: string
     }) => {
-      const nextDiagramName = diagramName?.trim() ?? ''
-      if (action === 'renameDiagram' && !nextDiagramName) throw new Error('Укажите наименование диаграммы')
-      const updatedRecord = applyPstoResultCorrection({ record, action, diagramName: nextDiagramName }) as RowWithId
+      const updatedRecord = buildPstoResultCorrectionRow({ record, action, diagramName })
 
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
@@ -240,7 +223,7 @@ export function usePstoReportMutations({
       value: string | null
       rows: RowWithId[]
     }) => {
-      const updatedRecord = withAutoHeatTreatmentDiagram({ ...record, [fieldKey]: value }, rows)
+      const updatedRecord = buildHeatTreatmentFieldRow({ record, fieldKey, value, rows })
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
