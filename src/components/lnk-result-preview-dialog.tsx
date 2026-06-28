@@ -1,5 +1,6 @@
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogHeader } from '@/components/dialog-header'
+import { DialogInlineEmptyState } from '@/components/dialog-inline-empty-state'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultPreviewRow } from '@/components/lnk-result-preview-row'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -29,9 +30,9 @@ export function LnkResultPreviewDialog({ rows, draft, onClose }: LnkResultPrevie
       />
       <div className="min-h-0 flex-1 overflow-auto p-5">
         {rows.length === 0 ? (
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          <DialogInlineEmptyState>
             Нет выбранных стыков.
-          </div>
+          </DialogInlineEmptyState>
         ) : (
           <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
             {rows.map((row) => (

@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
+import { DialogInlineEmptyState } from '@/components/dialog-inline-empty-state'
 import { JointChainCard } from '@/components/joint-chain-card'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
@@ -47,9 +48,9 @@ export function JointChainDialog({ record, rows, onClose, onOpenBase, onOpenRow 
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {rows.length === 0 ? (
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          <DialogInlineEmptyState>
             По этому стыку цепочка не найдена.
-          </div>
+          </DialogInlineEmptyState>
         ) : (
           <div className="space-y-2">
             {rows.map((row, index) => (
