@@ -15,6 +15,7 @@ import {
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
 import {
+  calculateFinalStatus,
   RESULT_STATUS_OPTIONS,
   type WeldFieldKey,
   type WeldInput,
@@ -78,4 +79,12 @@ export function withLnkCreatedAt<T extends WeldInput>(rows: T[]) {
 
 export function withTouchedLnkTimestamp<T extends WeldInput>(row: T): T {
   return { ...row, lnkCreatedAt: new Date().toISOString() }
+}
+
+export function withLnkFinalStatus<T extends WeldInput>(row: T) {
+  return { ...row, finalStatus: calculateFinalStatus(row) }
+}
+
+export function withTouchedLnkFinalStatus<T extends WeldInput>(row: T) {
+  return withLnkFinalStatus(withTouchedLnkTimestamp(row))
 }

@@ -22,6 +22,8 @@ import {
   clearLnkGeneratedData,
   hasLnkGeneratedDataChanged,
   isLnkRequestField,
+  withLnkFinalStatus,
+  withTouchedLnkFinalStatus,
   withTouchedLnkTimestamp,
 } from '@/lib/lnk-field-updates'
 import {
@@ -51,7 +53,6 @@ import {
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import {
-  calculateFinalStatus,
   type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
@@ -199,8 +200,7 @@ export function useLnkReportMutations({
         proposedRecord[method.conclusionKey] = null
       }
 
-      const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
-      const updatedRecord = { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
+      const updatedRecord = withTouchedLnkFinalStatus(proposedRecord)
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
@@ -270,8 +270,7 @@ export function useLnkReportMutations({
           changed = true
         }
         if (!changed) return []
-        const touchedRecord = withTouchedLnkTimestamp(nextRecord)
-        return [{ ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }]
+        return [withTouchedLnkFinalStatus(nextRecord)]
       })
 
       if (updatedRecords.length === 0) throw new Error('Заявка ЛНК не найдена')
@@ -343,7 +342,7 @@ export function useLnkReportMutations({
           [method.conclusionKey]: shouldClearResult ? null : conclusionName.trim(),
           lnkCreatedAt: lnkUpdatedAt,
         }
-        return { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
+        return withLnkFinalStatus(proposedRecord)
       })
 
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
@@ -433,8 +432,7 @@ export function useLnkReportMutations({
         [method.conclusionDateKey]: result ? record[method.conclusionDateKey] : null,
         [method.conclusionKey]: result ? record[method.conclusionKey] : null,
       } as RowWithId
-      const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
-      const updatedRecord = { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
+      const updatedRecord = withTouchedLnkFinalStatus(proposedRecord)
 
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
@@ -474,8 +472,7 @@ export function useLnkReportMutations({
         } as RowWithId)
       }
       const updatedRecords = [...updatedById.values()].map((record) => {
-        const touchedRecord = withTouchedLnkTimestamp(record)
-        return { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
+        return withTouchedLnkFinalStatus(record)
       })
 
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
@@ -528,8 +525,7 @@ export function useLnkReportMutations({
             ...record,
             [method.conclusionKey]: nextConclusionName,
           } as RowWithId
-          const touchedRecord = withTouchedLnkTimestamp(proposedRecord)
-          return { ...touchedRecord, finalStatus: calculateFinalStatus(touchedRecord) }
+          return withTouchedLnkFinalStatus(proposedRecord)
         })
 
       if (updatedRecords.length === 0) throw new Error('Нет результатов для переименования заключения')
@@ -572,7 +568,7 @@ export function useLnkReportMutations({
       }
 
       const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
-      const updatedRecord = { ...proposedRecord, finalStatus: calculateFinalStatus(proposedRecord) }
+      const updatedRecord = withLnkFinalStatus(proposedRecord)
       const saved = await updateWeldRowOrThrow(updatedRecord)
       return saved as unknown as WeldRow
     },
@@ -591,7 +587,7 @@ export function useLnkReportMutations({
     mutationFn: async (targetRows: WeldRow[]) => {
       const updatedRows = targetRows.flatMap((row) => {
         const cleanedRow = clearLnkGeneratedData(row)
-        return hasLnkGeneratedDataChanged(row, cleanedRow) ? [{ ...cleanedRow, finalStatus: calculateFinalStatus(cleanedRow) }] : []
+        return hasLnkGeneratedDataChanged(row, cleanedRow) ? [withLnkFinalStatus(cleanedRow)] : []
       })
       if (updatedRows.length === 0) return []
 
