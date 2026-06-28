@@ -1,6 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
-import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { formatDateBeforeWeldDateSaveReason, isDateBeforeWeldDate } from '@/lib/report-date-rules'
 import { LNK_CUSTOM_RESULT_VALUE, LNK_EMPTY_RESULT_VALUE, LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -35,6 +35,15 @@ export function filterLnkResultDraftRowResults(rowResults: Record<number, string
 
 export function isValidLnkResultDraftValue(value: string) {
   return value === LNK_EMPTY_RESULT_VALUE || LNK_RESULT_OPTIONS.includes(value as never)
+}
+
+export function assertValidLnkResultValue(value: string) {
+  if (!LNK_RESULT_OPTIONS.includes(value as never)) throw new Error('Укажите корректный результат')
+}
+
+export function assertLnkRepairAllowed(row: WeldRow, result: string | null) {
+  if (result !== 'ремонт' || !isLnkRepairForbidden(row)) return
+  throw new Error(`Ремонт недоступен для стыка ${String(row.joint ?? '-')}: ${getLnkRepairForbiddenReason(row)}`)
 }
 
 export function areLnkResultDraftRowsReady(rows: WeldRow[], draft: LnkResultDraftLike) {

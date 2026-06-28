@@ -7,7 +7,6 @@ import {
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
   LNK_METHODS,
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
-  LNK_RESULT_OPTIONS,
 } from '@/lib/report-config'
 import {
   getLnkMethodByRequestKey,
@@ -25,10 +24,8 @@ import {
   withTouchedLnkTimestamp,
 } from '@/lib/lnk-field-updates'
 import {
-  getLnkRepairForbiddenReason,
-  isLnkRepairForbidden,
-} from '@/lib/lnk-result-rules'
-import {
+  assertLnkRepairAllowed,
+  assertValidLnkResultValue,
   getManagedLnkResultChangeKey,
   isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
@@ -278,10 +275,7 @@ export function useLnkReportMutations({
       if (results.some((result) => !isValidLnkResultDraftValue(result))) throw new Error('Укажите результат для каждого выбранного стыка')
       if (hasNonEmptyResult && !controlDate) throw new Error('Укажите дату контроля')
       if (hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
-      const repairForbiddenRecord = records.find((record) => resultById[record.id] === 'ремонт' && isLnkRepairForbidden(record))
-      if (repairForbiddenRecord) {
-        throw new Error(`Ремонт недоступен для стыка ${String(repairForbiddenRecord.joint ?? '-')}: ${getLnkRepairForbiddenReason(repairForbiddenRecord)}`)
-      }
+      records.forEach((record) => assertLnkRepairAllowed(record, resultById[record.id] ?? ''))
 
       const lnkUpdatedAt = new Date().toISOString()
       const updatedRecords = records.map((record) => {
@@ -374,10 +368,8 @@ export function useLnkReportMutations({
     }) => {
       const method = getLnkMethodByRequestKey(methodKey)
       if (!method) throw new Error('Выберите метод контроля')
-      if (result && !LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Укажите корректный результат')
-      if (result === 'ремонт' && isLnkRepairForbidden(record)) {
-        throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: ${getLnkRepairForbiddenReason(record)}`)
-      }
+      if (result) assertValidLnkResultValue(result)
+      assertLnkRepairAllowed(record, result)
       const proposedRecord = {
         ...record,
         [method.resultKey]: result,
@@ -413,10 +405,8 @@ export function useLnkReportMutations({
       for (const { record, methodKey, result } of updates) {
         const method = getLnkMethodByRequestKey(methodKey)
         if (!method) throw new Error('Выберите метод контроля')
-        if (!LNK_RESULT_OPTIONS.includes(result as never)) throw new Error('Укажите корректный результат')
-        if (result === 'ремонт' && isLnkRepairForbidden(record)) {
-          throw new Error(`Ремонт недоступен для стыка ${String(record.joint ?? '-')}: ${getLnkRepairForbiddenReason(record)}`)
-        }
+        assertValidLnkResultValue(result)
+        assertLnkRepairAllowed(record, result)
         const currentRecord = updatedById.get(record.id) ?? record
         updatedById.set(record.id, {
           ...currentRecord,
