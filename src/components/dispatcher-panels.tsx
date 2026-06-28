@@ -1,9 +1,6 @@
 import { Button } from '@/components/ui/button'
-import {
-  DispatcherTaskGroup,
-  type DispatcherTaskCardHandlers,
-  WelderStampNotificationGroup,
-} from '@/components/dispatcher-task-card'
+import { DispatcherTaskGroup, type DispatcherTaskCardHandlers } from '@/components/dispatcher-task-card'
+import { WelderStampNotificationGroup } from '@/components/welder-stamp-notification-card'
 import type { DispatcherTask, RepeatedJointTask, RepeatedJointTaskGroup, WelderStampExpiryTask } from '@/lib/dispatcher-types'
 
 type DispatcherTaskPanelProps = {
