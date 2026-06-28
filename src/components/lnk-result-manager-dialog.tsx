@@ -3,6 +3,7 @@ import { Check } from 'lucide-react'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogHeader } from '@/components/dialog-header'
+import { DialogSummaryPanel, DialogSummaryStat } from '@/components/dialog-summary-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import {
   LnkResultManagerEntry,
@@ -75,12 +76,9 @@ export function LnkResultManagerDialog({
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-5 py-4 lg:grid-cols-[360px_minmax(0,1fr)]">
         <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-          <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-            <h3 className="mb-3 text-sm font-semibold text-slate-800">Что редактируем</h3>
+          <DialogSummaryPanel title="Что редактируем">
             <div className="space-y-3">
-              <div className="rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-                Выбрано стыков: <span className="font-semibold text-slate-900">{rows.length}</span>
-              </div>
+              <DialogSummaryStat label="Выбрано стыков" value={rows.length} />
 
               <label className="block space-y-1.5 text-sm">
                 <span className="text-[13px] font-medium leading-none text-slate-700">Метод контроля</span>
@@ -98,7 +96,7 @@ export function LnkResultManagerDialog({
                 </Select>
               </label>
             </div>
-          </div>
+          </DialogSummaryPanel>
           <DialogHelpNote>
             Замена меняет только результат и сохраняет существующее заключение. Наименование заключения редактируется отдельно у
             конкретного стыка. Удаление очищает результат, дату контроля и заключение.

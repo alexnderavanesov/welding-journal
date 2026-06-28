@@ -1,6 +1,7 @@
 import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
+import { DialogSummaryPanel, DialogSummaryStat } from '@/components/dialog-summary-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoResultManagerEntry } from '@/components/psto-result-manager-entry'
 import { Button } from '@/components/ui/button'
@@ -38,17 +39,12 @@ export function PstoResultManagerDialog({
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-5 py-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
-          <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-            <h3 className="mb-3 text-sm font-semibold text-slate-800">Что редактируем</h3>
+          <DialogSummaryPanel title="Что редактируем">
             <div className="space-y-2 text-sm text-slate-600">
-              <div className="rounded border border-slate-200 bg-white px-3 py-2">
-                Выбрано стыков: <span className="font-semibold text-slate-900">{rows.length}</span>
-              </div>
-              <div className="rounded border border-slate-200 bg-white px-3 py-2">
-                С результатом: <span className="font-semibold text-slate-900">{resultCount}</span>
-              </div>
+              <DialogSummaryStat label="Выбрано стыков" value={rows.length} />
+              <DialogSummaryStat label="С результатом" value={resultCount} />
             </div>
-          </div>
+          </DialogSummaryPanel>
           <DialogHelpNote>
             Переименование меняет только номер диаграммы у конкретного стыка. Удаление очищает результат, дату ПСТО и
             диаграмму, но оставляет заявку ПСТО.
