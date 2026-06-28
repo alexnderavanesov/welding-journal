@@ -58,7 +58,7 @@ import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
-import { getOfficialStampCompatibilitySaveBlockReason } from '@/lib/welder-stamp-registry'
+import { getOfficialStampCompatibilitySaveBlockReason } from '@/lib/welder-stamp-compatibility'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 
 export function useHomePageController() {

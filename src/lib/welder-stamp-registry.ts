@@ -12,15 +12,6 @@ import {
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
-export {
-  buildWeldFormStampSelectOptions,
-  formatOfficialStampCompatibilityIssue,
-  getOfficialStampCompatibilityIssues,
-  getOfficialStampCompatibilitySaveBlockReason,
-  validateOfficialStampCompatibilityForImport,
-  validateOfficialStampCompatibilityForSave,
-} from '@/lib/welder-stamp-compatibility'
-
 export function createEmptyWelderStampDraft(): WelderStampRecord {
   return {
     id: 0,

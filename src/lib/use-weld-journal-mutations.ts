@@ -13,10 +13,12 @@ import {
 } from '@/lib/weld-validation'
 import {
   normalizeWeldingMethodsForImport,
-  validateOfficialStampCompatibilityForImport,
-  validateOfficialStampCompatibilityForSave,
   validateWelderStampFieldsForImport,
 } from '@/lib/welder-stamp-registry'
+import {
+  validateOfficialStampCompatibilityForImport,
+  validateOfficialStampCompatibilityForSave,
+} from '@/lib/welder-stamp-compatibility'
 import type {
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
