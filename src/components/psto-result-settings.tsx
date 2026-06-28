@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 
+import { DialogHelpNote } from '@/components/dialog-help-note'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -50,10 +51,10 @@ export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: Ps
         />
       </div>
 
-      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+      <DialogHelpNote>
         Результат «проведено» заполнит дату ПСТО и диаграмму термообработки. Если выбрать «аннулировать», результат,
         дата и диаграмма очистятся, заявка ПСТО останется.
-      </div>
+      </DialogHelpNote>
     </section>
   )
 }

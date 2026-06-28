@@ -1,3 +1,5 @@
+import { DialogHelpNote } from '@/components/dialog-help-note'
+
 export function PstoRequestAside() {
   return (
     <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
@@ -5,9 +7,9 @@ export function PstoRequestAside() {
       <p className="text-xs leading-5 text-slate-500">
         В заявку можно добавить один или несколько стыков, где ПСТО требуется и заявка еще не создана.
       </p>
-      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+      <DialogHelpNote>
         После создания наименование заявки попадет в столбец «Заявка ПСТО», а строка обновит дату «Внесен ПСТО».
-      </div>
+      </DialogHelpNote>
     </section>
   )
 }

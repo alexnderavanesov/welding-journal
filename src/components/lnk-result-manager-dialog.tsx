@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 
+import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import {
@@ -97,10 +98,10 @@ export function LnkResultManagerDialog({
               </label>
             </div>
           </div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+          <DialogHelpNote>
             Замена меняет только результат и сохраняет существующее заключение. Наименование заключения редактируется отдельно у
             конкретного стыка. Удаление очищает результат, дату контроля и заключение.
-          </div>
+          </DialogHelpNote>
         </section>
 
         <section className="min-h-0 overflow-auto rounded-md border border-slate-200">

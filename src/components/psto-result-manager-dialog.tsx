@@ -1,3 +1,4 @@
+import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoResultManagerEntry } from '@/components/psto-result-manager-entry'
@@ -47,10 +48,10 @@ export function PstoResultManagerDialog({
               </div>
             </div>
           </div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
+          <DialogHelpNote>
             Переименование меняет только номер диаграммы у конкретного стыка. Удаление очищает результат, дату ПСТО и
             диаграмму, но оставляет заявку ПСТО.
-          </div>
+          </DialogHelpNote>
         </section>
 
         <section className="min-h-0 overflow-auto rounded-md border border-slate-200">
