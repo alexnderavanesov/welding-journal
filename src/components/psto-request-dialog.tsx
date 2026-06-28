@@ -1,10 +1,9 @@
-import { Pencil } from 'lucide-react'
-
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoRequestAside } from '@/components/psto-request-aside'
 import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
+import { RequestManagerButton } from '@/components/request-manager-button'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { Button } from '@/components/ui/button'
@@ -66,15 +65,7 @@ export function PstoRequestDialog({
         subtitle={`${nextRequestName} · Стыков: ${selectedRows.length}`}
         onClose={onClose}
         actions={
-          <Button
-            variant="outline"
-            onClick={onOpenRequestManager}
-            disabled={requestManagerOptions.length === 0}
-            className="border-sky-300 bg-sky-100 text-sky-900 shadow-sm shadow-sky-100 hover:bg-sky-200 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-          >
-            <Pencil className="mr-2 h-4 w-4" />
-            Управление заявками
-          </Button>
+          <RequestManagerButton disabled={requestManagerOptions.length === 0} onClick={onOpenRequestManager} />
         }
       />
 
