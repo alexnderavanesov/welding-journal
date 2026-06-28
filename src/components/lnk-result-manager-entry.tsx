@@ -1,11 +1,8 @@
 import { Pencil } from 'lucide-react'
 
 import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
+  JointFullMeta,
   JointTitleLine,
-  JointWeldDateMeta,
-  MetaSeparator,
 } from '@/components/joint-meta'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -91,11 +88,7 @@ export function LnkResultManagerEntry({
         <JointTitleLine row={row} />
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>
-            <JointProjectSubtitleMeta row={row} />
-            <MetaSeparator />
-            <JointSpoolDiameterMeta row={row} />
-            <MetaSeparator />
-            <JointWeldDateMeta row={row} />
+            <JointFullMeta row={row} />
           </span>
           {activeChangeHint || (previewResult && previewResult !== currentResult) ? (
             <span className="inline-flex items-center gap-1.5">

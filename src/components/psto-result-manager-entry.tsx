@@ -1,11 +1,8 @@
 import { Pencil, Trash2 } from 'lucide-react'
 
 import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
+  JointFullMeta,
   JointTitleLine,
-  JointWeldDateMeta,
-  MetaSeparator,
 } from '@/components/joint-meta'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,11 +38,7 @@ export function PstoResultManagerEntry({
         <JointTitleLine row={row} />
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>
-            <JointProjectSubtitleMeta row={row} />
-            <MetaSeparator />
-            <JointSpoolDiameterMeta row={row} />
-            <MetaSeparator />
-            <JointWeldDateMeta row={row} />
+            <JointFullMeta row={row} />
           </span>
           <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
             Стык: {getJointStatusLabel(row)}
