@@ -1,8 +1,9 @@
-import { Check, Pencil, X } from 'lucide-react'
+import { Check } from 'lucide-react'
 
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
+import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
@@ -80,28 +81,14 @@ export function LnkResultDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[1px]">
       <div className="flex h-[94vh] w-full max-w-[1480px] flex-col rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-950/10">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Добавление результата ЛНК</h2>
-            <p className="text-sm text-muted-foreground">
-              Заявка: {draft.requestName || '-'} · Выбрано: {draft.rowIds.size}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={onOpenManager}
-              disabled={draft.rowIds.size === 0}
-              className="border-sky-300 bg-sky-100 text-sky-900 shadow-sm shadow-sky-100 hover:bg-sky-200 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Редактировать результаты
-            </Button>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+        <ResultDialogHeader
+          title="Добавление результата ЛНК"
+          requestName={draft.requestName}
+          selectedCount={draft.rowIds.size}
+          managerDisabled={draft.rowIds.size === 0}
+          onOpenManager={onOpenManager}
+          onClose={onClose}
+        />
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
           <LnkResultSettings
