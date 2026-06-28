@@ -19,9 +19,16 @@ import {
   buildPstoResultCorrectionRow,
   buildPstoResultRows,
 } from '@/lib/psto-report-mutation-updates'
+import {
+  getPstoFieldHighlightFields,
+  PSTO_GENERATED_HIGHLIGHT_FIELDS,
+  PSTO_REQUEST_HIGHLIGHT_FIELDS,
+  PSTO_RESULT_HIGHLIGHT_FIELDS,
+} from '@/lib/psto-report-mutation-highlight-fields'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId, UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
 
 export function usePstoReportMutations({
@@ -57,7 +64,7 @@ export function usePstoReportMutations({
       return savedRows
     },
     onSuccess: async (_result, variables) => {
-      highlightChangedRows(_result, ['pstoRequest', 'pstoCreatedAt'])
+      highlightChangedRows(_result, [...PSTO_REQUEST_HIGHLIGHT_FIELDS])
       setMessage(
         variables.mode === 'edit'
           ? 'Заявка ПСТО обновлена'
@@ -93,7 +100,7 @@ export function usePstoReportMutations({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      highlightChangedRows(savedRows, ['pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      highlightChangedRows(savedRows, [...PSTO_RESULT_HIGHLIGHT_FIELDS])
       setMessage(
         variables.result === PSTO_EMPTY_RESULT_VALUE
           ? `Результат ПСТО аннулирован для стыков: ${savedRows.length}`
@@ -140,7 +147,7 @@ export function usePstoReportMutations({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      highlightChangedRows(savedRows, ['pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      highlightChangedRows(savedRows, [...PSTO_GENERATED_HIGHLIGHT_FIELDS])
       setMessage(
         variables.action === 'rename'
           ? `Заявка ${variables.requestName} переименована в ${variables.nextRequestName}`
@@ -170,7 +177,7 @@ export function usePstoReportMutations({
     },
     onSuccess: async (saved, variables) => {
       const removedRequestName = String(variables.record.pstoRequest ?? '').trim()
-      highlightChangedRows(saved ? [saved] : [], ['pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      highlightChangedRows(saved ? [saved] : [], [...PSTO_GENERATED_HIGHLIGHT_FIELDS])
       const hasRemainingRequestPositions = heatTreatmentRows.some((row) => row.id !== variables.record.id && String(row.pstoRequest ?? '').trim() === removedRequestName)
       if (removedRequestName && !hasRemainingRequestPositions) {
         setManagedPstoRequestName('')
@@ -202,7 +209,7 @@ export function usePstoReportMutations({
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
-      highlightChangedRows(saved ? [saved] : [], ['pstoDate', 'pstoResult', 'heatTreatmentDiagram', 'pstoCreatedAt'])
+      highlightChangedRows(saved ? [saved] : [], [...PSTO_RESULT_HIGHLIGHT_FIELDS])
       setMessage(variables.action === 'deleteResult' ? 'Результат ПСТО удален' : 'Диаграмма ПСТО переименована')
       await invalidateWeldJoints(queryClient)
     },
@@ -228,7 +235,7 @@ export function usePstoReportMutations({
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
-      highlightChangedRows(saved ? [saved] : [], [variables.fieldKey])
+      highlightChangedRows(saved ? [saved] : [], getPstoFieldHighlightFields(variables.fieldKey))
       setMessage(`${variables.fieldKey === 'pstoDate' ? 'Дата ПСТО' : 'Поле ПСТО'} обновлено`)
       setHeatTreatmentFieldEditing(null)
       await invalidateWeldJoints(queryClient)
