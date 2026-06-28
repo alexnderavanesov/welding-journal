@@ -1,35 +1,15 @@
-import type { Dispatch, SetStateAction } from 'react'
-import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
 import {
   resolveLnkResultDraftAfterMethodChange,
   resolveLnkResultDraftAfterRequestChange,
   resolveLnkResultDraftAfterRowIdsChange,
 } from '@/lib/lnk-result-action-utils'
+import type { UseLnkResultActionsOptions } from '@/lib/lnk-report-action-types'
 import {
   canSelectLnkResultRow,
   getLnkRowRequestNames,
 } from '@/lib/report-modal-rows'
-import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-
-type LnkResultMutation = {
-  isPending: boolean
-}
-
-type UseLnkResultActionsOptions = {
-  filteredRows: WeldRow[]
-  lnkRows: WeldRow[]
-  draft: LnkResultDraftState
-  mutation: LnkResultMutation
-  setDraft: Dispatch<SetStateAction<LnkResultDraftState>>
-  setIsModalOpen: (value: boolean) => void
-  setIsPreviewOpen: (value: boolean) => void
-  setMessage: (value: string | null) => void
-  setPreservedOrderIds: Dispatch<SetStateAction<number[] | null>>
-  setRequestSearch: (value: string) => void
-  setShouldPinPreviewedRows: (value: boolean) => void
-}
 
 export function useLnkResultActions({
   filteredRows,

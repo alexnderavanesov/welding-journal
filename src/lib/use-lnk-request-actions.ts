@@ -1,39 +1,10 @@
-import type { Dispatch, SetStateAction } from 'react'
-import type { LnkRequestDraftState } from '@/lib/report-draft-state'
+import type { UseLnkRequestActionsOptions } from '@/lib/lnk-report-action-types'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
-import { defaultRequestNamingState, type RequestNamingState } from '@/lib/request-naming-state'
+import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-
-type LnkRequestMutation = {
-  isPending: boolean
-  mutate: (value: {
-    records: WeldRow[]
-    methodKeys: WeldFieldKey[]
-    requestName: string
-  }) => void
-}
-
-type UseLnkRequestActionsOptions = {
-  draft: LnkRequestDraftState
-  filteredRows: WeldRow[]
-  lnkRows: WeldRow[]
-  naming: RequestNamingState
-  nextRequestName: string
-  selectedMethodKeys: WeldFieldKey[]
-  selectedRows: WeldRow[]
-  selectedTargetCount: number
-  mutation: LnkRequestMutation
-  setDraft: Dispatch<SetStateAction<LnkRequestDraftState>>
-  setIsOpen: (value: boolean) => void
-  setMessage: (value: string | null) => void
-  setNaming: Dispatch<SetStateAction<RequestNamingState>>
-  setPreservedOrderIds: Dispatch<SetStateAction<number[] | null>>
-  setSearch: (value: string) => void
-  setSelectedIds: Dispatch<SetStateAction<Set<number>>>
-}
 
 export function useLnkRequestActions({
   filteredRows,

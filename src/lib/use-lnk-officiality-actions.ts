@@ -1,31 +1,9 @@
-import type { Dispatch, SetStateAction } from 'react'
-import {
-  createDefaultLnkOfficialityDraft,
-  type LnkOfficialityDraftState,
-} from '@/lib/report-draft-state'
+import { createDefaultLnkOfficialityDraft } from '@/lib/report-draft-state'
 import {
   setNumberSetValues,
   toggleNumberSetValue,
 } from '@/lib/report-ui-state'
-import type { WeldRow } from '@/lib/dispatcher-types'
-
-type LnkOfficialityMutation = {
-  isPending: boolean
-  mutate: (value: {
-    records: WeldRow[]
-    status: 'official' | 'unofficial'
-  }) => void
-}
-
-type UseLnkOfficialityActionsOptions = {
-  draft: LnkOfficialityDraftState
-  filteredRows: WeldRow[]
-  selectedRows: WeldRow[]
-  isSaveDisabled: boolean
-  mutation: LnkOfficialityMutation
-  setDraft: Dispatch<SetStateAction<LnkOfficialityDraftState>>
-  setIsOpen: (value: boolean) => void
-}
+import type { UseLnkOfficialityActionsOptions } from '@/lib/lnk-report-action-types'
 
 export function useLnkOfficialityActions({
   draft,
