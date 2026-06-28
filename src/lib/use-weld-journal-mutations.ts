@@ -1,9 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  createWeldJoint,
   deleteWeldJoint,
   importWeldJoints,
-  updateWeldJoint,
 } from '@/server/welds'
 import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import {
@@ -30,6 +28,11 @@ import type {
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import {
+  createWeldRowOrThrow,
+  createWeldRowsOrThrow,
+  updateWeldRowOrThrow,
+} from '@/lib/weld-save-utils'
 
 type StampSelectOptionLike = {
   value: string
@@ -64,9 +67,9 @@ export function useWeldJournalMutations({
       validateRequiredRootStampForSave(preparedValue)
       validateManualJointNameForSave(preparedValue, rows)
       validateOfficialStampCompatibilityForSave(preparedValue, welderStamps)
-      const saved = preparedValue.id ? await updateWeldJoint({ data: preparedValue }) : await createWeldJoint({ data: preparedValue })
-      if (!saved) throw new Error('Запись не найдена')
-      return saved
+      return preparedValue.id
+        ? updateWeldRowOrThrow(preparedValue as WeldInput & { id: number })
+        : createWeldRowOrThrow(preparedValue)
     },
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [variables], variables.id && editingFocusField ? [editingFocusField] : [])
@@ -83,8 +86,7 @@ export function useWeldJournalMutations({
     mutationFn: async (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => {
       const targetJoints = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
       const drafts = targetJoints.map((targetJoint) => buildRepeatedJointDraft(task.row, targetJoint))
-      const savedRows = await Promise.all(drafts.map((draft) => createWeldJoint({ data: draft })))
-      if (!savedRows.every(Boolean)) throw new Error('Не удалось создать повторный стык')
+      const savedRows = await createWeldRowsOrThrow(drafts, 'Не удалось создать повторный стык')
       return savedRows as WeldRow[]
     },
     onSuccess: async (createdRows, task) => {
@@ -121,9 +123,7 @@ export function useWeldJournalMutations({
   const renameRepeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointRenameTask) => {
       const updatedRecord = { ...task.row, joint: task.targetJoint }
-      const saved = await updateWeldJoint({ data: updatedRecord })
-      if (!saved) throw new Error('Запись не найдена')
-      return saved
+      return updateWeldRowOrThrow(updatedRecord)
     },
     onSuccess: async (saved, task) => {
       highlightChangedRows(saved ? [saved] : [task.row], ['joint'])
