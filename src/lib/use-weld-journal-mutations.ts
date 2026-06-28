@@ -29,6 +29,7 @@ import type {
 } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 
 type StampSelectOptionLike = {
   value: string
@@ -179,8 +180,4 @@ export function useWeldJournalMutations({
     repeatedJointMutation,
     saveMutation,
   }
-}
-
-async function invalidateWeldJoints(queryClient: ReturnType<typeof useQueryClient>) {
-  await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
 }

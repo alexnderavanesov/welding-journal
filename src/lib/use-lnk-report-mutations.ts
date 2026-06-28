@@ -49,6 +49,7 @@ import {
   hasText,
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
+import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import {
   calculateFinalStatus,
   type WeldFieldKey,
@@ -631,8 +632,4 @@ export function useLnkReportMutations({
     lnkFieldMutation,
     clearLnkGeneratedDataMutation,
   }
-}
-
-async function invalidateWeldJoints(queryClient: ReturnType<typeof useQueryClient>) {
-  await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
 }

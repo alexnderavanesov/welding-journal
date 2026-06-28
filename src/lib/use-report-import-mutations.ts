@@ -6,6 +6,7 @@ import { normalizeEditableImportValue, normalizeExistingRequestImportValue } fro
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
 import { clearDisabledLnkRequests, isLnkRequestAllowedForRow, isLnkRequestField, withTouchedLnkTimestamp } from '@/lib/lnk-field-updates'
 import { hasText } from '@/lib/report-value-utils'
+import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 type RowWithId = WeldInput & { id: number }
@@ -111,8 +112,4 @@ export function useReportImportMutations({
     heatTreatmentImportMutation,
     lnkImportMutation,
   }
-}
-
-async function invalidateWeldJoints(queryClient: ReturnType<typeof useQueryClient>) {
-  await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
 }

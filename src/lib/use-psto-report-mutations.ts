@@ -16,6 +16,7 @@ import {
   withAutoHeatTreatmentDiagram,
   withAutoHeatTreatmentDiagrams,
 } from '@/lib/psto-status'
+import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
@@ -308,8 +309,4 @@ export function usePstoReportMutations({
     pstoResultCorrectionMutation,
     heatTreatmentFieldMutation,
   }
-}
-
-async function invalidateWeldJoints(queryClient: ReturnType<typeof useQueryClient>) {
-  await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
 }
