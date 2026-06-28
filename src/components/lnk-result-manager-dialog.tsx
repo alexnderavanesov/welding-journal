@@ -1,49 +1,22 @@
-import { Check, Pencil, X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 
 import {
-  JointProjectSubtitleMeta,
-  JointSpoolDiameterMeta,
-  JointWeldDateMeta,
-  MetaSeparator,
-  OfficialityBadge,
-} from '@/components/joint-meta'
+  LnkResultManagerEntry,
+  type LnkResultChangeHintState,
+  type LnkResultManagerEntryData,
+  type LnkResultMethod,
+  type LnkResultPreviewState,
+} from '@/components/lnk-result-manager-entry'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { isLnkRepairForbidden, getLnkRepairForbiddenReason } from '@/lib/lnk-result-rules'
-import { getLnkResultBadgeClass } from '@/lib/report-badges'
-import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
-import { getJointTitle } from '@/lib/report-ui-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-
-type LnkResultMethod = (typeof LNK_METHODS)[number]
-type LnkResultManagerEntry = {
-  row: WeldRow
-  method: LnkResultMethod
-  changeKey: string
-}
-
-type LnkResultPreviewState = {
-  changeKey: string
-  rowId: number
-  methodKey: WeldFieldKey
-  result: string
-} | null
-
-type LnkResultChangeHintState = {
-  changeKey: string
-  rowId: number
-  methodKey: WeldFieldKey
-  from: string
-  to: string
-} | null
 
 export type LnkResultManagerDialogProps = {
   rows: WeldRow[]
   methods: LnkResultMethod[]
-  entries: LnkResultManagerEntry[]
-  pendingEntries: LnkResultManagerEntry[]
+  entries: LnkResultManagerEntryData[]
+  pendingEntries: LnkResultManagerEntryData[]
   methodKey: WeldFieldKey | ''
   conclusionDrafts: Record<string, string>
   pendingResultChanges: Record<string, string>
@@ -138,132 +111,25 @@ export function LnkResultManagerDialog({
           <section className="min-h-0 overflow-auto rounded-md border border-slate-200">
             {entries.length > 0 ? (
               <div className="divide-y divide-slate-100">
-                {entries.map(({ row, method, changeKey }) => {
-                  const currentResult = String(row[method.resultKey] ?? '').trim()
-                  const conclusionName = String(row[method.conclusionKey] ?? '').trim()
-                  const conclusionDate = String(row[method.conclusionDateKey] ?? '').trim()
-                  const conclusionDraft = conclusionDrafts[changeKey] ?? conclusionName
-                  const previewResult = preview?.changeKey === changeKey ? preview.result : ''
-                  const pendingResult = pendingResultChanges[changeKey] ?? ''
-                  const activeChangeHint =
-                    pendingResult && pendingResult !== currentResult
-                      ? { changeKey, rowId: row.id, methodKey: method.requestKey, from: currentResult, to: pendingResult }
-                      : changeHint?.changeKey === changeKey
-                        ? changeHint
-                        : null
-
-                  return (
-                    <div key={changeKey} className="grid grid-cols-[minmax(520px,1fr)_minmax(260px,0.5fr)] gap-4 px-4 py-3 text-sm">
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <span className="font-medium text-slate-900">{getJointTitle(row)}</span>
-                          <OfficialityBadge row={row} compact />
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span>
-                            <JointProjectSubtitleMeta row={row} />
-                            <MetaSeparator />
-                            <JointSpoolDiameterMeta row={row} />
-                            <MetaSeparator />
-                            <JointWeldDateMeta row={row} />
-                          </span>
-                          {activeChangeHint || (previewResult && previewResult !== currentResult) ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="font-medium text-slate-500">
-                                {pendingResult && pendingResult !== currentResult ? 'Будет:' : 'Проверка:'}
-                              </span>
-                              <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getLnkResultBadgeClass(activeChangeHint?.from || currentResult)}`}>
-                                {activeChangeHint?.from || currentResult || '-'}
-                              </span>
-                              <span className="px-0.5 text-sm font-bold leading-none text-slate-700">→</span>
-                              <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getLnkResultBadgeClass(activeChangeHint?.to || previewResult)}`}>
-                                {activeChangeHint?.to || previewResult}
-                              </span>
-                            </span>
-                          ) : (
-                            <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${currentResult ? getLnkResultBadgeClass(currentResult) : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-                              Сейчас {method.code}: {currentResult || '-'}
-                            </span>
-                          )}
-                        </div>
-                        {conclusionName || conclusionDate ? (
-                          <div className="mt-1 text-xs leading-5 text-slate-500">
-                            <span className="font-medium text-slate-700">Заключение:</span>{' '}
-                            <span className="break-words">{conclusionName || '-'}</span>
-                            <span className="mx-1 text-slate-300">·</span>
-                            <span className="font-medium text-slate-700">Дата:</span> {conclusionDate || '-'}
-                          </div>
-                        ) : null}
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <Input
-                            value={conclusionDraft}
-                            onChange={(event) => onConclusionDraftChange(changeKey, event.target.value)}
-                            placeholder="Наименование заключения для этого стыка"
-                            disabled={isConclusionCorrectionPending}
-                            className="h-8 min-w-72 max-w-xl flex-1 bg-white text-xs"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onRenameConclusion(row, method.requestKey)}
-                            disabled={
-                              isConclusionCorrectionPending ||
-                              !conclusionDraft.trim() ||
-                              conclusionDraft.trim() === conclusionName
-                            }
-                            className="h-8"
-                          >
-                            <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                            Переименовать
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap content-start justify-end gap-1.5">
-                        <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
-                        {LNK_RESULT_OPTIONS.map((option) => {
-                          const disabledByRepairRule = option === 'ремонт' && isLnkRepairForbidden(row)
-                          return (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={() => {
-                                if (!disabledByRepairRule) onReplaceResult(row, method.requestKey, option)
-                              }}
-                              onMouseEnter={() => {
-                                if (!disabledByRepairRule) onPreviewEnter({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
-                              }}
-                              onMouseLeave={() => onPreviewLeave(changeKey)}
-                              onFocus={() => {
-                                if (!disabledByRepairRule) onPreviewEnter({ changeKey, rowId: row.id, methodKey: method.requestKey, result: option })
-                              }}
-                              onBlur={() => onPreviewLeave(changeKey)}
-                              disabled={disabledByRepairRule || isResultCorrectionPending || isResultReplacementPending}
-                              title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
-                              className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                                disabledByRepairRule
-                                  ? 'border-slate-200 bg-slate-50 text-slate-400'
-                                  : (pendingResult || currentResult) === option
-                                    ? getLnkResultBadgeClass(option)
-                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                              }`}
-                            >
-                              {option}
-                            </button>
-                          )
-                        })}
-                        <button
-                          type="button"
-                          onClick={() => onClearResult(row, method.requestKey)}
-                          disabled={!currentResult || isResultCorrectionPending || isResultReplacementPending}
-                          className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          удалить результат
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+                {entries.map((entry) => (
+                  <LnkResultManagerEntry
+                    key={entry.changeKey}
+                    entry={entry}
+                    conclusionDrafts={conclusionDrafts}
+                    pendingResultChanges={pendingResultChanges}
+                    preview={preview}
+                    changeHint={changeHint}
+                    isResultCorrectionPending={isResultCorrectionPending}
+                    isResultReplacementPending={isResultReplacementPending}
+                    isConclusionCorrectionPending={isConclusionCorrectionPending}
+                    onConclusionDraftChange={onConclusionDraftChange}
+                    onRenameConclusion={onRenameConclusion}
+                    onReplaceResult={onReplaceResult}
+                    onClearResult={onClearResult}
+                    onPreviewEnter={onPreviewEnter}
+                    onPreviewLeave={onPreviewLeave}
+                  />
+                ))}
               </div>
             ) : (
               <div className="flex min-h-72 items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
