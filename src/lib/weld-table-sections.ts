@@ -13,6 +13,7 @@ const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'projectTitle',
   'subtitleCode',
   'line',
+  'weldControlPercent',
   'spool',
   'joint',
   'wdi',

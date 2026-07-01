@@ -1,5 +1,5 @@
 import { formatDisplayDate } from '@/lib/date-format'
-import { formatJointDiameterLabel, isUnofficialJoint } from '@/lib/joint-display'
+import { formatJointDiameterLabel, formatJointWdiLabel, isUnofficialJoint } from '@/lib/joint-display'
 import { getJointTitle } from '@/lib/report-ui-state'
 import { cn } from '@/lib/utils'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -20,6 +20,15 @@ export function JointSpoolDiameterMeta({ row }: { row: WeldInput }) {
       ) : null}
       <span>Диаметр - </span>
       <span className="font-semibold text-slate-700">{formatJointDiameterLabel(row)}</span>
+    </>
+  )
+}
+
+export function JointWdiMeta({ row }: { row: WeldInput }) {
+  return (
+    <>
+      <span>WDI - </span>
+      <span className="font-semibold text-slate-700">{formatJointWdiLabel(row)}</span>
     </>
   )
 }
@@ -47,6 +56,8 @@ export function JointSpoolDateMeta({ row }: { row: WeldInput }) {
   return (
     <>
       <JointSpoolDiameterMeta row={row} />
+      <MetaSeparator />
+      <JointWdiMeta row={row} />
       <MetaSeparator />
       <JointWeldDateMeta row={row} />
     </>

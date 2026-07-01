@@ -40,6 +40,7 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
   if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
   if (reason === 'дозаполнить дату сварки') return { joint: task.sourceJoint, type: 'Дозаполнить дату сварки' }
+  if (reason === 'проверить целостность цепочки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
   if (reason === 'годный стык неофициальный') return { joint: task.sourceJoint, type: 'Годный стык неофициальный' }
   if (reason === 'несколько годных финалов') return { joint: task.sourceJoint, type: 'Несколько годных финалов' }
   if (reason === 'есть продолжение после годного') return { joint: task.sourceJoint, type: 'Лишняя ветка после годного' }
@@ -118,6 +119,9 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   }
   if (reason === 'годный стык неофициальный') {
     return `Стык ${task.sourceJoint} имеет годный результат, но отмечен как неофициальный. Итогом цепочки должен быть годный официальный стык, поэтому диспетчер просит проверить цепочку.`
+  }
+  if (reason === 'проверить целостность цепочки') {
+    return `В цепочке ${task.baseJoint} найден повторный стык без исходного или промежуточного стыка. Проверь, не был ли удален базовый или предыдущий шаг цепочки.`
   }
   return `Диспетчер обнаружил нестандартное состояние цепочки ${task.baseJoint}: ${reason}. Открой цепочку и проверь, нужны ли дополнительные действия.`
 }

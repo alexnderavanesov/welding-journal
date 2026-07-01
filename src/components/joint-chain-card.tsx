@@ -1,8 +1,7 @@
 import { ExternalLink } from 'lucide-react'
 
-import { OfficialityBadge } from '@/components/joint-meta'
+import { JointSpoolDateMeta, OfficialityBadge } from '@/components/joint-meta'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { formatDisplayDate } from '@/lib/date-format'
 import { getJointChainResultItems, getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import { getJointTitle } from '@/lib/report-ui-state'
 
@@ -49,7 +48,7 @@ export function JointChainCard({ row, index, isCurrent, onOpenRow }: JointChainC
           <div className="mt-1 text-sm text-slate-600">{getJointTitle(row)}</div>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
             <span>
-              Дата сварки: <span className="font-semibold text-slate-700">{formatDisplayDate(row.weldDate) || '-'}</span>
+              <JointSpoolDateMeta row={row} />
             </span>
             <span>
               Статус:{' '}

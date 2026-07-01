@@ -25,6 +25,7 @@ export function WeldTableSectionHeaderRow({
     <>
       {sections.map((group) => {
         const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
+        const canToggle = group.collapsed || canCollapse
         return (
           <th
             key={group.section}
@@ -36,11 +37,11 @@ export function WeldTableSectionHeaderRow({
             <button
               type="button"
               onClick={() => onToggleSection(group.section)}
-              disabled={!canCollapse}
+              disabled={!canToggle}
               className={`inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
-                canCollapse ? 'hover:bg-slate-100' : 'cursor-not-allowed'
+                canToggle ? 'hover:bg-slate-100' : 'cursor-not-allowed'
               }`}
-              title={!canCollapse ? 'Обязательные поля всегда показаны' : group.collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
+              title={!canToggle ? 'Обязательные поля всегда показаны' : group.collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
             >
               {group.collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               {group.section}

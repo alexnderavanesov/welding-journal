@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
+import { getAlwaysVisibleFieldKeys, getFilteredWeldTableSections } from './weld-table-sections'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -35,6 +36,26 @@ describe('weld field order', () => {
       'Результат',
       'Заключения',
       'Прочее',
+    ])
+  })
+
+  it('keeps weld control percent visible when the project section is collapsed', () => {
+    const alwaysVisibleFieldKeys = getAlwaysVisibleFieldKeys(false)
+    const projectSection = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Проект')
+
+    expect(projectSection).toBeDefined()
+
+    const sections = getFilteredWeldTableSections({
+      availableSections: [projectSection!],
+      collapsedSections: new Set(['Проект']),
+      alwaysVisibleFieldKeys,
+    })
+
+    expect(sections[0]?.fields.map((field) => field.key)).toEqual([
+      'projectTitle',
+      'subtitleCode',
+      'line',
+      'weldControlPercent',
     ])
   })
 

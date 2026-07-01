@@ -60,6 +60,7 @@ export const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'projectTitle',
   'subtitleCode',
   'line',
+  'weldControlPercent',
   'spool',
   'joint',
   'wdi',
@@ -122,4 +123,3 @@ export const WELD_STAMP_COMPLETION_GROUPS = [
 export const UNOFFICIAL_REJECTED_WITH_COIL_REASON = 'катушка требует проверки после смены официальности'
 export const REPAIR_FORBIDDEN_BY_DIAMETER_REASON = 'проверить ремонт по диаметру'
 export const REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON = 'после двух ремонтов доступен только вырез'
-

@@ -24,6 +24,11 @@ export function formatJointDiameterLabel(row: WeldInput) {
   return diameter === null ? '-' : formatJointDiameterValue(diameter)
 }
 
+export function formatJointWdiLabel(row: WeldInput) {
+  const value = String(row.wdi ?? '').trim()
+  return value || '-'
+}
+
 export function isUnofficialJoint(row: WeldInput) {
   return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
 }

@@ -2,7 +2,7 @@ import { REPAIR_FORBIDDEN_BY_DIAMETER_REASON, UNOFFICIAL_REJECTED_WITH_COIL_REAS
 import { getJointStatusLabel } from '@/lib/lnk-status'
 import { formatDisplayDate } from '@/lib/date-format'
 import { getWeldDateOrderValue } from '@/lib/report-date-rules'
-import { normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
+import { formatRepeatedJointName, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import { createJointChainCheckTask, isIncompleteWeldStampGroupReason } from '@/lib/repeated-joint-check-tasks'
@@ -40,49 +40,52 @@ export function buildJointChainConsistencyCheckTasks(
     }
   }
 
-  const tasks = [...groups.entries()].flatMap(([key, group]) => {
-    const sortedGroup = [...group].sort(compareJointChainRows)
-    const weldDateOrderIssue = findWeldDateOrderIssue(sortedGroup)
-    const checkTasks: RepeatedJointCheckTask[] = weldDateOrderIssue
-      ? [
+  const tasks = [
+    ...buildMissingRepeatedJointSourceCheckTasks(rows),
+    ...[...groups.entries()].flatMap(([key, group]) => {
+      const sortedGroup = [...group].sort(compareJointChainRows)
+      const weldDateOrderIssue = findWeldDateOrderIssue(sortedGroup)
+      const checkTasks: RepeatedJointCheckTask[] = weldDateOrderIssue
+        ? [
+            createJointChainCheckTask(
+              weldDateOrderIssue.row,
+              `${key}:weld-date-order:${weldDateOrderIssue.row.id}`,
+              'проверить даты сварки',
+              `Дата стыка ${String(weldDateOrderIssue.previous.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.previous.weldDate) || '-'}) позже даты следующего системного шага ${String(weldDateOrderIssue.row.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.row.weldDate) || '-'}). Проверь последовательность дат сварки в части R/W/Y.`,
+            ),
+          ]
+        : []
+      const firstUnofficialGood = sortedGroup.find((row) => isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
+      if (firstUnofficialGood) {
+        const joint = String(firstUnofficialGood.joint ?? '').trim() || '-'
+        return [
+          ...checkTasks,
           createJointChainCheckTask(
-            weldDateOrderIssue.row,
-            `${key}:weld-date-order:${weldDateOrderIssue.row.id}`,
-            'проверить даты сварки',
-            `Дата стыка ${String(weldDateOrderIssue.previous.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.previous.weldDate) || '-'}) позже даты следующего системного шага ${String(weldDateOrderIssue.row.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.row.weldDate) || '-'}). Проверь последовательность дат сварки в части R/W/Y.`,
+            firstUnofficialGood,
+            key,
+            'годный стык неофициальный',
+            `Стык ${joint} сейчас годен, но отмечен как неофициальный. Итогом цепочки должен быть годный официальный стык, поэтому нужно проверить официальность и финал цепочки.`,
           ),
         ]
-      : []
-    const firstUnofficialGood = sortedGroup.find((row) => isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
-    if (firstUnofficialGood) {
-      const joint = String(firstUnofficialGood.joint ?? '').trim() || '-'
-      return [
-        ...checkTasks,
-        createJointChainCheckTask(
-          firstUnofficialGood,
-          key,
-          'годный стык неофициальный',
-          `Стык ${joint} сейчас годен, но отмечен как неофициальный. Итогом цепочки должен быть годный официальный стык, поэтому нужно проверить официальность и финал цепочки.`,
-        ),
-      ]
-    }
+      }
 
-    const firstOfficialGoodIndex = sortedGroup.findIndex((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
-    if (firstOfficialGoodIndex < 0) return checkTasks
+      const firstOfficialGoodIndex = sortedGroup.findIndex((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
+      if (firstOfficialGoodIndex < 0) return checkTasks
 
-    const officialGoodCount = sortedGroup.filter((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен').length
-    const firstOfficialGood = sortedGroup[firstOfficialGoodIndex]
-    const rowAfterOfficialGood = sortedGroup.find((row) => isJointChainRowWeldedAfter(row, firstOfficialGood))
-    if (!rowAfterOfficialGood && officialGoodCount <= 1) return checkTasks
+      const officialGoodCount = sortedGroup.filter((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен').length
+      const firstOfficialGood = sortedGroup[firstOfficialGoodIndex]
+      const rowAfterOfficialGood = sortedGroup.find((row) => isJointChainRowWeldedAfter(row, firstOfficialGood))
+      if (!rowAfterOfficialGood && officialGoodCount <= 1) return checkTasks
 
-    const row = firstOfficialGood
-    const reason = officialGoodCount > 1 ? 'несколько годных финалов' : 'есть продолжение после годного'
-    const details =
-      officialGoodCount > 1
-        ? `В цепочке найдено ${officialGoodCount} годных официальных стыка. Нужно определить, какой из них является актуальным финалом, а какие строки лишние или требуют смены статуса.`
-        : `Стык ${String(firstOfficialGood.joint ?? '').trim() || '-'} уже годен с датой сварки ${formatDisplayDate(firstOfficialGood.weldDate) || '-'}, но после него найден стык ${String(rowAfterOfficialGood?.joint ?? '').trim() || '-'} с более поздней датой ${formatDisplayDate(rowAfterOfficialGood?.weldDate) || '-'}. Проверь, действительно ли цепочка должна продолжаться после годного стыка.`
-    return [...checkTasks, createJointChainCheckTask(row, key, reason, details)]
-  })
+      const row = firstOfficialGood
+      const reason = officialGoodCount > 1 ? 'несколько годных финалов' : 'есть продолжение после годного'
+      const details =
+        officialGoodCount > 1
+          ? `В цепочке найдено ${officialGoodCount} годных официальных стыка. Нужно определить, какой из них является актуальным финалом, а какие строки лишние или требуют смены статуса.`
+          : `Стык ${String(firstOfficialGood.joint ?? '').trim() || '-'} уже годен с датой сварки ${formatDisplayDate(firstOfficialGood.weldDate) || '-'}, но после него найден стык ${String(rowAfterOfficialGood?.joint ?? '').trim() || '-'} с более поздней датой ${formatDisplayDate(rowAfterOfficialGood?.weldDate) || '-'}. Проверь, действительно ли цепочка должна продолжаться после годного стыка.`
+      return [...checkTasks, createJointChainCheckTask(row, key, reason, details)]
+    }),
+  ]
   tasks.push(...buildObsoleteChildBranchCheckTasks(rows, chainGroups, groups, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }))
   return dedupeRepeatedJointCheckTasks(tasks)
 }
@@ -153,6 +156,70 @@ function buildObsoleteChildBranchCheckTasks(
     }
   }
   return tasks
+}
+
+function buildMissingRepeatedJointSourceCheckTasks(rows: WeldRow[]) {
+  const tasks: RepeatedJointCheckTask[] = []
+  for (const row of rows) {
+    const joint = String(row.joint ?? '').trim()
+    if (!joint) continue
+
+    const parsed = parseRepeatedJointName(joint)
+    if (parsed.segments.length === 0) continue
+
+    const sourceCandidates = getStrictRepeatedJointSourceCandidates(parsed)
+    if (sourceCandidates.length === 0) continue
+
+    const hasSource = sourceCandidates.some((sourceJoint) => hasMatchingRepeatedJoint(rows, row, sourceJoint))
+    if (hasSource) continue
+
+    const expectedSourceText = sourceCandidates.join(' или ')
+    tasks.push(
+      createJointChainCheckTask(
+        row,
+        `${getJointChainConsistencyKey(row) ?? row.id}:missing-source:${row.id}:${sourceCandidates.join('|')}`,
+        'проверить целостность цепочки',
+        `Стык ${joint} находится в цепочке, но предыдущий или исходный стык ${expectedSourceText} не найден в журнале. Проверь, не был ли удален базовый или промежуточный стык цепочки.`,
+      ),
+    )
+  }
+  return tasks
+}
+
+function getStrictRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseRepeatedJointName>) {
+  const candidates: string[] = []
+  const lastIndex = parsed.segments.length - 1
+
+  parsed.segments.forEach((segment, index) => {
+    const segments = parsed.segments.map((currentSegment) => ({ ...currentSegment }))
+    if (segment.index > 1) {
+      segments[index] = { ...segment, index: segment.index - 1 }
+      candidates.push(formatRepeatedJointName(parsed.base, segments))
+      return
+    }
+
+    if (index === lastIndex) {
+      segments.splice(index, 1)
+      candidates.push(formatRepeatedJointName(parsed.base, segments))
+    }
+  })
+
+  return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))]
+}
+
+function hasMatchingRepeatedJoint(rows: WeldRow[], row: WeldInput, joint: string) {
+  const expectedIdentity = getRepeatedJointIdentity(row, joint)
+  if (!expectedIdentity) return false
+  return rows.some((candidate) => {
+    const candidateIdentity = getRepeatedJointIdentity(candidate)
+    return Boolean(
+      candidateIdentity &&
+        candidateIdentity.project === expectedIdentity.project &&
+        candidateIdentity.subtitle === expectedIdentity.subtitle &&
+        candidateIdentity.line === expectedIdentity.line &&
+        candidateIdentity.joint === expectedIdentity.joint,
+    )
+  })
 }
 
 function isJointChainRowWeldedAfter(row: WeldInput, referenceRow: WeldInput) {
