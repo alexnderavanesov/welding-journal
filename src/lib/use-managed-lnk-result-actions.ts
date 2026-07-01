@@ -1,4 +1,5 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
 import {
   buildManagedLnkResultReplacementUpdates,
@@ -24,20 +25,19 @@ export function useManagedLnkResultActions({
   setManagedLnkResultRequestSearch,
   setManagedLnkConclusionDrafts,
   setManagedLnkResultOrderIds,
-  setManagedLnkResultPreview,
   setManagedLnkResultChangeHint,
   setManagedLnkPendingResultChanges,
 }: UseManagedLnkResultActionsOptions) {
+  const confirmAction = useConfirmAction()
+
   function resetManagedLnkResultChanges() {
     setManagedLnkPendingResultChanges({})
     setManagedLnkResultChangeHint(null)
-    setManagedLnkResultPreview(null)
   }
 
   function closeLnkResultManager() {
     setIsLnkResultManagerOpen(false)
     setManagedLnkResultOrderIds(null)
-    setManagedLnkResultPreview(null)
     setManagedLnkResultChangeHint(null)
     setManagedLnkPendingResultChanges({})
   }
@@ -54,7 +54,6 @@ export function useManagedLnkResultActions({
     setManagedLnkResultOrderIds(selectedRows.map((row) => row.id))
     setManagedLnkPendingResultChanges({})
     setManagedLnkResultChangeHint(null)
-    setManagedLnkResultPreview(null)
     setIsLnkResultManagerOpen(true)
   }
 
@@ -65,14 +64,12 @@ export function useManagedLnkResultActions({
     setManagedLnkResultOrderIds(rowsForRequest.map((row) => row.id))
     setManagedLnkPendingResultChanges({})
     setManagedLnkResultChangeHint(null)
-    setManagedLnkResultPreview(null)
   }
 
   function changeManagedLnkResultMethod(nextMethodKey: WeldFieldKey | '') {
     setManagedLnkResultMethodKey(nextMethodKey)
     setManagedLnkPendingResultChanges({})
     setManagedLnkResultChangeHint(null)
-    setManagedLnkResultPreview(null)
   }
 
   function changeManagedLnkConclusionDraft(changeKey: string, value: string) {
@@ -90,7 +87,6 @@ export function useManagedLnkResultActions({
   function replaceLnkResult(row: RowWithId, methodKey: WeldFieldKey, result: string) {
     const changeKey = getManagedLnkResultChangeKey(row.id, methodKey)
     const changeHint = getManagedLnkResultChangeHint(row, methodKey, result)
-    setManagedLnkResultPreview(null)
     if (changeHint) {
       setManagedLnkResultChangeHint(changeHint)
       setManagedLnkPendingResultChanges((current) => ({ ...current, [changeKey]: result }))
@@ -113,7 +109,7 @@ export function useManagedLnkResultActions({
     lnkResultReplacementMutation.mutate({ updates })
   }
 
-  function clearLnkResult(row: RowWithId, methodKey: WeldFieldKey) {
+  async function clearLnkResult(row: RowWithId, methodKey: WeldFieldKey) {
     const method = getLnkMethodByRequestKey(methodKey)
     if (!method) return
     setManagedLnkPendingResultChanges((current) => {
@@ -121,16 +117,15 @@ export function useManagedLnkResultActions({
       delete next[row.id]
       return next
     })
-    const confirmed = window.confirm(
-      `Удалить результат ${method.code} по стыку ${String(row.joint ?? '-')}? Заключение и дата контроля по этому методу тоже будут очищены.`,
-    )
+    const confirmed = await confirmAction({
+      title: 'Удалить результат ЛНК',
+      itemName: `${method.code} · ${String(row.joint ?? '-')}`,
+      description: 'Заключение и дата контроля по этому методу тоже будут очищены.',
+      warning: 'Это действие нельзя отменить.',
+    })
     if (!confirmed) return
     setManagedLnkResultChangeHint(null)
     lnkResultCorrectionMutation.mutate({ record: row, methodKey, result: null })
-  }
-
-  function leaveManagedLnkPreview(changeKey: string) {
-    setManagedLnkResultPreview((current) => (current?.changeKey === changeKey ? null : current))
   }
 
   return {
@@ -139,7 +134,6 @@ export function useManagedLnkResultActions({
     changeManagedLnkResultRequest,
     clearLnkResult,
     closeLnkResultManager,
-    leaveManagedLnkPreview,
     openLnkResultManager,
     renameManagedLnkConclusionForRow,
     replaceLnkResult,

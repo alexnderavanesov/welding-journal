@@ -1,4 +1,3 @@
-import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import { createDefaultPstoResultDraft } from '@/lib/report-draft-state'
 import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
@@ -11,6 +10,7 @@ import {
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
 
 export function createPstoResultActionHandlers({
+  confirmAction,
   rows,
   heatTreatmentRows,
   filteredPstoResultRows,
@@ -75,8 +75,14 @@ export function createPstoResultActionHandlers({
     })
   }
 
-  function deleteManagedPstoResult(row: RowWithId) {
-    if (!confirm(`Удалить результат ПСТО для стыка ${String(row.joint ?? '-')}?`)) return
+  async function deleteManagedPstoResult(row: RowWithId) {
+    const confirmed = await confirmAction({
+      title: 'Удалить результат ПСТО',
+      itemName: String(row.joint ?? '-'),
+      description: 'Дата ПСТО и диаграмма термообработки для этого стыка тоже будут очищены.',
+      warning: 'Это действие нельзя отменить.',
+    })
+    if (!confirmed) return
     pstoResultCorrectionMutation.mutate({ record: row, action: 'deleteResult' })
   }
 
@@ -110,19 +116,16 @@ export function createPstoResultActionHandlers({
       setMessage('Выберите один или несколько стыков')
       return
     }
-    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && pstoResultDraft.result !== 'проведено') {
+    if (pstoResultDraft.result !== 'проведено') {
       setMessage('Выберите результат ПСТО')
       return
     }
-    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !pstoResultDraft.pstoDate) {
+    if (!pstoResultDraft.pstoDate) {
       setMessage('Укажите дату ПСТО')
       return
     }
-    const diagramName =
-      pstoResultDraft.result === PSTO_EMPTY_RESULT_VALUE
-        ? ''
-        : getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName)
-    if (pstoResultDraft.result !== PSTO_EMPTY_RESULT_VALUE && !diagramName) {
+    const diagramName = getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName)
+    if (!diagramName) {
       setMessage('Укажите наименование диаграммы термообработки')
       return
     }

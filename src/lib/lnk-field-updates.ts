@@ -11,7 +11,9 @@ import {
 } from '@/lib/report-config'
 import { isSameImportValue } from '@/lib/report-import'
 import {
+  isPendingLnkResultValue,
   hasText,
+  isCancelledControlValue,
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
 import {
@@ -60,9 +62,40 @@ export function hasLnkGeneratedDataChanged(left: WeldInput, right: WeldInput) {
 export function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
   let nextRow: (T & Record<string, unknown>) | null = null
   for (const method of LNK_METHODS) {
-    if (isEnabledControlValue(row[method.enabledKey]) || hasLnkMethodReportHistory(row, method) || !hasText(row[method.requestKey])) continue
+    if (isEnabledControlValue(row[method.enabledKey]) || hasLnkMethodReportHistory(row, method)) continue
+    if (!hasText(row[method.requestKey]) && !isPendingLnkResultValue(row[method.resultKey])) continue
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
     nextRow[method.requestKey] = null
+    if (isPendingLnkResultValue(row[method.resultKey])) {
+      nextRow[method.resultKey] = null
+    }
+  }
+  return (nextRow ?? row) as T
+}
+
+export function clearCancelledRejectedLnkGeneratedData<T extends WeldInput>(row: T): T {
+  let nextRow: (T & Record<string, unknown>) | null = null
+  for (const method of LNK_METHODS) {
+    if (!isCancelledControlValue(row[method.enabledKey]) || !isRejectedLnkResultValue(row[method.resultKey])) continue
+    nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
+    nextRow[method.requestKey] = null
+    nextRow[method.resultKey] = null
+    nextRow[method.conclusionDateKey] = null
+    nextRow[method.conclusionKey] = null
+  }
+  return (nextRow ?? row) as T
+}
+
+export function restoreActiveLnkCancelledResults<T extends WeldInput>(row: T): T {
+  let nextRow: (T & Record<string, unknown>) | null = null
+  for (const method of LNK_METHODS) {
+    if (!isEnabledControlValue(row[method.enabledKey])) continue
+
+    const restoredResult = getRestoredActiveLnkResult(row[method.resultKey])
+    if (restoredResult === undefined) continue
+
+    nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
+    nextRow[method.resultKey] = restoredResult
   }
   return (nextRow ?? row) as T
 }
@@ -70,6 +103,18 @@ export function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
 export function normalizeLnkResultValue(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
   return RESULT_STATUS_OPTIONS.includes(text as never) ? text : null
+}
+
+function getRestoredActiveLnkResult(value: unknown) {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (text === 'годен (отменен)') return 'годен'
+  if (text === 'отменен') return null
+  return undefined
+}
+
+function isRejectedLnkResultValue(value: unknown) {
+  const text = String(value ?? '').trim().toLowerCase()
+  return text === 'ремонт' || text === 'вырез'
 }
 
 export function withLnkCreatedAt<T extends WeldInput>(rows: T[]) {

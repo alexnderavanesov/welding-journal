@@ -1,4 +1,4 @@
-import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
+import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import {
   applyPstoRequestManagerAction,
   applyPstoResult,
@@ -39,16 +39,18 @@ export function buildPstoResultRows({
   diagramName: string
   rows: RowWithId[]
 }) {
-  const shouldClearResult = result === PSTO_EMPTY_RESULT_VALUE
-  if (!shouldClearResult && result !== 'проведено') throw new Error('Выберите результат ПСТО')
-  if (!shouldClearResult && !pstoDate) throw new Error('Укажите дату ПСТО')
-  if (!shouldClearResult && !diagramName.trim()) throw new Error('Укажите наименование диаграммы термообработки')
+  if (result !== 'проведено') throw new Error('Выберите результат ПСТО')
+  if (!pstoDate) throw new Error('Укажите дату ПСТО')
+  const pstoDateReason = getDateInputValidationReason(pstoDate, 'Дата ПСТО')
+  if (pstoDateReason) throw new Error(pstoDateReason)
+  if (!diagramName.trim()) throw new Error('Укажите наименование диаграммы термообработки')
   if (records.some((record) => !hasText(record.pstoRequest))) throw new Error('Сначала укажите заявку ПСТО')
+  const normalizedPstoDate = normalizeDateLikeForStorage(pstoDate)
 
   const pstoUpdatedAt = new Date().toISOString()
   const proposedRowsById = new Map<number, RowWithId>()
   for (const record of records) {
-    proposedRowsById.set(record.id, applyPstoResult({ record, shouldClearResult, pstoDate, diagramName, pstoCreatedAt: pstoUpdatedAt }))
+    proposedRowsById.set(record.id, applyPstoResult({ record, shouldClearResult: false, pstoDate: normalizedPstoDate ?? pstoDate, diagramName, pstoCreatedAt: pstoUpdatedAt }))
   }
   const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
   return recalculatedRows.filter((row) => proposedRowsById.has(row.id))

@@ -43,6 +43,7 @@ import { usePstoReportMutations } from '@/lib/use-psto-report-mutations'
 import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { createReportRowActionHandlers } from '@/lib/report-row-action-handlers'
 import { createWeldTableProps } from '@/lib/weld-table-props'
@@ -58,11 +59,15 @@ import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
-import { getOfficialStampCompatibilitySaveBlockReason } from '@/lib/welder-stamp-compatibility'
+import {
+  getArchivedOfficialStampValuesForRecord,
+  getOfficialStampCompatibilitySaveBlockReason,
+} from '@/lib/welder-stamp-compatibility'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 
 export function useHomePageController() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const confirmAction = useConfirmAction()
   const {
     activeReport,
     columnFilters,
@@ -80,10 +85,12 @@ export function useHomePageController() {
     chainRecord,
     heatTreatmentFieldEditing,
     message,
+    lnkNotice,
     setEditing,
     setChainRecord,
     setHeatTreatmentFieldEditing,
     setMessage,
+    setLnkNotice,
   } = useReportPageUiState()
   const {
     highlightedRowIds,
@@ -151,7 +158,6 @@ export function useHomePageController() {
     managedLnkResultRequestSearch,
     managedLnkConclusionDrafts,
     managedLnkResultOrderIds,
-    managedLnkResultPreview,
     managedLnkResultChangeHint,
     managedLnkPendingResultChanges,
     preservedLnkOrderIds,
@@ -168,7 +174,6 @@ export function useHomePageController() {
     setManagedLnkResultRequestSearch,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
-    setManagedLnkResultPreview,
     setManagedLnkResultChangeHint,
     setManagedLnkPendingResultChanges,
     setPreservedLnkOrderIds,
@@ -356,6 +361,7 @@ export function useHomePageController() {
     lnkRows,
     lnkRequestOptions,
     setMessage,
+    setLnkNotice,
     highlightChangedRows,
     setSelectedLnkIds,
     setLnkRequestDraft,
@@ -371,7 +377,6 @@ export function useHomePageController() {
     resetDismissedRepeatedJointTasks,
     setManagedLnkPendingResultChanges,
     setManagedLnkResultChangeHint,
-    setManagedLnkResultPreview,
     setHeatTreatmentFieldEditing,
   })
   const {
@@ -590,7 +595,6 @@ export function useHomePageController() {
     changeManagedLnkResultMethod,
     clearLnkResult,
     closeLnkResultManager,
-    leaveManagedLnkPreview,
     openLnkResultManager,
     renameManagedLnkConclusionForRow,
     replaceLnkResult,
@@ -612,7 +616,6 @@ export function useHomePageController() {
     setManagedLnkResultRequestSearch,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
-    setManagedLnkResultPreview,
     setManagedLnkResultChangeHint,
     setManagedLnkPendingResultChanges,
   })
@@ -844,8 +847,15 @@ export function useHomePageController() {
     columnFilters: activeColumnFilters,
     onColumnFiltersChange: activeFiltersSetter,
     onEdit: handleEditRecord,
-    onDelete: (id) => {
-      if (confirm('Удалить запись стыка?')) deleteMutation.mutate(id)
+    onDelete: async (id) => {
+      const row = rows.find((candidate) => candidate.id === id)
+      const confirmed = await confirmAction({
+        title: 'Удалить стык',
+        itemName: row ? `${String(row.line ?? '-')} · ${String(row.joint ?? '-')}` : 'Запись стыка',
+        description: 'Запись будет удалена из сварочного журнала.',
+        warning: 'Связанные данные по этому стыку могут стать неактуальными. Это действие нельзя отменить.',
+      })
+      if (confirmed) deleteMutation.mutate(id)
     },
     stickyLeft,
     highlightedRowIds,
@@ -918,6 +928,7 @@ export function useHomePageController() {
     filteredWelderStamps,
     errorMessage: weldsQuery.error ? (weldsQuery.error as Error).message : null,
     message,
+    lnkNotice: activeReport === 'lnk' ? lnkNotice : null,
   })
 
   const reportTaskPanelsProps = createReportTaskPanelsProps({
@@ -939,10 +950,14 @@ export function useHomePageController() {
     onOpenBase: openChainBaseInCurrentReport,
     onOpenRow: openChainRowInCurrentReport,
   })
+  const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
   const reportWeldEditorProps = createReportWeldEditorProps({
     editing,
-    stampSelectOptions: getWeldFormStampSelectOptions,
-    getExternalSaveBlockReason: (draft) => getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps),
+    stampSelectOptions: (draft) => getWeldFormStampSelectOptions(draft, allowedArchivedOfficialStampsForEditing),
+    getExternalSaveBlockReason: (draft) =>
+      getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
+        allowedArchivedOfficialStamps: allowedArchivedOfficialStampsForEditing,
+      }),
     isSaving: saveMutation.isPending,
     onCancel: () => setEditing(null),
     onSave: (value) =>
@@ -1085,7 +1100,6 @@ export function useHomePageController() {
       methodKey: managedLnkResultMethodKey,
       conclusionDrafts: managedLnkConclusionDrafts,
       pendingResultChanges: managedLnkPendingResultChanges,
-      preview: managedLnkResultPreview,
       changeHint: managedLnkResultChangeHint,
       isResultCorrectionPending: lnkResultCorrectionMutation.isPending,
       isResultReplacementPending: lnkResultReplacementMutation.isPending,
@@ -1096,8 +1110,6 @@ export function useHomePageController() {
       onRenameConclusion: renameManagedLnkConclusionForRow,
       onReplaceResult: replaceLnkResult,
       onClearResult: clearLnkResult,
-      onPreviewEnter: setManagedLnkResultPreview,
-      onPreviewLeave: leaveManagedLnkPreview,
       onResetPendingChanges: resetManagedLnkResultChanges,
       onSaveChanges: saveManagedLnkResultChanges,
     },

@@ -18,6 +18,7 @@ export {
   RESULT_FIELD_KEYS,
   RESULT_STATUS_OPTIONS,
   calculateFinalStatus,
+  getFinalStatusErrorReason,
   normalizeFinalStatus,
   normalizeResultStatus,
 } from './weld-status'

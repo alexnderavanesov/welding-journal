@@ -19,6 +19,8 @@ type CreateReportSummaryBarPropsOptions = {
   filteredWelderStamps: WelderStampRecord[]
   errorMessage?: string | null
   message?: string | null
+  messageVariant?: ReportSummaryBarProps['messageVariant']
+  lnkNotice?: string | null
 }
 
 export function createReportSummaryBarProps({
@@ -36,6 +38,8 @@ export function createReportSummaryBarProps({
   filteredWelderStamps,
   errorMessage,
   message,
+  messageVariant,
+  lnkNotice,
 }: CreateReportSummaryBarPropsOptions): ReportSummaryBarProps {
   return {
     activeReport,
@@ -53,5 +57,7 @@ export function createReportSummaryBarProps({
     filteredWelderStampCount: filteredWelderStamps.length,
     errorMessage,
     message: message ?? undefined,
+    messageVariant,
+    lnkNotice: lnkNotice ?? undefined,
   }
 }

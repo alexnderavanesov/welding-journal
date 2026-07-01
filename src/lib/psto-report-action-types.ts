@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { ConfirmAction } from '@/lib/confirm-action-context'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 
@@ -41,6 +42,7 @@ export type PstoResultCorrectionVariables = {
 }
 
 export type UsePstoReportActionsOptions = {
+  confirmAction: ConfirmAction
   rows: RowWithId[]
   heatTreatmentRows: RowWithId[]
   filteredAvailablePstoRequestRows: RowWithId[]

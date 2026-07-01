@@ -6,6 +6,10 @@ import {
 import {
   hasText,
   hasWeldDate,
+  getCancelledLnkResultDisplay,
+  getCancelledPstoResultDisplay,
+  hasRealLnkResultValue,
+  isCancelledControlValue,
   isEnabledControlValue,
   isYesText,
 } from '@/lib/report-value-utils'
@@ -34,9 +38,10 @@ export function withOfficialJointStatus(record: WeldInput) {
 export function withPendingLnkResults<T extends WeldInput>(row: T): T {
   let nextRow: (T & Record<string, unknown>) | null = null
   for (const method of LNK_METHODS) {
-    if (!hasText(row[method.requestKey]) || hasText(row[method.resultKey])) continue
+    if (!isEnabledControlValue(row[method.enabledKey])) continue
+    if (hasText(row[method.resultKey])) continue
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
-    nextRow[method.resultKey] = 'ожидает НК'
+    nextRow[method.resultKey] = hasText(row[method.requestKey]) ? 'ожидает НК' : 'ожидает заявку'
   }
   return (nextRow ?? row) as T
 }
@@ -50,11 +55,13 @@ export function toControlCancellationReportRow<T extends WeldInput>(row: T): T {
   if (isCancelledPstoControl(row)) {
     nextRow = { ...row } as T & Record<string, unknown>
     nextRow.pstoRequired = 'отменен'
+    nextRow.pstoResult = getCancelledPstoResultDisplay(row.pstoResult)
   }
   for (const method of LNK_METHODS) {
     if (!isCancelledLnkControl(row, method)) continue
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
     nextRow[method.enabledKey] = 'отменен'
+    nextRow[method.resultKey] = getCancelledLnkResultDisplay(row[method.resultKey])
   }
   return (nextRow ?? row) as T
 }
@@ -68,15 +75,15 @@ export function toHeatTreatmentReportRow<T extends WeldInput>(row: T): T {
 }
 
 export function isCancelledPstoControl(row: WeldInput) {
-  return !isYesText(row.pstoRequired) && hasText(row.pstoResult)
+  return isCancelledControlValue(row.pstoRequired)
 }
 
 export function isCancelledLnkControl(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
-  return !isEnabledControlValue(row[method.enabledKey]) && hasLnkMethodReportHistory(row, method)
+  return isCancelledControlValue(row[method.enabledKey])
 }
 
 export function hasLnkMethodReportHistory(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
-  return hasText(row[method.resultKey]) && hasText(row[method.conclusionKey])
+  return hasRealLnkResultValue(row[method.resultKey]) || hasText(row[method.conclusionDateKey]) || hasText(row[method.conclusionKey])
 }
 
 export function canCreateLnkRequest(row: WeldInput) {

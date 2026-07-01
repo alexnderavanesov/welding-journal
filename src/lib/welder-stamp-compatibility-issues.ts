@@ -28,6 +28,9 @@ export function getOfficialStampCompatibilityIssues(
 ) {
   const activeRecords = welderStampRecords.filter((stampRecord) => !stampRecord.archived)
   const archivedRecords = welderStampRecords.filter((stampRecord) => stampRecord.archived)
+  const allowedArchivedOfficialStamps = new Set(
+    (options.allowedArchivedOfficialStamps ?? []).map(normalizeStampForCompare).filter(Boolean),
+  )
   const methods = parseOfficialStampWeldingMethods(record.weldingMethod)
   const diameters = getOfficialStampJointDiameters(record)
   const weldDateValue = getWeldDateOrderValue(record.weldDate)
@@ -44,7 +47,9 @@ export function getOfficialStampCompatibilityIssues(
       const isArchivedStamp = archivedRecords.some(
         (stampRecord) => normalizeStampForCompare(stampRecord.naksStamp) === normalizeStampForCompare(stamp),
       )
-      if (options.ignoreArchivedMissingRegistry && isArchivedStamp) continue
+      if (isArchivedStamp && (options.ignoreArchivedMissingRegistry || allowedArchivedOfficialStamps.has(normalizeStampForCompare(stamp)))) {
+        continue
+      }
 
       issues.push({
         fieldKey,

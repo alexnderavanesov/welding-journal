@@ -1,3 +1,7 @@
+export const MIN_ALLOWED_DATE_ISO = '2024-01-01'
+export const MIN_ALLOWED_DATE_DISPLAY = '01.01.2024'
+export const DATE_INPUT_FORMAT_HINT = 'ДД.ММ.ГГГГ или ДД.ММ.ГГ'
+
 export function formatDisplayDate(value: unknown) {
   const text = String(value ?? '').trim()
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -8,6 +12,71 @@ export function formatDisplayDate(value: unknown) {
 export function formatDateInputValue(date: Date) {
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+export function getTodayIsoDate() {
+  return formatDateInputValue(new Date())
+}
+
+export function parseDateLikeToIso(value: unknown) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null
+    return formatDateInputValue(value)
+  }
+
+  const text = String(value ?? '').trim()
+  if (!text || text === '-') return null
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (isoMatch) return buildIsoDate(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]))
+
+  const displayMatch = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/)
+  if (displayMatch) {
+    const yearText = displayMatch[3]
+    const year = yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText)
+    return buildIsoDate(year, Number(displayMatch[2]), Number(displayMatch[1]))
+  }
+
+  return null
+}
+
+export function normalizeDateLikeForStorage(value: unknown) {
+  if (value instanceof Date) return parseDateLikeToIso(value)
+  const text = String(value ?? '').trim()
+  if (!text || text === '-') return null
+  return parseDateLikeToIso(text) ?? text
+}
+
+export function getDateInputValidationReason(
+  value: unknown,
+  label = 'Дата',
+  options: { disallowFuture?: boolean } = {},
+) {
+  const text = String(value ?? '').trim()
+  if (!text || text === '-') return ''
+
+  const isoDate = parseDateLikeToIso(text)
+  if (!isoDate) return `${label}: укажите дату в формате ${DATE_INPUT_FORMAT_HINT}.`
+  if (isoDate < MIN_ALLOWED_DATE_ISO) return `${label} не может быть раньше ${MIN_ALLOWED_DATE_DISPLAY}.`
+  if (options.disallowFuture && isoDate > getTodayIsoDate()) return `${label} не может быть позже сегодняшней.`
+  return ''
+}
+
+function buildIsoDate(year: number, month: number, day: number) {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return null
+
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${String(year).padStart(4, '0')}-${pad(month)}-${pad(day)}`
 }
 
 export function formatShortDate(date: Date) {

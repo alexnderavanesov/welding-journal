@@ -8,6 +8,7 @@ import {
   calculateFinalStatus,
 } from './weld-fields'
 import { emptyToNull, parseCell } from './weld-import-parsers'
+import { formatControlAvailabilityForExport } from './report-value-utils'
 
 export function recordsToExportRows(records: WeldInput[]) {
   return records.map((record) => {
@@ -15,7 +16,7 @@ export function recordsToExportRows(records: WeldInput[]) {
     for (const field of EXCEL_FIELDS) {
       const value = record[field.key]
       if (field.kind === 'boolean') {
-        row[field.label] = value === true ? 'да' : ''
+        row[field.label] = formatControlAvailabilityForExport(value)
       } else {
         row[field.label] = value ?? ''
       }
@@ -30,7 +31,7 @@ export function recordsToExportMatrix(records: WeldInput[]) {
     ...records.map((record) =>
       EXCEL_FIELDS.map((field) => {
         const value = record[field.key]
-        if (field.kind === 'boolean') return value === true ? 'да' : ''
+        if (field.kind === 'boolean') return formatControlAvailabilityForExport(value)
         return value ?? ''
       }),
     ),
@@ -56,7 +57,8 @@ export function appendImportedWelds<T extends WeldRow>(existingRows: T[], import
 }
 
 export function withAutoVikForWeldDate<T extends WeldInput>(record: T): T {
-  if (String(record.hasVik ?? '').trim().toLowerCase() === 'отменен') return record
+  const hasVikText = String(record.hasVik ?? '').trim().toLowerCase()
+  if (hasVikText === 'отменен' || hasVikText === 'дополнительный') return record
   return emptyToNull(record.weldDate) === null ? record : ({ ...record, hasVik: true } as T)
 }
 

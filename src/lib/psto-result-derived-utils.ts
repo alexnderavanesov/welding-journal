@@ -1,6 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getDateInputValidationReason } from '@/lib/date-format'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
-import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import { findFirstDateBeforeWeldDateIssue } from '@/lib/report-date-rules'
 import {
   collectRequestNames,
@@ -56,16 +56,16 @@ export function getPstoResultSaveBlockReason({
   if (!draft.requestName) return 'Выберите заявку ПСТО.'
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
   if (!draft.result) return 'Выберите результат ПСТО.'
-  if (draft.result !== PSTO_EMPTY_RESULT_VALUE && draft.result !== 'проведено') return 'Выберите результат ПСТО.'
-  if (draft.result !== PSTO_EMPTY_RESULT_VALUE && !draft.pstoDate) return 'Укажите дату ПСТО.'
+  if (draft.result !== 'проведено') return 'Выберите результат ПСТО.'
+  if (!draft.pstoDate) return 'Укажите дату ПСТО.'
 
-  const dateIssue =
-    draft.result === PSTO_EMPTY_RESULT_VALUE
-      ? null
-      : findFirstDateBeforeWeldDateIssue(selectedRows, draft.pstoDate, 'Дата ПСТО')
+  const dateReason = getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО')
+  if (dateReason) return dateReason
+
+  const dateIssue = findFirstDateBeforeWeldDateIssue(selectedRows, draft.pstoDate, 'Дата ПСТО')
   if (dateIssue) return dateIssue
 
-  if (draft.result !== PSTO_EMPTY_RESULT_VALUE && !getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)) {
+  if (!getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)) {
     return 'Укажите наименование диаграммы термообработки.'
   }
 

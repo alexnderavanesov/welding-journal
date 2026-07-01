@@ -1,10 +1,11 @@
 import { getRequiredRootStampMessage } from '@/lib/weld-import-export'
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
-import type { WeldInput } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { getDateInputValidationReason } from '@/lib/date-format'
 
 export function validateManualJointNameForSave(value: WeldDraft, rows: WeldRow[]) {
-  validateWeldDateForSave(value.weldDate)
+  validateDateFieldsForSave(value)
 
   const currentJoint = normalizeJointName(value.joint)
   const previousRow = value.id ? rows.find((row) => row.id === value.id) : null
@@ -20,8 +21,18 @@ export function validateManualJointNameForSave(value: WeldDraft, rows: WeldRow[]
 }
 
 export function validateWeldDateForSave(value: unknown) {
-  if (!isFutureWeldDate(value)) return
-  throw new Error('Дата сварки не может быть позже сегодняшней.')
+  const reason = getDateInputValidationReason(value, 'Дата сварки', { disallowFuture: true })
+  if (reason) throw new Error(reason)
+}
+
+export function validateDateFieldsForSave(record: WeldInput) {
+  for (const fieldKey of dateFieldKeys) {
+    const field = FIELD_BY_KEY.get(fieldKey)
+    const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
+      disallowFuture: fieldKey === 'weldDate',
+    })
+    if (reason) throw new Error(reason)
+  }
 }
 
 export function validateRequiredRootStampForSave(record: WeldInput) {
@@ -55,24 +66,24 @@ export function validateManualJointNamesForImport(records: WeldInput[]) {
 
 export function validateWeldDatesForImport(records: WeldInput[]) {
   const invalidRecord = records
-    .map((record, index) => ({ record, index }))
-    .find((item) => isFutureWeldDate(item.record.weldDate))
+    .flatMap((record, index) =>
+      dateFieldKeys.map((fieldKey) => {
+        const field = FIELD_BY_KEY.get(fieldKey)
+        const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
+          disallowFuture: fieldKey === 'weldDate',
+        })
+        return { record, index, reason }
+      }),
+    )
+    .find((item) => item.reason)
 
   if (!invalidRecord) return
 
   const rowNumber = invalidRecord.index + 2
   const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
-  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". Дата сварки не может быть позже сегодняшней.`)
+  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.reason}`)
 }
 
-export function isFutureWeldDate(value: unknown) {
-  const date = String(value ?? '').trim()
-  if (!date) return false
-  return date > getTodayIsoDate()
-}
-
-export function getTodayIsoDate() {
-  const date = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
+const dateFieldKeys = [...FIELD_BY_KEY.entries()]
+  .filter(([, field]) => field.kind === 'date')
+  .map(([fieldKey]) => fieldKey as WeldFieldKey)

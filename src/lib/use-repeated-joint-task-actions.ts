@@ -1,4 +1,5 @@
 import type { ActiveReport } from '@/lib/home-state'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import {
   buildRepeatedJointTasks,
   isUnusedRepeatedJointDraft,
@@ -35,6 +36,8 @@ export function useRepeatedJointTaskActions({
   renameRepeatedJointMutation,
   setMessage,
 }: UseRepeatedJointTaskActionsOptions) {
+  const confirmAction = useConfirmAction()
+
   function createRepeatedJoint(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
     if (activeReport === 'lnk') {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Создание стыков доступно из сварочного журнала.')
@@ -53,7 +56,7 @@ export function useRepeatedJointTaskActions({
     repeatedJointMutation.mutate(currentTask)
   }
 
-  function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {
+  async function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {
     if (activeReport === 'lnk') {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Удаление стыков доступно из сварочного журнала.')
       return
@@ -71,12 +74,17 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const confirmed = window.confirm(`Удалить повторный стык ${task.targetJoint}? Исходный стык ${task.sourceJoint} больше не требует повтора.`)
+    const confirmed = await confirmAction({
+      title: 'Удалить повторный стык',
+      itemName: `${task.targetJoint}`,
+      description: `Исходный стык ${task.sourceJoint} больше не требует повтора.`,
+      warning: 'Стык будет удален из сварочного журнала. Это действие нельзя отменить.',
+    })
     if (!confirmed) return
     obsoleteRepeatedJointMutation.mutate(currentTask)
   }
 
-  function renameObsoleteRepeatedJoint(task: RepeatedJointRenameTask) {
+  async function renameObsoleteRepeatedJoint(task: RepeatedJointRenameTask) {
     if (activeReport === 'lnk') {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Переименование стыков доступно из сварочного журнала.')
       return
@@ -90,7 +98,14 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const confirmed = window.confirm(`Переименовать повторный стык ${task.currentJoint} в ${task.targetJoint}?`)
+    const confirmed = await confirmAction({
+      title: 'Переименовать повторный стык',
+      itemName: `${task.currentJoint} -> ${task.targetJoint}`,
+      description: 'Диспетчер задач обнаружил, что название повторного стыка не соответствует текущим правилам цепочки.',
+      warning: 'Проверьте цепочку перед подтверждением.',
+      confirmLabel: 'Переименовать',
+      tone: 'warning',
+    })
     if (!confirmed) return
     renameRepeatedJointMutation.mutate(currentTask)
   }

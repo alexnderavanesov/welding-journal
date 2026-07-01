@@ -81,6 +81,10 @@ export function RepeatedJointTaskActions({
             Цепочка
           </Button>
         </>
+      ) : task.kind === 'line-consistency' ? (
+        <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
+          Показать
+        </Button>
       ) : (
         <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
           Цепочка

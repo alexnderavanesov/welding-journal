@@ -13,13 +13,6 @@ export type LnkResultManagerEntryData = {
   changeKey: string
 }
 
-export type LnkResultPreviewState = {
-  changeKey: string
-  rowId: number
-  methodKey: WeldFieldKey
-  result: string
-} | null
-
 export type LnkResultChangeHintState = {
   changeKey: string
   rowId: number
@@ -32,7 +25,6 @@ type LnkResultManagerEntryProps = {
   entry: LnkResultManagerEntryData
   conclusionDrafts: Record<string, string>
   pendingResultChanges: Record<string, string>
-  preview: LnkResultPreviewState
   changeHint: LnkResultChangeHintState
   isResultCorrectionPending: boolean
   isResultReplacementPending: boolean
@@ -41,15 +33,12 @@ type LnkResultManagerEntryProps = {
   onRenameConclusion: (row: WeldRow, methodKey: WeldFieldKey) => void
   onReplaceResult: (row: WeldRow, methodKey: WeldFieldKey, result: string) => void
   onClearResult: (row: WeldRow, methodKey: WeldFieldKey) => void
-  onPreviewEnter: (preview: NonNullable<LnkResultPreviewState>) => void
-  onPreviewLeave: (changeKey: string) => void
 }
 
 export function LnkResultManagerEntry({
   entry,
   conclusionDrafts,
   pendingResultChanges,
-  preview,
   changeHint,
   isResultCorrectionPending,
   isResultReplacementPending,
@@ -58,15 +47,12 @@ export function LnkResultManagerEntry({
   onRenameConclusion,
   onReplaceResult,
   onClearResult,
-  onPreviewEnter,
-  onPreviewLeave,
 }: LnkResultManagerEntryProps) {
   const { row, method, changeKey } = entry
   const currentResult = String(row[method.resultKey] ?? '').trim()
   const conclusionName = String(row[method.conclusionKey] ?? '').trim()
   const conclusionDate = String(row[method.conclusionDateKey] ?? '').trim()
   const conclusionDraft = conclusionDrafts[changeKey] ?? conclusionName
-  const previewResult = preview?.changeKey === changeKey ? preview.result : ''
   const pendingResult = pendingResultChanges[changeKey] ?? ''
   const activeChangeHint =
     pendingResult && pendingResult !== currentResult
@@ -82,7 +68,6 @@ export function LnkResultManagerEntry({
           row={row}
           methodCode={method.code}
           currentResult={currentResult}
-          previewResult={previewResult}
           pendingResult={pendingResult}
           activeChangeHint={activeChangeHint}
           conclusionName={conclusionName}
@@ -104,15 +89,12 @@ export function LnkResultManagerEntry({
       <LnkResultManagerActions
         row={row}
         method={method}
-        changeKey={changeKey}
         currentResult={currentResult}
         pendingResult={pendingResult}
         isResultCorrectionPending={isResultCorrectionPending}
         isResultReplacementPending={isResultReplacementPending}
         onReplaceResult={onReplaceResult}
         onClearResult={onClearResult}
-        onPreviewEnter={onPreviewEnter}
-        onPreviewLeave={onPreviewLeave}
       />
     </div>
   )

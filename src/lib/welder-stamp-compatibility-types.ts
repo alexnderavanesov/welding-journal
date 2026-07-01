@@ -10,4 +10,5 @@ export type OfficialStampCompatibilityIssue = {
 
 export type OfficialStampCompatibilityOptions = {
   ignoreArchivedMissingRegistry?: boolean
+  allowedArchivedOfficialStamps?: readonly string[]
 }

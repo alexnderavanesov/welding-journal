@@ -5,7 +5,7 @@ import { RequestNamingControls } from '@/components/request-naming-controls'
 import { ResultSettingsCard } from '@/components/result-settings-card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
+import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 
 type PstoResultSettingsProps = {
@@ -23,8 +23,8 @@ export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: Ps
             <span className="text-[13px] font-medium leading-none text-slate-700">Дата ПСТО</span>
             <Input
               type="date"
+              min={MIN_ALLOWED_DATE_ISO}
               value={draft.pstoDate}
-              disabled={draft.result === PSTO_EMPTY_RESULT_VALUE}
               onChange={(event) => onDraftChange((current) => ({ ...current, pstoDate: event.target.value }))}
             />
           </label>
@@ -34,26 +34,24 @@ export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: Ps
             <Select value={draft.result} onChange={(event) => onDraftChange((current) => ({ ...current, result: event.target.value }))}>
               <option value="">Выберите результат</option>
               <option value="проведено">проведено</option>
-              <option value={PSTO_EMPTY_RESULT_VALUE}>аннулировать</option>
             </Select>
           </label>
         </div>
       </ResultSettingsCard>
 
-      <ResultSettingsCard muted={draft.result === PSTO_EMPTY_RESULT_VALUE}>
+      <ResultSettingsCard>
         <RequestNamingControls
           naming={draft.diagramNaming}
           systemName={nextDiagramName}
           label="Диаграмма термообработки"
           placeholder="Введите наименование диаграммы"
-          disabled={draft.result === PSTO_EMPTY_RESULT_VALUE}
           onChange={(diagramNaming) => onDraftChange((current) => ({ ...current, diagramNaming }))}
         />
       </ResultSettingsCard>
 
       <DialogHelpNote>
-        Результат «проведено» заполнит дату ПСТО и диаграмму термообработки. Если выбрать «аннулировать», результат,
-        дата и диаграмма очистятся, заявка ПСТО останется.
+        Результат «проведено» заполнит дату ПСТО и диаграмму термообработки. Изменение или удаление уже внесенного
+        результата выполняется через «Редактировать результаты».
       </DialogHelpNote>
     </section>
   )

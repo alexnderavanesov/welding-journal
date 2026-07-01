@@ -4,7 +4,16 @@ export const weldingMethodOptions = ['РАД', 'РД', 'МП'] as const
 
 export function isYesValue(value: unknown) {
   if (value === true) return true
-  return String(value ?? '').toLowerCase() === 'да'
+  const text = String(value ?? '').trim().toLowerCase()
+  return text === 'да' || text === 'дополнительный'
+}
+
+export function isCancelledValue(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'отменен'
+}
+
+export function isAdditionalValue(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'дополнительный'
 }
 
 export function getSelectedWeldingMethods(value: unknown) {

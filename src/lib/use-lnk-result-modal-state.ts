@@ -7,13 +7,6 @@ import {
   type LnkResultDraftState,
 } from '@/lib/report-draft-state'
 
-export type ManagedLnkResultPreviewState = {
-  changeKey: string
-  rowId: number
-  methodKey: WeldFieldKey
-  result: string
-} | null
-
 export type ManagedLnkResultChangeHintState = {
   changeKey: string
   rowId: number
@@ -38,7 +31,6 @@ export function useLnkResultModalState() {
   const [managedLnkResultRequestSearch, setManagedLnkResultRequestSearch] = useState('')
   const [managedLnkConclusionDrafts, setManagedLnkConclusionDrafts] = useState<Record<string, string>>({})
   const [managedLnkResultOrderIds, setManagedLnkResultOrderIds] = useState<number[] | null>(null)
-  const [managedLnkResultPreview, setManagedLnkResultPreview] = useState<ManagedLnkResultPreviewState>(null)
   const [managedLnkResultChangeHint, setManagedLnkResultChangeHint] = useState<ManagedLnkResultChangeHintState>(null)
   const [managedLnkPendingResultChanges, setManagedLnkPendingResultChanges] = useState<Record<string, string>>({})
   const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
@@ -57,7 +49,6 @@ export function useLnkResultModalState() {
     managedLnkResultRequestSearch,
     managedLnkConclusionDrafts,
     managedLnkResultOrderIds,
-    managedLnkResultPreview,
     managedLnkResultChangeHint,
     managedLnkPendingResultChanges,
     preservedLnkOrderIds,
@@ -74,7 +65,6 @@ export function useLnkResultModalState() {
     setManagedLnkResultRequestSearch,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
-    setManagedLnkResultPreview,
     setManagedLnkResultChangeHint,
     setManagedLnkPendingResultChanges,
     setPreservedLnkOrderIds,

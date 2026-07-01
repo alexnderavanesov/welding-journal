@@ -1,10 +1,12 @@
 import {
+  AdditionalBadge,
   CancelledBadge,
   ResultBadge,
   YesBadge,
   formatDate,
   formatDateTime,
   isCancelledText,
+  isAdditionalText,
   isNoText,
   isYesText,
 } from '@/lib/weld-table-utils'
@@ -23,7 +25,8 @@ export function WeldTableValue({
 }) {
   if (field.kind === 'boolean') {
     if (isCancelledText(value)) return <CancelledBadge />
-    if (value) return <YesBadge />
+    if (isAdditionalText(value)) return <AdditionalBadge />
+    if (value === true || isYesText(value)) return <YesBadge />
     return ''
   }
 
@@ -37,6 +40,8 @@ export function WeldTableValue({
         <ResultBadge value={value} />
       ) : field.key === 'pstoRequired' && isCancelledText(value) ? (
         <CancelledBadge />
+      ) : field.key === 'pstoRequired' && isAdditionalText(value) ? (
+        <AdditionalBadge />
       ) : field.key === 'pstoRequired' && isYesText(value) ? (
         <YesBadge />
       ) : field.key === 'pstoRequired' && isNoText(value) ? (

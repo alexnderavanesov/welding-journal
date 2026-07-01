@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus } from './weld-fields'
+import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -120,6 +120,59 @@ describe('weld field order', () => {
   it('does not treat cancelled controls with old results as an error', () => {
     expect(calculateFinalStatus({ hasPvk: 'отменен', pvkResult: 'годен' })).toBe('ожидает сварку')
     expect(calculateFinalStatus({ pstoRequired: 'отменен', pstoResult: 'проведено' })).toBe('ожидает сварку')
+  })
+
+  it('explains final status errors caused by result without active control', () => {
+    expect(getFinalStatusErrorReason({ hasRk: null, rkResult: 'ожидает НК' })).toContain(
+      'РК: результат «ожидает НК» заполнен, но наличие РК = «пусто»',
+    )
+    expect(getFinalStatusErrorReason({ hasRk: 'отменен', rkResult: 'ожидает НК' })).toBeNull()
+  })
+
+  it('skips cancelled controls when active controls still wait for NDT', () => {
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasVik: 'отменен',
+        vikRequest: 'Заявка-1',
+        vikResult: 'отменен',
+        hasRk: 'да',
+        rkRequest: 'Заявка-2',
+        rkResult: 'ожидает НК',
+        pstoRequired: 'отменен',
+        pstoResult: 'отменен',
+      }),
+    ).toBe('ожидает НК')
+  })
+
+  it('treats positive cancelled result as good when control is enabled again', () => {
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasVik: 'да',
+        vikResult: 'годен (отменен)',
+      }),
+    ).toBe('годен')
+  })
+
+  it('treats additional controls as active controls', () => {
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasRk: 'дополнительный',
+        rkRequest: 'Заявка-1',
+        rkResult: 'годен',
+      }),
+    ).toBe('годен')
+
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasRk: 'дополнительный',
+        rkRequest: 'Заявка-1',
+        rkResult: 'ожидает НК',
+      }),
+    ).toBe('ожидает НК')
   })
 
   it('treats pending NDT results as waiting', () => {

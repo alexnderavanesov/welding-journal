@@ -21,11 +21,15 @@ export function groupRepeatedJointTasks(
 
 function getRepeatedJointTaskGroupKey(task: DispatcherTask, getChainKey: (row: WeldRow) => string | null) {
   if (task.kind === 'welder-stamp-expiry') return `welder-stamp-expiry:${task.naksStamp.trim().toLowerCase()}`
+  if (task.kind === 'line-consistency') {
+    return `line-consistency:${task.projectTitle.trim().toLowerCase()}:${task.subtitleCode.trim().toLowerCase()}:${task.line.trim().toLowerCase()}`
+  }
   return getChainKey(task.row) ?? getRepeatedJointTaskBaseJoint(task)
 }
 
 function getRepeatedJointTaskBaseJoint(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') return formatWelderStampCompactLabel(task)
+  if (task.kind === 'line-consistency') return task.line
   if (task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename') return task.baseJoint
   return parseJointChainName(task.sourceJoint).base || task.sourceJoint
 }

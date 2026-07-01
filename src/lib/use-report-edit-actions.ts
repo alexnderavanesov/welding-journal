@@ -7,6 +7,7 @@ import {
   LNK_EDITABLE_FIELD_KEYS,
   REQUEST_AND_RESULT_FIELD_KEYS,
 } from '@/lib/report-config'
+import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 
 type FieldMutationVariables = {
@@ -91,8 +92,18 @@ export function useReportEditActions({
 
   function saveEditedHeatTreatmentField() {
     if (!heatTreatmentFieldEditing) return
+    const field = FIELD_BY_KEY.get(heatTreatmentFieldEditing.fieldKey)
+    const rawValue = heatTreatmentFieldEditing.value.trim()
+    const value = normalizeEditedFieldValue(rawValue, field?.kind === 'date')
+    if (field?.kind === 'date') {
+      const dateReason = getDateInputValidationReason(rawValue, field.label ?? 'Дата')
+      if (dateReason) {
+        setMessage(dateReason)
+        return
+      }
+    }
+
     if (heatTreatmentFieldEditing.report === 'lnk') {
-      const value = heatTreatmentFieldEditing.value.trim()
       if (heatTreatmentFieldEditing.mode === 'request' && value && !lnkRequestOptions.includes(value)) {
         setMessage('Можно выбрать только существующую заявку ЛНК или очистить поле')
         return
@@ -107,7 +118,7 @@ export function useReportEditActions({
     heatTreatmentFieldMutation.mutate({
       record: heatTreatmentFieldEditing.record,
       fieldKey: heatTreatmentFieldEditing.fieldKey,
-      value: heatTreatmentFieldEditing.value.trim() || null,
+      value: value || null,
       rows,
     })
   }
@@ -116,4 +127,9 @@ export function useReportEditActions({
     handleEditRecord,
     saveEditedHeatTreatmentField,
   }
+}
+
+function normalizeEditedFieldValue(value: string, isDateField: boolean) {
+  if (!isDateField) return value
+  return normalizeDateLikeForStorage(value) ?? ''
 }

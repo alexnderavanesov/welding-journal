@@ -1,7 +1,7 @@
 import { WeldTableValue } from '@/components/weld-table-value'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { bodyCellClass } from '@/lib/weld-table-utils'
-import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
+import { getFinalStatusErrorReason, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
 
 type WeldTableBodyCellProps = {
   row: WeldRow
@@ -26,6 +26,8 @@ export function WeldTableBodyCell({
   isResultField,
   onEdit,
 }: WeldTableBodyCellProps) {
+  const finalStatusErrorReason =
+    field.key === 'finalStatus' && String(displayValue ?? '').trim().toLowerCase() === 'ошибка' ? getFinalStatusErrorReason(row) : null
   const contentClass = `block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
     isEditableCell ? 'cursor-pointer hover:bg-slate-100/70' : isResultField ? '' : 'text-slate-500'
   }`
@@ -39,7 +41,9 @@ export function WeldTableBodyCell({
         onEdit?.(row, field.key as WeldFieldKey)
       }}
       title={
-        isEditableCell
+        finalStatusErrorReason
+          ? finalStatusErrorReason
+          : isEditableCell
           ? 'Нажмите, чтобы редактировать поле'
           : isBlockedEditableCell
             ? 'Недоступно: отсутствует отметка "да" в соответствующем наличии'

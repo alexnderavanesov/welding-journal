@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getDateInputValidationReason } from '@/lib/date-format'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import {
   areLnkResultDraftRowsReady,
@@ -133,6 +134,10 @@ export function getLnkResultSaveBlockReason({
   if (!areLnkResultDraftRowsReady(selectedRows, draft)) return 'Укажите результат для каждого выбранного стыка.'
   if (hasNonEmptyLnkResultDraftRows(selectedRows, draft) && !draft.controlDate) {
     return 'Укажите дату контроля.'
+  }
+  if (hasNonEmptyLnkResultDraftRows(selectedRows, draft)) {
+    const dateReason = getDateInputValidationReason(draft.controlDate, 'Дата контроля')
+    if (dateReason) return dateReason
   }
 
   const dateIssue = hasNonEmptyLnkResultDraftRows(selectedRows, draft)

@@ -1,5 +1,6 @@
 import { VISIBLE_FIELDS, type WeldField, type WeldInput } from './weld-fields'
 import { parseDate, parseNumber } from './weld-import-parsers'
+import { formatControlAvailabilityForExport } from './report-value-utils'
 
 export function recordsToVisibleExportMatrix(records: WeldInput[], fields: readonly WeldField[] = VISIBLE_FIELDS) {
   return [
@@ -7,7 +8,7 @@ export function recordsToVisibleExportMatrix(records: WeldInput[], fields: reado
     ...records.map((record) =>
       fields.map((field) => {
         const value = record[field.key as keyof WeldInput]
-        if (field.kind === 'boolean') return value === true ? 'да' : ''
+        if (field.kind === 'boolean') return formatControlAvailabilityForExport(value)
         if (field.kind === 'date') return formatExportDate(value)
         if (field.key === 'wdi') return formatExportNumber(value)
         return value ?? ''

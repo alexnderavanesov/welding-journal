@@ -30,6 +30,7 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (task.kind === 'delete') return { joint: task.targetJoint, type: 'Удалить лишний повторный стык' }
   if (task.kind === 'rename') return { joint: task.currentJoint, type: 'Переименовать повторный стык' }
   if (task.kind === 'duplicate-check') return { joint: task.baseJoint, type: 'Возможный дубль' }
+  if (task.kind === 'line-consistency') return { joint: task.line, type: task.title }
 
   const reason = task.reason ?? ''
   if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
@@ -86,6 +87,7 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   if (task.kind === 'duplicate-check') {
     return `В журнале найдено несколько строк с одинаковыми проектом, шифром, линией и номером стыка ${task.baseJoint}. Спул при этой проверке не учитывается. Проверь, это допустимые записи или лишние дубли.`
   }
+  if (task.kind === 'line-consistency') return task.details
 
   if (task.details) return formatDispatcherTaskText(task.details)
 
@@ -131,6 +133,7 @@ export function getRepeatedJointTaskDetailsHeading(task: DispatcherTask) {
   }
   if (task.kind === 'rename') return `${formatRepeatedJointTaskHeadingJoint(task.currentJoint, task.row)} → ${task.targetJoint}`
   if (task.kind === 'duplicate-check') return `${formatRepeatedJointTaskHeadingJoint(task.baseJoint, task.row)} · найдено дублей: ${task.count}`
+  if (task.kind === 'line-consistency') return `${task.line} · ${task.title}`
   return formatDispatcherTaskText(`${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.reason ?? 'цепочка изменилась'}`)
 }
 

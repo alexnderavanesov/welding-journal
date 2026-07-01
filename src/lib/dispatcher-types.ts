@@ -69,6 +69,20 @@ export type RepeatedJointDuplicateCheckTask = {
   count: number
 }
 
+export type LineConsistencyTask = {
+  kind: 'line-consistency'
+  key: string
+  row: WeldRow
+  line: string
+  projectTitle: string
+  subtitleCode: string
+  fieldKey: 'weldControlPercent' | 'groupName' | 'category' | 'controlPresence'
+  fieldLabel: string
+  title: string
+  values: string[]
+  details: string
+}
+
 export type RepeatedJointTask =
   | RepeatedJointCreateTask
   | RepeatedJointCoilTask
@@ -76,6 +90,7 @@ export type RepeatedJointTask =
   | RepeatedJointRenameTask
   | RepeatedJointCheckTask
   | RepeatedJointDuplicateCheckTask
+  | LineConsistencyTask
 
 export type WelderStampExpiryTask = {
   kind: 'welder-stamp-expiry'

@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
+import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import {
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
@@ -15,6 +16,8 @@ import {
   getFinalStatusValue,
   getResultStatusValue,
   getStampSelectValue,
+  isAdditionalValue,
+  isCancelledValue,
   isYesValue,
   yesEmptyFieldKeys,
   type StampSelectOptions,
@@ -97,16 +100,35 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
           ref={(element) => {
             fieldRefs.current[field.key] = element
           }}
-          value={isYesValue(draft[field.key]) ? 'yes' : ''}
+          value={
+            isAdditionalValue(draft[field.key])
+              ? 'additional'
+              : isYesValue(draft[field.key])
+                ? 'yes'
+                : isCancelledValue(draft[field.key])
+                  ? 'cancelled'
+                  : ''
+          }
           onChange={(event) =>
             setDraft((current) => ({
               ...current,
-              [field.key]: event.target.value === 'yes' ? (field.kind === 'boolean' ? true : 'да') : null,
+              [field.key]:
+                event.target.value === 'yes'
+                  ? field.kind === 'boolean'
+                    ? true
+                    : 'да'
+                  : event.target.value === 'additional'
+                    ? 'дополнительный'
+                    : event.target.value === 'cancelled'
+                      ? 'отменен'
+                      : null,
             }))
           }
         >
-          <option value="yes">да</option>
           <option value="">пусто</option>
+          <option value="yes">да</option>
+          <option value="cancelled">отменен</option>
+          <option value="additional">дополнительный</option>
         </Select>
       ) : field.kind === 'boolean' ? (
         <Select
@@ -131,6 +153,7 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
             fieldRefs.current[field.key] = element
           }}
           type={field.kind === 'date' ? 'date' : field.kind === 'number' ? 'number' : 'text'}
+          min={field.kind === 'date' ? MIN_ALLOWED_DATE_ISO : undefined}
           step={field.kind === 'number' ? '0.001' : undefined}
           value={String(draft[field.key] ?? '')}
           onChange={(event) =>

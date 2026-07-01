@@ -14,7 +14,6 @@ type LnkResultManagerSummaryProps = {
   row: WeldRow
   methodCode: string
   currentResult: string
-  previewResult: string
   pendingResult: string
   activeChangeHint: ResultChangeView
   conclusionName: string
@@ -25,14 +24,11 @@ export function LnkResultManagerSummary({
   row,
   methodCode,
   currentResult,
-  previewResult,
   pendingResult,
   activeChangeHint,
   conclusionName,
   conclusionDate,
 }: LnkResultManagerSummaryProps) {
-  const hasPreviewChange = Boolean(previewResult && previewResult !== currentResult)
-
   return (
     <>
       <JointTitleLine row={row} />
@@ -40,7 +36,7 @@ export function LnkResultManagerSummary({
         <span>
           <JointFullMeta row={row} />
         </span>
-        {activeChangeHint || hasPreviewChange ? (
+        {activeChangeHint ? (
           <span className="inline-flex items-center gap-1.5">
             <span className="font-medium text-slate-500">
               {pendingResult && pendingResult !== currentResult ? 'Будет:' : 'Проверка:'}
@@ -49,8 +45,8 @@ export function LnkResultManagerSummary({
               {activeChangeHint?.from || currentResult || '-'}
             </span>
             <span className="px-0.5 text-sm font-bold leading-none text-slate-700">→</span>
-            <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getLnkResultBadgeClass(activeChangeHint?.to || previewResult)}`}>
-              {activeChangeHint?.to || previewResult}
+            <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getLnkResultBadgeClass(activeChangeHint.to)}`}>
+              {activeChangeHint.to}
             </span>
           </span>
         ) : (

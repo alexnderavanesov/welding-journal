@@ -3,7 +3,7 @@ import {
   compareHeatTreatmentReportRows,
   filterPstoRows,
 } from '@/lib/report-row-utils'
-import { hasText } from '@/lib/report-value-utils'
+import { hasText, isYesText } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
 
@@ -23,6 +23,7 @@ export function rowBelongsToPstoRequest(row: WeldInput, requestName: string) {
 }
 
 export function canSelectPstoResultRow(row: WeldInput, requestName: string) {
+  if (!isYesText(row.pstoRequired)) return false
   if (requestName.trim()) return rowBelongsToPstoRequest(row, requestName)
   return hasText(row.pstoRequest)
 }

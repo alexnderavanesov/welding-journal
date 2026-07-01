@@ -10,6 +10,7 @@ import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-m
 
 export function useLnkRequestCreateMutation({
   setMessage,
+  setLnkNotice,
   highlightChangedRows,
   setSelectedLnkIds,
   setLnkRequestDraft,
@@ -39,7 +40,7 @@ export function useLnkRequestCreateMutation({
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, [...variables.methodKeys, 'lnkCreatedAt'])
-      setMessage(formatRequestCreatedMessage(variables.requestName, savedRows.length))
+      setLnkNotice(formatRequestCreatedMessage(variables.requestName, savedRows.length))
       setSelectedLnkIds(new Set())
       setLnkRequestDraft({ methods: new Set() })
       setLnkRequestNaming(defaultRequestNamingState)

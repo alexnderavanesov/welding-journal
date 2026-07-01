@@ -9,8 +9,11 @@ import {
   getPstoResultLabel,
 } from '@/lib/report-badges'
 import {
+  getCancelledLnkResultDisplay,
+  getCancelledPstoResultDisplay,
   hasText,
   hasWeldDate,
+  isCancelledControlValue,
   isEnabledControlValue,
   isYesText,
 } from '@/lib/report-value-utils'
@@ -26,7 +29,8 @@ export function getLnkMethodByResultKey(fieldKey: WeldFieldKey) {
 }
 
 export function isFinalLnkResultValue(value: unknown) {
-  return LNK_RESULT_OPTIONS.includes(String(value ?? '').trim().toLowerCase() as never)
+  const result = String(value ?? '').trim().toLowerCase()
+  return LNK_RESULT_OPTIONS.includes(result as never) || result === 'годен (отменен)'
 }
 
 export function hasRejectedLnkResult(row: WeldInput) {
@@ -61,9 +65,14 @@ export function isRejectedJoint(row: WeldInput) {
 }
 
 export function formatLnkResultSummaryItems(row: WeldInput) {
-  return LNK_METHODS.filter((method) => hasText(row[method.requestKey]) || isEnabledControlValue(row[method.enabledKey])).map((method) => {
+  return LNK_METHODS.filter(
+    (method) => hasText(row[method.requestKey]) || isEnabledControlValue(row[method.enabledKey]) || isCancelledControlValue(row[method.enabledKey]),
+  ).map((method) => {
+    const isCancelled = isCancelledControlValue(row[method.enabledKey])
     const hasRequest = hasText(row[method.requestKey])
-    const result = isLnkMethodNoNeed(row, method)
+    const result = isCancelled
+      ? getCancelledLnkResultDisplay(row[method.resultKey])
+      : isLnkMethodNoNeed(row, method)
       ? 'нет потребности'
       : String(row[method.resultKey] ?? '').trim() || (hasRequest ? 'ожидает НК' : 'ожидает заявку')
     return {
@@ -83,6 +92,7 @@ export function getLnkRequestMethodBadgeClass(row: WeldInput, method: (typeof LN
 
 export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
   const method = getLnkMethodByResultKey(fieldKey)
+  if (method && isCancelledControlValue(row[method.enabledKey])) return getCancelledLnkResultDisplay(row[method.resultKey])
   if (method && isLnkMethodNoNeed(row, method)) return 'нет потребности'
   return row[fieldKey]
 }
@@ -132,12 +142,24 @@ export function getJointChainResultItems(row: WeldInput) {
       className: item.inactive ? getInactiveLnkRequestBadgeClass() : getLnkResultBadgeClass(item.result),
     }))
   const pstoItems =
-    isYesText(row.pstoRequired) || hasText(row.pstoRequest) || hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram)
+    isYesText(row.pstoRequired) ||
+    isCancelledControlValue(row.pstoRequired) ||
+    hasText(row.pstoRequest) ||
+    hasText(row.pstoResult) ||
+    hasText(row.heatTreatmentDiagram)
       ? [
           {
             label: 'ПСТО',
-            value: isRejectedJoint(row) && !hasText(row.pstoResult) ? 'нет потребности' : getPstoResultLabel(row.pstoResult),
-            className: isRejectedJoint(row) && !hasText(row.pstoResult) ? getInactiveLnkRequestBadgeClass() : getPstoResultBadgeClass(row.pstoResult),
+            value: isCancelledControlValue(row.pstoRequired)
+              ? getCancelledPstoResultDisplay(row.pstoResult)
+              : isRejectedJoint(row) && !hasText(row.pstoResult)
+                ? 'нет потребности'
+                : getPstoResultLabel(row.pstoResult),
+            className: isCancelledControlValue(row.pstoRequired)
+              ? getPstoResultBadgeClass(getCancelledPstoResultDisplay(row.pstoResult))
+              : isRejectedJoint(row) && !hasText(row.pstoResult)
+                ? getInactiveLnkRequestBadgeClass()
+                : getPstoResultBadgeClass(row.pstoResult),
           },
         ]
       : []

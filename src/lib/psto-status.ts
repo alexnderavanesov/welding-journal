@@ -6,7 +6,7 @@ import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export function canCreatePstoRequest(row: WeldInput) {
-  return !hasText(row.pstoRequest)
+  return isYesText(row.pstoRequired) && !hasText(row.pstoRequest)
 }
 
 export function buildPstoWaitingRequestRows(rows: WeldRow[]) {

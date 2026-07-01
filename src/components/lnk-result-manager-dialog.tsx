@@ -7,7 +7,6 @@ import {
   type LnkResultChangeHintState,
   type LnkResultManagerEntryData,
   type LnkResultMethod,
-  type LnkResultPreviewState,
 } from '@/components/lnk-result-manager-entry'
 import { LnkResultManagerScopePanel } from '@/components/lnk-result-manager-scope-panel'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -21,7 +20,6 @@ export type LnkResultManagerDialogProps = {
   methodKey: WeldFieldKey | ''
   conclusionDrafts: Record<string, string>
   pendingResultChanges: Record<string, string>
-  preview: LnkResultPreviewState
   changeHint: LnkResultChangeHintState
   isResultCorrectionPending: boolean
   isResultReplacementPending: boolean
@@ -32,8 +30,6 @@ export type LnkResultManagerDialogProps = {
   onRenameConclusion: (row: WeldRow, methodKey: WeldFieldKey) => void
   onReplaceResult: (row: WeldRow, methodKey: WeldFieldKey, result: string) => void
   onClearResult: (row: WeldRow, methodKey: WeldFieldKey) => void
-  onPreviewEnter: (preview: NonNullable<LnkResultPreviewState>) => void
-  onPreviewLeave: (changeKey: string) => void
   onResetPendingChanges: () => void
   onSaveChanges: () => void
 }
@@ -46,7 +42,6 @@ export function LnkResultManagerDialog({
   methodKey,
   conclusionDrafts,
   pendingResultChanges,
-  preview,
   changeHint,
   isResultCorrectionPending,
   isResultReplacementPending,
@@ -57,8 +52,6 @@ export function LnkResultManagerDialog({
   onRenameConclusion,
   onReplaceResult,
   onClearResult,
-  onPreviewEnter,
-  onPreviewLeave,
   onResetPendingChanges,
   onSaveChanges,
 }: LnkResultManagerDialogProps) {
@@ -87,7 +80,6 @@ export function LnkResultManagerDialog({
                   entry={entry}
                   conclusionDrafts={conclusionDrafts}
                   pendingResultChanges={pendingResultChanges}
-                  preview={preview}
                   changeHint={changeHint}
                   isResultCorrectionPending={isResultCorrectionPending}
                   isResultReplacementPending={isResultReplacementPending}
@@ -96,8 +88,6 @@ export function LnkResultManagerDialog({
                   onRenameConclusion={onRenameConclusion}
                   onReplaceResult={onReplaceResult}
                   onClearResult={onClearResult}
-                  onPreviewEnter={onPreviewEnter}
-                  onPreviewLeave={onPreviewLeave}
                 />
               ))}
             </div>

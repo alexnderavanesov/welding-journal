@@ -25,12 +25,21 @@ export function buildExactJointFilters(row: WeldInput) {
   }
 }
 
+export function buildLineFilters(row: WeldInput) {
+  return {
+    projectTitle: trimRowText(row.projectTitle),
+    subtitleCode: trimRowText(row.subtitleCode),
+    line: trimRowText(row.line),
+  }
+}
+
 export function getJointBaseFromRow(row: WeldInput) {
   const joint = trimRowText(row.joint)
   return parseJointChainName(joint).base || joint
 }
 
 export function getRepeatedJointTaskBaseJoint(task: RepeatedJointTask) {
+  if (task.kind === 'line-consistency') return task.line
   if (task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename') {
     return task.baseJoint
   }
@@ -38,6 +47,7 @@ export function getRepeatedJointTaskBaseJoint(task: RepeatedJointTask) {
 }
 
 export function getRepeatedJointTaskActionText(task: RepeatedJointTask) {
+  if (task.kind === 'line-consistency') return task.title.toLowerCase()
   if (task.kind === 'check') return `проверьте ${task.targetJoint}`
   if (task.kind === 'duplicate-check') return `проверьте возможные дубли: ${task.count}`
   if (task.kind === 'rename') return `проверьте переименование ${task.currentJoint} → ${task.targetJoint}`

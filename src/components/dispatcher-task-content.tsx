@@ -81,6 +81,14 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
       </>
     )
   }
+  if (task.kind === 'line-consistency') {
+    return (
+      <>
+        <span className="text-slate-800">{title.joint}</span>
+        <span className="text-slate-700">{title.type}</span>
+      </>
+    )
+  }
   return (
     <>
       <span className="text-slate-800">{title.joint}</span>

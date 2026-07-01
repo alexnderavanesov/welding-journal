@@ -22,6 +22,7 @@ import {
   isBlockingRepeatedJointCheckTask,
 } from '@/lib/repeated-joint-consistency-tasks'
 import { buildDuplicateJointCheckTasks } from '@/lib/repeated-joint-duplicate-tasks'
+import { buildLineConsistencyTasks } from '@/lib/line-consistency-tasks'
 import {
   findMatchingJointRows,
   getExpectedRepeatedJointName,
@@ -48,6 +49,7 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
     ...buildIncompleteWelderStampGroupTasks(rows),
   ]
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
+  const lineConsistencyTasks = buildLineConsistencyTasks(rows)
   const blockedChainKeys = new Set(
     [
       ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),
@@ -158,7 +160,7 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
       })
     }
   }
-  return [...chainCheckTasks, ...duplicateCheckTasks, ...tasks]
+  return [...chainCheckTasks, ...duplicateCheckTasks, ...lineConsistencyTasks, ...tasks]
 }
 
 function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<string>) {

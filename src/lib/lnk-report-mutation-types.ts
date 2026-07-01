@@ -11,13 +11,6 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 
 export type RowWithId = WeldRow
 
-export type ManagedLnkResultPreviewState = {
-  changeKey: string
-  rowId: number
-  methodKey: WeldFieldKey
-  result: string
-} | null
-
 export type ManagedLnkResultChangeHintState = {
   changeKey: string
   rowId: number
@@ -30,6 +23,7 @@ export type UseLnkReportMutationsOptions = {
   lnkRows: RowWithId[]
   lnkRequestOptions: string[]
   setMessage: (value: string) => void
+  setLnkNotice: (value: string) => void
   highlightChangedRows: (rows: WeldRow[], fieldKeys?: WeldFieldKey[]) => void
   setSelectedLnkIds: (value: Set<number>) => void
   setLnkRequestDraft: Dispatch<SetStateAction<LnkRequestDraftState>>
@@ -45,6 +39,5 @@ export type UseLnkReportMutationsOptions = {
   resetDismissedRepeatedJointTasks: () => void
   setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string>>>
   setManagedLnkResultChangeHint: (value: ManagedLnkResultChangeHintState) => void
-  setManagedLnkResultPreview: (value: ManagedLnkResultPreviewState) => void
   setHeatTreatmentFieldEditing: (value: HeatTreatmentFieldEditingState | null) => void
 }

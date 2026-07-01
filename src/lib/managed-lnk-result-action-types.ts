@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ManagedLnkPendingResultRow } from '@/lib/managed-lnk-result-utils'
-import type { ManagedLnkResultChangeHintState, ManagedLnkResultPreviewState } from '@/lib/use-lnk-result-modal-state'
+import type { ManagedLnkResultChangeHintState } from '@/lib/use-lnk-result-modal-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
@@ -32,7 +32,6 @@ export type UseManagedLnkResultActionsOptions = {
   setManagedLnkResultRequestSearch: (value: string) => void
   setManagedLnkConclusionDrafts: Dispatch<SetStateAction<Record<string, string>>>
   setManagedLnkResultOrderIds: Dispatch<SetStateAction<number[] | null>>
-  setManagedLnkResultPreview: Dispatch<SetStateAction<ManagedLnkResultPreviewState>>
   setManagedLnkResultChangeHint: Dispatch<SetStateAction<ManagedLnkResultChangeHintState>>
   setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string>>>
 }

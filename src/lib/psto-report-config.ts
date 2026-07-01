@@ -1,8 +1,6 @@
 import type { WeldField, WeldFieldKey } from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
 
-export const PSTO_EMPTY_RESULT_VALUE = '__empty__'
-
 export const HEAT_TREATMENT_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoNote',
   'pstoBoq',
@@ -68,4 +66,3 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_REPORT_FIELD_KEYS,
   ...LNK_CONCLUSION_FIELD_KEYS,
 ])
-

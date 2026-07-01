@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
+import { ConfirmActionProvider } from '@/lib/confirm-action-context'
 import appCss from '@/styles.css?url'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -21,7 +22,9 @@ function RootComponent() {
   return (
     <RootDocument>
       <QueryClientProvider client={queryClient}>
-        <Outlet />
+        <ConfirmActionProvider>
+          <Outlet />
+        </ConfirmActionProvider>
       </QueryClientProvider>
     </RootDocument>
   )

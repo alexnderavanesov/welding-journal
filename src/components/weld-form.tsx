@@ -13,6 +13,9 @@ import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-
 import type { WeldDraft } from '@/lib/dispatcher-types'
 import {
   formHiddenFieldKeys,
+  getWeldFormAutoClearHint,
+  getWeldFormCancellationResultHint,
+  getWeldFormReactivationResultHint,
   getWeldFormSaveBlockReason,
   getWeldStampSaveBlockReason,
   withCalculatedFinalStatus,
@@ -51,6 +54,10 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
     getExternalSaveBlockReason?.(preparedDraft) ??
     getRequiredRootStampMessage(preparedDraft) ??
     getWeldFormSaveBlockReason(draft, value)
+  const autoClearHint = saveBlockReason ? null : getWeldFormAutoClearHint(draft, value)
+  const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(draft, value)
+  const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(draft, value)
+  const saveHint = [autoClearHint, cancellationResultHint, reactivationResultHint].filter(Boolean).join('; ') || null
   const handleSave = () => {
     if (!busy && !saveBlockReason) onSave(withCalculatedFinalStatus(preparedDraft))
   }
@@ -151,6 +158,7 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
 
       <WeldFormFooter
         busy={busy}
+        autoClearHint={saveHint}
         saveBlockReason={saveBlockReason}
         onCancel={onCancel}
         onSave={handleSave}

@@ -2,7 +2,23 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { weldJoints, type NewWeldJoint } from '@/db/schema'
-import { WELD_FIELDS, type WeldInput, calculateFinalStatus } from '@/lib/weld-fields'
+import {
+  clearCancelledRejectedLnkGeneratedData,
+  clearDisabledLnkRequests,
+  clearLnkGeneratedData,
+  hasLnkGeneratedDataChanged,
+  restoreActiveLnkCancelledResults,
+  withLnkFinalStatus,
+} from '@/lib/lnk-field-updates'
+import {
+  clearCancelledPstoRequestWithoutResult,
+  restoreActivePstoCancelledResult,
+  withPendingPstoResultStatus,
+} from '@/lib/psto-field-updates'
+import { LNK_GENERATED_FIELD_KEYS } from '@/lib/report-config'
+import { hasAnyLnkGeneratedData, hasLnkReportEntry, withPendingLnkResults } from '@/lib/report-control-state'
+import { isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
+import { WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
 import type { WeldDraft } from '@/lib/dispatcher-types'
 
@@ -43,50 +59,6 @@ const controlColumns = {
   МКК: weldJoints.hasMkk,
 } as const
 const SYSTEM_FIELD_KEYS = new Set(['createdAt', 'updatedAt'])
-const lnkControlRequestPairs = [
-  { enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionKey: 'vikConclusion' },
-  { enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionKey: 'rkConclusion' },
-  { enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionKey: 'pvkConclusion' },
-  { enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult', conclusionKey: 'uzkConclusion' },
-  { enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult', conclusionKey: 'tvmtConclusion' },
-  { enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult', conclusionKey: 'rfaConclusion' },
-  { enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult', conclusionKey: 'stlsConclusion' },
-  { enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult', conclusionKey: 'mkkConclusion' },
-] as const satisfies ReadonlyArray<{
-  enabledKey: keyof WeldInput
-  requestKey: keyof WeldInput
-  resultKey: keyof WeldInput
-  conclusionKey: keyof WeldInput
-}>
-const lnkGeneratedFieldKeys = [
-  'vikResult',
-  'rkResult',
-  'pvkResult',
-  'uzkResult',
-  'tvmtResult',
-  'rfaResult',
-  'stlsResult',
-  'mkkResult',
-  'vikConclusionDate',
-  'rkConclusionDate',
-  'pvkConclusionDate',
-  'uzkConclusionDate',
-  'tvmtConclusionDate',
-  'rfaConclusionDate',
-  'stlsConclusionDate',
-  'mkkConclusionDate',
-  'vikConclusion',
-  'rkConclusion',
-  'pvkConclusion',
-  'uzkConclusion',
-  'tvmtConclusion',
-  'rfaConclusion',
-  'stlsConclusion',
-  'mkkConclusion',
-  'lnkDefectDescription',
-  'lnkNote',
-  'lnkCreatedAt',
-] as const satisfies ReadonlyArray<keyof WeldInput>
 
 export const listWeldJoints = createServerFn({ method: 'GET' })
   .validator((data: WeldFilters | undefined) => data ?? {})
@@ -153,11 +125,11 @@ export const clearLnkGeneratedWeldData = createServerFn({ method: 'POST' }).hand
   for (const row of rows) {
     const cleanedRow = clearLnkGeneratedData(row as WeldInput & { id: number })
     if (!hasLnkGeneratedDataChanged(row as WeldInput, cleanedRow)) continue
-    const updateData = lnkGeneratedFieldKeys.reduce<Record<string, null>>((data, fieldKey) => {
+    const updateData = [...LNK_GENERATED_FIELD_KEYS].reduce<Record<string, null>>((data, fieldKey) => {
       data[fieldKey] = null
       return data
     }, {})
-    const finalStatus = calculateFinalStatus(cleanedRow)
+    const { finalStatus } = withLnkFinalStatus(cleanedRow)
     const [updated] = await db
       .update(weldJoints)
       .set({ ...updateData, finalStatus, updatedAt: new Date() })
@@ -170,7 +142,7 @@ export const clearLnkGeneratedWeldData = createServerFn({ method: 'POST' }).hand
 })
 
 function toDbInsert(input: WeldInput): NewWeldJoint {
-  const normalized = withPendingLnkResults(clearDisabledLnkRequests(normalizeWeldInput(input)))
+  const normalized = prepareServerWeldInput(normalizeWeldInput(input))
   const data: Record<string, unknown> = {}
 
   for (const field of WELD_FIELDS) {
@@ -179,8 +151,8 @@ function toDbInsert(input: WeldInput): NewWeldJoint {
       data[field.key] = normalized[field.key] ? new Date(String(normalized[field.key])) : null
       continue
     }
-    if (field.kind === 'boolean' && isCancelledText(normalized[field.key])) {
-      data[field.key] = null
+    if (field.kind === 'boolean') {
+      data[field.key] = normalizeControlAvailabilityValue(normalized[field.key])
       continue
     }
     data[field.key] = normalized[field.key] ?? null
@@ -195,69 +167,18 @@ function toDbInsert(input: WeldInput): NewWeldJoint {
   return data as NewWeldJoint
 }
 
-function isYesText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'да'
-}
-
-function isEnabledControlValue(value: unknown) {
-  if (value === true) return true
-  return String(value ?? '').trim().toLowerCase() === 'да'
-}
-
-function hasWeldDate(record: WeldInput) {
-  return String(record.weldDate ?? '').trim().length > 0
-}
-
-function hasLnkReportEntry(record: WeldInput) {
-  return hasWeldDate(record) && lnkControlRequestPairs.some((pair) => isEnabledControlValue(record[pair.enabledKey]))
-}
-
-function isCancelledText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'отменен'
-}
-
-function hasText(value: unknown) {
-  return String(value ?? '').trim().length > 0
-}
-
-function clearDisabledLnkRequests<T extends WeldInput>(record: T): T {
-  let nextRecord: (T & Record<string, unknown>) | null = null
-  for (const pair of lnkControlRequestPairs) {
-    if (isEnabledControlValue(record[pair.enabledKey]) || hasLnkMethodReportHistory(record, pair) || !hasText(record[pair.requestKey])) continue
-    nextRecord = nextRecord ?? ({ ...record } as T & Record<string, unknown>)
-    nextRecord[pair.requestKey] = null
-  }
-  return (nextRecord ?? record) as T
-}
-
-function withPendingLnkResults<T extends WeldInput>(record: T): T {
-  let nextRecord: (T & Record<string, unknown>) | null = null
-  for (const pair of lnkControlRequestPairs) {
-    if (!hasText(record[pair.requestKey]) || hasText(record[pair.resultKey])) continue
-    nextRecord = nextRecord ?? ({ ...record } as T & Record<string, unknown>)
-    nextRecord[pair.resultKey] = 'ожидает НК'
-  }
-  return (nextRecord ?? record) as T
-}
-
-function hasLnkMethodReportHistory(record: WeldInput, pair: (typeof lnkControlRequestPairs)[number]) {
-  return hasText(record[pair.resultKey]) && hasText(record[pair.conclusionKey])
-}
-
-function clearLnkGeneratedData<T extends WeldInput>(row: T): T {
-  const nextRow = { ...row } as T & Record<string, unknown>
-  for (const fieldKey of lnkGeneratedFieldKeys) {
-    nextRow[fieldKey] = null
-  }
-  return nextRow as T
-}
-
-function hasLnkGeneratedDataChanged(left: WeldInput, right: WeldInput) {
-  return lnkGeneratedFieldKeys.some((fieldKey) => String(left[fieldKey] ?? '') !== String(right[fieldKey] ?? ''))
-}
-
-function hasAnyLnkGeneratedData(record: WeldInput) {
-  return lnkGeneratedFieldKeys.some((fieldKey) => fieldKey !== 'lnkCreatedAt' && hasText(record[fieldKey]))
+function prepareServerWeldInput<T extends WeldInput>(record: T): T {
+  return withLnkFinalStatus(
+    withPendingPstoResultStatus(
+      withPendingLnkResults(
+        clearDisabledLnkRequests(
+          restoreActiveLnkCancelledResults(
+            restoreActivePstoCancelledResult(clearCancelledRejectedLnkGeneratedData(clearCancelledPstoRequestWithoutResult(record))),
+          ),
+        ),
+      ),
+    ),
+  )
 }
 
 function buildWhere(filters: WeldFilters) {
@@ -284,7 +205,8 @@ function buildWhere(filters: WeldFilters) {
   }
 
   if (filters.controlMethod && filters.controlMethod in controlColumns) {
-    clauses.push(eq(controlColumns[filters.controlMethod as keyof typeof controlColumns], true))
+    const column = controlColumns[filters.controlMethod as keyof typeof controlColumns]
+    clauses.push(or(eq(column, 'да'), eq(column, 'дополнительный')))
   }
 
   return clauses.length ? and(...clauses) : sql`true`

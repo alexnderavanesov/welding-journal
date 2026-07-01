@@ -3,6 +3,7 @@ import { RequestNamingControls } from '@/components/request-naming-controls'
 import { ResultSettingsCard } from '@/components/result-settings-card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { hasNonEmptyLnkResultDraftRows } from '@/lib/lnk-result-draft'
 import {
@@ -64,6 +65,7 @@ export function LnkResultSettings({
             <span className="text-[13px] font-medium leading-none text-slate-700">Дата контроля</span>
             <Input
               type="date"
+              min={MIN_ALLOWED_DATE_ISO}
               value={draft.controlDate}
               disabled={!hasNonEmptyRows}
               onChange={(event) => onControlDateChange(event.target.value)}

@@ -1,5 +1,17 @@
 import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import {
+  clearCancelledRejectedLnkGeneratedData,
+  clearDisabledLnkRequests,
+  restoreActiveLnkCancelledResults,
+  withLnkFinalStatus,
+} from '@/lib/lnk-field-updates'
+import {
+  clearCancelledPstoRequestWithoutResult,
+  restoreActivePstoCancelledResult,
+  withPendingPstoResultStatus,
+} from '@/lib/psto-field-updates'
+import { withPendingLnkResults } from '@/lib/report-control-state'
+import {
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
   validateRequiredRootStampForSave,
@@ -8,6 +20,7 @@ import {
 } from '@/lib/weld-validation'
 import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
 import {
+  getArchivedOfficialStampValuesForRecord,
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
@@ -31,10 +44,25 @@ export function prepareWeldSaveValue({
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
 }) {
-  const preparedValue = value
+  const preparedValue = withLnkFinalStatus(
+    withPendingPstoResultStatus(
+      withPendingLnkResults(
+        clearDisabledLnkRequests(
+          restoreActiveLnkCancelledResults(
+            restoreActivePstoCancelledResult(clearCancelledRejectedLnkGeneratedData(clearCancelledPstoRequestWithoutResult(value))),
+          ),
+        ),
+      ),
+    ),
+  )
   validateRequiredRootStampForSave(preparedValue)
   validateManualJointNameForSave(preparedValue, rows)
-  validateOfficialStampCompatibilityForSave(preparedValue, welderStamps)
+  validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
+    allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(
+      preparedValue.id ? rows.find((row) => row.id === preparedValue.id) : undefined,
+      welderStamps,
+    ),
+  })
   return preparedValue
 }
 

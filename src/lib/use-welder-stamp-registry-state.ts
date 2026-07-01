@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listWelderStampRecords, saveWelderStampRecords } from '@/server/welder-stamps'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { WeldInput } from '@/lib/weld-fields'
 import { createEmptyWelderStampFilters, filterWelderStampRecords } from '@/lib/welder-stamp-filters'
 import { buildWeldFormStampSelectOptions } from '@/lib/welder-stamp-compatibility'
@@ -19,6 +20,7 @@ type WelderStampRegistryStateInput = {
 
 export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryStateInput) {
   const queryClient = useQueryClient()
+  const confirmAction = useConfirmAction()
   const [welderStamps, setWelderStamps] = useState<WelderStampRecord[]>([])
   const [welderStampDraft, setWelderStampDraft] = useState<WelderStampRecord>(() => createEmptyWelderStampDraft())
   const [editingWelderStampId, setEditingWelderStampId] = useState<number | null>(null)
@@ -50,7 +52,8 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
 
   const weldFormStampSelectOptions = useMemo(() => buildWeldFormStampSelectOptions(welderStamps), [welderStamps])
   const getWeldFormStampSelectOptions = useMemo(
-    () => (draft: WeldInput) => buildWeldFormStampSelectOptions(welderStamps, draft),
+    () => (draft: WeldInput, allowedArchivedOfficialStamps: readonly string[] = []) =>
+      buildWeldFormStampSelectOptions(welderStamps, draft, allowedArchivedOfficialStamps),
     [welderStamps],
   )
   const filteredWelderStamps = useMemo(
@@ -102,8 +105,16 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     setMessage('Клеймо возвращено в общий список')
   }
 
-  function deleteWelderStampRecord(id: number) {
-    if (!confirm('Удалить запись клейма?')) return
+  async function deleteWelderStampRecord(id: number) {
+    const record = welderStamps.find((candidate) => candidate.id === id)
+    const stampName = record?.naksStamp || record?.internalStamp || 'Запись клейма'
+    const confirmed = await confirmAction({
+      title: 'Удалить клеймо',
+      itemName: stampName,
+      description: 'Запись будет удалена из справочника клейм сварщиков.',
+      warning: 'Это действие нельзя отменить.',
+    })
+    if (!confirmed) return
     persistWelderStampRecords(removeWelderStampRecord(welderStamps, id))
     if (editingWelderStampId === id) resetWelderStampForm()
     setMessage('Клеймо удалено')

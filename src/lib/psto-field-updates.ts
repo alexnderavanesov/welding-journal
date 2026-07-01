@@ -1,6 +1,7 @@
-import type { WeldRow } from '@/lib/dispatcher-types'
+import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
+import type { WeldInput } from '@/lib/weld-fields'
 
-type PstoRow = WeldRow
+type PstoRow = WeldInput
 
 export type PstoRequestManagerAction = 'rename' | 'delete'
 export type PstoResultCorrectionAction = 'renameDiagram' | 'deleteResult'
@@ -61,6 +62,55 @@ export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoCreat
     heatTreatmentDiagram: null,
     pstoCreatedAt,
   }
+}
+
+export function clearCancelledPstoRequestWithoutResult<T extends PstoRow>(record: T): T {
+  if (isEnabledControlValue(record.pstoRequired) || hasPstoResultHistory(record)) return record
+  if (!hasText(record.pstoRequest) && !hasText(record.pstoDate)) return record
+  return {
+    ...record,
+    pstoRequest: null,
+    pstoDate: null,
+    pstoResult: null,
+  }
+}
+
+export function withPendingPstoResultStatus<T extends PstoRow>(record: T): T {
+  if (!isEnabledControlValue(record.pstoRequired) || hasText(record.pstoResult)) return record
+  return {
+    ...record,
+    pstoResult: hasText(record.pstoRequest) ? 'ожидает' : 'ожидает заявку',
+  }
+}
+
+export function restoreActivePstoCancelledResult<T extends PstoRow>(record: T): T {
+  if (!isEnabledControlValue(record.pstoRequired)) return record
+
+  const restoredResult = getRestoredActivePstoResult(record.pstoResult)
+  if (restoredResult === undefined) return record
+
+  return {
+    ...record,
+    pstoResult: restoredResult,
+  }
+}
+
+function getRestoredActivePstoResult(value: unknown) {
+  const result = String(value ?? '').trim().toLowerCase()
+  if (result === 'проведено (отменен)') return 'проведено'
+  if (result === 'отменен') return null
+  return undefined
+}
+
+function hasPstoResultHistory(record: PstoRow) {
+  return isRealPstoResult(record.pstoResult) || ['heatTreatmentDiagram', 'pstoNote', 'pstoBoq', 'pstoKs3'].some((fieldKey) =>
+    hasText(record[fieldKey as keyof PstoRow]),
+  )
+}
+
+function isRealPstoResult(value: unknown) {
+  const result = String(value ?? '').trim().toLowerCase()
+  return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
 }
 
 export function applyPstoResultCorrection<T extends PstoRow>({

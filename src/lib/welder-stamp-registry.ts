@@ -2,6 +2,7 @@ import {
   formatWelderStampDate,
   normalizeWelderStampWeldType,
 } from '@/lib/welder-stamp-format'
+import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -27,6 +28,8 @@ export function normalizeWelderStampRecord(record: WelderStampRecord): WelderSta
     weldType: normalizeWelderStampWeldType(record.weldType),
     diameterFrom: record.diameterFrom.trim(),
     diameterTo: record.diameterTo.trim(),
+    validFrom: normalizeDateLikeForStorage(record.validFrom) ?? '',
+    validTo: normalizeDateLikeForStorage(record.validTo) ?? '',
     archived: Boolean(record.archived),
   }
 }
@@ -52,6 +55,10 @@ export function validateWelderStampRecord(record: WelderStampRecord) {
 
   if (diameterFrom === null && record.diameterFrom) return 'Диаметр от должен быть числом'
   if (diameterTo === null && record.diameterTo) return 'Диаметр до должен быть числом'
+  const validFromReason = record.validFrom ? getDateInputValidationReason(record.validFrom, 'Срок действия от') : ''
+  if (validFromReason) return validFromReason
+  const validToReason = record.validTo ? getDateInputValidationReason(record.validTo, 'Срок действия до') : ''
+  if (validToReason) return validToReason
   if (diameterFrom !== null && diameterTo !== null && diameterFrom > diameterTo) {
     return 'Диапазон диаметра заполнен некорректно: значение «от» больше значения «до»'
   }

@@ -21,7 +21,6 @@ export function useLnkResultManagerMutations({
   highlightChangedRows,
   setManagedLnkPendingResultChanges,
   setManagedLnkResultChangeHint,
-  setManagedLnkResultPreview,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -67,7 +66,6 @@ export function useLnkResultManagerMutations({
         Object.fromEntries(Object.entries(current).filter(([changeKey]) => !savedKeys.has(changeKey))),
       )
       setManagedLnkResultChangeHint(null)
-      setManagedLnkResultPreview(null)
       setMessage(`Результат ЛНК изменен для стыков: ${savedRows.length}`)
       await invalidateWeldJoints(queryClient)
     },

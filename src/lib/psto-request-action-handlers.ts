@@ -5,6 +5,7 @@ import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
 
 export function createPstoRequestActionHandlers({
+  confirmAction,
   filteredAvailablePstoRequestRows,
   managedPstoRequestName,
   managedPstoRequestNameDraft,
@@ -83,17 +84,29 @@ export function createPstoRequestActionHandlers({
     })
   }
 
-  function deleteManagedPstoRequest() {
+  async function deleteManagedPstoRequest() {
     const requestName = managedPstoRequestName.trim()
     if (!requestName) return
-    if (!confirm(`Удалить заявку ${requestName} и все связанные результаты ПСТО?`)) return
+    const confirmed = await confirmAction({
+      title: 'Удалить заявку ПСТО',
+      itemName: requestName,
+      description: 'Будут удалены заявка ПСТО и все связанные результаты ПСТО.',
+      warning: 'Это действие нельзя отменить.',
+    })
+    if (!confirmed) return
     pstoRequestManagerMutation.mutate({ action: 'delete', requestName })
   }
 
-  function clearManagedPstoRequestPosition(record: RowWithId) {
+  async function clearManagedPstoRequestPosition(record: RowWithId) {
     const requestName = String(record.pstoRequest ?? '').trim()
     if (!requestName) return
-    if (!confirm(`Очистить заявку ${requestName} только для стыка ${String(record.joint ?? '-')}?`)) return
+    const confirmed = await confirmAction({
+      title: 'Очистить позицию заявки ПСТО',
+      itemName: `${String(record.joint ?? '-')} · ${requestName}`,
+      description: 'Будет очищена заявка ПСТО только для этого стыка.',
+      warning: 'Остальные позиции заявки не изменятся.',
+    })
+    if (!confirmed) return
     pstoRequestCorrectionMutation.mutate({ record })
   }
 

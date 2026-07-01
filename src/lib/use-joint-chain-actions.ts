@@ -5,6 +5,7 @@ import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   buildExactJointFilters,
   buildJointChainFilters,
+  buildLineFilters,
   getJointBaseFromRow,
   getRepeatedJointTaskActionText,
   getRepeatedJointTaskBaseJoint,
@@ -42,6 +43,19 @@ export function useJointChainActions({
 
   function showRepeatedJointTask(task: DispatcherTask) {
     if (task.kind === 'welder-stamp-expiry') return
+    if (task.kind === 'line-consistency') {
+      setChainRecord(null)
+      const filters = buildLineFilters(task.row)
+      if (activeReport === 'lnk') {
+        setActiveReport('lnk')
+        setLnkFilters(filters)
+      } else {
+        setActiveReport('weldingJournal')
+        setColumnFilters(filters)
+      }
+      setMessage(`Показана линия ${task.line}: ${task.title.toLowerCase()}`)
+      return
+    }
     const baseJoint = getRepeatedJointTaskBaseJoint(task)
     const actionText = getRepeatedJointTaskActionText(task)
     showRepeatedJointTaskChain(task.row, baseJoint, `Показана цепочка стыка ${baseJoint}: ${actionText}`)

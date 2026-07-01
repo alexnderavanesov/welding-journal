@@ -11,7 +11,7 @@ import {
   compareLnkRequestRows,
   normalizeSearchText,
 } from '@/lib/report-row-utils'
-import { hasText } from '@/lib/report-value-utils'
+import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
@@ -73,6 +73,7 @@ export function getLnkResultEntryPriority(row: WeldInput, methodKey: WeldFieldKe
 export function isLnkResultRowApplicable(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
   const method = methodKey ? getLnkMethodByRequestKey(methodKey) : null
   if (!method) return false
+  if (!isEnabledControlValue(row[method.enabledKey])) return false
   const rowRequestName = String(row[method.requestKey] ?? '').trim()
   if (!rowRequestName) return false
   const name = requestName.trim()

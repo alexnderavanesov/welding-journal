@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { PSTO_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import {
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
@@ -48,13 +47,9 @@ export function usePstoResultMutations({
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },
-    onSuccess: async (savedRows, variables) => {
+    onSuccess: async (savedRows) => {
       highlightChangedRows(savedRows, [...PSTO_RESULT_HIGHLIGHT_FIELDS])
-      setMessage(
-        variables.result === PSTO_EMPTY_RESULT_VALUE
-          ? `Результат ПСТО аннулирован для стыков: ${savedRows.length}`
-          : `Результат ПСТО внесен для стыков: ${savedRows.length}`,
-      )
+      setMessage(`Результат ПСТО внесен для стыков: ${savedRows.length}`)
       setIsPstoResultModalOpen(false)
       setPstoResultDraft(createDefaultPstoResultDraft())
       await invalidateWeldJoints(queryClient)

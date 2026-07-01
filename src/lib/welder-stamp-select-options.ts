@@ -18,10 +18,17 @@ import {
 export function buildWeldFormStampSelectOptions(
   records: WelderStampRecord[],
   draft?: WeldInput,
+  allowedArchivedOfficialStamps: readonly string[] = [],
 ): Partial<Record<WeldFieldKey, readonly StampSelectOption[]>> {
   const activeRecords = records.filter((record) => !record.archived)
-  const officialOptions = uniqueStampValues(activeRecords.map((record) => record.naksStamp)).map((value) => {
-    const reason = draft ? getOfficialStampSelectBlockReason(value, draft, activeRecords) : null
+  const allowedArchivedStampValues = getExistingArchivedOfficialStampValues(allowedArchivedOfficialStamps, records)
+  const allowedArchivedStampSet = new Set(allowedArchivedStampValues.map(normalizeStampForCompare))
+  const officialOptions = uniqueStampValues([...activeRecords.map((record) => record.naksStamp), ...allowedArchivedStampValues]).map((value) => {
+    const hasActiveRecord = activeRecords.some(
+      (record) => normalizeStampForCompare(record.naksStamp) === normalizeStampForCompare(value),
+    )
+    const isAllowedArchivedOnly = !hasActiveRecord && allowedArchivedStampSet.has(normalizeStampForCompare(value))
+    const reason = !isAllowedArchivedOnly && draft ? getOfficialStampSelectBlockReason(value, draft, activeRecords) : null
     return {
       value,
       disabled: Boolean(reason),
@@ -42,6 +49,34 @@ export function buildWeldFormStampSelectOptions(
     ...Object.fromEntries(officialWelderStampFieldKeys.map((fieldKey) => [fieldKey, officialOptions])),
     ...Object.fromEntries(factualWelderStampFieldKeys.map((fieldKey) => [fieldKey, factualOptions])),
   }
+}
+
+export function getArchivedOfficialStampValuesForRecord(record: WeldInput | undefined, records: WelderStampRecord[]) {
+  if (!record) return []
+
+  const archivedStampSet = new Set(
+    records
+      .filter((stampRecord) => stampRecord.archived)
+      .map((stampRecord) => normalizeStampForCompare(stampRecord.naksStamp))
+      .filter(Boolean),
+  )
+
+  return uniqueStampValues(
+    officialWelderStampFieldKeys
+      .map((fieldKey) => record[fieldKey])
+      .filter((value) => archivedStampSet.has(normalizeStampForCompare(value))),
+  )
+}
+
+function getExistingArchivedOfficialStampValues(values: readonly string[], records: WelderStampRecord[]) {
+  const archivedStampSet = new Set(
+    records
+      .filter((stampRecord) => stampRecord.archived)
+      .map((stampRecord) => normalizeStampForCompare(stampRecord.naksStamp))
+      .filter(Boolean),
+  )
+
+  return uniqueStampValues(values.filter((value) => archivedStampSet.has(normalizeStampForCompare(value))))
 }
 
 function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, activeRecords: WelderStampRecord[]) {

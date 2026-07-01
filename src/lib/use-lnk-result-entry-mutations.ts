@@ -15,6 +15,7 @@ import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-m
 
 export function useLnkResultEntryMutations({
   setMessage,
+  setLnkNotice,
   highlightChangedRows,
   setSelectedLnkIds,
   setIsLnkResultModalOpen,
@@ -44,7 +45,7 @@ export function useLnkResultEntryMutations({
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, getLnkResultHighlightFields(variables.methodKey))
       const changedResults = Object.values(variables.resultById)
-      setMessage(
+      setLnkNotice(
         changedResults.every((result) => result === LNK_EMPTY_RESULT_VALUE)
           ? `Результат ЛНК очищен для стыков: ${savedRows.length}`
           : `Результат ЛНК внесен для стыков: ${savedRows.length}`,

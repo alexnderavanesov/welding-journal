@@ -4,6 +4,7 @@ import {
   normalizeFinalStatus,
   normalizeResultStatus,
 } from './weld-fields'
+import { normalizeDateLikeForStorage } from './date-format'
 
 export function emptyToNull(value: unknown) {
   if (value === null || value === undefined) return null
@@ -23,6 +24,7 @@ export function parseBoolean(value: unknown) {
   const text = String(normalized).toLowerCase()
   if (['да', 'yes', 'true', '1', '+'].includes(text)) return true
   if (text === 'отменен') return 'отменен'
+  if (text === 'дополнительный') return 'дополнительный'
   if (['нет', 'no', 'false', '0', '-'].includes(text)) return false
   return Boolean(text)
 }
@@ -40,12 +42,7 @@ export function parseDate(value: unknown) {
   if (typeof value === 'number') return excelSerialDateToIso(value)
   const numeric = Number(normalized)
   if (Number.isFinite(numeric) && numeric > 20000) return excelSerialDateToIso(numeric)
-  const shortMatch = String(normalized).match(/^(\d{2})\.(\d{2})\.(\d{2})$/)
-  if (shortMatch) return `20${shortMatch[3]}-${shortMatch[2]}-${shortMatch[1]}`
-  const longMatch = String(normalized).match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
-  if (longMatch) return `${longMatch[3]}-${longMatch[2]}-${longMatch[1]}`
-  const date = new Date(String(normalized))
-  return Number.isNaN(date.getTime()) ? String(normalized) : date.toISOString().slice(0, 10)
+  return normalizeDateLikeForStorage(normalized)
 }
 
 export function parseCell(field: WeldField, value: unknown) {

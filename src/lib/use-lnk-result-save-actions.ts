@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
   buildLnkResultDraftById,
@@ -47,6 +48,8 @@ export function useLnkResultSaveActions({
   setDraft,
   setMessage,
 }: UseLnkResultSaveActionsOptions) {
+  const confirmAction = useConfirmAction()
+
   function setLnkResultForRow(rowId: number, result: string) {
     setDraft((current) => {
       if (!current.rowIds.has(rowId)) return current
@@ -102,10 +105,13 @@ export function useLnkResultSaveActions({
     })
   }
 
-  function handleClearLnkGeneratedData() {
-    const confirmed = window.confirm(
-      'Очистить результаты, даты и заключения ЛНК? Заявки ЛНК, сами стыки и отметки наличия контроля останутся.',
-    )
+  async function handleClearLnkGeneratedData() {
+    const confirmed = await confirmAction({
+      title: 'Очистить результаты ЛНК',
+      itemName: 'Результаты, даты и заключения ЛНК',
+      description: 'Заявки ЛНК, сами стыки и отметки наличия контроля останутся.',
+      warning: 'Это действие нельзя отменить.',
+    })
     if (!confirmed) return
     clearGeneratedDataMutation.mutate(lnkRows)
   }

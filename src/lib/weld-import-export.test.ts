@@ -145,6 +145,16 @@ describe('weld import/export', () => {
 
   it('keeps cancelled marks as a non-active control flag', () => {
     expect(parseBoolean('отменен')).toBe('отменен')
+
+    const [headers, row] = recordsToExportMatrix([{ hasVik: 'отменен' }])
+    expect(row[headers.indexOf(label('hasVik'))]).toBe('отменен')
+  })
+
+  it('keeps additional marks as an active special control flag', () => {
+    expect(parseBoolean('дополнительный')).toBe('дополнительный')
+
+    const [headers, row] = recordsToExportMatrix([{ hasVik: 'дополнительный' }])
+    expect(row[headers.indexOf(label('hasVik'))]).toBe('дополнительный')
   })
 
   it('allows only the conducted value for the PSTO result field without affecting final control status', () => {
