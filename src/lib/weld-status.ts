@@ -67,8 +67,8 @@ export function calculateFinalStatus(record: WeldInput) {
 
   if (!hasActiveControl) return 'ожидает заявку'
   if (hasOnlyGoodResults) return 'годен'
-  if (hasMissingRequest) return 'ожидает заявку'
   if (hasPendingResult) return 'ожидает НК'
+  if (hasMissingRequest) return 'ожидает заявку'
   return 'ожидает НК'
 }
 

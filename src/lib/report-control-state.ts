@@ -11,6 +11,7 @@ import {
   hasRealLnkResultValue,
   isCancelledControlValue,
   isEnabledControlValue,
+  isPendingLnkResultValue,
   isYesText,
 } from '@/lib/report-value-utils'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -39,7 +40,7 @@ export function withPendingLnkResults<T extends WeldInput>(row: T): T {
   let nextRow: (T & Record<string, unknown>) | null = null
   for (const method of LNK_METHODS) {
     if (!isEnabledControlValue(row[method.enabledKey])) continue
-    if (hasText(row[method.resultKey])) continue
+    if (hasText(row[method.resultKey]) && !isPendingLnkResultValue(row[method.resultKey])) continue
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
     nextRow[method.resultKey] = hasText(row[method.requestKey]) ? 'ожидает НК' : 'ожидает заявку'
   }

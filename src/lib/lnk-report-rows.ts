@@ -1,11 +1,11 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
-import { getAvailableLnkRequestMethods, isLnkMethodNoNeed } from '@/lib/lnk-status'
+import { getAvailableLnkRequestMethods, getLnkEffectiveResultValue, isLnkMethodNoNeed } from '@/lib/lnk-status'
 
 export function buildLnkWaitingNkRows(rows: WeldRow[]) {
   return rows.flatMap((row) =>
     LNK_METHODS.flatMap((method) => {
-      const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
+      const result = String(getLnkEffectiveResultValue(row, method) ?? '').trim().toLowerCase()
       const requestName = String(row[method.requestKey] ?? '').trim()
       if (result !== 'ожидает нк') return []
       if (isLnkMethodNoNeed(row, method)) return []
@@ -45,7 +45,7 @@ export function buildLnkToRequestRows(rows: WeldRow[]) {
 export function buildLnkConclusionsRows(rows: WeldRow[]) {
   return rows.flatMap((row) =>
     LNK_METHODS.flatMap((method) => {
-      const result = String(row[method.resultKey] ?? '').trim()
+      const result = String(getLnkEffectiveResultValue(row, method) ?? '').trim()
       const conclusionName = String(row[method.conclusionKey] ?? '').trim()
       const controlDate = row[method.conclusionDateKey] ?? ''
       if (!result && !conclusionName && !controlDate) return []

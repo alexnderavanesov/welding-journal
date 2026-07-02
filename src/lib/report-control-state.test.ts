@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { canSelectLnkResultRow } from '@/lib/lnk-result-modal-rows'
+import { getLnkDisplayValue } from '@/lib/lnk-status'
 import { canSelectPstoResultRow } from '@/lib/psto-modal-rows'
 import {
   canCreateLnkRequest,
@@ -84,5 +85,16 @@ describe('cancelled report controls', () => {
     } as WeldInput)
 
     expect(row.rkResult).toBe('ожидает НК')
+  })
+
+  it('normalizes stale waiting request status to waiting NDT when request exists', () => {
+    const row = withPendingLnkResults({
+      hasRk: 'да',
+      rkRequest: 'Заявка-001',
+      rkResult: 'ожидает заявку',
+    } as WeldInput)
+
+    expect(row.rkResult).toBe('ожидает НК')
+    expect(getLnkDisplayValue(row, 'rkResult')).toBe('ожидает НК')
   })
 })

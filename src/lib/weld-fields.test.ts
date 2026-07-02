@@ -202,6 +202,33 @@ describe('weld field order', () => {
     )
   })
 
+  it('prioritizes waiting NDT over missing request in final status', () => {
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasVik: 'да',
+        vikRequest: '',
+        vikResult: 'ожидает заявку',
+        hasRk: 'да',
+        rkRequest: 'Заявка-1',
+        rkResult: 'ожидает НК',
+      }),
+    ).toBe('ожидает НК')
+  })
+
+  it('keeps waiting request when the other control is cancelled', () => {
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasVik: 'да',
+        vikRequest: '',
+        vikResult: 'ожидает заявку',
+        hasRk: 'отменен',
+        rkResult: 'отменен',
+      }),
+    ).toBe('ожидает заявку')
+  })
+
   it('does not let pending heat treatment keep a good NDT joint waiting', () => {
     expect(
       calculateFinalStatus({

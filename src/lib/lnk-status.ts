@@ -15,6 +15,7 @@ import {
   hasWeldDate,
   isCancelledControlValue,
   isEnabledControlValue,
+  isPendingLnkResultValue,
   isYesText,
 } from '@/lib/report-value-utils'
 import { parseJointChainName } from '@/lib/joint-chain'
@@ -69,12 +70,11 @@ export function formatLnkResultSummaryItems(row: WeldInput) {
     (method) => hasText(row[method.requestKey]) || isEnabledControlValue(row[method.enabledKey]) || isCancelledControlValue(row[method.enabledKey]),
   ).map((method) => {
     const isCancelled = isCancelledControlValue(row[method.enabledKey])
-    const hasRequest = hasText(row[method.requestKey])
     const result = isCancelled
       ? getCancelledLnkResultDisplay(row[method.resultKey])
       : isLnkMethodNoNeed(row, method)
       ? 'нет потребности'
-      : String(row[method.resultKey] ?? '').trim() || (hasRequest ? 'ожидает НК' : 'ожидает заявку')
+      : getLnkEffectiveResultValue(row, method)
     return {
       method: method.code,
       result,
@@ -94,7 +94,15 @@ export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
   const method = getLnkMethodByResultKey(fieldKey)
   if (method && isCancelledControlValue(row[method.enabledKey])) return getCancelledLnkResultDisplay(row[method.resultKey])
   if (method && isLnkMethodNoNeed(row, method)) return 'нет потребности'
+  if (method) return getLnkEffectiveResultValue(row, method)
   return row[fieldKey]
+}
+
+export function getLnkEffectiveResultValue(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
+  const result = String(row[method.resultKey] ?? '').trim()
+  if (!isEnabledControlValue(row[method.enabledKey])) return result
+  if (!result || isPendingLnkResultValue(result)) return hasText(row[method.requestKey]) ? 'ожидает НК' : 'ожидает заявку'
+  return result
 }
 
 export function getPendingWeldStatusLabel(row: WeldInput) {
