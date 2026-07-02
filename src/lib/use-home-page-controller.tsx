@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useState } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   useAutoCollapseNavOnHorizontalScroll,
@@ -66,7 +66,7 @@ import {
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 
 export function useHomePageController() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const confirmAction = useConfirmAction()
   const {
     activeReport,
@@ -216,18 +216,20 @@ export function useHomePageController() {
     restoreWelderStampRecord,
     deleteWelderStampRecord,
   } = useWelderStampRegistryState({ setMessage })
-  const isReportModalOpen = getReportModalOpenState({
-    isPstoRequestModalOpen,
-    isPstoRequestManagerOpen,
-    isPstoResultModalOpen,
-    isPstoResultManagerOpen,
-    isLnkRequestModalOpen,
-    isLnkRequestManagerOpen,
-    isLnkResultModalOpen,
-    isLnkResultPreviewOpen,
-    isLnkResultManagerOpen,
-    isLnkOfficialityModalOpen,
-  })
+  const isReportModalOpen =
+    isImportDialogOpen ||
+    getReportModalOpenState({
+      isPstoRequestModalOpen,
+      isPstoRequestManagerOpen,
+      isPstoResultModalOpen,
+      isPstoResultManagerOpen,
+      isLnkRequestModalOpen,
+      isLnkRequestManagerOpen,
+      isLnkResultModalOpen,
+      isLnkResultPreviewOpen,
+      isLnkResultManagerOpen,
+      isLnkOfficialityModalOpen,
+    })
 
   useEscapeToClearReportFilters({
     activeReport,
@@ -777,7 +779,7 @@ export function useHomePageController() {
     setMessage,
   })
 
-  const { handleImport } = useReportImportActions({
+  const { handleImportRecords } = useReportImportActions({
     activeReport,
     heatTreatmentImportMutation,
     lnkImportMutation,
@@ -802,6 +804,7 @@ export function useHomePageController() {
     isLnkOfficialityModalOpen,
     isLnkResultModalOpen,
     isLnkRequestModalOpen,
+    isReportImportModalOpen: isImportDialogOpen,
     canClosePstoRequestManager: !pstoRequestManagerMutation.isPending && !pstoRequestCorrectionMutation.isPending,
     canClosePstoResultManager: !pstoResultCorrectionMutation.isPending,
     canCloseLnkRequestManager: !lnkRequestManagerMutation.isPending && !lnkRequestCorrectionMutation.isPending,
@@ -819,6 +822,7 @@ export function useHomePageController() {
     onCloseLnkOfficialityModal: closeLnkOfficialityModal,
     onCloseLnkResultModal: closeAddLnkResultModal,
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
+    onCloseReportImportModal: () => setIsImportDialogOpen(false),
   })
 
   const dispatcherTaskCardProps = createDispatcherTaskCardHandlers({
@@ -887,8 +891,7 @@ export function useHomePageController() {
 
   const reportHeaderActionsProps = createReportHeaderActionsProps({
     activeReport,
-    fileInputRef,
-    onImportFile: (file) => void handleImport(file),
+    onOpenImportDialog: () => setIsImportDialogOpen(true),
     onExportXlsx: exportXlsx,
     onCreateWeldJoint: () => setEditing({ record: {} }),
     importDisabled: importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending,
@@ -912,6 +915,16 @@ export function useHomePageController() {
     onOpenLnkWaitingNkReport: openLnkWaitingNkReport,
     onOpenLnkConclusionsReport: openLnkConclusionsReport,
   })
+
+  const reportImportDialogProps = {
+    open: isImportDialogOpen,
+    activeReport,
+    isPending: importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending,
+    weldFormStampSelectOptions,
+    welderStamps,
+    onClose: () => setIsImportDialogOpen(false),
+    onImportRecords: handleImportRecords,
+  }
 
   const reportSummaryBarProps = createReportSummaryBarProps({
     activeReport,
@@ -1213,5 +1226,6 @@ export function useHomePageController() {
     reportPstoDialogsProps,
     reportLnkDialogsProps,
     reportFieldEditorProps,
+    reportImportDialogProps,
   }
 }

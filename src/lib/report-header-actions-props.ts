@@ -1,11 +1,9 @@
-import type { RefObject } from 'react'
 import type { ReportHeaderActionsProps } from '@/components/report-header-actions'
 import type { ActiveReport } from '@/lib/home-state'
 
 type CreateReportHeaderActionsPropsOptions = {
   activeReport: ActiveReport
-  fileInputRef: RefObject<HTMLInputElement | null>
-  onImportFile: (file: File) => void
+  onOpenImportDialog: () => void
   onExportXlsx: () => void
   onCreateWeldJoint: () => void
   importDisabled: boolean
@@ -32,8 +30,7 @@ type CreateReportHeaderActionsPropsOptions = {
 
 export function createReportHeaderActionsProps({
   activeReport,
-  fileInputRef,
-  onImportFile,
+  onOpenImportDialog,
   onExportXlsx,
   onCreateWeldJoint,
   importDisabled,
@@ -59,8 +56,7 @@ export function createReportHeaderActionsProps({
 }: CreateReportHeaderActionsPropsOptions): ReportHeaderActionsProps {
   return {
     activeReport,
-    fileInputRef,
-    onImportFile,
+    onOpenImportDialog,
     onExportXlsx,
     onCreateWeldJoint,
     importDisabled,

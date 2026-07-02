@@ -1,4 +1,3 @@
-import type { RefObject } from 'react'
 import { FileSpreadsheet, Plus, Upload } from 'lucide-react'
 import { HeatTreatmentHeaderActions, LnkHeaderActions } from '@/components/report-header-action-groups'
 import { Button } from '@/components/ui/button'
@@ -6,8 +5,7 @@ import type { ActiveReport } from '@/lib/home-state'
 
 export type ReportHeaderActionsProps = {
   activeReport: ActiveReport
-  fileInputRef: RefObject<HTMLInputElement | null>
-  onImportFile: (file: File) => void
+  onOpenImportDialog: () => void
   onExportXlsx: () => void
   onCreateWeldJoint: () => void
   importDisabled: boolean
@@ -34,8 +32,7 @@ export type ReportHeaderActionsProps = {
 
 export function ReportHeaderActions({
   activeReport,
-  fileInputRef,
-  onImportFile,
+  onOpenImportDialog,
   onExportXlsx,
   onCreateWeldJoint,
   importDisabled,
@@ -61,17 +58,6 @@ export function ReportHeaderActions({
 }: ReportHeaderActionsProps) {
   return (
     <div className="flex flex-wrap gap-2 lg:pt-0.5">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx,.xls,.csv"
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          if (file) onImportFile(file)
-          event.currentTarget.value = ''
-        }}
-      />
       {activeReport === 'heatTreatment' ? (
         <HeatTreatmentHeaderActions
           onCreateRequest={onCreatePstoRequest}
@@ -106,7 +92,7 @@ export function ReportHeaderActions({
         </Button>
       ) : null}
       {activeReport === 'weldingJournal' ? (
-        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importDisabled}>
+        <Button variant="outline" onClick={onOpenImportDialog} disabled={importDisabled}>
           <Upload className="mr-2 h-4 w-4" />
           Импорт
         </Button>

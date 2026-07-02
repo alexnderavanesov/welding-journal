@@ -2,6 +2,7 @@ import { ReportChainDialog, type ReportChainDialogProps } from '@/components/rep
 import { ReportFieldEditor, type ReportFieldEditorProps } from '@/components/report-field-editor'
 import { ReportLnkDialogs, type ReportLnkDialogsProps } from '@/components/report-lnk-dialogs'
 import { ReportPstoDialogs, type ReportPstoDialogsProps } from '@/components/report-psto-dialogs'
+import { ReportImportDialog, type ReportImportDialogProps } from '@/components/report-import-dialog'
 import { ReportWeldEditor, type ReportWeldEditorProps } from '@/components/report-weld-editor'
 
 type ReportDialogsProps = {
@@ -10,6 +11,7 @@ type ReportDialogsProps = {
   pstoDialogsProps: ReportPstoDialogsProps
   lnkDialogsProps: ReportLnkDialogsProps
   fieldEditorProps: ReportFieldEditorProps
+  importDialogProps: ReportImportDialogProps
 }
 
 export function ReportDialogs({
@@ -18,6 +20,7 @@ export function ReportDialogs({
   pstoDialogsProps,
   lnkDialogsProps,
   fieldEditorProps,
+  importDialogProps,
 }: ReportDialogsProps) {
   return (
     <>
@@ -26,6 +29,7 @@ export function ReportDialogs({
       <ReportPstoDialogs {...pstoDialogsProps} />
       <ReportLnkDialogs {...lnkDialogsProps} />
       <ReportFieldEditor {...fieldEditorProps} />
+      <ReportImportDialog {...importDialogProps} />
     </>
   )
 }

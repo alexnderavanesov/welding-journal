@@ -74,6 +74,22 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
             }))
           }
         />
+      ) : field.key === 'revisionActuality' ? (
+        <Select
+          ref={(element) => {
+            fieldRefs.current[field.key] = element
+          }}
+          value={String(draft[field.key] ?? '')}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              [field.key]: event.target.value || null,
+            }))
+          }
+        >
+          <option value="">Пусто</option>
+          <option value="не актуален">не актуален</option>
+        </Select>
       ) : RESULT_FIELD_KEYS.has(field.key) ? (
         <Select
           ref={(element) => {

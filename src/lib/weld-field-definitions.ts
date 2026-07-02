@@ -39,7 +39,7 @@ export const WELD_FIELDS = [
   { key: 'spool', dbName: 'spool', label: 'Спул', kind: 'text', group: 'Стык' },
   { key: 'spoolId', dbName: 'spool_id', label: 'ID cпула', kind: 'text', group: 'Стык' },
   { key: 'status', dbName: 'status', label: 'Статус', kind: 'text', group: 'Статусы/отчетность', visible: true },
-  { key: 'revisionActuality', dbName: 'revision_actuality', label: 'Актуал-ть (по изм.)', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'revisionActuality', dbName: 'revision_actuality', label: 'Актуальность по изм.', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'orderCode1', dbName: 'order_code_1', label: 'Код заказа 1', kind: 'text', group: 'Материалы' },
   { key: 'orderCode2', dbName: 'order_code_2', label: 'Код заказа 2', kind: 'text', group: 'Материалы' },
   { key: 'element1', dbName: 'element_1', label: 'Элемент 1', kind: 'text', group: 'Материалы' },

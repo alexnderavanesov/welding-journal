@@ -12,6 +12,7 @@ type ReportModalEscapeKeyOptions = {
   isLnkOfficialityModalOpen: boolean
   isLnkResultModalOpen: boolean
   isLnkRequestModalOpen: boolean
+  isReportImportModalOpen: boolean
   canClosePstoRequestManager: boolean
   canClosePstoResultManager: boolean
   canCloseLnkRequestManager: boolean
@@ -26,6 +27,7 @@ type ReportModalEscapeKeyOptions = {
   onCloseLnkOfficialityModal: () => void
   onCloseLnkResultModal: () => void
   onCloseLnkRequestModal: () => void
+  onCloseReportImportModal: () => void
 }
 
 export function useReportModalEscapeKey({
@@ -40,6 +42,7 @@ export function useReportModalEscapeKey({
   isLnkOfficialityModalOpen,
   isLnkResultModalOpen,
   isLnkRequestModalOpen,
+  isReportImportModalOpen,
   canClosePstoRequestManager,
   canClosePstoResultManager,
   canCloseLnkRequestManager,
@@ -54,6 +57,7 @@ export function useReportModalEscapeKey({
   onCloseLnkOfficialityModal,
   onCloseLnkResultModal,
   onCloseLnkRequestModal,
+  onCloseReportImportModal,
 }: ReportModalEscapeKeyOptions) {
   useEffect(() => {
     if (!isReportModalOpen) return
@@ -65,6 +69,10 @@ export function useReportModalEscapeKey({
 
       if (isLnkResultPreviewOpen) {
         onCloseLnkResultPreview()
+        return
+      }
+      if (isReportImportModalOpen) {
+        onCloseReportImportModal()
         return
       }
       if (isPstoRequestManagerOpen) {
@@ -118,6 +126,7 @@ export function useReportModalEscapeKey({
     isLnkOfficialityModalOpen,
     isLnkResultModalOpen,
     isLnkRequestModalOpen,
+    isReportImportModalOpen,
     canClosePstoRequestManager,
     canClosePstoResultManager,
     canCloseLnkRequestManager,
@@ -132,5 +141,6 @@ export function useReportModalEscapeKey({
     onCloseLnkOfficialityModal,
     onCloseLnkResultModal,
     onCloseLnkRequestModal,
+    onCloseReportImportModal,
   ])
 }

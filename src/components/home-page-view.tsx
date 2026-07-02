@@ -25,6 +25,7 @@ type HomePageViewProps = {
   reportPstoDialogsProps: ComponentProps<typeof ReportDialogs>['pstoDialogsProps']
   reportLnkDialogsProps: ComponentProps<typeof ReportDialogs>['lnkDialogsProps']
   reportFieldEditorProps: ComponentProps<typeof ReportDialogs>['fieldEditorProps']
+  reportImportDialogProps: ComponentProps<typeof ReportDialogs>['importDialogProps']
 }
 
 export function HomePageView({
@@ -45,6 +46,7 @@ export function HomePageView({
   reportPstoDialogsProps,
   reportLnkDialogsProps,
   reportFieldEditorProps,
+  reportImportDialogProps,
 }: HomePageViewProps) {
   return (
     <ReportWorkspace
@@ -74,6 +76,7 @@ export function HomePageView({
         pstoDialogsProps={reportPstoDialogsProps}
         lnkDialogsProps={reportLnkDialogsProps}
         fieldEditorProps={reportFieldEditorProps}
+        importDialogProps={reportImportDialogProps}
       />
     </ReportWorkspace>
   )

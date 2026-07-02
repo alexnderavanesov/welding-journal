@@ -7,6 +7,7 @@ import {
   parseEditableWorkbook,
   parseWorkbook,
 } from '@/lib/weld-import-export'
+import { stripIgnoredImportFields } from '@/lib/report-import-template'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldInput } from '@/lib/weld-fields'
 
@@ -33,30 +34,43 @@ export function useReportImportActions({
   importMutation,
   setMessage,
 }: UseReportImportActionsOptions) {
-  async function handleImport(file: File) {
+  async function handleImportRecords(records: WeldInput[], skippedRows = 0) {
     setMessage(null)
+    if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
+      const importResult =
+        activeReport === 'heatTreatment'
+          ? await heatTreatmentImportMutation.mutateAsync(records)
+          : await lnkImportMutation.mutateAsync(records)
+      setMessage(
+        `Обновлено ${getEditableReportImportLabel(activeReport)}: ${importResult.updated}; пропущено: ${importResult.skipped + skippedRows}`,
+      )
+      return
+    }
+
+    const importResult = await importMutation.mutateAsync(records.map(withOfficialJointStatus))
+    setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${skippedRows}`)
+  }
+
+  async function handleImport(file: File) {
     if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
       const options = getReportImportFieldKeys(activeReport)
       if (!options) return
       const result = file.name.toLowerCase().endsWith('.csv')
         ? parseEditableCsv(await file.text(), options)
         : parseEditableWorkbook(await file.arrayBuffer(), options)
-      const importResult =
-        activeReport === 'heatTreatment'
-          ? await heatTreatmentImportMutation.mutateAsync(result.records)
-          : await lnkImportMutation.mutateAsync(result.records)
-      setMessage(
-        `Обновлено ${getEditableReportImportLabel(activeReport)}: ${importResult.updated}; пропущено: ${importResult.skipped + result.skippedRows}`,
-      )
+      await handleImportRecords(result.records, result.skippedRows)
       return
     }
 
     const result = file.name.toLowerCase().endsWith('.csv') ? parseCsv(await file.text()) : parseWorkbook(await file.arrayBuffer())
-    const importResult = await importMutation.mutateAsync(result.records.map(withOfficialJointStatus))
-    setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${result.skippedRows}`)
+    await handleImportRecords(
+      result.records.map((record) => stripIgnoredImportFields(record, activeReport)),
+      result.skippedRows,
+    )
   }
 
   return {
     handleImport,
+    handleImportRecords,
   }
 }
