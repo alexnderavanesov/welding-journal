@@ -29,7 +29,7 @@ export function ReportShowMenu({ isOpen, onToggle, items, widthClassName = 'w-52
               key={item.label}
               type="button"
               onClick={item.onClick}
-              className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-semibold leading-5 text-slate-900 hover:bg-sky-50 hover:text-sky-900"
+              className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-normal leading-5 text-slate-800 hover:bg-sky-50 hover:text-sky-900"
             >
               {item.label}
             </button>

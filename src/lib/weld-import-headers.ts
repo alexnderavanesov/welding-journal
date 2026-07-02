@@ -2,11 +2,6 @@ import { EXCEL_FIELDS, normalizeHeader } from './weld-fields'
 
 export const OPTIONAL_LEGACY_IMPORT_HEADERS = new Set([
   'ID cпула',
-  'Зона стыка',
-  'Ном. стыка',
-  'Индкес',
-  'R/W стыка',
-  'Номер спула',
   'наличие МКК',
   'Заявка ВИК',
   'Заявка РК',

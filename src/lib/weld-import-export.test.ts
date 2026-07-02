@@ -223,11 +223,6 @@ describe('weld import/export', () => {
   it('exports visible rows without columns hidden from the register', () => {
     const [headers] = recordsToVisibleExportMatrix([{ joint: 'S13' }])
 
-    expect(headers).not.toContain(label('jointZone'))
-    expect(headers).not.toContain(label('jointNominal'))
-    expect(headers).not.toContain(label('indexCode'))
-    expect(headers).not.toContain(label('rwJoint'))
-    expect(headers).not.toContain(label('spoolNumber'))
     expect(headers).not.toContain(label('materialId1'))
     expect(headers).not.toContain(label('materialId2'))
     expect(FULL_EXCEL_HEADERS).not.toContain(label('createdAt'))

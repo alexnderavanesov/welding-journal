@@ -1,20 +1,27 @@
-import { FileSpreadsheet, Plus, Upload } from 'lucide-react'
-import { HeatTreatmentHeaderActions, LnkHeaderActions } from '@/components/report-header-action-groups'
-import { Button } from '@/components/ui/button'
+import { HeatTreatmentHeaderActions, LnkHeaderActions, WeldingJournalHeaderActions } from '@/components/report-header-action-groups'
 import type { ActiveReport } from '@/lib/home-state'
 
 export type ReportHeaderActionsProps = {
   activeReport: ActiveReport
   onOpenImportDialog: () => void
-  onExportXlsx: () => void
   onCreateWeldJoint: () => void
   importDisabled: boolean
+  isWeldingJournalShowMenuOpen: boolean
+  onToggleWeldingJournalShowMenu: () => void
+  onOpenWeldingJournalCurrentReport: () => void
+  onOpenWeldingJournalWaitingWeldReport: () => void
+  onOpenWeldingJournalWaitingRequestReport: () => void
+  onOpenWeldingJournalWaitingControlReport: () => void
+  onOpenWeldingJournalWaitingRepairReport: () => void
+  onOpenWeldingJournalCancelledAcceptedReport: () => void
+  onOpenWeldingJournalSystemReport: () => void
   onCreatePstoRequest: () => void
   pstoRequestPending: boolean
   onAddPstoResult: () => void
   pstoResultDisabled: boolean
   isPstoShowMenuOpen: boolean
   onTogglePstoShowMenu: () => void
+  onOpenPstoCurrentReport: () => void
   onOpenPstoWaitingRequestReport: () => void
   onOpenPstoResultsReport: () => void
   onCreateLnkRequest: () => void
@@ -25,6 +32,7 @@ export type ReportHeaderActionsProps = {
   lnkOfficialityPending: boolean
   isLnkShowMenuOpen: boolean
   onToggleLnkShowMenu: () => void
+  onOpenLnkCurrentReport: () => void
   onOpenLnkToRequestReport: () => void
   onOpenLnkWaitingNkReport: () => void
   onOpenLnkConclusionsReport: () => void
@@ -33,15 +41,24 @@ export type ReportHeaderActionsProps = {
 export function ReportHeaderActions({
   activeReport,
   onOpenImportDialog,
-  onExportXlsx,
   onCreateWeldJoint,
   importDisabled,
+  isWeldingJournalShowMenuOpen,
+  onToggleWeldingJournalShowMenu,
+  onOpenWeldingJournalCurrentReport,
+  onOpenWeldingJournalWaitingWeldReport,
+  onOpenWeldingJournalWaitingRequestReport,
+  onOpenWeldingJournalWaitingControlReport,
+  onOpenWeldingJournalWaitingRepairReport,
+  onOpenWeldingJournalCancelledAcceptedReport,
+  onOpenWeldingJournalSystemReport,
   onCreatePstoRequest,
   pstoRequestPending,
   onAddPstoResult,
   pstoResultDisabled,
   isPstoShowMenuOpen,
   onTogglePstoShowMenu,
+  onOpenPstoCurrentReport,
   onOpenPstoWaitingRequestReport,
   onOpenPstoResultsReport,
   onCreateLnkRequest,
@@ -52,6 +69,7 @@ export function ReportHeaderActions({
   lnkOfficialityPending,
   isLnkShowMenuOpen,
   onToggleLnkShowMenu,
+  onOpenLnkCurrentReport,
   onOpenLnkToRequestReport,
   onOpenLnkWaitingNkReport,
   onOpenLnkConclusionsReport,
@@ -66,6 +84,7 @@ export function ReportHeaderActions({
           resultDisabled={pstoResultDisabled}
           isShowMenuOpen={isPstoShowMenuOpen}
           onToggleShowMenu={onTogglePstoShowMenu}
+          onOpenCurrentReport={onOpenPstoCurrentReport}
           onOpenWaitingRequestReport={onOpenPstoWaitingRequestReport}
           onOpenResultsReport={onOpenPstoResultsReport}
         />
@@ -80,28 +99,27 @@ export function ReportHeaderActions({
           officialityPending={lnkOfficialityPending}
           isShowMenuOpen={isLnkShowMenuOpen}
           onToggleShowMenu={onToggleLnkShowMenu}
+          onOpenCurrentReport={onOpenLnkCurrentReport}
           onOpenToRequestReport={onOpenLnkToRequestReport}
           onOpenWaitingNkReport={onOpenLnkWaitingNkReport}
           onOpenConclusionsReport={onOpenLnkConclusionsReport}
         />
       ) : null}
       {activeReport === 'weldingJournal' ? (
-        <Button onClick={onCreateWeldJoint}>
-          <Plus className="mr-2 h-4 w-4" />
-          Новый стык
-        </Button>
-      ) : null}
-      {activeReport === 'weldingJournal' ? (
-        <Button variant="outline" onClick={onOpenImportDialog} disabled={importDisabled}>
-          <Upload className="mr-2 h-4 w-4" />
-          Импорт
-        </Button>
-      ) : null}
-      {activeReport !== 'welderStamps' ? (
-        <Button variant="outline" onClick={onExportXlsx}>
-          <FileSpreadsheet className="mr-2 h-4 w-4" />
-          Excel
-        </Button>
+        <WeldingJournalHeaderActions
+          onCreateWeldJoint={onCreateWeldJoint}
+          onOpenImportDialog={onOpenImportDialog}
+          importDisabled={importDisabled}
+          isShowMenuOpen={isWeldingJournalShowMenuOpen}
+          onToggleShowMenu={onToggleWeldingJournalShowMenu}
+          onOpenCurrentReport={onOpenWeldingJournalCurrentReport}
+          onOpenWaitingWeldReport={onOpenWeldingJournalWaitingWeldReport}
+          onOpenWaitingRequestReport={onOpenWeldingJournalWaitingRequestReport}
+          onOpenWaitingControlReport={onOpenWeldingJournalWaitingControlReport}
+          onOpenWaitingRepairReport={onOpenWeldingJournalWaitingRepairReport}
+          onOpenCancelledAcceptedReport={onOpenWeldingJournalCancelledAcceptedReport}
+          onOpenSystemReport={onOpenWeldingJournalSystemReport}
+        />
       ) : null}
     </div>
   )

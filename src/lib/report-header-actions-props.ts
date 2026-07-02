@@ -4,15 +4,24 @@ import type { ActiveReport } from '@/lib/home-state'
 type CreateReportHeaderActionsPropsOptions = {
   activeReport: ActiveReport
   onOpenImportDialog: () => void
-  onExportXlsx: () => void
   onCreateWeldJoint: () => void
   importDisabled: boolean
+  isWeldingJournalShowMenuOpen: boolean
+  onToggleWeldingJournalShowMenu: () => void
+  onOpenWeldingJournalCurrentReport: () => void
+  onOpenWeldingJournalWaitingWeldReport: () => void
+  onOpenWeldingJournalWaitingRequestReport: () => void
+  onOpenWeldingJournalWaitingControlReport: () => void
+  onOpenWeldingJournalWaitingRepairReport: () => void
+  onOpenWeldingJournalCancelledAcceptedReport: () => void
+  onOpenWeldingJournalSystemReport: () => void
   onCreatePstoRequest: () => void
   pstoRequestPending: boolean
   onAddPstoResult: () => void
   pstoResultDisabled: boolean
   isPstoShowMenuOpen: boolean
   onTogglePstoShowMenu: () => void
+  onOpenPstoCurrentReport: () => void
   onOpenPstoWaitingRequestReport: () => void
   onOpenPstoResultsReport: () => void
   onCreateLnkRequest: () => void
@@ -23,6 +32,7 @@ type CreateReportHeaderActionsPropsOptions = {
   lnkOfficialityPending: boolean
   isLnkShowMenuOpen: boolean
   onToggleLnkShowMenu: () => void
+  onOpenLnkCurrentReport: () => void
   onOpenLnkToRequestReport: () => void
   onOpenLnkWaitingNkReport: () => void
   onOpenLnkConclusionsReport: () => void
@@ -31,15 +41,24 @@ type CreateReportHeaderActionsPropsOptions = {
 export function createReportHeaderActionsProps({
   activeReport,
   onOpenImportDialog,
-  onExportXlsx,
   onCreateWeldJoint,
   importDisabled,
+  isWeldingJournalShowMenuOpen,
+  onToggleWeldingJournalShowMenu,
+  onOpenWeldingJournalCurrentReport,
+  onOpenWeldingJournalWaitingWeldReport,
+  onOpenWeldingJournalWaitingRequestReport,
+  onOpenWeldingJournalWaitingControlReport,
+  onOpenWeldingJournalWaitingRepairReport,
+  onOpenWeldingJournalCancelledAcceptedReport,
+  onOpenWeldingJournalSystemReport,
   onCreatePstoRequest,
   pstoRequestPending,
   onAddPstoResult,
   pstoResultDisabled,
   isPstoShowMenuOpen,
   onTogglePstoShowMenu,
+  onOpenPstoCurrentReport,
   onOpenPstoWaitingRequestReport,
   onOpenPstoResultsReport,
   onCreateLnkRequest,
@@ -50,6 +69,7 @@ export function createReportHeaderActionsProps({
   lnkOfficialityPending,
   isLnkShowMenuOpen,
   onToggleLnkShowMenu,
+  onOpenLnkCurrentReport,
   onOpenLnkToRequestReport,
   onOpenLnkWaitingNkReport,
   onOpenLnkConclusionsReport,
@@ -57,15 +77,24 @@ export function createReportHeaderActionsProps({
   return {
     activeReport,
     onOpenImportDialog,
-    onExportXlsx,
     onCreateWeldJoint,
     importDisabled,
+    isWeldingJournalShowMenuOpen,
+    onToggleWeldingJournalShowMenu,
+    onOpenWeldingJournalCurrentReport,
+    onOpenWeldingJournalWaitingWeldReport,
+    onOpenWeldingJournalWaitingRequestReport,
+    onOpenWeldingJournalWaitingControlReport,
+    onOpenWeldingJournalWaitingRepairReport,
+    onOpenWeldingJournalCancelledAcceptedReport,
+    onOpenWeldingJournalSystemReport,
     onCreatePstoRequest,
     pstoRequestPending,
     onAddPstoResult,
     pstoResultDisabled,
     isPstoShowMenuOpen,
     onTogglePstoShowMenu,
+    onOpenPstoCurrentReport,
     onOpenPstoWaitingRequestReport,
     onOpenPstoResultsReport,
     onCreateLnkRequest,
@@ -76,6 +105,7 @@ export function createReportHeaderActionsProps({
     lnkOfficialityPending,
     isLnkShowMenuOpen,
     onToggleLnkShowMenu,
+    onOpenLnkCurrentReport,
     onOpenLnkToRequestReport,
     onOpenLnkWaitingNkReport,
     onOpenLnkConclusionsReport,

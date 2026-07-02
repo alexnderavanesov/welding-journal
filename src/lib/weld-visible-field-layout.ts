@@ -3,7 +3,7 @@ import {
   type WeldFieldKey,
 } from './weld-field-definitions'
 
-const HIDDEN_TABLE_FIELD_KEYS = new Set(['jointZone', 'jointNominal', 'indexCode', 'rwJoint', 'spoolNumber'])
+const HIDDEN_TABLE_FIELD_KEYS = new Set<string>()
 
 const TABLE_LAYOUT = [
   {

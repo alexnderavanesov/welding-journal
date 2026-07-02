@@ -36,6 +36,13 @@
       "when": 1782831990000,
       "tag": "0007_control_availability_text",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782974287124,
+      "tag": "0008_drop_legacy_weld_joint_fields",
+      "breakpoints": true
     }
   ]
 }

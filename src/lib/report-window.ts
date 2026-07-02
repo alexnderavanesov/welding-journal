@@ -42,16 +42,3 @@ export function openNonEmptyTabularReportWindow({
   const opened = openTabularReportWindow({ rows, fields, sheetName, title, filename })
   return opened ? { ok: true as const } : { ok: false as const, message: blockedMessage }
 }
-
-export function downloadExcelBytes(bytes: Uint8Array, filename: string) {
-  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-  const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}

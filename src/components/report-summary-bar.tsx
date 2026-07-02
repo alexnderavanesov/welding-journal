@@ -43,7 +43,7 @@ export function ReportSummaryBar({
   const messageClassName =
     messageVariant === 'lnk-success'
       ? 'rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800 shadow-sm'
-      : ''
+      : 'rounded-md border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-800 shadow-sm'
   const summaryText = getReportSummaryText({
     activeReport,
     isLoading,

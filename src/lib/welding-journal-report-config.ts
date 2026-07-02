@@ -1,4 +1,4 @@
-import type { WeldFieldKey } from './weld-field-definitions'
+import { FIELD_BY_KEY, WELD_FIELDS, type WeldField, type WeldFieldKey } from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_METHODS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
 
 export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -123,3 +123,108 @@ export const WELD_STAMP_COMPLETION_GROUPS = [
 export const UNOFFICIAL_REJECTED_WITH_COIL_REASON = 'катушка требует проверки после смены официальности'
 export const REPAIR_FORBIDDEN_BY_DIAMETER_REASON = 'проверить ремонт по диаметру'
 export const REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON = 'после двух ремонтов доступен только вырез'
+
+const WELDING_JOURNAL_BASE_REPORT_FIELD_KEYS = [
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'weldControlPercent',
+  'spool',
+  'joint',
+  'wdi',
+  'weldDate',
+  'status',
+  'finalStatus',
+] as const satisfies readonly WeldFieldKey[]
+
+const WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS = [
+  'hasVik',
+  'hasRk',
+  'hasPvk',
+  'hasUzk',
+  'pstoRequired',
+  'hasTvmt',
+  'hasRfa',
+  'hasStls',
+  'hasMkk',
+] as const satisfies readonly WeldFieldKey[]
+
+const WELDING_JOURNAL_REQUEST_FIELD_KEYS = [
+  ...LNK_METHODS.map((method) => method.requestKey),
+  'pstoRequest',
+] as const satisfies readonly WeldFieldKey[]
+
+const WELDING_JOURNAL_RESULT_FIELD_KEYS = [
+  ...LNK_METHODS.map((method) => method.resultKey),
+  'pstoResult',
+] as const satisfies readonly WeldFieldKey[]
+
+const WELDING_JOURNAL_COMPLETION_FIELD_KEYS = [
+  ...LNK_METHODS.flatMap((method) => [method.conclusionDateKey, method.conclusionKey]),
+  'pstoDate',
+  'heatTreatmentDiagram',
+] as const satisfies readonly WeldFieldKey[]
+
+function getFieldsByKeys(keys: readonly WeldFieldKey[]) {
+  return keys.map((key) => FIELD_BY_KEY.get(key)).filter(Boolean) as WeldField[]
+}
+
+export const WELDING_JOURNAL_WAITING_WELD_FIELDS = getFieldsByKeys([
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'weldControlPercent',
+  'spool',
+  'spoolId',
+  'joint',
+  'materialId1',
+  'materialId2',
+  'element1',
+  'element2',
+  'material1',
+  'material2',
+  'weldingMethod',
+  'connectionType',
+  'd1',
+  'd2',
+  't1',
+  't2',
+  'wdi',
+  'weldDate',
+])
+
+export const WELDING_JOURNAL_WAITING_REQUEST_FIELDS = getFieldsByKeys([
+  ...WELDING_JOURNAL_BASE_REPORT_FIELD_KEYS,
+  ...WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS,
+  ...WELDING_JOURNAL_REQUEST_FIELD_KEYS,
+])
+
+export const WELDING_JOURNAL_WAITING_CONTROL_FIELDS = getFieldsByKeys([
+  ...WELDING_JOURNAL_BASE_REPORT_FIELD_KEYS,
+  ...WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS,
+  ...WELDING_JOURNAL_REQUEST_FIELD_KEYS,
+  ...WELDING_JOURNAL_RESULT_FIELD_KEYS,
+])
+
+const WELDING_JOURNAL_PREVIOUS_JOINT_FIELD = {
+  key: 'previousJoint',
+  dbName: 'previous_joint',
+  label: 'Предшествующий стык',
+  kind: 'text',
+  group: 'Стык',
+} as const satisfies WeldField
+
+export const WELDING_JOURNAL_WAITING_REPAIR_FIELDS = [
+  ...WELDING_JOURNAL_WAITING_WELD_FIELDS,
+  WELDING_JOURNAL_PREVIOUS_JOINT_FIELD,
+]
+
+export const WELDING_JOURNAL_CANCELLED_ACCEPTED_FIELDS = getFieldsByKeys([
+  ...WELDING_JOURNAL_BASE_REPORT_FIELD_KEYS,
+  ...WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS,
+  ...WELDING_JOURNAL_REQUEST_FIELD_KEYS,
+  ...WELDING_JOURNAL_RESULT_FIELD_KEYS,
+  ...WELDING_JOURNAL_COMPLETION_FIELD_KEYS,
+])
+
+export const WELDING_JOURNAL_SYSTEM_FIELDS = [...WELD_FIELDS]
