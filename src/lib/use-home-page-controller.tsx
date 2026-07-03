@@ -1242,6 +1242,7 @@ export function useHomePageController() {
     reportSummaryBarProps,
     reportTaskPanelsProps,
     statisticsRows: rows,
+    welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
     reportChainDialogProps,
