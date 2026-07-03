@@ -76,11 +76,17 @@ export function clearCancelledPstoRequestWithoutResult<T extends PstoRow>(record
 }
 
 export function withPendingPstoResultStatus<T extends PstoRow>(record: T): T {
-  if (!isEnabledControlValue(record.pstoRequired) || hasText(record.pstoResult)) return record
+  if (!isEnabledControlValue(record.pstoRequired)) return record
+  if (hasText(record.pstoResult) && !isPendingPstoResult(record.pstoResult)) return record
   return {
     ...record,
     pstoResult: hasText(record.pstoRequest) ? 'ожидает' : 'ожидает заявку',
   }
+}
+
+function isPendingPstoResult(value: unknown) {
+  const result = String(value ?? '').trim().toLowerCase()
+  return result === 'ожидает' || result === 'ожидает заявку'
 }
 
 export function restoreActivePstoCancelledResult<T extends PstoRow>(record: T): T {

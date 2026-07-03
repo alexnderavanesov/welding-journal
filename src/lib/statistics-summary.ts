@@ -1,6 +1,7 @@
 import { parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
+import { getLnkDisplayValue, getPstoDisplayValue } from '@/lib/lnk-status'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import {
   hasRealLnkResultValue,
@@ -89,7 +90,7 @@ export function buildStatisticsSummary(
   const completedRepairs = sumRows(weightedRows.filter(isCompletedRepeatedJoint), unit)
 
   const methods = LNK_METHODS.map((method) => {
-    const activeRows = weightedRows.filter((row) => isEnabledControlValue(row[method.enabledKey]))
+    const activeRows = weightedRows.filter((row) => isStatisticsLnkActive(row, method))
     const requestSourceRows =
       mode === 'events'
         ? getWeightedRows(rows.filter((row) => isLnkRequestInRange(row, method, from, to)), unit)
@@ -131,7 +132,7 @@ export function buildStatisticsSummary(
   const pstoClosedSourceRows =
     mode === 'events' ? getWeightedRows(rows.filter((row) => isDateInRange(row.pstoDate, from, to)), unit) : weightedRows
   const pstoRequestRows = pstoRequestSourceRows.filter(hasStatisticsPstoRequest)
-  const pstoActiveRows = weightedRows.filter((row) => isEnabledControlValue(row.pstoRequired))
+  const pstoActiveRows = weightedRows.filter(isStatisticsPstoActive)
   const pstoClosedRows = pstoClosedSourceRows.filter(hasPstoClosedData)
   const pstoClosedRequestRows = pstoRequestRows.filter(hasPstoClosedData)
   const pstoWaitingRequestRows = pstoActiveRows.filter((row) => !hasStatisticsPstoRequest(row) && !hasPstoClosedData(row))
@@ -231,13 +232,23 @@ function sumRowsByStatus(rows: WeldRow[], statuses: string[], unit: StatisticsUn
 }
 
 function hasLnkClosedData(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+  if (isStatisticsLnkNoNeed(row, method)) return false
   const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
   return hasRealLnkResultValue(result) || result === 'годен (отменен)'
 }
 
 function hasStatisticsLnkRequest(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
   if (!hasText(row[method.requestKey])) return false
+  if (isStatisticsLnkNoNeed(row, method)) return false
   return !isCancelledControlValue(row[method.enabledKey]) || hasLnkClosedData(row, method)
+}
+
+function isStatisticsLnkActive(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+  return isEnabledControlValue(row[method.enabledKey]) && !isStatisticsLnkNoNeed(row, method)
+}
+
+function isStatisticsLnkNoNeed(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+  return String(getLnkDisplayValue(row, method.resultKey) ?? '').trim().toLowerCase() === 'нет потребности'
 }
 
 function isLnkRequestInRange(row: WeldRow, method: (typeof LNK_METHODS)[number], from: string, to: string) {
@@ -247,13 +258,23 @@ function isLnkRequestInRange(row: WeldRow, method: (typeof LNK_METHODS)[number],
 }
 
 function hasPstoClosedData(row: WeldRow) {
+  if (isStatisticsPstoNoNeed(row)) return false
   const result = String(row.pstoResult ?? '').trim().toLowerCase()
   return result === 'проведено' || result === 'проведено (отменен)'
 }
 
 function hasStatisticsPstoRequest(row: WeldRow) {
   if (!hasText(row.pstoRequest)) return false
+  if (isStatisticsPstoNoNeed(row)) return false
   return !isCancelledControlValue(row.pstoRequired) || hasPstoClosedData(row)
+}
+
+function isStatisticsPstoActive(row: WeldRow) {
+  return isEnabledControlValue(row.pstoRequired) && !isStatisticsPstoNoNeed(row)
+}
+
+function isStatisticsPstoNoNeed(row: WeldRow) {
+  return String(getPstoDisplayValue(row, 'pstoResult') ?? '').trim().toLowerCase() === 'нет потребности'
 }
 
 function isPstoRequestInRange(row: WeldRow, from: string, to: string) {

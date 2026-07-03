@@ -66,6 +66,16 @@ describe('clearCancelledPstoRequestWithoutResult', () => {
     expect(row.pstoResult).toBe('ожидает')
   })
 
+  it('normalizes stale waiting request status when request exists', () => {
+    const row = withPendingPstoResultStatus({
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-30.06.26-001',
+      pstoResult: 'ожидает заявку',
+    } as WeldRow)
+
+    expect(row.pstoResult).toBe('ожидает')
+  })
+
   it('restores cancelled conducted result when PSTO becomes active again', () => {
     const row = restoreActivePstoCancelledResult({
       pstoRequired: 'да',

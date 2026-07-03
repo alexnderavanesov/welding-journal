@@ -1,7 +1,7 @@
 import type { WeldTableProps } from '@/components/weld-table'
 import type { ActiveReport } from '@/lib/home-state'
 import { isLnkRequestAllowedForRow, isLnkRequestField } from '@/lib/lnk-field-updates'
-import { getLnkDisplayValue } from '@/lib/lnk-status'
+import { getLnkDisplayValue, getPstoDisplayValue, getWeldingJournalDisplayValue } from '@/lib/lnk-status'
 import { getReportRowActions, type ReportRowActionHandlers } from '@/lib/report-row-actions'
 import {
   canOpenLinkedReport,
@@ -58,7 +58,14 @@ export function createWeldTableProps({
       activeReport === 'lnk'
         ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
         : undefined,
-    getDisplayValue: activeReport === 'lnk' ? getLnkDisplayValue : undefined,
+    getDisplayValue:
+      activeReport === 'lnk'
+        ? getLnkDisplayValue
+        : activeReport === 'weldingJournal'
+          ? getWeldingJournalDisplayValue
+          : activeReport === 'heatTreatment'
+            ? getPstoDisplayValue
+          : undefined,
     onOpenChain,
     onOpenLinkedReport: canOpenLinkedReport(activeReport) ? onOpenLinkedReport : undefined,
     openLinkedReportTitle: getOpenLinkedReportTitle(activeReport),

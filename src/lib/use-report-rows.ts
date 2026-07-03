@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { clearDisabledLnkRequests } from '@/lib/lnk-field-updates'
+import { withPendingPstoResultStatus } from '@/lib/psto-field-updates'
 import { normalizeRowPstoRequest, withPstoCreatedAt } from '@/lib/psto-status'
 import { toControlCancellationReportRow, withPendingLnkResults } from '@/lib/report-control-state'
 import { withAutoVikForWeldDate } from '@/lib/weld-import-export'
@@ -13,7 +14,8 @@ export function useReportRows(sourceRows: unknown[] | undefined) {
         const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(row as WeldRow)))
         const withTimestamps = withPstoCreatedAt([normalizedRow])[0]
         const withPendingLnk = withPendingLnkResults(withTimestamps)
-        return toControlCancellationReportRow(withPendingLnk)
+        const withPendingPsto = withPendingPstoResultStatus(withPendingLnk)
+        return toControlCancellationReportRow(withPendingPsto)
       })
       return rows.map((row) => ({ ...row, finalStatus: calculateFinalStatusInRows(row, rows) }))
     },

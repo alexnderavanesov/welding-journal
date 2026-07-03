@@ -98,6 +98,18 @@ export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
   return row[fieldKey]
 }
 
+export function getWeldingJournalDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  const method = getLnkMethodByResultKey(fieldKey)
+  if (method) return getLnkDisplayValue(row, fieldKey)
+  if (fieldKey === 'pstoResult') return getPstoDisplayValue(row, fieldKey)
+  return row[fieldKey]
+}
+
+export function getPstoDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  if (fieldKey === 'pstoResult' && isPstoNoNeed(row)) return 'нет потребности'
+  return row[fieldKey]
+}
+
 export function getLnkEffectiveResultValue(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
   const result = String(row[method.resultKey] ?? '').trim()
   if (!isEnabledControlValue(row[method.enabledKey])) return result
@@ -139,6 +151,13 @@ export function hasAnyEnabledLnkControl(row: WeldInput) {
 
 export function hasAnyLnkRequest(row: WeldInput) {
   return LNK_METHODS.some((method) => hasText(row[method.requestKey]))
+}
+
+function isPstoNoNeed(row: WeldInput) {
+  if (!isYesText(row.pstoRequired)) return false
+  if (!isRejectedJoint(row)) return false
+  const result = String(row.pstoResult ?? '').trim().toLowerCase()
+  return result !== 'проведено' && result !== 'проведено (отменен)' && result !== 'отменен'
 }
 
 export function getJointChainResultItems(row: WeldInput) {

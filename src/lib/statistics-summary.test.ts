@@ -21,6 +21,60 @@ describe('buildStatisticsSummary', () => {
     expect(summary.pstoClosurePercent).toBe(100)
   })
 
+  it('does not count PSTO rows with no need in request and closure statistics', () => {
+    const rows = [
+      {
+        id: 1,
+        weldDate: '2026-07-01',
+        pstoRequired: 'да',
+        pstoRequest: 'ПСТО-001',
+        pstoDate: '2026-07-02',
+        pstoResult: 'проведено',
+      },
+      {
+        id: 2,
+        weldDate: '2026-07-01',
+        pstoRequired: 'да',
+        pstoRequest: 'ПСТО-002',
+        pstoDate: '2026-07-02',
+        pstoResult: 'проведено',
+      },
+      {
+        id: 3,
+        weldDate: '2026-07-01',
+        finalStatus: 'не годен',
+        pstoRequired: 'да',
+        pstoRequest: 'ПСТО-003',
+        pstoResult: 'ожидает заявку',
+      },
+      {
+        id: 4,
+        weldDate: '2026-07-01',
+        pstoRequired: 'отменен',
+        pstoRequest: 'ПСТО-004',
+        pstoResult: 'отменен',
+      },
+      {
+        id: 5,
+        weldDate: '2026-07-01',
+        pstoRequired: 'да',
+      },
+      {
+        id: 6,
+        weldDate: '2026-07-01',
+        pstoRequired: 'да',
+      },
+    ] as WeldRow[]
+
+    const summary = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'joints', 'welded-joints')
+
+    expect(summary.pstoRequests).toBe(2)
+    expect(summary.pstoClosed).toBe(2)
+    expect(summary.pstoTotalClosed).toBe(2)
+    expect(summary.pstoMethod.waitingRequest).toBe(2)
+    expect(summary.pstoClosurePercent).toBe(100)
+  })
+
   it('does not count cancelled LNK controls as closed results', () => {
     const rows = [
       { id: 1, weldDate: '2026-07-01', rkRequest: 'Заявка-001', rkResult: 'годен' },
@@ -36,6 +90,58 @@ describe('buildStatisticsSummary', () => {
     expect(rk?.closed).toBe(2)
     expect(rk?.totalClosed).toBe(3)
     expect(rk?.closedWithoutRequest).toBe(1)
+    expect(rk?.closurePercent).toBe(100)
+  })
+
+  it('does not count LNK rows with no need in request and closure statistics', () => {
+    const rows = [
+      {
+        id: 1,
+        weldDate: '2026-07-01',
+        hasRk: 'да',
+        rkRequest: 'Заявка-001',
+        rkConclusionDate: '2026-07-02',
+        rkResult: 'годен',
+      },
+      {
+        id: 2,
+        weldDate: '2026-07-01',
+        hasRk: 'да',
+        rkRequest: 'Заявка-002',
+        rkConclusionDate: '2026-07-02',
+        rkResult: 'годен (отменен)',
+      },
+      {
+        id: 3,
+        weldDate: '2026-07-01',
+        hasVik: 'да',
+        vikResult: 'вырез',
+        hasRk: 'да',
+        rkRequest: 'Заявка-003',
+        rkResult: 'ожидает НК',
+      },
+      {
+        id: 4,
+        weldDate: '2026-07-01',
+        hasRk: 'отменен',
+        rkRequest: 'Заявка-004',
+        rkResult: 'отменен',
+      },
+      {
+        id: 5,
+        weldDate: '2026-07-01',
+        hasRk: 'да',
+      },
+    ] as WeldRow[]
+
+    const summary = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'joints', 'welded-joints')
+    const rk = summary.methods.find((method) => method.code === 'РК')
+
+    expect(rk?.requests).toBe(2)
+    expect(rk?.closed).toBe(2)
+    expect(rk?.totalClosed).toBe(2)
+    expect(rk?.good).toBe(2)
+    expect(rk?.waitingRequest).toBe(1)
     expect(rk?.closurePercent).toBe(100)
   })
 

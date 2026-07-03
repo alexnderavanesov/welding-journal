@@ -62,6 +62,7 @@ export function StatisticsPage({ rows }: StatisticsPageProps) {
       .map((code) => methodsByCode.get(code))
       .filter((method): method is StatisticsMethodSummary => Boolean(method))
   }, [summary.methods, summary.pstoMethod])
+  const lnkWaitingRequests = summary.methods.reduce((total, method) => total + method.waitingRequest, 0)
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
   const scopeLabel = getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
   const periodModeDescription =
@@ -312,6 +313,7 @@ export function StatisticsPage({ rows }: StatisticsPageProps) {
               closed={summary.lnkClosed}
               total={summary.lnkRequests}
               totalClosed={summary.lnkTotalClosed}
+              waitingRequest={lnkWaitingRequests}
               unit={unit}
             />
             <ProgressRow
@@ -319,6 +321,7 @@ export function StatisticsPage({ rows }: StatisticsPageProps) {
               closed={summary.pstoClosed}
               total={summary.pstoRequests}
               totalClosed={summary.pstoTotalClosed}
+              waitingRequest={summary.pstoMethod.waitingRequest}
               unit={unit}
             />
           </Panel>
@@ -432,12 +435,14 @@ function ProgressRow({
   closed,
   total,
   totalClosed,
+  waitingRequest,
   unit,
 }: {
   label: string
   closed: number
   total: number
   totalClosed: number
+  waitingRequest: number
   unit: StatisticsUnit
 }) {
   const percent = total > 0 ? (closed / total) * 100 : 0
@@ -446,7 +451,8 @@ function ProgressRow({
       <div className="mb-1 flex justify-between text-sm">
         <span className="font-medium text-slate-700">{label}</span>
         <span className="text-slate-500">
-          заявок: {formatStatisticValue(total, unit)} · закрыто: {formatStatisticValue(closed, unit)}
+          заявок: {formatStatisticValue(total, unit)}, в т.ч. закрыто: {formatStatisticValue(closed, unit)} · ожидает:{' '}
+          {formatStatisticValue(waitingRequest, unit)}
         </span>
       </div>
       <div className="h-2 rounded-full bg-slate-100">
@@ -454,7 +460,6 @@ function ProgressRow({
       </div>
       <div className="mt-1 text-xs text-slate-500">
         Всего результатов: {formatStatisticValue(totalClosed, unit)}
-        {total > closed ? ` · ожидает закрытия: ${formatStatisticValue(total - closed, unit)}` : ''}
       </div>
     </div>
   )
