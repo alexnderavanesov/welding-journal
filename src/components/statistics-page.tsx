@@ -1,8 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Activity, ClipboardCheck, FlaskConical, Gauge, LineChart, TimerReset, Users } from 'lucide-react'
+import { Activity, ClipboardCheck, FlaskConical, Gauge, LineChart, Settings2, TimerReset, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { parseJointChainName } from '@/lib/joint-chain'
 import {
   buildStatisticsSummary,
   formatPercent,
@@ -12,7 +13,12 @@ import {
   type StatisticsPeriodMode,
   type StatisticsUnit,
 } from '@/lib/statistics-summary'
-import { buildWelderStatisticsSummary, type WelderStatisticsRow } from '@/lib/welder-statistics-summary'
+import { buildLineSummary, type LineSummaryRow } from '@/lib/line-summary'
+import {
+  buildWelderStatisticsSummary,
+  type WelderStatisticsJointFilter,
+  type WelderStatisticsRow,
+} from '@/lib/welder-statistics-summary'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import { cn } from '@/lib/utils'
 
@@ -21,22 +27,33 @@ type StatisticsPageProps = {
   welderStamps: WelderStampRecord[]
 }
 
-type StatisticsTab = 'general' | 'welders'
+type StatisticsTab = 'general' | 'welders' | 'lineSummary'
 
-const disabledTabs = ['Полинейная сводка', 'Процентные линии']
+const disabledTabs = ['Процентные линии']
+const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
+  ['all', 'Все'],
+  ['f', 'F поле'],
+  ['s', 'S база'],
+]
 
 export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
   const defaultPeriod = useMemo(() => getDefaultStatisticsPeriod(), [])
   const [activeTab, setActiveTab] = useState<StatisticsTab>('general')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [period, setPeriod] = useState(defaultPeriod)
   const [allPeriod, setAllPeriod] = useState(false)
   const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('joints')
   const [weldersUnit, setWeldersUnit] = useState<StatisticsUnit>('joints')
+  const [lineSummaryUnit, setLineSummaryUnit] = useState<StatisticsUnit>('joints')
+  const [generalJointFilter, setGeneralJointFilter] = useState<WelderStatisticsJointFilter>('all')
+  const [welderJointFilter, setWelderJointFilter] = useState<WelderStatisticsJointFilter>('all')
   const [periodMode, setPeriodMode] = useState<StatisticsPeriodMode>('events')
   const [projectFilter, setProjectFilter] = useState('')
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
-  const unit = activeTab === 'welders' ? weldersUnit : generalUnit
-  const setUnit = activeTab === 'welders' ? setWeldersUnit : setGeneralUnit
+  const unit = activeTab === 'welders' ? weldersUnit : activeTab === 'lineSummary' ? lineSummaryUnit : generalUnit
+  const setUnit = activeTab === 'welders' ? setWeldersUnit : activeTab === 'lineSummary' ? setLineSummaryUnit : setGeneralUnit
+  const jointFilter = activeTab === 'welders' ? welderJointFilter : generalJointFilter
+  const setJointFilter = activeTab === 'welders' ? setWelderJointFilter : setGeneralJointFilter
 
   const projectOptions = useMemo(() => getUniqueSortedValues(rows.map((row) => row.projectTitle)), [rows])
   const subtitleOptions = useMemo(
@@ -61,13 +78,25 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
   )
   const periodFrom = allPeriod ? '' : period.from
   const periodTo = allPeriod ? '' : period.to
+  const generalRows = useMemo(
+    () => scopedRows.filter((row) => matchesStatisticsJointFilter(row, generalJointFilter)),
+    [generalJointFilter, scopedRows],
+  )
   const summary = useMemo(
-    () => buildStatisticsSummary(scopedRows, periodFrom, periodTo, unit, periodMode),
-    [periodFrom, periodTo, periodMode, scopedRows, unit],
+    () => buildStatisticsSummary(generalRows, periodFrom, periodTo, unit, periodMode),
+    [generalRows, periodFrom, periodTo, periodMode, unit],
   )
   const welderSummary = useMemo(
-    () => buildWelderStatisticsSummary(scopedRows, welderStamps, periodFrom, periodTo, weldersUnit),
-    [periodFrom, periodTo, scopedRows, welderStamps, weldersUnit],
+    () => buildWelderStatisticsSummary(scopedRows, welderStamps, periodFrom, periodTo, weldersUnit, welderJointFilter),
+    [periodFrom, periodTo, scopedRows, welderJointFilter, welderStamps, weldersUnit],
+  )
+  const lineSummary = useMemo(
+    () => buildLineSummary(scopedRows, lineSummaryUnit),
+    [lineSummaryUnit, scopedRows],
+  )
+  const generalProgressSummary = useMemo(
+    () => buildLineSummary(generalRows, unit),
+    [generalRows, unit],
   )
   const orderedMethods = useMemo(() => {
     const methodsByCode = new Map([...summary.methods, summary.pstoMethod].map((method) => [method.code, method]))
@@ -82,16 +111,10 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
     periodMode === 'events'
       ? 'Заявки считаются по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки.'
       : 'Все блоки показывают текущее состояние стыков, сваренных в выбранный период.'
-  const segmentButtonClass = (active: boolean) =>
-    cn(
-      'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-      active ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
-    )
-
   return (
     <section className="w-full max-w-full min-w-0 space-y-4 pb-8">
       <div className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -110,6 +133,14 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
               >
                 Сварщики
               </Button>
+              <Button
+                className="h-9 rounded-md"
+                size="sm"
+                variant={activeTab === 'lineSummary' ? 'default' : 'outline'}
+                onClick={() => setActiveTab('lineSummary')}
+              >
+                Полинейная сводка
+              </Button>
               {disabledTabs.map((tab) => (
                 <Button key={tab} variant="outline" size="sm" disabled className="h-9 rounded-md text-slate-400">
                   {tab}
@@ -119,174 +150,224 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
             <p className="mt-3 text-sm text-slate-500">
               {activeTab === 'general'
                 ? 'Общий прогресс сварки, заявок, заключений и ПСТО за выбранный период.'
-                : 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'}
+                : activeTab === 'welders'
+                  ? 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'
+                  : 'Сводка по линиям с учетом актуальных стыков и текущего остатка.'}
             </p>
             <p className="mt-1 text-xs text-slate-500">
               {activeTab === 'general'
                 ? periodModeDescription
-                : 'Статистика сварщиков считается по дате сварки стыка; распределение идет только по фактическим клеймам.'}
+                : activeTab === 'welders'
+                  ? 'Статистика сварщиков считается по дате сварки стыка; распределение идет только по фактическим клеймам.'
+                  : 'Неактуальные по изменению строки и исторические стыки цепочки до годного результата не включаются.'}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="grid gap-1 text-xs font-medium text-slate-600">
-              Период
-              <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white/80 p-1">
-                <Input
-                  aria-label="Период с"
-                  type="date"
-                  value={period.from}
-                  onChange={(event) => {
-                    setAllPeriod(false)
-                    setPeriod((current) => ({ ...current, from: event.target.value }))
-                  }}
-                  className="h-8 w-[128px] border-slate-200 text-sm"
-                />
-                <span className="text-slate-400">-</span>
-                <Input
-                  aria-label="Период по"
-                  type="date"
-                  value={period.to}
-                  onChange={(event) => {
-                    setAllPeriod(false)
-                    setPeriod((current) => ({ ...current, to: event.target.value }))
-                  }}
-                  className="h-8 w-[128px] border-slate-200 text-sm"
-                />
-                <button
-                  type="button"
-                  className={segmentButtonClass(allPeriod)}
-                  onClick={() => {
-                    setAllPeriod(true)
-                    setPeriod({ from: '', to: '' })
-                  }}
-                >
-                  За весь период
-                </button>
-              </div>
-            </div>
-            <div className="grid gap-1 text-xs font-medium text-slate-600">
-              Единица
-              <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
-                <button
-                  type="button"
-                  className={segmentButtonClass(unit === 'joints')}
-                  onClick={() => setUnit('joints')}
-                >
-                  Стыки
-                </button>
-                <button
-                  type="button"
-                  className={segmentButtonClass(unit === 'wdi')}
-                  onClick={() => setUnit('wdi')}
-                >
-                  WDI
-                </button>
-              </div>
-            </div>
-            {activeTab === 'general' ? (
+          <div className="flex flex-1 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-2 rounded-md border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              <Settings2 className="h-4 w-4 text-slate-400" />
+              {settingsOpen ? 'Скрыть настройки' : 'Настройки отчета'}
+            </Button>
+          </div>
+        </div>
+
+        {settingsOpen ? (
+          <div className="mt-4 rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 pb-3">
+              {activeTab !== 'lineSummary' ? (
+                <div className="grid gap-1 text-xs font-medium text-slate-600">
+                  Период
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white/80 p-1">
+                    <Input
+                      aria-label="Период с"
+                      type="date"
+                      value={period.from}
+                      onChange={(event) => {
+                        setAllPeriod(false)
+                        setPeriod((current) => ({ ...current, from: event.target.value }))
+                      }}
+                      className="h-8 w-[128px] border-slate-200 text-sm"
+                    />
+                    <span className="text-slate-400">-</span>
+                    <Input
+                      aria-label="Период по"
+                      type="date"
+                      value={period.to}
+                      onChange={(event) => {
+                        setAllPeriod(false)
+                        setPeriod((current) => ({ ...current, to: event.target.value }))
+                      }}
+                      className="h-8 w-[128px] border-slate-200 text-sm"
+                    />
+                    <button
+                      type="button"
+                      className={segmentButtonClass(allPeriod)}
+                      onClick={() => {
+                        setAllPeriod(true)
+                        setPeriod({ from: '', to: '' })
+                      }}
+                    >
+                      За весь период
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <div className="grid gap-1 text-xs font-medium text-slate-600">
-                Расчет периода
+                Единица
                 <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
                   <button
                     type="button"
-                    className={segmentButtonClass(periodMode === 'events')}
-                    onClick={() => setPeriodMode('events')}
-                    title="Заявки по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки"
+                    className={segmentButtonClass(unit === 'joints')}
+                    onClick={() => setUnit('joints')}
                   >
-                    События
+                    Стыки
                   </button>
                   <button
                     type="button"
-                    className={segmentButtonClass(periodMode === 'welded-joints')}
-                    onClick={() => setPeriodMode('welded-joints')}
-                    title="Что происходит со стыками, сваренными в выбранный период"
+                    className={segmentButtonClass(unit === 'wdi')}
+                    onClick={() => setUnit('wdi')}
                   >
-                    Стыки периода
+                    WDI
                   </button>
                 </div>
               </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">
-              Проект
-              <select
-                value={projectFilter}
-                onChange={(event) => {
-                  setProjectFilter(event.target.value)
-                  setSelectedSubtitles([])
-                }}
-                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-              >
-                <option value="">Все проекты</option>
-                {projectOptions.map((project) => (
-                  <option key={project.value} value={project.value}>
-                    {project.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="min-w-0 flex-1 basis-[420px]">
-              <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium text-slate-600">
-                <span>Шифр/подтитул</span>
-                {selectedSubtitles.length > 0 ? (
-                  <button
-                    type="button"
-                    className="text-sky-700 hover:text-sky-900"
-                    onClick={() => setSelectedSubtitles([])}
-                  >
-                    Сбросить шифры
-                  </button>
-                ) : null}
-              </div>
-              <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
-                {subtitleOptions.length > 0 ? (
-                  subtitleOptions.map((subtitle) => {
-                    const selected = selectedSubtitles.includes(subtitle.value)
-                    return (
+              {activeTab !== 'lineSummary' ? (
+                <div className="grid gap-1 text-xs font-medium text-slate-600">
+                  Тип стыка
+                  <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
+                    {jointFilterOptions.map(([value, label]) => (
                       <button
-                        key={subtitle.value}
+                        key={value}
                         type="button"
-                        className={cn(
-                          'rounded border px-2.5 py-1 text-sm transition-colors',
-                          selected
-                            ? 'border-sky-300 bg-sky-50 text-sky-800'
-                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
-                        )}
-                        onClick={() =>
-                          setSelectedSubtitles((current) =>
-                            current.includes(subtitle.value)
-                              ? current.filter((value) => value !== subtitle.value)
-                              : [...current, subtitle.value],
-                          )
-                        }
+                        className={segmentButtonClass(jointFilter === value)}
+                        onClick={() => setJointFilter(value)}
                       >
-                        {subtitle.label}
+                        {label}
                       </button>
-                    )
-                  })
-                ) : (
-                  <span className="text-sm text-slate-400">Шифры не найдены</span>
-                )}
-              </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {activeTab === 'general' ? (
+                <div className="grid gap-1 text-xs font-medium text-slate-600">
+                  Расчет периода
+                  <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
+                    <button
+                      type="button"
+                      className={segmentButtonClass(periodMode === 'events')}
+                      onClick={() => setPeriodMode('events')}
+                      title="Заявки по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки"
+                    >
+                      События
+                    </button>
+                    <button
+                      type="button"
+                      className={segmentButtonClass(periodMode === 'welded-joints')}
+                      onClick={() => setPeriodMode('welded-joints')}
+                      title="Что происходит со стыками, сваренными в выбранный период"
+                    >
+                      Стыки периода
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
-            <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">
-              Срез: <span className="font-medium text-slate-700">{scopeLabel}</span>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">
+                Проект
+                <select
+                  value={projectFilter}
+                  onChange={(event) => {
+                    setProjectFilter(event.target.value)
+                    setSelectedSubtitles([])
+                  }}
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                >
+                  <option value="">Все проекты</option>
+                  {projectOptions.map((project) => (
+                    <option key={project.value} value={project.value}>
+                      {project.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="min-w-0 flex-1 basis-[420px]">
+                <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium text-slate-600">
+                  <span>Шифр/подтитул</span>
+                  {selectedSubtitles.length > 0 ? (
+                    <button
+                      type="button"
+                      className="text-sky-700 hover:text-sky-900"
+                      onClick={() => setSelectedSubtitles([])}
+                    >
+                      Сбросить шифры
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                  {subtitleOptions.length > 0 ? (
+                    subtitleOptions.map((subtitle) => {
+                      const selected = selectedSubtitles.includes(subtitle.value)
+                      return (
+                        <button
+                          key={subtitle.value}
+                          type="button"
+                          className={cn(
+                            'rounded border px-2.5 py-1 text-sm transition-colors',
+                            selected
+                              ? 'border-sky-300 bg-sky-50 text-sky-800'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                          )}
+                          onClick={() =>
+                            setSelectedSubtitles((current) =>
+                              current.includes(subtitle.value)
+                                ? current.filter((value) => value !== subtitle.value)
+                                : [...current, subtitle.value],
+                            )
+                          }
+                        >
+                          {subtitle.label}
+                        </button>
+                      )
+                    })
+                  ) : (
+                    <span className="text-sm text-slate-400">Шифры не найдены</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">
+                Срез
+                <div className="flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-normal text-slate-600 shadow-sm">
+                  <span className="truncate">{scopeLabel}</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
       </div>
 
       {activeTab === 'general' ? (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard
+              compact
+              icon={ClipboardCheck}
+              label="Выполнено"
+              value={formatPercent(generalProgressSummary.total > 0 ? (generalProgressSummary.completed / generalProgressSummary.total) * 100 : 0)}
+              detail={`${formatStatisticValue(generalProgressSummary.completed, unit)} из ${formatStatisticValue(generalProgressSummary.total, unit)}`}
+              accent="green"
+            />
+            <MetricCard
+              compact
               icon={Activity}
               label="Сварено за период"
               value={formatStatisticValue(summary.welded, unit)}
@@ -294,6 +375,7 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
               accent="blue"
             />
             <MetricCard
+              compact
               icon={Gauge}
               label="Годность"
               value={formatPercent(summary.qualityPercent)}
@@ -301,6 +383,7 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
               accent="green"
             />
             <MetricCard
+              compact
               icon={ClipboardCheck}
               label="ЛНК закрыто"
               value={formatPercent(summary.lnkClosurePercent)}
@@ -308,6 +391,7 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
               accent="indigo"
             />
             <MetricCard
+              compact
               icon={TimerReset}
               label="ПСТО закрыто"
               value={formatPercent(summary.pstoClosurePercent)}
@@ -377,41 +461,51 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
             </Panel>
           </div>
         </>
+      ) : activeTab === 'welders' ? (
+        <WeldersStatisticsPanel
+          jointFilter={welderJointFilter}
+          summary={welderSummary}
+          unit={unit}
+        />
       ) : (
-        <WeldersStatisticsPanel summary={welderSummary} unit={unit} />
+        <LineSummaryPanel summary={lineSummary} unit={lineSummaryUnit} />
       )}
     </section>
   )
 }
 
 type MetricCardProps = {
+  compact?: boolean
   icon: typeof Activity
   label: string
   value: string
   detail: string
-  accent: 'blue' | 'green' | 'indigo' | 'amber'
+  accent: 'blue' | 'green' | 'indigo' | 'amber' | 'slate'
 }
 
-function MetricCard({ icon: Icon, label, value, detail, accent }: MetricCardProps) {
+function MetricCard({ compact = false, icon: Icon, label, value, detail, accent }: MetricCardProps) {
   const accentClass = {
     blue: 'bg-sky-50 text-sky-700 border-sky-100',
     green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
     amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    slate: 'bg-slate-50 text-slate-700 border-slate-100',
   }[accent]
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4">
-      <div className="flex items-center gap-3">
-        <span className={cn('flex h-10 w-10 items-center justify-center rounded-md border', accentClass)}>
-          <Icon className="h-5 w-5" />
+    <div className={cn('rounded-md border border-slate-200 bg-white', compact ? 'p-3' : 'p-4')}>
+      <div className={cn('flex items-center', compact ? 'gap-2.5' : 'gap-3')}>
+        <span className={cn('flex items-center justify-center rounded-md border', compact ? 'h-9 w-9' : 'h-10 w-10', accentClass)}>
+          <Icon className={cn(compact ? 'h-4 w-4' : 'h-5 w-5')} />
         </span>
         <div className="min-w-0">
-          <div className="text-sm text-slate-500">{label}</div>
-          <div className="text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+          <div className="truncate text-sm text-slate-500">{label}</div>
+          <div className={cn('font-semibold tracking-tight text-slate-900', compact ? 'text-xl' : 'text-2xl')}>{value}</div>
         </div>
       </div>
-      <div className="mt-3 text-sm text-slate-500">{detail}</div>
+      <div className={cn('truncate text-sm text-slate-500', compact ? 'mt-2' : 'mt-3')} title={detail}>
+        {detail}
+      </div>
     </div>
   )
 }
@@ -546,7 +640,15 @@ function MethodProgress({ method, unit }: { method: StatisticsMethodSummary; uni
   )
 }
 
-function WeldersStatisticsPanel({ summary, unit }: { summary: ReturnType<typeof buildWelderStatisticsSummary>; unit: StatisticsUnit }) {
+function WeldersStatisticsPanel({
+  jointFilter,
+  summary,
+  unit,
+}: {
+  jointFilter: WelderStatisticsJointFilter
+  summary: ReturnType<typeof buildWelderStatisticsSummary>
+  unit: StatisticsUnit
+}) {
   const controlled = summary.good + summary.rejected
   const [stampSearch, setStampSearch] = useState('')
   const filteredRows = useMemo(() => {
@@ -592,7 +694,7 @@ function WeldersStatisticsPanel({ summary, unit }: { summary: ReturnType<typeof 
         title="Отчет по сварщикам"
         subtitle="Считаются только фактические клейма. Если у внутреннего клейма есть связанное клеймо НАКС, в отчете показывается НАКС."
       >
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <label className="grid w-full max-w-sm gap-1 text-xs font-medium text-slate-600">
             Поиск клейма
             <Input
@@ -630,7 +732,7 @@ function WeldersStatisticsPanel({ summary, unit }: { summary: ReturnType<typeof 
                 </thead>
                 <tbody>
                   {filteredRows.map((row) => (
-                    <WelderStatisticsTableRow key={row.stamp} row={row} unit={unit} />
+                    <WelderStatisticsTableRow key={row.stamp} jointFilter={jointFilter} row={row} unit={unit} />
                   ))}
                 </tbody>
               </table>
@@ -651,16 +753,64 @@ function WeldersStatisticsPanel({ summary, unit }: { summary: ReturnType<typeof 
   )
 }
 
-function WelderStatisticsTableRow({ row, unit }: { row: WelderStatisticsRow; unit: StatisticsUnit }) {
+function WelderStatisticsTableRow({
+  jointFilter,
+  row,
+  unit,
+}: {
+  jointFilter: WelderStatisticsJointFilter
+  row: WelderStatisticsRow
+  unit: StatisticsUnit
+}) {
   const controlled = row.good + row.rejected
   return (
     <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
       <td className="px-4 py-3 font-semibold text-slate-900">{row.stamp}</td>
-      <WelderBodyCell>{formatStatisticValue(row.total, unit)}</WelderBodyCell>
-      <WelderBodyCell className="text-emerald-700">{formatStatisticValue(row.good, unit)}</WelderBodyCell>
-      <WelderBodyCell>{formatStatisticValue(row.waitingRequest, unit)}</WelderBodyCell>
-      <WelderBodyCell>{formatStatisticValue(row.waitingControl, unit)}</WelderBodyCell>
-      <WelderBodyCell className="text-rose-700">{formatStatisticValue(row.rejected, unit)}</WelderBodyCell>
+      <WelderBodyCell>
+        <WelderValueWithSplit
+          f={row.fTotal}
+          jointFilter={jointFilter}
+          s={row.sTotal}
+          total={row.total}
+          unit={unit}
+        />
+      </WelderBodyCell>
+      <WelderBodyCell className="text-emerald-700">
+        <WelderValueWithSplit
+          f={row.fGood}
+          jointFilter={jointFilter}
+          s={row.sGood}
+          total={row.good}
+          unit={unit}
+        />
+      </WelderBodyCell>
+      <WelderBodyCell>
+        <WelderValueWithSplit
+          f={row.fWaitingRequest}
+          jointFilter={jointFilter}
+          s={row.sWaitingRequest}
+          total={row.waitingRequest}
+          unit={unit}
+        />
+      </WelderBodyCell>
+      <WelderBodyCell>
+        <WelderValueWithSplit
+          f={row.fWaitingControl}
+          jointFilter={jointFilter}
+          s={row.sWaitingControl}
+          total={row.waitingControl}
+          unit={unit}
+        />
+      </WelderBodyCell>
+      <WelderBodyCell className="text-rose-700">
+        <WelderValueWithSplit
+          f={row.fRejected}
+          jointFilter={jointFilter}
+          s={row.sRejected}
+          total={row.rejected}
+          unit={unit}
+        />
+      </WelderBodyCell>
       <WelderBodyCell>
         <div className="flex items-center justify-end gap-2">
           <span>{formatPercent(row.defectPercent)}</span>
@@ -671,12 +821,266 @@ function WelderStatisticsTableRow({ row, unit }: { row: WelderStatisticsRow; uni
   )
 }
 
+function WelderValueWithSplit({
+  f,
+  jointFilter,
+  s,
+  total,
+  unit,
+}: {
+  f: number
+  jointFilter: WelderStatisticsJointFilter
+  s: number
+  total: number
+  unit: StatisticsUnit
+}) {
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <span>{formatStatisticValue(total, unit)}</span>
+      {jointFilter === 'all' ? (
+        <span className="flex flex-wrap justify-end gap-1 text-[11px] font-normal text-slate-500">
+          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F: {formatStatisticValue(f, unit)}</span>
+          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S: {formatStatisticValue(s, unit)}</span>
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 function WelderHeaderCell({ children, align = 'left' }: { children: ReactNode; align?: 'left' | 'right' }) {
   return <th className={cn('px-4 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left')}>{children}</th>
 }
 
 function WelderBodyCell({ children, className }: { children: ReactNode; className?: string }) {
   return <td className={cn('px-4 py-3 text-right font-medium text-slate-700', className)}>{children}</td>
+}
+
+function LineSummaryPanel({
+  summary,
+  unit,
+}: {
+  summary: ReturnType<typeof buildLineSummary>
+  unit: StatisticsUnit
+}) {
+  const [lineSearch, setLineSearch] = useState('')
+  const [showLineDetails, setShowLineDetails] = useState(false)
+  const unitColumnLabel = unit === 'wdi' ? 'WDI' : 'стыков'
+  const filteredRows = useMemo(() => {
+    const query = lineSearch.trim().toLowerCase()
+    if (!query) return summary.rows
+    return summary.rows.filter((row) => row.line.toLowerCase().includes(query))
+  }, [lineSearch, summary.rows])
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={Gauge}
+          label="Линий всего"
+          value={summary.rows.length}
+          detail="Количество линий в выбранном срезе"
+          accent="slate"
+        />
+        <MetricCard
+          icon={LineChart}
+          label="Всего по линиям"
+          value={formatStatisticValue(summary.total, unit)}
+          detail={`Выполнено ${formatStatisticValue(summary.completed, unit)} · остаток ${formatStatisticValue(summary.remaining, unit)}`}
+          accent="blue"
+        />
+        <MetricCard
+          icon={ClipboardCheck}
+          label="Выполнено"
+          value={formatPercent(summary.total > 0 ? (summary.completed / summary.total) * 100 : 0)}
+          detail={`${formatStatisticValue(summary.completed, unit)} из ${formatStatisticValue(summary.total, unit)}`}
+          accent="green"
+        />
+        <MetricCard
+          icon={TimerReset}
+          label="Остаток"
+          value={formatStatisticValue(summary.remaining, unit)}
+          detail="Стыки без даты сварки в актуальном срезе"
+          accent="amber"
+        />
+      </div>
+
+      <Panel
+        title="Полинейная сводка"
+        subtitle="Список линий по проекту/шифру. История цепочки до годного результата и строки «не актуален» по изм. не учитываются."
+      >
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <label className="grid w-full max-w-sm gap-1 text-xs font-medium text-slate-600">
+            Поиск по линии
+            <Input
+              value={lineSearch}
+              onChange={(event) => setLineSearch(event.target.value)}
+              placeholder="Например: 330-FL-02-016"
+              className="h-9 rounded-md border-slate-200 bg-white text-sm"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-md border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              onClick={() => setShowLineDetails((current) => !current)}
+            >
+              {showLineDetails ? 'Скрыть параметры линии' : 'Показать параметры линии'}
+            </Button>
+            {lineSearch.trim() ? (
+              <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => setLineSearch('')}>
+                Очистить поиск
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        {summary.rows.length > 0 ? (
+          <div className="overflow-hidden rounded-md border border-slate-200">
+            <div className="overflow-x-auto">
+              <table className={cn('w-full table-fixed border-collapse text-sm', showLineDetails ? 'min-w-[1160px]' : 'min-w-[860px]')}>
+                <colgroup>
+                  {showLineDetails ? (
+                    <>
+                      <col className="w-[11%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[14%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[12%]" />
+                    </>
+                  ) : (
+                    <>
+                      <col className="w-[15%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[21%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[16%]" />
+                    </>
+                  )}
+                </colgroup>
+                <thead className="bg-slate-100 text-slate-700">
+                  <tr>
+                    <LineHeaderCell>Проект/Титул</LineHeaderCell>
+                    <LineHeaderCell>Шифр/Подтитул</LineHeaderCell>
+                    <LineHeaderCell>Линия</LineHeaderCell>
+                    {showLineDetails ? (
+                      <>
+                        <LineHeaderCell>Группа</LineHeaderCell>
+                        <LineHeaderCell>Категория</LineHeaderCell>
+                        <LineHeaderCell align="right">Контроль швов, (%)</LineHeaderCell>
+                      </>
+                    ) : null}
+                    <LineHeaderCell align="right">Всего {unitColumnLabel}</LineHeaderCell>
+                    <LineHeaderCell align="right">Выполнено {unitColumnLabel}</LineHeaderCell>
+                    <LineHeaderCell align="right">Остаток {unitColumnLabel}</LineHeaderCell>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.map((row) => (
+                    <LineSummaryTableRow key={row.key} row={row} showLineDetails={showLineDetails} unit={unit} />
+                  ))}
+                </tbody>
+              </table>
+              {filteredRows.length === 0 ? (
+                <div className="border-t border-slate-100 bg-slate-50 p-5 text-sm text-slate-500">
+                  По этой линии ничего не найдено.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+            В выбранном срезе нет актуальных линий для сводки.
+          </div>
+        )}
+      </Panel>
+    </div>
+  )
+}
+
+function LineSummaryTableRow({
+  row,
+  showLineDetails,
+  unit,
+}: {
+  row: LineSummaryRow
+  showLineDetails: boolean
+  unit: StatisticsUnit
+}) {
+  return (
+    <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
+      <LineBodyCell align="left">{row.projectTitle}</LineBodyCell>
+      <LineBodyCell align="left">{row.subtitleCode}</LineBodyCell>
+      <LineBodyCell align="left" className="font-semibold text-slate-900">{row.line}</LineBodyCell>
+      {showLineDetails ? (
+        <>
+          <LineBodyCell align="left">{row.groupName}</LineBodyCell>
+          <LineBodyCell align="left">{row.category}</LineBodyCell>
+          <LineBodyCell>{row.weldControlPercent}</LineBodyCell>
+        </>
+      ) : null}
+      <LineBodyCell>
+        <LineValueWithSplit total={row.total} f={row.totalF} s={row.totalS} unit={unit} />
+      </LineBodyCell>
+      <LineBodyCell>
+        <LineValueWithSplit total={row.completed} f={row.completedF} s={row.completedS} unit={unit} />
+      </LineBodyCell>
+      <LineBodyCell>
+        <LineValueWithSplit total={row.remaining} f={row.remainingF} s={row.remainingS} unit={unit} />
+      </LineBodyCell>
+    </tr>
+  )
+}
+
+function LineValueWithSplit({ total, f, s, unit }: { total: number; f: number; s: number; unit: StatisticsUnit }) {
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <span>{formatStatisticValue(total, unit)}</span>
+      <span className="flex flex-wrap justify-end gap-1 text-[11px] font-normal text-slate-500">
+        <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F: {formatStatisticValue(f, unit)}</span>
+        <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S: {formatStatisticValue(s, unit)}</span>
+      </span>
+    </div>
+  )
+}
+
+function LineHeaderCell({ children, align = 'left' }: { children: ReactNode; align?: 'left' | 'right' }) {
+  return <th className={cn('px-3 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left')}>{children}</th>
+}
+
+function LineBodyCell({
+  children,
+  align = 'right',
+  className,
+}: {
+  children: ReactNode
+  align?: 'left' | 'right'
+  className?: string
+}) {
+  return (
+    <td className={cn('px-3 py-3 align-top font-medium text-slate-700', align === 'right' ? 'text-right' : 'text-left', className)}>
+      {children}
+    </td>
+  )
+}
+
+function segmentButtonClass(active: boolean) {
+  return cn(
+    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+    active ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+  )
+}
+
+function matchesStatisticsJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter) {
+  if (filter === 'all') return true
+  const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
+  if (filter === 'f') return baseJoint.startsWith('F')
+  return baseJoint.startsWith('S')
 }
 
 function getUniqueSortedValues(values: unknown[]): Array<{ value: string; label: string }> {

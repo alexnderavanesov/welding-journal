@@ -16,6 +16,39 @@ describe('buildRepeatedJointTasks', () => {
     expect(createTasks).toHaveLength(1)
     expect(createTasks[0]).toEqual(expect.objectContaining({ sourceJoint: 'S2', targetJoint: 'S2' }))
   })
+
+  it('keeps the next repeated joint create task when a premature coil needs integrity check', () => {
+    const rows = [
+      row({ id: 1, joint: 'S2', pvkResult: 'вырез' }),
+      row({ id: 2, joint: 'S2W1', pvkResult: 'вырез' }),
+      row({ id: 3, joint: 'S2W2', pvkResult: 'вырез' }),
+      row({ id: 4, joint: 'S2Y1', pvkResult: '' }),
+    ]
+
+    const tasks = buildRepeatedJointTasks(rows)
+
+    expect(tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'check', reason: 'проверить целостность катушки' }),
+        expect.objectContaining({ kind: 'create', sourceJoint: 'S2W2', targetJoint: 'S2W3' }),
+      ]),
+    )
+  })
+
+  it('offers to rename an orphan good repeated joint back to its missing source joint', () => {
+    const tasks = buildRepeatedJointTasks([row({ id: 1, joint: 'S2W1', finalStatus: 'годен' })])
+
+    expect(tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'rename',
+          currentJoint: 'S2W1',
+          targetJoint: 'S2',
+        }),
+      ]),
+    )
+    expect(tasks.some((task) => task.kind === 'check' && task.reason === 'проверить целостность цепочки')).toBe(false)
+  })
 })
 
 function row(values: Partial<WeldRow>): WeldRow {

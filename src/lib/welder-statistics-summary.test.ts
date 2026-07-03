@@ -96,6 +96,39 @@ describe('buildWelderStatisticsSummary', () => {
       waitingRequest: 1,
     })
   })
+
+  it('tracks F/S totals and can filter welders by joint type', () => {
+    const rows = [
+      {
+        id: 1,
+        joint: 'S1',
+        weldDate: '2026-07-01',
+        stamp1KFact: 'ABC1',
+        stamp1ZFact: 'ABC1',
+        stamp1OFact: 'ABC1',
+        hasVik: 'да',
+        vikResult: 'годен',
+      },
+      {
+        id: 2,
+        joint: 'F2W1',
+        weldDate: '2026-07-02',
+        stamp1KFact: 'ABC1',
+        stamp1ZFact: 'ABC1',
+        stamp1OFact: 'ABC1',
+        hasRk: 'да',
+        rkResult: 'вырез',
+      },
+    ] as WeldRow[]
+
+    const all = buildWelderStatisticsSummary(rows, [], '2026-07-01', '2026-07-31', 'joints')
+    const onlyF = buildWelderStatisticsSummary(rows, [], '2026-07-01', '2026-07-31', 'joints', 'f')
+    const onlyS = buildWelderStatisticsSummary(rows, [], '2026-07-01', '2026-07-31', 'joints', 's')
+
+    expect(all.rows[0]).toMatchObject({ stamp: 'ABC1', total: 2, fTotal: 1, sTotal: 1, good: 1, rejected: 1 })
+    expect(onlyF.rows[0]).toMatchObject({ stamp: 'ABC1', total: 1, fTotal: 1, sTotal: 0, rejected: 1 })
+    expect(onlyS.rows[0]).toMatchObject({ stamp: 'ABC1', total: 1, fTotal: 0, sTotal: 1, good: 1 })
+  })
 })
 
 function welderStamp(value: Partial<WelderStampRecord>): WelderStampRecord {

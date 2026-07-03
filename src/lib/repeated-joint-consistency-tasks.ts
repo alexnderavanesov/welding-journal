@@ -7,6 +7,7 @@ import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import { createJointChainCheckTask, isIncompleteWeldStampGroupReason } from '@/lib/repeated-joint-check-tasks'
 import { compareJointChainRows, getRepeatedJointBranchKey, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
+import { getExpectedRepeatedJointName } from '@/lib/repeated-joint-task-helpers'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 
@@ -17,6 +18,8 @@ type JointChainConsistencyTaskDeps = {
   getPrimaryRejectedLnkResult: RejectionResolver
   getOfficialRejectedJointChainRows: OfficialRejectedChainResolver
 }
+
+const COIL_CHAIN_INTEGRITY_REASON = 'проверить целостность катушки'
 
 export function buildJointChainConsistencyCheckTasks(
   rows: WeldRow[],
@@ -86,12 +89,71 @@ export function buildJointChainConsistencyCheckTasks(
       return [...checkTasks, createJointChainCheckTask(row, key, reason, details)]
     }),
   ]
+  tasks.push(...buildCoilIntegrityCheckTasks(rows, chainGroups, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }))
   tasks.push(...buildObsoleteChildBranchCheckTasks(rows, chainGroups, groups, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }))
   return dedupeRepeatedJointCheckTasks(tasks)
 }
 
 export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
-  return task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON && task.reason !== 'проверить клеймо' && !isIncompleteWeldStampGroupReason(task.reason)
+  return (
+    task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON &&
+    task.reason !== COIL_CHAIN_INTEGRITY_REASON &&
+    task.reason !== 'проверить клеймо' &&
+    !isIncompleteWeldStampGroupReason(task.reason)
+  )
+}
+
+function buildCoilIntegrityCheckTasks(
+  rows: WeldRow[],
+  chainGroups: Map<string, WeldRow[]>,
+  deps: JointChainConsistencyTaskDeps,
+) {
+  const tasks: RepeatedJointCheckTask[] = []
+  for (const [chainKey, chainRows] of chainGroups) {
+    const coilGroups = new Map<string, WeldRow[]>()
+    for (const row of chainRows) {
+      const coilBaseJoint = getCoilBaseJoint(String(row.joint ?? ''))
+      if (!coilBaseJoint) continue
+      const group = coilGroups.get(coilBaseJoint) ?? []
+      group.push(row)
+      coilGroups.set(coilBaseJoint, group)
+    }
+    if (coilGroups.size === 0) continue
+
+    const details: string[] = []
+    const sourceRow = [...coilGroups.values()].flat().sort(compareJointChainRows)[0]
+    if (!sourceRow) continue
+
+    for (const [coilBaseJoint, coilRows] of coilGroups) {
+      const expectedCoilJoints = [`${coilBaseJoint}Y1`, `${coilBaseJoint}Y2`]
+      const missingCoilJoints = expectedCoilJoints.filter((joint) => !hasMatchingRepeatedJoint(rows, sourceRow, joint))
+      if (missingCoilJoints.length > 0) {
+        const existingText = coilRows.map((row) => String(row.joint ?? '').trim()).filter(Boolean).join(', ') || '-'
+        details.push(
+          `Катушка ${coilBaseJoint} создана не полностью: найдено ${existingText}, но не найдено ${missingCoilJoints.join(' и ')}. Катушка должна состоять из двух стыков ${expectedCoilJoints.join(' и ')}.`,
+        )
+      }
+    }
+
+    if (!hasValidOfficialCoilTrigger(rows, chainRows, deps)) {
+      const coilText = [...coilGroups.keys()].map((coilBaseJoint) => `${coilBaseJoint}Y1/${coilBaseJoint}Y2`).join(', ')
+      const expectedTriggerJoint = getExpectedCoilTriggerJoint(chainRows, deps.getPrimaryRejectedLnkResult)
+      details.push(
+        `В цепочке уже есть стык катушки ${coilText}, но диспетчер не нашел официальный негодный стык, который по правилам должен породить катушку.${expectedTriggerJoint ? ` Перед катушкой ожидается следующий повторный стык ${expectedTriggerJoint} и его негодный результат контроля.` : ' Сначала должен существовать следующий повторный стык и его негодный результат контроля.'} До этого катушка считается преждевременной.`,
+      )
+    }
+
+    if (details.length === 0) continue
+    tasks.push(
+      createJointChainCheckTask(
+        sourceRow,
+        `${chainKey}:coil-integrity`,
+        COIL_CHAIN_INTEGRITY_REASON,
+        details.join(' '),
+      ),
+    )
+  }
+  return tasks
 }
 
 function buildObsoleteChildBranchCheckTasks(
@@ -251,6 +313,32 @@ function findWeldDateOrderIssue(rows: WeldRow[]) {
 function getJointChainStepKey(row: WeldInput) {
   const parsed = parseJointChainName(String(row.joint ?? ''))
   return `${normalizeJointChainPart(parsed.base)}:${parsed.segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+}
+
+function getCoilBaseJoint(joint: string) {
+  const parsed = parseJointChainName(joint)
+  const firstCoilIndex = parsed.segments.findIndex((segment) => segment.suffix === 'Y')
+  if (firstCoilIndex < 0) return null
+  const baseSegments = parsed.segments.slice(0, firstCoilIndex)
+  return `${parsed.base}${baseSegments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+}
+
+function getExpectedCoilTriggerJoint(chainRows: WeldRow[], getPrimaryRejectedLnkResult: RejectionResolver) {
+  const rejectedRows = chainRows
+    .filter((row) => !isUnofficialJoint(row) && getPrimaryRejectedLnkResult(row))
+    .sort(compareJointChainRows)
+  const lastRejectedRow = rejectedRows.at(-1)
+  if (!lastRejectedRow) return ''
+  const rejection = getPrimaryRejectedLnkResult(lastRejectedRow)
+  const sourceJoint = String(lastRejectedRow.joint ?? '').trim()
+  if (!isRepeatedJointRejection(rejection) || !sourceJoint) return ''
+  return getExpectedRepeatedJointName(lastRejectedRow, sourceJoint, rejection.result)
+}
+
+function isRepeatedJointRejection(value: unknown): value is { result: 'ремонт' | 'вырез' } {
+  if (!value || typeof value !== 'object') return false
+  const result = (value as { result?: unknown }).result
+  return result === 'ремонт' || result === 'вырез'
 }
 
 function hasValidOfficialCoilTrigger(rows: WeldRow[], chainRows: WeldRow[], { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }: JointChainConsistencyTaskDeps) {

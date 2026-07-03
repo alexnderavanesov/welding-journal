@@ -1,9 +1,12 @@
 import { parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { calculateFinalStatusInRows } from '@/lib/weld-status'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+
+export type WelderStatisticsJointFilter = 'all' | 'f' | 's'
 
 type WelderStampPart = {
   key: WeldFieldKey
@@ -19,6 +22,16 @@ export type WelderStatisticsRow = {
   waitingControl: number
   rejected: number
   defectPercent: number
+  fTotal: number
+  sTotal: number
+  fGood: number
+  sGood: number
+  fWaitingRequest: number
+  sWaitingRequest: number
+  fWaitingControl: number
+  sWaitingControl: number
+  fRejected: number
+  sRejected: number
 }
 
 export type WelderStatisticsSummary = {
@@ -30,6 +43,16 @@ export type WelderStatisticsSummary = {
   waitingControl: number
   rejected: number
   defectPercent: number
+  fTotal: number
+  sTotal: number
+  fGood: number
+  sGood: number
+  fWaitingRequest: number
+  sWaitingRequest: number
+  fWaitingControl: number
+  sWaitingControl: number
+  fRejected: number
+  sRejected: number
 }
 
 const indexOneFactStampParts: WelderStampPart[] = [
@@ -50,9 +73,10 @@ export function buildWelderStatisticsSummary(
   from: string,
   to: string,
   unit: StatisticsUnit,
+  jointFilter: WelderStatisticsJointFilter = 'all',
 ): WelderStatisticsSummary {
   const stampLabels = buildWelderStampLabelMap(welderStamps)
-  const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to))
+  const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to) && matchesJointFilter(row, jointFilter))
   const stats = new Map<string, WelderStatisticsRow>()
 
   for (const row of periodRows) {
@@ -62,6 +86,7 @@ export function buildWelderStatisticsSummary(
     const hasSecondWelder = indexTwoFactStampParts.some((part) => hasText(row[part.key]))
     const parts = hasSecondWelder ? [...indexOneFactStampParts, ...indexTwoFactStampParts] : indexOneFactStampParts
     const status = String(calculateFinalStatusInRows(row, rows)).trim().toLowerCase()
+    const jointType = getJointType(row)
 
     for (const part of parts) {
       const rawStamp = String(row[part.key] ?? '').trim()
@@ -69,7 +94,7 @@ export function buildWelderStatisticsSummary(
 
       const stamp = getWelderStampLabel(rawStamp, stampLabels)
       const partWeight = hasSecondWelder ? part.doubleWeight : part.singleWeight
-      addWelderStat(stats, stamp, rowWeight * partWeight, status)
+      addWelderStat(stats, stamp, rowWeight * partWeight, status, jointType)
     }
   }
 
@@ -93,8 +118,34 @@ export function buildWelderStatisticsSummary(
       waitingRequest: summary.waitingRequest + row.waitingRequest,
       waitingControl: summary.waitingControl + row.waitingControl,
       rejected: summary.rejected + row.rejected,
+      fTotal: summary.fTotal + row.fTotal,
+      sTotal: summary.sTotal + row.sTotal,
+      fGood: summary.fGood + row.fGood,
+      sGood: summary.sGood + row.sGood,
+      fWaitingRequest: summary.fWaitingRequest + row.fWaitingRequest,
+      sWaitingRequest: summary.sWaitingRequest + row.sWaitingRequest,
+      fWaitingControl: summary.fWaitingControl + row.fWaitingControl,
+      sWaitingControl: summary.sWaitingControl + row.sWaitingControl,
+      fRejected: summary.fRejected + row.fRejected,
+      sRejected: summary.sRejected + row.sRejected,
     }),
-    { total: 0, good: 0, waitingRequest: 0, waitingControl: 0, rejected: 0 },
+    {
+      total: 0,
+      good: 0,
+      waitingRequest: 0,
+      waitingControl: 0,
+      rejected: 0,
+      fTotal: 0,
+      sTotal: 0,
+      fGood: 0,
+      sGood: 0,
+      fWaitingRequest: 0,
+      sWaitingRequest: 0,
+      fWaitingControl: 0,
+      sWaitingControl: 0,
+      fRejected: 0,
+      sRejected: 0,
+    },
   )
 
   return {
@@ -105,7 +156,13 @@ export function buildWelderStatisticsSummary(
   }
 }
 
-function addWelderStat(stats: Map<string, WelderStatisticsRow>, stamp: string, value: number, status: string) {
+function addWelderStat(
+  stats: Map<string, WelderStatisticsRow>,
+  stamp: string,
+  value: number,
+  status: string,
+  jointType: 'f' | 's' | null,
+) {
   const row =
     stats.get(stamp) ??
     ({
@@ -116,14 +173,54 @@ function addWelderStat(stats: Map<string, WelderStatisticsRow>, stamp: string, v
       waitingControl: 0,
       rejected: 0,
       defectPercent: 0,
+      fTotal: 0,
+      sTotal: 0,
+      fGood: 0,
+      sGood: 0,
+      fWaitingRequest: 0,
+      sWaitingRequest: 0,
+      fWaitingControl: 0,
+      sWaitingControl: 0,
+      fRejected: 0,
+      sRejected: 0,
     } satisfies WelderStatisticsRow)
 
   row.total += value
-  if (status === 'годен') row.good += value
-  if (status === 'ожидает заявку') row.waitingRequest += value
-  if (status === 'ожидает нк') row.waitingControl += value
-  if (status === 'не годен') row.rejected += value
+  if (jointType === 'f') row.fTotal += value
+  if (jointType === 's') row.sTotal += value
+  if (status === 'годен') {
+    row.good += value
+    if (jointType === 'f') row.fGood += value
+    if (jointType === 's') row.sGood += value
+  }
+  if (status === 'ожидает заявку') {
+    row.waitingRequest += value
+    if (jointType === 'f') row.fWaitingRequest += value
+    if (jointType === 's') row.sWaitingRequest += value
+  }
+  if (status === 'ожидает нк') {
+    row.waitingControl += value
+    if (jointType === 'f') row.fWaitingControl += value
+    if (jointType === 's') row.sWaitingControl += value
+  }
+  if (status === 'не годен') {
+    row.rejected += value
+    if (jointType === 'f') row.fRejected += value
+    if (jointType === 's') row.sRejected += value
+  }
   stats.set(stamp, row)
+}
+
+function matchesJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter) {
+  if (filter === 'all') return true
+  return getJointType(row) === filter
+}
+
+function getJointType(row: WeldRow): 'f' | 's' | null {
+  const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
+  if (baseJoint.startsWith('F')) return 'f'
+  if (baseJoint.startsWith('S')) return 's'
+  return null
 }
 
 function buildWelderStampLabelMap(records: WelderStampRecord[]) {

@@ -34,7 +34,7 @@ import {
   isUnusedRepeatedJointDraft,
 } from '@/lib/repeated-joint-task-helpers'
 import { getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
-import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
+import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
@@ -42,13 +42,15 @@ export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
 
 export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStampRecord[] = []): RepeatedJointTask[] {
   const tasks: RepeatedJointTask[] = []
+  const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows)
+  const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
   const chainCheckTasks = [
     ...buildJointChainConsistencyCheckTasks(rows, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }),
     ...buildControlDateBeforeWeldDateCheckTasks(rows),
     ...buildForbiddenRepairByDiameterCheckTasks(rows),
     ...buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords),
     ...buildIncompleteWelderStampGroupTasks(rows),
-  ]
+  ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
   const lineConsistencyTasks = buildLineConsistencyTasks(rows)
   const blockedChainKeys = new Set(
@@ -165,7 +167,36 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
       })
     }
   }
-  return [...chainCheckTasks, ...duplicateCheckTasks, ...lineConsistencyTasks, ...tasks]
+  return [...chainCheckTasks, ...duplicateCheckTasks, ...lineConsistencyTasks, ...orphanGoodRenameTasks, ...tasks]
+}
+
+function buildOrphanGoodRepeatedJointRenameTasks(rows: WeldRow[]): RepeatedJointRenameTask[] {
+  const tasks: RepeatedJointRenameTask[] = []
+  for (const row of rows) {
+    if (isUnofficialJoint(row) || getJointStatusLabel(row) !== 'годен') continue
+    const currentJoint = String(row.joint ?? '').trim()
+    if (!currentJoint) continue
+    const parsed = parseRepeatedJointName(currentJoint)
+    if (parsed.segments.length === 0) continue
+
+    const sourceCandidates = getRepeatedJointSourceCandidates(parsed)
+    const targetJoint = sourceCandidates.find((candidate) => !hasRepeatedJointTarget(rows, row, candidate.sourceJoint))?.sourceJoint ?? ''
+    if (!targetJoint) continue
+    const hasAnySource = sourceCandidates.some((candidate) => hasRepeatedJointTarget(rows, row, candidate.sourceJoint))
+    if (hasAnySource) continue
+
+    tasks.push({
+      kind: 'rename',
+      key: `rename-orphan-good:${row.id}:${currentJoint}:${targetJoint}`,
+      row,
+      sourceRow: row,
+      sourceJoint: targetJoint,
+      currentJoint,
+      targetJoint,
+      baseJoint: parseRepeatedJointName(targetJoint).base,
+    })
+  }
+  return tasks
 }
 
 function getCreateTaskTargetKey(row: WeldInput, targetJoint: string) {

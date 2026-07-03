@@ -52,6 +52,29 @@ describe('repeated joint chain consistency tasks', () => {
 
     expect(tasks.filter((task) => task.reason === 'проверить целостность цепочки')).toHaveLength(0)
   })
+
+  it('creates a coil integrity task when one coil joint is missing and the coil is premature', () => {
+    const rejectedDeps = {
+      ...deps,
+      getPrimaryRejectedLnkResult: (currentRow: WeldRow) => (currentRow.pvkResult === 'вырез' ? { result: 'вырез' } : null),
+    }
+    const tasks = buildJointChainConsistencyCheckTasks(
+      [
+        row({ id: 1, joint: 'S2', pvkResult: 'вырез' }),
+        row({ id: 2, joint: 'S2W1', pvkResult: 'вырез' }),
+        row({ id: 3, joint: 'S2W2', pvkResult: 'вырез' }),
+        row({ id: 4, joint: 'S2Y1' }),
+      ],
+      rejectedDeps,
+    )
+
+    const coilTask = tasks.find((task) => task.reason === 'проверить целостность катушки')
+
+    expect(coilTask).toEqual(expect.objectContaining({ sourceJoint: 'S2Y1' }))
+    expect(coilTask?.details).toContain('S2Y2')
+    expect(coilTask?.details).toContain('S2W3')
+    expect(coilTask?.details).toContain('преждевременной')
+  })
 })
 
 function row(values: Partial<WeldRow>): WeldRow {

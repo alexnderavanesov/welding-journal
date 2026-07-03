@@ -41,6 +41,7 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
   if (reason === 'дозаполнить дату сварки') return { joint: task.sourceJoint, type: 'Дозаполнить дату сварки' }
   if (reason === 'проверить целостность цепочки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
+  if (reason === 'проверить целостность катушки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
   if (reason === 'годный стык неофициальный') return { joint: task.sourceJoint, type: 'Годный стык неофициальный' }
   if (reason === 'несколько годных финалов') return { joint: task.sourceJoint, type: 'Несколько годных финалов' }
   if (reason === 'есть продолжение после годного') return { joint: task.sourceJoint, type: 'Лишняя ветка после годного' }
@@ -83,6 +84,9 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
     return `Стык ${task.targetJoint} выглядит лишним для текущего состояния цепочки ${task.sourceJoint}. Причина: ${task.reason}. Дата сварки у него не заполнена, поэтому диспетчер может удалить его после подтверждения. Если есть сомнения, сначала открой цепочку.`
   }
   if (task.kind === 'rename') {
+    if (task.key.startsWith('rename-orphan-good:')) {
+      return `Стык ${task.currentJoint} находится в цепочке, но исходный или предыдущий стык ${task.targetJoint} не найден в журнале. Так как ${task.currentJoint} уже годен, диспетчер предлагает переименовать его в ${task.targetJoint} и сделать актуальным финалом цепочки.`
+    }
     return `Стык ${task.currentJoint} больше не соответствует правилам именования этой цепочки. По текущей официальности и результатам контроля ожидается имя ${task.targetJoint}, поэтому диспетчер предлагает переименовать его после проверки.`
   }
   if (task.kind === 'duplicate-check') {
@@ -122,6 +126,9 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   }
   if (reason === 'проверить целостность цепочки') {
     return `В цепочке ${task.baseJoint} найден повторный стык без исходного или промежуточного стыка. Проверь, не был ли удален базовый или предыдущий шаг цепочки.`
+  }
+  if (reason === 'проверить целостность катушки') {
+    return `В цепочке ${task.baseJoint} найдено нарушение по катушке Y. Проверь, есть ли оба стыка катушки и был ли уже получен негодный результат на стыке, который должен был породить катушку.`
   }
   return `Диспетчер обнаружил нестандартное состояние цепочки ${task.baseJoint}: ${reason}. Открой цепочку и проверь, нужны ли дополнительные действия.`
 }
