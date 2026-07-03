@@ -3,6 +3,7 @@ import { compareReportRows } from '@/lib/report-row-utils'
 import { compareJointChainSuffix, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { parseDateLikeToIso } from '@/lib/date-format'
 
 export function getRepeatedJointIdentity(row: WeldInput, jointOverride?: string) {
   const joint = String(jointOverride ?? row.joint ?? '').trim()
@@ -51,6 +52,8 @@ export function compareJointChainRows(left: WeldRow, right: WeldRow) {
     if (suffixDiff !== 0) return suffixDiff
     if (leftSegment.index !== rightSegment.index) return leftSegment.index - rightSegment.index
   }
+  const sameNameLifecycleDiff = compareSameNameLifecycleOrder(left, right)
+  if (sameNameLifecycleDiff !== 0) return sameNameLifecycleDiff
   return compareReportRows(left, right)
 }
 
@@ -69,4 +72,20 @@ export function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
       )
     })
     .sort(compareJointChainRows)
+}
+
+function compareSameNameLifecycleOrder(left: WeldRow, right: WeldRow) {
+  if (normalizeJointChainPart(left.joint) !== normalizeJointChainPart(right.joint)) return 0
+  const unofficialDiff = Number(!isUnofficialJoint(left)) - Number(!isUnofficialJoint(right))
+  if (unofficialDiff !== 0) return unofficialDiff
+  return compareWeldDates(left.weldDate, right.weldDate)
+}
+
+function compareWeldDates(left: unknown, right: unknown) {
+  const leftDate = parseDateLikeToIso(left)
+  const rightDate = parseDateLikeToIso(right)
+  if (leftDate === rightDate) return 0
+  if (!leftDate) return 1
+  if (!rightDate) return -1
+  return leftDate.localeCompare(rightDate)
 }

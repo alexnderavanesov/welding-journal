@@ -18,6 +18,8 @@ export {
   RESULT_FIELD_KEYS,
   RESULT_STATUS_OPTIONS,
   calculateFinalStatus,
+  calculateFinalStatusInRows,
+  hasRejectedControlResult,
   getFinalStatusErrorReason,
   normalizeFinalStatus,
   normalizeResultStatus,

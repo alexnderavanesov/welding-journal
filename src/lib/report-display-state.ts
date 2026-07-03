@@ -5,6 +5,7 @@ const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   heatTreatment: 'Термообработка',
   lnk: 'ЛНК',
   welderStamps: 'Клейма',
+  statistics: 'Статистика',
 }
 
 const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
@@ -12,6 +13,7 @@ const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
   heatTreatment: 'heat-treatment-register.xlsx',
   lnk: 'lnk-register.xlsx',
   welderStamps: 'welder-stamps-register.xlsx',
+  statistics: 'statistics.xlsx',
 }
 
 const EDITABLE_REPORT_IMPORT_LABELS: Partial<Record<ActiveReport, string>> = {
@@ -59,6 +61,9 @@ export function getReportSummaryText({
   }
   if (activeReport === 'welderStamps') {
     return `Клейм: ${activeWelderStampCount} · Архив: ${archivedWelderStampCount} · Найдено: ${filteredWelderStampCount}`
+  }
+  if (activeReport === 'statistics') {
+    return 'Общая сводка по сварке и контролю'
   }
   return `Записей: ${weldingRowCount} · WDI годных: ${acceptedWdiTotalText}`
 }

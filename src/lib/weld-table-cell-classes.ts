@@ -1,6 +1,48 @@
 import { isCompactWeldColumn } from '@/lib/weld-column-widths'
 import { RESULT_FIELD_KEYS, VISIBLE_SECTION_END_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
 
+const STAMP_FIELD_KEYS = new Set<WeldFieldKey>([
+  'stamp1K',
+  'stamp1Z',
+  'stamp1O',
+  'stamp1KFact',
+  'stamp1ZFact',
+  'stamp1OFact',
+  'stamp2K',
+  'stamp2Z',
+  'stamp2O',
+  'stamp2KFact',
+  'stamp2ZFact',
+  'stamp2OFact',
+])
+
+const REQUEST_FIELD_KEYS = new Set<WeldFieldKey>([
+  'vikRequest',
+  'rkRequest',
+  'pvkRequest',
+  'uzkRequest',
+  'pstoRequest',
+  'tvmtRequest',
+  'rfaRequest',
+  'stlsRequest',
+  'mkkRequest',
+])
+
+const RESULT_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
+  'vikResult',
+  'rkResult',
+  'pvkResult',
+  'uzkResult',
+  'pstoResult',
+  'heatTreatmentDiagram',
+  'tvmtResult',
+  'rfaResult',
+  'stlsResult',
+  'mkkResult',
+  'pstoNote',
+  'finalStatus',
+])
+
 export function headerCellClass(fieldKey: string, isReadOnlyColumn: boolean) {
   const base = 'border-b border-r px-3 py-2.5 text-center text-[13px] font-semibold text-slate-700'
   const width = getWidthClass(fieldKey)
@@ -40,11 +82,14 @@ export function filterCellClass(fieldKey: string, isReadOnlyColumn: boolean) {
 }
 
 function getWidthClass(fieldKey: string) {
+  const key = fieldKey as WeldFieldKey
   if (fieldKey === 'weldDate') return 'w-28 whitespace-nowrap'
   if (fieldKey === 'pstoDate') return 'w-28 whitespace-nowrap'
   if (fieldKey === 'createdAt' || fieldKey === 'pstoCreatedAt') return 'w-[120px] whitespace-nowrap'
-  if (RESULT_FIELD_KEYS.has(fieldKey as WeldFieldKey)) return 'w-28 whitespace-nowrap'
-  if (fieldKey === 'finalStatus') return 'w-[124px]'
+  if (STAMP_FIELD_KEYS.has(key)) return 'w-[126px]'
+  if (REQUEST_FIELD_KEYS.has(key)) return 'w-[170px]'
+  if (RESULT_SECTION_FIELD_KEYS.has(key)) return 'w-[132px]'
+  if (RESULT_FIELD_KEYS.has(key)) return 'w-28 whitespace-nowrap'
   if (isCompactWeldColumn(fieldKey)) return 'w-[82px]'
   return 'max-w-72'
 }

@@ -33,6 +33,7 @@ import {
   hasRepeatedJointTarget,
   isUnusedRepeatedJointDraft,
 } from '@/lib/repeated-joint-task-helpers'
+import { getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -61,6 +62,7 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
     const repeated = getObsoleteRepeatedJointInfo(rows, row)
     if (repeated) obsoleteByRowId.set(row.id, repeated)
   }
+  const createTaskTargetKeys = new Set<string>()
 
   for (const row of rows) {
     if (obsoleteByRowId.has(row.id)) continue
@@ -93,6 +95,9 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
 
     const targetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejection.result)
     if (hasRepeatedJointTarget(rows, row, targetJoint)) continue
+    const createTargetKey = getCreateTaskTargetKey(row, targetJoint)
+    if (createTargetKey && createTaskTargetKeys.has(createTargetKey)) continue
+    if (createTargetKey) createTaskTargetKeys.add(createTargetKey)
 
     tasks.push({
       kind: 'create',
@@ -161,6 +166,12 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
     }
   }
   return [...chainCheckTasks, ...duplicateCheckTasks, ...lineConsistencyTasks, ...tasks]
+}
+
+function getCreateTaskTargetKey(row: WeldInput, targetJoint: string) {
+  const identity = getRepeatedJointIdentity(row, targetJoint)
+  if (!identity) return null
+  return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
 }
 
 function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<string>) {

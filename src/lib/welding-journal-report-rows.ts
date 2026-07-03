@@ -10,7 +10,7 @@ import {
   getExpectedRepeatedJointName,
   getPrimaryRejectedLnkResult,
 } from '@/lib/repeated-joint-task-helpers'
-import { calculateFinalStatus, normalizeFinalStatus, type WeldInput } from '@/lib/weld-fields'
+import { calculateFinalStatusInRows, normalizeFinalStatus, type WeldInput } from '@/lib/weld-fields'
 
 type WeldingJournalStatusFilter =
   | 'ожидает сварку'
@@ -19,7 +19,7 @@ type WeldingJournalStatusFilter =
   | 'ожидает ремонт'
 
 export function buildWeldingJournalRows(rows: WeldInput[]) {
-  return rows.map((row) => ({ ...row, finalStatus: calculateFinalStatus(row) }))
+  return rows.map((row) => ({ ...row, finalStatus: calculateFinalStatusInRows(row, rows) }))
 }
 
 export function buildWeldingJournalRowsByStatus(rows: WeldInput[], status: WeldingJournalStatusFilter) {

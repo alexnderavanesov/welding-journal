@@ -1,4 +1,5 @@
 import type { WeldFieldKey, WeldInput } from './weld-field-definitions'
+import { normalizeJointChainPart, parseJointChainName } from './joint-chain'
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК', 'ожидает заявку'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
@@ -72,6 +73,14 @@ export function calculateFinalStatus(record: WeldInput) {
   return 'ожидает НК'
 }
 
+export function calculateFinalStatusInRows(record: WeldInput, rows: readonly WeldInput[]) {
+  const status = calculateFinalStatus(record)
+  if (status === 'ожидает сварку' && isOfficialSameNameRepairAfterUnofficialRejected(record, rows)) {
+    return 'ожидает ремонт'
+  }
+  return status
+}
+
 export function getFinalStatusErrorReason(record: WeldInput) {
   const inactiveControlResults = getInactiveControlResultErrors(record)
   if (inactiveControlResults.length === 0) return null
@@ -101,6 +110,13 @@ export function normalizeFinalStatus(value: unknown) {
   return option ?? null
 }
 
+export function hasRejectedControlResult(record: WeldInput) {
+  return CONTROL_RESULT_PAIRS.some(({ resultKey }) => {
+    const result = normalizeResultStatus(record[resultKey])
+    return result === 'ремонт' || result === 'вырез'
+  })
+}
+
 function getPendingWeldFinalStatus(record: WeldInput) {
   const joint = String(record.joint ?? '').replace(/\s+/g, '').toUpperCase()
   const hasCoilSegment = /Y\d+/.test(joint)
@@ -108,8 +124,44 @@ function getPendingWeldFinalStatus(record: WeldInput) {
   return hasRepairSegment && !hasCoilSegment ? 'ожидает ремонт' : 'ожидает сварку'
 }
 
+function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows: readonly WeldInput[]) {
+  if (hasText(record.weldDate) || isUnofficialStatus(record.status)) return false
+  const joint = String(record.joint ?? '').trim()
+  if (!joint) return false
+
+  const parsed = parseJointChainName(joint)
+  if (parsed.segments.length > 0) return false
+
+  const targetIdentity = getSameNameChainIdentity(record)
+  if (!targetIdentity) return false
+
+  return rows.some((row) => {
+    if (row === record) return false
+    if (record.id !== undefined && row.id !== undefined && record.id === row.id) return false
+    if (!isUnofficialStatus(row.status) || !hasRejectedControlResult(row)) return false
+    const identity = getSameNameChainIdentity(row)
+    return identity === targetIdentity && normalizeJointChainPart(row.joint) === normalizeJointChainPart(joint)
+  })
+}
+
+function getSameNameChainIdentity(record: WeldInput) {
+  const joint = String(record.joint ?? '').trim()
+  if (!joint) return null
+  const parsed = parseJointChainName(joint)
+  return [
+    normalizeJointChainPart(record.projectTitle),
+    normalizeJointChainPart(record.subtitleCode),
+    normalizeJointChainPart(record.line),
+    normalizeJointChainPart(parsed.base),
+  ].join('|')
+}
+
 function hasText(value: unknown) {
   return String(value ?? '').trim().length > 0
+}
+
+function isUnofficialStatus(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'неофициальный'
 }
 
 function isEnabledControl(value: unknown) {

@@ -1,4 +1,4 @@
-import { ClipboardCheck, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Stamp } from 'lucide-react'
+import { BarChart3, ClipboardCheck, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Stamp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ActiveReport } from '@/lib/home-state'
 
@@ -18,6 +18,7 @@ const sidebarItems: Array<{
   { report: 'heatTreatment', label: 'Термообработка', icon: Flame },
   { report: 'lnk', label: 'ЛНК', icon: ClipboardCheck },
   { report: 'welderStamps', label: 'Клейма', icon: Stamp },
+  { report: 'statistics', label: 'Статистика', icon: BarChart3 },
 ]
 
 export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {

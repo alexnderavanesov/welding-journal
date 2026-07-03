@@ -33,7 +33,12 @@ export function ReportWorkspace({
           navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72'
         }`}
       >
-        <div className="min-w-full w-max space-y-4 bg-white" style={{ minWidth: registerMinWidth }}>
+        <div
+          className={`space-y-4 bg-white ${
+            activeReport === 'statistics' ? 'min-w-0 w-full' : 'min-w-full w-max'
+          }`}
+          style={activeReport === 'statistics' ? undefined : { minWidth: registerMinWidth }}
+        >
           {children}
         </div>
       </div>

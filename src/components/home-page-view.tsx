@@ -18,6 +18,7 @@ type HomePageViewProps = {
   reportHeaderActionsProps: ReportHeaderActionsProps
   reportSummaryBarProps: ReportSummaryBarProps
   reportTaskPanelsProps: ReportTaskPanelsProps
+  statisticsRows: ComponentProps<typeof ReportMainContent>['statisticsRows']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
@@ -39,6 +40,7 @@ export function HomePageView({
   reportHeaderActionsProps,
   reportSummaryBarProps,
   reportTaskPanelsProps,
+  statisticsRows,
   welderStampsRegistryProps,
   weldTableProps,
   reportChainDialogProps,
@@ -60,12 +62,13 @@ export function HomePageView({
         <ReportHeaderActions {...reportHeaderActionsProps} />
       </ReportPageHeader>
 
-      <ReportSummaryBar {...reportSummaryBarProps} />
+      {activeReport !== 'statistics' ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
 
-      <ReportTaskPanels {...reportTaskPanelsProps} />
+      {activeReport !== 'statistics' ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
 
       <ReportMainContent
         activeReport={activeReport}
+        statisticsRows={statisticsRows}
         welderStampsRegistryProps={welderStampsRegistryProps}
         weldTableProps={weldTableProps}
       />
