@@ -20,6 +20,7 @@ export function buildLnkWaitingNkRows(rows: WeldRow[]) {
           weldDate: row.weldDate ?? '',
           requestName,
           controlMethod: method.code,
+          status: 'ожидает НК',
         },
       ]
     }),
@@ -38,6 +39,7 @@ export function buildLnkToRequestRows(rows: WeldRow[]) {
       weldDate: row.weldDate ?? '',
       requestName: '',
       controlMethod: method.code,
+      status: 'ожидает заявку',
     })),
   )
 }

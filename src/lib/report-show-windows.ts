@@ -26,10 +26,15 @@ import type { ReportRow } from '@/lib/report-row-actions'
 import { openNonEmptyTabularReportWindow } from '@/lib/report-window'
 import type { WeldField, WeldInput } from '@/lib/weld-fields'
 
+const WAITING_LNK_FIELDS_WITH_STATUS = [
+  ...LNK_WAITING_NK_FIELDS,
+  { key: 'status', label: 'Статус', kind: 'text', group: 'ЛНК', visible: true },
+] as WeldField[]
+
 export function openLnkWaitingNkReportWindow(rows: ReportRow[]) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkWaitingNkRows(rows) as WeldInput[],
-    fields: LNK_WAITING_NK_FIELDS,
+    fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание НК',
     title: 'Ожидание НК',
     filename: 'lnk-waiting-nk.xlsx',
@@ -40,7 +45,7 @@ export function openLnkWaitingNkReportWindow(rows: ReportRow[]) {
 export function openLnkToRequestReportWindow(rows: ReportRow[]) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkToRequestRows(rows) as WeldInput[],
-    fields: LNK_WAITING_NK_FIELDS,
+    fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание заявки',
     title: 'Ожидание заявки',
     filename: 'lnk-waiting-request.xlsx',
@@ -120,7 +125,7 @@ export function openWeldingJournalWaitingWeldReportWindow(rows: WeldInput[]) {
 export function openWeldingJournalWaitingRequestReportWindow(rows: WeldInput[]) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkToRequestRows(rows) as WeldInput[],
-    fields: LNK_WAITING_NK_FIELDS,
+    fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание заявки',
     title: 'Сварочный журнал: ожидание заявки',
     filename: 'welding-journal-waiting-request.xlsx',
@@ -131,7 +136,7 @@ export function openWeldingJournalWaitingRequestReportWindow(rows: WeldInput[]) 
 export function openWeldingJournalWaitingControlReportWindow(rows: WeldInput[]) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkWaitingNkRows(rows) as WeldInput[],
-    fields: LNK_WAITING_NK_FIELDS,
+    fields: WAITING_LNK_FIELDS_WITH_STATUS,
     sheetName: 'Ожидание НК',
     title: 'Сварочный журнал: ожидание НК',
     filename: 'welding-journal-waiting-control.xlsx',
