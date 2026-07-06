@@ -1,7 +1,14 @@
 import { createServerFn } from '@tanstack/react-start'
 import { asc, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { welderStamps, type NewWelderStamp, type WelderStamp } from '@/db/schema'
+import {
+  welderStampSuspensions,
+  welderStamps,
+  type NewWelderStamp,
+  type NewWelderStampSuspension,
+  type WelderStamp,
+  type WelderStampSuspension,
+} from '@/db/schema'
 
 export type WelderStampPayload = {
   id: number
@@ -13,6 +20,13 @@ export type WelderStampPayload = {
   validFrom: string
   validTo: string
   archived: boolean
+}
+
+export type WelderStampSuspensionPayload = {
+  id: number
+  naksStamp: string
+  suspendedFrom: string
+  suspendedTo: string
 }
 
 const textOrNull = (value: unknown) => {
@@ -44,6 +58,20 @@ const toDbInsert = (record: WelderStampPayload): NewWelderStamp => ({
   archived: Boolean(record.archived),
 })
 
+const suspensionToPayload = (row: WelderStampSuspension): WelderStampSuspensionPayload => ({
+  id: row.id,
+  naksStamp: row.naksStamp ?? '',
+  suspendedFrom: row.suspendedFrom ?? '',
+  suspendedTo: row.suspendedTo ?? '',
+})
+
+const suspensionToDbInsert = (record: WelderStampSuspensionPayload): NewWelderStampSuspension => ({
+  id: record.id,
+  naksStamp: String(record.naksStamp ?? '').trim(),
+  suspendedFrom: String(record.suspendedFrom ?? '').trim(),
+  suspendedTo: textOrNull(record.suspendedTo),
+})
+
 export const listWelderStampRecords = createServerFn({ method: 'GET' }).handler(async () => {
   const db = requireDb()
   const rows = await db.select().from(welderStamps).orderBy(asc(welderStamps.id))
@@ -66,4 +94,28 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
       sql`select setval(pg_get_serial_sequence('welder_stamps','id'), coalesce((select max(id) from welder_stamps), 1), true)`,
     )
     return rows.map(toPayload)
+  })
+
+export const listWelderStampSuspensionRecords = createServerFn({ method: 'GET' }).handler(async () => {
+  const db = requireDb()
+  const rows = await db.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
+  return rows.map(suspensionToPayload)
+})
+
+export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' })
+  .validator((data: { records: WelderStampSuspensionPayload[] }) => data)
+  .handler(async ({ data }) => {
+    const db = requireDb()
+    await db.delete(welderStampSuspensions)
+
+    if (data.records.length === 0) {
+      await db.execute(sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), 1, false)`)
+      return []
+    }
+
+    const rows = await db.insert(welderStampSuspensions).values(data.records.map(suspensionToDbInsert)).returning()
+    await db.execute(
+      sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), coalesce((select max(id) from welder_stamp_suspensions), 1), true)`,
+    )
+    return rows.map(suspensionToPayload)
   })

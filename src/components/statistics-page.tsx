@@ -1,5 +1,17 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Activity, ClipboardCheck, FlaskConical, Gauge, LineChart, Settings2, TimerReset, Users } from 'lucide-react'
+import {
+  Activity,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
+  FlaskConical,
+  Gauge,
+  LineChart,
+  Percent,
+  Settings2,
+  TimerReset,
+  Users,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -15,28 +27,33 @@ import {
 } from '@/lib/statistics-summary'
 import { buildLineSummary, type LineSummaryRow } from '@/lib/line-summary'
 import {
+  buildPercentageLineSummaries,
+  type PercentageLineStampSummary,
+} from '@/lib/percentage-line-summary'
+import {
   buildWelderStatisticsSummary,
   type WelderStatisticsJointFilter,
   type WelderStatisticsRow,
 } from '@/lib/welder-statistics-summary'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import { cn } from '@/lib/utils'
 
 type StatisticsPageProps = {
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
+  onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
 }
 
-type StatisticsTab = 'general' | 'welders' | 'lineSummary'
+type StatisticsTab = 'general' | 'welders' | 'lineSummary' | 'percentageLines'
 
-const disabledTabs = ['Процентные линии']
 const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['all', 'Все'],
   ['f', 'F поле'],
   ['s', 'S база'],
 ]
 
-export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
+export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRows }: StatisticsPageProps) {
   const defaultPeriod = useMemo(() => getDefaultStatisticsPeriod(), [])
   const [activeTab, setActiveTab] = useState<StatisticsTab>('general')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -94,6 +111,7 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
     () => buildLineSummary(scopedRows, lineSummaryUnit),
     [lineSummaryUnit, scopedRows],
   )
+  const percentageLineSummary = useMemo(() => buildPercentageLineSummaries(scopedRows), [scopedRows])
   const generalProgressSummary = useMemo(
     () => buildLineSummary(generalRows, unit),
     [generalRows, unit],
@@ -141,25 +159,32 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
               >
                 Полинейная сводка
               </Button>
-              {disabledTabs.map((tab) => (
-                <Button key={tab} variant="outline" size="sm" disabled className="h-9 rounded-md text-slate-400">
-                  {tab}
-                </Button>
-              ))}
+              <Button
+                className="h-9 rounded-md"
+                size="sm"
+                variant={activeTab === 'percentageLines' ? 'default' : 'outline'}
+                onClick={() => setActiveTab('percentageLines')}
+              >
+                Процентные линии
+              </Button>
             </div>
             <p className="mt-3 text-sm text-slate-500">
               {activeTab === 'general'
                 ? 'Общий прогресс сварки, заявок, заключений и ПСТО за выбранный период.'
                 : activeTab === 'welders'
                   ? 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'
-                  : 'Сводка по линиям с учетом актуальных стыков и текущего остатка.'}
+                  : activeTab === 'lineSummary'
+                    ? 'Сводка по линиям с учетом актуальных стыков и текущего остатка.'
+                    : 'Контроль процентных линий по официальным клеймам и РК/УЗК.'}
             </p>
             <p className="mt-1 text-xs text-slate-500">
               {activeTab === 'general'
                 ? periodModeDescription
                 : activeTab === 'welders'
                   ? 'Статистика сварщиков считается по дате сварки стыка; распределение идет только по фактическим клеймам.'
-                  : 'Неактуальные по изменению строки и исторические стыки цепочки до годного результата не включаются.'}
+                  : activeTab === 'lineSummary'
+                    ? 'Неактуальные по изменению строки и исторические стыки цепочки до годного результата не включаются.'
+                    : 'Процентная линия определяется как линия с единым % контроля меньше 100; расчет идет отдельно по каждому официальному клейму.'}
             </p>
           </div>
 
@@ -180,7 +205,7 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
         {settingsOpen ? (
           <div className="mt-4 rounded-md border border-slate-200 bg-white p-3 shadow-sm">
             <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 pb-3">
-              {activeTab !== 'lineSummary' ? (
+              {activeTab !== 'lineSummary' && activeTab !== 'percentageLines' ? (
                 <div className="grid gap-1 text-xs font-medium text-slate-600">
                   Период
                   <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white/80 p-1">
@@ -218,26 +243,28 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
                   </div>
                 </div>
               ) : null}
-              <div className="grid gap-1 text-xs font-medium text-slate-600">
-                Единица
-                <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
-                  <button
-                    type="button"
-                    className={segmentButtonClass(unit === 'joints')}
-                    onClick={() => setUnit('joints')}
-                  >
-                    Стыки
-                  </button>
-                  <button
-                    type="button"
-                    className={segmentButtonClass(unit === 'wdi')}
-                    onClick={() => setUnit('wdi')}
-                  >
-                    WDI
-                  </button>
+              {activeTab !== 'percentageLines' ? (
+                <div className="grid gap-1 text-xs font-medium text-slate-600">
+                  Единица
+                  <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
+                    <button
+                      type="button"
+                      className={segmentButtonClass(unit === 'joints')}
+                      onClick={() => setUnit('joints')}
+                    >
+                      Стыки
+                    </button>
+                    <button
+                      type="button"
+                      className={segmentButtonClass(unit === 'wdi')}
+                      onClick={() => setUnit('wdi')}
+                    >
+                      WDI
+                    </button>
+                  </div>
                 </div>
-              </div>
-              {activeTab !== 'lineSummary' ? (
+              ) : null}
+              {activeTab !== 'lineSummary' && activeTab !== 'percentageLines' ? (
                 <div className="grid gap-1 text-xs font-medium text-slate-600">
                   Тип стыка
                   <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
@@ -466,6 +493,11 @@ export function StatisticsPage({ rows, welderStamps }: StatisticsPageProps) {
           jointFilter={welderJointFilter}
           summary={welderSummary}
           unit={unit}
+        />
+      ) : activeTab === 'percentageLines' ? (
+        <PercentageLinesPanel
+          summary={percentageLineSummary}
+          onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         />
       ) : (
         <LineSummaryPanel summary={lineSummary} unit={lineSummaryUnit} />
@@ -855,6 +887,444 @@ function WelderBodyCell({ children, className }: { children: ReactNode; classNam
   return <td className={cn('px-4 py-3 text-right font-medium text-slate-700', className)}>{children}</td>
 }
 
+function PercentageLinesPanel({
+  summary,
+  onOpenPercentageLineStampRows,
+}: {
+  summary: ReturnType<typeof buildPercentageLineSummaries>
+  onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [collapsedLineKeys, setCollapsedLineKeys] = useState<Set<string>>(() => new Set())
+  const flatRows = useMemo(
+    () =>
+      summary.flatMap((line) =>
+        line.stamps.map((stamp) => ({
+          line,
+          stamp,
+        })),
+      ),
+    [summary],
+  )
+  const filteredSummary = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return summary
+
+    return summary.flatMap((line) => {
+      const lineMatches =
+        line.line.toLowerCase().includes(query) ||
+        line.projectTitle.toLowerCase().includes(query) ||
+        line.subtitleCode.toLowerCase().includes(query)
+
+      if (lineMatches) return [line]
+
+      const stamps = line.stamps.filter((stamp) => stamp.stamp.toLowerCase().includes(query))
+      return stamps.length > 0 ? [{ ...line, stamps }] : []
+    })
+  }, [search, summary])
+  const totals = useMemo(
+    () =>
+      flatRows.reduce(
+        (result, { stamp }) => ({
+          stamps: result.stamps + 1,
+          required: result.required + stamp.requiredControls,
+          assigned: result.assigned + stamp.assignedControls,
+          completed: result.completed + stamp.completedControls,
+          missing: result.missing + stamp.missingControls,
+          excess: result.excess + stamp.excessControls,
+          fullControl: result.fullControl + (stamp.fullControlRequired ? 1 : 0),
+        }),
+        { stamps: 0, required: 0, assigned: 0, completed: 0, missing: 0, excess: 0, fullControl: 0 },
+      ),
+    [flatRows],
+  )
+  const toggleLine = (lineKey: string) => {
+    setCollapsedLineKeys((current) => {
+      const next = new Set(current)
+      if (next.has(lineKey)) next.delete(lineKey)
+      else next.add(lineKey)
+      return next
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={Percent}
+          label="Процентных линий"
+          value={String(summary.length)}
+          detail={`${totals.stamps} клейм в расчете`}
+          accent="blue"
+        />
+        <MetricCard
+          icon={ClipboardCheck}
+          label="Требуется контроля"
+          value={String(totals.required)}
+          detail={`Назначено ${totals.assigned} · выполнено ${totals.completed}`}
+          accent="green"
+        />
+        <MetricCard
+          icon={TimerReset}
+          label="Не хватает"
+          value={String(totals.missing)}
+          detail="РК/УЗК еще нужно назначить по расчету"
+          accent="amber"
+        />
+        <MetricCard
+          icon={Gauge}
+          label="100% по клейму"
+          value={String(totals.fullControl)}
+          detail={totals.excess > 0 ? `Лишних назначений: ${totals.excess}` : 'Без лишних назначений'}
+          accent={totals.fullControl > 0 ? 'amber' : 'slate'}
+        />
+      </div>
+
+      <Panel
+        title="Процентные линии"
+        subtitle="Расчет идет по официальным клеймам на линиях с единым процентом контроля меньше 100. РК и УЗК считаются взаимозаменяемыми."
+      >
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <label className="grid w-full max-w-sm gap-1 text-xs font-medium text-slate-600">
+            Поиск по линии или клейму
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Линия, проект, шифр или клеймо"
+              className="h-9 rounded-md border-slate-200 bg-white text-sm"
+            />
+          </label>
+          {search.trim() ? (
+            <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => setSearch('')}>
+              Очистить поиск
+            </Button>
+          ) : null}
+        </div>
+
+        {flatRows.length > 0 ? (
+          <div className="space-y-3">
+            {filteredSummary.map((line) => (
+              <PercentageLineGroup
+                key={line.lineKey}
+                collapsed={collapsedLineKeys.has(line.lineKey)}
+                line={line}
+                onOpenStamp={onOpenPercentageLineStampRows}
+                onToggle={() => toggleLine(line.lineKey)}
+              />
+            ))}
+            {filteredSummary.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+                По этому запросу процентные линии не найдены.
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+            В выбранном срезе нет процентных линий: нужны линии с единым процентом контроля меньше 100.
+          </div>
+        )}
+      </Panel>
+    </div>
+  )
+}
+
+function PercentageLineGroup({
+  collapsed,
+  line,
+  onOpenStamp,
+  onToggle,
+}: {
+  collapsed: boolean
+  line: ReturnType<typeof buildPercentageLineSummaries>[number]
+  onOpenStamp?: (filter: PercentageLineStampFilter) => void
+  onToggle: () => void
+}) {
+  const totals = line.stamps.reduce(
+    (result, stamp) => ({
+      required: result.required + stamp.requiredControls,
+      assigned: result.assigned + stamp.assignedControls,
+      covered: result.covered + stamp.coveredControls,
+      completed: result.completed + stamp.completedControls,
+      missing: result.missing + stamp.missingControls,
+      excess: result.excess + stamp.excessControls,
+      fullControl: result.fullControl + (stamp.fullControlRequired ? 1 : 0),
+    }),
+    { required: 0, assigned: 0, covered: 0, completed: 0, missing: 0, excess: 0, fullControl: 0 },
+  )
+  const lineHint =
+    `${line.line}: ${line.percent}% контроля считается отдельно по каждому официальному клейму. ` +
+    `Расчет по проценту: max(1, округление вверх от количества официальных стыков клейма * ${line.percent}%). ` +
+    `Если первичный стык не годен: ${line.percent === 1 ? '+1 стык к РК/УЗК' : '+2 стыка к РК/УЗК'}. ` +
+    'После 4-го первичного негодного результата требуется 100% РК/УЗК по этому клейму.'
+
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-md border bg-white transition-colors',
+        totals.missing > 0 || totals.excess > 0 ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200',
+      )}
+    >
+      <div className="flex flex-wrap items-stretch gap-3 px-3 py-3">
+        <button
+          type="button"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+          onClick={onToggle}
+          title={collapsed ? 'Раскрыть клейма линии' : 'Свернуть клейма линии'}
+        >
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        <div className="min-w-[260px] flex-1" title={lineHint}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-semibold text-slate-900">{line.line}</span>
+            <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">
+              {line.percent}% РК/УЗК
+            </span>
+          </div>
+          <div className="mt-1 text-sm text-slate-600">
+            {line.projectTitle} · {line.subtitleCode}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            расчет отдельно по каждому официальному клейму
+          </div>
+        </div>
+        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          <PercentageLineMiniStat
+            label="Клейм"
+            value={line.stamps.length}
+            title="Количество официальных клейм, которые участвовали в сварке этой процентной линии."
+          />
+          <PercentageLineMiniStat
+            label="Требуется"
+            value={totals.required}
+            title="Сколько стыков нужно закрыть РК/УЗК по проценту и доборам после первичных негодных."
+          />
+          <PercentageLineMiniStat
+            label="Назначено"
+            value={totals.assigned}
+            title="Стыки, где РК или УЗК назначены значением «да» или «дополнительный»."
+          />
+          <PercentageLineMiniStat
+            label="Покрыто"
+            value={totals.covered}
+            title="Стыки, которые закрывают требование: назначены, уже выполнены или осознанно отменены."
+          />
+          <PercentageLineMiniStat
+            label="Не хватает"
+            value={totals.missing}
+            tone={totals.missing > 0 ? 'amber' : 'slate'}
+            title="Сколько расчетных стыков еще нужно назначить к РК/УЗК."
+          />
+          <PercentageLineMiniStat
+            label="Лишнее"
+            value={totals.excess}
+            tone={totals.excess > 0 ? 'rose' : 'slate'}
+            title="Обычные назначения «да» сверх расчетной потребности. «Дополнительный» сюда не попадает."
+          />
+        </div>
+      </div>
+
+      {!collapsed ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+              <col className="w-[16%]" />
+              <col className="w-[9%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[8%]" />
+              <col className="w-[8%]" />
+            </colgroup>
+            <thead className="bg-slate-100 text-slate-700">
+              <tr>
+                <LineHeaderCell>Клеймо</LineHeaderCell>
+                <LineHeaderCell align="right">Стыков</LineHeaderCell>
+                <LineHeaderCell align="right">Состояние</LineHeaderCell>
+                <LineHeaderCell
+                  align="right"
+                  title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных. После 4-го первичного негодного требуется 100% РК/УЗК."
+                >
+                  Требуется РК/УЗК
+                </LineHeaderCell>
+                <LineHeaderCell align="right" title="Назначено = стыки, где РК или УЗК стоит «да» либо «дополнительный».">
+                  Назначено
+                </LineHeaderCell>
+                <LineHeaderCell
+                  align="right"
+                  title="Покрыто = назначено, отменено или уже есть результат РК/УЗК. Отменено считается осознанным решением и закрывает требование."
+                >
+                  Покрыто
+                </LineHeaderCell>
+                <LineHeaderCell align="right" title="Выполнено = есть результат РК или УЗК: годен, ремонт или вырез.">
+                  Выполнено
+                </LineHeaderCell>
+                <LineHeaderCell
+                  align="right"
+                  title="Первично не годен = негодный результат РК/УЗК на первичном стыке без системных индексов R/W/Y."
+                >
+                  Первично не годен
+                </LineHeaderCell>
+                <LineHeaderCell align="right" title="Сколько стыков этого клейма еще нужно назначить к РК/УЗК.">
+                  Не хватает
+                </LineHeaderCell>
+                <LineHeaderCell align="right" title="Назначено обычным «да» больше, чем требует расчет.">
+                  Лишнее
+                </LineHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {line.stamps.map((stamp) => (
+                <PercentageLineTableRow
+                  key={stamp.key}
+                  stamp={stamp}
+                  onOpenStamp={onOpenStamp}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function PercentageLineMiniStat({
+  label,
+  value,
+  title,
+  tone = 'slate',
+}: {
+  label: string
+  value: number
+  title: string
+  tone?: 'slate' | 'amber' | 'rose'
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-md border bg-white px-3 py-2 shadow-sm',
+        tone === 'amber'
+          ? 'border-amber-200 text-amber-800'
+          : tone === 'rose'
+            ? 'border-rose-200 text-rose-800'
+            : 'border-slate-200 text-slate-700',
+      )}
+      title={title}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-1 text-lg font-semibold leading-none text-slate-900">{value}</div>
+    </div>
+  )
+}
+
+function PercentageLineTableRow({
+  onOpenStamp,
+  stamp,
+}: {
+  onOpenStamp?: (filter: PercentageLineStampFilter) => void
+  stamp: PercentageLineStampSummary
+}) {
+  return (
+    <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
+      <LineBodyCell align="left">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {onOpenStamp ? (
+            <button
+              type="button"
+              className="font-semibold text-sky-800 underline-offset-2 transition-colors hover:text-sky-950 hover:underline"
+              onClick={() =>
+                onOpenStamp({
+                  projectTitle: stamp.projectTitle,
+                  subtitleCode: stamp.subtitleCode,
+                  line: stamp.line,
+                  stamp: stamp.stamp,
+                })
+              }
+              title={`Показать стыки клейма ${stamp.stamp} на линии ${stamp.line}`}
+            >
+              {stamp.stamp}
+            </button>
+          ) : (
+            <span className="font-semibold text-slate-900">{stamp.stamp}</span>
+          )}
+          {stamp.fullControlRequired ? (
+            <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+              100% РК/УЗК
+            </span>
+          ) : null}
+        </div>
+      </LineBodyCell>
+      <LineBodyCell>{stamp.officialJointCount}</LineBodyCell>
+      <LineBodyCell>
+        <div className="grid justify-end gap-1 text-[11px] font-normal text-slate-600" title={getPercentageStatusHint(stamp)}>
+          <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
+            годен: {stamp.goodJoints}
+          </span>
+          <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-rose-700">
+            не годен: {stamp.rejectedJoints}
+          </span>
+          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700">
+            ожидает: {stamp.waitingRequestJoints + stamp.waitingControlJoints}
+          </span>
+        </div>
+      </LineBodyCell>
+      <LineBodyCell>
+        <div className="flex flex-col items-end gap-1">
+          <span>{stamp.requiredControls}</span>
+          <span className="text-[11px] font-normal text-slate-500">
+            по %: {stamp.baseRequiredControls}
+            {stamp.additionalRequiredControls > 0 ? ` · добор: ${stamp.additionalRequiredControls}` : ''}
+          </span>
+        </div>
+      </LineBodyCell>
+      <LineBodyCell>
+        <div className="flex flex-col items-end gap-1" title={getJointListHint('Назначено', stamp.assignedJointNames)}>
+          <span>{stamp.assignedControls}</span>
+        </div>
+      </LineBodyCell>
+      <LineBodyCell>
+        <div className="flex flex-col items-end gap-1" title={getJointListHint('Покрыто', stamp.coveredJointNames)}>
+          <span>{stamp.coveredControls}</span>
+        </div>
+      </LineBodyCell>
+      <LineBodyCell>
+        <div className="flex flex-col items-end gap-1" title={getJointListHint('Выполнено', stamp.completedJointNames)}>
+          <span>{stamp.completedControls}</span>
+        </div>
+      </LineBodyCell>
+      <LineBodyCell className={stamp.rejectedPrimaryControls > 0 ? 'text-rose-700' : undefined}>
+        {stamp.rejectedPrimaryControls}
+      </LineBodyCell>
+      <LineBodyCell className={stamp.missingControls > 0 ? 'text-amber-700' : undefined}>
+        <span title={getJointListHint('Кандидаты без покрытия', stamp.missingCandidateJointNames)}>
+          {stamp.missingControls}
+        </span>
+      </LineBodyCell>
+      <LineBodyCell className={stamp.excessControls > 0 ? 'text-rose-700' : undefined}>
+        <span title={getJointListHint('Назначено обычным да сверх расчета', stamp.excessCandidateJointNames)}>
+          {stamp.excessControls}
+        </span>
+      </LineBodyCell>
+    </tr>
+  )
+}
+
+function getPercentageStatusHint(stamp: PercentageLineStampSummary) {
+  return [
+    `Годен: ${stamp.goodJoints}`,
+    `Не годен: ${stamp.rejectedJoints}`,
+    `Ожидает заявку: ${stamp.waitingRequestJoints}`,
+    `Ожидает РК/УЗК: ${stamp.waitingControlJoints}`,
+  ].join('. ')
+}
+
+function getJointListHint(title: string, joints: string[]) {
+  return joints.length > 0 ? `${title}: ${joints.join(', ')}` : `${title}: нет стыков`
+}
+
 function LineSummaryPanel({
   summary,
   unit,
@@ -1049,8 +1519,20 @@ function LineValueWithSplit({ total, f, s, unit }: { total: number; f: number; s
   )
 }
 
-function LineHeaderCell({ children, align = 'left' }: { children: ReactNode; align?: 'left' | 'right' }) {
-  return <th className={cn('px-3 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left')}>{children}</th>
+function LineHeaderCell({
+  children,
+  align = 'left',
+  title,
+}: {
+  children: ReactNode
+  align?: 'left' | 'right'
+  title?: string
+}) {
+  return (
+    <th className={cn('px-3 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left')} title={title}>
+      {children}
+    </th>
+  )
 }
 
 function LineBodyCell({

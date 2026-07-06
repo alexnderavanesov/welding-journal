@@ -16,7 +16,7 @@ import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import type { ActiveReport } from '@/lib/home-state'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import type { WeldField, WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export type ReportImportPreviewError = {
   rowNumber: number
@@ -37,6 +37,7 @@ type ReportImportPreviewValidationOptions = {
   activeReport: ActiveReport
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
+  welderStampSuspensions: WelderStampSuspensionRecord[]
 }
 
 type BuildReportImportPreviewOptions = {
@@ -44,6 +45,7 @@ type BuildReportImportPreviewOptions = {
   file: File
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
+  welderStampSuspensions: WelderStampSuspensionRecord[]
 }
 
 export async function buildReportImportPreview({
@@ -51,6 +53,7 @@ export async function buildReportImportPreview({
   file,
   weldFormStampSelectOptions,
   welderStamps,
+  welderStampSuspensions,
 }: BuildReportImportPreviewOptions): Promise<ReportImportPreview> {
   const parsed = await parseReportImportFile(activeReport, file)
   const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport))
@@ -71,6 +74,7 @@ export async function buildReportImportPreview({
     activeReport,
     weldFormStampSelectOptions,
     welderStamps,
+    welderStampSuspensions,
   })
 
   return {
@@ -107,7 +111,7 @@ export function fixReportImportPreviewErrors(
 
 function validateReportImportRecords(
   records: WeldInput[],
-  { activeReport, weldFormStampSelectOptions, welderStamps }: ReportImportPreviewValidationOptions,
+  { activeReport, weldFormStampSelectOptions, welderStamps, welderStampSuspensions }: ReportImportPreviewValidationOptions,
 ) {
   if (activeReport !== 'weldingJournal') {
     return { validRecords: records, errors: [] as ReportImportPreviewError[] }
@@ -122,6 +126,7 @@ function validateReportImportRecords(
         records: [{ ...withOfficialJointStatus(record) }],
         weldFormStampSelectOptions,
         welderStamps,
+        welderStampSuspensions,
       })
       validRecords.push(prepared[0])
     } catch (error) {

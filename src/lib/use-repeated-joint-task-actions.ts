@@ -11,7 +11,7 @@ import type {
   RepeatedJointRenameTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 type MutationLike<TValue> = {
   mutate: (value: TValue) => void
@@ -21,6 +21,7 @@ type UseRepeatedJointTaskActionsOptions = {
   activeReport: ActiveReport
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
+  welderStampSuspensions: WelderStampSuspensionRecord[]
   repeatedJointMutation: MutationLike<RepeatedJointCreateTask | RepeatedJointCoilTask>
   obsoleteRepeatedJointMutation: MutationLike<RepeatedJointDeleteTask>
   renameRepeatedJointMutation: MutationLike<RepeatedJointRenameTask>
@@ -31,6 +32,7 @@ export function useRepeatedJointTaskActions({
   activeReport,
   rows,
   welderStamps,
+  welderStampSuspensions,
   repeatedJointMutation,
   obsoleteRepeatedJointMutation,
   renameRepeatedJointMutation,
@@ -44,7 +46,7 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
+    const currentTask = buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions).find(
       (candidate): candidate is RepeatedJointCreateTask | RepeatedJointCoilTask =>
         (candidate.kind === 'create' || candidate.kind === 'coil') && candidate.key === task.key,
     )
@@ -62,7 +64,7 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
+    const currentTask = buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions).find(
       (candidate): candidate is RepeatedJointDeleteTask => candidate.kind === 'delete' && candidate.key === task.key,
     )
     if (!currentTask) {
@@ -90,7 +92,7 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps).find(
+    const currentTask = buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions).find(
       (candidate): candidate is RepeatedJointRenameTask => candidate.kind === 'rename' && candidate.key === task.key,
     )
     if (!currentTask) {

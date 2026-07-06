@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   useAutoCollapseNavOnHorizontalScroll,
   useEscapeToClearReportFilters,
@@ -64,6 +64,7 @@ import {
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-compatibility'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
+import { buildPercentageLineStampFilters, type PercentageLineStampFilter } from '@/lib/report-navigation'
 
 export function useHomePageController() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -197,7 +198,9 @@ export function useHomePageController() {
   } = useDispatcherTaskUiState()
   const {
     welderStamps,
+    welderStampSuspensions,
     welderStampDraft,
+    welderStampSuspensionDraft,
     welderStampSearch,
     welderStampFilters,
     editingWelderStampId,
@@ -217,6 +220,11 @@ export function useHomePageController() {
     archiveWelderStampRecord,
     restoreWelderStampRecord,
     deleteWelderStampRecord,
+    updateWelderStampSuspensionDraft,
+    resetWelderStampSuspensionForm,
+    saveWelderStampSuspensionRecord,
+    editWelderStampSuspensionRecord,
+    deleteWelderStampSuspensionRecord,
   } = useWelderStampRegistryState({ setMessage })
   const isReportModalOpen =
     isImportDialogOpen ||
@@ -290,6 +298,7 @@ export function useHomePageController() {
     rows,
     setExpandedRepeatedJointTaskKeys,
     welderStamps,
+    welderStampSuspensions,
   })
 
   const {
@@ -436,6 +445,7 @@ export function useHomePageController() {
   } = useWeldJournalMutations({
     rows,
     welderStamps,
+    welderStampSuspensions,
     weldFormStampSelectOptions,
     editingFocusField: editing?.focusField,
     setEditing,
@@ -451,6 +461,7 @@ export function useHomePageController() {
     activeReport,
     rows,
     welderStamps,
+    welderStampSuspensions,
     repeatedJointMutation,
     obsoleteRepeatedJointMutation,
     renameRepeatedJointMutation,
@@ -804,6 +815,14 @@ export function useHomePageController() {
     setEditing,
   })
 
+  const openPercentageLineStampRows = (filter: PercentageLineStampFilter) => {
+    setActiveReport('weldingJournal')
+    setChainRecord(null)
+    setEditing(null)
+    setColumnFilters(buildPercentageLineStampFilters(filter))
+    setMessage(`Показаны стыки клейма ${filter.stamp} на линии ${filter.line}.`)
+  }
+
   useReportModalEscapeKey({
     isReportModalOpen,
     isLnkResultPreviewOpen,
@@ -842,6 +861,7 @@ export function useHomePageController() {
     isTaskExpanded: isRepeatedJointTaskExpanded,
     onToggleDetails: toggleRepeatedJointTaskDetails,
     onShowTask: showRepeatedJointTask,
+    onOpenTaskOfficiality: openPercentageLineTaskOfficiality,
     onCreateTask: createRepeatedJoint,
     onDeleteTask: deleteObsoleteRepeatedJoint,
     onRenameTask: renameObsoleteRepeatedJoint,
@@ -884,7 +904,9 @@ export function useHomePageController() {
   const welderStampsRegistryProps = createWelderStampsRegistryProps({
     activeRecords: activeWelderStamps,
     archivedRecords: archivedWelderStamps,
+    suspensionRecords: welderStampSuspensions,
     draft: welderStampDraft,
+    suspensionDraft: welderStampSuspensionDraft,
     search: welderStampSearch,
     filters: welderStampFilters,
     editingId: editingWelderStampId,
@@ -892,13 +914,18 @@ export function useHomePageController() {
     onSearchChange: setWelderStampSearch,
     onFiltersChange: setWelderStampFilters,
     onDraftChange: updateWelderStampDraft,
+    onSuspensionDraftChange: updateWelderStampSuspensionDraft,
     onSave: saveWelderStampRecord,
+    onSaveSuspension: saveWelderStampSuspensionRecord,
     onReset: resetWelderStampForm,
+    onResetSuspension: resetWelderStampSuspensionForm,
     onEdit: editWelderStampRecord,
+    onEditSuspension: editWelderStampSuspensionRecord,
     onArchive: archiveWelderStampRecord,
     onRestore: restoreWelderStampRecord,
     onToggleArchived: setShowArchivedWelderStamps,
     onDelete: deleteWelderStampRecord,
+    onDeleteSuspension: deleteWelderStampSuspensionRecord,
   })
 
   const reportHeaderActionsProps = createReportHeaderActionsProps({
@@ -944,8 +971,25 @@ export function useHomePageController() {
     isPending: importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending,
     weldFormStampSelectOptions,
     welderStamps,
+    welderStampSuspensions,
     onClose: () => setIsImportDialogOpen(false),
     onImportRecords: handleImportRecords,
+  }
+
+  function openPercentageLineTaskOfficiality(task: DispatcherTask) {
+    if (task.kind !== 'percentage-line-control' || task.issue !== 'rejected-primary') return
+
+    const rowIds = task.targetRowIds && task.targetRowIds.length > 0 ? task.targetRowIds : [task.row.id]
+    setChainRecord(null)
+    setActiveReport('lnk')
+    setLnkFilters(buildPercentageLineStampFilters(task))
+    setLnkOfficialityDraft({
+      rowIds: new Set(rowIds),
+      search: '',
+      status: '',
+    })
+    setIsLnkOfficialityModalOpen(true)
+    setMessage(`Открыта официальность по клейму ${task.stamp} на линии ${task.line}`)
   }
 
   const reportSummaryBarProps = createReportSummaryBarProps({
@@ -992,6 +1036,7 @@ export function useHomePageController() {
     getExternalSaveBlockReason: (draft) =>
       getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
         allowedArchivedOfficialStamps: allowedArchivedOfficialStampsForEditing,
+        suspensions: welderStampSuspensions,
       }),
     isSaving: saveMutation.isPending,
     onCancel: () => setEditing(null),
@@ -1245,6 +1290,7 @@ export function useHomePageController() {
     welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
+    onOpenPercentageLineStampRows: openPercentageLineStampRows,
     reportChainDialogProps,
     reportWeldEditorProps,
     reportPstoDialogsProps,

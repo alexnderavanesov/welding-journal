@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import type { ActiveReport } from '@/lib/home-state'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import type { WeldField, WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export type ReportImportDialogProps = {
   open: boolean
@@ -24,6 +24,7 @@ export type ReportImportDialogProps = {
   isPending: boolean
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
+  welderStampSuspensions: WelderStampSuspensionRecord[]
   onClose: () => void
   onImportRecords: (records: WeldInput[], skippedRows: number) => Promise<void>
 }
@@ -34,6 +35,7 @@ export function ReportImportDialog({
   isPending,
   weldFormStampSelectOptions,
   welderStamps,
+  welderStampSuspensions,
   onClose,
   onImportRecords,
 }: ReportImportDialogProps) {
@@ -73,6 +75,7 @@ export function ReportImportDialog({
         file,
         weldFormStampSelectOptions,
         welderStamps,
+        welderStampSuspensions,
       })
       setPreview(nextPreview)
     } catch (error) {
@@ -98,6 +101,7 @@ export function ReportImportDialog({
       activeReport,
       weldFormStampSelectOptions,
       welderStamps,
+      welderStampSuspensions,
     }))
   }
 

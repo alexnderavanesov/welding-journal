@@ -16,3 +16,10 @@ export type WelderStampFilters = {
   validFrom: string
   validTo: string
 }
+
+export type WelderStampSuspensionRecord = {
+  id: number
+  naksStamp: string
+  suspendedFrom: string
+  suspendedTo: string
+}

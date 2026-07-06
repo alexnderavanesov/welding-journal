@@ -28,9 +28,10 @@ export function validateOfficialStampCompatibilityForSave(
 export function validateOfficialStampCompatibilityForImport(
   records: WeldInput[],
   welderStampRecords: WelderStampRecord[],
+  options: OfficialStampCompatibilityOptions = {},
 ) {
   records.forEach((record, index) => {
-    const issue = getOfficialStampCompatibilityIssues(record, welderStampRecords)[0]
+    const issue = getOfficialStampCompatibilityIssues(record, welderStampRecords, options)[0]
     if (!issue) return
 
     const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`

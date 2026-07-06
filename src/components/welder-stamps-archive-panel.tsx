@@ -20,13 +20,18 @@ export function WelderStampsArchivePanel({
   onDelete,
 }: WelderStampsArchivePanelProps) {
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50/60">
+    <div className="rounded-md border-2 border-slate-300 bg-slate-50/80 shadow-sm shadow-slate-100">
       <button
         type="button"
         onClick={() => onToggleArchived(!showArchived)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-100/80"
       >
-        <span>Архив клейм</span>
+        <span>
+          <span className="block text-sm font-semibold text-slate-900">Архив клейм</span>
+          <span className="mt-1 block text-sm font-normal text-slate-500">
+            Здесь хранятся старые клейма, которые уже не используются, но могут понадобиться для истории.
+          </span>
+        </span>
         <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
           {archivedRecords.length} записей
           <ChevronDown className={`h-4 w-4 transition-transform ${showArchived ? 'rotate-180' : ''}`} />

@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { omitHiddenReportFilters } from '@/lib/report-navigation'
 import { filterCellClass, getTableLabel, headerCellClass } from '@/lib/weld-table-utils'
 import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
 
@@ -34,7 +35,7 @@ export function WeldTableFieldHeaderRows({
               value={columnFilters[field.key] ?? ''}
               onChange={(event) =>
                 onColumnFiltersChange({
-                  ...columnFilters,
+                  ...omitHiddenReportFilters(columnFilters),
                   [field.key]: event.target.value,
                 })
               }

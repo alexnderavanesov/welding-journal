@@ -23,6 +23,7 @@ import {
 } from '@/lib/repeated-joint-consistency-tasks'
 import { buildDuplicateJointCheckTasks } from '@/lib/repeated-joint-duplicate-tasks'
 import { buildLineConsistencyTasks } from '@/lib/line-consistency-tasks'
+import { buildPercentageLineControlTasks } from '@/lib/percentage-line-tasks'
 import {
   findMatchingJointRows,
   getExpectedRepeatedJointName,
@@ -35,12 +36,16 @@ import {
 } from '@/lib/repeated-joint-task-helpers'
 import { getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
 
-export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: WelderStampRecord[] = []): RepeatedJointTask[] {
+export function buildRepeatedJointTasks(
+  rows: WeldRow[],
+  welderStampRecords: WelderStampRecord[] = [],
+  welderStampSuspensions: WelderStampSuspensionRecord[] = [],
+): RepeatedJointTask[] {
   const tasks: RepeatedJointTask[] = []
   const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows)
   const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
@@ -48,11 +53,12 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
     ...buildJointChainConsistencyCheckTasks(rows, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }),
     ...buildControlDateBeforeWeldDateCheckTasks(rows),
     ...buildForbiddenRepairByDiameterCheckTasks(rows),
-    ...buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords),
+    ...buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions),
     ...buildIncompleteWelderStampGroupTasks(rows),
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
   const lineConsistencyTasks = buildLineConsistencyTasks(rows)
+  const percentageLineControlTasks = buildPercentageLineControlTasks(rows)
   const blockedChainKeys = new Set(
     [
       ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),
@@ -167,7 +173,14 @@ export function buildRepeatedJointTasks(rows: WeldRow[], welderStampRecords: Wel
       })
     }
   }
-  return [...chainCheckTasks, ...duplicateCheckTasks, ...lineConsistencyTasks, ...orphanGoodRenameTasks, ...tasks]
+  return [
+    ...chainCheckTasks,
+    ...duplicateCheckTasks,
+    ...lineConsistencyTasks,
+    ...percentageLineControlTasks,
+    ...orphanGoodRenameTasks,
+    ...tasks,
+  ]
 }
 
 function buildOrphanGoodRepeatedJointRenameTasks(rows: WeldRow[]): RepeatedJointRenameTask[] {

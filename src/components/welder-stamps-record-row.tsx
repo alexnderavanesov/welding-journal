@@ -32,13 +32,15 @@ export function WelderStampsRecordRow({
 
   return (
     <tr key={record.id} className={rowClassName}>
-      <td className={`border-t border-slate-200 px-3 py-3 text-center font-semibold ${archived ? '' : 'text-slate-900'}`}>
+      <td className={`break-words border-t border-slate-200 px-3 py-3 text-center font-semibold ${archived ? '' : 'text-slate-900'}`}>
         {record.naksStamp || '-'}
       </td>
-      <td className={`border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{record.internalStamp || '-'}</td>
-      <td className={`border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{record.weldType || '-'}</td>
-      <td className={`border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{formatWelderStampDiameterRange(record)}</td>
-      <td className={`border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{formatWelderStampValidity(record)}</td>
+      <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{record.internalStamp || '-'}</td>
+      <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{record.weldType || '-'}</td>
+      <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>
+        {formatWelderStampDiameterRange(record)}
+      </td>
+      <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{formatWelderStampValidity(record)}</td>
       <td className="border-t border-slate-200 px-3 py-2">
         <div className="flex justify-center gap-1.5">
           {archived ? (

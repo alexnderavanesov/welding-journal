@@ -6,7 +6,7 @@ import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
 } from './welder-stamp-compatibility'
-import type { WelderStampRecord } from './welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from './welder-stamp-types'
 
 const officialStampField = OFFICIAL_WELDER_STAMP_FIELD_KEYS[0]
 
@@ -21,6 +21,15 @@ function stampRecord(value: string, archived: boolean): WelderStampRecord {
     validFrom: '01.01.2026',
     validTo: '31.12.2026',
     archived,
+  }
+}
+
+function suspensionRecord(value: string): WelderStampSuspensionRecord {
+  return {
+    id: 1,
+    naksStamp: value,
+    suspendedFrom: '10.07.2026',
+    suspendedTo: '20.07.2026',
   }
 }
 
@@ -51,5 +60,29 @@ describe('welder stamp select options', () => {
         allowedArchivedOfficialStamps: allowedArchivedStamps,
       }),
     ).toBeNull()
+  })
+
+  it('disables and blocks an official stamp suspended on the weld date', () => {
+    const activeStamp = stampRecord('ABC1', false)
+    const suspension = suspensionRecord('ABC1')
+    const row = {
+      [officialStampField]: 'ABC1',
+      weldingMethod: 'РАД',
+      d1: '11',
+      d2: '11',
+      weldDate: '15.07.2026',
+    } as WeldInput
+
+    const options = buildWeldFormStampSelectOptions([activeStamp], row, [], [suspension])
+    const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp], {
+      suspensions: [suspension],
+    })
+
+    expect(options[officialStampField]?.find((option) => option.value === 'ABC1')).toMatchObject({
+      value: 'ABC1',
+      disabled: true,
+    })
+    expect(blockReason).toContain('Клеймо ABC1')
+    expect(blockReason).toContain('отстранено')
   })
 })

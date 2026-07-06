@@ -24,12 +24,16 @@ function getRepeatedJointTaskGroupKey(task: DispatcherTask, getChainKey: (row: W
   if (task.kind === 'line-consistency') {
     return `line-consistency:${task.projectTitle.trim().toLowerCase()}:${task.subtitleCode.trim().toLowerCase()}:${task.line.trim().toLowerCase()}`
   }
+  if (task.kind === 'percentage-line-control') {
+    return `percentage-line-control:${task.projectTitle.trim().toLowerCase()}:${task.subtitleCode.trim().toLowerCase()}:${task.line.trim().toLowerCase()}:${task.stamp.trim().toLowerCase()}`
+  }
   return getChainKey(task.row) ?? getRepeatedJointTaskBaseJoint(task)
 }
 
 function getRepeatedJointTaskBaseJoint(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') return formatWelderStampCompactLabel(task)
   if (task.kind === 'line-consistency') return task.line
+  if (task.kind === 'percentage-line-control') return `${task.line} · ${task.stamp}`
   if (task.kind === 'check' || task.kind === 'duplicate-check' || task.kind === 'rename') return task.baseJoint
   return parseJointChainName(task.sourceJoint).base || task.sourceJoint
 }

@@ -23,14 +23,14 @@ export function WelderStampsRecordsTable({
   onDelete,
 }: WelderStampsRecordsTableProps) {
   return (
-    <table className="w-full min-w-[980px] border-collapse text-sm">
+    <table className="w-full table-fixed border-collapse text-sm">
       <thead className="bg-slate-100 text-center text-slate-700">
         <tr>
-          <th className="border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
-          <th className="border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
-          <th className="border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
-          <th className="border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
-          <th className="border-r border-white px-3 py-3 font-semibold">Срок действия</th>
+          <th className="w-[14%] border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
+          <th className="w-[18%] border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
+          <th className="w-[13%] border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
+          <th className="w-[20%] border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
+          <th className="w-[22%] border-r border-white px-3 py-3 font-semibold">Срок действия</th>
           <th className={`${archived ? 'w-40' : 'w-32'} px-3 py-3 font-semibold`}>Действия</th>
         </tr>
       </thead>

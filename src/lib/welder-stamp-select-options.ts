@@ -4,7 +4,11 @@ import {
 } from '@/lib/report-config'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { StampSelectOption } from '@/lib/weld-form-utils'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import {
+  formatWelderStampSuspensionBlockReason,
+  getSuspensionOverlapForStamp,
+} from '@/lib/welder-stamp-suspensions'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import {
   formatOfficialStampDiameterList,
   getOfficialStampJointDiameters,
@@ -19,6 +23,7 @@ export function buildWeldFormStampSelectOptions(
   records: WelderStampRecord[],
   draft?: WeldInput,
   allowedArchivedOfficialStamps: readonly string[] = [],
+  suspensions: readonly WelderStampSuspensionRecord[] = [],
 ): Partial<Record<WeldFieldKey, readonly StampSelectOption[]>> {
   const activeRecords = records.filter((record) => !record.archived)
   const allowedArchivedStampValues = getExistingArchivedOfficialStampValues(allowedArchivedOfficialStamps, records)
@@ -28,7 +33,12 @@ export function buildWeldFormStampSelectOptions(
       (record) => normalizeStampForCompare(record.naksStamp) === normalizeStampForCompare(value),
     )
     const isAllowedArchivedOnly = !hasActiveRecord && allowedArchivedStampSet.has(normalizeStampForCompare(value))
-    const reason = !isAllowedArchivedOnly && draft ? getOfficialStampSelectBlockReason(value, draft, activeRecords) : null
+    const suspension = draft ? getSuspensionOverlapForStamp(suspensions, value, draft.weldDate) : null
+    const reason = suspension
+      ? formatWelderStampSuspensionBlockReason(suspension)
+      : !isAllowedArchivedOnly && draft
+        ? getOfficialStampSelectBlockReason(value, draft, activeRecords)
+        : null
     return {
       value,
       disabled: Boolean(reason),

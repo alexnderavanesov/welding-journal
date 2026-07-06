@@ -141,3 +141,15 @@ export const welderStamps = pgTable('welder_stamps', {
 
 export type WelderStamp = typeof welderStamps.$inferSelect
 export type NewWelderStamp = typeof welderStamps.$inferInsert
+
+export const welderStampSuspensions = pgTable('welder_stamp_suspensions', {
+  id: serial('id').primaryKey(),
+  naksStamp: text('naks_stamp').notNull(),
+  suspendedFrom: date('suspended_from').notNull(),
+  suspendedTo: date('suspended_to'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type WelderStampSuspension = typeof welderStampSuspensions.$inferSelect
+export type NewWelderStampSuspension = typeof welderStampSuspensions.$inferInsert

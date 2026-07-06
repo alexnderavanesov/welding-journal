@@ -3,6 +3,7 @@ import { WelderStampsRegistry, type WelderStampsRegistryProps } from '@/componen
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ActiveReport } from '@/lib/home-state'
+import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type ReportMainContentProps = {
@@ -11,6 +12,7 @@ type ReportMainContentProps = {
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
   weldTableProps: WeldTableProps
+  onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
 }
 
 export function ReportMainContent({
@@ -19,9 +21,16 @@ export function ReportMainContent({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
+  onOpenPercentageLineStampRows,
 }: ReportMainContentProps) {
   if (activeReport === 'statistics') {
-    return <StatisticsPage rows={statisticsRows} welderStamps={welderStamps} />
+    return (
+      <StatisticsPage
+        rows={statisticsRows}
+        welderStamps={welderStamps}
+        onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
+      />
+    )
   }
 
   if (activeReport === 'welderStamps') {

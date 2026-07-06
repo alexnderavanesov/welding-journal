@@ -17,6 +17,7 @@ export type DispatcherTaskCardHandlers = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
   onShowTask: (task: DispatcherTask) => void
+  onOpenTaskOfficiality: (task: DispatcherTask) => void
   onCreateTask: (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => void
   onDeleteTask: (task: RepeatedJointDeleteTask) => void
   onRenameTask: (task: RepeatedJointRenameTask) => void

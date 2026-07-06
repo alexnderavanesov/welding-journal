@@ -7,6 +7,7 @@ import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation
 
 export function useWeldImportMutation({
   welderStamps,
+  welderStampSuspensions,
   weldFormStampSelectOptions,
   setMessage,
   highlightChangedRows,
@@ -15,7 +16,12 @@ export function useWeldImportMutation({
 
   const importMutation = useMutation({
     mutationFn: async (records: WeldInput[]) => {
-      const preparedRecords = prepareImportedWeldRecords({ records, weldFormStampSelectOptions, welderStamps })
+      const preparedRecords = prepareImportedWeldRecords({
+        records,
+        weldFormStampSelectOptions,
+        welderStamps,
+        welderStampSuspensions,
+      })
       return importWeldJoints({ data: { records: preparedRecords } })
     },
     onSuccess: async (result) => {

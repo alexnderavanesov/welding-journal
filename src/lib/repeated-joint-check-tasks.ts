@@ -9,7 +9,7 @@ import { isLnkRepairForbiddenByDiameter } from '@/lib/lnk-result-rules'
 import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export function buildControlDateBeforeWeldDateCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
   const tasks: RepeatedJointCheckTask[] = []
@@ -62,18 +62,28 @@ export function buildForbiddenRepairByDiameterCheckTasks(rows: WeldRow[]): Repea
   return tasks
 }
 
-export function buildWelderStampCompatibilityCheckTasks(rows: WeldRow[], welderStampRecords: WelderStampRecord[]): RepeatedJointCheckTask[] {
-  if (welderStampRecords.length === 0) return []
+export function buildWelderStampCompatibilityCheckTasks(
+  rows: WeldRow[],
+  welderStampRecords: WelderStampRecord[],
+  welderStampSuspensions: WelderStampSuspensionRecord[] = [],
+): RepeatedJointCheckTask[] {
+  if (welderStampRecords.length === 0 && welderStampSuspensions.length === 0) return []
 
   const tasks: RepeatedJointCheckTask[] = []
   for (const row of rows) {
-    const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, { ignoreArchivedMissingRegistry: true })
+    const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, {
+      ignoreArchivedMissingRegistry: true,
+      suspensions: welderStampSuspensions,
+    })
     if (issues.length === 0) continue
 
     const joint = String(row.joint ?? '').trim() || '-'
+    const hasSuspensionIssue = issues.some((issue) => issue.reason === 'suspended')
     const details = [
       `Стык ${joint}: ${issues.map(formatOfficialStampCompatibilityIssue).join(' ')}`,
-      'Проверь официальное клеймо, тип сварки, D1/D2, дату сварки или срок действия допуска в реестре клейм.',
+      hasSuspensionIssue
+        ? 'Проверь дату сварки или период отстранения в истории отстранений.'
+        : 'Проверь официальное клеймо, тип сварки, D1/D2, дату сварки или срок действия допуска в реестре клейм.',
     ].join(' ')
 
     tasks.push(

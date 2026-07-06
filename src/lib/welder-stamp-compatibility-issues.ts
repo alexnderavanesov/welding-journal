@@ -19,6 +19,10 @@ import {
   parseOfficialStampWeldingMethods,
   splitOfficialStampWeldTypes,
 } from '@/lib/welder-stamp-compatibility-utils'
+import {
+  formatWelderStampSuspensionBlockReason,
+  getSuspensionOverlapForStamp,
+} from '@/lib/welder-stamp-suspensions'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export function getOfficialStampCompatibilityIssues(
@@ -39,6 +43,18 @@ export function getOfficialStampCompatibilityIssues(
   for (const fieldKey of officialWelderStampFieldKeys) {
     const stamp = normalizeStampSelectValue(record[fieldKey])
     if (!stamp) continue
+
+    const suspension = getSuspensionOverlapForStamp(options.suspensions ?? [], stamp, record.weldDate)
+    if (suspension) {
+      issues.push({
+        fieldKey,
+        stamp,
+        method: '',
+        reason: 'suspended',
+        message: `Клеймо ${stamp} ${formatWelderStampSuspensionBlockReason(suspension)}, дата сварки ${formatDisplayDate(record.weldDate) || '-'}.`,
+      })
+      continue
+    }
 
     const stampRecords = activeRecords.filter(
       (stampRecord) => normalizeStampForCompare(stampRecord.naksStamp) === normalizeStampForCompare(stamp),

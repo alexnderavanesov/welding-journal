@@ -7,7 +7,7 @@ import {
   getJointChainConsistencyKey,
 } from '@/lib/repeated-joint-tasks'
 import { buildWelderStampExpiryTasks } from '@/lib/welder-stamp-expiry-tasks'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 type UseDispatcherTasksInput = {
   activeReport: ActiveReport
@@ -15,6 +15,7 @@ type UseDispatcherTasksInput = {
   rows: WeldRow[]
   setExpandedRepeatedJointTaskKeys: Dispatch<SetStateAction<Set<string>>>
   welderStamps: WelderStampRecord[]
+  welderStampSuspensions: WelderStampSuspensionRecord[]
 }
 
 export function useDispatcherTasks({
@@ -23,10 +24,14 @@ export function useDispatcherTasks({
   rows,
   setExpandedRepeatedJointTaskKeys,
   welderStamps,
+  welderStampSuspensions,
 }: UseDispatcherTasksInput) {
   const repeatedJointTasks = useMemo(
-    () => buildRepeatedJointTasks(rows, welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),
-    [dismissedRepeatedJointTaskKeys, rows, welderStamps],
+    () =>
+      buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions).filter(
+        (task) => !dismissedRepeatedJointTaskKeys.has(task.key),
+      ),
+    [dismissedRepeatedJointTaskKeys, rows, welderStampSuspensions, welderStamps],
   )
   const welderStampExpiryTasks = useMemo(
     () => buildWelderStampExpiryTasks(welderStamps).filter((task) => !dismissedRepeatedJointTaskKeys.has(task.key)),

@@ -9,6 +9,7 @@ import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation
 export function useWeldRowMutations({
   rows,
   welderStamps,
+  welderStampSuspensions,
   editingFocusField,
   setEditing,
   setMessage,
@@ -18,7 +19,7 @@ export function useWeldRowMutations({
 
   const saveMutation = useMutation({
     mutationFn: async (value: WeldDraft) => {
-      const preparedValue = prepareWeldSaveValue({ value, rows, welderStamps })
+      const preparedValue = prepareWeldSaveValue({ value, rows, welderStamps, welderStampSuspensions })
       return preparedValue.id
         ? updateWeldRowOrThrow(preparedValue as WeldRow)
         : createWeldRowOrThrow(preparedValue)

@@ -18,6 +18,7 @@ export type RepeatedJointTaskActionsProps = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
   onShowTask: (task: DispatcherTask) => void
+  onOpenTaskOfficiality: (task: DispatcherTask) => void
   onCreateTask: (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => void
   onDeleteTask: (task: RepeatedJointDeleteTask) => void
   onRenameTask: (task: RepeatedJointRenameTask) => void
@@ -32,6 +33,7 @@ export function RepeatedJointTaskActions({
   isTaskExpanded,
   onToggleDetails,
   onShowTask,
+  onOpenTaskOfficiality,
   onCreateTask,
   onDeleteTask,
   onRenameTask,
@@ -81,7 +83,16 @@ export function RepeatedJointTaskActions({
             Цепочка
           </Button>
         </>
-      ) : task.kind === 'line-consistency' ? (
+      ) : task.kind === 'percentage-line-control' && task.issue === 'rejected-primary' ? (
+        <>
+          <Button type="button" size="sm" variant="outline" onClick={() => onOpenTaskOfficiality(task)} className={dispatcherActionButtonClass}>
+            Официальность
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
+            Показать
+          </Button>
+        </>
+      ) : task.kind === 'line-consistency' || task.kind === 'percentage-line-control' ? (
         <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
           Показать
         </Button>

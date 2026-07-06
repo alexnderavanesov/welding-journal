@@ -89,6 +89,17 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
       </>
     )
   }
+  if (task.kind === 'percentage-line-control') {
+    return (
+      <>
+        <span className="text-slate-800">{title.joint}</span>
+        <span className="text-slate-700">{title.type}</span>
+        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+          {task.count}
+        </span>
+      </>
+    )
+  }
   return (
     <>
       <span className="text-slate-800">{title.joint}</span>

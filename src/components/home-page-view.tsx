@@ -22,6 +22,7 @@ type HomePageViewProps = {
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
+  onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
   reportWeldEditorProps: ComponentProps<typeof ReportDialogs>['weldEditorProps']
   reportPstoDialogsProps: ComponentProps<typeof ReportDialogs>['pstoDialogsProps']
@@ -45,6 +46,7 @@ export function HomePageView({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
+  onOpenPercentageLineStampRows,
   reportChainDialogProps,
   reportWeldEditorProps,
   reportPstoDialogsProps,
@@ -52,6 +54,9 @@ export function HomePageView({
   reportFieldEditorProps,
   reportImportDialogProps,
 }: HomePageViewProps) {
+  const isFluidReport = activeReport === 'statistics' || activeReport === 'welderStamps'
+  const pageMinWidth = isFluidReport ? 0 : registerMinWidth
+
   return (
     <ReportWorkspace
       activeReport={activeReport}
@@ -60,11 +65,11 @@ export function HomePageView({
       onNavCollapsedChange={onNavCollapsedChange}
       onReportChange={onReportChange}
     >
-      <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={registerMinWidth}>
+      <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={pageMinWidth}>
         <ReportHeaderActions {...reportHeaderActionsProps} />
       </ReportPageHeader>
 
-      {activeReport !== 'statistics' ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
+      {activeReport !== 'statistics' ? <ReportSummaryBar {...reportSummaryBarProps} minWidth={pageMinWidth} /> : null}
 
       {activeReport !== 'statistics' ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
 
@@ -74,6 +79,7 @@ export function HomePageView({
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}
         weldTableProps={weldTableProps}
+        onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
       />
 
       <ReportDialogs

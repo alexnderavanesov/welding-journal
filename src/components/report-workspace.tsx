@@ -19,6 +19,8 @@ export function ReportWorkspace({
   onNavCollapsedChange,
   onReportChange,
 }: ReportWorkspaceProps) {
+  const isFluidReport = activeReport === 'statistics' || activeReport === 'welderStamps'
+
   return (
     <main className="relative min-h-screen bg-white">
       <AppSidebar
@@ -35,9 +37,9 @@ export function ReportWorkspace({
       >
         <div
           className={`space-y-4 bg-white ${
-            activeReport === 'statistics' ? 'min-w-0 w-full' : 'min-w-full w-max'
+            isFluidReport ? 'min-w-0 w-full' : 'min-w-full w-max'
           }`}
-          style={activeReport === 'statistics' ? undefined : { minWidth: registerMinWidth }}
+          style={isFluidReport ? undefined : { minWidth: registerMinWidth }}
         >
           {children}
         </div>

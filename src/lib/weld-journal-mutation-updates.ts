@@ -33,16 +33,18 @@ import type {
 } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export function prepareWeldSaveValue({
   value,
   rows,
   welderStamps,
+  welderStampSuspensions,
 }: {
   value: WeldDraft
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
+  welderStampSuspensions: WelderStampSuspensionRecord[]
 }) {
   const preparedValue = withLnkFinalStatus(
     withPendingPstoResultStatus(
@@ -62,6 +64,7 @@ export function prepareWeldSaveValue({
       preparedValue.id ? rows.find((row) => row.id === preparedValue.id) : undefined,
       welderStamps,
     ),
+    suspensions: welderStampSuspensions,
   })
   return preparedValue
 }
@@ -79,10 +82,12 @@ export function prepareImportedWeldRecords({
   records,
   weldFormStampSelectOptions,
   welderStamps,
+  welderStampSuspensions,
 }: {
   records: WeldInput[]
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
+  welderStampSuspensions: WelderStampSuspensionRecord[]
 }) {
   const preparedRecords = records
   validateRequiredRootStampsForImport(preparedRecords)
@@ -90,6 +95,6 @@ export function prepareImportedWeldRecords({
   validateWeldDatesForImport(preparedRecords)
   normalizeWeldingMethodsForImport(preparedRecords)
   validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
-  validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps)
+  validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, { suspensions: welderStampSuspensions })
   return preparedRecords
 }

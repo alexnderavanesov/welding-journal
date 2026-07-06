@@ -83,6 +83,24 @@ export type LineConsistencyTask = {
   details: string
 }
 
+export type PercentageLineControlTask = {
+  kind: 'percentage-line-control'
+  key: string
+  row: WeldRow
+  issue: 'missing' | 'excess' | 'rejected-primary' | 'suspend-welder'
+  projectTitle: string
+  subtitleCode: string
+  line: string
+  stamp: string
+  title: string
+  details: string
+  targetRowIds?: number[]
+  requiredControls: number
+  coveredControls: number
+  assignedControls: number
+  count: number
+}
+
 export type RepeatedJointTask =
   | RepeatedJointCreateTask
   | RepeatedJointCoilTask
@@ -91,6 +109,7 @@ export type RepeatedJointTask =
   | RepeatedJointCheckTask
   | RepeatedJointDuplicateCheckTask
   | LineConsistencyTask
+  | PercentageLineControlTask
 
 export type WelderStampExpiryTask = {
   kind: 'welder-stamp-expiry'
