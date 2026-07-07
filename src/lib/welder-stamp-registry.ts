@@ -10,6 +10,7 @@ export function createEmptyWelderStampDraft(): WelderStampRecord {
   return {
     id: 0,
     naksStamp: '',
+    welderName: '',
     internalStamp: '',
     weldType: '',
     diameterFrom: '',
@@ -24,6 +25,7 @@ export function normalizeWelderStampRecord(record: WelderStampRecord): WelderSta
   return {
     ...record,
     naksStamp: normalizeNaksStamp(record.naksStamp),
+    welderName: String(record.welderName ?? '').trim(),
     internalStamp: record.internalStamp.trim(),
     weldType: normalizeWelderStampWeldType(record.weldType),
     diameterFrom: record.diameterFrom.trim(),
@@ -40,6 +42,36 @@ export function normalizeNaksStamp(value: string) {
 
 export function isValidNaksStamp(value: string) {
   return /^[A-Z0-9]{4}$/.test(value)
+}
+
+export function getWelderNameByNaks(records: WelderStampRecord[], naksStamp: string, excludedId: number | null = null) {
+  const normalizedStamp = normalizeNaksStamp(naksStamp)
+  if (!normalizedStamp) return ''
+
+  return (
+    records.find(
+      (record) =>
+        record.id !== excludedId &&
+        normalizeNaksStamp(record.naksStamp) === normalizedStamp &&
+        String(record.welderName ?? '').trim(),
+    )?.welderName.trim() ?? ''
+  )
+}
+
+export function getWelderStampNameSyncHint(records: WelderStampRecord[], record: WelderStampRecord, editingId: number | null) {
+  const draft = normalizeWelderStampRecord(record)
+  if (!draft.naksStamp) return ''
+
+  const existingName = getWelderNameByNaks(records, draft.naksStamp, editingId)
+  if (!existingName) return ''
+  if (!draft.welderName) {
+    return `Для клейма ${draft.naksStamp} уже указано ФИО: ${existingName}. Оно будет использовано при сохранении.`
+  }
+  if (draft.welderName !== existingName) {
+    return `При сохранении ФИО для клейма ${draft.naksStamp} будет обновлено во всех строках этого клейма.`
+  }
+
+  return ''
 }
 
 export function validateWelderStampRecord(record: WelderStampRecord) {
@@ -75,6 +107,11 @@ export function prepareWelderStampSave(
   editingId: number | null,
 ) {
   const draft = normalizeWelderStampRecord(record)
+  const existingWelderName = getWelderNameByNaks(records, draft.naksStamp, editingId)
+  if (draft.naksStamp && !draft.welderName && existingWelderName) {
+    draft.welderName = existingWelderName
+  }
+
   if (!draft.naksStamp && !draft.internalStamp) {
     return { ok: false as const, message: 'Укажите Клеймо НАКС или Клеймо внутреннее' }
   }
@@ -85,20 +122,37 @@ export function prepareWelderStampSave(
   const validationError = validateWelderStampRecord(draft)
   if (validationError) return { ok: false as const, message: validationError }
 
-  if (editingId !== null) {
-    return {
-      ok: true as const,
-      nextRecords: records.map((current) => (current.id === editingId ? { ...draft, id: editingId } : current)),
-      message: 'Клеймо обновлено',
-    }
-  }
+  const nextRecords =
+    editingId !== null
+      ? records.map((current) => (current.id === editingId ? { ...draft, id: editingId } : current))
+      : [{ ...draft, id: Math.max(0, ...records.map((current) => current.id)) + 1 }, ...records]
 
-  const nextId = Math.max(0, ...records.map((current) => current.id)) + 1
+  const syncedRecords = syncWelderNameForNaks(nextRecords, draft.naksStamp, draft.welderName)
+  const hasSyncedNames =
+    Boolean(draft.naksStamp && draft.welderName) &&
+    records.some(
+      (current) =>
+        normalizeNaksStamp(current.naksStamp) === draft.naksStamp &&
+        current.id !== editingId &&
+        String(current.welderName ?? '').trim() !== draft.welderName,
+    )
+
   return {
     ok: true as const,
-    nextRecords: [{ ...draft, id: nextId }, ...records],
-    message: 'Клеймо добавлено',
+    nextRecords: syncedRecords,
+    message: `${editingId !== null ? 'Клеймо обновлено' : 'Клеймо добавлено'}${
+      hasSyncedNames ? `. ФИО синхронизировано по всем строкам ${draft.naksStamp}` : ''
+    }`,
   }
+}
+
+function syncWelderNameForNaks(records: WelderStampRecord[], naksStamp: string, welderName: string) {
+  const normalizedStamp = normalizeNaksStamp(naksStamp)
+  if (!normalizedStamp) return records
+
+  return records.map((record) =>
+    normalizeNaksStamp(record.naksStamp) === normalizedStamp ? { ...record, welderName } : record,
+  )
 }
 
 export function setWelderStampRecordArchived(records: WelderStampRecord[], id: number, archived: boolean) {
@@ -112,7 +166,7 @@ export function removeWelderStampRecord(records: WelderStampRecord[], id: number
 export function getWelderStampFormHint(record: WelderStampRecord) {
   const draft = normalizeWelderStampRecord(record)
   const defaultHint =
-    'Клеймо НАКС: 4 знака, только латинские буквы и цифры. Если заполнено только внутреннее клеймо, тип сварки, диаметры и срок действия можно не указывать.'
+    'Клеймо НАКС: 4 знака, только латинские буквы и цифры. ФИО синхронизируется по Клеймо НАКС. Если заполнено только внутреннее клеймо, тип сварки, диаметры и срок действия можно не указывать.'
 
   if (!draft.naksStamp && !draft.internalStamp) return { kind: 'info' as const, text: defaultHint }
   if (draft.naksStamp && !isValidNaksStamp(draft.naksStamp)) {

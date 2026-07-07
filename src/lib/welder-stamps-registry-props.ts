@@ -4,9 +4,11 @@ import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord
 type CreateWelderStampsRegistryPropsOptions = {
   activeRecords: WelderStampRecord[]
   archivedRecords: WelderStampRecord[]
+  allRecords: WelderStampRecord[]
   suspensionRecords: WelderStampSuspensionRecord[]
   draft: WelderStampRecord
   suspensionDraft: WelderStampSuspensionRecord
+  suspensionEditorOpenSignal?: number
   search: string
   filters: WelderStampFilters
   editingId: number | null
@@ -31,9 +33,11 @@ type CreateWelderStampsRegistryPropsOptions = {
 export function createWelderStampsRegistryProps({
   activeRecords,
   archivedRecords,
+  allRecords,
   suspensionRecords,
   draft,
   suspensionDraft,
+  suspensionEditorOpenSignal = 0,
   search,
   filters,
   editingId,
@@ -57,9 +61,11 @@ export function createWelderStampsRegistryProps({
   return {
     records: activeRecords,
     archivedRecords,
+    allRecords,
     suspensionRecords,
     draft,
     suspensionDraft,
+    suspensionEditorOpenSignal,
     search,
     filters,
     editingId,

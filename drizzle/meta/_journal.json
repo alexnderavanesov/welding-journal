@@ -50,6 +50,13 @@
       "when": 1783316400000,
       "tag": "0009_welder_stamp_suspensions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783345200000,
+      "tag": "0010_welder_stamp_names",
+      "breakpoints": true
     }
   ]
 }

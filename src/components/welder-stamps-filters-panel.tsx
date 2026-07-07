@@ -54,7 +54,7 @@ export function WelderStampsFiltersPanel({
             <Input
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Клеймо НАКС, внутреннее клеймо, тип сварки или диаметр"
+              placeholder="Клеймо НАКС, ФИО, внутреннее клеймо, тип сварки или диаметр"
               className="h-10"
             />
           </label>

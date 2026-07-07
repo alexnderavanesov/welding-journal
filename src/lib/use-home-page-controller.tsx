@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
+import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   useAutoCollapseNavOnHorizontalScroll,
   useEscapeToClearReportFilters,
@@ -68,6 +68,7 @@ import { buildPercentageLineStampFilters, type PercentageLineStampFilter } from 
 
 export function useHomePageController() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
   const confirmAction = useConfirmAction()
   const {
     activeReport,
@@ -865,6 +866,10 @@ export function useHomePageController() {
     onCreateTask: createRepeatedJoint,
     onDeleteTask: deleteObsoleteRepeatedJoint,
     onRenameTask: renameObsoleteRepeatedJoint,
+    onAcceptPercentageLineTask: acceptPercentageLineTask,
+    onEditPercentageLineTaskStamp: editPercentageLineTaskStamp,
+    onSuspendPercentageLineWelder: openWelderSuspensionFromPercentageLineTask,
+    onSkipPercentageLineWelderSuspension: skipWelderSuspensionFromPercentageLineTask,
     isCreatePending: repeatedJointMutation.isPending,
     isDeletePending: obsoleteRepeatedJointMutation.isPending,
     isRenamePending: renameRepeatedJointMutation.isPending,
@@ -904,9 +909,11 @@ export function useHomePageController() {
   const welderStampsRegistryProps = createWelderStampsRegistryProps({
     activeRecords: activeWelderStamps,
     archivedRecords: archivedWelderStamps,
+    allRecords: welderStamps,
     suspensionRecords: welderStampSuspensions,
     draft: welderStampDraft,
     suspensionDraft: welderStampSuspensionDraft,
+    suspensionEditorOpenSignal: welderStampSuspensionEditorOpenSignal,
     search: welderStampSearch,
     filters: welderStampFilters,
     editingId: editingWelderStampId,
@@ -990,6 +997,62 @@ export function useHomePageController() {
     })
     setIsLnkOfficialityModalOpen(true)
     setMessage(`Открыта официальность по клейму ${task.stamp} на линии ${task.line}`)
+  }
+
+  async function acceptPercentageLineTask(task: PercentageLineControlTask) {
+    if (task.issue !== 'excess' && task.issue !== 'new-welder') return
+    const confirmed = await confirmAction({
+      title: 'Принять предупреждение',
+      itemName: `${task.line} · ${task.stamp}`,
+      description:
+        task.issue === 'excess'
+          ? 'Диспетчер скроет текущее предупреждение о лишнем РК/УЗК для этой процентной линии и клейма. Используй это только если дополнительный контроль действительно нужен и его не нужно исправлять.'
+          : 'Диспетчер скроет текущее предупреждение о новом сварщике на процентной линии. Используй это только если клеймо указано верно и увеличение объема контроля принято осознанно.',
+      warning:
+        'Это не удаляет стык, заявку или результат. Если по линии изменятся стыки, клейма или назначенный контроль, предупреждение возникнет снова.',
+      confirmLabel: 'Принять',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+    dismissRepeatedJointTask(task)
+    setMessage(`Предупреждение принято: ${task.title.toLowerCase()}`)
+  }
+
+  function editPercentageLineTaskStamp(task: PercentageLineControlTask) {
+    if (task.issue !== 'new-welder') return
+    setActiveReport('weldingJournal')
+    setChainRecord(null)
+    setColumnFilters(buildPercentageLineStampFilters(task))
+    setEditing({ record: task.row, focusField: 'stamp1K' })
+    setMessage(`Открыто редактирование стыка ${String(task.row.joint ?? '-')}: проверь официальное клеймо ${task.stamp}`)
+  }
+
+  function openWelderSuspensionFromPercentageLineTask(task: PercentageLineControlTask) {
+    if (task.issue !== 'suspend-welder') return
+    setActiveReport('welderStamps')
+    setChainRecord(null)
+    resetWelderStampSuspensionForm()
+    updateWelderStampSuspensionDraft('naksStamp', task.stamp)
+    updateWelderStampSuspensionDraft('suspendedFrom', task.suspensionFrom || String(task.row.weldDate ?? ''))
+    setWelderStampSuspensionEditorOpenSignal((current) => current + 1)
+    setMessage(`Открыто добавление отстранения для клейма ${task.stamp}. Проверь дату и сохрани запись.`)
+  }
+
+  async function skipWelderSuspensionFromPercentageLineTask(task: PercentageLineControlTask) {
+    if (task.issue !== 'suspend-welder') return
+    const confirmed = await confirmAction({
+      title: 'Не отстранять сварщика',
+      itemName: `${task.stamp} · ${task.line}`,
+      description:
+        'Диспетчер скроет текущее предупреждение об отстранении сварщика. Используй это только если решение не отстранять уже принято и его не нужно фиксировать в истории отстранений.',
+      warning:
+        'Это не удаляет стык, заявку или результат. Если по этому клейму появятся новые первичные негодные стыки или изменится расчет, предупреждение возникнет снова.',
+      confirmLabel: 'Не отстранять',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+    dismissRepeatedJointTask(task)
+    setMessage(`Предупреждение об отстранении клейма ${task.stamp} скрыто`)
   }
 
   const reportSummaryBarProps = createReportSummaryBarProps({

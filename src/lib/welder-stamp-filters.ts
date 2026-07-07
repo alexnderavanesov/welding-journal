@@ -28,6 +28,7 @@ function matchesWelderStampTextSearch(record: WelderStampRecord, needle: string)
 
   return [
     record.naksStamp,
+    record.welderName,
     record.internalStamp,
     record.weldType,
     record.diameterFrom,

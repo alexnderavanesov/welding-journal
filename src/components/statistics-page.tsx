@@ -1054,8 +1054,8 @@ function PercentageLineGroup({
   const lineHint =
     `${line.line}: ${line.percent}% контроля считается отдельно по каждому официальному клейму. ` +
     `Расчет по проценту: max(1, округление вверх от количества официальных стыков клейма * ${line.percent}%). ` +
-    `Если первичный стык не годен: ${line.percent === 1 ? '+1 стык к РК/УЗК' : '+2 стыка к РК/УЗК'}. ` +
-    'После 4-го первичного негодного результата требуется 100% РК/УЗК по этому клейму.'
+    `Если первичный стык не годен по любому виду контроля: ${line.percent === 1 ? '+1 стык к РК/УЗК' : '+2 стыка к РК/УЗК'}. ` +
+    'После 4-го первичного негодного результата по любому виду контроля требуется 100% РК/УЗК по этому клейму.'
 
   return (
     <div
@@ -1096,7 +1096,7 @@ function PercentageLineGroup({
           <PercentageLineMiniStat
             label="Требуется"
             value={totals.required}
-            title="Сколько стыков нужно закрыть РК/УЗК по проценту и доборам после первичных негодных."
+            title="Сколько стыков нужно закрыть РК/УЗК: базовый процент плюс добор после первичных негодных результатов по любому виду контроля."
           />
           <PercentageLineMiniStat
             label="Назначено"
@@ -1141,11 +1141,16 @@ function PercentageLineGroup({
             <thead className="bg-slate-100 text-slate-700">
               <tr>
                 <LineHeaderCell>Клеймо</LineHeaderCell>
-                <LineHeaderCell align="right">Стыков</LineHeaderCell>
+                <LineHeaderCell
+                  align="right"
+                  title="Сварено = официальные активные стыки этого клейма на процентной линии. Неофициальные, неактуальные по изм. и строки без даты сварки не учитываются."
+                >
+                  Сварено
+                </LineHeaderCell>
                 <LineHeaderCell align="right">Состояние</LineHeaderCell>
                 <LineHeaderCell
                   align="right"
-                  title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных. После 4-го первичного негодного требуется 100% РК/УЗК."
+                  title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных результатов по любому виду контроля. После 4-го первичного негодного требуется 100% РК/УЗК."
                 >
                   Требуется РК/УЗК
                 </LineHeaderCell>
@@ -1158,12 +1163,12 @@ function PercentageLineGroup({
                 >
                   Покрыто
                 </LineHeaderCell>
-                <LineHeaderCell align="right" title="Выполнено = есть результат РК или УЗК: годен, ремонт или вырез.">
+                <LineHeaderCell align="right" title="Выполнено = есть результат РК/УЗК либо любой негодный результат по другому виду контроля. Такой негодный результат тоже запускает добор РК/УЗК.">
                   Выполнено
                 </LineHeaderCell>
                 <LineHeaderCell
                   align="right"
-                  title="Первично не годен = негодный результат РК/УЗК на первичном стыке без системных индексов R/W/Y."
+                  title="Первично не годен = негодный результат любого вида контроля на первичном стыке без системных индексов R/W/Y."
                 >
                   Первично не годен
                 </LineHeaderCell>
@@ -1317,7 +1322,7 @@ function getPercentageStatusHint(stamp: PercentageLineStampSummary) {
     `Годен: ${stamp.goodJoints}`,
     `Не годен: ${stamp.rejectedJoints}`,
     `Ожидает заявку: ${stamp.waitingRequestJoints}`,
-    `Ожидает РК/УЗК: ${stamp.waitingControlJoints}`,
+    `Ожидает результат НК: ${stamp.waitingControlJoints}`,
   ].join('. ')
 }
 

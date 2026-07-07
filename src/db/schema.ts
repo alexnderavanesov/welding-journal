@@ -128,6 +128,7 @@ export type NewWeldJoint = typeof weldJoints.$inferInsert
 export const welderStamps = pgTable('welder_stamps', {
   id: serial('id').primaryKey(),
   naksStamp: text('naks_stamp'),
+  welderName: text('welder_name'),
   internalStamp: text('internal_stamp'),
   weldType: text('weld_type'),
   diameterFrom: text('diameter_from'),

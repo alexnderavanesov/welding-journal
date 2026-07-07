@@ -14,9 +14,11 @@ import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord
 export type WelderStampsRegistryProps = {
   records: WelderStampRecord[]
   archivedRecords: WelderStampRecord[]
+  allRecords: WelderStampRecord[]
   suspensionRecords: WelderStampSuspensionRecord[]
   draft: WelderStampRecord
   suspensionDraft: WelderStampSuspensionRecord
+  suspensionEditorOpenSignal?: number
   search: string
   filters: WelderStampFilters
   editingId: number | null
@@ -41,9 +43,11 @@ export type WelderStampsRegistryProps = {
 export function WelderStampsRegistry({
   records,
   archivedRecords,
+  allRecords,
   suspensionRecords,
   draft,
   suspensionDraft,
+  suspensionEditorOpenSignal = 0,
   search,
   filters,
   editingId,
@@ -71,12 +75,12 @@ export function WelderStampsRegistry({
     () =>
       Array.from(
         new Set(
-          [...records, ...archivedRecords]
+          allRecords
             .map((record) => String(record.naksStamp ?? '').trim())
             .filter(Boolean),
         ),
       ).sort((left, right) => left.localeCompare(right, 'ru')),
-    [archivedRecords, records],
+    [allRecords],
   )
 
   useEffect(() => {
@@ -147,6 +151,7 @@ export function WelderStampsRegistry({
           records={suspensionRecords}
           stampOptions={suspensionStampOptions}
           draft={suspensionDraft}
+          openEditorSignal={suspensionEditorOpenSignal}
           onDraftChange={onSuspensionDraftChange}
           onSave={onSaveSuspension}
           onReset={onResetSuspension}
@@ -175,6 +180,7 @@ export function WelderStampsRegistry({
             <WelderStampsCreatePanel
               draft={draft}
               editingId={editingId}
+              records={allRecords}
               onDraftChange={onDraftChange}
               onSave={saveAndCloseEditorDialog}
               onReset={onReset}

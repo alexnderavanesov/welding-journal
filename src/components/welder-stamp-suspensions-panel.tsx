@@ -12,6 +12,7 @@ type WelderStampSuspensionsPanelProps = {
   records: WelderStampSuspensionRecord[]
   stampOptions: string[]
   draft: WelderStampSuspensionRecord
+  openEditorSignal?: number
   onDraftChange: (field: keyof WelderStampSuspensionRecord, value: string) => void
   onSave: () => boolean
   onReset: () => void
@@ -23,6 +24,7 @@ export function WelderStampSuspensionsPanel({
   records,
   stampOptions,
   draft,
+  openEditorSignal = 0,
   onDraftChange,
   onSave,
   onReset,
@@ -55,8 +57,14 @@ export function WelderStampSuspensionsPanel({
     return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [isEditorOpen])
 
+  useEffect(() => {
+    if (openEditorSignal <= 0) return
+    setIsOpen(true)
+    setIsEditorOpen(true)
+  }, [openEditorSignal])
+
   function openCreateEditor() {
-    onReset()
+    if (!hasDraft) onReset()
     setIsOpen(true)
     setIsEditorOpen(true)
   }

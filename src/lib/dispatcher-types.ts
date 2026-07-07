@@ -87,7 +87,7 @@ export type PercentageLineControlTask = {
   kind: 'percentage-line-control'
   key: string
   row: WeldRow
-  issue: 'missing' | 'excess' | 'rejected-primary' | 'suspend-welder'
+  issue: 'missing' | 'excess' | 'new-welder' | 'rejected-primary' | 'suspend-welder'
   projectTitle: string
   subtitleCode: string
   line: string
@@ -95,6 +95,7 @@ export type PercentageLineControlTask = {
   title: string
   details: string
   targetRowIds?: number[]
+  suspensionFrom?: string
   requiredControls: number
   coveredControls: number
   assignedControls: number

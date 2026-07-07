@@ -135,6 +135,7 @@ function welderStamp(value: Partial<WelderStampRecord>): WelderStampRecord {
   return {
     id: 1,
     naksStamp: '',
+    welderName: '',
     internalStamp: '',
     weldType: 'РАД',
     diameterFrom: '1',

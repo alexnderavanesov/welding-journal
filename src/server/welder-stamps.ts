@@ -13,6 +13,7 @@ import {
 export type WelderStampPayload = {
   id: number
   naksStamp: string
+  welderName: string
   internalStamp: string
   weldType: string
   diameterFrom: string
@@ -37,6 +38,7 @@ const textOrNull = (value: unknown) => {
 const toPayload = (row: WelderStamp): WelderStampPayload => ({
   id: row.id,
   naksStamp: row.naksStamp ?? '',
+  welderName: row.welderName ?? '',
   internalStamp: row.internalStamp ?? '',
   weldType: row.weldType ?? '',
   diameterFrom: row.diameterFrom ?? '',
@@ -49,6 +51,7 @@ const toPayload = (row: WelderStamp): WelderStampPayload => ({
 const toDbInsert = (record: WelderStampPayload): NewWelderStamp => ({
   id: record.id,
   naksStamp: textOrNull(record.naksStamp),
+  welderName: textOrNull(record.welderName),
   internalStamp: textOrNull(record.internalStamp),
   weldType: textOrNull(record.weldType),
   diameterFrom: textOrNull(record.diameterFrom),

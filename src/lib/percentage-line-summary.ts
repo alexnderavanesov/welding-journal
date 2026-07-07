@@ -2,7 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import { hasText, isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue } from '@/lib/report-value-utils'
-import { calculateFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
+import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeResultStatus } from '@/lib/weld-status'
 
 export type PercentageControlMethod = 'РК' | 'УЗК'
 
@@ -248,19 +248,28 @@ function hasNormalAssignedPercentageControl(row: WeldRow) {
 }
 
 function hasCoveredPercentageControl(row: WeldRow) {
-  return PERCENTAGE_CONTROL_METHODS.some(
-    ({ enabledKey, resultKey }) =>
-      isEnabledControlValue(row[enabledKey]) || isCancelledControlValue(row[enabledKey]) || hasCompletedResult(row[resultKey]),
+  return (
+    PERCENTAGE_CONTROL_METHODS.some(
+      ({ enabledKey, resultKey }) => isEnabledControlValue(row[enabledKey]) || hasCompletedResult(row[resultKey]),
+    ) || hasBothPercentageControlsCancelled(row)
   )
 }
 
 function hasCompletedPercentageControl(row: WeldRow) {
-  return PERCENTAGE_CONTROL_METHODS.some(({ resultKey }) => hasCompletedResult(row[resultKey]))
+  return PERCENTAGE_CONTROL_METHODS.some(({ resultKey }) => hasCompletedResult(row[resultKey])) || hasRejectedAnyControlResult(row)
+}
+
+function hasBothPercentageControlsCancelled(row: WeldRow) {
+  return PERCENTAGE_CONTROL_METHODS.every(({ enabledKey }) => isCancelledControlValue(row[enabledKey]))
 }
 
 function isRejectedPrimaryPercentageControl(row: WeldRow) {
   if (parseJointChainName(String(row.joint ?? '')).segments.length > 0) return false
-  return PERCENTAGE_CONTROL_METHODS.some(({ resultKey }) => {
+  return hasRejectedAnyControlResult(row)
+}
+
+function hasRejectedAnyControlResult(row: WeldRow) {
+  return CONTROL_RESULT_PAIRS.some(({ resultKey }) => {
     const result = normalizeResultStatus(row[resultKey])
     return result === 'ремонт' || result === 'вырез'
   })

@@ -58,7 +58,7 @@ export function buildRepeatedJointTasks(
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
   const lineConsistencyTasks = buildLineConsistencyTasks(rows)
-  const percentageLineControlTasks = buildPercentageLineControlTasks(rows)
+  const percentageLineControlTasks = buildPercentageLineControlTasks(rows, welderStampSuspensions)
   const blockedChainKeys = new Set(
     [
       ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),

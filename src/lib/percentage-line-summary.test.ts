@@ -43,6 +43,24 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.requiredControls).toBe(3)
   })
 
+  it('counts a rejected primary joint by any control method, not only RK or UZK', () => {
+    const rows = [
+      makeRow(1, { joint: 'S1', hasRfa: 'дополнительный', rfaResult: 'вырез', hasRk: 'да' }),
+      makeRow(2, { joint: 'S2' }),
+      makeRow(3, { joint: 'S3' }),
+      makeRow(4, { joint: 'S4' }),
+      makeRow(5, { joint: 'S5' }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.completedControls).toBe(1)
+    expect(stamp.rejectedPrimaryControls).toBe(1)
+    expect(stamp.rejectedJoints).toBe(1)
+    expect(stamp.additionalRequiredControls).toBe(2)
+    expect(stamp.requiredControls).toBe(3)
+  })
+
   it('adds one control after a rejected primary joint on a 1 percent line', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       makeRow(index + 1, {
@@ -91,12 +109,13 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.fullControlRequired).toBe(false)
   })
 
-  it('treats cancelled RK/UZK availability as intentionally covered for missing-control checks', () => {
+  it('treats RK and UZK cancelled together as intentionally covered for missing-control checks', () => {
     const rows = Array.from({ length: 6 }, (_, index) =>
       makeRow(index + 1, {
         joint: `S${index + 1}`,
         rkResult: index < 4 ? 'вырез' : '',
         hasRk: index < 4 ? 'да' : 'отменен',
+        hasUzk: index < 4 ? '' : 'отменен',
       }),
     )
 

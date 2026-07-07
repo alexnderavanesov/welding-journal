@@ -14,6 +14,7 @@ function stampRecord(value: string, archived: boolean): WelderStampRecord {
   return {
     id: archived ? 1 : 2,
     naksStamp: value,
+    welderName: '',
     internalStamp: '',
     weldType: 'РАД',
     diameterFrom: '1',

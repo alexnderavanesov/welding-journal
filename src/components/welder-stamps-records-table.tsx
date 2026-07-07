@@ -26,18 +26,19 @@ export function WelderStampsRecordsTable({
     <table className="w-full table-fixed border-collapse text-sm">
       <thead className="bg-slate-100 text-center text-slate-700">
         <tr>
-          <th className="w-[14%] border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
-          <th className="w-[18%] border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
-          <th className="w-[13%] border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
-          <th className="w-[20%] border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
-          <th className="w-[22%] border-r border-white px-3 py-3 font-semibold">Срок действия</th>
+          <th className="w-[12%] border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
+          <th className="w-[18%] border-r border-white px-3 py-3 font-semibold">ФИО сварщика</th>
+          <th className="w-[14%] border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
+          <th className="w-[12%] border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
+          <th className="w-[17%] border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
+          <th className="w-[17%] border-r border-white px-3 py-3 font-semibold">Срок действия</th>
           <th className={`${archived ? 'w-40' : 'w-32'} px-3 py-3 font-semibold`}>Действия</th>
         </tr>
       </thead>
       <tbody>
         {records.length === 0 ? (
           <tr>
-            <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+            <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
               {emptyMessage}
             </td>
           </tr>

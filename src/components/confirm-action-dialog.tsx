@@ -24,7 +24,7 @@ export function ConfirmActionDialog({
   itemName,
   description,
   warning,
-  confirmLabel = 'Удалить',
+  confirmLabel,
   cancelLabel = 'Отмена',
   tone = 'danger',
   onConfirm,
@@ -44,6 +44,7 @@ export function ConfirmActionDialog({
   }, [onClose])
 
   const isDanger = tone === 'danger'
+  const resolvedConfirmLabel = confirmLabel ?? (isDanger ? 'Удалить' : 'Принять')
 
   return (
     <LargeDialogShell
@@ -89,7 +90,7 @@ export function ConfirmActionDialog({
           {cancelLabel}
         </Button>
         <Button type="button" variant={isDanger ? 'destructive' : 'default'} onClick={onConfirm}>
-          {confirmLabel}
+          {resolvedConfirmLabel}
         </Button>
       </div>
     </LargeDialogShell>

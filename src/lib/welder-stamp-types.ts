@@ -1,6 +1,7 @@
 export type WelderStampRecord = {
   id: number
   naksStamp: string
+  welderName: string
   internalStamp: string
   weldType: string
   diameterFrom: string

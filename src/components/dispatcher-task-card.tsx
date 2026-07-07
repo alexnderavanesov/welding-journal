@@ -6,6 +6,7 @@ import {
 } from '@/components/dispatcher-task-ui'
 import type {
   DispatcherTask,
+  PercentageLineControlTask,
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
   RepeatedJointDeleteTask,
@@ -21,6 +22,10 @@ export type DispatcherTaskCardHandlers = {
   onCreateTask: (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => void
   onDeleteTask: (task: RepeatedJointDeleteTask) => void
   onRenameTask: (task: RepeatedJointRenameTask) => void
+  onAcceptPercentageLineTask: (task: PercentageLineControlTask) => void
+  onEditPercentageLineTaskStamp: (task: PercentageLineControlTask) => void
+  onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
+  onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
   canRunDispatcherMutation: boolean
   isCreatePending: boolean
   isDeletePending: boolean

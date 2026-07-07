@@ -35,6 +35,7 @@ export function WelderStampsRecordRow({
       <td className={`break-words border-t border-slate-200 px-3 py-3 text-center font-semibold ${archived ? '' : 'text-slate-900'}`}>
         {record.naksStamp || '-'}
       </td>
+      <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{record.welderName || '-'}</td>
       <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{record.internalStamp || '-'}</td>
       <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>{record.weldType || '-'}</td>
       <td className={`break-words border-t border-slate-200 px-3 py-3 text-center ${textClassName}`}>
