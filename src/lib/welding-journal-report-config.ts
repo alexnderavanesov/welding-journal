@@ -140,8 +140,8 @@ const WELDING_JOURNAL_BASE_REPORT_FIELD_KEYS = [
 const WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS = [
   'hasVik',
   'hasRk',
-  'hasPvk',
   'hasUzk',
+  'hasPvk',
   'pstoRequired',
   'hasTvmt',
   'hasRfa',

@@ -22,8 +22,8 @@ const LINE_CONSISTENCY_FIELDS: LineConsistencyField[] = [
 const CONTROL_PRESENCE_FIELDS: ControlPresenceField[] = [
   { key: 'hasVik', label: 'ВИК' },
   { key: 'hasRk', label: 'РК' },
-  { key: 'hasPvk', label: 'ПВК' },
   { key: 'hasUzk', label: 'УЗК' },
+  { key: 'hasPvk', label: 'ПВК' },
   { key: 'pstoRequired', label: 'ПСТО' },
   { key: 'hasTvmt', label: 'ТВМТ' },
   { key: 'hasRfa', label: 'РФА' },

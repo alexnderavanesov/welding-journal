@@ -118,7 +118,7 @@ export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRo
   )
   const orderedMethods = useMemo(() => {
     const methodsByCode = new Map([...summary.methods, summary.pstoMethod].map((method) => [method.code, method]))
-    return ['ВИК', 'РК', 'ПВК', 'УЗК', 'ПСТО', 'ТВМТ', 'РФА', 'СТЛС', 'МКК']
+    return ['ВИК', 'РК', 'УЗК', 'ПВК', 'ПСТО', 'ТВМТ', 'РФА', 'СТЛС', 'МКК']
       .map((code) => methodsByCode.get(code))
       .filter((method): method is StatisticsMethodSummary => Boolean(method))
   }, [summary.methods, summary.pstoMethod])

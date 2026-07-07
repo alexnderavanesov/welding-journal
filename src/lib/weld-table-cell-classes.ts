@@ -19,8 +19,8 @@ const STAMP_FIELD_KEYS = new Set<WeldFieldKey>([
 const REQUEST_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikRequest',
   'rkRequest',
-  'pvkRequest',
   'uzkRequest',
+  'pvkRequest',
   'pstoRequest',
   'tvmtRequest',
   'rfaRequest',
@@ -31,8 +31,8 @@ const REQUEST_FIELD_KEYS = new Set<WeldFieldKey>([
 const RESULT_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikResult',
   'rkResult',
-  'pvkResult',
   'uzkResult',
+  'pvkResult',
   'pstoResult',
   'heatTreatmentDiagram',
   'tvmtResult',

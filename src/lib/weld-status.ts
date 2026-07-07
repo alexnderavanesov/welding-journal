@@ -7,8 +7,8 @@ export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'ожид�
 export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikResult',
   'rkResult',
-  'pvkResult',
   'uzkResult',
+  'pvkResult',
   'tvmtResult',
   'rfaResult',
   'stlsResult',
@@ -20,8 +20,8 @@ export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
 export const CONTROL_RESULT_PAIRS = [
   { code: 'ВИК', enabledKey: 'hasVik', resultKey: 'vikResult' },
   { code: 'РК', enabledKey: 'hasRk', resultKey: 'rkResult' },
-  { code: 'ПВК', enabledKey: 'hasPvk', resultKey: 'pvkResult' },
   { code: 'УЗК', enabledKey: 'hasUzk', resultKey: 'uzkResult' },
+  { code: 'ПВК', enabledKey: 'hasPvk', resultKey: 'pvkResult' },
   { code: 'ТВМТ', enabledKey: 'hasTvmt', resultKey: 'tvmtResult' },
   { code: 'РФА', enabledKey: 'hasRfa', resultKey: 'rfaResult' },
   { code: 'СТЛС', enabledKey: 'hasStls', resultKey: 'stlsResult' },
@@ -31,8 +31,8 @@ export const CONTROL_RESULT_PAIRS = [
 const CONTROL_STATE_PAIRS = [
   { enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult' },
   { enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult' },
-  { enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult' },
   { enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult' },
+  { enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult' },
   { enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult' },
   { enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult' },
   { enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult' },

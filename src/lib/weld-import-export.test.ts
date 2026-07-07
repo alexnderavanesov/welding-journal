@@ -78,8 +78,8 @@ describe('weld import/export', () => {
     expect(result.missingHeaders).toEqual([
       'Заявка ВИК',
       'Заявка РК',
-      'Заявка ПВК',
       'Заявка УЗК',
+      'Заявка ПВК',
       'Заявка ПСТО',
       'Заявка ТВМТ',
       'Заявка РФА',

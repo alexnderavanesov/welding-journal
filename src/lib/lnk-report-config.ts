@@ -3,8 +3,8 @@ import type { WeldField, WeldFieldKey } from './weld-field-definitions'
 export const LNK_METHODS = [
   { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
   { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' },
-  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' },
   { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' },
+  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' },
   { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' },
   { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' },
   { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' },
@@ -47,10 +47,10 @@ export const LNK_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikKs3',
   'rkBoq',
   'rkKs3',
-  'pvkBoq',
-  'pvkKs3',
   'uzkBoq',
   'uzkKs3',
+  'pvkBoq',
+  'pvkKs3',
   'tvmtBoq',
   'tvmtKs3',
   'rfaBoq',
@@ -66,10 +66,10 @@ export const LNK_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikConclusion',
   'rkConclusionDate',
   'rkConclusion',
-  'pvkConclusionDate',
-  'pvkConclusion',
   'uzkConclusionDate',
   'uzkConclusion',
+  'pvkConclusionDate',
+  'pvkConclusion',
   'tvmtConclusionDate',
   'tvmtConclusion',
   'rfaConclusionDate',
@@ -96,4 +96,3 @@ export const LNK_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_EDITABLE_REPORT_FIELD_KEYS,
 ])
 export const LNK_IMPORT_MATCH_FIELD_KEYS = new Set<WeldFieldKey>(['line', 'joint'])
-
