@@ -34,7 +34,7 @@ export function CancelledBadge() {
 }
 
 export function AdditionalBadge() {
-  return <Badge className="bg-sky-50 px-2 py-0.5 text-xs font-normal text-sky-700">дополнительный</Badge>
+  return <Badge className="bg-sky-50 px-2 py-0.5 text-xs font-normal text-sky-700">доп.</Badge>
 }
 
 export function ReplacementBadge() {
