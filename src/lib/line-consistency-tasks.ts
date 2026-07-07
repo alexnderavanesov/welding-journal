@@ -103,12 +103,13 @@ function buildControlPresenceTasksForLine(groupRows: WeldRow[], representativeRo
   const tasks: LineConsistencyTask[] = []
   for (const [percentKey, percentRows] of percentGroups.entries()) {
     if (percentRows.length < 2) continue
+    const percent = normalizeDisplayValue(percentRows[0]?.weldControlPercent) || 'пусто'
+    if (!isFullControlPercent(percent)) continue
     const values = getControlPresenceConflictValues(percentRows)
     if (values.length < 2) continue
 
     const projectTitle = normalizeDisplayValue(representativeRow.projectTitle)
     const subtitleCode = normalizeDisplayValue(representativeRow.subtitleCode)
-    const percent = normalizeDisplayValue(percentRows[0]?.weldControlPercent) || 'пусто'
     const detailsContext = [
       projectTitle ? `проект ${projectTitle}` : '',
       subtitleCode ? `шифр ${subtitleCode}` : '',
@@ -188,7 +189,7 @@ function isAdditionalValue(value: unknown) {
 }
 
 function isNeutralPresenceValue(value: unknown) {
-  return isCancelledValue(value) || isAdditionalValue(value)
+  return isCancelledValue(value) || isAdditionalValue(value) || normalizeKey(value) === 'замена рк/узк'
 }
 
 function normalizeDisplayValue(value: unknown) {
@@ -197,4 +198,10 @@ function normalizeDisplayValue(value: unknown) {
 
 function normalizeKey(value: unknown) {
   return normalizeDisplayValue(value).toLowerCase()
+}
+
+function isFullControlPercent(value: unknown) {
+  const normalized = normalizeDisplayValue(value).replace(',', '.').replace('%', '')
+  const percent = Number(normalized)
+  return Number.isFinite(percent) && percent === 100
 }

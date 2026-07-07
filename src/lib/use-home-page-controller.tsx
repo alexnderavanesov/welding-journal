@@ -12,6 +12,7 @@ import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
+import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
 import { useReportRows } from '@/lib/use-report-rows'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
@@ -197,6 +198,7 @@ export function useHomePageController() {
     setExpandedRepeatedJointTaskKeys,
     toggleRepeatedJointTaskDetails,
   } = useDispatcherTaskUiState()
+  const { acceptedDispatcherWarningKeys, acceptDispatcherTaskWarning } = useDispatcherAcceptedWarnings({ setMessage })
   const {
     welderStamps,
     welderStampSuspensions,
@@ -294,6 +296,7 @@ export function useHomePageController() {
     welderStampExpiryTasks,
     welderStampNotificationGroups,
   } = useDispatcherTasks({
+    acceptedDispatcherWarningKeys,
     activeReport,
     dismissedRepeatedJointTaskKeys,
     rows,
@@ -1000,22 +1003,30 @@ export function useHomePageController() {
   }
 
   async function acceptPercentageLineTask(task: PercentageLineControlTask) {
-    if (task.issue !== 'excess' && task.issue !== 'new-welder') return
+    if (task.issue !== 'excess' && task.issue !== 'new-welder' && task.issue !== 'rejected-primary') return
     const confirmed = await confirmAction({
       title: 'Принять предупреждение',
       itemName: `${task.line} · ${task.stamp}`,
-      description:
-        task.issue === 'excess'
-          ? 'Диспетчер скроет текущее предупреждение о лишнем РК/УЗК для этой процентной линии и клейма. Используй это только если дополнительный контроль действительно нужен и его не нужно исправлять.'
-          : 'Диспетчер скроет текущее предупреждение о новом сварщике на процентной линии. Используй это только если клеймо указано верно и увеличение объема контроля принято осознанно.',
+      description: getPercentageLineAcceptDescription(task),
       warning:
         'Это не удаляет стык, заявку или результат. Если по линии изменятся стыки, клейма или назначенный контроль, предупреждение возникнет снова.',
       confirmLabel: 'Принять',
       tone: 'warning',
     })
     if (!confirmed) return
+    await acceptDispatcherTaskWarning(task)
     dismissRepeatedJointTask(task)
     setMessage(`Предупреждение принято: ${task.title.toLowerCase()}`)
+  }
+
+  function getPercentageLineAcceptDescription(task: PercentageLineControlTask) {
+    if (task.issue === 'excess') {
+      return 'Диспетчер скроет текущее предупреждение о лишнем РК/УЗК для этой процентной линии и клейма. Используй это только если дополнительный контроль действительно нужен и его не нужно исправлять.'
+    }
+    if (task.issue === 'new-welder') {
+      return 'Диспетчер скроет текущее предупреждение о новом сварщике на процентной линии. Используй это только если клеймо указано верно и увеличение объема контроля принято осознанно.'
+    }
+    return 'Диспетчер скроет текущее предупреждение о негодном первичном стыке процентной линии. Используй это только если стык должен остаться официальным, а увеличение объема РК/УЗК принято осознанно.'
   }
 
   function editPercentageLineTaskStamp(task: PercentageLineControlTask) {
@@ -1051,6 +1062,7 @@ export function useHomePageController() {
       tone: 'warning',
     })
     if (!confirmed) return
+    await acceptDispatcherTaskWarning(task)
     dismissRepeatedJointTask(task)
     setMessage(`Предупреждение об отстранении клейма ${task.stamp} скрыто`)
   }

@@ -159,6 +159,32 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
+  it('keeps accepted new-welder percentage-line tasks stable for the same stamp', () => {
+    const baseRows = [
+      row({ id: 1, joint: 'S1', stamp1K: 'ABC1', weldDate: '2026-07-01' }),
+      row({ id: 2, joint: 'S2', stamp1K: 'ARCH', weldDate: '2026-07-02' }),
+    ]
+    const changedRows = [
+      ...baseRows,
+      row({ id: 3, joint: 'S3', stamp1K: 'ARCH', weldDate: '2026-07-03' }),
+      row({ id: 4, joint: 'S4', stamp1K: 'ZZ99', weldDate: '2026-07-04' }),
+    ]
+
+    const baseNewWelderTasks = buildRepeatedJointTasks(baseRows).filter(
+      (task) => task.kind === 'percentage-line-control' && task.issue === 'new-welder',
+    )
+    const changedNewWelderTasks = buildRepeatedJointTasks(changedRows).filter(
+      (task) => task.kind === 'percentage-line-control' && task.issue === 'new-welder',
+    )
+
+    const acceptedStampTask = baseNewWelderTasks.find((task) => task.kind === 'percentage-line-control' && task.stamp === 'ARCH')
+    const sameStampTask = changedNewWelderTasks.find((task) => task.kind === 'percentage-line-control' && task.stamp === 'ARCH')
+    const thirdStampTask = changedNewWelderTasks.find((task) => task.kind === 'percentage-line-control' && task.stamp === 'ZZ99')
+
+    expect(sameStampTask?.key).toBe(acceptedStampTask?.key)
+    expect(thirdStampTask?.key).not.toBe(acceptedStampTask?.key)
+  })
+
   it('adds a percentage-line task for rejected primary official controls', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       row({
@@ -211,6 +237,41 @@ describe('buildRepeatedJointTasks', () => {
           requiredControls: 3,
           coveredControls: 0,
           count: 3,
+        }),
+      ]),
+    )
+  })
+
+  it('does not count PSTO as a rejected primary percentage-line control', () => {
+    const rows = Array.from({ length: 10 }, (_, index) =>
+      row({
+        id: index + 1,
+        joint: `S${index + 1}`,
+        stamp1K: 'ABC1',
+        hasRk: index === 0 ? 'да' : '',
+        rkResult: index === 0 ? 'годен' : '',
+        hasPsto: index === 1 ? 'да' : '',
+        pstoResult: index === 1 ? 'вырез' : '',
+      }),
+    )
+
+    const tasks = buildRepeatedJointTasks(rows)
+
+    expect(tasks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'percentage-line-control',
+          issue: 'rejected-primary',
+          stamp: 'ABC1',
+        }),
+      ]),
+    )
+    expect(tasks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'percentage-line-control',
+          issue: 'missing',
+          stamp: 'ABC1',
         }),
       ]),
     )

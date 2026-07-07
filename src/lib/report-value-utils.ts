@@ -6,8 +6,10 @@ export function hasText(value: unknown) {
 
 export function isYesText(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный'
+  return text === 'да' || text === 'дополнительный' || isReplacementControlValue(value)
 }
+
+export const CONTROL_REPLACEMENT_VALUE = 'замена РК/УЗК'
 
 export function isCancelledControlValue(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'отменен'
@@ -15,6 +17,10 @@ export function isCancelledControlValue(value: unknown) {
 
 export function isAdditionalControlValue(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'дополнительный'
+}
+
+export function isReplacementControlValue(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === CONTROL_REPLACEMENT_VALUE.toLowerCase()
 }
 
 export function getCancelledLnkResultDisplay(value: unknown) {
@@ -39,6 +45,7 @@ export function getCancelledPstoResultDisplay(value: unknown) {
 
 export function normalizeControlAvailabilityValue(value: unknown) {
   if (isCancelledControlValue(value)) return 'отменен'
+  if (isReplacementControlValue(value)) return CONTROL_REPLACEMENT_VALUE
   if (isAdditionalControlValue(value)) return 'дополнительный'
   if (value === true || isYesText(value)) return 'да'
   return null
@@ -55,5 +62,5 @@ export function hasWeldDate(row: WeldInput) {
 export function isEnabledControlValue(value: unknown) {
   if (value === true) return true
   const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный'
+  return text === 'да' || text === 'дополнительный' || isReplacementControlValue(value)
 }

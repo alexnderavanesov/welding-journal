@@ -12,6 +12,16 @@ export const yesEmptyFieldKeys = new Set([
   'hasMkk',
 ])
 
+export const percentageControlFieldKeys = new Set<WeldFieldKey>(['hasRk', 'hasUzk'])
+
+export const replacementControlFieldKeys = new Set<WeldFieldKey>([
+  'hasPvk',
+  'hasTvmt',
+  'hasRfa',
+  'hasStls',
+  'hasMkk',
+])
+
 export const factualWelderStampFieldKeys = new Set<WeldFieldKey>([
   'stamp1KFact',
   'stamp1ZFact',

@@ -154,3 +154,13 @@ export const welderStampSuspensions = pgTable('welder_stamp_suspensions', {
 
 export type WelderStampSuspension = typeof welderStampSuspensions.$inferSelect
 export type NewWelderStampSuspension = typeof welderStampSuspensions.$inferInsert
+
+export const dispatcherAcceptedWarnings = pgTable('dispatcher_accepted_warnings', {
+  key: text('key').primaryKey(),
+  kind: text('kind').notNull(),
+  title: text('title'),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type DispatcherAcceptedWarning = typeof dispatcherAcceptedWarnings.$inferSelect
+export type NewDispatcherAcceptedWarning = typeof dispatcherAcceptedWarnings.$inferInsert

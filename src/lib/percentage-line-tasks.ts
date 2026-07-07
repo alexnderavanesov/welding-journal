@@ -62,7 +62,7 @@ function buildNewWelderTask(
 
   return {
     kind: 'percentage-line-control',
-    key: `percentage-line-control:new-welder:${summary.key}:${lineStampCount}:${summary.officialJointCount}`,
+    key: `percentage-line-control:new-welder:${summary.key}`,
     row,
     issue: 'new-welder',
     projectTitle: summary.projectTitle,
@@ -93,7 +93,7 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
     detailParts.push(`Кандидаты без покрытия: ${formatJointList(summary.missingCandidateJointNames)}.`)
   }
   detailParts.push(
-    'Покрытием считается назначенный РК или УЗК, выполненный результат РК/УЗК либо осознанный пропуск: "отменен" одновременно в РК и УЗК.',
+    'Покрытием считается назначенный РК или УЗК, выполненный результат РК/УЗК, осознанный пропуск "отменен" одновременно в РК и УЗК либо статус "замена РК/УЗК" на другом виде НК.',
   )
 
   return {

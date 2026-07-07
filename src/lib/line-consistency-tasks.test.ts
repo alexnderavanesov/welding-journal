@@ -53,6 +53,15 @@ describe('line consistency tasks', () => {
     })
   })
 
+  it('does not create a control presence task for percentage lines below 100 percent', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, line: '330-FG-05-001', weldControlPercent: '25', hasVik: 'да', hasRk: 'да', hasPvk: 'да' }),
+      row({ id: 2, line: '330-FG-05-001', weldControlPercent: '25', hasVik: 'да' }),
+    ])
+
+    expect(tasks).toHaveLength(0)
+  })
+
   it('does not create a control presence task when a method is cancelled on one joint', () => {
     const tasks = buildLineConsistencyTasks([
       row({ id: 1, line: '330-FG-05-001', weldControlPercent: '100', hasVik: 'да', hasRk: 'отменен' }),

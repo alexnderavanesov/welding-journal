@@ -106,6 +106,28 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
+  it('blocks RK/UZK replacement on methods where it is not available', () => {
+    const draft = { id: 1, joint: 'S1', hasRk: 'замена РК/УЗК' } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
+      'наличие РК: «замена РК/УЗК» доступна только для ПВК, ТВМТ, РФА, СТЛС и МКК.',
+    )
+  })
+
+  it('blocks RK or UZK assignment while another method replaces RK/UZK', () => {
+    const draft = { id: 1, joint: 'S1', hasRk: 'да', hasPvk: 'замена РК/УЗК' } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
+      'наличие РК: сначала уберите «замена РК/УЗК» в другом виде контроля, затем назначайте РК или УЗК.',
+    )
+  })
+
+  it('allows RK/UZK replacement when RK and UZK are not active', () => {
+    const draft = { id: 1, joint: 'S1', hasPvk: 'замена РК/УЗК' } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
+  })
+
   it('explains auto-cleared request-only report data', () => {
     const draft = {
       id: 1,

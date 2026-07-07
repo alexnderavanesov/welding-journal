@@ -123,8 +123,97 @@ describe('buildPercentageLineSummaries', () => {
 
     expect(stamp.fullControlRequired).toBe(true)
     expect(stamp.requiredControls).toBe(6)
+    expect(stamp.assignedControls).toBe(6)
+    expect(stamp.cancelledAssignedControls).toBe(2)
+    expect(stamp.replacedAssignedControls).toBe(0)
     expect(stamp.coveredControls).toBe(6)
     expect(stamp.missingControls).toBe(0)
+  })
+
+  it('counts explicit RK/UZK replacement by another control as replaced assignment', () => {
+    const rows = [
+      makeRow(1, { joint: 'S1', hasRk: 'да' }),
+      makeRow(2, { joint: 'S2', hasPvk: 'замена РК/УЗК' }),
+      makeRow(3, { joint: 'S3' }),
+      makeRow(4, { joint: 'S4' }),
+      makeRow(5, { joint: 'S5' }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.requiredControls).toBe(1)
+    expect(stamp.assignedControls).toBe(2)
+    expect(stamp.cancelledAssignedControls).toBe(0)
+    expect(stamp.replacedAssignedControls).toBe(1)
+    expect(stamp.cancelledAssignedJointNames).toEqual([])
+    expect(stamp.replacedAssignedJointNames).toEqual(['S2'])
+    expect(stamp.coveredControls).toBe(2)
+    expect(stamp.excessControls).toBe(1)
+  })
+
+  it('does not treat old cancelled RK and UZK plus another additional control as replacement', () => {
+    const rows = [
+      makeRow(1, { joint: 'S1', hasRk: 'да' }),
+      makeRow(2, { joint: 'S2', hasRk: 'отменен', hasUzk: 'отменен', hasPvk: 'дополнительный' }),
+      makeRow(3, { joint: 'S3' }),
+      makeRow(4, { joint: 'S4' }),
+      makeRow(5, { joint: 'S5' }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.requiredControls).toBe(1)
+    expect(stamp.assignedControls).toBe(2)
+    expect(stamp.cancelledAssignedControls).toBe(1)
+    expect(stamp.replacedAssignedControls).toBe(0)
+    expect(stamp.cancelledAssignedJointNames).toEqual(['S2'])
+    expect(stamp.replacedAssignedJointNames).toEqual([])
+    expect(stamp.coveredControls).toBe(2)
+    expect(stamp.excessControls).toBe(1)
+  })
+
+  it('subtracts replaced controls from the allowed normal assignments', () => {
+    const rows = [
+      ...Array.from({ length: 6 }, (_, index) => makeRow(index + 1, { joint: `S${index + 1}`, weldControlPercent: '25', hasRk: 'да' })),
+      makeRow(7, { joint: 'S7', weldControlPercent: '25', hasRk: 'дополнительный' }),
+      makeRow(8, { joint: 'S8', weldControlPercent: '25', hasPvk: 'замена РК/УЗК' }),
+      ...Array.from({ length: 13 }, (_, index) => makeRow(index + 9, { joint: `S${index + 9}`, weldControlPercent: '25' })),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.requiredControls).toBe(6)
+    expect(stamp.assignedControls).toBe(8)
+    expect(stamp.additionalAssignedControls).toBe(1)
+    expect(stamp.replacedAssignedControls).toBe(1)
+    expect(stamp.normalAssignedControls).toBe(6)
+    expect(stamp.excessControls).toBe(1)
+    expect(stamp.excessCandidateJointNames).toEqual(['S6'])
+  })
+
+  it('does not use additional RK or UZK to cover required add-on controls after rejection', () => {
+    const rows = [
+      ...Array.from({ length: 6 }, (_, index) =>
+        makeRow(index + 1, {
+          joint: `S${index + 1}`,
+          weldControlPercent: '25',
+          hasRk: 'да',
+          rkResult: index === 0 ? 'вырез' : '',
+        }),
+      ),
+      makeRow(7, { joint: 'S7', weldControlPercent: '25', hasRk: 'дополнительный' }),
+      ...Array.from({ length: 14 }, (_, index) => makeRow(index + 8, { joint: `S${index + 8}`, weldControlPercent: '25' })),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.baseRequiredControls).toBe(6)
+    expect(stamp.additionalRequiredControls).toBe(2)
+    expect(stamp.requiredControls).toBe(8)
+    expect(stamp.assignedControls).toBe(7)
+    expect(stamp.additionalAssignedControls).toBe(1)
+    expect(stamp.coveredControls).toBe(6)
+    expect(stamp.missingControls).toBe(2)
   })
 
   it('does not report additional controls as excess', () => {
@@ -140,6 +229,8 @@ describe('buildPercentageLineSummaries', () => {
 
     expect(stamp.requiredControls).toBe(1)
     expect(stamp.assignedControls).toBe(2)
+    expect(stamp.additionalAssignedControls).toBe(1)
+    expect(stamp.additionalAssignedJointNames).toEqual(['S2'])
     expect(stamp.excessControls).toBe(0)
   })
 

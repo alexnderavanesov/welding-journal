@@ -58,7 +58,7 @@ export function appendImportedWelds<T extends WeldRow>(existingRows: T[], import
 
 export function withAutoVikForWeldDate<T extends WeldInput>(record: T): T {
   const hasVikText = String(record.hasVik ?? '').trim().toLowerCase()
-  if (hasVikText === 'отменен' || hasVikText === 'дополнительный') return record
+  if (hasVikText === 'отменен' || hasVikText === 'дополнительный' || hasVikText === 'замена рк/узк') return record
   return emptyToNull(record.weldDate) === null ? record : ({ ...record, hasVik: true } as T)
 }
 

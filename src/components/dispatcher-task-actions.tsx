@@ -95,9 +95,18 @@ export function RepeatedJointTaskActions({
         </>
       ) : task.kind === 'percentage-line-control' && task.issue === 'rejected-primary' ? (
         <>
-          <Button type="button" size="sm" variant="outline" onClick={() => onOpenTaskOfficiality(task)} className={dispatcherActionButtonClass}>
-            Официальность
-          </Button>
+          <DispatcherActionMenu
+            items={[
+              {
+                label: 'Принять',
+                onClick: () => onAcceptPercentageLineTask(task),
+              },
+              {
+                label: 'Сменить официальность',
+                onClick: () => onOpenTaskOfficiality(task),
+              },
+            ]}
+          />
           <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
             Показать
           </Button>
@@ -162,7 +171,7 @@ export function RepeatedJointTaskActions({
         </Button>
       )}
       <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherActionButtonClass}>
-        {isExpanded ? 'Свернуть' : 'Подробнее'}
+        {isExpanded ? 'Свернуть' : 'Описание'}
       </Button>
     </div>
   )

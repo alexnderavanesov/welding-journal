@@ -1,11 +1,12 @@
 import { FINAL_STATUS_OPTIONS, RESULT_STATUS_OPTIONS } from '@/lib/weld-fields'
 
 export const weldingMethodOptions = ['РАД', 'РД', 'МП'] as const
+export const CONTROL_REPLACEMENT_VALUE = 'замена РК/УЗК'
 
 export function isYesValue(value: unknown) {
   if (value === true) return true
   const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный'
+  return text === 'да' || text === 'дополнительный' || isReplacementValue(value)
 }
 
 export function isCancelledValue(value: unknown) {
@@ -14,6 +15,10 @@ export function isCancelledValue(value: unknown) {
 
 export function isAdditionalValue(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'дополнительный'
+}
+
+export function isReplacementValue(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === CONTROL_REPLACEMENT_VALUE.toLowerCase()
 }
 
 export function getSelectedWeldingMethods(value: unknown) {

@@ -25,6 +25,7 @@ export function parseBoolean(value: unknown) {
   if (['да', 'yes', 'true', '1', '+'].includes(text)) return true
   if (text === 'отменен') return 'отменен'
   if (text === 'дополнительный') return 'дополнительный'
+  if (text === 'замена рк/узк') return 'замена РК/УЗК'
   if (['нет', 'no', 'false', '0', '-'].includes(text)) return false
   return Boolean(text)
 }

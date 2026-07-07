@@ -14,6 +14,8 @@ import { withPendingLnkResults } from '@/lib/report-control-state'
 import {
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
+  validateControlReplacementForSave,
+  validateControlReplacementsForImport,
   validateRequiredRootStampForSave,
   validateRequiredRootStampsForImport,
   validateWeldDatesForImport,
@@ -57,6 +59,7 @@ export function prepareWeldSaveValue({
       ),
     ),
   )
+  validateControlReplacementForSave(preparedValue)
   validateRequiredRootStampForSave(preparedValue)
   validateManualJointNameForSave(preparedValue, rows)
   validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
@@ -93,6 +96,7 @@ export function prepareImportedWeldRecords({
   validateRequiredRootStampsForImport(preparedRecords)
   validateManualJointNamesForImport(preparedRecords)
   validateWeldDatesForImport(preparedRecords)
+  validateControlReplacementsForImport(preparedRecords)
   normalizeWeldingMethodsForImport(preparedRecords)
   validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
   validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, { suspensions: welderStampSuspensions })

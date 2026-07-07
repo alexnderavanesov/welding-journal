@@ -90,7 +90,7 @@ export function getFinalStatusErrorReason(record: WeldInput) {
     return `${code}: результат «${String(resultValue).trim()}» заполнен, но наличие ${code} = ${enabledText}`
   })
 
-  return `${details.join('; ')}. Поставьте в наличии «да», «отменен» или «дополнительный», либо очистите результат.`
+  return `${details.join('; ')}. Поставьте в наличии «да», «отменен», «дополнительный» или «замена РК/УЗК», либо очистите результат.`
 }
 
 export function normalizeResultStatus(value: unknown) {
@@ -167,7 +167,7 @@ function isUnofficialStatus(value: unknown) {
 function isEnabledControl(value: unknown) {
   if (value === true) return true
   const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный'
+  return text === 'да' || text === 'дополнительный' || text === 'замена рк/узк'
 }
 
 function isCancelledControl(value: unknown) {

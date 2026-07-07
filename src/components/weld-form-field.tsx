@@ -16,9 +16,13 @@ import {
   getFinalStatusValue,
   getResultStatusValue,
   getStampSelectValue,
+  CONTROL_REPLACEMENT_VALUE,
   isAdditionalValue,
   isCancelledValue,
+  isReplacementValue,
   isYesValue,
+  percentageControlFieldKeys,
+  replacementControlFieldKeys,
   yesEmptyFieldKeys,
   type StampSelectOptions,
 } from '@/lib/weld-form-utils'
@@ -32,6 +36,13 @@ type WeldFormFieldProps = {
 }
 
 export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, setDraft }: WeldFormFieldProps) {
+  const hasReplacementControl = hasReplacementControlValue(draft)
+  const hasActivePercentageControl = hasActivePercentageControlValue(draft)
+  const isPercentageControlField = percentageControlFieldKeys.has(field.key)
+  const isReplacementControlField = replacementControlFieldKeys.has(field.key)
+  const blockPercentageControlByReplacement = isPercentageControlField && hasReplacementControl
+  const blockReplacementByPercentageControl = isReplacementControlField && hasActivePercentageControl
+
   return (
     <div className="space-y-1.5 text-sm">
       <span className="text-[13px] font-medium leading-none text-slate-700">{field.label}</span>
@@ -116,8 +127,14 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
           ref={(element) => {
             fieldRefs.current[field.key] = element
           }}
+          title={getControlAvailabilitySelectTitle({
+            blockPercentageControlByReplacement,
+            blockReplacementByPercentageControl,
+          })}
           value={
-            isAdditionalValue(draft[field.key])
+            isReplacementValue(draft[field.key])
+              ? 'replacement'
+              : isAdditionalValue(draft[field.key])
               ? 'additional'
               : isYesValue(draft[field.key])
                 ? 'yes'
@@ -133,6 +150,8 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
                   ? field.kind === 'boolean'
                     ? true
                     : 'да'
+                  : event.target.value === 'replacement'
+                    ? CONTROL_REPLACEMENT_VALUE
                   : event.target.value === 'additional'
                     ? 'дополнительный'
                     : event.target.value === 'cancelled'
@@ -142,9 +161,30 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
           }
         >
           <option value="">пусто</option>
-          <option value="yes">да</option>
+          <option
+            value="yes"
+            disabled={blockPercentageControlByReplacement}
+            title={blockPercentageControlByReplacement ? 'Сначала уберите «замена РК/УЗК» в другом виде контроля.' : undefined}
+          >
+            да
+          </option>
           <option value="cancelled">отменен</option>
-          <option value="additional">дополнительный</option>
+          <option
+            value="additional"
+            disabled={blockPercentageControlByReplacement}
+            title={blockPercentageControlByReplacement ? 'Сначала уберите «замена РК/УЗК» в другом виде контроля.' : undefined}
+          >
+            дополнительный
+          </option>
+          {isReplacementControlField ? (
+            <option
+              value="replacement"
+              disabled={blockReplacementByPercentageControl}
+              title={blockReplacementByPercentageControl ? 'Сначала уберите «да» или «дополнительный» в РК/УЗК.' : undefined}
+            >
+              замена РК/УЗК
+            </option>
+          ) : null}
         </Select>
       ) : field.kind === 'boolean' ? (
         <Select
@@ -182,4 +222,30 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
       )}
     </div>
   )
+}
+
+function hasReplacementControlValue(draft: WeldInput) {
+  return Array.from(replacementControlFieldKeys).some((fieldKey) => isReplacementValue(draft[fieldKey]))
+}
+
+function hasActivePercentageControlValue(draft: WeldInput) {
+  return Array.from(percentageControlFieldKeys).some((fieldKey) => isOrdinaryOrAdditionalControlValue(draft[fieldKey]))
+}
+
+function isOrdinaryOrAdditionalControlValue(value: unknown) {
+  if (value === true) return true
+  const text = String(value ?? '').trim().toLowerCase()
+  return text === 'да' || text === 'дополнительный'
+}
+
+function getControlAvailabilitySelectTitle({
+  blockPercentageControlByReplacement,
+  blockReplacementByPercentageControl,
+}: {
+  blockPercentageControlByReplacement: boolean
+  blockReplacementByPercentageControl: boolean
+}) {
+  if (blockPercentageControlByReplacement) return 'Сначала уберите «замена РК/УЗК», затем назначайте РК или УЗК.'
+  if (blockReplacementByPercentageControl) return 'Замена РК/УЗК доступна только если РК и УЗК не назначены как «да» или «дополнительный».'
+  return undefined
 }
