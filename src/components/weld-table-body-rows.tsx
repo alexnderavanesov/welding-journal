@@ -20,6 +20,7 @@ type WeldTableBodyRowsProps = {
   isRowSelectable: (row: WeldRow) => boolean
   hasChainAction: boolean
   onOpenChain?: (row: WeldRow) => void
+  onFilterLine?: (row: WeldRow) => void
   onOpenLinkedReport?: (row: WeldRow) => void
   openLinkedReportTitle: string
   hasRowActions: boolean
@@ -45,6 +46,7 @@ export function WeldTableBodyRows({
   isRowSelectable,
   hasChainAction,
   onOpenChain,
+  onFilterLine,
   onOpenLinkedReport,
   openLinkedReportTitle,
   hasRowActions,
@@ -88,6 +90,7 @@ export function WeldTableBodyRows({
               <WeldTableRowNavigation
                 row={row}
                 onOpenChain={onOpenChain}
+                onFilterLine={onFilterLine}
                 onOpenLinkedReport={onOpenLinkedReport}
                 openLinkedReportTitle={openLinkedReportTitle}
               />

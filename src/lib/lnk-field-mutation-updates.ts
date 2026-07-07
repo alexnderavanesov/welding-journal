@@ -33,7 +33,7 @@ export function buildLnkFieldRow({
   }
   const requestMethod = getLnkMethodByRequestKey(fieldKey)
   if (requestMethod && value && !isEnabledControlValue(record[requestMethod.enabledKey])) {
-    throw new Error('Нельзя указать заявку ЛНК без наличия этого вида контроля')
+    throw new Error('Нельзя указать заявку ЛНК без назначения этого вида контроля')
   }
   if (isLnkRequestField(fieldKey) && value && !lnkRequestOptions.includes(value)) {
     throw new Error('Можно выбрать только существующую заявку ЛНК или очистить поле')

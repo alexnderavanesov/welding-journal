@@ -110,7 +110,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasRk: 'замена РК/УЗК' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'наличие РК: «замена РК/УЗК» доступна только для ПВК, ТВМТ, РФА, СТЛС и МКК.',
+      'Назначение РК: «замена РК/УЗК» доступна только для ПВК, ТВМТ, РФА, СТЛС и МКК.',
     )
   })
 
@@ -118,7 +118,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasRk: 'да', hasPvk: 'замена РК/УЗК' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'наличие РК: сначала уберите «замена РК/УЗК» в другом виде контроля, затем назначайте РК или УЗК.',
+      'Назначение РК: сначала уберите «замена РК/УЗК» в другом виде контроля, затем назначайте РК или УЗК.',
     )
   })
 

@@ -145,7 +145,7 @@ describe('weld field order', () => {
 
   it('explains final status errors caused by result without active control', () => {
     expect(getFinalStatusErrorReason({ hasRk: null, rkResult: 'ожидает НК' })).toContain(
-      'РК: результат «ожидает НК» заполнен, но наличие РК = «пусто»',
+      'РК: результат «ожидает НК» заполнен, но назначение РК = «пусто»',
     )
     expect(getFinalStatusErrorReason({ hasRk: 'отменен', rkResult: 'ожидает НК' })).toBeNull()
   })

@@ -87,10 +87,10 @@ export function getFinalStatusErrorReason(record: WeldInput) {
 
   const details = inactiveControlResults.map(({ code, enabledValue, resultValue }) => {
     const enabledText = hasText(enabledValue) ? `«${String(enabledValue).trim()}»` : '«пусто»'
-    return `${code}: результат «${String(resultValue).trim()}» заполнен, но наличие ${code} = ${enabledText}`
+    return `${code}: результат «${String(resultValue).trim()}» заполнен, но назначение ${code} = ${enabledText}`
   })
 
-  return `${details.join('; ')}. Поставьте в наличии «да», «отменен», «дополнительный» или «замена РК/УЗК», либо очистите результат.`
+  return `${details.join('; ')}. В назначении контроля выберите «да», «отменен», «дополнительный» или «замена РК/УЗК», либо очистите результат.`
 }
 
 export function normalizeResultStatus(value: unknown) {

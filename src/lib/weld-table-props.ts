@@ -24,6 +24,7 @@ type CreateWeldTablePropsOptions = {
   highlightedRowIds: NonNullable<WeldTableProps['highlightedRowIds']>
   highlightedCellKeys: NonNullable<WeldTableProps['highlightedCellKeys']>
   onOpenChain: NonNullable<WeldTableProps['onOpenChain']>
+  onFilterLine: NonNullable<WeldTableProps['onFilterLine']>
   onOpenLinkedReport: NonNullable<WeldTableProps['onOpenLinkedReport']>
   rowActionHandlers: ReportRowActionHandlers
 }
@@ -39,6 +40,7 @@ export function createWeldTableProps({
   highlightedRowIds,
   highlightedCellKeys,
   onOpenChain,
+  onFilterLine,
   onOpenLinkedReport,
   rowActionHandlers,
 }: CreateWeldTablePropsOptions): WeldTableProps {
@@ -73,5 +75,6 @@ export function createWeldTableProps({
     storageKey: activeReport,
     hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
     mergePstoSections: shouldMergePstoSections(activeReport),
+    onFilterLine,
   }
 }

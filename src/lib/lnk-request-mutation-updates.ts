@@ -53,7 +53,7 @@ export function buildLnkRequestCorrectionRow({
   const method = getLnkMethodByRequestKey(methodKey)
   if (!method) throw new Error('Выберите вид контроля')
   if (requestName && !isEnabledControlValue(record[method.enabledKey])) {
-    throw new Error('Нельзя указать заявку ЛНК без наличия этого вида контроля')
+    throw new Error('Нельзя указать заявку ЛНК без назначения этого вида контроля')
   }
 
   const proposedRecord = { ...record } as RowWithId

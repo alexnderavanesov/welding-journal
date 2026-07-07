@@ -109,7 +109,7 @@ export function useLnkResultSaveActions({
     const confirmed = await confirmAction({
       title: 'Очистить результаты ЛНК',
       itemName: 'Результаты, даты и заключения ЛНК',
-      description: 'Заявки ЛНК, сами стыки и отметки наличия контроля останутся.',
+      description: 'Заявки ЛНК, сами стыки и назначение контроля останутся.',
       warning: 'Это действие нельзя отменить.',
     })
     if (!confirmed) return

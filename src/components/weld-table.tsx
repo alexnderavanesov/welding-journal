@@ -22,6 +22,7 @@ export type WeldTableProps = {
   isCellEditable?: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
   getDisplayValue?: (row: WeldRow, fieldKey: WeldFieldKey) => unknown
   onOpenChain?: (row: WeldRow) => void
+  onFilterLine?: (row: WeldRow) => void
   onOpenLinkedReport?: (row: WeldRow) => void
   openLinkedReportTitle?: string
   selectable?: boolean
@@ -49,6 +50,7 @@ export function WeldTable({
   isCellEditable = () => true,
   getDisplayValue = (row, fieldKey) => row[fieldKey],
   onOpenChain,
+  onFilterLine,
   onOpenLinkedReport,
   openLinkedReportTitle = 'Открыть стык в связанном отчете',
   selectable = false,
@@ -90,6 +92,7 @@ export function WeldTable({
     blockedFieldKeys,
     isCellEditable,
     onOpenChain,
+    onFilterLine,
     onOpenLinkedReport,
     selectable,
     selectedRowIds,
@@ -156,6 +159,7 @@ export function WeldTable({
               isRowSelectable={isRowSelectable}
               hasChainAction={hasChainAction}
               onOpenChain={onOpenChain}
+              onFilterLine={onFilterLine}
               onOpenLinkedReport={onOpenLinkedReport}
               openLinkedReportTitle={openLinkedReportTitle}
               hasRowActions={hasRowActions}

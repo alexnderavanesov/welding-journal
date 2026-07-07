@@ -65,7 +65,7 @@ export function useReportEditActions({
     if (activeReport === 'lnk') {
       if (focusField && LNK_EDITABLE_FIELD_KEYS.has(focusField)) {
         if (isLnkRequestField(focusField) && !isLnkRequestAllowedForRow(record, focusField)) {
-          setMessage('Сначала укажите наличие этого вида контроля в сварочном журнале')
+          setMessage('Сначала укажите назначение этого вида контроля в сварочном журнале')
           return
         }
         const field = FIELD_BY_KEY.get(focusField)

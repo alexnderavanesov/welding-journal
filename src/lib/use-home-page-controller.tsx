@@ -65,7 +65,7 @@ import {
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-compatibility'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
-import { buildPercentageLineStampFilters, type PercentageLineStampFilter } from '@/lib/report-navigation'
+import { buildLineFilters, buildPercentageLineStampFilters, type PercentageLineStampFilter } from '@/lib/report-navigation'
 
 export function useHomePageController() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -827,6 +827,13 @@ export function useHomePageController() {
     setMessage(`Показаны стыки клейма ${filter.stamp} на линии ${filter.line}.`)
   }
 
+  const filterLineInCurrentReport = (row: WeldRow) => {
+    setChainRecord(null)
+    setEditing(null)
+    activeFiltersSetter(buildLineFilters(row))
+    setMessage(`Показана линия ${String(row.line ?? '-')} в текущем отчете.`)
+  }
+
   useReportModalEscapeKey({
     isReportModalOpen,
     isLnkResultPreviewOpen,
@@ -905,6 +912,7 @@ export function useHomePageController() {
     highlightedRowIds,
     highlightedCellKeys,
     onOpenChain: (row) => setChainRecord(row),
+    onFilterLine: filterLineInCurrentReport,
     onOpenLinkedReport: openLinkedReportRow,
     rowActionHandlers,
   })

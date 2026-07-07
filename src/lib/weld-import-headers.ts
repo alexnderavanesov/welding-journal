@@ -54,10 +54,22 @@ export const OPTIONAL_LEGACY_IMPORT_HEADERS = new Set([
   'результат РФА',
 ])
 
+const LEGACY_AVAILABILITY_HEADER_MAP = new Map([
+  ['наличие ПСТО', 'Назначение ПСТО'],
+  ['наличие ВИК', 'Назначение ВИК'],
+  ['наличие РК', 'Назначение РК'],
+  ['наличие УЗК', 'Назначение УЗК'],
+  ['наличие ПВК', 'Назначение ПВК'],
+  ['наличие ТВМТ', 'Назначение ТВМТ'],
+  ['наличие РФА', 'Назначение РФА'],
+  ['наличие СТЛС', 'Назначение СТЛС'],
+  ['наличие МКК', 'Назначение МКК'],
+])
+
 export function normalizeImportHeaders(values: unknown[]) {
   let pstoCount = 0
   const rawHeaders = values.map(normalizeHeader)
-  const hasExplicitPstoRequired = rawHeaders.includes('наличие ПСТО')
+  const hasExplicitPstoRequired = rawHeaders.includes('наличие ПСТО') || rawHeaders.includes('Назначение ПСТО')
   const resultHeaderMap = new Map([
     ['ВИК', 'результат ВИК'],
     ['РК', 'результат РК'],
@@ -73,9 +85,10 @@ export function normalizeImportHeaders(values: unknown[]) {
     if (header === 'ПСТО') {
       if (hasExplicitPstoRequired) return 'ПСТО'
       pstoCount += 1
-      return pstoCount === 1 ? 'наличие ПСТО' : 'результат ПСТО'
+      return pstoCount === 1 ? 'Назначение ПСТО' : 'результат ПСТО'
     }
     if (resultHeaderMap.has(header)) return resultHeaderMap.get(header)!
+    if (LEGACY_AVAILABILITY_HEADER_MAP.has(header)) return LEGACY_AVAILABILITY_HEADER_MAP.get(header)!
     return header === 'Конт-роль швов, (%)' ? 'Контроль швов, (%)' : header
   })
 }

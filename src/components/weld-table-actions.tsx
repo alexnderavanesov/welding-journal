@@ -1,4 +1,4 @@
-import { ClipboardCheck, ExternalLink, FilePlus2, FilterX, GitBranch } from 'lucide-react'
+import { ClipboardCheck, ExternalLink, FilePlus2, FilterX, GitBranch, ListFilter } from 'lucide-react'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
@@ -36,11 +36,13 @@ export function WeldTableFilterResetHeader({
 export function WeldTableRowNavigation({
   row,
   onOpenChain,
+  onFilterLine,
   onOpenLinkedReport,
   openLinkedReportTitle,
 }: {
   row: WeldRow
   onOpenChain?: (row: WeldRow) => void
+  onFilterLine?: (row: WeldRow) => void
   onOpenLinkedReport?: (row: WeldRow) => void
   openLinkedReportTitle: string
 }) {
@@ -59,6 +61,20 @@ export function WeldTableRowNavigation({
             aria-label={`Показать цепочку стыка ${String(row.joint ?? row.id)}`}
           >
             <GitBranch className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        {onFilterLine ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onFilterLine(row)
+            }}
+            className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800"
+            title="Показать всю линию стыка"
+            aria-label={`Показать всю линию стыка ${String(row.joint ?? row.id)}`}
+          >
+            <ListFilter className="h-3.5 w-3.5" />
           </button>
         ) : null}
         {onOpenLinkedReport ? (

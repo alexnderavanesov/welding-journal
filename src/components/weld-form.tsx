@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { WeldFormFooter } from '@/components/weld-form-footer'
 import { WeldFormHeader } from '@/components/weld-form-header'
-import { WeldFormSections } from '@/components/weld-form-sections'
+import { WeldFormSections, type WeldFormTab } from '@/components/weld-form-sections'
 import {
   VISIBLE_FIELD_SECTIONS,
   type WeldFieldKey,
@@ -20,6 +20,7 @@ import {
   getWeldStampSaveBlockReason,
   withCalculatedFinalStatus,
   type StampSelectOptions,
+  yesEmptyFieldKeys,
 } from '@/lib/weld-form-utils'
 
 export type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-utils'
@@ -37,6 +38,7 @@ type WeldFormProps = {
 export function WeldForm({ value, focusField, stampSelectOptions, getExternalSaveBlockReason, onSave, onCancel, busy }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
+  const [activeTab, setActiveTab] = useState<WeldFormTab>(() => (focusField && yesEmptyFieldKeys.has(focusField) ? 'control' : 'joint'))
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
   const fieldsByGroup = useMemo(
@@ -91,6 +93,8 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
 
   useEffect(() => {
     if (!focusField) return
+    const isControlFocus = yesEmptyFieldKeys.has(focusField)
+    setActiveTab(isControlFocus ? 'control' : 'joint')
 
     const focusedSection = fieldsByGroup.find((group) => group.fields.some((field) => field.key === focusField))?.section
     if (focusedSection) {
@@ -121,6 +125,10 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
       return { ...nextDraft, finalStatus: nextFinalStatus }
     })
   }, [draft])
+
+  useEffect(() => {
+    setActiveTab(focusField && yesEmptyFieldKeys.has(focusField) ? 'control' : 'joint')
+  }, [value.id, focusField])
 
   function toggleSection(section: string) {
     setCollapsedSections((current) => {
@@ -153,6 +161,8 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
           fieldRefs={fieldRefs}
           onToggleSection={toggleSection}
           setDraft={setDraft}
+          activeTab={activeTab}
+          onActiveTabChange={setActiveTab}
         />
       </div>
 

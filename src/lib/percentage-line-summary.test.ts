@@ -234,6 +234,22 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.excessControls).toBe(0)
   })
 
+  it('sorts percentage lines by required controls from highest to lowest', () => {
+    const rows = [
+      makeRow(1, { line: 'LINE-LOW', joint: 'S1' }),
+      makeRow(2, { line: 'LINE-HIGH', joint: 'S2', weldControlPercent: '25' }),
+      makeRow(3, { line: 'LINE-HIGH', joint: 'S3', weldControlPercent: '25' }),
+      makeRow(4, { line: 'LINE-HIGH', joint: 'S4', weldControlPercent: '25' }),
+      makeRow(5, { line: 'LINE-HIGH', joint: 'S5', weldControlPercent: '25' }),
+      makeRow(6, { line: 'LINE-HIGH', joint: 'S6', weldControlPercent: '25' }),
+    ]
+
+    const summaries = buildPercentageLineSummaries(rows)
+
+    expect(summaries.map((summary) => summary.line)).toEqual(['LINE-HIGH', 'LINE-LOW'])
+    expect(summaries.map((summary) => summary.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0))).toEqual([2, 1])
+  })
+
   it('does not treat a line with missing percent values as a percentage line', () => {
     const rows = [
       makeRow(1, { joint: 'S1', weldControlPercent: '10' }),

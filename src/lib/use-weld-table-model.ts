@@ -25,6 +25,7 @@ type UseWeldTableModelOptions = {
   blockedFieldKeys: ReadonlySet<WeldFieldKey>
   isCellEditable: (row: RowWithId, fieldKey: WeldFieldKey) => boolean
   onOpenChain?: (row: RowWithId) => void
+  onFilterLine?: (row: RowWithId) => void
   onOpenLinkedReport?: (row: RowWithId) => void
   selectable: boolean
   selectedRowIds: ReadonlySet<number>
@@ -45,6 +46,7 @@ export function useWeldTableModel({
   blockedFieldKeys,
   isCellEditable,
   onOpenChain,
+  onFilterLine,
   onOpenLinkedReport,
   selectable,
   selectedRowIds,
@@ -71,7 +73,7 @@ export function useWeldTableModel({
   )
   const filteredFields = useMemo(() => filteredSections.flatMap((group) => group.fields), [filteredSections])
   const hasRowActions = Boolean(rowActions)
-  const hasChainAction = Boolean(onOpenChain || onOpenLinkedReport)
+  const hasChainAction = Boolean(onOpenChain || onFilterLine || onOpenLinkedReport)
   const hasColumnFilters = getHasColumnFilters(columnFilters)
   const tableColumnSpan = getWeldTableColumnSpan({
     fieldCount: filteredFields.length,

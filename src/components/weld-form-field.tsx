@@ -34,9 +34,11 @@ type WeldFormFieldProps = {
   stampSelectOptions?: StampSelectOptions
   fieldRefs: MutableRefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
   setDraft: Dispatch<SetStateAction<WeldInput>>
+  hideLabel?: boolean
+  controlPickerLayout?: 'grid' | 'row'
 }
 
-export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, setDraft }: WeldFormFieldProps) {
+export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, setDraft, hideLabel = false, controlPickerLayout = 'grid' }: WeldFormFieldProps) {
   const hasReplacementControl = hasReplacementControlValue(draft)
   const hasActivePercentageControl = hasActivePercentageControlValue(draft)
   const isPercentageControlField = percentageControlFieldKeys.has(field.key)
@@ -46,7 +48,7 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
 
   return (
     <div className="space-y-1.5 text-sm">
-      <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>
+      {hideLabel ? null : <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>}
       {stampSelectOptions?.[field.key] ? (
         <Select
           ref={(element) => {
@@ -130,6 +132,7 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
           blockPercentageControlByReplacement={blockPercentageControlByReplacement}
           blockReplacementByPercentageControl={blockReplacementByPercentageControl}
           isReplacementControlField={isReplacementControlField}
+          layout={controlPickerLayout}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
           }}
@@ -206,6 +209,7 @@ function ControlAvailabilityPicker({
   blockPercentageControlByReplacement,
   blockReplacementByPercentageControl,
   isReplacementControlField,
+  layout,
   inputRef,
   onChange,
 }: {
@@ -214,6 +218,7 @@ function ControlAvailabilityPicker({
   blockPercentageControlByReplacement: boolean
   blockReplacementByPercentageControl: boolean
   isReplacementControlField: boolean
+  layout: 'grid' | 'row'
   inputRef: (element: HTMLButtonElement | null) => void
   onChange: (value: ControlAvailabilityValue) => void
 }) {
@@ -230,7 +235,7 @@ function ControlAvailabilityPicker({
 
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50/60 p-2 shadow-sm shadow-slate-200/30">
-      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className={cn('grid gap-1.5', layout === 'row' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3')}>
         {options.map((option, index) => {
           const active = value === option.value
           return (
@@ -345,9 +350,7 @@ function getReplacementUnavailableReason(fieldKey: WeldFieldKey) {
 }
 
 function getFormFieldLabel(field: WeldField & { key: WeldFieldKey }) {
-  if (!yesEmptyFieldKeys.has(field.key)) return field.label
-  if (field.key === 'pstoRequired') return 'Назначение ПСТО'
-  return field.label.replace(/^наличие\s+/i, 'Назначение ')
+  return field.label
 }
 
 function hasReplacementControlValue(draft: WeldInput) {

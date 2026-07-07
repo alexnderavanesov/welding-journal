@@ -508,6 +508,7 @@ export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRo
 
 type MetricCardProps = {
   compact?: boolean
+  wrapDetail?: boolean
   icon: typeof Activity
   label: string
   value: string
@@ -515,7 +516,7 @@ type MetricCardProps = {
   accent: 'blue' | 'green' | 'indigo' | 'amber' | 'slate'
 }
 
-function MetricCard({ compact = false, icon: Icon, label, value, detail, accent }: MetricCardProps) {
+function MetricCard({ compact = false, wrapDetail = false, icon: Icon, label, value, detail, accent }: MetricCardProps) {
   const accentClass = {
     blue: 'bg-sky-50 text-sky-700 border-sky-100',
     green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
@@ -535,7 +536,10 @@ function MetricCard({ compact = false, icon: Icon, label, value, detail, accent 
           <div className={cn('font-semibold tracking-tight text-slate-900', compact ? 'text-xl' : 'text-2xl')}>{value}</div>
         </div>
       </div>
-      <div className={cn('truncate text-sm text-slate-500', compact ? 'mt-2' : 'mt-3')} title={detail}>
+      <div
+        className={cn('text-sm text-slate-500', compact ? 'mt-2' : 'mt-3', wrapDetail ? 'leading-snug' : 'truncate')}
+        title={detail}
+      >
         {detail}
       </div>
     </div>
@@ -977,6 +981,7 @@ function PercentageLinesPanel({
           value={String(totals.required)}
           detail={`Назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · выполнено ${totals.completed}`}
           accent="green"
+          wrapDetail
         />
         <MetricCard
           icon={TimerReset}

@@ -98,10 +98,15 @@ export function buildPercentageLineSummaries(rows: WeldRow[]): PercentageLineSum
     .filter((summary) => summary.stamps.length > 0)
     .sort(
       (left, right) =>
+        getLineRequiredControls(right) - getLineRequiredControls(left) ||
         left.projectTitle.localeCompare(right.projectTitle, 'ru', { numeric: true }) ||
         left.subtitleCode.localeCompare(right.subtitleCode, 'ru', { numeric: true }) ||
         left.line.localeCompare(right.line, 'ru', { numeric: true }),
     )
+}
+
+function getLineRequiredControls(summary: PercentageLineSummary) {
+  return summary.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0)
 }
 
 function getPercentageLineGroups(rows: WeldRow[]) {

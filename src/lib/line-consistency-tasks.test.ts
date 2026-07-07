@@ -48,7 +48,7 @@ describe('line consistency tasks', () => {
       kind: 'line-consistency',
       line: '330-FG-05-001',
       fieldKey: 'controlPresence',
-      title: 'Проверить наличие контроля линии',
+      title: 'Проверить назначение контроля линии',
       values: ['ВИК, РК, ПВК, ПСТО', 'ВИК, РК'],
     })
   })
