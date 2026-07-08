@@ -1,4 +1,4 @@
-import { boolean, date, numeric, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core'
+import { boolean, date, integer, numeric, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core'
 
 const numericNumber = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
 
@@ -154,6 +154,23 @@ export const welderStampSuspensions = pgTable('welder_stamp_suspensions', {
 
 export type WelderStampSuspension = typeof welderStampSuspensions.$inferSelect
 export type NewWelderStampSuspension = typeof welderStampSuspensions.$inferInsert
+
+export const duplicateControls = pgTable('duplicate_controls', {
+  id: serial('id').primaryKey(),
+  weldJointId: integer('weld_joint_id')
+    .notNull()
+    .references(() => weldJoints.id, { onDelete: 'cascade' }),
+  method: text('method').notNull(),
+  result: text('result').notNull(),
+  controlDate: date('control_date'),
+  conclusion: text('conclusion'),
+  conclusionDate: date('conclusion_date'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type DuplicateControl = typeof duplicateControls.$inferSelect
+export type NewDuplicateControl = typeof duplicateControls.$inferInsert
 
 export const dispatcherAcceptedWarnings = pgTable('dispatcher_accepted_warnings', {
   key: text('key').primaryKey(),

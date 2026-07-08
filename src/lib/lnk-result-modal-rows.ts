@@ -14,6 +14,7 @@ import {
 import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { normalizeFinalStatus } from '@/lib/weld-status'
 
 export function filterLnkRowsByRequestName(rows: WeldRow[], requestName: string) {
   const name = requestName.trim()
@@ -64,7 +65,7 @@ export function getLnkResultEntryPriority(row: WeldInput, methodKey: WeldFieldKe
     if (hasPendingLnkRequestResult(row)) return 0
   }
 
-  const finalStatus = String(row.finalStatus ?? '').trim().toLowerCase()
+  const finalStatus = normalizeFinalStatus(row.finalStatus)
   if (finalStatus === 'годен') return 1
   if (finalStatus === 'не годен') return 2
   return 3

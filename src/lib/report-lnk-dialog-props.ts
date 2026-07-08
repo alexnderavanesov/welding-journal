@@ -6,6 +6,7 @@ type LnkRequestManagerDialogProps = NonNullable<ReportLnkDialogsProps['requestMa
 type LnkResultDialogProps = NonNullable<ReportLnkDialogsProps['resultDialogProps']>
 type LnkResultManagerDialogProps = NonNullable<ReportLnkDialogsProps['resultManagerDialogProps']>
 type LnkOfficialityDialogProps = NonNullable<ReportLnkDialogsProps['officialityDialogProps']>
+type DuplicateControlDialogProps = NonNullable<ReportLnkDialogsProps['duplicateControlDialogProps']>
 type LnkResultPreviewDialogProps = NonNullable<ReportLnkDialogsProps['resultPreviewDialogProps']>
 
 type CreateReportLnkDialogsPropsOptions = {
@@ -20,6 +21,9 @@ type CreateReportLnkDialogsPropsOptions = {
 
   officialityModalOpen: boolean
   officiality: LnkOfficialityDialogProps
+
+  duplicateControlModalOpen: boolean
+  duplicateControl: DuplicateControlDialogProps
 
   resultModalOpen: boolean
   result: Omit<LnkResultDialogProps, 'areAllFilteredRowsSelected'>
@@ -38,6 +42,8 @@ export function createReportLnkDialogsProps({
   resultManager,
   officialityModalOpen,
   officiality,
+  duplicateControlModalOpen,
+  duplicateControl,
   resultModalOpen,
   result,
   selectableResultRows,
@@ -49,6 +55,7 @@ export function createReportLnkDialogsProps({
     requestManagerDialogProps: requestManagerOpen ? requestManager : null,
     resultManagerDialogProps: resultManagerOpen ? resultManager : null,
     officialityDialogProps: officialityModalOpen ? officiality : null,
+    duplicateControlDialogProps: duplicateControlModalOpen ? duplicateControl : null,
     resultDialogProps: resultModalOpen
       ? {
           ...result,

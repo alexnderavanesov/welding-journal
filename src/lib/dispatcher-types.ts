@@ -1,7 +1,8 @@
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 
-export type WeldRow = WeldInput & { id: number }
+export type WeldRow = WeldInput & { id: number; duplicateControls?: DuplicateControlRecord[] }
 export type WeldDraft = WeldInput & { id?: number }
 
 export type RepeatedJointCreateTask = {

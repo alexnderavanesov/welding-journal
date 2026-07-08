@@ -9,7 +9,7 @@ import {
   isCancelledControlValue,
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
-import { calculateFinalStatusInRows, normalizeResultStatus } from '@/lib/weld-status'
+import { calculateFinalStatusInRows, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 
 export type StatisticsUnit = 'joints' | 'wdi'
 export type StatisticsPeriodMode = 'events' | 'welded-joints'
@@ -80,7 +80,7 @@ export function buildStatisticsSummary(
   const totalRows = sumRows(weightedStatusRows, unit)
   const welded = sumRows(weightedRows.filter((row) => hasText(row.weldDate)), unit)
 
-  const statuses = weightedStatusRows.map((row) => String(calculateFinalStatusInRows(row, rows)).trim().toLowerCase())
+  const statuses = weightedStatusRows.map((row) => normalizeFinalStatus(calculateFinalStatusInRows(row, rows)))
   const good = sumRowsByStatus(weightedStatusRows, statuses, unit, 'годен')
   const rejected = sumRowsByStatus(weightedStatusRows, statuses, unit, 'не годен')
   const waitingWeld = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает сварку')

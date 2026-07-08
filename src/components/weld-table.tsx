@@ -4,6 +4,7 @@ import { WeldTableHeader } from '@/components/weld-table-header'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
+import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
@@ -33,6 +34,7 @@ export type WeldTableProps = {
   hiddenFieldKeys?: ReadonlySet<WeldFieldKey>
   mergePstoSections?: boolean
   rowActions?: ReportRowActions
+  extraColumns?: WeldTableExtraColumn[]
 }
 
 export function WeldTable({
@@ -61,6 +63,7 @@ export function WeldTable({
   hiddenFieldKeys = new Set(),
   mergePstoSections = false,
   rowActions,
+  extraColumns = [],
 }: WeldTableProps) {
   const {
     alwaysVisibleFieldKeys,
@@ -103,21 +106,24 @@ export function WeldTable({
     mergePstoSections,
     rowActions,
   })
+  const extraColumnsWidth = extraColumns.reduce((total, column) => total + column.width, 0)
+  const fullTableMinWidth = tableMinWidth + extraColumnsWidth
+  const fullTableColumnSpan = tableColumnSpan + extraColumns.length
 
   return (
-    <div className="w-max space-y-3" style={{ minWidth: tableMinWidth }}>
+    <div className="w-max space-y-3" style={{ minWidth: fullTableMinWidth }}>
       <WeldTableSectionToolbar
         sections={availableSections}
         collapsedSections={collapsedSections}
         alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
-        tableMinWidth={tableMinWidth}
+        tableMinWidth={fullTableMinWidth}
         stickyLeft={stickyLeft}
         onToggleSection={toggleSection}
       />
-      <div className="rounded-md border border-slate-100 bg-card shadow-sm shadow-slate-200/30" style={{ minWidth: tableMinWidth }}>
+      <div className="rounded-md border border-slate-100 bg-card shadow-sm shadow-slate-200/30" style={{ minWidth: fullTableMinWidth }}>
         <table
           className="table-fixed border-separate border-spacing-0 text-sm text-slate-700 [&_td]:outline-none [&_th]:outline-none"
-          style={{ width: tableMinWidth }}
+          style={{ width: fullTableMinWidth }}
         >
           <WeldTableColumns
             fields={filteredFields}
@@ -125,6 +131,7 @@ export function WeldTable({
             selectable={selectable}
             hasRowActions={hasRowActions}
             hasChainAction={hasChainAction}
+            extraColumns={extraColumns}
           />
           <WeldTableHeader
             selectable={selectable}
@@ -139,6 +146,7 @@ export function WeldTable({
             rowActionsHeaderLabel={rowActions?.headerLabel ?? 'Быстрые действия'}
             rowActionsScreenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
             filteredSections={filteredSections}
+            extraColumns={extraColumns}
             alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
             readOnly={readOnly}
             onToggleSection={toggleSection}
@@ -151,7 +159,7 @@ export function WeldTable({
             <WeldTableBodyRows
               rows={filteredRows}
               fields={filteredFields}
-              colSpan={tableColumnSpan}
+              colSpan={fullTableColumnSpan}
               readOnly={readOnly}
               selectable={selectable}
               selectedRowIds={selectedRowIds}
@@ -164,6 +172,7 @@ export function WeldTable({
               openLinkedReportTitle={openLinkedReportTitle}
               hasRowActions={hasRowActions}
               rowActions={rowActions}
+              extraColumns={extraColumns}
               duplicateKeys={duplicateKeys}
               highlightedRowIds={highlightedRowIds}
               highlightedCellKeys={highlightedCellKeys}

@@ -11,6 +11,7 @@ type ReportModalOpenStateParams = {
   isLnkResultPreviewOpen: boolean
   isLnkResultManagerOpen: boolean
   isLnkOfficialityModalOpen: boolean
+  isDuplicateControlModalOpen?: boolean
 }
 
 export function getReportModalOpenState({
@@ -24,6 +25,7 @@ export function getReportModalOpenState({
   isLnkResultPreviewOpen,
   isLnkResultManagerOpen,
   isLnkOfficialityModalOpen,
+  isDuplicateControlModalOpen = false,
 }: ReportModalOpenStateParams) {
   return isAnyReportModalOpen([
     isPstoRequestModalOpen,
@@ -36,5 +38,6 @@ export function getReportModalOpenState({
     isLnkResultPreviewOpen,
     isLnkResultManagerOpen,
     isLnkOfficialityModalOpen,
+    isDuplicateControlModalOpen,
   ])
 }

@@ -87,13 +87,14 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
     summary.fullControlRequired
       ? `По клейму уже ${summary.rejectedPrimaryControls} первичных негодных стыков по любому виду контроля, поэтому требуется РК/УЗК для всех ${summary.officialJointCount} стыков этого клейма.`
       : `По расчету требуется ${summary.requiredControls} стык(ов) РК/УЗК: базово ${summary.baseRequiredControls}, дополнительно ${summary.additionalRequiredControls}.`,
-    `Закрыто расчетом ${summary.coveredControls}, осталось закрыть ${summary.missingControls}.`,
+    `Закрыто расчетом ${summary.coveredControls}${summary.rejectedCoveredControls > 0 ? `, в том числе браком ${summary.rejectedCoveredControls}` : ''}, осталось закрыть ${summary.missingControls}.`,
   ]
   if (summary.missingCandidateJointNames.length > 0) {
     detailParts.push(`Кандидаты без закрытия расчета: ${formatJointList(summary.missingCandidateJointNames)}.`)
   }
   detailParts.push(
     'Закрытием расчета считается назначенный РК или УЗК, выполненный результат РК/УЗК, осознанный пропуск "отменен" одновременно в РК и УЗК либо статус "замена РК/УЗК" на другом виде НК.',
+    'Если стык уже имеет негодный результат по любому контролю, он закрывает расчет браком и не попадает в кандидаты на назначение РК/УЗК.',
   )
 
   return {
@@ -107,6 +108,7 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
     stamp: summary.stamp,
     title,
     details: detailParts.join(' '),
+    targetRowIds: summary.missingCandidateRowIds,
     requiredControls: summary.requiredControls,
     coveredControls: summary.coveredControls,
     assignedControls: summary.assignedControls,
@@ -136,6 +138,7 @@ function buildExcessControlTask(row: WeldRow, summary: PercentageLineStampSummar
     stamp: summary.stamp,
     title: 'Проверить лишний контроль процентной линии',
     details: detailParts.join(' '),
+    targetRowIds: summary.excessCandidateRowIds,
     requiredControls: summary.requiredControls,
     coveredControls: summary.coveredControls,
     assignedControls: summary.assignedControls,

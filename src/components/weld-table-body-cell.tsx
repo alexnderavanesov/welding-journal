@@ -2,6 +2,7 @@ import { WeldTableValue } from '@/components/weld-table-value'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { bodyCellClass } from '@/lib/weld-table-utils'
 import { getFinalStatusErrorReason, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
+import { formatFinalStatusDisplay } from '@/lib/weld-status'
 
 type WeldTableBodyCellProps = {
   row: WeldRow
@@ -28,6 +29,7 @@ export function WeldTableBodyCell({
 }: WeldTableBodyCellProps) {
   const finalStatusErrorReason =
     field.key === 'finalStatus' && String(displayValue ?? '').trim().toLowerCase() === 'ошибка' ? getFinalStatusErrorReason(row) : null
+  const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const contentClass = `block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
     isEditableCell ? 'cursor-pointer hover:bg-slate-100/70' : isResultField ? '' : 'text-slate-500'
   }`
@@ -51,7 +53,7 @@ export function WeldTableBodyCell({
       }
     >
       <div className={contentClass}>
-        <WeldTableValue field={field} value={displayValue} isResultField={isResultField} />
+        <WeldTableValue field={field} value={visibleValue} isResultField={isResultField} />
       </div>
     </td>
   )

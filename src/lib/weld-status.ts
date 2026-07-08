@@ -1,9 +1,10 @@
 import type { WeldFieldKey, WeldInput } from './weld-field-definitions'
 import { normalizeJointChainPart, parseJointChainName } from './joint-chain'
+import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК', 'ожидает заявку'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
-export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК', 'ошибка'] as const
+export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'не годен по дублю', 'ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК', 'ошибка'] as const
 export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikResult',
   'rkResult',
@@ -42,6 +43,8 @@ const CONTROL_STATE_PAIRS = [
 export function calculateFinalStatus(record: WeldInput) {
   const hasResultWithoutEnabledControl = getInactiveControlResultErrors(record).length > 0
   if (hasResultWithoutEnabledControl) return 'ошибка'
+
+  if (hasRejectedDuplicateControl(record)) return 'не годен по дублю'
 
   if (!hasText(record.weldDate)) return getPendingWeldFinalStatus(record)
 
@@ -106,15 +109,37 @@ export function normalizeResultStatus(value: unknown) {
 export function normalizeFinalStatus(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
   if (text === 'ожидает') return 'ожидает НК'
+  if (text === 'не годен по дублю') return 'не годен'
   const option = FINAL_STATUS_OPTIONS.find((status) => status.toLowerCase() === text)
   return option ?? null
 }
 
 export function hasRejectedControlResult(record: WeldInput) {
+  if (hasRejectedDuplicateControl(record)) return true
   return CONTROL_RESULT_PAIRS.some(({ resultKey }) => {
     const result = normalizeResultStatus(record[resultKey])
     return result === 'ремонт' || result === 'вырез'
   })
+}
+
+export function getRejectedDuplicateControlLabel(record: WeldInput) {
+  const control = getRejectedDuplicateControls(record)[0]
+  return control ? `${control.method} (дубль) - ${control.result}` : ''
+}
+
+export function formatFinalStatusDisplay(record: WeldInput, value: unknown) {
+  const text = String(value ?? '').trim()
+  if (text.toLowerCase() !== 'не годен по дублю') return text
+
+  const methods = Array.from(
+    new Set(
+      getRejectedDuplicateControls(record)
+        .map((control) => String(control.method ?? '').trim())
+        .filter(Boolean),
+    ),
+  )
+
+  return methods.length > 0 ? `${text} (${methods.join(', ')})` : text
 }
 
 function getPendingWeldFinalStatus(record: WeldInput) {

@@ -93,6 +93,35 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.missingControls).toBe(2)
   })
 
+  it('uses an already rejected joint as rejected closure for full-control missing checks', () => {
+    const rows = [
+      ...Array.from({ length: 4 }, (_, index) =>
+        makeRow(index + 1, {
+          joint: `S${index + 1}`,
+          hasRk: 'да',
+          rkResult: 'вырез',
+          weldControlPercent: '25',
+        }),
+      ),
+      makeRow(5, {
+        joint: 'S5',
+        hasPvk: 'дополнительный',
+        pvkResult: 'вырез',
+        weldControlPercent: '25',
+      }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.fullControlRequired).toBe(true)
+    expect(stamp.requiredControls).toBe(5)
+    expect(stamp.coveredControls).toBe(5)
+    expect(stamp.rejectedCoveredControls).toBe(1)
+    expect(stamp.rejectedCoveredJointNames).toEqual(['S5'])
+    expect(stamp.missingControls).toBe(0)
+    expect(stamp.missingCandidateJointNames).toEqual([])
+  })
+
   it('does not count rejected repair descendants toward the full-control counter', () => {
     const rows = [
       makeRow(1, { joint: 'S1', rkResult: 'вырез' }),

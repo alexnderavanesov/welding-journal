@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   useAutoCollapseNavOnHorizontalScroll,
@@ -58,6 +58,7 @@ import { createReportFieldEditorProps } from '@/lib/report-field-editor-props'
 import { createReportPstoDialogsProps } from '@/lib/report-psto-dialog-props'
 import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
+import { useDuplicateControls } from '@/lib/use-duplicate-controls'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
@@ -72,6 +73,12 @@ import {
   buildRowIdListFilters,
   type PercentageLineStampFilter,
 } from '@/lib/report-navigation'
+import {
+  createEmptyDuplicateControlDraft,
+  type DuplicateControlDraft,
+  type DuplicateControlMethod,
+  type DuplicateControlRecord,
+} from '@/lib/duplicate-control-types'
 
 export function useHomePageController() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -187,6 +194,10 @@ export function useHomePageController() {
     setManagedLnkPendingResultChanges,
     setPreservedLnkOrderIds,
   } = useLnkResultModalState()
+  const [isDuplicateControlModalOpen, setIsDuplicateControlModalOpen] = useState(false)
+  const [duplicateControlDraft, setDuplicateControlDraft] = useState<DuplicateControlDraft>(() =>
+    createEmptyDuplicateControlDraft(),
+  )
   const {
     isPstoShowMenuOpen,
     isLnkShowMenuOpen,
@@ -248,6 +259,7 @@ export function useHomePageController() {
       isLnkResultPreviewOpen,
       isLnkResultManagerOpen,
       isLnkOfficialityModalOpen,
+      isDuplicateControlModalOpen,
     })
 
   useEscapeToClearReportFilters({
@@ -293,8 +305,14 @@ export function useHomePageController() {
   })
 
   const weldsQuery = useWeldsQuery()
+  const {
+    duplicateControls,
+    duplicateControlsQuery,
+    saveDuplicateControlMutation,
+    deleteDuplicateControlMutation,
+  } = useDuplicateControls()
 
-  const rows = useReportRows(weldsQuery.data)
+  const rows = useReportRows(weldsQuery.data, duplicateControls)
 
   const {
     repeatedJointTaskGroups,
@@ -669,6 +687,23 @@ export function useHomePageController() {
     setDraft: setLnkOfficialityDraft,
     setIsOpen: setIsLnkOfficialityModalOpen,
   })
+  const filteredDuplicateControlRows = useMemo(
+    () => filterDuplicateControlRows(rows, duplicateControlDraft.search, duplicateControlDraft.rowIds),
+    [duplicateControlDraft.search, duplicateControlDraft.rowIds, rows],
+  )
+  const selectedDuplicateControlRows = useMemo(
+    () => rows.filter((row) => duplicateControlDraft.rowIds.has(row.id)),
+    [duplicateControlDraft.rowIds, rows],
+  )
+  const duplicateControlDialogControls = useMemo(() => {
+    if (duplicateControlDraft.rowIds.size === 0) return duplicateControls
+    return duplicateControls.filter((control) => duplicateControlDraft.rowIds.has(control.weldJointId))
+  }, [duplicateControlDraft.rowIds, duplicateControls])
+  const duplicateControlSaveBlockReason = getDuplicateControlSaveBlockReason({
+    draft: duplicateControlDraft,
+    isSaving: saveDuplicateControlMutation.isPending,
+    selectedRows: selectedDuplicateControlRows,
+  })
   const {
     acceptedWdiTotal,
     activeColumnFilters,
@@ -825,6 +860,115 @@ export function useHomePageController() {
     setEditing,
   })
 
+  const openDuplicateControlModal = () => {
+    const initialRowIds = selectedLnkIds.size > 0 ? new Set(selectedLnkIds) : new Set<number>()
+    setDuplicateControlDraft({
+      ...createEmptyDuplicateControlDraft(),
+      rowIds: initialRowIds,
+    })
+    setIsDuplicateControlModalOpen(true)
+  }
+
+  const openDuplicateControlModalForRow = (row: WeldRow) => {
+    setDuplicateControlDraft({
+      ...createEmptyDuplicateControlDraft(),
+      rowIds: new Set([row.id]),
+      search: String(row.joint ?? ''),
+    })
+    setIsDuplicateControlModalOpen(true)
+  }
+
+  const closeDuplicateControlModal = () => {
+    setIsDuplicateControlModalOpen(false)
+    setDuplicateControlDraft(createEmptyDuplicateControlDraft())
+  }
+
+  const toggleDuplicateControlRow = (rowId: number) => {
+    setDuplicateControlDraft((current) => {
+      if (current.id) return current
+      const rowIds = new Set(current.rowIds)
+      if (rowIds.has(rowId)) rowIds.delete(rowId)
+      else rowIds.add(rowId)
+      return { ...current, rowIds }
+    })
+  }
+
+  const setVisibleDuplicateControlRowsSelected = (selected: boolean) => {
+    setDuplicateControlDraft((current) => {
+      if (current.id) return current
+      const rowIds = new Set(current.rowIds)
+      for (const row of filteredDuplicateControlRows) {
+        if (selected) rowIds.add(row.id)
+        else rowIds.delete(row.id)
+      }
+      return { ...current, rowIds }
+    })
+  }
+
+  const toggleDuplicateControlMethod = (method: DuplicateControlMethod) => {
+    setDuplicateControlDraft((current) => {
+      if (current.id && !current.methods.has(method)) return current
+      const methods = new Set(current.methods)
+      if (methods.has(method)) methods.delete(method)
+      else methods.add(method)
+      return { ...current, methods }
+    })
+  }
+
+  const editDuplicateControl = (control: DuplicateControlRecord) => {
+    setDuplicateControlDraft({
+      id: control.id,
+      rowIds: new Set([control.weldJointId]),
+      methods: new Set([control.method]),
+      result: control.result,
+      controlDate: control.controlDate,
+      conclusion: control.conclusion,
+      conclusionDate: control.conclusionDate,
+      search: '',
+    })
+    setIsDuplicateControlModalOpen(true)
+  }
+
+  const saveDuplicateControl = async () => {
+    if (duplicateControlSaveBlockReason) return
+    const methods = Array.from(duplicateControlDraft.methods)
+    const result = duplicateControlDraft.result
+    if (!result) return
+    const payloads = selectedDuplicateControlRows.flatMap((row) =>
+      methods.map((method) => ({
+        id: duplicateControlDraft.id,
+        weldJointId: row.id,
+        method,
+        result,
+        controlDate: duplicateControlDraft.controlDate,
+        conclusion: duplicateControlDraft.conclusion,
+        conclusionDate: duplicateControlDraft.conclusionDate,
+      })),
+    )
+
+    for (const payload of payloads) {
+      await saveDuplicateControlMutation.mutateAsync(payload)
+    }
+    await duplicateControlsQuery.refetch()
+    closeDuplicateControlModal()
+    setMessage(duplicateControlDraft.id ? 'Дубль-контроль обновлен' : `Дубль-контроль внесен: ${payloads.length}`)
+  }
+
+  const deleteDuplicateControlRecord = async (control: DuplicateControlRecord) => {
+    const confirmed = await confirmAction({
+      title: 'Удалить дубль-контроль',
+      itemName: `${control.method} · ${control.result}`,
+      description: 'Запись дубль-контроля будет удалена. Если она влияла на итоговый статус или диспетчер, расчет обновится после удаления.',
+      warning: 'Это действие нельзя отменить.',
+      confirmLabel: 'Удалить',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    await deleteDuplicateControlMutation.mutateAsync(control.id)
+    await duplicateControlsQuery.refetch()
+    setMessage('Дубль-контроль удален')
+  }
+
   const openPercentageLineStampRows = (filter: PercentageLineStampFilter) => {
     setActiveReport('weldingJournal')
     setChainRecord(null)
@@ -879,6 +1023,7 @@ export function useHomePageController() {
     isPstoResultModalOpen,
     isPstoRequestModalOpen,
     isLnkOfficialityModalOpen,
+    isDuplicateControlModalOpen,
     isLnkResultModalOpen,
     isLnkRequestModalOpen,
     isReportImportModalOpen: isImportDialogOpen,
@@ -897,6 +1042,7 @@ export function useHomePageController() {
     onClosePstoResultModal: closeAddPstoResultModal,
     onClosePstoRequestModal: closeCreatePstoRequestModal,
     onCloseLnkOfficialityModal: closeLnkOfficialityModal,
+    onCloseDuplicateControlModal: closeDuplicateControlModal,
     onCloseLnkResultModal: closeAddLnkResultModal,
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
     onCloseReportImportModal: () => setIsImportDialogOpen(false),
@@ -949,6 +1095,7 @@ export function useHomePageController() {
     onOpenChain: (row) => setChainRecord(row),
     onFilterLine: filterLineInCurrentReport,
     onOpenLinkedReport: openLinkedReportRow,
+    onOpenDuplicateControl: openDuplicateControlModalForRow,
     rowActionHandlers,
   })
 
@@ -1010,6 +1157,8 @@ export function useHomePageController() {
     lnkResultDisabled: lnkResultMutation.isPending || lnkResultRequestOptions.length === 0,
     onOpenLnkOfficiality: openLnkOfficialityModal,
     lnkOfficialityPending: lnkOfficialityMutation.isPending,
+    onOpenDuplicateControl: openDuplicateControlModal,
+    duplicateControlPending: saveDuplicateControlMutation.isPending || deleteDuplicateControlMutation.isPending,
     isLnkShowMenuOpen,
     onToggleLnkShowMenu: () => setIsLnkShowMenuOpen((current) => !current),
     onOpenLnkCurrentReport: openLnkCurrentReport,
@@ -1324,6 +1473,24 @@ export function useHomePageController() {
       onToggleRow: toggleLnkOfficialityRow,
       onSetVisibleRowsSelected: setVisibleLnkOfficialityRowsSelected,
     },
+    duplicateControlModalOpen: isDuplicateControlModalOpen,
+    duplicateControl: {
+      draft: duplicateControlDraft,
+      filteredRows: filteredDuplicateControlRows,
+      selectedRows: selectedDuplicateControlRows,
+      allRows: rows,
+      controls: duplicateControlDialogControls,
+      saveBlockReason: duplicateControlSaveBlockReason,
+      isSaving: saveDuplicateControlMutation.isPending || deleteDuplicateControlMutation.isPending,
+      onClose: closeDuplicateControlModal,
+      onSave: saveDuplicateControl,
+      onDelete: deleteDuplicateControlRecord,
+      onEdit: editDuplicateControl,
+      onDraftChange: setDuplicateControlDraft,
+      onToggleRow: toggleDuplicateControlRow,
+      onSetVisibleRowsSelected: setVisibleDuplicateControlRowsSelected,
+      onToggleMethod: toggleDuplicateControlMethod,
+    },
     resultModalOpen: isLnkResultModalOpen,
     result: {
       draft: lnkResultDraft,
@@ -1418,4 +1585,34 @@ export function useHomePageController() {
     reportFieldEditorProps,
     reportImportDialogProps,
   }
+}
+
+function filterDuplicateControlRows(rows: WeldRow[], search: string, _selectedIds: Set<number>) {
+  const query = search.trim().toLowerCase()
+  return query
+    ? rows.filter((row) =>
+        [row.project, row.subproject, row.line, row.spool, row.joint]
+          .map((value) => String(value ?? '').toLowerCase())
+          .some((value) => value.includes(query)),
+      )
+    : rows
+}
+
+function getDuplicateControlSaveBlockReason({
+  draft,
+  isSaving,
+  selectedRows,
+}: {
+  draft: DuplicateControlDraft
+  isSaving: boolean
+  selectedRows: WeldRow[]
+}) {
+  if (isSaving) return 'Дубль-контроль сохраняется, дождитесь завершения.'
+  if (selectedRows.length === 0) return 'Выберите один или несколько стыков.'
+  if (draft.methods.size === 0) return 'Выберите метод дубль-контроля.'
+  if (!draft.result) return 'Выберите результат дубль-контроля.'
+  if (draft.id && (selectedRows.length !== 1 || draft.methods.size !== 1)) {
+    return 'При редактировании должна быть выбрана одна запись дубль-контроля.'
+  }
+  return null
 }

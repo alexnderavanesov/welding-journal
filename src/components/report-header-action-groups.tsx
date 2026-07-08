@@ -1,4 +1,4 @@
-import { ClipboardCheck, Plus, ShieldCheck, Upload } from 'lucide-react'
+import { ClipboardCheck, CopyCheck, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { ReportShowMenu } from '@/components/report-show-menu'
 import { Button } from '@/components/ui/button'
 
@@ -113,6 +113,8 @@ type LnkHeaderActionsProps = {
   resultDisabled: boolean
   onOpenOfficiality: () => void
   officialityPending: boolean
+  onOpenDuplicateControl: () => void
+  duplicateControlPending: boolean
   isShowMenuOpen: boolean
   onToggleShowMenu: () => void
   onOpenCurrentReport: () => void
@@ -128,6 +130,8 @@ export function LnkHeaderActions({
   resultDisabled,
   onOpenOfficiality,
   officialityPending,
+  onOpenDuplicateControl,
+  duplicateControlPending,
   isShowMenuOpen,
   onToggleShowMenu,
   onOpenCurrentReport,
@@ -148,6 +152,10 @@ export function LnkHeaderActions({
       <Button variant="outline" onClick={onOpenOfficiality} disabled={officialityPending}>
         <ShieldCheck className="mr-2 h-4 w-4" />
         Официальность
+      </Button>
+      <Button variant="outline" onClick={onOpenDuplicateControl} disabled={duplicateControlPending}>
+        <CopyCheck className="mr-2 h-4 w-4" />
+        Дубль контроль
       </Button>
       <ReportShowMenu
         isOpen={isShowMenuOpen}

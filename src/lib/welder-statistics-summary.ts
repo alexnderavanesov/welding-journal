@@ -3,7 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { calculateFinalStatusInRows } from '@/lib/weld-status'
+import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export type WelderStatisticsJointFilter = 'all' | 'f' | 's'
@@ -85,7 +85,7 @@ export function buildWelderStatisticsSummary(
 
     const hasSecondWelder = indexTwoFactStampParts.some((part) => hasText(row[part.key]))
     const parts = hasSecondWelder ? [...indexOneFactStampParts, ...indexTwoFactStampParts] : indexOneFactStampParts
-    const status = String(calculateFinalStatusInRows(row, rows)).trim().toLowerCase()
+    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows))
     const jointType = getJointType(row)
 
     for (const part of parts) {

@@ -36,6 +36,52 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
+  it('creates a W-index repeated joint after duplicate control cut result', () => {
+    const rows = [
+      row({
+        id: 1,
+        joint: 'S10',
+        duplicateControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' }],
+      }),
+    ]
+
+    const createTasks = buildRepeatedJointTasks(rows).filter((task) => task.kind === 'create')
+
+    expect(createTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceJoint: 'S10',
+          targetJoint: 'S10W1',
+          methodCode: 'РК (дубль)',
+          result: 'вырез',
+        }),
+      ]),
+    )
+  })
+
+  it('creates an R-index repeated joint after duplicate control repair result', () => {
+    const rows = [
+      row({
+        id: 1,
+        joint: 'S11',
+        duplicateControls: [{ id: 1, weldJointId: 1, method: 'ВИК', result: 'ремонт', controlDate: '', conclusion: '', conclusionDate: '' }],
+      }),
+    ]
+
+    const createTasks = buildRepeatedJointTasks(rows).filter((task) => task.kind === 'create')
+
+    expect(createTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceJoint: 'S11',
+          targetJoint: 'S11R1',
+          methodCode: 'ВИК (дубль)',
+          result: 'ремонт',
+        }),
+      ]),
+    )
+  })
+
   it('offers to rename an orphan good repeated joint back to its missing source joint', () => {
     const tasks = buildRepeatedJointTasks([row({ id: 1, joint: 'S2W1', finalStatus: 'годен' })])
 
@@ -235,8 +281,9 @@ describe('buildRepeatedJointTasks', () => {
           issue: 'missing',
           stamp: 'ABC1',
           requiredControls: 3,
-          coveredControls: 0,
-          count: 3,
+          coveredControls: 1,
+          count: 2,
+          details: expect.stringContaining('в том числе браком 1'),
         }),
       ]),
     )

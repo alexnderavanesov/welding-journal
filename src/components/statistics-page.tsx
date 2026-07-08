@@ -42,7 +42,7 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue, isReplacementControlValue } from '@/lib/report-value-utils'
 import { cn } from '@/lib/utils'
-import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeResultStatus } from '@/lib/weld-status'
+import { calculateFinalStatus, CONTROL_RESULT_PAIRS, formatFinalStatusDisplay, normalizeResultStatus } from '@/lib/weld-status'
 
 type StatisticsPageProps = {
   fixedTab?: StatisticsTab
@@ -971,6 +971,7 @@ function PercentageLinesPanel({
           cancelledAssigned: result.cancelledAssigned + stamp.cancelledAssignedControls,
           replacedAssigned: result.replacedAssigned + stamp.replacedAssignedControls,
           covered: result.covered + stamp.coveredControls,
+          rejectedCovered: result.rejectedCovered + stamp.rejectedCoveredControls,
           completed: result.completed + stamp.completedControls,
           missing: result.missing + stamp.missingControls,
           excess: result.excess + stamp.excessControls,
@@ -984,6 +985,7 @@ function PercentageLinesPanel({
           cancelledAssigned: 0,
           replacedAssigned: 0,
           covered: 0,
+          rejectedCovered: 0,
           completed: 0,
           missing: 0,
           excess: 0,
@@ -1025,7 +1027,7 @@ function PercentageLinesPanel({
           icon={ClipboardCheck}
           label="Требуется контроля"
           value={String(totals.required)}
-          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · закрыто расчетом ${totals.covered}`}
+          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · закрыто расчетом ${totals.covered}${totals.rejectedCovered > 0 ? `, в т.ч. браком ${totals.rejectedCovered}` : ''}`}
           accent="green"
           wrapDetail
         />
@@ -1319,7 +1321,7 @@ function PercentageLineJointDetailRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold text-slate-900">{String(row.joint ?? '').trim() || `#${row.id}`}</span>
         <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
-          {calculateFinalStatus(row)}
+          {formatFinalStatusDisplay(row, calculateFinalStatus(row))}
         </span>
       </div>
       <div className="mt-1 text-xs text-slate-500">
@@ -1350,7 +1352,7 @@ function PercentageLineJointSummary({ row }: { row: WeldRow }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold text-slate-900">{String(row.joint ?? '').trim() || `#${row.id}`}</span>
         <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
-          {calculateFinalStatus(row)}
+          {formatFinalStatusDisplay(row, calculateFinalStatus(row))}
         </span>
       </div>
       <div className="mt-1 text-xs text-slate-500">
@@ -1396,6 +1398,7 @@ function PercentageLineGroup({
       cancelledAssigned: result.cancelledAssigned + stamp.cancelledAssignedControls,
       replacedAssigned: result.replacedAssigned + stamp.replacedAssignedControls,
       covered: result.covered + stamp.coveredControls,
+      rejectedCovered: result.rejectedCovered + stamp.rejectedCoveredControls,
       completed: result.completed + stamp.completedControls,
       missing: result.missing + stamp.missingControls,
       excess: result.excess + stamp.excessControls,
@@ -1408,6 +1411,7 @@ function PercentageLineGroup({
       cancelledAssigned: 0,
       replacedAssigned: 0,
       covered: 0,
+      rejectedCovered: 0,
       completed: 0,
       missing: 0,
       excess: 0,
@@ -1473,7 +1477,7 @@ function PercentageLineGroup({
           <PercentageLineSummaryPill
             label="Закрыто"
             value={totals.covered}
-            title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК или статус «замена РК/УЗК» на другом виде НК."
+            title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК, статус «замена РК/УЗК» на другом виде НК или уже известный негодный результат по любому контролю."
           />
           <PercentageLineSummaryPill
             label="Осталось"
@@ -1668,12 +1672,14 @@ function PercentageLineTableRow({
       </PercentageLineGridCell>
       <PercentageLineGridCell label="Итог">
         <PercentageLineResultStack
-          title={`${getJointListHint('Закрыто расчетом', stamp.coveredJointNames)}. ${getJointListHint('Выполнено', stamp.completedJointNames)}. ${getJointListHint('Кандидаты без закрытия расчета', stamp.missingCandidateJointNames)}. ${getJointListHint('Лишнее “да”', stamp.excessCandidateJointNames)}`}
+          title={`${getJointListHint('Закрыто расчетом', stamp.coveredJointNames)}. ${getJointListHint('Закрыто браком', stamp.rejectedCoveredJointNames)}. ${getJointListHint('Выполнено', stamp.completedJointNames)}. ${getJointListHint('Кандидаты без закрытия расчета', stamp.missingCandidateJointNames)}. ${getJointListHint('Лишнее “да”', stamp.excessCandidateJointNames)}`}
           missing={stamp.missingControls}
           completed={stamp.completedControls}
           rejectedPrimary={stamp.rejectedPrimaryControls}
           excess={stamp.excessControls}
           completedDetail={createDetail('Результаты внесены', stamp.completedRowIds)}
+          rejectedCovered={stamp.rejectedCoveredControls}
+          rejectedCoveredDetail={createDetail('Закрыто браком', stamp.rejectedCoveredRowIds)}
           excessDetail={createDetail('Лишнее обычное “да”', stamp.excessCandidateRowIds)}
           mainDetail={
             stamp.missingControls > 0
@@ -1741,6 +1747,8 @@ function PercentageLineResultStack({
   missing,
   onCancelMissing,
   onOpenDetail,
+  rejectedCovered,
+  rejectedCoveredDetail,
   rejectedPrimary,
   rejectedPrimaryDetail,
   title,
@@ -1754,6 +1762,8 @@ function PercentageLineResultStack({
   missing: number
   onCancelMissing?: (detail: PercentageLineCancelMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
+  rejectedCovered: number
+  rejectedCoveredDetail: PercentageLineJointDetailDialogState
   rejectedPrimary: number
   rejectedPrimaryDetail: PercentageLineJointDetailDialogState
   title: string
@@ -1788,6 +1798,11 @@ function PercentageLineResultStack({
       {completed > 0 ? (
         <PercentageLineDetailButton detail={completedDetail} onOpen={onOpenDetail}>
           Результатов внесено: {completed}
+        </PercentageLineDetailButton>
+      ) : null}
+      {rejectedCovered > 0 ? (
+        <PercentageLineDetailButton detail={rejectedCoveredDetail} onOpen={onOpenDetail}>
+          Закрыто браком: {rejectedCovered}
         </PercentageLineDetailButton>
       ) : null}
       {rejectedPrimary > 0 ? (

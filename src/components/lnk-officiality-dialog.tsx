@@ -1,14 +1,17 @@
-import type { Dispatch, SetStateAction } from 'react'
+import { useState, type Dispatch, type SetStateAction } from 'react'
 import { Check } from 'lucide-react'
 
+import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkOfficialitySettings } from '@/components/lnk-officiality-settings'
 import { LnkOfficialityRow } from '@/components/lnk-officiality-row'
+import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
 import { Button } from '@/components/ui/button'
 import type { LnkOfficialityDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 
 export type LnkOfficialityDialogProps = {
   draft: LnkOfficialityDraftState
@@ -35,6 +38,8 @@ export function LnkOfficialityDialog({
   onToggleRow,
   onSetVisibleRowsSelected,
 }: LnkOfficialityDialogProps) {
+  const [showSelectedPreview, setShowSelectedPreview] = useState(false)
+
   return (
     <LargeDialogShell
       maxWidthClassName="max-w-[1180px]"
@@ -101,12 +106,77 @@ export function LnkOfficialityDialog({
           <Button variant="outline" onClick={onClose}>
             Отмена
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowSelectedPreview(true)}
+            disabled={selectedRows.length === 0}
+          >
+            {`Предпросмотр (${selectedRows.length})`}
+          </Button>
           <Button onClick={onSave} disabled={isSaveDisabled}>
             <Check className="mr-2 h-4 w-4" />
             Сохранить статус
           </Button>
         </div>
       </div>
+      {showSelectedPreview ? (
+        <LnkOfficialityPreviewDialog rows={selectedRows} status={draft.status} onClose={() => setShowSelectedPreview(false)} />
+      ) : null}
+    </LargeDialogShell>
+  )
+}
+
+function LnkOfficialityPreviewDialog({
+  rows,
+  status,
+  onClose,
+}: {
+  rows: WeldRow[]
+  status: LnkOfficialityDraftState['status']
+  onClose: () => void
+}) {
+  const statusLabel = status === 'official' ? 'официальный' : 'неофициальный'
+
+  return (
+    <LargeDialogShell
+      maxWidthClassName="max-w-4xl"
+      maxHeightClassName="max-h-[86vh]"
+      overlayClassName="z-[65] bg-slate-950/25"
+    >
+      <DialogHeader
+        title="Предпросмотр выбранных стыков"
+        subtitle={`Будет установлен статус: ${statusLabel} · Выбрано: ${rows.length}`}
+        onClose={onClose}
+        closeLabel="Закрыть предпросмотр"
+      />
+      <div className="min-h-0 flex-1 overflow-auto p-5">
+        {rows.length === 0 ? (
+          <DialogEmptyState minHeightClassName="min-h-40">Нет выбранных стыков.</DialogEmptyState>
+        ) : (
+          <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+            {rows.map((row) => (
+              <div key={row.id} className="flex items-start justify-between gap-3 bg-white px-4 py-3">
+                <div className="min-w-0">
+                  <ManagerRowJointHeading
+                    row={row}
+                    titleClassName="text-sm font-semibold text-slate-900"
+                    metaClassName="mt-1 text-xs text-slate-500"
+                  />
+                </div>
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  <span className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">
+                    станет: {statusLabel}
+                  </span>
+                  <span className={`rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+                    {getJointStatusLabel(row)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <DialogCloseFooter onClose={onClose} />
     </LargeDialogShell>
   )
 }

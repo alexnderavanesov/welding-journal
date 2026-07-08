@@ -1,7 +1,7 @@
 import { compactSearchText, compareLnkRequestRows, normalizeSearchText } from '@/lib/report-row-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-export function filterLnkOfficialityRows(rows: WeldRow[], search: string, selectedIds: Set<number>) {
+export function filterLnkOfficialityRows(rows: WeldRow[], search: string, _selectedIds: Set<number>) {
   const query = normalizeSearchText(search)
   const compactQuery = compactSearchText(query)
   return rows
@@ -11,10 +11,5 @@ export function filterLnkOfficialityRows(rows: WeldRow[], search: string, select
       const haystack = normalizeSearchText(values.map((value) => String(value ?? '')).join(' '))
       return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
     })
-    .sort((left, right) => {
-      const leftSelected = selectedIds.has(left.id)
-      const rightSelected = selectedIds.has(right.id)
-      if (leftSelected !== rightSelected) return leftSelected ? -1 : 1
-      return compareLnkRequestRows(left, right)
-    })
+    .sort(compareLnkRequestRows)
 }

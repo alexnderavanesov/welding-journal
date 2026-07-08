@@ -2,7 +2,7 @@ import { ExternalLink } from 'lucide-react'
 
 import { JointSpoolDateMeta, OfficialityBadge } from '@/components/joint-meta'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getJointChainResultItems, getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
+import { getJointChainResultItems, getJointStatusBadgeClass, getJointStatusDisplayLabel } from '@/lib/lnk-status'
 import { getJointTitle } from '@/lib/report-ui-state'
 
 export type JointChainCardProps = {
@@ -53,7 +53,7 @@ export function JointChainCard({ row, index, isCurrent, onOpenRow }: JointChainC
             <span>
               Статус:{' '}
               <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
-                {getJointStatusLabel(row)}
+                {getJointStatusDisplayLabel(row)}
               </span>
             </span>
           </div>

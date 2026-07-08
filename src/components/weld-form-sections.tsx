@@ -82,10 +82,10 @@ export function WeldFormSections({
             <div className="text-sm font-semibold text-slate-900">Назначение контроля</div>
             <div className="mt-1 text-sm text-slate-500">Выберите состояние для каждого вида контроля. Правила замены РК/УЗК применяются сразу.</div>
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y-2 divide-slate-200">
             {controlAvailabilityFields.map((field) => (
-              <div key={field.key} className="grid grid-cols-1 gap-3 px-4 py-4 xl:grid-cols-[180px_minmax(0,1fr)]">
-                <div className="pt-1 text-sm font-semibold text-slate-700">{field.label}</div>
+              <div key={field.key} className="grid grid-cols-1 gap-3 bg-white px-4 py-4 xl:grid-cols-[180px_minmax(0,1fr)]">
+                <div className="border-l-4 border-slate-300 pl-3 pt-1 text-sm font-semibold text-slate-800">{field.label}</div>
                 <WeldFormField
                   field={field}
                   draft={draft}

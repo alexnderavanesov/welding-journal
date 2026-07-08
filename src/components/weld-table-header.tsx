@@ -3,6 +3,7 @@ import { WeldTableFieldHeaderRows } from '@/components/weld-table-field-header-r
 import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
 import { WeldTableSectionHeaderRow } from '@/components/weld-table-section-header-row'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
+import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
 
 type WeldTableHeaderProps = {
@@ -18,6 +19,7 @@ type WeldTableHeaderProps = {
   rowActionsHeaderLabel: string
   rowActionsScreenReaderLabel: string
   filteredSections: WeldTableDisplaySection[]
+  extraColumns: WeldTableExtraColumn[]
   alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>
   readOnly: boolean
   onToggleSection: (section: string) => void
@@ -40,6 +42,7 @@ export function WeldTableHeader({
   rowActionsHeaderLabel,
   rowActionsScreenReaderLabel,
   filteredSections,
+  extraColumns,
   alwaysVisibleFieldKeys,
   readOnly,
   onToggleSection,
@@ -68,6 +71,7 @@ export function WeldTableHeader({
           sections={filteredSections}
           alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
           readOnly={readOnly}
+          extraColumns={extraColumns}
           onToggleSection={onToggleSection}
         />
       </tr>
@@ -75,6 +79,7 @@ export function WeldTableHeader({
         fields={filteredFields}
         columnFilters={columnFilters}
         readOnly={readOnly}
+        extraColumns={extraColumns}
         canEditField={canEditField}
         onColumnFiltersChange={onColumnFiltersChange}
       />

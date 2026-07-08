@@ -30,6 +30,8 @@ export type ReportHeaderActionsProps = {
   lnkResultDisabled: boolean
   onOpenLnkOfficiality: () => void
   lnkOfficialityPending: boolean
+  onOpenDuplicateControl: () => void
+  duplicateControlPending: boolean
   isLnkShowMenuOpen: boolean
   onToggleLnkShowMenu: () => void
   onOpenLnkCurrentReport: () => void
@@ -67,6 +69,8 @@ export function ReportHeaderActions({
   lnkResultDisabled,
   onOpenLnkOfficiality,
   lnkOfficialityPending,
+  onOpenDuplicateControl,
+  duplicateControlPending,
   isLnkShowMenuOpen,
   onToggleLnkShowMenu,
   onOpenLnkCurrentReport,
@@ -97,6 +101,8 @@ export function ReportHeaderActions({
           resultDisabled={lnkResultDisabled}
           onOpenOfficiality={onOpenLnkOfficiality}
           officialityPending={lnkOfficialityPending}
+          onOpenDuplicateControl={onOpenDuplicateControl}
+          duplicateControlPending={duplicateControlPending}
           isShowMenuOpen={isLnkShowMenuOpen}
           onToggleShowMenu={onToggleLnkShowMenu}
           onOpenCurrentReport={onOpenLnkCurrentReport}

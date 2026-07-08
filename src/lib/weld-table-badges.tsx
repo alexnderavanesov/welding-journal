@@ -52,7 +52,11 @@ export function ResultBadge({ value }: { value: unknown }) {
     normalized === 'годен (отменен)' ||
     normalized === 'проведено (отменен)'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      : normalized === 'ремонт' || normalized === 'вырез' || normalized === 'не годен' || normalized === 'ошибка'
+      : normalized === 'ремонт' ||
+          normalized === 'вырез' ||
+          normalized === 'не годен' ||
+          normalized.startsWith('не годен по дублю') ||
+          normalized === 'ошибка'
         ? 'border-rose-200 bg-rose-50 text-rose-800'
         : normalized === 'ожидает' || normalized === 'ожидает нк' || normalized === 'ожидает заявку'
           ? 'border-amber-200 bg-amber-50 text-amber-800'

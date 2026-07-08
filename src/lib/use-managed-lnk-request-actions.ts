@@ -19,8 +19,8 @@ export function useManagedLnkRequestActions({
     lnkRequestCorrectionMutation.mutate({ record: row, methodKey, requestName: null })
   }
 
-  function openLnkRequestManager() {
-    const requestName = managedLnkRequestName || lnkRequestManagerOptions[0] || ''
+  function openLnkRequestManager(requestNameOverride?: string) {
+    const requestName = requestNameOverride || managedLnkRequestName || lnkRequestManagerOptions[0] || ''
     setManagedLnkRequestName(requestName)
     setManagedLnkRequestNameDraft(requestName)
     setIsLnkRequestManagerOpen(true)

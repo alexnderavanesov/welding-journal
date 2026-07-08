@@ -16,6 +16,7 @@ import { isUnofficialJoint } from '@/lib/joint-display'
 import { isLnkRepairForbiddenByOfficialRepairLimit } from '@/lib/lnk-result-rules'
 import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 
 export function isUnusedRepeatedJointDraft(row: WeldInput) {
   if (hasText(row.weldDate)) return false
@@ -25,6 +26,20 @@ export function isUnusedRepeatedJointDraft(row: WeldInput) {
 }
 
 export function getPrimaryRejectedLnkResult(row: WeldInput) {
+  const duplicateCut = getRejectedDuplicateControls(row).find((control) => control.result === 'вырез')
+  if (duplicateCut) {
+    return {
+      method: { code: `${duplicateCut.method} (дубль)`, resultKey: `duplicate:${duplicateCut.id}`, enabledKey: '', requestKey: '' },
+      result: 'вырез' as const,
+    }
+  }
+  const duplicateRepair = getRejectedDuplicateControls(row).find((control) => control.result === 'ремонт')
+  if (duplicateRepair) {
+    return {
+      method: { code: `${duplicateRepair.method} (дубль)`, resultKey: `duplicate:${duplicateRepair.id}`, enabledKey: '', requestKey: '' },
+      result: 'ремонт' as const,
+    }
+  }
   const cut = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'вырез')
   if (cut) return { method: cut, result: 'вырез' as const }
   const repair = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт')

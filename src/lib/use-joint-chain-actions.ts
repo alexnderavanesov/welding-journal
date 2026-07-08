@@ -7,6 +7,7 @@ import {
   buildJointChainFilters,
   buildLineFilters,
   buildPercentageLineStampFilters,
+  buildRowIdListFilters,
   getJointBaseFromRow,
   getRepeatedJointTaskActionText,
   getRepeatedJointTaskBaseJoint,
@@ -59,7 +60,9 @@ export function useJointChainActions({
     }
     if (task.kind === 'percentage-line-control') {
       setChainRecord(null)
-      const filters = buildPercentageLineStampFilters(task)
+      const filters = task.targetRowIds?.length
+        ? { ...buildLineFilters(task.row), ...buildRowIdListFilters(task.targetRowIds) }
+        : buildPercentageLineStampFilters(task)
       if (activeReport === 'lnk') {
         setActiveReport('lnk')
         setLnkFilters(filters)
@@ -67,7 +70,11 @@ export function useJointChainActions({
         setActiveReport('weldingJournal')
         setColumnFilters(filters)
       }
-      setMessage(`Показаны стыки клейма ${task.stamp} на линии ${task.line}: ${task.title.toLowerCase()}`)
+      setMessage(
+        task.targetRowIds?.length
+          ? `Показаны стыки задачи "${task.title.toLowerCase()}" на линии ${task.line}: ${task.targetRowIds.length}`
+          : `Показаны стыки клейма ${task.stamp} на линии ${task.line}: ${task.title.toLowerCase()}`,
+      )
       return
     }
     const baseJoint = getRepeatedJointTaskBaseJoint(task)

@@ -1,4 +1,6 @@
 import type { WeldTableProps } from '@/components/weld-table'
+import type { WeldRow } from '@/lib/dispatcher-types'
+import { getDuplicateControlTableColumns } from '@/lib/duplicate-control-table-columns'
 import type { ActiveReport } from '@/lib/home-state'
 import { isLnkRequestAllowedForRow, isLnkRequestField } from '@/lib/lnk-field-updates'
 import { getLnkDisplayValue, getPstoDisplayValue, getWeldingJournalDisplayValue } from '@/lib/lnk-status'
@@ -26,6 +28,7 @@ type CreateWeldTablePropsOptions = {
   onOpenChain: NonNullable<WeldTableProps['onOpenChain']>
   onFilterLine: NonNullable<WeldTableProps['onFilterLine']>
   onOpenLinkedReport: NonNullable<WeldTableProps['onOpenLinkedReport']>
+  onOpenDuplicateControl: (row: WeldRow) => void
   rowActionHandlers: ReportRowActionHandlers
 }
 
@@ -42,6 +45,7 @@ export function createWeldTableProps({
   onOpenChain,
   onFilterLine,
   onOpenLinkedReport,
+  onOpenDuplicateControl,
   rowActionHandlers,
 }: CreateWeldTablePropsOptions): WeldTableProps {
   return {
@@ -72,6 +76,7 @@ export function createWeldTableProps({
     onOpenLinkedReport: canOpenLinkedReport(activeReport) ? onOpenLinkedReport : undefined,
     openLinkedReportTitle: getOpenLinkedReportTitle(activeReport),
     rowActions: getReportRowActions(activeReport, rowActionHandlers),
+    extraColumns: getDuplicateControlTableColumns({ activeReport, onOpenDuplicateControl }),
     storageKey: activeReport,
     hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
     mergePstoSections: shouldMergePstoSections(activeReport),

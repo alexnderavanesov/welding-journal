@@ -8,7 +8,8 @@ import {
   isEnabledControlValue,
   isReplacementControlValue,
 } from '@/lib/report-value-utils'
-import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeResultStatus } from '@/lib/weld-status'
+import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
+import { hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
 
 export type PercentageControlMethod = 'РК' | 'УЗК'
 
@@ -30,6 +31,7 @@ export type PercentageLineStampSummary = {
   cancelledAssignedControls: number
   replacedAssignedControls: number
   coveredControls: number
+  rejectedCoveredControls: number
   completedControls: number
   rejectedPrimaryControls: number
   goodJoints: number
@@ -46,6 +48,8 @@ export type PercentageLineStampSummary = {
   replacedAssignedRowIds: number[]
   coveredJointNames: string[]
   coveredRowIds: number[]
+  rejectedCoveredJointNames: string[]
+  rejectedCoveredRowIds: number[]
   completedJointNames: string[]
   completedRowIds: number[]
   rejectedPrimaryJointNames: string[]
@@ -193,13 +197,14 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const replacedAssignedControls = entry.rows.filter(hasReplacedPercentageControl).length
   const cancelledAssignedControls = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).length
   const coveredControls = entry.rows.filter(hasCoveredPercentageControl).length
+  const rejectedCoveredControls = entry.rows.filter(hasRejectedClosurePercentageControl).length
   const completedControls = entry.rows.filter(hasCompletedPercentageControl).length
   const normalAssignedRows = entry.rows.filter(hasNormalAssignedPercentageControl)
   const normalAssignedControls = normalAssignedRows.length
   const allowedNormalAssignedControls = Math.max(0, requiredControls - cancelledAssignedControls - replacedAssignedControls)
   const statusCounters = entry.rows.reduce(
     (result, row) => {
-      const status = calculateFinalStatus(row)
+      const status = normalizeFinalStatus(calculateFinalStatus(row))
       if (status === 'годен') result.goodJoints += 1
       else if (status === 'не годен') result.rejectedJoints += 1
       else if (status === 'ожидает заявку') result.waitingRequestJoints += 1
@@ -218,6 +223,8 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const cancelledAssignedRowIds = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getRowId)
   const coveredJointNames = entry.rows.filter(hasCoveredPercentageControl).map(getJointDisplayName)
   const coveredRowIds = entry.rows.filter(hasCoveredPercentageControl).map(getRowId)
+  const rejectedCoveredJointNames = entry.rows.filter(hasRejectedClosurePercentageControl).map(getJointDisplayName)
+  const rejectedCoveredRowIds = entry.rows.filter(hasRejectedClosurePercentageControl).map(getRowId)
   const completedJointNames = entry.rows.filter(hasCompletedPercentageControl).map(getJointDisplayName)
   const completedRowIds = entry.rows.filter(hasCompletedPercentageControl).map(getRowId)
   const rejectedPrimaryJointNames = entry.rows.filter(isRejectedPrimaryPercentageControl).map(getJointDisplayName)
@@ -245,6 +252,7 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     cancelledAssignedControls,
     replacedAssignedControls,
     coveredControls,
+    rejectedCoveredControls,
     completedControls,
     rejectedPrimaryControls,
     ...statusCounters,
@@ -258,6 +266,8 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     replacedAssignedRowIds,
     coveredJointNames,
     coveredRowIds,
+    rejectedCoveredJointNames,
+    rejectedCoveredRowIds,
     completedJointNames,
     completedRowIds,
     rejectedPrimaryJointNames,
@@ -314,14 +324,23 @@ function hasAdditionalAssignedPercentageControl(row: WeldRow) {
 
 function hasCoveredPercentageControl(row: WeldRow) {
   return (
-    PERCENTAGE_CONTROL_METHODS.some(({ enabledKey, resultKey }) => {
-      const controlValue = row[enabledKey]
-      if (isAdditionalControlValue(controlValue)) return false
-      return isEnabledControlValue(controlValue) || hasCompletedResult(row[resultKey])
-    }) ||
+    hasDirectPercentageControlCoverage(row) ||
     hasBothPercentageControlsCancelled(row) ||
-    hasReplacedPercentageControl(row)
+    hasReplacedPercentageControl(row) ||
+    hasRejectedClosurePercentageControl(row)
   )
+}
+
+function hasDirectPercentageControlCoverage(row: WeldRow) {
+  return PERCENTAGE_CONTROL_METHODS.some(({ enabledKey, resultKey }) => {
+    const controlValue = row[enabledKey]
+    if (isAdditionalControlValue(controlValue)) return false
+    return isEnabledControlValue(controlValue) || hasCompletedResult(row[resultKey])
+  })
+}
+
+function hasRejectedClosurePercentageControl(row: WeldRow) {
+  return hasRejectedAnyControlResult(row) && !hasDirectPercentageControlCoverage(row)
 }
 
 function hasCompletedPercentageControl(row: WeldRow) {
@@ -346,6 +365,7 @@ function isRejectedPrimaryPercentageControl(row: WeldRow) {
 }
 
 function hasRejectedAnyControlResult(row: WeldRow) {
+  if (hasRejectedDuplicateControl(row)) return true
   return CONTROL_RESULT_PAIRS.some(({ resultKey }) => {
     const result = normalizeResultStatus(row[resultKey])
     return result === 'ремонт' || result === 'вырез'

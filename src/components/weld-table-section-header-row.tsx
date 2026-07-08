@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import { canCollapseSection } from '@/lib/weld-table-utils'
 import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
 
@@ -12,6 +13,7 @@ type WeldTableSectionHeaderRowProps = {
   sections: WeldTableSectionGroup[]
   alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>
   readOnly: boolean
+  extraColumns: WeldTableExtraColumn[]
   onToggleSection: (section: string) => void
 }
 
@@ -19,8 +21,11 @@ export function WeldTableSectionHeaderRow({
   sections,
   alwaysVisibleFieldKeys,
   readOnly,
+  extraColumns,
   onToggleSection,
 }: WeldTableSectionHeaderRowProps) {
+  const extraSections = groupExtraColumnsBySection(extraColumns)
+
   return (
     <>
       {sections.map((group) => {
@@ -49,6 +54,15 @@ export function WeldTableSectionHeaderRow({
           </th>
         )
       })}
+      {extraSections.map((group) => (
+        <th
+          key={`extra-${group.section}`}
+          colSpan={group.fields.length}
+          className="border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+        >
+          <span className="inline-flex items-center gap-1.5 rounded px-2 py-1">{group.section}</span>
+        </th>
+      ))}
       {!readOnly ? (
         <th
           rowSpan={2}
@@ -59,4 +73,17 @@ export function WeldTableSectionHeaderRow({
       ) : null}
     </>
   )
+}
+
+function groupExtraColumnsBySection(columns: WeldTableExtraColumn[]) {
+  const groups: Array<{ section: string; fields: WeldTableExtraColumn[] }> = []
+  for (const column of columns) {
+    const lastGroup = groups[groups.length - 1]
+    if (lastGroup?.section === column.section) {
+      lastGroup.fields.push(column)
+    } else {
+      groups.push({ section: column.section, fields: [column] })
+    }
+  }
+  return groups
 }

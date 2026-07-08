@@ -5,6 +5,7 @@ import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
 import { WeldTableRowSelectCell } from '@/components/weld-table-row-select-cell'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
+import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import { getWeldTableRowClassName, getWeldTableRowTitle } from '@/lib/weld-table-row-state'
 import { getCellKey, getDuplicateKey } from '@/lib/weld-table-utils'
 import { RESULT_FIELD_KEYS, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
@@ -25,6 +26,7 @@ type WeldTableBodyRowsProps = {
   openLinkedReportTitle: string
   hasRowActions: boolean
   rowActions?: ReportRowActions
+  extraColumns: WeldTableExtraColumn[]
   duplicateKeys: ReadonlySet<string>
   highlightedRowIds: ReadonlySet<number>
   highlightedCellKeys: ReadonlySet<string>
@@ -51,6 +53,7 @@ export function WeldTableBodyRows({
   openLinkedReportTitle,
   hasRowActions,
   rowActions,
+  extraColumns,
   duplicateKeys,
   highlightedRowIds,
   highlightedCellKeys,
@@ -119,6 +122,11 @@ export function WeldTableBodyRows({
                 />
               )
             })}
+            {extraColumns.map((column) => (
+              <td key={column.key} className="border-b border-r border-b-slate-100 border-r-slate-200 bg-slate-50/80 p-0 align-top">
+                {column.renderCell(row)}
+              </td>
+            ))}
             {!readOnly ? <WeldTableEditActionsCell row={row} onEdit={onEdit} onDelete={onDelete} /> : null}
           </tr>
         )

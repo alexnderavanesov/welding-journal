@@ -10,6 +10,7 @@ type ReportModalEscapeKeyOptions = {
   isPstoResultModalOpen: boolean
   isPstoRequestModalOpen: boolean
   isLnkOfficialityModalOpen: boolean
+  isDuplicateControlModalOpen?: boolean
   isLnkResultModalOpen: boolean
   isLnkRequestModalOpen: boolean
   isReportImportModalOpen: boolean
@@ -25,6 +26,7 @@ type ReportModalEscapeKeyOptions = {
   onClosePstoResultModal: () => void
   onClosePstoRequestModal: () => void
   onCloseLnkOfficialityModal: () => void
+  onCloseDuplicateControlModal?: () => void
   onCloseLnkResultModal: () => void
   onCloseLnkRequestModal: () => void
   onCloseReportImportModal: () => void
@@ -40,6 +42,7 @@ export function useReportModalEscapeKey({
   isPstoResultModalOpen,
   isPstoRequestModalOpen,
   isLnkOfficialityModalOpen,
+  isDuplicateControlModalOpen = false,
   isLnkResultModalOpen,
   isLnkRequestModalOpen,
   isReportImportModalOpen,
@@ -55,6 +58,7 @@ export function useReportModalEscapeKey({
   onClosePstoResultModal,
   onClosePstoRequestModal,
   onCloseLnkOfficialityModal,
+  onCloseDuplicateControlModal,
   onCloseLnkResultModal,
   onCloseLnkRequestModal,
   onCloseReportImportModal,
@@ -103,6 +107,10 @@ export function useReportModalEscapeKey({
         onCloseLnkOfficialityModal()
         return
       }
+      if (isDuplicateControlModalOpen) {
+        onCloseDuplicateControlModal?.()
+        return
+      }
       if (isLnkResultModalOpen) {
         onCloseLnkResultModal()
         return
@@ -124,6 +132,7 @@ export function useReportModalEscapeKey({
     isPstoResultModalOpen,
     isPstoRequestModalOpen,
     isLnkOfficialityModalOpen,
+    isDuplicateControlModalOpen,
     isLnkResultModalOpen,
     isLnkRequestModalOpen,
     isReportImportModalOpen,
@@ -139,6 +148,7 @@ export function useReportModalEscapeKey({
     onClosePstoResultModal,
     onClosePstoRequestModal,
     onCloseLnkOfficialityModal,
+    onCloseDuplicateControlModal,
     onCloseLnkResultModal,
     onCloseLnkRequestModal,
     onCloseReportImportModal,

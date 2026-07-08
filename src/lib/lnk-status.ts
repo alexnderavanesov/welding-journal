@@ -20,6 +20,8 @@ import {
 } from '@/lib/report-value-utils'
 import { parseJointChainName } from '@/lib/joint-chain'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { formatFinalStatusDisplay } from '@/lib/weld-status'
+import { getDuplicateControls, getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 
 export function getLnkMethodByRequestKey(fieldKey: WeldFieldKey) {
   return LNK_METHODS.find((method) => method.requestKey === fieldKey)
@@ -35,6 +37,7 @@ export function isFinalLnkResultValue(value: unknown) {
 }
 
 export function hasRejectedLnkResult(row: WeldInput) {
+  if (getRejectedDuplicateControls(row).length > 0) return true
   return LNK_METHODS.some((method) => {
     const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
     return result === 'ремонт' || result === 'вырез'
@@ -62,7 +65,8 @@ export function getAvailableLnkRequestMethods(row: WeldInput) {
 }
 
 export function isRejectedJoint(row: WeldInput) {
-  return getJointStatusLabel(row) === 'не годен'
+  const status = getJointStatusLabel(row)
+  return status === 'не годен' || status === 'не годен по дублю'
 }
 
 export function formatLnkResultSummaryItems(row: WeldInput) {
@@ -127,7 +131,7 @@ export function getPendingWeldStatusLabel(row: WeldInput) {
 export function getJointStatusLabel(row: WeldInput) {
   const status = String(row.finalStatus ?? '').trim().toLowerCase()
   if (status === 'годен') return 'годен'
-  if (status === 'не годен') return 'не годен'
+  if (status === 'не годен' || status === 'не годен по дублю') return status
   if (status === 'ожидает сварку') return 'ожидает сварку'
   if (status === 'ожидает ремонт') return 'ожидает ремонт'
   if (status === 'ожидает заявку') return 'ожидает заявку'
@@ -138,10 +142,14 @@ export function getJointStatusLabel(row: WeldInput) {
   return 'ожидает заявку'
 }
 
+export function getJointStatusDisplayLabel(row: WeldInput) {
+  return formatFinalStatusDisplay(row, getJointStatusLabel(row))
+}
+
 export function getJointStatusBadgeClass(row: WeldInput) {
   const status = getJointStatusLabel(row)
   if (status === 'годен') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-  if (status === 'не годен') return 'border-rose-200 bg-rose-50 text-rose-800'
+  if (status === 'не годен' || status === 'не годен по дублю') return 'border-rose-200 bg-rose-50 text-rose-800'
   return 'border-amber-200 bg-amber-50 text-amber-800'
 }
 
@@ -190,5 +198,10 @@ export function getJointChainResultItems(row: WeldInput) {
           },
         ]
       : []
-  return [...lnkItems, ...pstoItems]
+  const duplicateItems = getDuplicateControls(row).map((control) => ({
+    label: `${control.method} дубль`,
+    value: control.result,
+    className: getLnkResultBadgeClass(control.result),
+  }))
+  return [...lnkItems, ...duplicateItems, ...pstoItems]
 }
