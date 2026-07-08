@@ -23,6 +23,7 @@ type HomePageViewProps = {
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
+  onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
   reportWeldEditorProps: ComponentProps<typeof ReportDialogs>['weldEditorProps']
   reportPstoDialogsProps: ComponentProps<typeof ReportDialogs>['pstoDialogsProps']
@@ -47,6 +48,7 @@ export function HomePageView({
   welderStampsRegistryProps,
   weldTableProps,
   onOpenPercentageLineStampRows,
+  onOpenWeldRowIds,
   reportChainDialogProps,
   reportWeldEditorProps,
   reportPstoDialogsProps,
@@ -80,6 +82,7 @@ export function HomePageView({
         welderStampsRegistryProps={welderStampsRegistryProps}
         weldTableProps={weldTableProps}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
+        onOpenWeldRowIds={onOpenWeldRowIds}
       />
 
       <ReportDialogs

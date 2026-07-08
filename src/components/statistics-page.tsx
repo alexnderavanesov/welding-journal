@@ -13,8 +13,11 @@ import {
   Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DialogHeader } from '@/components/dialog-header'
 import { Input } from '@/components/ui/input'
+import { LargeDialogShell } from '@/components/large-dialog-shell'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { formatDisplayDate } from '@/lib/date-format'
 import { parseJointChainName } from '@/lib/joint-chain'
 import {
   buildStatisticsSummary,
@@ -37,12 +40,15 @@ import {
 } from '@/lib/welder-statistics-summary'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
+import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue, isReplacementControlValue } from '@/lib/report-value-utils'
 import { cn } from '@/lib/utils'
+import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeResultStatus } from '@/lib/weld-status'
 
 type StatisticsPageProps = {
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
+  onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
 }
 
 type StatisticsTab = 'general' | 'welders' | 'lineSummary' | 'percentageLines'
@@ -53,7 +59,7 @@ const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['s', 'S база'],
 ]
 
-export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRows }: StatisticsPageProps) {
+export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRows, onOpenWeldRowIds }: StatisticsPageProps) {
   const defaultPeriod = useMemo(() => getDefaultStatisticsPeriod(), [])
   const [activeTab, setActiveTab] = useState<StatisticsTab>('general')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -496,8 +502,10 @@ export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRo
         />
       ) : activeTab === 'percentageLines' ? (
         <PercentageLinesPanel
+          rows={scopedRows}
           summary={percentageLineSummary}
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
+          onOpenWeldRowIds={onOpenWeldRowIds}
         />
       ) : (
         <LineSummaryPanel summary={lineSummary} unit={lineSummaryUnit} />
@@ -892,14 +900,24 @@ function WelderBodyCell({ children, className }: { children: ReactNode; classNam
 }
 
 function PercentageLinesPanel({
+  rows,
   summary,
   onOpenPercentageLineStampRows,
+  onOpenWeldRowIds,
 }: {
+  rows: WeldRow[]
   summary: ReturnType<typeof buildPercentageLineSummaries>
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
+  onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
 }) {
   const [search, setSearch] = useState('')
   const [collapsedLineKeys, setCollapsedLineKeys] = useState<Set<string>>(() => new Set())
+  const [detailDialog, setDetailDialog] = useState<PercentageLineJointDetailDialogState | null>(null)
+  const rowsById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows])
+  const detailRows = useMemo(
+    () => (detailDialog ? detailDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)) : []),
+    [detailDialog, rowsById],
+  )
   const flatRows = useMemo(
     () =>
       summary.flatMap((line) =>
@@ -936,6 +954,7 @@ function PercentageLinesPanel({
           additionalAssigned: result.additionalAssigned + stamp.additionalAssignedControls,
           cancelledAssigned: result.cancelledAssigned + stamp.cancelledAssignedControls,
           replacedAssigned: result.replacedAssigned + stamp.replacedAssignedControls,
+          covered: result.covered + stamp.coveredControls,
           completed: result.completed + stamp.completedControls,
           missing: result.missing + stamp.missingControls,
           excess: result.excess + stamp.excessControls,
@@ -948,6 +967,7 @@ function PercentageLinesPanel({
           additionalAssigned: 0,
           cancelledAssigned: 0,
           replacedAssigned: 0,
+          covered: 0,
           completed: 0,
           missing: 0,
           excess: 0,
@@ -964,6 +984,11 @@ function PercentageLinesPanel({
       return next
     })
   }
+  const openRowsInWeldingJournal = (rowIds: number[], messageText?: string) => {
+    if (rowIds.length === 0) return
+    onOpenWeldRowIds?.(rowIds, messageText)
+    setDetailDialog(null)
+  }
 
   return (
     <div className="space-y-4">
@@ -979,22 +1004,22 @@ function PercentageLinesPanel({
           icon={ClipboardCheck}
           label="Требуется контроля"
           value={String(totals.required)}
-          detail={`Назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · выполнено ${totals.completed}`}
+          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · закрыто расчетом ${totals.covered}`}
           accent="green"
           wrapDetail
         />
         <MetricCard
           icon={TimerReset}
-          label="Не хватает"
+          label="Осталось закрыть"
           value={String(totals.missing)}
-          detail="РК/УЗК еще нужно назначить по расчету"
+          detail="РК/УЗК еще нужно закрыть по расчету"
           accent="amber"
         />
         <MetricCard
           icon={Gauge}
           label="100% по клейму"
           value={String(totals.fullControl)}
-          detail={totals.excess > 0 ? `Лишних назначений: ${totals.excess}` : 'Без лишних назначений'}
+          detail={totals.excess > 0 ? `Лишнее “да”: ${totals.excess}` : 'Без лишних “да”'}
           accent={totals.fullControl > 0 ? 'amber' : 'slate'}
         />
       </div>
@@ -1027,6 +1052,7 @@ function PercentageLinesPanel({
                 key={line.lineKey}
                 collapsed={collapsedLineKeys.has(line.lineKey)}
                 line={line}
+                onOpenDetail={setDetailDialog}
                 onOpenStamp={onOpenPercentageLineStampRows}
                 onToggle={() => toggleLine(line.lineKey)}
               />
@@ -1043,18 +1069,128 @@ function PercentageLinesPanel({
           </div>
         )}
       </Panel>
+      {detailDialog ? (
+        <PercentageLineJointDetailDialog
+          detail={detailDialog}
+          rows={detailRows}
+          onClose={() => setDetailDialog(null)}
+          onOpenRows={openRowsInWeldingJournal}
+        />
+      ) : null}
     </div>
+  )
+}
+
+type PercentageLineJointDetailDialogState = {
+  rowIds: number[]
+  subtitle: string
+  title: string
+}
+
+function PercentageLineJointDetailDialog({
+  detail,
+  onClose,
+  onOpenRows,
+  rows,
+}: {
+  detail: PercentageLineJointDetailDialogState
+  onClose: () => void
+  onOpenRows: (rowIds: number[], message?: string) => void
+  rows: WeldRow[]
+}) {
+  const openAll = () => {
+    onOpenRows(rows.map((row) => row.id), `Показаны стыки: ${detail.title.toLowerCase()} (${rows.length}).`)
+  }
+
+  return (
+    <LargeDialogShell maxWidthClassName="max-w-[720px]" maxHeightClassName="max-h-[86vh]" overlayClassName="z-[80] bg-slate-950/25">
+      <DialogHeader
+        title={detail.title}
+        subtitle={`${detail.subtitle} · стыков: ${rows.length}`}
+        onClose={onClose}
+        actions={
+          rows.length > 0 ? (
+            <Button type="button" variant="outline" size="sm" onClick={openAll}>
+              Показать все
+            </Button>
+          ) : null
+        }
+      />
+      <div className="overflow-y-auto p-4">
+        {rows.length > 0 ? (
+          <div className="space-y-2">
+            {rows.map((row) => (
+              <PercentageLineJointDetailRow key={row.id} row={row} onOpenRows={onOpenRows} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+            Стыки не найдены. Возможно, данные уже изменились.
+          </div>
+        )}
+      </div>
+      <div className="flex justify-end border-t border-slate-200/80 px-4 py-3">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Закрыть
+        </Button>
+      </div>
+    </LargeDialogShell>
+  )
+}
+
+function PercentageLineJointDetailRow({
+  onOpenRows,
+  row,
+}: {
+  onOpenRows: (rowIds: number[], message?: string) => void
+  row: WeldRow
+}) {
+  const badges = getPercentageLineJointBadges(row)
+
+  return (
+    <button
+      type="button"
+      className="w-full rounded-md border border-slate-200 bg-white p-3 text-left transition-colors hover:border-sky-200 hover:bg-sky-50"
+      onClick={() =>
+        onOpenRows([row.id], `Показан стык ${String(row.joint ?? row.id).trim() || row.id} из расшифровки процентной линии.`)
+      }
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold text-slate-900">{String(row.joint ?? '').trim() || `#${row.id}`}</span>
+        <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+          {calculateFinalStatus(row)}
+        </span>
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {String(row.diameter ?? '').trim() || '-'} · Дата сварки:{' '}
+        {formatDisplayDate(row.weldDate) || '-'}
+      </div>
+      {badges.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {badges.map((badge) => (
+            <span key={badge.text} className={getPercentageLineJointBadgeClassName(badge.tone)}>
+              {badge.text}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </button>
   )
 }
 
 function PercentageLineGroup({
   collapsed,
   line,
+  onOpenDetail,
   onOpenStamp,
   onToggle,
 }: {
   collapsed: boolean
   line: ReturnType<typeof buildPercentageLineSummaries>[number]
+  onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
   onToggle: () => void
 }) {
@@ -1089,12 +1225,21 @@ function PercentageLineGroup({
     `Расчет по проценту: max(1, округление вверх от количества официальных стыков клейма * ${line.percent}%). ` +
     `Если первичный стык не годен по любому виду контроля: ${line.percent === 1 ? '+1 стык к РК/УЗК' : '+2 стыка к РК/УЗК'}. ` +
     'После 4-го первичного негодного результата по любому виду контроля требуется 100% РК/УЗК по этому клейму.'
+  const allAcceptedAndClosed =
+    totals.missing === 0 &&
+    totals.excess === 0 &&
+    line.stamps.length > 0 &&
+    line.stamps.every((stamp) => stamp.rejectedJoints === 0 && stamp.waitingRequestJoints === 0 && stamp.waitingControlJoints === 0)
 
   return (
     <div
       className={cn(
         'overflow-hidden rounded-md border bg-white transition-colors',
-        totals.missing > 0 || totals.excess > 0 ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200',
+        totals.missing > 0 || totals.excess > 0
+          ? 'border-amber-300 bg-amber-50/20'
+          : allAcceptedAndClosed
+            ? 'border-emerald-300 bg-emerald-50/10'
+            : 'border-slate-200',
       )}
     >
       <div className="flex flex-wrap items-stretch gap-3 px-3 py-3">
@@ -1120,34 +1265,29 @@ function PercentageLineGroup({
             расчет отдельно по каждому официальному клейму
           </div>
         </div>
-        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-          <PercentageLineMiniStat
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <PercentageLineSummaryPill
             label="Клейм"
             value={line.stamps.length}
             title="Количество официальных клейм, которые участвовали в сварке этой процентной линии."
           />
-          <PercentageLineMiniStat
+          <PercentageLineSummaryPill
             label="Требуется"
             value={totals.required}
             title="Сколько стыков нужно закрыть РК/УЗК: базовый процент плюс добор после первичных негодных результатов по любому виду контроля."
           />
-          <PercentageLineMiniStat
-            label="Назначено"
-            value={totals.assigned}
-            title={`Все стыки, где по РК/УЗК стоит «да» или «дополнительный», РК+УЗК осознанно отменены, либо другой вид НК отмечен как «замена РК/УЗК». Дополнительно: ${totals.additionalAssigned}. Отменено: ${totals.cancelledAssigned}. Заменено: ${totals.replacedAssigned}. «Дополнительный» учитывается как назначенный контроль, но не закрывает обязательный расчет и добор.`}
-          />
-          <PercentageLineMiniStat
-            label="Покрыто"
+          <PercentageLineSummaryPill
+            label="Закрыто"
             value={totals.covered}
-            title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, одновременная отмена РК+УЗК или статус «замена РК/УЗК» на другом виде НК. «Дополнительный» сам по себе расчет не закрывает."
+            title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК или статус «замена РК/УЗК» на другом виде НК."
           />
-          <PercentageLineMiniStat
-            label="Не хватает"
+          <PercentageLineSummaryPill
+            label="Осталось"
             value={totals.missing}
             tone={totals.missing > 0 ? 'amber' : 'slate'}
-            title="Сколько расчетных стыков еще нужно назначить к РК/УЗК."
+            title="Сколько расчетных стыков еще нужно закрыть РК/УЗК."
           />
-          <PercentageLineMiniStat
+          <PercentageLineSummaryPill
             label="Лишнее"
             value={totals.excess}
             tone={totals.excess > 0 ? 'rose' : 'slate'}
@@ -1157,82 +1297,50 @@ function PercentageLineGroup({
       </div>
 
       {!collapsed ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] table-fixed border-collapse text-sm">
-            <colgroup>
-              <col className="w-[10%]" />
-              <col className="w-[9%]" />
-              <col className="w-[16%]" />
-              <col className="w-[9%]" />
-              <col className="w-[10%]" />
-              <col className="w-[10%]" />
-              <col className="w-[10%]" />
-              <col className="w-[10%]" />
-              <col className="w-[8%]" />
-              <col className="w-[8%]" />
-            </colgroup>
-            <thead className="bg-slate-100 text-slate-700">
-              <tr>
-                <LineHeaderCell>Клеймо</LineHeaderCell>
-                <LineHeaderCell
-                  align="right"
-                  title="Сварено = официальные активные стыки этого клейма на процентной линии. Неофициальные, неактуальные по изм. и строки без даты сварки не учитываются."
-                >
-                  Сварено
-                </LineHeaderCell>
-                <LineHeaderCell align="right">Состояние</LineHeaderCell>
-                <LineHeaderCell
-                  align="right"
-                  title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных результатов по любому виду контроля. После 4-го первичного негодного требуется 100% РК/УЗК."
-                >
-                  Требуется РК/УЗК
-                </LineHeaderCell>
-                <LineHeaderCell
-                  align="right"
-                  title="Назначено = все стыки, где РК/УЗК назначены как «да» или «дополнительный», стыки с осознанной отменой РК+УЗК и стыки со статусом «замена РК/УЗК» на другом виде НК. Обычное «да» участвует в проверке лишнего контроля. «Дополнительный» считается назначенным, но не закрывает обязательный расчет и добор. «Заменено» закрывает одно расчетное место РК/УЗК и не считается лишним контролем."
-                >
-                  Назначено
-                </LineHeaderCell>
-                <LineHeaderCell
-                  align="right"
-                  title="Покрыто = то, что закрывает обязательный расчет РК/УЗК: обычное «да», результат РК/УЗК, одновременная отмена РК+УЗК или статус «замена РК/УЗК» на другом виде НК. «Дополнительный» РК/УЗК сюда не входит."
-                >
-                  Покрыто
-                </LineHeaderCell>
-                <LineHeaderCell align="right" title="Выполнено = есть результат РК/УЗК либо любой негодный результат по другому виду контроля. Такой негодный результат тоже запускает добор РК/УЗК.">
-                  Выполнено
-                </LineHeaderCell>
-                <LineHeaderCell
-                  align="right"
-                  title="Первично не годен = негодный результат любого вида контроля на первичном стыке без системных индексов R/W/Y."
-                >
-                  Первично не годен
-                </LineHeaderCell>
-                <LineHeaderCell align="right" title="Сколько стыков этого клейма еще нужно назначить к РК/УЗК.">
-                  Не хватает
-                </LineHeaderCell>
-                <LineHeaderCell align="right" title="Назначено обычным «да» больше, чем требует расчет.">
-                  Лишнее
-                </LineHeaderCell>
-              </tr>
-            </thead>
-            <tbody>
-              {line.stamps.map((stamp) => (
-                <PercentageLineTableRow
-                  key={stamp.key}
-                  stamp={stamp}
-                  onOpenStamp={onOpenStamp}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div className="border-t border-slate-100 text-sm">
+          <div className="hidden grid-cols-[1.1fr_0.7fr_1.2fr_1.2fr_1.2fr_1.1fr] bg-slate-100 text-slate-700 2xl:grid">
+            <PercentageLineGridHeader>Клеймо</PercentageLineGridHeader>
+            <PercentageLineGridHeader
+              align="right"
+              title="Сварено = официальные активные стыки этого клейма на процентной линии. Неофициальные, неактуальные по изм. и строки без даты сварки не учитываются."
+            >
+              Сварено
+            </PercentageLineGridHeader>
+            <PercentageLineGridHeader align="right">Состояние</PercentageLineGridHeader>
+            <PercentageLineGridHeader
+              align="right"
+              title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных результатов по любому виду контроля. После 4-го первичного негодного требуется 100% РК/УЗК."
+            >
+              Расчет
+            </PercentageLineGridHeader>
+            <PercentageLineGridHeader
+              align="right"
+              title="Всего назначено = все стыки, где РК/УЗК назначены как «да» или «дополнительный», стыки с осознанной отменой РК+УЗК и стыки со статусом «замена РК/УЗК» на другом виде НК. Обычное «да» участвует в проверке лишнего контроля. «Дополнительный» считается назначенным, но не закрывает обязательный расчет и добор. «Заменено» закрывает одно расчетное место РК/УЗК и не считается лишним контролем."
+            >
+              Назначение
+            </PercentageLineGridHeader>
+            <PercentageLineGridHeader align="right" title="Закрыто расчетом и фактически выполненные результаты контроля.">
+              Итог
+            </PercentageLineGridHeader>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {line.stamps.map((stamp) => (
+              <PercentageLineTableRow
+                key={stamp.key}
+                line={line}
+                onOpenDetail={onOpenDetail}
+                stamp={stamp}
+                onOpenStamp={onOpenStamp}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
     </div>
   )
 }
 
-function PercentageLineMiniStat({
+function PercentageLineSummaryPill({
   label,
   value,
   title,
@@ -1246,7 +1354,7 @@ function PercentageLineMiniStat({
   return (
     <div
       className={cn(
-        'rounded-md border bg-white px-3 py-2 shadow-sm',
+        'min-w-[112px] rounded-md border bg-white px-3 py-2 shadow-sm',
         tone === 'amber'
           ? 'border-amber-200 text-amber-800'
           : tone === 'rose'
@@ -1262,15 +1370,26 @@ function PercentageLineMiniStat({
 }
 
 function PercentageLineTableRow({
+  line,
+  onOpenDetail,
   onOpenStamp,
   stamp,
 }: {
+  line: ReturnType<typeof buildPercentageLineSummaries>[number]
+  onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
   stamp: PercentageLineStampSummary
 }) {
+  const detailSubtitle = `${line.line} · клеймо ${stamp.stamp}`
+  const createDetail = (title: string, rowIds: number[]) => ({
+    rowIds,
+    subtitle: detailSubtitle,
+    title,
+  })
+
   return (
-    <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
-      <LineBodyCell align="left">
+    <div className="grid grid-cols-1 gap-3 bg-white p-3 odd:bg-white even:bg-slate-50/60 md:grid-cols-2 2xl:grid-cols-[1.1fr_0.7fr_1.2fr_1.2fr_1.2fr_1.1fr] 2xl:gap-0 2xl:p-0">
+      <PercentageLineGridCell label="Клеймо" align="left">
         <div className="flex flex-wrap items-center gap-1.5">
           {onOpenStamp ? (
             <button
@@ -1297,9 +1416,9 @@ function PercentageLineTableRow({
             </span>
           ) : null}
         </div>
-      </LineBodyCell>
-      <LineBodyCell>{stamp.officialJointCount}</LineBodyCell>
-      <LineBodyCell>
+      </PercentageLineGridCell>
+      <PercentageLineGridCell label="Сварено">{stamp.officialJointCount}</PercentageLineGridCell>
+      <PercentageLineGridCell label="Состояние">
         <div className="grid justify-end gap-1 text-[11px] font-normal text-slate-600" title={getPercentageStatusHint(stamp)}>
           <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
             годен: {stamp.goodJoints}
@@ -1311,54 +1430,294 @@ function PercentageLineTableRow({
             ожидает: {stamp.waitingRequestJoints + stamp.waitingControlJoints}
           </span>
         </div>
-      </LineBodyCell>
-      <LineBodyCell>
-        <div className="flex flex-col items-end gap-1">
-          <span>{stamp.requiredControls}</span>
-          <span className="text-[11px] font-normal text-slate-500">
-            по %: {stamp.baseRequiredControls}
-            {stamp.additionalRequiredControls > 0 ? ` · добор: ${stamp.additionalRequiredControls}` : ''}
+      </PercentageLineGridCell>
+      <PercentageLineGridCell label="Расчет">
+        <PercentageLineCellStack
+          main={`требуется ${stamp.requiredControls}`}
+          title="Расчетная потребность РК/УЗК"
+          details={[
+            `по %: ${stamp.baseRequiredControls}`,
+            stamp.additionalRequiredControls > 0 ? `добор: ${stamp.additionalRequiredControls}` : '',
+          ]}
+        />
+      </PercentageLineGridCell>
+      <PercentageLineGridCell label="Назначение">
+        <PercentageLineCellStack
+          main={`назначено ${stamp.assignedControls}`}
+          mainDetail={createDetail('Назначенные стыки', stamp.assignedRowIds)}
+          title={getAssignedControlsHint(stamp)}
+          details={[
+            stamp.additionalAssignedControls > 0
+              ? {
+                  text: `дополнительно: ${stamp.additionalAssignedControls}`,
+                  detail: createDetail('Дополнительный РК/УЗК', stamp.additionalAssignedRowIds),
+                }
+              : '',
+            stamp.cancelledAssignedControls > 0
+              ? {
+                  text: `отменено: ${stamp.cancelledAssignedControls}`,
+                  detail: createDetail('Осознанно отменено РК+УЗК', stamp.cancelledAssignedRowIds),
+                }
+              : '',
+            stamp.replacedAssignedControls > 0
+              ? {
+                  text: `заменено: ${stamp.replacedAssignedControls}`,
+                  detail: createDetail('Замена РК/УЗК другим видом НК', stamp.replacedAssignedRowIds),
+                }
+              : '',
+          ]}
+          onOpenDetail={onOpenDetail}
+        />
+      </PercentageLineGridCell>
+      <PercentageLineGridCell label="Итог">
+        <PercentageLineResultStack
+          title={`${getJointListHint('Закрыто расчетом', stamp.coveredJointNames)}. ${getJointListHint('Выполнено', stamp.completedJointNames)}. ${getJointListHint('Кандидаты без закрытия расчета', stamp.missingCandidateJointNames)}. ${getJointListHint('Лишнее “да”', stamp.excessCandidateJointNames)}`}
+          missing={stamp.missingControls}
+          completed={stamp.completedControls}
+          rejectedPrimary={stamp.rejectedPrimaryControls}
+          excess={stamp.excessControls}
+          completedDetail={createDetail('Результаты внесены', stamp.completedRowIds)}
+          excessDetail={createDetail('Лишнее обычное “да”', stamp.excessCandidateRowIds)}
+          mainDetail={
+            stamp.missingControls > 0
+              ? createDetail('Кандидаты без закрытия расчета', stamp.missingCandidateRowIds)
+              : createDetail('Закрыто расчетом', stamp.coveredRowIds)
+          }
+          rejectedPrimaryDetail={createDetail('Первично негодные стыки', stamp.rejectedPrimaryRowIds)}
+          onOpenDetail={onOpenDetail}
+        />
+      </PercentageLineGridCell>
+    </div>
+  )
+}
+
+function PercentageLineGridHeader({
+  align = 'left',
+  children,
+  title,
+}: {
+  align?: 'left' | 'right'
+  children: ReactNode
+  title?: string
+}) {
+  return (
+    <div className={cn('px-3 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left')} title={title}>
+      {children}
+    </div>
+  )
+}
+
+function PercentageLineGridCell({
+  align = 'right',
+  children,
+  label,
+}: {
+  align?: 'left' | 'right'
+  children: ReactNode
+  label: string
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-md border border-slate-100 bg-white px-3 py-2 align-top font-medium text-slate-700 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:py-3',
+        align === 'right' ? 'text-right' : 'text-left',
+      )}
+    >
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 2xl:hidden">{label}</div>
+      {children}
+    </div>
+  )
+}
+
+function PercentageLineResultStack({
+  completed,
+  completedDetail,
+  excess,
+  excessDetail,
+  mainDetail,
+  missing,
+  onOpenDetail,
+  rejectedPrimary,
+  rejectedPrimaryDetail,
+  title,
+}: {
+  completed: number
+  completedDetail: PercentageLineJointDetailDialogState
+  excess: number
+  excessDetail: PercentageLineJointDetailDialogState
+  mainDetail: PercentageLineJointDetailDialogState
+  missing: number
+  onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
+  rejectedPrimary: number
+  rejectedPrimaryDetail: PercentageLineJointDetailDialogState
+  title: string
+}) {
+  return (
+    <div className="flex flex-col items-end gap-1" title={title}>
+      <PercentageLineDetailButton
+        detail={mainDetail}
+        onOpen={onOpenDetail}
+        className={cn('text-sm font-semibold', missing > 0 ? 'text-amber-700' : 'text-emerald-700')}
+      >
+        {missing > 0 ? `Осталось закрыть: ${missing}` : 'Расчет закрыт'}
+      </PercentageLineDetailButton>
+      {excess > 0 ? (
+        <PercentageLineDetailButton
+          detail={excessDetail}
+          onOpen={onOpenDetail}
+          className="font-medium text-rose-700"
+        >
+          Лишнее “да”: {excess}
+        </PercentageLineDetailButton>
+      ) : null}
+      {completed > 0 ? (
+        <PercentageLineDetailButton detail={completedDetail} onOpen={onOpenDetail}>
+          Результатов внесено: {completed}
+        </PercentageLineDetailButton>
+      ) : null}
+      {rejectedPrimary > 0 ? (
+        <PercentageLineDetailButton detail={rejectedPrimaryDetail} onOpen={onOpenDetail}>
+          Первично не годен: {rejectedPrimary}
+        </PercentageLineDetailButton>
+      ) : null}
+    </div>
+  )
+}
+
+type PercentageLineDetailItem =
+  | string
+  | {
+      detail: PercentageLineJointDetailDialogState
+      text: string
+    }
+
+function PercentageLineCellStack({
+  details,
+  main,
+  mainDetail,
+  onOpenDetail,
+  title,
+  tone = 'slate',
+}: {
+  details: PercentageLineDetailItem[]
+  main: string
+  mainDetail?: PercentageLineJointDetailDialogState
+  onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
+  title: string
+  tone?: 'slate' | 'amber' | 'rose'
+}) {
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-end gap-1',
+        tone === 'amber' ? 'text-amber-700' : tone === 'rose' ? 'text-rose-700' : undefined,
+      )}
+      title={title}
+    >
+      {mainDetail ? (
+        <PercentageLineDetailButton
+          detail={mainDetail}
+          onOpen={onOpenDetail}
+          className={cn(
+            'text-sm font-semibold',
+            tone === 'amber' ? 'text-amber-700' : tone === 'rose' ? 'text-rose-700' : 'text-slate-700',
+          )}
+        >
+          {main}
+        </PercentageLineDetailButton>
+      ) : (
+        <span className="font-semibold">{main}</span>
+      )}
+      {details.filter(Boolean).map((detail) =>
+        typeof detail === 'string' ? (
+          <span key={detail} className="whitespace-nowrap text-[11px] font-normal text-slate-500">
+            {detail}
           </span>
-        </div>
-      </LineBodyCell>
-      <LineBodyCell>
-        <div className="flex flex-col items-end gap-1" title={getAssignedControlsHint(stamp)}>
-          <span>{stamp.assignedControls}</span>
-          {stamp.additionalAssignedControls > 0 ? (
-            <span className="whitespace-nowrap text-[11px] font-normal text-slate-500">дополнительно: {stamp.additionalAssignedControls}</span>
-          ) : null}
-          {stamp.cancelledAssignedControls > 0 ? (
-            <span className="whitespace-nowrap text-[11px] font-normal text-slate-500">отменено: {stamp.cancelledAssignedControls}</span>
-          ) : null}
-          {stamp.replacedAssignedControls > 0 ? (
-            <span className="whitespace-nowrap text-[11px] font-normal text-slate-500">заменено: {stamp.replacedAssignedControls}</span>
-          ) : null}
-        </div>
-      </LineBodyCell>
-      <LineBodyCell>
-        <div className="flex flex-col items-end gap-1" title={getJointListHint('Покрыто', stamp.coveredJointNames)}>
-          <span>{stamp.coveredControls}</span>
-        </div>
-      </LineBodyCell>
-      <LineBodyCell>
-        <div className="flex flex-col items-end gap-1" title={getJointListHint('Выполнено', stamp.completedJointNames)}>
-          <span>{stamp.completedControls}</span>
-        </div>
-      </LineBodyCell>
-      <LineBodyCell className={stamp.rejectedPrimaryControls > 0 ? 'text-rose-700' : undefined}>
-        {stamp.rejectedPrimaryControls}
-      </LineBodyCell>
-      <LineBodyCell className={stamp.missingControls > 0 ? 'text-amber-700' : undefined}>
-        <span title={getJointListHint('Кандидаты без покрытия', stamp.missingCandidateJointNames)}>
-          {stamp.missingControls}
-        </span>
-      </LineBodyCell>
-      <LineBodyCell className={stamp.excessControls > 0 ? 'text-rose-700' : undefined}>
-        <span title={getJointListHint('Назначено обычным да сверх расчета', stamp.excessCandidateJointNames)}>
-          {stamp.excessControls}
-        </span>
-      </LineBodyCell>
-    </tr>
+        ) : (
+          <PercentageLineDetailButton key={detail.text} detail={detail.detail} onOpen={onOpenDetail}>
+            {detail.text}
+          </PercentageLineDetailButton>
+        ),
+      )}
+    </div>
+  )
+}
+
+function PercentageLineDetailButton({
+  children,
+  className,
+  detail,
+  onOpen,
+}: {
+  children: ReactNode
+  className?: string
+  detail: PercentageLineJointDetailDialogState
+  onOpen?: (detail: PercentageLineJointDetailDialogState) => void
+}) {
+  if (!onOpen || detail.rowIds.length === 0) {
+    return <span className={cn('whitespace-nowrap text-[11px] font-normal text-slate-500', className)}>{children}</span>
+  }
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'whitespace-nowrap text-[11px] font-normal text-slate-500 underline decoration-dotted underline-offset-2 transition-colors hover:text-sky-800',
+        className,
+      )}
+      onClick={() => onOpen(detail)}
+    >
+      {children}
+    </button>
+  )
+}
+
+type PercentageLineJointBadge = {
+  text: string
+  tone: 'amber' | 'blue' | 'emerald' | 'rose' | 'slate' | 'sky' | 'violet'
+}
+
+function getPercentageLineJointBadges(row: WeldRow): PercentageLineJointBadge[] {
+  const badges: PercentageLineJointBadge[] = []
+
+  for (const { code, enabledKey, resultKey } of CONTROL_RESULT_PAIRS) {
+    const availability = row[enabledKey]
+    if (isReplacementControlValue(availability)) {
+      badges.push({ text: `${code}: замена РК/УЗК`, tone: 'violet' })
+    } else if (isAdditionalControlValue(availability)) {
+      badges.push({ text: `${code}: дополнительный`, tone: 'sky' })
+    } else if (isCancelledControlValue(availability)) {
+      badges.push({ text: `${code}: отменен`, tone: 'slate' })
+    } else if ((code === 'РК' || code === 'УЗК') && isEnabledControlValue(availability)) {
+      badges.push({ text: `${code}: да`, tone: 'blue' })
+    }
+
+    const result = normalizeResultStatus(row[resultKey])
+    if (!result) continue
+    if (result === 'годен') badges.push({ text: `${code} результат: годен`, tone: 'emerald' })
+    else if (result === 'ремонт' || result === 'вырез') badges.push({ text: `${code} результат: ${result}`, tone: 'rose' })
+    else badges.push({ text: `${code} результат: ${result}`, tone: 'amber' })
+  }
+
+  return badges
+}
+
+function getPercentageLineJointBadgeClassName(tone: PercentageLineJointBadge['tone']) {
+  return cn(
+    'rounded border px-2 py-0.5 text-[11px] font-medium',
+    tone === 'amber'
+      ? 'border-amber-200 bg-amber-50 text-amber-700'
+      : tone === 'blue'
+        ? 'border-sky-200 bg-sky-50 text-sky-700'
+        : tone === 'emerald'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          : tone === 'rose'
+            ? 'border-rose-200 bg-rose-50 text-rose-700'
+            : tone === 'sky'
+              ? 'border-cyan-200 bg-cyan-50 text-cyan-700'
+              : tone === 'violet'
+                ? 'border-violet-200 bg-violet-50 text-violet-700'
+                : 'border-slate-200 bg-slate-50 text-slate-600',
   )
 }
 
@@ -1373,9 +1732,12 @@ function getPercentageStatusHint(stamp: PercentageLineStampSummary) {
 
 function getAssignedControlsHint(stamp: PercentageLineStampSummary) {
   return [
-    `${getJointListHint('Назначено', stamp.assignedJointNames)}. Это общее число назначений: РК/УЗК, осознанные отмены РК+УЗК и замены РК/УЗК другим видом НК`,
-    stamp.additionalAssignedControls > 0 ? getJointListHint('В т.ч. дополнительно РК/УЗК', stamp.additionalAssignedJointNames) : '',
+    `${getJointListHint('Всего назначено', stamp.assignedJointNames)}. Это общее число назначений: РК/УЗК, осознанные отмены РК+УЗК и замены РК/УЗК другим видом НК`,
+    stamp.additionalAssignedControls > 0 ? getJointListHint('В т.ч. дополнительно', stamp.additionalAssignedJointNames) : '',
     stamp.cancelledAssignedControls > 0 ? getJointListHint('В т.ч. отменено РК и УЗК', stamp.cancelledAssignedJointNames) : '',
+    stamp.cancelledAssignedControls > 0
+      ? 'Отмена РК+УЗК закрывает одно расчетное место РК/УЗК и не считается лишним контролем'
+      : '',
     stamp.additionalAssignedControls > 0 ? 'Дополнительный РК/УЗК не закрывает обязательный расчет и добор' : '',
     stamp.replacedAssignedControls > 0
       ? `${getJointListHint('В т.ч. замена РК/УЗК', stamp.replacedAssignedJointNames)}. Эти стыки покрывают расчет РК/УЗК и не считаются лишним контролем`

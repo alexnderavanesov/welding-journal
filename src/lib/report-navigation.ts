@@ -4,12 +4,17 @@ import type { RepeatedJointTask } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export const PERCENTAGE_LINE_STAMP_FILTER_KEY = '__percentageLineStamp'
+export const ROW_ID_LIST_FILTER_KEY = '__rowIdList'
 
 export type PercentageLineStampFilter = {
   projectTitle: string
   subtitleCode: string
   line: string
   stamp: string
+}
+
+export type RowIdListFilter = {
+  rowIds: number[]
 }
 
 function trimRowText(value: unknown) {
@@ -56,6 +61,13 @@ export function buildPercentageLineStampFilters(filter: PercentageLineStampFilte
   }
 }
 
+export function buildRowIdListFilters(rowIds: number[]) {
+  const uniqueRowIds = Array.from(new Set(rowIds.filter(Number.isFinite)))
+  return {
+    [ROW_ID_LIST_FILTER_KEY]: JSON.stringify({ rowIds: uniqueRowIds } satisfies RowIdListFilter),
+  }
+}
+
 export function parsePercentageLineStampFilter(value: string): PercentageLineStampFilter | null {
   try {
     const parsed = JSON.parse(value) as Partial<PercentageLineStampFilter>
@@ -71,8 +83,20 @@ export function parsePercentageLineStampFilter(value: string): PercentageLineSta
   }
 }
 
+export function parseRowIdListFilter(value: string): RowIdListFilter | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<RowIdListFilter>
+    const rowIds = Array.isArray(parsed.rowIds)
+      ? parsed.rowIds.map((rowId) => Number(rowId)).filter(Number.isFinite)
+      : []
+    return rowIds.length > 0 ? { rowIds } : null
+  } catch {
+    return null
+  }
+}
+
 export function isHiddenReportFilterKey(key: string) {
-  return key === PERCENTAGE_LINE_STAMP_FILTER_KEY
+  return key === PERCENTAGE_LINE_STAMP_FILTER_KEY || key === ROW_ID_LIST_FILTER_KEY
 }
 
 export function omitHiddenReportFilters(filters: Record<string, string>) {

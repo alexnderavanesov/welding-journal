@@ -87,13 +87,13 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
     summary.fullControlRequired
       ? `По клейму уже ${summary.rejectedPrimaryControls} первичных негодных стыков по любому виду контроля, поэтому требуется РК/УЗК для всех ${summary.officialJointCount} стыков этого клейма.`
       : `По расчету требуется ${summary.requiredControls} стык(ов) РК/УЗК: базово ${summary.baseRequiredControls}, дополнительно ${summary.additionalRequiredControls}.`,
-    `Покрыто ${summary.coveredControls}, не хватает ${summary.missingControls}.`,
+    `Закрыто расчетом ${summary.coveredControls}, осталось закрыть ${summary.missingControls}.`,
   ]
   if (summary.missingCandidateJointNames.length > 0) {
-    detailParts.push(`Кандидаты без покрытия: ${formatJointList(summary.missingCandidateJointNames)}.`)
+    detailParts.push(`Кандидаты без закрытия расчета: ${formatJointList(summary.missingCandidateJointNames)}.`)
   }
   detailParts.push(
-    'Покрытием считается назначенный РК или УЗК, выполненный результат РК/УЗК, осознанный пропуск "отменен" одновременно в РК и УЗК либо статус "замена РК/УЗК" на другом виде НК.',
+    'Закрытием расчета считается назначенный РК или УЗК, выполненный результат РК/УЗК, осознанный пропуск "отменен" одновременно в РК и УЗК либо статус "замена РК/УЗК" на другом виде НК.',
   )
 
   return {
@@ -118,12 +118,12 @@ function buildExcessControlTask(row: WeldRow, summary: PercentageLineStampSummar
   const detailParts = [
     `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
     `По расчету требуется ${summary.requiredControls} стык(ов) РК/УЗК, а обычным статусом "да" назначено ${summary.normalAssignedControls}.`,
-    `Лишних назначений: ${summary.excessControls}.`,
+    `Лишних обычных "да": ${summary.excessControls}.`,
   ]
   if (summary.excessCandidateJointNames.length > 0) {
     detailParts.push(`Проверь назначенные стыки: ${formatJointList(summary.excessCandidateJointNames)}.`)
   }
-  detailParts.push('Если контроль назначен осознанно сверх процента, используй статус "дополнительный", тогда диспетчер не будет считать его ошибкой.')
+  detailParts.push('Если контроль назначен осознанно сверх процента, используй статус "дополнительный", тогда диспетчер не будет считать его лишним обычным "да".')
 
   return {
     kind: 'percentage-line-control',

@@ -13,6 +13,7 @@ type ReportMainContentProps = {
   welderStampsRegistryProps: WelderStampsRegistryProps
   weldTableProps: WeldTableProps
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
+  onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
 }
 
 export function ReportMainContent({
@@ -22,6 +23,7 @@ export function ReportMainContent({
   welderStampsRegistryProps,
   weldTableProps,
   onOpenPercentageLineStampRows,
+  onOpenWeldRowIds,
 }: ReportMainContentProps) {
   if (activeReport === 'statistics') {
     return (
@@ -29,6 +31,7 @@ export function ReportMainContent({
         rows={statisticsRows}
         welderStamps={welderStamps}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
+        onOpenWeldRowIds={onOpenWeldRowIds}
       />
     )
   }

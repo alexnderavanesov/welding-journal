@@ -37,15 +37,23 @@ export type PercentageLineStampSummary = {
   waitingRequestJoints: number
   waitingControlJoints: number
   assignedJointNames: string[]
+  assignedRowIds: number[]
   additionalAssignedJointNames: string[]
+  additionalAssignedRowIds: number[]
   cancelledAssignedJointNames: string[]
+  cancelledAssignedRowIds: number[]
   replacedAssignedJointNames: string[]
+  replacedAssignedRowIds: number[]
   coveredJointNames: string[]
+  coveredRowIds: number[]
   completedJointNames: string[]
+  completedRowIds: number[]
   rejectedPrimaryJointNames: string[]
   rejectedPrimaryRowIds: number[]
   missingCandidateJointNames: string[]
+  missingCandidateRowIds: number[]
   excessCandidateJointNames: string[]
+  excessCandidateRowIds: number[]
   missingControls: number
   excessControls: number
   fullControlRequired: boolean
@@ -201,15 +209,23 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     { goodJoints: 0, rejectedJoints: 0, waitingRequestJoints: 0, waitingControlJoints: 0 },
   )
   const assignedJointNames = entry.rows.filter(hasAssignedPercentageControl).map(getJointDisplayName)
+  const assignedRowIds = entry.rows.filter(hasAssignedPercentageControl).map(getRowId)
   const additionalAssignedJointNames = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getJointDisplayName)
+  const additionalAssignedRowIds = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getRowId)
   const replacedAssignedJointNames = entry.rows.filter(hasReplacedPercentageControl).map(getJointDisplayName)
+  const replacedAssignedRowIds = entry.rows.filter(hasReplacedPercentageControl).map(getRowId)
   const cancelledAssignedJointNames = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getJointDisplayName)
+  const cancelledAssignedRowIds = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getRowId)
   const coveredJointNames = entry.rows.filter(hasCoveredPercentageControl).map(getJointDisplayName)
+  const coveredRowIds = entry.rows.filter(hasCoveredPercentageControl).map(getRowId)
   const completedJointNames = entry.rows.filter(hasCompletedPercentageControl).map(getJointDisplayName)
+  const completedRowIds = entry.rows.filter(hasCompletedPercentageControl).map(getRowId)
   const rejectedPrimaryJointNames = entry.rows.filter(isRejectedPrimaryPercentageControl).map(getJointDisplayName)
   const rejectedPrimaryRowIds = entry.rows.filter(isRejectedPrimaryPercentageControl).map((row) => row.id)
   const missingCandidateJointNames = entry.rows.filter((row) => !hasCoveredPercentageControl(row)).map(getJointDisplayName)
+  const missingCandidateRowIds = entry.rows.filter((row) => !hasCoveredPercentageControl(row)).map(getRowId)
   const excessCandidateJointNames = normalAssignedRows.slice(allowedNormalAssignedControls).map(getJointDisplayName)
+  const excessCandidateRowIds = normalAssignedRows.slice(allowedNormalAssignedControls).map(getRowId)
 
   return {
     key: `${group.key}|${normalizeText(entry.stamp)}`,
@@ -233,15 +249,23 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     rejectedPrimaryControls,
     ...statusCounters,
     assignedJointNames,
+    assignedRowIds,
     additionalAssignedJointNames,
+    additionalAssignedRowIds,
     cancelledAssignedJointNames,
+    cancelledAssignedRowIds,
     replacedAssignedJointNames,
+    replacedAssignedRowIds,
     coveredJointNames,
+    coveredRowIds,
     completedJointNames,
+    completedRowIds,
     rejectedPrimaryJointNames,
     rejectedPrimaryRowIds,
     missingCandidateJointNames,
+    missingCandidateRowIds,
     excessCandidateJointNames,
+    excessCandidateRowIds,
     missingControls: Math.max(0, requiredControls - coveredControls),
     excessControls: Math.max(0, normalAssignedControls - allowedNormalAssignedControls),
     fullControlRequired,
@@ -364,4 +388,8 @@ function displayValue(value: unknown) {
 
 function getJointDisplayName(row: WeldRow) {
   return String(row.joint ?? '').trim() || `#${row.id ?? '-'}`
+}
+
+function getRowId(row: WeldRow) {
+  return row.id
 }
