@@ -12,6 +12,7 @@ type ReportMainContentProps = {
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
   weldTableProps: WeldTableProps
+  onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
 }
@@ -22,14 +23,17 @@ export function ReportMainContent({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
+  onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
 }: ReportMainContentProps) {
-  if (activeReport === 'statistics') {
+  if (activeReport === 'statistics' || activeReport === 'percentageLines') {
     return (
       <StatisticsPage
+        fixedTab={activeReport === 'percentageLines' ? 'percentageLines' : undefined}
         rows={statisticsRows}
         welderStamps={welderStamps}
+        onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenWeldRowIds={onOpenWeldRowIds}
       />

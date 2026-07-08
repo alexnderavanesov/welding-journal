@@ -18,7 +18,7 @@ export function useReportChangeActions({
 }: UseReportChangeActionsOptions) {
   function changeActiveReport(report: ActiveReport) {
     setActiveReport(report)
-    if (report === 'heatTreatment' || report === 'lnk' || report === 'welderStamps') {
+    if (report === 'heatTreatment' || report === 'lnk' || report === 'welderStamps' || report === 'percentageLines') {
       setEditing(null)
     }
   }

@@ -45,8 +45,10 @@ import { cn } from '@/lib/utils'
 import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeResultStatus } from '@/lib/weld-status'
 
 type StatisticsPageProps = {
+  fixedTab?: StatisticsTab
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
+  onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
 }
@@ -59,9 +61,17 @@ const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['s', 'S база'],
 ]
 
-export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRows, onOpenWeldRowIds }: StatisticsPageProps) {
+export function StatisticsPage({
+  fixedTab,
+  rows,
+  welderStamps,
+  onCancelPercentageLineMissingControls,
+  onOpenPercentageLineStampRows,
+  onOpenWeldRowIds,
+}: StatisticsPageProps) {
   const defaultPeriod = useMemo(() => getDefaultStatisticsPeriod(), [])
-  const [activeTab, setActiveTab] = useState<StatisticsTab>('general')
+  const [selectedTab, setSelectedTab] = useState<StatisticsTab>(fixedTab ?? 'general')
+  const activeTab = fixedTab ?? selectedTab
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [period, setPeriod] = useState(defaultPeriod)
   const [allPeriod, setAllPeriod] = useState(false)
@@ -140,40 +150,42 @@ export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRo
       <div className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                className="h-9 rounded-md"
-                size="sm"
-                variant={activeTab === 'general' ? 'default' : 'outline'}
-                onClick={() => setActiveTab('general')}
-              >
-                Общая
-              </Button>
-              <Button
-                className="h-9 rounded-md"
-                size="sm"
-                variant={activeTab === 'welders' ? 'default' : 'outline'}
-                onClick={() => setActiveTab('welders')}
-              >
-                Сварщики
-              </Button>
-              <Button
-                className="h-9 rounded-md"
-                size="sm"
-                variant={activeTab === 'lineSummary' ? 'default' : 'outline'}
-                onClick={() => setActiveTab('lineSummary')}
-              >
-                Полинейная сводка
-              </Button>
-              <Button
-                className="h-9 rounded-md"
-                size="sm"
-                variant={activeTab === 'percentageLines' ? 'default' : 'outline'}
-                onClick={() => setActiveTab('percentageLines')}
-              >
-                Процентные линии
-              </Button>
-            </div>
+            {!fixedTab ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  className="h-9 rounded-md"
+                  size="sm"
+                  variant={activeTab === 'general' ? 'default' : 'outline'}
+                  onClick={() => setSelectedTab('general')}
+                >
+                  Общая
+                </Button>
+                <Button
+                  className="h-9 rounded-md"
+                  size="sm"
+                  variant={activeTab === 'welders' ? 'default' : 'outline'}
+                  onClick={() => setSelectedTab('welders')}
+                >
+                  Сварщики
+                </Button>
+                <Button
+                  className="h-9 rounded-md"
+                  size="sm"
+                  variant={activeTab === 'lineSummary' ? 'default' : 'outline'}
+                  onClick={() => setSelectedTab('lineSummary')}
+                >
+                  Полинейная сводка
+                </Button>
+                <Button
+                  className="h-9 rounded-md"
+                  size="sm"
+                  variant={activeTab === 'percentageLines' ? 'default' : 'outline'}
+                  onClick={() => setSelectedTab('percentageLines')}
+                >
+                  Процентные линии
+                </Button>
+              </div>
+            ) : null}
             <p className="mt-3 text-sm text-slate-500">
               {activeTab === 'general'
                 ? 'Общий прогресс сварки, заявок, заключений и ПСТО за выбранный период.'
@@ -504,6 +516,7 @@ export function StatisticsPage({ rows, welderStamps, onOpenPercentageLineStampRo
         <PercentageLinesPanel
           rows={scopedRows}
           summary={percentageLineSummary}
+          onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
           onOpenWeldRowIds={onOpenWeldRowIds}
         />
@@ -900,11 +913,13 @@ function WelderBodyCell({ children, className }: { children: ReactNode; classNam
 }
 
 function PercentageLinesPanel({
+  onCancelPercentageLineMissingControls,
   rows,
   summary,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
 }: {
+  onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   rows: WeldRow[]
   summary: ReturnType<typeof buildPercentageLineSummaries>
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
@@ -913,6 +928,7 @@ function PercentageLinesPanel({
   const [search, setSearch] = useState('')
   const [collapsedLineKeys, setCollapsedLineKeys] = useState<Set<string>>(() => new Set())
   const [detailDialog, setDetailDialog] = useState<PercentageLineJointDetailDialogState | null>(null)
+  const [cancelMissingDialog, setCancelMissingDialog] = useState<PercentageLineCancelMissingDialogState | null>(null)
   const rowsById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows])
   const detailRows = useMemo(
     () => (detailDialog ? detailDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)) : []),
@@ -988,6 +1004,11 @@ function PercentageLinesPanel({
     if (rowIds.length === 0) return
     onOpenWeldRowIds?.(rowIds, messageText)
     setDetailDialog(null)
+    setCancelMissingDialog(null)
+  }
+  const closeMissingControlsByCancellation = async (rowIds: number[]) => {
+    await onCancelPercentageLineMissingControls?.(rowIds)
+    setCancelMissingDialog(null)
   }
 
   return (
@@ -1052,6 +1073,7 @@ function PercentageLinesPanel({
                 key={line.lineKey}
                 collapsed={collapsedLineKeys.has(line.lineKey)}
                 line={line}
+                onCancelMissing={onCancelPercentageLineMissingControls ? setCancelMissingDialog : undefined}
                 onOpenDetail={setDetailDialog}
                 onOpenStamp={onOpenPercentageLineStampRows}
                 onToggle={() => toggleLine(line.lineKey)}
@@ -1077,6 +1099,15 @@ function PercentageLinesPanel({
           onOpenRows={openRowsInWeldingJournal}
         />
       ) : null}
+      {cancelMissingDialog ? (
+        <PercentageLineCancelMissingDialog
+          detail={cancelMissingDialog}
+          rows={cancelMissingDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row))}
+          onClose={() => setCancelMissingDialog(null)}
+          onOpenRows={openRowsInWeldingJournal}
+          onSave={closeMissingControlsByCancellation}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1085,6 +1116,10 @@ type PercentageLineJointDetailDialogState = {
   rowIds: number[]
   subtitle: string
   title: string
+}
+
+type PercentageLineCancelMissingDialogState = PercentageLineJointDetailDialogState & {
+  missingControls: number
 }
 
 function PercentageLineJointDetailDialog({
@@ -1138,6 +1173,132 @@ function PercentageLineJointDetailDialog({
   )
 }
 
+function PercentageLineCancelMissingDialog({
+  detail,
+  onClose,
+  onOpenRows,
+  onSave,
+  rows,
+}: {
+  detail: PercentageLineCancelMissingDialogState
+  onClose: () => void
+  onOpenRows: (rowIds: number[], message?: string) => void
+  onSave: (rowIds: number[]) => Promise<void> | void
+  rows: WeldRow[]
+}) {
+  const selectableCount = Math.max(1, detail.missingControls)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(
+    () => new Set(rows.slice(0, selectableCount).map((row) => row.id)),
+  )
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const selectedRows = rows.filter((row) => selectedIds.has(row.id))
+  const isSelectionFull = selectedIds.size >= selectableCount
+
+  const toggleRow = (rowId: number) => {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(rowId)) {
+        next.delete(rowId)
+      } else if (next.size < selectableCount) {
+        next.add(rowId)
+      }
+      return next
+    })
+  }
+  const openSelected = () => {
+    if (selectedRows.length === 0) return
+    onOpenRows(
+      selectedRows.map((row) => row.id),
+      `Показаны стыки для закрытия недобора отменой РК/УЗК (${selectedRows.length}).`,
+    )
+  }
+  const saveSelected = async () => {
+    if (selectedIds.size === 0) return
+    setIsSaving(true)
+    setSaveError('')
+    try {
+      await onSave(Array.from(selectedIds))
+    } catch (error) {
+      setSaveError((error as Error).message || 'Не удалось сохранить отмену РК/УЗК')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <LargeDialogShell maxWidthClassName="max-w-[760px]" maxHeightClassName="max-h-[86vh]" overlayClassName="z-[85] bg-slate-950/25">
+      <DialogHeader
+        title="Закрыть недобор отменой"
+        subtitle={`${detail.subtitle} · нужно закрыть: ${detail.missingControls}`}
+        onClose={onClose}
+        actions={
+          selectedRows.length > 0 ? (
+            <Button type="button" variant="outline" size="sm" onClick={openSelected}>
+              Показать выбранные
+            </Button>
+          ) : null
+        }
+      />
+      <div className="space-y-3 overflow-y-auto p-4">
+        <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          Выберите стыки, по которым расчетный РК/УЗК официально не требуется. После сохранения система проставит
+          <span className="font-semibold"> РК = отменен</span> и <span className="font-semibold">УЗК = отменен</span>.
+        </div>
+        <div className="text-xs text-slate-500">
+          Можно выбрать не больше {detail.missingControls}. Если нужно закрыть другой стык, снимите выбор с текущего.
+        </div>
+        {saveError ? (
+          <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</div>
+        ) : null}
+        {rows.length > 0 ? (
+          <div className="space-y-2">
+            {rows.map((row) => {
+              const checked = selectedIds.has(row.id)
+              const disabled = !checked && isSelectionFull
+              return (
+                <label
+                  key={row.id}
+                  className={cn(
+                    'block rounded-md border bg-white p-3 transition-colors',
+                    checked ? 'border-sky-200 bg-sky-50' : 'border-slate-200',
+                    disabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer hover:border-sky-200',
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => toggleRow(row.id)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <PercentageLineJointSummary row={row} />
+                    </div>
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+            Кандидаты не найдены. Возможно, расчет уже изменился.
+          </div>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 border-t border-slate-200/80 px-4 py-3">
+        <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
+          Отмена
+        </Button>
+        <Button type="button" onClick={saveSelected} disabled={selectedIds.size === 0 || isSaving}>
+          {isSaving ? 'Сохранение...' : `Проставить отмену (${selectedIds.size})`}
+        </Button>
+      </div>
+    </LargeDialogShell>
+  )
+}
+
 function PercentageLineJointDetailRow({
   onOpenRows,
   row,
@@ -1181,15 +1342,48 @@ function PercentageLineJointDetailRow({
   )
 }
 
+function PercentageLineJointSummary({ row }: { row: WeldRow }) {
+  const badges = getPercentageLineJointBadges(row)
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold text-slate-900">{String(row.joint ?? '').trim() || `#${row.id}`}</span>
+        <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+          {calculateFinalStatus(row)}
+        </span>
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {String(row.diameter ?? '').trim() || '-'} · Дата сварки:{' '}
+        {formatDisplayDate(row.weldDate) || '-'}
+      </div>
+      {badges.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {badges.map((badge) => (
+            <span key={badge.text} className={getPercentageLineJointBadgeClassName(badge.tone)}>
+              {badge.text}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function PercentageLineGroup({
   collapsed,
   line,
+  onCancelMissing,
   onOpenDetail,
   onOpenStamp,
   onToggle,
 }: {
   collapsed: boolean
   line: ReturnType<typeof buildPercentageLineSummaries>[number]
+  onCancelMissing?: (detail: PercentageLineCancelMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
   onToggle: () => void
@@ -1328,6 +1522,7 @@ function PercentageLineGroup({
               <PercentageLineTableRow
                 key={stamp.key}
                 line={line}
+                onCancelMissing={onCancelMissing}
                 onOpenDetail={onOpenDetail}
                 stamp={stamp}
                 onOpenStamp={onOpenStamp}
@@ -1371,11 +1566,13 @@ function PercentageLineSummaryPill({
 
 function PercentageLineTableRow({
   line,
+  onCancelMissing,
   onOpenDetail,
   onOpenStamp,
   stamp,
 }: {
   line: ReturnType<typeof buildPercentageLineSummaries>[number]
+  onCancelMissing?: (detail: PercentageLineCancelMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
   stamp: PercentageLineStampSummary
@@ -1483,7 +1680,12 @@ function PercentageLineTableRow({
               ? createDetail('Кандидаты без закрытия расчета', stamp.missingCandidateRowIds)
               : createDetail('Закрыто расчетом', stamp.coveredRowIds)
           }
+          cancelMissingDetail={{
+            ...createDetail('Закрыть недобор отменой РК/УЗК', stamp.missingCandidateRowIds),
+            missingControls: stamp.missingControls,
+          }}
           rejectedPrimaryDetail={createDetail('Первично негодные стыки', stamp.rejectedPrimaryRowIds)}
+          onCancelMissing={onCancelMissing}
           onOpenDetail={onOpenDetail}
         />
       </PercentageLineGridCell>
@@ -1530,23 +1732,27 @@ function PercentageLineGridCell({
 }
 
 function PercentageLineResultStack({
+  cancelMissingDetail,
   completed,
   completedDetail,
   excess,
   excessDetail,
   mainDetail,
   missing,
+  onCancelMissing,
   onOpenDetail,
   rejectedPrimary,
   rejectedPrimaryDetail,
   title,
 }: {
+  cancelMissingDetail: PercentageLineCancelMissingDialogState
   completed: number
   completedDetail: PercentageLineJointDetailDialogState
   excess: number
   excessDetail: PercentageLineJointDetailDialogState
   mainDetail: PercentageLineJointDetailDialogState
   missing: number
+  onCancelMissing?: (detail: PercentageLineCancelMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   rejectedPrimary: number
   rejectedPrimaryDetail: PercentageLineJointDetailDialogState
@@ -1561,6 +1767,15 @@ function PercentageLineResultStack({
       >
         {missing > 0 ? `Осталось закрыть: ${missing}` : 'Расчет закрыт'}
       </PercentageLineDetailButton>
+      {missing > 0 && onCancelMissing && cancelMissingDetail.rowIds.length > 0 ? (
+        <button
+          type="button"
+          className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 transition-colors hover:border-amber-300 hover:bg-amber-100"
+          onClick={() => onCancelMissing(cancelMissingDetail)}
+        >
+          Закрыть отменой
+        </button>
+      ) : null}
       {excess > 0 ? (
         <PercentageLineDetailButton
           detail={excessDetail}

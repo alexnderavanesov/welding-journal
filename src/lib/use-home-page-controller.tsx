@@ -58,6 +58,7 @@ import { createReportFieldEditorProps } from '@/lib/report-field-editor-props'
 import { createReportPstoDialogsProps } from '@/lib/report-psto-dialog-props'
 import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
+import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
@@ -840,6 +841,27 @@ export function useHomePageController() {
     setMessage(messageText || `Показано стыков: ${rowIds.length}.`)
   }
 
+  const cancelPercentageLineMissingControls = async (rowIds: number[]) => {
+    const targetIdSet = new Set(rowIds)
+    const targetRows = rows.filter((row) => targetIdSet.has(row.id))
+    if (targetRows.length === 0) {
+      setMessage('Стыки для закрытия недобора не найдены')
+      return
+    }
+
+    const savedRows = await updateWeldRowsOrThrow(
+      targetRows.map((row) => ({
+        ...row,
+        hasRk: 'отменен',
+        hasUzk: 'отменен',
+      })),
+      'Не удалось закрыть недобор процентной линии',
+    )
+    highlightChangedRows(savedRows, ['hasRk', 'hasUzk'])
+    setMessage(`Недобор закрыт отменой РК/УЗК: ${savedRows.length}.`)
+    await weldsQuery.refetch()
+  }
+
   const filterLineInCurrentReport = (row: WeldRow) => {
     setChainRecord(null)
     setEditing(null)
@@ -1386,6 +1408,7 @@ export function useHomePageController() {
     welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
+    onCancelPercentageLineMissingControls: cancelPercentageLineMissingControls,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenWeldRowIds: openWeldRowIds,
     reportChainDialogProps,

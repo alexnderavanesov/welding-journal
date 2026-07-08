@@ -5,6 +5,7 @@ const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   heatTreatment: 'Термообработка',
   lnk: 'ЛНК',
   welderStamps: 'Клейма',
+  percentageLines: 'Процентные линии',
   statistics: 'Статистика',
 }
 
@@ -13,6 +14,7 @@ const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
   heatTreatment: 'heat-treatment-register.xlsx',
   lnk: 'lnk-register.xlsx',
   welderStamps: 'welder-stamps-register.xlsx',
+  percentageLines: 'percentage-lines.xlsx',
   statistics: 'statistics.xlsx',
 }
 
@@ -64,6 +66,9 @@ export function getReportSummaryText({
   }
   if (activeReport === 'statistics') {
     return 'Общая сводка по сварке и контролю'
+  }
+  if (activeReport === 'percentageLines') {
+    return 'Расчет РК/УЗК по процентным линиям'
   }
   return `Записей: ${weldingRowCount} · WDI годных: ${acceptedWdiTotalText}`
 }

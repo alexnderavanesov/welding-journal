@@ -19,7 +19,7 @@ export function ReportWorkspace({
   onNavCollapsedChange,
   onReportChange,
 }: ReportWorkspaceProps) {
-  const isFluidReport = activeReport === 'statistics' || activeReport === 'welderStamps'
+  const isFluidReport = activeReport === 'statistics' || activeReport === 'percentageLines' || activeReport === 'welderStamps'
 
   return (
     <main className="relative min-h-screen bg-white">

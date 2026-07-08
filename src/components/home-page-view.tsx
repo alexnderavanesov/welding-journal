@@ -22,6 +22,7 @@ type HomePageViewProps = {
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
+  onCancelPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onCancelPercentageLineMissingControls']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
@@ -47,6 +48,7 @@ export function HomePageView({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
+  onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
   reportChainDialogProps,
@@ -56,7 +58,7 @@ export function HomePageView({
   reportFieldEditorProps,
   reportImportDialogProps,
 }: HomePageViewProps) {
-  const isFluidReport = activeReport === 'statistics' || activeReport === 'welderStamps'
+  const isFluidReport = activeReport === 'statistics' || activeReport === 'percentageLines' || activeReport === 'welderStamps'
   const pageMinWidth = isFluidReport ? 0 : registerMinWidth
 
   return (
@@ -71,9 +73,11 @@ export function HomePageView({
         <ReportHeaderActions {...reportHeaderActionsProps} />
       </ReportPageHeader>
 
-      {activeReport !== 'statistics' ? <ReportSummaryBar {...reportSummaryBarProps} minWidth={pageMinWidth} /> : null}
+      {activeReport !== 'statistics' && activeReport !== 'percentageLines' ? (
+        <ReportSummaryBar {...reportSummaryBarProps} minWidth={pageMinWidth} />
+      ) : null}
 
-      {activeReport !== 'statistics' ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
+      {activeReport !== 'statistics' && activeReport !== 'percentageLines' ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
 
       <ReportMainContent
         activeReport={activeReport}
@@ -81,6 +85,7 @@ export function HomePageView({
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}
         weldTableProps={weldTableProps}
+        onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenWeldRowIds={onOpenWeldRowIds}
       />

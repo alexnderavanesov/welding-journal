@@ -16,4 +16,4 @@ export type HeatTreatmentFieldEditingState = {
   mode?: 'text' | 'request' | 'result'
 }
 
-export type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps' | 'statistics'
+export type ActiveReport = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps' | 'percentageLines' | 'statistics'
