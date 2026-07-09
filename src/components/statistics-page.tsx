@@ -1502,7 +1502,6 @@ function PercentageLineGroup({
     'После 4-го первичного негодного результата РК/УЗК требуется 100% РК/УЗК по этому клейму.'
   const allAcceptedAndClosed =
     totals.missing === 0 &&
-    totals.excess === 0 &&
     line.stamps.length > 0 &&
     line.stamps.every((stamp) => stamp.rejectedJoints === 0 && stamp.waitingRequestJoints === 0 && stamp.waitingControlJoints === 0)
 
@@ -1510,10 +1509,10 @@ function PercentageLineGroup({
     <div
       className={cn(
         'overflow-hidden rounded-md border bg-white transition-colors',
-        totals.missing > 0 || totals.excess > 0
-          ? 'border-amber-300 bg-amber-50/20'
-          : allAcceptedAndClosed
-            ? 'border-emerald-300 bg-emerald-50/10'
+        allAcceptedAndClosed
+          ? 'border-emerald-300 bg-emerald-50/10'
+          : totals.missing > 0 || totals.excess > 0
+            ? 'border-amber-300 bg-amber-50/20'
             : 'border-slate-200',
       )}
     >
