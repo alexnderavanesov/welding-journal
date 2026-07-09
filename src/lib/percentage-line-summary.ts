@@ -9,7 +9,7 @@ import {
   isReplacementControlValue,
 } from '@/lib/report-value-utils'
 import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
-import { hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
+import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
 
 export type PercentageControlMethod = 'РК' | 'УЗК'
 
@@ -24,6 +24,8 @@ export type PercentageLineStampSummary = {
   officialJointCount: number
   baseRequiredControls: number
   additionalRequiredControls: number
+  calculatedRequiredControls: number
+  availableRequiredControls: number
   requiredControls: number
   assignedControls: number
   normalAssignedControls: number
@@ -190,15 +192,17 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const additionalRequiredControls = fullControlRequired
     ? Math.max(0, officialJointCount - baseRequiredControls)
     : getAdditionalRequiredControls(rejectedPrimaryControls, group.percent)
-  const requiredControls = Math.min(
+  const calculatedRequiredControls = Math.min(
     officialJointCount,
     fullControlRequired ? officialJointCount : baseRequiredControls + additionalRequiredControls,
   )
+  const availableRequiredControls = entry.rows.filter(isPercentageControlRequiredAvailable).length
+  const requiredControls = Math.min(calculatedRequiredControls, availableRequiredControls)
   const assignedControls = entry.rows.filter(hasAssignedPercentageControl).length
   const additionalAssignedControls = entry.rows.filter(hasAdditionalAssignedPercentageControl).length
   const replacedAssignedControls = entry.rows.filter(hasReplacedPercentageControl).length
   const cancelledAssignedControls = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).length
-  const coveredControls = entry.rows.filter(hasCoveredPercentageControl).length
+  const coveredControls = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).length
   const rejectedCoveredControls = entry.rows.filter(hasRejectedClosurePercentageControl).length
   const completedControls = entry.rows.filter(hasCompletedPercentageControl).length
   const normalAssignedRows = entry.rows.filter(hasNormalAssignedPercentageControl)
@@ -223,16 +227,19 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const replacedAssignedRowIds = entry.rows.filter(hasReplacedPercentageControl).map(getRowId)
   const cancelledAssignedJointNames = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getJointDisplayName)
   const cancelledAssignedRowIds = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getRowId)
-  const coveredJointNames = entry.rows.filter(hasCoveredPercentageControl).map(getJointDisplayName)
-  const coveredRowIds = entry.rows.filter(hasCoveredPercentageControl).map(getRowId)
+  const coveredJointNames = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).map(getJointDisplayName)
+  const coveredRowIds = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).map(getRowId)
   const rejectedCoveredJointNames = entry.rows.filter(hasRejectedClosurePercentageControl).map(getJointDisplayName)
   const rejectedCoveredRowIds = entry.rows.filter(hasRejectedClosurePercentageControl).map(getRowId)
   const completedJointNames = entry.rows.filter(hasCompletedPercentageControl).map(getJointDisplayName)
   const completedRowIds = entry.rows.filter(hasCompletedPercentageControl).map(getRowId)
   const rejectedPrimaryJointNames = entry.rows.filter(isRejectedPrimaryPercentageControl).map(getJointDisplayName)
   const rejectedPrimaryRowIds = entry.rows.filter(isRejectedPrimaryPercentageControl).map((row) => row.id)
-  const missingCandidateJointNames = entry.rows.filter((row) => !hasCoveredPercentageControl(row)).map(getJointDisplayName)
-  const missingCandidateRowIds = entry.rows.filter((row) => !hasCoveredPercentageControl(row)).map(getRowId)
+  const missingCandidateRows = entry.rows.filter(
+    (row) => isPercentageControlRequiredAvailable(row) && !hasIntentionalRequiredPercentageControlCoverage(row),
+  )
+  const missingCandidateJointNames = missingCandidateRows.map(getJointDisplayName)
+  const missingCandidateRowIds = missingCandidateRows.map(getRowId)
   const assignmentCandidateRows = entry.rows.filter(isPercentageControlAssignmentCandidate)
   const assignmentCandidateJointNames = assignmentCandidateRows.map(getJointDisplayName)
   const assignmentCandidateRowIds = assignmentCandidateRows.map(getRowId)
@@ -250,6 +257,8 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     officialJointCount,
     baseRequiredControls,
     additionalRequiredControls: Math.min(additionalRequiredControls, Math.max(0, officialJointCount - baseRequiredControls)),
+    calculatedRequiredControls,
+    availableRequiredControls,
     requiredControls,
     assignedControls,
     normalAssignedControls,
@@ -329,12 +338,11 @@ function hasAdditionalAssignedPercentageControl(row: WeldRow) {
   return PERCENTAGE_CONTROL_METHODS.some(({ enabledKey }) => isAdditionalControlValue(row[enabledKey]))
 }
 
-function hasCoveredPercentageControl(row: WeldRow) {
+function hasIntentionalRequiredPercentageControlCoverage(row: WeldRow) {
   return (
     hasDirectPercentageControlCoverage(row) ||
     hasBothPercentageControlsCancelled(row) ||
-    hasReplacedPercentageControl(row) ||
-    hasRejectedClosurePercentageControl(row)
+    hasReplacedPercentageControl(row)
   )
 }
 
@@ -352,6 +360,10 @@ function hasRejectedClosurePercentageControl(row: WeldRow) {
 
 function isPercentageControlAssignmentCandidate(row: WeldRow) {
   return !hasAssignedPercentageControl(row) && !hasRejectedAnyControlResult(row)
+}
+
+function isPercentageControlRequiredAvailable(row: WeldRow) {
+  return hasIntentionalRequiredPercentageControlCoverage(row) || isPercentageControlAssignmentCandidate(row)
 }
 
 function hasCompletedPercentageControl(row: WeldRow) {
@@ -372,7 +384,7 @@ function hasCancelledPercentageControlWithoutReplacement(row: WeldRow) {
 
 function isRejectedPrimaryPercentageControl(row: WeldRow) {
   if (parseJointChainName(String(row.joint ?? '')).segments.length > 0) return false
-  return hasRejectedAnyControlResult(row)
+  return hasRejectedPercentageControlResult(row)
 }
 
 function hasRejectedAnyControlResult(row: WeldRow) {
@@ -381,6 +393,16 @@ function hasRejectedAnyControlResult(row: WeldRow) {
     const result = normalizeResultStatus(row[resultKey])
     return result === 'ремонт' || result === 'вырез'
   })
+}
+
+function hasRejectedPercentageControlResult(row: WeldRow) {
+  const hasRejectedRkOrUzkResult = PERCENTAGE_CONTROL_METHODS.some(({ resultKey }) => {
+    const result = normalizeResultStatus(row[resultKey])
+    return result === 'ремонт' || result === 'вырез'
+  })
+  if (hasRejectedRkOrUzkResult) return true
+
+  return getRejectedDuplicateControls(row).some((control) => control.method === 'РК' || control.method === 'УЗК')
 }
 
 function hasCompletedResult(value: unknown) {

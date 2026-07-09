@@ -255,7 +255,7 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
-  it('starts percentage-line follow-up when a primary joint is rejected by a non-RK/UZK control', () => {
+  it('does not start percentage-line follow-up when a primary joint is rejected by a non-RK/UZK control', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       row({
         id: index + 1,
@@ -268,22 +268,22 @@ describe('buildRepeatedJointTasks', () => {
 
     const tasks = buildRepeatedJointTasks(rows)
 
-    expect(tasks).toEqual(
+    expect(tasks).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'percentage-line-control',
           issue: 'rejected-primary',
           stamp: 'ABC1',
-          count: 1,
         }),
+      ]),
+    )
+    expect(tasks).not.toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
           kind: 'percentage-line-control',
           issue: 'missing',
           stamp: 'ABC1',
           requiredControls: 3,
-          coveredControls: 1,
-          count: 2,
-          details: expect.stringContaining('в том числе браком 1'),
         }),
       ]),
     )

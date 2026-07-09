@@ -43,7 +43,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.requiredControls).toBe(3)
   })
 
-  it('counts a rejected primary joint by any control method, not only RK or UZK', () => {
+  it('does not add required RK/UZK controls after a rejected primary joint by another control method', () => {
     const rows = [
       makeRow(1, { joint: 'S1', hasRfa: 'дополнительный', rfaResult: 'вырез', hasRk: 'да' }),
       makeRow(2, { joint: 'S2' }),
@@ -55,10 +55,49 @@ describe('buildPercentageLineSummaries', () => {
     const stamp = getOnlyStamp(rows)
 
     expect(stamp.completedControls).toBe(1)
-    expect(stamp.rejectedPrimaryControls).toBe(1)
+    expect(stamp.rejectedPrimaryControls).toBe(0)
     expect(stamp.rejectedJoints).toBe(1)
+    expect(stamp.additionalRequiredControls).toBe(0)
+    expect(stamp.requiredControls).toBe(1)
+  })
+
+  it('adds required RK/UZK controls after a rejected primary duplicate RK or UZK result', () => {
+    const rows = [
+      makeRow(1, {
+        joint: 'S1',
+        duplicateControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' }],
+      }),
+      makeRow(2, { joint: 'S2' }),
+      makeRow(3, { joint: 'S3' }),
+      makeRow(4, { joint: 'S4' }),
+      makeRow(5, { joint: 'S5' }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.rejectedPrimaryControls).toBe(1)
     expect(stamp.additionalRequiredControls).toBe(2)
     expect(stamp.requiredControls).toBe(3)
+  })
+
+  it('does not add required RK/UZK controls after a rejected primary duplicate by another method', () => {
+    const rows = [
+      makeRow(1, {
+        joint: 'S1',
+        duplicateControls: [{ id: 1, weldJointId: 1, method: 'ВИК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' }],
+      }),
+      makeRow(2, { joint: 'S2' }),
+      makeRow(3, { joint: 'S3' }),
+      makeRow(4, { joint: 'S4' }),
+      makeRow(5, { joint: 'S5' }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.rejectedPrimaryControls).toBe(0)
+    expect(stamp.rejectedJoints).toBe(1)
+    expect(stamp.additionalRequiredControls).toBe(0)
+    expect(stamp.requiredControls).toBe(1)
   })
 
   it('adds one control after a rejected primary joint on a 1 percent line', () => {
@@ -93,7 +132,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.missingControls).toBe(2)
   })
 
-  it('uses an already rejected joint as rejected closure for full-control missing checks', () => {
+  it('limits required controls by available unresolved joints instead of closing rejected joints by defect', () => {
     const rows = [
       ...Array.from({ length: 4 }, (_, index) =>
         makeRow(index + 1, {
@@ -114,12 +153,32 @@ describe('buildPercentageLineSummaries', () => {
     const stamp = getOnlyStamp(rows)
 
     expect(stamp.fullControlRequired).toBe(true)
-    expect(stamp.requiredControls).toBe(5)
-    expect(stamp.coveredControls).toBe(5)
+    expect(stamp.calculatedRequiredControls).toBe(5)
+    expect(stamp.availableRequiredControls).toBe(4)
+    expect(stamp.requiredControls).toBe(4)
+    expect(stamp.coveredControls).toBe(4)
     expect(stamp.rejectedCoveredControls).toBe(1)
     expect(stamp.rejectedCoveredJointNames).toEqual(['S5'])
     expect(stamp.missingControls).toBe(0)
     expect(stamp.missingCandidateJointNames).toEqual([])
+  })
+
+  it('keeps required controls open when enough assignable joints are still available after other rejected methods', () => {
+    const rows = [
+      makeRow(1, { joint: 'S1', weldControlPercent: '25', hasRk: 'да' }),
+      makeRow(2, { joint: 'S2', weldControlPercent: '25', hasRk: 'да' }),
+      makeRow(3, { joint: 'S3', weldControlPercent: '25', hasPvk: 'дополнительный', pvkResult: 'вырез' }),
+      ...Array.from({ length: 14 }, (_, index) => makeRow(index + 4, { joint: `S${index + 4}`, weldControlPercent: '25' })),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.calculatedRequiredControls).toBe(5)
+    expect(stamp.availableRequiredControls).toBe(16)
+    expect(stamp.requiredControls).toBe(5)
+    expect(stamp.coveredControls).toBe(2)
+    expect(stamp.rejectedCoveredControls).toBe(1)
+    expect(stamp.missingControls).toBe(3)
   })
 
   it('does not count rejected repair descendants toward the full-control counter', () => {
@@ -257,7 +316,7 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.missingCandidateJointNames).toEqual(['S3', 'S6'])
+    expect(stamp.missingCandidateJointNames).toEqual(['S6'])
     expect(stamp.assignmentCandidateJointNames).toEqual(['S6'])
     expect(stamp.assignmentCandidateRowIds).toEqual([6])
   })

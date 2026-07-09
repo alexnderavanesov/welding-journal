@@ -1,4 +1,5 @@
 import { buildPercentageLineSummaries, type PercentageLineStampSummary } from '@/lib/percentage-line-summary'
+import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import { normalizeResultStatus } from '@/lib/weld-status'
@@ -85,16 +86,19 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
   const detailParts = [
     `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
     summary.fullControlRequired
-      ? `По клейму уже ${summary.rejectedPrimaryControls} первичных негодных стыков по любому виду контроля, поэтому требуется РК/УЗК для всех ${summary.officialJointCount} стыков этого клейма.`
-      : `По расчету требуется ${summary.requiredControls} стык(ов) РК/УЗК: базово ${summary.baseRequiredControls}, дополнительно ${summary.additionalRequiredControls}.`,
-    `Закрыто расчетом ${summary.coveredControls}${summary.rejectedCoveredControls > 0 ? `, в том числе браком ${summary.rejectedCoveredControls}` : ''}, осталось закрыть ${summary.missingControls}.`,
+      ? `По клейму уже ${summary.rejectedPrimaryControls} первичных негодных стыков по РК/УЗК, включая дубль РК/УЗК, поэтому требуется РК/УЗК для всех ${summary.officialJointCount} стыков этого клейма.`
+      : `По расчету требуется ${summary.calculatedRequiredControls} стык(ов) РК/УЗК: базово ${summary.baseRequiredControls}, дополнительно ${summary.additionalRequiredControls}.`,
+    summary.availableRequiredControls < summary.calculatedRequiredControls
+      ? `Доступно для закрытия ${summary.availableRequiredControls} стык(ов), поэтому к закрытию берется ${summary.requiredControls}.`
+      : `К закрытию берется ${summary.requiredControls} стык(ов).`,
+    `Закрыто расчетом ${summary.coveredControls}, осталось закрыть ${summary.missingControls}.`,
   ]
   if (summary.missingCandidateJointNames.length > 0) {
     detailParts.push(`Кандидаты без закрытия расчета: ${formatJointList(summary.missingCandidateJointNames)}.`)
   }
   detailParts.push(
     'Закрытием расчета считается назначенный РК или УЗК, выполненный результат РК/УЗК, осознанный пропуск "отменен" одновременно в РК и УЗК либо статус "замена РК/УЗК" на другом виде НК.',
-    'Если стык уже имеет негодный результат по любому контролю, он закрывает расчет браком и не попадает в кандидаты на назначение РК/УЗК.',
+    'Если стык уже имеет негодный результат по любому контролю, он не попадает в кандидаты на назначение РК/УЗК.',
   )
 
   return {
@@ -150,7 +154,7 @@ function buildRejectedPrimaryControlTask(row: WeldRow, summary: PercentageLineSt
   const rejectedNames = summary.rejectedPrimaryJointNames
   const detailParts = [
     `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
-    `Найдено ${summary.rejectedPrimaryControls} первичных официальных стык(ов) с негодным результатом по любому виду контроля.`,
+    `Найдено ${summary.rejectedPrimaryControls} первичных официальных стык(ов) с негодным результатом по РК/УЗК, включая дубль РК/УЗК.`,
   ]
   if (rejectedNames.length > 0) {
     detailParts.push(`Проверь официальность стыков: ${formatJointList(rejectedNames)}.`)
@@ -183,7 +187,7 @@ function buildSuspendWelderTask(
 ): PercentageLineControlTask {
   const detailParts = [
     `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
-    `По клейму найдено ${summary.rejectedPrimaryControls} первичных негодных стыков по любому виду контроля: ${formatJointList(summary.rejectedPrimaryJointNames)}.`,
+    `По клейму найдено ${summary.rejectedPrimaryControls} первичных негодных стыков по РК/УЗК, включая дубль РК/УЗК: ${formatJointList(summary.rejectedPrimaryJointNames)}.`,
     'По правилу процентной линии после четвертого первичного негодного результата сварщика нужно отстранить от официальной сварки до отдельного решения.',
     suspensionFrom
       ? `Дату начала отстранения диспетчер предлагает взять по дате контроля четвертого негодного стыка: ${suspensionFrom}.`
@@ -255,14 +259,18 @@ function compareRejectedPrimaryRows(left: WeldRow, right: WeldRow) {
 }
 
 function getRejectedControlEventDate(row: WeldRow) {
-  const rejectedDates = LNK_METHODS.flatMap((method) => {
+  const rejectedDates = LNK_METHODS.filter((method) => method.code === 'РК' || method.code === 'УЗК').flatMap((method) => {
     const result = normalizeResultStatus(row[method.resultKey])
     if (result !== 'ремонт' && result !== 'вырез') return []
     const date = String(row[method.conclusionDateKey] ?? '').trim()
     return date ? [date] : []
-  }).sort(compareDateLike)
+  })
+  const rejectedDuplicateDates = getRejectedDuplicateControls(row).flatMap((control) => {
+    if (control.method !== 'РК' && control.method !== 'УЗК') return []
+    return control.conclusionDate || control.controlDate ? [control.conclusionDate || control.controlDate] : []
+  })
 
-  return rejectedDates[0] ?? String(row.weldDate ?? '').trim()
+  return [...rejectedDates, ...rejectedDuplicateDates].sort(compareDateLike)[0] ?? String(row.weldDate ?? '').trim()
 }
 
 function compareDateLike(left: unknown, right: unknown) {

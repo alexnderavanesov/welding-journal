@@ -1037,7 +1037,7 @@ function PercentageLinesPanel({
           icon={ClipboardCheck}
           label="Требуется контроля"
           value={String(totals.required)}
-          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · закрыто расчетом ${totals.covered}${totals.rejectedCovered > 0 ? `, в т.ч. браком ${totals.rejectedCovered}` : ''}`}
+          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · закрыто расчетом ${totals.covered}${totals.rejectedCovered > 0 ? ` · недоступно из-за брака ${totals.rejectedCovered}` : ''}`}
           accent="green"
           wrapDetail
         />
@@ -1379,6 +1379,7 @@ function PercentageLineJointDetailRow({
   row: WeldRow
 }) {
   const badges = getPercentageLineJointBadges(row)
+  const finalStatusLabel = formatFinalStatusDisplay(row, calculateFinalStatus(row))
 
   return (
     <button
@@ -1390,9 +1391,7 @@ function PercentageLineJointDetailRow({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold text-slate-900">{String(row.joint ?? '').trim() || `#${row.id}`}</span>
-        <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
-          {formatFinalStatusDisplay(row, calculateFinalStatus(row))}
-        </span>
+        <span className={getPercentageLineFinalStatusBadgeClassName(finalStatusLabel)}>{finalStatusLabel}</span>
       </div>
       <div className="mt-1 text-xs text-slate-500">
         {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
@@ -1416,14 +1415,13 @@ function PercentageLineJointDetailRow({
 
 function PercentageLineJointSummary({ row }: { row: WeldRow }) {
   const badges = getPercentageLineJointBadges(row)
+  const finalStatusLabel = formatFinalStatusDisplay(row, calculateFinalStatus(row))
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold text-slate-900">{String(row.joint ?? '').trim() || `#${row.id}`}</span>
-        <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
-          {formatFinalStatusDisplay(row, calculateFinalStatus(row))}
-        </span>
+        <span className={getPercentageLineFinalStatusBadgeClassName(finalStatusLabel)}>{finalStatusLabel}</span>
       </div>
       <div className="mt-1 text-xs text-slate-500">
         {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
@@ -1491,8 +1489,8 @@ function PercentageLineGroup({
   const lineHint =
     `${line.line}: ${line.percent}% контроля считается отдельно по каждому официальному клейму. ` +
     `Расчет по проценту: max(1, округление вверх от количества официальных стыков клейма * ${line.percent}%). ` +
-    `Если первичный стык не годен по любому виду контроля: ${line.percent === 1 ? '+1 стык к РК/УЗК' : '+2 стыка к РК/УЗК'}. ` +
-    'После 4-го первичного негодного результата по любому виду контроля требуется 100% РК/УЗК по этому клейму.'
+    `Если первичный стык не годен по РК/УЗК, включая дубль РК/УЗК: ${line.percent === 1 ? '+1 стык к РК/УЗК' : '+2 стыка к РК/УЗК'}. ` +
+    'После 4-го первичного негодного результата РК/УЗК требуется 100% РК/УЗК по этому клейму.'
   const allAcceptedAndClosed =
     totals.missing === 0 &&
     totals.excess === 0 &&
@@ -1542,7 +1540,7 @@ function PercentageLineGroup({
           <PercentageLineSummaryPill
             label="Требуется"
             value={totals.required}
-            title="Сколько стыков нужно закрыть РК/УЗК: базовый процент плюс добор после первичных негодных результатов по любому виду контроля."
+            title="Сколько стыков нужно закрыть РК/УЗК: базовый процент плюс добор после первичных негодных результатов РК/УЗК, включая дубль РК/УЗК."
           />
           <PercentageLineSummaryPill
             label="Закрыто"
@@ -1577,7 +1575,7 @@ function PercentageLineGroup({
             <PercentageLineGridHeader align="right">Состояние</PercentageLineGridHeader>
             <PercentageLineGridHeader
               align="right"
-              title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных результатов по любому виду контроля. После 4-го первичного негодного требуется 100% РК/УЗК."
+              title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных результатов РК/УЗК, включая дубль РК/УЗК. После 4-го такого результата требуется 100% РК/УЗК."
             >
               Расчет
             </PercentageLineGridHeader>
@@ -1694,11 +1692,14 @@ function PercentageLineTableRow({
           <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
             годен: {stamp.goodJoints}
           </span>
-          <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-rose-700">
-            не годен: {stamp.rejectedJoints}
-          </span>
           <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700">
             ожидает: {stamp.waitingRequestJoints + stamp.waitingControlJoints}
+          </span>
+          <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-rose-700">
+            <span className="block">не годен: {stamp.rejectedJoints}</span>
+            {stamp.rejectedJoints > 0 ? (
+              <span className="block text-[10px] leading-4 text-rose-600">в т.ч. РК/УЗК: {stamp.rejectedPrimaryControls}</span>
+            ) : null}
           </span>
         </div>
       </PercentageLineGridCell>
@@ -1707,6 +1708,12 @@ function PercentageLineTableRow({
           main={`требуется ${stamp.requiredControls}`}
           title="Расчетная потребность РК/УЗК"
           details={[
+            stamp.availableRequiredControls < stamp.calculatedRequiredControls
+              ? `расчетно: ${stamp.calculatedRequiredControls}`
+              : '',
+            stamp.availableRequiredControls < stamp.calculatedRequiredControls
+              ? `доступно: ${stamp.availableRequiredControls}`
+              : '',
             `по %: ${stamp.baseRequiredControls}`,
             stamp.additionalRequiredControls > 0 ? `добор: ${stamp.additionalRequiredControls}` : '',
           ]}
@@ -1742,14 +1749,14 @@ function PercentageLineTableRow({
       </PercentageLineGridCell>
       <PercentageLineGridCell label="Итог">
         <PercentageLineResultStack
-          title={`${getJointListHint('Закрыто расчетом', stamp.coveredJointNames)}. ${getJointListHint('Закрыто браком', stamp.rejectedCoveredJointNames)}. ${getJointListHint('Выполнено', stamp.completedJointNames)}. ${getJointListHint('Кандидаты без закрытия расчета', stamp.missingCandidateJointNames)}. ${getJointListHint('Лишнее “да”', stamp.excessCandidateJointNames)}`}
+          title={`${getJointListHint('Закрыто расчетом', stamp.coveredJointNames)}. ${getJointListHint('Недоступно из-за брака', stamp.rejectedCoveredJointNames)}. ${getJointListHint('Выполнено', stamp.completedJointNames)}. ${getJointListHint('Кандидаты без закрытия расчета', stamp.missingCandidateJointNames)}. ${getJointListHint('Лишнее “да”', stamp.excessCandidateJointNames)}`}
           missing={stamp.missingControls}
           completed={stamp.completedControls}
           rejectedPrimary={stamp.rejectedPrimaryControls}
           excess={stamp.excessControls}
           completedDetail={createDetail('Результаты внесены', stamp.completedRowIds)}
           rejectedCovered={stamp.rejectedCoveredControls}
-          rejectedCoveredDetail={createDetail('Закрыто браком', stamp.rejectedCoveredRowIds)}
+          rejectedCoveredDetail={createDetail('Недоступно из-за брака', stamp.rejectedCoveredRowIds)}
           excessDetail={createDetail('Лишнее обычное “да”', stamp.excessCandidateRowIds)}
           mainDetail={
             stamp.missingControls > 0
@@ -1874,7 +1881,7 @@ function PercentageLineResultStack({
       ) : null}
       {rejectedCovered > 0 ? (
         <PercentageLineDetailButton detail={rejectedCoveredDetail} onOpen={onOpenDetail}>
-          Закрыто браком: {rejectedCovered}
+          Недоступно из-за брака: {rejectedCovered}
         </PercentageLineDetailButton>
       ) : null}
       {rejectedPrimary > 0 ? (
@@ -2023,12 +2030,23 @@ function getPercentageLineJointBadgeClassName(tone: PercentageLineJointBadge['to
   )
 }
 
+function getPercentageLineFinalStatusBadgeClassName(statusLabel: string) {
+  const status = statusLabel.trim().toLowerCase()
+  const isRejected = status === 'не годен' || status.startsWith('не годен по дублю')
+
+  return cn(
+    'rounded border px-2 py-0.5 text-xs font-medium',
+    isRejected ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-slate-50 text-slate-600',
+  )
+}
+
 function getPercentageStatusHint(stamp: PercentageLineStampSummary) {
   return [
     `Годен: ${stamp.goodJoints}`,
-    `Не годен: ${stamp.rejectedJoints}`,
     `Ожидает заявку: ${stamp.waitingRequestJoints}`,
     `Ожидает результат НК: ${stamp.waitingControlJoints}`,
+    `Не годен всего: ${stamp.rejectedJoints}`,
+    `В том числе по РК/УЗК: ${stamp.rejectedPrimaryControls}. Эти стыки влияют на добор контроля процентной линии`,
   ].join('. ')
 }
 
