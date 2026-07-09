@@ -7,5 +7,6 @@ export type WeldTableExtraColumn = {
   section: string
   label: string
   width: number
+  insertBeforeSection?: string
   renderCell: (row: WeldRow) => ReactNode
 }

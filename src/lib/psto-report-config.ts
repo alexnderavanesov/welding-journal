@@ -60,6 +60,8 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'rfaResult',
   'stlsResult',
   'mkkResult',
+  'pstoBoq',
+  'pstoKs3',
   'boq',
   'ks3',
   'createdAt',

@@ -85,10 +85,8 @@ export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoDate',
   'heatTreatmentDiagram',
   'pstoNote',
-  'pstoBoq',
-  'pstoKs3',
   'pstoCreatedAt',
-  ...LNK_REPORT_FIELD_KEYS,
+  'lnkCreatedAt',
   ...LNK_CONCLUSION_FIELD_KEYS,
 ])
 
@@ -105,6 +103,7 @@ export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'boq',
   'ks3',
   'createdAt',
+  ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt'),
 ])
 
 export const WELD_STAMP_COMPLETION_GROUPS = [

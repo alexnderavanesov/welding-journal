@@ -6,13 +6,14 @@ import { WeldTableRowSelectCell } from '@/components/weld-table-row-select-cell'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
+import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
 import { getWeldTableRowClassName, getWeldTableRowTitle } from '@/lib/weld-table-row-state'
 import { getCellKey, getDuplicateKey } from '@/lib/weld-table-utils'
-import { RESULT_FIELD_KEYS, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
+import { RESULT_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
 
 type WeldTableBodyRowsProps = {
   rows: WeldRow[]
-  fields: WeldField[]
+  sections: WeldTableDisplaySection[]
   colSpan: number
   readOnly: boolean
   selectable: boolean
@@ -39,7 +40,7 @@ type WeldTableBodyRowsProps = {
 
 export function WeldTableBodyRows({
   rows,
-  fields,
+  sections,
   colSpan,
   readOnly,
   selectable,
@@ -63,6 +64,8 @@ export function WeldTableBodyRows({
   onEdit,
   onDelete,
 }: WeldTableBodyRowsProps) {
+  const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
+
   if (rows.length === 0) {
     return <WeldTableEmptyRow colSpan={colSpan} />
   }
@@ -99,33 +102,36 @@ export function WeldTableBodyRows({
               />
             ) : null}
             {hasRowActions && rowActions ? <WeldTableRowActions row={row} rowActions={rowActions} /> : null}
-            {fields.map((field) => {
-              const isEditableColumn = canEditField(field.key)
-              const isEditableCell = canEditCell(row, field.key)
-              const isBlockedEditableCell = isEditableColumn && !isEditableCell
-              const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
-              const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
-              const displayValue = getDisplayValue(row, field.key)
+            {sections.flatMap((section) => [
+              ...extraColumns
+                .filter((column) => column.insertBeforeSection === section.section)
+                .map((column) => <ExtraBodyCell key={column.key} column={column} row={row} />),
+              ...section.fields.map((field) => {
+                const isEditableColumn = canEditField(field.key)
+                const isEditableCell = canEditCell(row, field.key)
+                const isBlockedEditableCell = isEditableColumn && !isEditableCell
+                const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
+                const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
+                const displayValue = getDisplayValue(row, field.key)
 
-              return (
-                <WeldTableBodyCell
-                  key={field.key}
-                  row={row}
-                  field={field}
-                  displayValue={displayValue}
-                  isEditableCell={isEditableCell}
-                  isBlockedEditableCell={isBlockedEditableCell}
-                  isHighlightedRow={isHighlighted}
-                  isHighlightedCell={isCellHighlighted}
-                  isResultField={isResultField}
-                  onEdit={onEdit}
-                />
-              )
-            })}
-            {extraColumns.map((column) => (
-              <td key={column.key} className="border-b border-r border-b-slate-100 border-r-slate-200 bg-slate-50/80 p-0 align-top">
-                {column.renderCell(row)}
-              </td>
+                return (
+                  <WeldTableBodyCell
+                    key={field.key}
+                    row={row}
+                    field={field}
+                    displayValue={displayValue}
+                    isEditableCell={isEditableCell}
+                    isBlockedEditableCell={isBlockedEditableCell}
+                    isHighlightedRow={isHighlighted}
+                    isHighlightedCell={isCellHighlighted}
+                    isResultField={isResultField}
+                    onEdit={onEdit}
+                  />
+                )
+              }),
+            ])}
+            {trailingExtraColumns.map((column) => (
+              <ExtraBodyCell key={column.key} column={column} row={row} />
             ))}
             {!readOnly ? <WeldTableEditActionsCell row={row} onEdit={onEdit} onDelete={onDelete} /> : null}
           </tr>
@@ -133,4 +139,17 @@ export function WeldTableBodyRows({
       })}
     </>
   )
+}
+
+function ExtraBodyCell({ column, row }: { column: WeldTableExtraColumn; row: WeldRow }) {
+  return (
+    <td className="border-b border-r border-b-slate-100 border-r-slate-200 bg-slate-50/80 p-0 align-top">
+      {column.renderCell(row)}
+    </td>
+  )
+}
+
+function getTrailingExtraColumns(columns: WeldTableExtraColumn[], sections: WeldTableDisplaySection[]) {
+  const sectionNames = new Set(sections.map((section) => section.section))
+  return columns.filter((column) => !column.insertBeforeSection || !sectionNames.has(column.insertBeforeSection))
 }

@@ -126,7 +126,7 @@ export function WeldTable({
           style={{ width: fullTableMinWidth }}
         >
           <WeldTableColumns
-            fields={filteredFields}
+            sections={filteredSections}
             readOnly={readOnly}
             selectable={selectable}
             hasRowActions={hasRowActions}
@@ -150,7 +150,6 @@ export function WeldTable({
             alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
             readOnly={readOnly}
             onToggleSection={toggleSection}
-            filteredFields={filteredFields}
             columnFilters={columnFilters}
             canEditField={canEditField}
             onColumnFiltersChange={onColumnFiltersChange}
@@ -158,7 +157,7 @@ export function WeldTable({
           <tbody>
             <WeldTableBodyRows
               rows={filteredRows}
-              fields={filteredFields}
+              sections={filteredSections}
               colSpan={fullTableColumnSpan}
               readOnly={readOnly}
               selectable={selectable}

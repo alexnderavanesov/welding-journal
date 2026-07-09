@@ -12,7 +12,7 @@ export function getDuplicateControlTableColumns({
   activeReport: ActiveReport
   onOpenDuplicateControl?: (row: WeldRow) => void
 }): WeldTableExtraColumn[] {
-  if (!onOpenDuplicateControl || (activeReport !== 'weldingJournal' && activeReport !== 'lnk')) return []
+  if (!onOpenDuplicateControl || activeReport !== 'lnk') return []
 
   return [
     {
@@ -20,6 +20,7 @@ export function getDuplicateControlTableColumns({
       section: 'Дубль контроль',
       label: 'Результаты дубля',
       width: DUPLICATE_CONTROL_COLUMN_WIDTH,
+      insertBeforeSection: 'Прочее',
       renderCell: (row) => <DuplicateControlTableCell row={row} onOpen={onOpenDuplicateControl} />,
     },
   ]

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
-import { getAlwaysVisibleFieldKeys, getFilteredWeldTableSections } from './weld-table-sections'
+import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections, getFilteredWeldTableSections } from './weld-table-sections'
+import { WELDING_JOURNAL_HIDDEN_FIELD_KEYS } from './welding-journal-report-config'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -35,6 +36,8 @@ describe('weld field order', () => {
       'Заявки',
       'Результат',
       'Заключения',
+      'Код работ',
+      'Закрытие',
       'Прочее',
     ])
   })
@@ -84,33 +87,77 @@ describe('weld field order', () => {
     ])
   })
 
-  it('shows welding and heat treatment tracking fields in the misc section', () => {
+  it('shows welding customer work code and acceptance fields in separate sections', () => {
+    const customerWorkCode = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Код работ')
+    const acceptance = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Закрытие')
+
+    expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
+      'BoQ сварка',
+      'BoQ ПСТО',
+      'BoQ ВИК',
+      'BoQ РК',
+      'BoQ УЗК',
+      'BoQ ПВК',
+      'BoQ ТВМТ',
+      'BoQ РФА',
+      'BoQ СТЛС',
+      'BoQ МКК',
+    ])
+    expect(acceptance?.fields.map((field) => field.label)).toEqual([
+      'КС3 сварка',
+      'КС3 ПСТО',
+      'КС3 ВИК',
+      'КС3 РК',
+      'КС3 УЗК',
+      'КС3 ПВК',
+      'КС3 ТВМТ',
+      'КС3 РФА',
+      'КС3 СТЛС',
+      'КС3 МКК',
+    ])
+  })
+
+  it('keeps BoQ and KS3 fields visible in the welding journal report', () => {
+    const sections = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const customerWorkCode = sections.find((group) => group.section === 'Код работ')
+    const acceptance = sections.find((group) => group.section === 'Закрытие')
+
+    expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
+      'BoQ сварка',
+      'BoQ ПСТО',
+      'BoQ ВИК',
+      'BoQ РК',
+      'BoQ УЗК',
+      'BoQ ПВК',
+      'BoQ ТВМТ',
+      'BoQ РФА',
+      'BoQ СТЛС',
+      'BoQ МКК',
+    ])
+    expect(acceptance?.fields.map((field) => field.label)).toEqual([
+      'КС3 сварка',
+      'КС3 ПСТО',
+      'КС3 ВИК',
+      'КС3 РК',
+      'КС3 УЗК',
+      'КС3 ПВК',
+      'КС3 ТВМТ',
+      'КС3 РФА',
+      'КС3 СТЛС',
+      'КС3 МКК',
+    ])
+  })
+
+  it('shows service tracking fields in the misc section', () => {
     const misc = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Прочее')
 
     expect(misc?.fields.map((field) => field.label)).toEqual([
-      'BoQ сварка',
-      'КС3 сварка',
       'Внесен сварка',
-      'BoQ ПСТО',
-      'КС3 ПСТО',
       'Внесен ПСТО',
       'Внесен ЛНК',
-      'BoQ ВИК',
-      'КС3 ВИК',
-      'BoQ РК',
-      'КС3 РК',
-      'BoQ УЗК',
-      'КС3 УЗК',
-      'BoQ ПВК',
-      'КС3 ПВК',
-      'BoQ ТВМТ',
-      'КС3 ТВМТ',
-      'BoQ РФА',
-      'КС3 РФА',
-      'BoQ СТЛС',
-      'КС3 СТЛС',
-      'BoQ МКК',
-      'КС3 МКК',
     ])
   })
 

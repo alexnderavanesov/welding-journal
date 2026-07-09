@@ -24,14 +24,20 @@ export function WeldTableSectionHeaderRow({
   extraColumns,
   onToggleSection,
 }: WeldTableSectionHeaderRowProps) {
-  const extraSections = groupExtraColumnsBySection(extraColumns)
+  const trailingExtraSections = groupExtraColumnsBySection(getTrailingExtraColumns(extraColumns, sections))
 
   return (
     <>
-      {sections.map((group) => {
+      {sections.flatMap((group) => {
         const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
         const canToggle = group.collapsed || canCollapse
-        return (
+        const insertedExtraSections = groupExtraColumnsBySection(
+          extraColumns.filter((column) => column.insertBeforeSection === group.section),
+        )
+        return [
+          ...insertedExtraSections.map((extraGroup) => (
+            <ExtraSectionHeader key={`extra-${extraGroup.section}`} section={extraGroup.section} colSpan={extraGroup.fields.length} />
+          )),
           <th
             key={group.section}
             colSpan={group.fields.length}
@@ -49,19 +55,13 @@ export function WeldTableSectionHeaderRow({
               title={!canToggle ? 'Обязательные поля всегда показаны' : group.collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
             >
               {group.collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              {group.section}
+              {getSectionTitle(group.section)}
             </button>
-          </th>
-        )
+          </th>,
+        ]
       })}
-      {extraSections.map((group) => (
-        <th
-          key={`extra-${group.section}`}
-          colSpan={group.fields.length}
-          className="border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
-        >
-          <span className="inline-flex items-center gap-1.5 rounded px-2 py-1">{group.section}</span>
-        </th>
+      {trailingExtraSections.map((group) => (
+        <ExtraSectionHeader key={`extra-${group.section}`} section={group.section} colSpan={group.fields.length} />
       ))}
       {!readOnly ? (
         <th
@@ -75,6 +75,21 @@ export function WeldTableSectionHeaderRow({
   )
 }
 
+function ExtraSectionHeader({ section, colSpan }: { section: string; colSpan: number }) {
+  return (
+    <th
+      colSpan={colSpan}
+      className="border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+    >
+      <span className="inline-flex items-center gap-1.5 rounded px-2 py-1">{getSectionTitle(section)}</span>
+    </th>
+  )
+}
+
+function getSectionTitle(section: string) {
+  return section === 'Контроль' ? 'Назначение НК' : section
+}
+
 function groupExtraColumnsBySection(columns: WeldTableExtraColumn[]) {
   const groups: Array<{ section: string; fields: WeldTableExtraColumn[] }> = []
   for (const column of columns) {
@@ -86,4 +101,9 @@ function groupExtraColumnsBySection(columns: WeldTableExtraColumn[]) {
     }
   }
   return groups
+}
+
+function getTrailingExtraColumns(columns: WeldTableExtraColumn[], sections: WeldTableSectionGroup[]) {
+  const sectionNames = new Set(sections.map((section) => section.section))
+  return columns.filter((column) => !column.insertBeforeSection || !sectionNames.has(column.insertBeforeSection))
 }
