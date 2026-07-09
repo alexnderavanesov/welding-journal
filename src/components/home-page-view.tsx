@@ -22,6 +22,7 @@ type HomePageViewProps = {
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
+  onAssignPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onAssignPercentageLineMissingControls']
   onCancelPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onCancelPercentageLineMissingControls']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
@@ -48,6 +49,7 @@ export function HomePageView({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
+  onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
@@ -85,6 +87,7 @@ export function HomePageView({
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}
         weldTableProps={weldTableProps}
+        onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
         onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenWeldRowIds={onOpenWeldRowIds}

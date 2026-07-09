@@ -73,6 +73,7 @@ import {
   buildRowIdListFilters,
   type PercentageLineStampFilter,
 } from '@/lib/report-navigation'
+import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import {
   createEmptyDuplicateControlDraft,
   type DuplicateControlDraft,
@@ -985,6 +986,27 @@ export function useHomePageController() {
     setMessage(messageText || `Показано стыков: ${rowIds.length}.`)
   }
 
+  const assignPercentageLineMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
+    const targetIdSet = new Set(rowIds)
+    const targetRows = rows.filter((row) => targetIdSet.has(row.id))
+    if (targetRows.length === 0) {
+      setMessage('Стыки для назначения РК/УЗК не найдены')
+      return
+    }
+
+    const fieldKey = method === 'УЗК' ? 'hasUzk' : 'hasRk'
+    const savedRows = await updateWeldRowsOrThrow(
+      targetRows.map((row) => ({
+        ...row,
+        [fieldKey]: 'да',
+      })),
+      'Не удалось назначить РК/УЗК по процентной линии',
+    )
+    highlightChangedRows(savedRows, [fieldKey])
+    setMessage(`Назначен ${method} по процентной линии: ${savedRows.length}.`)
+    await weldsQuery.refetch()
+  }
+
   const cancelPercentageLineMissingControls = async (rowIds: number[]) => {
     const targetIdSet = new Set(rowIds)
     const targetRows = rows.filter((row) => targetIdSet.has(row.id))
@@ -1575,6 +1597,7 @@ export function useHomePageController() {
     welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
+    onAssignPercentageLineMissingControls: assignPercentageLineMissingControls,
     onCancelPercentageLineMissingControls: cancelPercentageLineMissingControls,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenWeldRowIds: openWeldRowIds,

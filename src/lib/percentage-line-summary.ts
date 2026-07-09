@@ -56,6 +56,8 @@ export type PercentageLineStampSummary = {
   rejectedPrimaryRowIds: number[]
   missingCandidateJointNames: string[]
   missingCandidateRowIds: number[]
+  assignmentCandidateJointNames: string[]
+  assignmentCandidateRowIds: number[]
   excessCandidateJointNames: string[]
   excessCandidateRowIds: number[]
   missingControls: number
@@ -231,6 +233,9 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const rejectedPrimaryRowIds = entry.rows.filter(isRejectedPrimaryPercentageControl).map((row) => row.id)
   const missingCandidateJointNames = entry.rows.filter((row) => !hasCoveredPercentageControl(row)).map(getJointDisplayName)
   const missingCandidateRowIds = entry.rows.filter((row) => !hasCoveredPercentageControl(row)).map(getRowId)
+  const assignmentCandidateRows = entry.rows.filter(isPercentageControlAssignmentCandidate)
+  const assignmentCandidateJointNames = assignmentCandidateRows.map(getJointDisplayName)
+  const assignmentCandidateRowIds = assignmentCandidateRows.map(getRowId)
   const excessCandidateJointNames = normalAssignedRows.slice(allowedNormalAssignedControls).map(getJointDisplayName)
   const excessCandidateRowIds = normalAssignedRows.slice(allowedNormalAssignedControls).map(getRowId)
 
@@ -274,6 +279,8 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     rejectedPrimaryRowIds,
     missingCandidateJointNames,
     missingCandidateRowIds,
+    assignmentCandidateJointNames,
+    assignmentCandidateRowIds,
     excessCandidateJointNames,
     excessCandidateRowIds,
     missingControls: Math.max(0, requiredControls - coveredControls),
@@ -341,6 +348,10 @@ function hasDirectPercentageControlCoverage(row: WeldRow) {
 
 function hasRejectedClosurePercentageControl(row: WeldRow) {
   return hasRejectedAnyControlResult(row) && !hasDirectPercentageControlCoverage(row)
+}
+
+function isPercentageControlAssignmentCandidate(row: WeldRow) {
+  return !hasAssignedPercentageControl(row) && !hasRejectedAnyControlResult(row)
 }
 
 function hasCompletedPercentageControl(row: WeldRow) {

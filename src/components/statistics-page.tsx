@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Activity,
   ChevronDown,
@@ -31,6 +31,7 @@ import {
 import { buildLineSummary, type LineSummaryRow } from '@/lib/line-summary'
 import {
   buildPercentageLineSummaries,
+  type PercentageControlMethod,
   type PercentageLineStampSummary,
 } from '@/lib/percentage-line-summary'
 import {
@@ -48,6 +49,7 @@ type StatisticsPageProps = {
   fixedTab?: StatisticsTab
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
+  onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
@@ -65,6 +67,7 @@ export function StatisticsPage({
   fixedTab,
   rows,
   welderStamps,
+  onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
@@ -514,9 +517,10 @@ export function StatisticsPage({
         />
       ) : activeTab === 'percentageLines' ? (
         <PercentageLinesPanel
+          onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
+          onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
           rows={scopedRows}
           summary={percentageLineSummary}
-          onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
           onOpenWeldRowIds={onOpenWeldRowIds}
         />
@@ -913,12 +917,14 @@ function WelderBodyCell({ children, className }: { children: ReactNode; classNam
 }
 
 function PercentageLinesPanel({
+  onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   rows,
   summary,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
 }: {
+  onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   rows: WeldRow[]
   summary: ReturnType<typeof buildPercentageLineSummaries>
@@ -928,7 +934,7 @@ function PercentageLinesPanel({
   const [search, setSearch] = useState('')
   const [collapsedLineKeys, setCollapsedLineKeys] = useState<Set<string>>(() => new Set())
   const [detailDialog, setDetailDialog] = useState<PercentageLineJointDetailDialogState | null>(null)
-  const [cancelMissingDialog, setCancelMissingDialog] = useState<PercentageLineCancelMissingDialogState | null>(null)
+  const [assignMissingDialog, setAssignMissingDialog] = useState<PercentageLineAssignMissingDialogState | null>(null)
   const rowsById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows])
   const detailRows = useMemo(
     () => (detailDialog ? detailDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)) : []),
@@ -1006,11 +1012,15 @@ function PercentageLinesPanel({
     if (rowIds.length === 0) return
     onOpenWeldRowIds?.(rowIds, messageText)
     setDetailDialog(null)
-    setCancelMissingDialog(null)
+    setAssignMissingDialog(null)
+  }
+  const assignMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
+    await onAssignPercentageLineMissingControls?.(rowIds, method)
+    setAssignMissingDialog(null)
   }
   const closeMissingControlsByCancellation = async (rowIds: number[]) => {
     await onCancelPercentageLineMissingControls?.(rowIds)
-    setCancelMissingDialog(null)
+    setAssignMissingDialog(null)
   }
 
   return (
@@ -1073,9 +1083,11 @@ function PercentageLinesPanel({
             {filteredSummary.map((line) => (
               <PercentageLineGroup
                 key={line.lineKey}
+                onAssignMissing={
+                  onAssignPercentageLineMissingControls || onCancelPercentageLineMissingControls ? setAssignMissingDialog : undefined
+                }
                 collapsed={collapsedLineKeys.has(line.lineKey)}
                 line={line}
-                onCancelMissing={onCancelPercentageLineMissingControls ? setCancelMissingDialog : undefined}
                 onOpenDetail={setDetailDialog}
                 onOpenStamp={onOpenPercentageLineStampRows}
                 onToggle={() => toggleLine(line.lineKey)}
@@ -1101,13 +1113,17 @@ function PercentageLinesPanel({
           onOpenRows={openRowsInWeldingJournal}
         />
       ) : null}
-      {cancelMissingDialog ? (
-        <PercentageLineCancelMissingDialog
-          detail={cancelMissingDialog}
-          rows={cancelMissingDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row))}
-          onClose={() => setCancelMissingDialog(null)}
+      {assignMissingDialog ? (
+        <PercentageLineAssignMissingDialog
+          detail={assignMissingDialog}
+          assignmentRows={assignMissingDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row))}
+          cancellationRows={assignMissingDialog.cancellationRowIds
+            .map((rowId) => rowsById.get(rowId))
+            .filter((row): row is WeldRow => Boolean(row))}
+          onClose={() => setAssignMissingDialog(null)}
           onOpenRows={openRowsInWeldingJournal}
-          onSave={closeMissingControlsByCancellation}
+          onCancelSave={closeMissingControlsByCancellation}
+          onSave={assignMissingControls}
         />
       ) : null}
     </div>
@@ -1120,9 +1136,12 @@ type PercentageLineJointDetailDialogState = {
   title: string
 }
 
-type PercentageLineCancelMissingDialogState = PercentageLineJointDetailDialogState & {
+type PercentageLineAssignMissingDialogState = PercentageLineJointDetailDialogState & {
+  cancellationRowIds: number[]
   missingControls: number
 }
+
+type PercentageLineMissingControlAction = PercentageControlMethod | 'отмена'
 
 function PercentageLineJointDetailDialog({
   detail,
@@ -1175,27 +1194,56 @@ function PercentageLineJointDetailDialog({
   )
 }
 
-function PercentageLineCancelMissingDialog({
+function PercentageLineAssignMissingDialog({
+  assignmentRows,
+  cancellationRows,
   detail,
   onClose,
+  onCancelSave,
   onOpenRows,
   onSave,
-  rows,
 }: {
-  detail: PercentageLineCancelMissingDialogState
+  assignmentRows: WeldRow[]
+  cancellationRows: WeldRow[]
+  detail: PercentageLineAssignMissingDialogState
   onClose: () => void
+  onCancelSave: (rowIds: number[]) => Promise<void> | void
   onOpenRows: (rowIds: number[], message?: string) => void
-  onSave: (rowIds: number[]) => Promise<void> | void
-  rows: WeldRow[]
+  onSave: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
 }) {
   const selectableCount = Math.max(1, detail.missingControls)
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(
-    () => new Set(rows.slice(0, selectableCount).map((row) => row.id)),
-  )
+  const [action, setAction] = useState<PercentageLineMissingControlAction>('РК')
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set())
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const selectedRows = rows.filter((row) => selectedIds.has(row.id))
+  const activeRows = action === 'отмена' ? cancellationRows : assignmentRows
+  const selectedRows = activeRows.filter((row) => selectedIds.has(row.id))
   const isSelectionFull = selectedIds.size >= selectableCount
+  const actionTitle = action === 'отмена' ? 'закрытия недобора отменой РК/УЗК' : `назначения ${action} по процентной линии`
+  const actionHintClassName =
+    action === 'отмена'
+      ? 'border-amber-200 bg-amber-50 text-amber-900'
+      : action === 'РК'
+        ? 'border-sky-100 bg-sky-50 text-sky-900'
+        : 'border-indigo-100 bg-indigo-50 text-indigo-900'
+  const actionHint =
+    action === 'отмена' ? (
+      <>
+        Выберите стыки, по которым расчетный РК/УЗК сознательно не выполняется. Система проставит{' '}
+        <span className="font-semibold">РК = отменен</span> и <span className="font-semibold">УЗК = отменен</span>, и эти
+        стыки закроют недобор процентной линии.
+      </>
+    ) : (
+      <>
+        Выберите актуальные официальные стыки без РК/УЗК, без закрытия расчетом и без негодного результата. Система
+        проставит <span className="font-semibold">{action}</span> как назначенный контроль по процентной линии.
+      </>
+    )
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setSaveError('')
+  }, [action])
 
   const toggleRow = (rowId: number) => {
     setSelectedIds((current) => {
@@ -1212,7 +1260,7 @@ function PercentageLineCancelMissingDialog({
     if (selectedRows.length === 0) return
     onOpenRows(
       selectedRows.map((row) => row.id),
-      `Показаны стыки для закрытия недобора отменой РК/УЗК (${selectedRows.length}).`,
+      `Показаны стыки для ${actionTitle} (${selectedRows.length}).`,
     )
   }
   const saveSelected = async () => {
@@ -1220,9 +1268,13 @@ function PercentageLineCancelMissingDialog({
     setIsSaving(true)
     setSaveError('')
     try {
-      await onSave(Array.from(selectedIds))
+      if (action === 'отмена') {
+        await onCancelSave(Array.from(selectedIds))
+      } else {
+        await onSave(Array.from(selectedIds), action)
+      }
     } catch (error) {
-      setSaveError((error as Error).message || 'Не удалось сохранить отмену РК/УЗК')
+      setSaveError((error as Error).message || 'Не удалось сохранить назначение РК/УЗК')
     } finally {
       setIsSaving(false)
     }
@@ -1231,7 +1283,7 @@ function PercentageLineCancelMissingDialog({
   return (
     <LargeDialogShell maxWidthClassName="max-w-[760px]" maxHeightClassName="max-h-[86vh]" overlayClassName="z-[85] bg-slate-950/25">
       <DialogHeader
-        title="Закрыть недобор отменой"
+        title="Назначить РК/УЗК"
         subtitle={`${detail.subtitle} · нужно закрыть: ${detail.missingControls}`}
         onClose={onClose}
         actions={
@@ -1243,19 +1295,37 @@ function PercentageLineCancelMissingDialog({
         }
       />
       <div className="space-y-3 overflow-y-auto p-4">
-        <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-          Выберите стыки, по которым расчетный РК/УЗК официально не требуется. После сохранения система проставит
-          <span className="font-semibold"> РК = отменен</span> и <span className="font-semibold">УЗК = отменен</span>.
+        <div className={cn('rounded-md border px-3 py-2 text-sm transition-colors', actionHintClassName)}>
+          {actionHint}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Действие</span>
+          {(['РК', 'УЗК', 'отмена'] as PercentageLineMissingControlAction[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={cn(
+                'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+                action === option
+                  ? 'border-sky-300 bg-sky-50 text-sky-800'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50',
+              )}
+              onClick={() => setAction(option)}
+              disabled={isSaving}
+            >
+              {option === 'отмена' ? 'Отмена' : option}
+            </button>
+          ))}
         </div>
         <div className="text-xs text-slate-500">
-          Можно выбрать не больше {detail.missingControls}. Если нужно закрыть другой стык, снимите выбор с текущего.
+          Выберите стыки вручную. Можно выбрать не больше {detail.missingControls}.
         </div>
         {saveError ? (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</div>
         ) : null}
-        {rows.length > 0 ? (
+        {activeRows.length > 0 ? (
           <div className="space-y-2">
-            {rows.map((row) => {
+            {activeRows.map((row) => {
               const checked = selectedIds.has(row.id)
               const disabled = !checked && isSelectionFull
               return (
@@ -1285,7 +1355,7 @@ function PercentageLineCancelMissingDialog({
           </div>
         ) : (
           <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-            Кандидаты не найдены. Возможно, расчет уже изменился.
+            Кандидаты для выбранного действия не найдены. Проверьте расчет линии или выберите другое действие.
           </div>
         )}
       </div>
@@ -1294,7 +1364,7 @@ function PercentageLineCancelMissingDialog({
           Отмена
         </Button>
         <Button type="button" onClick={saveSelected} disabled={selectedIds.size === 0 || isSaving}>
-          {isSaving ? 'Сохранение...' : `Проставить отмену (${selectedIds.size})`}
+          {isSaving ? 'Сохранение...' : action === 'отмена' ? `Проставить отмену (${selectedIds.size})` : `Назначить ${action} (${selectedIds.size})`}
         </Button>
       </div>
     </LargeDialogShell>
@@ -1378,14 +1448,14 @@ function PercentageLineJointSummary({ row }: { row: WeldRow }) {
 function PercentageLineGroup({
   collapsed,
   line,
-  onCancelMissing,
+  onAssignMissing,
   onOpenDetail,
   onOpenStamp,
   onToggle,
 }: {
   collapsed: boolean
   line: ReturnType<typeof buildPercentageLineSummaries>[number]
-  onCancelMissing?: (detail: PercentageLineCancelMissingDialogState) => void
+  onAssignMissing?: (detail: PercentageLineAssignMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
   onToggle: () => void
@@ -1526,7 +1596,7 @@ function PercentageLineGroup({
               <PercentageLineTableRow
                 key={stamp.key}
                 line={line}
-                onCancelMissing={onCancelMissing}
+                onAssignMissing={onAssignMissing}
                 onOpenDetail={onOpenDetail}
                 stamp={stamp}
                 onOpenStamp={onOpenStamp}
@@ -1570,13 +1640,13 @@ function PercentageLineSummaryPill({
 
 function PercentageLineTableRow({
   line,
-  onCancelMissing,
+  onAssignMissing,
   onOpenDetail,
   onOpenStamp,
   stamp,
 }: {
   line: ReturnType<typeof buildPercentageLineSummaries>[number]
-  onCancelMissing?: (detail: PercentageLineCancelMissingDialogState) => void
+  onAssignMissing?: (detail: PercentageLineAssignMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
   stamp: PercentageLineStampSummary
@@ -1686,12 +1756,13 @@ function PercentageLineTableRow({
               ? createDetail('Кандидаты без закрытия расчета', stamp.missingCandidateRowIds)
               : createDetail('Закрыто расчетом', stamp.coveredRowIds)
           }
-          cancelMissingDetail={{
-            ...createDetail('Закрыть недобор отменой РК/УЗК', stamp.missingCandidateRowIds),
+          assignMissingDetail={{
+            ...createDetail('Назначить РК/УЗК', stamp.assignmentCandidateRowIds),
+            cancellationRowIds: stamp.missingCandidateRowIds,
             missingControls: stamp.missingControls,
           }}
           rejectedPrimaryDetail={createDetail('Первично негодные стыки', stamp.rejectedPrimaryRowIds)}
-          onCancelMissing={onCancelMissing}
+          onAssignMissing={onAssignMissing}
           onOpenDetail={onOpenDetail}
         />
       </PercentageLineGridCell>
@@ -1738,14 +1809,14 @@ function PercentageLineGridCell({
 }
 
 function PercentageLineResultStack({
-  cancelMissingDetail,
+  assignMissingDetail,
   completed,
   completedDetail,
   excess,
   excessDetail,
   mainDetail,
   missing,
-  onCancelMissing,
+  onAssignMissing,
   onOpenDetail,
   rejectedCovered,
   rejectedCoveredDetail,
@@ -1753,14 +1824,14 @@ function PercentageLineResultStack({
   rejectedPrimaryDetail,
   title,
 }: {
-  cancelMissingDetail: PercentageLineCancelMissingDialogState
+  assignMissingDetail: PercentageLineAssignMissingDialogState
   completed: number
   completedDetail: PercentageLineJointDetailDialogState
   excess: number
   excessDetail: PercentageLineJointDetailDialogState
   mainDetail: PercentageLineJointDetailDialogState
   missing: number
-  onCancelMissing?: (detail: PercentageLineCancelMissingDialogState) => void
+  onAssignMissing?: (detail: PercentageLineAssignMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   rejectedCovered: number
   rejectedCoveredDetail: PercentageLineJointDetailDialogState
@@ -1777,13 +1848,14 @@ function PercentageLineResultStack({
       >
         {missing > 0 ? `Осталось закрыть: ${missing}` : 'Расчет закрыт'}
       </PercentageLineDetailButton>
-      {missing > 0 && onCancelMissing && cancelMissingDetail.rowIds.length > 0 ? (
+      {missing > 0 && onAssignMissing && (assignMissingDetail.rowIds.length > 0 || assignMissingDetail.cancellationRowIds.length > 0) ? (
         <button
           type="button"
-          className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 transition-colors hover:border-amber-300 hover:bg-amber-100"
-          onClick={() => onCancelMissing(cancelMissingDetail)}
+          className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100"
+          onClick={() => onAssignMissing?.(assignMissingDetail)}
+          title="Назначить РК/УЗК или закрыть недобор отменой"
         >
-          Закрыть отменой
+          Назначить РК/УЗК
         </button>
       ) : null}
       {excess > 0 ? (

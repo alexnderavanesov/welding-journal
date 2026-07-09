@@ -245,6 +245,23 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.missingControls).toBe(2)
   })
 
+  it('keeps assignment candidates only for active official unresolved joints without RK/UZK coverage', () => {
+    const rows = [
+      makeRow(1, { joint: 'S1', hasRk: 'да' }),
+      makeRow(2, { joint: 'S2', rkResult: 'вырез' }),
+      makeRow(3, { joint: 'S3', hasUzk: 'дополнительный' }),
+      makeRow(4, { joint: 'S4', status: 'неофициальный' }),
+      makeRow(5, { joint: 'S5', revisionActuality: 'не актуален' }),
+      makeRow(6, { joint: 'S6' }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.missingCandidateJointNames).toEqual(['S3', 'S6'])
+    expect(stamp.assignmentCandidateJointNames).toEqual(['S6'])
+    expect(stamp.assignmentCandidateRowIds).toEqual([6])
+  })
+
   it('does not report additional controls as excess', () => {
     const rows = [
       makeRow(1, { joint: 'S1', hasRk: 'да' }),
