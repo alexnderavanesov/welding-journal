@@ -7,6 +7,8 @@ const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   welderStamps: 'Клейма',
   percentageLines: 'Процентные линии',
   statistics: 'Статистика',
+  documents: 'Документы',
+  settings: 'Настройки',
 }
 
 const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
@@ -16,6 +18,8 @@ const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
   welderStamps: 'welder-stamps-register.xlsx',
   percentageLines: 'percentage-lines.xlsx',
   statistics: 'statistics.xlsx',
+  documents: 'documents.xlsx',
+  settings: 'settings.xlsx',
 }
 
 const EDITABLE_REPORT_IMPORT_LABELS: Partial<Record<ActiveReport, string>> = {
@@ -69,6 +73,12 @@ export function getReportSummaryText({
   }
   if (activeReport === 'percentageLines') {
     return 'Расчет РК/УЗК по процентным линиям'
+  }
+  if (activeReport === 'documents') {
+    return 'Формирование документов по данным системы'
+  }
+  if (activeReport === 'settings') {
+    return 'Настройки системы и шаблонов документов'
   }
   return `Записей: ${weldingRowCount} · WDI годных: ${acceptedWdiTotalText}`
 }

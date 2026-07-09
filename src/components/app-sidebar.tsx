@@ -1,4 +1,15 @@
-import { BarChart3, ClipboardCheck, Flame, NotebookTabs, PanelLeftClose, PanelLeftOpen, Percent, Stamp } from 'lucide-react'
+import {
+  BarChart3,
+  ClipboardCheck,
+  FileText,
+  Flame,
+  NotebookTabs,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Percent,
+  Settings,
+  Stamp,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ActiveReport } from '@/lib/home-state'
 
@@ -20,12 +31,15 @@ const sidebarItems: Array<{
   { report: 'welderStamps', label: 'Клейма', icon: Stamp },
   { report: 'percentageLines', label: 'Процентные линии', icon: Percent },
   { report: 'statistics', label: 'Статистика', icon: BarChart3 },
+  { report: 'documents', label: 'Документы', icon: FileText },
 ]
 
 export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {
+  const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }
+
   return (
     <aside
-      className={`fixed left-0 top-0 z-30 h-screen border-r border-slate-100 bg-white px-3 py-5 transition-[width] duration-200 ${
+      className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-slate-100 bg-white px-3 py-5 transition-[width] duration-200 ${
         collapsed ? 'w-16' : 'w-48 lg:w-64 lg:px-4'
       }`}
     >
@@ -60,6 +74,25 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
             </button>
           )
         })}
+      </nav>
+      <nav className="mt-auto border-t border-slate-100 pt-3">
+        {(() => {
+          const Icon = settingsItem.icon
+          const isActive = activeReport === settingsItem.report
+          return (
+            <button
+              key={settingsItem.report}
+              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                isActive ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+              } ${collapsed ? 'justify-center px-0' : ''}`}
+              onClick={() => onReportChange(settingsItem.report)}
+              title={settingsItem.label}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className={collapsed ? 'sr-only' : ''}>{settingsItem.label}</span>
+            </button>
+          )
+        })()}
       </nav>
     </aside>
   )

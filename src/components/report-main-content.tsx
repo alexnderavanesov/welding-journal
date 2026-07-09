@@ -1,7 +1,10 @@
+import { DocumentsPage } from '@/components/documents-page'
+import { SettingsPage } from '@/components/settings-page'
 import { StatisticsPage } from '@/components/statistics-page'
 import { WelderStampsRegistry, type WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
@@ -9,6 +12,7 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type ReportMainContentProps = {
   activeReport: ActiveReport
+  documentGenerationRequest?: DocumentGenerationRequest | null
   statisticsRows: WeldRow[]
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
@@ -21,6 +25,7 @@ type ReportMainContentProps = {
 
 export function ReportMainContent({
   activeReport,
+  documentGenerationRequest,
   statisticsRows,
   welderStamps,
   welderStampsRegistryProps,
@@ -46,6 +51,14 @@ export function ReportMainContent({
 
   if (activeReport === 'welderStamps') {
     return <WelderStampsRegistry {...welderStampsRegistryProps} />
+  }
+
+  if (activeReport === 'documents') {
+    return <DocumentsPage rows={statisticsRows} generationRequest={documentGenerationRequest} />
+  }
+
+  if (activeReport === 'settings') {
+    return <SettingsPage />
   }
 
   return <WeldTable {...weldTableProps} />

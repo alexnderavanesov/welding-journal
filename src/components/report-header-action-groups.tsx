@@ -8,6 +8,9 @@ type WeldingJournalHeaderActionsProps = {
   importDisabled: boolean
   isShowMenuOpen: boolean
   onToggleShowMenu: () => void
+  isGenerateMenuOpen: boolean
+  onToggleGenerateMenu: () => void
+  onGenerateWeldingJournalDocument: () => void
   onOpenCurrentReport: () => void
   onOpenWaitingWeldReport: () => void
   onOpenWaitingRequestReport: () => void
@@ -23,6 +26,9 @@ export function WeldingJournalHeaderActions({
   importDisabled,
   isShowMenuOpen,
   onToggleShowMenu,
+  isGenerateMenuOpen,
+  onToggleGenerateMenu,
+  onGenerateWeldingJournalDocument,
   onOpenCurrentReport,
   onOpenWaitingWeldReport,
   onOpenWaitingRequestReport,
@@ -50,6 +56,13 @@ export function WeldingJournalHeaderActions({
           { label: 'Ожидает ремонт', onClick: onOpenWaitingRepairReport },
           { label: 'Отмененные годные результаты', onClick: onOpenCancelledAcceptedReport },
         ]}
+      />
+      <ReportShowMenu
+        label="Сформировать"
+        isOpen={isGenerateMenuOpen}
+        onToggle={onToggleGenerateMenu}
+        widthClassName="w-56"
+        items={[{ label: 'Сварочный журнал', onClick: onGenerateWeldingJournalDocument }]}
       />
       <Button variant="outline" onClick={onOpenImportDialog} disabled={importDisabled}>
         <Upload className="mr-2 h-4 w-4" />

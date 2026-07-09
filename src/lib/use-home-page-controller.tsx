@@ -52,6 +52,7 @@ import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-pr
 import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
 import { createReportSummaryBarProps } from '@/lib/report-summary-props'
 import { createReportTaskPanelsProps } from '@/lib/report-task-panels-props'
+import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import { createReportChainDialogProps } from '@/lib/report-chain-dialog-props'
 import { createReportWeldEditorProps } from '@/lib/report-weld-editor-props'
 import { createReportFieldEditorProps } from '@/lib/report-field-editor-props'
@@ -62,6 +63,7 @@ import { useDuplicateControls } from '@/lib/use-duplicate-controls'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
@@ -196,15 +198,18 @@ export function useHomePageController() {
     setPreservedLnkOrderIds,
   } = useLnkResultModalState()
   const [isDuplicateControlModalOpen, setIsDuplicateControlModalOpen] = useState(false)
+  const [documentGenerationRequest, setDocumentGenerationRequest] = useState<DocumentGenerationRequest | null>(null)
   const [duplicateControlDraft, setDuplicateControlDraft] = useState<DuplicateControlDraft>(() =>
     createEmptyDuplicateControlDraft(),
   )
   const {
     isPstoShowMenuOpen,
     isLnkShowMenuOpen,
+    isWeldingJournalGenerateMenuOpen,
     isWeldingJournalShowMenuOpen,
     setIsPstoShowMenuOpen,
     setIsLnkShowMenuOpen,
+    setIsWeldingJournalGenerateMenuOpen,
     setIsWeldingJournalShowMenuOpen,
   } = useReportShowMenuState()
   const {
@@ -723,6 +728,20 @@ export function useHomePageController() {
     setHeatTreatmentFilters,
     setLnkFilters,
   })
+  const filteredVisibleRows = useMemo(
+    () => filterWeldRowsByColumns(visibleRows as WeldRow[], activeColumnFilters),
+    [activeColumnFilters, visibleRows],
+  )
+  const generateWeldingJournalDocument = () => {
+    setDocumentGenerationRequest({
+      id: Date.now(),
+      type: 'weldingJournal',
+      rows: filteredVisibleRows,
+    })
+    setIsWeldingJournalGenerateMenuOpen(false)
+    setIsWeldingJournalShowMenuOpen(false)
+    setActiveReport('documents')
+  }
   const {
     openLnkConclusionsReport,
     openLnkCurrentReport,
@@ -1157,6 +1176,9 @@ export function useHomePageController() {
     importDisabled: importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending,
     isWeldingJournalShowMenuOpen,
     onToggleWeldingJournalShowMenu: () => setIsWeldingJournalShowMenuOpen((current) => !current),
+    isWeldingJournalGenerateMenuOpen,
+    onToggleWeldingJournalGenerateMenu: () => setIsWeldingJournalGenerateMenuOpen((current) => !current),
+    onGenerateWeldingJournalDocument: generateWeldingJournalDocument,
     onOpenWeldingJournalCurrentReport: openWeldingJournalCurrentReport,
     onOpenWeldingJournalWaitingWeldReport: openWeldingJournalWaitingWeldReport,
     onOpenWeldingJournalWaitingRequestReport: openWeldingJournalWaitingRequestReport,
@@ -1593,6 +1615,7 @@ export function useHomePageController() {
     reportHeaderActionsProps,
     reportSummaryBarProps,
     reportTaskPanelsProps,
+    documentGenerationRequest,
     statisticsRows: rows,
     welderStamps,
     welderStampsRegistryProps,

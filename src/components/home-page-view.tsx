@@ -18,6 +18,7 @@ type HomePageViewProps = {
   reportHeaderActionsProps: ReportHeaderActionsProps
   reportSummaryBarProps: ReportSummaryBarProps
   reportTaskPanelsProps: ReportTaskPanelsProps
+  documentGenerationRequest: ComponentProps<typeof ReportMainContent>['documentGenerationRequest']
   statisticsRows: ComponentProps<typeof ReportMainContent>['statisticsRows']
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
@@ -45,6 +46,7 @@ export function HomePageView({
   reportHeaderActionsProps,
   reportSummaryBarProps,
   reportTaskPanelsProps,
+  documentGenerationRequest,
   statisticsRows,
   welderStamps,
   welderStampsRegistryProps,
@@ -60,7 +62,14 @@ export function HomePageView({
   reportFieldEditorProps,
   reportImportDialogProps,
 }: HomePageViewProps) {
-  const isFluidReport = activeReport === 'statistics' || activeReport === 'percentageLines' || activeReport === 'welderStamps'
+  const isFluidReport =
+    activeReport === 'statistics' ||
+    activeReport === 'percentageLines' ||
+    activeReport === 'welderStamps' ||
+    activeReport === 'documents' ||
+    activeReport === 'settings'
+  const isStandaloneReport =
+    activeReport === 'statistics' || activeReport === 'percentageLines' || activeReport === 'documents' || activeReport === 'settings'
   const pageMinWidth = isFluidReport ? 0 : registerMinWidth
 
   return (
@@ -72,17 +81,16 @@ export function HomePageView({
       onReportChange={onReportChange}
     >
       <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={pageMinWidth}>
-        <ReportHeaderActions {...reportHeaderActionsProps} />
+        {activeReport !== 'documents' && activeReport !== 'settings' ? <ReportHeaderActions {...reportHeaderActionsProps} /> : null}
       </ReportPageHeader>
 
-      {activeReport !== 'statistics' && activeReport !== 'percentageLines' ? (
-        <ReportSummaryBar {...reportSummaryBarProps} minWidth={pageMinWidth} />
-      ) : null}
+      {!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} minWidth={pageMinWidth} /> : null}
 
-      {activeReport !== 'statistics' && activeReport !== 'percentageLines' ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
+      {!isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
 
       <ReportMainContent
         activeReport={activeReport}
+        documentGenerationRequest={documentGenerationRequest}
         statisticsRows={statisticsRows}
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}

@@ -7,17 +7,18 @@ type ReportShowMenuItem = {
 }
 
 export type ReportShowMenuProps = {
+  label?: string
   isOpen: boolean
   onToggle: () => void
   items: ReportShowMenuItem[]
   widthClassName?: string
 }
 
-export function ReportShowMenu({ isOpen, onToggle, items, widthClassName = 'w-52' }: ReportShowMenuProps) {
+export function ReportShowMenu({ label = 'Показать', isOpen, onToggle, items, widthClassName = 'w-52' }: ReportShowMenuProps) {
   return (
     <div className="relative">
       <Button variant="outline" onClick={onToggle}>
-        Показать
+        {label}
         <ChevronDown className="ml-2 h-4 w-4" />
       </Button>
       {isOpen ? (
