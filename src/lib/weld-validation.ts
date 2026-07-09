@@ -3,8 +3,6 @@ import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { getDateInputValidationReason } from '@/lib/date-format'
-import { isReplacementControlValue } from '@/lib/report-value-utils'
-import { percentageControlFieldKeys, replacementControlFieldKeys, yesEmptyFieldKeys } from '@/lib/weld-form-field-sets'
 
 export function validateManualJointNameForSave(value: WeldDraft, rows: WeldRow[]) {
   validateDateFieldsForSave(value)
@@ -43,27 +41,15 @@ export function validateRequiredRootStampForSave(record: WeldInput) {
 }
 
 export function validateControlReplacementForSave(record: WeldInput) {
-  const reason = getControlReplacementSaveBlockReason(record)
-  if (reason) throw new Error(reason)
+  normalizeLegacyControlReplacement(record)
 }
 
-export function getControlReplacementSaveBlockReason(record: WeldInput) {
-  const replacementInDisabledField = Array.from(yesEmptyFieldKeys).find(
-    (fieldKey) => !replacementControlFieldKeys.has(fieldKey) && isReplacementControlValue(record[fieldKey]),
-  )
-  if (replacementInDisabledField) {
-    const label = FIELD_BY_KEY.get(replacementInDisabledField)?.label ?? 'поле контроля'
-    return `${label}: «замена РК/УЗК» доступна только для ПВК, ТВМТ, РФА, СТЛС и МКК.`
+function normalizeLegacyControlReplacement(record: WeldInput) {
+  for (const fieldKey of legacyControlReplacementFieldKeys) {
+    if (String(record[fieldKey] ?? '').trim().toLowerCase() === 'замена рк/узк') {
+      record[fieldKey] = 'дополнительный' as never
+    }
   }
-
-  const hasReplacement = Array.from(replacementControlFieldKeys).some((fieldKey) => isReplacementControlValue(record[fieldKey]))
-  if (!hasReplacement) return null
-
-  const activePercentageControl = Array.from(percentageControlFieldKeys).find((fieldKey) => isOrdinaryOrAdditionalControlValue(record[fieldKey]))
-  if (!activePercentageControl) return null
-
-  const label = FIELD_BY_KEY.get(activePercentageControl)?.label ?? 'РК/УЗК'
-  return `${label}: сначала уберите «замена РК/УЗК» в другом виде контроля, затем назначайте РК или УЗК.`
 }
 
 export function validateRequiredRootStampsForImport(records: WeldInput[]) {
@@ -79,15 +65,9 @@ export function validateRequiredRootStampsForImport(records: WeldInput[]) {
 }
 
 export function validateControlReplacementsForImport(records: WeldInput[]) {
-  const invalidRecord = records
-    .map((record, index) => ({ record, index, reason: getControlReplacementSaveBlockReason(record) }))
-    .find((item) => item.reason)
-
-  if (!invalidRecord) return
-
-  const rowNumber = invalidRecord.index + 2
-  const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
-  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.reason}`)
+  for (const record of records) {
+    normalizeLegacyControlReplacement(record)
+  }
 }
 
 export function validateManualJointNamesForImport(records: WeldInput[]) {
@@ -126,8 +106,14 @@ const dateFieldKeys = [...FIELD_BY_KEY.entries()]
   .filter(([, field]) => field.kind === 'date')
   .map(([fieldKey]) => fieldKey as WeldFieldKey)
 
-function isOrdinaryOrAdditionalControlValue(value: unknown) {
-  if (value === true) return true
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный'
-}
+const legacyControlReplacementFieldKeys = [
+  'pstoRequired',
+  'hasVik',
+  'hasRk',
+  'hasUzk',
+  'hasPvk',
+  'hasTvmt',
+  'hasRfa',
+  'hasStls',
+  'hasMkk',
+] as const

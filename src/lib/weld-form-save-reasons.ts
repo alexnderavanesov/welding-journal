@@ -11,15 +11,11 @@ import {
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { factualWelderStampFieldKeys } from '@/lib/weld-form-field-sets'
 import type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-types'
-import { CONTROL_REPLACEMENT_VALUE, getStampSelectValue, isCancelledValue, isReplacementValue, isYesValue } from '@/lib/weld-form-value-utils'
-import { getControlReplacementSaveBlockReason } from '@/lib/weld-validation'
+import { getStampSelectValue, isAdditionalValue, isCancelledValue, isYesValue } from '@/lib/weld-form-value-utils'
 
 export function getWeldFormSaveBlockReason(draft: WeldInput, initialValue: WeldDraft) {
   const dateReason = getWeldFormDateSaveBlockReason(draft)
   if (dateReason) return dateReason
-
-  const replacementReason = getControlReplacementSaveBlockReason(draft)
-  if (replacementReason) return replacementReason
 
   const reportHistoryReason = getControlAvailabilityReportHistoryReason(draft)
   if (reportHistoryReason) return reportHistoryReason
@@ -142,7 +138,7 @@ function hasControlAvailabilityChanged(currentValue: unknown, initialValue: unkn
 
 function normalizeControlAvailabilityForHint(value: unknown) {
   if (isCancelledValue(value)) return 'отменен'
-  if (isReplacementValue(value)) return CONTROL_REPLACEMENT_VALUE
+  if (isAdditionalValue(value)) return 'дополнительный'
   if (isYesValue(value)) return 'да'
   return ''
 }

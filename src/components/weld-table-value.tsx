@@ -1,7 +1,6 @@
 import {
   AdditionalBadge,
   CancelledBadge,
-  ReplacementBadge,
   ResultBadge,
   YesBadge,
   formatDate,
@@ -9,7 +8,6 @@ import {
   isCancelledText,
   isAdditionalText,
   isNoText,
-  isReplacementText,
   isYesText,
 } from '@/lib/weld-table-utils'
 import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
@@ -27,7 +25,6 @@ export function WeldTableValue({
 }) {
   if (field.kind === 'boolean') {
     if (isCancelledText(value)) return <CancelledBadge />
-    if (isReplacementText(value)) return <ReplacementBadge />
     if (isAdditionalText(value)) return <AdditionalBadge />
     if (value === true || isYesText(value)) return <YesBadge />
     return ''
@@ -43,8 +40,6 @@ export function WeldTableValue({
         <ResultBadge value={value} />
       ) : field.key === 'pstoRequired' && isCancelledText(value) ? (
         <CancelledBadge />
-      ) : field.key === 'pstoRequired' && isReplacementText(value) ? (
-        <ReplacementBadge />
       ) : field.key === 'pstoRequired' && isAdditionalText(value) ? (
         <AdditionalBadge />
       ) : field.key === 'pstoRequired' && isYesText(value) ? (

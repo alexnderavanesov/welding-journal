@@ -26,6 +26,10 @@ export function isUnusedRepeatedJointDraft(row: WeldInput) {
 }
 
 export function getPrimaryRejectedLnkResult(row: WeldInput) {
+  const cut = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'вырез')
+  if (cut) return { method: cut, result: 'вырез' as const }
+  const repair = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт')
+  if (repair) return { method: repair, result: 'ремонт' as const }
   const duplicateCut = getRejectedDuplicateControls(row).find((control) => control.result === 'вырез')
   if (duplicateCut) {
     return {
@@ -40,10 +44,6 @@ export function getPrimaryRejectedLnkResult(row: WeldInput) {
       result: 'ремонт' as const,
     }
   }
-  const cut = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'вырез')
-  if (cut) return { method: cut, result: 'вырез' as const }
-  const repair = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт')
-  if (repair) return { method: repair, result: 'ремонт' as const }
   return null
 }
 

@@ -82,6 +82,30 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
+  it('uses the project control result before duplicate control when choosing R or W target', () => {
+    const rows = [
+      row({
+        id: 1,
+        joint: 'F4',
+        rkResult: 'вырез',
+        duplicateControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт', controlDate: '', conclusion: '', conclusionDate: '' }],
+      }),
+    ]
+
+    const createTasks = buildRepeatedJointTasks(rows).filter((task) => task.kind === 'create')
+
+    expect(createTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceJoint: 'F4',
+          targetJoint: 'F4W1',
+          methodCode: 'РК',
+          result: 'вырез',
+        }),
+      ]),
+    )
+  })
+
   it('offers to rename an orphan good repeated joint back to its missing source joint', () => {
     const tasks = buildRepeatedJointTasks([row({ id: 1, joint: 'S2W1', finalStatus: 'годен' })])
 
@@ -95,6 +119,29 @@ describe('buildRepeatedJointTasks', () => {
       ]),
     )
     expect(tasks.some((task) => task.kind === 'check' && task.reason === 'проверить целостность цепочки')).toBe(false)
+  })
+
+  it('propagates obsolete repeated joint renames through the following chain rows', () => {
+    const rows = [
+      row({ id: 1, joint: 'F1', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'F1W1', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'F1W2' }),
+    ]
+
+    const renameTasks = buildRepeatedJointTasks(rows).filter((task) => task.kind === 'rename')
+
+    expect(renameTasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          currentJoint: 'F1W1',
+          targetJoint: 'F1R1',
+        }),
+        expect.objectContaining({
+          currentJoint: 'F1W2',
+          targetJoint: 'F1R1W2',
+        }),
+      ]),
+    )
   })
 
   it('adds a dispatcher task when a percentage line stamp lacks RK/UZK coverage', () => {

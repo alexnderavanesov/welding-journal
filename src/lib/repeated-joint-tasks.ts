@@ -4,6 +4,7 @@ import { normalizeSearchText } from '@/lib/report-row-utils'
 import { hasWeldDate } from '@/lib/report-value-utils'
 import { formatDisplayDate } from '@/lib/date-format'
 import {
+  formatRepeatedJointName,
   getCoilJointNames,
   normalizeJointChainPart,
   parseRepeatedJointName,
@@ -41,6 +42,15 @@ import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welde
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
 
+type ObsoleteRepeatedJointInfo = {
+  sourceRow: WeldRow
+  sourceJoint: string
+  targetJoint: string
+  expectedTargetJoint: string
+  suffix: 'R' | 'W'
+  reason: string
+}
+
 export function buildRepeatedJointTasks(
   rows: WeldRow[],
   welderStampRecords: WelderStampRecord[] = [],
@@ -65,9 +75,15 @@ export function buildRepeatedJointTasks(
       ...duplicateCheckTasks,
     ].map((task) => getJointChainConsistencyKey(task.row)).filter(Boolean) as string[],
   )
-  const obsoleteByRowId = new Map<number, NonNullable<ReturnType<typeof getObsoleteRepeatedJointInfo>>>()
+  const obsoleteByRowId = new Map<number, ObsoleteRepeatedJointInfo>()
   for (const row of rows) {
     const repeated = getObsoleteRepeatedJointInfo(rows, row)
+    if (repeated) obsoleteByRowId.set(row.id, repeated)
+  }
+  const directObsoleteInfos = Array.from(obsoleteByRowId.values())
+  for (const row of rows) {
+    if (obsoleteByRowId.has(row.id)) continue
+    const repeated = getPropagatedObsoleteRepeatedJointInfo(row, directObsoleteInfos)
     if (repeated) obsoleteByRowId.set(row.id, repeated)
   }
   const createTaskTargetKeys = new Set<string>()
@@ -223,18 +239,11 @@ function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<
   return Boolean(chainKey && blockedChainKeys.has(chainKey))
 }
 
-function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow) {
+function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow): ObsoleteRepeatedJointInfo | null {
   const targetJoint = String(row.joint ?? '').trim()
   const parsed = parseRepeatedJointName(targetJoint)
   if (parsed.segments.length === 0) return null
-  let obsoleteCandidate: {
-    sourceRow: WeldRow
-    sourceJoint: string
-    targetJoint: string
-    expectedTargetJoint: string
-    suffix: 'R' | 'W'
-    reason: string
-  } | null = null
+  let obsoleteCandidate: ObsoleteRepeatedJointInfo | null = null
   for (const candidate of getRepeatedJointSourceCandidates(parsed)) {
     const sourceRows = findMatchingJointRows(rows, row, candidate.sourceJoint)
     if (sourceRows.length === 0) continue
@@ -259,6 +268,66 @@ function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow) {
       }
   }
   return obsoleteCandidate
+}
+
+function getPropagatedObsoleteRepeatedJointInfo(
+  row: WeldRow,
+  directObsoleteInfos: ObsoleteRepeatedJointInfo[],
+): ObsoleteRepeatedJointInfo | null {
+  const targetJoint = String(row.joint ?? '').trim()
+  const parsed = parseRepeatedJointName(targetJoint)
+  if (parsed.segments.length === 0) return null
+
+  for (const direct of directObsoleteInfos) {
+    if (!direct.expectedTargetJoint) continue
+    if (normalizeJointChainPart(direct.targetJoint) === normalizeJointChainPart(targetJoint)) continue
+    if (!isSameRepeatedJointLine(row, direct.sourceRow)) continue
+
+    const directTarget = parseRepeatedJointName(direct.targetJoint)
+    const directExpected = parseRepeatedJointName(direct.expectedTargetJoint)
+    if (directTarget.segments.length === 0) continue
+    if (normalizeJointChainPart(parsed.base) !== normalizeJointChainPart(directTarget.base)) continue
+
+    const changedSegmentIndex = directTarget.segments.length - 1
+    if (parsed.segments.length <= changedSegmentIndex) continue
+
+    const hasSamePrefixBeforeChangedSegment = directTarget.segments
+      .slice(0, changedSegmentIndex)
+      .every((segment, index) => {
+        const currentSegment = parsed.segments[index]
+        return currentSegment?.suffix === segment.suffix && currentSegment.index === segment.index
+      })
+    if (!hasSamePrefixBeforeChangedSegment) continue
+
+    const changedSegment = directTarget.segments[changedSegmentIndex]
+    const currentSegment = parsed.segments[changedSegmentIndex]
+    if (!currentSegment || currentSegment.suffix !== changedSegment.suffix || currentSegment.index < changedSegment.index) continue
+
+    const expectedTargetJoint = formatRepeatedJointName(directExpected.base, [
+      ...directExpected.segments,
+      ...parsed.segments.slice(changedSegmentIndex),
+    ])
+    if (normalizeJointChainPart(expectedTargetJoint) === normalizeJointChainPart(targetJoint)) continue
+
+    return {
+      sourceRow: direct.sourceRow,
+      sourceJoint: direct.sourceJoint,
+      targetJoint,
+      expectedTargetJoint,
+      suffix: direct.suffix,
+      reason: `Стык ${targetJoint} продолжает цепочку стыка ${direct.targetJoint}, который должен быть переименован в ${direct.expectedTargetJoint}. Поэтому продолжение цепочки тоже нужно переименовать.`,
+    }
+  }
+
+  return null
+}
+
+function isSameRepeatedJointLine(row: WeldInput, sourceRow: WeldInput) {
+  return (
+    normalizeSearchText(row.projectTitle) === normalizeSearchText(sourceRow.projectTitle) &&
+    normalizeSearchText(row.subtitleCode) === normalizeSearchText(sourceRow.subtitleCode) &&
+    normalizeSearchText(row.line) === normalizeSearchText(sourceRow.line)
+  )
 }
 
 function getObsoleteRepeatedJointReason(

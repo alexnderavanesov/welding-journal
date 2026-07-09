@@ -6,7 +6,6 @@ import {
   isAdditionalControlValue,
   isCancelledControlValue,
   isEnabledControlValue,
-  isReplacementControlValue,
 } from '@/lib/report-value-utils'
 import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
@@ -31,7 +30,6 @@ export type PercentageLineStampSummary = {
   normalAssignedControls: number
   additionalAssignedControls: number
   cancelledAssignedControls: number
-  replacedAssignedControls: number
   coveredControls: number
   rejectedCoveredControls: number
   completedControls: number
@@ -46,8 +44,6 @@ export type PercentageLineStampSummary = {
   additionalAssignedRowIds: number[]
   cancelledAssignedJointNames: string[]
   cancelledAssignedRowIds: number[]
-  replacedAssignedJointNames: string[]
-  replacedAssignedRowIds: number[]
   coveredJointNames: string[]
   coveredRowIds: number[]
   rejectedCoveredJointNames: string[]
@@ -95,8 +91,6 @@ const PERCENTAGE_CONTROL_METHODS = [
   { code: 'РК' as const, enabledKey: 'hasRk' as const, resultKey: 'rkResult' as const },
   { code: 'УЗК' as const, enabledKey: 'hasUzk' as const, resultKey: 'uzkResult' as const },
 ]
-
-const REPLACEMENT_CONTROL_KEYS = new Set(['hasPvk', 'hasTvmt', 'hasRfa', 'hasStls', 'hasMkk'])
 
 export function buildPercentageLineSummaries(rows: WeldRow[]): PercentageLineSummary[] {
   const lineGroups = getPercentageLineGroups(rows)
@@ -200,14 +194,13 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const requiredControls = Math.min(calculatedRequiredControls, availableRequiredControls)
   const assignedControls = entry.rows.filter(hasAssignedPercentageControl).length
   const additionalAssignedControls = entry.rows.filter(hasAdditionalAssignedPercentageControl).length
-  const replacedAssignedControls = entry.rows.filter(hasReplacedPercentageControl).length
   const cancelledAssignedControls = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).length
   const coveredControls = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).length
   const rejectedCoveredControls = entry.rows.filter(hasRejectedClosurePercentageControl).length
   const completedControls = entry.rows.filter(hasCompletedPercentageControl).length
   const normalAssignedRows = entry.rows.filter(hasNormalAssignedPercentageControl)
   const normalAssignedControls = normalAssignedRows.length
-  const allowedNormalAssignedControls = Math.max(0, requiredControls - cancelledAssignedControls - replacedAssignedControls)
+  const allowedNormalAssignedControls = Math.max(0, requiredControls - cancelledAssignedControls)
   const statusCounters = entry.rows.reduce(
     (result, row) => {
       const status = normalizeFinalStatus(calculateFinalStatus(row))
@@ -223,8 +216,6 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const assignedRowIds = entry.rows.filter(hasAssignedPercentageControl).map(getRowId)
   const additionalAssignedJointNames = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getJointDisplayName)
   const additionalAssignedRowIds = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getRowId)
-  const replacedAssignedJointNames = entry.rows.filter(hasReplacedPercentageControl).map(getJointDisplayName)
-  const replacedAssignedRowIds = entry.rows.filter(hasReplacedPercentageControl).map(getRowId)
   const cancelledAssignedJointNames = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getJointDisplayName)
   const cancelledAssignedRowIds = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getRowId)
   const coveredJointNames = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).map(getJointDisplayName)
@@ -264,7 +255,6 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     normalAssignedControls,
     additionalAssignedControls,
     cancelledAssignedControls,
-    replacedAssignedControls,
     coveredControls,
     rejectedCoveredControls,
     completedControls,
@@ -276,8 +266,6 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
     additionalAssignedRowIds,
     cancelledAssignedJointNames,
     cancelledAssignedRowIds,
-    replacedAssignedJointNames,
-    replacedAssignedRowIds,
     coveredJointNames,
     coveredRowIds,
     rejectedCoveredJointNames,
@@ -322,8 +310,7 @@ function getOfficialStamps(row: WeldRow) {
 function hasAssignedPercentageControl(row: WeldRow) {
   return (
     PERCENTAGE_CONTROL_METHODS.some(({ enabledKey }) => isEnabledControlValue(row[enabledKey])) ||
-    hasBothPercentageControlsCancelled(row) ||
-    hasReplacedPercentageControl(row)
+    hasBothPercentageControlsCancelled(row)
   )
 }
 
@@ -341,8 +328,7 @@ function hasAdditionalAssignedPercentageControl(row: WeldRow) {
 function hasIntentionalRequiredPercentageControlCoverage(row: WeldRow) {
   return (
     hasDirectPercentageControlCoverage(row) ||
-    hasBothPercentageControlsCancelled(row) ||
-    hasReplacedPercentageControl(row)
+    hasBothPercentageControlsCancelled(row)
   )
 }
 
@@ -372,10 +358,6 @@ function hasCompletedPercentageControl(row: WeldRow) {
 
 function hasBothPercentageControlsCancelled(row: WeldRow) {
   return PERCENTAGE_CONTROL_METHODS.every(({ enabledKey }) => isCancelledControlValue(row[enabledKey]))
-}
-
-function hasReplacedPercentageControl(row: WeldRow) {
-  return CONTROL_RESULT_PAIRS.some(({ enabledKey }) => REPLACEMENT_CONTROL_KEYS.has(enabledKey) && isReplacementControlValue(row[enabledKey]))
 }
 
 function hasCancelledPercentageControlWithoutReplacement(row: WeldRow) {

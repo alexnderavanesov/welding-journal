@@ -41,8 +41,9 @@ import {
 } from '@/lib/welder-statistics-summary'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
-import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue, isReplacementControlValue } from '@/lib/report-value-utils'
+import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue } from '@/lib/report-value-utils'
 import { cn } from '@/lib/utils'
+import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import { calculateFinalStatus, CONTROL_RESULT_PAIRS, formatFinalStatusDisplay, normalizeResultStatus } from '@/lib/weld-status'
 
 type StatisticsPageProps = {
@@ -178,14 +179,6 @@ export function StatisticsPage({
                   onClick={() => setSelectedTab('lineSummary')}
                 >
                   Полинейная сводка
-                </Button>
-                <Button
-                  className="h-9 rounded-md"
-                  size="sm"
-                  variant={activeTab === 'percentageLines' ? 'default' : 'outline'}
-                  onClick={() => setSelectedTab('percentageLines')}
-                >
-                  Процентные линии
                 </Button>
               </div>
             ) : null}
@@ -975,7 +968,6 @@ function PercentageLinesPanel({
           assigned: result.assigned + stamp.assignedControls,
           additionalAssigned: result.additionalAssigned + stamp.additionalAssignedControls,
           cancelledAssigned: result.cancelledAssigned + stamp.cancelledAssignedControls,
-          replacedAssigned: result.replacedAssigned + stamp.replacedAssignedControls,
           covered: result.covered + stamp.coveredControls,
           rejectedCovered: result.rejectedCovered + stamp.rejectedCoveredControls,
           completed: result.completed + stamp.completedControls,
@@ -989,7 +981,6 @@ function PercentageLinesPanel({
           assigned: 0,
           additionalAssigned: 0,
           cancelledAssigned: 0,
-          replacedAssigned: 0,
           covered: 0,
           rejectedCovered: 0,
           completed: 0,
@@ -1037,7 +1028,7 @@ function PercentageLinesPanel({
           icon={ClipboardCheck}
           label="Требуется контроля"
           value={String(totals.required)}
-          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned, totals.replacedAssigned)} · закрыто расчетом ${totals.covered}${totals.rejectedCovered > 0 ? ` · недоступно из-за брака ${totals.rejectedCovered}` : ''}`}
+          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned)} · закрыто расчетом ${totals.covered}${totals.rejectedCovered > 0 ? ` · недоступно из-за брака ${totals.rejectedCovered}` : ''}`}
           accent="green"
           wrapDetail
         />
@@ -1154,6 +1145,16 @@ function PercentageLineJointDetailDialog({
   onOpenRows: (rowIds: number[], message?: string) => void
   rows: WeldRow[]
 }) {
+  useWindowEscapeKey(
+    true,
+    (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    },
+    { capture: true },
+  )
+
   const openAll = () => {
     onOpenRows(rows.map((row) => row.id), `Показаны стыки: ${detail.title.toLowerCase()} (${rows.length}).`)
   }
@@ -1239,6 +1240,16 @@ function PercentageLineAssignMissingDialog({
         проставит <span className="font-semibold">{action}</span> как назначенный контроль по процентной линии.
       </>
     )
+
+  useWindowEscapeKey(
+    true,
+    (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    },
+    { capture: true },
+  )
 
   useEffect(() => {
     setSelectedIds(new Set())
@@ -1464,7 +1475,6 @@ function PercentageLineGroup({
       assigned: result.assigned + stamp.assignedControls,
       additionalAssigned: result.additionalAssigned + stamp.additionalAssignedControls,
       cancelledAssigned: result.cancelledAssigned + stamp.cancelledAssignedControls,
-      replacedAssigned: result.replacedAssigned + stamp.replacedAssignedControls,
       covered: result.covered + stamp.coveredControls,
       rejectedCovered: result.rejectedCovered + stamp.rejectedCoveredControls,
       completed: result.completed + stamp.completedControls,
@@ -1477,7 +1487,6 @@ function PercentageLineGroup({
       assigned: 0,
       additionalAssigned: 0,
       cancelledAssigned: 0,
-      replacedAssigned: 0,
       covered: 0,
       rejectedCovered: 0,
       completed: 0,
@@ -1545,7 +1554,7 @@ function PercentageLineGroup({
           <PercentageLineSummaryPill
             label="Закрыто"
             value={totals.covered}
-            title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК, статус «замена РК/УЗК» на другом виде НК или уже известный негодный результат по любому контролю."
+            title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК или уже известный негодный результат по любому контролю."
           />
           <PercentageLineSummaryPill
             label="Осталось"
@@ -1581,7 +1590,7 @@ function PercentageLineGroup({
             </PercentageLineGridHeader>
             <PercentageLineGridHeader
               align="right"
-              title="Всего назначено = все стыки, где РК/УЗК назначены как «да» или «дополнительный», стыки с осознанной отменой РК+УЗК и стыки со статусом «замена РК/УЗК» на другом виде НК. Обычное «да» участвует в проверке лишнего контроля. «Дополнительный» считается назначенным, но не закрывает обязательный расчет и добор. «Заменено» закрывает одно расчетное место РК/УЗК и не считается лишним контролем."
+              title="Всего назначено = все стыки, где РК/УЗК назначены как «да» или «дополнительный», а также стыки с осознанной отменой РК+УЗК. Обычное «да» участвует в проверке лишнего контроля. «Дополнительный» считается назначенным, но не закрывает обязательный расчет и добор."
             >
               Назначение
             </PercentageLineGridHeader>
@@ -1735,12 +1744,6 @@ function PercentageLineTableRow({
               ? {
                   text: `отменено: ${stamp.cancelledAssignedControls}`,
                   detail: createDetail('Осознанно отменено РК+УЗК', stamp.cancelledAssignedRowIds),
-                }
-              : '',
-            stamp.replacedAssignedControls > 0
-              ? {
-                  text: `заменено: ${stamp.replacedAssignedControls}`,
-                  detail: createDetail('Замена РК/УЗК другим видом НК', stamp.replacedAssignedRowIds),
                 }
               : '',
           ]}
@@ -1991,9 +1994,7 @@ function getPercentageLineJointBadges(row: WeldRow): PercentageLineJointBadge[] 
 
   for (const { code, enabledKey, resultKey } of CONTROL_RESULT_PAIRS) {
     const availability = row[enabledKey]
-    if (isReplacementControlValue(availability)) {
-      badges.push({ text: `${code}: замена РК/УЗК`, tone: 'violet' })
-    } else if (isAdditionalControlValue(availability)) {
+    if (isAdditionalControlValue(availability)) {
       badges.push({ text: `${code}: дополнительный`, tone: 'sky' })
     } else if (isCancelledControlValue(availability)) {
       badges.push({ text: `${code}: отменен`, tone: 'slate' })
@@ -2052,24 +2053,20 @@ function getPercentageStatusHint(stamp: PercentageLineStampSummary) {
 
 function getAssignedControlsHint(stamp: PercentageLineStampSummary) {
   return [
-    `${getJointListHint('Всего назначено', stamp.assignedJointNames)}. Это общее число назначений: РК/УЗК, осознанные отмены РК+УЗК и замены РК/УЗК другим видом НК`,
+    `${getJointListHint('Всего назначено', stamp.assignedJointNames)}. Это общее число назначений: РК/УЗК и осознанные отмены РК+УЗК`,
     stamp.additionalAssignedControls > 0 ? getJointListHint('В т.ч. дополнительно', stamp.additionalAssignedJointNames) : '',
     stamp.cancelledAssignedControls > 0 ? getJointListHint('В т.ч. отменено РК и УЗК', stamp.cancelledAssignedJointNames) : '',
     stamp.cancelledAssignedControls > 0
       ? 'Отмена РК+УЗК закрывает одно расчетное место РК/УЗК и не считается лишним контролем'
       : '',
     stamp.additionalAssignedControls > 0 ? 'Дополнительный РК/УЗК не закрывает обязательный расчет и добор' : '',
-    stamp.replacedAssignedControls > 0
-      ? `${getJointListHint('В т.ч. замена РК/УЗК', stamp.replacedAssignedJointNames)}. Эти стыки покрывают расчет РК/УЗК и не считаются лишним контролем`
-      : '',
   ].filter(Boolean).join('. ')
 }
 
-function formatAssignedBreakdown(additional: number, cancelled: number, replaced: number) {
+function formatAssignedBreakdown(additional: number, cancelled: number) {
   const parts = [
     additional > 0 ? `дополнительно: ${additional}` : '',
     cancelled > 0 ? `отменено: ${cancelled}` : '',
-    replaced > 0 ? `заменено: ${replaced}` : '',
   ].filter(Boolean)
   return parts.length > 0 ? ` (${parts.join(' · ')})` : ''
 }

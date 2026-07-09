@@ -106,23 +106,7 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
-  it('blocks RK/UZK replacement on methods where it is not available', () => {
-    const draft = { id: 1, joint: 'S1', hasRk: 'замена РК/УЗК' } as WeldInput
-
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'Назначение РК: «замена РК/УЗК» доступна только для ПВК, ТВМТ, РФА, СТЛС и МКК.',
-    )
-  })
-
-  it('blocks RK or UZK assignment while another method replaces RK/UZK', () => {
-    const draft = { id: 1, joint: 'S1', hasRk: 'да', hasPvk: 'замена РК/УЗК' } as WeldInput
-
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'Назначение РК: сначала уберите «замена РК/УЗК» в другом виде контроля, затем назначайте РК или УЗК.',
-    )
-  })
-
-  it('allows RK/UZK replacement when RK and UZK are not active', () => {
+  it('treats old RK/UZK replacement values as additional availability in form hints', () => {
     const draft = { id: 1, joint: 'S1', hasPvk: 'замена РК/УЗК' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()

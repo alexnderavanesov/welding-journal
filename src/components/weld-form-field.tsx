@@ -17,13 +17,9 @@ import {
   getFinalStatusValue,
   getResultStatusValue,
   getStampSelectValue,
-  CONTROL_REPLACEMENT_VALUE,
   isAdditionalValue,
   isCancelledValue,
-  isReplacementValue,
   isYesValue,
-  percentageControlFieldKeys,
-  replacementControlFieldKeys,
   yesEmptyFieldKeys,
   type StampSelectOptions,
 } from '@/lib/weld-form-utils'
@@ -39,13 +35,6 @@ type WeldFormFieldProps = {
 }
 
 export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, setDraft, hideLabel = false, controlPickerLayout = 'grid' }: WeldFormFieldProps) {
-  const hasReplacementControl = hasReplacementControlValue(draft)
-  const hasActivePercentageControl = hasActivePercentageControlValue(draft)
-  const isPercentageControlField = percentageControlFieldKeys.has(field.key)
-  const isReplacementControlField = replacementControlFieldKeys.has(field.key)
-  const blockPercentageControlByReplacement = isPercentageControlField && hasReplacementControl
-  const blockReplacementByPercentageControl = isReplacementControlField && hasActivePercentageControl
-
   return (
     <div className="space-y-1.5 text-sm">
       {hideLabel ? null : <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>}
@@ -127,11 +116,7 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
         </Select>
       ) : yesEmptyFieldKeys.has(field.key) ? (
         <ControlAvailabilityPicker
-          field={field}
           value={getControlAvailabilityValue(draft[field.key])}
-          blockPercentageControlByReplacement={blockPercentageControlByReplacement}
-          blockReplacementByPercentageControl={blockReplacementByPercentageControl}
-          isReplacementControlField={isReplacementControlField}
           layout={controlPickerLayout}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
@@ -144,9 +129,7 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
                   ? field.kind === 'boolean'
                     ? true
                     : 'да'
-                  : value === 'replacement'
-                    ? CONTROL_REPLACEMENT_VALUE
-                    : value === 'additional'
+                  : value === 'additional'
                       ? 'дополнительный'
                       : value === 'cancelled'
                         ? 'отменен'
@@ -192,7 +175,7 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
   )
 }
 
-type ControlAvailabilityValue = '' | 'yes' | 'cancelled' | 'additional' | 'replacement'
+type ControlAvailabilityValue = '' | 'yes' | 'cancelled' | 'additional'
 
 type ControlAvailabilityOption = {
   value: ControlAvailabilityValue
@@ -204,34 +187,17 @@ type ControlAvailabilityOption = {
 }
 
 function ControlAvailabilityPicker({
-  field,
   value,
-  blockPercentageControlByReplacement,
-  blockReplacementByPercentageControl,
-  isReplacementControlField,
   layout,
   inputRef,
   onChange,
 }: {
-  field: WeldField & { key: WeldFieldKey }
   value: ControlAvailabilityValue
-  blockPercentageControlByReplacement: boolean
-  blockReplacementByPercentageControl: boolean
-  isReplacementControlField: boolean
   layout: 'grid' | 'row'
   inputRef: (element: HTMLButtonElement | null) => void
   onChange: (value: ControlAvailabilityValue) => void
 }) {
-  const options = getControlAvailabilityOptions({
-    fieldKey: field.key,
-    blockPercentageControlByReplacement,
-    blockReplacementByPercentageControl,
-    isReplacementControlField,
-  })
-  const note = getControlAvailabilitySelectTitle({
-    blockPercentageControlByReplacement,
-    blockReplacementByPercentageControl,
-  })
+  const options = getControlAvailabilityOptions()
 
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50/60 p-2 shadow-sm shadow-slate-200/30">
@@ -268,28 +234,11 @@ function ControlAvailabilityPicker({
           )
         })}
       </div>
-      {note ? <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">{note}</div> : null}
-      {!note && isReplacementControlField ? (
-        <div className="mt-2 rounded-md border border-sky-100 bg-sky-50 px-2.5 py-2 text-xs text-sky-800">
-          Для замены расчетного РК/УЗК выберите «замена РК/УЗК» на этом виде контроля.
-        </div>
-      ) : null}
     </div>
   )
 }
 
-function getControlAvailabilityOptions({
-  fieldKey,
-  blockPercentageControlByReplacement,
-  blockReplacementByPercentageControl,
-  isReplacementControlField,
-}: {
-  fieldKey: WeldFieldKey
-  blockPercentageControlByReplacement: boolean
-  blockReplacementByPercentageControl: boolean
-  isReplacementControlField: boolean
-}): ControlAvailabilityOption[] {
-  const replacementUnavailableReason = getReplacementUnavailableReason(fieldKey)
+function getControlAvailabilityOptions(): ControlAvailabilityOption[] {
   return [
     {
       value: '',
@@ -302,16 +251,12 @@ function getControlAvailabilityOptions({
       label: 'Да',
       shortLabel: 'да',
       description: 'Обычный обязательный контроль.',
-      disabled: blockPercentageControlByReplacement,
-      disabledReason: blockPercentageControlByReplacement ? 'Сначала уберите «замена РК/УЗК» в другом виде контроля.' : undefined,
     },
     {
       value: 'additional',
       label: 'Дополнительный',
       shortLabel: 'доп.',
       description: 'Контроль сверх проекта или процента.',
-      disabled: blockPercentageControlByReplacement,
-      disabledReason: blockPercentageControlByReplacement ? 'Сначала уберите «замена РК/УЗК» в другом виде контроля.' : undefined,
     },
     {
       value: 'cancelled',
@@ -319,62 +264,16 @@ function getControlAvailabilityOptions({
       shortLabel: 'отменен',
       description: 'Контроль официально отменен.',
     },
-    {
-      value: 'replacement',
-      label: 'Замена РК/УЗК',
-      shortLabel: 'замена',
-      description: 'Этот контроль заменяет расчетный РК/УЗК.',
-      disabled: !isReplacementControlField || blockReplacementByPercentageControl,
-      disabledReason: !isReplacementControlField
-        ? replacementUnavailableReason
-        : blockReplacementByPercentageControl
-          ? 'Сначала уберите «да» или «дополнительный» в РК/УЗК.'
-          : undefined,
-    },
   ]
 }
 
 function getControlAvailabilityValue(value: unknown): ControlAvailabilityValue {
-  if (isReplacementValue(value)) return 'replacement'
   if (isAdditionalValue(value)) return 'additional'
   if (isYesValue(value)) return 'yes'
   if (isCancelledValue(value)) return 'cancelled'
   return ''
 }
 
-function getReplacementUnavailableReason(fieldKey: WeldFieldKey) {
-  if (fieldKey === 'pstoRequired') return 'ПСТО не является видом НК, поэтому замена РК/УЗК недоступна.'
-  if (fieldKey === 'hasVik') return 'ВИК всегда идет отдельно и не заменяет РК/УЗК.'
-  if (fieldKey === 'hasRk' || fieldKey === 'hasUzk') return 'Замена выбирается на другом виде НК, а не на РК/УЗК.'
-  return 'Замена РК/УЗК для этого поля недоступна.'
-}
-
 function getFormFieldLabel(field: WeldField & { key: WeldFieldKey }) {
   return field.label
-}
-
-function hasReplacementControlValue(draft: WeldInput) {
-  return Array.from(replacementControlFieldKeys).some((fieldKey) => isReplacementValue(draft[fieldKey]))
-}
-
-function hasActivePercentageControlValue(draft: WeldInput) {
-  return Array.from(percentageControlFieldKeys).some((fieldKey) => isOrdinaryOrAdditionalControlValue(draft[fieldKey]))
-}
-
-function isOrdinaryOrAdditionalControlValue(value: unknown) {
-  if (value === true) return true
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный'
-}
-
-function getControlAvailabilitySelectTitle({
-  blockPercentageControlByReplacement,
-  blockReplacementByPercentageControl,
-}: {
-  blockPercentageControlByReplacement: boolean
-  blockReplacementByPercentageControl: boolean
-}) {
-  if (blockPercentageControlByReplacement) return 'Сначала уберите «замена РК/УЗК», затем назначайте РК или УЗК.'
-  if (blockReplacementByPercentageControl) return 'Замена РК/УЗК доступна только если РК и УЗК не назначены как «да» или «дополнительный».'
-  return undefined
 }

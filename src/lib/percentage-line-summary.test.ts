@@ -213,12 +213,11 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.requiredControls).toBe(6)
     expect(stamp.assignedControls).toBe(6)
     expect(stamp.cancelledAssignedControls).toBe(2)
-    expect(stamp.replacedAssignedControls).toBe(0)
     expect(stamp.coveredControls).toBe(6)
     expect(stamp.missingControls).toBe(0)
   })
 
-  it('counts explicit RK/UZK replacement by another control as replaced assignment', () => {
+  it('treats old RK/UZK replacement text as additional non-percentage control', () => {
     const rows = [
       makeRow(1, { joint: 'S1', hasRk: 'да' }),
       makeRow(2, { joint: 'S2', hasPvk: 'замена РК/УЗК' }),
@@ -230,13 +229,11 @@ describe('buildPercentageLineSummaries', () => {
     const stamp = getOnlyStamp(rows)
 
     expect(stamp.requiredControls).toBe(1)
-    expect(stamp.assignedControls).toBe(2)
+    expect(stamp.assignedControls).toBe(1)
     expect(stamp.cancelledAssignedControls).toBe(0)
-    expect(stamp.replacedAssignedControls).toBe(1)
     expect(stamp.cancelledAssignedJointNames).toEqual([])
-    expect(stamp.replacedAssignedJointNames).toEqual(['S2'])
-    expect(stamp.coveredControls).toBe(2)
-    expect(stamp.excessControls).toBe(1)
+    expect(stamp.coveredControls).toBe(1)
+    expect(stamp.excessControls).toBe(0)
   })
 
   it('does not treat old cancelled RK and UZK plus another additional control as replacement', () => {
@@ -253,18 +250,16 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.requiredControls).toBe(1)
     expect(stamp.assignedControls).toBe(2)
     expect(stamp.cancelledAssignedControls).toBe(1)
-    expect(stamp.replacedAssignedControls).toBe(0)
     expect(stamp.cancelledAssignedJointNames).toEqual(['S2'])
-    expect(stamp.replacedAssignedJointNames).toEqual([])
     expect(stamp.coveredControls).toBe(2)
     expect(stamp.excessControls).toBe(1)
   })
 
-  it('subtracts replaced controls from the allowed normal assignments', () => {
+  it('subtracts cancelled controls from the allowed normal assignments', () => {
     const rows = [
       ...Array.from({ length: 6 }, (_, index) => makeRow(index + 1, { joint: `S${index + 1}`, weldControlPercent: '25', hasRk: 'да' })),
       makeRow(7, { joint: 'S7', weldControlPercent: '25', hasRk: 'дополнительный' }),
-      makeRow(8, { joint: 'S8', weldControlPercent: '25', hasPvk: 'замена РК/УЗК' }),
+      makeRow(8, { joint: 'S8', weldControlPercent: '25', hasRk: 'отменен', hasUzk: 'отменен' }),
       ...Array.from({ length: 13 }, (_, index) => makeRow(index + 9, { joint: `S${index + 9}`, weldControlPercent: '25' })),
     ]
 
@@ -273,7 +268,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.requiredControls).toBe(6)
     expect(stamp.assignedControls).toBe(8)
     expect(stamp.additionalAssignedControls).toBe(1)
-    expect(stamp.replacedAssignedControls).toBe(1)
+    expect(stamp.cancelledAssignedControls).toBe(1)
     expect(stamp.normalAssignedControls).toBe(6)
     expect(stamp.excessControls).toBe(1)
     expect(stamp.excessCandidateJointNames).toEqual(['S6'])

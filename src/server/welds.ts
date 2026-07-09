@@ -17,7 +17,7 @@ import {
 } from '@/lib/psto-field-updates'
 import { LNK_GENERATED_FIELD_KEYS } from '@/lib/report-config'
 import { hasAnyLnkGeneratedData, hasLnkReportEntry, withPendingLnkResults } from '@/lib/report-control-state'
-import { CONTROL_REPLACEMENT_VALUE, isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
+import { isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
 import { WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
 import type { WeldDraft } from '@/lib/dispatcher-types'
@@ -206,7 +206,7 @@ function buildWhere(filters: WeldFilters) {
 
   if (filters.controlMethod && filters.controlMethod in controlColumns) {
     const column = controlColumns[filters.controlMethod as keyof typeof controlColumns]
-    clauses.push(or(eq(column, 'да'), eq(column, 'дополнительный'), eq(column, CONTROL_REPLACEMENT_VALUE)))
+    clauses.push(or(eq(column, 'да'), eq(column, 'дополнительный'), eq(column, 'замена РК/УЗК')))
   }
 
   return clauses.length ? and(...clauses) : sql`true`

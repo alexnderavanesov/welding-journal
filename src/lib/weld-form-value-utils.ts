@@ -6,7 +6,7 @@ export const CONTROL_REPLACEMENT_VALUE = 'замена РК/УЗК'
 export function isYesValue(value: unknown) {
   if (value === true) return true
   const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный' || isReplacementValue(value)
+  return text === 'да' || text === 'дополнительный' || isLegacyReplacementValue(value)
 }
 
 export function isCancelledValue(value: unknown) {
@@ -14,10 +14,11 @@ export function isCancelledValue(value: unknown) {
 }
 
 export function isAdditionalValue(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'дополнительный'
+  const text = String(value ?? '').trim().toLowerCase()
+  return text === 'дополнительный' || isLegacyReplacementValue(value)
 }
 
-export function isReplacementValue(value: unknown) {
+export function isLegacyReplacementValue(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === CONTROL_REPLACEMENT_VALUE.toLowerCase()
 }
 

@@ -157,11 +157,11 @@ describe('weld import/export', () => {
     expect(row[headers.indexOf(label('hasVik'))]).toBe('дополнительный')
   })
 
-  it('keeps RK/UZK replacement marks as an active special control flag', () => {
-    expect(parseBoolean('замена РК/УЗК')).toBe('замена РК/УЗК')
+  it('normalizes old RK/UZK replacement marks to additional control', () => {
+    expect(parseBoolean('замена РК/УЗК')).toBe('дополнительный')
 
     const [headers, row] = recordsToExportMatrix([{ hasPvk: 'замена РК/УЗК' }])
-    expect(row[headers.indexOf(label('hasPvk'))]).toBe('замена РК/УЗК')
+    expect(row[headers.indexOf(label('hasPvk'))]).toBe('дополнительный')
   })
 
   it('allows only the conducted value for the PSTO result field without affecting final control status', () => {

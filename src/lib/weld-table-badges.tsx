@@ -6,7 +6,7 @@ export function getCellKey(rowId: number, fieldKey: string) {
 
 export function isYesText(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный' || isReplacementText(value)
+  return text === 'да' || text === 'дополнительный' || isLegacyReplacementText(value)
 }
 
 export function isNoText(value: unknown) {
@@ -18,10 +18,11 @@ export function isCancelledText(value: unknown) {
 }
 
 export function isAdditionalText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'дополнительный'
+  const text = String(value ?? '').trim().toLowerCase()
+  return text === 'дополнительный' || isLegacyReplacementText(value)
 }
 
-export function isReplacementText(value: unknown) {
+export function isLegacyReplacementText(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'замена рк/узк'
 }
 
@@ -35,10 +36,6 @@ export function CancelledBadge() {
 
 export function AdditionalBadge() {
   return <Badge className="bg-sky-50 px-2 py-0.5 text-xs font-normal text-sky-700">доп.</Badge>
-}
-
-export function ReplacementBadge() {
-  return <Badge className="bg-violet-50 px-2 py-0.5 text-xs font-normal text-violet-700">замена</Badge>
 }
 
 export function ResultBadge({ value }: { value: unknown }) {
