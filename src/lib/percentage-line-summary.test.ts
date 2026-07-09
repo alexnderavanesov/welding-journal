@@ -217,26 +217,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.missingControls).toBe(0)
   })
 
-  it('treats old RK/UZK replacement text as additional non-percentage control', () => {
-    const rows = [
-      makeRow(1, { joint: 'S1', hasRk: 'да' }),
-      makeRow(2, { joint: 'S2', hasPvk: 'замена РК/УЗК' }),
-      makeRow(3, { joint: 'S3' }),
-      makeRow(4, { joint: 'S4' }),
-      makeRow(5, { joint: 'S5' }),
-    ]
-
-    const stamp = getOnlyStamp(rows)
-
-    expect(stamp.requiredControls).toBe(1)
-    expect(stamp.assignedControls).toBe(1)
-    expect(stamp.cancelledAssignedControls).toBe(0)
-    expect(stamp.cancelledAssignedJointNames).toEqual([])
-    expect(stamp.coveredControls).toBe(1)
-    expect(stamp.excessControls).toBe(0)
-  })
-
-  it('does not treat old cancelled RK and UZK plus another additional control as replacement', () => {
+  it('treats cancelled RK and UZK plus another additional control as separate assignments', () => {
     const rows = [
       makeRow(1, { joint: 'S1', hasRk: 'да' }),
       makeRow(2, { joint: 'S2', hasRk: 'отменен', hasUzk: 'отменен', hasPvk: 'дополнительный' }),
@@ -253,6 +234,23 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.cancelledAssignedJointNames).toEqual(['S2'])
     expect(stamp.coveredControls).toBe(2)
     expect(stamp.excessControls).toBe(1)
+  })
+
+  it('reads old RK/UZK replacement text as additional non-percentage control', () => {
+    const rows = [
+      makeRow(1, { joint: 'S1', hasRk: 'да' }),
+      makeRow(2, { joint: 'S2', hasPvk: 'замена РК/УЗК' }),
+      makeRow(3, { joint: 'S3' }),
+      makeRow(4, { joint: 'S4' }),
+      makeRow(5, { joint: 'S5' }),
+    ]
+
+    const stamp = getOnlyStamp(rows)
+
+    expect(stamp.requiredControls).toBe(1)
+    expect(stamp.assignedControls).toBe(1)
+    expect(stamp.coveredControls).toBe(1)
+    expect(stamp.excessControls).toBe(0)
   })
 
   it('subtracts cancelled controls from the allowed normal assignments', () => {

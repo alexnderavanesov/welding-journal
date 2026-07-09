@@ -9,6 +9,7 @@ import {
 } from './weld-fields'
 import { emptyToNull, parseCell } from './weld-import-parsers'
 import { formatControlAvailabilityForExport } from './report-value-utils'
+import { normalizeControlAvailabilityText } from '@/lib/control-availability-values'
 
 export function recordsToExportRows(records: WeldInput[]) {
   return records.map((record) => {
@@ -57,8 +58,8 @@ export function appendImportedWelds<T extends WeldRow>(existingRows: T[], import
 }
 
 export function withAutoVikForWeldDate<T extends WeldInput>(record: T): T {
-  const hasVikText = String(record.hasVik ?? '').trim().toLowerCase()
-  if (hasVikText === 'отменен' || hasVikText === 'дополнительный' || hasVikText === 'замена рк/узк') return record
+  const hasVikText = normalizeControlAvailabilityText(record.hasVik)
+  if (hasVikText === 'отменен' || hasVikText === 'дополнительный') return record
   return emptyToNull(record.weldDate) === null ? record : ({ ...record, hasVik: true } as T)
 }
 

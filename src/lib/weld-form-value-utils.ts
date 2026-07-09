@@ -1,12 +1,10 @@
 import { FINAL_STATUS_OPTIONS, RESULT_STATUS_OPTIONS } from '@/lib/weld-fields'
+import { isControlAdditionalValue, isControlEnabledValue } from '@/lib/control-availability-values'
 
 export const weldingMethodOptions = ['РАД', 'РД', 'МП'] as const
-export const CONTROL_REPLACEMENT_VALUE = 'замена РК/УЗК'
 
 export function isYesValue(value: unknown) {
-  if (value === true) return true
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный' || isLegacyReplacementValue(value)
+  return isControlEnabledValue(value)
 }
 
 export function isCancelledValue(value: unknown) {
@@ -14,12 +12,7 @@ export function isCancelledValue(value: unknown) {
 }
 
 export function isAdditionalValue(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'дополнительный' || isLegacyReplacementValue(value)
-}
-
-export function isLegacyReplacementValue(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === CONTROL_REPLACEMENT_VALUE.toLowerCase()
+  return isControlAdditionalValue(value)
 }
 
 export function getSelectedWeldingMethods(value: unknown) {

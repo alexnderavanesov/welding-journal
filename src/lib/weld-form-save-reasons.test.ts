@@ -106,7 +106,7 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
-  it('treats old RK/UZK replacement values as additional availability in form hints', () => {
+  it('reads old RK/UZK replacement values as additional availability in form hints', () => {
     const draft = { id: 1, joint: 'S1', hasPvk: 'замена РК/УЗК' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()

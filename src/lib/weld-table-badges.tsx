@@ -1,12 +1,12 @@
 import { Badge } from '@/components/ui/badge'
+import { isControlAdditionalValue, isControlEnabledValue } from '@/lib/control-availability-values'
 
 export function getCellKey(rowId: number, fieldKey: string) {
   return `${rowId}:${fieldKey}`
 }
 
 export function isYesText(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный' || isLegacyReplacementText(value)
+  return isControlEnabledValue(value)
 }
 
 export function isNoText(value: unknown) {
@@ -18,12 +18,7 @@ export function isCancelledText(value: unknown) {
 }
 
 export function isAdditionalText(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'дополнительный' || isLegacyReplacementText(value)
-}
-
-export function isLegacyReplacementText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'замена рк/узк'
+  return isControlAdditionalValue(value)
 }
 
 export function YesBadge() {

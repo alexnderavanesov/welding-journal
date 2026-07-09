@@ -1,27 +1,25 @@
 import type { WeldInput } from '@/lib/weld-fields'
+import {
+  isControlAdditionalValue,
+  isControlCancelledValue,
+  isControlEnabledValue,
+  normalizeControlAvailabilityFlag,
+} from '@/lib/control-availability-values'
 
 export function hasText(value: unknown) {
   return String(value ?? '').trim().length > 0
 }
 
 export function isYesText(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный' || isLegacyReplacementControlValue(value)
+  return isControlEnabledValue(value)
 }
 
-export const CONTROL_REPLACEMENT_VALUE = 'замена РК/УЗК'
-
 export function isCancelledControlValue(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'отменен'
+  return isControlCancelledValue(value)
 }
 
 export function isAdditionalControlValue(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'дополнительный' || isLegacyReplacementControlValue(value)
-}
-
-export function isLegacyReplacementControlValue(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === CONTROL_REPLACEMENT_VALUE.toLowerCase()
+  return isControlAdditionalValue(value)
 }
 
 export function getCancelledLnkResultDisplay(value: unknown) {
@@ -45,10 +43,7 @@ export function getCancelledPstoResultDisplay(value: unknown) {
 }
 
 export function normalizeControlAvailabilityValue(value: unknown) {
-  if (isCancelledControlValue(value)) return 'отменен'
-  if (isAdditionalControlValue(value)) return 'дополнительный'
-  if (value === true || isYesText(value)) return 'да'
-  return null
+  return normalizeControlAvailabilityFlag(value)
 }
 
 export function formatControlAvailabilityForExport(value: unknown) {
@@ -60,7 +55,5 @@ export function hasWeldDate(row: WeldInput) {
 }
 
 export function isEnabledControlValue(value: unknown) {
-  if (value === true) return true
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный' || isLegacyReplacementControlValue(value)
+  return isControlEnabledValue(value)
 }

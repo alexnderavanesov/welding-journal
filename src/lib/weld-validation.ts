@@ -3,6 +3,7 @@ import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { getDateInputValidationReason } from '@/lib/date-format'
+import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
 
 export function validateManualJointNameForSave(value: WeldDraft, rows: WeldRow[]) {
   validateDateFieldsForSave(value)
@@ -40,13 +41,13 @@ export function validateRequiredRootStampForSave(record: WeldInput) {
   if (message) throw new Error(`Сохранение невозможно: ${message}`)
 }
 
-export function validateControlReplacementForSave(record: WeldInput) {
-  normalizeLegacyControlReplacement(record)
+export function normalizeLegacyControlAvailabilityForSave(record: WeldInput) {
+  normalizeLegacyControlAvailability(record)
 }
 
-function normalizeLegacyControlReplacement(record: WeldInput) {
-  for (const fieldKey of legacyControlReplacementFieldKeys) {
-    if (String(record[fieldKey] ?? '').trim().toLowerCase() === 'замена рк/узк') {
+function normalizeLegacyControlAvailability(record: WeldInput) {
+  for (const fieldKey of legacyControlAvailabilityFieldKeys) {
+    if (String(record[fieldKey] ?? '').trim().toLowerCase() === LEGACY_CONTROL_REPLACEMENT_VALUE.toLowerCase()) {
       record[fieldKey] = 'дополнительный' as never
     }
   }
@@ -64,9 +65,9 @@ export function validateRequiredRootStampsForImport(records: WeldInput[]) {
   throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.message}`)
 }
 
-export function validateControlReplacementsForImport(records: WeldInput[]) {
+export function normalizeLegacyControlAvailabilityForImport(records: WeldInput[]) {
   for (const record of records) {
-    normalizeLegacyControlReplacement(record)
+    normalizeLegacyControlAvailability(record)
   }
 }
 
@@ -106,7 +107,7 @@ const dateFieldKeys = [...FIELD_BY_KEY.entries()]
   .filter(([, field]) => field.kind === 'date')
   .map(([fieldKey]) => fieldKey as WeldFieldKey)
 
-const legacyControlReplacementFieldKeys = [
+const legacyControlAvailabilityFieldKeys = [
   'pstoRequired',
   'hasVik',
   'hasRk',

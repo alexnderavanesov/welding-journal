@@ -157,7 +157,7 @@ describe('weld import/export', () => {
     expect(row[headers.indexOf(label('hasVik'))]).toBe('дополнительный')
   })
 
-  it('normalizes old RK/UZK replacement marks to additional control', () => {
+  it('cleans old RK/UZK replacement marks to additional control', () => {
     expect(parseBoolean('замена РК/УЗК')).toBe('дополнительный')
 
     const [headers, row] = recordsToExportMatrix([{ hasPvk: 'замена РК/УЗК' }])

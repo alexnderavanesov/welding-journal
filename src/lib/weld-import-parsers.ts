@@ -5,6 +5,7 @@ import {
   normalizeResultStatus,
 } from './weld-fields'
 import { normalizeDateLikeForStorage } from './date-format'
+import { normalizeControlAvailabilityText } from '@/lib/control-availability-values'
 
 export function emptyToNull(value: unknown) {
   if (value === null || value === undefined) return null
@@ -21,11 +22,10 @@ export function excelSerialDateToIso(value: number) {
 export function parseBoolean(value: unknown) {
   const normalized = emptyToNull(value)
   if (normalized === null) return null
-  const text = String(normalized).toLowerCase()
+  const text = normalizeControlAvailabilityText(normalized)
   if (['да', 'yes', 'true', '1', '+'].includes(text)) return true
   if (text === 'отменен') return 'отменен'
   if (text === 'дополнительный') return 'дополнительный'
-  if (text === 'замена рк/узк') return 'дополнительный'
   if (['нет', 'no', 'false', '0', '-'].includes(text)) return false
   return Boolean(text)
 }

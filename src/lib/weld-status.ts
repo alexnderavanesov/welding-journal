@@ -1,6 +1,7 @@
 import type { WeldFieldKey, WeldInput } from './weld-field-definitions'
 import { normalizeJointChainPart, parseJointChainName } from './joint-chain'
 import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
+import { isControlEnabledValue } from '@/lib/control-availability-values'
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК', 'ожидает заявку'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
@@ -190,9 +191,7 @@ function isUnofficialStatus(value: unknown) {
 }
 
 function isEnabledControl(value: unknown) {
-  if (value === true) return true
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'да' || text === 'дополнительный' || text === 'замена рк/узк'
+  return isControlEnabledValue(value)
 }
 
 function isCancelledControl(value: unknown) {

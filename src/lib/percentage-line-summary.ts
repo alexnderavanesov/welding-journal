@@ -194,7 +194,7 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const requiredControls = Math.min(calculatedRequiredControls, availableRequiredControls)
   const assignedControls = entry.rows.filter(hasAssignedPercentageControl).length
   const additionalAssignedControls = entry.rows.filter(hasAdditionalAssignedPercentageControl).length
-  const cancelledAssignedControls = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).length
+  const cancelledAssignedControls = entry.rows.filter(hasCancelledPercentageControlCoverage).length
   const coveredControls = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).length
   const rejectedCoveredControls = entry.rows.filter(hasRejectedClosurePercentageControl).length
   const completedControls = entry.rows.filter(hasCompletedPercentageControl).length
@@ -216,8 +216,8 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const assignedRowIds = entry.rows.filter(hasAssignedPercentageControl).map(getRowId)
   const additionalAssignedJointNames = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getJointDisplayName)
   const additionalAssignedRowIds = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getRowId)
-  const cancelledAssignedJointNames = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getJointDisplayName)
-  const cancelledAssignedRowIds = entry.rows.filter(hasCancelledPercentageControlWithoutReplacement).map(getRowId)
+  const cancelledAssignedJointNames = entry.rows.filter(hasCancelledPercentageControlCoverage).map(getJointDisplayName)
+  const cancelledAssignedRowIds = entry.rows.filter(hasCancelledPercentageControlCoverage).map(getRowId)
   const coveredJointNames = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).map(getJointDisplayName)
   const coveredRowIds = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).map(getRowId)
   const rejectedCoveredJointNames = entry.rows.filter(hasRejectedClosurePercentageControl).map(getJointDisplayName)
@@ -360,7 +360,7 @@ function hasBothPercentageControlsCancelled(row: WeldRow) {
   return PERCENTAGE_CONTROL_METHODS.every(({ enabledKey }) => isCancelledControlValue(row[enabledKey]))
 }
 
-function hasCancelledPercentageControlWithoutReplacement(row: WeldRow) {
+function hasCancelledPercentageControlCoverage(row: WeldRow) {
   return hasBothPercentageControlsCancelled(row)
 }
 

@@ -198,7 +198,7 @@ function addWelderStat(
     if (jointType === 'f') row.fWaitingRequest += value
     if (jointType === 's') row.sWaitingRequest += value
   }
-  if (status === 'ожидает нк') {
+  if (status.toLowerCase() === 'ожидает нк') {
     row.waitingControl += value
     if (jointType === 'f') row.fWaitingControl += value
     if (jointType === 's') row.sWaitingControl += value

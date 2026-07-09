@@ -12,10 +12,10 @@ import {
 } from '@/lib/psto-field-updates'
 import { withPendingLnkResults } from '@/lib/report-control-state'
 import {
+  normalizeLegacyControlAvailabilityForImport,
+  normalizeLegacyControlAvailabilityForSave,
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
-  validateControlReplacementForSave,
-  validateControlReplacementsForImport,
   validateRequiredRootStampForSave,
   validateRequiredRootStampsForImport,
   validateWeldDatesForImport,
@@ -59,7 +59,7 @@ export function prepareWeldSaveValue({
       ),
     ),
   )
-  validateControlReplacementForSave(preparedValue)
+  normalizeLegacyControlAvailabilityForSave(preparedValue)
   validateRequiredRootStampForSave(preparedValue)
   validateManualJointNameForSave(preparedValue, rows)
   validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
@@ -93,10 +93,10 @@ export function prepareImportedWeldRecords({
   welderStampSuspensions: WelderStampSuspensionRecord[]
 }) {
   const preparedRecords = records
+  normalizeLegacyControlAvailabilityForImport(preparedRecords)
   validateRequiredRootStampsForImport(preparedRecords)
   validateManualJointNamesForImport(preparedRecords)
   validateWeldDatesForImport(preparedRecords)
-  validateControlReplacementsForImport(preparedRecords)
   normalizeWeldingMethodsForImport(preparedRecords)
   validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
   validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, { suspensions: welderStampSuspensions })

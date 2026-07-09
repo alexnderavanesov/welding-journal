@@ -1,4 +1,5 @@
 import type { LineConsistencyTask, WeldRow } from '@/lib/dispatcher-types'
+import { isControlAdditionalValue } from '@/lib/control-availability-values'
 
 type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence'>
 
@@ -185,11 +186,11 @@ function isCancelledValue(value: unknown) {
 }
 
 function isAdditionalValue(value: unknown) {
-  return normalizeKey(value) === 'дополнительный'
+  return isControlAdditionalValue(value)
 }
 
 function isNeutralPresenceValue(value: unknown) {
-  return isCancelledValue(value) || isAdditionalValue(value) || normalizeKey(value) === 'замена рк/узк'
+  return isCancelledValue(value) || isAdditionalValue(value)
 }
 
 function normalizeDisplayValue(value: unknown) {
