@@ -24,7 +24,8 @@ export function ReportWorkspace({
     activeReport === 'percentageLines' ||
     activeReport === 'welderStamps' ||
     activeReport === 'documents' ||
-    activeReport === 'settings'
+    activeReport === 'settings' ||
+    activeReport === 'userGuide'
 
   return (
     <main className="relative min-h-screen bg-white">

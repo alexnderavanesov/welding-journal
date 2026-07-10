@@ -9,6 +9,7 @@ const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   statistics: 'Статистика',
   documents: 'Документы',
   settings: 'Настройки',
+  userGuide: 'Руководство пользователя',
 }
 
 const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
@@ -20,6 +21,7 @@ const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
   statistics: 'statistics.xlsx',
   documents: 'documents.xlsx',
   settings: 'settings.xlsx',
+  userGuide: 'user-guide.pdf',
 }
 
 const EDITABLE_REPORT_IMPORT_LABELS: Partial<Record<ActiveReport, string>> = {
@@ -79,6 +81,9 @@ export function getReportSummaryText({
   }
   if (activeReport === 'settings') {
     return 'Настройки системы и шаблонов документов'
+  }
+  if (activeReport === 'userGuide') {
+    return 'Подробное руководство по разделам, кнопкам, правилам и кейсам'
   }
   return `Записей: ${weldingRowCount} · WDI годных: ${acceptedWdiTotalText}`
 }

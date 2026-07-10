@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookOpenText,
   ClipboardCheck,
   FileText,
   Flame,
@@ -36,6 +37,7 @@ const sidebarItems: Array<{
 
 export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {
   const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }
+  const guideItem = { report: 'userGuide' as const, label: 'Руководство пользователя', icon: BookOpenText }
 
   return (
     <aside
@@ -75,7 +77,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
           )
         })}
       </nav>
-      <nav className="mt-auto border-t border-slate-100 pt-3">
+      <nav className="mt-auto space-y-1 border-t border-slate-100 pb-7 pt-3 lg:pb-10">
         {(() => {
           const Icon = settingsItem.icon
           const isActive = activeReport === settingsItem.report
@@ -90,6 +92,23 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className={collapsed ? 'sr-only' : ''}>{settingsItem.label}</span>
+            </button>
+          )
+        })()}
+        {(() => {
+          const Icon = guideItem.icon
+          const isActive = activeReport === guideItem.report
+          return (
+            <button
+              key={guideItem.report}
+              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                isActive ? 'bg-slate-100 text-slate-950' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+              } ${collapsed ? 'justify-center px-0' : ''}`}
+              onClick={() => onReportChange(guideItem.report)}
+              title={guideItem.label}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className={collapsed ? 'sr-only' : ''}>{guideItem.label}</span>
             </button>
           )
         })()}

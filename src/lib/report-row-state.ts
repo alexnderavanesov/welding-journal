@@ -13,7 +13,13 @@ export function getVisibleReportRows<T>(
 }
 
 export function getReportRegisterMinWidth(activeReport: ActiveReport, defaultMinWidth: number) {
-  if (activeReport === 'statistics' || activeReport === 'percentageLines' || activeReport === 'documents' || activeReport === 'settings') {
+  if (
+    activeReport === 'statistics' ||
+    activeReport === 'percentageLines' ||
+    activeReport === 'documents' ||
+    activeReport === 'settings' ||
+    activeReport === 'userGuide'
+  ) {
     return 1180
   }
   return activeReport === 'welderStamps' ? 1120 : defaultMinWidth

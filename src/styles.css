@@ -52,3 +52,34 @@
     scrollbar-width: thin;
   }
 }
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  aside,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .user-guide-page {
+    padding: 0 !important;
+  }
+
+  .user-guide-page article,
+  .user-guide-page section,
+  .user-guide-page table {
+    break-inside: avoid;
+  }
+
+  .user-guide-page mark {
+    background: transparent !important;
+    color: inherit !important;
+    padding: 0 !important;
+  }
+
+  main > div {
+    padding: 0 !important;
+  }
+}

@@ -67,9 +67,14 @@ export function HomePageView({
     activeReport === 'percentageLines' ||
     activeReport === 'welderStamps' ||
     activeReport === 'documents' ||
-    activeReport === 'settings'
+    activeReport === 'settings' ||
+    activeReport === 'userGuide'
   const isStandaloneReport =
-    activeReport === 'statistics' || activeReport === 'percentageLines' || activeReport === 'documents' || activeReport === 'settings'
+    activeReport === 'statistics' ||
+    activeReport === 'percentageLines' ||
+    activeReport === 'documents' ||
+    activeReport === 'settings' ||
+    activeReport === 'userGuide'
   const pageMinWidth = isFluidReport ? 0 : registerMinWidth
 
   return (
@@ -81,7 +86,9 @@ export function HomePageView({
       onReportChange={onReportChange}
     >
       <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={pageMinWidth}>
-        {activeReport !== 'documents' && activeReport !== 'settings' ? <ReportHeaderActions {...reportHeaderActionsProps} /> : null}
+        {activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
+          <ReportHeaderActions {...reportHeaderActionsProps} />
+        ) : null}
       </ReportPageHeader>
 
       {!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} minWidth={pageMinWidth} /> : null}

@@ -1,6 +1,7 @@
 import { DocumentsPage } from '@/components/documents-page'
 import { SettingsPage } from '@/components/settings-page'
 import { StatisticsPage } from '@/components/statistics-page'
+import { UserGuidePage } from '@/components/user-guide-page'
 import { WelderStampsRegistry, type WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -59,6 +60,10 @@ export function ReportMainContent({
 
   if (activeReport === 'settings') {
     return <SettingsPage rowsCount={statisticsRows.length} />
+  }
+
+  if (activeReport === 'userGuide') {
+    return <UserGuidePage />
   }
 
   return <WeldTable {...weldTableProps} />
