@@ -709,7 +709,7 @@ function WeldersStatisticsPanel({
   const filteredRows = useMemo(() => {
     const query = stampSearch.trim().toLowerCase()
     if (!query) return summary.rows
-    return summary.rows.filter((row) => row.stamp.toLowerCase().includes(query))
+    return summary.rows.filter((row) => row.stamp.toLowerCase().includes(query) || row.welderName.toLowerCase().includes(query))
   }, [stampSearch, summary.rows])
 
   return (
@@ -751,11 +751,11 @@ function WeldersStatisticsPanel({
       >
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <label className="grid w-full max-w-sm gap-1 text-xs font-medium text-slate-600">
-            Поиск клейма
+            Поиск клейма или ФИО
             <Input
               value={stampSearch}
               onChange={(event) => setStampSearch(event.target.value)}
-              placeholder="Клеймо НАКС или внутреннее"
+              placeholder="Клеймо НАКС, внутреннее или ФИО"
               className="h-9 rounded-md border-slate-200 bg-white text-sm"
             />
           </label>
@@ -793,7 +793,7 @@ function WeldersStatisticsPanel({
               </table>
               {filteredRows.length === 0 ? (
                 <div className="border-t border-slate-100 bg-slate-50 p-5 text-sm text-slate-500">
-                  По этому клейму ничего не найдено.
+                  По этому клейму или ФИО ничего не найдено.
                 </div>
               ) : null}
             </div>
@@ -820,7 +820,10 @@ function WelderStatisticsTableRow({
   const controlled = row.good + row.rejected
   return (
     <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
-      <td className="px-4 py-3 font-semibold text-slate-900">{row.stamp}</td>
+      <td className="px-4 py-3">
+        <div className="font-semibold text-slate-900">{row.stamp}</div>
+        {row.welderName ? <div className="mt-1 text-xs font-medium leading-4 text-slate-500">{row.welderName}</div> : null}
+      </td>
       <WelderBodyCell>
         <WelderValueWithSplit
           f={row.fTotal}

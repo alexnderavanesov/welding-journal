@@ -346,8 +346,10 @@ function DocumentTemplatesSettings() {
             </div>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
               Загружайте шаблон под конкретный тип документа. В Excel используйте маркеры вида <TemplateToken>Линия</TemplateToken>.
-              В одной ячейке можно указать несколько маркеров, например <TemplateToken>Линия</TemplateToken> и{' '}
-              <TemplateToken>Контроль швов, (%)</TemplateToken> на разных строках одной ячейки.
+              Для названий столбцов используйте формат <TemplateToken>столбец</TemplateToken>, для номера строки{' '}
+              <TemplateToken>№ п/п</TemplateToken>, для ФИО сварщика <TemplateToken>ФИО сварщика</TemplateToken>. В одной ячейке можно
+              указать несколько маркеров, например <TemplateToken>Линия</TemplateToken> и <TemplateToken>Контроль швов, (%)</TemplateToken>{' '}
+              на разных строках одной ячейки.
             </p>
           </div>
           <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100">

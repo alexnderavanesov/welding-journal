@@ -63,13 +63,14 @@ describe('buildWelderStatisticsSummary', () => {
         vikRequest: 'Заявка-001',
       },
     ] as WeldRow[]
-    const welderStamps = [welderStamp({ naksStamp: 'ABC1', internalStamp: '1111' })]
+    const welderStamps = [welderStamp({ naksStamp: 'ABC1', internalStamp: '1111', welderName: 'Иванов И.И.' })]
 
     const summary = buildWelderStatisticsSummary(rows, welderStamps, '2026-07-01', '2026-07-31', 'joints')
 
     expect(summary.rows).toHaveLength(1)
     expect(summary.rows[0]).toMatchObject({
       stamp: 'ABC1',
+      welderName: 'Иванов И.И.',
       total: 1,
       waitingControl: 1,
     })

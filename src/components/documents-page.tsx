@@ -26,6 +26,8 @@ import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-sta
 import { getWelderNamesForFactStamps } from '@/lib/welder-stamp-names'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
+const EMPTY_TEMPLATE_FIELD_VALUE = 'н/п'
+
 type DocumentsPageProps = {
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
@@ -317,9 +319,15 @@ function getTemplatePreviewFieldValue(fieldName: string, row: WeldRow, rowIndex:
   const mappedKey = TEMPLATE_PREVIEW_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return rowIndex + 1
-  if (mappedKey === '__welderName') return getWelderNamesForFactStamps(row, welderStamps)
+  if (mappedKey === '__welderName') return formatTemplatePreviewFieldFallback(getWelderNamesForFactStamps(row, welderStamps))
 
-  return getCellValue(row, mappedKey)
+  return formatTemplatePreviewFieldFallback(getCellValue(row, mappedKey))
+}
+
+function formatTemplatePreviewFieldFallback(value: unknown) {
+  if (typeof value === 'number') return value
+  const text = String(value ?? '').trim()
+  return text && text !== '-' ? value : EMPTY_TEMPLATE_FIELD_VALUE
 }
 
 export function DocumentsPage({ rows, welderStamps, generationRequest }: DocumentsPageProps) {

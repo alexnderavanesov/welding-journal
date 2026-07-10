@@ -9,6 +9,7 @@ export const DOCUMENT_TEMPLATE_STORAGE_EVENT = 'document-template-storage-change
 
 const DOCUMENT_TEMPLATE_DB_NAME = 'welding-document-templates'
 const DOCUMENT_TEMPLATE_STORE_NAME = 'templates'
+const EMPTY_TEMPLATE_FIELD_VALUE = 'н/п'
 
 export const DOCUMENT_TEMPLATE_TYPES = [
   {
@@ -267,15 +268,19 @@ export function createWeldingJournalBlobFromTemplate(
         t: typeof value === 'number' ? 'n' : 's',
         v: value,
         w: undefined,
-        s: withWrappedCellStyle(originalCell?.s),
+        s: cloneCellStyle(originalCell?.s),
       }
     }
-    applyGeneratedRowHeight(worksheet, targetRow, range.s.c, range.e.c)
+    enableAutoRowHeight(worksheet, targetRow)
   })
 
   expandWorksheetRef(worksheet, markerRow + Math.max(records.length - 1, 0), Math.max(range.e.c, ...repeatedCells.map((cell) => cell.column)))
-  const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-  return new Blob([workbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
+  const preservedWorkbookData = preserveTemplateWorkbookXml(template.fileData, workbookData, {
+    markerRow,
+    recordCount: records.length,
+  })
+  return new Blob([preservedWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 }
 
 export function extractTemplateFields(source: string) {
@@ -361,14 +366,19 @@ function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex
   const mappedKey = TEMPLATE_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return recordIndex + 1
-  if (mappedKey === '__welderName') return getWelderNamesForFactStamps(record, context.welderStamps ?? [])
+  if (mappedKey === '__welderName') return formatTemplateFieldFallback(getWelderNamesForFactStamps(record, context.welderStamps ?? []))
 
   const field = WELD_FIELDS.find((candidate) => candidate.key === mappedKey)
   const value = record[mappedKey]
-  if (field?.kind === 'date') return formatExportDate(value)
-  if (field?.kind === 'number') return formatExportNumber(value)
-  if (field?.kind === 'boolean') return formatControlAvailabilityForExport(value)
-  return value ?? ''
+  if (field?.kind === 'date') return formatTemplateFieldFallback(formatExportDate(value))
+  if (field?.kind === 'number') return formatTemplateFieldFallback(formatExportNumber(value))
+  if (field?.kind === 'boolean') return formatTemplateFieldFallback(formatControlAvailabilityForExport(value))
+  return formatTemplateFieldFallback(value)
+}
+
+function formatTemplateFieldFallback(value: unknown) {
+  if (typeof value === 'number') return value
+  return String(value ?? '').trim() ? value : EMPTY_TEMPLATE_FIELD_VALUE
 }
 
 function normalizeTemplateFieldName(value: string) {
@@ -432,7 +442,7 @@ function copyWorksheetRow(worksheet: XLSX.WorkSheet, sourceRow: number, targetRo
     if (sourceCell) {
       worksheet[targetAddress] = {
         ...sourceCell,
-        s: withWrappedCellStyle(sourceCell.s),
+        s: cloneCellStyle(sourceCell.s),
       }
     } else {
       delete worksheet[targetAddress]
@@ -461,35 +471,14 @@ function copyWorksheetRowMerges(worksheet: XLSX.WorkSheet, sourceRow: number, ta
   }
 }
 
-function withWrappedCellStyle(style: unknown) {
-  const baseStyle = cloneCellStyle(style)
-  const alignment = isObjectRecord(baseStyle.alignment) ? baseStyle.alignment : {}
-  return {
-    ...baseStyle,
-    alignment: {
-      ...alignment,
-      wrapText: true,
-      vertical: alignment.vertical ?? 'center',
-    },
-  }
-}
+function enableAutoRowHeight(worksheet: XLSX.WorkSheet, row: number) {
+  const rowInfo = worksheet['!rows']?.[row]
+  if (!rowInfo) return
 
-function applyGeneratedRowHeight(worksheet: XLSX.WorkSheet, row: number, startColumn: number, endColumn: number) {
-  let maxLines = 1
-  for (let column = startColumn; column <= endColumn; column += 1) {
-    const address = XLSX.utils.encode_cell({ r: row, c: column })
-    const value = worksheet[address]?.v
-    if (value === undefined || value === null) continue
-    const lines = String(value).split(/\r\n|\r|\n/).length
-    maxLines = Math.max(maxLines, lines)
-  }
-
-  if (!worksheet['!rows']) worksheet['!rows'] = []
-  const sourceRowHeight = worksheet['!rows'][row]?.hpt ?? 18
-  worksheet['!rows'][row] = {
-    ...worksheet['!rows'][row],
-    hpt: Math.max(sourceRowHeight, 18 * maxLines),
-  }
+  delete rowInfo.hpt
+  delete rowInfo.hpx
+  delete (rowInfo as Record<string, unknown>).customHeight
+  if (Object.keys(rowInfo).length === 0 && worksheet['!rows']) delete worksheet['!rows'][row]
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -499,6 +488,169 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 function cloneCellStyle(style: unknown) {
   if (!isObjectRecord(style)) return {}
   return JSON.parse(JSON.stringify(style)) as Record<string, unknown>
+}
+
+type WorkbookXmlPreservationContext = {
+  markerRow: number
+  recordCount: number
+}
+
+function preserveTemplateWorkbookXml(
+  templateData: ArrayBuffer,
+  generatedData: ArrayBuffer,
+  context: WorkbookXmlPreservationContext,
+) {
+  try {
+    const templateCfb = XLSX.CFB.read(new Uint8Array(templateData), { type: 'array' })
+    const generatedCfb = XLSX.CFB.read(new Uint8Array(generatedData), { type: 'array' })
+    copyCfbFile(templateCfb, generatedCfb, 'xl/styles.xml')
+    copyCfbFile(templateCfb, generatedCfb, 'xl/theme/theme1.xml')
+
+    const templateSheetPath = getFirstWorksheetPath(templateCfb)
+    const generatedSheetPath = getFirstWorksheetPath(generatedCfb)
+    const templateSheetXml = readCfbText(templateCfb, templateSheetPath)
+    const generatedSheetXml = readCfbText(generatedCfb, generatedSheetPath)
+    if (templateSheetXml && generatedSheetXml) {
+      const styleByCell = extractCellStyleMap(templateSheetXml)
+      const patchedSheetXml = clearGeneratedRowHeights(
+        applyTemplateCellStyles(generatedSheetXml, styleByCell, context),
+        context,
+      )
+      writeCfbText(generatedCfb, generatedSheetPath, patchedSheetXml)
+    }
+
+    return XLSX.CFB.write(generatedCfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
+  } catch {
+    return generatedData
+  }
+}
+
+function copyCfbFile(sourceCfb: XLSX.CFB.CFB$Container, targetCfb: XLSX.CFB.CFB$Container, path: string) {
+  const sourceIndex = findCfbFileIndex(sourceCfb, path)
+  const targetIndex = findCfbFileIndex(targetCfb, path)
+  if (sourceIndex < 0 || targetIndex < 0) return
+  targetCfb.FileIndex[targetIndex].content = new Uint8Array(sourceCfb.FileIndex[sourceIndex].content)
+}
+
+function readCfbText(cfb: XLSX.CFB.CFB$Container, path: string) {
+  const index = findCfbFileIndex(cfb, path)
+  if (index < 0) return ''
+  return new TextDecoder().decode(cfb.FileIndex[index].content)
+}
+
+function writeCfbText(cfb: XLSX.CFB.CFB$Container, path: string, value: string) {
+  const index = findCfbFileIndex(cfb, path)
+  if (index < 0) return
+  cfb.FileIndex[index].content = new TextEncoder().encode(value)
+  cfb.FileIndex[index].size = cfb.FileIndex[index].content.length
+}
+
+function findCfbFileIndex(cfb: XLSX.CFB.CFB$Container, path: string) {
+  const normalizedPath = path.replace(/^\/+/, '')
+  return cfb.FullPaths.findIndex((fullPath) => fullPath.replace(/^Root Entry\//, '') === normalizedPath)
+}
+
+function getFirstWorksheetPath(cfb: XLSX.CFB.CFB$Container) {
+  const worksheetPath =
+    cfb.FullPaths.map((fullPath) => fullPath.replace(/^Root Entry\//, ''))
+      .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(path))
+      .sort((left, right) => left.localeCompare(right, 'ru', { numeric: true }))[0] ?? 'xl/worksheets/sheet1.xml'
+  return worksheetPath
+}
+
+function extractCellStyleMap(sheetXml: string) {
+  const styleByCell = new Map<string, string>()
+  for (const tag of sheetXml.match(/<c\b[^>]*>/g) ?? []) {
+    const attrs = parseXmlAttributes(tag)
+    const cellRef = attrs.get('r')
+    const styleId = attrs.get('s')
+    if (!cellRef || styleId === undefined) continue
+    const decoded = decodeCellReference(cellRef)
+    if (!decoded) continue
+    styleByCell.set(`${decoded.row}:${decoded.column}`, styleId)
+  }
+  return styleByCell
+}
+
+function applyTemplateCellStyles(
+  sheetXml: string,
+  styleByCell: Map<string, string>,
+  { markerRow, recordCount }: WorkbookXmlPreservationContext,
+) {
+  const extraRows = Math.max(recordCount - 1, 0)
+  const generatedStartRow = markerRow + 1
+  const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
+
+  return sheetXml.replace(/<c\b[^>]*>/g, (tag) => {
+    const attrs = parseXmlAttributes(tag)
+    const cellRef = attrs.get('r')
+    if (!cellRef) return tag
+
+    const decoded = decodeCellReference(cellRef)
+    if (!decoded) return tag
+
+    const sourceRow =
+      decoded.row < generatedStartRow
+        ? decoded.row
+        : decoded.row <= generatedEndRow
+          ? generatedStartRow
+          : decoded.row - extraRows
+    const styleId = styleByCell.get(`${sourceRow}:${decoded.column}`)
+    return styleId === undefined ? removeXmlAttribute(tag, 's') : setXmlAttribute(tag, 's', styleId)
+  })
+}
+
+function clearGeneratedRowHeights(sheetXml: string, { markerRow, recordCount }: WorkbookXmlPreservationContext) {
+  const generatedStartRow = markerRow + 1
+  const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
+  return sheetXml.replace(/<row\b[^>]*>/g, (tag) => {
+    const rowNumber = Number(parseXmlAttributes(tag).get('r'))
+    if (!Number.isFinite(rowNumber) || rowNumber < generatedStartRow || rowNumber > generatedEndRow) return tag
+    return removeXmlAttribute(removeXmlAttribute(tag, 'ht'), 'customHeight')
+  })
+}
+
+function parseXmlAttributes(tag: string) {
+  const attrs = new Map<string, string>()
+  for (const match of tag.matchAll(/([A-Za-z_:][\w:.-]*)="([^"]*)"/g)) {
+    attrs.set(match[1], match[2])
+  }
+  return attrs
+}
+
+function setXmlAttribute(tag: string, name: string, value: string) {
+  const escapedValue = escapeXmlAttribute(value)
+  return new RegExp(`\\s${escapeRegExp(name)}="[^"]*"`).test(tag)
+    ? tag.replace(new RegExp(`(\\s${escapeRegExp(name)}=")[^"]*(")`), `$1${escapedValue}$2`)
+    : tag.replace(/\/?>$/, (ending) => ` ${name}="${escapedValue}"${ending}`)
+}
+
+function removeXmlAttribute(tag: string, name: string) {
+  return tag.replace(new RegExp(`\\s${escapeRegExp(name)}="[^"]*"`, 'g'), '')
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function escapeXmlAttribute(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function decodeCellReference(value: string) {
+  const match = value.match(/^([A-Z]+)(\d+)$/i)
+  if (!match) return null
+  return {
+    column: decodeColumnReference(match[1]),
+    row: Number(match[2]),
+  }
+}
+
+function decodeColumnReference(value: string) {
+  return value
+    .toUpperCase()
+    .split('')
+    .reduce((total, char) => total * 26 + char.charCodeAt(0) - 64, 0)
 }
 
 function openDocumentTemplateDb() {

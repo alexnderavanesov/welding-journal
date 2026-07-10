@@ -17,6 +17,7 @@ type WelderStampPart = {
 
 export type WelderStatisticsRow = {
   stamp: string
+  welderName: string
   total: number
   good: number
   waitingRequest: number
@@ -77,6 +78,7 @@ export function buildWelderStatisticsSummary(
   jointFilter: WelderStatisticsJointFilter = 'all',
 ): WelderStatisticsSummary {
   const stampLabels = buildWelderStampLabelMap(welderStamps)
+  const welderNames = buildWelderNameMap(welderStamps)
   const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to) && matchesJointFilter(row, jointFilter))
   const stats = new Map<string, WelderStatisticsRow>()
 
@@ -94,8 +96,9 @@ export function buildWelderStatisticsSummary(
       if (!rawStamp) continue
 
       const stamp = getWelderStampLabel(rawStamp, stampLabels)
+      const welderName = getWelderName(rawStamp, stamp, welderNames)
       const partWeight = hasSecondWelder ? part.doubleWeight : part.singleWeight
-      addWelderStat(stats, stamp, rowWeight * partWeight, status, jointType)
+      addWelderStat(stats, stamp, welderName, rowWeight * partWeight, status, jointType)
     }
   }
 
@@ -160,6 +163,7 @@ export function buildWelderStatisticsSummary(
 function addWelderStat(
   stats: Map<string, WelderStatisticsRow>,
   stamp: string,
+  welderName: string,
   value: number,
   status: string,
   jointType: 'f' | 's' | null,
@@ -168,6 +172,7 @@ function addWelderStat(
     stats.get(stamp) ??
     ({
       stamp,
+      welderName,
       total: 0,
       good: 0,
       waitingRequest: 0,
@@ -186,6 +191,7 @@ function addWelderStat(
       sRejected: 0,
     } satisfies WelderStatisticsRow)
 
+  if (!row.welderName && welderName) row.welderName = welderName
   row.total += value
   if (jointType === 'f') row.fTotal += value
   if (jointType === 's') row.sTotal += value
@@ -236,8 +242,26 @@ function buildWelderStampLabelMap(records: WelderStampRecord[]) {
   return map
 }
 
+function buildWelderNameMap(records: WelderStampRecord[]) {
+  const map = new Map<string, string>()
+  for (const record of records) {
+    const name = record.welderName.trim()
+    if (!name) continue
+
+    const naksStamp = record.naksStamp.trim()
+    const internalStamp = record.internalStamp.trim()
+    if (naksStamp && !map.has(normalizeStamp(naksStamp))) map.set(normalizeStamp(naksStamp), name)
+    if (internalStamp && !map.has(normalizeStamp(internalStamp))) map.set(normalizeStamp(internalStamp), name)
+  }
+  return map
+}
+
 function getWelderStampLabel(rawStamp: string, labels: Map<string, string>) {
   return labels.get(normalizeStamp(rawStamp)) ?? rawStamp
+}
+
+function getWelderName(rawStamp: string, stamp: string, names: Map<string, string>) {
+  return names.get(normalizeStamp(rawStamp)) ?? names.get(normalizeStamp(stamp)) ?? ''
 }
 
 function normalizeStamp(value: string) {
