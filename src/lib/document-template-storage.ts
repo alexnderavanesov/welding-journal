@@ -1,7 +1,9 @@
-import * as XLSX from 'xlsx'
+import * as XLSX from 'xlsx-js-style'
 import { FIELD_BY_LABEL, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
 import { formatExportDate, formatExportNumber } from '@/lib/weld-export-utils'
+import { getWelderNamesForFactStamps } from '@/lib/welder-stamp-names'
+import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export const DOCUMENT_TEMPLATE_STORAGE_EVENT = 'document-template-storage-change'
 
@@ -79,11 +81,18 @@ type TemplateMarkerCell = {
   fields: string[]
 }
 
-const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | '__index'>([
+type TemplateSystemField = '__index' | '__welderName'
+
+type WeldingJournalTemplateContext = {
+  welderStamps?: WelderStampRecord[]
+}
+
+const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | TemplateSystemField>([
   [normalizeTemplateFieldName('№'), '__index'],
   [normalizeTemplateFieldName('№ п/п'), '__index'],
   [normalizeTemplateFieldName('N'), '__index'],
   [normalizeTemplateFieldName('Номер'), '__index'],
+  [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
 ])
 
 for (const field of WELD_FIELDS) {
@@ -210,6 +219,23 @@ export function downloadWeldingJournalFromTemplate(
   periodFrom: string,
   periodTo: string,
   fileName?: string,
+  context?: WeldingJournalTemplateContext,
+) {
+  const blob = createWeldingJournalBlobFromTemplate(template, records, context)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${fileName || `Сварочный журнал ${periodFrom || 'all'}-${periodTo || 'all'}`}.xlsx`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+export function createWeldingJournalBlobFromTemplate(
+  template: StoredDocumentTemplate,
+  records: WeldInput[],
+  context: WeldingJournalTemplateContext = {},
 ) {
   const workbook = XLSX.read(template.fileData, { type: 'array', cellStyles: true })
   const sheetName = workbook.SheetNames[0]
@@ -235,7 +261,7 @@ export function downloadWeldingJournalFromTemplate(
     for (const markerCell of repeatedCells) {
       const targetAddress = XLSX.utils.encode_cell({ r: targetRow, c: markerCell.column })
       const originalCell = worksheet[markerCell.address]
-      const value = replaceTemplateMarkers(markerCell.source, record, recordIndex)
+      const value = replaceTemplateMarkers(markerCell.source, record, recordIndex, context)
       worksheet[targetAddress] = {
         ...originalCell,
         t: typeof value === 'number' ? 'n' : 's',
@@ -248,7 +274,8 @@ export function downloadWeldingJournalFromTemplate(
   })
 
   expandWorksheetRef(worksheet, markerRow + Math.max(records.length - 1, 0), Math.max(range.e.c, ...repeatedCells.map((cell) => cell.column)))
-  XLSX.writeFile(workbook, `${fileName || `Сварочный журнал ${periodFrom || 'all'}-${periodTo || 'all'}`}.xlsx`)
+  const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+  return new Blob([workbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 }
 
 export function extractTemplateFields(source: string) {
@@ -321,17 +348,20 @@ function getPrimaryMarkerRow(markerCells: TemplateMarkerCell[]) {
   })[0][0]
 }
 
-function replaceTemplateMarkers(source: string, record: WeldInput, recordIndex: number) {
+function replaceTemplateMarkers(source: string, record: WeldInput, recordIndex: number, context: WeldingJournalTemplateContext) {
   const singleMarker = source.match(/^\s*\{\{\s*([^{}]+?)\s*\}\}\s*$/)
-  if (singleMarker) return getTemplateFieldValue(singleMarker[1], record, recordIndex)
+  if (singleMarker) return getTemplateFieldValue(singleMarker[1], record, recordIndex, context)
 
-  return source.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, fieldName: string) => String(getTemplateFieldValue(fieldName, record, recordIndex) ?? ''))
+  return source.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, fieldName: string) =>
+    String(getTemplateFieldValue(fieldName, record, recordIndex, context) ?? ''),
+  )
 }
 
-function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex: number) {
+function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex: number, context: WeldingJournalTemplateContext) {
   const mappedKey = TEMPLATE_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return recordIndex + 1
+  if (mappedKey === '__welderName') return getWelderNamesForFactStamps(record, context.welderStamps ?? [])
 
   const field = WELD_FIELDS.find((candidate) => candidate.key === mappedKey)
   const value = record[mappedKey]
@@ -432,13 +462,14 @@ function copyWorksheetRowMerges(worksheet: XLSX.WorkSheet, sourceRow: number, ta
 }
 
 function withWrappedCellStyle(style: unknown) {
-  const baseStyle = isObjectRecord(style) ? style : {}
+  const baseStyle = cloneCellStyle(style)
   const alignment = isObjectRecord(baseStyle.alignment) ? baseStyle.alignment : {}
   return {
     ...baseStyle,
     alignment: {
       ...alignment,
       wrapText: true,
+      vertical: alignment.vertical ?? 'center',
     },
   }
 }
@@ -463,6 +494,11 @@ function applyGeneratedRowHeight(worksheet: XLSX.WorkSheet, row: number, startCo
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function cloneCellStyle(style: unknown) {
+  if (!isObjectRecord(style)) return {}
+  return JSON.parse(JSON.stringify(style)) as Record<string, unknown>
 }
 
 function openDocumentTemplateDb() {

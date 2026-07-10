@@ -1,21 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Download, FileSpreadsheet, FileText } from 'lucide-react'
+import { CheckCircle2, Download, ExternalLink, FileSpreadsheet, FileText, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import {
   DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
   DOCUMENT_TEMPLATE_STORAGE_EVENT,
-  downloadWeldingJournalFromTemplate,
+  createWeldingJournalBlobFromTemplate,
   loadDocumentTemplate,
   type StoredDocumentTemplate,
 } from '@/lib/document-template-storage'
+import {
+  deleteGeneratedDocument,
+  downloadBlob,
+  downloadGeneratedDocument,
+  GENERATED_DOCUMENT_STORAGE_EVENT,
+  loadGeneratedDocuments,
+  openGeneratedDocument,
+  saveGeneratedDocument,
+  type StoredGeneratedDocument,
+} from '@/lib/generated-document-storage'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { FIELD_BY_LABEL, WELD_FIELDS, normalizeHeader } from '@/lib/weld-fields'
 import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
+import { getWelderNamesForFactStamps } from '@/lib/welder-stamp-names'
+import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type DocumentsPageProps = {
   rows: WeldRow[]
+  welderStamps: WelderStampRecord[]
   generationRequest?: DocumentGenerationRequest | null
 }
 
@@ -36,6 +49,8 @@ type TemplatePreviewColumn = {
   source: string
   fields: string[]
 }
+
+const EXCEL_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 const WELDING_JOURNAL_FIELDS: JournalField[] = [
   { key: 'projectTitle', label: 'Проект/Титул' },
@@ -72,6 +87,7 @@ const TEMPLATE_PREVIEW_FIELD_ALIASES = new Map<string, string | '__index'>([
   [normalizeTemplateFieldName('№ п/п'), '__index'],
   [normalizeTemplateFieldName('N'), '__index'],
   [normalizeTemplateFieldName('Номер'), '__index'],
+  [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
 ])
 
 for (const field of WELD_FIELDS) {
@@ -165,14 +181,15 @@ function buildExportRows(rows: WeldRow[]) {
   })
 }
 
-async function downloadWeldingJournal(rows: WeldRow[], periodFrom: string, periodTo: string, fileName?: string) {
+async function createWeldingJournalBlob(rows: WeldRow[]) {
   const XLSX = await import('xlsx')
   const worksheet = XLSX.utils.json_to_sheet(buildExportRows(rows))
   worksheet['!cols'] = [{ wch: 5 }, ...WELDING_JOURNAL_FIELDS.map((field) => ({ wch: Math.max(14, field.label.length + 3) }))]
 
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Сварочный журнал')
-  XLSX.writeFile(workbook, `${fileName || `welding-journal-${periodFrom || 'all'}-${periodTo || 'all'}`}.xlsx`)
+  const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+  return new Blob([workbookData], { type: EXCEL_MIME_TYPE })
 }
 
 function getTextValue(value: unknown) {
@@ -202,13 +219,20 @@ function formatScopeFilePart(values: string[], fallback: string) {
 
 function buildWeldingJournalFileName(scope: DocumentScope, periodFrom: string, periodTo: string) {
   const parts = [
-    formatScopeFilePart(scope.projects, 'Все проекты'),
     formatScopeFilePart(scope.subtitles, 'Все шифры'),
-    formatScopeFilePart(scope.lines, 'Все линии'),
     'Сварочный журнал',
     `${formatShortDate(periodFrom)} - ${formatShortDate(periodTo)}`,
   ]
   return parts.map(sanitizeFileNamePart).filter(Boolean).join(' - ')
+}
+
+function normalizeManualFileName(value: string) {
+  return sanitizeFileNamePart(value.replace(/\.xlsx$/i, '').trim())
+}
+
+function ensureXlsxFileName(value: string) {
+  const baseName = normalizeManualFileName(value) || 'Сварочный журнал'
+  return `${baseName}.xlsx`
 }
 
 function extractTemplateFields(source: string) {
@@ -280,32 +304,35 @@ function formatTemplatePreviewHeader(source: string, fields: string[]) {
   return label || fields.join(' / ') || 'Поле'
 }
 
-function getTemplatePreviewCellValue(source: string, row: WeldRow, rowIndex: number) {
+function getTemplatePreviewCellValue(source: string, row: WeldRow, rowIndex: number, welderStamps: WelderStampRecord[]) {
   const singleMarker = source.match(/^\s*\{\{\s*([^{}]+?)\s*\}\}\s*$/)
-  if (singleMarker) return getTemplatePreviewFieldValue(singleMarker[1], row, rowIndex)
+  if (singleMarker) return getTemplatePreviewFieldValue(singleMarker[1], row, rowIndex, welderStamps)
 
   return source.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, fieldName: string) =>
-    String(getTemplatePreviewFieldValue(fieldName, row, rowIndex) ?? ''),
+    String(getTemplatePreviewFieldValue(fieldName, row, rowIndex, welderStamps) ?? ''),
   )
 }
 
-function getTemplatePreviewFieldValue(fieldName: string, row: WeldRow, rowIndex: number) {
+function getTemplatePreviewFieldValue(fieldName: string, row: WeldRow, rowIndex: number, welderStamps: WelderStampRecord[]) {
   const mappedKey = TEMPLATE_PREVIEW_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return rowIndex + 1
+  if (mappedKey === '__welderName') return getWelderNamesForFactStamps(row, welderStamps)
 
   return getCellValue(row, mappedKey)
 }
 
-export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
+export function DocumentsPage({ rows, welderStamps, generationRequest }: DocumentsPageProps) {
   const initialRange = useMemo(() => getCurrentMonthRange(), [])
   const [periodFrom, setPeriodFrom] = useState(initialRange.from)
   const [periodTo, setPeriodTo] = useState(initialRange.to)
   const [selectedProjects, setSelectedProjects] = useState<string[]>([])
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
   const [selectedLines, setSelectedLines] = useState<string[]>([])
+  const [manualFileName, setManualFileName] = useState('')
   const [isDownloading, setIsDownloading] = useState(false)
   const [weldingJournalTemplate, setWeldingJournalTemplate] = useState<StoredDocumentTemplate | null>(null)
+  const [generatedDocuments, setGeneratedDocuments] = useState<StoredGeneratedDocument[]>([])
   const weldingJournalOptions = weldingJournalTemplate?.options?.weldingJournal ?? DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS
   const sourceRows = generationRequest?.type === 'weldingJournal' ? generationRequest.rows : rows
 
@@ -351,6 +378,26 @@ export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
     }
   }, [])
 
+  useEffect(() => {
+    let isMounted = true
+    const syncGeneratedDocuments = () => {
+      loadGeneratedDocuments()
+        .then((documents) => {
+          if (isMounted) setGeneratedDocuments(documents)
+        })
+        .catch(() => {
+          if (isMounted) setGeneratedDocuments([])
+        })
+    }
+
+    syncGeneratedDocuments()
+    window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, syncGeneratedDocuments)
+    return () => {
+      isMounted = false
+      window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, syncGeneratedDocuments)
+    }
+  }, [])
+
   const journalRows = useMemo(() => {
     const fromDate = parseDate(periodFrom)
     const toDate = parseDate(periodTo)
@@ -387,6 +434,7 @@ export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
     () => buildWeldingJournalFileName(exportScope, periodFrom, periodTo),
     [exportScope, periodFrom, periodTo],
   )
+  const downloadFileName = normalizeManualFileName(manualFileName) || exportFileName
 
   const previewRows = journalRows.slice(0, 5)
   const templatePreviewColumns = useMemo(() => buildTemplatePreviewColumns(weldingJournalTemplate), [weldingJournalTemplate])
@@ -440,38 +488,63 @@ export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
               </div>
             ) : null}
           </div>
-          <Button
-            onClick={async () => {
-              setIsDownloading(true)
-              try {
-                if (weldingJournalTemplate?.fileType === 'xlsx' || weldingJournalTemplate?.fileType === 'xls') {
-                  downloadWeldingJournalFromTemplate(weldingJournalTemplate, journalRows, periodFrom, periodTo, exportFileName)
-                } else {
-                  await downloadWeldingJournal(journalRows, periodFrom, periodTo, exportFileName)
+          <div className="w-full max-w-md space-y-2 sm:w-80">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Имя файла
+              <input
+                type="text"
+                value={manualFileName}
+                onChange={(event) => setManualFileName(event.target.value)}
+                placeholder={exportFileName}
+                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
+              />
+            </label>
+            <Button
+              onClick={async () => {
+                setIsDownloading(true)
+                try {
+                  const fileName = ensureXlsxFileName(downloadFileName)
+                  const blob =
+                    weldingJournalTemplate?.fileType === 'xlsx' || weldingJournalTemplate?.fileType === 'xls'
+                      ? createWeldingJournalBlobFromTemplate(weldingJournalTemplate, journalRows, { welderStamps })
+                      : await createWeldingJournalBlob(journalRows)
+
+                  await saveGeneratedDocument({
+                    type: 'weldingJournal',
+                    title: downloadFileName,
+                    fileName,
+                    mimeType: EXCEL_MIME_TYPE,
+                    fileData: await blob.arrayBuffer(),
+                    periodFrom,
+                    periodTo,
+                    rowCount: journalRows.length,
+                    wdiTotal,
+                  })
+                  downloadBlob(blob, fileName)
+                } finally {
+                  setIsDownloading(false)
                 }
-              } finally {
-                setIsDownloading(false)
-              }
-            }}
-            disabled={journalRows.length === 0 || isDownloading}
-            className="gap-2"
-          >
-            <Download className="h-4 w-4" />
-            {isDownloading ? 'Готовлю файл' : 'Скачать Excel'}
-          </Button>
+              }}
+              disabled={journalRows.length === 0 || isDownloading}
+              className="w-full gap-2"
+            >
+              <Download className="h-4 w-4" />
+              {isDownloading ? 'Готовлю файл' : 'Скачать Excel'}
+            </Button>
+          </div>
         </div>
 
-        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(320px,520px)_1fr]">
-          <div className="space-y-4">
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-              <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4 p-4 lg:grid-cols-[minmax(300px,380px)_1fr]">
+          <div className="space-y-3">
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div className="grid grid-cols-2 gap-2">
                 <label className="text-sm font-medium text-slate-700">
                   Период с
                   <input
                     type="date"
                     value={periodFrom}
                     onChange={(event) => setPeriodFrom(event.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900"
                   />
                 </label>
                 <label className="text-sm font-medium text-slate-700">
@@ -480,14 +553,14 @@ export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
                     type="date"
                     value={periodTo}
                     onChange={(event) => setPeriodTo(event.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900"
                   />
                 </label>
               </div>
               <Button
                 type="button"
                 variant="outline"
-                className="mt-3 w-full"
+                className="mt-2 h-8 w-full text-sm"
                 onClick={() => {
                   setPeriodFrom(initialRange.from)
                   setPeriodTo(initialRange.to)
@@ -498,8 +571,23 @@ export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
             </div>
 
             <div className="rounded-md border border-slate-200 bg-white p-3">
-              <div className="mb-2 text-sm font-semibold text-slate-900">Срез документа</div>
-              <div className="space-y-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-slate-900">Срез документа</div>
+                {(selectedProjects.length > 0 || selectedSubtitles.length > 0 || selectedLines.length > 0) && (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-sky-700 hover:text-sky-900"
+                    onClick={() => {
+                      setSelectedProjects([])
+                      setSelectedSubtitles([])
+                      setSelectedLines([])
+                    }}
+                  >
+                    сбросить все
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
                 <DocumentMultiFilter
                   label="Проекты"
                   options={scopeOptions.projects}
@@ -543,7 +631,7 @@ export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
             </div>
             <div className="overflow-x-auto">
               {showTemplatePreview ? (
-                <TemplatePreviewTable columns={templatePreviewColumns} rows={previewRows} totalRows={journalRows.length} />
+                <TemplatePreviewTable columns={templatePreviewColumns} rows={previewRows} totalRows={journalRows.length} welderStamps={welderStamps} />
               ) : (
                 <BasePreviewTable rows={previewRows} totalRows={journalRows.length} />
               )}
@@ -552,31 +640,101 @@ export function DocumentsPage({ rows, generationRequest }: DocumentsPageProps) {
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-md border border-slate-200 bg-white p-5">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-slate-500" />
-            <h2 className="text-base font-semibold text-slate-900">Что формируется здесь</h2>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            Раздел “Документы” отвечает за формирование и просмотр рабочих документов. Настройка шаблонов вынесена отдельно, чтобы не
-            смешивать подготовку форм и ежедневную работу с готовыми документами.
-          </p>
-        </div>
-
-        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-5">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-slate-500" />
-            <h2 className="text-base font-semibold text-slate-900">Следующий слой</h2>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            Позже сюда можно добавить список “созданных документов” и переход из кликабельных заявок или заключений прямо к готовому
-            документу.
-          </p>
-        </div>
-      </section>
+      <GeneratedDocumentsPanel documents={generatedDocuments.filter((documentRecord) => documentRecord.type === 'weldingJournal')} />
     </div>
   )
+}
+
+function GeneratedDocumentsPanel({ documents }: { documents: StoredGeneratedDocument[] }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-slate-500" />
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">История документов</h2>
+            <p className="text-xs text-slate-500">
+              {documents.length > 0 ? `${documents.length} ${formatDocumentCount(documents.length)}` : 'Сформированные документы появятся здесь.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {documents.length > 0 ? (
+        <div className="divide-y divide-slate-100">
+          {documents.map((documentRecord) => (
+            <div key={documentRecord.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <button
+                type="button"
+                className="min-w-0 flex-1 text-left"
+                onClick={() => openGeneratedDocument(documentRecord)}
+                title="Открыть документ в новой вкладке"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="truncate text-sm font-semibold text-sky-800 hover:text-sky-950">{documentRecord.title}</span>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                  <span>{formatGeneratedDocumentDate(documentRecord.createdAt)}</span>
+                  {documentRecord.periodFrom || documentRecord.periodTo ? (
+                    <span>
+                      период: {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)}
+                    </span>
+                  ) : null}
+                  {typeof documentRecord.rowCount === 'number' ? <span>строк: {documentRecord.rowCount}</span> : null}
+                  {typeof documentRecord.wdiTotal === 'number' ? <span>WDI: {documentRecord.wdiTotal}</span> : null}
+                </div>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => downloadGeneratedDocument(documentRecord)}>
+                  <Download className="h-4 w-4" />
+                  Скачать
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  onClick={async () => {
+                    if (!window.confirm(`Удалить документ "${documentRecord.title}" из истории?`)) return
+                    await deleteGeneratedDocument(documentRecord.id)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Удалить
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="px-4 py-8 text-center text-sm text-slate-500">Пока нет сохраненных документов.</div>
+      )}
+    </section>
+  )
+}
+
+function formatGeneratedDocumentDate(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatDocumentCount(count: number) {
+  const lastTwo = count % 100
+  const last = count % 10
+  if (lastTwo >= 11 && lastTwo <= 14) return 'документов'
+  if (last === 1) return 'документ'
+  if (last >= 2 && last <= 4) return 'документа'
+  return 'документов'
 }
 
 function DocumentMultiFilter({
@@ -603,18 +761,18 @@ function DocumentMultiFilter({
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between gap-2">
+    <div className="grid grid-cols-[74px_1fr] items-start gap-2">
+      <div className="flex min-h-8 flex-col justify-center">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
         {selectedValues.length > 0 ? (
-          <button type="button" className="text-xs font-medium text-sky-700 hover:text-sky-900" onClick={() => onChange([])}>
+          <button type="button" className="mt-0.5 text-left text-[11px] font-medium text-sky-700 hover:text-sky-900" onClick={() => onChange([])}>
             сбросить
           </button>
         ) : (
-          <span className="text-xs text-slate-400">{emptyLabel}</span>
+          <span className="mt-0.5 text-[11px] text-slate-400">{emptyLabel}</span>
         )}
       </div>
-      <div className="mt-1 flex max-h-24 flex-wrap gap-1.5 overflow-auto rounded-md border border-slate-200 bg-slate-50 p-2">
+      <div className="flex max-h-16 min-h-8 flex-wrap gap-1 overflow-auto rounded-md border border-slate-200 bg-slate-50 p-1.5">
         {options.length > 0 ? (
           options.map((option) => {
             const isSelected = selectedSet.has(option)
@@ -622,7 +780,7 @@ function DocumentMultiFilter({
               <button
                 key={option}
                 type="button"
-                className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                className={`rounded-md border px-2 py-0.5 text-xs font-semibold transition ${
                   isSelected
                     ? 'border-sky-300 bg-sky-50 text-sky-800 shadow-sm'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
@@ -634,14 +792,24 @@ function DocumentMultiFilter({
             )
           })
         ) : (
-          <span className="px-1 py-1 text-xs text-slate-400">нет значений</span>
+          <span className="px-1 py-0.5 text-xs text-slate-400">нет значений</span>
         )}
       </div>
     </div>
   )
 }
 
-function TemplatePreviewTable({ columns, rows, totalRows }: { columns: TemplatePreviewColumn[]; rows: WeldRow[]; totalRows: number }) {
+function TemplatePreviewTable({
+  columns,
+  rows,
+  totalRows,
+  welderStamps,
+}: {
+  columns: TemplatePreviewColumn[]
+  rows: WeldRow[]
+  totalRows: number
+  welderStamps: WelderStampRecord[]
+}) {
   return (
     <table className="w-full border-collapse text-sm" style={{ minWidth: `${Math.max(760, columns.length * 150)}px` }}>
       <thead className="bg-slate-100 text-slate-600">
@@ -659,7 +827,7 @@ function TemplatePreviewTable({ columns, rows, totalRows }: { columns: TemplateP
             <tr key={row.id} className="border-t border-slate-100">
               {columns.map((column) => (
                 <td key={column.id} className="whitespace-pre-line px-3 py-2 align-top text-slate-700">
-                  {getTemplatePreviewCellValue(column.source, row, rowIndex) || '-'}
+                  {getTemplatePreviewCellValue(column.source, row, rowIndex, welderStamps) || '-'}
                 </td>
               ))}
             </tr>

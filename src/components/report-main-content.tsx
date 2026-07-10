@@ -54,7 +54,7 @@ export function ReportMainContent({
   }
 
   if (activeReport === 'documents') {
-    return <DocumentsPage rows={statisticsRows} generationRequest={documentGenerationRequest} />
+    return <DocumentsPage rows={statisticsRows} welderStamps={welderStamps} generationRequest={documentGenerationRequest} />
   }
 
   if (activeReport === 'settings') {
