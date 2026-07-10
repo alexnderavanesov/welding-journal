@@ -2,7 +2,12 @@ import * as XLSX from 'xlsx-js-style'
 import { FIELD_BY_LABEL, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
 import { formatExportDate, formatExportNumber } from '@/lib/weld-export-utils'
-import { getWelderNamesForFactStamps } from '@/lib/welder-stamp-names'
+import {
+  STAMP_NAME_TEMPLATE_FIELDS,
+  getWelderNameForTemplateStamp,
+  getWelderNamesForOfficialStamps,
+  type TemplateStampNameFieldKey,
+} from '@/lib/welder-stamp-names'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export const DOCUMENT_TEMPLATE_STORAGE_EVENT = 'document-template-storage-change'
@@ -82,7 +87,7 @@ type TemplateMarkerCell = {
   fields: string[]
 }
 
-type TemplateSystemField = '__index' | '__welderName'
+type TemplateSystemField = '__index' | '__welderName' | `__welderName:${TemplateStampNameFieldKey}`
 
 type WeldingJournalTemplateContext = {
   welderStamps?: WelderStampRecord[]
@@ -95,6 +100,11 @@ const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | TemplateSystemF
   [normalizeTemplateFieldName('Номер'), '__index'],
   [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
 ])
+
+for (const field of STAMP_NAME_TEMPLATE_FIELDS) {
+  TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(`${field.label}ФИО сварщика`), `__welderName:${field.key}`)
+  TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(`${field.label} ФИО сварщика`), `__welderName:${field.key}`)
+}
 
 for (const field of WELD_FIELDS) {
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(field.label), field.key as keyof WeldInput)
@@ -366,7 +376,10 @@ function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex
   const mappedKey = TEMPLATE_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return recordIndex + 1
-  if (mappedKey === '__welderName') return formatTemplateFieldFallback(getWelderNamesForFactStamps(record, context.welderStamps ?? []))
+  if (mappedKey === '__welderName') return formatTemplateFieldFallback(getWelderNamesForOfficialStamps(record, context.welderStamps ?? []))
+  if (isTemplateStampWelderNameField(mappedKey)) {
+    return formatTemplateFieldFallback(getWelderNameForTemplateStamp(record, mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey, context.welderStamps ?? []))
+  }
 
   const field = WELD_FIELDS.find((candidate) => candidate.key === mappedKey)
   const value = record[mappedKey]
@@ -379,6 +392,10 @@ function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex
 function formatTemplateFieldFallback(value: unknown) {
   if (typeof value === 'number') return value
   return String(value ?? '').trim() ? value : EMPTY_TEMPLATE_FIELD_VALUE
+}
+
+function isTemplateStampWelderNameField(value: keyof WeldInput | TemplateSystemField): value is `__welderName:${TemplateStampNameFieldKey}` {
+  return typeof value === 'string' && value.startsWith('__welderName:')
 }
 
 function normalizeTemplateFieldName(value: string) {
@@ -433,17 +450,12 @@ function shiftWorksheetRows(worksheet: XLSX.WorkSheet, startRow: number, offset:
 }
 
 function copyWorksheetRow(worksheet: XLSX.WorkSheet, sourceRow: number, targetRow: number, startColumn: number, endColumn: number) {
-  if (sourceRow === targetRow) return
-
   for (let column = startColumn; column <= endColumn; column += 1) {
     const sourceAddress = XLSX.utils.encode_cell({ r: sourceRow, c: column })
     const targetAddress = XLSX.utils.encode_cell({ r: targetRow, c: column })
     const sourceCell = worksheet[sourceAddress]
     if (sourceCell) {
-      worksheet[targetAddress] = {
-        ...sourceCell,
-        s: cloneCellStyle(sourceCell.s),
-      }
+      worksheet[targetAddress] = cloneTemplateRowCell(sourceCell)
     } else {
       delete worksheet[targetAddress]
     }
@@ -488,6 +500,32 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 function cloneCellStyle(style: unknown) {
   if (!isObjectRecord(style)) return {}
   return JSON.parse(JSON.stringify(style)) as Record<string, unknown>
+}
+
+function cloneTemplateRowCell(sourceCell: XLSX.CellObject) {
+  const clonedCell = {
+    ...sourceCell,
+    s: cloneCellStyle(sourceCell.s),
+  }
+
+  if (hasCellStyle(sourceCell.s) && !hasCellContent(sourceCell)) {
+    return {
+      ...clonedCell,
+      t: 's',
+      v: '',
+      w: undefined,
+    } satisfies XLSX.CellObject
+  }
+
+  return clonedCell
+}
+
+function hasCellStyle(style: unknown) {
+  return isObjectRecord(style) && Object.keys(style).length > 0
+}
+
+function hasCellContent(cell: XLSX.CellObject) {
+  return cell.v !== undefined && cell.v !== null && String(cell.v) !== ''
 }
 
 type WorkbookXmlPreservationContext = {
@@ -581,7 +619,7 @@ function applyTemplateCellStyles(
   const generatedStartRow = markerRow + 1
   const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
 
-  return sheetXml.replace(/<c\b[^>]*>/g, (tag) => {
+  const styledSheetXml = sheetXml.replace(/<c\b[^>]*>/g, (tag) => {
     const attrs = parseXmlAttributes(tag)
     const cellRef = attrs.get('r')
     if (!cellRef) return tag
@@ -597,6 +635,71 @@ function applyTemplateCellStyles(
           : decoded.row - extraRows
     const styleId = styleByCell.get(`${sourceRow}:${decoded.column}`)
     return styleId === undefined ? removeXmlAttribute(tag, 's') : setXmlAttribute(tag, 's', styleId)
+  })
+
+  return ensureGeneratedStyledEmptyCells(styledSheetXml, styleByCell, {
+    markerRow,
+    recordCount,
+  })
+}
+
+function ensureGeneratedStyledEmptyCells(
+  sheetXml: string,
+  styleByCell: Map<string, string>,
+  { markerRow, recordCount }: WorkbookXmlPreservationContext,
+) {
+  const generatedStartRow = markerRow + 1
+  const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
+  const styleByColumn = new Map<number, string>()
+
+  for (const entry of Array.from(styleByCell.entries())
+    .map(([key, styleId]) => {
+      const [row, column] = key.split(':').map(Number)
+      return row === generatedStartRow && Number.isFinite(column) ? { column, styleId } : null
+    })
+    .filter((entry): entry is { column: number; styleId: string } => Boolean(entry))
+    .sort((left, right) => left.column - right.column)) {
+    if (!styleByColumn.has(entry.column)) styleByColumn.set(entry.column, entry.styleId)
+  }
+
+  for (const rowXml of sheetXml.match(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g) ?? []) {
+    const rowNumber = Number(parseXmlAttributes(rowXml).get('r'))
+    if (!Number.isFinite(rowNumber) || rowNumber < generatedStartRow || rowNumber > generatedEndRow) continue
+
+    for (const cellTag of rowXml.match(/<c\b[^>]*>/g) ?? []) {
+      const attrs = parseXmlAttributes(cellTag)
+      const cellRef = attrs.get('r')
+      const styleId = attrs.get('s')
+      const decoded = cellRef ? decodeCellReference(cellRef) : null
+      if (decoded && styleId !== undefined && !styleByColumn.has(decoded.column)) styleByColumn.set(decoded.column, styleId)
+    }
+  }
+
+  if (!styleByColumn.size) return sheetXml
+
+  return sheetXml.replace(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g, (rowXml) => {
+    const rowAttrs = parseXmlAttributes(rowXml)
+    const rowNumber = Number(rowAttrs.get('r'))
+    if (!Number.isFinite(rowNumber) || rowNumber < generatedStartRow || rowNumber > generatedEndRow) return rowXml
+
+    const existingColumns = new Set<number>()
+    const styledRowXml = rowXml.replace(/<c\b[^>]*>/g, (cellTag) => {
+      const cellRef = parseXmlAttributes(cellTag).get('r')
+      const decoded = cellRef ? decodeCellReference(cellRef) : null
+      if (decoded) existingColumns.add(decoded.column)
+      const styleId = decoded ? styleByColumn.get(decoded.column) : undefined
+      return styleId === undefined ? cellTag : setXmlAttribute(cellTag, 's', styleId)
+    })
+
+    const missingCells = Array.from(styleByColumn.entries())
+      .sort((left, right) => left[0] - right[0])
+      .filter(([column]) => !existingColumns.has(column))
+      .map(([column, styleId]) => `<c r="${encodeCellReference(rowNumber, column)}" s="${escapeXmlAttribute(styleId)}"/>`)
+      .join('')
+
+    if (!missingCells) return styledRowXml
+    if (/\/>$/.test(styledRowXml)) return styledRowXml.replace(/\/>$/, `>${missingCells}</row>`)
+    return styledRowXml.replace(/<\/row>$/, `${missingCells}</row>`)
   })
 }
 
@@ -651,6 +754,21 @@ function decodeColumnReference(value: string) {
     .toUpperCase()
     .split('')
     .reduce((total, char) => total * 26 + char.charCodeAt(0) - 64, 0)
+}
+
+function encodeCellReference(row: number, column: number) {
+  return `${encodeColumnReference(column)}${row}`
+}
+
+function encodeColumnReference(column: number) {
+  let value = ''
+  let current = column
+  while (current > 0) {
+    const remainder = (current - 1) % 26
+    value = String.fromCharCode(65 + remainder) + value
+    current = Math.floor((current - 1) / 26)
+  }
+  return value
 }
 
 function openDocumentTemplateDb() {

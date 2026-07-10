@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronDown, Download, ExternalLink, FileSpreadsheet, FileText, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import {
@@ -23,7 +24,12 @@ import {
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { FIELD_BY_LABEL, WELD_FIELDS, normalizeHeader } from '@/lib/weld-fields'
 import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
-import { getWelderNamesForFactStamps } from '@/lib/welder-stamp-names'
+import {
+  STAMP_NAME_TEMPLATE_FIELDS,
+  getWelderNameForTemplateStamp,
+  getWelderNamesForOfficialStamps,
+  type TemplateStampNameFieldKey,
+} from '@/lib/welder-stamp-names'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 const EMPTY_TEMPLATE_FIELD_VALUE = 'н/п'
@@ -84,13 +90,20 @@ const WELDING_JOURNAL_FIELDS: JournalField[] = [
   { key: 'responsible', label: 'Ответственный' },
 ]
 
-const TEMPLATE_PREVIEW_FIELD_ALIASES = new Map<string, string | '__index'>([
+type TemplatePreviewSystemField = '__index' | '__welderName' | `__welderName:${TemplateStampNameFieldKey}`
+
+const TEMPLATE_PREVIEW_FIELD_ALIASES = new Map<string, string | TemplatePreviewSystemField>([
   [normalizeTemplateFieldName('№'), '__index'],
   [normalizeTemplateFieldName('№ п/п'), '__index'],
   [normalizeTemplateFieldName('N'), '__index'],
   [normalizeTemplateFieldName('Номер'), '__index'],
   [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
 ])
+
+for (const field of STAMP_NAME_TEMPLATE_FIELDS) {
+  TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(`${field.label}ФИО сварщика`), `__welderName:${field.key}`)
+  TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(`${field.label} ФИО сварщика`), `__welderName:${field.key}`)
+}
 
 for (const field of WELD_FIELDS) {
   TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(field.label), field.key)
@@ -319,7 +332,10 @@ function getTemplatePreviewFieldValue(fieldName: string, row: WeldRow, rowIndex:
   const mappedKey = TEMPLATE_PREVIEW_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return rowIndex + 1
-  if (mappedKey === '__welderName') return formatTemplatePreviewFieldFallback(getWelderNamesForFactStamps(row, welderStamps))
+  if (mappedKey === '__welderName') return formatTemplatePreviewFieldFallback(getWelderNamesForOfficialStamps(row, welderStamps))
+  if (isTemplateStampWelderNamePreviewField(mappedKey)) {
+    return formatTemplatePreviewFieldFallback(getWelderNameForTemplateStamp(row, mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey, welderStamps))
+  }
 
   return formatTemplatePreviewFieldFallback(getCellValue(row, mappedKey))
 }
@@ -328,6 +344,10 @@ function formatTemplatePreviewFieldFallback(value: unknown) {
   if (typeof value === 'number') return value
   const text = String(value ?? '').trim()
   return text && text !== '-' ? value : EMPTY_TEMPLATE_FIELD_VALUE
+}
+
+function isTemplateStampWelderNamePreviewField(value: string | TemplatePreviewSystemField): value is `__welderName:${TemplateStampNameFieldKey}` {
+  return value.startsWith('__welderName:')
 }
 
 export function DocumentsPage({ rows, welderStamps, generationRequest }: DocumentsPageProps) {
@@ -670,6 +690,7 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
 
 function GeneratedDocumentsPanel({ documents }: { documents: StoredGeneratedDocument[] }) {
   const [isOpen, setIsOpen] = useState(true)
+  const confirmAction = useConfirmAction()
 
   return (
     <section className="rounded-md border border-slate-200 bg-white">
@@ -724,8 +745,13 @@ function GeneratedDocumentsPanel({ documents }: { documents: StoredGeneratedDocu
                   size="sm"
                   className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
                   onClick={async () => {
-                    if (!window.confirm(`Удалить документ "${documentRecord.title}" из истории?`)) return
-                    await deleteGeneratedDocument(documentRecord.id)
+                    const confirmed = await confirmAction({
+                      title: 'Удалить документ',
+                      itemName: documentRecord.title,
+                      description: 'Документ будет удален из истории сформированных документов.',
+                      warning: 'Файл больше не будет доступен в истории. Это действие нельзя отменить.',
+                    })
+                    if (confirmed) await deleteGeneratedDocument(documentRecord.id)
                   }}
                 >
                   <Trash2 className="h-4 w-4" />

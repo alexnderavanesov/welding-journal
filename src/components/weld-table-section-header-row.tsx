@@ -87,7 +87,7 @@ function ExtraSectionHeader({ section, colSpan }: { section: string; colSpan: nu
 }
 
 function getSectionTitle(section: string) {
-  return section === 'Контроль' ? 'Назначения' : section
+  return section === 'Контроль' ? 'Назначение' : section
 }
 
 function groupExtraColumnsBySection(columns: WeldTableExtraColumn[]) {

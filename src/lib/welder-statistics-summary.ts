@@ -230,29 +230,43 @@ function getJointType(row: WeldRow): 'f' | 's' | null {
 
 function buildWelderStampLabelMap(records: WelderStampRecord[]) {
   const map = new Map<string, string>()
+
+  for (const record of records) {
+    const naksStamp = record.naksStamp.trim()
+    if (naksStamp && !map.has(normalizeStamp(naksStamp))) map.set(normalizeStamp(naksStamp), naksStamp)
+  }
+
   for (const record of records) {
     const naksStamp = record.naksStamp.trim()
     const internalStamp = record.internalStamp.trim()
     const label = naksStamp || internalStamp
     if (!label) continue
 
-    if (naksStamp && !map.has(normalizeStamp(naksStamp))) map.set(normalizeStamp(naksStamp), naksStamp)
     if (internalStamp && !map.has(normalizeStamp(internalStamp))) map.set(normalizeStamp(internalStamp), label)
   }
+
   return map
 }
 
 function buildWelderNameMap(records: WelderStampRecord[]) {
   const map = new Map<string, string>()
+
   for (const record of records) {
     const name = record.welderName.trim()
     if (!name) continue
 
     const naksStamp = record.naksStamp.trim()
-    const internalStamp = record.internalStamp.trim()
     if (naksStamp && !map.has(normalizeStamp(naksStamp))) map.set(normalizeStamp(naksStamp), name)
+  }
+
+  for (const record of records) {
+    const name = record.welderName.trim()
+    if (!name) continue
+
+    const internalStamp = record.internalStamp.trim()
     if (internalStamp && !map.has(normalizeStamp(internalStamp))) map.set(normalizeStamp(internalStamp), name)
   }
+
   return map
 }
 

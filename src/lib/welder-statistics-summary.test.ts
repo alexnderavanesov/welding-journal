@@ -98,6 +98,31 @@ describe('buildWelderStatisticsSummary', () => {
     })
   })
 
+  it('prefers exact NAKS stamp over another welder internal stamp alias', () => {
+    const rows = [
+      {
+        id: 1,
+        weldDate: '2026-07-01',
+        stamp1KFact: 'ARCH',
+        stamp1ZFact: 'ARCH',
+        stamp1OFact: 'ARCH',
+        hasVik: 'да',
+      },
+    ] as WeldRow[]
+    const welderStamps = [
+      welderStamp({ naksStamp: 'ABC1', internalStamp: 'ARCH', welderName: 'Петров Владислав' }),
+      welderStamp({ naksStamp: 'ARCH', internalStamp: '', welderName: 'Иванов Иван' }),
+    ]
+
+    const summary = buildWelderStatisticsSummary(rows, welderStamps, '2026-07-01', '2026-07-31', 'joints')
+
+    expect(summary.rows[0]).toMatchObject({
+      stamp: 'ARCH',
+      welderName: 'Иванов Иван',
+      total: 1,
+    })
+  })
+
   it('tracks F/S totals and can filter welders by joint type', () => {
     const rows = [
       {

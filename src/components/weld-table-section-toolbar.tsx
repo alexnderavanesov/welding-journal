@@ -48,7 +48,7 @@ export function WeldTableSectionToolbar({
             title={!canCollapse ? 'Обязательные поля всегда показаны' : collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
           >
             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {group.section}
+            {getSectionTitle(group.section)}
             <span className="text-slate-400">
               {visibleCount}/{group.fields.length}
             </span>
@@ -57,4 +57,8 @@ export function WeldTableSectionToolbar({
       })}
     </div>
   )
+}
+
+function getSectionTitle(section: string) {
+  return section === 'Контроль' ? 'Назначение' : section
 }

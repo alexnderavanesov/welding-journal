@@ -1,5 +1,5 @@
-import { type ChangeEvent, useEffect, useState } from 'react'
-import { AlertTriangle, Bell, CheckCircle2, ChevronDown, FileText, Hash, Inbox, Pencil, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
+import { type ChangeEvent, type ReactNode, useEffect, useState } from 'react'
+import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Download, FileText, Hash, Inbox, Pencil, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
 import {
   deleteDocumentTemplate,
   DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
@@ -335,6 +335,20 @@ function DocumentTemplatesSettings() {
     }))
   }
 
+  const handleTemplateDownload = () => {
+    if (!activeUpload) return
+
+    const blob = new Blob([activeUpload.fileData], { type: getTemplateMimeType(activeUpload.fileType) })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = activeUpload.fileName || `${activeTemplate.label}.${activeUpload.fileType || 'xlsx'}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
@@ -344,13 +358,24 @@ function DocumentTemplatesSettings() {
               <Upload className="h-5 w-5 text-slate-500" />
               <h3 className="text-base font-semibold text-slate-900">Шаблоны документов</h3>
             </div>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Загружайте шаблон под конкретный тип документа. В Excel используйте маркеры вида <TemplateToken>Линия</TemplateToken>.
-              Для названий столбцов используйте формат <TemplateToken>столбец</TemplateToken>, для номера строки{' '}
-              <TemplateToken>№ п/п</TemplateToken>, для ФИО сварщика <TemplateToken>ФИО сварщика</TemplateToken>. В одной ячейке можно
-              указать несколько маркеров, например <TemplateToken>Линия</TemplateToken> и <TemplateToken>Контроль швов, (%)</TemplateToken>{' '}
-              на разных строках одной ячейки.
-            </p>
+            <div className="mt-2 max-w-4xl space-y-1.5 text-sm leading-6 text-slate-600">
+              <p>Загружайте Excel-шаблон под конкретный тип документа и ставьте маркеры в тех ячейках, куда нужно подставить данные.</p>
+              <TemplateHintLine label="Основные маркеры">
+                <TemplateToken>Линия</TemplateToken>
+                <TemplateToken>Дата сварки</TemplateToken>
+                <TemplateToken>№ п/п</TemplateToken>
+              </TemplateHintLine>
+              <p>В маркерах можно использовать название любого системного столбца из журнала.</p>
+              <TemplateHintLine label="ФИО по официальному клейму">
+                <TemplateToken>Корень_1ФИО сварщика</TemplateToken>
+                <TemplateToken>Заполнение_1ФИО сварщика</TemplateToken>
+                <TemplateToken>Облицовка_1ФИО сварщика</TemplateToken>
+              </TemplateHintLine>
+              <p>
+                В одной ячейке можно указать несколько маркеров, например <TemplateToken>Линия</TemplateToken> и{' '}
+                <TemplateToken>Контроль швов, (%)</TemplateToken> на разных строках.
+              </p>
+            </div>
           </div>
           <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100">
             <Upload className="h-4 w-4" />
@@ -403,21 +428,31 @@ function DocumentTemplatesSettings() {
               <p className="mt-1 text-sm text-slate-500">{activeTemplate.description}</p>
             </div>
             {activeUpload ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  await deleteDocumentTemplate(activeTemplateId)
-                  setUploads((currentUploads) => {
-                    const nextUploads = { ...currentUploads }
-                    delete nextUploads[activeTemplateId]
-                    return nextUploads
-                  })
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-              >
-                <Trash2 className="h-4 w-4" />
-                Удалить шаблон
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleTemplateDownload}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" />
+                  Скачать шаблон
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await deleteDocumentTemplate(activeTemplateId)
+                    setUploads((currentUploads) => {
+                      const nextUploads = { ...currentUploads }
+                      delete nextUploads[activeTemplateId]
+                      return nextUploads
+                    })
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Удалить шаблон
+                </button>
+              </div>
             ) : null}
           </div>
 
@@ -516,6 +551,20 @@ function TemplateOptionCheckbox({
 
 function TemplateToken({ children }: { children: string }) {
   return <span className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-xs text-slate-800">{`{{${children}}}`}</span>
+}
+
+function TemplateHintLine({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <p>
+      <span className="font-medium text-slate-700">{label}:</span> <span className="inline-flex flex-wrap gap-1.5 align-middle">{children}</span>
+    </p>
+  )
+}
+
+function getTemplateMimeType(fileType: string) {
+  if (fileType === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  if (fileType === 'xls') return 'application/vnd.ms-excel'
+  return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 }
 
 function EmptyTemplateState() {
