@@ -68,6 +68,7 @@ import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-compatibility'
+import { loadOtherSettings } from '@/lib/other-settings'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 import {
   buildLineFilters,
@@ -82,6 +83,10 @@ import {
   type DuplicateControlMethod,
   type DuplicateControlRecord,
 } from '@/lib/duplicate-control-types'
+import {
+  getDefaultNamingState,
+  useRequestConclusionSettings,
+} from '@/lib/request-conclusion-settings'
 
 export function useHomePageController() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -202,6 +207,23 @@ export function useHomePageController() {
   const [duplicateControlDraft, setDuplicateControlDraft] = useState<DuplicateControlDraft>(() =>
     createEmptyDuplicateControlDraft(),
   )
+  const requestConclusionSettings = useRequestConclusionSettings()
+  const defaultLnkRequestNaming = useMemo(
+    () => getDefaultNamingState(requestConclusionSettings, 'lnkRequest'),
+    [requestConclusionSettings],
+  )
+  const defaultLnkConclusionNaming = useMemo(
+    () => getDefaultNamingState(requestConclusionSettings, 'lnkConclusion'),
+    [requestConclusionSettings],
+  )
+  const defaultPstoRequestNaming = useMemo(
+    () => getDefaultNamingState(requestConclusionSettings, 'pstoRequest'),
+    [requestConclusionSettings],
+  )
+  const defaultPstoConclusionNaming = useMemo(
+    () => getDefaultNamingState(requestConclusionSettings, 'pstoConclusion'),
+    [requestConclusionSettings],
+  )
   const {
     isPstoShowMenuOpen,
     isLnkShowMenuOpen,
@@ -308,6 +330,10 @@ export function useHomePageController() {
     setSelectedLnkIds,
     setShouldPinPreviewedLnkResultRows,
     setWelderStampSearch,
+    defaultLnkRequestNaming,
+    defaultLnkConclusionNaming,
+    defaultPstoRequestNaming,
+    defaultPstoConclusionNaming,
   })
 
   const weldsQuery = useWeldsQuery()
@@ -392,6 +418,7 @@ export function useHomePageController() {
     lnkResultDraft,
     managedPstoRequestName,
     managedLnkRequestName,
+    requestConclusionSettings,
   })
   const {
     lnkRequestMutation,
@@ -425,6 +452,8 @@ export function useHomePageController() {
     setManagedLnkPendingResultChanges,
     setManagedLnkResultChangeHint,
     setHeatTreatmentFieldEditing,
+    defaultLnkRequestNaming,
+    defaultLnkConclusionNaming,
   })
   const {
     closeCreateLnkRequestModal,
@@ -451,6 +480,7 @@ export function useHomePageController() {
     setPreservedOrderIds: setPreservedLnkOrderIds,
     setSearch: setLnkRequestSearch,
     setSelectedIds: setSelectedLnkIds,
+    defaultNaming: defaultLnkRequestNaming,
   })
   const {
     changeManagedLnkRequest,
@@ -535,6 +565,8 @@ export function useHomePageController() {
     setManagedPstoRequestNameDraft,
     setIsPstoRequestManagerOpen,
     setHeatTreatmentFieldEditing,
+    defaultPstoRequestNaming,
+    defaultPstoConclusionNaming,
   })
   const {
     handleEditRecord,
@@ -610,6 +642,7 @@ export function useHomePageController() {
     setPreservedOrderIds: setPreservedLnkOrderIds,
     setRequestSearch: setLnkResultRequestSearch,
     setShouldPinPreviewedRows: setShouldPinPreviewedLnkResultRows,
+    defaultConclusionNaming: defaultLnkConclusionNaming,
   })
   const {
     handleAddLnkResult,
@@ -851,6 +884,8 @@ export function useHomePageController() {
     setPstoResultDraft,
     setPstoResultRequestSearch,
     setSelectedHeatTreatmentIds,
+    defaultRequestNaming: defaultPstoRequestNaming,
+    defaultConclusionNaming: defaultPstoConclusionNaming,
   })
 
   const {
@@ -1347,6 +1382,7 @@ export function useHomePageController() {
     getExternalSaveBlockReason: (draft) =>
       getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
         allowedArchivedOfficialStamps: allowedArchivedOfficialStampsForEditing,
+        ignoreArchivedMissingRegistry: loadOtherSettings().includeArchivedWelderStampsInForm,
         suspensions: welderStampSuspensions,
       }),
     isSaving: saveMutation.isPending,

@@ -63,6 +63,8 @@ export type UsePstoReportActionsOptions = {
   pstoRequestMutation: MutationLike<PstoRequestVariables>
   pstoResultCorrectionMutation: MutationLike<PstoResultCorrectionVariables>
   pstoResultMutation: MutationLike<PstoResultVariables>
+  defaultRequestNaming: RequestNamingState
+  defaultConclusionNaming: RequestNamingState
   setIsPstoRequestManagerOpen: (value: boolean) => void
   setIsPstoRequestModalOpen: (value: boolean) => void
   setIsPstoResultManagerOpen: (value: boolean) => void

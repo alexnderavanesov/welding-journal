@@ -40,4 +40,6 @@ export type UseLnkReportMutationsOptions = {
   setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string>>>
   setManagedLnkResultChangeHint: (value: ManagedLnkResultChangeHintState) => void
   setHeatTreatmentFieldEditing: (value: HeatTreatmentFieldEditingState | null) => void
+  defaultLnkRequestNaming: RequestNamingState
+  defaultLnkConclusionNaming: RequestNamingState
 }

@@ -17,6 +17,7 @@ export function useLnkResultActions({
   lnkRows,
   draft,
   mutation,
+  defaultConclusionNaming,
   setDraft,
   setIsModalOpen,
   setIsPreviewOpen,
@@ -28,7 +29,7 @@ export function useLnkResultActions({
   function openAddLnkResultModal() {
     setPreservedOrderIds(null)
     setRequestSearch('')
-    setDraft(createDefaultLnkResultDraft())
+    setDraft(createDefaultLnkResultDraft(defaultConclusionNaming))
     setShouldPinPreviewedRows(false)
     setIsModalOpen(true)
   }
@@ -44,7 +45,7 @@ export function useLnkResultActions({
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
     setRequestSearch(requestName)
     setDraft({
-      ...createDefaultLnkResultDraft(),
+      ...createDefaultLnkResultDraft(defaultConclusionNaming),
       requestName,
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),

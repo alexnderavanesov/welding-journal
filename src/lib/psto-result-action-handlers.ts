@@ -21,6 +21,7 @@ export function createPstoResultActionHandlers({
   selectedPstoResultRows,
   pstoResultCorrectionMutation,
   pstoResultMutation,
+  defaultConclusionNaming,
   setIsPstoResultManagerOpen,
   setIsPstoResultModalOpen,
   setManagedPstoDiagramDrafts,
@@ -30,7 +31,7 @@ export function createPstoResultActionHandlers({
 }: UsePstoReportActionsOptions) {
   function openAddPstoResultModal() {
     setPstoResultRequestSearch('')
-    setPstoResultDraft(createDefaultPstoResultDraft())
+    setPstoResultDraft(createDefaultPstoResultDraft(defaultConclusionNaming))
     setIsPstoResultModalOpen(true)
   }
 
@@ -42,7 +43,7 @@ export function createPstoResultActionHandlers({
     }
 
     setPstoResultDraft({
-      ...createDefaultPstoResultDraft(),
+      ...createDefaultPstoResultDraft(defaultConclusionNaming),
       requestName,
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),

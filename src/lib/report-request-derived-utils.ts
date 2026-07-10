@@ -1,5 +1,6 @@
 import type { LnkRequestDraftState, LnkResultDraftState, PstoResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { LNK_REQUEST_FIELD_KEYS } from '@/lib/report-config'
 import {
   collectLnkResultRequestNames,
@@ -30,12 +31,12 @@ export function getSelectedLnkRequestTargetCount(selectedLnkRows: WeldRow[], sel
   return countLnkRequestTargets(selectedLnkRows, selectedLnkMethodKeys)
 }
 
-export function getNextPstoRequestName(heatTreatmentRows: WeldRow[]) {
-  return formatPstoRequestName(heatTreatmentRows)
+export function getNextPstoRequestName(heatTreatmentRows: WeldRow[], settings: RequestConclusionSettings) {
+  return formatPstoRequestName(heatTreatmentRows, settings)
 }
 
-export function getNextLnkRequestName(rows: WeldRow[]) {
-  return formatLnkRequestName(rows)
+export function getNextLnkRequestName(rows: WeldRow[], settings: RequestConclusionSettings) {
+  return formatLnkRequestName(rows, settings)
 }
 
 export function getPstoRequestOptions(rows: WeldRow[]) {
@@ -74,12 +75,12 @@ export function getManagedLnkRequestMethods(managedLnkRequestRows: WeldRow[], ma
   return getLnkRequestMethodsForRows(managedLnkRequestRows, managedLnkRequestName)
 }
 
-export function getNextLnkConclusionName(rows: WeldRow[], lnkResultDraft: LnkResultDraftState) {
-  return formatLnkConclusionName(rows, lnkResultDraft.controlDate, lnkResultDraft.methodKey)
+export function getNextLnkConclusionName(rows: WeldRow[], lnkResultDraft: LnkResultDraftState, settings: RequestConclusionSettings) {
+  return formatLnkConclusionName(rows, lnkResultDraft.controlDate, lnkResultDraft.methodKey, settings)
 }
 
-export function getNextPstoDiagramName(rows: WeldRow[], pstoResultDraft: PstoResultDraftState) {
-  return formatPstoDiagramName(rows, pstoResultDraft.pstoDate)
+export function getNextPstoDiagramName(rows: WeldRow[], pstoResultDraft: PstoResultDraftState, settings: RequestConclusionSettings) {
+  return formatPstoDiagramName(rows, pstoResultDraft.pstoDate, settings)
 }
 
 export function getSelectedPstoResultRequestRows(heatTreatmentRows: WeldRow[], pstoResultDraft: PstoResultDraftState) {

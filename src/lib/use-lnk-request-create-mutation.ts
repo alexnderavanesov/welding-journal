@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
 import { buildLnkRequestRows } from '@/lib/lnk-report-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
@@ -16,6 +15,7 @@ export function useLnkRequestCreateMutation({
   setLnkRequestDraft,
   setLnkRequestNaming,
   setIsLnkRequestModalOpen,
+  defaultLnkRequestNaming,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -43,7 +43,7 @@ export function useLnkRequestCreateMutation({
       setLnkNotice(formatRequestCreatedMessage(variables.requestName, savedRows.length))
       setSelectedLnkIds(new Set())
       setLnkRequestDraft({ methods: new Set() })
-      setLnkRequestNaming(defaultRequestNamingState)
+      setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
       await invalidateWeldJoints(queryClient)
     },

@@ -26,6 +26,7 @@ export function usePstoResultMutations({
   setIsPstoResultModalOpen,
   setPstoResultDraft,
   setHeatTreatmentFieldEditing,
+  defaultPstoConclusionNaming,
 }: UsePstoReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -51,7 +52,7 @@ export function usePstoResultMutations({
       highlightChangedRows(savedRows, [...PSTO_RESULT_HIGHLIGHT_FIELDS])
       setMessage(`Результат ПСТО внесен для стыков: ${savedRows.length}`)
       setIsPstoResultModalOpen(false)
-      setPstoResultDraft(createDefaultPstoResultDraft())
+      setPstoResultDraft(createDefaultPstoResultDraft(defaultPstoConclusionNaming))
       await invalidateWeldJoints(queryClient)
     },
     onError: (error) => {

@@ -26,6 +26,7 @@ import {
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
+import { loadOtherSettings } from '@/lib/other-settings'
 import type {
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
@@ -62,11 +63,13 @@ export function prepareWeldSaveValue({
   normalizeLegacyControlAvailabilityForSave(preparedValue)
   validateRequiredRootStampForSave(preparedValue)
   validateManualJointNameForSave(preparedValue, rows)
+  const otherSettings = loadOtherSettings()
   validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
     allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(
       preparedValue.id ? rows.find((row) => row.id === preparedValue.id) : undefined,
       welderStamps,
     ),
+    ignoreArchivedMissingRegistry: otherSettings.includeArchivedWelderStampsInForm,
     suspensions: welderStampSuspensions,
   })
   return preparedValue

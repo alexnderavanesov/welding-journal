@@ -35,7 +35,7 @@ export type PstoResultDraftState = {
   search: string
 }
 
-export function createDefaultLnkResultDraft(): LnkResultDraftState {
+export function createDefaultLnkResultDraft(conclusionNaming: RequestNamingState = defaultRequestNamingState): LnkResultDraftState {
   return {
     requestName: '',
     methodKey: '',
@@ -43,7 +43,7 @@ export function createDefaultLnkResultDraft(): LnkResultDraftState {
     rowResults: {},
     controlDate: formatDateInputValue(new Date()),
     result: '',
-    conclusionNaming: defaultRequestNamingState,
+    conclusionNaming,
     search: '',
   }
 }
@@ -56,13 +56,13 @@ export function createDefaultLnkOfficialityDraft(): LnkOfficialityDraftState {
   }
 }
 
-export function createDefaultPstoResultDraft(): PstoResultDraftState {
+export function createDefaultPstoResultDraft(diagramNaming: RequestNamingState = defaultRequestNamingState): PstoResultDraftState {
   return {
     requestName: '',
     rowIds: new Set(),
     pstoDate: formatDateInputValue(new Date()),
     result: '',
-    diagramNaming: defaultRequestNamingState,
+    diagramNaming,
     search: '',
   }
 }

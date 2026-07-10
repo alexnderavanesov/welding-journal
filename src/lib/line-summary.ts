@@ -1,5 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
+import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import { calculateFinalStatusInRows } from '@/lib/weld-status'
 
@@ -175,9 +176,7 @@ function getChainKey(row: WeldRow) {
 
 function getJointType(row: WeldRow): 'f' | 's' | null {
   const base = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
-  if (base.startsWith('F')) return 'f'
-  if (base.startsWith('S')) return 's'
-  return null
+  return getConfiguredBaseJointType(base)
 }
 
 function getJointOrder(value: unknown) {

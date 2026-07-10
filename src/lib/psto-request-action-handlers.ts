@@ -1,7 +1,6 @@
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
 import { canCreatePstoRequest } from '@/lib/psto-status'
-import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
 
 export function createPstoRequestActionHandlers({
@@ -16,6 +15,7 @@ export function createPstoRequestActionHandlers({
   pstoRequestCorrectionMutation,
   pstoRequestManagerMutation,
   pstoRequestMutation,
+  defaultRequestNaming,
   setIsPstoRequestManagerOpen,
   setIsPstoRequestModalOpen,
   setManagedPstoRequestName,
@@ -42,7 +42,7 @@ export function createPstoRequestActionHandlers({
 
   function openCreatePstoRequestModal() {
     setSelectedHeatTreatmentIds(new Set())
-    setPstoRequestNaming(defaultRequestNamingState)
+    setPstoRequestNaming(defaultRequestNaming)
     setPstoRequestSearch('')
     setIsPstoRequestModalOpen(true)
   }
@@ -54,7 +54,7 @@ export function createPstoRequestActionHandlers({
     }
 
     setSelectedHeatTreatmentIds(new Set([row.id]))
-    setPstoRequestNaming(defaultRequestNamingState)
+    setPstoRequestNaming(defaultRequestNaming)
     setPstoRequestSearch(String(row.joint ?? row.line ?? ''))
     setIsPstoRequestModalOpen(true)
   }

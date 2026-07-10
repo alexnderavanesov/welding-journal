@@ -1,6 +1,7 @@
 import type { WeldDraft } from '@/lib/dispatcher-types'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
+import { getSystemIndexSummaryText } from '@/lib/system-index-settings'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import {
   getCancelledLnkResultDisplay,
@@ -25,7 +26,7 @@ export function getWeldFormSaveBlockReason(draft: WeldInput, initialValue: WeldD
   if (initialValue.id && currentJoint === initialJoint) return null
 
   if (initialValue.id && hasReservedJointSystemPart(initialValue.joint)) {
-    return 'стык с системными индексами R/W/Y нельзя переименовывать вручную. Используйте подсказки диспетчера задач.'
+    return `стык с системными индексами ${getSystemIndexSummaryText()} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`
   }
 
   return validateManualJointName(draft.joint)

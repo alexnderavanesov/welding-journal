@@ -4,6 +4,7 @@ import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
+import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export type WelderStatisticsJointFilter = 'all' | 'f' | 's'
@@ -218,9 +219,7 @@ function matchesJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter) {
 
 function getJointType(row: WeldRow): 'f' | 's' | null {
   const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
-  if (baseJoint.startsWith('F')) return 'f'
-  if (baseJoint.startsWith('S')) return 's'
-  return null
+  return getConfiguredBaseJointType(baseJoint)
 }
 
 function buildWelderStampLabelMap(records: WelderStampRecord[]) {

@@ -144,9 +144,9 @@ export function formatFinalStatusDisplay(record: WeldInput, value: unknown) {
 }
 
 function getPendingWeldFinalStatus(record: WeldInput) {
-  const joint = String(record.joint ?? '').replace(/\s+/g, '').toUpperCase()
-  const hasCoilSegment = /Y\d+/.test(joint)
-  const hasRepairSegment = /[RW]\d+/.test(joint)
+  const parsed = parseJointChainName(String(record.joint ?? ''))
+  const hasCoilSegment = parsed.segments.some((segment) => segment.suffix === 'Y')
+  const hasRepairSegment = parsed.segments.some((segment) => segment.suffix === 'R' || segment.suffix === 'W')
   return hasRepairSegment && !hasCoilSegment ? 'ожидает ремонт' : 'ожидает сварку'
 }
 

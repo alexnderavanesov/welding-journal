@@ -23,6 +23,7 @@ export type UseLnkRequestActionsOptions = {
   selectedRows: WeldRow[]
   selectedTargetCount: number
   mutation: LnkRequestMutation
+  defaultNaming: RequestNamingState
   setDraft: Dispatch<SetStateAction<LnkRequestDraftState>>
   setIsOpen: (value: boolean) => void
   setMessage: (value: string | null) => void
@@ -41,6 +42,7 @@ export type UseLnkResultActionsOptions = {
   lnkRows: WeldRow[]
   draft: LnkResultDraftState
   mutation: LnkResultMutation
+  defaultConclusionNaming: RequestNamingState
   setDraft: Dispatch<SetStateAction<LnkResultDraftState>>
   setIsModalOpen: (value: boolean) => void
   setIsPreviewOpen: (value: boolean) => void

@@ -58,7 +58,7 @@ export function ReportMainContent({
   }
 
   if (activeReport === 'settings') {
-    return <SettingsPage />
+    return <SettingsPage rowsCount={statisticsRows.length} />
   }
 
   return <WeldTable {...weldTableProps} />

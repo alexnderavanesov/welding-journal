@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from './report-config'
+import { FACTUAL_WELDER_STAMP_FIELD_KEYS, OFFICIAL_WELDER_STAMP_FIELD_KEYS } from './report-config'
 import type { WeldInput } from './weld-fields'
 import {
   buildWeldFormStampSelectOptions,
@@ -9,6 +9,7 @@ import {
 import type { WelderStampRecord, WelderStampSuspensionRecord } from './welder-stamp-types'
 
 const officialStampField = OFFICIAL_WELDER_STAMP_FIELD_KEYS[0]
+const factualStampField = FACTUAL_WELDER_STAMP_FIELD_KEYS[0]
 
 function stampRecord(value: string, archived: boolean): WelderStampRecord {
   return {
@@ -85,5 +86,21 @@ describe('welder stamp select options', () => {
     })
     expect(blockReason).toContain('Клеймо ABC1')
     expect(blockReason).toContain('отстранено')
+  })
+
+  it('can include archived stamps in create and edit dropdowns by setting', () => {
+    const archivedStamp = { ...stampRecord('ARCH1', true), internalStamp: 'I-ARCH' }
+    const archivedInternalStamp = { ...stampRecord('', true), internalStamp: 'I-ONLY' }
+    const activeStamp = stampRecord('ACTIVE1', false)
+    const row = { weldingMethod: 'РАД' } as WeldInput
+
+    const options = buildWeldFormStampSelectOptions([archivedStamp, archivedInternalStamp, activeStamp], row, [], [], {
+      includeArchivedStamps: true,
+    })
+
+    expect(options[officialStampField]?.some((option) => option.value === 'ARCH1')).toBe(true)
+    expect(options[officialStampField]?.find((option) => option.value === 'ARCH1')?.disabled).toBe(false)
+    expect(options[factualStampField]?.some((option) => option.value === 'ARCH1')).toBe(true)
+    expect(options[factualStampField]?.some((option) => option.value === 'I-ONLY')).toBe(true)
   })
 })

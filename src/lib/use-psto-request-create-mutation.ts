@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
-import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import { buildPstoRequestRows } from '@/lib/psto-report-mutation-updates'
 import { PSTO_REQUEST_HIGHLIGHT_FIELDS } from '@/lib/psto-report-mutation-highlight-fields'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
@@ -14,6 +13,7 @@ export function usePstoRequestCreateMutation({
   setPstoRequestNaming,
   setPstoRequestSearch,
   setIsPstoRequestModalOpen,
+  defaultPstoRequestNaming,
 }: UsePstoReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -38,7 +38,7 @@ export function usePstoRequestCreateMutation({
           : formatRequestCreatedMessage(variables.requestName, variables.records.length),
       )
       setSelectedHeatTreatmentIds(new Set())
-      setPstoRequestNaming(defaultRequestNamingState)
+      setPstoRequestNaming(defaultPstoRequestNaming)
       setPstoRequestSearch('')
       setIsPstoRequestModalOpen(false)
       await invalidateWeldJoints(queryClient)

@@ -6,7 +6,7 @@ import {
   type LnkResultDraftState,
   type PstoResultDraftState,
 } from '@/lib/report-draft-state'
-import { defaultRequestNamingState, type RequestNamingState } from '@/lib/request-naming-state'
+import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { ActiveReport, HeatTreatmentFieldEditingState } from '@/lib/home-state'
 
 type SetState<T> = Dispatch<SetStateAction<T>>
@@ -40,6 +40,10 @@ type ReportSwitchResetInput = {
   setSelectedLnkIds: SetState<Set<number>>
   setShouldPinPreviewedLnkResultRows: SetState<boolean>
   setWelderStampSearch: SetState<string>
+  defaultLnkRequestNaming: RequestNamingState
+  defaultLnkConclusionNaming: RequestNamingState
+  defaultPstoRequestNaming: RequestNamingState
+  defaultPstoConclusionNaming: RequestNamingState
 }
 
 export function useReportSwitchReset({
@@ -71,6 +75,10 @@ export function useReportSwitchReset({
   setSelectedLnkIds,
   setShouldPinPreviewedLnkResultRows,
   setWelderStampSearch,
+  defaultLnkRequestNaming,
+  defaultLnkConclusionNaming,
+  defaultPstoRequestNaming,
+  defaultPstoConclusionNaming,
 }: ReportSwitchResetInput) {
   const previousReportRef = useRef<ActiveReport>('weldingJournal')
 
@@ -87,7 +95,7 @@ export function useReportSwitchReset({
     if (activeReport !== 'heatTreatment') {
       setSelectedHeatTreatmentIds(new Set())
       setHeatTreatmentFieldEditing(null)
-      setPstoRequestNaming(defaultRequestNamingState)
+      setPstoRequestNaming(defaultPstoRequestNaming)
       setPstoRequestSearch('')
       setPstoResultRequestSearch('')
       setIsPstoRequestModalOpen(false)
@@ -97,18 +105,18 @@ export function useReportSwitchReset({
       setIsPstoResultModalOpen(false)
       setIsPstoResultManagerOpen(false)
       setManagedPstoDiagramDrafts({})
-      setPstoResultDraft(createDefaultPstoResultDraft())
+      setPstoResultDraft(createDefaultPstoResultDraft(defaultPstoConclusionNaming))
       setIsPstoShowMenuOpen(false)
     }
     if (activeReport !== 'lnk') {
       setSelectedLnkIds(new Set())
       setLnkRequestDraft({ methods: new Set() })
-      setLnkRequestNaming(defaultRequestNamingState)
+      setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
       setIsLnkResultModalOpen(false)
       setIsLnkResultPreviewOpen(false)
       setShouldPinPreviewedLnkResultRows(false)
-      setLnkResultDraft(createDefaultLnkResultDraft())
+      setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
       setLnkRequestSearch('')
       setPreservedLnkOrderIds(null)
     }

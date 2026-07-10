@@ -2,12 +2,13 @@ import { REPAIR_FORBIDDEN_BY_DIAMETER_REASON, UNOFFICIAL_REJECTED_WITH_COIL_REAS
 import { getJointStatusLabel } from '@/lib/lnk-status'
 import { formatDisplayDate } from '@/lib/date-format'
 import { getWeldDateOrderValue } from '@/lib/report-date-rules'
-import { formatRepeatedJointName, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
+import { formatRepeatedJointName, getCoilJointNames, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import { createJointChainCheckTask, isIncompleteWeldStampGroupReason } from '@/lib/repeated-joint-check-tasks'
 import { compareJointChainRows, getRepeatedJointBranchKey, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import { getExpectedRepeatedJointName } from '@/lib/repeated-joint-task-helpers'
+import { getConfiguredJointChainSuffix, getSystemIndexSummaryText } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 
@@ -54,7 +55,7 @@ export function buildJointChainConsistencyCheckTasks(
               weldDateOrderIssue.row,
               `${key}:weld-date-order:${weldDateOrderIssue.row.id}`,
               'проверить даты сварки',
-              `Дата стыка ${String(weldDateOrderIssue.previous.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.previous.weldDate) || '-'}) позже даты следующего системного шага ${String(weldDateOrderIssue.row.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.row.weldDate) || '-'}). Проверь последовательность дат сварки в части R/W/Y.`,
+              `Дата стыка ${String(weldDateOrderIssue.previous.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.previous.weldDate) || '-'}) позже даты следующего системного шага ${String(weldDateOrderIssue.row.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.row.weldDate) || '-'}). Проверь последовательность дат сварки в части ${getSystemIndexSummaryText()}.`,
             ),
           ]
         : []
@@ -125,7 +126,7 @@ function buildCoilIntegrityCheckTasks(
     if (!sourceRow) continue
 
     for (const [coilBaseJoint, coilRows] of coilGroups) {
-      const expectedCoilJoints = [`${coilBaseJoint}Y1`, `${coilBaseJoint}Y2`]
+      const expectedCoilJoints = getCoilJointNames(coilBaseJoint)
       const missingCoilJoints = expectedCoilJoints.filter((joint) => !hasMatchingRepeatedJoint(rows, sourceRow, joint))
       if (missingCoilJoints.length > 0) {
         const existingText = coilRows.map((row) => String(row.joint ?? '').trim()).filter(Boolean).join(', ') || '-'
@@ -136,7 +137,7 @@ function buildCoilIntegrityCheckTasks(
     }
 
     if (!hasValidOfficialCoilTrigger(rows, chainRows, deps)) {
-      const coilText = [...coilGroups.keys()].map((coilBaseJoint) => `${coilBaseJoint}Y1/${coilBaseJoint}Y2`).join(', ')
+      const coilText = [...coilGroups.keys()].map((coilBaseJoint) => getCoilJointNames(coilBaseJoint).join('/')).join(', ')
       const expectedTriggerJoint = getExpectedCoilTriggerJoint(chainRows, deps.getPrimaryRejectedLnkResult)
       details.push(
         `В цепочке уже есть стык катушки ${coilText}, но диспетчер не нашел официальный негодный стык, который по правилам должен породить катушку.${expectedTriggerJoint ? ` Перед катушкой ожидается следующий повторный стык ${expectedTriggerJoint} и его негодный результат контроля.` : ' Сначала должен существовать следующий повторный стык и его негодный результат контроля.'} До этого катушка считается преждевременной.`,
@@ -181,7 +182,7 @@ function buildObsoleteChildBranchCheckTasks(
           unofficialRejectedRowWithObsoleteCoil,
           `${chainKey}:unofficial-rejected-with-coil`,
           UNOFFICIAL_REJECTED_WITH_COIL_REASON,
-          `Стык ${String(unofficialRejectedRowWithObsoleteCoil.joint ?? '').trim() || '-'} отмечен как неофициальный, но в этой же цепочке уже есть ветка катушки Y. После смены официальности катушка может быть лишней или требовать другой логики, поэтому нужно проверить цепочку целиком.`,
+          `Стык ${String(unofficialRejectedRowWithObsoleteCoil.joint ?? '').trim() || '-'} отмечен как неофициальный, но в этой же цепочке уже есть ветка катушки ${getConfiguredJointChainSuffix('Y')}. После смены официальности катушка может быть лишней или требовать другой логики, поэтому нужно проверить цепочку целиком.`,
         ),
       )
       continue
@@ -198,7 +199,7 @@ function buildObsoleteChildBranchCheckTasks(
       const obsoleteChildKey = branchKeys.find((branchKey) => {
         if (branchKey === completedBranchKey) return false
         const branchJoint = branchKey.split(':').at(-1) ?? ''
-        return completedBranchHasCoil ? branchJoint.startsWith(`${completedBranchJoint}Y`) : hasJointChainSegment(branchJoint, 'Y')
+        return completedBranchHasCoil ? branchJoint.startsWith(`${completedBranchJoint}${getConfiguredJointChainSuffix('Y')}`) : hasJointChainSegment(branchJoint, 'Y')
       })
       if (!obsoleteChildKey) continue
 
@@ -320,7 +321,7 @@ function getCoilBaseJoint(joint: string) {
   const firstCoilIndex = parsed.segments.findIndex((segment) => segment.suffix === 'Y')
   if (firstCoilIndex < 0) return null
   const baseSegments = parsed.segments.slice(0, firstCoilIndex)
-  return `${parsed.base}${baseSegments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+  return formatRepeatedJointName(parsed.base, baseSegments)
 }
 
 function getExpectedCoilTriggerJoint(chainRows: WeldRow[], getPrimaryRejectedLnkResult: RejectionResolver) {

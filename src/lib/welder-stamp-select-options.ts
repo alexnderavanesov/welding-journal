@@ -24,19 +24,31 @@ export function buildWeldFormStampSelectOptions(
   draft?: WeldInput,
   allowedArchivedOfficialStamps: readonly string[] = [],
   suspensions: readonly WelderStampSuspensionRecord[] = [],
+  options: { includeArchivedStamps?: boolean } = {},
 ): Partial<Record<WeldFieldKey, readonly StampSelectOption[]>> {
   const activeRecords = records.filter((record) => !record.archived)
+  const optionRecords = options.includeArchivedStamps ? records : activeRecords
   const allowedArchivedStampValues = getExistingArchivedOfficialStampValues(allowedArchivedOfficialStamps, records)
+  const configuredArchivedStampValues = options.includeArchivedStamps
+    ? uniqueStampValues(records.filter((record) => record.archived).map((record) => record.naksStamp))
+    : []
   const allowedArchivedStampSet = new Set(allowedArchivedStampValues.map(normalizeStampForCompare))
-  const officialOptions = uniqueStampValues([...activeRecords.map((record) => record.naksStamp), ...allowedArchivedStampValues]).map((value) => {
+  const configuredArchivedStampSet = new Set(configuredArchivedStampValues.map(normalizeStampForCompare))
+  const officialOptions = uniqueStampValues([
+    ...activeRecords.map((record) => record.naksStamp),
+    ...allowedArchivedStampValues,
+    ...configuredArchivedStampValues,
+  ]).map((value) => {
     const hasActiveRecord = activeRecords.some(
       (record) => normalizeStampForCompare(record.naksStamp) === normalizeStampForCompare(value),
     )
-    const isAllowedArchivedOnly = !hasActiveRecord && allowedArchivedStampSet.has(normalizeStampForCompare(value))
+    const normalizedValue = normalizeStampForCompare(value)
+    const isAllowedArchivedOnly = !hasActiveRecord && allowedArchivedStampSet.has(normalizedValue)
+    const isConfiguredArchivedOnly = !hasActiveRecord && configuredArchivedStampSet.has(normalizedValue)
     const suspension = draft ? getSuspensionOverlapForStamp(suspensions, value, draft.weldDate) : null
     const reason = suspension
       ? formatWelderStampSuspensionBlockReason(suspension)
-      : !isAllowedArchivedOnly && draft
+      : !isAllowedArchivedOnly && !isConfiguredArchivedOnly && draft
         ? getOfficialStampSelectBlockReason(value, draft, activeRecords)
         : null
     return {
@@ -46,7 +58,7 @@ export function buildWeldFormStampSelectOptions(
     }
   })
   const factualOptions = uniqueStampValues(
-    activeRecords.flatMap((record) => {
+    optionRecords.flatMap((record) => {
       const naksStamp = normalizeStampSelectValue(record.naksStamp)
       if (naksStamp) return [naksStamp]
 

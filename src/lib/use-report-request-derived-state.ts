@@ -23,6 +23,7 @@ import {
 } from '@/lib/report-request-derived-utils'
 import type { LnkRequestDraftState, LnkResultDraftState, PstoResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 
 interface ReportRequestDerivedStateOptions {
   rows: WeldRow[]
@@ -37,6 +38,7 @@ interface ReportRequestDerivedStateOptions {
   lnkResultDraft: LnkResultDraftState
   managedPstoRequestName: string
   managedLnkRequestName: string
+  requestConclusionSettings: RequestConclusionSettings
 }
 
 export function useReportRequestDerivedState({
@@ -52,6 +54,7 @@ export function useReportRequestDerivedState({
   lnkResultDraft,
   managedPstoRequestName,
   managedLnkRequestName,
+  requestConclusionSettings,
 }: ReportRequestDerivedStateOptions) {
   const selectedHeatTreatmentRows = useMemo(
     () => getSelectedRowsByIds(availablePstoRequestRows, selectedHeatTreatmentIds),
@@ -66,8 +69,8 @@ export function useReportRequestDerivedState({
     () => getSelectedLnkRequestTargetCount(selectedLnkRows, selectedLnkMethodKeys),
     [selectedLnkMethodKeys, selectedLnkRows],
   )
-  const nextPstoRequestName = useMemo(() => getNextPstoRequestName(heatTreatmentRows), [heatTreatmentRows])
-  const nextLnkRequestName = useMemo(() => getNextLnkRequestName(rows), [rows])
+  const nextPstoRequestName = useMemo(() => getNextPstoRequestName(heatTreatmentRows, requestConclusionSettings), [heatTreatmentRows, requestConclusionSettings])
+  const nextLnkRequestName = useMemo(() => getNextLnkRequestName(rows, requestConclusionSettings), [requestConclusionSettings, rows])
   const pstoRequestOptions = useMemo(() => getPstoRequestOptions(rows), [rows])
   const pstoRequestManagerOptions = useMemo(() => getPstoRequestManagerOptions(pstoRequestOptions), [pstoRequestOptions])
   const managedPstoRequestRows = useMemo(
@@ -84,12 +87,12 @@ export function useReportRequestDerivedState({
     [managedLnkRequestName, managedLnkRequestRows],
   )
   const nextLnkConclusionName = useMemo(
-    () => getNextLnkConclusionName(rows, lnkResultDraft),
-    [lnkResultDraft, rows],
+    () => getNextLnkConclusionName(rows, lnkResultDraft, requestConclusionSettings),
+    [lnkResultDraft, requestConclusionSettings, rows],
   )
   const nextPstoDiagramName = useMemo(
-    () => getNextPstoDiagramName(rows, pstoResultDraft),
-    [pstoResultDraft, rows],
+    () => getNextPstoDiagramName(rows, pstoResultDraft, requestConclusionSettings),
+    [pstoResultDraft, requestConclusionSettings, rows],
   )
   const selectedPstoResultRequestRows = useMemo(
     () => getSelectedPstoResultRequestRows(heatTreatmentRows, pstoResultDraft),

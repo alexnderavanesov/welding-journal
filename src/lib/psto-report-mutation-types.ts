@@ -22,4 +22,6 @@ export type UsePstoReportMutationsOptions = {
   setManagedPstoRequestNameDraft: (value: string) => void
   setIsPstoRequestManagerOpen: (value: boolean) => void
   setHeatTreatmentFieldEditing: (value: HeatTreatmentFieldEditingState | null) => void
+  defaultPstoRequestNaming: RequestNamingState
+  defaultPstoConclusionNaming: RequestNamingState
 }

@@ -1,7 +1,13 @@
 import { parseJointName } from '@/lib/joint-name'
+import { getConfiguredJointChainSuffix, getSemanticJointChainSuffix, type JointSystemSuffix } from '@/lib/system-index-settings'
 
 export type RepeatedJointSegment = {
   suffix: 'R' | 'W'
+  index: number
+}
+
+export type JointChainSegment = {
+  suffix: JointSystemSuffix
   index: number
 }
 
@@ -19,7 +25,7 @@ export function parseRepeatedJointName(joint: string): ParsedRepeatedJointName {
   const repairSegments = parsed.segments
     .slice(lastCoilIndex + 1)
     .filter((segment): segment is RepeatedJointSegment => segment.suffix === 'R' || segment.suffix === 'W')
-  const base = `${parsed.base}${baseSegments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+  const base = formatRepeatedJointName(parsed.base, baseSegments)
   const lastSegment = repairSegments.at(-1)
   return {
     base,
@@ -43,11 +49,12 @@ export function getRepeatedJointRepairCount(parsed: ParsedRepeatedJointName) {
 }
 
 export function getCoilJointNames(baseJoint: string) {
-  return [`${baseJoint}Y1`, `${baseJoint}Y2`]
+  const coilSuffix = getConfiguredJointChainSuffix('Y')
+  return [`${baseJoint}${coilSuffix}1`, `${baseJoint}${coilSuffix}2`]
 }
 
-export function formatRepeatedJointName(base: string, segments: RepeatedJointSegment[]) {
-  return `${base}${segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
+export function formatRepeatedJointName(base: string, segments: JointChainSegment[]) {
+  return `${base}${segments.map((segment) => `${getConfiguredJointChainSuffix(segment.suffix)}${segment.index}`).join('')}`
 }
 
 export function compareJointChainSuffix(left: string, right: string) {
@@ -57,9 +64,10 @@ export function compareJointChainSuffix(left: string, right: string) {
 }
 
 export function getJointChainSuffixOrder(suffix: string) {
-  if (suffix === 'R') return 1
-  if (suffix === 'W') return 2
-  if (suffix === 'Y') return 3
+  const semanticSuffix = getSemanticJointChainSuffix(suffix) ?? suffix.toUpperCase()
+  if (semanticSuffix === 'R') return 1
+  if (semanticSuffix === 'W') return 2
+  if (semanticSuffix === 'Y') return 3
   return 10
 }
 

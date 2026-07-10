@@ -1,50 +1,28 @@
-import {
-  formatLongDate,
-  formatShortDate,
-  parseLongDateValue,
-} from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import {
+  REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  buildSystemNameFromPattern,
+  type RequestConclusionSettings,
+} from '@/lib/request-conclusion-settings'
 import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/lib/report-config'
 import { compactSearchText, normalizeSearchText } from '@/lib/report-row-utils'
-import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
-export function formatPstoRequestName(rows: WeldRow[]) {
-  const date = formatShortDate(new Date())
-  const prefix = `ПСТО-${date}-`
-  const requestNames = [
-    ...new Set(
-      rows
-        .map((row) => String(row.pstoRequest ?? '').trim())
-        .filter((requestName) => requestName.startsWith(prefix)),
-    ),
-  ]
-  const maxNumber = requestNames.reduce((max, requestName) => {
-    const match = requestName.match(new RegExp(`^${escapeRegExp(prefix)}(\\d{3})$`))
-    return match ? Math.max(max, Number(match[1])) : max
-  }, 0)
-  const nextNumber = Math.max(maxNumber, requestNames.length) + 1
-  return `${prefix}${String(nextNumber).padStart(3, '0')}`
+export function formatPstoRequestName(rows: WeldRow[], settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS) {
+  return buildSystemNameFromPattern(
+    settings.pstoRequest.systemPattern,
+    { date: new Date() },
+    rows.map((row) => String(row.pstoRequest ?? '').trim()),
+  )
 }
 
-export function formatLnkRequestName(rows: WeldRow[]) {
-  const date = formatLongDate(new Date())
-  const prefix = `Заявка-${date}-`
-  const maxNumber = rows
-    .flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim()))
-    .map((requestName) => parseLnkRequestName(requestName))
-    .filter((parsed): parsed is { dateValue: number; number: number } => Boolean(parsed && parsed.dateValue === parseLongDateValue(date)))
-    .reduce((max, parsed) => Math.max(max, parsed.number), 0)
-  const requestNames = [
-    ...new Set(
-      rows
-        .flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim()))
-        .filter((requestName) => parseLnkRequestName(requestName)?.dateValue === parseLongDateValue(date)),
-    ),
-  ]
-  const nextNumber = Math.max(maxNumber, requestNames.length) + 1
-  return `${prefix}${String(nextNumber).padStart(3, '0')}`
+export function formatLnkRequestName(rows: WeldRow[], settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS) {
+  return buildSystemNameFromPattern(
+    settings.lnkRequest.systemPattern,
+    { date: new Date() },
+    rows.flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim())),
+  )
 }
 
 export function collectRequestNames(rows: WeldInput[], fieldKeys: readonly WeldFieldKey[]) {

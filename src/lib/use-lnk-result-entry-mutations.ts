@@ -20,6 +20,7 @@ export function useLnkResultEntryMutations({
   setSelectedLnkIds,
   setIsLnkResultModalOpen,
   setLnkResultDraft,
+  defaultLnkConclusionNaming,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -51,7 +52,7 @@ export function useLnkResultEntryMutations({
           : `Результат ЛНК внесен для стыков: ${savedRows.length}`,
       )
       setIsLnkResultModalOpen(false)
-      setLnkResultDraft(createDefaultLnkResultDraft())
+      setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
       await invalidateWeldJoints(queryClient)
     },
     onError: (error) => {
@@ -71,7 +72,7 @@ export function useLnkResultEntryMutations({
     onSuccess: async (savedRows) => {
       highlightChangedRows(savedRows, [...lnkGeneratedFieldKeys, 'finalStatus'])
       setSelectedLnkIds(new Set())
-      setLnkResultDraft(createDefaultLnkResultDraft())
+      setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
       setMessage(savedRows.length > 0 ? `Очищены результаты и заключения ЛНК: ${savedRows.length} строк` : 'В ЛНК нечего очищать')
       await invalidateWeldJoints(queryClient)
     },

@@ -19,6 +19,7 @@ import { LargeDialogShell } from '@/components/large-dialog-shell'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { formatDisplayDate } from '@/lib/date-format'
 import { parseJointChainName } from '@/lib/joint-chain'
+import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
 import {
   buildStatisticsSummary,
   formatPercent,
@@ -2310,8 +2311,7 @@ function segmentButtonClass(active: boolean) {
 function matchesStatisticsJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter) {
   if (filter === 'all') return true
   const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
-  if (filter === 'f') return baseJoint.startsWith('F')
-  return baseJoint.startsWith('S')
+  return getConfiguredBaseJointType(baseJoint) === filter
 }
 
 function getUniqueSortedValues(values: unknown[]): Array<{ value: string; label: string }> {

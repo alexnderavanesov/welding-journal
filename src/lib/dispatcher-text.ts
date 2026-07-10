@@ -6,6 +6,7 @@ import {
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
 import type { WeldInput } from '@/lib/weld-fields'
+import { getConfiguredJointChainSuffix, getSystemIndexSummaryText } from '@/lib/system-index-settings'
 import {
   formatWelderStampCompactLabel,
   formatWelderStampDate,
@@ -73,8 +74,8 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
     const dateText = formatDisplayDate(task.row.weldDate) || '-'
     const officialityText = isUnofficialDispatcherJoint(task.row) ? 'неофициальный' : 'официальный'
     const ruleText = isUnofficialDispatcherJoint(task.row)
-      ? 'Так как исходный стык неофициальный, следующий стык создается с тем же номером без системного индекса R/W/Y.'
-      : 'Так как исходный стык официальный, следующий стык создается по правилу цепочки с системным индексом R или W.'
+      ? `Так как исходный стык неофициальный, следующий стык создается с тем же номером без системного индекса ${getSystemIndexSummaryText()}.`
+      : `Так как исходный стык официальный, следующий стык создается по правилу цепочки с системным индексом ${getConfiguredJointChainSuffix('R')} или ${getConfiguredJointChainSuffix('W')}.`
     return `Стык ${task.sourceJoint} (${officialityText}) получил негодный результат ${task.methodCode} - ${task.result}${dateText !== '-' ? `, дата сварки ${dateText}` : ''}. ${ruleText} По правилам цепочки нужен следующий стык ${task.targetJoint}, но диспетчер не нашел его в журнале. Создание выполняется только после подтверждения.`
   }
   if (task.kind === 'coil') {
@@ -100,7 +101,7 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
 
   const reason = task.reason ?? 'цепочка изменилась'
   if (reason === 'проверить даты сварки') {
-    return `В цепочке ${task.baseJoint} обнаружена дата сварки, которая нарушает последовательность системных шагов R/W/Y. Проверь даты сварки у повторных стыков.`
+    return `В цепочке ${task.baseJoint} обнаружена дата сварки, которая нарушает последовательность системных шагов ${getSystemIndexSummaryText()}. Проверь даты сварки у повторных стыков.`
   }
   if (reason === 'проверить дату сварки и контроля') {
     return `В цепочке ${task.baseJoint} дата контроля или ПСТО оказалась раньше даты сварки. Проверь даты в сварочном журнале, ЛНК и ПСТО.`
@@ -130,7 +131,7 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
     return `В цепочке ${task.baseJoint} найден повторный стык без исходного или промежуточного стыка. Проверь, не был ли удален базовый или предыдущий шаг цепочки.`
   }
   if (reason === 'проверить целостность катушки') {
-    return `В цепочке ${task.baseJoint} найдено нарушение по катушке Y. Проверь, есть ли оба стыка катушки и был ли уже получен негодный результат на стыке, который должен был породить катушку.`
+    return `В цепочке ${task.baseJoint} найдено нарушение по катушке ${getConfiguredJointChainSuffix('Y')}. Проверь, есть ли оба стыка катушки и был ли уже получен негодный результат на стыке, который должен был породить катушку.`
   }
   return `Диспетчер обнаружил нестандартное состояние цепочки ${task.baseJoint}: ${reason}. Открой цепочку и проверь, нужны ли дополнительные действия.`
 }

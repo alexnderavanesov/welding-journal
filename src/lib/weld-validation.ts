@@ -1,5 +1,6 @@
 import { getRequiredRootStampMessage } from '@/lib/weld-import-export'
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
+import { getSystemIndexSummaryText } from '@/lib/system-index-settings'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { getDateInputValidationReason } from '@/lib/date-format'
@@ -14,7 +15,7 @@ export function validateManualJointNameForSave(value: WeldDraft, rows: WeldRow[]
   if (value.id && currentJoint === previousJoint) return
 
   if (previousRow && hasReservedJointSystemPart(previousRow.joint)) {
-    throw new Error('Стык с системными индексами R/W/Y нельзя переименовывать вручную. Используйте подсказки диспетчера задач.')
+    throw new Error(`Стык с системными индексами ${getSystemIndexSummaryText()} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`)
   }
 
   const error = validateManualJointName(value.joint)

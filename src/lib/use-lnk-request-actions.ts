@@ -1,7 +1,6 @@
 import type { UseLnkRequestActionsOptions } from '@/lib/lnk-report-action-types'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
-import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -15,6 +14,7 @@ export function useLnkRequestActions({
   selectedRows,
   selectedTargetCount,
   mutation,
+  defaultNaming,
   setDraft,
   setIsOpen,
   setMessage,
@@ -51,7 +51,7 @@ export function useLnkRequestActions({
     setPreservedOrderIds(null)
     setSelectedIds(new Set())
     setDraft({ methods: new Set() })
-    setNaming(defaultRequestNamingState)
+    setNaming(defaultNaming)
     setSearch('')
     setIsOpen(true)
   }
@@ -66,7 +66,7 @@ export function useLnkRequestActions({
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
     setSelectedIds(new Set([row.id]))
     setDraft({ methods: new Set(availableMethods.map((method) => method.requestKey)) })
-    setNaming(defaultRequestNamingState)
+    setNaming(defaultNaming)
     setSearch(String(row.joint ?? row.line ?? ''))
     setIsOpen(true)
   }
