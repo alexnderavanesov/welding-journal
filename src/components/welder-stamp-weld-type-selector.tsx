@@ -1,19 +1,17 @@
-import { WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions } from '@/lib/report-config'
-
-type WelderStampWeldType = (typeof welderStampWeldTypeOptions)[number]
-
 type WelderStampWeldTypeSelectorProps = {
+  options: readonly string[]
   selectedWeldTypes: string[]
-  onToggleWeldType: (type: WelderStampWeldType) => void
+  onToggleWeldType: (type: string) => void
 }
 
 export function WelderStampWeldTypeSelector({
+  options,
   selectedWeldTypes,
   onToggleWeldType,
 }: WelderStampWeldTypeSelectorProps) {
   return (
     <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-input bg-white px-2 py-1.5 shadow-sm shadow-slate-200/40">
-      {welderStampWeldTypeOptions.map((type) => {
+      {options.map((type) => {
         const isSelected = selectedWeldTypes.includes(type)
         return (
           <button

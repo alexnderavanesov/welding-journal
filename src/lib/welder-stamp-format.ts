@@ -1,15 +1,13 @@
-import {
-  WELDER_STAMP_FIELD_KEYS_FOR_DISPLAY as welderStampFieldKeysForDisplay,
-  WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions,
-} from '@/lib/report-config'
+import { WELDER_STAMP_FIELD_KEYS_FOR_DISPLAY as welderStampFieldKeysForDisplay } from '@/lib/report-config'
+import { loadDataListSettings } from '@/lib/data-list-settings'
 import { escapeRegExp } from '@/lib/string-utils'
 import type { WelderStampExpiryTask } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
-export function splitWelderStampWeldTypes(value: string) {
+export function splitWelderStampWeldTypes(value: string, options: readonly string[] = loadDataListSettings().weldingTypes) {
   const normalized = value.toUpperCase().replace(/;/g, ',')
-  return welderStampWeldTypeOptions.filter((option) =>
+  return options.filter((option) =>
     normalized
       .split(',')
       .map((item) => item.trim())
@@ -17,8 +15,8 @@ export function splitWelderStampWeldTypes(value: string) {
   )
 }
 
-export function normalizeWelderStampWeldType(value: string) {
-  return splitWelderStampWeldTypes(value).join(', ')
+export function normalizeWelderStampWeldType(value: string, options: readonly string[] = loadDataListSettings().weldingTypes) {
+  return splitWelderStampWeldTypes(value, options).join(', ')
 }
 
 export function formatWelderStampDiameterRange(record: WelderStampRecord) {
@@ -49,7 +47,7 @@ export function formatWelderStampDate(value: string) {
 export function formatWelderStampRecordLabel(record: WelderStampRecord) {
   const naksStamp = record.naksStamp.trim() || '-'
   const weldType = normalizeWelderStampWeldType(record.weldType)
-  return weldType ? `Клеймо ${naksStamp} (тип: ${weldType})` : `Клеймо ${naksStamp}`
+  return weldType ? `Клеймо ${naksStamp} (способ: ${weldType})` : `Клеймо ${naksStamp}`
 }
 
 export function formatWelderStampTaskLabel(task: WelderStampExpiryTask) {

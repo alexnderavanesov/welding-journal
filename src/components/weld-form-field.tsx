@@ -1,6 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { WeldFormConnectionTypeField } from '@/components/weld-form-connection-type-field'
 import { WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { cn } from '@/lib/utils'
@@ -74,6 +75,19 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
             setDraft((current) => ({
               ...current,
               weldingMethod,
+            }))
+          }
+        />
+      ) : field.key === 'connectionType' ? (
+        <WeldFormConnectionTypeField
+          value={draft.connectionType}
+          inputRef={(element) => {
+            fieldRefs.current[field.key] = element
+          }}
+          onChange={(connectionType) =>
+            setDraft((current) => ({
+              ...current,
+              connectionType,
             }))
           }
         />

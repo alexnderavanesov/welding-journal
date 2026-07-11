@@ -83,7 +83,7 @@ export function buildWelderStampCompatibilityCheckTasks(
       `Стык ${joint}: ${issues.map(formatOfficialStampCompatibilityIssue).join(' ')}`,
       hasSuspensionIssue
         ? 'Проверь дату сварки или период отстранения в истории отстранений.'
-        : 'Проверь официальное клеймо, тип сварки, D1/D2, дату сварки или срок действия допуска в реестре клейм.',
+        : 'Проверь официальное клеймо, способ сварки, D1/D2, дату сварки или срок действия допуска в реестре клейм.',
     ].join(' ')
 
     tasks.push(

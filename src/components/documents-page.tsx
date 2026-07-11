@@ -22,7 +22,7 @@ import {
   type StoredGeneratedDocument,
 } from '@/lib/generated-document-storage'
 import { isUnofficialJoint } from '@/lib/joint-display'
-import { FIELD_BY_LABEL, WELD_FIELDS, normalizeHeader } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, FIELD_BY_LABEL, WELD_FIELDS, normalizeHeader, type WeldFieldKey } from '@/lib/weld-fields'
 import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
 import {
   STAMP_NAME_TEMPLATE_FIELDS,
@@ -41,7 +41,7 @@ type DocumentsPageProps = {
 }
 
 type JournalField = {
-  key: string
+  key: WeldFieldKey
   label: string
 }
 
@@ -60,35 +60,48 @@ type TemplatePreviewColumn = {
 
 const EXCEL_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
-const WELDING_JOURNAL_FIELDS: JournalField[] = [
-  { key: 'projectTitle', label: 'Проект/Титул' },
-  { key: 'subtitleCode', label: 'Шифр/Подтитул' },
-  { key: 'line', label: 'Линия' },
-  { key: 'spool', label: 'Спул' },
-  { key: 'spoolId', label: 'ID спула' },
-  { key: 'joint', label: 'Стык' },
-  { key: 'materialId1', label: 'ID материала 1' },
-  { key: 'materialId2', label: 'ID материала 2' },
-  { key: 'element1', label: 'Элемент 1' },
-  { key: 'element2', label: 'Элемент 2' },
-  { key: 'material1', label: 'Материал 1' },
-  { key: 'material2', label: 'Материал 2' },
-  { key: 'weldingMethod', label: 'Тип сварки' },
-  { key: 'connectionType', label: 'Тип соедин.' },
-  { key: 'd1', label: 'D1' },
-  { key: 'd2', label: 'D2' },
-  { key: 't1', label: 'T1' },
-  { key: 't2', label: 'T2' },
-  { key: 'wdi', label: 'WDI' },
-  { key: 'weldDate', label: 'Дата сварки' },
-  { key: 'stamp1KFact', label: 'Корень_1 факт' },
-  { key: 'stamp1ZFact', label: 'Заполнение_1 факт' },
-  { key: 'stamp1OFact', label: 'Облицовка_1 факт' },
-  { key: 'stamp2KFact', label: 'Корень_2 факт' },
-  { key: 'stamp2ZFact', label: 'Заполнение_2 факт' },
-  { key: 'stamp2OFact', label: 'Облицовка_2 факт' },
-  { key: 'responsible', label: 'Ответственный' },
+const WELDING_JOURNAL_FIELD_KEYS: WeldFieldKey[] = [
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'spool',
+  'spoolId',
+  'joint',
+  'materialId1',
+  'materialId2',
+  'element1',
+  'element2',
+  'material1',
+  'material2',
+  'materialUniqueNumber1',
+  'materialUniqueNumber2',
+  'materialFullName1',
+  'materialFullName2',
+  'materialNormativeDocument1',
+  'materialNormativeDocument2',
+  'materialCertificateNumber1',
+  'materialCertificateNumber2',
+  'weldingMethod',
+  'connectionType',
+  'd1',
+  'd2',
+  't1',
+  't2',
+  'wdi',
+  'weldDate',
+  'stamp1KFact',
+  'stamp1ZFact',
+  'stamp1OFact',
+  'stamp2KFact',
+  'stamp2ZFact',
+  'stamp2OFact',
+  'responsible',
 ]
+
+const WELDING_JOURNAL_FIELDS: JournalField[] = WELDING_JOURNAL_FIELD_KEYS.map((key) => {
+  const field = FIELD_BY_KEY.get(key)
+  return { key, label: field?.label ?? key }
+})
 
 type TemplatePreviewSystemField = '__index' | '__welderName' | `__welderName:${TemplateStampNameFieldKey}`
 
@@ -952,7 +965,7 @@ function BasePreviewTable({ rows, totalRows }: { rows: WeldRow[]; totalRows: num
           <th className="px-3 py-2 text-left font-semibold">Линия</th>
           <th className="px-3 py-2 text-left font-semibold">Стык</th>
           <th className="px-3 py-2 text-left font-semibold">Дата сварки</th>
-          <th className="px-3 py-2 text-left font-semibold">Тип сварки</th>
+          <th className="px-3 py-2 text-left font-semibold">Способ сварки</th>
           <th className="px-3 py-2 text-left font-semibold">D1/D2</th>
           <th className="px-3 py-2 text-left font-semibold">Факт. клейма</th>
         </tr>

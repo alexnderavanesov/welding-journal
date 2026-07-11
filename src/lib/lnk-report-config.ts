@@ -1,4 +1,4 @@
-import type { WeldField, WeldFieldKey } from './weld-field-definitions'
+import { FIELD_BY_KEY, type WeldField, type WeldFieldKey } from './weld-field-definitions'
 
 export const LNK_METHODS = [
   { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
@@ -23,13 +23,13 @@ export const LNK_EMPTY_RESULT_VALUE = '__empty__'
 export const LNK_CUSTOM_RESULT_VALUE = '__custom__'
 
 export const LNK_WAITING_NK_FIELDS = [
-  { key: 'projectTitle', label: 'Проект/Титул', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'subtitleCode', label: 'Шифр/Подтитул', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'line', label: 'Линия', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'spool', label: 'Спул', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'joint', label: 'Стык', kind: 'text', group: 'ЛНК', visible: true },
-  { key: 'wdi', label: 'WDI', kind: 'number', group: 'ЛНК', visible: true },
-  { key: 'weldDate', label: 'Дата сварки', kind: 'date', group: 'ЛНК', visible: true },
+  getReportField('projectTitle', 'ЛНК'),
+  getReportField('subtitleCode', 'ЛНК'),
+  getReportField('line', 'ЛНК'),
+  getReportField('spool', 'ЛНК'),
+  getReportField('joint', 'ЛНК'),
+  getReportField('wdi', 'ЛНК'),
+  getReportField('weldDate', 'ЛНК'),
   { key: 'requestName', label: 'Наименование заявки', kind: 'text', group: 'ЛНК', visible: true },
   { key: 'controlMethod', label: 'Вид НК', kind: 'text', group: 'ЛНК', visible: true },
 ] as unknown as WeldField[]
@@ -96,3 +96,9 @@ export const LNK_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_EDITABLE_REPORT_FIELD_KEYS,
 ])
 export const LNK_IMPORT_MATCH_FIELD_KEYS = new Set<WeldFieldKey>(['line', 'joint'])
+
+function getReportField(key: WeldFieldKey, group: string): WeldField {
+  const field = FIELD_BY_KEY.get(key)
+  if (!field) throw new Error(`Unknown LNK report field: ${key}`)
+  return { ...field, group, visible: true }
+}

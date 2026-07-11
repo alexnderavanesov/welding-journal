@@ -29,7 +29,7 @@ export function WelderStampsRecordsTable({
           <th className="w-[12%] border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
           <th className="w-[18%] border-r border-white px-3 py-3 font-semibold">ФИО сварщика</th>
           <th className="w-[14%] border-r border-white px-3 py-3 font-semibold">Клеймо внутреннее</th>
-          <th className="w-[12%] border-r border-white px-3 py-3 font-semibold">Тип сварки</th>
+          <th className="w-[12%] border-r border-white px-3 py-3 font-semibold">Способ сварки</th>
           <th className="w-[17%] border-r border-white px-3 py-3 font-semibold">Диапазон диаметра</th>
           <th className="w-[17%] border-r border-white px-3 py-3 font-semibold">Срок действия</th>
           <th className={`${archived ? 'w-40' : 'w-32'} px-3 py-3 font-semibold`}>Действия</th>

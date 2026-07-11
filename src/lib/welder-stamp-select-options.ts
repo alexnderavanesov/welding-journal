@@ -119,7 +119,7 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
 
   for (const method of methods) {
     const methodRecords = stampRecords.filter((record) => splitOfficialStampWeldTypes(record).includes(method))
-    if (methodRecords.length === 0) return `не подходит по типу сварки ${method}`
+    if (methodRecords.length === 0) return `не подходит по способу сварки ${method}`
 
     if (
       diameters.length > 0 &&

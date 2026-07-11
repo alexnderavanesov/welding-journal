@@ -1,14 +1,13 @@
 export function getTableLabel(fieldKey: string, label: string) {
-  const tableLabel = fieldKey === 'orderCode1' ? 'ID материала 1' : fieldKey === 'orderCode2' ? 'ID материала 2' : label
-  if (tableLabel.endsWith(' - факт')) {
+  if (label.endsWith(' - факт')) {
     return (
       <span className="inline-flex flex-col items-center leading-tight">
-        <span>{capitalizeFirstLetter(tableLabel.replace(' - факт', ''))}</span>
+        <span>{capitalizeFirstLetter(label.replace(' - факт', ''))}</span>
         <span className="text-[12px] font-medium text-slate-500">факт</span>
       </span>
     )
   }
-  return capitalizeFirstLetter(tableLabel)
+  return capitalizeFirstLetter(label)
 }
 
 function capitalizeFirstLetter(value: string) {

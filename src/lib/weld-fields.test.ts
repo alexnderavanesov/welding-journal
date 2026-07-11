@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
 import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections, getFilteredWeldTableSections } from './weld-table-sections'
-import { WELDING_JOURNAL_HIDDEN_FIELD_KEYS } from './welding-journal-report-config'
+import { HEAT_TREATMENT_HIDDEN_FIELD_KEYS, LNK_HIDDEN_FIELD_KEYS, WELDING_JOURNAL_HIDDEN_FIELD_KEYS } from './report-config'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -20,7 +20,7 @@ describe('weld field order', () => {
       'ID cпула',
       'Стык',
       'Статус',
-      'Код заказа 1',
+      'Материал 1',
     ])
   })
 
@@ -39,7 +39,27 @@ describe('weld field order', () => {
       'Код работ',
       'Закрытие',
       'Прочее',
+      'Материал (дополнительно)',
     ])
+  })
+
+  it('hides additional material fields from LNK and PSTO reports only', () => {
+    const journalSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const lnkSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+
+    expect(journalSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(true)
+    expect(lnkSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(false)
+    expect(pstoSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(false)
   })
 
   it('keeps weld control percent visible when the project section is collapsed', () => {

@@ -59,7 +59,7 @@ export function ReportMainContent({
   }
 
   if (activeReport === 'settings') {
-    return <SettingsPage rowsCount={statisticsRows.length} />
+    return <SettingsPage rows={statisticsRows} />
   }
 
   if (activeReport === 'userGuide') {

@@ -65,6 +65,8 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
+import type { ReportImportRecord } from '@/lib/report-import-preview'
+import type { WeldInput } from '@/lib/weld-fields'
 import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
@@ -93,7 +95,7 @@ export function useHomePageController() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
   const confirmAction = useConfirmAction()
-  const { requireEditPassword, requireDeletePassword } = useSecurityGuard()
+  const { requireEditPassword, requireImportReplacePassword, requireDeletePassword } = useSecurityGuard()
   const {
     activeReport,
     columnFilters,
@@ -534,7 +536,7 @@ export function useHomePageController() {
     setMessage,
   })
 
-  const { heatTreatmentImportMutation, lnkImportMutation } = useReportImportMutations({
+  const { heatTreatmentImportMutation, lnkImportMutation, weldMassFillMutation, weldReplaceDataMutation } = useReportImportMutations({
     rows,
     heatTreatmentRows,
     lnkRows,
@@ -1274,12 +1276,27 @@ export function useHomePageController() {
   const reportImportDialogProps = {
     open: isImportDialogOpen,
     activeReport,
-    isPending: importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending,
+    isPending:
+      importMutation.isPending ||
+      heatTreatmentImportMutation.isPending ||
+      lnkImportMutation.isPending ||
+      weldMassFillMutation.isPending ||
+      weldReplaceDataMutation.isPending,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
+    rows,
     onClose: () => setIsImportDialogOpen(false),
-    onImportRecords: handleImportRecords,
+    onImportRecords: (records: WeldInput[], skippedRows: number) =>
+      runProtectedEdit('импорт данных', () => handleImportRecords(records, skippedRows)),
+    onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) =>
+      runProtectedEdit('массовое заполнение данных', async () => {
+        await weldMassFillMutation.mutateAsync({ records, skippedRows })
+      }),
+    onReplaceDataRecords: async (records: ReportImportRecord[], skippedRows: number) => {
+      if (!(await requireImportReplacePassword('замену данных импортом'))) return
+      await weldReplaceDataMutation.mutateAsync({ records, skippedRows })
+    },
   }
 
   function openPercentageLineTaskOfficiality(task: DispatcherTask) {

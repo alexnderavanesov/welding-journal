@@ -21,6 +21,7 @@ import {
   validateWeldDatesForImport,
 } from '@/lib/weld-validation'
 import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
+import { loadDataListSettings, normalizeDataListOption } from '@/lib/data-list-settings'
 import {
   getArchivedOfficialStampValuesForRecord,
   validateOfficialStampCompatibilityForImport,
@@ -101,7 +102,36 @@ export function prepareImportedWeldRecords({
   validateManualJointNamesForImport(preparedRecords)
   validateWeldDatesForImport(preparedRecords)
   normalizeWeldingMethodsForImport(preparedRecords)
+  normalizeConnectionTypesForImport(preparedRecords)
   validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
   validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, { suspensions: welderStampSuspensions })
   return preparedRecords
+}
+
+function normalizeConnectionTypesForImport(records: WeldInput[]) {
+  const connectionTypeOptions = loadDataListSettings().connectionTypes
+
+  records.forEach((record, index) => {
+    const rawValue = String(record.connectionType ?? '').trim()
+    const value = normalizeDataListOption(rawValue)
+    if (!value) {
+      record.connectionType = null
+      return
+    }
+
+    const rowLabel = getImportRowLabel(index)
+    if (connectionTypeOptions.length === 0) {
+      throw new Error(`Импорт остановлен: ${rowLabel}. Поле "Тип соединения" заполнено, но список в настройках пока пуст.`)
+    }
+    if (!connectionTypeOptions.includes(value)) {
+      throw new Error(
+        `Импорт остановлен: ${rowLabel}. Поле "Тип соединения" должно содержать одно значение из настроек: ${connectionTypeOptions.join(', ')}. Значение "${rawValue}" не подходит.`,
+      )
+    }
+    record.connectionType = value
+  })
+}
+
+function getImportRowLabel(index: number) {
+  return `строка ${index + 2}`
 }

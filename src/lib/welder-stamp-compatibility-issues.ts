@@ -83,7 +83,7 @@ export function getOfficialStampCompatibilityIssues(
         stamp,
         method: '',
         reason: 'missing-weld-type',
-        message: `Для клейма ${stamp} нужно указать тип сварки.`,
+        message: `Для клейма ${stamp} нужно указать способ сварки.`,
       })
       continue
     }
@@ -96,7 +96,7 @@ export function getOfficialStampCompatibilityIssues(
           stamp,
           method,
           reason: 'weld-type',
-          message: `Клеймо ${stamp} (${method}) не имеет допуска на тип сварки ${method}.`,
+          message: `Клеймо ${stamp} (${method}) не имеет допуска на способ сварки ${method}.`,
         })
         continue
       }

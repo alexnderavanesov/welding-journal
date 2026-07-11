@@ -13,6 +13,7 @@ export type FieldGroup =
   | 'Общее'
   | 'Стык'
   | 'Материалы'
+  | 'Материал (дополнительно)'
   | 'Сварка'
   | 'Клейма'
   | 'Контроль'
@@ -35,16 +36,24 @@ export const WELD_FIELDS = [
   { key: 'spoolId', dbName: 'spool_id', label: 'ID cпула', kind: 'text', group: 'Стык' },
   { key: 'status', dbName: 'status', label: 'Статус', kind: 'text', group: 'Статусы/отчетность', visible: true },
   { key: 'revisionActuality', dbName: 'revision_actuality', label: 'Актуальность по изм.', kind: 'text', group: 'Статусы/отчетность' },
-  { key: 'orderCode1', dbName: 'order_code_1', label: 'Код заказа 1', kind: 'text', group: 'Материалы' },
-  { key: 'orderCode2', dbName: 'order_code_2', label: 'Код заказа 2', kind: 'text', group: 'Материалы' },
-  { key: 'element1', dbName: 'element_1', label: 'Элемент 1', kind: 'text', group: 'Материалы' },
-  { key: 'element2', dbName: 'element_2', label: 'Элемент 2', kind: 'text', group: 'Материалы' },
+  { key: 'orderCode1', dbName: 'order_code_1', label: 'Код заказа 1', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'orderCode2', dbName: 'order_code_2', label: 'Код заказа 2', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'materialUniqueNumber1', dbName: 'material_unique_number_1', label: 'Уникальный номер материала 1', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'materialUniqueNumber2', dbName: 'material_unique_number_2', label: 'Уникальный номер материала 2', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'element1', dbName: 'element_1', label: 'Материал 1', kind: 'text', group: 'Материалы' },
+  { key: 'element2', dbName: 'element_2', label: 'Материал 2', kind: 'text', group: 'Материалы' },
   { key: 'materialId1', dbName: 'material_id_1', label: 'ID материала 1', kind: 'text', group: 'Материалы' },
   { key: 'materialId2', dbName: 'material_id_2', label: 'ID материала 2', kind: 'text', group: 'Материалы' },
-  { key: 'material1', dbName: 'material_1', label: 'Материал 1', kind: 'text', group: 'Материалы' },
-  { key: 'material2', dbName: 'material_2', label: 'Материал 2', kind: 'text', group: 'Материалы' },
-  { key: 'weldingMethod', dbName: 'welding_method', label: 'Тип сварки', kind: 'text', group: 'Сварка', visible: true },
-  { key: 'connectionType', dbName: 'connection_type', label: 'Тип соедин.', kind: 'text', group: 'Сварка' },
+  { key: 'material1', dbName: 'material_1', label: 'Состав 1', kind: 'text', group: 'Материалы' },
+  { key: 'material2', dbName: 'material_2', label: 'Состав 2', kind: 'text', group: 'Материалы' },
+  { key: 'materialFullName1', dbName: 'material_full_name_1', label: 'Полное наименование материала 1', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'materialFullName2', dbName: 'material_full_name_2', label: 'Полное наименование материала 2', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'materialNormativeDocument1', dbName: 'material_normative_document_1', label: 'Нормативный документ материала 1', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'materialNormativeDocument2', dbName: 'material_normative_document_2', label: 'Нормативный документ материала 2', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'materialCertificateNumber1', dbName: 'material_certificate_number_1', label: 'Номер сертификата на материал 1', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'materialCertificateNumber2', dbName: 'material_certificate_number_2', label: 'Номер сертификата на материал 2', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'weldingMethod', dbName: 'welding_method', label: 'Способ сварки', kind: 'text', group: 'Сварка', visible: true },
+  { key: 'connectionType', dbName: 'connection_type', label: 'Тип соединения', kind: 'text', group: 'Сварка' },
   { key: 'd1', dbName: 'd1', label: 'D1', kind: 'number', group: 'Сварка' },
   { key: 'd2', dbName: 'd2', label: 'D2', kind: 'number', group: 'Сварка' },
   { key: 't1', dbName: 't1', label: 'T1', kind: 'number', group: 'Сварка' },
@@ -139,6 +148,19 @@ export const WELD_FIELDS = [
 export type WeldFieldKey = (typeof WELD_FIELDS)[number]['key']
 export type WeldInput = Partial<Record<WeldFieldKey, string | number | boolean | null>>
 
+export const MATERIAL_ADDITIONAL_FIELD_KEYS = [
+  'orderCode1',
+  'orderCode2',
+  'materialUniqueNumber1',
+  'materialUniqueNumber2',
+  'materialFullName1',
+  'materialFullName2',
+  'materialNormativeDocument1',
+  'materialNormativeDocument2',
+  'materialCertificateNumber1',
+  'materialCertificateNumber2',
+] as const satisfies readonly WeldFieldKey[]
+
 export function normalizeHeader(value: unknown) {
   return String(value ?? '')
     .replace(/\r?\n/g, ' ')
@@ -146,5 +168,5 @@ export function normalizeHeader(value: unknown) {
     .trim()
 }
 
-export const FIELD_BY_LABEL = new Map(WELD_FIELDS.map((field) => [normalizeHeader(field.label), field]))
+export const FIELD_BY_LABEL = new Map(WELD_FIELDS.map((field) => [normalizeHeader(field.label), field] as const))
 export const FIELD_BY_KEY = new Map(WELD_FIELDS.map((field) => [field.key, field]))

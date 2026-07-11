@@ -10,7 +10,9 @@ export const FULL_EXCEL_HEADERS = EXCEL_FIELDS.map((field) => field.label)
 export const LEGACY_EXCEL_HEADERS = EXCEL_FIELDS.filter((field) => field.key !== 'spoolId').map((field) => field.label)
 
 export function isKnownHeaderSet(headers: string[]) {
-  const normalized = headers.map(normalizeHeader).filter(Boolean)
+  const normalized = headers
+    .map(normalizeHeader)
+    .filter(Boolean)
   const hasFull = FULL_EXCEL_HEADERS.every((header) => normalized.includes(header))
   const hasLegacy = LEGACY_EXCEL_HEADERS.every((header) => normalized.includes(header))
   return hasFull || hasLegacy

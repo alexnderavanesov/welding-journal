@@ -1,4 +1,5 @@
-import { FACTUAL_WELDER_STAMP_FIELD_KEY_SET, WELDER_STAMP_WELD_TYPE_OPTIONS } from '@/lib/report-config'
+import { FACTUAL_WELDER_STAMP_FIELD_KEY_SET } from '@/lib/report-config'
+import { loadDataListSettings } from '@/lib/data-list-settings'
 import type { StampSelectOption } from '@/lib/weld-form-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { formatWelderStampFieldKeyLabel } from '@/lib/welder-stamp-format'
@@ -33,6 +34,7 @@ export function validateWelderStampFieldsForImport(
 }
 
 export function normalizeWeldingMethodsForImport(records: WeldInput[]) {
+  const weldingTypeOptions = loadDataListSettings().weldingTypes
   records.forEach((record, index) => {
     const rawValue = normalizeStampSelectValue(record.weldingMethod)
     if (!rawValue) {
@@ -44,7 +46,7 @@ export function normalizeWeldingMethodsForImport(records: WeldInput[]) {
       .split(/[+,;]+/)
       .map((part) => part.trim())
       .filter(Boolean)
-    const invalidParts = parts.filter((part) => !WELDER_STAMP_WELD_TYPE_OPTIONS.includes(part as (typeof WELDER_STAMP_WELD_TYPE_OPTIONS)[number]))
+    const invalidParts = parts.filter((part) => !weldingTypeOptions.includes(part))
 
     if (parts.length === 0) {
       record.weldingMethod = null
@@ -54,11 +56,11 @@ export function normalizeWeldingMethodsForImport(records: WeldInput[]) {
     if (invalidParts.length > 0) {
       const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
       throw new Error(
-        `Импорт остановлен: ${rowLabel}. Поле "Тип сварки" должно содержать только РАД, РД или МП. Значение "${rawValue}" не подходит.`,
+        `Импорт остановлен: ${rowLabel}. Поле "Способ сварки" должно содержать только значения из настроек: ${weldingTypeOptions.join(', ')}. Значение "${rawValue}" не подходит.`,
       )
     }
 
     const selected = new Set(parts)
-    record.weldingMethod = WELDER_STAMP_WELD_TYPE_OPTIONS.filter((option) => selected.has(option)).join('+')
+    record.weldingMethod = weldingTypeOptions.filter((option) => selected.has(option)).join('+')
   })
 }

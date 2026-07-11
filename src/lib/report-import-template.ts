@@ -5,8 +5,13 @@ import { escapeXml, getExportColumnWidth, normalizeSheetName } from '@/lib/weld-
 import type { ActiveReport } from '@/lib/home-state'
 import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import { VISIBLE_FIELDS } from '@/lib/weld-visible-field-layout'
+import type { WeldRow } from '@/lib/dispatcher-types'
 
 export type ImportTemplateCellKind = 'free' | 'checked' | 'ignored'
+export type ReportImportMode = 'newRecords' | 'massFill' | 'replaceData'
+
+export const MASS_FILL_ROW_ID_HEADER = 'ID записи'
+export const REPLACE_DELETE_ROW_HEADER = 'Удалить строку'
 
 const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
   'status',
@@ -60,6 +65,7 @@ const WELD_IMPORT_CHECKED_FIELD_KEYS = new Set<string>([
   'joint',
   'weldDate',
   'weldingMethod',
+  'connectionType',
   'd1',
   'd2',
   'stamp1K',
@@ -128,7 +134,7 @@ export function getReportImportCellKind(activeReport: ActiveReport, fieldKey: st
 
   const options = getReportImportFieldKeys(activeReport)
   if (!options) return 'free'
-  if (options.matchFieldKeys.has(fieldKey)) return 'checked'
+  if (options.matchFieldKeys.has(fieldKey as WeldFieldKey)) return 'checked'
   return 'free'
 }
 
@@ -172,16 +178,81 @@ export function buildImportTemplateXlsxBytes(activeReport: ActiveReport) {
   ])
 }
 
+export function buildMassFillTemplateXlsxBytes(activeReport: ActiveReport, records: readonly WeldRow[]) {
+  return buildExistingRowsTemplateXlsxBytes(activeReport, records, 'massFill')
+}
+
+export function buildReplaceDataTemplateXlsxBytes(activeReport: ActiveReport, records: readonly WeldRow[]) {
+  return buildExistingRowsTemplateXlsxBytes(activeReport, records, 'replaceData')
+}
+
+function buildExistingRowsTemplateXlsxBytes(activeReport: ActiveReport, records: readonly WeldRow[], mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
+  const fields = getReportImportTemplateFields(activeReport)
+  const sheetName = normalizeSheetName(getExistingRowsTemplateSheetName(activeReport, mode))
+  const serviceFields =
+    mode === 'replaceData'
+      ? [
+          { key: '__rowId', label: MASS_FILL_ROW_ID_HEADER },
+          { key: '__deleteRow', label: REPLACE_DELETE_ROW_HEADER },
+        ]
+      : [{ key: '__rowId', label: MASS_FILL_ROW_ID_HEADER }]
+  const templateFields = [...serviceFields, ...fields] as const
+  const rows = [
+    templateFields.map((field) => field.label),
+    ...records.map((record) => [
+      record.id,
+      ...(mode === 'replaceData' ? [''] : []),
+      ...fields.map((field) => record[field.key as keyof WeldRow] ?? ''),
+    ]),
+  ]
+
+  return createZip([
+    { path: '[Content_Types].xml', content: buildContentTypesXml() },
+    { path: '_rels/.rels', content: buildRootRelsXml() },
+    { path: 'xl/workbook.xml', content: buildWorkbookXml(sheetName) },
+    { path: 'xl/_rels/workbook.xml.rels', content: buildWorkbookRelsXml() },
+    { path: 'xl/styles.xml', content: buildTemplateStylesXml() },
+    { path: 'xl/worksheets/sheet1.xml', content: buildExistingRowsWorksheetXml(rows, fields, activeReport, records, mode) },
+  ])
+}
+
 export function getReportImportTemplateFilename(activeReport: ActiveReport) {
   if (activeReport === 'heatTreatment') return 'Шаблон импорта ПСТО.xlsx'
   if (activeReport === 'lnk') return 'Шаблон импорта ЛНК.xlsx'
   return 'Шаблон импорта сварочного журнала.xlsx'
 }
 
+export function getMassFillTemplateFilename(activeReport: ActiveReport) {
+  if (activeReport === 'heatTreatment') return 'Шаблон массового заполнения ПСТО.xlsx'
+  if (activeReport === 'lnk') return 'Шаблон массового заполнения ЛНК.xlsx'
+  return 'Шаблон массового заполнения сварочного журнала.xlsx'
+}
+
+export function getReplaceDataTemplateFilename(activeReport: ActiveReport) {
+  if (activeReport === 'heatTreatment') return 'Шаблон замены данных ПСТО.xlsx'
+  if (activeReport === 'lnk') return 'Шаблон замены данных ЛНК.xlsx'
+  return 'Шаблон замены данных сварочного журнала.xlsx'
+}
+
 function getReportImportTemplateSheetName(activeReport: ActiveReport) {
   if (activeReport === 'heatTreatment') return 'Импорт ПСТО'
   if (activeReport === 'lnk') return 'Импорт ЛНК'
   return 'Импорт сварочного журнала'
+}
+
+function getMassFillTemplateSheetName(activeReport: ActiveReport) {
+  return getExistingRowsTemplateSheetName(activeReport, 'massFill')
+}
+
+function getExistingRowsTemplateSheetName(activeReport: ActiveReport, mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
+  if (mode === 'replaceData') {
+    if (activeReport === 'heatTreatment') return 'Замена ПСТО'
+    if (activeReport === 'lnk') return 'Замена ЛНК'
+    return 'Замена данных'
+  }
+  if (activeReport === 'heatTreatment') return 'Заполнение ПСТО'
+  if (activeReport === 'lnk') return 'Заполнение ЛНК'
+  return 'Заполнение журнала'
 }
 
 function buildContentTypesXml() {
@@ -277,6 +348,62 @@ function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField
 </worksheet>`
 }
 
+function buildExistingRowsWorksheetXml(
+  rows: unknown[][],
+  fields: readonly WeldField[],
+  activeReport: ActiveReport,
+  records: readonly WeldRow[],
+  mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>,
+) {
+  const serviceColumnCount = mode === 'replaceData' ? 2 : 1
+  const allColumns =
+    mode === 'replaceData'
+      ? [
+          { key: '__rowId', label: MASS_FILL_ROW_ID_HEADER },
+          { key: '__deleteRow', label: REPLACE_DELETE_ROW_HEADER },
+          ...fields,
+        ]
+      : ([{ key: '__rowId', label: MASS_FILL_ROW_ID_HEADER }, ...fields] as const)
+  const cols = allColumns
+    .map((field, index) => {
+      const column = index + 1
+      const width = field.key === '__rowId' ? 10 : field.key === '__deleteRow' ? 16 : getExportColumnWidth(field as WeldField)
+      return `<col min="${column}" max="${column}" width="${width}" customWidth="1"/>`
+    })
+    .join('')
+  const rowXml = rows
+    .map((row, rowIndex) => {
+      const record = rowIndex > 0 ? records[rowIndex - 1] : null
+      const cells = row
+        .map((value, columnIndex) => {
+          const isDeleteColumn = mode === 'replaceData' && columnIndex === 1
+          const field = columnIndex < serviceColumnCount ? null : fields[columnIndex - serviceColumnCount]
+          const styleId =
+            rowIndex === 0
+              ? isDeleteColumn
+                ? 5
+                : getMassFillHeaderStyleId(activeReport, field?.key)
+              : isDeleteColumn
+                ? 3
+              : getExistingRowsBodyStyleId(activeReport, field ?? undefined, record, mode)
+          const ref = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })
+          const text = String(value ?? '')
+          if (!text) return `<c r="${ref}" s="${styleId}"/>`
+          if (typeof value === 'number') return `<c r="${ref}" s="${styleId}"><v>${value}</v></c>`
+          return `<c r="${ref}" t="inlineStr" s="${styleId}"><is><t>${escapeXml(text)}</t></is></c>`
+        })
+        .join('')
+      return `<row r="${rowIndex + 1}">${cells}</row>`
+    })
+    .join('')
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+ <cols>${cols}</cols>
+ <sheetData>${rowXml}</sheetData>
+</worksheet>`
+}
+
 function getTemplateStyleId(activeReport: ActiveReport, fieldKey?: string) {
   if (!fieldKey) return 0
   const kind = getReportImportCellKind(activeReport, fieldKey)
@@ -291,4 +418,35 @@ function getTemplateHeaderStyleId(activeReport: ActiveReport, fieldKey?: string)
   if (kind === 'ignored') return 4
   if (kind === 'checked') return 5
   return 1
+}
+
+function getMassFillHeaderStyleId(activeReport: ActiveReport, fieldKey?: string) {
+  if (!fieldKey) return 4
+  return getTemplateHeaderStyleId(activeReport, fieldKey)
+}
+
+function getExistingRowsBodyStyleId(
+  activeReport: ActiveReport,
+  field?: WeldField,
+  record?: WeldRow | null,
+  mode: Extract<ReportImportMode, 'massFill' | 'replaceData'> = 'massFill',
+) {
+  if (!field || !record) return 2
+  if (mode === 'massFill' && isMassFillFieldLocked(activeReport, field, record)) return 2
+  if (mode === 'replaceData' && isSystemImportField(activeReport, field)) return 2
+  return getTemplateStyleId(activeReport, field.key)
+}
+
+export function isMassFillFieldLocked(activeReport: ActiveReport, field: WeldField, record: WeldInput) {
+  if (isSystemImportField(activeReport, field)) return true
+  return hasMassFillValue(record[field.key as keyof WeldInput])
+}
+
+export function isSystemImportField(activeReport: ActiveReport, field: WeldField) {
+  return getReportImportCellKind(activeReport, field.key) === 'ignored'
+}
+
+function hasMassFillValue(value: unknown) {
+  if (value === null || value === undefined) return false
+  return String(value).trim() !== ''
 }

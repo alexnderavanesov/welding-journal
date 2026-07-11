@@ -124,7 +124,7 @@ export function WelderStampsRegistry({
         <div>
           <h2 className="text-base font-semibold text-slate-900">Справочник клейм сварщиков</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Здесь хранятся клейма НАКС, внутренние клейма и допуски по типу сварки, диаметрам и сроку действия.
+            Здесь хранятся клейма НАКС, внутренние клейма и допуски по способу сварки, диаметрам и сроку действия.
           </p>
         </div>
         <Button type="button" onClick={openCreateDialog}>
@@ -173,7 +173,7 @@ export function WelderStampsRegistry({
         <LargeDialogShell maxWidthClassName="max-w-[1080px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[80] bg-slate-950/30">
           <DialogHeader
             title={editingId === null ? 'Добавление клейма' : 'Редактирование клейма'}
-            subtitle="Клеймо НАКС, внутреннее клеймо и допуски по типу сварки, диаметрам и сроку действия."
+            subtitle="Клеймо НАКС, внутреннее клеймо и допуски по способу сварки, диаметрам и сроку действия."
             onClose={closeEditorDialog}
           />
           <div className="overflow-y-auto px-5 py-5">

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WelderStampPermitFields } from '@/components/welder-stamp-permit-fields'
 import { WelderStampWeldTypeSelector } from '@/components/welder-stamp-weld-type-selector'
-import { WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions } from '@/lib/report-config'
+import { useDataListSettings } from '@/lib/data-list-settings'
 import { splitWelderStampWeldTypes } from '@/lib/welder-stamp-format'
 import {
   getWelderNameByNaks,
@@ -30,7 +30,8 @@ export function WelderStampsCreatePanel({
   onSave,
   onReset,
 }: WelderStampsCreatePanelProps) {
-  const selectedWeldTypes = splitWelderStampWeldTypes(draft.weldType)
+  const { weldingTypes } = useDataListSettings()
+  const selectedWeldTypes = splitWelderStampWeldTypes(draft.weldType, weldingTypes)
   const requiresPermitFields = Boolean(draft.naksStamp.trim())
   const formHint = getWelderStampFormHint(draft)
   const nameSyncHint = getWelderStampNameSyncHint(records, draft, editingId)
@@ -47,7 +48,7 @@ export function WelderStampsCreatePanel({
     if (existingName) onDraftChange('welderName', existingName)
   }
 
-  function toggleWeldType(type: (typeof welderStampWeldTypeOptions)[number]) {
+  function toggleWeldType(type: string) {
     const nextTypes = selectedWeldTypes.includes(type)
       ? selectedWeldTypes.filter((value) => value !== type)
       : [...selectedWeldTypes, type]
@@ -89,8 +90,8 @@ export function WelderStampsCreatePanel({
           />
         </label>
         <div className="space-y-1.5 text-sm font-medium text-slate-700">
-          <span>Тип сварки</span>
-          <WelderStampWeldTypeSelector selectedWeldTypes={selectedWeldTypes} onToggleWeldType={toggleWeldType} />
+          <span>Способ сварки</span>
+          <WelderStampWeldTypeSelector options={weldingTypes} selectedWeldTypes={selectedWeldTypes} onToggleWeldType={toggleWeldType} />
         </div>
         <WelderStampPermitFields draft={draft} requiresPermitFields={requiresPermitFields} onDraftChange={onDraftChange} />
       </div>

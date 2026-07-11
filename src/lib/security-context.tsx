@@ -90,6 +90,12 @@ export function useSecurityGuard() {
         title: 'Подтверждение доступа',
         description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
       }),
+    requireImportReplacePassword: (actionLabel = 'замену данных импортом') =>
+      requirePassword('importReplace', {
+        scope: 'importReplace',
+        title: 'Замена данных импортом',
+        description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
+      }),
     requireDeletePassword: (actionLabel = 'удаление') =>
       requirePassword('delete', {
         scope: 'delete',

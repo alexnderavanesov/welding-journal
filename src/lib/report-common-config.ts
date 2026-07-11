@@ -1,6 +1,5 @@
 import type { WeldFieldKey } from './weld-field-definitions'
 
-export const WELDER_STAMP_WELD_TYPE_OPTIONS = ['РАД', 'РД', 'МП'] as const
 export const WELDER_STAMP_EXPIRY_REMINDER_DAYS = 7
 export const DAY_IN_MS = 24 * 60 * 60 * 1000
 export const COLLAPSED_SECTIONS_STORAGE_PREFIX = 'welding-tracker-collapsed-sections'
@@ -29,4 +28,3 @@ export const WELDER_STAMP_FIELD_KEYS_FOR_DISPLAY: readonly WeldFieldKey[] = [
   ...OFFICIAL_WELDER_STAMP_FIELD_KEYS,
   ...FACTUAL_WELDER_STAMP_FIELD_KEYS,
 ]
-

@@ -1,6 +1,4 @@
-import {
-  WELDER_STAMP_WELD_TYPE_OPTIONS as welderStampWeldTypeOptions,
-} from '@/lib/report-config'
+import { loadDataListSettings } from '@/lib/data-list-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import { splitWelderStampWeldTypes } from '@/lib/welder-stamp-format'
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
@@ -15,6 +13,7 @@ export function normalizeStampForCompare(value: unknown) {
 }
 
 export function parseOfficialStampWeldingMethods(value: unknown) {
+  const weldingTypeOptions = loadDataListSettings().weldingTypes
   const selected = new Set(
     String(value ?? '')
       .toUpperCase()
@@ -22,7 +21,7 @@ export function parseOfficialStampWeldingMethods(value: unknown) {
       .map((part) => part.trim())
       .filter(Boolean),
   )
-  return welderStampWeldTypeOptions.filter((option) => selected.has(option))
+  return weldingTypeOptions.filter((option) => selected.has(option))
 }
 
 export function getOfficialStampJointDiameters(record: WeldInput) {

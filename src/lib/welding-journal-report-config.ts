@@ -1,4 +1,4 @@
-import { FIELD_BY_KEY, WELD_FIELDS, type WeldField, type WeldFieldKey } from './weld-field-definitions'
+import { FIELD_BY_KEY, MATERIAL_ADDITIONAL_FIELD_KEYS, WELD_FIELDS, type WeldField, type WeldFieldKey } from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_METHODS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
 
 export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -91,6 +91,7 @@ export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...MATERIAL_ADDITIONAL_FIELD_KEYS,
   'pstoRequired',
   'pstoRequest',
   'pstoDate',

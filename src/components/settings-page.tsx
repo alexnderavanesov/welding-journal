@@ -4,12 +4,14 @@ import {
   Bell,
   CheckCircle2,
   ChevronDown,
+  Database,
   Download,
   FileText,
   Hash,
   Inbox,
   LockKeyhole,
   Pencil,
+  Plus,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
@@ -58,6 +60,12 @@ import {
 } from '@/lib/system-index-settings'
 import { saveOtherSettings, useOtherSettings } from '@/lib/other-settings'
 import {
+  DEFAULT_DATA_LIST_SETTINGS,
+  normalizeDataListOption,
+  saveDataListSettings,
+  useDataListSettings,
+} from '@/lib/data-list-settings'
+import {
   clearSecuritySettings,
   saveSecuritySettings,
   useSecuritySettings,
@@ -65,9 +73,11 @@ import {
   type SecuritySettings,
 } from '@/lib/security-settings'
 import { useSecurityGuard } from '@/lib/security-context'
+import type { WeldRow } from '@/lib/dispatcher-types'
 
 const SETTINGS_TABS = [
   { id: 'templates', label: 'Шаблоны документов', icon: FileText },
+  { id: 'data', label: 'Данные', icon: Database },
   { id: 'requests', label: 'Заявки и заключения', icon: Inbox },
   { id: 'indexes', label: 'Системные индексы', icon: Hash },
   { id: 'dispatcher', label: 'Диспетчер задач и напоминаний', icon: Bell },
@@ -78,7 +88,7 @@ const SETTINGS_TABS = [
 type SettingsTabId = (typeof SETTINGS_TABS)[number]['id']
 type ProtectedSettingsChange = (action: () => void | Promise<void>) => Promise<boolean>
 
-export function SettingsPage({ rowsCount = 0 }: { rowsCount?: number }) {
+export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: WeldRow[]; rowsCount?: number }) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('templates')
   const { requireSettingsChangePassword } = useSecurityGuard()
   const runProtectedSettingsChange = useCallback<ProtectedSettingsChange>(
@@ -120,6 +130,8 @@ export function SettingsPage({ rowsCount = 0 }: { rowsCount?: number }) {
         <div className="p-5">
           {activeTab === 'templates' ? (
             <DocumentTemplatesSettings runProtectedSettingsChange={runProtectedSettingsChange} />
+          ) : activeTab === 'data' ? (
+            <DataSettingsPanel rows={rows} runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'requests' ? (
             <RequestConclusionSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'indexes' ? (
@@ -141,6 +153,7 @@ const SECURITY_PASSWORD_KEYS = {
   entry: 'entryPassword',
   settings: 'settingsPassword',
   edit: 'editPassword',
+  importReplace: 'importReplacePassword',
   delete: 'deletePassword',
 } as const satisfies Record<SecurityScope, keyof SecuritySettings>
 
@@ -148,6 +161,7 @@ const SECURITY_FLAG_KEYS = {
   entry: 'requirePasswordOnEntry',
   settings: 'protectSettings',
   edit: 'protectEdit',
+  importReplace: 'protectImportReplace',
   delete: 'protectDelete',
 } as const satisfies Record<SecurityScope, keyof SecuritySettings>
 
@@ -180,6 +194,13 @@ const SECURITY_RULE_CARDS: Array<{
     example: 'Пользователь нажал редактировать стык или сохранить результат, ввел пароль редактирования.',
   },
   {
+    scope: 'importReplace',
+    title: 'Изменение данных импортом',
+    passwordTitle: 'Пароль на замену данных импортом',
+    description: 'Перед сохранением вкладки “Замена данных” в импорте будет запрошен отдельный пароль.',
+    example: 'Пользователь загрузил шаблон замены данных, проверил предпросмотр, нажал заменить и ввел пароль импорта.',
+  },
+  {
     scope: 'delete',
     title: 'Удаление',
     passwordTitle: 'Пароль на удаление',
@@ -194,12 +215,14 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
     entry: '',
     settings: '',
     edit: '',
+    importReplace: '',
     delete: '',
   })
   const [repeatDrafts, setRepeatDrafts] = useState<Record<SecurityScope, string>>({
     entry: '',
     settings: '',
     edit: '',
+    importReplace: '',
     delete: '',
   })
   const [editingPasswordScopes, setEditingPasswordScopes] = useState<Set<SecurityScope>>(() => new Set())
@@ -280,8 +303,8 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
     await runProtectedSettingsChange(() => {
       clearSecuritySettings()
     })
-    setPasswordDrafts({ entry: '', settings: '', edit: '', delete: '' })
-    setRepeatDrafts({ entry: '', settings: '', edit: '', delete: '' })
+    setPasswordDrafts({ entry: '', settings: '', edit: '', importReplace: '', delete: '' })
+    setRepeatDrafts({ entry: '', settings: '', edit: '', importReplace: '', delete: '' })
     setEditingPasswordScopes(new Set())
     setMessage('Все пароли и блокировки отключены')
   }
@@ -314,7 +337,7 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
           </div>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
             <div className="font-semibold text-slate-900">2. Включите защиты</div>
-            <div className="mt-1 leading-5 text-slate-500">Отдельно включаются вход, изменение настроек, редактирование и удаление.</div>
+            <div className="mt-1 leading-5 text-slate-500">Отдельно включаются вход, настройки, редактирование, замена импортом и удаление.</div>
           </div>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
             <div className="font-semibold text-slate-900">3. Пользователь вводит пароль</div>
@@ -568,6 +591,278 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
       </label>
     </div>
   )
+}
+
+function DataSettingsPanel({
+  rows,
+  runProtectedSettingsChange,
+}: {
+  rows: WeldRow[]
+  runProtectedSettingsChange: ProtectedSettingsChange
+}) {
+  const settings = useDataListSettings()
+  const [drafts, setDrafts] = useState<Record<DataListSettingsKey, string>>({
+    weldingTypes: '',
+    connectionTypes: '',
+  })
+  const [message, setMessage] = useState<string | null>(null)
+  const usageCountsByKey: Record<DataListSettingsKey, Map<string, number>> = {
+    weldingTypes: getWeldingTypeUsageCounts(rows),
+    connectionTypes: getConnectionTypeUsageCounts(rows),
+  }
+
+  async function addListValue(config: DataListConfig) {
+    const nextValue = normalizeDataListOption(drafts[config.key])
+    const values = settings[config.key]
+    if (!nextValue) {
+      setMessage(`Введите значение для списка “${config.title}”.`)
+      return
+    }
+    if (values.includes(nextValue)) {
+      setMessage(`Значение ${nextValue} уже есть в списке.`)
+      return
+    }
+
+    const saved = await runProtectedSettingsChange(() => {
+      saveDataListSettings({
+        ...settings,
+        [config.key]: [...values, nextValue],
+      })
+    })
+    if (!saved) return
+    setDrafts((current) => ({ ...current, [config.key]: '' }))
+    setMessage(`Добавлено значение ${nextValue}.`)
+  }
+
+  async function removeListValue(config: DataListConfig, value: string) {
+    const values = settings[config.key]
+    if (config.minOptions && values.length <= config.minOptions) {
+      setMessage(config.minOptionsMessage)
+      return
+    }
+    const usageCount = usageCountsByKey[config.key].get(value) ?? 0
+    if (usageCount > 0) {
+      setMessage(`Нельзя удалить ${value}: ${config.usedValueText} используется в стыках (${usageCount}).`)
+      return
+    }
+
+    const saved = await runProtectedSettingsChange(() => {
+      saveDataListSettings({
+        ...settings,
+        [config.key]: values.filter((item) => item !== value),
+      })
+    })
+    if (saved) setMessage(`Значение ${value} удалено из списка.`)
+  }
+
+  async function resetListValues(config: DataListConfig) {
+    const defaultList = DEFAULT_DATA_LIST_SETTINGS[config.key]
+    const defaultValues = new Set(defaultList)
+    const values = settings[config.key]
+    const usageCounts = usageCountsByKey[config.key]
+    const blockedValues = values.filter((value) => !defaultValues.has(value) && (usageCounts.get(value) ?? 0) > 0)
+    if (blockedValues.length > 0) {
+      setMessage(
+        `Нельзя ${config.resetBlockedAction}: в стыках используются значения ${blockedValues
+          .map((value) => `${value} (${usageCounts.get(value)})`)
+          .join(', ')}.`,
+      )
+      return
+    }
+
+    const saved = await runProtectedSettingsChange(() => {
+      saveDataListSettings({
+        ...settings,
+        [config.key]: defaultList,
+      })
+    })
+    if (saved) {
+      setDrafts((current) => ({ ...current, [config.key]: '' }))
+      setMessage(config.resetSuccessMessage)
+    }
+  }
+
+  function renderListValue(config: DataListConfig, value: string) {
+    const usageCount = usageCountsByKey[config.key].get(value) ?? 0
+    return (
+      <span
+        key={value}
+        className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
+          usageCount > 0 ? 'border-sky-100 bg-sky-50 text-sky-900' : 'border-slate-200 bg-slate-50 text-slate-800'
+        }`}
+      >
+        {value}
+        {usageCount > 0 ? (
+          <span className="rounded border border-sky-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
+            стыков: {usageCount}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => removeListValue(config, value)}
+          className={`rounded border bg-white px-1.5 py-0.5 text-xs font-semibold transition-colors ${
+            usageCount > 0
+              ? 'border-slate-200 text-slate-400 hover:bg-slate-50'
+              : 'border-sky-200 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'
+          }`}
+          aria-label={`Удалить ${value}`}
+          title={usageCount > 0 ? `Нельзя удалить: используется в стыках (${usageCount})` : `Удалить ${value}`}
+        >
+          ×
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-slate-500" />
+          <h3 className="text-base font-semibold text-slate-900">Данные</h3>
+        </div>
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+          Здесь настраиваются выпадающие списки, которые используются в рабочих формах и импорте. Значения нельзя удалить или убрать
+          сбросом, если они уже используются хотя бы в одном стыке.
+        </p>
+      </div>
+
+      {DATA_LIST_CONFIGS.map((config) => (
+        <div key={config.key} className="rounded-md border border-slate-200 bg-white">
+          <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-base font-semibold text-slate-900">{config.title}</div>
+              <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-500">{config.description}</p>
+              <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">{config.protectionHint}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => resetListValues(config)}
+              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {config.resetButtonLabel}
+            </button>
+          </div>
+
+          <div className="space-y-4 p-4">
+            {settings[config.key].length > 0 ? (
+              <div className="flex flex-wrap gap-2">{settings[config.key].map((value) => renderListValue(config, value))}</div>
+            ) : (
+              <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                {config.emptyListText}
+              </div>
+            )}
+
+            <div className="grid gap-3 md:grid-cols-[minmax(220px,360px)_auto] md:items-end md:justify-start">
+              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+                <span>Новое значение</span>
+                <input
+                  type="text"
+                  value={drafts[config.key]}
+                  onChange={(event) => {
+                    setDrafts((current) => ({ ...current, [config.key]: event.target.value }))
+                    setMessage(null)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void addListValue(config)
+                    }
+                  }}
+                  placeholder={config.placeholder}
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm shadow-slate-200/50 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => addListValue(config)}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <Plus className="h-4 w-4" />
+                Добавить
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {message ? <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">{message}</div> : null}
+    </div>
+  )
+}
+
+type DataListSettingsKey = 'weldingTypes' | 'connectionTypes'
+
+type DataListConfig = {
+  key: DataListSettingsKey
+  title: string
+  description: string
+  protectionHint: string
+  placeholder: string
+  emptyListText: string
+  resetButtonLabel: string
+  resetBlockedAction: string
+  resetSuccessMessage: string
+  usedValueText: string
+  minOptions?: number
+  minOptionsMessage: string
+}
+
+const DATA_LIST_CONFIGS: DataListConfig[] = [
+  {
+    key: 'weldingTypes',
+    title: 'Способ сварки',
+    description:
+      'Пользователь сможет выбрать только значения из этого списка. Список применяется в сварочном журнале, карточках клейм и проверке импорта.',
+    protectionHint: 'Уже созданные записи не переименовываются автоматически, но при новом вводе будет применяться актуальный список.',
+    placeholder: 'Например: РД',
+    emptyListText: 'Список пуст. Добавьте хотя бы один способ сварки.',
+    resetButtonLabel: 'Вернуть РД/РАД',
+    resetBlockedAction: 'вернуть список к РД/РАД',
+    resetSuccessMessage: 'Список “Способ сварки” возвращен к значениям по умолчанию.',
+    usedValueText: 'этот способ сварки',
+    minOptions: 1,
+    minOptionsMessage: 'В списке “Способ сварки” должно остаться хотя бы одно значение.',
+  },
+  {
+    key: 'connectionTypes',
+    title: 'Тип соединения',
+    description:
+      'Пользователь выбирает одно значение из этого списка в меню создания и редактирования стыка. Это одиночный выбор, не набор галочек.',
+    protectionHint: 'Если тип соединения уже используется в стыках, удалить его из настроек нельзя.',
+    placeholder: 'Например: СТ',
+    emptyListText: 'Список пока пуст. После добавления значений поле “Тип соединения” станет выпадающим списком в форме стыка.',
+    resetButtonLabel: 'Очистить список',
+    resetBlockedAction: 'очистить список “Тип соединения”',
+    resetSuccessMessage: 'Список “Тип соединения” очищен.',
+    usedValueText: 'этот тип соединения',
+    minOptionsMessage: '',
+  },
+]
+
+function getWeldingTypeUsageCounts(rows: WeldRow[]) {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const values = new Set(splitWeldingMethodValues(row.weldingMethod))
+    values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1))
+  }
+  return counts
+}
+
+function getConnectionTypeUsageCounts(rows: WeldRow[]) {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const value = normalizeDataListOption(row.connectionType)
+    if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return counts
+}
+
+function splitWeldingMethodValues(value: unknown) {
+  return String(value ?? '')
+    .split(/[+,;]+/)
+    .map((part) => normalizeDataListOption(part))
+    .filter(Boolean)
 }
 
 const SYSTEM_INDEX_ROWS: Array<{

@@ -1,4 +1,4 @@
-import type { WeldField, WeldFieldKey } from './weld-field-definitions'
+import { FIELD_BY_KEY, MATERIAL_ADDITIONAL_FIELD_KEYS, type WeldField, type WeldFieldKey } from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
 
 export const HEAT_TREATMENT_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -9,21 +9,21 @@ export const HEAT_TREATMENT_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
 export const HEAT_TREATMENT_IMPORT_MATCH_FIELD_KEYS = new Set<WeldFieldKey>(['line', 'joint'])
 
 export const PSTO_WAITING_REQUEST_FIELDS = [
-  { key: 'projectTitle', label: 'Проект/Титул', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'subtitleCode', label: 'Шифр/Подтитул', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'line', label: 'Линия', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'spool', label: 'Спул', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'joint', label: 'Стык', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'wdi', label: 'WDI', kind: 'number', group: 'ПСТО', visible: true },
-  { key: 'weldDate', label: 'Дата сварки', kind: 'date', group: 'ПСТО', visible: true },
-  { key: 'status', label: 'Статус', kind: 'text', group: 'ПСТО', visible: true },
+  getReportField('projectTitle', 'ПСТО'),
+  getReportField('subtitleCode', 'ПСТО'),
+  getReportField('line', 'ПСТО'),
+  getReportField('spool', 'ПСТО'),
+  getReportField('joint', 'ПСТО'),
+  getReportField('wdi', 'ПСТО'),
+  getReportField('weldDate', 'ПСТО'),
+  getReportField('status', 'ПСТО'),
 ] as unknown as WeldField[]
 
 export const PSTO_RESULTS_FIELDS = [
   ...PSTO_WAITING_REQUEST_FIELDS.filter((field) => field.key !== 'status'),
-  { key: 'pstoRequest', label: 'Номер заявки ПСТО', kind: 'text', group: 'ПСТО', visible: true },
-  { key: 'pstoDate', label: 'Дата', kind: 'date', group: 'ПСТО', visible: true },
-  { key: 'heatTreatmentDiagram', label: 'Номер диаграммы', kind: 'text', group: 'ПСТО', visible: true },
+  getReportField('pstoRequest', 'ПСТО'),
+  getReportField('pstoDate', 'ПСТО'),
+  getReportField('heatTreatmentDiagram', 'ПСТО'),
 ] as unknown as WeldField[]
 
 export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -36,6 +36,7 @@ export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...MATERIAL_ADDITIONAL_FIELD_KEYS,
   'hasVik',
   'hasRk',
   'hasUzk',
@@ -68,3 +69,9 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_REPORT_FIELD_KEYS,
   ...LNK_CONCLUSION_FIELD_KEYS,
 ])
+
+function getReportField(key: WeldFieldKey, group: string): WeldField {
+  const field = FIELD_BY_KEY.get(key)
+  if (!field) throw new Error(`Unknown PSTO report field: ${key}`)
+  return { ...field, group, visible: true }
+}

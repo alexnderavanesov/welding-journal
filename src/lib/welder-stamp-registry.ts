@@ -77,7 +77,7 @@ export function getWelderStampNameSyncHint(records: WelderStampRecord[], record:
 export function validateWelderStampRecord(record: WelderStampRecord) {
   const hasNaksStamp = Boolean(record.naksStamp)
 
-  if (hasNaksStamp && !record.weldType) return 'Укажите Тип сварки'
+  if (hasNaksStamp && !record.weldType) return 'Укажите Способ сварки'
   if (hasNaksStamp && !record.diameterFrom) return 'Укажите Диаметр от'
   if (hasNaksStamp && !record.validFrom) return 'Укажите Срок действия от'
   if (hasNaksStamp && !record.validTo) return 'Укажите Срок действия до'
@@ -166,7 +166,7 @@ export function removeWelderStampRecord(records: WelderStampRecord[], id: number
 export function getWelderStampFormHint(record: WelderStampRecord) {
   const draft = normalizeWelderStampRecord(record)
   const defaultHint =
-    'Клеймо НАКС: 4 знака, только латинские буквы и цифры. ФИО синхронизируется по Клеймо НАКС. Если заполнено только внутреннее клеймо, тип сварки, диаметры и срок действия можно не указывать.'
+    'Клеймо НАКС: 4 знака, только латинские буквы и цифры. ФИО синхронизируется по Клеймо НАКС. Если заполнено только внутреннее клеймо, способ сварки, диаметры и срок действия можно не указывать.'
 
   if (!draft.naksStamp && !draft.internalStamp) return { kind: 'info' as const, text: defaultHint }
   if (draft.naksStamp && !isValidNaksStamp(draft.naksStamp)) {

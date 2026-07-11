@@ -8,23 +8,27 @@ export type SecuritySettings = {
   entryPassword: string
   settingsPassword: string
   editPassword: string
+  importReplacePassword: string
   deletePassword: string
   requirePasswordOnEntry: boolean
   protectSettings: boolean
   protectEdit: boolean
+  protectImportReplace: boolean
   protectDelete: boolean
 }
 
-export type SecurityScope = 'entry' | 'settings' | 'edit' | 'delete'
+export type SecurityScope = 'entry' | 'settings' | 'edit' | 'importReplace' | 'delete'
 
 export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   entryPassword: '',
   settingsPassword: '',
   editPassword: '',
+  importReplacePassword: '',
   deletePassword: '',
   requirePasswordOnEntry: false,
   protectSettings: false,
   protectEdit: false,
+  protectImportReplace: false,
   protectDelete: false,
 }
 
@@ -78,6 +82,7 @@ export function isSecurityScopeEnabled(settings: SecuritySettings, scope: Securi
   if (scope === 'entry') return settings.requirePasswordOnEntry
   if (scope === 'settings') return settings.protectSettings
   if (scope === 'edit') return settings.protectEdit
+  if (scope === 'importReplace') return settings.protectImportReplace
   return settings.protectDelete
 }
 
@@ -85,6 +90,7 @@ export function getSecurityScopePassword(settings: SecuritySettings, scope: Secu
   if (scope === 'entry') return settings.entryPassword
   if (scope === 'settings') return settings.settingsPassword
   if (scope === 'edit') return settings.editPassword
+  if (scope === 'importReplace') return settings.importReplacePassword
   return settings.deletePassword
 }
 
@@ -95,16 +101,19 @@ export function normalizeSecuritySettings(value: unknown): SecuritySettings {
   const entryPassword = typeof source.entryPassword === 'string' ? source.entryPassword : legacyPassword
   const settingsPassword = typeof source.settingsPassword === 'string' ? source.settingsPassword : legacyPassword
   const editPassword = typeof source.editPassword === 'string' ? source.editPassword : legacyPassword
+  const importReplacePassword = typeof source.importReplacePassword === 'string' ? source.importReplacePassword : ''
   const deletePassword = typeof source.deletePassword === 'string' ? source.deletePassword : legacyPassword
   const legacyProtectEditDelete = legacySource.protectEditDelete === true
   return {
     entryPassword,
     settingsPassword,
     editPassword,
+    importReplacePassword,
     deletePassword,
     requirePasswordOnEntry: entryPassword ? source.requirePasswordOnEntry === true : false,
     protectSettings: settingsPassword ? source.protectSettings === true : false,
     protectEdit: editPassword ? source.protectEdit === true || legacyProtectEditDelete : false,
+    protectImportReplace: importReplacePassword ? source.protectImportReplace === true : false,
     protectDelete: deletePassword ? source.protectDelete === true || legacyProtectEditDelete : false,
   }
 }
