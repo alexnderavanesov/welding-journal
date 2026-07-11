@@ -1,5 +1,20 @@
-import { type ChangeEvent, type ReactNode, useEffect, useState } from 'react'
-import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Download, FileText, Hash, Inbox, Pencil, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
+import {
+  AlertTriangle,
+  Bell,
+  CheckCircle2,
+  ChevronDown,
+  Download,
+  FileText,
+  Hash,
+  Inbox,
+  LockKeyhole,
+  Pencil,
+  ShieldCheck,
+  SlidersHorizontal,
+  Trash2,
+  Upload,
+} from 'lucide-react'
 import {
   deleteDocumentTemplate,
   DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
@@ -42,6 +57,14 @@ import {
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
 import { saveOtherSettings, useOtherSettings } from '@/lib/other-settings'
+import {
+  clearSecuritySettings,
+  saveSecuritySettings,
+  useSecuritySettings,
+  type SecurityScope,
+  type SecuritySettings,
+} from '@/lib/security-settings'
+import { useSecurityGuard } from '@/lib/security-context'
 
 const SETTINGS_TABS = [
   { id: 'templates', label: 'Шаблоны документов', icon: FileText },
@@ -49,12 +72,23 @@ const SETTINGS_TABS = [
   { id: 'indexes', label: 'Системные индексы', icon: Hash },
   { id: 'dispatcher', label: 'Диспетчер задач и напоминаний', icon: Bell },
   { id: 'other', label: 'Прочее', icon: SlidersHorizontal },
+  { id: 'security', label: 'Блокировка', icon: LockKeyhole },
 ] as const
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]['id']
+type ProtectedSettingsChange = (action: () => void | Promise<void>) => Promise<boolean>
 
 export function SettingsPage({ rowsCount = 0 }: { rowsCount?: number }) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('templates')
+  const { requireSettingsChangePassword } = useSecurityGuard()
+  const runProtectedSettingsChange = useCallback<ProtectedSettingsChange>(
+    async (action) => {
+      if (!(await requireSettingsChangePassword())) return false
+      await action()
+      return true
+    },
+    [requireSettingsChangePassword],
+  )
 
   return (
     <div className="space-y-5">
@@ -85,15 +119,17 @@ export function SettingsPage({ rowsCount = 0 }: { rowsCount?: number }) {
 
         <div className="p-5">
           {activeTab === 'templates' ? (
-            <DocumentTemplatesSettings />
+            <DocumentTemplatesSettings runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'requests' ? (
-            <RequestConclusionSettingsPanel />
+            <RequestConclusionSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'indexes' ? (
-            <SystemIndexesSettingsPanel rowsCount={rowsCount} />
+            <SystemIndexesSettingsPanel rowsCount={rowsCount} runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'dispatcher' ? (
-            <DispatcherSettingsPanel />
+            <DispatcherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
+          ) : activeTab === 'other' ? (
+            <OtherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : (
-            <OtherSettingsPanel />
+            <SecuritySettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           )}
         </div>
       </section>
@@ -101,8 +137,391 @@ export function SettingsPage({ rowsCount = 0 }: { rowsCount?: number }) {
   )
 }
 
-function OtherSettingsPanel() {
+const SECURITY_PASSWORD_KEYS = {
+  entry: 'entryPassword',
+  settings: 'settingsPassword',
+  edit: 'editPassword',
+  delete: 'deletePassword',
+} as const satisfies Record<SecurityScope, keyof SecuritySettings>
+
+const SECURITY_FLAG_KEYS = {
+  entry: 'requirePasswordOnEntry',
+  settings: 'protectSettings',
+  edit: 'protectEdit',
+  delete: 'protectDelete',
+} as const satisfies Record<SecurityScope, keyof SecuritySettings>
+
+const SECURITY_RULE_CARDS: Array<{
+  scope: SecurityScope
+  title: string
+  passwordTitle: string
+  description: string
+  example: string
+}> = [
+  {
+    scope: 'entry',
+    title: 'Вход на сайт',
+    passwordTitle: 'Пароль на вход',
+    description: 'Сайт откроется только после ввода пароля для входа.',
+    example: 'Пользователь открыл сайт, ввел пароль входа и попал в систему.',
+  },
+  {
+    scope: 'settings',
+    title: 'Изменение настроек',
+    passwordTitle: 'Пароль на настройки',
+    description: 'Раздел “Настройки” можно открыть и читать, но сохранение изменений попросит пароль.',
+    example: 'Пользователь поменял правило или галочку, нажал сохранить и ввел пароль настроек.',
+  },
+  {
+    scope: 'edit',
+    title: 'Редактирование',
+    passwordTitle: 'Пароль на редактирование',
+    description: 'Перед изменением, переименованием, очисткой или сохранением данных будет запрошен пароль.',
+    example: 'Пользователь нажал редактировать стык или сохранить результат, ввел пароль редактирования.',
+  },
+  {
+    scope: 'delete',
+    title: 'Удаление',
+    passwordTitle: 'Пароль на удаление',
+    description: 'Перед удалением записей будет запрошен отдельный пароль удаления.',
+    example: 'Пользователь нажал удалить стык, ввел пароль удаления, затем подтвердил удаление.',
+  },
+]
+
+function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
+  const settings = useSecuritySettings()
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<SecurityScope, string>>({
+    entry: '',
+    settings: '',
+    edit: '',
+    delete: '',
+  })
+  const [repeatDrafts, setRepeatDrafts] = useState<Record<SecurityScope, string>>({
+    entry: '',
+    settings: '',
+    edit: '',
+    delete: '',
+  })
+  const [editingPasswordScopes, setEditingPasswordScopes] = useState<Set<SecurityScope>>(() => new Set())
+  const [message, setMessage] = useState<string | null>(null)
+  const enabledRulesCount = SECURITY_RULE_CARDS.filter((card) =>
+    Boolean(settings[SECURITY_PASSWORD_KEYS[card.scope]]) && settings[SECURITY_FLAG_KEYS[card.scope]] === true,
+  ).length
+  const configuredPasswordsCount = SECURITY_RULE_CARDS.filter((card) => Boolean(settings[SECURITY_PASSWORD_KEYS[card.scope]])).length
+
+  const updatePasswordDraft = (scope: SecurityScope, value: string) => {
+    setPasswordDrafts((current) => ({ ...current, [scope]: value }))
+    setMessage(null)
+  }
+
+  const updateRepeatDraft = (scope: SecurityScope, value: string) => {
+    setRepeatDrafts((current) => ({ ...current, [scope]: value }))
+    setMessage(null)
+  }
+
+  const setPasswordEditorOpen = (scope: SecurityScope, open: boolean) => {
+    setEditingPasswordScopes((current) => {
+      const next = new Set(current)
+      if (open) next.add(scope)
+      else next.delete(scope)
+      return next
+    })
+  }
+
+  async function savePassword(scope: SecurityScope, enableAfterSave = false) {
+    const nextPassword = passwordDrafts[scope].trim()
+    if (nextPassword.length < 1) {
+      setMessage('Введите пароль')
+      return
+    }
+    if (nextPassword !== repeatDrafts[scope].trim()) {
+      setMessage('Пароли не совпадают')
+      return
+    }
+    await runProtectedSettingsChange(() => {
+      saveSecuritySettings({
+        ...settings,
+        [SECURITY_PASSWORD_KEYS[scope]]: nextPassword,
+        ...(enableAfterSave ? { [SECURITY_FLAG_KEYS[scope]]: true } : {}),
+      })
+    })
+    setPasswordDrafts((current) => ({ ...current, [scope]: '' }))
+    setRepeatDrafts((current) => ({ ...current, [scope]: '' }))
+    setPasswordEditorOpen(scope, false)
+    setMessage(enableAfterSave ? 'Пароль сохранен, защита включена.' : 'Пароль сохранен.')
+  }
+
+  async function updateSecurityFlag(scope: SecurityScope, value: boolean) {
+    if (!settings[SECURITY_PASSWORD_KEYS[scope]]) {
+      setMessage('Сначала задайте пароль для этой защиты')
+      return
+    }
+    await runProtectedSettingsChange(() => {
+      saveSecuritySettings({ ...settings, [SECURITY_FLAG_KEYS[scope]]: value })
+    })
+    setMessage(value ? 'Защита включена. Теперь в этом месте будет запрашиваться свой пароль.' : 'Защита выключена для этого действия.')
+  }
+
+  async function resetSecurityScope(scope: SecurityScope) {
+    await runProtectedSettingsChange(() => {
+      saveSecuritySettings({
+        ...settings,
+        [SECURITY_PASSWORD_KEYS[scope]]: '',
+        [SECURITY_FLAG_KEYS[scope]]: false,
+      })
+    })
+    setPasswordDrafts((current) => ({ ...current, [scope]: '' }))
+    setRepeatDrafts((current) => ({ ...current, [scope]: '' }))
+    setPasswordEditorOpen(scope, false)
+    setMessage('Пароль и защита для выбранного действия сброшены')
+  }
+
+  async function resetSecurity() {
+    await runProtectedSettingsChange(() => {
+      clearSecuritySettings()
+    })
+    setPasswordDrafts({ entry: '', settings: '', edit: '', delete: '' })
+    setRepeatDrafts({ entry: '', settings: '', edit: '', delete: '' })
+    setEditingPasswordScopes(new Set())
+    setMessage('Все пароли и блокировки отключены')
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <LockKeyhole className="h-5 w-5 text-slate-500" />
+              <h3 className="text-base font-semibold text-slate-900">Блокировка</h3>
+            </div>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              Для каждой защиты можно задать свой пароль. Настройки открываются свободно, но если включена защита настроек, изменения и сохранения
+              потребуют пароль настроек.
+            </p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            {configuredPasswordsCount > 0
+              ? `Паролей задано: ${configuredPasswordsCount} · защит включено: ${enabledRulesCount}`
+              : 'Пароли не заданы · защиты недоступны'}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div className="font-semibold text-slate-900">1. Задайте пароли</div>
+            <div className="mt-1 leading-5 text-slate-500">Можно один и тот же, а можно разные: например, вход 1111, удаление 9999.</div>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div className="font-semibold text-slate-900">2. Включите защиты</div>
+            <div className="mt-1 leading-5 text-slate-500">Отдельно включаются вход, изменение настроек, редактирование и удаление.</div>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div className="font-semibold text-slate-900">3. Пользователь вводит пароль</div>
+            <div className="mt-1 leading-5 text-slate-500">Система спросит пароль только в том месте, где включена защита.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {SECURITY_RULE_CARDS.map((card) => {
+          const hasPassword = Boolean(settings[SECURITY_PASSWORD_KEYS[card.scope]])
+          const checked = settings[SECURITY_FLAG_KEYS[card.scope]] === true
+          const isEditingPassword = !hasPassword || editingPasswordScopes.has(card.scope)
+          return (
+            <div
+              key={card.scope}
+              className={`overflow-hidden rounded-md border bg-white transition-colors ${
+                checked ? 'border-sky-200 shadow-sm shadow-sky-100/70' : 'border-slate-200'
+              }`}
+            >
+              <SecurityToggle
+                title={card.title}
+                description={card.description}
+                example={card.example}
+                checked={checked}
+                onChange={(isChecked) => updateSecurityFlag(card.scope, isChecked)}
+              />
+
+              <div className="border-t border-slate-100 bg-slate-50/80 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-slate-500" />
+                    <h4 className="text-sm font-semibold text-slate-900">{card.passwordTitle}</h4>
+                  </div>
+                  <span
+                    className={`rounded-md border px-2 py-1 text-xs font-semibold ${
+                      hasPassword ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {hasPassword ? 'пароль задан' : 'пароль не задан'}
+                  </span>
+                </div>
+
+                {isEditingPassword ? (
+                  <>
+                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                      <label className="grid gap-1 text-sm font-medium text-slate-700">
+                        {hasPassword ? 'Новый пароль' : 'Задайте пароль'}
+                        <input
+                          type="password"
+                          value={passwordDrafts[card.scope]}
+                          onChange={(event) => updatePasswordDraft(card.scope, event.target.value)}
+                          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                          placeholder={hasPassword ? 'Введите новый пароль' : 'От 1 символа'}
+                        />
+                      </label>
+                      <label className="grid gap-1 text-sm font-medium text-slate-700">
+                        Повторите пароль
+                        <input
+                          type="password"
+                          value={repeatDrafts[card.scope]}
+                          onChange={(event) => updateRepeatDraft(card.scope, event.target.value)}
+                          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                          placeholder="Еще раз"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                        onClick={() => savePassword(card.scope, !hasPassword)}
+                      >
+                        {hasPassword ? 'Сохранить пароль' : 'Сохранить и включить'}
+                      </button>
+                      {hasPassword ? (
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                          onClick={() => {
+                            setPasswordDrafts((current) => ({ ...current, [card.scope]: '' }))
+                            setRepeatDrafts((current) => ({ ...current, [card.scope]: '' }))
+                            setPasswordEditorOpen(card.scope, false)
+                          }}
+                        >
+                          Отмена
+                        </button>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+                    <span className="text-sm text-slate-500">Пароль скрыт. Используется только для этой защиты.</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                        onClick={() => setPasswordEditorOpen(card.scope, true)}
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-red-100 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                        onClick={() => resetSecurityScope(card.scope)}
+                      >
+                        Сбросить
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {isEditingPassword && hasPassword ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-red-600 hover:text-red-700"
+                      onClick={() => resetSecurityScope(card.scope)}
+                    >
+                      Сбросить эту защиту
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+        <button
+          type="button"
+          className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+          onClick={resetSecurity}
+        >
+          Сбросить все пароли и защиты
+        </button>
+        {message ? <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">{message}</div> : null}
+      </div>
+    </div>
+  )
+}
+
+function SecurityToggle({
+  title,
+  description,
+  example,
+  checked,
+  disabled,
+  onChange,
+}: {
+  title: string
+  description: string
+  example: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label
+      className={`block p-4 transition-colors ${
+        disabled
+          ? 'cursor-not-allowed bg-slate-50 opacity-70'
+          : checked
+            ? 'cursor-pointer bg-sky-50/60 hover:bg-sky-50'
+            : 'cursor-pointer bg-white hover:bg-slate-50'
+      }`}
+    >
+      <span className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+          className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-900">{title}</span>
+            <span
+              className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+                checked ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'
+              }`}
+            >
+              {checked ? 'включено' : 'выключено'}
+            </span>
+          </span>
+          <span className="mt-1 block text-sm leading-5 text-slate-500">{description}</span>
+          <span className="mt-2 block rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-500">
+            {example}
+          </span>
+        </span>
+      </span>
+    </label>
+  )
+}
+
+function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useOtherSettings()
+
+  function updateArchivedWelderStampsSetting(checked: boolean) {
+    void runProtectedSettingsChange(() => {
+      saveOtherSettings({
+        ...settings,
+        includeArchivedWelderStampsInForm: checked,
+      })
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -116,20 +535,32 @@ function OtherSettingsPanel() {
         </p>
       </div>
 
-      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-white p-4 hover:bg-slate-50">
+      <label
+        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 transition-colors ${
+          settings.includeArchivedWelderStampsInForm
+            ? 'border-sky-100 bg-sky-50 hover:bg-sky-50'
+            : 'border-slate-200 bg-white hover:bg-slate-50'
+        }`}
+      >
         <input
           type="checkbox"
           checked={settings.includeArchivedWelderStampsInForm}
-          onChange={(event) =>
-            saveOtherSettings({
-              ...settings,
-              includeArchivedWelderStampsInForm: event.target.checked,
-            })
-          }
+          onChange={(event) => updateArchivedWelderStampsSetting(event.currentTarget.checked)}
           className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
         />
         <span>
-          <span className="block text-sm font-semibold text-slate-900">Учитывать архив клейм в форме стыка</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-900">Учитывать архив клейм в форме стыка</span>
+            <span
+              className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+                settings.includeArchivedWelderStampsInForm
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-slate-200 bg-white text-slate-500'
+              }`}
+            >
+              {settings.includeArchivedWelderStampsInForm ? 'включено' : 'выключено'}
+            </span>
+          </span>
           <span className="mt-1 block text-sm leading-5 text-slate-500">
             Архивные клейма будут доступны в выпадающих списках при создании и редактировании стыков.
           </span>
@@ -171,7 +602,13 @@ const SYSTEM_INDEX_ROWS: Array<{
   },
 ]
 
-function SystemIndexesSettingsPanel({ rowsCount }: { rowsCount: number }) {
+function SystemIndexesSettingsPanel({
+  rowsCount,
+  runProtectedSettingsChange,
+}: {
+  rowsCount: number
+  runProtectedSettingsChange: ProtectedSettingsChange
+}) {
   const settings = useSystemIndexSettings()
   const [draft, setDraft] = useState<SystemIndexSettings>(settings)
   const canEdit = rowsCount === 0
@@ -189,11 +626,11 @@ function SystemIndexesSettingsPanel({ rowsCount }: { rowsCount: number }) {
     }))
   }
 
-  const resetDraft = () => setDraft(DEFAULT_SYSTEM_INDEX_SETTINGS)
+  const resetDraft = () => runProtectedSettingsChange(() => setDraft(DEFAULT_SYSTEM_INDEX_SETTINGS))
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!canEdit || validationError) return
-    saveSystemIndexSettings(draft)
+    await runProtectedSettingsChange(() => saveSystemIndexSettings(draft))
   }
 
   return (
@@ -276,7 +713,7 @@ function SystemIndexesSettingsPanel({ rowsCount }: { rowsCount: number }) {
   )
 }
 
-function DocumentTemplatesSettings() {
+function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const [activeTemplateId, setActiveTemplateId] = useState<DocumentTemplateId>('weldingJournal')
   const [uploads, setUploads] = useState<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>({})
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -308,16 +745,18 @@ function DocumentTemplatesSettings() {
     if (!file) return
 
     setUploadError(null)
-    try {
-      const parsedTemplate = await parseDocumentTemplateFile(file)
-      const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate)
-      setUploads((currentUploads) => ({
-        ...currentUploads,
-        [activeTemplateId]: savedTemplate,
-      }))
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : 'Не удалось прочитать шаблон.')
-    }
+    await runProtectedSettingsChange(async () => {
+      try {
+        const parsedTemplate = await parseDocumentTemplateFile(file)
+        const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate)
+        setUploads((currentUploads) => ({
+          ...currentUploads,
+          [activeTemplateId]: savedTemplate,
+        }))
+      } catch (error) {
+        setUploadError(error instanceof Error ? error.message : 'Не удалось прочитать шаблон.')
+      }
+    })
   }
 
   const handleWeldingJournalOptionChange = async (optionKey: keyof WeldingJournalTemplateOptions, checked: boolean) => {
@@ -327,12 +766,14 @@ function DocumentTemplatesSettings() {
       ...weldingJournalOptions,
       [optionKey]: checked,
     }
-    const savedTemplate = await updateDocumentTemplateOptions('weldingJournal', { weldingJournal: nextOptions })
-    if (!savedTemplate) return
-    setUploads((currentUploads) => ({
-      ...currentUploads,
-      weldingJournal: savedTemplate,
-    }))
+    await runProtectedSettingsChange(async () => {
+      const savedTemplate = await updateDocumentTemplateOptions('weldingJournal', { weldingJournal: nextOptions })
+      if (!savedTemplate) return
+      setUploads((currentUploads) => ({
+        ...currentUploads,
+        weldingJournal: savedTemplate,
+      }))
+    })
   }
 
   const handleTemplateDownload = () => {
@@ -440,11 +881,13 @@ function DocumentTemplatesSettings() {
                 <button
                   type="button"
                   onClick={async () => {
-                    await deleteDocumentTemplate(activeTemplateId)
-                    setUploads((currentUploads) => {
-                      const nextUploads = { ...currentUploads }
-                      delete nextUploads[activeTemplateId]
-                      return nextUploads
+                    await runProtectedSettingsChange(async () => {
+                      await deleteDocumentTemplate(activeTemplateId)
+                      setUploads((currentUploads) => {
+                        const nextUploads = { ...currentUploads }
+                        delete nextUploads[activeTemplateId]
+                        return nextUploads
+                      })
                     })
                   }}
                   className="inline-flex items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
@@ -690,23 +1133,23 @@ const REQUEST_NAMING_CARDS: Array<{
   },
 ]
 
-function RequestConclusionSettingsPanel() {
+function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useRequestConclusionSettings()
 
   const updateSettings = (
     kind: RequestConclusionNamingKind,
     patch: Partial<RequestConclusionSettings[RequestConclusionNamingKind]>,
   ) => {
-    saveRequestConclusionSettings({
+    return runProtectedSettingsChange(() => saveRequestConclusionSettings({
       ...settings,
       [kind]: {
         ...settings[kind],
         ...patch,
       },
-    })
+    }))
   }
 
-  const resetSettings = () => saveRequestConclusionSettings(REQUEST_CONCLUSION_DEFAULT_SETTINGS)
+  const resetSettings = () => runProtectedSettingsChange(() => saveRequestConclusionSettings(REQUEST_CONCLUSION_DEFAULT_SETTINGS))
 
   return (
     <div className="space-y-4">
@@ -748,7 +1191,7 @@ function RequestConclusionSettingsPanel() {
             settings={settings[card.id]}
             showMethodHint={card.id === 'lnkConclusion'}
             onModeChange={(defaultMode) => updateSettings(card.id, { defaultMode })}
-            onPatternChange={(systemPattern) => updateSettings(card.id, { systemPattern })}
+            onPatternSave={(systemPattern) => updateSettings(card.id, { systemPattern })}
           />
         ))}
       </div>
@@ -763,7 +1206,7 @@ function RequestNamingSettingsCard({
   settings,
   showMethodHint,
   onModeChange,
-  onPatternChange,
+  onPatternSave,
 }: {
   title: string
   description: string
@@ -771,9 +1214,19 @@ function RequestNamingSettingsCard({
   settings: RequestConclusionSettings[RequestConclusionNamingKind]
   showMethodHint: boolean
   onModeChange: (mode: RequestNamingState['mode']) => void
-  onPatternChange: (pattern: string) => void
+  onPatternSave: (pattern: string) => Promise<boolean>
 }) {
   const [isEditingPattern, setIsEditingPattern] = useState(false)
+  const [patternDraft, setPatternDraft] = useState(settings.systemPattern)
+
+  useEffect(() => {
+    if (!isEditingPattern) setPatternDraft(settings.systemPattern)
+  }, [isEditingPattern, settings.systemPattern])
+
+  async function savePatternDraft() {
+    const saved = await onPatternSave(patternDraft)
+    if (saved) setIsEditingPattern(false)
+  }
 
   return (
     <div className="rounded-md border border-slate-200 bg-white p-4">
@@ -806,17 +1259,24 @@ function RequestNamingSettingsCard({
           <button
             type="button"
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            onClick={() => setIsEditingPattern((isEditing) => !isEditing)}
+            onClick={() => {
+              if (isEditingPattern) {
+                void savePatternDraft()
+                return
+              }
+              setPatternDraft(settings.systemPattern)
+              setIsEditingPattern(true)
+            }}
           >
             <Pencil className="h-3.5 w-3.5" />
-            {isEditingPattern ? 'Готово' : 'Изменить'}
+            {isEditingPattern ? 'Сохранить' : 'Изменить'}
           </button>
         </div>
         {isEditingPattern ? (
           <input
             type="text"
-            value={settings.systemPattern}
-            onChange={(event) => onPatternChange(event.target.value)}
+            value={patternDraft}
+            onChange={(event) => setPatternDraft(event.target.value)}
             placeholder={placeholder}
             className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm shadow-slate-200/50 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
           />
@@ -858,13 +1318,13 @@ function RequestNamingModeButton({
   )
 }
 
-function DispatcherSettingsPanel() {
+function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useDispatcherSettings()
   const disabledCount = Object.values(settings).filter((enabled) => !enabled).length
   const totalCount = Object.values(settings).length
 
   const updateSetting = (id: DispatcherSettingId, enabled: boolean) => {
-    saveDispatcherSettings({ ...settings, [id]: enabled })
+    runProtectedSettingsChange(() => saveDispatcherSettings({ ...settings, [id]: enabled }))
   }
 
   const updateGroup = (group: DispatcherSettingGroup, enabled: boolean) => {
@@ -872,7 +1332,7 @@ function DispatcherSettingsPanel() {
     group.items.forEach((item) => {
       nextSettings[item.id] = enabled
     })
-    saveDispatcherSettings(nextSettings)
+    runProtectedSettingsChange(() => saveDispatcherSettings(nextSettings))
   }
 
   return (
@@ -896,7 +1356,7 @@ function DispatcherSettingsPanel() {
             <button
               type="button"
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-              onClick={() => saveDispatcherSettings(DEFAULT_DISPATCHER_SETTINGS)}
+              onClick={() => runProtectedSettingsChange(() => saveDispatcherSettings(DEFAULT_DISPATCHER_SETTINGS))}
             >
               Включить все
             </button>
@@ -905,7 +1365,7 @@ function DispatcherSettingsPanel() {
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               onClick={() => {
                 const nextSettings = Object.fromEntries(Object.keys(DEFAULT_DISPATCHER_SETTINGS).map((id) => [id, false])) as DispatcherSettings
-                saveDispatcherSettings(nextSettings)
+                runProtectedSettingsChange(() => saveDispatcherSettings(nextSettings))
               }}
             >
               Отключить все

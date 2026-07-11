@@ -45,6 +45,7 @@ import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 import { useConfirmAction } from '@/lib/confirm-action-context'
+import { useSecurityGuard } from '@/lib/security-context'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { createReportRowActionHandlers } from '@/lib/report-row-action-handlers'
 import { createWeldTableProps } from '@/lib/weld-table-props'
@@ -92,6 +93,7 @@ export function useHomePageController() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
   const confirmAction = useConfirmAction()
+  const { requireEditPassword, requireDeletePassword } = useSecurityGuard()
   const {
     activeReport,
     columnFilters,
@@ -910,10 +912,14 @@ export function useHomePageController() {
     setMessage,
   })
 
-  const { changeActiveReport } = useReportChangeActions({
+  const { changeActiveReport: changeActiveReportUnsafe } = useReportChangeActions({
     setActiveReport,
     setEditing,
   })
+
+  async function changeActiveReport(report: Parameters<typeof changeActiveReportUnsafe>[0]) {
+    changeActiveReportUnsafe(report)
+  }
 
   const openDuplicateControlModal = () => {
     const initialRowIds = selectedLnkIds.size > 0 ? new Set(selectedLnkIds) : new Set<number>()
@@ -970,7 +976,8 @@ export function useHomePageController() {
     })
   }
 
-  const editDuplicateControl = (control: DuplicateControlRecord) => {
+  const editDuplicateControl = async (control: DuplicateControlRecord) => {
+    if (!(await requireEditPassword('редактирование дубль-контроля'))) return
     setDuplicateControlDraft({
       id: control.id,
       rowIds: new Set([control.weldJointId]),
@@ -986,6 +993,7 @@ export function useHomePageController() {
 
   const saveDuplicateControl = async () => {
     if (duplicateControlSaveBlockReason) return
+    if (!(await requireEditPassword(duplicateControlDraft.id ? 'сохранение дубль-контроля' : 'создание дубль-контроля'))) return
     const methods = Array.from(duplicateControlDraft.methods)
     const result = duplicateControlDraft.result
     if (!result) return
@@ -1010,6 +1018,7 @@ export function useHomePageController() {
   }
 
   const deleteDuplicateControlRecord = async (control: DuplicateControlRecord) => {
+    if (!(await requireDeletePassword('удаление дубль-контроля'))) return
     const confirmed = await confirmAction({
       title: 'Удалить дубль-контроль',
       itemName: `${control.method} · ${control.result}`,
@@ -1022,6 +1031,20 @@ export function useHomePageController() {
     await deleteDuplicateControlMutation.mutateAsync(control.id)
     await duplicateControlsQuery.refetch()
     setMessage('Дубль-контроль удален')
+  }
+
+  async function runProtectedEdit(actionLabel: string, action: () => void | Promise<void>) {
+    if (!(await requireEditPassword(actionLabel))) return
+    await action()
+  }
+
+  async function runProtectedDelete(actionLabel: string, action: () => void | Promise<void>) {
+    if (!(await requireDeletePassword(actionLabel))) return
+    await action()
+  }
+
+  async function handleProtectedEditRecord(row: WeldRow, fieldKey?: Parameters<typeof handleEditRecord>[1]) {
+    await runProtectedEdit('редактирование стыка', () => handleEditRecord(row, fieldKey))
   }
 
   const openPercentageLineStampRows = (filter: PercentageLineStampFilter) => {
@@ -1131,11 +1154,12 @@ export function useHomePageController() {
     onShowTask: showRepeatedJointTask,
     onOpenTaskOfficiality: openPercentageLineTaskOfficiality,
     onCreateTask: createRepeatedJoint,
-    onDeleteTask: deleteObsoleteRepeatedJoint,
-    onRenameTask: renameObsoleteRepeatedJoint,
+    onDeleteTask: (task) => runProtectedDelete('удаление повторного стыка', () => deleteObsoleteRepeatedJoint(task)),
+    onRenameTask: (task) => runProtectedEdit('переименование стыка', () => renameObsoleteRepeatedJoint(task)),
     onAcceptPercentageLineTask: acceptPercentageLineTask,
-    onEditPercentageLineTaskStamp: editPercentageLineTaskStamp,
-    onSuspendPercentageLineWelder: openWelderSuspensionFromPercentageLineTask,
+    onEditPercentageLineTaskStamp: (task) => runProtectedEdit('редактирование клейма стыка', () => editPercentageLineTaskStamp(task)),
+    onSuspendPercentageLineWelder: (task) =>
+      runProtectedEdit('добавление отстранения сварщика', () => openWelderSuspensionFromPercentageLineTask(task)),
     onSkipPercentageLineWelderSuspension: skipWelderSuspensionFromPercentageLineTask,
     isCreatePending: repeatedJointMutation.isPending,
     isDeletePending: obsoleteRepeatedJointMutation.isPending,
@@ -1154,8 +1178,9 @@ export function useHomePageController() {
     rows: visibleRows as WeldRow[],
     columnFilters: activeColumnFilters,
     onColumnFiltersChange: activeFiltersSetter,
-    onEdit: handleEditRecord,
+    onEdit: handleProtectedEditRecord,
     onDelete: async (id) => {
+      if (!(await requireDeletePassword('удаление стыка'))) return
       const row = rows.find((candidate) => candidate.id === id)
       const confirmed = await confirmAction({
         title: 'Удалить стык',
@@ -1191,17 +1216,17 @@ export function useHomePageController() {
     onFiltersChange: setWelderStampFilters,
     onDraftChange: updateWelderStampDraft,
     onSuspensionDraftChange: updateWelderStampSuspensionDraft,
-    onSave: saveWelderStampRecord,
-    onSaveSuspension: saveWelderStampSuspensionRecord,
+    onSave: () => runProtectedEdit('сохранение клейма', saveWelderStampRecord),
+    onSaveSuspension: () => runProtectedEdit('сохранение отстранения', saveWelderStampSuspensionRecord),
     onReset: resetWelderStampForm,
     onResetSuspension: resetWelderStampSuspensionForm,
-    onEdit: editWelderStampRecord,
-    onEditSuspension: editWelderStampSuspensionRecord,
-    onArchive: archiveWelderStampRecord,
-    onRestore: restoreWelderStampRecord,
+    onEdit: (record) => runProtectedEdit('редактирование клейма', () => editWelderStampRecord(record)),
+    onEditSuspension: (record) => runProtectedEdit('редактирование отстранения', () => editWelderStampSuspensionRecord(record)),
+    onArchive: (id) => runProtectedEdit('архивирование клейма', () => archiveWelderStampRecord(id)),
+    onRestore: (id) => runProtectedEdit('восстановление клейма', () => restoreWelderStampRecord(id)),
     onToggleArchived: setShowArchivedWelderStamps,
-    onDelete: deleteWelderStampRecord,
-    onDeleteSuspension: deleteWelderStampSuspensionRecord,
+    onDelete: (id) => runProtectedDelete('удаление клейма', () => deleteWelderStampRecord(id)),
+    onDeleteSuspension: (id) => runProtectedDelete('удаление отстранения', () => deleteWelderStampSuspensionRecord(id)),
   })
 
   const reportHeaderActionsProps = createReportHeaderActionsProps({
@@ -1384,11 +1409,13 @@ export function useHomePageController() {
         allowedArchivedOfficialStamps: allowedArchivedOfficialStampsForEditing,
         ignoreArchivedMissingRegistry: loadOtherSettings().includeArchivedWelderStampsInForm,
         suspensions: welderStampSuspensions,
-      }),
+    }),
     isSaving: saveMutation.isPending,
     onCancel: () => setEditing(null),
     onSave: (value) =>
-      editing && saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id }),
+      runProtectedEdit('сохранение стыка', () => {
+        if (editing) saveMutation.mutate({ ...value, status: editing.record.status ?? null, id: editing.record.id })
+      }),
   })
   const reportFieldEditorProps = createReportFieldEditorProps({
     editing: heatTreatmentFieldEditing,
@@ -1396,7 +1423,7 @@ export function useHomePageController() {
     isSaving: heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending,
     onChange: (value) => setHeatTreatmentFieldEditing((current) => (current ? { ...current, value } : current)),
     onClose: () => setHeatTreatmentFieldEditing(null),
-    onSave: saveEditedHeatTreatmentField,
+    onSave: () => runProtectedEdit('сохранение поля отчета', saveEditedHeatTreatmentField),
   })
   const reportPstoDialogsProps = createReportPstoDialogsProps({
     requestModalOpen: isPstoRequestModalOpen,
@@ -1417,7 +1444,7 @@ export function useHomePageController() {
       onRequestSearchChange: setPstoRequestSearch,
       onToggleAllRows: toggleAllPstoRequestRows,
       onToggleRow: togglePstoRequestRow,
-      onSubmit: submitCreatePstoRequest,
+      onSubmit: () => runProtectedEdit('создание заявки ПСТО', submitCreatePstoRequest),
     },
     filteredAvailableRequestRows: filteredAvailablePstoRequestRows,
     requestManagerOpen: isPstoRequestManagerOpen,
@@ -1431,9 +1458,9 @@ export function useHomePageController() {
       onClose: () => setIsPstoRequestManagerOpen(false),
       onChangeRequest: changeManagedPstoRequest,
       onRequestNameDraftChange: setManagedPstoRequestNameDraft,
-      onRenameRequest: renameManagedPstoRequest,
-      onClearPosition: clearManagedPstoRequestPosition,
-      onDeleteRequest: deleteManagedPstoRequest,
+      onRenameRequest: () => runProtectedEdit('переименование заявки ПСТО', renameManagedPstoRequest),
+      onClearPosition: (row) => runProtectedDelete('очистку позиции заявки ПСТО', () => clearManagedPstoRequestPosition(row)),
+      onDeleteRequest: () => runProtectedDelete('удаление заявки ПСТО', deleteManagedPstoRequest),
     },
     resultModalOpen: isPstoResultModalOpen,
     result: {
@@ -1460,7 +1487,7 @@ export function useHomePageController() {
       onToggleRow: togglePstoResultRow,
       onOpenManager: openPstoResultManager,
       onClose: closeAddPstoResultModal,
-      onSave: handleAddPstoResult,
+      onSave: () => runProtectedEdit('сохранение результата ПСТО', handleAddPstoResult),
     },
     resultManagerOpen: isPstoResultManagerOpen,
     resultManager: {
@@ -1473,8 +1500,8 @@ export function useHomePageController() {
       },
       onDiagramDraftChange: (rowId, value) =>
         setManagedPstoDiagramDrafts((current) => ({ ...current, [rowId]: value })),
-      onRenameDiagram: renameManagedPstoDiagram,
-      onDeleteResult: deleteManagedPstoResult,
+      onRenameDiagram: (row) => runProtectedEdit('переименование диаграммы ПСТО', () => renameManagedPstoDiagram(row)),
+      onDeleteResult: (row) => runProtectedDelete('удаление результата ПСТО', () => deleteManagedPstoResult(row)),
     },
   })
   const reportLnkDialogsProps = createReportLnkDialogsProps({
@@ -1500,7 +1527,7 @@ export function useHomePageController() {
       onRequestSearchChange: setLnkRequestSearch,
       onToggleAllRows: toggleAllLnkRequestRows,
       onToggleRow: toggleLnkRequestRow,
-      onSubmit: handleCreateLnkRequest,
+      onSubmit: () => runProtectedEdit('создание заявки ЛНК', handleCreateLnkRequest),
     },
     requestManagerOpen: isLnkRequestManagerOpen,
     requestManager: {
@@ -1514,9 +1541,10 @@ export function useHomePageController() {
       onClose: closeLnkRequestManager,
       onChangeRequest: changeManagedLnkRequest,
       onRequestNameDraftChange: setManagedLnkRequestNameDraft,
-      onRenameRequest: renameManagedLnkRequest,
-      onClearPosition: clearManagedLnkRequestPosition,
-      onDeleteRequest: deleteManagedLnkRequest,
+      onRenameRequest: () => runProtectedEdit('переименование заявки ЛНК', renameManagedLnkRequest),
+      onClearPosition: (row, methodKey) =>
+        runProtectedDelete('очистку позиции заявки ЛНК', () => clearManagedLnkRequestPosition(row, methodKey)),
+      onDeleteRequest: () => runProtectedDelete('удаление заявки ЛНК', deleteManagedLnkRequest),
     },
     resultManagerOpen: isLnkResultManagerOpen,
     resultManager: {
@@ -1534,11 +1562,13 @@ export function useHomePageController() {
       onClose: closeLnkResultManager,
       onMethodChange: changeManagedLnkResultMethod,
       onConclusionDraftChange: changeManagedLnkConclusionDraft,
-      onRenameConclusion: renameManagedLnkConclusionForRow,
-      onReplaceResult: replaceLnkResult,
-      onClearResult: clearLnkResult,
+      onRenameConclusion: (row, methodKey) =>
+        runProtectedEdit('переименование заключения ЛНК', () => renameManagedLnkConclusionForRow(row, methodKey)),
+      onReplaceResult: (row, methodKey, result) =>
+        runProtectedEdit('изменение результата ЛНК', () => replaceLnkResult(row, methodKey, result)),
+      onClearResult: (row, methodKey) => runProtectedDelete('очистку результата ЛНК', () => clearLnkResult(row, methodKey)),
       onResetPendingChanges: resetManagedLnkResultChanges,
-      onSaveChanges: saveManagedLnkResultChanges,
+      onSaveChanges: () => runProtectedEdit('сохранение изменений результатов ЛНК', saveManagedLnkResultChanges),
     },
     officialityModalOpen: isLnkOfficialityModalOpen,
     officiality: {
@@ -1548,7 +1578,7 @@ export function useHomePageController() {
       saveBlockReason: lnkOfficialitySaveBlockReason,
       isSaveDisabled: isLnkOfficialitySaveDisabled,
       onClose: closeLnkOfficialityModal,
-      onSave: saveLnkOfficiality,
+      onSave: () => runProtectedEdit('сохранение официальности ЛНК', saveLnkOfficiality),
       onDraftChange: setLnkOfficialityDraft,
       onToggleRow: toggleLnkOfficialityRow,
       onSetVisibleRowsSelected: setVisibleLnkOfficialityRowsSelected,
@@ -1629,7 +1659,7 @@ export function useHomePageController() {
         setShouldPinPreviewedLnkResultRows(true)
         setIsLnkResultPreviewOpen(true)
       },
-      onSave: handleAddLnkResult,
+      onSave: () => runProtectedEdit('сохранение результата ЛНК', handleAddLnkResult),
     },
     selectableResultRows: selectableVisibleLnkResultRows,
     resultPreviewOpen: isLnkResultPreviewOpen,
