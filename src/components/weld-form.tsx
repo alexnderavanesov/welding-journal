@@ -18,6 +18,7 @@ import {
   getWeldFormReactivationResultHint,
   getWeldFormSaveBlockReason,
   getWeldStampSaveBlockReason,
+  secondaryWeldFormFieldKeys,
   withCalculatedFinalStatus,
   type StampSelectOptions,
   yesEmptyFieldKeys,
@@ -38,7 +39,7 @@ type WeldFormProps = {
 export function WeldForm({ value, focusField, stampSelectOptions, getExternalSaveBlockReason, onSave, onCancel, busy }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
-  const [activeTab, setActiveTab] = useState<WeldFormTab>(() => (focusField && yesEmptyFieldKeys.has(focusField) ? 'control' : 'joint'))
+  const [activeTab, setActiveTab] = useState<WeldFormTab>(() => getWeldFormTabForField(focusField))
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
   const fieldsByGroup = useMemo(
@@ -93,8 +94,7 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
 
   useEffect(() => {
     if (!focusField) return
-    const isControlFocus = yesEmptyFieldKeys.has(focusField)
-    setActiveTab(isControlFocus ? 'control' : 'joint')
+    setActiveTab(getWeldFormTabForField(focusField))
 
     const focusedSection = fieldsByGroup.find((group) => group.fields.some((field) => field.key === focusField))?.section
     if (focusedSection) {
@@ -127,7 +127,7 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
   }, [draft])
 
   useEffect(() => {
-    setActiveTab(focusField && yesEmptyFieldKeys.has(focusField) ? 'control' : 'joint')
+    setActiveTab(getWeldFormTabForField(focusField))
   }, [value.id, focusField])
 
   function toggleSection(section: string) {
@@ -175,4 +175,11 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
       />
     </LargeDialogShell>
   )
+}
+
+function getWeldFormTabForField(fieldKey?: WeldFieldKey): WeldFormTab {
+  if (!fieldKey) return 'joint'
+  if (yesEmptyFieldKeys.has(fieldKey)) return 'control'
+  if (secondaryWeldFormFieldKeys.has(fieldKey)) return 'workClosure'
+  return 'joint'
 }

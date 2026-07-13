@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
 import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections, getFilteredWeldTableSections } from './weld-table-sections'
 import { HEAT_TREATMENT_HIDDEN_FIELD_KEYS, LNK_HIDDEN_FIELD_KEYS, WELDING_JOURNAL_HIDDEN_FIELD_KEYS } from './report-config'
+import { formHiddenFieldKeys, secondaryWeldFormFieldKeys } from './weld-form-field-sets'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -135,6 +136,14 @@ describe('weld field order', () => {
       'КС3 СТЛС',
       'КС3 МКК',
     ])
+  })
+
+  it('keeps work code and acceptance fields available in the weld form secondary tab', () => {
+    expect([...secondaryWeldFormFieldKeys].some((fieldKey) => formHiddenFieldKeys.has(fieldKey))).toBe(false)
+    expect(secondaryWeldFormFieldKeys.has('boq')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('ks3')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('pstoBoq')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('pstoKs3')).toBe(true)
   })
 
   it('keeps BoQ and KS3 fields visible in the welding journal report', () => {

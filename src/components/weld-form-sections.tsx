@@ -2,10 +2,10 @@ import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import { WeldFormField } from '@/components/weld-form-field'
 import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
-import { yesEmptyFieldKeys, type StampSelectOptions } from '@/lib/weld-form-utils'
+import { secondaryWeldFormSectionNames, yesEmptyFieldKeys, type StampSelectOptions } from '@/lib/weld-form-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
-export type WeldFormTab = 'joint' | 'control'
+export type WeldFormTab = 'joint' | 'control' | 'workClosure'
 
 type WeldFormFieldGroup = {
   section: string
@@ -41,7 +41,15 @@ export function WeldFormSections({
   onActiveTabChange,
 }: WeldFormSectionsProps) {
   const controlAvailabilityFields = fieldsByGroup.flatMap(({ fields }) => fields.filter((field) => yesEmptyFieldKeys.has(field.key)))
+  const workClosureFieldsByGroup = fieldsByGroup
+    .filter((group) => secondaryWeldFormSectionNames.has(group.section))
+    .map((group) => ({
+      ...group,
+      fields: group.fields.filter((field) => !yesEmptyFieldKeys.has(field.key)),
+    }))
+    .filter((group) => group.fields.length > 0)
   const regularFieldsByGroup = fieldsByGroup
+    .filter((group) => !secondaryWeldFormSectionNames.has(group.section))
     .map((group) => ({
       ...group,
       fields: group.fields.filter((field) => !yesEmptyFieldKeys.has(field.key)),
@@ -73,6 +81,15 @@ export function WeldFormSections({
               Назначение контроля
             </button>
           ) : null}
+          {workClosureFieldsByGroup.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => onActiveTabChange('workClosure')}
+              className={activeTab === 'workClosure' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
+            >
+              Код работ и закрытие
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -99,6 +116,34 @@ export function WeldFormSections({
             ))}
           </div>
         </section>
+      ) : null}
+      {activeTab === 'workClosure' ? (
+        <div className="space-y-8">
+          {workClosureFieldsByGroup.map(({ section, fields }) => (
+            <section key={section}>
+              <WeldFormSectionHeader
+                section={section}
+                fieldsCount={fields.length}
+                collapsed={collapsedSections.has(section)}
+                onToggle={() => onToggleSection(section)}
+              />
+              {collapsedSections.has(section) ? null : (
+                <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+                  {fields.map((field) => (
+                    <WeldFormField
+                      key={field.key}
+                      field={field}
+                      draft={draft}
+                      stampSelectOptions={stampSelectOptions}
+                      fieldRefs={fieldRefs}
+                      setDraft={setDraft}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
       ) : null}
       {activeTab === 'joint' ? (
         <div className="space-y-8">

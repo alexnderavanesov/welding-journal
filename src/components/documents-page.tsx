@@ -8,7 +8,9 @@ import {
   DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
   DOCUMENT_TEMPLATE_STORAGE_EVENT,
   createWeldingJournalBlobFromTemplate,
+  isKnownTemplateMarkerField,
   loadDocumentTemplate,
+  parseTemplateMarkerToken,
   type StoredDocumentTemplate,
 } from '@/lib/document-template-storage'
 import {
@@ -31,8 +33,6 @@ import {
   type TemplateStampNameFieldKey,
 } from '@/lib/welder-stamp-names'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
-
-const EMPTY_TEMPLATE_FIELD_VALUE = 'н/п'
 
 type DocumentsPageProps = {
   rows: WeldRow[]
@@ -294,10 +294,13 @@ function decodeTemplateCellAddress(address: string) {
 function buildTemplatePreviewColumns(template: StoredDocumentTemplate | null) {
   if (!template?.locations.length) return []
 
-  const locations = template.locations.map((location) => ({
-    ...location,
-    decoded: decodeTemplateCellAddress(location.cell),
-  }))
+  const locations = template.locations
+    .map((location) => ({
+      ...location,
+      fields: location.fields.filter(isKnownTemplateMarkerField),
+      decoded: decodeTemplateCellAddress(location.cell),
+    }))
+    .filter((location) => location.fields.length > 0)
 
   const rowScores = new Map<number, number>()
   for (const location of locations) {
@@ -325,7 +328,10 @@ function buildTemplatePreviewColumns(template: StoredDocumentTemplate | null) {
 
 function formatTemplatePreviewHeader(source: string, fields: string[]) {
   const label = source
-    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, '$1')
+    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, fieldName: string) => {
+      const marker = parseTemplateMarkerToken(fieldName)
+      return isKnownTemplateMarkerField(marker.fieldName) ? marker.fieldName : ''
+    })
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -342,21 +348,25 @@ function getTemplatePreviewCellValue(source: string, row: WeldRow, rowIndex: num
 }
 
 function getTemplatePreviewFieldValue(fieldName: string, row: WeldRow, rowIndex: number, welderStamps: WelderStampRecord[]) {
-  const mappedKey = TEMPLATE_PREVIEW_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
+  const marker = parseTemplateMarkerToken(fieldName)
+  const mappedKey = TEMPLATE_PREVIEW_FIELD_ALIASES.get(normalizeTemplateFieldName(marker.fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return rowIndex + 1
-  if (mappedKey === '__welderName') return formatTemplatePreviewFieldFallback(getWelderNamesForOfficialStamps(row, welderStamps))
+  if (mappedKey === '__welderName') return formatTemplatePreviewFieldValue(getWelderNamesForOfficialStamps(row, welderStamps), marker.fallback)
   if (isTemplateStampWelderNamePreviewField(mappedKey)) {
-    return formatTemplatePreviewFieldFallback(getWelderNameForTemplateStamp(row, mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey, welderStamps))
+    return formatTemplatePreviewFieldValue(
+      getWelderNameForTemplateStamp(row, mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey, welderStamps),
+      marker.fallback,
+    )
   }
 
-  return formatTemplatePreviewFieldFallback(getCellValue(row, mappedKey))
+  return formatTemplatePreviewFieldValue(getCellValue(row, mappedKey), marker.fallback)
 }
 
-function formatTemplatePreviewFieldFallback(value: unknown) {
+function formatTemplatePreviewFieldValue(value: unknown, fallback: string | undefined) {
   if (typeof value === 'number') return value
   const text = String(value ?? '').trim()
-  return text && text !== '-' ? value : EMPTY_TEMPLATE_FIELD_VALUE
+  return text && text !== '-' ? value : fallback ?? ''
 }
 
 function isTemplateStampWelderNamePreviewField(value: string | TemplatePreviewSystemField): value is `__welderName:${TemplateStampNameFieldKey}` {

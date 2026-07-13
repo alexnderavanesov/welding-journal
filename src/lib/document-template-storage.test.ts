@@ -1,22 +1,44 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx-js-style'
 
-import { createWeldingJournalBlobFromTemplate, type StoredDocumentTemplate } from '@/lib/document-template-storage'
+import { createWeldingJournalBlobFromTemplate, extractTemplateFields, type StoredDocumentTemplate } from '@/lib/document-template-storage'
 import type { WeldInput } from '@/lib/weld-fields'
 
 describe('document template storage', () => {
-  it('uses н/п for existing template fields that are empty in the weld row', async () => {
-    const template = createXlsxTemplate([['{{ID материала 1}}']])
+  it('ignores template markers that are not current system field names', () => {
+    expect(extractTemplateFields('{{Тип сварки}} {{Способ сварки}} {{Стык/"н/п"}}')).toEqual(['Способ сварки', 'Стык'])
+  })
+
+  it('keeps ordinary empty template fields empty', async () => {
+    const template = createXlsxTemplate([['{{ID материала 1}}', '{{Стык}}']])
     const blob = createWeldingJournalBlobFromTemplate(template, [
-      { joint: 'S1', materialId1: '' },
+      { joint: '', materialId1: '' },
       { joint: 'S2', materialId1: 'MAT-2' },
     ] as WeldInput[])
 
     const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
     const worksheet = workbook.Sheets[workbook.SheetNames[0]]
 
-    expect(worksheet.A1?.v).toBe('н/п')
+    expect(worksheet.A1?.v).toBe('')
+    expect(worksheet.B1?.v).toBe('')
     expect(worksheet.A2?.v).toBe('MAT-2')
+    expect(worksheet.B2?.v).toBe('S2')
+  })
+
+  it('uses custom marker fallback when a template field is empty', async () => {
+    const template = createXlsxTemplate([
+      ['{{Стык/«н/п»}}', '{{ID материала 1/"нет материала"}}', '{{Линия/"не используется"}}'],
+    ])
+    const blob = createWeldingJournalBlobFromTemplate(template, [
+      { joint: '', materialId1: '', line: 'LIN-1' },
+    ] as WeldInput[])
+
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+
+    expect(worksheet.A1?.v).toBe('н/п')
+    expect(worksheet.B1?.v).toBe('нет материала')
+    expect(worksheet.C1?.v).toBe('LIN-1')
   })
 
   it('uses welder names for exact official stamp template fields', async () => {
@@ -56,7 +78,7 @@ describe('document template storage', () => {
     expect(worksheet.A1?.v).toBe('Иванов И.И.')
     expect(worksheet.B1?.v).toBe('Петров П.П.')
     expect(worksheet.C1?.v).toBe('Сидоров С.С.')
-    expect(worksheet.D1?.v).toBe('н/п')
+    expect(worksheet.D1?.v).toBe('')
   })
 
   it('prefers exact NAKS stamp owner over another welder internal stamp alias', async () => {

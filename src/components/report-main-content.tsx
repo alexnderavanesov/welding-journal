@@ -39,6 +39,7 @@ export function ReportMainContent({
   if (activeReport === 'statistics' || activeReport === 'percentageLines') {
     return (
       <StatisticsPage
+        key={activeReport}
         fixedTab={activeReport === 'percentageLines' ? 'percentageLines' : undefined}
         rows={statisticsRows}
         welderStamps={welderStamps}

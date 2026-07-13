@@ -14,8 +14,6 @@ export const DOCUMENT_TEMPLATE_STORAGE_EVENT = 'document-template-storage-change
 
 const DOCUMENT_TEMPLATE_DB_NAME = 'welding-document-templates'
 const DOCUMENT_TEMPLATE_STORE_NAME = 'templates'
-const EMPTY_TEMPLATE_FIELD_VALUE = 'н/п'
-
 export const DOCUMENT_TEMPLATE_TYPES = [
   {
     id: 'weldingJournal',
@@ -299,11 +297,29 @@ export function extractTemplateFields(source: string) {
   let marker: RegExpExecArray | null
 
   while ((marker = markerPattern.exec(source)) !== null) {
-    const fieldName = marker[1]?.trim()
-    if (fieldName) fields.push(fieldName)
+    const fieldName = parseTemplateMarkerToken(marker[1] ?? '').fieldName
+    if (isKnownTemplateMarkerField(fieldName)) fields.push(fieldName)
   }
 
   return fields
+}
+
+export function isKnownTemplateMarkerField(fieldName: string) {
+  return TEMPLATE_FIELD_ALIASES.has(normalizeTemplateFieldName(fieldName))
+}
+
+export function parseTemplateMarkerToken(token: string) {
+  const normalized = normalizeHeader(token)
+  const fallbackMatch = normalized.match(/^(.*?)\/\s*(?:"([^"]*)"|'([^']*)'|«([^»]*)»|“([^”]*)”)\s*$/)
+  if (!fallbackMatch) return { fieldName: normalized, fallback: undefined }
+
+  const fieldName = normalizeHeader(fallbackMatch[1])
+  if (!fieldName) return { fieldName: normalized, fallback: undefined }
+
+  return {
+    fieldName,
+    fallback: fallbackMatch[2] ?? fallbackMatch[3] ?? fallbackMatch[4] ?? fallbackMatch[5] ?? '',
+  }
 }
 
 export function getFileExtension(fileName: string) {
@@ -373,25 +389,29 @@ function replaceTemplateMarkers(source: string, record: WeldInput, recordIndex: 
 }
 
 function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex: number, context: WeldingJournalTemplateContext) {
-  const mappedKey = TEMPLATE_FIELD_ALIASES.get(normalizeTemplateFieldName(fieldName))
+  const marker = parseTemplateMarkerToken(fieldName)
+  const mappedKey = TEMPLATE_FIELD_ALIASES.get(normalizeTemplateFieldName(marker.fieldName))
   if (!mappedKey) return ''
   if (mappedKey === '__index') return recordIndex + 1
-  if (mappedKey === '__welderName') return formatTemplateFieldFallback(getWelderNamesForOfficialStamps(record, context.welderStamps ?? []))
+  if (mappedKey === '__welderName') return formatTemplateFieldValue(getWelderNamesForOfficialStamps(record, context.welderStamps ?? []), marker.fallback)
   if (isTemplateStampWelderNameField(mappedKey)) {
-    return formatTemplateFieldFallback(getWelderNameForTemplateStamp(record, mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey, context.welderStamps ?? []))
+    return formatTemplateFieldValue(
+      getWelderNameForTemplateStamp(record, mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey, context.welderStamps ?? []),
+      marker.fallback,
+    )
   }
 
   const field = WELD_FIELDS.find((candidate) => candidate.key === mappedKey)
   const value = record[mappedKey]
-  if (field?.kind === 'date') return formatTemplateFieldFallback(formatExportDate(value))
-  if (field?.kind === 'number') return formatTemplateFieldFallback(formatExportNumber(value))
-  if (field?.kind === 'boolean') return formatTemplateFieldFallback(formatControlAvailabilityForExport(value))
-  return formatTemplateFieldFallback(value)
+  if (field?.kind === 'date') return formatTemplateFieldValue(formatExportDate(value), marker.fallback)
+  if (field?.kind === 'number') return formatTemplateFieldValue(formatExportNumber(value), marker.fallback)
+  if (field?.kind === 'boolean') return formatTemplateFieldValue(formatControlAvailabilityForExport(value), marker.fallback)
+  return formatTemplateFieldValue(value, marker.fallback)
 }
 
-function formatTemplateFieldFallback(value: unknown) {
+function formatTemplateFieldValue(value: unknown, fallback: string | undefined) {
   if (typeof value === 'number') return value
-  return String(value ?? '').trim() ? value : EMPTY_TEMPLATE_FIELD_VALUE
+  return String(value ?? '').trim() ? value : fallback ?? ''
 }
 
 function isTemplateStampWelderNameField(value: keyof WeldInput | TemplateSystemField): value is `__welderName:${TemplateStampNameFieldKey}` {

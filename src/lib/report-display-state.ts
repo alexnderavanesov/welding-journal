@@ -21,7 +21,7 @@ const REPORT_EXPORT_FILENAMES: Record<ActiveReport, string> = {
   statistics: 'statistics.xlsx',
   documents: 'documents.xlsx',
   settings: 'settings.xlsx',
-  userGuide: 'user-guide.pdf',
+  userGuide: 'Руководство пользователя. Учет сварки.pdf',
 }
 
 const EDITABLE_REPORT_IMPORT_LABELS: Partial<Record<ActiveReport, string>> = {

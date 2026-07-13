@@ -22,6 +22,7 @@ import {
   DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
   DOCUMENT_TEMPLATE_TYPES,
   formatFileSize,
+  isKnownTemplateMarkerField,
   loadDocumentTemplates,
   parseDocumentTemplateFile,
   saveDocumentTemplate,
@@ -1102,6 +1103,10 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 <TemplateToken>№ п/п</TemplateToken>
               </TemplateHintLine>
               <p>В маркерах можно использовать название любого системного столбца из журнала.</p>
+              <p>
+                Если нужно вывести текст при пустом поле, добавьте его после слэша: <TemplateToken>Стык/"н/п"</TemplateToken> или{' '}
+                <TemplateToken>Стык/«н/п»</TemplateToken>.
+              </p>
               <TemplateHintLine label="ФИО по официальному клейму">
                 <TemplateToken>Корень_1ФИО сварщика</TemplateToken>
                 <TemplateToken>Заполнение_1ФИО сварщика</TemplateToken>
@@ -1317,11 +1322,19 @@ function EmptyTemplateState() {
 }
 
 function TemplateUploadPreview({ upload }: { upload: TemplateUploadInfo }) {
+  const knownFields = upload.fields.filter(isKnownTemplateMarkerField)
+  const knownLocations = upload.locations
+    .map((location) => ({
+      ...location,
+      fields: location.fields.filter(isKnownTemplateMarkerField),
+    }))
+    .filter((location) => location.fields.length > 0)
+
   return (
     <div className="space-y-4 p-4">
       <div className="grid gap-3 md:grid-cols-3">
         <TemplateMetaCard label="Файл" value={upload.fileName} detail={`${upload.fileType.toUpperCase()} · ${formatFileSize(upload.fileSize)}`} />
-        <TemplateMetaCard label="Найдено маркеров" value={String(upload.markerCount)} detail={`уникальных полей: ${upload.fields.length}`} />
+        <TemplateMetaCard label="Найдено маркеров" value={String(knownLocations.reduce((count, location) => count + location.fields.length, 0))} detail={`уникальных полей: ${knownFields.length}`} />
         <TemplateMetaCard label="Загружен" value={upload.uploadedAt} detail="сохранен для формирования документов" />
       </div>
 
@@ -1338,9 +1351,9 @@ function TemplateUploadPreview({ upload }: { upload: TemplateUploadInfo }) {
 
       <div>
         <div className="text-sm font-semibold text-slate-900">Поля, найденные в шаблоне</div>
-        {upload.fields.length ? (
+        {knownFields.length ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            {upload.fields.map((field) => (
+            {knownFields.map((field) => (
               <span key={field} className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
                 {field}
               </span>
@@ -1351,7 +1364,7 @@ function TemplateUploadPreview({ upload }: { upload: TemplateUploadInfo }) {
         )}
       </div>
 
-      {upload.locations.length ? (
+      {knownLocations.length ? (
         <div className="overflow-hidden rounded-md border border-slate-200">
           <div className="grid grid-cols-[130px_90px_1fr] bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             <div>Лист</div>
@@ -1359,7 +1372,7 @@ function TemplateUploadPreview({ upload }: { upload: TemplateUploadInfo }) {
             <div>Маркеры</div>
           </div>
           <div className="max-h-72 overflow-auto">
-            {upload.locations.map((location, index) => (
+            {knownLocations.map((location, index) => (
               <div
                 key={`${location.sheet}-${location.cell}-${index}`}
                 className="grid grid-cols-[130px_90px_1fr] gap-0 border-t border-slate-100 px-3 py-2 text-sm text-slate-700"
