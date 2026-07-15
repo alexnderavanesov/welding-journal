@@ -4,12 +4,26 @@ export const OTHER_SETTINGS_EVENT = 'other-settings-change'
 
 const OTHER_SETTINGS_STORAGE_KEY = 'welding-other-settings'
 
+export type WdiCalculationMode = 'manual' | 'formula' | 'table'
+
+export type WdiTableSettings = {
+  fileName: string
+  uploadedAt: string
+  diameters: number[]
+  thicknesses: number[]
+  values: Array<Array<number | null>>
+}
+
 export type OtherSettings = {
   includeArchivedWelderStampsInForm: boolean
+  wdiCalculationMode: WdiCalculationMode
+  wdiTable: WdiTableSettings | null
 }
 
 export const DEFAULT_OTHER_SETTINGS: OtherSettings = {
   includeArchivedWelderStampsInForm: false,
+  wdiCalculationMode: 'manual',
+  wdiTable: null,
 }
 
 export function useOtherSettings() {
@@ -48,8 +62,46 @@ export function saveOtherSettings(settings: OtherSettings) {
 }
 
 export function normalizeOtherSettings(value: unknown): OtherSettings {
-  const source = typeof value === 'object' && value ? (value as Partial<Record<keyof OtherSettings, unknown>>) : {}
+  const source = typeof value === 'object' && value ? (value as Partial<Record<keyof OtherSettings | 'wdiInputMode', unknown>>) : {}
+  const legacyWdiInputMode = source.wdiInputMode === 'system' ? 'formula' : source.wdiInputMode === 'manual' ? 'manual' : null
+  const wdiCalculationMode =
+    source.wdiCalculationMode === 'formula' || source.wdiCalculationMode === 'table' || source.wdiCalculationMode === 'manual'
+      ? source.wdiCalculationMode
+      : legacyWdiInputMode ?? DEFAULT_OTHER_SETTINGS.wdiCalculationMode
+  const wdiTable = normalizeWdiTableSettings(source.wdiTable)
   return {
     includeArchivedWelderStampsInForm: source.includeArchivedWelderStampsInForm === true,
+    wdiCalculationMode: wdiCalculationMode === 'table' && !wdiTable ? 'manual' : wdiCalculationMode,
+    wdiTable,
   }
+}
+
+function normalizeWdiTableSettings(value: unknown): WdiTableSettings | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Partial<WdiTableSettings>
+  const diameters = normalizeNumberArray(source.diameters)
+  const thicknesses = normalizeNumberArray(source.thicknesses)
+  const values = Array.isArray(source.values)
+    ? source.values.map((row) => (Array.isArray(row) ? row.map((cell) => normalizeNullableNumber(cell)) : []))
+    : []
+  if (diameters.length === 0 || thicknesses.length === 0 || values.length === 0) return null
+  return {
+    fileName: typeof source.fileName === 'string' ? source.fileName : 'Таблица WDI',
+    uploadedAt: typeof source.uploadedAt === 'string' ? source.uploadedAt : '',
+    diameters,
+    thicknesses,
+    values,
+  }
+}
+
+function normalizeNumberArray(values: unknown) {
+  return Array.isArray(values)
+    ? values.map((value) => normalizeNullableNumber(value)).filter((value): value is number => value !== null)
+    : []
+}
+
+function normalizeNullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(String(value).trim().replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : null
 }

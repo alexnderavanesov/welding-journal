@@ -1,7 +1,11 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react'
+import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import { UserRoundCheck, WandSparkles } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
 import { WeldFormField } from '@/components/weld-form-field'
 import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
+import { getWeldLineAutofillState } from '@/lib/weld-line-autofill'
+import { getWeldStampAutofillState } from '@/lib/weld-stamp-autofill'
 import { secondaryWeldFormSectionNames, yesEmptyFieldKeys, type StampSelectOptions } from '@/lib/weld-form-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
@@ -21,7 +25,9 @@ type WeldFormSectionsProps = {
   fieldsByGroup: WeldFormFieldGroup[]
   collapsedSections: ReadonlySet<string>
   draft: WeldInput
+  suggestionRows?: readonly WeldInput[]
   stampSelectOptions?: StampSelectOptions
+  systemWdiEnabled?: boolean
   fieldRefs: RefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
   onToggleSection: (section: string) => void
   setDraft: Dispatch<SetStateAction<WeldInput>>
@@ -33,7 +39,9 @@ export function WeldFormSections({
   fieldsByGroup,
   collapsedSections,
   draft,
+  suggestionRows = [],
   stampSelectOptions,
+  systemWdiEnabled = false,
   fieldRefs,
   onToggleSection,
   setDraft,
@@ -106,7 +114,9 @@ export function WeldFormSections({
                 <WeldFormField
                   field={field}
                   draft={draft}
+                  suggestionRows={suggestionRows}
                   stampSelectOptions={stampSelectOptions}
+                  systemWdiEnabled={systemWdiEnabled}
                   fieldRefs={fieldRefs}
                   setDraft={setDraft}
                   hideLabel
@@ -134,7 +144,9 @@ export function WeldFormSections({
                       key={field.key}
                       field={field}
                       draft={draft}
+                      suggestionRows={suggestionRows}
                       stampSelectOptions={stampSelectOptions}
+                      systemWdiEnabled={systemWdiEnabled}
                       fieldRefs={fieldRefs}
                       setDraft={setDraft}
                     />
@@ -154,6 +166,13 @@ export function WeldFormSections({
                 fieldsCount={fields.length}
                 collapsed={collapsedSections.has(section)}
                 onToggle={() => onToggleSection(section)}
+                actions={
+                  section === 'Проект' ? (
+                    <LineAutofillButton draft={draft} suggestionRows={suggestionRows} setDraft={setDraft} />
+                  ) : section === 'Клейма' ? (
+                    <StampAutofillButton draft={draft} setDraft={setDraft} />
+                  ) : undefined
+                }
               />
               {collapsedSections.has(section) ? null : (
                 <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
@@ -162,7 +181,9 @@ export function WeldFormSections({
                       key={field.key}
                       field={field}
                       draft={draft}
+                      suggestionRows={suggestionRows}
                       stampSelectOptions={stampSelectOptions}
+                      systemWdiEnabled={systemWdiEnabled}
                       fieldRefs={fieldRefs}
                       setDraft={setDraft}
                     />
@@ -175,4 +196,83 @@ export function WeldFormSections({
       ) : null}
     </div>
   )
+}
+
+function StampAutofillButton({
+  draft,
+  setDraft,
+}: {
+  draft: WeldInput
+  setDraft: Dispatch<SetStateAction<WeldInput>>
+}) {
+  const state = useMemo(() => getWeldStampAutofillState(draft), [draft])
+  const isDisabled = Boolean(state.disabledReason)
+  const helpText =
+    'Заполняется по полям Корень_1 и Корень_2: клеймо из корня переносится в заполнение, облицовку и фактические поля своего индекса.'
+  const title = state.disabledReason ? `${state.disabledReason} ${helpText}` : `${helpText} Будет заполнено полей: ${state.changedFieldsCount}.`
+
+  function handleAutofill() {
+    if (isDisabled) return
+    setDraft((current) => ({ ...current, ...state.values }))
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={isDisabled}
+      title={title}
+      onClick={handleAutofill}
+      className="h-7 border-emerald-200 bg-white px-2.5 text-xs text-emerald-800 shadow-sm shadow-emerald-100 hover:bg-emerald-50 hover:text-emerald-950 disabled:bg-slate-100 disabled:text-slate-400"
+    >
+      <UserRoundCheck className="mr-1.5 h-3.5 w-3.5" />
+      Заполнить клейма
+    </Button>
+  )
+}
+
+function LineAutofillButton({
+  draft,
+  suggestionRows,
+  setDraft,
+}: {
+  draft: WeldInput
+  suggestionRows: readonly WeldInput[]
+  setDraft: Dispatch<SetStateAction<WeldInput>>
+}) {
+  const state = useMemo(() => getWeldLineAutofillState(draft, suggestionRows), [draft, suggestionRows])
+  const isDisabled = Boolean(state.disabledReason)
+  const helpText =
+    'Заполняется по уже существующим стыкам этой линии: Проект/Титул, Шифр/Подтитул, Группа, Категория, Контроль швов (%) и назначения контроля.'
+  const sourceText = state.sourceRowsCount > 0 ? `Источник: ${formatSourceRowsCount(state.sourceRowsCount)} линии ${state.line}.` : ''
+  const title = state.disabledReason ? `${state.disabledReason} ${helpText}` : `${helpText} ${sourceText} Будет заполнено полей: ${state.changedFieldsCount}.`
+
+  function handleAutofill() {
+    if (isDisabled) return
+    setDraft((current) => ({ ...current, ...state.values }))
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={isDisabled}
+      title={title}
+      onClick={handleAutofill}
+      className="h-7 border-sky-200 bg-white px-2.5 text-xs text-sky-800 shadow-sm shadow-sky-100 hover:bg-sky-50 hover:text-sky-950 disabled:bg-slate-100 disabled:text-slate-400"
+    >
+      <WandSparkles className="mr-1.5 h-3.5 w-3.5" />
+      Заполнить по линии
+    </Button>
+  )
+}
+
+function formatSourceRowsCount(count: number) {
+  const lastDigit = count % 10
+  const lastTwoDigits = count % 100
+  if (lastDigit === 1 && lastTwoDigits !== 11) return `${count} стык`
+  if ([2, 3, 4].includes(lastDigit) && ![12, 13, 14].includes(lastTwoDigits)) return `${count} стыка`
+  return `${count} стыков`
 }

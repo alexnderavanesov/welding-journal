@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { WELD_FIELDS, calculateFinalStatus, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, calculateFinalStatus, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys, LNK_METHODS } from '@/lib/report-config'
 import { normalizeEditableImportValue, normalizeExistingRequestImportValue } from '@/lib/report-import'
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
 import { clearDisabledLnkRequests, isLnkRequestAllowedForRow, isLnkRequestField, withTouchedLnkTimestamp } from '@/lib/lnk-field-updates'
+import { isExistingRowsImportLockedField, isMassFillFieldLocked, isSystemImportField } from '@/lib/report-import-template'
 import { hasText } from '@/lib/report-value-utils'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
@@ -110,7 +111,7 @@ export function useReportImportMutations({
 
   const weldMassFillMutation = useMutation({
     mutationFn: async ({ records, skippedRows }: { records: ReportImportRecord[]; skippedRows: number }) => {
-      const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(rows, records)
+      const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(rows, records, 'massFill')
 
       if (updatedRows.length === 0) {
         return { updated: 0, rows: [], changedFieldKeys: [...changedFieldKeys], skipped: records.length + skippedRows }
@@ -138,7 +139,7 @@ export function useReportImportMutations({
     mutationFn: async ({ records, skippedRows }: { records: ReportImportRecord[]; skippedRows: number }) => {
       const deleteRecords = records.filter((record) => record.deleteRequested && record.id)
       const updateRecords = records.filter((record) => !record.deleteRequested)
-      const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(rows, updateRecords)
+      const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(rows, updateRecords, 'replaceData')
 
       const savedRows =
         updatedRows.length > 0
@@ -182,7 +183,7 @@ export function useReportImportMutations({
   }
 }
 
-function buildExistingRowImportUpdates(rows: WeldRow[], records: ReportImportRecord[]) {
+export function buildExistingRowImportUpdates(rows: WeldRow[], records: ReportImportRecord[], mode: 'massFill' | 'replaceData') {
   const rowsById = new Map(rows.map((row) => [row.id, row]))
   const changedFieldKeys = new Set<WeldFieldKey>()
   const updatedRows = records.flatMap((record) => {
@@ -191,19 +192,36 @@ function buildExistingRowImportUpdates(rows: WeldRow[], records: ReportImportRec
     if (!currentRow) return []
 
     let hasChanges = false
-    const nextRow = { ...currentRow, ...record } as WeldRow
-    for (const field of WELD_FIELDS) {
+    const nextRow = { ...currentRow } as WeldRow
+    for (const [rawKey, value] of Object.entries(record)) {
+      if (rawKey === 'id' || rawKey === 'deleteRequested') continue
+      const field = FIELD_BY_KEY.get(rawKey as WeldFieldKey)
+      if (!field) continue
+      const isDerivedWdi = field.key === 'wdi' && isDerivedSystemWdiUpdate(record)
+      if (!isDerivedWdi && isExistingRowsImportLockedField(field)) continue
+      if (!isDerivedWdi && mode === 'massFill' && isMassFillFieldLocked('weldingJournal', field, currentRow)) continue
+      if (!isDerivedWdi && mode === 'replaceData' && isSystemImportField('weldingJournal', field)) continue
+
       const key = field.key as WeldFieldKey
-      if (normalizeChangedValue(nextRow[key]) === normalizeChangedValue(currentRow[key])) continue
+      if (normalizeChangedValue(value) === normalizeChangedValue(currentRow[key])) continue
+      nextRow[key] = value as never
       hasChanges = true
       changedFieldKeys.add(key)
     }
 
     if (!hasChanges) return []
-    return [{ ...nextRow, finalStatus: calculateFinalStatus(nextRow) }]
+    const rowWithStatus = { ...nextRow, finalStatus: calculateFinalStatus(nextRow) }
+    if (normalizeChangedValue(rowWithStatus.finalStatus) !== normalizeChangedValue(currentRow.finalStatus)) {
+      changedFieldKeys.add('finalStatus')
+    }
+    return [rowWithStatus]
   })
 
   return { updatedRows, changedFieldKeys }
+}
+
+function isDerivedSystemWdiUpdate(record: ReportImportRecord) {
+  return ['d1', 'd2', 't1', 't2'].some((fieldKey) => Object.prototype.hasOwnProperty.call(record, fieldKey))
 }
 
 function normalizeChangedValue(value: unknown) {

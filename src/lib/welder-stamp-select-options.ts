@@ -117,6 +117,19 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
       : `не подходит по диаметру ${formatOfficialStampDiameterList(diameters)}`
   }
 
+  if (methods.length > 1) {
+    const hasCompatibleMethod = methods.some((method) => {
+      const methodRecords = stampRecords.filter((record) => splitOfficialStampWeldTypes(record).includes(method))
+      return (
+        methodRecords.length > 0 &&
+        (diameters.length === 0 ||
+          methodRecords.some((record) => diameters.every((diameter) => isWelderStampDiameterCompatible(diameter, record))))
+      )
+    })
+
+    if (hasCompatibleMethod) return null
+  }
+
   for (const method of methods) {
     const methodRecords = stampRecords.filter((record) => splitOfficialStampWeldTypes(record).includes(method))
     if (methodRecords.length === 0) return `не подходит по способу сварки ${method}`

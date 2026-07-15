@@ -6,6 +6,8 @@ import type { ActiveReport } from '@/lib/home-state'
 import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import { VISIBLE_FIELDS } from '@/lib/weld-visible-field-layout'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { loadOtherSettings } from '@/lib/other-settings'
+import { isSystemWdiMode } from '@/lib/wdi'
 
 export type ImportTemplateCellKind = 'free' | 'checked' | 'ignored'
 export type ReportImportMode = 'newRecords' | 'massFill' | 'replaceData'
@@ -91,6 +93,8 @@ const WELD_IMPORT_CHECKED_FIELD_KEYS = new Set<string>([
   'hasMkk',
 ])
 
+const EXISTING_ROWS_IMPORT_LOCKED_FIELD_KEYS = new Set<string>(['joint'])
+
 const PREVIEW_FIELD_KEYS = [
   'line',
   'joint',
@@ -128,6 +132,7 @@ export function getReportImportPreviewFields(activeReport: ActiveReport) {
 export function getReportImportCellKind(activeReport: ActiveReport, fieldKey: string): ImportTemplateCellKind {
   if (activeReport === 'weldingJournal') {
     if (WELD_IMPORT_IGNORED_FIELD_KEYS.has(fieldKey)) return 'ignored'
+    if (isDynamicSystemImportField(activeReport, fieldKey)) return 'ignored'
     if (WELD_IMPORT_CHECKED_FIELD_KEYS.has(fieldKey)) return 'checked'
     return 'free'
   }
@@ -139,7 +144,10 @@ export function getReportImportCellKind(activeReport: ActiveReport, fieldKey: st
 }
 
 export function getReportImportIgnoredFieldKeys(activeReport: ActiveReport) {
-  if (activeReport === 'weldingJournal') return WELD_IMPORT_IGNORED_FIELD_KEYS
+  if (activeReport === 'weldingJournal') {
+    if (!isSystemWdiMode(loadOtherSettings())) return WELD_IMPORT_IGNORED_FIELD_KEYS
+    return new Set([...WELD_IMPORT_IGNORED_FIELD_KEYS, 'wdi'])
+  }
   return new Set<string>()
 }
 
@@ -147,6 +155,10 @@ export function getReportImportCheckedFieldKeys(activeReport: ActiveReport) {
   if (activeReport === 'weldingJournal') return WELD_IMPORT_CHECKED_FIELD_KEYS
   const options = getReportImportFieldKeys(activeReport)
   return options ? options.matchFieldKeys : new Set<string>()
+}
+
+function isDynamicSystemImportField(activeReport: ActiveReport, fieldKey: string) {
+  return activeReport === 'weldingJournal' && fieldKey === 'wdi' && isSystemWdiMode(loadOtherSettings())
 }
 
 export function stripIgnoredImportFields(record: WeldInput, activeReport: ActiveReport) {
@@ -157,6 +169,10 @@ export function stripIgnoredImportFields(record: WeldInput, activeReport: Active
     delete nextRecord[key as WeldFieldKey]
   }
   return nextRecord
+}
+
+export function isExistingRowsImportLockedField(field: WeldField) {
+  return EXISTING_ROWS_IMPORT_LOCKED_FIELD_KEYS.has(field.key)
 }
 
 export function buildImportTemplateXlsxBytes(activeReport: ActiveReport) {
@@ -298,7 +314,7 @@ function buildTemplateStylesXml() {
  <fills count="5">
   <fill><patternFill patternType="none"/></fill>
   <fill><patternFill patternType="gray125"/></fill>
-  <fill><patternFill patternType="solid"><fgColor rgb="FFE2E8F0"/></patternFill></fill>
+  <fill><patternFill patternType="solid"><fgColor rgb="FFDCEBFA"/></patternFill></fill>
   <fill><patternFill patternType="solid"><fgColor rgb="FFE5E7EB"/></patternFill></fill>
   <fill><patternFill patternType="solid"><fgColor rgb="FFFEF3C7"/></patternFill></fill>
  </fills>
@@ -330,7 +346,7 @@ function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField
       const cells = row
         .map((value, columnIndex) => {
           const field = fields[columnIndex]
-          const styleId = rowIndex === 0 ? getTemplateHeaderStyleId(activeReport, field?.key) : getTemplateStyleId(activeReport, field?.key)
+          const styleId = rowIndex === 0 ? getTemplateHeaderStyleId() : getTemplateStyleId(activeReport, field?.key)
           const ref = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })
           const text = String(value ?? '')
           if (!text) return `<c r="${ref}" s="${styleId}"/>`
@@ -380,9 +396,7 @@ function buildExistingRowsWorksheetXml(
           const field = columnIndex < serviceColumnCount ? null : fields[columnIndex - serviceColumnCount]
           const styleId =
             rowIndex === 0
-              ? isDeleteColumn
-                ? 5
-                : getMassFillHeaderStyleId(activeReport, field?.key)
+              ? getTemplateHeaderStyleId()
               : isDeleteColumn
                 ? 3
               : getExistingRowsBodyStyleId(activeReport, field ?? undefined, record, mode)
@@ -412,17 +426,8 @@ function getTemplateStyleId(activeReport: ActiveReport, fieldKey?: string) {
   return 0
 }
 
-function getTemplateHeaderStyleId(activeReport: ActiveReport, fieldKey?: string) {
-  if (!fieldKey) return 1
-  const kind = getReportImportCellKind(activeReport, fieldKey)
-  if (kind === 'ignored') return 4
-  if (kind === 'checked') return 5
+function getTemplateHeaderStyleId() {
   return 1
-}
-
-function getMassFillHeaderStyleId(activeReport: ActiveReport, fieldKey?: string) {
-  if (!fieldKey) return 4
-  return getTemplateHeaderStyleId(activeReport, fieldKey)
 }
 
 function getExistingRowsBodyStyleId(
@@ -432,12 +437,14 @@ function getExistingRowsBodyStyleId(
   mode: Extract<ReportImportMode, 'massFill' | 'replaceData'> = 'massFill',
 ) {
   if (!field || !record) return 2
+  if (isExistingRowsImportLockedField(field)) return 2
   if (mode === 'massFill' && isMassFillFieldLocked(activeReport, field, record)) return 2
   if (mode === 'replaceData' && isSystemImportField(activeReport, field)) return 2
   return getTemplateStyleId(activeReport, field.key)
 }
 
 export function isMassFillFieldLocked(activeReport: ActiveReport, field: WeldField, record: WeldInput) {
+  if (isExistingRowsImportLockedField(field)) return true
   if (isSystemImportField(activeReport, field)) return true
   return hasMassFillValue(record[field.key as keyof WeldInput])
 }

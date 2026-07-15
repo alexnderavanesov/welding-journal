@@ -1,7 +1,9 @@
-import 'dotenv/config'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
+import { loadServerEnv } from '@/server-env'
 import * as schema from './schema'
+
+loadServerEnv()
 
 const connectionString = process.env.DATABASE_URL
 

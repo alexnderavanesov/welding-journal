@@ -1285,7 +1285,7 @@ export function useHomePageController() {
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
-    rows,
+    rows: activeReport === 'weldingJournal' ? filteredVisibleRows : (visibleRows as WeldRow[]),
     onClose: () => setIsImportDialogOpen(false),
     onImportRecords: (records: WeldInput[], skippedRows: number) =>
       runProtectedEdit('импорт данных', () => handleImportRecords(records, skippedRows)),
@@ -1420,6 +1420,7 @@ export function useHomePageController() {
   const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
   const reportWeldEditorProps = createReportWeldEditorProps({
     editing,
+    rows,
     stampSelectOptions: (draft) => getWeldFormStampSelectOptions(draft, allowedArchivedOfficialStampsForEditing),
     getExternalSaveBlockReason: (draft) =>
       getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
