@@ -1,10 +1,11 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import { useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldFormConnectionTypeField } from '@/components/weld-form-connection-type-field'
 import { WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { cn } from '@/lib/utils'
+import { getWeldFormSuggestions, type WeldFormSuggestion } from '@/lib/weld-form-suggestions'
 import {
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
@@ -28,14 +29,26 @@ import {
 type WeldFormFieldProps = {
   field: WeldField & { key: WeldFieldKey }
   draft: WeldInput
+  suggestionRows?: readonly WeldInput[]
   stampSelectOptions?: StampSelectOptions
+  systemWdiEnabled?: boolean
   fieldRefs: MutableRefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
   setDraft: Dispatch<SetStateAction<WeldInput>>
   hideLabel?: boolean
   controlPickerLayout?: 'grid' | 'row'
 }
 
-export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, setDraft, hideLabel = false, controlPickerLayout = 'grid' }: WeldFormFieldProps) {
+export function WeldFormField({
+  field,
+  draft,
+  suggestionRows = [],
+  stampSelectOptions,
+  systemWdiEnabled = false,
+  fieldRefs,
+  setDraft,
+  hideLabel = false,
+  controlPickerLayout = 'grid',
+}: WeldFormFieldProps) {
   return (
     <div className="space-y-1.5 text-sm">
       {hideLabel ? null : <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>}
@@ -169,22 +182,154 @@ export function WeldFormField({ field, draft, stampSelectOptions, fieldRefs, set
           <option value="false">нет</option>
         </Select>
       ) : (
-        <Input
-          ref={(element) => {
-            fieldRefs.current[field.key] = element
-          }}
-          type={field.kind === 'date' ? 'date' : field.kind === 'number' ? 'number' : 'text'}
-          min={field.kind === 'date' ? MIN_ALLOWED_DATE_ISO : undefined}
-          step={field.kind === 'number' ? '0.001' : undefined}
-          value={String(draft[field.key] ?? '')}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              [field.key]: event.target.value,
-            }))
-          }
+        <FreeTextField
+          field={field}
+          draft={draft}
+          suggestionRows={suggestionRows}
+          disabled={systemWdiEnabled && field.key === 'wdi'}
+          fieldRefs={fieldRefs}
+          setDraft={setDraft}
         />
       )}
+    </div>
+  )
+}
+
+function FreeTextField({
+  field,
+  draft,
+  suggestionRows,
+  disabled,
+  fieldRefs,
+  setDraft,
+}: {
+  field: WeldField & { key: WeldFieldKey }
+  draft: WeldInput
+  suggestionRows: readonly WeldInput[]
+  disabled?: boolean
+  fieldRefs: MutableRefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
+  setDraft: Dispatch<SetStateAction<WeldInput>>
+}) {
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(0)
+  const value = String(draft[field.key] ?? '')
+  const suggestions = useMemo(
+    () =>
+      field.kind === 'text' || field.kind === 'number'
+        ? getWeldFormSuggestions({
+            fieldKey: field.key,
+            value,
+            draft,
+            rows: suggestionRows,
+          })
+        : [],
+    [draft, field.key, field.kind, suggestionRows, value],
+  )
+  const visibleSuggestions = open ? suggestions : []
+
+  function updateValue(nextValue: string | null) {
+    setDraft((current) => ({
+      ...current,
+      [field.key]: nextValue,
+    }))
+  }
+
+  function selectSuggestion(suggestion: WeldFormSuggestion) {
+    updateValue(suggestion.value)
+    setOpen(false)
+    setActiveIndex(0)
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!visibleSuggestions.length) return
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      event.stopPropagation()
+      setActiveIndex((current) => (current + 1) % visibleSuggestions.length)
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      event.stopPropagation()
+      setActiveIndex((current) => (current - 1 + visibleSuggestions.length) % visibleSuggestions.length)
+      return
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      event.stopPropagation()
+      selectSuggestion(visibleSuggestions[activeIndex] ?? visibleSuggestions[0])
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <Input
+        ref={(element) => {
+          fieldRefs.current[field.key] = element
+        }}
+        type={field.kind === 'date' ? 'date' : 'text'}
+        inputMode={field.kind === 'number' ? 'decimal' : undefined}
+        min={field.kind === 'date' ? MIN_ALLOWED_DATE_ISO : undefined}
+        value={value}
+        autoComplete="off"
+        disabled={disabled}
+        title={disabled && field.key === 'wdi' ? 'WDI считается автоматически по выбранному режиму в настройках.' : undefined}
+        onFocus={() => {
+          if (!disabled && suggestions.length > 0) setOpen(true)
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 120)
+        }}
+        onKeyDown={handleKeyDown}
+        onChange={(event) => {
+          if (disabled) return
+          updateValue(event.target.value)
+          setActiveIndex(0)
+          setOpen(true)
+        }}
+      />
+      {visibleSuggestions.length > 0 ? (
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
+          <div className="max-h-64 overflow-auto py-1">
+            {visibleSuggestions.map((suggestion, index) => {
+              const active = index === activeIndex
+              return (
+                <button
+                  key={`${suggestion.value}:${index}`}
+                  type="button"
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectSuggestion(suggestion)}
+                  className={cn(
+                    'grid w-full gap-1 px-3 py-2 text-left text-sm transition-colors',
+                    active ? 'bg-sky-50 text-slate-950' : 'text-slate-700 hover:bg-slate-50',
+                  )}
+                >
+                  <span className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="truncate font-medium">{suggestion.value}</span>
+                    {suggestion.count > 1 ? (
+                      <span className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+                        {suggestion.count}
+                      </span>
+                    ) : null}
+                  </span>
+                  {suggestion.context ? <span className="truncate text-xs text-slate-500">{suggestion.context}</span> : null}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -28,6 +28,7 @@ import {
   validateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
 import { loadOtherSettings } from '@/lib/other-settings'
+import { applySystemWdi, getSystemWdiValidationError, isSystemWdiMode } from '@/lib/wdi'
 import type {
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
@@ -50,6 +51,9 @@ export function prepareWeldSaveValue({
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
 }) {
+  const otherSettings = loadOtherSettings()
+  if (isSystemWdiMode(otherSettings)) applySystemWdi(value, otherSettings)
+
   const preparedValue = withLnkFinalStatus(
     withPendingPstoResultStatus(
       withPendingLnkResults(
@@ -64,7 +68,6 @@ export function prepareWeldSaveValue({
   normalizeLegacyControlAvailabilityForSave(preparedValue)
   validateRequiredRootStampForSave(preparedValue)
   validateManualJointNameForSave(preparedValue, rows)
-  const otherSettings = loadOtherSettings()
   validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
     allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(
       preparedValue.id ? rows.find((row) => row.id === preparedValue.id) : undefined,
@@ -87,25 +90,41 @@ export function buildRenamedRepeatedJointRow(task: RepeatedJointRenameTask) {
 
 export function prepareImportedWeldRecords({
   records,
+  skipManualJointNameValidation = false,
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
 }: {
   records: WeldInput[]
+  skipManualJointNameValidation?: boolean
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
 }) {
   const preparedRecords = records
+  normalizeSystemWdiForImport(preparedRecords)
   normalizeLegacyControlAvailabilityForImport(preparedRecords)
   validateRequiredRootStampsForImport(preparedRecords)
-  validateManualJointNamesForImport(preparedRecords)
+  if (!skipManualJointNameValidation) validateManualJointNamesForImport(preparedRecords)
   validateWeldDatesForImport(preparedRecords)
   normalizeWeldingMethodsForImport(preparedRecords)
   normalizeConnectionTypesForImport(preparedRecords)
   validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions)
   validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, { suspensions: welderStampSuspensions })
   return preparedRecords
+}
+
+function normalizeSystemWdiForImport(records: WeldInput[]) {
+  const otherSettings = loadOtherSettings()
+  if (!isSystemWdiMode(otherSettings)) return
+
+  records.forEach((record, index) => {
+    const validationError = getSystemWdiValidationError(record, otherSettings)
+    if (validationError) {
+      throw new Error(`Импорт остановлен: ${getImportRowLabel(index)}. ${validationError}`)
+    }
+    applySystemWdi(record, otherSettings)
+  })
 }
 
 function normalizeConnectionTypesForImport(records: WeldInput[]) {

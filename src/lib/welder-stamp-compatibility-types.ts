@@ -5,7 +5,7 @@ export type OfficialStampCompatibilityIssue = {
   fieldKey: WeldFieldKey
   stamp: string
   method: string
-  reason: 'missing-registry' | 'missing-weld-type' | 'weld-type' | 'date' | 'diameter' | 'suspended'
+  reason: 'missing-registry' | 'missing-weld-type' | 'weld-type' | 'team-weld-type' | 'date' | 'diameter' | 'suspended'
   message: string
 }
 

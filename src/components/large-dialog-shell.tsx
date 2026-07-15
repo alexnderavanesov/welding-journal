@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -12,6 +13,10 @@ type LargeDialogShellProps = {
   panelClassName?: string
 }
 
+let bodyScrollLockCount = 0
+let previousBodyOverflow = ''
+let previousDocumentOverflow = ''
+
 export function LargeDialogShell({
   children,
   maxWidthClassName = 'max-w-[1320px]',
@@ -21,11 +26,29 @@ export function LargeDialogShell({
   panelRadiusClassName = 'rounded-md',
   panelClassName,
 }: LargeDialogShellProps) {
+  useEffect(() => {
+    if (bodyScrollLockCount === 0) {
+      previousBodyOverflow = document.body.style.overflow
+      previousDocumentOverflow = document.documentElement.style.overflow
+      document.body.style.overflow = 'hidden'
+      document.documentElement.style.overflow = 'hidden'
+    }
+    bodyScrollLockCount += 1
+
+    return () => {
+      bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1)
+      if (bodyScrollLockCount === 0) {
+        document.body.style.overflow = previousBodyOverflow
+        document.documentElement.style.overflow = previousDocumentOverflow
+      }
+    }
+  }, [])
+
   return (
-    <div className={cn('fixed inset-0 flex items-center justify-center px-4 backdrop-blur-[1px]', overlayClassName)}>
+    <div className={cn('fixed inset-0 flex items-center justify-center overflow-hidden overscroll-contain px-4 backdrop-blur-[1px]', overlayClassName)}>
       <div
         className={cn(
-          'flex w-full flex-col border border-slate-200 bg-white shadow-2xl',
+          'flex w-full flex-col overscroll-contain border border-slate-200 bg-white shadow-2xl',
           maxHeightClassName,
           maxWidthClassName,
           panelRadiusClassName,

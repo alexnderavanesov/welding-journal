@@ -11,6 +11,8 @@ import {
 } from '@/lib/weld-fields'
 import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-import-export'
 import type { WeldDraft } from '@/lib/dispatcher-types'
+import { useOtherSettings } from '@/lib/other-settings'
+import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import {
   formHiddenFieldKeys,
   getWeldFormAutoClearHint,
@@ -29,6 +31,7 @@ export type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-util
 type WeldFormProps = {
   value: WeldDraft
   focusField?: WeldFieldKey
+  suggestionRows?: readonly WeldInput[]
   stampSelectOptions?: StampSelectOptions | ((value: WeldInput) => StampSelectOptions)
   getExternalSaveBlockReason?: (value: WeldInput) => string | null
   onSave: (value: WeldInput) => void
@@ -36,8 +39,10 @@ type WeldFormProps = {
   busy?: boolean
 }
 
-export function WeldForm({ value, focusField, stampSelectOptions, getExternalSaveBlockReason, onSave, onCancel, busy }: WeldFormProps) {
+export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOptions, getExternalSaveBlockReason, onSave, onCancel, busy }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
+  const otherSettings = useOtherSettings()
+  const systemWdiEnabled = isSystemWdiMode(otherSettings)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
   const [activeTab, setActiveTab] = useState<WeldFormTab>(() => getWeldFormTabForField(focusField))
   const contentRef = useRef<HTMLDivElement | null>(null)
@@ -119,12 +124,12 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
 
   useEffect(() => {
     setDraft((current) => {
-      const nextDraft = withAutoVikForWeldDate(current)
+      const nextDraft = systemWdiEnabled ? withSystemWdi(withAutoVikForWeldDate(current), otherSettings) : withAutoVikForWeldDate(current)
       const nextFinalStatus = calculateFinalStatus(nextDraft)
       if (current === nextDraft && current.finalStatus === nextFinalStatus) return current
       return { ...nextDraft, finalStatus: nextFinalStatus }
     })
-  }, [draft])
+  }, [draft, otherSettings, systemWdiEnabled])
 
   useEffect(() => {
     setActiveTab(getWeldFormTabForField(focusField))
@@ -157,7 +162,9 @@ export function WeldForm({ value, focusField, stampSelectOptions, getExternalSav
           fieldsByGroup={fieldsByGroup}
           collapsedSections={collapsedSections}
           draft={draft}
+          suggestionRows={suggestionRows}
           stampSelectOptions={resolvedStampSelectOptions}
+          systemWdiEnabled={systemWdiEnabled}
           fieldRefs={fieldRefs}
           onToggleSection={toggleSection}
           setDraft={setDraft}

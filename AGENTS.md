@@ -1,5 +1,11 @@
 # Agent Rules
 
+## User guide
+
+- Any new feature, rule change, renamed field, import behavior change, document-template behavior change, dispatcher logic change, or settings change must be accompanied by an update to the in-app user guide.
+- The main guide is implemented in `src/components/user-guide-page.tsx`.
+- Keep the guide user-facing: describe what the user sees, what to click, what the system checks, and practical cases.
+
 ## Database migrations
 
 - Never write migration SQL files manually.

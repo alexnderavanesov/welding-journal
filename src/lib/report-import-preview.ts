@@ -15,6 +15,7 @@ import {
   REPLACE_DELETE_ROW_HEADER,
   getReportImportCheckedFieldKeys,
   getReportImportPreviewFields,
+  isExistingRowsImportLockedField,
   isMassFillFieldLocked,
   isSystemImportField,
   stripIgnoredImportFields,
@@ -22,7 +23,7 @@ import {
 import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import type { ActiveReport } from '@/lib/home-state'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
-import { FIELD_BY_LABEL, normalizeHeader, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
@@ -30,6 +31,8 @@ export type ReportImportPreviewError = {
   rowNumber: number
   title: string
   message: string
+  id?: number
+  fieldKeys?: WeldFieldKey[]
 }
 
 export type ReportImportRecord = WeldInput & { id?: number; deleteRequested?: boolean }
@@ -153,8 +156,8 @@ async function buildExistingRowsImportPreview({
   }
 
   const parsed = await parseMassFillImportFile(file)
-  const fields = getReportImportPreviewFields(activeReport)
   const fieldsByColumn = mapMassFillHeadersToFields(parsed.headers)
+  const fields = getExistingRowsPreviewFields(fieldsByColumn)
   const idColumnIndex = getMassFillIdColumnIndex(parsed.headers)
   const deleteColumnIndex = mode === 'replaceData' ? getReplaceDeleteColumnIndex(parsed.headers) : -1
   const rowsById = new Map(rows.map((row) => [row.id, row]))
@@ -196,27 +199,38 @@ async function buildExistingRowsImportPreview({
     })
 
     const changedKeys = Object.keys(updates).filter((key) => key !== 'id')
+    const candidate = { ...existingRow, ...updates } as ReportImportRecord
     if (changedKeys.length === 0) {
       skippedRows += 1
       return
     }
 
-    const candidate = { ...existingRow, ...updates } as ReportImportRecord
     records.push(candidate)
+    const changedFieldKeys = getKnownFieldKeys(changedKeys)
 
     try {
       const prepared = prepareImportedWeldRecords({
-        records: [{ ...withOfficialJointStatus(candidate) }],
+        records: [{ ...candidate }],
+        skipManualJointNameValidation: true,
         weldFormStampSelectOptions,
         welderStamps,
         welderStampSuspensions,
       })[0] as ReportImportRecord
-      validRecords.push({ ...prepared, id: existingRow.id })
+      const preparedUpdates: ReportImportRecord = { id: existingRow.id }
+      changedKeys.forEach((key) => {
+        const field = FIELD_BY_KEY.get(key as WeldFieldKey)
+        if (!field) return
+        preparedUpdates[field.key] = prepared[field.key]
+      })
+      applyPreparedDerivedUpdates(preparedUpdates, prepared, existingRow, changedKeys)
+      validRecords.push(preparedUpdates)
     } catch (error) {
       errors.push({
         rowNumber,
         title: getRecordTitle(existingRow),
         message: getImportErrorMessage(error),
+        id: existingRow.id,
+        fieldKeys: changedFieldKeys,
       })
     }
   })
@@ -231,9 +245,32 @@ async function buildExistingRowsImportPreview({
   }
 }
 
+function applyPreparedDerivedUpdates(
+  updates: ReportImportRecord,
+  prepared: ReportImportRecord,
+  existingRow: WeldRow,
+  changedKeys: string[],
+) {
+  const changedKeySet = new Set(changedKeys)
+  const wdiInputTouched = ['d1', 'd2', 't1', 't2', 'wdi'].some((key) => changedKeySet.has(key))
+  if (wdiInputTouched && normalizePreviewValue(prepared.wdi) !== normalizePreviewValue(existingRow.wdi)) {
+    updates.wdi = prepared.wdi
+  }
+}
+
 function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ActiveReport, field: WeldField, existingRow: WeldRow) {
+  if (isExistingRowsImportLockedField(field)) return true
   if (mode === 'replaceData') return isSystemImportField(activeReport, field)
   return isMassFillFieldLocked(activeReport, field, existingRow)
+}
+
+function getExistingRowsPreviewFields(fieldsByColumn: Array<WeldField | null>) {
+  const seen = new Set<string>()
+  return fieldsByColumn.filter((field): field is WeldField => {
+    if (!field || seen.has(field.key)) return false
+    seen.add(field.key)
+    return true
+  })
 }
 
 export function fixReportImportPreviewErrors(
@@ -283,6 +320,8 @@ function validateReportImportRecords(
         rowNumber: index + 2,
         title: getRecordTitle(record),
         message: getImportErrorMessage(error),
+        id: record.id,
+        fieldKeys: getRecordErrorFieldKeys(record, activeReport),
       })
     }
   })
@@ -309,6 +348,16 @@ function clearImportRecordFields(record: WeldInput, fieldKeys: readonly WeldFiel
     nextRecord[fieldKey] = null
   }
   return nextRecord
+}
+
+function getKnownFieldKeys(keys: readonly string[]) {
+  return keys.filter((key): key is WeldFieldKey => FIELD_BY_KEY.has(key as WeldFieldKey))
+}
+
+function getRecordErrorFieldKeys(record: WeldInput, activeReport: ActiveReport) {
+  const checkedFieldKeys = [...getReportImportCheckedFieldKeys(activeReport)] as WeldFieldKey[]
+  const filledCheckedKeys = checkedFieldKeys.filter((fieldKey) => emptyToNull(record[fieldKey]) !== null)
+  return filledCheckedKeys.length ? filledCheckedKeys : checkedFieldKeys
 }
 
 async function parseReportImportFile(activeReport: ActiveReport, file: File) {

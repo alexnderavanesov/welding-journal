@@ -4,7 +4,8 @@
   "type": "module",
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "dev": "vite dev",
+    "dev": "vite dev --host 127.0.0.1 --port 3000",
+    "dev:local": "vite dev --host 127.0.0.1 --port 3000",
     "build": "vite build",
     "start": "vite preview",
     "db:up": "docker compose up -d postgres",

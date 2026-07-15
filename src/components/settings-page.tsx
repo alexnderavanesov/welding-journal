@@ -59,7 +59,8 @@ import {
   type SystemIndexKey,
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
-import { saveOtherSettings, useOtherSettings } from '@/lib/other-settings'
+import { saveOtherSettings, useOtherSettings, type WdiCalculationMode } from '@/lib/other-settings'
+import { parseWdiTableFile } from '@/lib/wdi-table-import'
 import {
   DEFAULT_DATA_LIST_SETTINGS,
   normalizeDataListOption,
@@ -537,6 +538,7 @@ function SecurityToggle({
 
 function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useOtherSettings()
+  const [wdiMessage, setWdiMessage] = useState<string | null>(null)
 
   function updateArchivedWelderStampsSetting(checked: boolean) {
     void runProtectedSettingsChange(() => {
@@ -545,6 +547,37 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
         includeArchivedWelderStampsInForm: checked,
       })
     })
+  }
+
+  function updateWdiCalculationMode(mode: WdiCalculationMode) {
+    setWdiMessage(null)
+    void runProtectedSettingsChange(() => {
+      saveOtherSettings({
+        ...settings,
+        wdiCalculationMode: mode,
+      })
+    })
+  }
+
+  async function handleWdiTableUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+
+    setWdiMessage(null)
+    try {
+      await runProtectedSettingsChange(async () => {
+        const table = await parseWdiTableFile(file)
+        saveOtherSettings({
+          ...settings,
+          wdiCalculationMode: 'table',
+          wdiTable: table,
+        })
+        setWdiMessage(`Таблица загружена: ${table.diameters.length} диаметров × ${table.thicknesses.length} толщин.`)
+      })
+    } catch (error) {
+      setWdiMessage((error as Error).message)
+    }
   }
 
   return (
@@ -590,8 +623,102 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
           </span>
         </span>
       </label>
+
+      <section className="rounded-md border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900">Расчет WDI</h4>
+            <p className="mt-1 text-sm leading-5 text-slate-500">
+              Режим влияет на новые сохранения и импорт. Уже сохраненные значения WDI при смене режима не пересчитываются.
+            </p>
+          </div>
+          <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-500">
+            {getWdiModeLabel(settings.wdiCalculationMode)}
+          </span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <WdiModeCard
+            title="Пользовательский"
+            description="WDI вводится вручную в форме и в импорте."
+            active={settings.wdiCalculationMode === 'manual'}
+            onClick={() => updateWdiCalculationMode('manual')}
+          />
+          <WdiModeCard
+            title="Системный: D / 25,4"
+            description="Берется меньший D1/D2 и делится на 25,4. Результат округляется до 2 знаков."
+            active={settings.wdiCalculationMode === 'formula'}
+            onClick={() => updateWdiCalculationMode('formula')}
+          />
+          <WdiModeCard
+            title="Системный: таблица D/T"
+            description="Берется меньший D1/D2 и меньший T1/T2, затем значение ищется в загруженной таблице."
+            active={settings.wdiCalculationMode === 'table'}
+            onClick={() => {
+              if (!settings.wdiTable) {
+                setWdiMessage('Сначала загрузите таблицу дюйм-диаметров.')
+                return
+              }
+              updateWdiCalculationMode('table')
+            }}
+          />
+        </div>
+
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 text-sm text-slate-600">
+              <div className="font-semibold text-slate-800">Таблица дюйм-диаметров</div>
+              <div className="mt-1">
+                {settings.wdiTable
+                  ? `${settings.wdiTable.fileName}: ${settings.wdiTable.diameters.length} диаметров × ${settings.wdiTable.thicknesses.length} толщин`
+                  : 'Таблица пока не загружена.'}
+              </div>
+            </div>
+            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50">
+              <Upload className="h-4 w-4" />
+              Загрузить таблицу
+              <input type="file" accept=".xlsx,.xls" onChange={handleWdiTableUpload} className="hidden" />
+            </label>
+          </div>
+          {wdiMessage ? <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">{wdiMessage}</div> : null}
+        </div>
+      </section>
     </div>
   )
+}
+
+function WdiModeCard({
+  title,
+  description,
+  active,
+  onClick,
+}: {
+  title: string
+  description: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md border p-3 text-left transition-colors ${
+        active ? 'border-sky-200 bg-sky-50 text-slate-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+      }`}
+    >
+      <span className="flex items-center gap-2">
+        <span className={`h-3 w-3 rounded-full border ${active ? 'border-sky-700 bg-sky-700' : 'border-slate-300 bg-white'}`} />
+        <span className="text-sm font-semibold">{title}</span>
+      </span>
+      <span className="mt-2 block text-sm leading-5 text-slate-500">{description}</span>
+    </button>
+  )
+}
+
+function getWdiModeLabel(mode: WdiCalculationMode) {
+  if (mode === 'formula') return 'системный: D / 25,4'
+  if (mode === 'table') return 'системный: таблица D/T'
+  return 'пользовательский'
 }
 
 function DataSettingsPanel({
