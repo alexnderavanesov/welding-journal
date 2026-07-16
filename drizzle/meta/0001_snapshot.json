@@ -1,6 +1,6 @@
 {
-  "id": "1ccbc8ac-ba1c-4b24-9a67-02501b25d12e",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "4bfa70d2-e8e5-403c-9548-5dae837ff085",
+  "prevId": "1ccbc8ac-ba1c-4b24-9a67-02501b25d12e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -243,6 +243,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "material_unique_number_1": {
+          "name": "material_unique_number_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_unique_number_2": {
+          "name": "material_unique_number_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "element_1": {
           "name": "element_1",
           "type": "text",
@@ -275,6 +287,42 @@
         },
         "material_2": {
           "name": "material_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_full_name_1": {
+          "name": "material_full_name_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_full_name_2": {
+          "name": "material_full_name_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_normative_document_1": {
+          "name": "material_normative_document_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_normative_document_2": {
+          "name": "material_normative_document_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_certificate_number_1": {
+          "name": "material_certificate_number_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_certificate_number_2": {
+          "name": "material_certificate_number_2",
           "type": "text",
           "primaryKey": false,
           "notNull": false
