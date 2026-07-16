@@ -95,7 +95,7 @@ export function WeldFormSections({
               onClick={() => onActiveTabChange('workClosure')}
               className={activeTab === 'workClosure' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
             >
-              Код работ и закрытие
+              Испытания и закрытие
             </button>
           ) : null}
         </div>

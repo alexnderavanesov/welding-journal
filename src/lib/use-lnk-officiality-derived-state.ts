@@ -3,6 +3,7 @@ import type { LnkOfficialityDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getFilteredLnkOfficialityRows,
+  getLnkOfficialityCounters,
   getLnkOfficialitySaveBlockReason,
   getSelectedLnkOfficialityRows,
 } from '@/lib/lnk-officiality-derived-utils'
@@ -28,6 +29,11 @@ export function useLnkOfficialityDerivedState({
     [lnkOfficialityDraft.rowIds, lnkRows],
   )
 
+  const lnkOfficialityCounters = useMemo(
+    () => getLnkOfficialityCounters(filteredLnkOfficialityRows),
+    [filteredLnkOfficialityRows],
+  )
+
   const lnkOfficialitySaveBlockReason = useMemo(
     () =>
       getLnkOfficialitySaveBlockReason({
@@ -43,6 +49,7 @@ export function useLnkOfficialityDerivedState({
   return {
     filteredLnkOfficialityRows,
     selectedLnkOfficialityRows,
+    lnkOfficialityCounters,
     lnkOfficialitySaveBlockReason,
     isLnkOfficialitySaveDisabled,
   }

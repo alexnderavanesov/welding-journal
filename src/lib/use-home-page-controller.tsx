@@ -708,6 +708,7 @@ export function useHomePageController() {
   const {
     filteredLnkOfficialityRows,
     selectedLnkOfficialityRows,
+    lnkOfficialityCounters,
     lnkOfficialitySaveBlockReason,
     isLnkOfficialitySaveDisabled,
   } = useLnkOfficialityDerivedState({
@@ -1593,6 +1594,7 @@ export function useHomePageController() {
       draft: lnkOfficialityDraft,
       filteredRows: filteredLnkOfficialityRows,
       selectedRows: selectedLnkOfficialityRows,
+      counters: lnkOfficialityCounters,
       saveBlockReason: lnkOfficialitySaveBlockReason,
       isSaveDisabled: isLnkOfficialitySaveDisabled,
       onClose: closeLnkOfficialityModal,
