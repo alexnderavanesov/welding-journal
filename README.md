@@ -35,4 +35,18 @@ DATABASE_URL=postgres://welding:welding@localhost:5432/welding_tracker
 
 Для локальных секретов используйте `.env.local` или `.env`. Эти файлы не коммитятся.
 
-Production на Netlify использует только переменную окружения `DATABASE_URL`, заданную в Netlify UI. Не вставляйте production-строку подключения в локальные `.env` файлы, если не собираетесь осознанно запускать production-миграцию.
+Production на Netlify использует переменную окружения `DATABASE_URL`, заданную в Netlify UI. Обычный запуск приложения и локальные миграции продолжают использовать только `DATABASE_URL`.
+
+Для миграции удаленной базы добавьте отдельную переменную в `.env.local` или `.env`:
+
+```bash
+DATABASE_URL_REMOTE_FOR_MIGRATIONS=postgres://user:password@remote-host:5432/welding_tracker
+```
+
+Затем запустите специальную команду:
+
+```bash
+pnpm db:remote-migration
+```
+
+`db:remote-migration` не использует `DATABASE_URL` и завершится с ошибкой, если `DATABASE_URL_REMOTE_FOR_MIGRATIONS` не задана. Не коммитьте настоящую строку подключения удаленной базы.

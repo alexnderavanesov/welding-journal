@@ -12,6 +12,7 @@
     "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:remote-migration": "drizzle-kit migrate --config=drizzle.remote.config.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest"
