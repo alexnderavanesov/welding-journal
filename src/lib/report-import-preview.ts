@@ -21,6 +21,8 @@ import {
   stripIgnoredImportFields,
 } from '@/lib/report-import-template'
 import { getReportImportFieldKeys } from '@/lib/report-field-state'
+import { loadOtherSettings } from '@/lib/other-settings'
+import { isSystemWdiMode } from '@/lib/wdi'
 import type { ActiveReport } from '@/lib/home-state'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
@@ -209,8 +211,9 @@ async function buildExistingRowsImportPreview({
     const changedFieldKeys = getKnownFieldKeys(changedKeys)
 
     try {
+      const candidateForPrepare = prepareCandidateForExistingRowsValidation(candidate)
       const prepared = prepareImportedWeldRecords({
-        records: [{ ...candidate }],
+        records: [candidateForPrepare],
         skipManualJointNameValidation: true,
         weldFormStampSelectOptions,
         welderStamps,
@@ -225,12 +228,18 @@ async function buildExistingRowsImportPreview({
       applyPreparedDerivedUpdates(preparedUpdates, prepared, existingRow, changedKeys)
       validRecords.push(preparedUpdates)
     } catch (error) {
+      const message = getImportErrorMessage(error)
       errors.push({
         rowNumber,
         title: getRecordTitle(existingRow),
-        message: getImportErrorMessage(error),
+        message,
         id: existingRow.id,
-        fieldKeys: changedFieldKeys,
+        fieldKeys: getImportErrorFieldKeys({
+          message,
+          record: candidate,
+          activeReport,
+          fallbackFieldKeys: changedFieldKeys,
+        }),
       })
     }
   })
@@ -256,6 +265,11 @@ function applyPreparedDerivedUpdates(
   if (wdiInputTouched && normalizePreviewValue(prepared.wdi) !== normalizePreviewValue(existingRow.wdi)) {
     updates.wdi = prepared.wdi
   }
+}
+
+function prepareCandidateForExistingRowsValidation(candidate: ReportImportRecord) {
+  if (!isSystemWdiMode(loadOtherSettings())) return { ...candidate }
+  return { ...candidate, wdi: null }
 }
 
 function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ActiveReport, field: WeldField, existingRow: WeldRow) {
@@ -316,12 +330,18 @@ function validateReportImportRecords(
       })
       validRecords.push({ ...prepared[0], id: record.id })
     } catch (error) {
+      const message = getImportErrorMessage(error)
       errors.push({
         rowNumber: index + 2,
         title: getRecordTitle(record),
-        message: getImportErrorMessage(error),
+        message,
         id: record.id,
-        fieldKeys: getRecordErrorFieldKeys(record, activeReport),
+        fieldKeys: getImportErrorFieldKeys({
+          message,
+          record,
+          activeReport,
+          fallbackFieldKeys: getRecordFallbackErrorFieldKeys(record, activeReport),
+        }),
       })
     }
   })
@@ -354,10 +374,103 @@ function getKnownFieldKeys(keys: readonly string[]) {
   return keys.filter((key): key is WeldFieldKey => FIELD_BY_KEY.has(key as WeldFieldKey))
 }
 
-function getRecordErrorFieldKeys(record: WeldInput, activeReport: ActiveReport) {
+function getRecordFallbackErrorFieldKeys(record: WeldInput, activeReport: ActiveReport) {
   const checkedFieldKeys = [...getReportImportCheckedFieldKeys(activeReport)] as WeldFieldKey[]
   const filledCheckedKeys = checkedFieldKeys.filter((fieldKey) => emptyToNull(record[fieldKey]) !== null)
   return filledCheckedKeys.length ? filledCheckedKeys : checkedFieldKeys
+}
+
+function getImportErrorFieldKeys({
+  message,
+  record,
+  activeReport,
+  fallbackFieldKeys,
+}: {
+  message: string
+  record: WeldInput
+  activeReport: ActiveReport
+  fallbackFieldKeys: readonly WeldFieldKey[]
+}) {
+  const matchedFieldKeys = collectImportErrorFieldKeys(message, record)
+  if (matchedFieldKeys.length === 0) return fallbackFieldKeys.length ? [...fallbackFieldKeys] : getRecordFallbackErrorFieldKeys(record, activeReport)
+
+  const fallbackSet = new Set(fallbackFieldKeys)
+  if (fallbackSet.size === 0) return matchedFieldKeys
+
+  const narrowedFieldKeys = matchedFieldKeys.filter((fieldKey) => fallbackSet.has(fieldKey))
+  return narrowedFieldKeys.length ? narrowedFieldKeys : matchedFieldKeys
+}
+
+function collectImportErrorFieldKeys(message: string, record: WeldInput) {
+  const fieldKeys = new Set<WeldFieldKey>()
+  const normalizedMessage = normalizeHeader(message).toLowerCase()
+
+  addQuotedFieldLabels(fieldKeys, message)
+  addMentionedFieldLabels(fieldKeys, normalizedMessage)
+  addWdiFieldKeys(fieldKeys, normalizedMessage)
+  addJointFieldKeys(fieldKeys, normalizedMessage)
+  addStampValueFieldKeys(fieldKeys, message, record)
+
+  return [...fieldKeys]
+}
+
+function addQuotedFieldLabels(fieldKeys: Set<WeldFieldKey>, message: string) {
+  for (const match of message.matchAll(/Поле\s+"([^"]+)"/gi)) {
+    const field = FIELD_BY_LABEL.get(normalizeHeader(match[1]))
+    if (field) fieldKeys.add(field.key as WeldFieldKey)
+  }
+}
+
+function addMentionedFieldLabels(fieldKeys: Set<WeldFieldKey>, normalizedMessage: string) {
+  for (const [fieldKey, field] of FIELD_BY_KEY.entries()) {
+    if (fieldKey === 'joint') continue
+    const label = normalizeHeader(field.label).toLowerCase()
+    if (!label || label === 'дата' || label.length < 2) continue
+    if (normalizedMessage.includes(label)) fieldKeys.add(fieldKey as WeldFieldKey)
+  }
+}
+
+function addWdiFieldKeys(fieldKeys: Set<WeldFieldKey>, normalizedMessage: string) {
+  if (!normalizedMessage.includes('wdi')) return
+  fieldKeys.add('wdi')
+
+  if (normalizedMessage.includes('d1/d2/t1/t2')) {
+    fieldKeys.add('d1')
+    fieldKeys.add('d2')
+    fieldKeys.add('t1')
+    fieldKeys.add('t2')
+  } else if (normalizedMessage.includes('d1/d2')) {
+    fieldKeys.add('d1')
+    fieldKeys.add('d2')
+  }
+}
+
+function addJointFieldKeys(fieldKeys: Set<WeldFieldKey>, normalizedMessage: string) {
+  if (
+    normalizedMessage.includes('укажите номер стыка') ||
+    normalizedMessage.includes('стык должен начинаться') ||
+    normalizedMessage.includes('зарезервированы системой')
+  ) {
+    fieldKeys.add('joint')
+  }
+}
+
+function addStampValueFieldKeys(fieldKeys: Set<WeldFieldKey>, message: string, record: WeldInput) {
+  const stampMatches = [...message.matchAll(/Клеймо\s+([^\s(),.]+)/gi)]
+    .map((match) => normalizeStampForCompare(match[1]))
+    .filter(Boolean)
+  if (stampMatches.length === 0) return
+
+  const stampSet = new Set(stampMatches)
+  for (const [fieldKey] of FIELD_BY_KEY.entries()) {
+    if (!fieldKey.startsWith('stamp')) continue
+    const value = normalizeStampForCompare(record[fieldKey as WeldFieldKey])
+    if (value && stampSet.has(value)) fieldKeys.add(fieldKey as WeldFieldKey)
+  }
+}
+
+function normalizeStampForCompare(value: unknown) {
+  return String(value ?? '').trim().toUpperCase()
 }
 
 async function parseReportImportFile(activeReport: ActiveReport, file: File) {

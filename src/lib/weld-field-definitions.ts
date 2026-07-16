@@ -17,6 +17,7 @@ export type FieldGroup =
   | 'Сварка'
   | 'Клейма'
   | 'Контроль'
+  | 'Испытания'
   | 'Статусы/отчетность'
 
 export const WELD_FIELDS = [
@@ -120,8 +121,12 @@ export const WELD_FIELDS = [
   { key: 'lnkDefectDescription', dbName: 'lnk_defect_description', label: 'Описание дефектов', kind: 'text', group: 'Контроль' },
   { key: 'lnkNote', dbName: 'lnk_note', label: 'Примечание', kind: 'text', group: 'Контроль' },
   { key: 'finalStatus', dbName: 'final_status', label: 'Итоговый статус', kind: 'text', group: 'Статусы/отчетность', visible: true },
+  { key: 'testContour', dbName: 'test_contour', label: 'Контур', kind: 'text', group: 'Испытания' },
+  { key: 'testDate', dbName: 'test_date', label: 'Дата испытаний', kind: 'date', group: 'Испытания' },
   { key: 'boq', dbName: 'boq', label: 'BoQ сварка', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'testBoq', dbName: 'test_boq', label: 'BoQ испытания', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'ks3', dbName: 'ks3', label: 'КС3 сварка', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'testKs3', dbName: 'test_ks3', label: 'КС3 испытания', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'createdAt', dbName: 'created_at', label: 'Внесен сварка', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoBoq', dbName: 'psto_boq', label: 'BoQ ПСТО', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoKs3', dbName: 'psto_ks3', label: 'КС3 ПСТО', kind: 'text', group: 'Статусы/отчетность' },

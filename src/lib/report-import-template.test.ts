@@ -10,7 +10,10 @@ import {
 } from './report-import-template'
 
 const WORK_CODE_AND_ACCEPTANCE_KEYS = [
+  'testContour',
+  'testDate',
   'boq',
+  'testBoq',
   'pstoBoq',
   'vikBoq',
   'rkBoq',
@@ -21,6 +24,7 @@ const WORK_CODE_AND_ACCEPTANCE_KEYS = [
   'stlsBoq',
   'mkkBoq',
   'ks3',
+  'testKs3',
   'pstoKs3',
   'vikKs3',
   'rkKs3',

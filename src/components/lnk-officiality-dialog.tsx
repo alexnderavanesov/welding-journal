@@ -12,11 +12,13 @@ import { Button } from '@/components/ui/button'
 import type { LnkOfficialityDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
+import type { LnkOfficialityCounters } from '@/lib/lnk-officiality-derived-utils'
 
 export type LnkOfficialityDialogProps = {
   draft: LnkOfficialityDraftState
   filteredRows: WeldRow[]
   selectedRows: WeldRow[]
+  counters: LnkOfficialityCounters
   saveBlockReason: string | null
   isSaveDisabled: boolean
   onClose: () => void
@@ -30,6 +32,7 @@ export function LnkOfficialityDialog({
   draft,
   filteredRows,
   selectedRows,
+  counters,
   saveBlockReason,
   isSaveDisabled,
   onClose,
@@ -53,6 +56,7 @@ export function LnkOfficialityDialog({
         <LnkOfficialitySettings
           status={draft.status}
           selectedRows={selectedRows}
+          counters={counters}
           onStatusChange={(status) => onDraftChange((current) => ({ ...current, status }))}
         />
 

@@ -1,8 +1,10 @@
 import * as XLSX from 'xlsx'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DEFAULT_DATA_LIST_SETTINGS, saveDataListSettings } from './data-list-settings'
 import { DEFAULT_OTHER_SETTINGS, saveOtherSettings } from './other-settings'
-import { MASS_FILL_ROW_ID_HEADER } from './report-import-template'
+import { MASS_FILL_ROW_ID_HEADER, getReportImportTemplateFields } from './report-import-template'
 import {
+  buildReportImportPreview,
   buildReportMassFillPreview,
   buildReportReplaceDataPreview,
 } from './report-import-preview'
@@ -11,6 +13,7 @@ import type { WeldRow } from './dispatcher-types'
 describe('existing rows report import preview', () => {
   afterEach(() => {
     saveOtherSettings(DEFAULT_OTHER_SETTINGS)
+    saveDataListSettings(DEFAULT_DATA_LIST_SETTINGS)
   })
 
   it('keeps unofficial status out of mass fill update payloads', async () => {
@@ -62,6 +65,25 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, d1: 50.8, wdi: 2 }])
   })
 
+  it('does not validate stale existing WDI when system WDI inputs changed', async () => {
+    saveOtherSettings({
+      ...DEFAULT_OTHER_SETTINGS,
+      wdiCalculationMode: 'formula',
+    })
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'D1'], [[7, 'F1', 80]])
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, joint: 'F1', status: 'н/п', d1: 100, wdi: 3.94, finalStatus: 'ожидает сварку' } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, d1: 80, wdi: 3.15 }])
+  })
+
   it('shows changed existing rows with columns from the uploaded template', async () => {
     const file = buildWorkbookFile(
       [MASS_FILL_ROW_ID_HEADER, 'Линия', 'Стык', 'Состав 1', 'Ответственный'],
@@ -97,6 +119,37 @@ describe('existing rows report import preview', () => {
     expect(preview.errors).toEqual([])
     expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
   })
+
+  it('points new record validation errors to the exact import field', async () => {
+    const file = buildWeldingJournalImportFile({ joint: 'S1', weldingMethod: 'МП', material1: '09Г2С' })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0].fieldKeys).toEqual(['weldingMethod'])
+  })
+
+  it('points existing row validation errors to the exact changed import field', async () => {
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Корень_1', 'Состав 1'], [[7, 'S1', 'BAD', '09Г2С']])
+    const preview = await buildReportMassFillPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, joint: 'S1', stamp1K: null, material1: null } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [{ value: 'GOOD' }] },
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0].fieldKeys).toEqual(['stamp1K'])
+  })
 })
 
 function buildWorkbookFile(headers: string[], rows: unknown[][]) {
@@ -109,4 +162,12 @@ function buildWorkbookFile(headers: string[], rows: unknown[][]) {
     arrayBuffer: async () => buffer,
     text: async () => '',
   } as File
+}
+
+function buildWeldingJournalImportFile(valuesByFieldKey: Record<string, unknown>) {
+  const fields = getReportImportTemplateFields('weldingJournal')
+  return buildWorkbookFile(
+    fields.map((field) => field.label),
+    [fields.map((field) => valuesByFieldKey[field.key] ?? '')],
+  )
 }

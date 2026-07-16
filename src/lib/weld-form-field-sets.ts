@@ -23,10 +23,13 @@ export const factualWelderStampFieldKeys = new Set<WeldFieldKey>([
   'stamp2OFact',
 ])
 
-export const secondaryWeldFormSectionNames = new Set(['Код работ', 'Закрытие'])
+export const secondaryWeldFormSectionNames = new Set(['Испытания', 'Код работ', 'Закрытие'])
 
 export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
+  'testContour',
+  'testDate',
   'boq',
+  'testBoq',
   'pstoBoq',
   'vikBoq',
   'rkBoq',
@@ -37,6 +40,7 @@ export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
   'stlsBoq',
   'mkkBoq',
   'ks3',
+  'testKs3',
   'pstoKs3',
   'vikKs3',
   'rkKs3',

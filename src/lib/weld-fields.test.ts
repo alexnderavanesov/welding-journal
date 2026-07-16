@@ -37,6 +37,7 @@ describe('weld field order', () => {
       'Заявки',
       'Результат',
       'Заключения',
+      'Испытания',
       'Код работ',
       'Закрытие',
       'Прочее',
@@ -61,6 +62,32 @@ describe('weld field order', () => {
     expect(journalSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(true)
     expect(lnkSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(false)
     expect(pstoSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(false)
+  })
+
+  it('shows testing fields only in the welding journal report', () => {
+    const journalSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const lnkSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+
+    expect(journalSections.some((group) => group.section === 'Испытания')).toBe(true)
+    expect(journalSections.flatMap((group) => group.fields).map((field) => field.key)).toEqual(
+      expect.arrayContaining(['testContour', 'testDate', 'testBoq', 'testKs3']),
+    )
+    expect(lnkSections.flatMap((group) => group.fields).map((field) => field.key)).not.toEqual(
+      expect.arrayContaining(['testContour', 'testDate', 'testBoq', 'testKs3']),
+    )
+    expect(pstoSections.flatMap((group) => group.fields).map((field) => field.key)).not.toEqual(
+      expect.arrayContaining(['testContour', 'testDate', 'testBoq', 'testKs3']),
+    )
   })
 
   it('keeps weld control percent visible when the project section is collapsed', () => {
@@ -109,11 +136,17 @@ describe('weld field order', () => {
   })
 
   it('shows welding customer work code and acceptance fields in separate sections', () => {
+    const tests = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Испытания')
     const customerWorkCode = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Код работ')
     const acceptance = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Закрытие')
 
+    expect(tests?.fields.map((field) => field.label)).toEqual([
+      'Контур',
+      'Дата испытаний',
+    ])
     expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
       'BoQ сварка',
+      'BoQ испытания',
       'BoQ ПСТО',
       'BoQ ВИК',
       'BoQ РК',
@@ -126,6 +159,7 @@ describe('weld field order', () => {
     ])
     expect(acceptance?.fields.map((field) => field.label)).toEqual([
       'КС3 сварка',
+      'КС3 испытания',
       'КС3 ПСТО',
       'КС3 ВИК',
       'КС3 РК',
@@ -140,8 +174,12 @@ describe('weld field order', () => {
 
   it('keeps work code and acceptance fields available in the weld form secondary tab', () => {
     expect([...secondaryWeldFormFieldKeys].some((fieldKey) => formHiddenFieldKeys.has(fieldKey))).toBe(false)
+    expect(secondaryWeldFormFieldKeys.has('testContour')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('testDate')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('boq')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('ks3')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('testBoq')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('testKs3')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('pstoBoq')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('pstoKs3')).toBe(true)
   })
@@ -153,9 +191,15 @@ describe('weld field order', () => {
     })
     const customerWorkCode = sections.find((group) => group.section === 'Код работ')
     const acceptance = sections.find((group) => group.section === 'Закрытие')
+    const tests = sections.find((group) => group.section === 'Испытания')
 
+    expect(tests?.fields.map((field) => field.label)).toEqual([
+      'Контур',
+      'Дата испытаний',
+    ])
     expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
       'BoQ сварка',
+      'BoQ испытания',
       'BoQ ПСТО',
       'BoQ ВИК',
       'BoQ РК',
@@ -168,6 +212,7 @@ describe('weld field order', () => {
     ])
     expect(acceptance?.fields.map((field) => field.label)).toEqual([
       'КС3 сварка',
+      'КС3 испытания',
       'КС3 ПСТО',
       'КС3 ВИК',
       'КС3 РК',
