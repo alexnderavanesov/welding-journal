@@ -10,7 +10,7 @@
 
 - Never write migration SQL files manually.
 - Treat `src/db/schema.ts` as the source of truth for database shape.
-- For schema changes, update the Drizzle schema first, then generate migrations with Drizzle CLI:
-  - `drizzle-kit generate`
-  - `drizzle-kit migrate`
+- For schema changes, update the Drizzle schema first, then generate migrations with `pnpm db:generate`.
 - Review generated migrations before running them, but do not hand-author migration files.
+- Apply local migrations with `pnpm db:migrate`.
+- Always apply migrations to a remote database with `pnpm db:remote-migration`. This script uses `DATABASE_URL_REMOTE_FOR_MIGRATIONS`; never run `drizzle-kit migrate` directly against a remote database and never use the app's `DATABASE_URL` for remote migrations.
