@@ -41,8 +41,8 @@ export function WeldTableSectionHeaderRow({
           <th
             key={group.section}
             colSpan={group.fields.length}
-            className={`border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)] ${
-              group.collapsed ? 'bg-slate-50 text-slate-500' : 'text-slate-700'
+            className={`border-b border-l border-r-2 border-t-2 border-b-[#e7f0f6] border-l-[#e7f0f6] border-r-[#d3e3ee] border-t-[#d3e3ee] px-3 py-3 text-center text-[13px] font-bold tracking-wide shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)] ${
+              group.collapsed ? 'bg-[#f6fbfe] text-slate-500' : 'bg-[#f6fbfe] text-slate-700'
             }`}
           >
             <button
@@ -50,7 +50,7 @@ export function WeldTableSectionHeaderRow({
               onClick={() => onToggleSection(group.section)}
               disabled={!canToggle}
               className={`inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
-                canToggle ? 'hover:bg-slate-100' : 'cursor-not-allowed'
+                canToggle ? 'hover:bg-white/65' : 'cursor-not-allowed'
               }`}
               title={!canToggle ? 'Обязательные поля всегда показаны' : group.collapsed ? 'Раскрыть раздел' : 'Скрыть раздел'}
             >
@@ -66,7 +66,7 @@ export function WeldTableSectionHeaderRow({
       {!readOnly ? (
         <th
           rowSpan={2}
-          className="w-24 border-r border-slate-200/70 px-3 py-2.5 text-right text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+          className="w-24 border-b-2 border-r-2 border-t-2 border-b-[#d3e3ee] border-r-[#d3e3ee] border-t-[#d3e3ee] bg-[#f6fbfe] px-3 py-2.5 text-right text-xs font-semibold text-slate-600 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)]"
         >
           Действия
         </th>
@@ -79,7 +79,7 @@ function ExtraSectionHeader({ section, colSpan }: { section: string; colSpan: nu
   return (
     <th
       colSpan={colSpan}
-      className="border-r border-slate-200/70 px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+      className="border-b border-l border-r-2 border-t-2 border-b-[#e7f0f6] border-l-[#e7f0f6] border-r-[#d3e3ee] border-t-[#d3e3ee] bg-[#f6fbfe] px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)]"
     >
       <span className="inline-flex items-center gap-1.5 rounded px-2 py-1">{getSectionTitle(section)}</span>
     </th>

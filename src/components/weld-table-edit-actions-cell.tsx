@@ -11,7 +11,7 @@ type WeldTableEditActionsCellProps = {
 
 export function WeldTableEditActionsCell({ row, onEdit, onDelete }: WeldTableEditActionsCellProps) {
   return (
-    <td className="border-b border-slate-100 px-3 py-2 text-right">
+    <td className="border-b border-r-2 border-b-[#edf2f7] border-r-[#d7e4ee] px-3 py-2 text-right">
       <div className="flex justify-end gap-1">
         <Button
           variant="ghost"

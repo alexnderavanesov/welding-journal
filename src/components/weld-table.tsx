@@ -7,6 +7,7 @@ import type { ReportRowActions } from '@/lib/report-row-actions'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { CHAIN_ACTION_COLUMN_WIDTH } from '@/lib/weld-table-layout'
 
 export type WeldTableProps = {
   rows: WeldRow[]
@@ -35,6 +36,7 @@ export type WeldTableProps = {
   mergePstoSections?: boolean
   rowActions?: ReportRowActions
   extraColumns?: WeldTableExtraColumn[]
+  stickyIdentityColumns?: boolean
 }
 
 export function WeldTable({
@@ -64,6 +66,7 @@ export function WeldTable({
   mergePstoSections = false,
   rowActions,
   extraColumns = [],
+  stickyIdentityColumns = false,
 }: WeldTableProps) {
   const {
     alwaysVisibleFieldKeys,
@@ -109,6 +112,7 @@ export function WeldTable({
   const extraColumnsWidth = extraColumns.reduce((total, column) => total + column.width, 0)
   const fullTableMinWidth = tableMinWidth + extraColumnsWidth
   const fullTableColumnSpan = tableColumnSpan + extraColumns.length
+  const stickyIdentityLeadingWidth = stickyIdentityColumns && hasChainAction ? CHAIN_ACTION_COLUMN_WIDTH : 0
 
   return (
     <div className="w-max space-y-3" style={{ minWidth: fullTableMinWidth }}>
@@ -120,9 +124,9 @@ export function WeldTable({
         stickyLeft={stickyLeft}
         onToggleSection={toggleSection}
       />
-      <div className="rounded-md border border-slate-100 bg-card shadow-sm shadow-slate-200/30" style={{ minWidth: fullTableMinWidth }}>
+      <div className="rounded-lg border border-[#dbe7f0] bg-white shadow-sm shadow-slate-200/45" style={{ minWidth: fullTableMinWidth }}>
         <table
-          className="table-fixed border-separate border-spacing-0 text-sm text-slate-700 [&_td]:outline-none [&_th]:outline-none"
+          className="table-fixed border-separate border-spacing-0 text-[13px] text-slate-700 [&_td]:outline-none [&_th]:outline-none"
           style={{ width: fullTableMinWidth }}
         >
           <WeldTableColumns
@@ -149,6 +153,10 @@ export function WeldTable({
             extraColumns={extraColumns}
             alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
             readOnly={readOnly}
+            rows={rows}
+            stickyLeft={stickyIdentityColumns ? stickyLeft : 0}
+            stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
+            stickyIdentityColumns={stickyIdentityColumns}
             onToggleSection={toggleSection}
             columnFilters={columnFilters}
             canEditField={canEditField}
@@ -177,6 +185,9 @@ export function WeldTable({
               highlightedCellKeys={highlightedCellKeys}
               canEditField={canEditField}
               canEditCell={canEditCell}
+              stickyLeft={stickyIdentityColumns ? stickyLeft : 0}
+              stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
+              stickyIdentityColumns={stickyIdentityColumns}
               getDisplayValue={getDisplayValue}
               onEdit={onEdit}
               onDelete={onDelete}

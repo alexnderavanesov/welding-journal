@@ -36,6 +36,29 @@ export async function parseWdiTableFile(file: File): Promise<WdiTableSettings> {
   }
 }
 
+export async function buildWdiTableXlsxBytes(table: WdiTableSettings) {
+  const XLSX = await import('xlsx')
+  const rows = getWdiTableMatrix(table)
+  const sheet = XLSX.utils.aoa_to_sheet(rows)
+  sheet['!cols'] = [
+    { wch: 12 },
+    ...table.thicknesses.map(() => ({ wch: 10 })),
+  ]
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Таблица WDI')
+  return XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+}
+
+export function getWdiTableMatrix(table: WdiTableSettings): Array<Array<number | string>> {
+  return [
+    ['D \\ T', ...table.thicknesses],
+    ...table.diameters.map((diameter, rowIndex) => [
+      diameter,
+      ...table.thicknesses.map((_, columnIndex) => table.values[rowIndex]?.[columnIndex] ?? ''),
+    ]),
+  ]
+}
+
 function parseBoundaryRow(values: unknown[]) {
   return values.map(parseNumber).filter((value): value is number => value !== null)
 }

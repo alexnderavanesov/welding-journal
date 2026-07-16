@@ -1,19 +1,31 @@
 import { ClipboardCheck, ExternalLink, FilePlus2, FilterX, GitBranch, ListFilter } from 'lucide-react'
+import type { CSSProperties } from 'react'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 
+type StickyCoverStyle = CSSProperties & {
+  '--weld-sticky-cover-left'?: string
+}
+
 export function WeldTableFilterResetHeader({
   hasColumnFilters,
+  sticky,
+  stickyLeft,
   onReset,
 }: {
   hasColumnFilters: boolean
+  sticky: boolean
+  stickyLeft: number
   onReset: () => void
 }) {
   return (
     <th
-      rowSpan={3}
-      className="border-r border-slate-200/70 bg-slate-50 px-1.5 py-2 text-center text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+      rowSpan={2}
+      className={`border-b-2 border-r border-t-2 border-b-[#d3e3ee] border-r-[#e7f0f6] border-t-[#d3e3ee] bg-[#f6fbfe] px-1.5 py-2 text-center text-xs font-semibold text-slate-600 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)] ${
+        sticky ? getStickyCoverClassName('z-40') : ''
+      }`}
+      style={sticky ? getStickyCoverStyle(stickyLeft) : undefined}
       title="Навигация по стыку"
     >
       <div className="flex h-full min-h-24 flex-col items-center justify-end gap-2">
@@ -35,19 +47,30 @@ export function WeldTableFilterResetHeader({
 
 export function WeldTableRowNavigation({
   row,
+  sticky,
+  stickyLeft,
+  stickyBackgroundClassName = 'bg-white',
   onOpenChain,
   onFilterLine,
   onOpenLinkedReport,
   openLinkedReportTitle,
 }: {
   row: WeldRow
+  sticky?: boolean
+  stickyLeft?: number
+  stickyBackgroundClassName?: string
   onOpenChain?: (row: WeldRow) => void
   onFilterLine?: (row: WeldRow) => void
   onOpenLinkedReport?: (row: WeldRow) => void
   openLinkedReportTitle: string
 }) {
   return (
-    <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">
+    <td
+      className={`border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top ${
+        sticky ? `${getStickyCoverClassName('z-[1]')} ${stickyBackgroundClassName}` : ''
+      }`}
+      style={sticky ? getStickyCoverStyle(stickyLeft ?? 0) : undefined}
+    >
       <div className="flex items-center justify-center gap-1">
         {onOpenChain ? (
           <button
@@ -94,6 +117,17 @@ export function WeldTableRowNavigation({
       </div>
     </td>
   )
+}
+
+function getStickyCoverClassName(zIndexClassName: string) {
+  return `sticky ${zIndexClassName} before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-[var(--weld-sticky-cover-left)] before:bg-inherit before:content-['']`
+}
+
+function getStickyCoverStyle(left: number): StickyCoverStyle {
+  return {
+    left,
+    '--weld-sticky-cover-left': `${Math.max(left, 0)}px`,
+  }
 }
 
 export function WeldTableRowActions({

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildPercentageLineStampFilters } from '@/lib/report-navigation'
-import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
+import {
+  buildWeldColumnValueFilter,
+  filterWeldRowsByColumns,
+} from '@/lib/weld-table-filtering'
 
 function row(partial: Partial<WeldRow>): WeldRow {
   return {
@@ -37,4 +40,19 @@ describe('filterWeldRowsByColumns', () => {
 
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1', 'S2', 'S3'])
   })
+
+  it('filters by selected column values', () => {
+    const rows = [
+      row({ joint: 'S1', line: 'LIN-1' }),
+      row({ joint: 'S2', line: 'LIN-2' }),
+      row({ joint: 'S3', line: 'LIN-3' }),
+    ]
+
+    const filteredRows = filterWeldRowsByColumns(rows, {
+      line: buildWeldColumnValueFilter(['LIN-1', 'LIN-3']),
+    })
+
+    expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1', 'S3'])
+  })
+
 })

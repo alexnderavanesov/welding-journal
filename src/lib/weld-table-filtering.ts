@@ -7,6 +7,14 @@ import {
   parseRowIdListFilter,
 } from '@/lib/report-navigation'
 
+const COLUMN_CHOICE_FILTER_PREFIX = '__column_choice_filter__:'
+
+type ColumnChoiceFilter =
+  {
+    kind: 'values'
+    values: string[]
+  }
+
 export function hasColumnFilters(columnFilters: Record<string, string>) {
   return Object.values(columnFilters).some((value) => value.trim())
 }
@@ -29,13 +37,58 @@ function matchesWeldColumnFilter(row: WeldRow, key: string, value: string) {
     return matchesRowIdListFilter(row, value)
   }
 
+  const choiceFilter = parseWeldColumnChoiceFilter(value)
+  if (choiceFilter) {
+    return matchesWeldColumnChoiceFilter(row, key, choiceFilter)
+  }
+
   const cellValue = row[key as keyof typeof row]
-  const normalized = cellValue === true ? 'да' : cellValue === false || cellValue == null ? '' : String(cellValue)
+  const normalized = getWeldColumnFilterCellText(cellValue)
   const normalizedText = normalized.trim().toLowerCase()
   if (query.startsWith('=')) {
     return normalizedText === query.slice(1).trim().replace(/^["']|["']$/g, '')
   }
   return normalizedText.includes(query)
+}
+
+export function buildWeldColumnValueFilter(values: string[]) {
+  const normalizedValues = Array.from(new Set(values.map(normalizeChoiceValue)))
+  if (normalizedValues.length === 0) return ''
+  return encodeWeldColumnChoiceFilter({ kind: 'values', values: normalizedValues })
+}
+
+export function getWeldColumnFilterCellText(value: unknown) {
+  return value === true ? 'да' : value === false || value == null ? '' : String(value)
+}
+
+export function parseWeldColumnChoiceFilter(value: string): ColumnChoiceFilter | null {
+  if (!value.startsWith(COLUMN_CHOICE_FILTER_PREFIX)) return null
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value.slice(COLUMN_CHOICE_FILTER_PREFIX.length))) as Partial<ColumnChoiceFilter>
+    if (parsed.kind === 'values' && Array.isArray(parsed.values)) {
+      return {
+        kind: 'values',
+        values: parsed.values.map(normalizeChoiceValue),
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function encodeWeldColumnChoiceFilter(filter: ColumnChoiceFilter) {
+  return `${COLUMN_CHOICE_FILTER_PREFIX}${encodeURIComponent(JSON.stringify(filter))}`
+}
+
+function matchesWeldColumnChoiceFilter(row: WeldRow, key: string, filter: ColumnChoiceFilter) {
+  const cellText = getWeldColumnFilterCellText(row[key as keyof typeof row])
+  const normalizedCellText = normalizeChoiceValue(cellText)
+  return filter.values.some((value) => normalizeChoiceValue(value) === normalizedCellText)
+}
+
+function normalizeChoiceValue(value: unknown) {
+  return String(value ?? '').trim()
 }
 
 function matchesRowIdListFilter(row: WeldRow, value: string) {

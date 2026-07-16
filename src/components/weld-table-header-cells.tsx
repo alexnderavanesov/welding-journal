@@ -15,8 +15,8 @@ export function WeldTableSelectAllHeader({
 }: WeldTableSelectAllHeaderProps) {
   return (
     <th
-      rowSpan={3}
-      className="border-r border-slate-200/70 px-2 py-2.5 text-center shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+      rowSpan={2}
+      className="border-b-2 border-r-2 border-t-2 border-b-[#d3e3ee] border-r-[#d3e3ee] border-t-[#d3e3ee] bg-[#f6fbfe] px-2 py-2.5 text-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)]"
     >
       <input
         type="checkbox"
@@ -42,8 +42,8 @@ type WeldTableRowActionsHeaderProps = {
 export function WeldTableRowActionsHeader({ label, screenReaderLabel }: WeldTableRowActionsHeaderProps) {
   return (
     <th
-      rowSpan={3}
-      className="border-r border-slate-200/70 bg-slate-50 px-2 py-2.5 text-center text-xs font-semibold text-slate-500 shadow-[inset_0_1px_0_0_rgb(241,245,249),inset_0_-1px_0_0_rgb(226,232,240)]"
+      rowSpan={2}
+      className="border-b-2 border-r-2 border-t-2 border-b-[#d3e3ee] border-r-[#d3e3ee] border-t-[#d3e3ee] bg-[#f6fbfe] px-2 py-2.5 text-center text-xs font-semibold text-slate-600 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)]"
       title={label}
     >
       <span className="sr-only">{screenReaderLabel}</span>

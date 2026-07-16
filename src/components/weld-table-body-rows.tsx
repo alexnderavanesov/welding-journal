@@ -7,7 +7,11 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
-import { getWeldTableRowClassName, getWeldTableRowTitle } from '@/lib/weld-table-row-state'
+import {
+  getWeldTableRowClassName,
+  getWeldTableRowTitle,
+  getWeldTableStickyCellBackgroundClassName,
+} from '@/lib/weld-table-row-state'
 import { getCellKey, getDuplicateKey } from '@/lib/weld-table-utils'
 import { RESULT_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
 
@@ -33,6 +37,9 @@ type WeldTableBodyRowsProps = {
   highlightedCellKeys: ReadonlySet<string>
   canEditField: (fieldKey: WeldFieldKey) => boolean
   canEditCell: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
+  stickyLeft: number
+  stickyIdentityLeadingWidth: number
+  stickyIdentityColumns: boolean
   getDisplayValue: (row: WeldRow, fieldKey: WeldFieldKey) => unknown
   onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onDelete?: (id: number) => void
@@ -60,6 +67,9 @@ export function WeldTableBodyRows({
   highlightedCellKeys,
   canEditField,
   canEditCell,
+  stickyLeft,
+  stickyIdentityLeadingWidth,
+  stickyIdentityColumns,
   getDisplayValue,
   onEdit,
   onDelete,
@@ -72,11 +82,17 @@ export function WeldTableBodyRows({
 
   return (
     <>
-      {rows.map((row) => {
+      {rows.map((row, rowIndex) => {
         const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')
         const isHighlighted = highlightedRowIds.has(row.id)
         const isSelected = selectedRowIds.has(row.id)
         const isSelectableRow = !selectable || isRowSelectable(row)
+        const stickyBackgroundClassName = getWeldTableStickyCellBackgroundClassName({
+          rowIndex,
+          isHighlighted,
+          isSelected,
+          isDuplicate,
+        })
 
         return (
           <tr
@@ -95,6 +111,9 @@ export function WeldTableBodyRows({
             {hasChainAction ? (
               <WeldTableRowNavigation
                 row={row}
+                sticky={stickyIdentityColumns}
+                stickyLeft={stickyLeft}
+                stickyBackgroundClassName={stickyBackgroundClassName}
                 onOpenChain={onOpenChain}
                 onFilterLine={onFilterLine}
                 onOpenLinkedReport={onOpenLinkedReport}
@@ -106,13 +125,14 @@ export function WeldTableBodyRows({
               ...extraColumns
                 .filter((column) => column.insertBeforeSection === section.section)
                 .map((column) => <ExtraBodyCell key={column.key} column={column} row={row} />),
-              ...section.fields.map((field) => {
+              ...section.fields.map((field, fieldIndex) => {
                 const isEditableColumn = canEditField(field.key)
                 const isEditableCell = canEditCell(row, field.key)
                 const isBlockedEditableCell = isEditableColumn && !isEditableCell
                 const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
                 const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
                 const displayValue = getDisplayValue(row, field.key)
+                const isSectionEnd = fieldIndex === section.fields.length - 1
 
                 return (
                   <WeldTableBodyCell
@@ -125,6 +145,11 @@ export function WeldTableBodyRows({
                     isHighlightedRow={isHighlighted}
                     isHighlightedCell={isCellHighlighted}
                     isResultField={isResultField}
+                    stickyLeft={stickyLeft}
+                    stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
+                    stickyIdentityColumns={stickyIdentityColumns}
+                    stickyBackgroundClassName={stickyBackgroundClassName}
+                    isSectionEnd={isSectionEnd}
                     onEdit={onEdit}
                   />
                 )

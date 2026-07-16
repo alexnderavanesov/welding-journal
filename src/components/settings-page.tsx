@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Database,
   Download,
+  ExternalLink,
   FileText,
   Hash,
   Inbox,
@@ -59,8 +60,8 @@ import {
   type SystemIndexKey,
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
-import { saveOtherSettings, useOtherSettings, type WdiCalculationMode } from '@/lib/other-settings'
-import { parseWdiTableFile } from '@/lib/wdi-table-import'
+import { saveOtherSettings, useOtherSettings, type WdiCalculationMode, type WdiTableSettings } from '@/lib/other-settings'
+import { buildWdiTableXlsxBytes, getWdiTableMatrix, parseWdiTableFile } from '@/lib/wdi-table-import'
 import {
   DEFAULT_DATA_LIST_SETTINGS,
   normalizeDataListOption,
@@ -104,8 +105,8 @@ export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: We
 
   return (
     <div className="space-y-5">
-      <section className="rounded-md border border-slate-200 bg-white">
-        <div className="border-b border-slate-100 px-5 py-4">
+      <section className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
+        <div className="bg-white px-5 py-4">
           <div className="flex flex-wrap gap-2">
             {SETTINGS_TABS.map((tab) => {
               const Icon = tab.icon
@@ -129,7 +130,7 @@ export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: We
           </div>
         </div>
 
-        <div className="p-5">
+        <div className="border-t border-slate-200 bg-slate-50 p-5">
           {activeTab === 'templates' ? (
             <DocumentTemplatesSettings runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'data' ? (
@@ -312,8 +313,8 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-200 bg-white p-4">
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-white p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -348,7 +349,7 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         {SECURITY_RULE_CARDS.map((card) => {
           const hasPassword = Boolean(settings[SECURITY_PASSWORD_KEYS[card.scope]])
           const checked = settings[SECURITY_FLAG_KEYS[card.scope]] === true
@@ -357,7 +358,7 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
             <div
               key={card.scope}
               className={`overflow-hidden rounded-md border bg-white transition-colors ${
-                checked ? 'border-sky-200 shadow-sm shadow-sky-100/70' : 'border-slate-200'
+                checked ? 'border-sky-200 shadow-md shadow-sky-100/80' : 'border-slate-300 shadow-sm shadow-slate-200/60'
               }`}
             >
               <SecurityToggle
@@ -468,7 +469,7 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <button
           type="button"
           className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
@@ -580,9 +581,45 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
     }
   }
 
+  function openWdiTablePreview() {
+    if (!settings.wdiTable) {
+      setWdiMessage('Сначала загрузите таблицу дюйм-диаметров.')
+      return
+    }
+
+    const html = buildWdiTablePreviewHtml(settings.wdiTable)
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+
+  async function downloadWdiTable() {
+    if (!settings.wdiTable) {
+      setWdiMessage('Сначала загрузите таблицу дюйм-диаметров.')
+      return
+    }
+
+    setWdiMessage(null)
+    try {
+      const bytes = await buildWdiTableXlsxBytes(settings.wdiTable)
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = getWdiTableDownloadName(settings.wdiTable.fileName)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setWdiMessage((error as Error).message)
+    }
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-5 w-5 text-slate-500" />
           <h3 className="text-base font-semibold text-slate-900">Прочее</h3>
@@ -593,10 +630,10 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
       </div>
 
       <label
-        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 transition-colors ${
+        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 shadow-sm transition-colors ${
           settings.includeArchivedWelderStampsInForm
-            ? 'border-sky-100 bg-sky-50 hover:bg-sky-50'
-            : 'border-slate-200 bg-white hover:bg-slate-50'
+            ? 'border-sky-200 bg-sky-50 shadow-sky-100/60 hover:bg-sky-50'
+            : 'border-slate-300 bg-white shadow-slate-200/60 hover:bg-slate-50'
         }`}
       >
         <input
@@ -624,7 +661,7 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
         </span>
       </label>
 
-      <section className="rounded-md border border-slate-200 bg-white p-4">
+      <section className="rounded-md border border-slate-300 bg-white p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h4 className="text-sm font-semibold text-slate-900">Расчет WDI</h4>
@@ -674,11 +711,31 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
                   : 'Таблица пока не загружена.'}
               </div>
             </div>
-            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50">
-              <Upload className="h-4 w-4" />
-              Загрузить таблицу
-              <input type="file" accept=".xlsx,.xls" onChange={handleWdiTableUpload} className="hidden" />
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={openWdiTablePreview}
+                disabled={!settings.wdiTable}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Открыть
+              </button>
+              <button
+                type="button"
+                onClick={() => void downloadWdiTable()}
+                disabled={!settings.wdiTable}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                Скачать
+              </button>
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50">
+                <Upload className="h-4 w-4" />
+                Загрузить
+                <input type="file" accept=".xlsx,.xls" onChange={handleWdiTableUpload} className="hidden" />
+              </label>
+            </div>
           </div>
           {wdiMessage ? <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">{wdiMessage}</div> : null}
         </div>
@@ -713,6 +770,75 @@ function WdiModeCard({
       <span className="mt-2 block text-sm leading-5 text-slate-500">{description}</span>
     </button>
   )
+}
+
+function buildWdiTablePreviewHtml(table: WdiTableSettings) {
+  const matrix = getWdiTableMatrix(table)
+  const [headerRow = [], ...dataRows] = matrix
+  const headerCells = headerRow
+    .map((cell) => `<th>${escapeHtml(formatWdiTableCell(cell))}</th>`)
+    .join('')
+  const rows = dataRows
+    .map((row) => `<tr>${row.map((cell, index) => `${index === 0 ? '<th>' : '<td>'}${escapeHtml(formatWdiTableCell(cell))}${index === 0 ? '</th>' : '</td>'}`).join('')}</tr>`)
+    .join('')
+  const uploadedAt = table.uploadedAt ? new Date(table.uploadedAt).toLocaleString('ru-RU') : 'не указано'
+
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(table.fileName)} · WDI</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f8fafc; color: #0f172a; }
+    main { padding: 28px; }
+    .header { margin-bottom: 18px; }
+    h1 { margin: 0; font-size: 22px; line-height: 1.25; }
+    .meta { margin-top: 8px; color: #64748b; font-size: 14px; }
+    .table-wrap { max-height: calc(100vh - 132px); overflow: auto; border: 1px solid #dbe3ef; border-radius: 10px; background: white; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); }
+    table { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+    th, td { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 9px 12px; text-align: center; white-space: nowrap; font-size: 14px; }
+    thead th { position: sticky; top: 0; z-index: 2; background: #e8eef6; font-weight: 700; }
+    tbody th { position: sticky; left: 0; z-index: 1; background: #eaf6ff; font-weight: 700; color: #0f466b; }
+    thead th:first-child { left: 0; z-index: 3; background: linear-gradient(135deg, #d7e1ef 0%, #eef4fb 100%); }
+    tbody tr:nth-child(even) td { background: #fbfdff; }
+    td:empty::after { content: "—"; color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="header">
+      <h1>Таблица дюйм-диаметров WDI</h1>
+      <div class="meta">${escapeHtml(table.fileName)} · ${table.diameters.length} диаметров × ${table.thicknesses.length} толщин · загружено: ${escapeHtml(uploadedAt)}</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>${headerCells}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>`
+}
+
+function getWdiTableDownloadName(fileName: string) {
+  const baseName = fileName.trim().replace(/\.(xlsx|xls)$/i, '') || 'Таблица WDI'
+  return `${baseName}.xlsx`
+}
+
+function formatWdiTableCell(value: number | string) {
+  return typeof value === 'number' ? String(value).replace('.', ',') : value
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function getWdiModeLabel(mode: WdiCalculationMode) {
@@ -843,8 +969,8 @@ function DataSettingsPanel({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex items-center gap-2">
           <Database className="h-5 w-5 text-slate-500" />
           <h3 className="text-base font-semibold text-slate-900">Данные</h3>
@@ -856,7 +982,7 @@ function DataSettingsPanel({
       </div>
 
       {DATA_LIST_CONFIGS.map((config) => (
-        <div key={config.key} className="rounded-md border border-slate-200 bg-white">
+        <div key={config.key} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-base font-semibold text-slate-900">{config.title}</div>
@@ -1057,8 +1183,8 @@ function SystemIndexesSettingsPanel({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -1094,7 +1220,7 @@ function SystemIndexesSettingsPanel({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
         <div className="hidden grid-cols-[minmax(190px,1fr)_96px_minmax(260px,2fr)] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase text-slate-400 md:grid">
           <div>Индекс</div>
           <div>Буква</div>
@@ -1214,8 +1340,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -1260,8 +1386,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
         ) : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-        <div className="rounded-md border border-slate-200 bg-white p-2">
+      <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+        <div className="rounded-md border border-slate-300 bg-white p-2 shadow-sm shadow-slate-200/60">
           {DOCUMENT_TEMPLATE_TYPES.map((templateType) => {
             const isActive = activeTemplateId === templateType.id
             const hasUpload = Boolean(uploads[templateType.id])
@@ -1286,7 +1412,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           })}
         </div>
 
-        <div className="rounded-md border border-slate-200 bg-white">
+        <div className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -1326,7 +1452,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
             ) : null}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             {activeTemplateId === 'weldingJournal' ? (
               <WeldingJournalTemplateOptionsPanel
                 disabled={!activeUpload}
@@ -1587,8 +1713,8 @@ function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runPro
   const resetSettings = () => runProtectedSettingsChange(() => saveRequestConclusionSettings(REQUEST_CONCLUSION_DEFAULT_SETTINGS))
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -1616,7 +1742,7 @@ function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runPro
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         {REQUEST_NAMING_CARDS.map((card) => (
           <RequestNamingSettingsCard
             key={card.id}
@@ -1664,7 +1790,7 @@ function RequestNamingSettingsCard({
   }
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4">
+    <div className="rounded-md border border-slate-300 bg-white p-4 shadow-sm shadow-slate-200/60">
       <div>
         <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
         <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p>
@@ -1771,8 +1897,8 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -1809,7 +1935,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         {DISPATCHER_SETTING_GROUPS.map((group) => (
           <DispatcherSettingsGroupCard
             key={group.id}
@@ -1849,7 +1975,7 @@ function DispatcherSettingsGroupCard({
   }
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white">
+    <div className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
         <div>
           <h4 className="text-sm font-semibold text-slate-900">{group.title}</h4>
