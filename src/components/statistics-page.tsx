@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { formatDisplayDate } from '@/lib/date-format'
+import { isUnofficialJoint } from '@/lib/joint-display'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
 import {
@@ -40,6 +41,7 @@ import {
   type WelderStatisticsJointFilter,
   type WelderStatisticsRow,
 } from '@/lib/welder-statistics-summary'
+import { buildWeldingDynamics, type WeldingDynamicsSummary } from '@/lib/welding-dynamics'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue } from '@/lib/report-value-utils'
@@ -57,7 +59,7 @@ type StatisticsPageProps = {
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
 }
 
-type StatisticsTab = 'general' | 'welders' | 'lineSummary' | 'percentageLines'
+type StatisticsTab = 'general' | 'lnk' | 'welders' | 'lineSummary' | 'percentageLines'
 
 const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['all', 'Все'],
@@ -80,7 +82,7 @@ export function StatisticsPage({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [period, setPeriod] = useState(defaultPeriod)
   const [allPeriod, setAllPeriod] = useState(false)
-  const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('joints')
+  const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('wdi')
   const [weldersUnit, setWeldersUnit] = useState<StatisticsUnit>('joints')
   const [lineSummaryUnit, setLineSummaryUnit] = useState<StatisticsUnit>('joints')
   const [generalJointFilter, setGeneralJointFilter] = useState<WelderStatisticsJointFilter>('all')
@@ -88,6 +90,7 @@ export function StatisticsPage({
   const [periodMode, setPeriodMode] = useState<StatisticsPeriodMode>('events')
   const [projectFilter, setProjectFilter] = useState('')
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
+  const isGeneralLikeTab = activeTab === 'general' || activeTab === 'lnk'
   const unit = activeTab === 'welders' ? weldersUnit : activeTab === 'lineSummary' ? lineSummaryUnit : generalUnit
   const setUnit = activeTab === 'welders' ? setWeldersUnit : activeTab === 'lineSummary' ? setLineSummaryUnit : setGeneralUnit
   const jointFilter = activeTab === 'welders' ? welderJointFilter : generalJointFilter
@@ -124,6 +127,10 @@ export function StatisticsPage({
     () => buildStatisticsSummary(generalRows, periodFrom, periodTo, unit, periodMode),
     [generalRows, periodFrom, periodTo, periodMode, unit],
   )
+  const weldingDynamics = useMemo(
+    () => buildWeldingDynamics(summary.periodRows, periodFrom, periodTo, unit),
+    [periodFrom, periodTo, summary.periodRows, unit],
+  )
   const welderSummary = useMemo(
     () => buildWelderStatisticsSummary(scopedRows, welderStamps, periodFrom, periodTo, weldersUnit, welderJointFilter),
     [periodFrom, periodTo, scopedRows, welderJointFilter, welderStamps, weldersUnit],
@@ -143,6 +150,10 @@ export function StatisticsPage({
       .map((code) => methodsByCode.get(code))
       .filter((method): method is StatisticsMethodSummary => Boolean(method))
   }, [summary.methods, summary.pstoMethod])
+  const lnkMethods = useMemo(() => orderedMethods.filter((method) => method.code !== 'ПСТО'), [orderedMethods])
+  const unofficialRows = useMemo(() => summary.periodRows.filter(isUnofficialJoint), [summary.periodRows])
+  const unofficialCount = unofficialRows.length
+  const unofficialValue = sumStatisticRows(unofficialRows, unit)
   const lnkWaitingRequests = summary.methods.reduce((total, method) => total + method.waitingRequest, 0)
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
   const scopeLabel = getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
@@ -168,6 +179,14 @@ export function StatisticsPage({
                 <Button
                   className="h-9 rounded-md"
                   size="sm"
+                  variant={activeTab === 'lnk' ? 'default' : 'outline'}
+                  onClick={() => setSelectedTab('lnk')}
+                >
+                  ЛНК и ПСТО
+                </Button>
+                <Button
+                  className="h-9 rounded-md"
+                  size="sm"
                   variant={activeTab === 'welders' ? 'default' : 'outline'}
                   onClick={() => setSelectedTab('welders')}
                 >
@@ -184,8 +203,10 @@ export function StatisticsPage({
               </div>
             ) : null}
             <p className="mt-3 text-sm text-slate-500">
-              {activeTab === 'general'
-                ? 'Общий прогресс сварки, заявок, заключений и ПСТО за выбранный период.'
+              {activeTab === 'lnk'
+                ? 'Сводка по заявкам, заключениям, результатам ЛНК и ПСТО за выбранный период.'
+                : activeTab === 'general'
+                  ? 'Общий прогресс сварки, заявок, заключений и ПСТО за выбранный период.'
                 : activeTab === 'welders'
                   ? 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'
                   : activeTab === 'lineSummary'
@@ -193,8 +214,10 @@ export function StatisticsPage({
                     : 'Контроль процентных линий по официальным клеймам и РК/УЗК.'}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              {activeTab === 'general'
-                ? periodModeDescription
+              {activeTab === 'lnk'
+                ? 'ЛНК и ПСТО разделены по группам: виды НК отдельно, ПСТО отдельно. Неофициальные стыки показаны отдельным счетчиком.'
+                : activeTab === 'general'
+                  ? periodModeDescription
                 : activeTab === 'welders'
                   ? 'Статистика сварщиков считается по дате сварки стыка; распределение идет только по фактическим клеймам.'
                   : activeTab === 'lineSummary'
@@ -296,7 +319,7 @@ export function StatisticsPage({
                   </div>
                 </div>
               ) : null}
-              {activeTab === 'general' ? (
+              {isGeneralLikeTab ? (
                 <div className="grid gap-1 text-xs font-medium text-slate-600">
                   Расчет периода
                   <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
@@ -410,14 +433,6 @@ export function StatisticsPage({
             />
             <MetricCard
               compact
-              icon={Activity}
-              label="Сварено за период"
-              value={formatStatisticValue(summary.welded, unit)}
-              detail={`${formatPercent(summary.weldedShare)} от общего количества`}
-              accent="blue"
-            />
-            <MetricCard
-              compact
               icon={Gauge}
               label="Годность"
               value={formatPercent(summary.qualityPercent)}
@@ -426,83 +441,66 @@ export function StatisticsPage({
             />
             <MetricCard
               compact
-              icon={ClipboardCheck}
-              label="ЛНК закрыто"
-              value={formatPercent(summary.lnkClosurePercent)}
-              detail={`${formatStatisticValue(summary.lnkClosed, unit)} из ${formatStatisticValue(summary.lnkRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.lnkTotalClosed, unit)}`}
+              icon={TimerReset}
+              label={`В смену, ${unit === 'wdi' ? 'WDI' : 'стыков'}`}
+              value={formatAverageStatisticValue(weldingDynamics.periodDays > 0 ? weldingDynamics.totalValue / weldingDynamics.periodDays : 0)}
+              detail={`${formatStatisticValue(weldingDynamics.totalValue, unit)} за ${weldingDynamics.periodDays} дн.`}
+              accent="amber"
+            />
+            <MetricCard
+              compact
+              icon={Users}
+              label="Количество сварщиков"
+              value={formatStatisticValue(weldingDynamics.totalWelders, 'joints')}
+              detail="Уникальные фактические клейма за период"
               accent="indigo"
             />
             <MetricCard
               compact
-              icon={TimerReset}
-              label="ПСТО закрыто"
-              value={formatPercent(summary.pstoClosurePercent)}
-              detail={`${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.pstoTotalClosed, unit)}`}
-              accent="amber"
+              icon={Activity}
+              label="Сварено за период"
+              value={formatStatisticValue(summary.welded, unit)}
+              detail={`${formatPercent(summary.weldedShare)} от общего количества`}
+              accent="blue"
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[1.05fr_1.35fr]">
-            <div className="space-y-4">
-              <Panel
-                title="Состояние стыков"
-                subtitle={`В срезе ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; сварено всего ${formatStatisticValue(summary.welded, unit)}, из них ремонтов ${formatStatisticValue(summary.completedRepairs, unit)}.`}
-              >
-                <SegmentedProgress
-                  unit={unit}
-                  items={[
-                    { label: 'Годен', value: summary.good, className: 'bg-emerald-500' },
-                    { label: 'Не годен', value: summary.rejected, className: 'bg-rose-500' },
-                    { label: 'Ожидает НК', value: summary.waitingControl, className: 'bg-amber-400' },
-                    { label: 'Ожидает заявку', value: summary.waitingRequest, className: 'bg-sky-400' },
-                    { label: 'Ожидает ремонт', value: summary.waitingRepair, className: 'bg-orange-400' },
-                  ]}
-                />
-                <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                  <StatusLine label="Годен" value={summary.good} unit={unit} />
-                  <StatusLine label="Не годен" value={summary.rejected} unit={unit} />
-                  <StatusLine label="Ожидает заявку" value={summary.waitingRequest} unit={unit} />
-                  <StatusLine label="Ожидает НК" value={summary.waitingControl} unit={unit} />
-                  <StatusLine label="Ожидает ремонт" value={summary.waitingRepair} unit={unit} />
-                  <StatusLine label="Ожидает сварку" value={summary.waitingWeld} unit={unit} />
-                </div>
-              </Panel>
+          <WeldingDynamicsPanel summary={weldingDynamics} unit={unit} />
 
-              <Panel
-                title="Заявки и результат"
-                subtitle="Показывает, сколько заявок есть в выбранном периоде и сколько из них уже закрыто результатом/заключением."
-              >
-                <ProgressRow
-                  label="ЛНК"
-                  closed={summary.lnkClosed}
-                  total={summary.lnkRequests}
-                  totalClosed={summary.lnkTotalClosed}
-                  waitingRequest={lnkWaitingRequests}
-                  unit={unit}
-                />
-                <ProgressRow
-                  label="ПСТО"
-                  closed={summary.pstoClosed}
-                  total={summary.pstoRequests}
-                  totalClosed={summary.pstoTotalClosed}
-                  waitingRequest={summary.pstoMethod.waitingRequest}
-                  unit={unit}
-                />
-              </Panel>
+          <Panel
+            title="Состояние стыков"
+            subtitle={`В срезе ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; сварено всего ${formatStatisticValue(summary.welded, unit)}, из них ремонтов ${formatStatisticValue(summary.completedRepairs, unit)}.`}
+          >
+            <SegmentedProgress
+              unit={unit}
+              items={[
+                { label: 'Годен', value: summary.good, className: 'bg-emerald-500' },
+                { label: 'Не годен', value: summary.rejected, className: 'bg-rose-500' },
+                { label: 'Ожидает НК', value: summary.waitingControl, className: 'bg-amber-400' },
+                { label: 'Ожидает заявку', value: summary.waitingRequest, className: 'bg-sky-400' },
+                { label: 'Ожидает ремонт', value: summary.waitingRepair, className: 'bg-orange-400' },
+              ]}
+            />
+            <div className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
+              <StatusLine label="Годен" value={summary.good} unit={unit} />
+              <StatusLine label="Не годен" value={summary.rejected} unit={unit} />
+              <StatusLine label="Ожидает заявку" value={summary.waitingRequest} unit={unit} />
+              <StatusLine label="Ожидает НК" value={summary.waitingControl} unit={unit} />
+              <StatusLine label="Ожидает ремонт" value={summary.waitingRepair} unit={unit} />
+              <StatusLine label="Ожидает сварку" value={summary.waitingWeld} unit={unit} />
             </div>
-
-            <Panel
-              title="Лаборатория по видам контроля"
-              subtitle="По каждому виду НК видно: сколько заявок подано за период, сколько закрыто, сколько еще ожидает результат."
-            >
-              <div className="space-y-2">
-                {orderedMethods.map((method) => (
-                  <MethodProgress key={method.code} method={method} unit={unit} />
-                ))}
-              </div>
-            </Panel>
-          </div>
+          </Panel>
         </>
+      ) : activeTab === 'lnk' ? (
+        <LnkPstoStatisticsPanel
+          lnkMethods={lnkMethods}
+          lnkWaitingRequests={lnkWaitingRequests}
+          summary={summary}
+          unofficialCount={unofficialCount}
+          unofficialValue={unofficialValue}
+          unit={unit}
+          unitLabel={unitLabel}
+        />
       ) : activeTab === 'welders' ? (
         <WeldersStatisticsPanel
           jointFilter={welderJointFilter}
@@ -565,18 +563,96 @@ function MetricCard({ compact = false, wrapDetail = false, icon: Icon, label, va
   )
 }
 
-function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-          <p className="text-sm text-slate-500">{subtitle}</p>
+          {subtitle ? <p className="text-sm text-slate-500">{subtitle}</p> : null}
         </div>
         <LineChart className="mt-0.5 h-5 w-5 shrink-0 text-slate-300" />
       </div>
       {children}
     </section>
+  )
+}
+
+function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSummary; unit: StatisticsUnit }) {
+  const unitLabel = unit === 'wdi' ? 'WDI' : 'стыков'
+  const maxValue = Math.max(1, summary.peakValue)
+  const maxWelders = Math.max(1, summary.peakWelders)
+  const chartMinWidth = Math.max(720, summary.buckets.length * 58)
+  const bucketText = getWeldingDynamicsBucketText(summary.bucketUnitLabel)
+
+  return (
+    <Panel
+      title="Динамика сварки"
+      subtitle={`Интервал: ${bucketText}. Столбики показывают ${unitLabel}, точки - количество сварщиков по фактическим клеймам.`}
+    >
+      {summary.buckets.length > 0 ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
+            <StatusLine label={`Всего за период, ${unitLabel}`} value={summary.totalValue} unit={unit} />
+            <StatusLine label="Сварщиков по факту" value={summary.totalWelders} unit="joints" />
+            <StatusLine label={`Пик за ${summary.bucketUnitLabel}, ${unitLabel}`} value={summary.peakValue} unit={unit} />
+          </div>
+
+          <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+            <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-5 rounded-sm bg-sky-500" />
+                {unitLabel}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full border border-indigo-200 bg-indigo-600" />
+                сварщики по фактическим клеймам
+              </span>
+            </div>
+            <div className="overflow-x-auto pb-3">
+              <div
+                className="grid min-h-[246px] items-end gap-2"
+                style={{ gridTemplateColumns: `repeat(${summary.buckets.length}, minmax(44px, 1fr))`, minWidth: chartMinWidth }}
+              >
+                {summary.buckets.map((bucket) => {
+                  const valuePercent = bucket.value > 0 ? Math.max(6, (bucket.value / maxValue) * 100) : 0
+                  const welderPercent = bucket.welderCount > 0 ? Math.max(8, (bucket.welderCount / maxWelders) * 100) : 0
+                  const title = `${bucket.label}: ${formatStatisticValue(bucket.value, unit)} ${unitLabel}; сварщиков ${bucket.welderCount}`
+
+                  return (
+                    <div key={bucket.key} className="flex min-w-0 flex-col items-center gap-2" title={title}>
+                      <div className="relative h-36 w-full rounded-md border border-slate-200 bg-white">
+                        <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-slate-100" />
+                        <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-slate-100" />
+                        <div
+                          className="absolute bottom-0 left-1/2 w-7 -translate-x-1/2 rounded-t-md bg-sky-500/80 shadow-sm"
+                          style={{ height: `${valuePercent}%` }}
+                        />
+                        {bucket.welderCount > 0 ? (
+                          <span
+                            className="absolute left-1/2 z-10 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white bg-indigo-600 shadow"
+                            style={{ bottom: `calc(${welderPercent}% - 6px)` }}
+                          />
+                        ) : null}
+                      </div>
+                      <div className="w-full rounded-md border border-slate-200 bg-white px-1.5 py-1.5 text-center shadow-sm">
+                        <div className="truncate text-[11px] font-semibold text-slate-800">{bucket.shortLabel}</div>
+                        <div className="mt-0.5 truncate text-[11px] font-semibold text-sky-700">{formatStatisticValue(bucket.value, unit)}</div>
+                        <div className="truncate text-[10px] font-medium text-indigo-600">{bucket.welderCount} св.</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          В выбранном периоде нет строк с датой сварки.
+        </div>
+      )}
+    </Panel>
   )
 }
 
@@ -617,6 +693,210 @@ function StatusLine({ label, value, unit }: { label: string; value: number; unit
     <div className="rounded border border-slate-100 bg-slate-50 px-3 py-2">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="font-semibold text-slate-800">{formatStatisticValue(value, unit)}</div>
+    </div>
+  )
+}
+
+function MethodQueueCard({
+  description,
+  getValue,
+  methods,
+  title,
+  tone,
+  unit,
+}: {
+  description: string
+  getValue: (method: StatisticsMethodSummary) => number
+  methods: StatisticsMethodSummary[]
+  title: string
+  tone: 'amber' | 'sky'
+  unit: StatisticsUnit
+}) {
+  const total = methods.reduce((sum, method) => sum + getValue(method), 0)
+  const activeClass =
+    tone === 'amber'
+      ? 'border-amber-200 bg-amber-50 text-amber-900'
+      : 'border-sky-200 bg-sky-50 text-sky-900'
+  const totalClass =
+    tone === 'amber'
+      ? 'border-amber-200 bg-amber-100 text-amber-900'
+      : 'border-sky-200 bg-sky-100 text-sky-900'
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-slate-800">{title}</div>
+          <div className="mt-1 text-xs leading-5 text-slate-500">{description}</div>
+        </div>
+        <span className={cn('shrink-0 rounded border px-2 py-1 text-xs font-semibold', totalClass)}>
+          {formatStatisticValue(total, unit)}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {methods.map((method) => {
+          const value = getValue(method)
+          return (
+            <div
+              key={method.code}
+              className={cn(
+                'flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs',
+                value > 0 ? activeClass : 'border-slate-100 bg-slate-50 text-slate-400',
+              )}
+            >
+              <span className="font-semibold">{method.code}</span>
+              <span className="font-medium">{formatStatisticValue(value, unit)}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function LnkPstoStatisticsPanel({
+  lnkMethods,
+  lnkWaitingRequests,
+  summary,
+  unofficialCount,
+  unofficialValue,
+  unit,
+  unitLabel,
+}: {
+  lnkMethods: StatisticsMethodSummary[]
+  lnkWaitingRequests: number
+  summary: ReturnType<typeof buildStatisticsSummary>
+  unofficialCount: number
+  unofficialValue: number
+  unit: StatisticsUnit
+  unitLabel: string
+}) {
+  const unofficialDetail =
+    unit === 'wdi'
+      ? `Неофициальные стыки: ${unofficialCount} шт. · ${formatStatisticValue(unofficialValue, unit)} WDI`
+      : `Неофициальные стыки: ${unofficialCount} шт.`
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <MetricCard
+          compact
+          icon={Gauge}
+          label="Годность"
+          value={formatPercent(summary.qualityPercent)}
+          detail={`${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`}
+          accent="green"
+        />
+        <MetricCard
+          compact
+          icon={ClipboardCheck}
+          label="ЛНК закрыто"
+          value={formatPercent(summary.lnkClosurePercent)}
+          detail={`${formatStatisticValue(summary.lnkClosed, unit)} из ${formatStatisticValue(summary.lnkRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.lnkTotalClosed, unit)}`}
+          accent="indigo"
+        />
+        <MetricCard
+          compact
+          icon={TimerReset}
+          label="ПСТО закрыто"
+          value={formatPercent(summary.pstoClosurePercent)}
+          detail={`${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.pstoTotalClosed, unit)}`}
+          accent="amber"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[0.95fr_1.45fr]">
+        <div className="space-y-4">
+          <Panel
+            title="Заявки и результаты"
+            subtitle="Сколько заявок уже закрыто заключениями и сколько позиций еще ожидает заявку."
+          >
+            <ProgressRow
+              label="ЛНК"
+              closed={summary.lnkClosed}
+              total={summary.lnkRequests}
+              totalClosed={summary.lnkTotalClosed}
+              waitingRequest={lnkWaitingRequests}
+              unit={unit}
+            />
+            <ProgressRow
+              label="ПСТО"
+              closed={summary.pstoClosed}
+              total={summary.pstoRequests}
+              totalClosed={summary.pstoTotalClosed}
+              waitingRequest={summary.pstoMethod.waitingRequest}
+              unit={unit}
+            />
+          </Panel>
+
+          <Panel
+            title="Состояние стыков"
+            subtitle={`В срезе ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; ${unofficialDetail}.`}
+          >
+            <SegmentedProgress
+              unit={unit}
+              items={[
+                { label: 'Годен', value: summary.good, className: 'bg-emerald-500' },
+                { label: 'Не годен', value: summary.rejected, className: 'bg-rose-500' },
+                { label: 'Ожидает НК', value: summary.waitingControl, className: 'bg-amber-400' },
+                { label: 'Ожидает заявку', value: summary.waitingRequest, className: 'bg-sky-400' },
+                { label: 'Ожидает ремонт', value: summary.waitingRepair, className: 'bg-orange-400' },
+              ]}
+            />
+            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+              <StatusLine label="Годен" value={summary.good} unit={unit} />
+              <StatusLine label="Не годен" value={summary.rejected} unit={unit} />
+              <StatusLine label="Ожидает заявку" value={summary.waitingRequest} unit={unit} />
+              <StatusLine label="Ожидает НК" value={summary.waitingControl} unit={unit} />
+              <StatusLine label="Ожидает ремонт" value={summary.waitingRepair} unit={unit} />
+              <StatusLine label="Неофициальные" value={unofficialCount} unit="joints" />
+            </div>
+          </Panel>
+
+          <Panel
+            title="ПСТО"
+          >
+            <MethodProgress method={summary.pstoMethod} unit={unit} />
+          </Panel>
+        </div>
+
+        <div className="space-y-4">
+          <Panel
+            title="Очереди ЛНК по видам НК"
+            subtitle="Быстрый список, где нужно создать заявку и где заявка уже есть, но заключение еще не внесено."
+          >
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              <MethodQueueCard
+                title="Без заявки, но контроль нужен"
+                description="В журнале по виду НК стоит “да” или “дополнительный”, а заявки еще нет."
+                getValue={(method) => method.waitingRequest}
+                methods={lnkMethods}
+                tone="amber"
+                unit={unit}
+              />
+              <MethodQueueCard
+                title="Есть заявка, нет заключения"
+                description="Заявка уже создана, но результат/заключение по виду НК еще не внесены."
+                getValue={(method) => method.waitingControl}
+                methods={lnkMethods}
+                tone="sky"
+                unit={unit}
+              />
+            </div>
+          </Panel>
+
+          <Panel
+            title="ЛНК по видам контроля"
+            subtitle="По каждому виду НК видно: сколько заявок подано за период, сколько закрыто, сколько еще ожидает результат."
+          >
+            <div className="space-y-2">
+              {lnkMethods.map((method) => (
+                <MethodProgress key={method.code} method={method} unit={unit} />
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </div>
     </div>
   )
 }
@@ -2333,6 +2613,26 @@ function getUniqueSortedValues(values: unknown[]): Array<{ value: string; label:
 
 function normalizeFilterValue(value: unknown) {
   return String(value ?? '').trim().toLowerCase()
+}
+
+function sumStatisticRows(rows: readonly WeldRow[], unit: StatisticsUnit) {
+  if (unit === 'joints') return rows.length
+  return rows.reduce((total, row) => {
+    const value = Number(String(row.wdi ?? '').replace(',', '.'))
+    return total + (Number.isFinite(value) && value > 0 ? value : 0)
+  }, 0)
+}
+
+function getWeldingDynamicsBucketText(bucketUnitLabel: string) {
+  if (bucketUnitLabel === 'день') return 'по дням'
+  if (bucketUnitLabel === 'неделя') return 'по неделям'
+  if (bucketUnitLabel === 'месяц') return 'по месяцам'
+  if (bucketUnitLabel === 'квартал') return 'по кварталам'
+  return 'по годам'
+}
+
+function formatAverageStatisticValue(value: number) {
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0)
 }
 
 function getScopeLabel(
