@@ -98,8 +98,8 @@ export function getOfficialStampCompatibilityIssues(
         fieldKey,
         stamp,
         method: '',
-        reason: 'missing-registry',
-        message: `Клеймо ${stamp} не найдено в активном реестре клейм.`,
+        reason: isArchivedStamp ? 'archived' : 'missing-registry',
+        message: isArchivedStamp ? `Клеймо ${stamp} находится в архиве.` : `Клеймо ${stamp} не найдено в активном реестре клейм.`,
       })
       continue
     }

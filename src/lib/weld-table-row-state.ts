@@ -4,12 +4,14 @@ export function getWeldTableRowClassName({
   isSelected,
   isDuplicate,
   hasDispatcherTask,
+  isContextMenuAnchor,
 }: {
   readOnly: boolean
   isHighlighted: boolean
   isSelected: boolean
   isDuplicate: boolean
   hasDispatcherTask: boolean
+  isContextMenuAnchor?: boolean
 }) {
   const baseClass = `group ${readOnly ? '' : 'cursor-pointer'} transition-colors duration-[25ms] ease-out motion-reduce:transition-none`
   if (isHighlighted) {
@@ -21,6 +23,9 @@ export function getWeldTableRowClassName({
   if (isDuplicate || hasDispatcherTask) {
     return `${baseClass} bg-amber-100/90 shadow-[inset_4px_0_0_rgb(245,158,11)] hover:bg-amber-100`
   }
+  if (isContextMenuAnchor) {
+    return `${baseClass} bg-[#cfeeff]`
+  }
   return `${baseClass} odd:bg-white even:bg-[#f8fafc] hover:bg-[#cfeeff]`
 }
 
@@ -30,16 +35,19 @@ export function getWeldTableStickyCellBackgroundClassName({
   isSelected,
   isDuplicate,
   hasDispatcherTask,
+  isContextMenuAnchor,
 }: {
   rowIndex: number
   isHighlighted: boolean
   isSelected: boolean
   isDuplicate: boolean
   hasDispatcherTask: boolean
+  isContextMenuAnchor?: boolean
 }) {
   if (isHighlighted) return 'bg-emerald-100 group-hover:bg-emerald-100'
   if (isSelected) return 'bg-[#dff3ff] group-hover:bg-[#dff3ff]'
   if (isDuplicate || hasDispatcherTask) return 'bg-amber-100 group-hover:bg-amber-100'
+  if (isContextMenuAnchor) return 'bg-[#cfeeff] group-hover:bg-[#cfeeff]'
   return rowIndex % 2 === 0 ? 'bg-white group-hover:bg-[#cfeeff]' : 'bg-[#f8fafc] group-hover:bg-[#cfeeff]'
 }
 

@@ -51,6 +51,39 @@ export type SaveCheckSettingGroup = {
   items: SaveCheckSettingItem[]
 }
 
+export const SAVE_CHECK_SETTING_CODES: Record<SaveCheckSettingId, string> = {
+  officialRegistry: 'ЗВ-01',
+  officialArchive: 'ЗВ-02',
+  officialNaksDate: 'ЗВ-03',
+  officialSuspension: 'ЗВ-04',
+  officialWeldingMethod: 'ЗВ-05',
+  officialMaterialGroup: 'ЗВ-06',
+  officialDiameter: 'ЗВ-07',
+  officialThickness: 'ЗВ-08',
+  officialDls: 'ЗВ-09',
+  requiredRootStampWithWeldDate: 'ЗВ-10',
+  dateFormat: 'ЗВ-11',
+  weldDateNotFuture: 'ЗВ-12',
+  lnkResultControlDateRequired: 'ЗВ-13',
+  lnkResultControlDateFormat: 'ЗВ-14',
+  lnkResultDateAfterWeldDate: 'ЗВ-15',
+  lnkResultRequestDateOrder: 'ЗВ-16',
+  lnkResultVikDateBeforeOther: 'ЗВ-17',
+  lnkResultVikRequiredBeforeOther: 'ЗВ-18',
+  lnkResultConclusionRequired: 'ЗВ-19',
+  lnkResultRepairRules: 'ЗВ-20',
+  pstoResultDateRequired: 'ЗВ-21',
+  pstoResultDateFormat: 'ЗВ-22',
+  pstoResultDateAfterWeldDate: 'ЗВ-23',
+  pstoResultRequestDateOrder: 'ЗВ-24',
+  pstoResultDiagramRequired: 'ЗВ-25',
+  manualJointName: 'ЗВ-26',
+  controlHistoryProtection: 'ЗВ-27',
+  systemJointRenameProtection: 'ЗВ-28',
+}
+
+const SAVE_CHECK_REASON_CODE_PATTERN = /^ЗВ-\d+\s·\s/
+
 const OFFICIAL_STAMP_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   {
     id: 'officialRegistry',
@@ -61,8 +94,8 @@ const OFFICIAL_STAMP_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   {
     id: 'officialArchive',
     label: 'Архив клейм',
-    description: 'Запрещает сохранить стык, если в официальном поле выбрано архивное клеймо. Это не про показ в списке, а именно про кнопку “Сохранить”.',
-    example: 'Если ABC1 архивное и стоит в Корень_1, сохранение стыка будет заблокировано. Показ архивных клейм в выпадающем списке настраивается рядом: “Учитывать архив клейм в форме стыка”.',
+    description: 'Запрещает сохранить новый или отредактированный стык, если в официальном поле выбрано архивное клеймо.',
+    example: 'Архивное клеймо можно видеть в выпадающем списке, если включена настройка “Учитывать архив клейм в форме стыка”, но эта проверка не даст случайно использовать его как действующее.',
   },
   {
     id: 'officialNaksDate',
@@ -349,4 +382,14 @@ export function normalizeSaveCheckSettings(value: unknown): SaveCheckSettings {
       return [key, typeof source[key] === 'boolean' ? source[key] : fallback]
     }),
   ) as SaveCheckSettings
+}
+
+export function getSaveCheckSettingCode(id: SaveCheckSettingId) {
+  return SAVE_CHECK_SETTING_CODES[id]
+}
+
+export function formatSaveCheckBlockReason(id: SaveCheckSettingId, message: string) {
+  if (!message) return message
+  if (SAVE_CHECK_REASON_CODE_PATTERN.test(message)) return message
+  return `${getSaveCheckSettingCode(id)} · ${message}`
 }

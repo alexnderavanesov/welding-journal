@@ -23,6 +23,7 @@ export type ContextActionMenuItem =
 export type ContextActionMenuState = {
   x: number
   y: number
+  anchorRowId?: number
   items: ContextActionMenuItem[]
 } | null
 

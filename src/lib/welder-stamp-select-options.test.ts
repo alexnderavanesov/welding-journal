@@ -151,7 +151,8 @@ describe('welder stamp select options', () => {
       d2: '11',
     } as WeldInput
 
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('активном реестре')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('ЗВ-02')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('находится в архиве')
     expect(
       getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp], {
         saveCheckSettings: {

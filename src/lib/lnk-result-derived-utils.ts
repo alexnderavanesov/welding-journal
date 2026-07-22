@@ -2,14 +2,14 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
-import { findFirstLnkChronologyIssue } from '@/lib/lnk-chronology-checks'
+import { findFirstLnkChronologySaveBlockReason } from '@/lib/lnk-chronology-checks'
 import {
   areLnkResultDraftRowsReady,
   findFirstLnkResultDateBeforeWeldDateIssue,
   getEffectiveLnkResultDraftValueForRow,
   hasNonEmptyLnkResultDraftRows,
 } from '@/lib/lnk-result-draft'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
 import {
   canSelectLnkResultRow,
@@ -140,31 +140,31 @@ export function getLnkResultSaveBlockReason({
   const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
   if (!areLnkResultDraftRowsReady(selectedRows, draft, saveCheckSettings)) return 'Укажите результат для каждого выбранного стыка.'
   if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyRows && !draft.controlDate) {
-    return 'Укажите дату контроля.'
+    return formatSaveCheckBlockReason('lnkResultControlDateRequired', 'Укажите дату контроля.')
   }
   if (saveCheckSettings.lnkResultControlDateFormat && hasNonEmptyRows) {
     const dateReason = getDateInputValidationReason(draft.controlDate, 'Дата контроля')
-    if (dateReason) return dateReason
+    if (dateReason) return formatSaveCheckBlockReason('lnkResultControlDateFormat', dateReason)
   }
 
   const dateIssue = saveCheckSettings.lnkResultDateAfterWeldDate && hasNonEmptyRows
     ? findFirstLnkResultDateBeforeWeldDateIssue(selectedRows, draft, saveCheckSettings)
     : null
-  if (dateIssue) return dateIssue
+  if (dateIssue) return formatSaveCheckBlockReason('lnkResultDateAfterWeldDate', dateIssue)
 
   if (
     saveCheckSettings.lnkResultConclusionRequired &&
     hasNonEmptyRows &&
     !getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName, draft.controlDate)
   ) {
-    return 'Укажите наименование заключения.'
+    return formatSaveCheckBlockReason('lnkResultConclusionRequired', 'Укажите наименование заключения.')
   }
 
   const vikBeforeOtherIssue = findFirstLnkResultVikBeforeOtherDraftIssue(selectedRows, draft, saveCheckSettings)
   if (vikBeforeOtherIssue) return vikBeforeOtherIssue
 
   const chronologyIssue = hasNonEmptyRows
-    ? findFirstLnkChronologyIssue(
+    ? findFirstLnkChronologySaveBlockReason(
         buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName),
         saveCheckSettings,
       )
@@ -188,7 +188,7 @@ function findFirstLnkResultVikBeforeOtherDraftIssue(
   })
   if (!row) return ''
   const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
-  return `Стык ${joint}: нельзя сохранять результат ${method.code}, пока нет результата ВИК.`
+  return formatSaveCheckBlockReason('lnkResultVikRequiredBeforeOther', `Стык ${joint}: нельзя сохранять результат ${method.code}, пока нет результата ВИК.`)
 }
 
 function buildProposedLnkResultRowsForChecks(

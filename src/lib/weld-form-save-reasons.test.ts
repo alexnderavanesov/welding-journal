@@ -30,7 +30,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'годен' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ВИК: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.',
+      'ЗВ-27 · ВИК: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.',
     )
   })
 
@@ -100,7 +100,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoDate: '10.06.2026', pstoResult: 'проведено' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.',
+      'ЗВ-27 · ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.',
     )
   })
 
@@ -148,7 +148,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'Стык S1: дата заявки РК 08.07.2026 раньше даты сварки 10.07.2026.',
+      'ЗВ-16 · Стык S1: дата заявки РК 08.07.2026 раньше даты сварки 10.07.2026.',
     )
   })
 
@@ -182,7 +182,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'Стык S1: дата заявки ПСТО 08.07.2026 раньше даты сварки 10.07.2026.',
+      'ЗВ-24 · Стык S1: дата заявки ПСТО 08.07.2026 раньше даты сварки 10.07.2026.',
     )
   })
 
@@ -208,7 +208,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'результат РК - «ремонт» нельзя сохранить при минимальном диаметре 55 мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.',
+      'ЗВ-20 · результат РК - «ремонт» нельзя сохранить при минимальном диаметре 55 мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.',
     )
   })
 
@@ -274,7 +274,7 @@ describe('getWeldFormSaveBlockReason', () => {
     }
 
     expect(getWeldFormSaveBlockReason(malformedDraft, initialValue, settings)).toBeNull()
-    expect(getWeldFormSaveBlockReason(futureDraft, initialValue, settings)).toBe('дата сварки не может быть позже сегодняшней.')
+    expect(getWeldFormSaveBlockReason(futureDraft, initialValue, settings)).toBe('ЗВ-12 · дата сварки не может быть позже сегодняшней.')
   })
 
   it('allows disabling all soft date checks', () => {

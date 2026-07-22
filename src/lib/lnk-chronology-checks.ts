@@ -2,7 +2,12 @@ import type { WeldInput } from '@/lib/weld-fields'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import { LNK_METHODS } from '@/lib/report-config'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  DEFAULT_SAVE_CHECK_SETTINGS,
+  formatSaveCheckBlockReason,
+  type SaveCheckSettingId,
+  type SaveCheckSettings,
+} from '@/lib/save-check-settings'
 
 type LnkChronologyRow = WeldInput & { id?: number }
 
@@ -54,9 +59,20 @@ export function findFirstLnkChronologyIssue(rows: WeldInput[], settings: SaveChe
   return getLnkChronologyIssues(rows, settings)[0]?.message ?? ''
 }
 
+export function findFirstLnkChronologySaveBlockReason(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
+  const issue = getLnkChronologyIssues(rows, settings)[0]
+  return issue ? formatSaveCheckBlockReason(getLnkChronologyIssueSaveCheckSettingId(issue), issue.message) : ''
+}
+
 export function assertNoLnkChronologyIssues(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
   const issue = findFirstLnkChronologyIssue(rows, settings)
   if (issue) throw new Error(issue)
+}
+
+function getLnkChronologyIssueSaveCheckSettingId(issue: LnkChronologyIssue): SaveCheckSettingId {
+  if (issue.reason === LNK_VIK_DATE_ORDER_REASON) return 'lnkResultVikDateBeforeOther'
+  if (issue.reason === LNK_VIK_REQUIRED_REASON) return 'lnkResultVikRequiredBeforeOther'
+  return 'lnkResultRequestDateOrder'
 }
 
 export function getDispatcherLnkChronologyIssues(rows: LnkChronologyRow[]) {

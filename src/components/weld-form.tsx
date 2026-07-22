@@ -12,7 +12,7 @@ import {
 import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-import-export'
 import type { WeldDraft } from '@/lib/dispatcher-types'
 import { useOtherSettings } from '@/lib/other-settings'
-import { useSaveCheckSettings } from '@/lib/save-check-settings'
+import { formatSaveCheckBlockReason, useSaveCheckSettings } from '@/lib/save-check-settings'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import {
   formHiddenFieldKeys,
@@ -60,9 +60,9 @@ export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOp
   const resolvedStampSelectOptions = typeof stampSelectOptions === 'function' ? stampSelectOptions(draft) : stampSelectOptions
   const preparedDraft = draft
   const saveBlockReason =
-    getWeldStampSaveBlockReason(preparedDraft, resolvedStampSelectOptions) ??
     getExternalSaveBlockReason?.(preparedDraft) ??
-    (saveCheckSettings.requiredRootStampWithWeldDate ? getRequiredRootStampMessage(preparedDraft) : null) ??
+    getWeldStampSaveBlockReason(preparedDraft, resolvedStampSelectOptions) ??
+    (saveCheckSettings.requiredRootStampWithWeldDate ? formatRequiredRootStampMessage(getRequiredRootStampMessage(preparedDraft)) : null) ??
     getWeldFormSaveBlockReason(draft, value, saveCheckSettings)
   const autoClearHint = saveBlockReason ? null : getWeldFormAutoClearHint(draft, value)
   const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(draft, value)
@@ -185,6 +185,10 @@ export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOp
       />
     </LargeDialogShell>
   )
+}
+
+function formatRequiredRootStampMessage(message: string | null) {
+  return message ? formatSaveCheckBlockReason('requiredRootStampWithWeldDate', message) : null
 }
 
 function getWeldFormTabForField(fieldKey?: WeldFieldKey): WeldFormTab {

@@ -3,11 +3,16 @@ import { getDateInputValidationReason, getTodayIsoDate, parseDateLikeToIso } fro
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
 import { formatJointDiameterLabel } from '@/lib/joint-display'
 import { isLnkRepairForbiddenByDiameter } from '@/lib/lnk-result-rules'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  DEFAULT_SAVE_CHECK_SETTINGS,
+  formatSaveCheckBlockReason,
+  type SaveCheckSettingId,
+  type SaveCheckSettings,
+} from '@/lib/save-check-settings'
 import { getSystemIndexSummaryText } from '@/lib/system-index-settings'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
-import { findFirstLnkChronologyIssue } from '@/lib/lnk-chronology-checks'
-import { findFirstPstoChronologyIssue } from '@/lib/psto-chronology-checks'
+import { findFirstLnkChronologySaveBlockReason } from '@/lib/lnk-chronology-checks'
+import { findFirstPstoChronologySaveBlockReason } from '@/lib/psto-chronology-checks'
 import {
   getCancelledLnkResultDisplay,
   getCancelledPstoResultDisplay,
@@ -28,18 +33,18 @@ export function getWeldFormSaveBlockReason(
   if (dateReason) return dateReason
 
   const reportHistoryReason = saveCheckSettings.controlHistoryProtection ? getControlAvailabilityReportHistoryReason(draft) : null
-  if (reportHistoryReason) return reportHistoryReason
+  if (reportHistoryReason) return formatSaveCheckBlockReason('controlHistoryProtection', reportHistoryReason)
 
   if (shouldCheckDocumentChronologyForForm(draft, initialValue)) {
     const documentChronologyReason =
-      findFirstLnkChronologyIssue([draft], saveCheckSettings) ||
-      findFirstPstoChronologyIssue([draft], saveCheckSettings)
+      findFirstLnkChronologySaveBlockReason([draft], saveCheckSettings) ||
+      findFirstPstoChronologySaveBlockReason([draft], saveCheckSettings)
     if (documentChronologyReason) return documentChronologyReason
   }
 
   if (shouldCheckLnkRepairDiameterForForm(draft, initialValue, saveCheckSettings)) {
     const repairDiameterReason = getWeldFormRepairDiameterSaveBlockReason(draft)
-    if (repairDiameterReason) return repairDiameterReason
+    if (repairDiameterReason) return formatSaveCheckBlockReason('lnkResultRepairRules', repairDiameterReason)
   }
 
   const currentJoint = normalizeJointName(draft.joint)
@@ -47,10 +52,11 @@ export function getWeldFormSaveBlockReason(
   if (initialValue.id && currentJoint === initialJoint) return null
 
   if (saveCheckSettings.systemJointRenameProtection && initialValue.id && hasReservedJointSystemPart(initialValue.joint)) {
-    return `стык с системными индексами ${getSystemIndexSummaryText()} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`
+    return formatSaveCheckBlockReason('systemJointRenameProtection', `стык с системными индексами ${getSystemIndexSummaryText()} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`)
   }
 
-  return saveCheckSettings.manualJointName ? validateManualJointName(draft.joint) : null
+  const manualJointNameReason = saveCheckSettings.manualJointName ? validateManualJointName(draft.joint) : null
+  return manualJointNameReason ? formatSaveCheckBlockReason('manualJointName', manualJointNameReason) : null
 }
 
 function shouldCheckDocumentChronologyForForm(draft: WeldInput, initialValue: WeldDraft) {
@@ -253,11 +259,11 @@ export function getWeldStampSaveBlockReason(
 
     const selectedOption = options.find((option) => option.value.trim() === value)
     if (!selectedOption) {
-      return `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} должно быть выбрано из активного реестра клейм.`
+      return formatSaveCheckBlockReason('officialRegistry', `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} должно быть выбрано из активного реестра клейм.`)
     }
     if (selectedOption.disabled) {
       const reason = selectedOption.reason ? `: ${selectedOption.reason}` : ''
-      return `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} не подходит по реестру клейм${reason}.`
+      return formatSaveCheckBlockReason(getStampSelectOptionSaveCheckSettingId(reason), `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} не подходит по реестру клейм${reason}.`)
     }
   }
 
@@ -273,15 +279,31 @@ function getWeldFormDateSaveBlockReason(draft: WeldInput, saveCheckSettings: Sav
       const reason = getDateInputValidationReason(draft[fieldKey], field?.label ?? 'Дата', {
         disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
       })
-      if (reason) return lowerFirst(reason)
+      if (reason) return formatSaveCheckBlockReason(getDateReasonSaveCheckSettingId(fieldKey, reason), lowerFirst(reason))
       continue
     }
 
     if (fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture && isFutureDateLike(draft[fieldKey])) {
-      return 'дата сварки не может быть позже сегодняшней.'
+      return formatSaveCheckBlockReason('weldDateNotFuture', 'дата сварки не может быть позже сегодняшней.')
     }
   }
   return ''
+}
+
+function getDateReasonSaveCheckSettingId(fieldKey: WeldFieldKey, reason: string): SaveCheckSettingId {
+  if (fieldKey === 'weldDate' && reason.toLowerCase().includes('позже сегодняшней')) return 'weldDateNotFuture'
+  return 'dateFormat'
+}
+
+function getStampSelectOptionSaveCheckSettingId(reason: string): SaveCheckSettingId {
+  if (reason.includes('отстран')) return 'officialSuspension'
+  if (reason.includes('способ')) return 'officialWeldingMethod'
+  if (reason.includes('групп')) return 'officialMaterialGroup'
+  if (reason.includes('дат')) return 'officialNaksDate'
+  if (reason.includes('диаметр')) return 'officialDiameter'
+  if (reason.includes('толщин')) return 'officialThickness'
+  if (reason.includes('ДЛС')) return 'officialDls'
+  return 'officialRegistry'
 }
 
 function isFutureDateLike(value: unknown) {

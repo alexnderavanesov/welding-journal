@@ -17,7 +17,7 @@ import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
 import { isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
-import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type LnkRequestDialogProps = {
@@ -91,7 +91,8 @@ export function LnkRequestDialog({
       requestName,
       requestDate,
     })
-    return getLnkChronologyIssues(proposedRows, saveCheckSettings)[0]?.message ?? ''
+    const issue = getLnkChronologyIssues(proposedRows, saveCheckSettings)[0]
+    return issue ? formatSaveCheckBlockReason('lnkResultRequestDateOrder', issue.message) : ''
   }, [requestDate, requestDateReason, requestName, saveCheckSettings, selectedMethodKeys, selectedRows])
   const createDisabledReason = getLnkRequestCreateDisabledReason({
     selectedRowsCount,

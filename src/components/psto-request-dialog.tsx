@@ -16,7 +16,7 @@ import { getPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { buildPstoRequestDraftRows } from '@/lib/psto-report-mutation-updates'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
-import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 
 export type PstoRequestDialogProps = {
   nextRequestName: string
@@ -74,7 +74,8 @@ export function PstoRequestDialog({
   const chronologyReason = useMemo(() => {
     if (selectedRows.length === 0 || !requestName || requestDateReason) return ''
     const proposedRows = buildPstoRequestDraftRows({ records: selectedRows, requestName, requestDate })
-    return getPstoChronologyIssues(proposedRows, saveCheckSettings)[0]?.message ?? ''
+    const issue = getPstoChronologyIssues(proposedRows, saveCheckSettings)[0]
+    return issue ? formatSaveCheckBlockReason('pstoResultRequestDateOrder', issue.message) : ''
   }, [requestDate, requestDateReason, requestName, saveCheckSettings, selectedRows])
   const createDisabledReason = getPstoRequestCreateDisabledReason({
     selectedRowsCount: selectedRows.length,

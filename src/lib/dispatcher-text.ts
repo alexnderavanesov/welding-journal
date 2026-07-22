@@ -1,5 +1,6 @@
 import { formatDisplayDate } from '@/lib/date-format'
 import { formatDaysLeft } from '@/lib/dispatcher-format'
+import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
 import {
   LNK_REQUEST_DATE_ORDER_REASON,
@@ -153,6 +154,10 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
 }
 
 export function getRepeatedJointTaskDetailsHeading(task: DispatcherTask) {
+  return `${getRepeatedJointTaskDetailsHeadingText(task)} (${getDispatcherTaskCode(task)})`
+}
+
+function getRepeatedJointTaskDetailsHeadingText(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') {
     const permitName = task.permitKind === 'dls' ? 'ДЛС' : 'НАКС'
     return `${formatWelderStampTaskLabel(task)} · срок ${permitName} до ${formatWelderStampDate(task.validTo)}`

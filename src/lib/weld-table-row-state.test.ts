@@ -45,4 +45,27 @@ describe('weld table row state', () => {
       'Возможный дубль: совпадают ключевые поля стыка',
     )
   })
+
+  it('keeps hover-like row highlight while context menu is open', () => {
+    const className = getWeldTableRowClassName({
+      readOnly: false,
+      isHighlighted: false,
+      isSelected: false,
+      isDuplicate: false,
+      hasDispatcherTask: false,
+      isContextMenuAnchor: true,
+    })
+
+    expect(className).toContain('bg-[#cfeeff]')
+    expect(
+      getWeldTableStickyCellBackgroundClassName({
+        rowIndex: 0,
+        isHighlighted: false,
+        isSelected: false,
+        isDuplicate: false,
+        hasDispatcherTask: false,
+        isContextMenuAnchor: true,
+      }),
+    ).toContain('bg-[#cfeeff]')
+  })
 })

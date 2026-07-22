@@ -8,6 +8,7 @@ export type OfficialStampCompatibilityIssue = {
   method: string
   reason:
     | 'missing-registry'
+    | 'archived'
     | 'missing-weld-type'
     | 'weld-type'
     | 'team-weld-type'

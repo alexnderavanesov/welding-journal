@@ -131,7 +131,7 @@ export function WeldTable({
       })
       if (!items?.length) return
       event.preventDefault()
-      setContextMenu({ x: event.clientX, y: event.clientY, items })
+      setContextMenu({ x: event.clientX, y: event.clientY, anchorRowId: row.id, items })
     },
     [getContextMenuItems, selectedRowIds, selectedRows],
   )
@@ -203,6 +203,7 @@ export function WeldTable({
               highlightedRowIds={highlightedRowIds}
               highlightedCellKeys={highlightedCellKeys}
               dispatcherTaskRowIds={dispatcherTaskRowIds}
+              contextMenuAnchorRowId={contextMenu?.anchorRowId}
               canEditField={canEditField}
               canEditCell={canEditCell}
               stickyLeft={stickyIdentityColumns ? stickyLeft : 0}

@@ -33,6 +33,7 @@ type WeldTableBodyRowsProps = {
   highlightedRowIds: ReadonlySet<number>
   highlightedCellKeys: ReadonlySet<string>
   dispatcherTaskRowIds: ReadonlySet<number>
+  contextMenuAnchorRowId?: number
   canEditField: (fieldKey: WeldFieldKey) => boolean
   canEditCell: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
   stickyLeft: number
@@ -61,6 +62,7 @@ export function WeldTableBodyRows({
   highlightedRowIds,
   highlightedCellKeys,
   dispatcherTaskRowIds,
+  contextMenuAnchorRowId,
   canEditField,
   canEditCell,
   stickyLeft,
@@ -85,6 +87,7 @@ export function WeldTableBodyRows({
         const isHighlighted = highlightedRowIds.has(row.id)
         const isSelected = selectedRowIds.has(row.id)
         const hasDispatcherTask = dispatcherTaskRowIds.has(row.id)
+        const isContextMenuAnchor = contextMenuAnchorRowId === row.id
         const isSelectableRow = !selectable || isRowSelectable(row)
         const stickyBackgroundClassName = getWeldTableStickyCellBackgroundClassName({
           rowIndex,
@@ -92,12 +95,13 @@ export function WeldTableBodyRows({
           isSelected,
           isDuplicate,
           hasDispatcherTask,
+          isContextMenuAnchor,
         })
 
         return (
           <tr
             key={row.id}
-            className={getWeldTableRowClassName({ readOnly, isHighlighted, isSelected, isDuplicate, hasDispatcherTask })}
+            className={getWeldTableRowClassName({ readOnly, isHighlighted, isSelected, isDuplicate, hasDispatcherTask, isContextMenuAnchor })}
             title={getWeldTableRowTitle({ isHighlighted, isDuplicate, hasDispatcherTask })}
             onContextMenu={onContextMenu ? (event) => onContextMenu(event, row) : undefined}
           >

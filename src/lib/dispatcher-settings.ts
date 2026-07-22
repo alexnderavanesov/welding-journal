@@ -70,6 +70,70 @@ export type DispatcherSettingActionHelp = {
   description: string
 }
 
+export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
+  'percentage-new-welder': 'ДЗ-01',
+  'percentage-excess': 'ДЗ-02',
+  'percentage-rejected-primary': 'ДЗ-03',
+  'percentage-missing': 'ДЗ-04',
+  'percentage-full-control': 'ДЗ-05',
+  'percentage-suspend-welder': 'ДЗ-06',
+  'repeated-create': 'ДЗ-07',
+  'repeated-create-official-from-unofficial': 'ДЗ-08',
+  'repeated-coil': 'ДЗ-09',
+  'repeated-delete': 'ДЗ-10',
+  'repeated-rename': 'ДЗ-11',
+  'repeated-obsolete-check': 'ДЗ-12',
+  'chain-consistency': 'ДЗ-13',
+  'chain-duplicate': 'ДЗ-14',
+  'chain-date-order': 'ДЗ-15',
+  'check-control-before-weld': 'ДЗ-16',
+  'check-repair-diameter': 'ДЗ-17',
+  'check-welder-stamp': 'ДЗ-18',
+  'check-incomplete-stamps': 'ДЗ-19',
+  'check-lnk-request-date-order': 'ДЗ-20',
+  'check-lnk-vik-date-order': 'ДЗ-21',
+  'check-lnk-vik-required': 'ДЗ-22',
+  'check-psto-request-date-order': 'ДЗ-23',
+  'line-percent': 'ДЗ-24',
+  'line-group': 'ДЗ-25',
+  'line-category': 'ДЗ-26',
+  'line-control-presence': 'ДЗ-27',
+  'welder-stamp-expiry': 'ДЗ-28',
+  'welder-dls-expiry': 'ДЗ-29',
+}
+
+export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, string> = {
+  'percentage-new-welder': 'Новый сварщик на процентной линии',
+  'percentage-excess': 'Лишний контроль',
+  'percentage-rejected-primary': 'Проверить официальность',
+  'percentage-missing': 'Назначить РК/УЗК',
+  'percentage-full-control': 'Назначить 100% РК/УЗК',
+  'percentage-suspend-welder': 'Отстранить сварщика',
+  'repeated-create': 'Создать повторный стык',
+  'repeated-create-official-from-unofficial': 'Создать официальный стык после неофициального',
+  'repeated-coil': 'Создать катушку',
+  'repeated-delete': 'Удалить лишний повторный стык',
+  'repeated-rename': 'Переименовать повторный стык',
+  'repeated-obsolete-check': 'Проверить цепочку вместо удаления',
+  'chain-consistency': 'Проверить целостность цепочки',
+  'chain-duplicate': 'Возможный дубль',
+  'chain-date-order': 'Проверить даты сварки',
+  'check-control-before-weld': 'Проверить дату сварки и контроля',
+  'check-repair-diameter': 'Проверить ремонт по диаметру',
+  'check-welder-stamp': 'Проверить клеймо',
+  'check-incomplete-stamps': 'Дозаполнить клейма/дату сварки',
+  'check-lnk-request-date-order': 'Проверить даты ЛНК',
+  'check-lnk-vik-date-order': 'Проверить порядок НК',
+  'check-lnk-vik-required': 'Дозаполнить ВИК',
+  'check-psto-request-date-order': 'Проверить даты ПСТО',
+  'line-percent': 'Проверить % контроля линии',
+  'line-group': 'Проверить группу трубопровода линии',
+  'line-category': 'Проверить категорию трубопровода линии',
+  'line-control-presence': 'Проверить назначение контроля линии',
+  'welder-stamp-expiry': 'Срок НАКС заканчивается',
+  'welder-dls-expiry': 'Срок ДЛС заканчивается',
+}
+
 export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
   {
     id: 'percentage-lines',
@@ -646,6 +710,18 @@ export function isDispatcherTaskEnabled(task: DispatcherTask, settings: Dispatch
   return settings[getDispatcherTaskSettingId(task)] !== false
 }
 
+export function getDispatcherSettingCode(id: DispatcherSettingId) {
+  return DISPATCHER_SETTING_CODES[id]
+}
+
+export function getDispatcherSettingTaskTypeLabel(id: DispatcherSettingId) {
+  return DISPATCHER_SETTING_TASK_TYPE_LABELS[id]
+}
+
+export function getDispatcherTaskCode(task: DispatcherTask) {
+  return getDispatcherSettingCode(getDispatcherTaskSettingId(task))
+}
+
 function normalizeDispatcherSettings(value: unknown): DispatcherSettings {
   const source = typeof value === 'object' && value ? (value as Partial<Record<DispatcherSettingId, unknown>>) : {}
   return Object.fromEntries(
@@ -669,7 +745,7 @@ export function normalizeDispatcherReminderDays(value: unknown, fallback = MIN_D
   return Math.max(MIN_DISPATCHER_REMINDER_DAYS, Math.floor(parsed))
 }
 
-function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSettingId {
+export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSettingId {
   if (task.kind === 'welder-stamp-expiry') return task.permitKind === 'dls' ? 'welder-dls-expiry' : 'welder-stamp-expiry'
   if (task.kind === 'create') return String(task.row.status ?? '').trim().toLowerCase() === 'неофициальный' ? 'repeated-create-official-from-unofficial' : 'repeated-create'
   if (task.kind === 'coil') return 'repeated-coil'

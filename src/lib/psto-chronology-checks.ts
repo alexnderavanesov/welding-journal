@@ -1,5 +1,9 @@
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  DEFAULT_SAVE_CHECK_SETTINGS,
+  formatSaveCheckBlockReason,
+  type SaveCheckSettings,
+} from '@/lib/save-check-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 
 type PstoChronologyRow = WeldInput & { id?: number }
@@ -80,6 +84,14 @@ export function findFirstPstoChronologyIssue(
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
   return getPstoChronologyIssues(rows, settings)[0]?.message ?? ''
+}
+
+export function findFirstPstoChronologySaveBlockReason(
+  rows: WeldInput[],
+  settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  const issue = getPstoChronologyIssues(rows, settings)[0]
+  return issue ? formatSaveCheckBlockReason('pstoResultRequestDateOrder', issue.message) : ''
 }
 
 export function assertNoPstoChronologyIssues(
