@@ -1,4 +1,6 @@
 import { LNK_METHODS } from '@/lib/report-config'
+import { normalizeDateLikeForStorage } from '@/lib/date-format'
+import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import {
   withTouchedLnkFinalStatus,
@@ -8,6 +10,7 @@ import {
   hasText,
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
+import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 
@@ -17,11 +20,31 @@ export function buildLnkRequestRows({
   records,
   methodKeys,
   requestName,
+  requestDate,
 }: {
   records: RowWithId[]
   methodKeys: WeldFieldKey[]
   requestName: string
+  requestDate: string
 }) {
+  const saveCheckSettings = loadSaveCheckSettings()
+  const proposedRecords = buildLnkRequestDraftRows({ records, methodKeys, requestName, requestDate })
+  assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
+  return proposedRecords
+}
+
+export function buildLnkRequestDraftRows({
+  records,
+  methodKeys,
+  requestName,
+  requestDate,
+}: {
+  records: RowWithId[]
+  methodKeys: WeldFieldKey[]
+  requestName: string
+  requestDate: string
+}) {
+  const normalizedRequestDate = normalizeDateLikeForStorage(requestDate)
   return records.flatMap((record) => {
     const nextRecord = { ...record }
     let changed = false
@@ -32,6 +55,7 @@ export function buildLnkRequestRows({
       const existingRequestName = String(record[method.requestKey] ?? '').trim()
       if (existingRequestName) continue
       nextRecord[method.requestKey] = requestName
+      nextRecord[method.requestDateKey] = normalizedRequestDate
       if (!hasText(nextRecord[method.resultKey])) {
         nextRecord[method.resultKey] = 'ожидает НК'
       }
@@ -50,6 +74,7 @@ export function buildLnkRequestCorrectionRow({
   methodKey: WeldFieldKey
   requestName: string | null
 }) {
+  const saveCheckSettings = loadSaveCheckSettings()
   const method = getLnkMethodByRequestKey(methodKey)
   if (!method) throw new Error('Выберите вид контроля')
   if (requestName && !isEnabledControlValue(record[method.enabledKey])) {
@@ -64,12 +89,15 @@ export function buildLnkRequestCorrectionRow({
     }
   } else {
     proposedRecord[method.requestKey] = null
+    proposedRecord[method.requestDateKey] = null
     proposedRecord[method.resultKey] = null
     proposedRecord[method.conclusionDateKey] = null
     proposedRecord[method.conclusionKey] = null
   }
 
-  return withTouchedLnkFinalStatus(proposedRecord)
+  const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
+  assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)
+  return nextRecord
 }
 
 export function buildLnkRequestManagerRows({
@@ -83,7 +111,8 @@ export function buildLnkRequestManagerRows({
   nextRequestName: string
   action: LnkRequestManagerAction
 }) {
-  return records.flatMap((record) => {
+  const saveCheckSettings = loadSaveCheckSettings()
+  const proposedRecords = records.flatMap((record) => {
     const nextRecord = { ...record } as RowWithId
     let changed = false
     for (const method of LNK_METHODS) {
@@ -92,6 +121,7 @@ export function buildLnkRequestManagerRows({
         nextRecord[method.requestKey] = nextRequestName
       } else {
         nextRecord[method.requestKey] = null
+        nextRecord[method.requestDateKey] = null
         nextRecord[method.resultKey] = null
         nextRecord[method.conclusionDateKey] = null
         nextRecord[method.conclusionKey] = null
@@ -100,4 +130,8 @@ export function buildLnkRequestManagerRows({
     }
     return changed ? [withTouchedLnkFinalStatus(nextRecord)] : []
   })
+  if (action === 'rename') {
+    assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
+  }
+  return proposedRecords
 }

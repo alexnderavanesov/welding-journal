@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joints" ADD COLUMN "material_group" text;

@@ -43,10 +43,18 @@ import {
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import {
   DEFAULT_DISPATCHER_SETTINGS,
+  DISPATCHER_SETTING_ACTION_HELP,
   DISPATCHER_SETTING_HELP,
   DISPATCHER_SETTING_GROUPS,
+  MIN_DISPATCHER_REMINDER_DAYS,
+  isDispatcherReminderSettingId,
+  normalizeDispatcherReminderDays,
+  saveDispatcherReminderSettings,
   saveDispatcherSettings,
+  useDispatcherReminderSettings,
   useDispatcherSettings,
+  type DispatcherReminderSettingId,
+  type DispatcherReminderSettings,
   type DispatcherSettingGroup,
   type DispatcherSettingId,
   type DispatcherSettings,
@@ -69,6 +77,13 @@ import {
   useDataListSettings,
 } from '@/lib/data-list-settings'
 import {
+  SAVE_CHECK_SETTING_GROUPS,
+  saveSaveCheckSettings,
+  useSaveCheckSettings,
+  type SaveCheckSettingId,
+  type SaveCheckSettings,
+} from '@/lib/save-check-settings'
+import {
   clearSecuritySettings,
   saveSecuritySettings,
   useSecuritySettings,
@@ -76,6 +91,7 @@ import {
   type SecuritySettings,
 } from '@/lib/security-settings'
 import { useSecurityGuard } from '@/lib/security-context'
+import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 const SETTINGS_TABS = [
@@ -84,12 +100,25 @@ const SETTINGS_TABS = [
   { id: 'requests', label: 'Заявки и заключения', icon: Inbox },
   { id: 'indexes', label: 'Системные индексы', icon: Hash },
   { id: 'dispatcher', label: 'Диспетчер задач и напоминаний', icon: Bell },
+  { id: 'saveChecks', label: 'Проверки при сохранении', icon: ShieldCheck },
   { id: 'other', label: 'Прочее', icon: SlidersHorizontal },
   { id: 'security', label: 'Блокировка', icon: LockKeyhole },
 ] as const
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]['id']
 type ProtectedSettingsChange = (action: () => void | Promise<void>) => Promise<boolean>
+const DANGEROUS_SAVE_CHECK_SETTING_IDS = new Set<SaveCheckSettingId>([
+  'manualJointName',
+  'controlHistoryProtection',
+  'systemJointRenameProtection',
+])
+const DISPATCHER_INPUT_PROTECTED_TASK_IDS = new Set<DispatcherSettingId>([
+  'check-control-before-weld',
+  'check-repair-diameter',
+  'check-lnk-request-date-order',
+  'check-lnk-vik-date-order',
+  'check-psto-request-date-order',
+])
 
 export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: WeldRow[]; rowsCount?: number }) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('templates')
@@ -141,6 +170,8 @@ export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: We
             <SystemIndexesSettingsPanel rowsCount={rowsCount} runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'dispatcher' ? (
             <DispatcherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
+          ) : activeTab === 'saveChecks' ? (
+            <SaveChecksSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'other' ? (
             <OtherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : (
@@ -541,15 +572,6 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
   const settings = useOtherSettings()
   const [wdiMessage, setWdiMessage] = useState<string | null>(null)
 
-  function updateArchivedWelderStampsSetting(checked: boolean) {
-    void runProtectedSettingsChange(() => {
-      saveOtherSettings({
-        ...settings,
-        includeArchivedWelderStampsInForm: checked,
-      })
-    })
-  }
-
   function updateWdiCalculationMode(mode: WdiCalculationMode) {
     setWdiMessage(null)
     void runProtectedSettingsChange(() => {
@@ -628,38 +650,6 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
           Дополнительные параметры, которые меняют поведение рабочих форм без изменения данных журнала.
         </p>
       </div>
-
-      <label
-        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 shadow-sm transition-colors ${
-          settings.includeArchivedWelderStampsInForm
-            ? 'border-sky-200 bg-sky-50 shadow-sky-100/60 hover:bg-sky-50'
-            : 'border-slate-300 bg-white shadow-slate-200/60 hover:bg-slate-50'
-        }`}
-      >
-        <input
-          type="checkbox"
-          checked={settings.includeArchivedWelderStampsInForm}
-          onChange={(event) => updateArchivedWelderStampsSetting(event.currentTarget.checked)}
-          className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
-        />
-        <span>
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-900">Учитывать архив клейм в форме стыка</span>
-            <span
-              className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
-                settings.includeArchivedWelderStampsInForm
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 bg-white text-slate-500'
-              }`}
-            >
-              {settings.includeArchivedWelderStampsInForm ? 'включено' : 'выключено'}
-            </span>
-          </span>
-          <span className="mt-1 block text-sm leading-5 text-slate-500">
-            Архивные клейма будут доступны в выпадающих списках при создании и редактировании стыков.
-          </span>
-        </span>
-      </label>
 
       <section className="rounded-md border border-slate-300 bg-white p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -858,11 +848,13 @@ function DataSettingsPanel({
   const [drafts, setDrafts] = useState<Record<DataListSettingsKey, string>>({
     weldingTypes: '',
     connectionTypes: '',
+    materialGroups: '',
   })
   const [message, setMessage] = useState<string | null>(null)
   const usageCountsByKey: Record<DataListSettingsKey, Map<string, number>> = {
     weldingTypes: getWeldingTypeUsageCounts(rows),
     connectionTypes: getConnectionTypeUsageCounts(rows),
+    materialGroups: getMaterialGroupUsageCounts(rows),
   }
 
   async function addListValue(config: DataListConfig) {
@@ -1045,7 +1037,7 @@ function DataSettingsPanel({
   )
 }
 
-type DataListSettingsKey = 'weldingTypes' | 'connectionTypes'
+type DataListSettingsKey = 'weldingTypes' | 'connectionTypes' | 'materialGroups'
 
 type DataListConfig = {
   key: DataListSettingsKey
@@ -1092,6 +1084,20 @@ const DATA_LIST_CONFIGS: DataListConfig[] = [
     usedValueText: 'этот тип соединения',
     minOptionsMessage: '',
   },
+  {
+    key: 'materialGroups',
+    title: 'Группа материалов',
+    description:
+      'Пользователь выбирает одно значение из этого списка в меню создания и редактирования стыка. Поле находится в разделе “Сварка” после “Тип соединения”.',
+    protectionHint: 'Если группа материалов уже используется в стыках, удалить ее из настроек нельзя.',
+    placeholder: 'Например: М01',
+    emptyListText: 'Список пока пуст. После добавления значений поле “Группа материалов” станет выпадающим списком в форме стыка.',
+    resetButtonLabel: 'Очистить список',
+    resetBlockedAction: 'очистить список “Группа материалов”',
+    resetSuccessMessage: 'Список “Группа материалов” очищен.',
+    usedValueText: 'эта группа материалов',
+    minOptionsMessage: '',
+  },
 ]
 
 function getWeldingTypeUsageCounts(rows: WeldRow[]) {
@@ -1107,6 +1113,15 @@ function getConnectionTypeUsageCounts(rows: WeldRow[]) {
   const counts = new Map<string, number>()
   for (const row of rows) {
     const value = normalizeDataListOption(row.connectionType)
+    if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return counts
+}
+
+function getMaterialGroupUsageCounts(rows: WeldRow[]) {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const value = normalizeDataListOption(row.materialGroup)
     if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
   }
   return counts
@@ -1881,11 +1896,17 @@ function RequestNamingModeButton({
 
 function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useDispatcherSettings()
+  const reminderSettings = useDispatcherReminderSettings()
   const disabledCount = Object.values(settings).filter((enabled) => !enabled).length
   const totalCount = Object.values(settings).length
 
   const updateSetting = (id: DispatcherSettingId, enabled: boolean) => {
     runProtectedSettingsChange(() => saveDispatcherSettings({ ...settings, [id]: enabled }))
+  }
+
+  const updateReminderDays = (id: DispatcherSettingId, value: number) => {
+    if (!isDispatcherReminderSettingId(id)) return Promise.resolve(false)
+    return runProtectedSettingsChange(() => saveDispatcherReminderSettings({ ...reminderSettings, [id]: value }))
   }
 
   const updateGroup = (group: DispatcherSettingGroup, enabled: boolean) => {
@@ -1941,8 +1962,10 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
             key={group.id}
             group={group}
             settings={settings}
+            reminderSettings={reminderSettings}
             onItemChange={updateSetting}
             onGroupChange={(enabled) => updateGroup(group, enabled)}
+            onReminderDaysChange={updateReminderDays}
           />
         ))}
       </div>
@@ -1953,13 +1976,17 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
 function DispatcherSettingsGroupCard({
   group,
   settings,
+  reminderSettings,
   onItemChange,
   onGroupChange,
+  onReminderDaysChange,
 }: {
   group: DispatcherSettingGroup
   settings: DispatcherSettings
+  reminderSettings: DispatcherReminderSettings
   onItemChange: (id: DispatcherSettingId, enabled: boolean) => void
   onGroupChange: (enabled: boolean) => void
+  onReminderDaysChange: (id: DispatcherReminderSettingId, value: number) => Promise<boolean>
 }) {
   const enabledCount = group.items.filter((item) => settings[item.id]).length
   const allEnabled = enabledCount === group.items.length
@@ -1997,6 +2024,9 @@ function DispatcherSettingsGroupCard({
           const enabled = settings[item.id]
           const expanded = expandedItemIds.has(item.id)
           const help = DISPATCHER_SETTING_HELP[item.id]
+          const actionHelp = DISPATCHER_SETTING_ACTION_HELP[item.id]
+          const isReminder = isDispatcherReminderSettingId(item.id)
+          const isInputProtectedTask = DISPATCHER_INPUT_PROTECTED_TASK_IDS.has(item.id)
           return (
             <div key={item.id} className="px-4 py-3 hover:bg-slate-50">
               <div className="flex items-start gap-3">
@@ -2008,7 +2038,14 @@ function DispatcherSettingsGroupCard({
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className={`block text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-400'}`}>{item.label}</span>
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-400'}`}>{item.label}</span>
+                      {isInputProtectedTask ? (
+                        <span className="inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                          не актуально при включенных защитах ввода
+                        </span>
+                      ) : null}
+                    </span>
                     <span className={`mt-1 block text-xs leading-5 ${enabled ? 'text-slate-500' : 'text-slate-400'}`}>{item.description}</span>
                   </span>
                 </label>
@@ -2022,6 +2059,17 @@ function DispatcherSettingsGroupCard({
                   <ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />
                 </button>
               </div>
+              {isReminder ? (
+                <div className="mt-3 ml-7 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  <span>Показывать за</span>
+                  <DispatcherReminderDaysInput
+                    id={item.id as DispatcherReminderSettingId}
+                    value={reminderSettings[item.id as DispatcherReminderSettingId]}
+                    onSave={onReminderDaysChange}
+                  />
+                  <span>дней до окончания, минимум {MIN_DISPATCHER_REMINDER_DAYS}</span>
+                </div>
+              ) : null}
               {expanded ? (
                 <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600">
                   <div>
@@ -2032,12 +2080,323 @@ function DispatcherSettingsGroupCard({
                     <span className="font-semibold text-slate-800">Кейс: </span>
                     {help.example}
                   </div>
+                  {actionHelp.length ? (
+                    <div className="mt-3 rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                      <div className="font-semibold text-slate-800">Кнопки в задаче:</div>
+                      <div className="mt-2 space-y-1.5">
+                        {actionHelp.map((action) => (
+                          <div key={action.label}>
+                            <span className="font-semibold text-slate-700">{action.label}: </span>
+                            {action.description}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+function DispatcherReminderDaysInput({
+  id,
+  value,
+  onSave,
+}: {
+  id: DispatcherReminderSettingId
+  value: number
+  onSave: (id: DispatcherReminderSettingId, value: number) => Promise<boolean>
+}) {
+  const [draft, setDraft] = useState(() => String(value))
+
+  useEffect(() => {
+    setDraft(String(value))
+  }, [value])
+
+  const commit = async () => {
+    const normalizedValue = normalizeDispatcherReminderDays(draft, value)
+    setDraft(String(normalizedValue))
+    if (normalizedValue === value) return
+
+    const saved = await onSave(id, normalizedValue)
+    if (!saved) setDraft(String(value))
+  }
+
+  return (
+    <input
+      type="number"
+      min={MIN_DISPATCHER_REMINDER_DAYS}
+      value={draft}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={() => {
+        void commit()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.currentTarget.blur()
+        }
+      }}
+      className="h-8 w-20 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+    />
+  )
+}
+
+function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
+  const settings = useSaveCheckSettings()
+  const otherSettings = useOtherSettings()
+  const confirmAction = useConfirmAction()
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set())
+  const enabledCount = Object.values(settings).filter(Boolean).length
+  const totalCount = Object.values(settings).length
+
+  async function confirmDangerousSaveChecksChange(enabled: boolean) {
+    return confirmAction({
+      title: 'Вы уверены?',
+      itemName: enabled ? 'Включить опасные проверки формы стыка' : 'Отключить опасные проверки формы стыка',
+      description:
+        'Эти проверки защищают ручное имя обычного стыка, историю контроля и системные имена стыков. Их отключают только в проектах, где заказчик сам ведет нумерацию, контроль и документы, а система используется почти как сварочный журнал.',
+      warning: enabled
+        ? 'После включения система снова начнет блокировать нарушения этих правил при сохранении формы стыка.'
+        : 'После отключения пользователь сможет сохранить данные, которые раньше считались опасными для ручной нумерации, цепочек или истории ЛНК/ПСТО.',
+      confirmLabel: enabled ? 'Да, включить' : 'Да, отключить',
+      cancelLabel: 'Отмена',
+      tone: 'danger',
+    })
+  }
+
+  async function updateSetting(id: SaveCheckSettingId, enabled: boolean) {
+    if (DANGEROUS_SAVE_CHECK_SETTING_IDS.has(id)) {
+      const confirmed = await confirmDangerousSaveChecksChange(enabled)
+      if (!confirmed) return
+    }
+
+    await runProtectedSettingsChange(() => saveSaveCheckSettings({ ...settings, [id]: enabled }))
+  }
+
+  async function updateAllSettings(enabled: boolean) {
+    const changesDangerousCheck = [...DANGEROUS_SAVE_CHECK_SETTING_IDS].some((id) => settings[id] !== enabled)
+    if (changesDangerousCheck) {
+      const confirmed = await confirmDangerousSaveChecksChange(enabled)
+      if (!confirmed) return
+    }
+
+    await runProtectedSettingsChange(() =>
+      saveSaveCheckSettings(Object.fromEntries(Object.keys(settings).map((id) => [id, enabled])) as SaveCheckSettings),
+    )
+  }
+
+  async function updateGroupSettings(groupItems: { id: SaveCheckSettingId }[], enabled: boolean) {
+    const groupIds = groupItems.map((item) => item.id)
+    const changesDangerousCheck = groupIds.some((id) => DANGEROUS_SAVE_CHECK_SETTING_IDS.has(id) && settings[id] !== enabled)
+    if (changesDangerousCheck) {
+      const confirmed = await confirmDangerousSaveChecksChange(enabled)
+      if (!confirmed) return
+    }
+
+    await runProtectedSettingsChange(() => {
+      saveSaveCheckSettings({
+        ...settings,
+        ...Object.fromEntries(groupIds.map((id) => [id, enabled])),
+      } as SaveCheckSettings)
+    })
+  }
+
+  function updateArchivedWelderStampsSetting(checked: boolean) {
+    void runProtectedSettingsChange(() => {
+      saveOtherSettings({
+        ...otherSettings,
+        includeArchivedWelderStampsInForm: checked,
+      })
+    })
+  }
+
+  function toggleGroup(groupId: string) {
+    setCollapsedGroupIds((current) => {
+      const next = new Set(current)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      return next
+    })
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-slate-500" />
+              <h3 className="text-base font-semibold text-slate-900">Проверки при сохранении</h3>
+            </div>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+              Эти правила работают в форме создания и редактирования стыка. Если включенная проверка не проходит, система не даст сохранить
+              стык. Диспетчер задач настраивается отдельно и только показывает подсказки по уже существующим данным.
+            </p>
+            <div className="mt-2 text-xs font-semibold text-slate-500">
+              Включено: {enabledCount} из {totalCount}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              onClick={() => {
+                void updateAllSettings(true)
+              }}
+            >
+              Включить все
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              onClick={() => {
+                void updateAllSettings(false)
+              }}
+            >
+              Отключить все
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {SAVE_CHECK_SETTING_GROUPS.map((group) => {
+        const collapsed = collapsedGroupIds.has(group.id)
+        const groupEnabledCount = group.items.filter((item) => settings[item.id]).length
+        const isGroupFullyEnabled = groupEnabledCount === group.items.length
+        const isGroupFullyDisabled = groupEnabledCount === 0
+
+        return (
+          <section key={group.id} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 hover:bg-slate-50 lg:flex-row lg:items-start lg:justify-between">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-start justify-between gap-4 text-left"
+                onClick={() => toggleGroup(group.id)}
+                aria-expanded={!collapsed}
+              >
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-900">{group.title}</span>
+                    <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                      {groupEnabledCount}/{group.items.length}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">{group.description}</span>
+                </span>
+                <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition ${collapsed ? '' : 'rotate-180'}`} />
+              </button>
+              <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
+                <button
+                  type="button"
+                  disabled={isGroupFullyEnabled}
+                  className="inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                  onClick={() => {
+                    void updateGroupSettings(group.items, true)
+                  }}
+                >
+                  Включить раздел
+                </button>
+                <button
+                  type="button"
+                  disabled={isGroupFullyDisabled}
+                  className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  onClick={() => {
+                    void updateGroupSettings(group.items, false)
+                  }}
+                >
+                  Отключить раздел
+                </button>
+              </div>
+            </div>
+            {!collapsed ? (
+              <div className="space-y-3 p-4">
+                {group.id === 'official-stamps' ? (
+                  <label
+                    className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 transition-colors ${
+                      otherSettings.includeArchivedWelderStampsInForm
+                        ? 'border-sky-200 bg-sky-50/70 hover:bg-sky-50'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={otherSettings.includeArchivedWelderStampsInForm}
+                      onChange={(event) => updateArchivedWelderStampsSetting(event.currentTarget.checked)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">Учитывать архив клейм в форме стыка</span>
+                        <span
+                          className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+                            otherSettings.includeArchivedWelderStampsInForm
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-slate-200 bg-white text-slate-500'
+                          }`}
+                        >
+                          {otherSettings.includeArchivedWelderStampsInForm ? 'включено' : 'выключено'}
+                        </span>
+                      </span>
+                      <span className="mt-1 block text-sm leading-5 text-slate-500">
+                        Архивные клейма будут доступны в выпадающих списках при создании и редактировании стыков.
+                      </span>
+                      <span className="mt-2 block rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-500">
+                        Это отвечает только за показ архивных клейм в списке. Запрет сохранения с архивным официальным клеймом настраивается отдельной проверкой “Архив клейм”.
+                      </span>
+                    </span>
+                  </label>
+                ) : null}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {group.items.map((item) => {
+                    const enabled = settings[item.id]
+                    return (
+                      <label
+                        key={item.id}
+                        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 transition-colors ${
+                          enabled ? 'border-sky-200 bg-sky-50/70 hover:bg-sky-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={(event) => {
+                            void updateSetting(item.id, event.currentTarget.checked)
+                          }}
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                            <span
+                              className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+                                enabled ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'
+                              }`}
+                            >
+                              {enabled ? 'блокирует сохранение' : 'не блокирует'}
+                            </span>
+                          </span>
+                          <span className="mt-1 block text-sm leading-5 text-slate-500">{item.description}</span>
+                          <span className="mt-2 block rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-500">
+                            {item.example}
+                          </span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        )
+      })}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { WeldFormConnectionTypeField } from '@/components/weld-form-connection-type-field'
+import { WeldFormConnectionTypeField, WeldFormMaterialGroupField } from '@/components/weld-form-connection-type-field'
 import { WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { cn } from '@/lib/utils'
@@ -71,7 +71,7 @@ export function WeldFormField({
               key={option.value}
               value={option.value}
               disabled={option.disabled}
-              title={option.reason}
+              title={option.disabled ? option.reason : undefined}
               className={option.disabled ? 'bg-slate-100 text-slate-400' : undefined}
             >
               {option.value}
@@ -80,7 +80,7 @@ export function WeldFormField({
         </Select>
       ) : field.key === 'weldingMethod' ? (
         <WeldFormWeldingMethodField
-          value={draft.weldingMethod}
+          value={getTextDraftValue(draft.weldingMethod)}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
           }}
@@ -93,7 +93,7 @@ export function WeldFormField({
         />
       ) : field.key === 'connectionType' ? (
         <WeldFormConnectionTypeField
-          value={draft.connectionType}
+          value={getTextDraftValue(draft.connectionType)}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
           }}
@@ -101,6 +101,19 @@ export function WeldFormField({
             setDraft((current) => ({
               ...current,
               connectionType,
+            }))
+          }
+        />
+      ) : field.key === 'materialGroup' ? (
+        <WeldFormMaterialGroupField
+          value={getTextDraftValue(draft.materialGroup)}
+          inputRef={(element) => {
+            fieldRefs.current[field.key] = element
+          }}
+          onChange={(materialGroup) =>
+            setDraft((current) => ({
+              ...current,
+              materialGroup,
             }))
           }
         />
@@ -193,6 +206,10 @@ export function WeldFormField({
       )}
     </div>
   )
+}
+
+function getTextDraftValue(value: WeldInput[WeldFieldKey]) {
+  return typeof value === 'string' ? value : null
 }
 
 function FreeTextField({

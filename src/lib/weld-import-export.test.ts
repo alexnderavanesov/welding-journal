@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { FIELD_BY_KEY, FULL_EXCEL_HEADERS, LEGACY_EXCEL_HEADERS } from './weld-fields'
+import { FIELD_BY_KEY, FULL_EXCEL_HEADERS } from './weld-fields'
 import { hasReservedJointSystemPart, parseJointName, validateManualJointName } from './joint-name'
 import {
   appendImportedWelds,
@@ -64,28 +64,10 @@ describe('weld import/export', () => {
     expect(result.missingHeaders).toHaveLength(0)
   })
 
-  it('recognizes the legacy header set without spool id', () => {
-    const result = parseWorksheetRows([LEGACY_EXCEL_HEADERS])
-    expect(result.records).toHaveLength(0)
-    expect(result.missingHeaders).toEqual([label('spoolId')])
-  })
-
-  it('accepts older files without per-control request columns', () => {
+  it('rejects older files without per-control request columns', () => {
     const oldHeaders = FULL_EXCEL_HEADERS.filter((header) => !header.startsWith('Заявка '))
-    const result = parseWorksheetRows([oldHeaders])
 
-    expect(result.records).toHaveLength(0)
-    expect(result.missingHeaders).toEqual([
-      'Заявка ВИК',
-      'Заявка РК',
-      'Заявка УЗК',
-      'Заявка ПВК',
-      'Заявка ПСТО',
-      'Заявка ТВМТ',
-      'Заявка РФА',
-      'Заявка СТЛС',
-      'Заявка МКК',
-    ])
+    expect(() => parseWorksheetRows([oldHeaders])).toThrow('Не найдены обязательные колонки')
   })
 
   it('converts placeholder dashes to null', () => {
@@ -185,9 +167,9 @@ describe('weld import/export', () => {
 
   it('skips service rows without a real joint, line, or isometry', () => {
     const rows = [
-      LEGACY_EXCEL_HEADERS,
-      LEGACY_EXCEL_HEADERS.map(() => '-'),
-      buildLegacyRow({
+      FULL_EXCEL_HEADERS,
+      FULL_EXCEL_HEADERS.map(() => '-'),
+      buildFullHeaderRow({
         [label('weldDate')]: 45736,
         [label('line')]: '330-FL-02-004',
         [label('joint')]: 'S13',
@@ -386,6 +368,6 @@ describe('weld import/export', () => {
   })
 })
 
-function buildLegacyRow(values: Record<string, unknown>) {
-  return LEGACY_EXCEL_HEADERS.map((header) => values[header] ?? null)
+function buildFullHeaderRow(values: Record<string, unknown>) {
+  return FULL_EXCEL_HEADERS.map((header) => values[header] ?? null)
 }

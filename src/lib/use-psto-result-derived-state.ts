@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import {
   getFilteredPstoResultRequestOptions,
   getFilteredPstoResultRows,
@@ -20,6 +21,7 @@ type PstoResultDerivedStateParams = {
   pstoResultDraft: PstoResultDraftState
   nextPstoDiagramName: string
   isPstoResultSaving: boolean
+  saveCheckSettings: SaveCheckSettings
 }
 
 export function usePstoResultDerivedState({
@@ -31,6 +33,7 @@ export function usePstoResultDerivedState({
   pstoResultDraft,
   nextPstoDiagramName,
   isPstoResultSaving,
+  saveCheckSettings,
 }: PstoResultDerivedStateParams) {
   const pstoResultAvailableRequestOptions = useMemo(
     () => getPstoResultAvailableRequestOptions(pstoResultSelectedRows, pstoResultRequestOptions),
@@ -64,9 +67,10 @@ export function usePstoResultDerivedState({
         draft: pstoResultDraft,
         isSaving: isPstoResultSaving,
         nextDiagramName: nextPstoDiagramName,
+        saveCheckSettings,
         selectedRows: selectedPstoResultRows,
       }),
-    [isPstoResultSaving, nextPstoDiagramName, pstoResultDraft, selectedPstoResultRows],
+    [isPstoResultSaving, nextPstoDiagramName, pstoResultDraft, saveCheckSettings, selectedPstoResultRows],
   )
 
   const managedPstoResultRows = useMemo(

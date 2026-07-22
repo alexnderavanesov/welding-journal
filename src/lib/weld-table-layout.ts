@@ -3,7 +3,6 @@ import type { WeldField } from '@/lib/weld-fields'
 
 export const SELECT_COLUMN_WIDTH = 48
 export const ROW_ACTIONS_COLUMN_WIDTH = 72
-export const CHAIN_ACTION_COLUMN_WIDTH = 76
 
 export function getWeldTableMinWidth({
   fields,
@@ -18,12 +17,13 @@ export function getWeldTableMinWidth({
   hasRowActions: boolean
   hasChainAction: boolean
 }) {
+  const hasControlColumn = selectable || hasChainAction
+
   return (
     getWeldTableWidth(fields) -
     (readOnly ? ACTIONS_COLUMN_WIDTH : 0) +
-    (selectable ? SELECT_COLUMN_WIDTH : 0) +
-    (hasRowActions ? ROW_ACTIONS_COLUMN_WIDTH : 0) +
-    (hasChainAction ? CHAIN_ACTION_COLUMN_WIDTH : 0)
+    (hasControlColumn ? SELECT_COLUMN_WIDTH : 0) +
+    (hasRowActions ? ROW_ACTIONS_COLUMN_WIDTH : 0)
     )
 }
 
@@ -40,11 +40,12 @@ export function getWeldTableColumnSpan({
   hasRowActions: boolean
   hasChainAction: boolean
 }) {
+  const hasControlColumn = selectable || hasChainAction
+
   return (
     fieldCount +
     (readOnly ? 0 : 1) +
-    (selectable ? 1 : 0) +
-    (hasChainAction ? 1 : 0) +
+    (hasControlColumn ? 1 : 0) +
     (hasRowActions ? 1 : 0)
   )
 }

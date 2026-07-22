@@ -58,7 +58,6 @@ export function ResultBadge({ value }: { value: unknown }) {
 
   return (
     <Badge
-      variant="outline"
       className={`inline-flex max-w-full justify-center whitespace-normal break-words px-1.5 py-0.5 text-center text-[11px] font-normal leading-tight ${className}`}
     >
       {text}

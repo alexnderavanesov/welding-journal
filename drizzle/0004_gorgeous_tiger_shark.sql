@@ -1,0 +1,1 @@
+ALTER TABLE "welder_stamps" ADD COLUMN "material_groups" text;

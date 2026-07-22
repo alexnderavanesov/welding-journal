@@ -20,7 +20,7 @@ import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 
 export function isUnusedRepeatedJointDraft(row: WeldInput) {
   if (hasText(row.weldDate)) return false
-  return ![...lnkRequestFieldKeys, ...lnkGeneratedFieldKeys, 'pstoRequest', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram'].some((fieldKey) =>
+  return ![...lnkRequestFieldKeys, ...lnkGeneratedFieldKeys, 'pstoRequest', 'pstoRequestDate', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram'].some((fieldKey) =>
     hasText(row[fieldKey]),
   )
 }

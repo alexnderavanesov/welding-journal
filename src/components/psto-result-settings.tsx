@@ -45,6 +45,7 @@ export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: Ps
           systemName={nextDiagramName}
           label="Диаграмма термообработки"
           placeholder="Введите наименование диаграммы"
+          customDate={draft.pstoDate}
           onChange={(diagramNaming) => onDraftChange((current) => ({ ...current, diagramNaming }))}
         />
       </ResultSettingsCard>

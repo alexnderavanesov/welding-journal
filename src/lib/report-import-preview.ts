@@ -9,7 +9,11 @@ import {
   parseWorkbook,
 } from '@/lib/weld-import-export'
 import { withOfficialJointStatus } from '@/lib/report-control-state'
+import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoLnkRepairRuleIssues } from '@/lib/lnk-result-rules'
+import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { prepareImportedWeldRecords } from '@/lib/weld-journal-mutation-updates'
+import { getArchivedOfficialStampValuesForRecord } from '@/lib/welder-stamp-compatibility'
 import {
   MASS_FILL_ROW_ID_HEADER,
   REPLACE_DELETE_ROW_HEADER,
@@ -22,7 +26,9 @@ import {
 } from '@/lib/report-import-template'
 import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import { loadOtherSettings } from '@/lib/other-settings'
+import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import { isSystemWdiMode } from '@/lib/wdi'
+import { LNK_METHODS } from '@/lib/report-config'
 import type { ActiveReport } from '@/lib/home-state'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
@@ -78,7 +84,7 @@ export async function buildReportImportPreview({
   const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport))
   const fields = getReportImportPreviewFields(activeReport)
 
-  if (activeReport !== 'weldingJournal') {
+  if (activeReport !== 'weldingJournal' && activeReport !== 'lnk') {
     return {
       fileName: file.name,
       fields,
@@ -215,10 +221,15 @@ async function buildExistingRowsImportPreview({
       const prepared = prepareImportedWeldRecords({
         records: [candidateForPrepare],
         skipManualJointNameValidation: true,
+        skipLnkRepairRuleValidation: true,
+        allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(existingRow, welderStamps),
         weldFormStampSelectOptions,
         welderStamps,
         welderStampSuspensions,
       })[0] as ReportImportRecord
+      if (hasChangedLnkRepairRuleInputs(candidate, existingRow)) {
+        assertNoLnkRepairRuleIssues([prepared], loadSaveCheckSettings())
+      }
       const preparedUpdates: ReportImportRecord = { id: existingRow.id }
       changedKeys.forEach((key) => {
         const field = FIELD_BY_KEY.get(key as WeldFieldKey)
@@ -272,6 +283,14 @@ function prepareCandidateForExistingRowsValidation(candidate: ReportImportRecord
   return { ...candidate, wdi: null }
 }
 
+function hasChangedLnkRepairRuleInputs(candidate: ReportImportRecord, existingRow: WeldRow) {
+  return (
+    normalizePreviewValue(candidate.d1) !== normalizePreviewValue(existingRow.d1) ||
+    normalizePreviewValue(candidate.d2) !== normalizePreviewValue(existingRow.d2) ||
+    LNK_METHODS.some((method) => normalizePreviewValue(candidate[method.resultKey]) !== normalizePreviewValue(existingRow[method.resultKey]))
+  )
+}
+
 function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ActiveReport, field: WeldField, existingRow: WeldRow) {
   if (isExistingRowsImportLockedField(field)) return true
   if (mode === 'replaceData') return isSystemImportField(activeReport, field)
@@ -313,7 +332,7 @@ function validateReportImportRecords(
   records: ReportImportRecord[],
   { activeReport, weldFormStampSelectOptions, welderStamps, welderStampSuspensions }: ReportImportPreviewValidationOptions,
 ) {
-  if (activeReport !== 'weldingJournal') {
+  if (activeReport !== 'weldingJournal' && activeReport !== 'lnk') {
     return { validRecords: records, errors: [] as ReportImportPreviewError[] }
   }
 
@@ -322,12 +341,17 @@ function validateReportImportRecords(
 
   records.forEach((record, index) => {
     try {
-      const prepared = prepareImportedWeldRecords({
-        records: [{ ...withOfficialJointStatus(record) }],
-        weldFormStampSelectOptions,
-        welderStamps,
-        welderStampSuspensions,
-      })
+      const prepared = activeReport === 'weldingJournal'
+        ? prepareImportedWeldRecords({
+            records: [{ ...withOfficialJointStatus(record) }],
+            weldFormStampSelectOptions,
+            welderStamps,
+            welderStampSuspensions,
+          })
+        : [record]
+      const saveCheckSettings = loadSaveCheckSettings()
+      assertNoLnkChronologyIssues(prepared, saveCheckSettings)
+      assertNoPstoChronologyIssues(prepared, saveCheckSettings)
       validRecords.push({ ...prepared[0], id: record.id })
     } catch (error) {
       const message = getImportErrorMessage(error)

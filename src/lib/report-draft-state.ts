@@ -7,6 +7,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type LnkRequestDraftState = {
   methods: Set<WeldFieldKey>
+  requestDate: string
 }
 
 export type LnkResultDraftState = {
@@ -45,6 +46,13 @@ export function createDefaultLnkResultDraft(conclusionNaming: RequestNamingState
     result: '',
     conclusionNaming,
     search: '',
+  }
+}
+
+export function createDefaultLnkRequestDraft(): LnkRequestDraftState {
+  return {
+    methods: new Set(),
+    requestDate: formatDateInputValue(new Date()),
   }
 }
 

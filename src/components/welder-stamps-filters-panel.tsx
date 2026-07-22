@@ -48,21 +48,20 @@ export function WelderStampsFiltersPanel({
       </button>
 
       {isOpen ? (
-        <div className="grid items-end gap-3 bg-white p-4 xl:grid-cols-[minmax(280px,1.4fr)_minmax(110px,0.55fr)_minmax(110px,0.55fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_auto]">
+        <div className="grid items-end gap-3 bg-white p-4 xl:grid-cols-[minmax(300px,1.5fr)_repeat(6,minmax(110px,0.55fr))_auto]">
           <label className="space-y-1.5 text-sm font-medium text-slate-700">
             <span>Поиск</span>
             <Input
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Клеймо НАКС, ФИО, внутреннее клеймо, способ сварки или диаметр"
+              placeholder="Клеймо, ФИО, ДЛС, способ, группа, D/T, срок или примечание"
               className="h-10"
             />
           </label>
           <label className="space-y-1.5 text-sm font-medium text-slate-700">
             <span>Диаметр от</span>
             <Input
-              type="number"
-              min="0"
+              type="text"
               inputMode="decimal"
               value={filters.diameterFrom}
               onChange={(event) => updateFilter('diameterFrom', event.target.value)}
@@ -73,11 +72,32 @@ export function WelderStampsFiltersPanel({
           <label className="space-y-1.5 text-sm font-medium text-slate-700">
             <span>Диаметр до</span>
             <Input
-              type="number"
-              min="0"
+              type="text"
               inputMode="decimal"
               value={filters.diameterTo}
               onChange={(event) => updateFilter('diameterTo', event.target.value)}
+              placeholder="до"
+              className="h-10"
+            />
+          </label>
+          <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <span>Толщина от</span>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={filters.thicknessFrom}
+              onChange={(event) => updateFilter('thicknessFrom', event.target.value)}
+              placeholder="от"
+              className="h-10"
+            />
+          </label>
+          <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <span>Толщина до</span>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={filters.thicknessTo}
+              onChange={(event) => updateFilter('thicknessTo', event.target.value)}
               placeholder="до"
               className="h-10"
             />

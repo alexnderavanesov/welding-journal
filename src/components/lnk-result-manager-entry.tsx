@@ -2,6 +2,7 @@ import { LnkResultManagerActions } from '@/components/lnk-result-manager-actions
 import { LnkResultManagerSummary } from '@/components/lnk-result-manager-summary'
 import { ResultManagerDocumentEditor } from '@/components/result-manager-document-editor'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import { LNK_METHODS } from '@/lib/report-config'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
@@ -53,6 +54,7 @@ export function LnkResultManagerEntry({
   const conclusionName = String(row[method.conclusionKey] ?? '').trim()
   const conclusionDate = String(row[method.conclusionDateKey] ?? '').trim()
   const conclusionDraft = conclusionDrafts[changeKey] ?? conclusionName
+  const fixedDateConclusionDraft = formatCustomDocumentName(conclusionDraft, conclusionDate)
   const pendingResult = pendingResultChanges[changeKey] ?? ''
   const activeChangeHint =
     pendingResult && pendingResult !== currentResult
@@ -76,11 +78,12 @@ export function LnkResultManagerEntry({
         <ResultManagerDocumentEditor
           value={conclusionDraft}
           placeholder="Наименование заключения для этого стыка"
+          hint="Дата заключения фиксируется отдельно и не меняется через название."
           disabled={isConclusionCorrectionPending}
           canRename={
             !isConclusionCorrectionPending &&
-            Boolean(conclusionDraft.trim()) &&
-            conclusionDraft.trim() !== conclusionName
+            Boolean(fixedDateConclusionDraft) &&
+            fixedDateConclusionDraft !== conclusionName
           }
           onChange={(value) => onConclusionDraftChange(changeKey, value)}
           onRename={() => onRenameConclusion(row, method.requestKey)}

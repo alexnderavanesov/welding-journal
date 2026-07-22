@@ -8,11 +8,13 @@ import {
 } from '@/server/welder-stamps'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { useOtherSettings } from '@/lib/other-settings'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import { createEmptyWelderStampFilters, filterWelderStampRecords } from '@/lib/welder-stamp-filters'
 import { buildWeldFormStampSelectOptions } from '@/lib/welder-stamp-compatibility'
 import {
   createEmptyWelderStampDraft,
+  normalizeWelderStampRecordsForRegistry,
   normalizeNaksStamp,
   prepareWelderStampSave,
   removeWelderStampRecord,
@@ -33,12 +35,12 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
   const otherSettings = useOtherSettings()
+  const saveCheckSettings = useSaveCheckSettings()
   const [welderStamps, setWelderStamps] = useState<WelderStampRecord[]>([])
   const [welderStampDraft, setWelderStampDraft] = useState<WelderStampRecord>(() => createEmptyWelderStampDraft())
   const [editingWelderStampId, setEditingWelderStampId] = useState<number | null>(null)
   const [welderStampSearch, setWelderStampSearch] = useState('')
   const [welderStampFilters, setWelderStampFilters] = useState<WelderStampFilters>(() => createEmptyWelderStampFilters())
-  const [showArchivedWelderStamps, setShowArchivedWelderStamps] = useState(false)
   const [welderStampSuspensions, setWelderStampSuspensions] = useState<WelderStampSuspensionRecord[]>([])
   const [welderStampSuspensionDraft, setWelderStampSuspensionDraft] = useState<WelderStampSuspensionRecord>(() =>
     createEmptyWelderStampSuspensionDraft(),
@@ -52,7 +54,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const welderStampsMutation = useMutation({
     mutationFn: async (records: WelderStampRecord[]) => saveWelderStampRecords({ data: { records } }),
     onSuccess: async (records) => {
-      setWelderStamps(records)
+      setWelderStamps(normalizeWelderStampRecordsForRegistry(records))
       await queryClient.invalidateQueries({ queryKey: ['welder-stamps'] })
     },
     onError: (error) => {
@@ -78,7 +80,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
 
   useEffect(() => {
     if (welderStampsQuery.data) {
-      setWelderStamps(welderStampsQuery.data)
+      setWelderStamps(normalizeWelderStampRecordsForRegistry(welderStampsQuery.data))
     }
   }, [welderStampsQuery.data])
 
@@ -92,15 +94,17 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     () =>
       buildWeldFormStampSelectOptions(welderStamps, undefined, [], welderStampSuspensions, {
         includeArchivedStamps: otherSettings.includeArchivedWelderStampsInForm,
+        saveCheckSettings,
       }),
-    [otherSettings.includeArchivedWelderStampsInForm, welderStampSuspensions, welderStamps],
+    [otherSettings.includeArchivedWelderStampsInForm, saveCheckSettings, welderStampSuspensions, welderStamps],
   )
   const getWeldFormStampSelectOptions = useMemo(
     () => (draft: WeldInput, allowedArchivedOfficialStamps: readonly string[] = []) =>
       buildWeldFormStampSelectOptions(welderStamps, draft, allowedArchivedOfficialStamps, welderStampSuspensions, {
         includeArchivedStamps: otherSettings.includeArchivedWelderStampsInForm,
+        saveCheckSettings,
       }),
-    [otherSettings.includeArchivedWelderStampsInForm, welderStampSuspensions, welderStamps],
+    [otherSettings.includeArchivedWelderStampsInForm, saveCheckSettings, welderStampSuspensions, welderStamps],
   )
   const filteredWelderStamps = useMemo(
     () => filterWelderStampRecords(welderStamps, welderStampSearch, welderStampFilters),
@@ -109,8 +113,8 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const activeWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => !record.archived), [filteredWelderStamps])
   const archivedWelderStamps = useMemo(() => filteredWelderStamps.filter((record) => record.archived), [filteredWelderStamps])
 
-  function updateWelderStampDraft(field: keyof WelderStampRecord, value: string) {
-    setWelderStampDraft((current) => ({ ...current, [field]: field === 'naksStamp' ? normalizeNaksStamp(value) : value }))
+  function updateWelderStampDraft<K extends keyof WelderStampRecord>(field: K, value: WelderStampRecord[K]) {
+    setWelderStampDraft((current) => ({ ...current, [field]: field === 'naksStamp' ? normalizeNaksStamp(String(value ?? '')) : value }))
   }
 
   function resetWelderStampForm() {
@@ -142,6 +146,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   }
 
   function editWelderStampRecord(record: WelderStampRecord) {
+    setWelderStampDraft(createEmptyWelderStampDraft())
     setWelderStampDraft(record)
     setEditingWelderStampId(record.id)
   }
@@ -155,6 +160,25 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   function restoreWelderStampRecord(id: number) {
     persistWelderStampRecords(setWelderStampRecordArchived(welderStamps, id, false))
     setMessage('Клеймо возвращено в общий список')
+  }
+
+  function setWelderStampPermitArchived(recordId: number, permitKind: 'naks' | 'dls', permitId: string, archived: boolean) {
+    const nextRecords = welderStamps.map((record) => {
+      if (record.id !== recordId) return record
+      if (permitKind === 'naks') {
+        return {
+          ...record,
+          naksPermits: record.naksPermits.map((permit) => (permit.id === permitId ? { ...permit, archived } : permit)),
+        }
+      }
+      return {
+        ...record,
+        dlsPermits: record.dlsPermits.map((permit) => (permit.id === permitId ? { ...permit, archived } : permit)),
+      }
+    })
+
+    persistWelderStampRecords(nextRecords)
+    setMessage(archived ? 'Допуск добавлен в архив' : 'Допуск возвращен из архива')
   }
 
   async function deleteWelderStampRecord(id: number) {
@@ -218,7 +242,6 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     welderStampSearch,
     welderStampFilters,
     editingWelderStampId,
-    showArchivedWelderStamps,
     filteredWelderStamps,
     activeWelderStamps,
     archivedWelderStamps,
@@ -226,13 +249,13 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     getWeldFormStampSelectOptions,
     setWelderStampSearch,
     setWelderStampFilters,
-    setShowArchivedWelderStamps,
     updateWelderStampDraft,
     resetWelderStampForm,
     saveWelderStampRecord,
     editWelderStampRecord,
     archiveWelderStampRecord,
     restoreWelderStampRecord,
+    setWelderStampPermitArchived,
     deleteWelderStampRecord,
     updateWelderStampSuspensionDraft,
     resetWelderStampSuspensionForm,

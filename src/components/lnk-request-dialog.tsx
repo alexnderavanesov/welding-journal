@@ -9,28 +9,39 @@ import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { getDateInputValidationReason } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
 import { isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
+import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type LnkRequestDialogProps = {
   nextRequestName: string
   selectedRowsCount: number
+  selectedRows: WeldRow[]
   selectedTargetCount: number
   requestNaming: RequestNamingState
+  requestDate: string
   requestManagerOptions: string[]
   selectedMethodKeys: readonly WeldFieldKey[]
   selectedMethods: ReadonlySet<WeldFieldKey>
   requestSearch: string
+  message?: string | null
   lnkRowsCount: number
   filteredRows: WeldRow[]
   filteredAvailableRows: WeldRow[]
   selectedIds: ReadonlySet<number>
   isPending: boolean
+  saveCheckSettings: SaveCheckSettings
   onClose: () => void
   onOpenRequestManager: (requestName?: string) => void
   onRequestNamingChange: (value: RequestNamingState) => void
+  onRequestDateChange: (value: string) => void
   onToggleMethod: (methodKey: WeldFieldKey) => void
   onRequestSearchChange: (value: string) => void
   onToggleAllRows: () => void
@@ -41,20 +52,25 @@ export type LnkRequestDialogProps = {
 export function LnkRequestDialog({
   nextRequestName,
   selectedRowsCount,
+  selectedRows,
   selectedTargetCount,
   requestNaming,
+  requestDate,
   requestManagerOptions,
   selectedMethodKeys,
   selectedMethods,
   requestSearch,
+  message,
   lnkRowsCount,
   filteredRows,
   filteredAvailableRows,
   selectedIds,
   isPending,
+  saveCheckSettings,
   onClose,
   onOpenRequestManager,
   onRequestNamingChange,
+  onRequestDateChange,
   onToggleMethod,
   onRequestSearchChange,
   onToggleAllRows,
@@ -65,6 +81,27 @@ export function LnkRequestDialog({
   const allFilteredRowsSelected = isEveryFilteredLnkRequestRowSelected(selectedIds, filteredAvailableRows)
   const [showCreatedRequests, setShowCreatedRequests] = useState(false)
   const [createdRequestSearch, setCreatedRequestSearch] = useState('')
+  const requestName = getRequestNameFromNaming(requestNaming, nextRequestName, requestDate)
+  const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ЛНК')
+  const chronologyReason = useMemo(() => {
+    if (selectedRows.length === 0 || selectedMethodKeys.length === 0 || !requestName || requestDateReason) return ''
+    const proposedRows = buildLnkRequestDraftRows({
+      records: selectedRows,
+      methodKeys: [...selectedMethodKeys],
+      requestName,
+      requestDate,
+    })
+    return getLnkChronologyIssues(proposedRows, saveCheckSettings)[0]?.message ?? ''
+  }, [requestDate, requestDateReason, requestName, saveCheckSettings, selectedMethodKeys, selectedRows])
+  const createDisabledReason = getLnkRequestCreateDisabledReason({
+    selectedRowsCount,
+    selectedMethodKeysCount: selectedMethodKeys.length,
+    selectedTargetCount,
+    requestName,
+    requestDateReason,
+    chronologyReason,
+  })
+  const feedbackMessage = createDisabledReason ?? message
   const filteredRequestManagerOptions = useMemo(() => {
     const query = createdRequestSearch.trim().toLowerCase()
     if (!query) return requestManagerOptions
@@ -81,13 +118,28 @@ export function LnkRequestDialog({
 
       {!showCreatedRequests ? (
         <div className="border-b border-slate-100 px-5 py-4">
-          <div className="min-w-0">
-            <RequestNamingControls
-              naming={requestNaming}
-              systemName={nextRequestName}
-              label="Наименование заявки ЛНК"
-              onChange={onRequestNamingChange}
-            />
+          <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+            <label className="block space-y-1.5 text-sm">
+              <span className="text-[13px] font-medium leading-none text-slate-700">Дата заявки</span>
+              <Input
+                type="date"
+                value={requestDate}
+                onChange={(event) => onRequestDateChange(event.target.value)}
+                className="h-10 bg-white"
+              />
+              <span className="block text-xs leading-4 text-slate-500">
+                Для системного имени заявка будет названа по этой дате.
+              </span>
+            </label>
+            <div className="min-w-0">
+              <RequestNamingControls
+                naming={requestNaming}
+                systemName={nextRequestName}
+                label="Наименование заявки ЛНК"
+                customDate={requestDate}
+                onChange={onRequestNamingChange}
+              />
+            </div>
           </div>
         </div>
       ) : null}
@@ -218,10 +270,37 @@ export function LnkRequestDialog({
 
       <RequestDialogFooter
         isPending={isPending}
-        isCreateDisabled={selectedTargetCount === 0}
+        isCreateDisabled={Boolean(createDisabledReason)}
+        disabledReason={feedbackMessage}
         onClose={onClose}
         onSubmit={onSubmit}
       />
     </LargeDialogShell>
   )
+}
+
+function getLnkRequestCreateDisabledReason({
+  selectedRowsCount,
+  selectedMethodKeysCount,
+  selectedTargetCount,
+  requestName,
+  requestDateReason,
+  chronologyReason,
+}: {
+  selectedRowsCount: number
+  selectedMethodKeysCount: number
+  selectedTargetCount: number
+  requestName: string
+  requestDateReason: string | null
+  chronologyReason: string
+}) {
+  if (selectedRowsCount === 0) return 'Чтобы создать заявку ЛНК, выберите один или несколько стыков.'
+  if (selectedMethodKeysCount === 0) return 'Чтобы создать заявку ЛНК, выберите один или несколько видов контроля.'
+  if (selectedTargetCount === 0) {
+    return 'По выбранным стыкам и видам контроля нет доступных позиций: заявка уже создана, контроль не назначен или стык больше не доступен для новой заявки.'
+  }
+  if (!requestName) return 'Укажите пользовательское наименование заявки ЛНК или переключитесь на системное имя.'
+  if (requestDateReason) return requestDateReason
+  if (chronologyReason) return chronologyReason
+  return null
 }

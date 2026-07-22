@@ -98,10 +98,10 @@ export function LnkResultDialog({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         <LnkResultSettings
           draft={draft}
-          selectedMethods={selectedMethods}
-          selectedRows={selectedRows}
-          nextConclusionName={nextConclusionName}
-          onMethodChange={onMethodChange}
+        selectedMethods={selectedMethods}
+        selectedRows={selectedRows}
+        nextConclusionName={nextConclusionName}
+        onMethodChange={onMethodChange}
           onControlDateChange={onControlDateChange}
           onDefaultResultChange={onDefaultResultChange}
           onConclusionNamingChange={onConclusionNamingChange}
@@ -166,6 +166,7 @@ export function LnkResultDialog({
       <ResultDialogFooter
         saveBlockReason={saveBlockReason}
         isSaveDisabled={isSaveDisabled}
+        saveBlockReasonVariant="danger"
         onClose={onClose}
         onSave={onSave}
         preview={{

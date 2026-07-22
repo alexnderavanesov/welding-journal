@@ -12,20 +12,20 @@ type CreateWelderStampsRegistryPropsOptions = {
   search: string
   filters: WelderStampFilters
   editingId: number | null
-  showArchived: boolean
   onSearchChange: (value: string) => void
   onFiltersChange: (value: WelderStampFilters) => void
-  onDraftChange: (field: keyof WelderStampRecord, value: string) => void
+  onDraftChange: <K extends keyof WelderStampRecord>(field: K, value: WelderStampRecord[K]) => void
   onSuspensionDraftChange: (field: keyof WelderStampSuspensionRecord, value: string) => void
-  onSave: () => boolean
-  onSaveSuspension: () => boolean
+  onSave: () => boolean | Promise<boolean | undefined>
+  onSaveSuspension: () => boolean | Promise<boolean | undefined>
   onReset: () => void
   onResetSuspension: () => void
   onEdit: (record: WelderStampRecord) => void
   onEditSuspension: (record: WelderStampSuspensionRecord) => void
   onArchive: (id: number) => void
   onRestore: (id: number) => void
-  onToggleArchived: (value: boolean) => void
+  onArchivePermit: (recordId: number, permitKind: 'naks' | 'dls', permitId: string) => void
+  onRestorePermit: (recordId: number, permitKind: 'naks' | 'dls', permitId: string) => void
   onDelete: (id: number) => void
   onDeleteSuspension: (id: number) => void
 }
@@ -41,7 +41,6 @@ export function createWelderStampsRegistryProps({
   search,
   filters,
   editingId,
-  showArchived,
   onSearchChange,
   onFiltersChange,
   onDraftChange,
@@ -54,13 +53,13 @@ export function createWelderStampsRegistryProps({
   onEditSuspension,
   onArchive,
   onRestore,
-  onToggleArchived,
+  onArchivePermit,
+  onRestorePermit,
   onDelete,
   onDeleteSuspension,
 }: CreateWelderStampsRegistryPropsOptions): WelderStampsRegistryProps {
   return {
-    records: activeRecords,
-    archivedRecords,
+    records: [...activeRecords, ...archivedRecords],
     allRecords,
     suspensionRecords,
     draft,
@@ -69,7 +68,6 @@ export function createWelderStampsRegistryProps({
     search,
     filters,
     editingId,
-    showArchived,
     onSearchChange,
     onFiltersChange,
     onDraftChange,
@@ -82,7 +80,8 @@ export function createWelderStampsRegistryProps({
     onEditSuspension,
     onArchive,
     onRestore,
-    onToggleArchived,
+    onArchivePermit,
+    onRestorePermit,
     onDelete,
     onDeleteSuspension,
   }

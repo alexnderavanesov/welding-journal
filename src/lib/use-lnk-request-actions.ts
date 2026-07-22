@@ -1,4 +1,6 @@
 import type { UseLnkRequestActionsOptions } from '@/lib/lnk-report-action-types'
+import { getDateInputValidationReason } from '@/lib/date-format'
+import { createDefaultLnkRequestDraft } from '@/lib/report-draft-state'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
@@ -6,6 +8,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export function useLnkRequestActions({
+  draft,
   filteredRows,
   lnkRows,
   naming,
@@ -24,6 +27,7 @@ export function useLnkRequestActions({
   setSelectedIds,
 }: UseLnkRequestActionsOptions) {
   function handleCreateLnkRequest() {
+    setMessage(null)
     const methodKeys = selectedMethodKeys
     if (selectedRows.length === 0) {
       setMessage('Выберите один или несколько стыков для заявки ЛНК')
@@ -38,25 +42,32 @@ export function useLnkRequestActions({
       return
     }
 
-    const requestName = getRequestNameFromNaming(naming, nextRequestName)
+    const requestName = getRequestNameFromNaming(naming, nextRequestName, draft.requestDate)
     if (!requestName) {
       setMessage('Укажите пользовательское наименование заявки ЛНК')
       return
     }
+    const requestDateReason = getDateInputValidationReason(draft.requestDate, 'Дата заявки ЛНК')
+    if (requestDateReason) {
+      setMessage(requestDateReason)
+      return
+    }
 
-    mutation.mutate({ records: selectedRows, methodKeys, requestName })
+    mutation.mutate({ records: selectedRows, methodKeys, requestName, requestDate: draft.requestDate })
   }
 
   function openCreateLnkRequestModal() {
+    setMessage(null)
     setPreservedOrderIds(null)
     setSelectedIds(new Set())
-    setDraft({ methods: new Set() })
+    setDraft(createDefaultLnkRequestDraft())
     setNaming(defaultNaming)
     setSearch('')
     setIsOpen(true)
   }
 
   function openCreateLnkRequestModalForRow(row: WeldRow) {
+    setMessage(null)
     const availableMethods = getAvailableLnkRequestMethods(row)
     if (availableMethods.length === 0) {
       setMessage('Все заявки ЛНК для этого стыка уже созданы')
@@ -65,7 +76,7 @@ export function useLnkRequestActions({
 
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
     setSelectedIds(new Set([row.id]))
-    setDraft({ methods: new Set(availableMethods.map((method) => method.requestKey)) })
+    setDraft({ ...createDefaultLnkRequestDraft(), methods: new Set(availableMethods.map((method) => method.requestKey)) })
     setNaming(defaultNaming)
     setSearch(String(row.joint ?? row.line ?? ''))
     setIsOpen(true)
@@ -84,7 +95,7 @@ export function useLnkRequestActions({
       } else {
         methods.add(requestKey)
       }
-      return { methods }
+      return { ...current, methods }
     })
   }
 

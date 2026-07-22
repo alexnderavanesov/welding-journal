@@ -2,6 +2,7 @@ import { useEffect, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { buildDispatcherTaskGroups, getVisibleDispatcherTaskKeys } from '@/lib/dispatcher-view'
 import {
   isDispatcherTaskEnabled,
+  useDispatcherReminderSettings,
   useDispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -33,6 +34,7 @@ export function useDispatcherTasks({
   welderStampSuspensions,
 }: UseDispatcherTasksInput) {
   const dispatcherSettings = useDispatcherSettings()
+  const dispatcherReminderSettings = useDispatcherReminderSettings()
   const hiddenDispatcherTaskKeys = useMemo(
     () => new Set([...dismissedRepeatedJointTaskKeys, ...acceptedDispatcherWarningKeys]),
     [acceptedDispatcherWarningKeys, dismissedRepeatedJointTaskKeys],
@@ -46,8 +48,11 @@ export function useDispatcherTasks({
     [dispatcherSettings, hiddenDispatcherTaskKeys, rows, welderStampSuspensions, welderStamps],
   )
   const welderStampExpiryTasks = useMemo(
-    () => buildWelderStampExpiryTasks(welderStamps).filter((task) => !hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings)),
-    [dispatcherSettings, hiddenDispatcherTaskKeys, welderStamps],
+    () =>
+      buildWelderStampExpiryTasks(welderStamps, dispatcherReminderSettings).filter(
+        (task) => !hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings),
+      ),
+    [dispatcherReminderSettings, dispatcherSettings, hiddenDispatcherTaskKeys, welderStamps],
   )
   const { repeatedJointTaskGroups, welderStampNotificationGroups } = useMemo(
     () =>

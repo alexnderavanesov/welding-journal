@@ -28,7 +28,7 @@ export function isLnkResultField(fieldKey: WeldFieldKey) {
 }
 
 export function isLnkRequestField(fieldKey: WeldFieldKey) {
-  return LNK_REQUEST_FIELD_KEYS.includes(fieldKey)
+  return (LNK_REQUEST_FIELD_KEYS as readonly WeldFieldKey[]).includes(fieldKey)
 }
 
 export function isLnkRequestAllowedForRow(row: WeldInput, fieldKey: WeldFieldKey) {
@@ -41,6 +41,7 @@ export function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: We
   const requestMethod = getLnkMethodByRequestKey(fieldKey)
   if (requestMethod && !hasText(value)) {
     nextRecord[requestMethod.resultKey] = null
+    nextRecord[requestMethod.requestDateKey] = null
     nextRecord[requestMethod.conclusionDateKey] = null
     nextRecord[requestMethod.conclusionKey] = null
   }
@@ -66,6 +67,7 @@ export function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
     if (!hasText(row[method.requestKey]) && !isPendingLnkResultValue(row[method.resultKey])) continue
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
     nextRow[method.requestKey] = null
+    nextRow[method.requestDateKey] = null
     if (isPendingLnkResultValue(row[method.resultKey])) {
       nextRow[method.resultKey] = null
     }
@@ -79,6 +81,7 @@ export function clearCancelledRejectedLnkGeneratedData<T extends WeldInput>(row:
     if (!isCancelledControlValue(row[method.enabledKey]) || !isRejectedLnkResultValue(row[method.resultKey])) continue
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
     nextRow[method.requestKey] = null
+    nextRow[method.requestDateKey] = null
     nextRow[method.resultKey] = null
     nextRow[method.conclusionDateKey] = null
     nextRow[method.conclusionKey] = null

@@ -15,7 +15,7 @@ export function WeldFormFooter({ busy = false, autoClearHint, saveBlockReason, o
       <div className="min-h-10 min-w-0 flex-1 text-sm text-slate-500">
         {saveBlockReason ? (
           <span className="inline-flex max-h-24 max-w-full overflow-y-auto rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-800 shadow-sm">
-            <span className="whitespace-normal break-words leading-5">Чтобы сохранить: {saveBlockReason}</span>
+            <span className="whitespace-normal break-words leading-5">{saveBlockReason}</span>
           </span>
         ) : autoClearHint ? (
           <span className="inline-flex max-h-24 max-w-full overflow-y-auto rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-sky-800 shadow-sm">

@@ -2,6 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
@@ -27,11 +28,12 @@ export function LnkResultManagerActions({
   onReplaceResult,
   onClearResult,
 }: LnkResultManagerActionsProps) {
+  const saveCheckSettings = useSaveCheckSettings()
   return (
     <div className="flex flex-wrap content-start justify-end gap-1.5">
       <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
       {LNK_RESULT_OPTIONS.map((option) => {
-        const disabledByRepairRule = option === 'ремонт' && isLnkRepairForbidden(row)
+        const disabledByRepairRule = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
         return (
           <button
             key={option}

@@ -1,11 +1,15 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDateInputValidationReason } from '@/lib/date-format'
+import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
+import { findFirstLnkChronologyIssue } from '@/lib/lnk-chronology-checks'
 import {
   areLnkResultDraftRowsReady,
   findFirstLnkResultDateBeforeWeldDateIssue,
+  getEffectiveLnkResultDraftValueForRow,
   hasNonEmptyLnkResultDraftRows,
 } from '@/lib/lnk-result-draft'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
 import {
   canSelectLnkResultRow,
@@ -121,36 +125,89 @@ export function getLnkResultSaveBlockReason({
   draft,
   isSaving,
   nextConclusionName,
+  saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
 }: {
   draft: LnkResultDraftState
   isSaving: boolean
   nextConclusionName: string
+  saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
 }) {
   if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
   if (!draft.methodKey) return 'Выберите метод контроля.'
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
-  if (!areLnkResultDraftRowsReady(selectedRows, draft)) return 'Укажите результат для каждого выбранного стыка.'
-  if (hasNonEmptyLnkResultDraftRows(selectedRows, draft) && !draft.controlDate) {
+  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
+  if (!areLnkResultDraftRowsReady(selectedRows, draft, saveCheckSettings)) return 'Укажите результат для каждого выбранного стыка.'
+  if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyRows && !draft.controlDate) {
     return 'Укажите дату контроля.'
   }
-  if (hasNonEmptyLnkResultDraftRows(selectedRows, draft)) {
+  if (saveCheckSettings.lnkResultControlDateFormat && hasNonEmptyRows) {
     const dateReason = getDateInputValidationReason(draft.controlDate, 'Дата контроля')
     if (dateReason) return dateReason
   }
 
-  const dateIssue = hasNonEmptyLnkResultDraftRows(selectedRows, draft)
-    ? findFirstLnkResultDateBeforeWeldDateIssue(selectedRows, draft)
+  const dateIssue = saveCheckSettings.lnkResultDateAfterWeldDate && hasNonEmptyRows
+    ? findFirstLnkResultDateBeforeWeldDateIssue(selectedRows, draft, saveCheckSettings)
     : null
   if (dateIssue) return dateIssue
 
   if (
-    hasNonEmptyLnkResultDraftRows(selectedRows, draft) &&
-    !getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
+    saveCheckSettings.lnkResultConclusionRequired &&
+    hasNonEmptyRows &&
+    !getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName, draft.controlDate)
   ) {
     return 'Укажите наименование заключения.'
   }
 
+  const vikBeforeOtherIssue = findFirstLnkResultVikBeforeOtherDraftIssue(selectedRows, draft, saveCheckSettings)
+  if (vikBeforeOtherIssue) return vikBeforeOtherIssue
+
+  const chronologyIssue = hasNonEmptyRows
+    ? findFirstLnkChronologyIssue(
+        buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName),
+        saveCheckSettings,
+      )
+    : ''
+  if (chronologyIssue) return chronologyIssue
+
   return ''
+}
+
+function findFirstLnkResultVikBeforeOtherDraftIssue(
+  selectedRows: WeldRow[],
+  draft: LnkResultDraftState,
+  saveCheckSettings: SaveCheckSettings,
+) {
+  if (!saveCheckSettings.lnkResultVikRequiredBeforeOther) return ''
+  const method = getLnkMethodByRequestKey(draft.methodKey)
+  if (!method || method.code === 'ВИК') return ''
+  const row = selectedRows.find((candidate) => {
+    const result = getEffectiveLnkResultDraftValueForRow(candidate, draft, saveCheckSettings)
+    return isFinalLnkResultValue(result) && !isFinalLnkResultValue(candidate.vikResult)
+  })
+  if (!row) return ''
+  const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
+  return `Стык ${joint}: нельзя сохранять результат ${method.code}, пока нет результата ВИК.`
+}
+
+function buildProposedLnkResultRowsForChecks(
+  selectedRows: WeldRow[],
+  draft: LnkResultDraftState,
+  nextConclusionName: string,
+) {
+  const method = getLnkMethodByRequestKey(draft.methodKey)
+  if (!method) return selectedRows
+  const normalizedControlDate = normalizeDateLikeForStorage(draft.controlDate)
+  const conclusionName = getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName, draft.controlDate)
+  return selectedRows.map((row) => {
+    const result = draft.rowResults[row.id] ?? draft.result
+    if (!isFinalLnkResultValue(result)) return row
+    return {
+      ...row,
+      [method.resultKey]: result,
+      [method.conclusionDateKey]: normalizedControlDate,
+      [method.conclusionKey]: conclusionName,
+    }
+  })
 }

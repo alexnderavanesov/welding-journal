@@ -1,4 +1,3 @@
-import { WeldTableFilterResetHeader } from '@/components/weld-table-actions'
 import { WeldTableFieldHeaderRows } from '@/components/weld-table-field-header-rows'
 import { WeldTableRowActionsHeader, WeldTableSelectAllHeader } from '@/components/weld-table-header-cells'
 import { WeldTableSectionHeaderRow } from '@/components/weld-table-section-header-row'
@@ -12,6 +11,7 @@ type WeldTableHeaderProps = {
   allVisibleRowsSelected: boolean
   someVisibleRowsSelected: boolean
   selectableVisibleRowsCount: number
+  selectedRowsCount: number
   onSetVisibleRowsSelected: (selected: boolean) => void
   hasChainAction: boolean
   hasColumnFilters: boolean
@@ -38,6 +38,7 @@ export function WeldTableHeader({
   allVisibleRowsSelected,
   someVisibleRowsSelected,
   selectableVisibleRowsCount,
+  selectedRowsCount,
   onSetVisibleRowsSelected,
   hasChainAction,
   hasColumnFilters,
@@ -58,24 +59,31 @@ export function WeldTableHeader({
   canEditField,
   onColumnFiltersChange,
 }: WeldTableHeaderProps) {
+  const selectStickyLeft = stickyLeft
+  const hasControlColumn = selectable || hasChainAction
+
   return (
     <thead className="sticky top-0 z-10 bg-[#f7fbfe]/95 text-left shadow-[0_2px_10px_rgba(15,23,42,0.07),inset_0_-1px_0_0_#d6e5ef] backdrop-blur">
       <tr>
-        {selectable ? (
+        {hasControlColumn ? (
           <WeldTableSelectAllHeader
+            selectable={selectable}
             checked={allVisibleRowsSelected}
             indeterminate={someVisibleRowsSelected}
             disabled={selectableVisibleRowsCount === 0}
-            title={selectableVisibleRowsCount === 0 ? 'Нет доступных стыков для новой заявки' : 'Выбрать видимые стыки'}
-            onChange={onSetVisibleRowsSelected}
-          />
-        ) : null}
-        {hasChainAction ? (
-          <WeldTableFilterResetHeader
+            selectedRowsCount={selectedRowsCount}
+            title={
+              selectableVisibleRowsCount === 0
+                ? 'Нет доступных строк для выбора'
+                : allVisibleRowsSelected || someVisibleRowsSelected
+                  ? 'Снять выбор с видимых строк'
+                  : 'Выбрать видимые строки'
+            }
             hasColumnFilters={hasColumnFilters}
             sticky={stickyIdentityColumns}
-            stickyLeft={stickyLeft}
-            onReset={onResetColumnFilters}
+            stickyLeft={selectStickyLeft}
+            onChange={onSetVisibleRowsSelected}
+            onResetColumnFilters={onResetColumnFilters}
           />
         ) : null}
         {hasRowActions ? (

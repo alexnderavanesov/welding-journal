@@ -23,11 +23,15 @@ import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 import { getDuplicateControls, getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 
-export function getLnkMethodByRequestKey(fieldKey: WeldFieldKey) {
+export type LnkMethod = (typeof LNK_METHODS)[number]
+
+export function getLnkMethodByRequestKey(fieldKey: WeldFieldKey | '') {
+  if (!fieldKey) return undefined
   return LNK_METHODS.find((method) => method.requestKey === fieldKey)
 }
 
-export function getLnkMethodByResultKey(fieldKey: WeldFieldKey) {
+export function getLnkMethodByResultKey(fieldKey: WeldFieldKey | '') {
+  if (!fieldKey) return undefined
   return LNK_METHODS.find((method) => method.resultKey === fieldKey)
 }
 

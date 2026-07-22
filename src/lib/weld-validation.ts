@@ -3,20 +3,27 @@ import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName
 import { getSystemIndexSummaryText } from '@/lib/system-index-settings'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-import { getDateInputValidationReason } from '@/lib/date-format'
+import { getDateInputValidationReason, getTodayIsoDate, parseDateLikeToIso } from '@/lib/date-format'
 import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 
-export function validateManualJointNameForSave(value: WeldDraft, rows: WeldRow[]) {
-  validateDateFieldsForSave(value)
+export function validateManualJointNameForSave(
+  value: WeldDraft,
+  rows: WeldRow[],
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  validateDateFieldsForSave(value, saveCheckSettings)
 
   const currentJoint = normalizeJointName(value.joint)
   const previousRow = value.id ? rows.find((row) => row.id === value.id) : null
   const previousJoint = normalizeJointName(previousRow?.joint)
   if (value.id && currentJoint === previousJoint) return
 
-  if (previousRow && hasReservedJointSystemPart(previousRow.joint)) {
+  if (saveCheckSettings.systemJointRenameProtection && previousRow && hasReservedJointSystemPart(previousRow.joint)) {
     throw new Error(`Стык с системными индексами ${getSystemIndexSummaryText()} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`)
   }
+
+  if (!saveCheckSettings.manualJointName) return
 
   const error = validateManualJointName(value.joint)
   if (error) throw new Error(error)
@@ -27,17 +34,34 @@ export function validateWeldDateForSave(value: unknown) {
   if (reason) throw new Error(reason)
 }
 
-export function validateDateFieldsForSave(record: WeldInput) {
+export function validateDateFieldsForSave(
+  record: WeldInput,
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  if (!saveCheckSettings.dateFormat && !saveCheckSettings.weldDateNotFuture) return
+
   for (const fieldKey of dateFieldKeys) {
     const field = FIELD_BY_KEY.get(fieldKey)
-    const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
-      disallowFuture: fieldKey === 'weldDate',
-    })
-    if (reason) throw new Error(reason)
+    if (saveCheckSettings.dateFormat) {
+      const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
+        disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
+      })
+      if (reason) throw new Error(reason)
+      continue
+    }
+
+    if (fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture && isFutureDateLike(record[fieldKey])) {
+      throw new Error('Дата сварки не может быть позже сегодняшней.')
+    }
   }
 }
 
-export function validateRequiredRootStampForSave(record: WeldInput) {
+export function validateRequiredRootStampForSave(
+  record: WeldInput,
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  if (!saveCheckSettings.requiredRootStampWithWeldDate) return
+
   const message = getRequiredRootStampMessage(record)
   if (message) throw new Error(`Сохранение невозможно: ${message}`)
 }
@@ -54,7 +78,12 @@ function normalizeLegacyControlAvailability(record: WeldInput) {
   }
 }
 
-export function validateRequiredRootStampsForImport(records: WeldInput[]) {
+export function validateRequiredRootStampsForImport(
+  records: WeldInput[],
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  if (!saveCheckSettings.requiredRootStampWithWeldDate) return
+
   const invalidRecord = records
     .map((record, index) => ({ record, index, message: getRequiredRootStampMessage(record) }))
     .find((item) => item.message)
@@ -72,7 +101,12 @@ export function normalizeLegacyControlAvailabilityForImport(records: WeldInput[]
   }
 }
 
-export function validateManualJointNamesForImport(records: WeldInput[]) {
+export function validateManualJointNamesForImport(
+  records: WeldInput[],
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  if (!saveCheckSettings.manualJointName) return
+
   const invalidRecord = records
     .map((record, index) => ({ record, index, error: validateManualJointName(record.joint) }))
     .find((item) => item.error)
@@ -84,14 +118,23 @@ export function validateManualJointNamesForImport(records: WeldInput[]) {
   throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.error}`)
 }
 
-export function validateWeldDatesForImport(records: WeldInput[]) {
+export function validateWeldDatesForImport(
+  records: WeldInput[],
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  if (!saveCheckSettings.dateFormat && !saveCheckSettings.weldDateNotFuture) return
+
   const invalidRecord = records
     .flatMap((record, index) =>
       dateFieldKeys.map((fieldKey) => {
         const field = FIELD_BY_KEY.get(fieldKey)
-        const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
-          disallowFuture: fieldKey === 'weldDate',
-        })
+        const reason = saveCheckSettings.dateFormat
+          ? getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
+              disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
+            })
+          : fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture && isFutureDateLike(record[fieldKey])
+            ? 'Дата сварки не может быть позже сегодняшней.'
+            : ''
         return { record, index, reason }
       }),
     )
@@ -107,6 +150,11 @@ export function validateWeldDatesForImport(records: WeldInput[]) {
 const dateFieldKeys = [...FIELD_BY_KEY.entries()]
   .filter(([, field]) => field.kind === 'date')
   .map(([fieldKey]) => fieldKey as WeldFieldKey)
+
+function isFutureDateLike(value: unknown) {
+  const isoDate = parseDateLikeToIso(value)
+  return Boolean(isoDate && isoDate > getTodayIsoDate())
+}
 
 const legacyControlAvailabilityFieldKeys = [
   'pstoRequired',

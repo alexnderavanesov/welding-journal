@@ -3,7 +3,6 @@ import { Plus } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
-import { WelderStampsArchivePanel } from '@/components/welder-stamps-archive-panel'
 import { WelderStampsCreatePanel } from '@/components/welder-stamps-create-panel'
 import { WelderStampsFiltersPanel } from '@/components/welder-stamps-filters-panel'
 import { WelderStampsRecordsTable } from '@/components/welder-stamps-records-table'
@@ -13,7 +12,6 @@ import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord
 
 export type WelderStampsRegistryProps = {
   records: WelderStampRecord[]
-  archivedRecords: WelderStampRecord[]
   allRecords: WelderStampRecord[]
   suspensionRecords: WelderStampSuspensionRecord[]
   draft: WelderStampRecord
@@ -22,27 +20,26 @@ export type WelderStampsRegistryProps = {
   search: string
   filters: WelderStampFilters
   editingId: number | null
-  showArchived: boolean
   onSearchChange: (value: string) => void
   onFiltersChange: (value: WelderStampFilters) => void
-  onDraftChange: (field: keyof WelderStampRecord, value: string) => void
+  onDraftChange: <K extends keyof WelderStampRecord>(field: K, value: WelderStampRecord[K]) => void
   onSuspensionDraftChange: (field: keyof WelderStampSuspensionRecord, value: string) => void
-  onSave: () => boolean
-  onSaveSuspension: () => boolean
+  onSave: () => boolean | Promise<boolean | undefined>
+  onSaveSuspension: () => boolean | Promise<boolean | undefined>
   onReset: () => void
   onResetSuspension: () => void
   onEdit: (record: WelderStampRecord) => void
   onEditSuspension: (record: WelderStampSuspensionRecord) => void
   onArchive: (id: number) => void
   onRestore: (id: number) => void
-  onToggleArchived: (value: boolean) => void
+  onArchivePermit: (recordId: number, permitKind: 'naks' | 'dls', permitId: string) => void
+  onRestorePermit: (recordId: number, permitKind: 'naks' | 'dls', permitId: string) => void
   onDelete: (id: number) => void
   onDeleteSuspension: (id: number) => void
 }
 
 export function WelderStampsRegistry({
   records,
-  archivedRecords,
   allRecords,
   suspensionRecords,
   draft,
@@ -51,7 +48,6 @@ export function WelderStampsRegistry({
   search,
   filters,
   editingId,
-  showArchived,
   onSearchChange,
   onFiltersChange,
   onDraftChange,
@@ -64,11 +60,14 @@ export function WelderStampsRegistry({
   onEditSuspension,
   onArchive,
   onRestore,
-  onToggleArchived,
+  onArchivePermit,
+  onRestorePermit,
   onDelete,
   onDeleteSuspension,
 }: WelderStampsRegistryProps) {
   const [isEditorOpen, setIsEditorOpen] = useState(false)
+  const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null)
+  const [editorFocusPermitId, setEditorFocusPermitId] = useState<string | null>(null)
   const hasRangeFilters = hasWelderStampRangeFilters(filters)
   const hasSearchOrRangeFilters = Boolean(search.trim()) || hasRangeFilters
   const suspensionStampOptions = useMemo(
@@ -97,25 +96,41 @@ export function WelderStampsRegistry({
     return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [isEditorOpen])
 
+  useEffect(() => {
+    if (selectedRecordId !== null && !records.some((record) => record.id === selectedRecordId)) setSelectedRecordId(null)
+  }, [records, selectedRecordId])
+
   function openCreateDialog() {
     onReset()
+    setEditorFocusPermitId(null)
     setIsEditorOpen(true)
   }
 
-  function openEditDialog(record: WelderStampRecord) {
+  function openEditDialog(record: WelderStampRecord, focusPermitId?: string) {
     onEdit(record)
+    setEditorFocusPermitId(focusPermitId ?? null)
     setIsEditorOpen(true)
   }
 
   function closeEditorDialog() {
     setIsEditorOpen(false)
+    setEditorFocusPermitId(null)
     onReset()
   }
 
-  function saveAndCloseEditorDialog() {
-    const saved = onSave()
+  async function saveAndCloseEditorDialog() {
+    const saved = await onSave()
     if (saved) setIsEditorOpen(false)
     return saved
+  }
+
+  function archiveRecord(id: number) {
+    onArchive(id)
+  }
+
+  function deleteRecord(id: number) {
+    onDelete(id)
+    if (selectedRecordId === id) setSelectedRecordId(null)
   }
 
   return (
@@ -124,7 +139,7 @@ export function WelderStampsRegistry({
         <div>
           <h2 className="text-base font-semibold text-slate-900">Справочник клейм сварщиков</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Здесь хранятся клейма НАКС, внутренние клейма и допуски по способу сварки, диаметрам и сроку действия.
+            Здесь хранятся клейма НАКС, внутренние клейма и допуски по способу сварки, группе материалов, диаметрам и сроку действия.
           </p>
         </div>
         <Button type="button" onClick={openCreateDialog}>
@@ -135,14 +150,19 @@ export function WelderStampsRegistry({
 
       <WelderStampsFiltersPanel search={search} filters={filters} onSearchChange={onSearchChange} onFiltersChange={onFiltersChange} />
 
-      <div className="overflow-hidden rounded-md border border-slate-200">
+      <div className="min-w-0 overflow-hidden rounded-md border border-slate-200">
         <WelderStampsRecordsTable
           records={records}
           emptyMessage={hasSearchOrRangeFilters ? 'По фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
           editingId={editingId}
+          selectedId={selectedRecordId}
+          onSelect={(record) => setSelectedRecordId((current) => (current === record.id ? null : record.id))}
           onEdit={openEditDialog}
-          onArchive={onArchive}
-          onDelete={onDelete}
+          onArchive={archiveRecord}
+          onRestore={onRestore}
+          onArchivePermit={onArchivePermit}
+          onRestorePermit={onRestorePermit}
+          onDelete={deleteRecord}
         />
       </div>
 
@@ -158,28 +178,20 @@ export function WelderStampsRegistry({
           onEdit={onEditSuspension}
           onDelete={onDeleteSuspension}
         />
-
-        <WelderStampsArchivePanel
-          archivedRecords={archivedRecords}
-          showArchived={showArchived}
-          hasSearchOrRangeFilters={hasSearchOrRangeFilters}
-          onRestore={onRestore}
-          onToggleArchived={onToggleArchived}
-          onDelete={onDelete}
-        />
       </div>
 
       {isEditorOpen ? (
         <LargeDialogShell maxWidthClassName="max-w-[1080px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[80] bg-slate-950/30">
           <DialogHeader
             title={editingId === null ? 'Добавление клейма' : 'Редактирование клейма'}
-            subtitle="Клеймо НАКС, внутреннее клеймо и допуски по способу сварки, диаметрам и сроку действия."
+            subtitle="Клеймо НАКС, внутреннее клеймо и допуски по способу сварки, группе материалов, диаметрам и сроку действия."
             onClose={closeEditorDialog}
           />
           <div className="overflow-y-auto px-5 py-5">
             <WelderStampsCreatePanel
               draft={draft}
               editingId={editingId}
+              initialFocusPermitId={editorFocusPermitId}
               records={allRecords}
               onDraftChange={onDraftChange}
               onSave={saveAndCloseEditorDialog}

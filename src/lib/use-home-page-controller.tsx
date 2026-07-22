@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   useAutoCollapseNavOnHorizontalScroll,
@@ -61,17 +62,29 @@ import { createReportPstoDialogsProps } from '@/lib/report-psto-dialog-props'
 import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import { useWeldsQuery } from '@/lib/use-welds-query'
 import { useDuplicateControls } from '@/lib/use-duplicate-controls'
+import type { ContextActionMenuItem } from '@/components/context-action-menu'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
+import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
+import { sumAcceptedWdi } from '@/lib/report-row-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import {
+  createDefaultLnkRequestDraft,
+  createDefaultLnkResultDraft,
+  createDefaultPstoResultDraft,
+} from '@/lib/report-draft-state'
+import { canCreatePstoRequest } from '@/lib/psto-status'
+import { canCreateLnkRequest } from '@/lib/report-control-state'
+import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
 import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-compatibility'
 import { loadOtherSettings } from '@/lib/other-settings'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 import {
   buildLineFilters,
@@ -92,6 +105,7 @@ import {
 } from '@/lib/request-conclusion-settings'
 
 export function useHomePageController() {
+  const saveCheckSettings = useSaveCheckSettings()
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
   const confirmAction = useConfirmAction()
@@ -129,8 +143,10 @@ export function useHomePageController() {
   const {
     selectedHeatTreatmentIds,
     selectedLnkIds,
+    selectedWeldingJournalIds,
     setSelectedHeatTreatmentIds,
     setSelectedLnkIds,
+    setSelectedWeldingJournalIds,
   } = useReportSelectionState()
   const {
     lnkRequestDraft,
@@ -150,6 +166,7 @@ export function useHomePageController() {
   } = useLnkRequestModalState()
   const {
     pstoRequestNaming,
+    pstoRequestDate,
     pstoRequestSearch,
     pstoResultRequestSearch,
     isPstoRequestModalOpen,
@@ -161,6 +178,7 @@ export function useHomePageController() {
     managedPstoDiagramDrafts,
     pstoResultDraft,
     setPstoRequestNaming,
+    setPstoRequestDate,
     setPstoRequestSearch,
     setPstoResultRequestSearch,
     setIsPstoRequestModalOpen,
@@ -256,7 +274,6 @@ export function useHomePageController() {
     welderStampSearch,
     welderStampFilters,
     editingWelderStampId,
-    showArchivedWelderStamps,
     filteredWelderStamps,
     activeWelderStamps,
     archivedWelderStamps,
@@ -264,13 +281,13 @@ export function useHomePageController() {
     getWeldFormStampSelectOptions,
     setWelderStampSearch,
     setWelderStampFilters,
-    setShowArchivedWelderStamps,
     updateWelderStampDraft,
     resetWelderStampForm,
     saveWelderStampRecord,
     editWelderStampRecord,
     archiveWelderStampRecord,
     restoreWelderStampRecord,
+    setWelderStampPermitArchived,
     deleteWelderStampRecord,
     updateWelderStampSuspensionDraft,
     resetWelderStampSuspensionForm,
@@ -299,6 +316,15 @@ export function useHomePageController() {
     editingOpen: Boolean(editing),
     isReportModalOpen,
     chainOpen: Boolean(chainRecord),
+    selectedWeldingJournalIds,
+    selectedLnkIds,
+    selectedHeatTreatmentIds,
+    columnFilters,
+    heatTreatmentFilters,
+    lnkFilters,
+    setSelectedWeldingJournalIds,
+    setSelectedLnkIds,
+    setSelectedHeatTreatmentIds,
     setColumnFilters,
     setHeatTreatmentFilters,
     setLnkFilters,
@@ -364,6 +390,7 @@ export function useHomePageController() {
     welderStamps,
     welderStampSuspensions,
   })
+  const dispatcherTaskRowIds = useMemo(() => getDispatcherTaskRowIds(repeatedJointTasks), [repeatedJointTasks])
 
   const {
     heatTreatmentRows,
@@ -417,6 +444,7 @@ export function useHomePageController() {
     availableLnkRequestRows,
     selectedHeatTreatmentIds,
     selectedLnkIds,
+    pstoRequestDate,
     lnkRequestDraft,
     pstoResultDraft,
     lnkResultDraft,
@@ -562,6 +590,7 @@ export function useHomePageController() {
     setSelectedHeatTreatmentIds,
     setPstoRequestNaming,
     setPstoRequestSearch,
+    setPstoRequestDate,
     setIsPstoRequestModalOpen,
     setIsPstoResultModalOpen,
     setPstoResultDraft,
@@ -602,6 +631,7 @@ export function useHomePageController() {
     pstoResultDraft,
     nextPstoDiagramName,
     isPstoResultSaving: pstoResultMutation.isPending,
+    saveCheckSettings,
   })
   const {
     lnkResultAvailableRequestOptions,
@@ -749,7 +779,6 @@ export function useHomePageController() {
     selectedRows: selectedDuplicateControlRows,
   })
   const {
-    acceptedWdiTotal,
     activeColumnFilters,
     activeFiltersSetter,
     activeTitle,
@@ -761,7 +790,6 @@ export function useHomePageController() {
     heatTreatmentFilters,
     lnkFilters,
     navCollapsed,
-    rows,
     setColumnFilters,
     setHeatTreatmentFilters,
     setLnkFilters,
@@ -770,16 +798,25 @@ export function useHomePageController() {
     () => filterWeldRowsByColumns(visibleRows as WeldRow[], activeColumnFilters),
     [activeColumnFilters, visibleRows],
   )
-  const generateWeldingJournalDocument = () => {
+  const filteredAvailableLnkRequestRowsForSummary = useMemo(
+    () => filterWeldRowsByColumns(availableLnkRequestRows, activeColumnFilters),
+    [activeColumnFilters, availableLnkRequestRows],
+  )
+  const filteredAcceptedWdiTotal = useMemo(
+    () => sumAcceptedWdi(filteredVisibleRows),
+    [filteredVisibleRows],
+  )
+  const generateWeldingJournalDocumentForRows = (documentRows: WeldRow[]) => {
     setDocumentGenerationRequest({
       id: Date.now(),
       type: 'weldingJournal',
-      rows: filteredVisibleRows,
+      rows: documentRows,
     })
     setIsWeldingJournalGenerateMenuOpen(false)
     setIsWeldingJournalShowMenuOpen(false)
     setActiveReport('documents')
   }
+  const generateWeldingJournalDocument = () => generateWeldingJournalDocumentForRows(filteredVisibleRows)
   const {
     openLnkConclusionsReport,
     openLnkCurrentReport,
@@ -866,11 +903,13 @@ export function useHomePageController() {
     nextPstoDiagramName,
     nextPstoRequestName,
     pstoRequestManagerOptions,
+    pstoRequestDate,
     pstoRequestNaming,
     pstoResultDraft,
     pstoResultSaveBlockReason,
     selectedHeatTreatmentRows,
     selectedPstoResultRows,
+    saveCheckSettings,
     pstoRequestCorrectionMutation,
     pstoRequestManagerMutation,
     pstoRequestMutation,
@@ -884,6 +923,7 @@ export function useHomePageController() {
     setManagedPstoRequestName,
     setManagedPstoRequestNameDraft,
     setMessage,
+    setPstoRequestDate,
     setPstoRequestNaming,
     setPstoRequestSearch,
     setPstoResultDraft,
@@ -897,12 +937,14 @@ export function useHomePageController() {
     openChainBaseInCurrentReport,
     openChainRowInCurrentReport,
     openLinkedReportRow,
+    openRowsInReport,
     showRepeatedJointTask,
   } = useJointChainActions({
     activeReport,
     setActiveReport,
     setChainRecord,
     setColumnFilters,
+    setHeatTreatmentFilters,
     setLnkFilters,
     setMessage,
   })
@@ -1036,9 +1078,9 @@ export function useHomePageController() {
     setMessage('Дубль-контроль удален')
   }
 
-  async function runProtectedEdit(actionLabel: string, action: () => void | Promise<void>) {
-    if (!(await requireEditPassword(actionLabel))) return
-    await action()
+  async function runProtectedEdit<T>(actionLabel: string, action: () => T | Promise<T>) {
+    if (!(await requireEditPassword(actionLabel))) return undefined
+    return action()
   }
 
   async function runProtectedDelete(actionLabel: string, action: () => void | Promise<void>) {
@@ -1048,6 +1090,46 @@ export function useHomePageController() {
 
   async function handleProtectedEditRecord(row: WeldRow, fieldKey?: Parameters<typeof handleEditRecord>[1]) {
     await runProtectedEdit('редактирование стыка', () => handleEditRecord(row, fieldKey))
+  }
+
+  async function deleteWeldRowById(id: number) {
+    if (!(await requireDeletePassword('удаление стыка'))) return
+    const row = rows.find((candidate) => candidate.id === id)
+    const confirmed = await confirmAction({
+      title: 'Удалить стык',
+      itemName: row ? `${String(row.line ?? '-')} · ${String(row.joint ?? '-')}` : 'Запись стыка',
+      description: 'Запись будет удалена из сварочного журнала.',
+      warning: 'Связанные данные по этому стыку могут стать неактуальными. Это действие нельзя отменить.',
+    })
+    if (confirmed) deleteMutation.mutate(id)
+  }
+
+  async function deleteWeldRowsByIds(ids: number[]) {
+    const rowIds = Array.from(new Set(ids)).filter(Number.isFinite)
+    if (rowIds.length === 0) return
+    if (rowIds.length === 1) {
+      await deleteWeldRowById(rowIds[0])
+      return
+    }
+
+    if (!(await requireDeletePassword('удаление выбранных стыков'))) return
+    const confirmed = await confirmAction({
+      title: 'Удалить выбранные стыки',
+      itemName: `${rowIds.length} стыков`,
+      description: 'Выбранные записи будут удалены из сварочного журнала.',
+      warning: 'Связанные данные по этим стыкам могут стать неактуальными. Это действие нельзя отменить.',
+    })
+    if (!confirmed) return
+
+    try {
+      await Promise.all(rowIds.map((id) => deleteMutation.mutateAsync(id)))
+      setSelectedWeldingJournalIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
+      setSelectedLnkIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
+      setSelectedHeatTreatmentIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
+      setMessage(`Удалено стыков: ${rowIds.length}`)
+    } catch {
+      // Текст ошибки уже показывает deleteMutation.onError.
+    }
   }
 
   const openPercentageLineStampRows = (filter: PercentageLineStampFilter) => {
@@ -1176,31 +1258,476 @@ export function useHomePageController() {
     openAddLnkResultModalForRow,
   })
 
+  const openLnkRequestContextForRow = (row: WeldRow) => {
+    if (canCreateLnkRequest(row)) {
+      openCreateLnkRequestModalForRow(row)
+      return
+    }
+
+    const requestName = getLnkRowRequestNames(row)[0]
+    if (requestName) {
+      openLnkRequestManager(requestName)
+      return
+    }
+
+    setMessage('Для этого стыка нет заявок ЛНК')
+  }
+
+  const openPstoRequestContextForRow = (row: WeldRow) => {
+    if (canCreatePstoRequest(row)) {
+      openCreatePstoRequestModalForRow(row)
+      return
+    }
+
+    const requestName = String(row.pstoRequest ?? '').trim()
+    if (requestName) {
+      openPstoRequestManager(requestName)
+      return
+    }
+
+    setMessage('Для этого стыка нет заявки ПСТО')
+  }
+
+  const openLnkOfficialityModalForRow = (row: WeldRow) => {
+    setLnkOfficialityDraft({
+      rowIds: new Set([row.id]),
+      search: String(row.joint ?? row.line ?? ''),
+      status: '',
+    })
+    setIsLnkOfficialityModalOpen(true)
+  }
+
+  const getCommonLnkRequestNames = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length === 0) return []
+    const [firstRow, ...restRows] = selectedRows
+    const common = new Set(getLnkRowRequestNames(firstRow))
+    for (const selectedRow of restRows) {
+      const names = new Set(getLnkRowRequestNames(selectedRow))
+      for (const name of [...common]) {
+        if (!names.has(name)) common.delete(name)
+      }
+    }
+    return [...common]
+  }
+
+  const getUniquePstoRequestNames = (selectedRows: WeldRow[]) =>
+    Array.from(new Set(selectedRows.map((selectedRow) => String(selectedRow.pstoRequest ?? '').trim()).filter(Boolean)))
+
+  const areRowsOnSameLine = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) return true
+    const first = selectedRows[0]
+    return selectedRows.every(
+      (selectedRow) =>
+        String(selectedRow.projectTitle ?? '').trim() === String(first.projectTitle ?? '').trim() &&
+        String(selectedRow.subtitleCode ?? '').trim() === String(first.subtitleCode ?? '').trim() &&
+        String(selectedRow.line ?? '').trim() === String(first.line ?? '').trim(),
+    )
+  }
+
+  const filterRowsLineInCurrentReport = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length === 0) return
+    if (!areRowsOnSameLine(selectedRows)) {
+      setMessage('Выбранные стыки относятся к разным линиям')
+      return
+    }
+    filterLineInCurrentReport(selectedRows[0])
+  }
+
+  const filterSelectedRowsInCurrentReport = (selectedRows: WeldRow[]) => {
+    const rowIds = selectedRows.map((selectedRow) => selectedRow.id)
+    if (rowIds.length === 0) return
+    activeFiltersSetter({
+      ...activeColumnFilters,
+      ...buildRowIdListFilters(rowIds),
+    } as typeof activeColumnFilters)
+    setMessage(`Показаны выбранные стыки: ${rowIds.length}.`)
+  }
+
+  const activeSelectedRowIds =
+    activeReport === 'lnk'
+      ? selectedLnkIds
+      : activeReport === 'heatTreatment'
+        ? selectedHeatTreatmentIds
+        : selectedWeldingJournalIds
+  const setActiveSelectedRowIds =
+    activeReport === 'lnk'
+      ? setSelectedLnkIds
+      : activeReport === 'heatTreatment'
+        ? setSelectedHeatTreatmentIds
+        : setSelectedWeldingJournalIds
+
+  const openLnkRequestContextForRows = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) {
+      openLnkRequestContextForRow(selectedRows[0])
+      return
+    }
+
+    const creatableRows = selectedRows.filter(canCreateLnkRequest)
+    if (creatableRows.length === selectedRows.length) {
+      const methodKeys = new Set<WeldFieldKey>(
+        selectedRows.flatMap((selectedRow) => getAvailableLnkRequestMethods(selectedRow).map((method) => method.requestKey)),
+      )
+      setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
+      setSelectedLnkIds(new Set(selectedRows.map((selectedRow) => selectedRow.id)))
+      setLnkRequestDraft({ ...createDefaultLnkRequestDraft(), methods: methodKeys })
+      setLnkRequestNaming(defaultLnkRequestNaming)
+      setLnkRequestSearch('')
+      setIsLnkRequestModalOpen(true)
+      return
+    }
+
+    if (creatableRows.length === 0) {
+      const commonRequestNames = getCommonLnkRequestNames(selectedRows)
+      if (commonRequestNames.length === 1) {
+        openLnkRequestManager(commonRequestNames[0])
+        return
+      }
+    }
+
+    setMessage('Для выбранных стыков заявка ЛНК ведет в разные действия')
+  }
+
+  const openPstoRequestContextForRows = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) {
+      openPstoRequestContextForRow(selectedRows[0])
+      return
+    }
+
+    const creatableRows = selectedRows.filter(canCreatePstoRequest)
+    if (creatableRows.length === selectedRows.length) {
+      setSelectedHeatTreatmentIds(new Set(selectedRows.map((selectedRow) => selectedRow.id)))
+      setPstoRequestNaming(defaultPstoRequestNaming)
+      setPstoRequestSearch('')
+      setIsPstoRequestModalOpen(true)
+      return
+    }
+
+    if (creatableRows.length === 0) {
+      const requestNames = getUniquePstoRequestNames(selectedRows)
+      if (requestNames.length === 1) {
+        openPstoRequestManager(requestNames[0])
+        return
+      }
+    }
+
+    setMessage('Для выбранных стыков заявка ПСТО ведет в разные действия')
+  }
+
+  const openLnkResultModalForRows = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) {
+      openAddLnkResultModalForRow(selectedRows[0])
+      return
+    }
+    if (selectedRows.some((selectedRow) => getLnkRowRequestNames(selectedRow).length === 0)) {
+      setMessage('Для части выбранных стыков нет заявки ЛНК')
+      return
+    }
+
+    const commonRequestNames = getCommonLnkRequestNames(selectedRows)
+    const requestName = commonRequestNames.length === 1 ? commonRequestNames[0] : ''
+    setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
+    setLnkResultRequestSearch(requestName)
+    setLnkResultDraft({
+      ...createDefaultLnkResultDraft(defaultLnkConclusionNaming),
+      requestName,
+      rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
+      search: '',
+    })
+    setShouldPinPreviewedLnkResultRows(false)
+    setIsLnkResultModalOpen(true)
+  }
+
+  const openPstoResultModalForRows = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) {
+      openAddPstoResultModalForRow(selectedRows[0])
+      return
+    }
+    const requestNames = getUniquePstoRequestNames(selectedRows)
+    if (requestNames.length !== 1) {
+      setMessage('Для результата ПСТО выберите стыки одной заявки ПСТО')
+      return
+    }
+
+    const requestName = requestNames[0]
+    setPstoResultDraft({
+      ...createDefaultPstoResultDraft(defaultPstoConclusionNaming),
+      requestName,
+      rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
+      search: '',
+    })
+    setPstoResultRequestSearch(requestName)
+    setIsPstoResultModalOpen(true)
+  }
+
+  const openLnkOfficialityModalForRows = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) {
+      openLnkOfficialityModalForRow(selectedRows[0])
+      return
+    }
+    setLnkOfficialityDraft({
+      rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
+      search: '',
+      status: '',
+    })
+    setIsLnkOfficialityModalOpen(true)
+  }
+
+  const openDuplicateControlModalForRows = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) {
+      openDuplicateControlModalForRow(selectedRows[0])
+      return
+    }
+    setDuplicateControlDraft({
+      ...createEmptyDuplicateControlDraft(),
+      rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
+    })
+    setIsDuplicateControlModalOpen(true)
+  }
+
+  const getLnkRequestGroupDisabledReason = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) return undefined
+    const creatableCount = selectedRows.filter(canCreateLnkRequest).length
+    if (creatableCount > 0 && creatableCount < selectedRows.length) {
+      return 'Часть стыков требует создания заявки, а часть уже находится в заявке'
+    }
+    if (creatableCount === selectedRows.length) return undefined
+    return getCommonLnkRequestNames(selectedRows).length === 1 ? undefined : 'Выбранные стыки находятся в разных заявках ЛНК'
+  }
+
+  const getPstoRequestGroupDisabledReason = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length <= 1) return undefined
+    const creatableCount = selectedRows.filter(canCreatePstoRequest).length
+    if (creatableCount > 0 && creatableCount < selectedRows.length) {
+      return 'Часть стыков требует создания заявки, а часть уже находится в заявке'
+    }
+    if (creatableCount === selectedRows.length) return undefined
+    return getUniquePstoRequestNames(selectedRows).length === 1 ? undefined : 'Выбранные стыки находятся в разных заявках ПСТО'
+  }
+
+  const getSelectedRowsReportCount = (selectedRows: WeldRow[], report: 'weldingJournal' | 'lnk' | 'heatTreatment') => {
+    const selectedIds = new Set(selectedRows.map((selectedRow) => selectedRow.id))
+    const reportRows = report === 'lnk' ? lnkRows : report === 'heatTreatment' ? heatTreatmentRows : rows
+    return reportRows.filter((reportRow) => selectedIds.has(reportRow.id)).length
+  }
+
+  const getReportContextMenuItems = (row: WeldRow, selectedRows: WeldRow[] = [row]): ContextActionMenuItem[] => {
+    const contextRows = selectedRows.length > 0 ? selectedRows : [row]
+    const isGroupAction = contextRows.length > 1
+    const sameLine = areRowsOnSameLine(contextRows)
+    const labelSuffix = isGroupAction ? ` (${contextRows.length})` : ''
+    const lnkReportCount = getSelectedRowsReportCount(contextRows, 'lnk')
+    const pstoReportCount = getSelectedRowsReportCount(contextRows, 'heatTreatment')
+    const weldingJournalReportCount = getSelectedRowsReportCount(contextRows, 'weldingJournal')
+    const getReportLabel = (label: string, count: number) => `${label}${isGroupAction ? ` (${count})` : ''}`
+    const getEmptyReportReason = (count: number, reportLabel: string) =>
+      isGroupAction && count === 0 ? `Среди выбранных стыков нет строк в отчете ${reportLabel}` : undefined
+    const lnkRequestDisabledReason = activeReport === 'lnk' ? getLnkRequestGroupDisabledReason(contextRows) : undefined
+    const pstoRequestDisabledReason = activeReport === 'heatTreatment' ? getPstoRequestGroupDisabledReason(contextRows) : undefined
+    const lnkResultDisabledReason =
+      activeReport === 'lnk' && contextRows.some((selectedRow) => getLnkRowRequestNames(selectedRow).length === 0)
+        ? 'Сначала создайте заявку ЛНК для всех выбранных стыков'
+        : undefined
+    const pstoResultRequestNames = activeReport === 'heatTreatment' ? getUniquePstoRequestNames(contextRows) : []
+    const pstoResultDisabledReason =
+      activeReport === 'heatTreatment' && (pstoResultRequestNames.length === 0 || (isGroupAction && pstoResultRequestNames.length !== 1))
+        ? isGroupAction
+          ? 'Для результата ПСТО выберите стыки одной заявки ПСТО'
+          : 'Сначала создайте заявку ПСТО для этого стыка'
+        : undefined
+
+    const items: ContextActionMenuItem[] = []
+
+    if (activeSelectedRowIds.has(row.id)) {
+      items.push(
+        {
+          id: 'filter-selected',
+          label: `Фильтр выбранных${labelSuffix}`,
+          icon: ListFilter,
+          onSelect: () => filterSelectedRowsInCurrentReport(contextRows),
+        },
+        ...(isGroupAction
+          ? [
+              {
+                id: 'generate-selected',
+                label: 'Сформировать',
+                icon: FileSpreadsheet,
+                onSelect: () => undefined,
+                children: [
+                  {
+                    id: 'generate-selected-welding-journal',
+                    label: 'Сварочный журнал',
+                    icon: FileSpreadsheet,
+                    onSelect: () => generateWeldingJournalDocumentForRows(contextRows),
+                  },
+                ],
+              } satisfies ContextActionMenuItem,
+            ]
+          : []),
+        { type: 'separator', id: 'selection-filter-separator' },
+      )
+    }
+
+    items.push(
+      {
+        id: 'open-chain',
+        label: 'Открыть цепочку',
+        icon: GitBranch,
+        disabled: isGroupAction,
+        title: isGroupAction ? 'Цепочку можно открыть только для одного стыка' : undefined,
+        onSelect: () => setChainRecord(row),
+      },
+      {
+        id: 'open-line',
+        label: 'Открыть линию',
+        icon: ListFilter,
+        disabled: !sameLine,
+        title: sameLine ? undefined : 'Выбранные стыки относятся к разным линиям',
+        onSelect: () => filterRowsLineInCurrentReport(contextRows),
+      },
+      { type: 'separator', id: 'navigation-separator' },
+    )
+
+    if (activeReport === 'weldingJournal') {
+      items.push(
+        {
+          id: 'open-lnk',
+          label: getReportLabel('Открыть в ЛНК', lnkReportCount),
+          icon: ExternalLink,
+          disabled: Boolean(getEmptyReportReason(lnkReportCount, 'ЛНК')),
+          title: getEmptyReportReason(lnkReportCount, 'ЛНК'),
+          onSelect: () => openRowsInReport(contextRows, 'lnk'),
+        },
+        {
+          id: 'open-psto',
+          label: getReportLabel('Открыть в ПСТО', pstoReportCount),
+          icon: ExternalLink,
+          disabled: Boolean(getEmptyReportReason(pstoReportCount, 'ПСТО')),
+          title: getEmptyReportReason(pstoReportCount, 'ПСТО'),
+          onSelect: () => openRowsInReport(contextRows, 'heatTreatment'),
+        },
+        { type: 'separator', id: 'edit-separator' },
+        {
+          id: 'edit-row',
+          label: 'Редактировать стык',
+          icon: Pencil,
+          disabled: isGroupAction,
+          title: isGroupAction ? 'Редактирование открывается только для одного стыка' : undefined,
+          onSelect: () => handleProtectedEditRecord(row),
+        },
+        {
+          id: 'delete-row',
+          label: isGroupAction ? `Удалить выбранные (${contextRows.length})` : 'Удалить стык',
+          icon: Trash2,
+          danger: true,
+          onSelect: () => deleteWeldRowsByIds(contextRows.map((selectedRow) => selectedRow.id)),
+        },
+      )
+      return items
+    }
+
+    items.push(
+      {
+        id: 'open-welding-journal',
+        label: getReportLabel('Открыть в сварочном журнале', weldingJournalReportCount),
+        icon: ExternalLink,
+        disabled: Boolean(getEmptyReportReason(weldingJournalReportCount, 'сварочного журнала')),
+        title: getEmptyReportReason(weldingJournalReportCount, 'сварочного журнала'),
+        onSelect: () => openRowsInReport(contextRows, 'weldingJournal'),
+      },
+      {
+        id: activeReport === 'lnk' ? 'open-psto' : 'open-lnk',
+        label:
+          activeReport === 'lnk'
+            ? getReportLabel('Открыть в ПСТО', pstoReportCount)
+            : getReportLabel('Открыть в ЛНК', lnkReportCount),
+        icon: ExternalLink,
+        disabled: Boolean(
+          activeReport === 'lnk' ? getEmptyReportReason(pstoReportCount, 'ПСТО') : getEmptyReportReason(lnkReportCount, 'ЛНК'),
+        ),
+        title: activeReport === 'lnk' ? getEmptyReportReason(pstoReportCount, 'ПСТО') : getEmptyReportReason(lnkReportCount, 'ЛНК'),
+        onSelect: () => openRowsInReport(contextRows, activeReport === 'lnk' ? 'heatTreatment' : 'lnk'),
+      },
+      { type: 'separator', id: 'report-actions-separator' },
+    )
+
+    if (activeReport === 'lnk') {
+      items.push(
+        {
+          id: 'lnk-request',
+          label: 'Заявка ЛНК',
+          icon: FilePlus2,
+          disabled: Boolean(lnkRequestDisabledReason),
+          title: lnkRequestDisabledReason,
+          onSelect: () => openLnkRequestContextForRows(contextRows),
+        },
+        {
+          id: 'lnk-result',
+          label: 'Результат ЛНК',
+          icon: ClipboardCheck,
+          disabled: Boolean(lnkResultDisabledReason),
+          title: lnkResultDisabledReason,
+          onSelect: () => openLnkResultModalForRows(contextRows),
+        },
+        {
+          id: 'lnk-officiality',
+          label: 'Официальность',
+          icon: BadgeCheck,
+          onSelect: () => openLnkOfficialityModalForRows(contextRows),
+        },
+        {
+          id: 'duplicate-control',
+          label: 'Дубль-контроль',
+          icon: ClipboardCheck,
+          onSelect: () => openDuplicateControlModalForRows(contextRows),
+        },
+      )
+      return items
+    }
+
+    if (activeReport === 'heatTreatment') {
+      items.push(
+        {
+          id: 'psto-request',
+          label: 'Заявка ПСТО',
+          icon: FilePlus2,
+          disabled: Boolean(pstoRequestDisabledReason),
+          title: pstoRequestDisabledReason,
+          onSelect: () => openPstoRequestContextForRows(contextRows),
+        },
+        {
+          id: 'psto-result',
+          label: 'Результат ПСТО',
+          icon: ClipboardCheck,
+          disabled: Boolean(pstoResultDisabledReason),
+          title: pstoResultDisabledReason,
+          onSelect: () => openPstoResultModalForRows(contextRows),
+        },
+      )
+    }
+
+    return items
+  }
+
   const weldTableProps = createWeldTableProps({
     activeReport,
     rows: visibleRows as WeldRow[],
     columnFilters: activeColumnFilters,
     onColumnFiltersChange: activeFiltersSetter,
     onEdit: handleProtectedEditRecord,
-    onDelete: async (id) => {
-      if (!(await requireDeletePassword('удаление стыка'))) return
-      const row = rows.find((candidate) => candidate.id === id)
-      const confirmed = await confirmAction({
-        title: 'Удалить стык',
-        itemName: row ? `${String(row.line ?? '-')} · ${String(row.joint ?? '-')}` : 'Запись стыка',
-        description: 'Запись будет удалена из сварочного журнала.',
-        warning: 'Связанные данные по этому стыку могут стать неактуальными. Это действие нельзя отменить.',
-      })
-      if (confirmed) deleteMutation.mutate(id)
-    },
+    onDelete: deleteWeldRowById,
     stickyLeft,
     highlightedRowIds,
     highlightedCellKeys,
+    dispatcherTaskRowIds,
     onOpenChain: (row) => setChainRecord(row),
     onFilterLine: filterLineInCurrentReport,
     onOpenLinkedReport: openLinkedReportRow,
     onOpenDuplicateControl: openDuplicateControlModalForRow,
     rowActionHandlers,
+    getContextMenuItems: getReportContextMenuItems,
+    selectable: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
+    selectedRowIds: activeSelectedRowIds,
+    onSelectedRowIdsChange: setActiveSelectedRowIds,
   })
 
   const welderStampsRegistryProps = createWelderStampsRegistryProps({
@@ -1214,7 +1741,6 @@ export function useHomePageController() {
     search: welderStampSearch,
     filters: welderStampFilters,
     editingId: editingWelderStampId,
-    showArchived: showArchivedWelderStamps,
     onSearchChange: setWelderStampSearch,
     onFiltersChange: setWelderStampFilters,
     onDraftChange: updateWelderStampDraft,
@@ -1227,7 +1753,10 @@ export function useHomePageController() {
     onEditSuspension: (record) => runProtectedEdit('редактирование отстранения', () => editWelderStampSuspensionRecord(record)),
     onArchive: (id) => runProtectedEdit('архивирование клейма', () => archiveWelderStampRecord(id)),
     onRestore: (id) => runProtectedEdit('восстановление клейма', () => restoreWelderStampRecord(id)),
-    onToggleArchived: setShowArchivedWelderStamps,
+    onArchivePermit: (recordId, permitKind, permitId) =>
+      runProtectedEdit('архивирование допуска', () => setWelderStampPermitArchived(recordId, permitKind, permitId, true)),
+    onRestorePermit: (recordId, permitKind, permitId) =>
+      runProtectedEdit('восстановление допуска', () => setWelderStampPermitArchived(recordId, permitKind, permitId, false)),
     onDelete: (id) => runProtectedDelete('удаление клейма', () => deleteWelderStampRecord(id)),
     onDeleteSuspension: (id) => runProtectedDelete('удаление отстранения', () => deleteWelderStampSuspensionRecord(id)),
   })
@@ -1386,12 +1915,12 @@ export function useHomePageController() {
     left: stickyLeft,
     minWidth: registerMinWidth,
     isLoading: weldsQuery.isLoading,
-    weldingRows: rows,
-    acceptedWdiTotal,
-    heatTreatmentRows,
+    weldingRows: activeReport === 'weldingJournal' ? filteredVisibleRows : rows,
+    acceptedWdiTotal: filteredAcceptedWdiTotal,
+    heatTreatmentRows: activeReport === 'heatTreatment' ? filteredVisibleRows : heatTreatmentRows,
     selectedHeatTreatmentRows,
-    lnkRows,
-    availableLnkRequestRows,
+    lnkRows: activeReport === 'lnk' ? filteredVisibleRows : lnkRows,
+    availableLnkRequestRows: activeReport === 'lnk' ? filteredAvailableLnkRequestRowsForSummary : availableLnkRequestRows,
     welderStamps,
     filteredWelderStamps,
     errorMessage: weldsQuery.error ? (weldsQuery.error as Error).message : null,
@@ -1427,8 +1956,9 @@ export function useHomePageController() {
       getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
         allowedArchivedOfficialStamps: allowedArchivedOfficialStampsForEditing,
         ignoreArchivedMissingRegistry: loadOtherSettings().includeArchivedWelderStampsInForm,
+        saveCheckSettings,
         suspensions: welderStampSuspensions,
-    }),
+      }),
     isSaving: saveMutation.isPending,
     onCancel: () => setEditing(null),
     onSave: (value) =>
@@ -1450,16 +1980,20 @@ export function useHomePageController() {
       nextRequestName: nextPstoRequestName,
       selectedRows: selectedHeatTreatmentRows,
       requestNaming: pstoRequestNaming,
+      requestDate: pstoRequestDate,
       requestSearch: pstoRequestSearch,
+      message,
       requestManagerOptions: pstoRequestManagerOptions,
       heatTreatmentRowsCount: heatTreatmentRows.length,
       filteredRows: filteredPstoRequestRows,
       availableRowsCount: filteredAvailablePstoRequestRows.length,
       selectedIds: selectedHeatTreatmentIds,
       isPending: pstoRequestMutation.isPending,
+      saveCheckSettings,
       onClose: closeCreatePstoRequestModal,
       onOpenRequestManager: openPstoRequestManager,
       onRequestNamingChange: setPstoRequestNaming,
+      onRequestDateChange: setPstoRequestDate,
       onRequestSearchChange: setPstoRequestSearch,
       onToggleAllRows: toggleAllPstoRequestRows,
       onToggleRow: togglePstoRequestRow,
@@ -1528,20 +2062,25 @@ export function useHomePageController() {
     request: {
       nextRequestName: nextLnkRequestName,
       selectedRowsCount: selectedLnkRows.length,
+      selectedRows: selectedLnkRows,
       selectedTargetCount: selectedLnkRequestTargetCount,
       requestNaming: lnkRequestNaming,
+      requestDate: lnkRequestDraft.requestDate,
       requestManagerOptions: lnkRequestManagerOptions,
       selectedMethodKeys: selectedLnkMethodKeys,
       selectedMethods: lnkRequestDraft.methods,
       requestSearch: lnkRequestSearch,
+      message,
       lnkRowsCount: lnkRows.length,
       filteredRows: filteredLnkRequestRows,
       filteredAvailableRows: filteredAvailableLnkRequestRows,
       selectedIds: selectedLnkIds,
       isPending: lnkRequestMutation.isPending,
+      saveCheckSettings,
       onClose: closeCreateLnkRequestModal,
       onOpenRequestManager: openLnkRequestManager,
       onRequestNamingChange: setLnkRequestNaming,
+      onRequestDateChange: (requestDate) => setLnkRequestDraft((current) => ({ ...current, requestDate })),
       onToggleMethod: toggleLnkRequestMethod,
       onRequestSearchChange: setLnkRequestSearch,
       onToggleAllRows: toggleAllLnkRequestRows,
@@ -1640,7 +2179,7 @@ export function useHomePageController() {
       onMethodChange: changeLnkResultMethod,
       onControlDateChange: (controlDate) => setLnkResultDraft((current) => ({ ...current, controlDate })),
       onDefaultResultChange: (result) => {
-        if (result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
+        if (saveCheckSettings.lnkResultRepairRules && result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
         setLnkResultDraft((current) => ({
           ...current,
           result,
@@ -1723,11 +2262,23 @@ function filterDuplicateControlRows(rows: WeldRow[], search: string, _selectedId
   const query = search.trim().toLowerCase()
   return query
     ? rows.filter((row) =>
-        [row.project, row.subproject, row.line, row.spool, row.joint]
+        [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
           .map((value) => String(value ?? '').toLowerCase())
           .some((value) => value.includes(query)),
       )
     : rows
+}
+
+function getDispatcherTaskRowIds(tasks: DispatcherTask[]) {
+  const rowIds = new Set<number>()
+  for (const task of tasks) {
+    if (task.kind === 'welder-stamp-expiry') continue
+    rowIds.add(task.row.id)
+    if (task.kind === 'percentage-line-control') {
+      task.targetRowIds?.forEach((rowId) => rowIds.add(rowId))
+    }
+  }
+  return rowIds
 }
 
 function getDuplicateControlSaveBlockReason({

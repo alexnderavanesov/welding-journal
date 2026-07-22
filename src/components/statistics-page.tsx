@@ -2188,13 +2188,13 @@ function LineSummaryPanel({
                 </colgroup>
                 <thead className="bg-slate-100 text-slate-700">
                   <tr>
-                    <LineHeaderCell>Проект/Титул</LineHeaderCell>
-                    <LineHeaderCell>Шифр/Подтитул</LineHeaderCell>
+                    <LineHeaderCell>Проект</LineHeaderCell>
+                    <LineHeaderCell>Шифр</LineHeaderCell>
                     <LineHeaderCell>Линия</LineHeaderCell>
                     {showLineDetails ? (
                       <>
-                        <LineHeaderCell>Группа</LineHeaderCell>
-                        <LineHeaderCell>Категория</LineHeaderCell>
+                        <LineHeaderCell>Группа трубопровода</LineHeaderCell>
+                        <LineHeaderCell>Категория трубопровода</LineHeaderCell>
                         <LineHeaderCell align="right">Контроль швов, (%)</LineHeaderCell>
                       </>
                     ) : null}

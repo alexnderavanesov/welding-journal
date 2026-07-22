@@ -81,7 +81,14 @@ export function buildLnkReportHtml(
 }
 
 function formatLnkReportCell(value: unknown, field: WeldField) {
-  if (field.key === 'weldDate' || field.key === 'controlDate' || field.key === 'pstoDate') return formatDisplayDate(value)
+  if (
+    field.key === 'weldDate' ||
+    field.key === 'controlDate' ||
+    field.key === 'pstoRequestDate' ||
+    field.key === 'pstoDate'
+  ) {
+    return formatDisplayDate(value)
+  }
   if (field.key === 'wdi') return value ?? ''
   return value ?? ''
 }

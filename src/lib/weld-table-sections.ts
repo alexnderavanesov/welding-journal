@@ -1,4 +1,4 @@
-import { canCollapseSection } from '@/lib/weld-table-utils'
+import { canCollapseSection } from '@/lib/weld-table-section-state'
 import { VISIBLE_FIELD_SECTIONS, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
 
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -86,7 +86,7 @@ export function getFilteredWeldTableSections({
 }: {
   availableSections: WeldTableSection[]
   collapsedSections: ReadonlySet<string>
-  alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>
+  alwaysVisibleFieldKeys: ReadonlySet<string>
 }) {
   return availableSections
     .map((group) => ({

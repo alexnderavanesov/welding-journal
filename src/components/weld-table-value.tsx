@@ -1,15 +1,14 @@
+import { formatDate, formatDateTime } from '@/lib/weld-table-formatting'
 import {
   AdditionalBadge,
   CancelledBadge,
   ResultBadge,
   YesBadge,
-  formatDate,
-  formatDateTime,
-  isCancelledText,
   isAdditionalText,
+  isCancelledText,
   isNoText,
   isYesText,
-} from '@/lib/weld-table-utils'
+} from '@/lib/weld-table-badges'
 import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
 
 const DATE_TIME_FIELD_KEYS = new Set<WeldFieldKey>(['createdAt', 'pstoCreatedAt', 'lnkCreatedAt'])
@@ -23,6 +22,8 @@ export function WeldTableValue({
   value: unknown
   isResultField: boolean
 }) {
+  const fieldKey = field.key as WeldFieldKey
+
   if (field.kind === 'boolean') {
     if (isCancelledText(value)) return <CancelledBadge />
     if (isAdditionalText(value)) return <AdditionalBadge />
@@ -31,10 +32,10 @@ export function WeldTableValue({
   }
 
   return (
-    <span className={field.kind === 'date' || DATE_TIME_FIELD_KEYS.has(field.key) || isResultField ? 'whitespace-nowrap' : 'line-clamp-2'}>
+    <span className={field.kind === 'date' || DATE_TIME_FIELD_KEYS.has(fieldKey) || isResultField ? 'whitespace-nowrap' : 'line-clamp-2'}>
       {field.kind === 'date' ? (
         formatDate(value)
-      ) : DATE_TIME_FIELD_KEYS.has(field.key) ? (
+      ) : DATE_TIME_FIELD_KEYS.has(fieldKey) ? (
         formatDateTime(value)
       ) : isResultField ? (
         <ResultBadge value={value} />

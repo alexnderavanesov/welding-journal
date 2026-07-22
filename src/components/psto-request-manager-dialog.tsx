@@ -11,6 +11,7 @@ import {
   RequestRenamePanel,
 } from '@/components/request-manager-panels'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { isSystemPstoRequestName } from '@/lib/report-request-naming'
 import { hasText } from '@/lib/report-value-utils'
 
 export type PstoRequestManagerDialogProps = {
@@ -43,6 +44,7 @@ export function PstoRequestManagerDialog({
   onDeleteRequest,
 }: PstoRequestManagerDialogProps) {
   const resultCount = requestRows.filter((row) => hasText(row.pstoResult)).length
+  const isSystemRequest = isSystemPstoRequestName(requestName)
 
   return (
     <LargeDialogShell maxWidthClassName="max-w-[920px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[60] bg-slate-950/30">
@@ -70,11 +72,22 @@ export function PstoRequestManagerDialog({
         <RequestRenamePanel
           value={requestNameDraft}
           placeholder="Новое наименование заявки"
-          disabled={!requestName || isManagerPending}
-          canRename={Boolean(requestName && requestNameDraft.trim() && requestNameDraft.trim() !== requestName && !isManagerPending)}
+          disabled={!requestName || isSystemRequest || isManagerPending}
+          canRename={Boolean(
+            requestName &&
+              !isSystemRequest &&
+              requestNameDraft.trim() &&
+              requestNameDraft.trim() !== requestName &&
+              !isManagerPending,
+          )}
           onChange={onRequestNameDraftChange}
           onRename={onRenameRequest}
-        />
+        >
+          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+            Дата заявки ПСТО фиксируется при создании и не редактируется в управлении заявками. Системную
+            заявку переименовать нельзя; пользовательскую можно только переименовать.
+          </p>
+        </RequestRenamePanel>
 
         <RequestPositionPanel
           title="Очистить конкретный стык"

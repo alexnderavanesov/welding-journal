@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import type { LnkRequestDraftState } from '@/lib/report-draft-state'
+import { createDefaultLnkRequestDraft, type LnkRequestDraftState } from '@/lib/report-draft-state'
 import {
   defaultRequestNamingState,
   type RequestNamingState,
 } from '@/lib/request-naming-state'
 
 export function useLnkRequestModalState() {
-  const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => ({ methods: new Set() }))
+  const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => createDefaultLnkRequestDraft())
   const [lnkRequestNaming, setLnkRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
   const [isLnkRequestModalOpen, setIsLnkRequestModalOpen] = useState(false)
   const [isLnkRequestManagerOpen, setIsLnkRequestManagerOpen] = useState(false)

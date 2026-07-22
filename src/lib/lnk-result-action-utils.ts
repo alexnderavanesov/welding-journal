@@ -13,7 +13,7 @@ function keepAvailableMethodKey(
   methodKey: WeldFieldKey | '',
   methodRows: WeldRow[],
   requestName: string,
-) {
+): LnkResultDraftState['methodKey'] {
   if (!methodKey) return ''
   const methods = getLnkInputMethodsForRows(methodRows, requestName)
   return methods.some((method) => method.requestKey === methodKey) ? methodKey : ''
@@ -23,7 +23,7 @@ export function resolveLnkResultDraftAfterRequestChange(
   current: LnkResultDraftState,
   lnkRows: WeldRow[],
   requestName: string,
-) {
+): LnkResultDraftState {
   const rowIds = new Set(current.rowIds)
   const selectedRows = lnkRows.filter((row) => rowIds.has(row.id))
   const requestRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : []
@@ -46,7 +46,7 @@ export function resolveLnkResultDraftAfterMethodChange(
   current: LnkResultDraftState,
   lnkRows: WeldRow[],
   methodKey: WeldFieldKey | '',
-) {
+): LnkResultDraftState {
   if (!methodKey) return { ...current, methodKey: '' }
   const rowIds = new Set(
     [...current.rowIds].filter((id) => {
@@ -66,7 +66,7 @@ export function resolveLnkResultDraftAfterRowIdsChange(
   current: LnkResultDraftState,
   lnkRows: WeldRow[],
   rowIds: Set<number>,
-) {
+): LnkResultDraftState {
   const selectedRows = lnkRows.filter((candidate) => rowIds.has(candidate.id))
   const requestName = current.requestName
     && selectedRows.some((candidate) => rowBelongsToLnkRequest(candidate, current.requestName))

@@ -19,6 +19,7 @@ export function createPstoResultActionHandlers({
   pstoResultDraft,
   pstoResultSaveBlockReason,
   selectedPstoResultRows,
+  saveCheckSettings,
   pstoResultCorrectionMutation,
   pstoResultMutation,
   defaultConclusionNaming,
@@ -121,12 +122,16 @@ export function createPstoResultActionHandlers({
       setMessage('Выберите результат ПСТО')
       return
     }
-    if (!pstoResultDraft.pstoDate) {
+    if (saveCheckSettings.pstoResultDateRequired && !pstoResultDraft.pstoDate) {
       setMessage('Укажите дату ПСТО')
       return
     }
-    const diagramName = getRequestNameFromNaming(pstoResultDraft.diagramNaming, nextPstoDiagramName)
-    if (!diagramName) {
+    const diagramName = getRequestNameFromNaming(
+      pstoResultDraft.diagramNaming,
+      nextPstoDiagramName,
+      pstoResultDraft.pstoDate,
+    )
+    if (saveCheckSettings.pstoResultDiagramRequired && !diagramName) {
       setMessage('Укажите наименование диаграммы термообработки')
       return
     }

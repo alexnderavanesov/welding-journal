@@ -49,6 +49,6 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
 
 function getDispatcherTaskTitle(task: DispatcherTask) {
   if ('title' in task) return task.title
-  if (task.kind === 'welder-stamp-expiry') return `Клеймо ${task.naksStamp}: срок НАКС`
+  if (task.kind === 'welder-stamp-expiry') return `Клеймо ${task.naksStamp}: срок ${task.permitKind === 'dls' ? 'ДЛС' : 'НАКС'}`
   return task.kind
 }

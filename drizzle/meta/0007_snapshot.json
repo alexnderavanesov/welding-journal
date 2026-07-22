@@ -1,0 +1,1158 @@
+{
+  "id": "a4b53bfc-7272-43ad-bb6f-5bbe9882896d",
+  "prevId": "9f460393-229d-4bef-a8cf-8f46ef990b2c",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.dispatcher_accepted_warnings": {
+      "name": "dispatcher_accepted_warnings",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.duplicate_controls": {
+      "name": "duplicate_controls",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "weld_joint_id": {
+          "name": "weld_joint_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result": {
+          "name": "result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "control_date": {
+          "name": "control_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "conclusion": {
+          "name": "conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "conclusion_date": {
+          "name": "conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "duplicate_controls_weld_joint_id_weld_joints_id_fk": {
+          "name": "duplicate_controls_weld_joint_id_weld_joints_id_fk",
+          "tableFrom": "duplicate_controls",
+          "tableTo": "weld_joints",
+          "columnsFrom": [
+            "weld_joint_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.weld_joints": {
+      "name": "weld_joints",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "weld_date": {
+          "name": "weld_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "project_title": {
+          "name": "project_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subtitle_code": {
+          "name": "subtitle_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "line": {
+          "name": "line",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "group_name": {
+          "name": "group_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_required": {
+          "name": "psto_required",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "weld_control_percent": {
+          "name": "weld_control_percent",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isometry": {
+          "name": "isometry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sheet": {
+          "name": "sheet",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revision_number": {
+          "name": "revision_number",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "joint": {
+          "name": "joint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spool": {
+          "name": "spool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spool_id": {
+          "name": "spool_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revision_actuality": {
+          "name": "revision_actuality",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "order_code_1": {
+          "name": "order_code_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "order_code_2": {
+          "name": "order_code_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_unique_number_1": {
+          "name": "material_unique_number_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_unique_number_2": {
+          "name": "material_unique_number_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "element_1": {
+          "name": "element_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "element_2": {
+          "name": "element_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_id_1": {
+          "name": "material_id_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_id_2": {
+          "name": "material_id_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_1": {
+          "name": "material_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_2": {
+          "name": "material_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_full_name_1": {
+          "name": "material_full_name_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_full_name_2": {
+          "name": "material_full_name_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_normative_document_1": {
+          "name": "material_normative_document_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_normative_document_2": {
+          "name": "material_normative_document_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_certificate_number_1": {
+          "name": "material_certificate_number_1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_certificate_number_2": {
+          "name": "material_certificate_number_2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "welding_method": {
+          "name": "welding_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "connection_type": {
+          "name": "connection_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_group": {
+          "name": "material_group",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d1": {
+          "name": "d1",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "d2": {
+          "name": "d2",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "t1": {
+          "name": "t1",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "t2": {
+          "name": "t2",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wdi": {
+          "name": "wdi",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsible": {
+          "name": "responsible",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_1_k": {
+          "name": "stamp_1_k",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_1_z": {
+          "name": "stamp_1_z",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_1_o": {
+          "name": "stamp_1_o",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_2_k": {
+          "name": "stamp_2_k",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_2_z": {
+          "name": "stamp_2_z",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_2_o": {
+          "name": "stamp_2_o",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_1_k_fact": {
+          "name": "stamp_1_k_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_1_z_fact": {
+          "name": "stamp_1_z_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_1_o_fact": {
+          "name": "stamp_1_o_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_2_k_fact": {
+          "name": "stamp_2_k_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_2_z_fact": {
+          "name": "stamp_2_z_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_2_o_fact": {
+          "name": "stamp_2_o_fact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_vik": {
+          "name": "has_vik",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_rk": {
+          "name": "has_rk",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_pvk": {
+          "name": "has_pvk",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_uzk": {
+          "name": "has_uzk",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_tvmt": {
+          "name": "has_tvmt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_rfa": {
+          "name": "has_rfa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_stls": {
+          "name": "has_stls",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_mkk": {
+          "name": "has_mkk",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vik_request": {
+          "name": "vik_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vik_request_date": {
+          "name": "vik_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rk_request": {
+          "name": "rk_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rk_request_date": {
+          "name": "rk_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pvk_request": {
+          "name": "pvk_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pvk_request_date": {
+          "name": "pvk_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uzk_request": {
+          "name": "uzk_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uzk_request_date": {
+          "name": "uzk_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_request": {
+          "name": "psto_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_request_date": {
+          "name": "psto_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tvmt_request": {
+          "name": "tvmt_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tvmt_request_date": {
+          "name": "tvmt_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rfa_request": {
+          "name": "rfa_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rfa_request_date": {
+          "name": "rfa_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stls_request": {
+          "name": "stls_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stls_request_date": {
+          "name": "stls_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mkk_request": {
+          "name": "mkk_request",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mkk_request_date": {
+          "name": "mkk_request_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_date": {
+          "name": "psto_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "heat_treatment_diagram": {
+          "name": "heat_treatment_diagram",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_result": {
+          "name": "psto_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_note": {
+          "name": "psto_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vik_result": {
+          "name": "vik_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rk_result": {
+          "name": "rk_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pvk_result": {
+          "name": "pvk_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uzk_result": {
+          "name": "uzk_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tvmt_result": {
+          "name": "tvmt_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rfa_result": {
+          "name": "rfa_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stls_result": {
+          "name": "stls_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mkk_result": {
+          "name": "mkk_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vik_conclusion_date": {
+          "name": "vik_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vik_conclusion": {
+          "name": "vik_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rk_conclusion_date": {
+          "name": "rk_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rk_conclusion": {
+          "name": "rk_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pvk_conclusion_date": {
+          "name": "pvk_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pvk_conclusion": {
+          "name": "pvk_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uzk_conclusion_date": {
+          "name": "uzk_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uzk_conclusion": {
+          "name": "uzk_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tvmt_conclusion_date": {
+          "name": "tvmt_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tvmt_conclusion": {
+          "name": "tvmt_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rfa_conclusion_date": {
+          "name": "rfa_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rfa_conclusion": {
+          "name": "rfa_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stls_conclusion_date": {
+          "name": "stls_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stls_conclusion": {
+          "name": "stls_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mkk_conclusion_date": {
+          "name": "mkk_conclusion_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mkk_conclusion": {
+          "name": "mkk_conclusion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lnk_defect_description": {
+          "name": "lnk_defect_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lnk_note": {
+          "name": "lnk_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "final_status": {
+          "name": "final_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "test_contour": {
+          "name": "test_contour",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "test_date": {
+          "name": "test_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "boq": {
+          "name": "boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "test_boq": {
+          "name": "test_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ks3": {
+          "name": "ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "test_ks3": {
+          "name": "test_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_boq": {
+          "name": "psto_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_ks3": {
+          "name": "psto_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "psto_created_at": {
+          "name": "psto_created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lnk_created_at": {
+          "name": "lnk_created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vik_boq": {
+          "name": "vik_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vik_ks3": {
+          "name": "vik_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rk_boq": {
+          "name": "rk_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rk_ks3": {
+          "name": "rk_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pvk_boq": {
+          "name": "pvk_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pvk_ks3": {
+          "name": "pvk_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uzk_boq": {
+          "name": "uzk_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uzk_ks3": {
+          "name": "uzk_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tvmt_boq": {
+          "name": "tvmt_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tvmt_ks3": {
+          "name": "tvmt_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rfa_boq": {
+          "name": "rfa_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rfa_ks3": {
+          "name": "rfa_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stls_boq": {
+          "name": "stls_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stls_ks3": {
+          "name": "stls_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mkk_boq": {
+          "name": "mkk_boq",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mkk_ks3": {
+          "name": "mkk_ks3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.welder_stamp_suspensions": {
+      "name": "welder_stamp_suspensions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "naks_stamp": {
+          "name": "naks_stamp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "suspended_from": {
+          "name": "suspended_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "suspended_to": {
+          "name": "suspended_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.welder_stamps": {
+      "name": "welder_stamps",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "naks_stamp": {
+          "name": "naks_stamp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "welder_name": {
+          "name": "welder_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "internal_stamp": {
+          "name": "internal_stamp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "weld_type": {
+          "name": "weld_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "material_groups": {
+          "name": "material_groups",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diameter_from": {
+          "name": "diameter_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diameter_to": {
+          "name": "diameter_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thickness_from": {
+          "name": "thickness_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thickness_to": {
+          "name": "thickness_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "naks_permits": {
+          "name": "naks_permits",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dls_permits": {
+          "name": "dls_permits",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived": {
+          "name": "archived",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

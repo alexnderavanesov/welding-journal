@@ -1,5 +1,6 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import {
+  createDefaultLnkRequestDraft,
   createDefaultLnkResultDraft,
   createDefaultPstoResultDraft,
   type LnkRequestDraftState,
@@ -110,7 +111,7 @@ export function useReportSwitchReset({
     }
     if (activeReport !== 'lnk') {
       setSelectedLnkIds(new Set())
-      setLnkRequestDraft({ methods: new Set() })
+      setLnkRequestDraft(createDefaultLnkRequestDraft())
       setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
       setIsLnkResultModalOpen(false)

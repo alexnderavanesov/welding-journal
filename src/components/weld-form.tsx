@@ -12,6 +12,7 @@ import {
 import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-import-export'
 import type { WeldDraft } from '@/lib/dispatcher-types'
 import { useOtherSettings } from '@/lib/other-settings'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import {
   formHiddenFieldKeys,
@@ -42,6 +43,7 @@ type WeldFormProps = {
 export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOptions, getExternalSaveBlockReason, onSave, onCancel, busy }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
   const otherSettings = useOtherSettings()
+  const saveCheckSettings = useSaveCheckSettings()
   const systemWdiEnabled = isSystemWdiMode(otherSettings)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
   const [activeTab, setActiveTab] = useState<WeldFormTab>(() => getWeldFormTabForField(focusField))
@@ -60,8 +62,8 @@ export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOp
   const saveBlockReason =
     getWeldStampSaveBlockReason(preparedDraft, resolvedStampSelectOptions) ??
     getExternalSaveBlockReason?.(preparedDraft) ??
-    getRequiredRootStampMessage(preparedDraft) ??
-    getWeldFormSaveBlockReason(draft, value)
+    (saveCheckSettings.requiredRootStampWithWeldDate ? getRequiredRootStampMessage(preparedDraft) : null) ??
+    getWeldFormSaveBlockReason(draft, value, saveCheckSettings)
   const autoClearHint = saveBlockReason ? null : getWeldFormAutoClearHint(draft, value)
   const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(draft, value)
   const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(draft, value)
@@ -164,6 +166,7 @@ export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOp
           draft={draft}
           suggestionRows={suggestionRows}
           stampSelectOptions={resolvedStampSelectOptions}
+          stampCompatibilityReason={getExternalSaveBlockReason?.(preparedDraft) ?? null}
           systemWdiEnabled={systemWdiEnabled}
           fieldRefs={fieldRefs}
           onToggleSection={toggleSection}

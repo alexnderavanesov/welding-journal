@@ -4,6 +4,7 @@ import { createZip } from '@/lib/weld-export-zip'
 import { escapeXml, getExportColumnWidth, normalizeSheetName } from '@/lib/weld-export-utils'
 import type { ActiveReport } from '@/lib/home-state'
 import { getReportImportFieldKeys } from '@/lib/report-field-state'
+import { LNK_REQUEST_DATE_FIELD_KEYS } from '@/lib/report-config'
 import { VISIBLE_FIELDS } from '@/lib/weld-visible-field-layout'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { loadOtherSettings } from '@/lib/other-settings'
@@ -26,12 +27,14 @@ const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
   'rkRequest',
   'uzkRequest',
   'pvkRequest',
+  ...LNK_REQUEST_DATE_FIELD_KEYS,
   'pstoRequest',
   'tvmtRequest',
   'rfaRequest',
   'stlsRequest',
   'mkkRequest',
   'pstoDate',
+  'pstoRequestDate',
   'pstoResult',
   'heatTreatmentDiagram',
   'pstoNote',
@@ -68,6 +71,7 @@ const WELD_IMPORT_CHECKED_FIELD_KEYS = new Set<string>([
   'weldDate',
   'weldingMethod',
   'connectionType',
+  'materialGroup',
   'd1',
   'd2',
   'stamp1K',
@@ -100,6 +104,8 @@ const PREVIEW_FIELD_KEYS = [
   'joint',
   'weldDate',
   'weldingMethod',
+  'connectionType',
+  'materialGroup',
   'd1',
   'd2',
   'wdi',

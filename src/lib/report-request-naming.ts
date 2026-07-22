@@ -1,3 +1,4 @@
+import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import {
@@ -9,18 +10,26 @@ import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/li
 import { compactSearchText, normalizeSearchText } from '@/lib/report-row-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
-export function formatPstoRequestName(rows: WeldRow[], settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS) {
+export function formatPstoRequestName(
+  rows: WeldRow[],
+  settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  requestDate?: string,
+) {
   return buildSystemNameFromPattern(
     settings.pstoRequest.systemPattern,
-    { date: new Date() },
+    { date: getNamingDate(requestDate) },
     rows.map((row) => String(row.pstoRequest ?? '').trim()),
   )
 }
 
-export function formatLnkRequestName(rows: WeldRow[], settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS) {
+export function formatLnkRequestName(
+  rows: WeldRow[],
+  settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  requestDate?: string,
+) {
   return buildSystemNameFromPattern(
     settings.lnkRequest.systemPattern,
-    { date: new Date() },
+    { date: getNamingDate(requestDate) },
     rows.flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim())),
   )
 }
@@ -51,8 +60,33 @@ export function filterRequestNamesBySearch(requestNames: string[], search: strin
   })
 }
 
-export function getRequestNameFromNaming(naming: RequestNamingState, systemName: string) {
-  return naming.mode === 'system' ? systemName.trim() : naming.customName.trim()
+export function getRequestNameFromNaming(naming: RequestNamingState, systemName: string, customDate?: unknown) {
+  return naming.mode === 'system' ? systemName.trim() : formatCustomDocumentName(naming.customName, customDate)
+}
+
+export function formatCustomRequestName(name: string, dateValue?: unknown) {
+  return formatCustomDocumentName(name, dateValue)
+}
+
+export function formatCustomDocumentName(name: string, dateValue?: unknown) {
+  const trimmedName = stripDocumentDateSuffix(name)
+  if (!trimmedName) return ''
+  const isoDate = parseDateLikeToIso(dateValue)
+  if (!isoDate) return trimmedName
+  return `${trimmedName} от ${formatDisplayDate(isoDate)}`
+}
+
+export function stripDocumentDateSuffix(name: string) {
+  const trimmedName = name.trim()
+  return trimmedName.replace(/\s+от\s+\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})$/i, '').trim()
+}
+
+export function isSystemLnkRequestName(name: string) {
+  return parseLnkRequestName(name) !== null
+}
+
+export function isSystemPstoRequestName(name: string) {
+  return parsePstoRequestName(name) !== null
 }
 
 export function formatRequestCreatedMessage(requestName: string, count: number) {
@@ -102,16 +136,23 @@ export function parseLnkRequestName(value: string) {
   const fullYear = year.length === 2 ? `20${year}` : year
   return {
     dateValue: Number(`${fullYear}${month}${day}`),
+    isoDate: `${fullYear}-${month}-${day}`,
     number: Number(number),
   }
 }
 
 export function parsePstoRequestName(value: string) {
-  const match = value.trim().match(/^ПСТО-(\d{2})\.(\d{2})\.(\d{2})-(\d{3})$/)
+  const match = value.trim().match(/^ПСТО-(\d{2})\.(\d{2})\.(\d{2}|\d{4})-(\d{3})$/)
   if (!match) return null
   const [, day, month, year, number] = match
+  const fullYear = year.length === 2 ? `20${year}` : year
   return {
-    dateValue: Number(`20${year}${month}${day}`),
+    dateValue: Number(`${fullYear}${month}${day}`),
     number: Number(number),
   }
+}
+
+function getNamingDate(value: unknown) {
+  const isoDate = parseDateLikeToIso(value)
+  return isoDate ? new Date(`${isoDate}T00:00:00`) : new Date()
 }

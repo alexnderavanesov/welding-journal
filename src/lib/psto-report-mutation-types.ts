@@ -10,6 +10,7 @@ export type UsePstoReportMutationsOptions = {
   rows: RowWithId[]
   heatTreatmentRows: RowWithId[]
   pstoRequestOptions: string[]
+  setPstoRequestDate: (value: string) => void
   setMessage: (value: string) => void
   highlightChangedRows: (rows: WeldRow[], fieldKeys?: WeldFieldKey[]) => void
   setSelectedHeatTreatmentIds: (value: Set<number>) => void

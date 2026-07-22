@@ -3,7 +3,7 @@ import {
   type WeldInput,
   calculateFinalStatus,
 } from './weld-fields'
-import { mapHeadersToFields, normalizeImportHeaders, OPTIONAL_LEGACY_IMPORT_HEADERS } from './weld-import-headers'
+import { mapHeadersToFields, normalizeImportHeaders } from './weld-import-headers'
 import { emptyToNull, parseCell } from './weld-import-parsers'
 
 export type ImportResult = {
@@ -22,9 +22,8 @@ export function parseWorksheetRows(rows: unknown[][]): ImportResult {
   const [rawHeaders = [], ...dataRows] = rows
   const headers = normalizeImportHeaders(rawHeaders)
   const missingHeaders = FULL_EXCEL_HEADERS.filter((header) => !headers.includes(header))
-  const acceptsLegacy = missingHeaders.length === 0 || missingHeaders.every((header) => OPTIONAL_LEGACY_IMPORT_HEADERS.has(header))
 
-  if (!acceptsLegacy) {
+  if (missingHeaders.length > 0) {
     throw new Error(`Не найдены обязательные колонки: ${missingHeaders.join(', ')}`)
   }
 

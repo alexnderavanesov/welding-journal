@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type PstoRequestManagerAction } from '@/lib/psto-field-updates'
 import { buildPstoRequestManagerRows } from '@/lib/psto-report-mutation-updates'
 import { PSTO_GENERATED_HIGHLIGHT_FIELDS } from '@/lib/psto-report-mutation-highlight-fields'
+import { isSystemPstoRequestName } from '@/lib/report-request-naming'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -32,6 +33,7 @@ export function usePstoRequestManagerMutation({
       const renamedName = nextRequestName?.trim() ?? ''
       if (!currentName) throw new Error('Выберите заявку ПСТО')
       if (action === 'rename') {
+        if (isSystemPstoRequestName(currentName)) throw new Error('Системную заявку ПСТО нельзя переименовать')
         if (!renamedName) throw new Error('Введите новое наименование заявки')
         if (renamedName === currentName) throw new Error('Новое наименование совпадает с текущим')
         if (pstoRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')

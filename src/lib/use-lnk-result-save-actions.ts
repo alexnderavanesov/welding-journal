@@ -9,6 +9,7 @@ import {
 import { LNK_CUSTOM_RESULT_VALUE, LNK_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type LnkResultMutation = {
@@ -49,12 +50,13 @@ export function useLnkResultSaveActions({
   setMessage,
 }: UseLnkResultSaveActionsOptions) {
   const confirmAction = useConfirmAction()
+  const saveCheckSettings = useSaveCheckSettings()
 
   function setLnkResultForRow(rowId: number, result: string) {
     setDraft((current) => {
       if (!current.rowIds.has(rowId)) return current
       const row = lnkRows.find((candidate) => candidate.id === rowId)
-      if (row && result === 'ремонт' && isLnkRepairForbidden(row)) return current
+      if (saveCheckSettings.lnkResultRepairRules && row && result === 'ремонт' && isLnkRepairForbidden(row)) return current
       const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
       const rowResults: Record<number, string> = {}
       for (const id of current.rowIds) {
@@ -78,20 +80,20 @@ export function useLnkResultSaveActions({
       setMessage('Выберите один или несколько стыков')
       return
     }
-    const resultById = buildLnkResultDraftById(selectedRows, draft)
+    const resultById = buildLnkResultDraftById(selectedRows, draft, saveCheckSettings)
     const resultValues = Object.values(resultById)
     if (resultValues.some((result) => !isValidLnkResultDraftValue(result))) {
       setMessage('Укажите результат для каждого выбранного стыка')
       return
     }
     const hasNonEmptyResult = resultValues.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
-    if (hasNonEmptyResult && !draft.controlDate) {
+    if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyResult && !draft.controlDate) {
       setMessage('Укажите дату контроля')
       return
     }
     const conclusionName =
-      !hasNonEmptyResult ? '' : getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
-    if (hasNonEmptyResult && !conclusionName) {
+      !hasNonEmptyResult ? '' : getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName, draft.controlDate)
+    if (saveCheckSettings.lnkResultConclusionRequired && hasNonEmptyResult && !conclusionName) {
       setMessage('Укажите наименование заключения')
       return
     }

@@ -14,6 +14,7 @@ import {
 import { filterRequestNamesBySearch, withCurrentOption } from '@/lib/report-naming'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 
 type LnkResultDerivedStateParams = {
   lnkRows: WeldRow[]
@@ -38,6 +39,7 @@ export function useLnkResultDerivedState({
   shouldPinPreviewedLnkResultRows,
   isLnkResultSaving,
 }: LnkResultDerivedStateParams) {
+  const saveCheckSettings = useSaveCheckSettings()
   const lnkResultMethodRequestOptions = useMemo(
     () => getLnkResultMethodRequestOptions(lnkRows, lnkResultRequestOptions, lnkResultDraft.methodKey),
     [lnkResultDraft.methodKey, lnkResultRequestOptions, lnkRows],
@@ -112,9 +114,10 @@ export function useLnkResultDerivedState({
         draft: lnkResultDraft,
         isSaving: isLnkResultSaving,
         nextConclusionName: nextLnkConclusionName,
+        saveCheckSettings,
         selectedRows: selectedLnkResultRows,
       }),
-    [isLnkResultSaving, lnkResultDraft, nextLnkConclusionName, selectedLnkResultRows],
+    [isLnkResultSaving, lnkResultDraft, nextLnkConclusionName, saveCheckSettings, selectedLnkResultRows],
   )
 
   const isLnkResultSaveDisabled = Boolean(lnkResultSaveBlockReason)

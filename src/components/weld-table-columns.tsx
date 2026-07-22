@@ -1,5 +1,5 @@
 import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth } from '@/lib/weld-column-widths'
-import { CHAIN_ACTION_COLUMN_WIDTH, ROW_ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
+import { ROW_ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 
@@ -21,11 +21,11 @@ export function WeldTableColumns({
   extraColumns,
 }: WeldTableColumnsProps) {
   const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
+  const hasControlColumn = selectable || hasChainAction
 
   return (
     <colgroup>
-      {selectable ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
-      {hasChainAction ? <col style={{ width: CHAIN_ACTION_COLUMN_WIDTH }} /> : null}
+      {hasControlColumn ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
       {hasRowActions ? <col style={{ width: ROW_ACTIONS_COLUMN_WIDTH }} /> : null}
       {sections.flatMap((section) => [
         ...extraColumns

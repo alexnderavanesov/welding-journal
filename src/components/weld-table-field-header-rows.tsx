@@ -1,5 +1,5 @@
 import { Check, ListFilter } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import { omitHiddenReportFilters } from '@/lib/report-navigation'
@@ -9,6 +9,7 @@ import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
 import { getTableLabel, headerCellClass } from '@/lib/weld-table-utils'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { getStickyWeldTableFieldStyle, isStickyWeldTableField } from '@/lib/weld-table-sticky-columns'
+import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
@@ -71,6 +72,7 @@ export function WeldTableFieldHeaderRows({
               <WeldColumnFilterControl
                 fieldKey={field.key as WeldFieldKey}
                 label={getTableLabel(field.key, field.label)}
+                textLabel={field.label}
                 rows={rows}
                 columnFilters={columnFilters}
                 onColumnFiltersChange={onColumnFiltersChange}
@@ -89,12 +91,14 @@ export function WeldTableFieldHeaderRows({
 function WeldColumnFilterControl({
   fieldKey,
   label,
+  textLabel,
   rows,
   columnFilters,
   onColumnFiltersChange,
 }: {
   fieldKey: WeldFieldKey
-  label: string
+  label: ReactNode
+  textLabel: string
   rows: WeldRow[]
   columnFilters: Record<string, string>
   onColumnFiltersChange: (filters: Record<string, string>) => void
@@ -161,13 +165,13 @@ function WeldColumnFilterControl({
           setIsOpen((current) => !current)
           setOptionSearch('')
         }}
-        className={`group/header-filter relative -mx-1 flex min-h-8 w-[calc(100%+0.5rem)] min-w-0 items-center justify-center rounded-md py-1 text-[13px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
-          hasActiveFilter || isOpen ? 'bg-white/45 pl-1 pr-8 text-slate-800' : 'px-1 text-slate-700 hover:bg-white/35'
+        className={`group/header-filter relative -mx-1 flex min-h-8 w-[calc(100%+0.5rem)] min-w-0 items-center justify-center rounded-md px-1 py-1 text-[13px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
+          hasActiveFilter || isOpen ? 'bg-white/45 text-slate-800' : 'text-slate-700 hover:bg-white/35'
         }`}
         title={hasActiveFilter ? `Фильтр активен: ${filterSummary}` : 'Фильтр по значениям'}
-        aria-label={`${label}. Открыть фильтр`}
+        aria-label={`${textLabel}. Открыть фильтр`}
       >
-        <span className="min-w-0 whitespace-normal break-words text-center leading-tight">{label}</span>
+        <span className="min-w-0 whitespace-normal break-normal text-center leading-tight">{label}</span>
         <span
           className={`absolute right-1 top-1/2 inline-flex h-6 min-w-6 -translate-y-1/2 items-center justify-center gap-1 rounded-md border border-[#9fc7de] bg-white/95 px-1.5 text-[11px] font-semibold text-sky-700 shadow-sm shadow-sky-100/70 transition-opacity ${
             hasActiveFilter || isOpen ? 'opacity-100' : 'opacity-0 group-hover/header-filter:opacity-100 group-focus-visible/header-filter:opacity-100'
@@ -383,6 +387,7 @@ function ensureFilterMenuEscapeListener() {
   filterMenuEscapeListenerAttached = true
   window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return
+    if (isContextActionMenuOpen()) return
     const firstMenu = openFilterMenus[0]
     if (!firstMenu) return
     event.preventDefault()

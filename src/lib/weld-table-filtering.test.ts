@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { buildPercentageLineStampFilters } from '@/lib/report-navigation'
+import { buildPercentageLineStampFilters, buildRowIdListFilters } from '@/lib/report-navigation'
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
@@ -55,4 +55,18 @@ describe('filterWeldRowsByColumns', () => {
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1', 'S3'])
   })
 
+  it('combines selected row filter with ordinary column filters', () => {
+    const rows = [
+      row({ id: 1, joint: 'S1', line: 'LIN-1' }),
+      row({ id: 2, joint: 'S2', line: 'LIN-1' }),
+      row({ id: 3, joint: 'S3', line: 'LIN-2' }),
+    ]
+
+    const filteredRows = filterWeldRowsByColumns(rows, {
+      line: 'LIN-1',
+      ...buildRowIdListFilters([2, 3]),
+    })
+
+    expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S2'])
+  })
 })

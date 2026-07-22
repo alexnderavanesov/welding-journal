@@ -13,6 +13,7 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
+import { isSystemLnkRequestName } from '@/lib/report-naming'
 
 type LnkRequestMethod = (typeof LNK_METHODS)[number]
 
@@ -47,6 +48,7 @@ export function LnkRequestManagerDialog({
   onClearPosition,
   onDeleteRequest,
 }: LnkRequestManagerDialogProps) {
+  const isSystemRequest = isSystemLnkRequestName(requestName)
   const positionCount = LNK_METHODS.reduce(
     (count, method) => count + requestRows.filter((row) => String(row[method.requestKey] ?? '').trim() === requestName).length,
     0,
@@ -88,11 +90,22 @@ export function LnkRequestManagerDialog({
         <RequestRenamePanel
           value={requestNameDraft}
           placeholder="Новое наименование заявки"
-          disabled={!requestName || isManagerPending}
-          canRename={Boolean(requestName && requestNameDraft.trim() && requestNameDraft.trim() !== requestName && !isManagerPending)}
+          disabled={!requestName || isSystemRequest || isManagerPending}
+          canRename={Boolean(
+            requestName &&
+              !isSystemRequest &&
+              requestNameDraft.trim() &&
+              !isManagerPending &&
+              requestNameDraft.trim() !== requestName,
+          )}
           onChange={onRequestNameDraftChange}
           onRename={onRenameRequest}
-        />
+        >
+          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+            Дата заявки фиксируется при создании и не редактируется в управлении заявками. Системную заявку
+            переименовать нельзя; пользовательскую можно только переименовать.
+          </p>
+        </RequestRenamePanel>
 
         <RequestPositionPanel
           title="Очистить конкретную позицию"

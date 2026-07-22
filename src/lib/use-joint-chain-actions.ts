@@ -18,6 +18,7 @@ type UseJointChainActionsOptions = {
   setActiveReport: Dispatch<SetStateAction<ActiveReport>>
   setChainRecord: Dispatch<SetStateAction<WeldRow | null>>
   setColumnFilters: Dispatch<SetStateAction<WeldFilters>>
+  setHeatTreatmentFilters: Dispatch<SetStateAction<WeldFilters>>
   setLnkFilters: Dispatch<SetStateAction<WeldFilters>>
   setMessage: (value: string | null) => void
 }
@@ -27,6 +28,7 @@ export function useJointChainActions({
   setActiveReport,
   setChainRecord,
   setColumnFilters,
+  setHeatTreatmentFilters,
   setLnkFilters,
   setMessage,
 }: UseJointChainActionsOptions) {
@@ -111,6 +113,54 @@ export function useJointChainActions({
     }
   }
 
+  function openRowInReport(row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') {
+    setChainRecord(null)
+    const filters = buildExactJointFilters(row)
+    if (report === 'weldingJournal') {
+      setActiveReport('weldingJournal')
+      setColumnFilters(filters)
+      setMessage(`Открыт стык ${String(row.joint ?? '-')} в сварочном журнале`)
+      return
+    }
+    if (report === 'lnk') {
+      setActiveReport('lnk')
+      setLnkFilters(filters)
+      setMessage(`Открыт стык ${String(row.joint ?? '-')} в отчете ЛНК`)
+      return
+    }
+    setActiveReport('heatTreatment')
+    setHeatTreatmentFilters(filters)
+    setMessage(`Открыт стык ${String(row.joint ?? '-')} в отчете ПСТО`)
+  }
+
+  function openRowsInReport(rows: WeldRow[], report: 'weldingJournal' | 'lnk' | 'heatTreatment') {
+    const rowIds = rows.map((row) => row.id)
+    if (rowIds.length === 0) return
+    if (rowIds.length === 1) {
+      openRowInReport(rows[0], report)
+      return
+    }
+
+    setChainRecord(null)
+    const filters = buildRowIdListFilters(rowIds) as WeldFilters
+    const count = rowIds.length
+    if (report === 'weldingJournal') {
+      setActiveReport('weldingJournal')
+      setColumnFilters(filters)
+      setMessage(`Открыты выбранные стыки в сварочном журнале: ${count}`)
+      return
+    }
+    if (report === 'lnk') {
+      setActiveReport('lnk')
+      setLnkFilters(filters)
+      setMessage(`Открыты выбранные стыки в отчете ЛНК: ${count}`)
+      return
+    }
+    setActiveReport('heatTreatment')
+    setHeatTreatmentFilters(filters)
+    setMessage(`Открыты выбранные стыки в отчете ПСТО: ${count}`)
+  }
+
   function openChainBaseInCurrentReport(row: WeldRow) {
     const baseJoint = getJointBaseFromRow(row)
     showRepeatedJointTaskChain(row, baseJoint, `Показана вся цепочка стыка ${baseJoint}`)
@@ -120,6 +170,8 @@ export function useJointChainActions({
     openChainBaseInCurrentReport,
     openChainRowInCurrentReport,
     openLinkedReportRow,
+    openRowInReport,
+    openRowsInReport,
     showRepeatedJointTask,
     showRepeatedJointTaskChain,
   }

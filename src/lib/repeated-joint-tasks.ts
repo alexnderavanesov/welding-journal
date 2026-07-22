@@ -15,6 +15,8 @@ import {
   buildControlDateBeforeWeldDateCheckTasks,
   buildForbiddenRepairByDiameterCheckTasks,
   buildIncompleteWelderStampGroupTasks,
+  buildLnkChronologyCheckTasks,
+  buildPstoChronologyCheckTasks,
   buildWelderStampCompatibilityCheckTasks,
 } from '@/lib/repeated-joint-check-tasks'
 import {
@@ -62,6 +64,8 @@ export function buildRepeatedJointTasks(
   const chainCheckTasks = [
     ...buildJointChainConsistencyCheckTasks(rows, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }),
     ...buildControlDateBeforeWeldDateCheckTasks(rows),
+    ...buildLnkChronologyCheckTasks(rows),
+    ...buildPstoChronologyCheckTasks(rows),
     ...buildForbiddenRepairByDiameterCheckTasks(rows),
     ...buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions),
     ...buildIncompleteWelderStampGroupTasks(rows),

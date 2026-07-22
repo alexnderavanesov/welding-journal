@@ -22,6 +22,7 @@ export const PSTO_WAITING_REQUEST_FIELDS = [
 export const PSTO_RESULTS_FIELDS = [
   ...PSTO_WAITING_REQUEST_FIELDS.filter((field) => field.key !== 'status'),
   getReportField('pstoRequest', 'ПСТО'),
+  getReportField('pstoRequestDate', 'ПСТО'),
   getReportField('pstoDate', 'ПСТО'),
   getReportField('heatTreatmentDiagram', 'ПСТО'),
 ] as unknown as WeldField[]
@@ -29,6 +30,7 @@ export const PSTO_RESULTS_FIELDS = [
 export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
   'pstoRequest',
+  'pstoRequestDate',
   'pstoDate',
   'pstoResult',
   'heatTreatmentDiagram',
@@ -46,13 +48,21 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'hasStls',
   'hasMkk',
   'vikRequest',
+  'vikRequestDate',
   'rkRequest',
+  'rkRequestDate',
   'uzkRequest',
+  'uzkRequestDate',
   'pvkRequest',
+  'pvkRequestDate',
   'tvmtRequest',
+  'tvmtRequestDate',
   'rfaRequest',
+  'rfaRequestDate',
   'stlsRequest',
+  'stlsRequestDate',
   'mkkRequest',
+  'mkkRequestDate',
   'vikResult',
   'rkResult',
   'uzkResult',
@@ -77,5 +87,5 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
 function getReportField(key: WeldFieldKey, group: string): WeldField {
   const field = FIELD_BY_KEY.get(key)
   if (!field) throw new Error(`Unknown PSTO report field: ${key}`)
-  return { ...field, group, visible: true }
+  return { ...field, group: group as WeldField['group'], visible: true }
 }

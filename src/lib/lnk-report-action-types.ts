@@ -10,6 +10,7 @@ export type LnkRequestMutation = {
     records: WeldRow[]
     methodKeys: WeldFieldKey[]
     requestName: string
+    requestDate: string
   }) => void
 }
 

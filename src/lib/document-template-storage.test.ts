@@ -6,7 +6,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 
 describe('document template storage', () => {
   it('ignores template markers that are not current system field names', () => {
-    expect(extractTemplateFields('{{Тип сварки}} {{Способ сварки}} {{Стык/"н/п"}}')).toEqual(['Способ сварки', 'Стык'])
+    expect(extractTemplateFields('{{Неизвестное поле}} {{Способ сварки}} {{Стык/"н/п"}}')).toEqual(['Способ сварки', 'Стык'])
   })
 
   it('keeps ordinary empty template fields empty', async () => {
@@ -171,10 +171,15 @@ function welderStamp(overrides: Partial<import('@/lib/welder-stamp-types').Welde
     welderName: '',
     internalStamp: '',
     weldType: '',
+    materialGroups: '',
     diameterFrom: '',
     diameterTo: '',
+    thicknessFrom: '',
+    thicknessTo: '',
     validFrom: '',
     validTo: '',
+    naksPermits: [],
+    dlsPermits: [],
     archived: false,
     ...overrides,
   }

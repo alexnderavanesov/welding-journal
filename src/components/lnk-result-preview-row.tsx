@@ -3,6 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getEffectiveLnkResultDraftValueForRow, type LnkResultDraftLike } from '@/lib/lnk-result-draft'
 import type { LnkMethod } from '@/lib/lnk-status'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 
 type LnkResultPreviewRowProps = {
   row: WeldRow
@@ -11,9 +12,10 @@ type LnkResultPreviewRowProps = {
 }
 
 export function LnkResultPreviewRow({ row, method, draft }: LnkResultPreviewRowProps) {
+  const saveCheckSettings = useSaveCheckSettings()
   const currentResult = method ? String(row[method.resultKey] ?? '').trim() || 'заявка' : '-'
   const requestName = method ? String(row[method.requestKey] ?? '').trim() : ''
-  const result = getEffectiveLnkResultDraftValueForRow(row, draft)
+  const result = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
 
   return (
     <div className="grid grid-cols-[minmax(320px,1fr)_minmax(220px,0.45fr)] gap-4 px-4 py-3 text-sm">

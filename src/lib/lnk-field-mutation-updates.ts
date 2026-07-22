@@ -2,6 +2,7 @@ import {
   getLnkMethodByResultKey,
   getLnkMethodByRequestKey,
 } from '@/lib/lnk-status'
+import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   applyLnkFieldUpdate,
   clearDisabledLnkRequests,
@@ -12,6 +13,7 @@ import {
   withTouchedLnkTimestamp,
 } from '@/lib/lnk-field-updates'
 import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
+import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
@@ -40,6 +42,7 @@ export function buildLnkFieldRow({
   }
 
   const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
+  assertNoLnkChronologyIssues([proposedRecord], loadSaveCheckSettings())
   return withLnkFinalStatus(proposedRecord)
 }
 

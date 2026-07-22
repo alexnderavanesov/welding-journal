@@ -1,3 +1,6 @@
+import { useCallback, useState, type MouseEvent } from 'react'
+
+import { ContextActionMenu, type ContextActionMenuItem, type ContextActionMenuState } from '@/components/context-action-menu'
 import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { WeldTableColumns } from '@/components/weld-table-columns'
 import { WeldTableHeader } from '@/components/weld-table-header'
@@ -7,7 +10,7 @@ import type { ReportRowActions } from '@/lib/report-row-actions'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { CHAIN_ACTION_COLUMN_WIDTH } from '@/lib/weld-table-layout'
+import { SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
 
 export type WeldTableProps = {
   rows: WeldRow[]
@@ -18,6 +21,7 @@ export type WeldTableProps = {
   stickyLeft?: number
   highlightedRowIds?: ReadonlySet<number>
   highlightedCellKeys?: ReadonlySet<string>
+  dispatcherTaskRowIds?: ReadonlySet<number>
   readOnly?: boolean
   editableFieldKeys?: ReadonlySet<WeldFieldKey>
   blockedFieldKeys?: ReadonlySet<WeldFieldKey>
@@ -37,6 +41,7 @@ export type WeldTableProps = {
   rowActions?: ReportRowActions
   extraColumns?: WeldTableExtraColumn[]
   stickyIdentityColumns?: boolean
+  getContextMenuItems?: (row: WeldRow, selectedRows: WeldRow[]) => ContextActionMenuItem[]
 }
 
 export function WeldTable({
@@ -48,6 +53,7 @@ export function WeldTable({
   stickyLeft = 0,
   highlightedRowIds = new Set(),
   highlightedCellKeys = new Set(),
+  dispatcherTaskRowIds = new Set(),
   readOnly = false,
   editableFieldKeys = new Set(),
   blockedFieldKeys = new Set(),
@@ -56,7 +62,6 @@ export function WeldTable({
   onOpenChain,
   onFilterLine,
   onOpenLinkedReport,
-  openLinkedReportTitle = 'Открыть стык в связанном отчете',
   selectable = false,
   selectedRowIds = new Set(),
   onSelectedRowIdsChange,
@@ -67,7 +72,9 @@ export function WeldTable({
   rowActions,
   extraColumns = [],
   stickyIdentityColumns = false,
+  getContextMenuItems,
 }: WeldTableProps) {
+  const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const {
     alwaysVisibleFieldKeys,
     availableSections,
@@ -112,7 +119,22 @@ export function WeldTable({
   const extraColumnsWidth = extraColumns.reduce((total, column) => total + column.width, 0)
   const fullTableMinWidth = tableMinWidth + extraColumnsWidth
   const fullTableColumnSpan = tableColumnSpan + extraColumns.length
-  const stickyIdentityLeadingWidth = stickyIdentityColumns && hasChainAction ? CHAIN_ACTION_COLUMN_WIDTH : 0
+  const hasControlColumn = selectable || hasChainAction
+  const stickyIdentityLeadingWidth = stickyIdentityColumns && hasControlColumn ? SELECT_COLUMN_WIDTH : 0
+  const selectedRows = rows.filter((row) => selectedRowIds.has(row.id))
+  const openRowContextMenu = useCallback(
+    (event: MouseEvent, row: WeldRow) => {
+      const contextRows = selectedRowIds.has(row.id) && selectedRows.length > 1 ? selectedRows : [row]
+      const items = getContextMenuItems?.(row, contextRows).filter((item, index, list) => {
+        if (item.type !== 'separator') return true
+        return index > 0 && list[index - 1]?.type !== 'separator' && list[index + 1]?.type !== 'separator'
+      })
+      if (!items?.length) return
+      event.preventDefault()
+      setContextMenu({ x: event.clientX, y: event.clientY, items })
+    },
+    [getContextMenuItems, selectedRowIds, selectedRows],
+  )
 
   return (
     <div className="w-max space-y-3" style={{ minWidth: fullTableMinWidth }}>
@@ -142,6 +164,7 @@ export function WeldTable({
             allVisibleRowsSelected={allVisibleRowsSelected}
             someVisibleRowsSelected={someVisibleRowsSelected}
             selectableVisibleRowsCount={selectableVisibleRows.length}
+            selectedRowsCount={selectedRows.length}
             onSetVisibleRowsSelected={setVisibleRowsSelected}
             hasChainAction={hasChainAction}
             hasColumnFilters={hasColumnFilters}
@@ -173,16 +196,13 @@ export function WeldTable({
               onSetRowSelected={setRowSelected}
               isRowSelectable={isRowSelectable}
               hasChainAction={hasChainAction}
-              onOpenChain={onOpenChain}
-              onFilterLine={onFilterLine}
-              onOpenLinkedReport={onOpenLinkedReport}
-              openLinkedReportTitle={openLinkedReportTitle}
               hasRowActions={hasRowActions}
               rowActions={rowActions}
               extraColumns={extraColumns}
               duplicateKeys={duplicateKeys}
               highlightedRowIds={highlightedRowIds}
               highlightedCellKeys={highlightedCellKeys}
+              dispatcherTaskRowIds={dispatcherTaskRowIds}
               canEditField={canEditField}
               canEditCell={canEditCell}
               stickyLeft={stickyIdentityColumns ? stickyLeft : 0}
@@ -191,10 +211,12 @@ export function WeldTable({
               getDisplayValue={getDisplayValue}
               onEdit={onEdit}
               onDelete={onDelete}
+              onContextMenu={getContextMenuItems ? openRowContextMenu : undefined}
             />
           </tbody>
         </table>
       </div>
+      <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </div>
   )
 }

@@ -17,17 +17,18 @@ describe('dispatcher settings', () => {
 
   it('filters welder stamp expiry reminders separately from dispatcher tasks', () => {
     const settings = { ...DEFAULT_DISPATCHER_SETTINGS, 'welder-stamp-expiry': false }
-    const task = {
-      kind: 'welder-stamp-expiry',
-      key: 'welder-stamp-expiry:1:A1:2026-07-10',
-      stamp: { id: 1, naksStamp: 'A1', internalStamp: '', welderName: '', weldingMethod: '', diameter: '', validTo: '2026-07-10', archived: false },
-      naksStamp: 'A1',
-      validTo: '2026-07-10',
-      daysLeft: 0,
-      expired: false,
-    } as DispatcherTask
+    const task = makeExpiryTask('naks')
 
     expect(isDispatcherTaskEnabled(task, settings)).toBe(false)
+  })
+
+  it('filters DLS expiry reminders separately from NAKS expiry reminders', () => {
+    const settings = { ...DEFAULT_DISPATCHER_SETTINGS, 'welder-dls-expiry': false }
+    const naksTask = makeExpiryTask('naks')
+    const dlsTask = makeExpiryTask('dls')
+
+    expect(isDispatcherTaskEnabled(naksTask, settings)).toBe(true)
+    expect(isDispatcherTaskEnabled(dlsTask, settings)).toBe(false)
   })
 
   it('filters official-from-unofficial create tasks separately from repeated joint create tasks', () => {
@@ -69,5 +70,35 @@ function makeCreateTask(status: string): DispatcherTask {
     result: 'ремонт',
     suffix: 'R',
     methodCode: 'РК',
+  } as DispatcherTask
+}
+
+function makeExpiryTask(permitKind: 'naks' | 'dls'): DispatcherTask {
+  return {
+    kind: 'welder-stamp-expiry',
+    key: `welder-stamp-expiry:${permitKind}:1:A1:permit:2026-07-10`,
+    stamp: {
+      id: 1,
+      naksStamp: 'A1',
+      internalStamp: '',
+      welderName: '',
+      weldType: '',
+      materialGroups: '',
+      diameterFrom: '',
+      diameterTo: '',
+      thicknessFrom: '',
+      thicknessTo: '',
+      validFrom: '',
+      validTo: '2026-07-10',
+      naksPermits: [],
+      dlsPermits: [],
+      archived: false,
+    },
+    permitKind,
+    permitNumber: permitKind === 'dls' ? 'ДЛС-1' : undefined,
+    naksStamp: 'A1',
+    validTo: '2026-07-10',
+    daysLeft: 0,
+    expired: false,
   } as DispatcherTask
 }

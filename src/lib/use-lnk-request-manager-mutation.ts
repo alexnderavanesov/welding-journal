@@ -4,6 +4,7 @@ import {
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
 } from '@/lib/report-config'
 import { buildLnkRequestManagerRows } from '@/lib/lnk-report-mutation-updates'
+import { isSystemLnkRequestName } from '@/lib/report-naming'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -35,9 +36,10 @@ export function useLnkRequestManagerMutation({
       const renamedName = nextRequestName?.trim() ?? ''
       if (!currentName) throw new Error('Выберите заявку ЛНК')
       if (action === 'rename') {
+        if (isSystemLnkRequestName(currentName)) throw new Error('Системную заявку ЛНК нельзя переименовать')
         if (!renamedName) throw new Error('Введите новое наименование заявки')
         if (renamedName === currentName) throw new Error('Новое наименование совпадает с текущим')
-        if (lnkRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')
+        if (renamedName !== currentName && lnkRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')
       }
 
       const updatedRecords = buildLnkRequestManagerRows({
@@ -53,11 +55,17 @@ export function useLnkRequestManagerMutation({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      const requestFields = [...lnkRequestFieldKeys, 'lnkCreatedAt', 'finalStatus'] as WeldFieldKey[]
+      const requestNameFields = [...lnkRequestFieldKeys, 'finalStatus'] as WeldFieldKey[]
+      const requestDeleteFields = [
+        ...lnkRequestFieldKeys,
+        ...LNK_METHODS.map((method) => method.requestDateKey),
+        'lnkCreatedAt',
+        'finalStatus',
+      ] as WeldFieldKey[]
       const generatedFields =
         variables.action === 'delete'
-          ? [...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]), ...requestFields]
-          : requestFields
+          ? [...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]), ...requestDeleteFields]
+          : requestNameFields
       highlightChangedRows(savedRows, generatedFields)
       setMessage(
         variables.action === 'rename'

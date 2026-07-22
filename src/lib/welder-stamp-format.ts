@@ -3,10 +3,11 @@ import { loadDataListSettings } from '@/lib/data-list-settings'
 import { escapeRegExp } from '@/lib/string-utils'
 import type { WelderStampExpiryTask } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
+import { getWelderStampDlsPermits } from '@/lib/welder-stamp-permits'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export function splitWelderStampWeldTypes(value: string, options: readonly string[] = loadDataListSettings().weldingTypes) {
-  const normalized = value.toUpperCase().replace(/;/g, ',')
+  const normalized = String(value ?? '').toUpperCase().replace(/;/g, ',')
   return options.filter((option) =>
     normalized
       .split(',')
@@ -19,6 +20,26 @@ export function normalizeWelderStampWeldType(value: string, options: readonly st
   return splitWelderStampWeldTypes(value, options).join(', ')
 }
 
+export function splitWelderStampMaterialGroups(
+  value: string,
+  options: readonly string[] = loadDataListSettings().materialGroups,
+) {
+  const normalized = String(value ?? '').toUpperCase().replace(/;/g, ',')
+  return options.filter((option) =>
+    normalized
+      .split(',')
+      .map((item) => item.trim())
+      .includes(option),
+  )
+}
+
+export function normalizeWelderStampMaterialGroups(
+  value: string,
+  options: readonly string[] = loadDataListSettings().materialGroups,
+) {
+  return splitWelderStampMaterialGroups(value, options).join(', ')
+}
+
 export function formatWelderStampDiameterRange(record: WelderStampRecord) {
   const from = record.diameterFrom.trim()
   const to = record.diameterTo.trim()
@@ -27,6 +48,21 @@ export function formatWelderStampDiameterRange(record: WelderStampRecord) {
   if (from) return `от ${from}`
   if (to) return `до ${to}`
   return '-'
+}
+
+export function formatWelderStampThicknessRange(record: WelderStampRecord) {
+  const from = record.thicknessFrom.trim()
+  const to = record.thicknessTo.trim()
+
+  if (from && to) return `${from} - ${to}`
+  if (from) return `от ${from}`
+  if (to) return `до ${to}`
+  return '-'
+}
+
+export function formatWelderStampDlsSummary(record: WelderStampRecord) {
+  const count = getWelderStampDlsPermits(record).length
+  return count > 0 ? `${count} ДЛС` : '-'
 }
 
 export function formatWelderStampValidity(record: WelderStampRecord) {
@@ -47,11 +83,19 @@ export function formatWelderStampDate(value: string) {
 export function formatWelderStampRecordLabel(record: WelderStampRecord) {
   const naksStamp = record.naksStamp.trim() || '-'
   const weldType = normalizeWelderStampWeldType(record.weldType)
-  return weldType ? `Клеймо ${naksStamp} (способ: ${weldType})` : `Клеймо ${naksStamp}`
+  const materialGroups = normalizeWelderStampMaterialGroups(record.materialGroups)
+  const parts = [
+    weldType ? `способ: ${weldType}` : '',
+    materialGroups ? `группа материалов: ${materialGroups}` : '',
+  ].filter(Boolean)
+  return parts.length > 0 ? `Клеймо ${naksStamp} (${parts.join('; ')})` : `Клеймо ${naksStamp}`
 }
 
 export function formatWelderStampTaskLabel(task: WelderStampExpiryTask) {
-  return formatWelderStampRecordLabel(task.stamp)
+  const recordLabel = formatWelderStampRecordLabel(task.stamp)
+  if (task.permitKind === 'dls') return `${recordLabel} · ДЛС ${task.permitNumber?.trim() || '-'}`
+  if (task.permitNumber?.trim()) return `${recordLabel} · НАКС ${task.permitNumber.trim()}`
+  return recordLabel
 }
 
 export function formatWelderStampCompactLabel(task: WelderStampExpiryTask) {

@@ -6,15 +6,18 @@ const DATA_LIST_SETTINGS_STORAGE_KEY = 'welding-data-list-settings'
 
 export const DEFAULT_WELDING_TYPE_OPTIONS = ['РАД', 'РД'] as const
 export const DEFAULT_CONNECTION_TYPE_OPTIONS = [] as const
+export const DEFAULT_MATERIAL_GROUP_OPTIONS = [] as const
 
 export type DataListSettings = {
   weldingTypes: string[]
   connectionTypes: string[]
+  materialGroups: string[]
 }
 
 export const DEFAULT_DATA_LIST_SETTINGS: DataListSettings = {
   weldingTypes: [...DEFAULT_WELDING_TYPE_OPTIONS],
   connectionTypes: [...DEFAULT_CONNECTION_TYPE_OPTIONS],
+  materialGroups: [...DEFAULT_MATERIAL_GROUP_OPTIONS],
 }
 
 export function useDataListSettings() {
@@ -60,10 +63,14 @@ export function normalizeDataListSettings(value: unknown): DataListSettings {
   const connectionTypes = Array.isArray(source.connectionTypes)
     ? normalizeDataListOptions(source.connectionTypes)
     : DEFAULT_DATA_LIST_SETTINGS.connectionTypes
+  const materialGroups = Array.isArray(source.materialGroups)
+    ? normalizeDataListOptions(source.materialGroups)
+    : DEFAULT_DATA_LIST_SETTINGS.materialGroups
 
   return {
     weldingTypes: weldingTypes.length > 0 ? weldingTypes : DEFAULT_DATA_LIST_SETTINGS.weldingTypes,
     connectionTypes,
+    materialGroups,
   }
 }
 

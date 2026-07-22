@@ -22,7 +22,7 @@ export function setNumberSetValues(current: ReadonlySet<number>, values: Iterabl
 
 export function toggleNumberSetValues(current: ReadonlySet<number>, values: Iterable<number>) {
   const valueSet = new Set(values)
-  if (valueSet.size === 0) return current
+  if (valueSet.size === 0) return new Set(current)
   const allSelected = [...valueSet].every((value) => current.has(value))
   return allSelected
     ? new Set([...current].filter((value) => !valueSet.has(value)))

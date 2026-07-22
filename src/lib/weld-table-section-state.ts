@@ -1,8 +1,6 @@
-import type { WeldFieldKey } from '@/lib/weld-fields'
-
 const collapsedSectionsStoragePrefix = 'welding-tracker-collapsed-sections'
 
-export function canCollapseSection(fields: Array<{ key: WeldFieldKey }>, alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>) {
+export function canCollapseSection(fields: Array<{ key: string }>, alwaysVisibleFieldKeys: ReadonlySet<string>) {
   return fields.some((field) => !alwaysVisibleFieldKeys.has(field.key))
 }
 

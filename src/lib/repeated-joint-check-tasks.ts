@@ -6,6 +6,8 @@ import { isDateBeforeWeldDate } from '@/lib/report-date-rules'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { formatJointDiameterLabel, isUnofficialJoint } from '@/lib/joint-display'
 import { isLnkRepairForbiddenByDiameter } from '@/lib/lnk-result-rules'
+import { getDispatcherLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { getDispatcherPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
@@ -62,6 +64,30 @@ export function buildForbiddenRepairByDiameterCheckTasks(rows: WeldRow[]): Repea
   return tasks
 }
 
+export function buildLnkChronologyCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
+  return getDispatcherLnkChronologyIssues(rows).map((issue) => {
+    const row = issue.row as WeldRow
+    return createJointChainCheckTask(
+      row,
+      `${getJointChainConsistencyKey(row) ?? row.id}:lnk-chronology:${issue.kind}:${issue.methodCode}`,
+      issue.reason,
+      issue.message,
+    )
+  })
+}
+
+export function buildPstoChronologyCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
+  return getDispatcherPstoChronologyIssues(rows).map((issue) => {
+    const row = issue.row as WeldRow
+    return createJointChainCheckTask(
+      row,
+      `${getJointChainConsistencyKey(row) ?? row.id}:psto-chronology:${issue.kind}`,
+      issue.reason,
+      issue.message,
+    )
+  })
+}
+
 export function buildWelderStampCompatibilityCheckTasks(
   rows: WeldRow[],
   welderStampRecords: WelderStampRecord[],
@@ -83,7 +109,7 @@ export function buildWelderStampCompatibilityCheckTasks(
       `Стык ${joint}: ${issues.map(formatOfficialStampCompatibilityIssue).join(' ')}`,
       hasSuspensionIssue
         ? 'Проверь дату сварки или период отстранения в истории отстранений.'
-        : 'Проверь официальное клеймо, способ сварки, D1/D2, дату сварки или срок действия допуска в реестре клейм.',
+        : 'Проверь официальное клеймо, НАКС, ДЛС, способ сварки, группу материалов, D1/D2, T1/T2, дату сварки или срок действия допуска в реестре клейм.',
     ].join(' ')
 
     tasks.push(

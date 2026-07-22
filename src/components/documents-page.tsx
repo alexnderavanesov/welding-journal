@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronDown, Download, ExternalLink, FileSpreadsheet, FileText, Search, Trash2, X } from 'lucide-react'
+import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { Button } from '@/components/ui/button'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -83,6 +84,7 @@ const WELDING_JOURNAL_FIELD_KEYS: WeldFieldKey[] = [
   'materialCertificateNumber2',
   'weldingMethod',
   'connectionType',
+  'materialGroup',
   'd1',
   'd2',
   't1',
@@ -366,7 +368,7 @@ function getTemplatePreviewFieldValue(fieldName: string, row: WeldRow, rowIndex:
 function formatTemplatePreviewFieldValue(value: unknown, fallback: string | undefined) {
   if (typeof value === 'number') return value
   const text = String(value ?? '').trim()
-  return text && text !== '-' ? value : fallback ?? ''
+  return text && text !== '-' ? text : fallback ?? ''
 }
 
 function isTemplateStampWelderNamePreviewField(value: string | TemplatePreviewSystemField): value is `__welderName:${TemplateStampNameFieldKey}` {
@@ -713,7 +715,17 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
 
 function GeneratedDocumentsPanel({ documents }: { documents: StoredGeneratedDocument[] }) {
   const [isOpen, setIsOpen] = useState(true)
+  const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const confirmAction = useConfirmAction()
+  const deleteDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
+    const confirmed = await confirmAction({
+      title: 'Удалить документ',
+      itemName: documentRecord.title,
+      description: 'Документ будет удален из истории сформированных документов.',
+      warning: 'Файл больше не будет доступен в истории. Это действие нельзя отменить.',
+    })
+    if (confirmed) await deleteGeneratedDocument(documentRecord.id)
+  }
 
   return (
     <section className="rounded-md border border-slate-200 bg-white">
@@ -733,7 +745,39 @@ function GeneratedDocumentsPanel({ documents }: { documents: StoredGeneratedDocu
       {!isOpen ? null : documents.length > 0 ? (
         <div className="divide-y divide-slate-100">
           {documents.map((documentRecord) => (
-            <div key={documentRecord.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div
+              key={documentRecord.id}
+              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setContextMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  items: [
+                    {
+                      id: 'open-document',
+                      label: 'Открыть',
+                      icon: ExternalLink,
+                      onSelect: () => openGeneratedDocument(documentRecord),
+                    },
+                    {
+                      id: 'download-document',
+                      label: 'Скачать',
+                      icon: Download,
+                      onSelect: () => downloadGeneratedDocument(documentRecord),
+                    },
+                    { type: 'separator', id: 'delete-separator' },
+                    {
+                      id: 'delete-document',
+                      label: 'Удалить',
+                      icon: Trash2,
+                      danger: true,
+                      onSelect: () => deleteDocumentRecord(documentRecord),
+                    },
+                  ],
+                })
+              }}
+            >
               <button
                 type="button"
                 className="min-w-0 flex-1 text-left"
@@ -767,15 +811,7 @@ function GeneratedDocumentsPanel({ documents }: { documents: StoredGeneratedDocu
                   variant="outline"
                   size="sm"
                   className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  onClick={async () => {
-                    const confirmed = await confirmAction({
-                      title: 'Удалить документ',
-                      itemName: documentRecord.title,
-                      description: 'Документ будет удален из истории сформированных документов.',
-                      warning: 'Файл больше не будет доступен в истории. Это действие нельзя отменить.',
-                    })
-                    if (confirmed) await deleteGeneratedDocument(documentRecord.id)
-                  }}
+                  onClick={() => deleteDocumentRecord(documentRecord)}
                 >
                   <Trash2 className="h-4 w-4" />
                   Удалить
@@ -787,6 +823,7 @@ function GeneratedDocumentsPanel({ documents }: { documents: StoredGeneratedDocu
       ) : (
         <div className="px-4 py-8 text-center text-sm text-slate-500">Пока нет сохраненных документов.</div>
       )}
+      <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </section>
   )
 }

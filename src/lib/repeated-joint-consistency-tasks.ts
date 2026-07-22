@@ -1,4 +1,10 @@
 import { REPAIR_FORBIDDEN_BY_DIAMETER_REASON, UNOFFICIAL_REJECTED_WITH_COIL_REASON } from '@/lib/report-config'
+import {
+  LNK_REQUEST_DATE_ORDER_REASON,
+  LNK_VIK_DATE_ORDER_REASON,
+  LNK_VIK_REQUIRED_REASON,
+} from '@/lib/lnk-chronology-checks'
+import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
 import { getJointStatusLabel } from '@/lib/lnk-status'
 import { formatDisplayDate } from '@/lib/date-format'
 import { getWeldDateOrderValue } from '@/lib/report-date-rules'
@@ -100,6 +106,7 @@ export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
     task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON &&
     task.reason !== COIL_CHAIN_INTEGRITY_REASON &&
     task.reason !== 'проверить клеймо' &&
+    !isLnkChronologyReason(task.reason) &&
     !isIncompleteWeldStampGroupReason(task.reason)
   )
 }
@@ -389,6 +396,8 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
   return tasks.filter((task) => {
     const key =
       task.reason === 'проверить клеймо' ||
+      isLnkChronologyReason(task.reason) ||
+      task.reason === PSTO_REQUEST_DATE_ORDER_REASON ||
       task.reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON ||
       isIncompleteWeldStampGroupReason(task.reason)
         ? task.key
@@ -397,4 +406,12 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
     seen.add(key)
     return true
   })
+}
+
+function isLnkChronologyReason(reason?: string) {
+  return (
+    reason === LNK_REQUEST_DATE_ORDER_REASON ||
+    reason === LNK_VIK_DATE_ORDER_REASON ||
+    reason === LNK_VIK_REQUIRED_REASON
+  )
 }

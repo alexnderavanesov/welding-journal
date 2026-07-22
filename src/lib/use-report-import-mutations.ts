@@ -4,11 +4,16 @@ import { LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys, LNK_METHODS } from '@/
 import { normalizeEditableImportValue, normalizeExistingRequestImportValue } from '@/lib/report-import'
 import { buildEditableImportUpdates, buildHeatTreatmentImportUpdates } from '@/lib/report-import-updates'
 import { clearDisabledLnkRequests, isLnkRequestAllowedForRow, isLnkRequestField, withTouchedLnkTimestamp } from '@/lib/lnk-field-updates'
+import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoLnkRepairRuleIssues, getRowsWithChangedLnkRepairRuleInputs } from '@/lib/lnk-result-rules'
+import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { isExistingRowsImportLockedField, isMassFillFieldLocked, isSystemImportField } from '@/lib/report-import-template'
 import { hasText } from '@/lib/report-value-utils'
+import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { deleteWeldJoint } from '@/server/welds'
+import { parseDateLikeToIso } from '@/lib/date-format'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -28,7 +33,6 @@ export function useReportImportMutations({
   rows,
   heatTreatmentRows,
   lnkRows,
-  pstoRequestOptions,
   lnkRequestOptions,
   setMessage,
   highlightChangedRows,
@@ -41,7 +45,6 @@ export function useReportImportMutations({
         records,
         heatTreatmentRows,
         rows,
-        new Set(pstoRequestOptions),
       )
       if (updatedRows.length === 0) {
         return { updated: 0, rows: [], changedFieldKeys, matched, skipped }
@@ -95,6 +98,7 @@ export function useReportImportMutations({
       if (updatedRows.length === 0) {
         return { updated: 0, rows: [], changedFieldKeys, matched, skipped }
       }
+      assertNoLnkChronologyIssues(updatedRows, loadSaveCheckSettings())
 
       const savedRows = await updateWeldRowsOrThrow(updatedRows, 'Не удалось сохранить часть записей ЛНК')
       return { updated: savedRows.length, rows: savedRows as unknown as WeldRow[], changedFieldKeys, matched, skipped }
@@ -116,6 +120,11 @@ export function useReportImportMutations({
       if (updatedRows.length === 0) {
         return { updated: 0, rows: [], changedFieldKeys: [...changedFieldKeys], skipped: records.length + skippedRows }
       }
+      const saveCheckSettings = loadSaveCheckSettings()
+      const chronologyRows = getRowsWithChangedWeldDate(updatedRows, rows)
+      assertNoLnkRepairRuleIssues(getRowsWithChangedLnkRepairRuleInputs(updatedRows, rows), saveCheckSettings)
+      assertNoLnkChronologyIssues(chronologyRows, saveCheckSettings)
+      assertNoPstoChronologyIssues(chronologyRows, saveCheckSettings)
 
       const savedRows = await updateWeldRowsOrThrow(updatedRows, 'Не удалось сохранить часть записей массового заполнения')
       return {
@@ -141,6 +150,13 @@ export function useReportImportMutations({
       const updateRecords = records.filter((record) => !record.deleteRequested)
       const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(rows, updateRecords, 'replaceData')
 
+      if (updatedRows.length > 0) {
+        const saveCheckSettings = loadSaveCheckSettings()
+        const chronologyRows = getRowsWithChangedWeldDate(updatedRows, rows)
+        assertNoLnkRepairRuleIssues(getRowsWithChangedLnkRepairRuleInputs(updatedRows, rows), saveCheckSettings)
+        assertNoLnkChronologyIssues(chronologyRows, saveCheckSettings)
+        assertNoPstoChronologyIssues(chronologyRows, saveCheckSettings)
+      }
       const savedRows =
         updatedRows.length > 0
           ? await updateWeldRowsOrThrow(updatedRows, 'Не удалось сохранить часть записей замены данных')
@@ -227,4 +243,17 @@ function isDerivedSystemWdiUpdate(record: ReportImportRecord) {
 function normalizeChangedValue(value: unknown) {
   if (value === null || value === undefined || value === '') return null
   return typeof value === 'string' ? value.trim() : value
+}
+
+function getRowsWithChangedWeldDate(updatedRows: WeldRow[], rows: WeldRow[]) {
+  const rowsById = new Map(rows.map((row) => [row.id, row]))
+  return updatedRows.filter((row) => {
+    const previousRow = rowsById.get(row.id)
+    if (!previousRow) return true
+    return normalizeDateForChronology(row.weldDate) !== normalizeDateForChronology(previousRow.weldDate)
+  })
+}
+
+function normalizeDateForChronology(value: unknown) {
+  return parseDateLikeToIso(value) ?? String(value ?? '').trim()
 }

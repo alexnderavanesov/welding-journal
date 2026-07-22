@@ -1,3 +1,4 @@
+import { formatDateInputValue } from '@/lib/date-format'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
 import { canCreatePstoRequest } from '@/lib/psto-status'
@@ -10,6 +11,7 @@ export function createPstoRequestActionHandlers({
   managedPstoRequestNameDraft,
   nextPstoRequestName,
   pstoRequestManagerOptions,
+  pstoRequestDate,
   pstoRequestNaming,
   selectedHeatTreatmentRows,
   pstoRequestCorrectionMutation,
@@ -21,6 +23,7 @@ export function createPstoRequestActionHandlers({
   setManagedPstoRequestName,
   setManagedPstoRequestNameDraft,
   setMessage,
+  setPstoRequestDate,
   setPstoRequestNaming,
   setPstoRequestSearch,
   setSelectedHeatTreatmentIds,
@@ -31,17 +34,18 @@ export function createPstoRequestActionHandlers({
       return
     }
 
-    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
+    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName, pstoRequestDate)
     if (!requestName) {
       setMessage('Укажите пользовательское наименование заявки ПСТО')
       return
     }
 
-    pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, mode: 'create' })
+    pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, requestDate: pstoRequestDate, mode: 'create' })
   }
 
   function openCreatePstoRequestModal() {
     setSelectedHeatTreatmentIds(new Set())
+    setPstoRequestDate(formatDateInputValue(new Date()))
     setPstoRequestNaming(defaultRequestNaming)
     setPstoRequestSearch('')
     setIsPstoRequestModalOpen(true)
@@ -54,6 +58,7 @@ export function createPstoRequestActionHandlers({
     }
 
     setSelectedHeatTreatmentIds(new Set([row.id]))
+    setPstoRequestDate(formatDateInputValue(new Date()))
     setPstoRequestNaming(defaultRequestNaming)
     setPstoRequestSearch(String(row.joint ?? row.line ?? ''))
     setIsPstoRequestModalOpen(true)
@@ -64,8 +69,8 @@ export function createPstoRequestActionHandlers({
     setIsPstoRequestModalOpen(false)
   }
 
-  function openPstoRequestManager() {
-    const requestName = managedPstoRequestName || pstoRequestManagerOptions[0] || ''
+  function openPstoRequestManager(requestNameOverride?: string) {
+    const requestName = requestNameOverride || managedPstoRequestName || pstoRequestManagerOptions[0] || ''
     setManagedPstoRequestName(requestName)
     setManagedPstoRequestNameDraft(requestName)
     setIsPstoRequestManagerOpen(true)
@@ -111,12 +116,12 @@ export function createPstoRequestActionHandlers({
   }
 
   function submitCreatePstoRequest() {
-    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
+    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName, pstoRequestDate)
     if (!requestName) {
       setMessage('Укажите пользовательское наименование заявки ПСТО')
       return
     }
-    pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, mode: 'create' })
+    pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, requestDate: pstoRequestDate, mode: 'create' })
   }
 
   function togglePstoRequestRow(rowId: number) {

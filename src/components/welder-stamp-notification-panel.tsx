@@ -26,7 +26,7 @@ export function WelderStampNotificationPanel({
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 leading-snug">
             <span className="shrink-0 text-sm font-semibold text-amber-950">Диспетчер оповещений клейм</span>
             <span className="min-w-0 text-xs leading-snug text-amber-800">
-              Найдено: {tasks.length} · Напоминания по сроку действия НАКС
+              Найдено: {tasks.length} · Напоминания по сроку действия НАКС и ДЛС
             </span>
           </div>
           <Button

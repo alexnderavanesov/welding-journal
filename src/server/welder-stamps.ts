@@ -16,10 +16,15 @@ export type WelderStampPayload = {
   welderName: string
   internalStamp: string
   weldType: string
+  materialGroups: string
   diameterFrom: string
   diameterTo: string
+  thicknessFrom: string
+  thicknessTo: string
   validFrom: string
   validTo: string
+  naksPermits: import('@/lib/welder-stamp-types').WelderStampNaksPermit[]
+  dlsPermits: import('@/lib/welder-stamp-types').WelderStampDlsPermit[]
   archived: boolean
 }
 
@@ -35,16 +40,34 @@ const textOrNull = (value: unknown) => {
   return text.length > 0 ? text : null
 }
 
+const parseJsonArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[]
+  if (typeof value !== 'string' || !value.trim()) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? (parsed as T[]) : []
+  } catch {
+    return []
+  }
+}
+
+const jsonOrNull = (value: unknown[]) => (value.length > 0 ? JSON.stringify(value) : null)
+
 const toPayload = (row: WelderStamp): WelderStampPayload => ({
   id: row.id,
   naksStamp: row.naksStamp ?? '',
   welderName: row.welderName ?? '',
   internalStamp: row.internalStamp ?? '',
   weldType: row.weldType ?? '',
+  materialGroups: row.materialGroups ?? '',
   diameterFrom: row.diameterFrom ?? '',
   diameterTo: row.diameterTo ?? '',
+  thicknessFrom: row.thicknessFrom ?? '',
+  thicknessTo: row.thicknessTo ?? '',
   validFrom: row.validFrom ?? '',
   validTo: row.validTo ?? '',
+  naksPermits: parseJsonArray(row.naksPermits),
+  dlsPermits: parseJsonArray(row.dlsPermits),
   archived: Boolean(row.archived),
 })
 
@@ -54,10 +77,15 @@ const toDbInsert = (record: WelderStampPayload): NewWelderStamp => ({
   welderName: textOrNull(record.welderName),
   internalStamp: textOrNull(record.internalStamp),
   weldType: textOrNull(record.weldType),
+  materialGroups: textOrNull(record.materialGroups),
   diameterFrom: textOrNull(record.diameterFrom),
   diameterTo: textOrNull(record.diameterTo),
+  thicknessFrom: textOrNull(record.thicknessFrom),
+  thicknessTo: textOrNull(record.thicknessTo),
   validFrom: textOrNull(record.validFrom),
   validTo: textOrNull(record.validTo),
+  naksPermits: jsonOrNull(record.naksPermits),
+  dlsPermits: jsonOrNull(record.dlsPermits),
   archived: Boolean(record.archived),
 })
 

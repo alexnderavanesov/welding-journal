@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatDateInputValue } from '@/lib/date-format'
 import {
   createDefaultPstoResultDraft,
   type PstoResultDraftState,
@@ -10,6 +11,7 @@ import {
 
 export function usePstoModalState() {
   const [pstoRequestNaming, setPstoRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
+  const [pstoRequestDate, setPstoRequestDate] = useState(() => formatDateInputValue(new Date()))
   const [pstoRequestSearch, setPstoRequestSearch] = useState('')
   const [pstoResultRequestSearch, setPstoResultRequestSearch] = useState('')
   const [isPstoRequestModalOpen, setIsPstoRequestModalOpen] = useState(false)
@@ -23,6 +25,7 @@ export function usePstoModalState() {
 
   return {
     pstoRequestNaming,
+    pstoRequestDate,
     pstoRequestSearch,
     pstoResultRequestSearch,
     isPstoRequestModalOpen,
@@ -34,6 +37,7 @@ export function usePstoModalState() {
     managedPstoDiagramDrafts,
     pstoResultDraft,
     setPstoRequestNaming,
+    setPstoRequestDate,
     setPstoRequestSearch,
     setPstoResultRequestSearch,
     setIsPstoRequestModalOpen,

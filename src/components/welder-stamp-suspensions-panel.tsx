@@ -14,7 +14,7 @@ type WelderStampSuspensionsPanelProps = {
   draft: WelderStampSuspensionRecord
   openEditorSignal?: number
   onDraftChange: (field: keyof WelderStampSuspensionRecord, value: string) => void
-  onSave: () => boolean
+  onSave: () => boolean | Promise<boolean | undefined>
   onReset: () => void
   onEdit: (record: WelderStampSuspensionRecord) => void
   onDelete: (id: number) => void
@@ -80,8 +80,8 @@ export function WelderStampSuspensionsPanel({
     onReset()
   }
 
-  function saveAndCloseEditor() {
-    const saved = onSave()
+  async function saveAndCloseEditor() {
+    const saved = await onSave()
     if (saved) setIsEditorOpen(false)
     return saved
   }

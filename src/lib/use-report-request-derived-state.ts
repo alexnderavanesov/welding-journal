@@ -33,6 +33,7 @@ interface ReportRequestDerivedStateOptions {
   availableLnkRequestRows: WeldRow[]
   selectedHeatTreatmentIds: Set<number>
   selectedLnkIds: Set<number>
+  pstoRequestDate: string
   lnkRequestDraft: LnkRequestDraftState
   pstoResultDraft: PstoResultDraftState
   lnkResultDraft: LnkResultDraftState
@@ -49,6 +50,7 @@ export function useReportRequestDerivedState({
   availableLnkRequestRows,
   selectedHeatTreatmentIds,
   selectedLnkIds,
+  pstoRequestDate,
   lnkRequestDraft,
   pstoResultDraft,
   lnkResultDraft,
@@ -69,8 +71,14 @@ export function useReportRequestDerivedState({
     () => getSelectedLnkRequestTargetCount(selectedLnkRows, selectedLnkMethodKeys),
     [selectedLnkMethodKeys, selectedLnkRows],
   )
-  const nextPstoRequestName = useMemo(() => getNextPstoRequestName(heatTreatmentRows, requestConclusionSettings), [heatTreatmentRows, requestConclusionSettings])
-  const nextLnkRequestName = useMemo(() => getNextLnkRequestName(rows, requestConclusionSettings), [requestConclusionSettings, rows])
+  const nextPstoRequestName = useMemo(
+    () => getNextPstoRequestName(heatTreatmentRows, requestConclusionSettings, pstoRequestDate),
+    [heatTreatmentRows, pstoRequestDate, requestConclusionSettings],
+  )
+  const nextLnkRequestName = useMemo(
+    () => getNextLnkRequestName(rows, requestConclusionSettings, lnkRequestDraft.requestDate),
+    [lnkRequestDraft.requestDate, requestConclusionSettings, rows],
+  )
   const pstoRequestOptions = useMemo(() => getPstoRequestOptions(rows), [rows])
   const pstoRequestManagerOptions = useMemo(() => getPstoRequestManagerOptions(pstoRequestOptions), [pstoRequestOptions])
   const managedPstoRequestRows = useMemo(

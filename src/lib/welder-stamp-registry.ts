@@ -1,9 +1,23 @@
 import {
   formatWelderStampDate,
+  normalizeWelderStampMaterialGroups,
   normalizeWelderStampWeldType,
 } from '@/lib/welder-stamp-format'
+import { loadDataListSettings } from '@/lib/data-list-settings'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
+import {
+  createEmptyNaksPermit,
+  getAllWelderStampDlsPermits,
+  getAllWelderStampNaksPermits,
+  getWelderStampDlsPermits,
+  getWelderStampNaksPermits,
+  normalizeDlsPermit,
+  normalizeNaksPermit,
+  validateDlsPermit,
+  validateNaksPermit,
+  withWelderStampPermitSummary,
+} from '@/lib/welder-stamp-permits'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export function createEmptyWelderStampDraft(): WelderStampRecord {
@@ -13,27 +27,69 @@ export function createEmptyWelderStampDraft(): WelderStampRecord {
     welderName: '',
     internalStamp: '',
     weldType: '',
+    materialGroups: '',
     diameterFrom: '',
     diameterTo: '',
+    thicknessFrom: '',
+    thicknessTo: '',
     validFrom: '',
     validTo: '',
+    naksPermits: [createEmptyNaksPermit()],
+    dlsPermits: [],
     archived: false,
   }
 }
 
 export function normalizeWelderStampRecord(record: WelderStampRecord): WelderStampRecord {
-  return {
+  const naksPermits = getAllWelderStampNaksPermits(record).map(normalizeNaksPermit)
+  const dlsPermits = getAllWelderStampDlsPermits(record).map(normalizeDlsPermit)
+  return withWelderStampPermitSummary({
     ...record,
     naksStamp: normalizeNaksStamp(record.naksStamp),
     welderName: String(record.welderName ?? '').trim(),
     internalStamp: record.internalStamp.trim(),
     weldType: normalizeWelderStampWeldType(record.weldType),
+    materialGroups: normalizeWelderStampMaterialGroups(record.materialGroups),
     diameterFrom: record.diameterFrom.trim(),
     diameterTo: record.diameterTo.trim(),
+    thicknessFrom: String(record.thicknessFrom ?? '').trim(),
+    thicknessTo: String(record.thicknessTo ?? '').trim(),
     validFrom: normalizeDateLikeForStorage(record.validFrom) ?? '',
     validTo: normalizeDateLikeForStorage(record.validTo) ?? '',
+    naksPermits,
+    dlsPermits,
     archived: Boolean(record.archived),
+  })
+}
+
+export function normalizeWelderStampRecordsForRegistry(records: WelderStampRecord[]) {
+  const prepared = records.map(normalizeWelderStampRecord)
+  const cards = new Map<string, WelderStampRecord>()
+  const result: WelderStampRecord[] = []
+
+  for (const record of prepared) {
+    const key = record.naksStamp ? `naks:${record.naksStamp}` : `id:${record.id}`
+    const existing = cards.get(key)
+    if (!existing) {
+      cards.set(key, record)
+      result.push(record)
+      continue
+    }
+
+    const merged = normalizeWelderStampRecord({
+      ...existing,
+      welderName: existing.welderName || record.welderName,
+      internalStamp: joinUniqueText([existing.internalStamp, record.internalStamp]),
+      naksPermits: [...existing.naksPermits, ...record.naksPermits],
+      dlsPermits: [...existing.dlsPermits, ...record.dlsPermits],
+      archived: existing.archived && record.archived,
+    })
+    cards.set(key, merged)
+    const index = result.findIndex((candidate) => candidate.id === existing.id)
+    if (index >= 0) result[index] = merged
   }
+
+  return result
 }
 
 export function normalizeNaksStamp(value: string) {
@@ -76,11 +132,18 @@ export function getWelderStampNameSyncHint(records: WelderStampRecord[], record:
 
 export function validateWelderStampRecord(record: WelderStampRecord) {
   const hasNaksStamp = Boolean(record.naksStamp)
+  const naksPermits = getWelderStampNaksPermits(record)
+  const dlsPermits = getWelderStampDlsPermits(record)
 
-  if (hasNaksStamp && !record.weldType) return 'Укажите Способ сварки'
-  if (hasNaksStamp && !record.diameterFrom) return 'Укажите Диаметр от'
-  if (hasNaksStamp && !record.validFrom) return 'Укажите Срок действия от'
-  if (hasNaksStamp && !record.validTo) return 'Укажите Срок действия до'
+  if (hasNaksStamp && naksPermits.length === 0) return 'Добавьте хотя бы один допуск НАКС'
+  for (const [index, permit] of naksPermits.entries()) {
+    const validationError = validateNaksPermit(permit, index)
+    if (validationError) return validationError
+  }
+  for (const [index, permit] of dlsPermits.entries()) {
+    const validationError = validateDlsPermit(permit, index, naksPermits)
+    if (validationError) return validationError
+  }
 
   const diameterFrom = record.diameterFrom ? parseWelderStampNumber(record.diameterFrom) : null
   const diameterTo = record.diameterTo ? parseWelderStampNumber(record.diameterTo) : null
@@ -155,6 +218,10 @@ function syncWelderNameForNaks(records: WelderStampRecord[], naksStamp: string, 
   )
 }
 
+function joinUniqueText(values: string[]) {
+  return [...new Set(values.flatMap((value) => String(value ?? '').split(/[;,]+/).map((part) => part.trim())).filter(Boolean))].join(', ')
+}
+
 export function setWelderStampRecordArchived(records: WelderStampRecord[], id: number, archived: boolean) {
   return records.map((record) => (record.id === id ? { ...record, archived } : record))
 }
@@ -166,7 +233,7 @@ export function removeWelderStampRecord(records: WelderStampRecord[], id: number
 export function getWelderStampFormHint(record: WelderStampRecord) {
   const draft = normalizeWelderStampRecord(record)
   const defaultHint =
-    'Клеймо НАКС: 4 знака, только латинские буквы и цифры. ФИО синхронизируется по Клеймо НАКС. Если заполнено только внутреннее клеймо, способ сварки, диаметры и срок действия можно не указывать.'
+    'Клеймо НАКС: 4 знака, только латинские буквы и цифры. ФИО синхронизируется по Клеймо НАКС. В карточке можно вести несколько допусков НАКС и ДЛС; ДЛС не может выходить за границы НАКС. Если заполнено только внутреннее клеймо, допуски можно не указывать.'
 
   if (!draft.naksStamp && !draft.internalStamp) return { kind: 'info' as const, text: defaultHint }
   if (draft.naksStamp && !isValidNaksStamp(draft.naksStamp)) {

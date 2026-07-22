@@ -1,18 +1,19 @@
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey } from './weld-field-definitions'
 
 export const LNK_METHODS = [
-  { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
-  { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' },
-  { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' },
-  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' },
-  { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' },
-  { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' },
-  { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' },
-  { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult', conclusionDateKey: 'mkkConclusionDate', conclusionKey: 'mkkConclusion' },
+  { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', requestDateKey: 'vikRequestDate', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
+  { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', requestDateKey: 'rkRequestDate', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' },
+  { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', requestDateKey: 'uzkRequestDate', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' },
+  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', requestDateKey: 'pvkRequestDate', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' },
+  { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', requestDateKey: 'tvmtRequestDate', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' },
+  { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', requestDateKey: 'rfaRequestDate', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' },
+  { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', requestDateKey: 'stlsRequestDate', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' },
+  { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', requestDateKey: 'mkkRequestDate', resultKey: 'mkkResult', conclusionDateKey: 'mkkConclusionDate', conclusionKey: 'mkkConclusion' },
 ] as const satisfies ReadonlyArray<{
   code: string
   enabledKey: WeldFieldKey
   requestKey: WeldFieldKey
+  requestDateKey: WeldFieldKey
   resultKey: WeldFieldKey
   conclusionDateKey: WeldFieldKey
   conclusionKey: WeldFieldKey
@@ -31,6 +32,7 @@ export const LNK_WAITING_NK_FIELDS = [
   getReportField('wdi', 'ЛНК'),
   getReportField('weldDate', 'ЛНК'),
   { key: 'requestName', label: 'Наименование заявки', kind: 'text', group: 'ЛНК', visible: true },
+  { key: 'requestDate', label: 'Дата заявки', kind: 'date', group: 'ЛНК', visible: true },
   { key: 'controlMethod', label: 'Вид НК', kind: 'text', group: 'ЛНК', visible: true },
 ] as unknown as WeldField[]
 
@@ -86,6 +88,7 @@ export const LNK_EDITABLE_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
   ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt'),
 ])
 export const LNK_REQUEST_FIELD_KEYS = LNK_METHODS.map((method) => method.requestKey)
+export const LNK_REQUEST_DATE_FIELD_KEYS = LNK_METHODS.map((method) => method.requestDateKey)
 export const LNK_GENERATED_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]),
   'lnkDefectDescription',
@@ -100,5 +103,5 @@ export const LNK_IMPORT_MATCH_FIELD_KEYS = new Set<WeldFieldKey>(['line', 'joint
 function getReportField(key: WeldFieldKey, group: string): WeldField {
   const field = FIELD_BY_KEY.get(key)
   if (!field) throw new Error(`Unknown LNK report field: ${key}`)
-  return { ...field, group, visible: true }
+  return { ...field, group: group as WeldField['group'], visible: true }
 }

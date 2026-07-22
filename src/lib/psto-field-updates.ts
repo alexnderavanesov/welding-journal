@@ -6,8 +6,18 @@ type PstoRow = WeldInput
 export type PstoRequestManagerAction = 'rename' | 'delete'
 export type PstoResultCorrectionAction = 'renameDiagram' | 'deleteResult'
 
-export function assignPstoRequest<T extends PstoRow>(records: T[], requestName: string, pstoCreatedAt = new Date().toISOString()) {
-  return records.map((record) => ({ ...record, pstoRequest: requestName, pstoCreatedAt }))
+export function assignPstoRequest<T extends PstoRow>({
+  records,
+  requestName,
+  requestDate,
+  pstoCreatedAt = new Date().toISOString(),
+}: {
+  records: T[]
+  requestName: string
+  requestDate: string | null
+  pstoCreatedAt?: string
+}) {
+  return records.map((record) => ({ ...record, pstoRequest: requestName, pstoRequestDate: requestDate, pstoCreatedAt }))
 }
 
 export function applyPstoResult<T extends PstoRow>({
@@ -46,6 +56,7 @@ export function applyPstoRequestManagerAction<T extends PstoRow>({
   return {
     ...record,
     pstoRequest: action === 'rename' ? nextRequestName : null,
+    pstoRequestDate: action === 'rename' ? record.pstoRequestDate : null,
     pstoDate: action === 'rename' ? record.pstoDate : null,
     pstoResult: action === 'rename' ? record.pstoResult : null,
     heatTreatmentDiagram: action === 'rename' ? record.heatTreatmentDiagram : null,
@@ -57,6 +68,7 @@ export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoCreat
   return {
     ...record,
     pstoRequest: null,
+    pstoRequestDate: null,
     pstoDate: null,
     pstoResult: null,
     heatTreatmentDiagram: null,
@@ -66,10 +78,11 @@ export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoCreat
 
 export function clearCancelledPstoRequestWithoutResult<T extends PstoRow>(record: T): T {
   if (isEnabledControlValue(record.pstoRequired) || hasPstoResultHistory(record)) return record
-  if (!hasText(record.pstoRequest) && !hasText(record.pstoDate)) return record
+  if (!hasText(record.pstoRequest) && !hasText(record.pstoRequestDate) && !hasText(record.pstoDate)) return record
   return {
     ...record,
     pstoRequest: null,
+    pstoRequestDate: null,
     pstoDate: null,
     pstoResult: null,
   }

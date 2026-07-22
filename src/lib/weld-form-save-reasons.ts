@@ -1,8 +1,13 @@
 import type { WeldDraft } from '@/lib/dispatcher-types'
-import { getDateInputValidationReason } from '@/lib/date-format'
+import { getDateInputValidationReason, getTodayIsoDate, parseDateLikeToIso } from '@/lib/date-format'
 import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
+import { formatJointDiameterLabel } from '@/lib/joint-display'
+import { isLnkRepairForbiddenByDiameter } from '@/lib/lnk-result-rules'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { getSystemIndexSummaryText } from '@/lib/system-index-settings'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { findFirstLnkChronologyIssue } from '@/lib/lnk-chronology-checks'
+import { findFirstPstoChronologyIssue } from '@/lib/psto-chronology-checks'
 import {
   getCancelledLnkResultDisplay,
   getCancelledPstoResultDisplay,
@@ -14,22 +19,72 @@ import { factualWelderStampFieldKeys } from '@/lib/weld-form-field-sets'
 import type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-types'
 import { getStampSelectValue, isAdditionalValue, isCancelledValue, isYesValue } from '@/lib/weld-form-value-utils'
 
-export function getWeldFormSaveBlockReason(draft: WeldInput, initialValue: WeldDraft) {
-  const dateReason = getWeldFormDateSaveBlockReason(draft)
+export function getWeldFormSaveBlockReason(
+  draft: WeldInput,
+  initialValue: WeldDraft,
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  const dateReason = getWeldFormDateSaveBlockReason(draft, saveCheckSettings)
   if (dateReason) return dateReason
 
-  const reportHistoryReason = getControlAvailabilityReportHistoryReason(draft)
+  const reportHistoryReason = saveCheckSettings.controlHistoryProtection ? getControlAvailabilityReportHistoryReason(draft) : null
   if (reportHistoryReason) return reportHistoryReason
+
+  if (shouldCheckDocumentChronologyForForm(draft, initialValue)) {
+    const documentChronologyReason =
+      findFirstLnkChronologyIssue([draft], saveCheckSettings) ||
+      findFirstPstoChronologyIssue([draft], saveCheckSettings)
+    if (documentChronologyReason) return documentChronologyReason
+  }
+
+  if (shouldCheckLnkRepairDiameterForForm(draft, initialValue, saveCheckSettings)) {
+    const repairDiameterReason = getWeldFormRepairDiameterSaveBlockReason(draft)
+    if (repairDiameterReason) return repairDiameterReason
+  }
 
   const currentJoint = normalizeJointName(draft.joint)
   const initialJoint = normalizeJointName(initialValue.joint)
   if (initialValue.id && currentJoint === initialJoint) return null
 
-  if (initialValue.id && hasReservedJointSystemPart(initialValue.joint)) {
+  if (saveCheckSettings.systemJointRenameProtection && initialValue.id && hasReservedJointSystemPart(initialValue.joint)) {
     return `стык с системными индексами ${getSystemIndexSummaryText()} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`
   }
 
-  return validateManualJointName(draft.joint)
+  return saveCheckSettings.manualJointName ? validateManualJointName(draft.joint) : null
+}
+
+function shouldCheckDocumentChronologyForForm(draft: WeldInput, initialValue: WeldDraft) {
+  if (!initialValue.id) return true
+  return normalizeDateForComparison(draft.weldDate) !== normalizeDateForComparison(initialValue.weldDate)
+}
+
+function shouldCheckLnkRepairDiameterForForm(
+  draft: WeldInput,
+  initialValue: WeldDraft,
+  saveCheckSettings: SaveCheckSettings,
+) {
+  if (!saveCheckSettings.lnkResultRepairRules) return false
+  if (!initialValue.id) return true
+
+  return normalizeDiameterForComparison(draft.d1) !== normalizeDiameterForComparison(initialValue.d1) ||
+    normalizeDiameterForComparison(draft.d2) !== normalizeDiameterForComparison(initialValue.d2)
+}
+
+function normalizeDiameterForComparison(value: unknown) {
+  return String(value ?? '').trim().replace(',', '.')
+}
+
+function getWeldFormRepairDiameterSaveBlockReason(row: WeldInput) {
+  if (!isLnkRepairForbiddenByDiameter(row)) return null
+
+  const repairMethods = LNK_METHODS.filter(
+    (method) => getNormalizedResult(row[method.resultKey]) === 'ремонт',
+  )
+  if (repairMethods.length === 0) return null
+
+  const methodCodes = repairMethods.map((method) => method.code).join(', ')
+  const diameterText = formatJointDiameterLabel(row)
+  return `результат ${methodCodes} - «ремонт» нельзя сохранить при минимальном диаметре ${diameterText} мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.`
 }
 
 function getControlAvailabilityReportHistoryReason(draft: WeldInput) {
@@ -65,10 +120,14 @@ export function getWeldFormAutoClearHint(draft: WeldInput, initialValue: WeldDra
   if (
     hasControlAvailabilityChanged(draft.pstoRequired, initialValue.pstoRequired) &&
     !isYesValue(draft.pstoRequired) &&
-    (hasText(draft.pstoRequest) || hasText(draft.pstoDate)) &&
+    (hasText(draft.pstoRequest) || hasText(draft.pstoRequestDate) || hasText(draft.pstoDate)) &&
     !hasRealPstoReportHistory(draft)
   ) {
-    hints.push(hasText(draft.pstoDate) ? 'ПСТО: заявка и дата на стык будут удалены' : 'ПСТО: заявка на стык будет удалена')
+    hints.push(
+      hasText(draft.pstoRequestDate) || hasText(draft.pstoDate)
+        ? 'ПСТО: заявка и даты на стык будут удалены'
+        : 'ПСТО: заявка на стык будет удалена',
+    )
   }
 
   return hints.length ? hints.join('; ') : null
@@ -205,15 +264,33 @@ export function getWeldStampSaveBlockReason(
   return null
 }
 
-function getWeldFormDateSaveBlockReason(draft: WeldInput) {
+function getWeldFormDateSaveBlockReason(draft: WeldInput, saveCheckSettings: SaveCheckSettings) {
+  if (!saveCheckSettings.dateFormat && !saveCheckSettings.weldDateNotFuture) return ''
+
   for (const fieldKey of dateFieldKeys) {
     const field = FIELD_BY_KEY.get(fieldKey)
-    const reason = getDateInputValidationReason(draft[fieldKey], field?.label ?? 'Дата', {
-      disallowFuture: fieldKey === 'weldDate',
-    })
-    if (reason) return lowerFirst(reason)
+    if (saveCheckSettings.dateFormat) {
+      const reason = getDateInputValidationReason(draft[fieldKey], field?.label ?? 'Дата', {
+        disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
+      })
+      if (reason) return lowerFirst(reason)
+      continue
+    }
+
+    if (fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture && isFutureDateLike(draft[fieldKey])) {
+      return 'дата сварки не может быть позже сегодняшней.'
+    }
   }
   return ''
+}
+
+function isFutureDateLike(value: unknown) {
+  const isoDate = parseDateLikeToIso(value)
+  return Boolean(isoDate && isoDate > getTodayIsoDate())
+}
+
+function normalizeDateForComparison(value: unknown) {
+  return parseDateLikeToIso(value) ?? String(value ?? '').trim()
 }
 
 function lowerFirst(value: string) {

@@ -31,6 +31,7 @@ export type WeldFilters = {
   category?: string
   pstoRequired?: string
   weldingMethod?: string
+  materialGroup?: string
   status?: string
   finalStatus?: string
   controlMethod?: string
@@ -45,6 +46,7 @@ const filterKeys = [
   'category',
   'pstoRequired',
   'weldingMethod',
+  'materialGroup',
   'status',
   'finalStatus',
 ] as const
@@ -124,8 +126,9 @@ export const clearLnkGeneratedWeldData = createServerFn({ method: 'POST' }).hand
   const updatedRows = []
 
   for (const row of rows) {
-    const cleanedRow = clearLnkGeneratedData(row as WeldInput & { id: number })
-    if (!hasLnkGeneratedDataChanged(row as WeldInput, cleanedRow)) continue
+    const weldRow = row as unknown as WeldInput & { id: number }
+    const cleanedRow = clearLnkGeneratedData(weldRow)
+    if (!hasLnkGeneratedDataChanged(weldRow, cleanedRow)) continue
     const updateData = [...LNK_GENERATED_FIELD_KEYS].reduce<Record<string, null>>((data, fieldKey) => {
       data[fieldKey] = null
       return data

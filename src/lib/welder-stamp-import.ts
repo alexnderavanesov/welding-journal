@@ -1,5 +1,6 @@
 import { FACTUAL_WELDER_STAMP_FIELD_KEY_SET } from '@/lib/report-config'
 import { loadDataListSettings } from '@/lib/data-list-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { StampSelectOption } from '@/lib/weld-form-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { formatWelderStampFieldKeyLabel } from '@/lib/welder-stamp-format'
@@ -11,15 +12,20 @@ function normalizeStampSelectValue(value: unknown) {
 export function validateWelderStampFieldsForImport(
   records: WeldInput[],
   stampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOption[]>>,
+  allowedOfficialStampValues: readonly string[] = [],
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
   const entries = Object.entries(stampSelectOptions) as Array<[WeldFieldKey, readonly StampSelectOption[]]>
+  const allowedOfficialStampSet = new Set(allowedOfficialStampValues.map(normalizeStampSelectValue))
 
   records.forEach((record, index) => {
     for (const [fieldKey, options] of entries) {
       if (FACTUAL_WELDER_STAMP_FIELD_KEY_SET.has(fieldKey)) continue
+      if (!saveCheckSettings.officialRegistry) continue
 
       const value = normalizeStampSelectValue(record[fieldKey])
       if (!value) continue
+      if (allowedOfficialStampSet.has(value)) continue
 
       const isValid = options.some((option) => normalizeStampSelectValue(option.value) === value)
       if (!isValid) {

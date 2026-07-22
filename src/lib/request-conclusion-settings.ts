@@ -111,7 +111,7 @@ function normalizeRequestConclusionSettings(value: unknown): RequestConclusionSe
 function normalizeSettingsItem(
   value: Partial<RequestConclusionNamingItemSettings> | undefined,
   fallback: RequestConclusionNamingItemSettings,
-) {
+): RequestConclusionNamingItemSettings {
   const defaultMode = value?.defaultMode === 'custom' ? 'custom' : 'system'
   const systemPattern = String(value?.systemPattern ?? '').trim() || fallback.systemPattern
   return { defaultMode, systemPattern }

@@ -117,6 +117,8 @@ export type WelderStampExpiryTask = {
   kind: 'welder-stamp-expiry'
   key: string
   stamp: WelderStampRecord
+  permitKind: 'naks' | 'dls'
+  permitNumber?: string
   naksStamp: string
   validTo: string
   daysLeft: number

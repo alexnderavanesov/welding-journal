@@ -1,11 +1,11 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
-import { canCollapseSection } from '@/lib/weld-table-utils'
+import type { WeldField } from '@/lib/weld-fields'
+import { canCollapseSection } from '@/lib/weld-table-section-state'
 
 type WeldTableSectionToolbarProps = {
   sections: Array<{ section: string; fields: WeldField[] }>
   collapsedSections: ReadonlySet<string>
-  alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>
+  alwaysVisibleFieldKeys: ReadonlySet<string>
   tableMinWidth: number
   stickyLeft: number
   onToggleSection: (section: string) => void

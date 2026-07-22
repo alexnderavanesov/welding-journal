@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
-import { canCollapseSection } from '@/lib/weld-table-utils'
-import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
+import { canCollapseSection } from '@/lib/weld-table-section-state'
+import type { WeldField } from '@/lib/weld-fields'
 
 type WeldTableSectionGroup = {
   section: string
@@ -11,7 +11,7 @@ type WeldTableSectionGroup = {
 
 type WeldTableSectionHeaderRowProps = {
   sections: WeldTableSectionGroup[]
-  alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>
+  alwaysVisibleFieldKeys: ReadonlySet<string>
   readOnly: boolean
   extraColumns: WeldTableExtraColumn[]
   onToggleSection: (section: string) => void

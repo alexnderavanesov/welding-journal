@@ -3,6 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ConfirmAction } from '@/lib/confirm-action-context'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 
 export type RowWithId = WeldRow
 
@@ -14,6 +15,7 @@ export type MutationLike<TVariables> = {
 export type PstoRequestVariables = {
   records: RowWithId[]
   requestName: string
+  requestDate: string
   mode?: 'create' | 'edit'
 }
 
@@ -53,11 +55,13 @@ export type UsePstoReportActionsOptions = {
   nextPstoDiagramName: string
   nextPstoRequestName: string
   pstoRequestManagerOptions: string[]
+  pstoRequestDate: string
   pstoRequestNaming: RequestNamingState
   pstoResultDraft: PstoResultDraftState
   pstoResultSaveBlockReason: string | null
   selectedHeatTreatmentRows: RowWithId[]
   selectedPstoResultRows: RowWithId[]
+  saveCheckSettings: SaveCheckSettings
   pstoRequestCorrectionMutation: MutationLike<PstoRequestCorrectionVariables>
   pstoRequestManagerMutation: MutationLike<PstoRequestManagerVariables>
   pstoRequestMutation: MutationLike<PstoRequestVariables>
@@ -73,6 +77,7 @@ export type UsePstoReportActionsOptions = {
   setManagedPstoRequestName: (value: string) => void
   setManagedPstoRequestNameDraft: (value: string) => void
   setMessage: (value: string) => void
+  setPstoRequestDate: (value: string) => void
   setPstoRequestNaming: (value: RequestNamingState) => void
   setPstoRequestSearch: (value: string) => void
   setPstoResultDraft: Dispatch<SetStateAction<PstoResultDraftState>>

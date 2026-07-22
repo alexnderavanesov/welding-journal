@@ -122,6 +122,7 @@ export function PstoResultDialog({
       <ResultDialogFooter
         saveBlockReason={saveBlockReason}
         isSaveDisabled={Boolean(saveBlockReason)}
+        saveBlockReasonVariant="danger"
         onClose={onClose}
         onSave={onSave}
       />

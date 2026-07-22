@@ -2,6 +2,13 @@ import { formatDisplayDate } from '@/lib/date-format'
 import { formatDaysLeft } from '@/lib/dispatcher-format'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
 import {
+  LNK_REQUEST_DATE_ORDER_REASON,
+  LNK_VIK_DATE_ORDER_REASON,
+  LNK_VIK_REQUIRED_REASON,
+  isLnkChronologyCheckReason,
+} from '@/lib/lnk-chronology-checks'
+import { PSTO_REQUEST_DATE_ORDER_REASON, isPstoChronologyCheckReason } from '@/lib/psto-chronology-checks'
+import {
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
@@ -16,9 +23,10 @@ import {
 
 export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') {
+    const permitName = task.permitKind === 'dls' ? 'ДЛС' : 'НАКС'
     return {
       joint: formatWelderStampCompactLabel(task),
-      type: task.expired ? 'Клеймо НАКС просрочено' : 'Срок НАКС заканчивается',
+      type: task.expired ? `${permitName} просрочен` : `Срок ${permitName} заканчивается`,
     }
   }
   if (task.kind === 'create') {
@@ -42,6 +50,10 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
   if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
   if (reason === 'дозаполнить дату сварки') return { joint: task.sourceJoint, type: 'Дозаполнить дату сварки' }
+  if (reason === LNK_REQUEST_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить даты ЛНК' }
+  if (reason === LNK_VIK_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить порядок НК' }
+  if (reason === LNK_VIK_REQUIRED_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить ВИК' }
+  if (reason === PSTO_REQUEST_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить даты ПСТО' }
   if (reason === 'проверить целостность цепочки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
   if (reason === 'проверить целостность катушки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
   if (reason === 'годный стык неофициальный') return { joint: task.sourceJoint, type: 'Годный стык неофициальный' }
@@ -65,10 +77,11 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') {
     const validTo = formatWelderStampDate(task.validTo)
     const stampLabel = formatWelderStampTaskLabel(task)
+    const permitName = task.permitKind === 'dls' ? 'ДЛС' : 'НАКС'
     if (task.expired) {
-      return `${stampLabel} просрочено: срок действия закончился ${validTo}. Перенесите клеймо в архив или актуализируйте срок действия.`
+      return `${stampLabel}: ${permitName} просрочен, срок действия закончился ${validTo}. Актуализируйте срок, продлите допуск или замените клеймо в новых работах.`
     }
-    return `${stampLabel}: срок окончания - ${validTo}. До окончания осталось ${formatDaysLeft(task.daysLeft)}. Проверьте, нужно ли продлить срок или подготовить замену.`
+    return `${stampLabel}: срок ${permitName} заканчивается ${validTo}. До окончания осталось ${formatDaysLeft(task.daysLeft)}. Проверьте, нужно ли продлить срок или подготовить замену.`
   }
   if (task.kind === 'create') {
     const dateText = formatDisplayDate(task.row.weldDate) || '-'
@@ -106,11 +119,14 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   if (reason === 'проверить дату сварки и контроля') {
     return `В цепочке ${task.baseJoint} дата контроля или ПСТО оказалась раньше даты сварки. Проверь даты в сварочном журнале, ЛНК и ПСТО.`
   }
+  if (reason === PSTO_REQUEST_DATE_ORDER_REASON) {
+    return `В стыке ${task.sourceJoint} нарушен порядок дат ПСТО: дата сварки должна быть не позже даты заявки ПСТО, а дата заявки - не позже даты результата ПСТО.`
+  }
   if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON) {
     return `В стыке ${task.sourceJoint} указан результат "ремонт" при диаметре до 89 мм. По правилу для такого диаметра допустим только "вырез". Проверь D1/D2 или результат контроля.`
   }
   if (reason === 'проверить клеймо') {
-    return `В стыке ${task.sourceJoint} найдено несоответствие официального клейма. Проверь реестр клейм, историю отстранений, дату сварки, способ сварки или D1/D2.`
+    return `В стыке ${task.sourceJoint} найдено несоответствие официального клейма. Проверь реестр клейм, НАКС, ДЛС, историю отстранений, дату сварки, способ сварки, группу материалов, D1/D2 или T1/T2.`
   }
   if (reason === UNOFFICIAL_REJECTED_WITH_COIL_REASON) {
     return `В цепочке ${task.baseJoint} изменилась официальность стыка, из-за чего катушка или ветка может стать лишней либо требовать подтверждения. Проверь цепочку перед дальнейшими действиями.`
@@ -138,7 +154,8 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
 
 export function getRepeatedJointTaskDetailsHeading(task: DispatcherTask) {
   if (task.kind === 'welder-stamp-expiry') {
-    return `${formatWelderStampTaskLabel(task)} · срок окончания ${formatWelderStampDate(task.validTo)}`
+    const permitName = task.permitKind === 'dls' ? 'ДЛС' : 'НАКС'
+    return `${formatWelderStampTaskLabel(task)} · срок ${permitName} до ${formatWelderStampDate(task.validTo)}`
   }
   if (task.kind === 'create') return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} → ${task.targetJoint} · ${task.methodCode} - ${task.result}`
   if (task.kind === 'coil') return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.methodCode} - ${task.result} · катушка ${task.targetJoints.join(' + ')}`
@@ -149,6 +166,12 @@ export function getRepeatedJointTaskDetailsHeading(task: DispatcherTask) {
   if (task.kind === 'duplicate-check') return `${formatRepeatedJointTaskHeadingJoint(task.baseJoint, task.row)} · найдено дублей: ${task.count}`
   if (task.kind === 'line-consistency') return `${task.line} · ${task.title}`
   if (task.kind === 'percentage-line-control') return `${task.line} · клеймо ${task.stamp} · ${task.title}`
+  if (task.kind === 'check' && isLnkChronologyCheckReason(task.reason)) {
+    return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · проверка данных ЛНК`
+  }
+  if (task.kind === 'check' && isPstoChronologyCheckReason(task.reason)) {
+    return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · проверка данных ПСТО`
+  }
   return formatDispatcherTaskText(`${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.row)} · ${task.reason ?? 'цепочка изменилась'}`)
 }
 

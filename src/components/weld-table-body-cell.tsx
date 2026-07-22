@@ -15,6 +15,8 @@ type WeldTableBodyCellProps = {
   isEditableCell: boolean
   isBlockedEditableCell: boolean
   isHighlightedRow: boolean
+  isSelectedRow: boolean
+  hasDispatcherTask: boolean
   isHighlightedCell: boolean
   isResultField: boolean
   stickyLeft: number
@@ -32,6 +34,8 @@ export function WeldTableBodyCell({
   isEditableCell,
   isBlockedEditableCell,
   isHighlightedRow,
+  isSelectedRow,
+  hasDispatcherTask,
   isHighlightedCell,
   isResultField,
   stickyLeft,
@@ -46,15 +50,26 @@ export function WeldTableBodyCell({
   const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const isStickyCell = stickyIdentityColumns && isStickyWeldTableField(field.key)
   const contentClass = `block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
-    isEditableCell ? 'cursor-pointer hover:bg-[#dff1fb]' : isResultField ? '' : 'text-slate-600'
+    isEditableCell ? (isSelectedRow || hasDispatcherTask ? 'cursor-pointer' : 'cursor-pointer hover:bg-[#cfeeff]') : isResultField ? '' : 'text-slate-600'
   }`
 
   return (
     <td
-      className={`${bodyCellClass(field.key, !isEditableCell, isHighlightedRow, isHighlightedCell, isBlockedEditableCell, isSectionEnd)} ${
+      className={`${bodyCellClass(
+        field.key,
+        !isEditableCell,
+        isHighlightedRow,
+        isSelectedRow,
+        hasDispatcherTask,
+        isHighlightedCell,
+        isBlockedEditableCell,
+        isSectionEnd,
+      )} ${
         isStickyCell
           ? getStickyWeldTableBodyCellClass({
               isHighlightedRow,
+              isSelectedRow,
+              hasDispatcherTask,
               isHighlightedCell,
               isBlockedEditableCell,
               stickyBackgroundClassName,
@@ -71,7 +86,7 @@ export function WeldTableBodyCell({
         finalStatusErrorReason
           ? finalStatusErrorReason
           : isEditableCell
-          ? 'Нажмите, чтобы редактировать поле'
+          ? undefined
           : isBlockedEditableCell
             ? 'Недоступно: отсутствует отметка "да" в назначении соответствующего контроля'
             : SYSTEM_FIELD_TOOLTIP
@@ -86,21 +101,29 @@ export function WeldTableBodyCell({
 
 function getStickyWeldTableBodyCellClass({
   isHighlightedRow,
+  isSelectedRow,
   isHighlightedCell,
+  hasDispatcherTask,
   isBlockedEditableCell,
   stickyBackgroundClassName,
 }: {
   isHighlightedRow: boolean
+  isSelectedRow: boolean
   isHighlightedCell: boolean
+  hasDispatcherTask: boolean
   isBlockedEditableCell: boolean
   stickyBackgroundClassName: string
 }) {
-  const background = isHighlightedCell
-    ? 'bg-lime-100/95'
-    : isHighlightedRow
-      ? 'bg-emerald-50 group-hover:bg-emerald-50'
-      : isBlockedEditableCell
-        ? 'bg-amber-50 group-hover:bg-[#dff1fb]'
+  const background = isSelectedRow
+    ? stickyBackgroundClassName
+    : isHighlightedCell
+      ? 'bg-lime-100/95'
+      : isHighlightedRow
+        ? 'bg-emerald-50 group-hover:bg-emerald-50'
+        : hasDispatcherTask
+        ? 'bg-amber-100 group-hover:bg-amber-100'
+        : isBlockedEditableCell
+        ? 'bg-amber-50 group-hover:bg-[#cfeeff]'
         : stickyBackgroundClassName
   return `sticky z-[1] ${background}`
 }

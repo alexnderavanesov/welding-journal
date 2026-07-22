@@ -1,4 +1,4 @@
-import { WeldTableRowActions, WeldTableRowNavigation } from '@/components/weld-table-actions'
+import { WeldTableRowActions } from '@/components/weld-table-actions'
 import { WeldTableBodyCell } from '@/components/weld-table-body-cell'
 import { WeldTableEditActionsCell } from '@/components/weld-table-edit-actions-cell'
 import { WeldTableEmptyRow } from '@/components/weld-table-empty-row'
@@ -7,6 +7,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
+import type { MouseEvent } from 'react'
 import {
   getWeldTableRowClassName,
   getWeldTableRowTitle,
@@ -25,16 +26,13 @@ type WeldTableBodyRowsProps = {
   onSetRowSelected: (row: WeldRow, selected: boolean) => void
   isRowSelectable: (row: WeldRow) => boolean
   hasChainAction: boolean
-  onOpenChain?: (row: WeldRow) => void
-  onFilterLine?: (row: WeldRow) => void
-  onOpenLinkedReport?: (row: WeldRow) => void
-  openLinkedReportTitle: string
   hasRowActions: boolean
   rowActions?: ReportRowActions
   extraColumns: WeldTableExtraColumn[]
   duplicateKeys: ReadonlySet<string>
   highlightedRowIds: ReadonlySet<number>
   highlightedCellKeys: ReadonlySet<string>
+  dispatcherTaskRowIds: ReadonlySet<number>
   canEditField: (fieldKey: WeldFieldKey) => boolean
   canEditCell: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
   stickyLeft: number
@@ -43,6 +41,7 @@ type WeldTableBodyRowsProps = {
   getDisplayValue: (row: WeldRow, fieldKey: WeldFieldKey) => unknown
   onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onDelete?: (id: number) => void
+  onContextMenu?: (event: MouseEvent, row: WeldRow) => void
 }
 
 export function WeldTableBodyRows({
@@ -55,16 +54,13 @@ export function WeldTableBodyRows({
   onSetRowSelected,
   isRowSelectable,
   hasChainAction,
-  onOpenChain,
-  onFilterLine,
-  onOpenLinkedReport,
-  openLinkedReportTitle,
   hasRowActions,
   rowActions,
   extraColumns,
   duplicateKeys,
   highlightedRowIds,
   highlightedCellKeys,
+  dispatcherTaskRowIds,
   canEditField,
   canEditCell,
   stickyLeft,
@@ -73,8 +69,10 @@ export function WeldTableBodyRows({
   getDisplayValue,
   onEdit,
   onDelete,
+  onContextMenu,
 }: WeldTableBodyRowsProps) {
   const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
+  const hasControlColumn = selectable || hasChainAction
 
   if (rows.length === 0) {
     return <WeldTableEmptyRow colSpan={colSpan} />
@@ -86,38 +84,33 @@ export function WeldTableBodyRows({
         const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')
         const isHighlighted = highlightedRowIds.has(row.id)
         const isSelected = selectedRowIds.has(row.id)
+        const hasDispatcherTask = dispatcherTaskRowIds.has(row.id)
         const isSelectableRow = !selectable || isRowSelectable(row)
         const stickyBackgroundClassName = getWeldTableStickyCellBackgroundClassName({
           rowIndex,
           isHighlighted,
           isSelected,
           isDuplicate,
+          hasDispatcherTask,
         })
 
         return (
           <tr
             key={row.id}
-            className={getWeldTableRowClassName({ readOnly, isHighlighted, isSelected, isDuplicate })}
-            title={getWeldTableRowTitle({ isHighlighted, isDuplicate })}
+            className={getWeldTableRowClassName({ readOnly, isHighlighted, isSelected, isDuplicate, hasDispatcherTask })}
+            title={getWeldTableRowTitle({ isHighlighted, isDuplicate, hasDispatcherTask })}
+            onContextMenu={onContextMenu ? (event) => onContextMenu(event, row) : undefined}
           >
-            {selectable ? (
+            {hasControlColumn ? (
               <WeldTableRowSelectCell
+                selectable={selectable}
                 label={String(row.joint ?? row.id)}
                 checked={isSelectableRow && isSelected}
                 disabled={!isSelectableRow}
-                onChange={(selected) => onSetRowSelected(row, selected)}
-              />
-            ) : null}
-            {hasChainAction ? (
-              <WeldTableRowNavigation
-                row={row}
                 sticky={stickyIdentityColumns}
                 stickyLeft={stickyLeft}
                 stickyBackgroundClassName={stickyBackgroundClassName}
-                onOpenChain={onOpenChain}
-                onFilterLine={onFilterLine}
-                onOpenLinkedReport={onOpenLinkedReport}
-                openLinkedReportTitle={openLinkedReportTitle}
+                onChange={(selected) => onSetRowSelected(row, selected)}
               />
             ) : null}
             {hasRowActions && rowActions ? <WeldTableRowActions row={row} rowActions={rowActions} /> : null}
@@ -126,12 +119,13 @@ export function WeldTableBodyRows({
                 .filter((column) => column.insertBeforeSection === section.section)
                 .map((column) => <ExtraBodyCell key={column.key} column={column} row={row} />),
               ...section.fields.map((field, fieldIndex) => {
-                const isEditableColumn = canEditField(field.key)
-                const isEditableCell = canEditCell(row, field.key)
+                const fieldKey = field.key as WeldFieldKey
+                const isEditableColumn = canEditField(fieldKey)
+                const isEditableCell = canEditCell(row, fieldKey)
                 const isBlockedEditableCell = isEditableColumn && !isEditableCell
                 const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
-                const isResultField = RESULT_FIELD_KEYS.has(field.key as WeldFieldKey)
-                const displayValue = getDisplayValue(row, field.key)
+                const isResultField = RESULT_FIELD_KEYS.has(fieldKey)
+                const displayValue = getDisplayValue(row, fieldKey)
                 const isSectionEnd = fieldIndex === section.fields.length - 1
 
                 return (
@@ -143,6 +137,8 @@ export function WeldTableBodyRows({
                     isEditableCell={isEditableCell}
                     isBlockedEditableCell={isBlockedEditableCell}
                     isHighlightedRow={isHighlighted}
+                    isSelectedRow={isSelected}
+                    hasDispatcherTask={hasDispatcherTask}
                     isHighlightedCell={isCellHighlighted}
                     isResultField={isResultField}
                     stickyLeft={stickyLeft}

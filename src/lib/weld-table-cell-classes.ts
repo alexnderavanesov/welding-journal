@@ -55,6 +55,8 @@ export function bodyCellClass(
   fieldKey: string,
   isReadOnlyColumn: boolean,
   isHighlightedRow: boolean,
+  isSelectedRow: boolean,
+  hasDispatcherTask: boolean,
   isHighlightedCell: boolean,
   isBlockedEditableCell = false,
   isSectionEnd = VISIBLE_SECTION_END_FIELD_KEYS.has(fieldKey as never),
@@ -62,17 +64,21 @@ export function bodyCellClass(
   const base = 'border-b border-r border-b-[#edf2f7] p-0 align-top'
   const width = getWidthClass(fieldKey)
   const border = isSectionEnd ? 'border-r-2 border-r-[#d7e4ee]' : 'border-r-[#edf2f7]'
-  const blockedEditable = isBlockedEditableCell
-    ? 'bg-amber-50/70 shadow-[inset_0_0_0_9999px_rgba(251,191,36,0.08)]'
-    : ''
-  const readonly = isReadOnlyColumn
-    ? isHighlightedRow
-      ? 'bg-emerald-50/70 shadow-[inset_0_0_0_9999px_rgba(16,185,129,0.06)]'
+  const blockedEditable =
+    isBlockedEditableCell && !isSelectedRow ? 'bg-amber-50/70 shadow-[inset_0_0_0_9999px_rgba(251,191,36,0.08)]' : ''
+  const readonly =
+    isReadOnlyColumn && !isSelectedRow
+      ? isHighlightedRow
+        ? 'bg-emerald-50/70 shadow-[inset_0_0_0_9999px_rgba(16,185,129,0.06)]'
+        : ''
       : ''
-    : ''
-  const highlightedRow = isHighlightedRow && !isReadOnlyColumn ? 'bg-emerald-50/80' : ''
-  const highlightedCell = isHighlightedCell ? 'bg-lime-100/95 shadow-[inset_0_0_0_9999px_rgba(190,242,100,0.16)]' : ''
-  return `${base} ${width} ${border} ${readonly} ${blockedEditable} ${highlightedRow} ${highlightedCell}`
+  const highlightedRow = isHighlightedRow && !isReadOnlyColumn && !isSelectedRow ? 'bg-emerald-50/80' : ''
+  const dispatcherTaskRow =
+    hasDispatcherTask && !isSelectedRow && !hasHigherPriorityCellHighlight(isHighlightedRow, isHighlightedCell)
+      ? 'bg-amber-100/90'
+      : ''
+  const highlightedCell = isHighlightedCell && !isSelectedRow ? 'bg-lime-100/95 shadow-[inset_0_0_0_9999px_rgba(190,242,100,0.16)]' : ''
+  return `${base} ${width} ${border} ${readonly} ${blockedEditable} ${highlightedRow} ${dispatcherTaskRow} ${highlightedCell}`
 }
 
 export function filterCellClass(fieldKey: string, isReadOnlyColumn: boolean, isSectionEnd = VISIBLE_SECTION_END_FIELD_KEYS.has(fieldKey as never)) {
@@ -85,7 +91,7 @@ export function filterCellClass(fieldKey: string, isReadOnlyColumn: boolean, isS
 function getWidthClass(fieldKey: string) {
   const key = fieldKey as WeldFieldKey
   if (fieldKey === 'weldDate') return 'w-[124px] whitespace-nowrap'
-  if (fieldKey === 'pstoDate') return 'w-[124px] whitespace-nowrap'
+  if (fieldKey === 'pstoRequestDate' || fieldKey === 'pstoDate') return 'w-[124px] whitespace-nowrap'
   if (fieldKey === 'createdAt' || fieldKey === 'pstoCreatedAt') return 'w-[132px] whitespace-nowrap'
   if (STAMP_FIELD_KEYS.has(key)) return 'w-[138px]'
   if (REQUEST_FIELD_KEYS.has(key)) return 'w-[182px]'
@@ -93,4 +99,8 @@ function getWidthClass(fieldKey: string) {
   if (RESULT_FIELD_KEYS.has(key)) return 'w-[124px] whitespace-nowrap'
   if (isCompactWeldColumn(fieldKey)) return 'w-[94px]'
   return 'max-w-72'
+}
+
+function hasHigherPriorityCellHighlight(isHighlightedRow: boolean, isHighlightedCell: boolean) {
+  return isHighlightedRow || isHighlightedCell
 }

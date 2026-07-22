@@ -1,12 +1,14 @@
 import type { LnkRequestDraftState, LnkResultDraftState, PstoResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
-import { LNK_REQUEST_FIELD_KEYS } from '@/lib/report-config'
+import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS } from '@/lib/report-config'
 import {
   collectLnkResultRequestNames,
   collectRequestNames,
   formatLnkConclusionName,
   formatLnkRequestName,
+  parseLnkRequestName,
   formatPstoDiagramName,
   formatPstoRequestName,
   sortLnkRequestNamesNewestFirst,
@@ -23,20 +25,41 @@ export function getSelectedRowsByIds(rows: WeldRow[], ids: Set<number>) {
   return rows.filter((row) => ids.has(row.id))
 }
 
+export function getLnkRequestDateForRequest(rows: WeldRow[], requestName: string) {
+  const name = requestName.trim()
+  if (!name) return ''
+  const dates = [
+    ...new Set(
+      rows.flatMap((row) =>
+        LNK_METHODS.flatMap((method) => {
+          if (String(row[method.requestKey] ?? '').trim() !== name) return []
+          const requestDate = String(row[method.requestDateKey] ?? '').trim()
+          return requestDate ? [requestDate] : []
+        }),
+      ),
+    ),
+  ]
+  if (dates.length === 1) return dates[0]
+  if (dates.length > 1) return ''
+
+  const parsed = parseLnkRequestName(name)
+  return parsed?.isoDate ?? ''
+}
+
 export function getSelectedLnkMethodKeys(lnkRequestDraft: LnkRequestDraftState) {
   return [...lnkRequestDraft.methods]
 }
 
-export function getSelectedLnkRequestTargetCount(selectedLnkRows: WeldRow[], selectedLnkMethodKeys: string[]) {
+export function getSelectedLnkRequestTargetCount(selectedLnkRows: WeldRow[], selectedLnkMethodKeys: WeldFieldKey[]) {
   return countLnkRequestTargets(selectedLnkRows, selectedLnkMethodKeys)
 }
 
-export function getNextPstoRequestName(heatTreatmentRows: WeldRow[], settings: RequestConclusionSettings) {
-  return formatPstoRequestName(heatTreatmentRows, settings)
+export function getNextPstoRequestName(heatTreatmentRows: WeldRow[], settings: RequestConclusionSettings, requestDate?: string) {
+  return formatPstoRequestName(heatTreatmentRows, settings, requestDate)
 }
 
-export function getNextLnkRequestName(rows: WeldRow[], settings: RequestConclusionSettings) {
-  return formatLnkRequestName(rows, settings)
+export function getNextLnkRequestName(rows: WeldRow[], settings: RequestConclusionSettings, requestDate?: string) {
+  return formatLnkRequestName(rows, settings, requestDate)
 }
 
 export function getPstoRequestOptions(rows: WeldRow[]) {

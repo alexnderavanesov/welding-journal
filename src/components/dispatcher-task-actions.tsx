@@ -14,6 +14,8 @@ import type {
   RepeatedJointDeleteTask,
   RepeatedJointRenameTask,
 } from '@/lib/dispatcher-types'
+import { isLnkChronologyCheckReason } from '@/lib/lnk-chronology-checks'
+import { isPstoChronologyCheckReason } from '@/lib/psto-chronology-checks'
 
 export type RepeatedJointTaskActionsProps = {
   task: DispatcherTask
@@ -161,7 +163,9 @@ export function RepeatedJointTaskActions({
             Показать
           </Button>
         </>
-      ) : task.kind === 'line-consistency' || task.kind === 'percentage-line-control' ? (
+      ) : task.kind === 'line-consistency' ||
+        task.kind === 'percentage-line-control' ||
+        (task.kind === 'check' && (isLnkChronologyCheckReason(task.reason) || isPstoChronologyCheckReason(task.reason))) ? (
         <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
           Показать
         </Button>

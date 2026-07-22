@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { createDefaultLnkRequestDraft } from '@/lib/report-draft-state'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
+import { LNK_METHODS } from '@/lib/report-config'
 import { buildLnkRequestRows } from '@/lib/lnk-report-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
@@ -24,12 +26,14 @@ export function useLnkRequestCreateMutation({
       records,
       methodKeys,
       requestName,
+      requestDate,
     }: {
       records: RowWithId[]
       methodKeys: WeldFieldKey[]
       requestName: string
+      requestDate: string
     }) => {
-      const updatedRecords = buildLnkRequestRows({ records, methodKeys, requestName })
+      const updatedRecords = buildLnkRequestRows({ records, methodKeys, requestName, requestDate })
 
       if (updatedRecords.length === 0) {
         throw new Error('Нет доступных стыков или видов контроля для новой заявки ЛНК')
@@ -39,10 +43,14 @@ export function useLnkRequestCreateMutation({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      highlightChangedRows(savedRows, [...variables.methodKeys, 'lnkCreatedAt'])
+      const requestDateFields = variables.methodKeys.flatMap((methodKey) => {
+        const method = LNK_METHODS.find((candidate) => candidate.requestKey === methodKey)
+        return method ? [method.requestDateKey] : []
+      })
+      highlightChangedRows(savedRows, [...variables.methodKeys, ...requestDateFields, 'lnkCreatedAt'])
       setLnkNotice(formatRequestCreatedMessage(variables.requestName, savedRows.length))
       setSelectedLnkIds(new Set())
-      setLnkRequestDraft({ methods: new Set() })
+      setLnkRequestDraft(createDefaultLnkRequestDraft())
       setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
       await invalidateWeldJoints(queryClient)

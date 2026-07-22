@@ -16,8 +16,8 @@ type ControlPresenceField = {
 
 const LINE_CONSISTENCY_FIELDS: LineConsistencyField[] = [
   { key: 'weldControlPercent', label: 'Контроль швов, (%)', title: 'Проверить % контроля линии' },
-  { key: 'groupName', label: 'Группа', title: 'Проверить группу линии' },
-  { key: 'category', label: 'Категория', title: 'Проверить категорию линии' },
+  { key: 'groupName', label: 'Группа трубопровода', title: 'Проверить группу трубопровода линии' },
+  { key: 'category', label: 'Категория трубопровода', title: 'Проверить категорию трубопровода линии' },
 ]
 
 const CONTROL_PRESENCE_FIELDS: ControlPresenceField[] = [

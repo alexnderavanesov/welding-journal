@@ -14,6 +14,7 @@ import {
 import { getInactiveLnkRequestBadgeClass, getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 
 type LnkResultRowProps = {
   row: WeldRow
@@ -23,11 +24,12 @@ type LnkResultRowProps = {
 }
 
 export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkResultRowProps) {
+  const saveCheckSettings = useSaveCheckSettings()
   const method = getLnkMethodByRequestKey(draft.methodKey)
   const disabled = !canSelectLnkResultRow(row, draft.requestName, draft.methodKey)
   const selected = draft.rowIds.has(row.id) && !disabled
   const rowRequestNames = getLnkRowRequestNames(row)
-  const rowResult = getEffectiveLnkResultDraftValueForRow(row, draft)
+  const rowResult = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
   const hasSavedFinalResult = Boolean(
     method && LNK_RESULT_OPTIONS.includes(String(row[method.resultKey] ?? '').trim().toLowerCase() as never),
   )

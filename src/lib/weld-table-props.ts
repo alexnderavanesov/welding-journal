@@ -25,11 +25,16 @@ type CreateWeldTablePropsOptions = {
   stickyLeft: NonNullable<WeldTableProps['stickyLeft']>
   highlightedRowIds: NonNullable<WeldTableProps['highlightedRowIds']>
   highlightedCellKeys: NonNullable<WeldTableProps['highlightedCellKeys']>
+  dispatcherTaskRowIds?: WeldTableProps['dispatcherTaskRowIds']
   onOpenChain: NonNullable<WeldTableProps['onOpenChain']>
   onFilterLine: NonNullable<WeldTableProps['onFilterLine']>
   onOpenLinkedReport: NonNullable<WeldTableProps['onOpenLinkedReport']>
   onOpenDuplicateControl: (row: WeldRow) => void
   rowActionHandlers: ReportRowActionHandlers
+  getContextMenuItems?: WeldTableProps['getContextMenuItems']
+  selectable?: WeldTableProps['selectable']
+  selectedRowIds?: WeldTableProps['selectedRowIds']
+  onSelectedRowIdsChange?: WeldTableProps['onSelectedRowIdsChange']
 }
 
 export function createWeldTableProps({
@@ -42,11 +47,16 @@ export function createWeldTableProps({
   stickyLeft,
   highlightedRowIds,
   highlightedCellKeys,
+  dispatcherTaskRowIds,
   onOpenChain,
   onFilterLine,
   onOpenLinkedReport,
   onOpenDuplicateControl,
   rowActionHandlers,
+  getContextMenuItems,
+  selectable,
+  selectedRowIds,
+  onSelectedRowIdsChange,
 }: CreateWeldTablePropsOptions): WeldTableProps {
   return {
     rows,
@@ -57,6 +67,7 @@ export function createWeldTableProps({
     stickyLeft,
     highlightedRowIds,
     highlightedCellKeys,
+    dispatcherTaskRowIds,
     readOnly: isReadOnlyReport(activeReport),
     editableFieldKeys: getReportEditableFieldKeys(activeReport),
     blockedFieldKeys: getReportBlockedFieldKeys(activeReport),
@@ -77,6 +88,10 @@ export function createWeldTableProps({
     openLinkedReportTitle: getOpenLinkedReportTitle(activeReport),
     rowActions: getReportRowActions(activeReport, rowActionHandlers),
     extraColumns: getDuplicateControlTableColumns({ activeReport, onOpenDuplicateControl }),
+    getContextMenuItems,
+    selectable,
+    selectedRowIds,
+    onSelectedRowIdsChange,
     storageKey: activeReport,
     hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
     mergePstoSections: shouldMergePstoSections(activeReport),

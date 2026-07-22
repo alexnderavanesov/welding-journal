@@ -5,14 +5,22 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { hasNonEmptyLnkResultDraftRows } from '@/lib/lnk-result-draft'
+import {
+  getEffectiveLnkResultDraftValueForRow,
+  hasNonEmptyLnkResultDraftRows,
+} from '@/lib/lnk-result-draft'
 import {
   getLnkResultRepairForbiddenSummary,
   isLnkRepairForbidden,
 } from '@/lib/lnk-result-rules'
+import {
+  getLnkMethodByRequestKey,
+  isFinalLnkResultValue,
+} from '@/lib/lnk-status'
 import { LNK_CUSTOM_RESULT_VALUE, LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import { type SaveCheckSettings, useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
@@ -38,8 +46,11 @@ export function LnkResultSettings({
   onDefaultResultChange,
   onConclusionNamingChange,
 }: LnkResultSettingsProps) {
-  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft)
-  const hasRepairForbiddenRows = selectedRows.some(isLnkRepairForbidden)
+  const saveCheckSettings = useSaveCheckSettings()
+  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
+  const hasRepairForbiddenRows = saveCheckSettings.lnkResultRepairRules && selectedRows.some(isLnkRepairForbidden)
+  const vikBeforeOtherHint = getVikBeforeOtherHint(selectedRows, draft, saveCheckSettings)
+  const disabledCheckHint = vikBeforeOtherHint && !vikBeforeOtherHint.blocking ? vikBeforeOtherHint.message : ''
 
   return (
     <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
@@ -92,6 +103,11 @@ export function LnkResultSettings({
             ) : null}
           </label>
         </div>
+        {disabledCheckHint ? (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+            <span className="font-semibold">Проверка выключена:</span> {disabledCheckHint}
+          </div>
+        ) : null}
       </ResultSettingsCard>
 
       <ResultSettingsCard title="2. Заключение" muted={!hasNonEmptyRows}>
@@ -100,6 +116,7 @@ export function LnkResultSettings({
           systemName={nextConclusionName}
           label="Наименование заключения"
           placeholder="Введите наименование заключения"
+          customDate={draft.controlDate}
           disabled={!hasNonEmptyRows}
           onChange={onConclusionNamingChange}
         />
@@ -112,4 +129,32 @@ export function LnkResultSettings({
       </DialogHelpNote>
     </section>
   )
+}
+
+function getVikBeforeOtherHint(
+  selectedRows: WeldRow[],
+  draft: LnkResultDraftState,
+  saveCheckSettings: SaveCheckSettings,
+) {
+  const method = getLnkMethodByRequestKey(draft.methodKey)
+  if (!method || method.code === 'ВИК') return null
+
+  const rowsWithoutVik = selectedRows.filter((row) => {
+    const nextResult = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
+    return isFinalLnkResultValue(nextResult) && !isFinalLnkResultValue(row.vikResult)
+  })
+  if (rowsWithoutVik.length === 0) return null
+
+  const jointList = rowsWithoutVik
+    .slice(0, 3)
+    .map((row) => String(row.joint ?? `ID ${row.id}`).trim())
+    .filter(Boolean)
+    .join(', ')
+  const tail = rowsWithoutVik.length > 3 ? ` и еще ${rowsWithoutVik.length - 3}` : ''
+  const baseMessage = `Для ${method.code} сначала нужен результат ВИК: ${jointList}${tail}.`
+  if (saveCheckSettings.lnkResultVikRequiredBeforeOther) return { message: baseMessage, blocking: true }
+  return {
+    message: `${baseMessage} Галочка “ВИК обязателен перед другими НК” выключена в настройках, поэтому сохранение разрешено.`,
+    blocking: false,
+  }
 }

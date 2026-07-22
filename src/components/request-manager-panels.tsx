@@ -93,6 +93,7 @@ type RequestRenamePanelProps = {
   placeholder: string
   disabled: boolean
   canRename: boolean
+  children?: ReactNode
   onChange: (requestName: string) => void
   onRename: () => void
 }
@@ -102,12 +103,14 @@ export function RequestRenamePanel({
   placeholder,
   disabled,
   canRename,
+  children,
   onChange,
   onRename,
 }: RequestRenamePanelProps) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-3">
       <h3 className="mb-3 text-sm font-semibold text-slate-800">Переименовать заявку</h3>
+      {children ? <div className="mb-3">{children}</div> : null}
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={value}

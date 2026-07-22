@@ -253,7 +253,7 @@ function isStatisticsLnkNoNeed(row: WeldRow, method: (typeof LNK_METHODS)[number
 
 function isLnkRequestInRange(row: WeldRow, method: (typeof LNK_METHODS)[number], from: string, to: string) {
   if (!hasStatisticsLnkRequest(row, method)) return false
-  const requestDate = parseDateFromText(row[method.requestKey]) ?? parseDateForStatistics(row.lnkCreatedAt)
+  const requestDate = parseDateForStatistics(row[method.requestDateKey]) ?? parseDateFromText(row[method.requestKey]) ?? parseDateForStatistics(row.lnkCreatedAt)
   return isIsoDateInRange(requestDate, from, to)
 }
 
@@ -279,7 +279,8 @@ function isStatisticsPstoNoNeed(row: WeldRow) {
 
 function isPstoRequestInRange(row: WeldRow, from: string, to: string) {
   if (!hasStatisticsPstoRequest(row)) return false
-  const requestDate = parseDateFromText(row.pstoRequest) ?? parseDateForStatistics(row.pstoCreatedAt)
+  const requestDate =
+    parseDateForStatistics(row.pstoRequestDate) ?? parseDateFromText(row.pstoRequest) ?? parseDateForStatistics(row.pstoCreatedAt)
   return isIsoDateInRange(requestDate, from, to)
 }
 

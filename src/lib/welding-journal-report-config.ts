@@ -18,11 +18,13 @@ export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'stamp2OFact',
   ...LNK_METHODS.flatMap((method) => [
     method.requestKey,
+    method.requestDateKey,
     method.resultKey,
     method.conclusionDateKey,
     method.conclusionKey,
   ]),
   'pstoRequest',
+  'pstoRequestDate',
   'pstoDate',
   'pstoResult',
   'heatTreatmentDiagram',
@@ -73,8 +75,9 @@ export const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const REQUEST_AND_RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
-  ...LNK_METHODS.flatMap((method) => [method.requestKey, method.resultKey]),
+  ...LNK_METHODS.flatMap((method) => [method.requestKey, method.requestDateKey, method.resultKey]),
   'pstoRequest',
+  'pstoRequestDate',
   'pstoResult',
 ])
 
@@ -98,6 +101,7 @@ export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   ...MATERIAL_ADDITIONAL_FIELD_KEYS,
   'pstoRequired',
   'pstoRequest',
+  'pstoRequestDate',
   'pstoDate',
   'pstoResult',
   'heatTreatmentDiagram',
@@ -160,6 +164,7 @@ const WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS = [
 const WELDING_JOURNAL_REQUEST_FIELD_KEYS = [
   ...LNK_METHODS.map((method) => method.requestKey),
   'pstoRequest',
+  'pstoRequestDate',
 ] as const satisfies readonly WeldFieldKey[]
 
 const WELDING_JOURNAL_RESULT_FIELD_KEYS = [
@@ -193,6 +198,7 @@ export const WELDING_JOURNAL_WAITING_WELD_FIELDS = getFieldsByKeys([
   'material2',
   'weldingMethod',
   'connectionType',
+  'materialGroup',
   'd1',
   'd2',
   't1',

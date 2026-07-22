@@ -1,6 +1,7 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getDateInputValidationReason } from '@/lib/date-format'
+import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
+import { findFirstPstoChronologyIssue } from '@/lib/psto-chronology-checks'
 import { findFirstDateBeforeWeldDateIssue } from '@/lib/report-date-rules'
 import {
   collectRequestNames,
@@ -11,6 +12,7 @@ import {
 import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { filterPstoResultRows } from '@/lib/report-row-utils'
 import { hasText } from '@/lib/report-value-utils'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 
 export function getPstoResultAvailableRequestOptions(selectedRows: WeldRow[], requestOptions: string[]) {
   const selectedRequestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
@@ -45,11 +47,13 @@ export function getPstoResultSaveBlockReason({
   draft,
   isSaving,
   nextDiagramName,
+  saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
 }: {
   draft: PstoResultDraftState
   isSaving: boolean
   nextDiagramName: string
+  saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
 }) {
   if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
@@ -57,19 +61,47 @@ export function getPstoResultSaveBlockReason({
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
   if (!draft.result) return 'Выберите результат ПСТО.'
   if (draft.result !== 'проведено') return 'Выберите результат ПСТО.'
-  if (!draft.pstoDate) return 'Укажите дату ПСТО.'
+  if (saveCheckSettings.pstoResultDateRequired && !draft.pstoDate) return 'Укажите дату ПСТО.'
 
-  const dateReason = getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО')
-  if (dateReason) return dateReason
+  if (saveCheckSettings.pstoResultDateFormat) {
+    const dateReason = getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО')
+    if (dateReason) return dateReason
+  }
 
-  const dateIssue = findFirstDateBeforeWeldDateIssue(selectedRows, draft.pstoDate, 'Дата ПСТО')
+  const dateIssue = saveCheckSettings.pstoResultDateAfterWeldDate
+    ? findFirstDateBeforeWeldDateIssue(selectedRows, draft.pstoDate, 'Дата ПСТО')
+    : null
   if (dateIssue) return dateIssue
 
-  if (!getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)) {
+  if (
+    saveCheckSettings.pstoResultDiagramRequired &&
+    !getRequestNameFromNaming(draft.diagramNaming, nextDiagramName, draft.pstoDate)
+  ) {
     return 'Укажите наименование диаграммы термообработки.'
   }
 
+  const chronologyIssue = findFirstPstoChronologyIssue(
+    buildProposedPstoResultRowsForChecks(selectedRows, draft, nextDiagramName),
+    saveCheckSettings,
+  )
+  if (chronologyIssue) return chronologyIssue
+
   return ''
+}
+
+function buildProposedPstoResultRowsForChecks(
+  selectedRows: WeldRow[],
+  draft: PstoResultDraftState,
+  nextDiagramName: string,
+) {
+  const pstoDate = normalizeDateLikeForStorage(draft.pstoDate) ?? draft.pstoDate
+  const diagramName = getRequestNameFromNaming(draft.diagramNaming, nextDiagramName, draft.pstoDate)
+  return selectedRows.map((row) => ({
+    ...row,
+    pstoDate,
+    pstoResult: draft.result,
+    heatTreatmentDiagram: diagramName,
+  }))
 }
 
 export function getManagedPstoResultRows(rows: WeldRow[], selectedRowIds: Set<number>) {
