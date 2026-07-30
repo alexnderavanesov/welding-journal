@@ -2,7 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
-import { calculateFinalStatusInRows } from '@/lib/weld-status'
+import { buildFinalStatusRowsContext, calculateFinalStatusInRows, type FinalStatusRowsContext } from '@/lib/weld-status'
 
 export type LineSummaryRow = {
   key: string
@@ -37,7 +37,8 @@ type ChainRow = {
 }
 
 export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit): LineSummary {
-  const rowsForSummary = getActualLineRows(rows)
+  const finalStatusContext = buildFinalStatusRowsContext(rows)
+  const rowsForSummary = getActualLineRows(rows, finalStatusContext)
   const lineRows = new Map<string, LineSummaryRow>()
 
   for (const row of rowsForSummary) {
@@ -103,7 +104,7 @@ export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit): LineSum
   }
 }
 
-function getActualLineRows(rows: WeldRow[]) {
+function getActualLineRows(rows: WeldRow[], finalStatusContext: FinalStatusRowsContext) {
   const chainGroups = new Map<string, WeldRow[]>()
 
   for (const row of rows) {
@@ -114,14 +115,14 @@ function getActualLineRows(rows: WeldRow[]) {
     chainGroups.set(key, current)
   }
 
-  return Array.from(chainGroups.values()).flatMap((chainRows) => getActualRowsFromChain(chainRows, rows))
+  return Array.from(chainGroups.values()).flatMap((chainRows) => getActualRowsFromChain(chainRows, rows, finalStatusContext))
 }
 
-function getActualRowsFromChain(chainRows: WeldRow[], allRows: WeldRow[]) {
+function getActualRowsFromChain(chainRows: WeldRow[], allRows: WeldRow[], finalStatusContext: FinalStatusRowsContext) {
   const officialRows = chainRows.filter((row) => !isUnofficial(row.status))
   if (officialRows.length === 0) return []
 
-  const goodOfficialRows = officialRows.filter((row) => normalizeStatus(calculateFinalStatusInRows(row, allRows)) === 'годен')
+  const goodOfficialRows = officialRows.filter((row) => normalizeStatus(calculateFinalStatusInRows(row, allRows, finalStatusContext)) === 'годен')
   if (goodOfficialRows.length > 0) return [pickGoodChainRepresentative(goodOfficialRows)]
 
   const prepared = officialRows.map((row) => ({

@@ -1,13 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { getReportImportFieldKeys, getEditableReportImportLabel } from '@/lib/report-ui-state'
+import { getEditableReportImportLabel } from '@/lib/report-ui-state'
 import { withOfficialJointStatus } from '@/lib/report-control-state'
-import {
-  parseCsv,
-  parseEditableCsv,
-  parseEditableWorkbook,
-  parseWorkbook,
-} from '@/lib/weld-import-export'
-import { stripIgnoredImportFields } from '@/lib/report-import-template'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldInput } from '@/lib/weld-fields'
 
@@ -51,26 +44,7 @@ export function useReportImportActions({
     setMessage(`Добавлено ${importResult.inserted}, пропущено служебных строк: ${skippedRows}`)
   }
 
-  async function handleImport(file: File) {
-    if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
-      const options = getReportImportFieldKeys(activeReport)
-      if (!options) return
-      const result = file.name.toLowerCase().endsWith('.csv')
-        ? parseEditableCsv(await file.text(), options)
-        : parseEditableWorkbook(await file.arrayBuffer(), options)
-      await handleImportRecords(result.records, result.skippedRows)
-      return
-    }
-
-    const result = file.name.toLowerCase().endsWith('.csv') ? parseCsv(await file.text()) : parseWorkbook(await file.arrayBuffer())
-    await handleImportRecords(
-      result.records.map((record) => stripIgnoredImportFields(record, activeReport)),
-      result.skippedRows,
-    )
-  }
-
   return {
-    handleImport,
     handleImportRecords,
   }
 }

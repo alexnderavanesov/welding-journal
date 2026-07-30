@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { PaginationBar } from '@/components/pagination-bar'
 import { PstoRequestAside } from '@/components/psto-request-aside'
 import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
@@ -17,6 +18,7 @@ import { buildPstoRequestDraftRows } from '@/lib/psto-report-mutation-updates'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { usePagination } from '@/lib/use-pagination'
 
 export type PstoRequestDialogProps = {
   nextRequestName: string
@@ -69,6 +71,12 @@ export function PstoRequestDialog({
   onToggleRow,
   onSubmit,
 }: PstoRequestDialogProps) {
+  const paginationResetKeys = useMemo(() => [requestSearch, filteredRows], [filteredRows, requestSearch])
+  const rowsPagination = usePagination({
+    items: filteredRows,
+    defaultPageSize: 100,
+    resetKeys: paginationResetKeys,
+  })
   const requestName = getRequestNameFromNaming(requestNaming, nextRequestName, requestDate)
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ПСТО')
   const chronologyReason = useMemo(() => {
@@ -149,11 +157,22 @@ export function PstoRequestDialog({
           onSearchChange={onRequestSearchChange}
         >
           <div className="divide-y divide-slate-100">
-            {filteredRows.map((row) => {
+            {rowsPagination.pageItems.map((row) => {
               const disabled = !canCreateRequest(row)
               const selected = selectedIds.has(row.id)
               return <PstoRequestRow key={row.id} row={row} selected={selected} disabled={disabled} onToggleRow={onToggleRow} />
             })}
+          </div>
+          <div className="p-3">
+            <PaginationBar
+              totalCount={rowsPagination.totalCount}
+              firstItemNumber={rowsPagination.firstItemNumber}
+              lastItemNumber={rowsPagination.lastItemNumber}
+              pageSize={rowsPagination.pageSize}
+              hasMore={rowsPagination.hasMore}
+              onLoadMore={rowsPagination.loadMore}
+              onPageSizeChange={rowsPagination.setPageSize}
+            />
           </div>
         </RequestRowsPanel>
       </div>

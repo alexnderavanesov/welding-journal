@@ -1,6 +1,6 @@
 import { formatDisplayDate } from '@/lib/date-format'
 import { LNK_WAITING_NK_FIELDS } from '@/lib/report-config'
-import type { ExportWorkbookOptions } from '@/lib/weld-import-export'
+import type { ExportWorkbookOptions } from '@/lib/weld-export-types'
 import type { WeldField, WeldInput } from '@/lib/weld-fields'
 
 export function buildLnkReportHtml(

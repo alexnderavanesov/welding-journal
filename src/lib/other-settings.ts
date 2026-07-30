@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 
 export const OTHER_SETTINGS_EVENT = 'other-settings-change'
 
@@ -56,11 +57,16 @@ export function loadOtherSettings(): OtherSettings {
   }
 }
 
-export function saveOtherSettings(settings: OtherSettings) {
+export function saveOtherSettings(settings: OtherSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeOtherSettings(settings)
   window.localStorage.setItem(OTHER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(OTHER_SETTINGS_EVENT))
+  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.other, normalizedSettings)
+}
+
+export function applyRemoteOtherSettings(settings: unknown) {
+  saveOtherSettings(normalizeOtherSettings(settings), { syncRemote: false })
 }
 
 export function normalizeOtherSettings(value: unknown): OtherSettings {

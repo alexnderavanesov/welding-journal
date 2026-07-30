@@ -155,6 +155,45 @@ describe('buildWelderStatisticsSummary', () => {
     expect(onlyF.rows[0]).toMatchObject({ stamp: 'ABC1', total: 1, fTotal: 1, sTotal: 0, rejected: 1 })
     expect(onlyS.rows[0]).toMatchObject({ stamp: 'ABC1', total: 1, fTotal: 0, sTotal: 1, good: 1 })
   })
+
+  it('builds expandable details by day and material group for fact stamps', () => {
+    const rows = [
+      {
+        id: 1,
+        joint: 'S1',
+        weldDate: '2026-07-01',
+        materialGroup: 'M01',
+        stamp1KFact: 'ABC1',
+        stamp1ZFact: 'ABC1',
+        stamp1OFact: 'ABC1',
+        hasVik: 'да',
+        vikResult: 'годен',
+      },
+      {
+        id: 2,
+        joint: 'S2',
+        weldDate: '2026-07-02',
+        materialGroup: 'M05',
+        stamp1KFact: 'ABC1',
+        stamp1ZFact: 'ABC1',
+        stamp1OFact: 'ABC1',
+        hasRk: 'да',
+        rkResult: 'ремонт',
+      },
+    ] as WeldRow[]
+
+    const summary = buildWelderStatisticsSummary(rows, [], '2026-07-01', '2026-07-31', 'joints')
+    const row = summary.rows.find((item) => item.stamp === 'ABC1')
+
+    expect(row?.daily).toEqual([
+      { date: '2026-07-01', total: 1, joints: 1 },
+      { date: '2026-07-02', total: 1, joints: 1 },
+    ])
+    expect(row?.materialGroups).toEqual([
+      { key: 'M01', total: 1, good: 1, waitingRequest: 0, waitingControl: 0, rejected: 0 },
+      { key: 'M05', total: 1, good: 0, waitingRequest: 0, waitingControl: 0, rejected: 1 },
+    ])
+  })
 })
 
 function welderStamp(value: Partial<WelderStampRecord>): WelderStampRecord {

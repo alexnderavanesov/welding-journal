@@ -28,7 +28,6 @@ import { buildDuplicateJointCheckTasks } from '@/lib/repeated-joint-duplicate-ta
 import { buildLineConsistencyTasks } from '@/lib/line-consistency-tasks'
 import { buildPercentageLineControlTasks } from '@/lib/percentage-line-tasks'
 import {
-  findMatchingJointRows,
   getExpectedRepeatedJointName,
   getExpectedRepeatedJointSuffix,
   getOfficialRejectedJointChainRows,
@@ -53,11 +52,27 @@ type ObsoleteRepeatedJointInfo = {
   reason: string
 }
 
+type MatchingJointRowsIndex = Map<string, WeldRow[]>
+
+type BuildRepeatedJointTasksOptions = {
+  includeIncompleteStampChecks?: boolean
+  includeLineConsistencyTasks?: boolean
+  includePercentageLineControlTasks?: boolean
+  includeWelderStampCompatibilityChecks?: boolean
+}
+
 export function buildRepeatedJointTasks(
   rows: WeldRow[],
   welderStampRecords: WelderStampRecord[] = [],
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
+  options: BuildRepeatedJointTasksOptions = {},
 ): RepeatedJointTask[] {
+  const {
+    includeIncompleteStampChecks = true,
+    includeLineConsistencyTasks = true,
+    includePercentageLineControlTasks = true,
+    includeWelderStampCompatibilityChecks = true,
+  } = options
   const tasks: RepeatedJointTask[] = []
   const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows)
   const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
@@ -67,12 +82,17 @@ export function buildRepeatedJointTasks(
     ...buildLnkChronologyCheckTasks(rows),
     ...buildPstoChronologyCheckTasks(rows),
     ...buildForbiddenRepairByDiameterCheckTasks(rows),
-    ...buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions),
-    ...buildIncompleteWelderStampGroupTasks(rows),
+    ...(includeWelderStampCompatibilityChecks
+      ? buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions)
+      : []),
+    ...(includeIncompleteStampChecks ? buildIncompleteWelderStampGroupTasks(rows) : []),
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
-  const lineConsistencyTasks = buildLineConsistencyTasks(rows)
-  const percentageLineControlTasks = buildPercentageLineControlTasks(rows, welderStampSuspensions)
+  const lineConsistencyTasks = includeLineConsistencyTasks ? buildLineConsistencyTasks(rows) : []
+  const percentageLineControlTasks = includePercentageLineControlTasks
+    ? buildPercentageLineControlTasks(rows, welderStampSuspensions)
+    : []
+  const matchingJointRowsIndex = buildMatchingJointRowsIndex(rows)
   const blockedChainKeys = new Set(
     [
       ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),
@@ -81,7 +101,7 @@ export function buildRepeatedJointTasks(
   )
   const obsoleteByRowId = new Map<number, ObsoleteRepeatedJointInfo>()
   for (const row of rows) {
-    const repeated = getObsoleteRepeatedJointInfo(rows, row)
+    const repeated = getObsoleteRepeatedJointInfo(matchingJointRowsIndex, row)
     if (repeated) obsoleteByRowId.set(row.id, repeated)
   }
   const directObsoleteInfos = Array.from(obsoleteByRowId.values())
@@ -243,13 +263,43 @@ function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<
   return Boolean(chainKey && blockedChainKeys.has(chainKey))
 }
 
-function getObsoleteRepeatedJointInfo(rows: WeldRow[], row: WeldRow): ObsoleteRepeatedJointInfo | null {
+function buildMatchingJointRowsIndex(rows: WeldRow[]): MatchingJointRowsIndex {
+  const index: MatchingJointRowsIndex = new Map()
+  for (const row of rows) {
+    const key = getMatchingJointRowsIndexKey(row, row.joint)
+    if (!key) continue
+    const group = index.get(key)
+    if (group) {
+      group.push(row)
+    } else {
+      index.set(key, [row])
+    }
+  }
+  return index
+}
+
+function getMatchingJointRowsIndexKey(row: WeldInput, joint: unknown) {
+  const normalizedJoint = normalizeSearchText(joint)
+  if (!normalizedJoint) return ''
+  return [
+    normalizeSearchText(row.projectTitle),
+    normalizeSearchText(row.subtitleCode),
+    normalizeSearchText(row.line),
+    normalizedJoint,
+  ].join('\u0000')
+}
+
+function findMatchingJointRowsInIndex(index: MatchingJointRowsIndex, sourceRow: WeldInput, joint: string) {
+  return index.get(getMatchingJointRowsIndexKey(sourceRow, joint)) ?? []
+}
+
+function getObsoleteRepeatedJointInfo(index: MatchingJointRowsIndex, row: WeldRow): ObsoleteRepeatedJointInfo | null {
   const targetJoint = String(row.joint ?? '').trim()
   const parsed = parseRepeatedJointName(targetJoint)
   if (parsed.segments.length === 0) return null
   let obsoleteCandidate: ObsoleteRepeatedJointInfo | null = null
   for (const candidate of getRepeatedJointSourceCandidates(parsed)) {
-    const sourceRows = findMatchingJointRows(rows, row, candidate.sourceJoint)
+    const sourceRows = findMatchingJointRowsInIndex(index, row, candidate.sourceJoint)
     if (sourceRows.length === 0) continue
     const validSource = sourceRows.find((sourceRow) => {
       const rejection = getPrimaryRejectedLnkResult(sourceRow)

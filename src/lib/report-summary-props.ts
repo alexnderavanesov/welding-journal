@@ -10,10 +10,13 @@ type CreateReportSummaryBarPropsOptions = {
   minWidth: number
   isLoading: boolean
   weldingRows: WeldRow[]
+  weldingRowCount?: number
   acceptedWdiTotal: number
   heatTreatmentRows: WeldRow[]
+  heatTreatmentRowCount?: number
   selectedHeatTreatmentRows: WeldRow[]
   lnkRows: WeldRow[]
+  lnkRowCount?: number
   availableLnkRequestRows: WeldRow[]
   welderStamps: WelderStampRecord[]
   filteredWelderStamps: WelderStampRecord[]
@@ -29,10 +32,13 @@ export function createReportSummaryBarProps({
   minWidth,
   isLoading,
   weldingRows,
+  weldingRowCount,
   acceptedWdiTotal,
   heatTreatmentRows,
+  heatTreatmentRowCount,
   selectedHeatTreatmentRows,
   lnkRows,
+  lnkRowCount,
   availableLnkRequestRows,
   welderStamps,
   filteredWelderStamps,
@@ -46,11 +52,11 @@ export function createReportSummaryBarProps({
     left,
     minWidth,
     isLoading,
-    weldingRowCount: weldingRows.length,
+    weldingRowCount: weldingRowCount ?? weldingRows.length,
     acceptedWdiTotalText: formatWdiTotal(acceptedWdiTotal),
-    heatTreatmentRowCount: heatTreatmentRows.length,
+    heatTreatmentRowCount: heatTreatmentRowCount ?? heatTreatmentRows.length,
     selectedHeatTreatmentRowCount: selectedHeatTreatmentRows.length,
-    lnkRowCount: lnkRows.length,
+    lnkRowCount: lnkRowCount ?? lnkRows.length,
     availableLnkRequestRowCount: availableLnkRequestRows.length,
     activeWelderStampCount: welderStamps.filter((record) => !record.archived).length,
     archivedWelderStampCount: welderStamps.filter((record) => record.archived).length,

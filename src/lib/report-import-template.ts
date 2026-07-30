@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx'
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { createZip } from '@/lib/weld-export-zip'
 import { escapeXml, getExportColumnWidth, normalizeSheetName } from '@/lib/weld-export-utils'
@@ -353,7 +352,7 @@ function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField
         .map((value, columnIndex) => {
           const field = fields[columnIndex]
           const styleId = rowIndex === 0 ? getTemplateHeaderStyleId() : getTemplateStyleId(activeReport, field?.key)
-          const ref = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })
+          const ref = encodeCellRef(rowIndex, columnIndex)
           const text = String(value ?? '')
           if (!text) return `<c r="${ref}" s="${styleId}"/>`
           return `<c r="${ref}" t="inlineStr" s="${styleId}"><is><t>${escapeXml(text)}</t></is></c>`
@@ -406,7 +405,7 @@ function buildExistingRowsWorksheetXml(
               : isDeleteColumn
                 ? 3
               : getExistingRowsBodyStyleId(activeReport, field ?? undefined, record, mode)
-          const ref = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })
+          const ref = encodeCellRef(rowIndex, columnIndex)
           const text = String(value ?? '')
           if (!text) return `<c r="${ref}" s="${styleId}"/>`
           if (typeof value === 'number') return `<c r="${ref}" s="${styleId}"><v>${value}</v></c>`
@@ -422,6 +421,17 @@ function buildExistingRowsWorksheetXml(
  <cols>${cols}</cols>
  <sheetData>${rowXml}</sheetData>
 </worksheet>`
+}
+
+function encodeCellRef(rowIndex: number, columnIndex: number) {
+  let columnNumber = columnIndex + 1
+  let columnName = ''
+  while (columnNumber > 0) {
+    const remainder = (columnNumber - 1) % 26
+    columnName = String.fromCharCode(65 + remainder) + columnName
+    columnNumber = Math.floor((columnNumber - 1) / 26)
+  }
+  return `${columnName}${rowIndex + 1}`
 }
 
 function getTemplateStyleId(activeReport: ActiveReport, fieldKey?: string) {

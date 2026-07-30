@@ -46,9 +46,9 @@ export function useReportOutputActions({
   visibleRows,
 }: UseReportOutputActionsParams) {
   return useMemo(() => {
-    function openLnkCurrentReport() {
+    async function openLnkCurrentReport() {
       setIsLnkShowMenuOpen(false)
-      const result = openCurrentReportWindow(
+      const result = await openCurrentReportWindow(
         visibleRows,
         getReportExportOptions(activeReport, activeTitle).fields,
         'ЛНК: текущая версия',
@@ -57,27 +57,27 @@ export function useReportOutputActions({
       if (!result.ok) setMessage(result.message)
     }
 
-    function openLnkWaitingNkReport() {
+    async function openLnkWaitingNkReport() {
       setIsLnkShowMenuOpen(false)
-      const result = openLnkWaitingNkReportWindow(lnkRows)
+      const result = await openLnkWaitingNkReportWindow(lnkRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openLnkToRequestReport() {
+    async function openLnkToRequestReport() {
       setIsLnkShowMenuOpen(false)
-      const result = openLnkToRequestReportWindow(lnkRows)
+      const result = await openLnkToRequestReportWindow(lnkRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openLnkConclusionsReport() {
+    async function openLnkConclusionsReport() {
       setIsLnkShowMenuOpen(false)
-      const result = openLnkConclusionsReportWindow(lnkRows)
+      const result = await openLnkConclusionsReportWindow(lnkRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openPstoCurrentReport() {
+    async function openPstoCurrentReport() {
       setIsPstoShowMenuOpen(false)
-      const result = openCurrentReportWindow(
+      const result = await openCurrentReportWindow(
         visibleRows,
         getReportExportOptions(activeReport, activeTitle).fields,
         'Термообработка: текущая версия',
@@ -86,60 +86,60 @@ export function useReportOutputActions({
       if (!result.ok) setMessage(result.message)
     }
 
-    function openPstoWaitingRequestReport() {
+    async function openPstoWaitingRequestReport() {
       setIsPstoShowMenuOpen(false)
-      const result = openPstoWaitingRequestReportWindow(heatTreatmentRows)
+      const result = await openPstoWaitingRequestReportWindow(heatTreatmentRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openPstoResultsReport() {
+    async function openPstoResultsReport() {
       setIsPstoShowMenuOpen(false)
-      const result = openPstoResultsReportWindow(heatTreatmentRows)
+      const result = await openPstoResultsReportWindow(heatTreatmentRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openWeldingJournalCurrentReport() {
+    async function openWeldingJournalCurrentReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = openWeldingJournalCurrentReportWindow(
+      const result = await openWeldingJournalCurrentReportWindow(
         visibleRows,
         getReportExportOptions(activeReport, activeTitle).fields,
       )
       if (!result.ok) setMessage(result.message)
     }
 
-    function openWeldingJournalWaitingWeldReport() {
+    async function openWeldingJournalWaitingWeldReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = openWeldingJournalWaitingWeldReportWindow(weldingJournalRows)
+      const result = await openWeldingJournalWaitingWeldReportWindow(weldingJournalRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openWeldingJournalWaitingRequestReport() {
+    async function openWeldingJournalWaitingRequestReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = openWeldingJournalWaitingRequestReportWindow(weldingJournalRows)
+      const result = await openWeldingJournalWaitingRequestReportWindow(weldingJournalRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openWeldingJournalWaitingControlReport() {
+    async function openWeldingJournalWaitingControlReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = openWeldingJournalWaitingControlReportWindow(weldingJournalRows)
+      const result = await openWeldingJournalWaitingControlReportWindow(weldingJournalRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openWeldingJournalWaitingRepairReport() {
+    async function openWeldingJournalWaitingRepairReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = openWeldingJournalWaitingRepairReportWindow(weldingJournalRows)
+      const result = await openWeldingJournalWaitingRepairReportWindow(weldingJournalRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openWeldingJournalCancelledAcceptedReport() {
+    async function openWeldingJournalCancelledAcceptedReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = openWeldingJournalCancelledAcceptedReportWindow(weldingJournalRows)
+      const result = await openWeldingJournalCancelledAcceptedReportWindow(weldingJournalRows)
       if (!result.ok) setMessage(result.message)
     }
 
-    function openWeldingJournalSystemReport() {
+    async function openWeldingJournalSystemReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = openWeldingJournalSystemReportWindow(weldingJournalRows)
+      const result = await openWeldingJournalSystemReportWindow(weldingJournalRows)
       if (!result.ok) setMessage(result.message)
     }
 

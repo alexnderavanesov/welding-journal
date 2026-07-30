@@ -1,7 +1,7 @@
 import type { LineConsistencyTask, WeldRow } from '@/lib/dispatcher-types'
 import { isControlAdditionalValue } from '@/lib/control-availability-values'
 
-type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence'>
+type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence' | 'pstoPresence'>
 
 type LineConsistencyField = {
   key: LineMetadataFieldKey
@@ -25,7 +25,6 @@ const CONTROL_PRESENCE_FIELDS: ControlPresenceField[] = [
   { key: 'hasRk', label: 'РК' },
   { key: 'hasUzk', label: 'УЗК' },
   { key: 'hasPvk', label: 'ПВК' },
-  { key: 'pstoRequired', label: 'ПСТО' },
   { key: 'hasTvmt', label: 'ТВМТ' },
   { key: 'hasRfa', label: 'РФА' },
   { key: 'hasStls', label: 'СТЛС' },
@@ -83,6 +82,7 @@ export function buildLineConsistencyTasks(rows: WeldRow[]): LineConsistencyTask[
     }
 
     tasks.push(...buildControlPresenceTasksForLine(groupRows, representativeRow, line))
+    tasks.push(...buildPstoPresenceTasksForLine(groupRows, representativeRow, line))
   }
 
   return tasks
@@ -134,6 +134,42 @@ function buildControlPresenceTasksForLine(groupRows: WeldRow[], representativeRo
   }
 
   return tasks
+}
+
+function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: WeldRow, line: string) {
+  if (groupRows.length < 2) return []
+
+  const rowsWithPsto = groupRows.filter((row) => isRequiredControlPresence(row.pstoRequired))
+  if (rowsWithPsto.length === 0 || rowsWithPsto.length === groupRows.length) return []
+
+  const rowsWithoutPsto = groupRows.filter((row) => !isRequiredControlPresence(row.pstoRequired))
+  const projectTitle = normalizeDisplayValue(representativeRow.projectTitle)
+  const subtitleCode = normalizeDisplayValue(representativeRow.subtitleCode)
+  const detailsContext = [
+    projectTitle ? `проект ${projectTitle}` : '',
+    subtitleCode ? `шифр ${subtitleCode}` : '',
+  ].filter(Boolean).join(', ')
+  const missingJoints = rowsWithoutPsto
+    .slice(0, 8)
+    .map((row) => normalizeDisplayValue(row.joint) || `ID ${row.id}`)
+    .join(', ')
+  const extraText = rowsWithoutPsto.length > 8 ? ` и еще ${rowsWithoutPsto.length - 8}` : ''
+
+  return [
+    {
+      kind: 'line-consistency',
+      key: `line-consistency:pstoPresence:${normalizeKey(projectTitle)}:${normalizeKey(subtitleCode)}:${normalizeKey(line)}:${rowsWithPsto.length}:${rowsWithoutPsto.length}`,
+      row: representativeRow,
+      line,
+      projectTitle,
+      subtitleCode,
+      fieldKey: 'pstoPresence',
+      fieldLabel: 'ПСТО',
+      title: 'Проверить ПСТО по линии',
+      values: [`ПСТО есть: ${rowsWithPsto.length}`, `ПСТО нет: ${rowsWithoutPsto.length}`],
+      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} ПСТО назначено только у части стыков: с ПСТО ${rowsWithPsto.length}, без ПСТО ${rowsWithoutPsto.length}. Если ПСТО требуется хотя бы на одном стыке линии, обычно оно должно быть назначено на всю связку Проект + Шифр + Линия. Проверьте стыки без ПСТО: ${missingJoints}${extraText}.`,
+    } satisfies LineConsistencyTask,
+  ]
 }
 
 function getDistinctLineValues(rows: WeldRow[], key: LineMetadataFieldKey) {

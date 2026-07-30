@@ -41,6 +41,22 @@ const CONTROL_STATE_PAIRS = [
   { enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult' },
 ] as const satisfies ReadonlyArray<{ enabledKey: WeldFieldKey; requestKey: WeldFieldKey; resultKey: WeldFieldKey }>
 
+export type FinalStatusRowsContext = {
+  rejectedUnofficialSameNameRepairKeys: ReadonlySet<string>
+}
+
+export function buildFinalStatusRowsContext(rows: readonly WeldInput[]): FinalStatusRowsContext {
+  const rejectedUnofficialSameNameRepairKeys = new Set<string>()
+
+  for (const row of rows) {
+    if (!isUnofficialStatus(row.status) || !hasRejectedControlResult(row)) continue
+    const key = getSameNameRejectedRepairLookupKey(row)
+    if (key) rejectedUnofficialSameNameRepairKeys.add(key)
+  }
+
+  return { rejectedUnofficialSameNameRepairKeys }
+}
+
 export function calculateFinalStatus(record: WeldInput) {
   const hasResultWithoutEnabledControl = getInactiveControlResultErrors(record).length > 0
   if (hasResultWithoutEnabledControl) return 'ошибка'
@@ -77,9 +93,9 @@ export function calculateFinalStatus(record: WeldInput) {
   return 'ожидает НК'
 }
 
-export function calculateFinalStatusInRows(record: WeldInput, rows: readonly WeldInput[]) {
+export function calculateFinalStatusInRows(record: WeldInput, rows: readonly WeldInput[], context?: FinalStatusRowsContext) {
   const status = calculateFinalStatus(record)
-  if (status === 'ожидает сварку' && isOfficialSameNameRepairAfterUnofficialRejected(record, rows)) {
+  if (status === 'ожидает сварку' && isOfficialSameNameRepairAfterUnofficialRejected(record, rows, context)) {
     return 'ожидает ремонт'
   }
   return status
@@ -150,7 +166,7 @@ function getPendingWeldFinalStatus(record: WeldInput) {
   return hasRepairSegment && !hasCoilSegment ? 'ожидает ремонт' : 'ожидает сварку'
 }
 
-function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows: readonly WeldInput[]) {
+function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows: readonly WeldInput[], context?: FinalStatusRowsContext) {
   if (hasText(record.weldDate) || isUnofficialStatus(record.status)) return false
   const joint = String(record.joint ?? '').trim()
   if (!joint) return false
@@ -160,6 +176,10 @@ function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows
 
   const targetIdentity = getSameNameChainIdentity(record)
   if (!targetIdentity) return false
+  const targetKey = getSameNameRejectedRepairLookupKey(record)
+  if (!targetKey) return false
+
+  if (context) return context.rejectedUnofficialSameNameRepairKeys.has(targetKey)
 
   return rows.some((row) => {
     if (row === record) return false
@@ -168,6 +188,12 @@ function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows
     const identity = getSameNameChainIdentity(row)
     return identity === targetIdentity && normalizeJointChainPart(row.joint) === normalizeJointChainPart(joint)
   })
+}
+
+function getSameNameRejectedRepairLookupKey(record: WeldInput) {
+  const identity = getSameNameChainIdentity(record)
+  const normalizedJoint = normalizeJointChainPart(record.joint)
+  return identity && normalizedJoint ? `${identity}\u0000${normalizedJoint}` : null
 }
 
 function getSameNameChainIdentity(record: WeldInput) {

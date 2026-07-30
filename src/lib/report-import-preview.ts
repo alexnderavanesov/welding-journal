@@ -1,13 +1,15 @@
-import * as XLSX from 'xlsx'
 import { getEditableReportImportLabel } from '@/lib/report-display-state'
 import {
   emptyToNull,
   parseCell,
+} from '@/lib/weld-import-parsers'
+import {
   parseCsv,
   parseEditableCsv,
   parseEditableWorkbook,
   parseWorkbook,
-} from '@/lib/weld-import-export'
+} from '@/lib/weld-import-readers'
+import { readFirstSheetRows } from '@/lib/weld-import-sheet-reader'
 import { withOfficialJointStatus } from '@/lib/report-control-state'
 import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { assertNoLnkRepairRuleIssues } from '@/lib/lnk-result-rules'
@@ -504,19 +506,19 @@ async function parseReportImportFile(activeReport: ActiveReport, file: File) {
       throw new Error(`Для отчета ${getEditableReportImportLabel(activeReport)} импорт не настроен.`)
     }
     return file.name.toLowerCase().endsWith('.csv')
-      ? parseEditableCsv(await file.text(), options)
-      : parseEditableWorkbook(await file.arrayBuffer(), options)
+      ? await parseEditableCsv(await file.text(), options)
+      : await parseEditableWorkbook(await file.arrayBuffer(), options)
   }
 
   return file.name.toLowerCase().endsWith('.csv')
-    ? parseCsv(await file.text())
-    : parseWorkbook(await file.arrayBuffer())
+    ? await parseCsv(await file.text())
+    : await parseWorkbook(await file.arrayBuffer())
 }
 
 async function parseMassFillImportFile(file: File) {
   const rows = file.name.toLowerCase().endsWith('.csv')
-    ? readFirstSheetRows(await file.text(), 'string')
-    : readFirstSheetRows(await file.arrayBuffer(), 'array')
+    ? await readFirstSheetRows(await file.text(), 'string')
+    : await readFirstSheetRows(await file.arrayBuffer(), 'array')
   const [rawHeaders = [], ...dataRows] = rows
   const headers = rawHeaders.map((header) => normalizeHeader(header))
 
@@ -529,12 +531,6 @@ async function parseMassFillImportFile(file: File) {
     dataRows,
     skippedRows: dataRows.filter(isEmptyWorksheetRow).length,
   }
-}
-
-function readFirstSheetRows(data: ArrayBuffer | string, type: 'array' | 'string') {
-  const workbook = XLSX.read(data, { type, raw: true, cellDates: false })
-  const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-  return XLSX.utils.sheet_to_json<unknown[]>(firstSheet, { header: 1, raw: true, defval: null })
 }
 
 function mapMassFillHeadersToFields(headers: readonly string[]) {

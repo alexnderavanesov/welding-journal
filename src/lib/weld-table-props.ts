@@ -18,7 +18,14 @@ import {
 type CreateWeldTablePropsOptions = {
   activeReport: ActiveReport
   rows: WeldTableProps['rows']
+  actionRows?: WeldTableProps['actionRows']
+  duplicateRows?: WeldTableProps['duplicateRows']
+  duplicateKeyOverrides?: WeldTableProps['duplicateKeyOverrides']
+  filterOptionRows?: WeldTableProps['filterOptionRows']
   columnFilters: WeldTableProps['columnFilters']
+  manualFiltering?: WeldTableProps['manualFiltering']
+  manualFilterOptionsReport?: WeldTableProps['manualFilterOptionsReport']
+  manualPagination?: WeldTableProps['manualPagination']
   onColumnFiltersChange: WeldTableProps['onColumnFiltersChange']
   onEdit: WeldTableProps['onEdit']
   onDelete: WeldTableProps['onDelete']
@@ -40,7 +47,14 @@ type CreateWeldTablePropsOptions = {
 export function createWeldTableProps({
   activeReport,
   rows,
+  actionRows,
+  duplicateRows,
+  duplicateKeyOverrides,
+  filterOptionRows,
   columnFilters,
+  manualFiltering,
+  manualFilterOptionsReport,
+  manualPagination,
   onColumnFiltersChange,
   onEdit,
   onDelete,
@@ -60,7 +74,14 @@ export function createWeldTableProps({
 }: CreateWeldTablePropsOptions): WeldTableProps {
   return {
     rows,
+    actionRows,
+    duplicateRows,
+    duplicateKeyOverrides,
+    filterOptionRows,
     columnFilters,
+    manualFiltering,
+    manualFilterOptionsReport,
+    manualPagination,
     onColumnFiltersChange,
     onEdit,
     onDelete,

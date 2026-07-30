@@ -39,7 +39,7 @@ describe('line consistency tasks', () => {
 
   it('creates a task when control presence differs within the same line and percent', () => {
     const tasks = buildLineConsistencyTasks([
-      row({ id: 1, line: '330-FG-05-001', weldControlPercent: '100', hasVik: 'да', hasRk: 'да', hasPvk: 'да', pstoRequired: 'да' }),
+      row({ id: 1, line: '330-FG-05-001', weldControlPercent: '100', hasVik: 'да', hasRk: 'да', hasPvk: 'да' }),
       row({ id: 2, line: '330-FG-05-001', weldControlPercent: '100', hasVik: 'да', hasRk: 'да' }),
     ])
 
@@ -49,7 +49,7 @@ describe('line consistency tasks', () => {
       line: '330-FG-05-001',
       fieldKey: 'controlPresence',
       title: 'Проверить назначение контроля линии',
-      values: ['ВИК, РК, ПВК, ПСТО', 'ВИК, РК'],
+      values: ['ВИК, РК, ПВК', 'ВИК, РК'],
     })
   })
 
@@ -89,6 +89,49 @@ describe('line consistency tasks', () => {
     ])
 
     expect(tasks.map((task) => task.fieldKey)).toEqual(['weldControlPercent'])
+  })
+
+  it('creates a separate PSTO task regardless of line control percent', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: 'да' }),
+      row({ id: 2, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: '' }),
+      row({ id: 3, line: '330-FG-05-001', weldControlPercent: '25', pstoRequired: '' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({
+      kind: 'line-consistency',
+      line: '330-FG-05-001',
+      fieldKey: 'pstoPresence',
+      title: 'Проверить ПСТО по линии',
+      values: ['ПСТО есть: 1', 'ПСТО нет: 2'],
+    })
+  })
+
+  it('does not create a PSTO task when every joint has PSTO or every joint has no PSTO', () => {
+    expect(
+      buildLineConsistencyTasks([
+        row({ id: 1, pstoRequired: 'да' }),
+        row({ id: 2, pstoRequired: 'да' }),
+      ]),
+    ).toHaveLength(0)
+
+    expect(
+      buildLineConsistencyTasks([
+        row({ id: 1, pstoRequired: '' }),
+        row({ id: 2, pstoRequired: '' }),
+      ]),
+    ).toHaveLength(0)
+  })
+
+  it('does not compare PSTO between different project and subtitle line groups', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, projectTitle: 'P1', subtitleCode: '400', line: 'LIN-1', pstoRequired: 'да' }),
+      row({ id: 2, projectTitle: 'P2', subtitleCode: '400', line: 'LIN-1', pstoRequired: '' }),
+      row({ id: 3, projectTitle: 'P1', subtitleCode: '500', line: 'LIN-1', pstoRequired: '' }),
+    ])
+
+    expect(tasks).toHaveLength(0)
   })
 })
 

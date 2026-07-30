@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Activity,
   ChevronDown,
@@ -28,18 +28,21 @@ import {
   getDefaultStatisticsPeriod,
   type StatisticsMethodSummary,
   type StatisticsPeriodMode,
+  type StatisticsSummary,
   type StatisticsUnit,
 } from '@/lib/statistics-summary'
-import { buildLineSummary, type LineSummaryRow } from '@/lib/line-summary'
+import { buildLineSummary, type LineSummary, type LineSummaryRow } from '@/lib/line-summary'
 import {
   buildPercentageLineSummaries,
   type PercentageControlMethod,
+  type PercentageLineSummary,
   type PercentageLineStampSummary,
 } from '@/lib/percentage-line-summary'
 import {
   buildWelderStatisticsSummary,
   type WelderStatisticsJointFilter,
   type WelderStatisticsRow,
+  type WelderStatisticsSummary,
 } from '@/lib/welder-statistics-summary'
 import { buildWeldingDynamics, type WeldingDynamicsSummary } from '@/lib/welding-dynamics'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
@@ -60,6 +63,86 @@ type StatisticsPageProps = {
 }
 
 type StatisticsTab = 'general' | 'lnk' | 'welders' | 'lineSummary' | 'percentageLines'
+
+const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
+  code: '',
+  requests: 0,
+  closed: 0,
+  totalClosed: 0,
+  closedWithoutRequest: 0,
+  pending: 0,
+  waitingRequest: 0,
+  waitingControl: 0,
+  good: 0,
+  rejected: 0,
+  closurePercent: 0,
+}
+
+const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
+  periodRows: [],
+  totalRows: 0,
+  welded: 0,
+  weldedShare: 0,
+  good: 0,
+  rejected: 0,
+  waitingWeld: 0,
+  waitingRequest: 0,
+  waitingControl: 0,
+  waitingRepair: 0,
+  completedRepairs: 0,
+  qualityPercent: 0,
+  lnkRequests: 0,
+  lnkClosed: 0,
+  lnkTotalClosed: 0,
+  lnkClosurePercent: 0,
+  pstoRequests: 0,
+  pstoClosed: 0,
+  pstoTotalClosed: 0,
+  pstoClosurePercent: 0,
+  methods: [],
+  pstoMethod: { ...EMPTY_METHOD_SUMMARY, code: 'ПСТО' },
+}
+
+const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
+  bucketUnit: 'day',
+  bucketUnitLabel: 'день',
+  buckets: [],
+  periodDays: 0,
+  totalValue: 0,
+  totalWelders: 0,
+  peakValue: 0,
+  peakWelders: 0,
+}
+
+const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
+  rows: [],
+  totalWelders: 0,
+  total: 0,
+  good: 0,
+  waitingRequest: 0,
+  waitingControl: 0,
+  rejected: 0,
+  defectPercent: 0,
+  fTotal: 0,
+  sTotal: 0,
+  fGood: 0,
+  sGood: 0,
+  fWaitingRequest: 0,
+  sWaitingRequest: 0,
+  fWaitingControl: 0,
+  sWaitingControl: 0,
+  fRejected: 0,
+  sRejected: 0,
+}
+
+const EMPTY_LINE_SUMMARY: LineSummary = {
+  rows: [],
+  total: 0,
+  completed: 0,
+  remaining: 0,
+}
+
+const EMPTY_PERCENTAGE_LINE_SUMMARY: PercentageLineSummary[] = []
 
 const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['all', 'Все'],
@@ -124,25 +207,31 @@ export function StatisticsPage({
     [generalJointFilter, scopedRows],
   )
   const summary = useMemo(
-    () => buildStatisticsSummary(generalRows, periodFrom, periodTo, unit, periodMode),
-    [generalRows, periodFrom, periodTo, periodMode, unit],
+    () => (isGeneralLikeTab ? buildStatisticsSummary(generalRows, periodFrom, periodTo, unit, periodMode) : EMPTY_STATISTICS_SUMMARY),
+    [generalRows, isGeneralLikeTab, periodFrom, periodTo, periodMode, unit],
   )
   const weldingDynamics = useMemo(
-    () => buildWeldingDynamics(summary.periodRows, periodFrom, periodTo, unit),
-    [periodFrom, periodTo, summary.periodRows, unit],
+    () => (activeTab === 'general' ? buildWeldingDynamics(summary.periodRows, periodFrom, periodTo, unit) : EMPTY_WELDING_DYNAMICS),
+    [activeTab, periodFrom, periodTo, summary.periodRows, unit],
   )
   const welderSummary = useMemo(
-    () => buildWelderStatisticsSummary(scopedRows, welderStamps, periodFrom, periodTo, weldersUnit, welderJointFilter),
-    [periodFrom, periodTo, scopedRows, welderJointFilter, welderStamps, weldersUnit],
+    () =>
+      activeTab === 'welders'
+        ? buildWelderStatisticsSummary(scopedRows, welderStamps, periodFrom, periodTo, weldersUnit, welderJointFilter)
+        : EMPTY_WELDER_SUMMARY,
+    [activeTab, periodFrom, periodTo, scopedRows, welderJointFilter, welderStamps, weldersUnit],
   )
   const lineSummary = useMemo(
-    () => buildLineSummary(scopedRows, lineSummaryUnit),
-    [lineSummaryUnit, scopedRows],
+    () => (activeTab === 'lineSummary' ? buildLineSummary(scopedRows, lineSummaryUnit) : EMPTY_LINE_SUMMARY),
+    [activeTab, lineSummaryUnit, scopedRows],
   )
-  const percentageLineSummary = useMemo(() => buildPercentageLineSummaries(scopedRows), [scopedRows])
+  const percentageLineSummary = useMemo(
+    () => (activeTab === 'percentageLines' ? buildPercentageLineSummaries(scopedRows) : EMPTY_PERCENTAGE_LINE_SUMMARY),
+    [activeTab, scopedRows],
+  )
   const generalProgressSummary = useMemo(
-    () => buildLineSummary(generalRows, unit),
-    [generalRows, unit],
+    () => (activeTab === 'general' ? buildLineSummary(generalRows, unit) : EMPTY_LINE_SUMMARY),
+    [activeTab, generalRows, unit],
   )
   const orderedMethods = useMemo(() => {
     const methodsByCode = new Map([...summary.methods, summary.pstoMethod].map((method) => [method.code, method]))
@@ -975,6 +1064,9 @@ function MethodProgress({ method, unit }: { method: StatisticsMethodSummary; uni
   )
 }
 
+const WELDER_GROUP_BREAKDOWN_TOOLTIP =
+  'Разбивка по группам материалов показывает расчетную долю работы этого фактического клейма в выбранной единице отчета. Если стык варили несколько сварщиков, система распределяет вклад по слоям: для одного комплекта Корень/Заполнение/Облицовка = 40% / 30% / 30%, для двух комплектов = 20% / 15% / 15% на каждый комплект.'
+
 function WeldersStatisticsPanel({
   jointFilter,
   summary,
@@ -986,11 +1078,20 @@ function WeldersStatisticsPanel({
 }) {
   const controlled = summary.good + summary.rejected
   const [stampSearch, setStampSearch] = useState('')
+  const [expandedStamps, setExpandedStamps] = useState<Set<string>>(() => new Set())
   const filteredRows = useMemo(() => {
     const query = stampSearch.trim().toLowerCase()
     if (!query) return summary.rows
     return summary.rows.filter((row) => row.stamp.toLowerCase().includes(query) || row.welderName.toLowerCase().includes(query))
   }, [stampSearch, summary.rows])
+  const toggleExpandedStamp = (stamp: string) => {
+    setExpandedStamps((current) => {
+      const next = new Set(current)
+      if (next.has(stamp)) next.delete(stamp)
+      else next.add(stamp)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -1067,7 +1168,14 @@ function WeldersStatisticsPanel({
                 </thead>
                 <tbody>
                   {filteredRows.map((row) => (
-                    <WelderStatisticsTableRow key={row.stamp} jointFilter={jointFilter} row={row} unit={unit} />
+                    <WelderStatisticsTableRow
+                      key={row.stamp}
+                      expanded={expandedStamps.has(row.stamp)}
+                      jointFilter={jointFilter}
+                      onToggle={() => toggleExpandedStamp(row.stamp)}
+                      row={row}
+                      unit={unit}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -1089,74 +1197,329 @@ function WeldersStatisticsPanel({
 }
 
 function WelderStatisticsTableRow({
+  expanded,
   jointFilter,
+  onToggle,
   row,
   unit,
 }: {
+  expanded: boolean
   jointFilter: WelderStatisticsJointFilter
+  onToggle: () => void
   row: WelderStatisticsRow
   unit: StatisticsUnit
 }) {
   const controlled = row.good + row.rejected
+  const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
+  const activeDays = row.daily.length
+  const averagePerActiveDay = activeDays > 0 ? row.total / activeDays : 0
+  const expandedCellClass = expanded ? 'border-t-2 border-sky-200 bg-sky-50/60' : ''
   return (
-    <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
-      <td className="px-4 py-3">
-        <div className="font-semibold text-slate-900">{row.stamp}</div>
-        {row.welderName ? <div className="mt-1 text-xs font-medium leading-4 text-slate-500">{row.welderName}</div> : null}
-      </td>
-      <WelderBodyCell>
-        <WelderValueWithSplit
-          f={row.fTotal}
-          jointFilter={jointFilter}
-          s={row.sTotal}
-          total={row.total}
-          unit={unit}
-        />
-      </WelderBodyCell>
-      <WelderBodyCell className="text-emerald-700">
-        <WelderValueWithSplit
-          f={row.fGood}
-          jointFilter={jointFilter}
-          s={row.sGood}
-          total={row.good}
-          unit={unit}
-        />
-      </WelderBodyCell>
-      <WelderBodyCell>
-        <WelderValueWithSplit
-          f={row.fWaitingRequest}
-          jointFilter={jointFilter}
-          s={row.sWaitingRequest}
-          total={row.waitingRequest}
-          unit={unit}
-        />
-      </WelderBodyCell>
-      <WelderBodyCell>
-        <WelderValueWithSplit
-          f={row.fWaitingControl}
-          jointFilter={jointFilter}
-          s={row.sWaitingControl}
-          total={row.waitingControl}
-          unit={unit}
-        />
-      </WelderBodyCell>
-      <WelderBodyCell className="text-rose-700">
-        <WelderValueWithSplit
-          f={row.fRejected}
-          jointFilter={jointFilter}
-          s={row.sRejected}
-          total={row.rejected}
-          unit={unit}
-        />
-      </WelderBodyCell>
-      <WelderBodyCell>
-        <div className="flex items-center justify-end gap-2">
-          <span>{formatPercent(row.defectPercent)}</span>
-          <span className="text-xs font-normal text-slate-400">из {formatStatisticValue(controlled, unit)}</span>
-        </div>
-      </WelderBodyCell>
-    </tr>
+    <>
+      <tr
+        className={cn(
+          'cursor-pointer border-t border-slate-100 transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-sky-50',
+          expanded ? 'bg-sky-50/70 hover:bg-sky-50/70' : '',
+        )}
+        onClick={onToggle}
+      >
+        <td className={cn('px-4 py-3', expandedCellClass, expanded ? 'border-l-2' : '')}>
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm">
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </span>
+            <div className="min-w-0">
+              <div className="font-semibold text-slate-900">{row.stamp}</div>
+              {row.welderName ? <div className="mt-1 text-xs font-medium leading-4 text-slate-500">{row.welderName}</div> : null}
+            </div>
+          </div>
+        </td>
+        {expanded ? (
+          <td colSpan={6} className={cn(expandedCellClass, 'border-r-2 px-2 py-2')}>
+            <div className="grid grid-cols-[repeat(7,minmax(112px,1fr))] gap-2">
+              <WelderSummaryCard
+                label={`В смену, ${unitLabel}`}
+                value={formatStatisticValue(averagePerActiveDay, unit)}
+                detail={activeDays > 0 ? `${activeDays} дн. работы` : 'нет дней работы'}
+              />
+              <WelderSummaryCard
+                label="Всего"
+                value={formatStatisticValue(row.total, unit)}
+                f={row.fTotal}
+                groupMetric="total"
+                groups={row.materialGroups}
+                s={row.sTotal}
+                jointFilter={jointFilter}
+                unit={unit}
+              />
+              <WelderSummaryCard
+                accent="green"
+                label="Годен"
+                value={formatStatisticValue(row.good, unit)}
+                f={row.fGood}
+                groupMetric="good"
+                groups={row.materialGroups}
+                s={row.sGood}
+                jointFilter={jointFilter}
+                unit={unit}
+              />
+              <WelderSummaryCard
+                accent="blue"
+                label="Ожидает заявку"
+                value={formatStatisticValue(row.waitingRequest, unit)}
+                f={row.fWaitingRequest}
+                groupMetric="waitingRequest"
+                groups={row.materialGroups}
+                s={row.sWaitingRequest}
+                jointFilter={jointFilter}
+                unit={unit}
+              />
+              <WelderSummaryCard
+                accent="indigo"
+                label="Ожидает НК"
+                value={formatStatisticValue(row.waitingControl, unit)}
+                f={row.fWaitingControl}
+                groupMetric="waitingControl"
+                groups={row.materialGroups}
+                s={row.sWaitingControl}
+                jointFilter={jointFilter}
+                unit={unit}
+              />
+              <WelderSummaryCard
+                accent="rose"
+                label="Не годен"
+                value={formatStatisticValue(row.rejected, unit)}
+                f={row.fRejected}
+                groupMetric="rejected"
+                groups={row.materialGroups}
+                s={row.sRejected}
+                jointFilter={jointFilter}
+                unit={unit}
+              />
+              <WelderSummaryCard
+                align="center"
+                label="% брака"
+                value={formatPercent(row.defectPercent)}
+                detail={`из ${formatStatisticValue(controlled, unit)}`}
+                style={getDefectCardStyle(row.defectPercent)}
+              />
+            </div>
+          </td>
+        ) : (
+          <>
+            <WelderBodyCell>
+              <WelderValueWithSplit
+                f={row.fTotal}
+                jointFilter={jointFilter}
+                s={row.sTotal}
+                total={row.total}
+                unit={unit}
+              />
+            </WelderBodyCell>
+            <WelderBodyCell className="text-emerald-700">
+              <WelderValueWithSplit
+                f={row.fGood}
+                jointFilter={jointFilter}
+                s={row.sGood}
+                total={row.good}
+                unit={unit}
+              />
+            </WelderBodyCell>
+            <WelderBodyCell>
+              <WelderValueWithSplit
+                f={row.fWaitingRequest}
+                jointFilter={jointFilter}
+                s={row.sWaitingRequest}
+                total={row.waitingRequest}
+                unit={unit}
+              />
+            </WelderBodyCell>
+            <WelderBodyCell>
+              <WelderValueWithSplit
+                f={row.fWaitingControl}
+                jointFilter={jointFilter}
+                s={row.sWaitingControl}
+                total={row.waitingControl}
+                unit={unit}
+              />
+            </WelderBodyCell>
+            <WelderBodyCell className="text-rose-700">
+              <WelderValueWithSplit
+                f={row.fRejected}
+                jointFilter={jointFilter}
+                s={row.sRejected}
+                total={row.rejected}
+                unit={unit}
+              />
+            </WelderBodyCell>
+            <WelderBodyCell>
+              <div className="flex items-center justify-end gap-2">
+                <span>{formatPercent(row.defectPercent)}</span>
+                <span className="text-xs font-normal text-slate-400">из {formatStatisticValue(controlled, unit)}</span>
+              </div>
+            </WelderBodyCell>
+          </>
+        )}
+      </tr>
+      {expanded ? (
+        <tr className="bg-sky-50/60">
+          <td colSpan={7} className="border-x-2 border-b-2 border-sky-200 p-2.5">
+            <WelderStatisticsDetails row={row} unit={unit} />
+          </td>
+        </tr>
+      ) : null}
+    </>
   )
+}
+
+function WelderStatisticsDetails({ row, unit }: { row: WelderStatisticsRow; unit: StatisticsUnit }) {
+  const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
+  const unitDescription = unit === 'joints' ? 'в стыках' : 'в дюймах (WDI)'
+  const maxDaily = Math.max(1, ...row.daily.map((bucket) => bucket.total))
+
+  return (
+    <div className="rounded-lg border-2 border-sky-200 bg-white shadow-sm">
+      <div className="border-b border-sky-100 bg-sky-50/35 p-3">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Динамика по дням</div>
+              <div className="text-xs text-slate-500">По фактическому клейму {row.stamp}, {unitDescription}.</div>
+            </div>
+            <span className="rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800">
+              {formatStatisticValue(row.total, unit)} {unitLabel}
+            </span>
+          </div>
+          {row.daily.length > 0 ? (
+            <div className="overflow-x-auto pb-1">
+              <div className="flex min-w-max items-end gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-3 py-3">
+                {row.daily.map((bucket) => {
+                  const height = Math.max(12, (bucket.total / maxDaily) * 92)
+                  const title = `${formatDisplayDate(bucket.date)}: ${formatStatisticValue(bucket.total, unit)} ${unitLabel}; стыков ${bucket.joints}`
+                  return (
+                    <div key={bucket.date} className="grid w-12 justify-items-center gap-1" title={title}>
+                      <div className="flex h-24 w-8 items-end rounded-md border border-sky-100 bg-white px-1">
+                        <div className="w-full rounded-t bg-sky-400 shadow-sm" style={{ height }} />
+                      </div>
+                      <div className="text-[11px] font-semibold leading-3 text-slate-700">{formatDisplayDate(bucket.date).slice(0, 5)}</div>
+                      <div className="text-[11px] leading-3 text-sky-700">{formatStatisticValue(bucket.total, unit)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+              По дням нет данных для выбранного периода.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WelderSummaryCard({
+  accent = 'slate',
+  align = 'left',
+  detail,
+  f,
+  groupMetric,
+  groups,
+  jointFilter,
+  label,
+  s,
+  style,
+  unit,
+  value,
+}: {
+  accent?: 'slate' | 'green' | 'blue' | 'indigo' | 'rose'
+  align?: 'left' | 'center'
+  detail?: string
+  f?: number
+  groupMetric?: keyof Pick<WelderStatisticsRow['materialGroups'][number], 'total' | 'good' | 'waitingRequest' | 'waitingControl' | 'rejected'>
+  groups?: WelderStatisticsRow['materialGroups']
+  jointFilter?: WelderStatisticsJointFilter
+  label: string
+  s?: number
+  style?: CSSProperties
+  unit?: StatisticsUnit
+  value: string
+}) {
+  const accentClass = {
+    slate: 'border-slate-200 bg-slate-50/85 text-slate-900',
+    green: 'border-emerald-100 bg-emerald-50/55 text-emerald-900',
+    blue: 'border-sky-100 bg-sky-50/60 text-sky-900',
+    indigo: 'border-indigo-100 bg-indigo-50/55 text-indigo-900',
+    rose: 'border-rose-100 bg-rose-50/55 text-rose-900',
+  }[accent]
+  const groupDetails =
+    groups && groupMetric
+      ? groups
+          .map((group) => ({ key: group.key, value: group[groupMetric] }))
+          .filter((group) => group.value > 0)
+          .sort((left, right) => right.value - left.value || left.key.localeCompare(right.key, 'ru', { numeric: true }))
+      : []
+  const visibleGroups = groupDetails.slice(0, 2)
+  const hiddenGroups = Math.max(0, groupDetails.length - visibleGroups.length)
+  const groupUnitLabel = unit === 'joints' ? 'ст.' : 'WDI'
+
+  return (
+    <div
+      className={cn(
+        'min-h-[72px] rounded-md border px-2.5 py-2 shadow-sm',
+        align === 'center' ? 'flex flex-col items-center justify-center text-center' : '',
+        accentClass,
+      )}
+      style={style}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-1 text-base font-semibold leading-none">{value}</div>
+      {detail ? <div className="mt-1 text-[11px] font-medium leading-4 text-slate-500">{detail}</div> : null}
+      {jointFilter === 'all' && typeof f === 'number' && typeof s === 'number' && unit ? (
+        <div className="mt-2 grid grid-cols-2 gap-1">
+          <span className="flex items-center justify-between gap-1 rounded border border-slate-200/80 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
+            <span className="text-slate-500">F</span>
+            <span className="tabular-nums text-slate-800">{formatStatisticValue(f, unit)}</span>
+          </span>
+          <span className="flex items-center justify-between gap-1 rounded border border-slate-200/80 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
+            <span className="text-slate-500">S</span>
+            <span className="tabular-nums text-slate-800">{formatStatisticValue(s, unit)}</span>
+          </span>
+        </div>
+      ) : null}
+      {visibleGroups.length > 0 ? (
+        <div className="mt-2 grid gap-1" title={WELDER_GROUP_BREAKDOWN_TOOLTIP}>
+          {visibleGroups.map((group) => (
+            <div
+              key={group.key}
+              className="flex min-w-0 items-center justify-between gap-2 rounded border border-slate-200/80 bg-white px-1.5 py-0.5 text-[10.5px] leading-4 text-slate-500 shadow-[0_1px_0_rgba(15,23,42,0.03)]"
+            >
+              <span className="min-w-0 truncate font-semibold text-slate-800">{group.key}</span>
+              <span className="shrink-0 tabular-nums text-slate-700">
+                {formatStatisticValue(group.value, unit ?? 'joints')} {groupUnitLabel}
+              </span>
+            </div>
+          ))}
+          {hiddenGroups > 0 ? (
+            <div className="rounded border border-slate-200/80 bg-white px-1.5 py-0.5 text-[10.5px] font-medium leading-4 text-slate-500">
+              еще {hiddenGroups}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function getDefectCardStyle(defectPercent: number): CSSProperties {
+  const clamped = Math.max(0, Math.min(25, defectPercent))
+  const ratio = clamped <= 4 ? 0 : (clamped - 4) / 21
+  const hue = ratio < 0.5 ? 145 - ratio * 2 * 95 : 50 - (ratio - 0.5) * 2 * 50
+  return {
+    backgroundColor: `hsl(${hue} 82% 96%)`,
+    borderColor: `hsl(${hue} 72% 84%)`,
+  }
 }
 
 function WelderValueWithSplit({
@@ -1243,6 +1606,8 @@ function PercentageLinesPanel({
       return stamps.length > 0 ? [{ ...line, stamps }] : []
     })
   }, [search, summary])
+  const allVisibleLinesCollapsed =
+    filteredSummary.length > 0 && filteredSummary.every((line) => collapsedLineKeys.has(line.lineKey))
   const totals = useMemo(
     () =>
       flatRows.reduce(
@@ -1280,6 +1645,17 @@ function PercentageLinesPanel({
       const next = new Set(current)
       if (next.has(lineKey)) next.delete(lineKey)
       else next.add(lineKey)
+      return next
+    })
+  }
+  const toggleVisibleLines = () => {
+    setCollapsedLineKeys((current) => {
+      const next = new Set(current)
+      if (allVisibleLinesCollapsed) {
+        for (const line of filteredSummary) next.delete(line.lineKey)
+      } else {
+        for (const line of filteredSummary) next.add(line.lineKey)
+      }
       return next
     })
   }
@@ -1346,11 +1722,28 @@ function PercentageLinesPanel({
               className="h-9 rounded-md border-slate-200 bg-white text-sm"
             />
           </label>
-          {search.trim() ? (
-            <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => setSearch('')}>
-              Очистить поиск
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-md border-sky-100 bg-sky-50/70 text-sky-800 hover:border-sky-200 hover:bg-sky-100"
+              onClick={toggleVisibleLines}
+              disabled={filteredSummary.length === 0}
+              title={allVisibleLinesCollapsed ? 'Развернуть все видимые процентные линии' : 'Свернуть все видимые процентные линии'}
+            >
+              {allVisibleLinesCollapsed ? (
+                <ChevronDown className="mr-1.5 h-4 w-4" />
+              ) : (
+                <ChevronRight className="mr-1.5 h-4 w-4" />
+              )}
+              {allVisibleLinesCollapsed ? 'Развернуть все' : 'Свернуть все'}
             </Button>
-          ) : null}
+            {search.trim() ? (
+              <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => setSearch('')}>
+                Очистить поиск
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         {flatRows.length > 0 ? (
@@ -1824,6 +2217,11 @@ function PercentageLineGroup({
           </div>
         </div>
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <PercentageLineSummaryPill
+            label="Стыков"
+            value={line.rows.length}
+            title="Количество сваренных официальных стыков на этой процентной линии. Неофициальные, неактуальные по ИЗМу и строки без даты сварки не учитываются."
+          />
           <PercentageLineSummaryPill
             label="Клейм"
             value={line.stamps.length}

@@ -5,100 +5,67 @@ import {
   ROW_ID_LIST_FILTER_KEY,
   parsePercentageLineStampFilter,
   parseRowIdListFilter,
-} from '@/lib/report-navigation'
+} from '@/lib/report-hidden-filters'
+import {
+  buildWeldColumnValueFilter,
+  normalizeWeldColumnChoiceValue,
+  parseWeldColumnChoiceFilter,
+} from '@/lib/weld-column-choice-filter'
 
-const COLUMN_CHOICE_FILTER_PREFIX = '__column_choice_filter__:'
-
-type ColumnChoiceFilter =
-  {
-    kind: 'values'
-    values: string[]
-  }
+export { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 
 export function hasColumnFilters(columnFilters: Record<string, string>) {
   return Object.values(columnFilters).some((value) => value.trim())
 }
 
 export function filterWeldRowsByColumns<Row extends WeldRow>(rows: Row[], columnFilters: Record<string, string>) {
-  return rows.filter((row) =>
-    Object.entries(columnFilters).every(([key, value]) => matchesWeldColumnFilter(row, key, value)),
-  )
+  const matchers = buildWeldColumnFilterMatchers(columnFilters)
+  if (matchers.length === 0) return rows
+  return rows.filter((row) => matchers.every((matches) => matches(row)))
 }
 
-function matchesWeldColumnFilter(row: WeldRow, key: string, value: string) {
-  const query = value.trim().toLowerCase()
-  if (!query) return true
+type WeldColumnFilterMatcher = (row: WeldRow) => boolean
 
-  if (key === PERCENTAGE_LINE_STAMP_FILTER_KEY) {
-    return matchesPercentageLineStampFilter(row, value)
-  }
+function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): WeldColumnFilterMatcher[] {
+  return Object.entries(columnFilters).flatMap(([key, value]) => {
+    const query = value.trim().toLowerCase()
+    if (!query) return []
 
-  if (key === ROW_ID_LIST_FILTER_KEY) {
-    return matchesRowIdListFilter(row, value)
-  }
+    if (key === PERCENTAGE_LINE_STAMP_FILTER_KEY) {
+      const filter = parsePercentageLineStampFilter(value)
+      return [(row: WeldRow) => matchesPercentageLineStampFilter(row, filter)]
+    }
 
-  const choiceFilter = parseWeldColumnChoiceFilter(value)
-  if (choiceFilter) {
-    return matchesWeldColumnChoiceFilter(row, key, choiceFilter)
-  }
+    if (key === ROW_ID_LIST_FILTER_KEY) {
+      const filter = parseRowIdListFilter(value)
+      const rowIds = new Set(filter?.rowIds ?? [])
+      return [(row: WeldRow) => rowIds.has(row.id)]
+    }
 
-  const cellValue = row[key as keyof typeof row]
-  const normalized = getWeldColumnFilterCellText(cellValue)
-  const normalizedText = normalized.trim().toLowerCase()
-  if (query.startsWith('=')) {
-    return normalizedText === query.slice(1).trim().replace(/^["']|["']$/g, '')
-  }
-  return normalizedText.includes(query)
+    const choiceFilter = parseWeldColumnChoiceFilter(value)
+    if (choiceFilter) {
+      const normalizedValues = new Set(choiceFilter.values.map(normalizeWeldColumnChoiceValue))
+      return [(row: WeldRow) => normalizedValues.has(normalizeWeldColumnChoiceValue(getWeldColumnFilterCellText(row[key as keyof typeof row])))]
+    }
+
+    if (query.startsWith('=')) {
+      const expectedValue = query.slice(1).trim().replace(/^["']|["']$/g, '')
+      return [(row: WeldRow) => getNormalizedWeldColumnFilterCellText(row[key as keyof typeof row]) === expectedValue]
+    }
+
+    return [(row: WeldRow) => getNormalizedWeldColumnFilterCellText(row[key as keyof typeof row]).includes(query)]
+  })
 }
 
-export function buildWeldColumnValueFilter(values: string[]) {
-  const normalizedValues = Array.from(new Set(values.map(normalizeChoiceValue)))
-  if (normalizedValues.length === 0) return ''
-  return encodeWeldColumnChoiceFilter({ kind: 'values', values: normalizedValues })
+function getNormalizedWeldColumnFilterCellText(value: unknown) {
+  return getWeldColumnFilterCellText(value).trim().toLowerCase()
 }
 
 export function getWeldColumnFilterCellText(value: unknown) {
   return value === true ? 'да' : value === false || value == null ? '' : String(value)
 }
 
-export function parseWeldColumnChoiceFilter(value: string): ColumnChoiceFilter | null {
-  if (!value.startsWith(COLUMN_CHOICE_FILTER_PREFIX)) return null
-  try {
-    const parsed = JSON.parse(decodeURIComponent(value.slice(COLUMN_CHOICE_FILTER_PREFIX.length))) as Partial<ColumnChoiceFilter>
-    if (parsed.kind === 'values' && Array.isArray(parsed.values)) {
-      return {
-        kind: 'values',
-        values: parsed.values.map(normalizeChoiceValue),
-      }
-    }
-  } catch {
-    return null
-  }
-  return null
-}
-
-function encodeWeldColumnChoiceFilter(filter: ColumnChoiceFilter) {
-  return `${COLUMN_CHOICE_FILTER_PREFIX}${encodeURIComponent(JSON.stringify(filter))}`
-}
-
-function matchesWeldColumnChoiceFilter(row: WeldRow, key: string, filter: ColumnChoiceFilter) {
-  const cellText = getWeldColumnFilterCellText(row[key as keyof typeof row])
-  const normalizedCellText = normalizeChoiceValue(cellText)
-  return filter.values.some((value) => normalizeChoiceValue(value) === normalizedCellText)
-}
-
-function normalizeChoiceValue(value: unknown) {
-  return String(value ?? '').trim()
-}
-
-function matchesRowIdListFilter(row: WeldRow, value: string) {
-  const filter = parseRowIdListFilter(value)
-  if (!filter) return false
-  return filter.rowIds.includes(row.id)
-}
-
-function matchesPercentageLineStampFilter(row: WeldRow, value: string) {
-  const filter = parsePercentageLineStampFilter(value)
+function matchesPercentageLineStampFilter(row: WeldRow, filter: ReturnType<typeof parsePercentageLineStampFilter>) {
   if (!filter) return false
 
   const sameLine =

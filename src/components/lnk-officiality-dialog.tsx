@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react'
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Check } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
@@ -8,11 +8,13 @@ import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkOfficialitySettings } from '@/components/lnk-officiality-settings'
 import { LnkOfficialityRow } from '@/components/lnk-officiality-row'
 import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
+import { PaginationBar } from '@/components/pagination-bar'
 import { Button } from '@/components/ui/button'
 import type { LnkOfficialityDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import type { LnkOfficialityCounters } from '@/lib/lnk-officiality-derived-utils'
+import { usePagination } from '@/lib/use-pagination'
 
 export type LnkOfficialityDialogProps = {
   draft: LnkOfficialityDraftState
@@ -42,6 +44,12 @@ export function LnkOfficialityDialog({
   onSetVisibleRowsSelected,
 }: LnkOfficialityDialogProps) {
   const [showSelectedPreview, setShowSelectedPreview] = useState(false)
+  const paginationResetKeys = useMemo(() => [draft.search, filteredRows], [draft.search, filteredRows])
+  const rowsPagination = usePagination({
+    items: filteredRows,
+    defaultPageSize: 100,
+    resetKeys: paginationResetKeys,
+  })
 
   return (
     <LargeDialogShell
@@ -94,9 +102,22 @@ export function LnkOfficialityDialog({
                 По фильтру ничего не найдено.
               </DialogEmptyState>
             ) : (
-              filteredRows.map((row) => (
-                <LnkOfficialityRow key={row.id} row={row} selected={draft.rowIds.has(row.id)} onToggle={onToggleRow} />
-              ))
+              <>
+                {rowsPagination.pageItems.map((row) => (
+                  <LnkOfficialityRow key={row.id} row={row} selected={draft.rowIds.has(row.id)} onToggle={onToggleRow} />
+                ))}
+                <div className="p-3">
+                  <PaginationBar
+                    totalCount={rowsPagination.totalCount}
+                    firstItemNumber={rowsPagination.firstItemNumber}
+                    lastItemNumber={rowsPagination.lastItemNumber}
+                    pageSize={rowsPagination.pageSize}
+                    hasMore={rowsPagination.hasMore}
+                    onLoadMore={rowsPagination.loadMore}
+                    onPageSizeChange={rowsPagination.setPageSize}
+                  />
+                </div>
+              </>
             )}
           </div>
         </section>

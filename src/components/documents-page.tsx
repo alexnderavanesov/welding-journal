@@ -26,7 +26,7 @@ import {
 } from '@/lib/generated-document-storage'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, WELD_FIELDS, normalizeHeader, type WeldFieldKey } from '@/lib/weld-fields'
-import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
+import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
 import {
   STAMP_NAME_TEMPLATE_FIELDS,
   getWelderNameForTemplateStamp,
@@ -452,6 +452,8 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
     }
   }, [])
 
+  const finalStatusContext = useMemo(() => buildFinalStatusRowsContext(rows), [rows])
+
   const journalRows = useMemo(() => {
     const fromDate = parseDate(periodFrom)
     const toDate = parseDate(periodTo)
@@ -465,7 +467,7 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
         if (!matchesSelection(row.subtitleCode, selectedSubtitles)) return false
         if (!matchesSelection(row.line, selectedLines)) return false
         if (weldingJournalOptions.officialOnly && isUnofficialJoint(row)) return false
-        if (weldingJournalOptions.goodOnly && normalizeFinalStatus(calculateFinalStatusInRows(row, rows)) !== 'годен') return false
+        if (weldingJournalOptions.goodOnly && normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)) !== 'годен') return false
         return true
       })
       .sort((a, b) => {
@@ -473,7 +475,18 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
         const bTime = parseDate(b.weldDate)?.getTime() ?? 0
         return aTime - bTime || String(a.line ?? '').localeCompare(String(b.line ?? '')) || String(a.joint ?? '').localeCompare(String(b.joint ?? ''))
       })
-  }, [periodFrom, periodTo, rows, selectedLines, selectedProjects, selectedSubtitles, sourceRows, weldingJournalOptions.goodOnly, weldingJournalOptions.officialOnly])
+  }, [
+    finalStatusContext,
+    periodFrom,
+    periodTo,
+    rows,
+    selectedLines,
+    selectedProjects,
+    selectedSubtitles,
+    sourceRows,
+    weldingJournalOptions.goodOnly,
+    weldingJournalOptions.officialOnly,
+  ])
 
   const exportScope = useMemo<DocumentScope>(
     () => ({
@@ -572,7 +585,7 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
                   const fileName = ensureXlsxFileName(downloadFileName)
                   const blob =
                     weldingJournalTemplate?.fileType === 'xlsx' || weldingJournalTemplate?.fileType === 'xls'
-                      ? createWeldingJournalBlobFromTemplate(weldingJournalTemplate, journalRows, { welderStamps })
+                      ? await createWeldingJournalBlobFromTemplate(weldingJournalTemplate, journalRows, { welderStamps })
                       : await createWeldingJournalBlob(journalRows)
 
                   await saveGeneratedDocument({

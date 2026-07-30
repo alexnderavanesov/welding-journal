@@ -5,6 +5,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { WeldReportKind } from '@/server/welds'
 
 type WeldTableHeaderProps = {
   selectable: boolean
@@ -30,6 +31,7 @@ type WeldTableHeaderProps = {
   onToggleSection: (section: string) => void
   columnFilters: Record<string, string>
   canEditField: (fieldKey: WeldFieldKey) => boolean
+  manualFilterOptionsReport?: WeldReportKind
   onColumnFiltersChange: (filters: Record<string, string>) => void
 }
 
@@ -57,6 +59,7 @@ export function WeldTableHeader({
   onToggleSection,
   columnFilters,
   canEditField,
+  manualFilterOptionsReport,
   onColumnFiltersChange,
 }: WeldTableHeaderProps) {
   const selectStickyLeft = stickyLeft
@@ -106,6 +109,7 @@ export function WeldTableHeader({
         stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
         stickyIdentityColumns={stickyIdentityColumns}
         canEditField={canEditField}
+        manualFilterOptionsReport={manualFilterOptionsReport}
         onColumnFiltersChange={onColumnFiltersChange}
       />
     </thead>

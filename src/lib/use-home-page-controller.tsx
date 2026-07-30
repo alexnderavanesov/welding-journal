@@ -13,9 +13,11 @@ import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
+import { useDispatcherTaskSnapshot } from '@/lib/use-dispatcher-task-snapshot'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
 import { useReportRows } from '@/lib/use-report-rows'
+import { useWeldPageQuery } from '@/lib/use-weld-page-query'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
@@ -68,9 +70,9 @@ import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
-import { sumAcceptedWdi } from '@/lib/report-row-utils'
+import { buildHeatTreatmentReportRows, buildLnkReportRows, sumAcceptedWdi } from '@/lib/report-row-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
-import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { buildFinalStatusRowsContext, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import {
   createDefaultLnkRequestDraft,
   createDefaultLnkResultDraft,
@@ -366,7 +368,21 @@ export function useHomePageController() {
     defaultPstoConclusionNaming,
   })
 
-  const weldsQuery = useWeldsQuery()
+  const shouldLoadFullWeldRows =
+    activeReport === 'statistics' ||
+    activeReport === 'percentageLines' ||
+    activeReport === 'documents' ||
+    activeReport === 'settings' ||
+    Boolean(chainRecord) ||
+    Boolean(editing) ||
+    Boolean(heatTreatmentFieldEditing) ||
+    Boolean(documentGenerationRequest) ||
+    isReportModalOpen ||
+    isWeldingJournalGenerateMenuOpen ||
+    isWeldingJournalShowMenuOpen ||
+    isLnkShowMenuOpen ||
+    isPstoShowMenuOpen
+  const weldsQuery = useWeldsQuery({ enabled: shouldLoadFullWeldRows })
   const {
     duplicateControls,
     duplicateControlsQuery,
@@ -375,8 +391,13 @@ export function useHomePageController() {
   } = useDuplicateControls()
 
   const rows = useReportRows(weldsQuery.data, duplicateControls)
+  const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
+  const shouldBuildRepeatedDispatcherTasks =
+    !isServerPagedTab && (activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment')
+  const shouldBuildWelderStampExpiryTasks = activeReport === 'welderStamps'
 
   const {
+    dispatcherTaskRowIds,
     repeatedJointTaskGroups,
     repeatedJointTasks,
     welderStampExpiryTasks,
@@ -385,13 +406,56 @@ export function useHomePageController() {
     acceptedDispatcherWarningKeys,
     activeReport,
     dismissedRepeatedJointTaskKeys,
+    includeRepeatedJointTasks: shouldBuildRepeatedDispatcherTasks,
+    includeWelderStampExpiryTasks: shouldBuildWelderStampExpiryTasks,
     rows,
     setExpandedRepeatedJointTaskKeys,
     welderStamps,
     welderStampSuspensions,
   })
-  const dispatcherTaskRowIds = useMemo(() => getDispatcherTaskRowIds(repeatedJointTasks), [repeatedJointTasks])
+  const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
+    dismissedRepeatedJointTaskKeys,
+    enabled: isServerPagedTab,
+  })
+  const tableDispatcherTaskRowIds = isServerPagedTab && dispatcherTaskSnapshot.data
+    ? dispatcherTaskSnapshot.dispatcherTaskRowIds
+    : dispatcherTaskRowIds
+  const tableDuplicateKeys = isServerPagedTab && dispatcherTaskSnapshot.data
+    ? dispatcherTaskSnapshot.duplicateKeys
+    : undefined
+  const visibleRepeatedJointTasks = isServerPagedTab && dispatcherTaskSnapshot.data
+    ? dispatcherTaskSnapshot.repeatedJointTasks
+    : repeatedJointTasks
+  const visibleRepeatedJointTaskGroups = isServerPagedTab && dispatcherTaskSnapshot.data
+    ? dispatcherTaskSnapshot.repeatedJointTaskGroups
+    : repeatedJointTaskGroups
 
+  const enablePstoRequestState =
+    activeReport === 'heatTreatment' ||
+    isImportDialogOpen ||
+    isPstoRequestModalOpen ||
+    isPstoRequestManagerOpen ||
+    isPstoResultModalOpen ||
+    isPstoResultManagerOpen
+  const enablePstoResultState =
+    activeReport === 'heatTreatment' || isImportDialogOpen || isPstoResultModalOpen || isPstoResultManagerOpen
+  const enableLnkRequestState =
+    activeReport === 'lnk' ||
+    isImportDialogOpen ||
+    isLnkRequestModalOpen ||
+    isLnkRequestManagerOpen ||
+    isLnkResultModalOpen ||
+    isLnkResultManagerOpen ||
+    isLnkOfficialityModalOpen ||
+    isDuplicateControlModalOpen
+  const enableLnkResultState =
+    activeReport === 'lnk' ||
+    isImportDialogOpen ||
+    isLnkResultModalOpen ||
+    isLnkResultPreviewOpen ||
+    isLnkResultManagerOpen ||
+    isLnkOfficialityModalOpen ||
+    isDuplicateControlModalOpen
   const {
     heatTreatmentRows,
     availablePstoRequestRows,
@@ -404,6 +468,10 @@ export function useHomePageController() {
     visibleRows,
   } = usePreparedReportRows({
     activeReport,
+    enableHeatTreatmentRows: enablePstoRequestState || enablePstoResultState,
+    enableLnkRows: enableLnkRequestState || enableLnkResultState,
+    enablePstoRequestRows: enablePstoRequestState,
+    enableLnkRequestRows: enableLnkRequestState,
     rows,
     preservedLnkOrderIds,
     pstoRequestSearch,
@@ -437,6 +505,10 @@ export function useHomePageController() {
     selectedLnkResultRequestRows,
     lnkResultSelectedRows,
   } = useReportRequestDerivedState({
+    enableLnkRequestState,
+    enableLnkResultState,
+    enablePstoRequestState,
+    enablePstoResultState,
     rows,
     heatTreatmentRows,
     lnkRows,
@@ -794,17 +866,57 @@ export function useHomePageController() {
     setHeatTreatmentFilters,
     setLnkFilters,
   })
+  const weldPageQuery = useWeldPageQuery({
+    enabled: isServerPagedTab,
+    report: isServerPagedTab ? activeReport : 'weldingJournal',
+    columnFilters: isServerPagedTab ? activeColumnFilters : {},
+  })
+  const fullFinalStatusContext = useMemo(() => buildFinalStatusRowsContext(rows), [rows])
+  const pagedReportRows = useReportRows(weldPageQuery.rows, duplicateControls, rows, fullFinalStatusContext)
+  const tableActionRows = rows.length > 0 ? (visibleRows as WeldRow[]) : pagedReportRows
+  const refetchWeldData = async () => {
+    await Promise.all([
+      weldsQuery.refetch(),
+      isServerPagedTab ? weldPageQuery.refetch() : Promise.resolve(),
+    ])
+  }
+  const activeReportManualPagination = useMemo(
+    () =>
+      isServerPagedTab
+        ? {
+            totalCount: weldPageQuery.totalCount,
+            firstItemNumber: weldPageQuery.firstItemNumber,
+            lastItemNumber: weldPageQuery.lastItemNumber,
+            pageSize: weldPageQuery.pageSize,
+            hasMore: weldPageQuery.hasMore,
+            onLoadMore: weldPageQuery.loadMore,
+            onPageSizeChange: weldPageQuery.setPageSize,
+          }
+        : undefined,
+    [
+      isServerPagedTab,
+      weldPageQuery.firstItemNumber,
+      weldPageQuery.hasMore,
+      weldPageQuery.lastItemNumber,
+      weldPageQuery.loadMore,
+      weldPageQuery.pageSize,
+      weldPageQuery.setPageSize,
+      weldPageQuery.totalCount,
+    ],
+  )
+  const shouldBuildFilteredVisibleRows =
+    activeReport === 'weldingJournal' || isImportDialogOpen || isLnkShowMenuOpen || isPstoShowMenuOpen
   const filteredVisibleRows = useMemo(
-    () => filterWeldRowsByColumns(visibleRows as WeldRow[], activeColumnFilters),
-    [activeColumnFilters, visibleRows],
+    () => (shouldBuildFilteredVisibleRows ? filterWeldRowsByColumns(visibleRows as WeldRow[], activeColumnFilters) : []),
+    [activeColumnFilters, shouldBuildFilteredVisibleRows, visibleRows],
   )
   const filteredAvailableLnkRequestRowsForSummary = useMemo(
     () => filterWeldRowsByColumns(availableLnkRequestRows, activeColumnFilters),
     [activeColumnFilters, availableLnkRequestRows],
   )
   const filteredAcceptedWdiTotal = useMemo(
-    () => sumAcceptedWdi(filteredVisibleRows),
-    [filteredVisibleRows],
+    () => (activeReport === 'weldingJournal' ? sumAcceptedWdi(filteredVisibleRows) : 0),
+    [activeReport, filteredVisibleRows],
   )
   const generateWeldingJournalDocumentForRows = (documentRows: WeldRow[]) => {
     setDocumentGenerationRequest({
@@ -963,6 +1075,7 @@ export function useHomePageController() {
   })
 
   async function changeActiveReport(report: Parameters<typeof changeActiveReportUnsafe>[0]) {
+    setMessage(null)
     changeActiveReportUnsafe(report)
   }
 
@@ -1166,7 +1279,7 @@ export function useHomePageController() {
     )
     highlightChangedRows(savedRows, [fieldKey])
     setMessage(`Назначен ${method} по процентной линии: ${savedRows.length}.`)
-    await weldsQuery.refetch()
+    await refetchWeldData()
   }
 
   const cancelPercentageLineMissingControls = async (rowIds: number[]) => {
@@ -1187,7 +1300,7 @@ export function useHomePageController() {
     )
     highlightChangedRows(savedRows, ['hasRk', 'hasUzk'])
     setMessage(`Недобор закрыт отменой РК/УЗК: ${savedRows.length}.`)
-    await weldsQuery.refetch()
+    await refetchWeldData()
   }
 
   const filterLineInCurrentReport = (row: WeldRow) => {
@@ -1505,9 +1618,9 @@ export function useHomePageController() {
   }
 
   const getSelectedRowsReportCount = (selectedRows: WeldRow[], report: 'weldingJournal' | 'lnk' | 'heatTreatment') => {
-    const selectedIds = new Set(selectedRows.map((selectedRow) => selectedRow.id))
-    const reportRows = report === 'lnk' ? lnkRows : report === 'heatTreatment' ? heatTreatmentRows : rows
-    return reportRows.filter((reportRow) => selectedIds.has(reportRow.id)).length
+    if (report === 'weldingJournal') return selectedRows.length
+    if (report === 'heatTreatment') return buildHeatTreatmentReportRows(selectedRows).length
+    return buildLnkReportRows(selectedRows).length
   }
 
   const getReportContextMenuItems = (row: WeldRow, selectedRows: WeldRow[] = [row]): ContextActionMenuItem[] => {
@@ -1710,15 +1823,22 @@ export function useHomePageController() {
 
   const weldTableProps = createWeldTableProps({
     activeReport,
-    rows: visibleRows as WeldRow[],
+    rows: isServerPagedTab ? pagedReportRows : (visibleRows as WeldRow[]),
+    actionRows: tableActionRows,
+    duplicateRows: tableActionRows,
+    duplicateKeyOverrides: tableDuplicateKeys,
+    filterOptionRows: isServerPagedTab ? undefined : (visibleRows as WeldRow[]),
     columnFilters: activeColumnFilters,
+    manualFiltering: isServerPagedTab,
+    manualFilterOptionsReport: isServerPagedTab ? activeReport : undefined,
+    manualPagination: activeReportManualPagination,
     onColumnFiltersChange: activeFiltersSetter,
     onEdit: handleProtectedEditRecord,
     onDelete: deleteWeldRowById,
     stickyLeft,
     highlightedRowIds,
     highlightedCellKeys,
-    dispatcherTaskRowIds,
+    dispatcherTaskRowIds: tableDispatcherTaskRowIds,
     onOpenChain: (row) => setChainRecord(row),
     onFilterLine: filterLineInCurrentReport,
     onOpenLinkedReport: openLinkedReportRow,
@@ -1781,7 +1901,9 @@ export function useHomePageController() {
     onCreatePstoRequest: openCreatePstoRequestModal,
     pstoRequestPending: pstoRequestMutation.isPending,
     onAddPstoResult: openAddPstoResultModal,
-    pstoResultDisabled: pstoResultMutation.isPending || pstoResultRequestOptions.length === 0,
+    pstoResultDisabled:
+      pstoResultMutation.isPending ||
+      (shouldLoadFullWeldRows && !weldsQuery.isLoading && pstoResultRequestOptions.length === 0),
     isPstoShowMenuOpen,
     onTogglePstoShowMenu: () => setIsPstoShowMenuOpen((current) => !current),
     onOpenPstoCurrentReport: openPstoCurrentReport,
@@ -1790,7 +1912,9 @@ export function useHomePageController() {
     onCreateLnkRequest: openCreateLnkRequestModal,
     lnkRequestPending: lnkRequestMutation.isPending,
     onAddLnkResult: openAddLnkResultModal,
-    lnkResultDisabled: lnkResultMutation.isPending || lnkResultRequestOptions.length === 0,
+    lnkResultDisabled:
+      lnkResultMutation.isPending ||
+      (shouldLoadFullWeldRows && !weldsQuery.isLoading && lnkResultRequestOptions.length === 0),
     onOpenLnkOfficiality: openLnkOfficialityModal,
     lnkOfficialityPending: lnkOfficialityMutation.isPending,
     onOpenDuplicateControl: openDuplicateControlModal,
@@ -1914,24 +2038,30 @@ export function useHomePageController() {
     activeReport,
     left: stickyLeft,
     minWidth: registerMinWidth,
-    isLoading: weldsQuery.isLoading,
+    isLoading: isServerPagedTab ? weldPageQuery.isLoading : weldsQuery.isLoading,
     weldingRows: activeReport === 'weldingJournal' ? filteredVisibleRows : rows,
-    acceptedWdiTotal: filteredAcceptedWdiTotal,
+    weldingRowCount: activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
+    acceptedWdiTotal:
+      activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.acceptedWdiTotal : filteredAcceptedWdiTotal,
     heatTreatmentRows: activeReport === 'heatTreatment' ? filteredVisibleRows : heatTreatmentRows,
+    heatTreatmentRowCount: activeReport === 'heatTreatment' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
     selectedHeatTreatmentRows,
     lnkRows: activeReport === 'lnk' ? filteredVisibleRows : lnkRows,
+    lnkRowCount: activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
     availableLnkRequestRows: activeReport === 'lnk' ? filteredAvailableLnkRequestRowsForSummary : availableLnkRequestRows,
     welderStamps,
     filteredWelderStamps,
-    errorMessage: weldsQuery.error ? (weldsQuery.error as Error).message : null,
+    errorMessage: (isServerPagedTab ? weldPageQuery.error : weldsQuery.error)
+      ? ((isServerPagedTab ? weldPageQuery.error : weldsQuery.error) as Error).message
+      : null,
     message,
     lnkNotice: activeReport === 'lnk' ? lnkNotice : null,
   })
 
   const reportTaskPanelsProps = createReportTaskPanelsProps({
     activeReport,
-    repeatedJointTasks,
-    repeatedJointTaskGroups,
+    repeatedJointTasks: visibleRepeatedJointTasks,
+    repeatedJointTaskGroups: visibleRepeatedJointTaskGroups,
     welderStampExpiryTasks,
     welderStampNotificationGroups,
     stickyLeft,
@@ -2267,18 +2397,6 @@ function filterDuplicateControlRows(rows: WeldRow[], search: string, _selectedId
           .some((value) => value.includes(query)),
       )
     : rows
-}
-
-function getDispatcherTaskRowIds(tasks: DispatcherTask[]) {
-  const rowIds = new Set<number>()
-  for (const task of tasks) {
-    if (task.kind === 'welder-stamp-expiry') continue
-    rowIds.add(task.row.id)
-    if (task.kind === 'percentage-line-control') {
-      task.targetRowIds?.forEach((rowId) => rowIds.add(rowId))
-    }
-  }
-  return rowIds
 }
 
 function getDuplicateControlSaveBlockReason({

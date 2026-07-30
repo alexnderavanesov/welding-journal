@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { weldJoints, type NewWeldJoint } from '@/db/schema'
+import { weldJoints, type NewWeldJoint, type WeldJoint } from '@/db/schema'
 import {
   clearCancelledRejectedLnkGeneratedData,
   clearDisabledLnkRequests,
@@ -15,13 +15,28 @@ import {
   restoreActivePstoCancelledResult,
   withPendingPstoResultStatus,
 } from '@/lib/psto-field-updates'
-import { LNK_GENERATED_FIELD_KEYS } from '@/lib/report-config'
+import { LNK_GENERATED_FIELD_KEYS, LNK_METHODS } from '@/lib/report-config'
 import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
 import { hasAnyLnkGeneratedData, hasLnkReportEntry, withPendingLnkResults } from '@/lib/report-control-state'
-import { isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
-import { WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
+import { hasWeldDate, isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
+import {
+  FIELD_BY_KEY,
+  WELD_FIELDS,
+  type WeldFieldKey,
+  type WeldInput,
+} from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
-import type { WeldDraft } from '@/lib/dispatcher-types'
+import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
+import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
+import { filterWeldRowsByColumns, getWeldColumnFilterCellText } from '@/lib/weld-table-filtering'
+import { buildHeatTreatmentReportRows, buildLnkReportRows } from '@/lib/report-row-utils'
+import {
+  PERCENTAGE_LINE_STAMP_FILTER_KEY,
+  ROW_ID_LIST_FILTER_KEY,
+  isHiddenReportFilterKey,
+  parsePercentageLineStampFilter,
+  parseRowIdListFilter,
+} from '@/lib/report-hidden-filters'
 
 export type WeldFilters = {
   search?: string
@@ -35,6 +50,39 @@ export type WeldFilters = {
   status?: string
   finalStatus?: string
   controlMethod?: string
+}
+
+export const WELD_PAGE_SIZE_OPTIONS = [100, 300, 500, 1000] as const
+export const WELD_PAGE_ALL_SIZE = 'all'
+
+export type WeldPageSize = (typeof WELD_PAGE_SIZE_OPTIONS)[number] | typeof WELD_PAGE_ALL_SIZE
+
+export type WeldPageRequest = WeldFilters & {
+  report?: WeldReportKind
+  page?: number
+  pageSize?: WeldPageSize
+  columnFilters?: Record<string, string>
+}
+
+export type WeldReportKind = 'weldingJournal' | 'lnk' | 'heatTreatment'
+
+export type WeldPageResult = {
+  rows: WeldRow[]
+  total: number
+  acceptedWdiTotal?: number
+  page: number
+  pageSize: WeldPageSize
+  hasMore: boolean
+}
+
+export type WeldColumnFilterOption = {
+  value: string
+  count: number
+  label: string
+}
+
+export type WeldColumnFilterOptionsRequest = WeldPageRequest & {
+  fieldKey: WeldFieldKey
 }
 
 export type WeldPayload = WeldDraft
@@ -62,6 +110,83 @@ const controlColumns = {
   МКК: weldJoints.hasMkk,
 } as const
 const SYSTEM_FIELD_KEYS = new Set(['createdAt', 'updatedAt'])
+const WELD_TABLE_SELECT = {
+  id: weldJoints.id,
+  ...Object.fromEntries(
+    WELD_FIELDS.map((field) => [field.key, getWeldColumn(field.key as WeldFieldKey)] as const),
+  ),
+} as Record<'id' | WeldFieldKey, SQL>
+const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
+  'id',
+  'weldDate',
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'groupName',
+  'category',
+  'pstoRequired',
+  'weldControlPercent',
+  'spool',
+  'spoolId',
+  'joint',
+  'isometry',
+  'sheet',
+  'revisionNumber',
+  'status',
+  'revisionActuality',
+  'orderCode1',
+  'orderCode2',
+  'materialUniqueNumber1',
+  'materialUniqueNumber2',
+  'element1',
+  'element2',
+  'materialId1',
+  'materialId2',
+  'material1',
+  'material2',
+  'materialFullName1',
+  'materialFullName2',
+  'materialNormativeDocument1',
+  'materialNormativeDocument2',
+  'materialCertificateNumber1',
+  'materialCertificateNumber2',
+  'weldingMethod',
+  'connectionType',
+  'materialGroup',
+  'd1',
+  'd2',
+  't1',
+  't2',
+  'wdi',
+  'responsible',
+  'stamp1K',
+  'stamp1Z',
+  'stamp1O',
+  'stamp1KFact',
+  'stamp1ZFact',
+  'stamp1OFact',
+  'stamp2K',
+  'stamp2Z',
+  'stamp2O',
+  'stamp2KFact',
+  'stamp2ZFact',
+  'stamp2OFact',
+  'hasVik',
+  'hasRk',
+  'hasUzk',
+  'hasPvk',
+  'hasTvmt',
+  'hasRfa',
+  'hasStls',
+  'hasMkk',
+  'testContour',
+  'testDate',
+  'boq',
+  'testBoq',
+  'ks3',
+  'testKs3',
+  'createdAt',
+])
 
 export const listWeldJoints = createServerFn({ method: 'GET' })
   .validator((data: WeldFilters | undefined) => data ?? {})
@@ -76,6 +201,118 @@ export const listWeldJoints = createServerFn({ method: 'GET' })
       .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
       .limit(5000)
   })
+
+export const listWeldJointPage = createServerFn({ method: 'GET' })
+  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
+  .handler(async ({ data }): Promise<WeldPageResult> => listReportPage(data.report ?? 'weldingJournal', data))
+
+export const listWeldingJournalPage = createServerFn({ method: 'GET' })
+  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
+  .handler(async ({ data }): Promise<WeldPageResult> => listReportPage('weldingJournal', data))
+
+export const listLnkReportPage = createServerFn({ method: 'GET' })
+  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
+  .handler(async ({ data }): Promise<WeldPageResult> => listReportPage('lnk', data))
+
+export const listHeatTreatmentReportPage = createServerFn({ method: 'GET' })
+  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
+  .handler(async ({ data }): Promise<WeldPageResult> => listReportPage('heatTreatment', data))
+
+export const listWeldColumnFilterOptions = createServerFn({ method: 'GET' })
+  .validator((data: WeldColumnFilterOptionsRequest | undefined) => normalizeWeldColumnFilterOptionsRequest(data))
+  .handler(async ({ data }): Promise<WeldColumnFilterOption[]> => listColumnFilterOptions(data))
+
+async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>) {
+  const db = requireDb()
+  if (report !== 'weldingJournal') {
+    const where = and(buildReportKindWhere(report), buildReportSourceWhere(data)) ?? sql`true`
+    if (canPaginateReportSource(data.columnFilters)) {
+      const query = db
+        .select()
+        .from(weldJoints)
+        .where(where)
+        .orderBy(...getReportOrderBy(report))
+      const countQuery = db.select({ total: count() }).from(weldJoints).where(where)
+      const rowsQuery =
+        data.pageSize === WELD_PAGE_ALL_SIZE
+          ? query
+          : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
+      const [[{ total }], rows] = await Promise.all([countQuery, rowsQuery])
+
+      return {
+        rows: buildServerReportRows(rows, report) as WeldRow[],
+        total,
+        page: data.page,
+        pageSize: data.pageSize,
+        hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
+      }
+    }
+
+    const rows = await db
+      .select()
+      .from(weldJoints)
+      .where(where)
+      .orderBy(...getReportOrderBy(report))
+    return buildWeldReportPageFromRows(rows, data, report)
+  }
+
+  const where = buildWhere(data)
+  const query = db
+    .select(WELD_TABLE_SELECT)
+    .from(weldJoints)
+    .where(where)
+    .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+
+  const countQuery = db.select({ total: count() }).from(weldJoints).where(where)
+  const acceptedWdiTotalQuery = db
+    .select({
+      total: sql<number>`coalesce(sum(case when lower(trim(coalesce(${weldJoints.finalStatus}, ''))) = 'годен' then coalesce(${weldJoints.wdi}, 0) else 0 end), 0)::float`,
+    })
+    .from(weldJoints)
+    .where(where)
+  const rowsQuery =
+    data.pageSize === WELD_PAGE_ALL_SIZE
+      ? query
+      : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
+  const [[{ total }], [{ total: acceptedWdiTotal }], rows] = await Promise.all([countQuery, acceptedWdiTotalQuery, rowsQuery])
+
+  return {
+    rows: rows as WeldRow[],
+    total,
+    acceptedWdiTotal,
+    page: data.page,
+    pageSize: data.pageSize,
+    hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
+  }
+}
+
+export function buildWeldReportPageFromRows(
+  sourceRows: WeldJoint[],
+  request: Required<Pick<WeldPageRequest, 'page' | 'pageSize' | 'columnFilters'>>,
+  report: WeldReportKind,
+): WeldPageResult {
+  const reportRows = buildServerReportRows(sourceRows, report)
+  const filteredRows = filterWeldRowsByColumns(reportRows, request.columnFilters)
+  const rows =
+    request.pageSize === WELD_PAGE_ALL_SIZE
+      ? filteredRows
+      : filteredRows.slice((request.page - 1) * request.pageSize, request.page * request.pageSize)
+
+  return {
+    rows,
+    total: filteredRows.length,
+    page: request.page,
+    pageSize: request.pageSize,
+    hasMore: request.pageSize !== WELD_PAGE_ALL_SIZE && request.page * request.pageSize < filteredRows.length,
+  }
+}
+
+function buildServerReportRows(sourceRows: WeldJoint[], report: WeldReportKind) {
+  if (report === 'weldingJournal') return sourceRows
+  const weldedRows = sourceRows.filter(hasWeldDate) as WeldRow[]
+  if (report === 'heatTreatment') return buildHeatTreatmentReportRows(weldedRows) as WeldJoint[]
+  return buildLnkReportRows(weldedRows) as WeldJoint[]
+}
 
 export const createWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: WeldPayload) => data)
@@ -171,6 +408,71 @@ function toDbInsert(input: WeldInput): NewWeldJoint {
   return data as NewWeldJoint
 }
 
+async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColumnFilterOptionsRequest>) {
+  if (!FIELD_BY_KEY.has(data.fieldKey)) return []
+  const columnFilters = getColumnFilterOptionFilters(data.columnFilters, data.fieldKey)
+  if (data.report !== 'weldingJournal') {
+    const column = getWeldColumn(data.fieldKey)
+    if (column && REPORT_SOURCE_COLUMN_FILTER_KEYS.has(data.fieldKey) && canPaginateReportSource(columnFilters)) {
+      return listSourceColumnFilterOptions(data.report, data.fieldKey, columnFilters)
+    }
+
+    const db = requireDb()
+    const where = and(buildReportKindWhere(data.report), buildReportSourceWhere({ ...data, columnFilters })) ?? sql`true`
+    const rows = await db
+      .select()
+      .from(weldJoints)
+      .where(where)
+      .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+    const reportRows = buildWeldReportPageFromRows(rows, { page: 1, pageSize: WELD_PAGE_ALL_SIZE, columnFilters }, data.report).rows
+    return buildWeldColumnFilterOptionsFromRows(reportRows, data.fieldKey)
+  }
+
+  const column = getWeldColumn(data.fieldKey)
+  if (!column) return []
+  const db = requireDb()
+  const valueExpression = sql<string>`coalesce(${column}::text, '')`
+  const where = buildWhere({ ...data, columnFilters })
+  const rows = await db
+    .select({ value: valueExpression, count: count() })
+    .from(weldJoints)
+    .where(where)
+    .groupBy(valueExpression)
+
+  return sortColumnFilterOptions(
+    rows.map((row) => ({
+      value: row.value,
+      count: row.count,
+      label: row.value || '(пусто)',
+    })),
+  )
+}
+
+async function listSourceColumnFilterOptions(
+  report: Exclude<WeldReportKind, 'weldingJournal'>,
+  fieldKey: WeldFieldKey,
+  columnFilters: Record<string, string>,
+) {
+  const column = getWeldColumn(fieldKey)
+  if (!column) return []
+  const db = requireDb()
+  const valueExpression = sql<string>`coalesce(${column}::text, '')`
+  const where = and(buildReportKindWhere(report), buildReportSourceWhere({ columnFilters })) ?? sql`true`
+  const rows = await db
+    .select({ value: valueExpression, count: count() })
+    .from(weldJoints)
+    .where(where)
+    .groupBy(valueExpression)
+
+  return sortColumnFilterOptions(
+    rows.map((row) => ({
+      value: row.value,
+      count: row.count,
+      label: row.value || '(пусто)',
+    })),
+  )
+}
+
 function prepareServerWeldInput<T extends WeldInput>(record: T): T {
   return withLnkFinalStatus(
     withPendingPstoResultStatus(
@@ -185,8 +487,43 @@ function prepareServerWeldInput<T extends WeldInput>(record: T): T {
   )
 }
 
-function buildWhere(filters: WeldFilters) {
-  const clauses = []
+function normalizeWeldColumnFilterOptionsRequest(data: WeldColumnFilterOptionsRequest | undefined) {
+  const request = normalizeWeldPageRequest(data)
+  const report = data?.report ?? 'weldingJournal'
+  const fieldKey = String(data?.fieldKey ?? '') as WeldFieldKey
+
+  return {
+    ...request,
+    report,
+    fieldKey,
+  }
+}
+
+export function normalizeWeldPageRequest(data: WeldPageRequest | undefined): Required<Pick<WeldPageRequest, 'page' | 'pageSize' | 'columnFilters'>> & WeldFilters {
+  const page = Math.max(1, Math.floor(Number(data?.page) || 1))
+  const pageSize = normalizeWeldPageSize(data?.pageSize)
+  const columnFilters = Object.fromEntries(
+    Object.entries(data?.columnFilters ?? {}).filter(([, value]) => String(value ?? '').trim()),
+  )
+
+  return {
+    ...data,
+    page,
+    pageSize,
+    columnFilters,
+  }
+}
+
+export function normalizeWeldPageSize(value: unknown): WeldPageSize {
+  if (value === WELD_PAGE_ALL_SIZE) return WELD_PAGE_ALL_SIZE
+  const numericValue = Number(value)
+  return WELD_PAGE_SIZE_OPTIONS.includes(numericValue as (typeof WELD_PAGE_SIZE_OPTIONS)[number])
+    ? (numericValue as (typeof WELD_PAGE_SIZE_OPTIONS)[number])
+    : 100
+}
+
+function buildWhere(filters: WeldFilters & { columnFilters?: Record<string, string> }) {
+  const clauses: SQL[] = []
 
   if (filters.search?.trim()) {
     const search = `%${filters.search.trim()}%`
@@ -223,5 +560,188 @@ function buildWhere(filters: WeldFilters) {
     clauses.push(or(eq(column, 'да'), eq(column, 'дополнительный'), eq(column, LEGACY_CONTROL_REPLACEMENT_VALUE)))
   }
 
+  addColumnFilterClauses(clauses, filters.columnFilters ?? {})
+
   return clauses.length ? and(...clauses) : sql`true`
+}
+
+function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, string>) {
+  for (const [key, value] of Object.entries(columnFilters)) {
+    const query = value.trim()
+    if (!query) continue
+
+    if (key === ROW_ID_LIST_FILTER_KEY) {
+      const filter = parseRowIdListFilter(query)
+      if (filter) clauses.push(or(...filter.rowIds.map((id) => eq(weldJoints.id, id))) ?? sql`false`)
+      continue
+    }
+
+    if (key === PERCENTAGE_LINE_STAMP_FILTER_KEY) {
+      const filter = parsePercentageLineStampFilter(query)
+      if (filter) clauses.push(buildPercentageLineStampWhere(filter))
+      continue
+    }
+
+    if (!FIELD_BY_KEY.has(key as WeldFieldKey)) continue
+    const column = getWeldColumn(key as WeldFieldKey)
+    if (!column) continue
+
+    const choiceFilter = parseWeldColumnChoiceFilter(query)
+    if (choiceFilter?.kind === 'values') {
+      clauses.push(buildColumnChoiceWhere(column, choiceFilter.values))
+      continue
+    }
+
+    if (query.startsWith('=')) {
+      clauses.push(buildColumnTextEqualsWhere(column, query.slice(1).trim().replace(/^["']|["']$/g, '')))
+      continue
+    }
+
+    clauses.push(sql`coalesce(${column}::text, '') ilike ${`%${query}%`}`)
+  }
+}
+
+function buildReportSourceWhere(filters: WeldFilters & { columnFilters?: Record<string, string> }) {
+  const clauses: SQL[] = []
+  addReportSourceColumnFilterClauses(clauses, filters.columnFilters ?? {})
+  return clauses.length ? and(...clauses) : sql`true`
+}
+
+function buildReportKindWhere(report: Exclude<WeldReportKind, 'weldingJournal'>) {
+  const hasWeldingDate = sql`${weldJoints.weldDate} is not null`
+  if (report === 'heatTreatment') {
+    return and(hasWeldingDate, buildControlReportValueWhere(weldJoints.pstoRequired as unknown as SQL)) ?? sql`false`
+  }
+  return (
+    and(
+      hasWeldingDate,
+      or(...LNK_METHODS.map((method) => buildControlReportValueWhere(getWeldColumn(method.enabledKey) ?? sql`null`))) ??
+        sql`false`,
+    ) ?? sql`false`
+  )
+}
+
+function buildControlReportValueWhere(column: SQL) {
+  return (
+    or(
+      buildColumnTextEqualsWhere(column, 'да'),
+      buildColumnTextEqualsWhere(column, 'дополнительный'),
+      buildColumnTextEqualsWhere(column, LEGACY_CONTROL_REPLACEMENT_VALUE),
+      buildColumnTextEqualsWhere(column, 'отменен'),
+    ) ?? sql`false`
+  )
+}
+
+function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, string>) {
+  for (const [key, value] of Object.entries(columnFilters)) {
+    const query = value.trim()
+    if (!query) continue
+
+    if (key === ROW_ID_LIST_FILTER_KEY) {
+      const filter = parseRowIdListFilter(query)
+      if (filter) clauses.push(or(...filter.rowIds.map((id) => eq(weldJoints.id, id))) ?? sql`false`)
+      continue
+    }
+
+    if (key === PERCENTAGE_LINE_STAMP_FILTER_KEY) {
+      const filter = parsePercentageLineStampFilter(query)
+      if (filter) clauses.push(buildPercentageLineStampWhere(filter))
+      continue
+    }
+
+    if (!REPORT_SOURCE_COLUMN_FILTER_KEYS.has(key as WeldFieldKey)) continue
+    const column = getWeldColumn(key as WeldFieldKey)
+    if (!column) continue
+
+    const choiceFilter = parseWeldColumnChoiceFilter(query)
+    if (choiceFilter?.kind === 'values') {
+      clauses.push(buildColumnChoiceWhere(column, choiceFilter.values))
+      continue
+    }
+
+    if (query.startsWith('=')) {
+      clauses.push(buildColumnTextEqualsWhere(column, query.slice(1).trim().replace(/^["']|["']$/g, '')))
+      continue
+    }
+
+    clauses.push(sql`coalesce(${column}::text, '') ilike ${`%${query}%`}`)
+  }
+}
+
+function getWeldColumn(fieldKey: WeldFieldKey) {
+  return (weldJoints as Record<string, unknown>)[fieldKey] as SQL | undefined
+}
+
+function buildColumnChoiceWhere(column: SQL, values: readonly string[]) {
+  const normalizedValues = [...new Set(values.map((value) => String(value ?? '').trim()))]
+  if (normalizedValues.length === 0) return sql`false`
+  return or(...normalizedValues.map((value) => buildColumnTextEqualsWhere(column, value))) ?? sql`false`
+}
+
+function buildColumnTextEqualsWhere(column: SQL, value: string) {
+  return sql`coalesce(${column}::text, '') = ${value}`
+}
+
+function getColumnFilterOptionFilters(columnFilters: Record<string, string>, fieldKey: WeldFieldKey) {
+  const filters = Object.fromEntries(Object.entries(columnFilters).filter(([key]) => !isHiddenReportFilterKey(key)))
+  delete filters[fieldKey]
+  return filters
+}
+
+export function canPaginateReportSource(columnFilters: Record<string, string>) {
+  return Object.entries(columnFilters).every(([key, value]) => {
+    if (!String(value ?? '').trim()) return true
+    return isHiddenReportFilterKey(key) || REPORT_SOURCE_COLUMN_FILTER_KEYS.has(key as WeldFieldKey)
+  })
+}
+
+export function buildWeldColumnFilterOptionsFromRows(rows: WeldRow[], fieldKey: WeldFieldKey): WeldColumnFilterOption[] {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const value = getWeldColumnFilterCellText(row[fieldKey]).trim()
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+
+  return sortColumnFilterOptions(
+    Array.from(counts.entries()).map(([value, count]) => ({
+      value,
+      count,
+      label: value || '(пусто)',
+    })),
+  )
+}
+
+function sortColumnFilterOptions(options: WeldColumnFilterOption[]) {
+  return [...options].sort((left, right) => {
+    if (left.value === '') return -1
+    if (right.value === '') return 1
+    return left.label.localeCompare(right.label, 'ru', { numeric: true, sensitivity: 'base' })
+  })
+}
+
+function getReportOrderBy(report: Exclude<WeldReportKind, 'weldingJournal'>) {
+  const createdAtColumn = report === 'lnk' ? weldJoints.lnkCreatedAt : weldJoints.pstoCreatedAt
+  return [
+    sql`${createdAtColumn} desc nulls last`,
+    asc(weldJoints.line),
+    asc(weldJoints.spool),
+    asc(weldJoints.joint),
+  ]
+}
+
+function buildPercentageLineStampWhere(filter: NonNullable<ReturnType<typeof parsePercentageLineStampFilter>>) {
+  const stamp = filter.stamp.trim()
+  return and(
+    buildColumnTextEqualsWhere(weldJoints.projectTitle as unknown as SQL, filter.projectTitle),
+    buildColumnTextEqualsWhere(weldJoints.subtitleCode as unknown as SQL, filter.subtitleCode),
+    buildColumnTextEqualsWhere(weldJoints.line as unknown as SQL, filter.line),
+    or(
+      eq(weldJoints.stamp1K, stamp),
+      eq(weldJoints.stamp1Z, stamp),
+      eq(weldJoints.stamp1O, stamp),
+      eq(weldJoints.stamp2K, stamp),
+      eq(weldJoints.stamp2Z, stamp),
+      eq(weldJoints.stamp2O, stamp),
+    ) ?? sql`false`,
+  ) ?? sql`false`
 }

@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx'
 import { VISIBLE_FIELDS, type WeldField, type WeldInput } from './weld-fields'
 import {
   escapeXml,
@@ -100,7 +99,7 @@ function buildWorksheetXml(rows: unknown[][], fields: readonly WeldField[], read
         .map((value, columnIndex) => {
           const field = fields[columnIndex]
           const styleId = rowIndex === 0 ? 1 : field && readOnlyFieldKeys.has(field.key) ? 2 : 0
-          const ref = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })
+          const ref = encodeCellRef(rowIndex, columnIndex)
           if (rowIndex > 0 && field?.key === 'wdi') {
             const number = formatExportNumber(value)
             return number === ''
@@ -119,4 +118,15 @@ function buildWorksheetXml(rows: unknown[][], fields: readonly WeldField[], read
  <cols>${cols}</cols>
  <sheetData>${rowXml}</sheetData>
 </worksheet>`
+}
+
+function encodeCellRef(rowIndex: number, columnIndex: number) {
+  let columnNumber = columnIndex + 1
+  let columnName = ''
+  while (columnNumber > 0) {
+    const remainder = (columnNumber - 1) % 26
+    columnName = String.fromCharCode(65 + remainder) + columnName
+    columnNumber = Math.floor((columnNumber - 1) / 26)
+  }
+  return `${columnName}${rowIndex + 1}`
 }

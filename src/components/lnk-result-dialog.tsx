@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
+import { PaginationBar } from '@/components/pagination-bar'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { ResultDialogRowsPanel } from '@/components/result-dialog-rows-panel'
@@ -10,6 +12,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import { usePagination } from '@/lib/use-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
@@ -79,6 +82,16 @@ export function LnkResultDialog({
   onOpenPreview,
   onSave,
 }: LnkResultDialogProps) {
+  const paginationResetKeys = useMemo(
+    () => [draft.search, draft.requestName, draft.methodKey, requestSearch, visibleRows],
+    [draft.methodKey, draft.requestName, draft.search, requestSearch, visibleRows],
+  )
+  const rowsPagination = usePagination({
+    items: visibleRows,
+    defaultPageSize: 100,
+    resetKeys: paginationResetKeys,
+  })
+
   return (
     <LargeDialogShell
       maxWidthClassName="max-w-[1480px]"
@@ -150,7 +163,7 @@ export function LnkResultDialog({
           }
         >
           <div className="divide-y divide-slate-100">
-            {visibleRows.map((row) => (
+            {rowsPagination.pageItems.map((row) => (
               <LnkResultRow
                 key={row.id}
                 row={row}
@@ -159,6 +172,17 @@ export function LnkResultDialog({
                 onSetRowResult={onSetRowResult}
               />
             ))}
+          </div>
+          <div className="p-3">
+            <PaginationBar
+              totalCount={rowsPagination.totalCount}
+              firstItemNumber={rowsPagination.firstItemNumber}
+              lastItemNumber={rowsPagination.lastItemNumber}
+              pageSize={rowsPagination.pageSize}
+              hasMore={rowsPagination.hasMore}
+              onLoadMore={rowsPagination.loadMore}
+              onPageSizeChange={rowsPagination.setPageSize}
+            />
           </div>
         </ResultDialogRowsPanel>
       </div>

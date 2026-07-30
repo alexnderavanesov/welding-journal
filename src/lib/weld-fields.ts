@@ -17,6 +17,7 @@ export {
   PSTO_RESULT_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
   RESULT_STATUS_OPTIONS,
+  buildFinalStatusRowsContext,
   calculateFinalStatus,
   calculateFinalStatusInRows,
   hasRejectedControlResult,
@@ -24,6 +25,7 @@ export {
   normalizeFinalStatus,
   normalizeResultStatus,
 } from './weld-status'
+export type { FinalStatusRowsContext } from './weld-status'
 export {
   EXCEL_FIELDS,
   FIELD_GROUPS,

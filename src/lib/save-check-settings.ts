@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { loadOtherSettings } from '@/lib/other-settings'
+import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 
 export const SAVE_CHECK_SETTINGS_EVENT = 'save-check-settings-change'
 
@@ -366,11 +367,16 @@ export function loadSaveCheckSettings(): SaveCheckSettings {
   }
 }
 
-export function saveSaveCheckSettings(settings: SaveCheckSettings) {
+export function saveSaveCheckSettings(settings: SaveCheckSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeSaveCheckSettings(settings)
   window.localStorage.setItem(SAVE_CHECK_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(SAVE_CHECK_SETTINGS_EVENT))
+  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.saveCheck, normalizedSettings)
+}
+
+export function applyRemoteSaveCheckSettings(settings: unknown) {
+  saveSaveCheckSettings(normalizeSaveCheckSettings(settings), { syncRemote: false })
 }
 
 export function normalizeSaveCheckSettings(value: unknown): SaveCheckSettings {

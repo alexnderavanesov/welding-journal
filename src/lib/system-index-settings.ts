@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 
 export const SYSTEM_INDEX_SETTINGS_EVENT = 'system-index-settings-change'
 
@@ -56,11 +57,16 @@ export function loadSystemIndexSettings(): SystemIndexSettings {
   }
 }
 
-export function saveSystemIndexSettings(settings: SystemIndexSettings) {
+export function saveSystemIndexSettings(settings: SystemIndexSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeSystemIndexSettings(settings)
   window.localStorage.setItem(SYSTEM_INDEX_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(SYSTEM_INDEX_SETTINGS_EVENT))
+  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.systemIndex, normalizedSettings)
+}
+
+export function applyRemoteSystemIndexSettings(settings: unknown) {
+  saveSystemIndexSettings(normalizeSystemIndexSettings(settings), { syncRemote: false })
 }
 
 export function normalizeSystemIndexSettings(value: unknown): SystemIndexSettings {

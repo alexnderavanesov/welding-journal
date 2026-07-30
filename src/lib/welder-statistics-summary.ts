@@ -3,7 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
+import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
 import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -13,6 +13,25 @@ type WelderStampPart = {
   key: WeldFieldKey
   singleWeight: number
   doubleWeight: number
+}
+
+export type WelderStatisticsBucket = {
+  date: string
+  total: number
+  joints: number
+}
+
+export type WelderStatisticsGroupSummary = {
+  key: string
+  total: number
+  good: number
+  waitingRequest: number
+  waitingControl: number
+  rejected: number
+}
+
+type WelderStatisticsBucketDraft = WelderStatisticsBucket & {
+  rowIds: Set<number>
 }
 
 export type WelderStatisticsRow = {
@@ -34,6 +53,13 @@ export type WelderStatisticsRow = {
   sWaitingControl: number
   fRejected: number
   sRejected: number
+  daily: WelderStatisticsBucket[]
+  materialGroups: WelderStatisticsGroupSummary[]
+}
+
+type WelderStatisticsDraftRow = Omit<WelderStatisticsRow, 'daily' | 'materialGroups'> & {
+  dailyMap: Map<string, WelderStatisticsBucketDraft>
+  materialGroupMap: Map<string, WelderStatisticsGroupSummary>
 }
 
 export type WelderStatisticsSummary = {
@@ -80,7 +106,8 @@ export function buildWelderStatisticsSummary(
   const stampLabels = buildWelderStampLabelMap(welderStamps)
   const welderNames = buildWelderNameMap(welderStamps)
   const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to) && matchesJointFilter(row, jointFilter))
-  const stats = new Map<string, WelderStatisticsRow>()
+  const finalStatusContext = buildFinalStatusRowsContext(rows)
+  const stats = new Map<string, WelderStatisticsDraftRow>()
 
   for (const row of periodRows) {
     const rowWeight = getRowWeight(row, unit)
@@ -88,7 +115,7 @@ export function buildWelderStatisticsSummary(
 
     const hasSecondWelder = indexTwoFactStampParts.some((part) => hasText(row[part.key]))
     const parts = hasSecondWelder ? [...indexOneFactStampParts, ...indexTwoFactStampParts] : indexOneFactStampParts
-    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows))
+    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
     const jointType = getJointType(row)
 
     for (const part of parts) {
@@ -98,14 +125,23 @@ export function buildWelderStatisticsSummary(
       const stamp = getWelderStampLabel(rawStamp, stampLabels)
       const welderName = getWelderName(rawStamp, stamp, welderNames)
       const partWeight = hasSecondWelder ? part.doubleWeight : part.singleWeight
-      addWelderStat(stats, stamp, welderName, rowWeight * partWeight, status, jointType)
+      addWelderStat(stats, stamp, welderName, rowWeight * partWeight, status, jointType, row)
     }
   }
 
-  const resultRows = Array.from(stats.values()).map((row) => ({
-    ...row,
-    defectPercent: getPercent(row.rejected, row.good + row.rejected),
-  }))
+  const resultRows = Array.from(stats.values()).map((row) => {
+    const { dailyMap, materialGroupMap, ...base } = row
+
+    return {
+      ...base,
+      defectPercent: getPercent(row.rejected, row.good + row.rejected),
+      daily: Array.from(dailyMap.values())
+        .map(({ rowIds, ...bucket }) => ({ ...bucket, joints: rowIds.size }))
+        .sort((left, right) => left.date.localeCompare(right.date)),
+      materialGroups: Array.from(materialGroupMap.values())
+        .sort((left, right) => right.total - left.total || left.key.localeCompare(right.key, 'ru', { numeric: true })),
+    }
+  })
 
   resultRows.sort(
     (left, right) =>
@@ -161,12 +197,13 @@ export function buildWelderStatisticsSummary(
 }
 
 function addWelderStat(
-  stats: Map<string, WelderStatisticsRow>,
+  stats: Map<string, WelderStatisticsDraftRow>,
   stamp: string,
   welderName: string,
   value: number,
   status: string,
   jointType: 'f' | 's' | null,
+  sourceRow: WeldRow,
 ) {
   const row =
     stats.get(stamp) ??
@@ -189,7 +226,9 @@ function addWelderStat(
       sWaitingControl: 0,
       fRejected: 0,
       sRejected: 0,
-    } satisfies WelderStatisticsRow)
+      dailyMap: new Map<string, WelderStatisticsBucketDraft>(),
+      materialGroupMap: new Map<string, WelderStatisticsGroupSummary>(),
+    } satisfies WelderStatisticsDraftRow)
 
   if (!row.welderName && welderName) row.welderName = welderName
   row.total += value
@@ -215,7 +254,34 @@ function addWelderStat(
     if (jointType === 'f') row.fRejected += value
     if (jointType === 's') row.sRejected += value
   }
+  addWelderDetail(row, sourceRow, value, status)
   stats.set(stamp, row)
+}
+
+function addWelderDetail(row: WelderStatisticsDraftRow, sourceRow: WeldRow, value: number, status: string) {
+  const weldDate = parseDateForStatistics(sourceRow.weldDate)
+  if (weldDate) {
+    const current = row.dailyMap.get(weldDate) ?? { date: weldDate, total: 0, joints: 0, rowIds: new Set<number>() }
+    current.total += value
+    current.rowIds.add(sourceRow.id)
+    row.dailyMap.set(weldDate, current)
+  }
+
+  const materialGroup = displayValue(sourceRow.materialGroup)
+  const group = row.materialGroupMap.get(materialGroup) ?? {
+    key: materialGroup,
+    total: 0,
+    good: 0,
+    waitingRequest: 0,
+    waitingControl: 0,
+    rejected: 0,
+  }
+  group.total += value
+  if (status === 'годен') group.good += value
+  if (status === 'ожидает заявку') group.waitingRequest += value
+  if (status.toLowerCase() === 'ожидает нк') group.waitingControl += value
+  if (status === 'не годен') group.rejected += value
+  row.materialGroupMap.set(materialGroup, group)
 }
 
 function matchesJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter) {
@@ -303,6 +369,11 @@ function parseDateForStatistics(value: unknown) {
 
 function hasText(value: unknown) {
   return String(value ?? '').trim().length > 0
+}
+
+function displayValue(value: unknown, fallback = 'Без группы') {
+  const text = String(value ?? '').trim()
+  return text || fallback
 }
 
 function getPercent(value: number, total: number) {

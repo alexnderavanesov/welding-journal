@@ -4,19 +4,15 @@ import { FIELD_BY_KEY, FULL_EXCEL_HEADERS } from './weld-fields'
 import { hasReservedJointSystemPart, parseJointName, validateManualJointName } from './joint-name'
 import {
   appendImportedWelds,
-  buildExportWorkbook,
-  buildExportXlsxBytes,
-  emptyToNull,
-  excelSerialDateToIso,
-  parseBoolean,
-  parseDate,
-  parseEditableWorksheetRows,
-  parseWorkbook,
-  parseWorksheetRows,
   recordsToExportMatrix,
-  recordsToVisibleExportMatrix,
   normalizeWeldInput,
-} from './weld-import-export'
+} from './weld-record-transforms'
+import { buildExportWorkbook } from './weld-export-builders'
+import { buildExportXlsxBytes } from './weld-export-xlsx-xml'
+import { recordsToVisibleExportMatrix } from './weld-export-utils'
+import { emptyToNull, excelSerialDateToIso, parseBoolean, parseDate } from './weld-import-parsers'
+import { parseWorkbook } from './weld-import-readers'
+import { parseEditableWorksheetRows, parseWorksheetRows } from './weld-import-rows'
 
 const label = (key: string) => {
   const field = FIELD_BY_KEY.get(key as never)
@@ -251,7 +247,7 @@ describe('weld import/export', () => {
     ])
   })
 
-  it('round-trips an exported workbook through the import parser', () => {
+  it('round-trips an exported workbook through the import parser', async () => {
     const workbook = buildExportWorkbook([
       {
         joint: 'S13',
@@ -264,7 +260,7 @@ describe('weld import/export', () => {
       },
     ])
     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-    const result = parseWorkbook(buffer)
+    const result = await parseWorkbook(buffer)
 
     expect(result.records).toHaveLength(1)
     expect(result.records[0]).toMatchObject({
@@ -352,14 +348,14 @@ describe('weld import/export', () => {
     expect(rows[1]).toMatchObject({ id: 7, joint: 'S13', line: 'old-line', responsible: 'old-responsible' })
   })
 
-  it('appends records imported from an exported workbook instead of replacing the register', () => {
+  it('appends records imported from an exported workbook instead of replacing the register', async () => {
     const existing = [
       { id: 3, joint: 'OLD-1', line: 'old-line-1' },
       { id: 4, joint: 'OLD-2', line: 'old-line-2' },
     ]
     const workbook = buildExportWorkbook([{ joint: 'NEW-1', line: 'new-line-1' }])
     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-    const imported = parseWorkbook(buffer)
+    const imported = await parseWorkbook(buffer)
     const rows = appendImportedWelds(existing, imported.records)
 
     expect(rows).toHaveLength(3)

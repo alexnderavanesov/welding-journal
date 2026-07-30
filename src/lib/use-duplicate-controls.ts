@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteDuplicateControl, listDuplicateControls, saveDuplicateControl, type DuplicateControlPayload } from '@/server/duplicate-controls'
+import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 
 export const DUPLICATE_CONTROLS_QUERY_KEY = ['duplicate-controls'] as const
 
@@ -14,7 +15,7 @@ export function useDuplicateControls() {
     mutationFn: async (record: DuplicateControlPayload) => saveDuplicateControl({ data: record }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROLS_QUERY_KEY })
-      await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
+      await invalidateWeldJoints(queryClient)
     },
   })
 
@@ -22,7 +23,7 @@ export function useDuplicateControls() {
     mutationFn: async (id: number) => deleteDuplicateControl({ data: { id } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROLS_QUERY_KEY })
-      await queryClient.invalidateQueries({ queryKey: ['weld-joints'] })
+      await invalidateWeldJoints(queryClient)
     },
   })
 

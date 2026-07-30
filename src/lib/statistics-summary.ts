@@ -9,7 +9,7 @@ import {
   isCancelledControlValue,
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
-import { calculateFinalStatusInRows, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
+import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 
 export type StatisticsUnit = 'joints' | 'wdi'
 export type StatisticsPeriodMode = 'events' | 'welded-joints'
@@ -68,10 +68,11 @@ export function buildStatisticsSummary(
   unit: StatisticsUnit,
   mode: StatisticsPeriodMode = 'events',
 ): StatisticsSummary {
+  const finalStatusContext = buildFinalStatusRowsContext(rows)
   const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to))
   const pendingWithoutWeldRows = rows.filter((row) => {
     if (hasText(row.weldDate)) return false
-    const status = String(calculateFinalStatusInRows(row, rows)).trim().toLowerCase()
+    const status = String(calculateFinalStatusInRows(row, rows, finalStatusContext)).trim().toLowerCase()
     return status === 'ожидает сварку' || status === 'ожидает ремонт'
   })
   const statusRows = [...periodRows, ...pendingWithoutWeldRows]
@@ -80,7 +81,7 @@ export function buildStatisticsSummary(
   const totalRows = sumRows(weightedStatusRows, unit)
   const welded = sumRows(weightedRows.filter((row) => hasText(row.weldDate)), unit)
 
-  const statuses = weightedStatusRows.map((row) => normalizeFinalStatus(calculateFinalStatusInRows(row, rows)))
+  const statuses = weightedStatusRows.map((row) => normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)))
   const good = sumRowsByStatus(weightedStatusRows, statuses, unit, 'годен')
   const rejected = sumRowsByStatus(weightedStatusRows, statuses, unit, 'не годен')
   const waitingWeld = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает сварку')

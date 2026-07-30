@@ -11,7 +11,7 @@ describe('document template storage', () => {
 
   it('keeps ordinary empty template fields empty', async () => {
     const template = createXlsxTemplate([['{{ID материала 1}}', '{{Стык}}']])
-    const blob = createWeldingJournalBlobFromTemplate(template, [
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
       { joint: '', materialId1: '' },
       { joint: 'S2', materialId1: 'MAT-2' },
     ] as WeldInput[])
@@ -29,7 +29,7 @@ describe('document template storage', () => {
     const template = createXlsxTemplate([
       ['{{Стык/«н/п»}}', '{{ID материала 1/"нет материала"}}', '{{Линия/"не используется"}}'],
     ])
-    const blob = createWeldingJournalBlobFromTemplate(template, [
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
       { joint: '', materialId1: '', line: 'LIN-1' },
     ] as WeldInput[])
 
@@ -45,7 +45,7 @@ describe('document template storage', () => {
     const template = createXlsxTemplate([
       ['{{Корень_1ФИО сварщика}}', '{{Заполнение_1ФИО сварщика}}', '{{Облицовка_2ФИО сварщика}}', '{{Корень_2 ФИО сварщика}}'],
     ])
-    const blob = createWeldingJournalBlobFromTemplate(
+    const blob = await createWeldingJournalBlobFromTemplate(
       template,
       [
         {
@@ -83,7 +83,7 @@ describe('document template storage', () => {
 
   it('prefers exact NAKS stamp owner over another welder internal stamp alias', async () => {
     const template = createXlsxTemplate([['{{Заполнение_1ФИО сварщика}}']])
-    const blob = createWeldingJournalBlobFromTemplate(
+    const blob = await createWeldingJournalBlobFromTemplate(
       template,
       [{ stamp1Z: 'ARCH', stamp1ZFact: 'ABC1' }] as WeldInput[],
       {
@@ -116,7 +116,7 @@ describe('document template storage', () => {
       },
       rowInfo: { hpt: 42 },
     })
-    const blob = createWeldingJournalBlobFromTemplate(template, [{ line: 'LIN-1\nLIN-2' }] as WeldInput[])
+    const blob = await createWeldingJournalBlobFromTemplate(template, [{ line: 'LIN-1\nLIN-2' }] as WeldInput[])
 
     const generatedData = await readBlobAsArrayBuffer(blob)
     const workbook = XLSX.read(generatedData, { type: 'array', cellStyles: true })
@@ -143,7 +143,7 @@ describe('document template storage', () => {
       },
       styledCells: ['A1', 'B1', 'C1'],
     })
-    const blob = createWeldingJournalBlobFromTemplate(template, [{ line: 'LIN-1' }, { line: 'LIN-2' }] as WeldInput[])
+    const blob = await createWeldingJournalBlobFromTemplate(template, [{ line: 'LIN-1' }, { line: 'LIN-2' }] as WeldInput[])
 
     const generatedData = await readBlobAsArrayBuffer(blob)
     const sheetXml = readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')

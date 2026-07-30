@@ -1,8 +1,5 @@
-import { DocumentsPage } from '@/components/documents-page'
-import { SettingsPage } from '@/components/settings-page'
-import { StatisticsPage } from '@/components/statistics-page'
-import { UserGuidePage } from '@/components/user-guide-page'
-import { WelderStampsRegistry, type WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
+import { lazy, Suspense } from 'react'
+import type { WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
@@ -10,6 +7,14 @@ import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+
+const StatisticsPage = lazy(() => import('@/components/statistics-page').then((module) => ({ default: module.StatisticsPage })))
+const WelderStampsRegistry = lazy(() =>
+  import('@/components/welder-stamps-registry').then((module) => ({ default: module.WelderStampsRegistry })),
+)
+const DocumentsPage = lazy(() => import('@/components/documents-page').then((module) => ({ default: module.DocumentsPage })))
+const SettingsPage = lazy(() => import('@/components/settings-page').then((module) => ({ default: module.SettingsPage })))
+const UserGuidePage = lazy(() => import('@/components/user-guide-page').then((module) => ({ default: module.UserGuidePage })))
 
 type ReportMainContentProps = {
   activeReport: ActiveReport
@@ -38,34 +43,60 @@ export function ReportMainContent({
 }: ReportMainContentProps) {
   if (activeReport === 'statistics' || activeReport === 'percentageLines') {
     return (
-      <StatisticsPage
-        key={activeReport}
-        fixedTab={activeReport === 'percentageLines' ? 'percentageLines' : undefined}
-        rows={statisticsRows}
-        welderStamps={welderStamps}
-        onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
-        onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
-        onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
-        onOpenWeldRowIds={onOpenWeldRowIds}
-      />
+      <Suspense fallback={<ReportSectionFallback label="Загружаем статистику" />}>
+        <StatisticsPage
+          key={activeReport}
+          fixedTab={activeReport === 'percentageLines' ? 'percentageLines' : undefined}
+          rows={statisticsRows}
+          welderStamps={welderStamps}
+          onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
+          onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
+          onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
+          onOpenWeldRowIds={onOpenWeldRowIds}
+        />
+      </Suspense>
     )
   }
 
   if (activeReport === 'welderStamps') {
-    return <WelderStampsRegistry {...welderStampsRegistryProps} />
+    return (
+      <Suspense fallback={<ReportSectionFallback label="Загружаем клейма" />}>
+        <WelderStampsRegistry {...welderStampsRegistryProps} />
+      </Suspense>
+    )
   }
 
   if (activeReport === 'documents') {
-    return <DocumentsPage rows={statisticsRows} welderStamps={welderStamps} generationRequest={documentGenerationRequest} />
+    return (
+      <Suspense fallback={<ReportSectionFallback label="Загружаем документы" />}>
+        <DocumentsPage rows={statisticsRows} welderStamps={welderStamps} generationRequest={documentGenerationRequest} />
+      </Suspense>
+    )
   }
 
   if (activeReport === 'settings') {
-    return <SettingsPage rows={statisticsRows} />
+    return (
+      <Suspense fallback={<ReportSectionFallback label="Загружаем настройки" />}>
+        <SettingsPage rows={statisticsRows} />
+      </Suspense>
+    )
   }
 
   if (activeReport === 'userGuide') {
-    return <UserGuidePage />
+    return (
+      <Suspense fallback={<ReportSectionFallback label="Загружаем руководство" />}>
+        <UserGuidePage />
+      </Suspense>
+    )
   }
 
   return <WeldTable {...weldTableProps} />
+}
+
+function ReportSectionFallback({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
+      {label}...
+    </div>
+  )
 }

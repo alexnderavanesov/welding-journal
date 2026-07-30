@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx-js-style'
+import type * as XLSXTypes from 'xlsx-js-style'
 import { FIELD_BY_LABEL, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
 import { formatExportDate, formatExportNumber } from '@/lib/weld-export-utils'
@@ -11,6 +11,22 @@ import {
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export const DOCUMENT_TEMPLATE_STORAGE_EVENT = 'document-template-storage-change'
+
+type XlsxModule = typeof import('xlsx-js-style')
+
+let XLSX = null as unknown as XlsxModule
+let xlsxModule: XlsxModule | null = null
+let xlsxModulePromise: Promise<XlsxModule> | null = null
+
+async function loadXlsxJsStyle() {
+  if (xlsxModule) return xlsxModule
+  xlsxModulePromise ??= import('xlsx-js-style').then((module) => {
+    XLSX = module
+    xlsxModule = module
+    return module
+  })
+  return xlsxModulePromise
+}
 
 const DOCUMENT_TEMPLATE_DB_NAME = 'welding-document-templates'
 const DOCUMENT_TEMPLATE_STORE_NAME = 'templates'
@@ -136,6 +152,7 @@ export async function parseDocumentTemplateFile(file: File): Promise<TemplateUpl
     }
   }
 
+  const XLSX = await loadXlsxJsStyle()
   const workbook = XLSX.read(fileData, { type: 'array' })
   const fieldSet = new Set<string>()
   const locations: TemplateMarkerLocation[] = []
@@ -222,7 +239,7 @@ export async function deleteDocumentTemplate(templateId: DocumentTemplateId) {
   notifyDocumentTemplateStorageChanged()
 }
 
-export function downloadWeldingJournalFromTemplate(
+export async function downloadWeldingJournalFromTemplate(
   template: StoredDocumentTemplate,
   records: WeldInput[],
   periodFrom: string,
@@ -230,7 +247,7 @@ export function downloadWeldingJournalFromTemplate(
   fileName?: string,
   context?: WeldingJournalTemplateContext,
 ) {
-  const blob = createWeldingJournalBlobFromTemplate(template, records, context)
+  const blob = await createWeldingJournalBlobFromTemplate(template, records, context)
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -241,11 +258,12 @@ export function downloadWeldingJournalFromTemplate(
   URL.revokeObjectURL(url)
 }
 
-export function createWeldingJournalBlobFromTemplate(
+export async function createWeldingJournalBlobFromTemplate(
   template: StoredDocumentTemplate,
   records: WeldInput[],
   context: WeldingJournalTemplateContext = {},
 ) {
+  const XLSX = await loadXlsxJsStyle()
   const workbook = XLSX.read(template.fileData, { type: 'array', cellStyles: true })
   const sheetName = workbook.SheetNames[0]
   const worksheet = workbook.Sheets[sheetName]
@@ -332,7 +350,7 @@ export function formatFileSize(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} МБ`
 }
 
-function collectTemplateMarkerCells(worksheet: XLSX.WorkSheet) {
+function collectTemplateMarkerCells(worksheet: XLSXTypes.WorkSheet) {
   if (!worksheet['!ref']) return []
 
   const range = XLSX.utils.decode_range(worksheet['!ref'])
@@ -360,7 +378,7 @@ function collectTemplateMarkerCells(worksheet: XLSX.WorkSheet) {
   return markerCells
 }
 
-function getTemplateCellText(cell: XLSX.CellObject | undefined) {
+function getTemplateCellText(cell: XLSXTypes.CellObject | undefined) {
   if (!cell) return undefined
   if (typeof cell.v === 'string') return cell.v
   return cell.w ?? cell.v
@@ -422,14 +440,14 @@ function normalizeTemplateFieldName(value: string) {
   return normalizeHeader(value).replace(/[{}]/g, '').trim()
 }
 
-function expandWorksheetRef(worksheet: XLSX.WorkSheet, maxRow: number, maxColumn: number) {
+function expandWorksheetRef(worksheet: XLSXTypes.WorkSheet, maxRow: number, maxColumn: number) {
   const currentRange = worksheet['!ref'] ? XLSX.utils.decode_range(worksheet['!ref']) : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } }
   currentRange.e.r = Math.max(currentRange.e.r, maxRow)
   currentRange.e.c = Math.max(currentRange.e.c, maxColumn)
   worksheet['!ref'] = XLSX.utils.encode_range(currentRange)
 }
 
-function shiftWorksheetRows(worksheet: XLSX.WorkSheet, startRow: number, offset: number) {
+function shiftWorksheetRows(worksheet: XLSXTypes.WorkSheet, startRow: number, offset: number) {
   if (offset <= 0 || !worksheet['!ref']) return
 
   const range = XLSX.utils.decode_range(worksheet['!ref'])
@@ -469,7 +487,7 @@ function shiftWorksheetRows(worksheet: XLSX.WorkSheet, startRow: number, offset:
   worksheet['!ref'] = XLSX.utils.encode_range(range)
 }
 
-function copyWorksheetRow(worksheet: XLSX.WorkSheet, sourceRow: number, targetRow: number, startColumn: number, endColumn: number) {
+function copyWorksheetRow(worksheet: XLSXTypes.WorkSheet, sourceRow: number, targetRow: number, startColumn: number, endColumn: number) {
   for (let column = startColumn; column <= endColumn; column += 1) {
     const sourceAddress = XLSX.utils.encode_cell({ r: sourceRow, c: column })
     const targetAddress = XLSX.utils.encode_cell({ r: targetRow, c: column })
@@ -486,7 +504,7 @@ function copyWorksheetRow(worksheet: XLSX.WorkSheet, sourceRow: number, targetRo
   }
 }
 
-function copyWorksheetRowMerges(worksheet: XLSX.WorkSheet, sourceRow: number, targetRow: number) {
+function copyWorksheetRowMerges(worksheet: XLSXTypes.WorkSheet, sourceRow: number, targetRow: number) {
   if (sourceRow === targetRow || !worksheet['!merges']) return
 
   const sourceMerges = worksheet['!merges'].filter((merge) => merge.s.r === sourceRow && merge.e.r === sourceRow)
@@ -503,7 +521,7 @@ function copyWorksheetRowMerges(worksheet: XLSX.WorkSheet, sourceRow: number, ta
   }
 }
 
-function enableAutoRowHeight(worksheet: XLSX.WorkSheet, row: number) {
+function enableAutoRowHeight(worksheet: XLSXTypes.WorkSheet, row: number) {
   const rowInfo = worksheet['!rows']?.[row]
   if (!rowInfo) return
 
@@ -522,7 +540,7 @@ function cloneCellStyle(style: unknown) {
   return JSON.parse(JSON.stringify(style)) as Record<string, unknown>
 }
 
-function cloneTemplateRowCell(sourceCell: XLSX.CellObject) {
+function cloneTemplateRowCell(sourceCell: XLSXTypes.CellObject) {
   const clonedCell = {
     ...sourceCell,
     s: cloneCellStyle(sourceCell.s),
@@ -534,7 +552,7 @@ function cloneTemplateRowCell(sourceCell: XLSX.CellObject) {
       t: 's',
       v: '',
       w: undefined,
-    } satisfies XLSX.CellObject
+    } satisfies XLSXTypes.CellObject
   }
 
   return clonedCell
@@ -544,7 +562,7 @@ function hasCellStyle(style: unknown) {
   return isObjectRecord(style) && Object.keys(style).length > 0
 }
 
-function hasCellContent(cell: XLSX.CellObject) {
+function hasCellContent(cell: XLSXTypes.CellObject) {
   return cell.v !== undefined && cell.v !== null && String(cell.v) !== ''
 }
 
@@ -583,32 +601,32 @@ function preserveTemplateWorkbookXml(
   }
 }
 
-function copyCfbFile(sourceCfb: XLSX.CFB.CFB$Container, targetCfb: XLSX.CFB.CFB$Container, path: string) {
+function copyCfbFile(sourceCfb: XLSXTypes.CFB.CFB$Container, targetCfb: XLSXTypes.CFB.CFB$Container, path: string) {
   const sourceIndex = findCfbFileIndex(sourceCfb, path)
   const targetIndex = findCfbFileIndex(targetCfb, path)
   if (sourceIndex < 0 || targetIndex < 0) return
   targetCfb.FileIndex[targetIndex].content = new Uint8Array(sourceCfb.FileIndex[sourceIndex].content)
 }
 
-function readCfbText(cfb: XLSX.CFB.CFB$Container, path: string) {
+function readCfbText(cfb: XLSXTypes.CFB.CFB$Container, path: string) {
   const index = findCfbFileIndex(cfb, path)
   if (index < 0) return ''
   return new TextDecoder().decode(cfb.FileIndex[index].content)
 }
 
-function writeCfbText(cfb: XLSX.CFB.CFB$Container, path: string, value: string) {
+function writeCfbText(cfb: XLSXTypes.CFB.CFB$Container, path: string, value: string) {
   const index = findCfbFileIndex(cfb, path)
   if (index < 0) return
   cfb.FileIndex[index].content = new TextEncoder().encode(value)
   cfb.FileIndex[index].size = cfb.FileIndex[index].content.length
 }
 
-function findCfbFileIndex(cfb: XLSX.CFB.CFB$Container, path: string) {
+function findCfbFileIndex(cfb: XLSXTypes.CFB.CFB$Container, path: string) {
   const normalizedPath = path.replace(/^\/+/, '')
   return cfb.FullPaths.findIndex((fullPath) => fullPath.replace(/^Root Entry\//, '') === normalizedPath)
 }
 
-function getFirstWorksheetPath(cfb: XLSX.CFB.CFB$Container) {
+function getFirstWorksheetPath(cfb: XLSXTypes.CFB.CFB$Container) {
   const worksheetPath =
     cfb.FullPaths.map((fullPath) => fullPath.replace(/^Root Entry\//, ''))
       .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(path))

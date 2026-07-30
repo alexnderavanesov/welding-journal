@@ -57,6 +57,20 @@
       "when": 1784658756258,
       "tag": "0007_fuzzy_virginia_dare",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785386742467,
+      "tag": "0008_glamorous_slyde",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785402760540,
+      "tag": "0009_glorious_skullbuster",
+      "breakpoints": true
     }
   ]
 }

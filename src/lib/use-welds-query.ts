@@ -6,9 +6,10 @@ import {
 
 const emptyFilters: WeldFilters = {}
 
-export function useWeldsQuery() {
+export function useWeldsQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['weld-joints', emptyFilters],
     queryFn: async () => listWeldJoints({ data: emptyFilters }),
+    enabled,
   })
 }

@@ -10,6 +10,10 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 
 interface PreparedReportRowsOptions {
   activeReport: ActiveReport
+  enableHeatTreatmentRows?: boolean
+  enableLnkRows?: boolean
+  enablePstoRequestRows?: boolean
+  enableLnkRequestRows?: boolean
   rows: WeldRow[]
   preservedLnkOrderIds: number[] | null
   pstoRequestSearch: string
@@ -18,34 +22,51 @@ interface PreparedReportRowsOptions {
 
 export function usePreparedReportRows({
   activeReport,
+  enableHeatTreatmentRows = true,
+  enableLnkRows = true,
+  enablePstoRequestRows = true,
+  enableLnkRequestRows = true,
   rows,
   preservedLnkOrderIds,
   pstoRequestSearch,
   lnkRequestSearch,
 }: PreparedReportRowsOptions) {
-  const weldedRows = useMemo(() => rows.filter(hasWeldDate), [rows])
-  const heatTreatmentRows = useMemo(
-    () => buildHeatTreatmentReportRows(weldedRows),
-    [weldedRows],
+  const shouldBuildDerivedReportRows = enableHeatTreatmentRows || enableLnkRows
+  const weldedRows = useMemo(
+    () => (shouldBuildDerivedReportRows ? rows.filter(hasWeldDate) : []),
+    [rows, shouldBuildDerivedReportRows],
   )
-  const availablePstoRequestRows = useMemo(() => heatTreatmentRows.filter(canCreatePstoRequest), [heatTreatmentRows])
+  const heatTreatmentRows = useMemo(
+    () => (enableHeatTreatmentRows ? buildHeatTreatmentReportRows(weldedRows) : []),
+    [enableHeatTreatmentRows, weldedRows],
+  )
+  const availablePstoRequestRows = useMemo(
+    () => (enablePstoRequestRows ? heatTreatmentRows.filter(canCreatePstoRequest) : []),
+    [enablePstoRequestRows, heatTreatmentRows],
+  )
   const filteredPstoRequestRows = useMemo(
-    () => filterPstoRequestRows(heatTreatmentRows, pstoRequestSearch),
-    [heatTreatmentRows, pstoRequestSearch],
+    () => (enablePstoRequestRows ? filterPstoRequestRows(heatTreatmentRows, pstoRequestSearch) : []),
+    [enablePstoRequestRows, heatTreatmentRows, pstoRequestSearch],
   )
   const filteredAvailablePstoRequestRows = useMemo(
-    () => filteredPstoRequestRows.filter(canCreatePstoRequest),
-    [filteredPstoRequestRows],
+    () => (enablePstoRequestRows ? filteredPstoRequestRows.filter(canCreatePstoRequest) : []),
+    [enablePstoRequestRows, filteredPstoRequestRows],
   )
-  const lnkRows = useMemo(() => buildLnkReportRows(weldedRows, preservedLnkOrderIds), [preservedLnkOrderIds, weldedRows])
-  const availableLnkRequestRows = useMemo(() => lnkRows.filter(canCreateLnkRequest), [lnkRows])
+  const lnkRows = useMemo(
+    () => (enableLnkRows ? buildLnkReportRows(weldedRows, preservedLnkOrderIds) : []),
+    [enableLnkRows, preservedLnkOrderIds, weldedRows],
+  )
+  const availableLnkRequestRows = useMemo(
+    () => (enableLnkRequestRows ? lnkRows.filter(canCreateLnkRequest) : []),
+    [enableLnkRequestRows, lnkRows],
+  )
   const filteredLnkRequestRows = useMemo(
-    () => filterLnkRequestRows(lnkRows, lnkRequestSearch),
-    [lnkRequestSearch, lnkRows],
+    () => (enableLnkRequestRows ? filterLnkRequestRows(lnkRows, lnkRequestSearch) : []),
+    [enableLnkRequestRows, lnkRequestSearch, lnkRows],
   )
   const filteredAvailableLnkRequestRows = useMemo(
-    () => filteredLnkRequestRows.filter(canCreateLnkRequest),
-    [filteredLnkRequestRows],
+    () => (enableLnkRequestRows ? filteredLnkRequestRows.filter(canCreateLnkRequest) : []),
+    [enableLnkRequestRows, filteredLnkRequestRows],
   )
   const visibleRows = getVisibleReportRows(activeReport, rows, heatTreatmentRows, lnkRows)
 

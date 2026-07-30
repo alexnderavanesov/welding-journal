@@ -1,6 +1,7 @@
-import type { Dispatch, SetStateAction } from 'react'
+import { useMemo, type Dispatch, type SetStateAction } from 'react'
 
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { PaginationBar } from '@/components/pagination-bar'
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
 import { PstoResultSettings } from '@/components/psto-result-settings'
@@ -10,6 +11,7 @@ import { ResultDialogRowsPanel } from '@/components/result-dialog-rows-panel'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
+import { usePagination } from '@/lib/use-pagination'
 
 export type PstoResultDialogProps = {
   draft: PstoResultDraftState
@@ -52,6 +54,16 @@ export function PstoResultDialog({
   onClose,
   onSave,
 }: PstoResultDialogProps) {
+  const paginationResetKeys = useMemo(
+    () => [draft.search, draft.requestName, requestSearch, filteredRows],
+    [draft.requestName, draft.search, filteredRows, requestSearch],
+  )
+  const rowsPagination = usePagination({
+    items: filteredRows,
+    defaultPageSize: 100,
+    resetKeys: paginationResetKeys,
+  })
+
   return (
     <LargeDialogShell
       maxWidthClassName="max-w-[1480px]"
@@ -106,7 +118,7 @@ export function PstoResultDialog({
           }
         >
           <div className="divide-y divide-slate-100">
-            {filteredRows.map((row) => (
+            {rowsPagination.pageItems.map((row) => (
               <PstoResultRow
                 key={row.id}
                 row={row}
@@ -115,6 +127,17 @@ export function PstoResultDialog({
                 onToggle={onToggleRow}
               />
             ))}
+          </div>
+          <div className="p-3">
+            <PaginationBar
+              totalCount={rowsPagination.totalCount}
+              firstItemNumber={rowsPagination.firstItemNumber}
+              lastItemNumber={rowsPagination.lastItemNumber}
+              pageSize={rowsPagination.pageSize}
+              hasMore={rowsPagination.hasMore}
+              onLoadMore={rowsPagination.loadMore}
+              onPageSizeChange={rowsPagination.setPageSize}
+            />
           </div>
         </ResultDialogRowsPanel>
       </div>

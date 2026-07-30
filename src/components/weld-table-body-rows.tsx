@@ -40,6 +40,7 @@ type WeldTableBodyRowsProps = {
   stickyIdentityLeadingWidth: number
   stickyIdentityColumns: boolean
   getDisplayValue: (row: WeldRow, fieldKey: WeldFieldKey) => unknown
+  getActionRow: (row: WeldRow) => WeldRow
   onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onDelete?: (id: number) => void
   onContextMenu?: (event: MouseEvent, row: WeldRow) => void
@@ -69,6 +70,7 @@ export function WeldTableBodyRows({
   stickyIdentityLeadingWidth,
   stickyIdentityColumns,
   getDisplayValue,
+  getActionRow,
   onEdit,
   onDelete,
   onContextMenu,
@@ -83,12 +85,13 @@ export function WeldTableBodyRows({
   return (
     <>
       {rows.map((row, rowIndex) => {
+        const actionRow = getActionRow(row)
         const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')
         const isHighlighted = highlightedRowIds.has(row.id)
         const isSelected = selectedRowIds.has(row.id)
         const hasDispatcherTask = dispatcherTaskRowIds.has(row.id)
         const isContextMenuAnchor = contextMenuAnchorRowId === row.id
-        const isSelectableRow = !selectable || isRowSelectable(row)
+        const isSelectableRow = !selectable || isRowSelectable(actionRow)
         const stickyBackgroundClassName = getWeldTableStickyCellBackgroundClassName({
           rowIndex,
           isHighlighted,
@@ -114,18 +117,18 @@ export function WeldTableBodyRows({
                 sticky={stickyIdentityColumns}
                 stickyLeft={stickyLeft}
                 stickyBackgroundClassName={stickyBackgroundClassName}
-                onChange={(selected) => onSetRowSelected(row, selected)}
+                onChange={(selected) => onSetRowSelected(actionRow, selected)}
               />
             ) : null}
-            {hasRowActions && rowActions ? <WeldTableRowActions row={row} rowActions={rowActions} /> : null}
+            {hasRowActions && rowActions ? <WeldTableRowActions row={actionRow} rowActions={rowActions} /> : null}
             {sections.flatMap((section) => [
               ...extraColumns
                 .filter((column) => column.insertBeforeSection === section.section)
-                .map((column) => <ExtraBodyCell key={column.key} column={column} row={row} />),
+                .map((column) => <ExtraBodyCell key={column.key} column={column} row={actionRow} />),
               ...section.fields.map((field, fieldIndex) => {
                 const fieldKey = field.key as WeldFieldKey
                 const isEditableColumn = canEditField(fieldKey)
-                const isEditableCell = canEditCell(row, fieldKey)
+                const isEditableCell = canEditCell(actionRow, fieldKey)
                 const isBlockedEditableCell = isEditableColumn && !isEditableCell
                 const isCellHighlighted = highlightedCellKeys.has(getCellKey(row.id, field.key))
                 const isResultField = RESULT_FIELD_KEYS.has(fieldKey)
@@ -135,7 +138,7 @@ export function WeldTableBodyRows({
                 return (
                   <WeldTableBodyCell
                     key={field.key}
-                    row={row}
+                    row={actionRow}
                     field={field}
                     displayValue={displayValue}
                     isEditableCell={isEditableCell}
@@ -156,9 +159,9 @@ export function WeldTableBodyRows({
               }),
             ])}
             {trailingExtraColumns.map((column) => (
-              <ExtraBodyCell key={column.key} column={column} row={row} />
+              <ExtraBodyCell key={column.key} column={column} row={actionRow} />
             ))}
-            {!readOnly ? <WeldTableEditActionsCell row={row} onEdit={onEdit} onDelete={onDelete} /> : null}
+            {!readOnly ? <WeldTableEditActionsCell row={actionRow} onEdit={onEdit} onDelete={onDelete} /> : null}
           </tr>
         )
       })}

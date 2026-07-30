@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkRequestMethods } from '@/components/lnk-request-methods'
 import { LnkRequestRow } from '@/components/lnk-request-row'
+import { PaginationBar } from '@/components/pagination-bar'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestNamingControls } from '@/components/request-naming-controls'
@@ -18,6 +19,7 @@ import { isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { usePagination } from '@/lib/use-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type LnkRequestDialogProps = {
@@ -78,6 +80,12 @@ export function LnkRequestDialog({
   onSubmit,
 }: LnkRequestDialogProps) {
   const hasSearch = requestSearch.trim().length > 0
+  const paginationResetKeys = useMemo(() => [requestSearch, filteredAvailableRows], [filteredAvailableRows, requestSearch])
+  const rowsPagination = usePagination({
+    items: filteredAvailableRows,
+    defaultPageSize: 100,
+    resetKeys: paginationResetKeys,
+  })
   const allFilteredRowsSelected = isEveryFilteredLnkRequestRowSelected(selectedIds, filteredAvailableRows)
   const [showCreatedRequests, setShowCreatedRequests] = useState(false)
   const [createdRequestSearch, setCreatedRequestSearch] = useState('')
@@ -229,7 +237,7 @@ export function LnkRequestDialog({
             onSearchChange={onRequestSearchChange}
           >
             <div className="divide-y divide-slate-100">
-              {filteredAvailableRows.map((row) => (
+              {rowsPagination.pageItems.map((row) => (
                 <LnkRequestRow
                   key={row.id}
                   row={row}
@@ -238,6 +246,17 @@ export function LnkRequestDialog({
                   onToggleRow={onToggleRow}
                 />
               ))}
+            </div>
+            <div className="p-3">
+              <PaginationBar
+                totalCount={rowsPagination.totalCount}
+                firstItemNumber={rowsPagination.firstItemNumber}
+                lastItemNumber={rowsPagination.lastItemNumber}
+                pageSize={rowsPagination.pageSize}
+                hasMore={rowsPagination.hasMore}
+                onLoadMore={rowsPagination.loadMore}
+                onPageSizeChange={rowsPagination.setPageSize}
+              />
             </div>
           </RequestRowsPanel>
         </div>

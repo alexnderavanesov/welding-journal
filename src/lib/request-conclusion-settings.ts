@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatLongDate, formatPstoDiagramLongDate, formatPstoDiagramShortDateFromLong, formatShortDate } from '@/lib/date-format'
+import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 
 export const REQUEST_CONCLUSION_SETTINGS_EVENT = 'request-conclusion-settings-change'
@@ -68,11 +69,16 @@ export function loadRequestConclusionSettings(): RequestConclusionSettings {
   }
 }
 
-export function saveRequestConclusionSettings(settings: RequestConclusionSettings) {
+export function saveRequestConclusionSettings(settings: RequestConclusionSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeRequestConclusionSettings(settings)
   window.localStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(REQUEST_CONCLUSION_SETTINGS_EVENT))
+  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.requestConclusion, normalizedSettings)
+}
+
+export function applyRemoteRequestConclusionSettings(settings: unknown) {
+  saveRequestConclusionSettings(normalizeRequestConclusionSettings(settings), { syncRemote: false })
 }
 
 export function getDefaultNamingState(settings: RequestConclusionSettings, kind: RequestConclusionNamingKind): RequestNamingState {
@@ -97,7 +103,7 @@ export function buildSystemNameFromPattern(pattern: string, context: NamingPatte
   return renderNamingPattern(normalizedPattern, context, 10_000)
 }
 
-function normalizeRequestConclusionSettings(value: unknown): RequestConclusionSettings {
+export function normalizeRequestConclusionSettings(value: unknown): RequestConclusionSettings {
   const source = typeof value === 'object' && value ? (value as Partial<Record<RequestConclusionNamingKind, Partial<RequestConclusionNamingItemSettings>>>) : {}
 
   return {

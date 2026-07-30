@@ -13,12 +13,25 @@ import { useWeldTableEditability } from '@/lib/use-weld-table-editability'
 import { useWeldTableSelection } from '@/lib/use-weld-table-selection'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { usePagination } from '@/lib/use-pagination'
 
 type RowWithId = WeldRow
 
 type UseWeldTableModelOptions = {
   rows: RowWithId[]
+  duplicateRows?: RowWithId[]
+  duplicateKeys?: ReadonlySet<string>
   columnFilters: Record<string, string>
+  manualFiltering?: boolean
+  manualPagination?: {
+    totalCount: number
+    firstItemNumber: number
+    lastItemNumber: number
+    pageSize: number
+    hasMore: boolean
+    loadMore: () => void
+    setPageSize: (pageSize: number) => void
+  }
   onEdit?: (row: RowWithId, fieldKey?: WeldFieldKey) => void
   readOnly: boolean
   editableFieldKeys: ReadonlySet<WeldFieldKey>
@@ -39,7 +52,11 @@ type UseWeldTableModelOptions = {
 
 export function useWeldTableModel({
   rows,
+  duplicateRows,
+  duplicateKeys: duplicateKeysOverride,
   columnFilters,
+  manualFiltering = false,
+  manualPagination,
   onEdit,
   readOnly,
   editableFieldKeys,
@@ -89,10 +106,23 @@ export function useWeldTableModel({
     hasRowActions,
     hasChainAction,
   })
-  const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows])
-  const filteredRows = useMemo(() => filterWeldRowsByColumns(rows, columnFilters), [rows, columnFilters])
+  const duplicateSourceRows = duplicateRows ?? rows
+  const calculatedDuplicateKeys = useMemo(() => getDuplicateKeys(duplicateSourceRows), [duplicateSourceRows])
+  const duplicateKeys = duplicateKeysOverride ?? calculatedDuplicateKeys
+  const filteredRows = useMemo(
+    () => (manualFiltering ? rows : filterWeldRowsByColumns(rows, columnFilters)),
+    [columnFilters, manualFiltering, rows],
+  )
+  const paginationResetKeys = useMemo(() => [columnFilters, rows], [columnFilters, rows])
+  const localPagination = usePagination({
+    items: filteredRows,
+    defaultPageSize: 100,
+    resetKeys: paginationResetKeys,
+  })
+  const pagination = manualPagination ?? localPagination
+  const paginatedRows = manualPagination ? filteredRows : localPagination.pageItems
   const selection = useWeldTableSelection({
-    filteredRows,
+    filteredRows: paginatedRows,
     selectable,
     selectedRowIds,
     onSelectedRowIdsChange,
@@ -113,6 +143,8 @@ export function useWeldTableModel({
     duplicateKeys,
     filteredFields,
     filteredRows,
+    paginatedRows,
+    pagination,
     filteredSections,
     hasChainAction,
     hasColumnFilters,

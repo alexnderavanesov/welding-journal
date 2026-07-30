@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 
 export const DATA_LIST_SETTINGS_EVENT = 'data-list-settings-change'
 
@@ -48,11 +49,16 @@ export function loadDataListSettings(): DataListSettings {
   }
 }
 
-export function saveDataListSettings(settings: DataListSettings) {
+export function saveDataListSettings(settings: DataListSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeDataListSettings(settings)
   window.localStorage.setItem(DATA_LIST_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(DATA_LIST_SETTINGS_EVENT))
+  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.dataList, normalizedSettings)
+}
+
+export function applyRemoteDataListSettings(settings: unknown) {
+  saveDataListSettings(normalizeDataListSettings(settings), { syncRemote: false })
 }
 
 export function normalizeDataListSettings(value: unknown): DataListSettings {

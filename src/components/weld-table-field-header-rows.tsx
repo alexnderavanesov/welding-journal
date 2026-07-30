@@ -1,5 +1,6 @@
 import { Check, ListFilter } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import { omitHiddenReportFilters } from '@/lib/report-navigation'
@@ -16,6 +17,7 @@ import {
   getWeldColumnFilterCellText,
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-table-filtering'
+import { listWeldColumnFilterOptions, type WeldReportKind } from '@/server/welds'
 
 const openFilterMenus: Array<{ id: number; close: () => void }> = []
 let filterMenuId = 0
@@ -36,6 +38,7 @@ type WeldTableFieldHeaderRowsProps = {
   stickyIdentityLeadingWidth: number
   stickyIdentityColumns: boolean
   canEditField: (fieldKey: WeldFieldKey) => boolean
+  manualFilterOptionsReport?: WeldReportKind
   onColumnFiltersChange: (filters: Record<string, string>) => void
 }
 
@@ -48,6 +51,7 @@ export function WeldTableFieldHeaderRows({
   stickyIdentityLeadingWidth,
   stickyIdentityColumns,
   canEditField,
+  manualFilterOptionsReport,
   onColumnFiltersChange,
 }: WeldTableFieldHeaderRowsProps) {
   const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
@@ -75,6 +79,7 @@ export function WeldTableFieldHeaderRows({
                 textLabel={field.label}
                 rows={rows}
                 columnFilters={columnFilters}
+                manualFilterOptionsReport={manualFilterOptionsReport}
                 onColumnFiltersChange={onColumnFiltersChange}
               />
             </th>
@@ -94,6 +99,7 @@ function WeldColumnFilterControl({
   textLabel,
   rows,
   columnFilters,
+  manualFilterOptionsReport,
   onColumnFiltersChange,
 }: {
   fieldKey: WeldFieldKey
@@ -101,6 +107,7 @@ function WeldColumnFilterControl({
   textLabel: string
   rows: WeldRow[]
   columnFilters: Record<string, string>
+  manualFilterOptionsReport?: WeldReportKind
   onColumnFiltersChange: (filters: Record<string, string>) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -112,10 +119,37 @@ function WeldColumnFilterControl({
   const filterSummary = getColumnFilterSummary(filterValue, choiceFilter)
   const activeFilterCount = getColumnFilterCount(filterValue, choiceFilter)
   const isDateField = FIELD_BY_KEY.get(fieldKey)?.kind === 'date'
-  const options = useMemo(
-    () => getColumnFilterOptions(rows, fieldKey, columnFilters).filter((option) => option.label.toLowerCase().includes(optionSearch.trim().toLowerCase())),
-    [columnFilters, fieldKey, optionSearch, rows],
+  const localOptions = useMemo(
+    () => {
+      if (!isOpen) return []
+      if (manualFilterOptionsReport) return []
+      return getColumnFilterOptions(rows, fieldKey, columnFilters).filter((option) =>
+        option.label.toLowerCase().includes(optionSearch.trim().toLowerCase()),
+      )
+    },
+    [columnFilters, fieldKey, isOpen, manualFilterOptionsReport, optionSearch, rows],
   )
+  const filterOptionsQuery = useQuery({
+    queryKey: ['weld-column-filter-options', manualFilterOptionsReport, fieldKey, columnFilters],
+    enabled: Boolean(isOpen && manualFilterOptionsReport),
+    queryFn: async () =>
+      listWeldColumnFilterOptions({
+        data: {
+          report: manualFilterOptionsReport,
+          fieldKey,
+          columnFilters,
+        },
+      }),
+  })
+  const serverOptions = useMemo(
+    () =>
+      (filterOptionsQuery.data ?? []).filter((option) =>
+        option.label.toLowerCase().includes(optionSearch.trim().toLowerCase()),
+      ),
+    [filterOptionsQuery.data, optionSearch],
+  )
+  const options = manualFilterOptionsReport ? serverOptions : localOptions
+  const isOptionsLoading = Boolean(manualFilterOptionsReport && filterOptionsQuery.isLoading)
   const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
 
   const setFilterValue = (value: string) => {
@@ -189,7 +223,11 @@ function WeldColumnFilterControl({
               <div>
                 <div className="text-sm font-medium text-slate-800">Фильтр по значениям</div>
                 <div className="mt-0.5 text-xs font-normal text-slate-500">
-                  {hasActiveFilter ? `Активно: ${filterSummary}` : `Найдено значений: ${options.length}`}
+                  {hasActiveFilter
+                    ? `Активно: ${filterSummary}`
+                    : isOptionsLoading
+                      ? 'Загружаем значения...'
+                      : `Найдено значений: ${options.length}`}
                 </div>
               </div>
               <button type="button" className="text-xs font-normal text-slate-500 hover:text-slate-900" onClick={() => setIsOpen(false)}>
@@ -241,6 +279,8 @@ function WeldColumnFilterControl({
                   </button>
                 )
               })
+            ) : isOptionsLoading ? (
+              <div className="px-3 py-6 text-center text-xs font-normal text-slate-500">Загружаем значения...</div>
             ) : (
               <div className="px-3 py-6 text-center text-xs font-normal text-slate-500">Значений не найдено</div>
             )}

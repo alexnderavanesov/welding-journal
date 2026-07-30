@@ -77,7 +77,7 @@ export type LineConsistencyTask = {
   line: string
   projectTitle: string
   subtitleCode: string
-  fieldKey: 'weldControlPercent' | 'groupName' | 'category' | 'controlPresence'
+  fieldKey: 'weldControlPercent' | 'groupName' | 'category' | 'controlPresence' | 'pstoPresence'
   fieldLabel: string
   title: string
   values: string[]

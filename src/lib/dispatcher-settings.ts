@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { REPAIR_FORBIDDEN_BY_DIAMETER_REASON, UNOFFICIAL_REJECTED_WITH_COIL_REASON } from '@/lib/report-config'
+import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   LNK_REQUEST_DATE_ORDER_REASON,
   LNK_VIK_DATE_ORDER_REASON,
@@ -43,6 +44,7 @@ export type DispatcherSettingId =
   | 'line-group'
   | 'line-category'
   | 'line-control-presence'
+  | 'line-psto-presence'
   | 'welder-stamp-expiry'
   | 'welder-dls-expiry'
 
@@ -100,6 +102,7 @@ export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
   'line-control-presence': 'ДЗ-27',
   'welder-stamp-expiry': 'ДЗ-28',
   'welder-dls-expiry': 'ДЗ-29',
+  'line-psto-presence': 'ДЗ-30',
 }
 
 export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, string> = {
@@ -130,6 +133,7 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'line-group': 'Проверить группу трубопровода линии',
   'line-category': 'Проверить категорию трубопровода линии',
   'line-control-presence': 'Проверить назначение контроля линии',
+  'line-psto-presence': 'Проверить ПСТО по линии',
   'welder-stamp-expiry': 'Срок НАКС заканчивается',
   'welder-dls-expiry': 'Срок ДЛС заканчивается',
 }
@@ -294,7 +298,12 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
       {
         id: 'line-control-presence',
         label: 'Проверить назначение контроля линии',
-        description: 'Показывать задачи разных наборов назначенного контроля на 100% линии.',
+        description: 'Показывать задачи разных наборов назначенного ЛНК-контроля на 100% линии. ПСТО проверяется отдельной задачей ниже.',
+      },
+      {
+        id: 'line-psto-presence',
+        label: 'Проверить ПСТО по линии',
+        description: 'Показывать задачи, если ПСТО назначено только у части стыков одной связки Проект + Шифр + Линия.',
       },
     ],
   },
@@ -423,8 +432,12 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     example: 'Для LIN-1 у одних стыков категория I, у других II. Нужно проверить импорт или ручной ввод.',
   },
   'line-control-presence': {
-    meaning: 'На 100% линиях проверяет, что набор назначенных видов контроля одинаков внутри линии.',
+    meaning: 'На 100% линиях проверяет, что набор назначенных видов ЛНК-контроля одинаков внутри линии. ПСТО сюда не входит и проверяется отдельной задачей.',
     example: 'На одной 100% линии часть стыков имеет ВИК+РК, а часть только ВИК. Диспетчер попросит проверить назначение контроля.',
+  },
+  'line-psto-presence': {
+    meaning: 'Проверяет ПСТО отдельно от процента контроля. Если на одной связке Проект + Шифр + Линия хотя бы у одного стыка стоит ПСТО, а у части стыков ПСТО пусто, диспетчер покажет задачу.',
+    example: 'На линии 10% у стыка F1 стоит ПСТО, а у F2 и F3 ПСТО пусто. Процент линии не важен: нужно либо назначить ПСТО на всю линию, либо убрать ошибочное ПСТО у F1.',
   },
   'welder-stamp-expiry': {
     meaning: 'Показывает в разделе "Клейма" напоминания о НАКС, срок которого скоро истечет или уже истек. Порог задается числом дней, минимум 7.',
@@ -615,6 +628,10 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_SHOW,
     ACTION_DESCRIPTION,
   ],
+  'line-psto-presence': [
+    ACTION_SHOW,
+    ACTION_DESCRIPTION,
+  ],
   'welder-stamp-expiry': [
     ACTION_REMINDER_DETAILS,
   ],
@@ -680,11 +697,12 @@ export function loadDispatcherSettings(): DispatcherSettings {
   }
 }
 
-export function saveDispatcherSettings(settings: DispatcherSettings) {
+export function saveDispatcherSettings(settings: DispatcherSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeDispatcherSettings(settings)
   window.localStorage.setItem(DISPATCHER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(DISPATCHER_SETTINGS_EVENT))
+  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.dispatcher, normalizedSettings)
 }
 
 export function loadDispatcherReminderSettings(): DispatcherReminderSettings {
@@ -699,15 +717,32 @@ export function loadDispatcherReminderSettings(): DispatcherReminderSettings {
   }
 }
 
-export function saveDispatcherReminderSettings(settings: DispatcherReminderSettings) {
+export function saveDispatcherReminderSettings(settings: DispatcherReminderSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeDispatcherReminderSettings(settings)
   window.localStorage.setItem(DISPATCHER_REMINDER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(DISPATCHER_SETTINGS_EVENT))
+  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.dispatcherReminders, normalizedSettings)
+}
+
+export function applyRemoteDispatcherSettings(settings: unknown) {
+  saveDispatcherSettings(normalizeDispatcherSettings(settings), { syncRemote: false })
+}
+
+export function applyRemoteDispatcherReminderSettings(settings: unknown) {
+  saveDispatcherReminderSettings(normalizeDispatcherReminderSettings(settings), { syncRemote: false })
 }
 
 export function isDispatcherTaskEnabled(task: DispatcherTask, settings: DispatcherSettings) {
-  return settings[getDispatcherTaskSettingId(task)] !== false
+  return isDispatcherSettingEnabled(getDispatcherTaskSettingId(task), settings)
+}
+
+export function isDispatcherSettingEnabled(id: DispatcherSettingId, settings: DispatcherSettings) {
+  return settings[id] !== false
+}
+
+export function isAnyDispatcherSettingEnabled(ids: readonly DispatcherSettingId[], settings: DispatcherSettings) {
+  return ids.some((id) => isDispatcherSettingEnabled(id, settings))
 }
 
 export function getDispatcherSettingCode(id: DispatcherSettingId) {
@@ -722,7 +757,7 @@ export function getDispatcherTaskCode(task: DispatcherTask) {
   return getDispatcherSettingCode(getDispatcherTaskSettingId(task))
 }
 
-function normalizeDispatcherSettings(value: unknown): DispatcherSettings {
+export function normalizeDispatcherSettings(value: unknown): DispatcherSettings {
   const source = typeof value === 'object' && value ? (value as Partial<Record<DispatcherSettingId, unknown>>) : {}
   return Object.fromEntries(
     Object.entries(DEFAULT_DISPATCHER_SETTINGS).map(([id, defaultValue]) => [id, typeof source[id as DispatcherSettingId] === 'boolean' ? source[id as DispatcherSettingId] : defaultValue]),
@@ -757,10 +792,11 @@ export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSett
   return getCheckTaskSettingId(task.reason)
 }
 
-function getLineConsistencySettingId(fieldKey: 'weldControlPercent' | 'groupName' | 'category' | 'controlPresence') {
+function getLineConsistencySettingId(fieldKey: 'weldControlPercent' | 'groupName' | 'category' | 'controlPresence' | 'pstoPresence') {
   if (fieldKey === 'weldControlPercent') return 'line-percent'
   if (fieldKey === 'groupName') return 'line-group'
   if (fieldKey === 'category') return 'line-category'
+  if (fieldKey === 'pstoPresence') return 'line-psto-presence'
   return 'line-control-presence'
 }
 

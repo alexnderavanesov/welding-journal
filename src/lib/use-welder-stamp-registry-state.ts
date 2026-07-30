@@ -26,6 +26,7 @@ import {
   removeWelderStampSuspensionRecord,
 } from '@/lib/welder-stamp-suspensions'
 import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import { DISPATCHER_TASK_SNAPSHOT_QUERY_KEY } from '@/lib/weld-query-utils'
 
 type WelderStampRegistryStateInput = {
   setMessage: (message: string | null) => void
@@ -55,7 +56,10 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     mutationFn: async (records: WelderStampRecord[]) => saveWelderStampRecords({ data: { records } }),
     onSuccess: async (records) => {
       setWelderStamps(normalizeWelderStampRecordsForRegistry(records))
-      await queryClient.invalidateQueries({ queryKey: ['welder-stamps'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['welder-stamps'] }),
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+      ])
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -71,7 +75,10 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     mutationFn: async (records: WelderStampSuspensionRecord[]) => saveWelderStampSuspensionRecords({ data: { records } }),
     onSuccess: async (records) => {
       setWelderStampSuspensions(records)
-      await queryClient.invalidateQueries({ queryKey: ['welder-stamp-suspensions'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['welder-stamp-suspensions'] }),
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+      ])
     },
     onError: (error) => {
       setMessage((error as Error).message)
