@@ -141,8 +141,6 @@ export function useWeldTableModel({
     availableSections,
     collapsedSections,
     duplicateKeys,
-    filteredFields,
-    filteredRows,
     paginatedRows,
     pagination,
     filteredSections,

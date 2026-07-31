@@ -11,6 +11,7 @@ import {
 import { getJointChainConsistencyKey } from '@/lib/repeated-joint-tasks'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ActiveReport } from '@/lib/home-state'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/dispatcher-task-builder'
@@ -22,6 +23,7 @@ type UseDispatcherTasksInput = {
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
   rows: WeldRow[]
+  saveCheckSettings: SaveCheckSettings
   setExpandedRepeatedJointTaskKeys: Dispatch<SetStateAction<Set<string>>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
@@ -34,6 +36,7 @@ export function useDispatcherTasks({
   includeRepeatedJointTasks,
   includeWelderStampExpiryTasks,
   rows,
+  saveCheckSettings,
   setExpandedRepeatedJointTaskKeys,
   welderStamps,
   welderStampSuspensions,
@@ -51,6 +54,7 @@ export function useDispatcherTasks({
         includeRepeatedJointTasks,
         includeWelderStampExpiryTasks,
         rows,
+        saveCheckSettings,
         welderStamps,
         welderStampSuspensions,
       }),
@@ -62,6 +66,7 @@ export function useDispatcherTasks({
       includeRepeatedJointTasks,
       includeWelderStampExpiryTasks,
       rows,
+      saveCheckSettings,
       welderStampSuspensions,
       welderStamps,
     ],

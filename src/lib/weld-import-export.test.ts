@@ -135,6 +135,29 @@ describe('weld import/export', () => {
     expect(row[headers.indexOf(label('hasVik'))]).toBe('дополнительный')
   })
 
+  it('keeps RK, UZK and the line percentage in their exact import columns', () => {
+    const result = parseWorksheetRows([
+      FULL_EXCEL_HEADERS,
+      buildFullHeaderRow({
+        [label('joint')]: 'F18',
+        [label('weldControlPercent')]: 25,
+        [label('hasRk')]: 'да',
+        [label('hasUzk')]: '',
+      }),
+      buildFullHeaderRow({
+        [label('joint')]: 'F19',
+        [label('weldControlPercent')]: 10,
+        [label('hasRk')]: '',
+        [label('hasUzk')]: 'да',
+      }),
+    ])
+
+    expect(result.records).toMatchObject([
+      { joint: 'F18', weldControlPercent: 25, hasRk: true, hasUzk: null },
+      { joint: 'F19', weldControlPercent: 10, hasRk: null, hasUzk: true },
+    ])
+  })
+
   it('cleans old RK/UZK replacement marks to additional control', () => {
     expect(parseBoolean('замена РК/УЗК')).toBe('дополнительный')
 
@@ -272,6 +295,39 @@ describe('weld import/export', () => {
       vikResult: 'годен',
       finalStatus: 'годен',
       wdi: 1.25,
+    })
+  })
+
+  it('keeps control percent, RK, and UZK in their exact columns during workbook round-trip', async () => {
+    const workbook = buildExportWorkbook([
+      {
+        joint: 'F18',
+        weldControlPercent: 25,
+        hasRk: true,
+        hasUzk: null,
+      },
+      {
+        joint: 'F19',
+        weldControlPercent: 10,
+        hasRk: null,
+        hasUzk: true,
+      },
+    ])
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+    const result = await parseWorkbook(buffer)
+
+    expect(result.records).toHaveLength(2)
+    expect(result.records[0]).toMatchObject({
+      joint: 'F18',
+      weldControlPercent: 25,
+      hasRk: true,
+      hasUzk: null,
+    })
+    expect(result.records[1]).toMatchObject({
+      joint: 'F19',
+      weldControlPercent: 10,
+      hasRk: null,
+      hasUzk: true,
     })
   })
 

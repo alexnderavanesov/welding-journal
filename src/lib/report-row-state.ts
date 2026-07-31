@@ -48,7 +48,7 @@ export function getActiveReportFilterSetter<T>(
 }
 
 export function makeExactColumnFilterValue(value: unknown) {
-  return `=${String(value ?? '').trim().toLowerCase()}`
+  return `=${String(value ?? '').trim()}`
 }
 
 export function getJointTitle(value: WeldInput) {

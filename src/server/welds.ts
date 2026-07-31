@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { weldJoints, type NewWeldJoint, type WeldJoint } from '@/db/schema'
 import {
@@ -30,6 +30,7 @@ import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 import { filterWeldRowsByColumns, getWeldColumnFilterCellText } from '@/lib/weld-table-filtering'
 import { buildHeatTreatmentReportRows, buildLnkReportRows } from '@/lib/report-row-utils'
+import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import {
   PERCENTAGE_LINE_STAMP_FILTER_KEY,
   ROW_ID_LIST_FILTER_KEY,
@@ -85,6 +86,11 @@ export type WeldColumnFilterOptionsRequest = WeldPageRequest & {
   fieldKey: WeldFieldKey
 }
 
+export type WeldJointChainResult = {
+  record: WeldRow | null
+  rows: WeldRow[]
+}
+
 export type WeldPayload = WeldDraft
 
 const filterKeys = [
@@ -110,6 +116,12 @@ const controlColumns = {
   МКК: weldJoints.hasMkk,
 } as const
 const SYSTEM_FIELD_KEYS = new Set(['createdAt', 'updatedAt'])
+const WELDING_JOURNAL_ORDER_BY = [
+  sql`${weldJoints.createdAt} desc nulls last`,
+  sql`${weldJoints.weldDate} desc nulls last`,
+  asc(weldJoints.line),
+  asc(weldJoints.joint),
+]
 const WELD_TABLE_SELECT = {
   id: weldJoints.id,
   ...Object.fromEntries(
@@ -198,8 +210,34 @@ export const listWeldJoints = createServerFn({ method: 'GET' })
       .select()
       .from(weldJoints)
       .where(where)
-      .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+      .orderBy(...WELDING_JOURNAL_ORDER_BY)
       .limit(5000)
+  })
+
+export const listWeldJointChain = createServerFn({ method: 'GET' })
+  .validator((data: { id: number }) => data)
+  .handler(async ({ data }): Promise<WeldJointChainResult> => {
+    const db = requireDb()
+    const [record] = await db.select().from(weldJoints).where(eq(weldJoints.id, data.id)).limit(1)
+    if (!record) return { record: null, rows: [] }
+
+    const candidates = await db
+      .select()
+      .from(weldJoints)
+      .where(
+        and(
+          normalizedTextEquals(weldJoints.projectTitle, record.projectTitle),
+          normalizedTextEquals(weldJoints.subtitleCode, record.subtitleCode),
+          normalizedTextEquals(weldJoints.line, record.line),
+        ),
+      )
+    const weldRecord = record as unknown as WeldRow
+    const weldCandidates = candidates as unknown as WeldRow[]
+
+    return {
+      record: weldRecord,
+      rows: getJointChainRows(weldCandidates, weldRecord),
+    }
   })
 
 export const listWeldJointPage = createServerFn({ method: 'GET' })
@@ -261,7 +299,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     .select(WELD_TABLE_SELECT)
     .from(weldJoints)
     .where(where)
-    .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+    .orderBy(...WELDING_JOURNAL_ORDER_BY)
 
   const countQuery = db.select({ total: count() }).from(weldJoints).where(where)
   const acceptedWdiTotalQuery = db
@@ -679,7 +717,12 @@ function buildColumnChoiceWhere(column: SQL, values: readonly string[]) {
 }
 
 function buildColumnTextEqualsWhere(column: SQL, value: string) {
-  return sql`coalesce(${column}::text, '') = ${value}`
+  return sql`lower(trim(coalesce(${column}::text, ''))) = lower(trim(${value}))`
+}
+
+function normalizedTextEquals(column: SQLWrapper, value: unknown) {
+  const normalizedValue = String(value ?? '').replace(/\s+/g, '').trim().toLowerCase()
+  return sql`lower(regexp_replace(coalesce(${column}::text, ''), '\\s+', '', 'g')) = ${normalizedValue}`
 }
 
 function getColumnFilterOptionFilters(columnFilters: Record<string, string>, fieldKey: WeldFieldKey) {

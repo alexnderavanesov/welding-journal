@@ -22,9 +22,14 @@ import {
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/dispatcher-task-builder'
-import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
+import type { RepeatedJointTask } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import {
+  DEFAULT_SAVE_CHECK_SETTINGS,
+  normalizeSaveCheckSettings,
+  type SaveCheckSettings,
+} from '@/lib/save-check-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import type { WelderStampDlsPermit, WelderStampNaksPermit, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
@@ -33,6 +38,7 @@ export type DispatcherTaskSnapshotRequest = {
   dismissedRepeatedJointTaskKeys?: string[]
   dispatcherSettings?: Partial<DispatcherSettings>
   dispatcherReminderSettings?: Partial<DispatcherReminderSettings>
+  saveCheckSettings?: Partial<SaveCheckSettings>
 }
 
 export type DispatcherTaskSnapshotResult = {
@@ -61,6 +67,7 @@ export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
     ])
     const dispatcherSettings = getDispatcherSettings(settingsRows, data.dispatcherSettings)
     const dispatcherReminderSettings = getDispatcherReminderSettings(settingsRows, data.dispatcherReminderSettings)
+    const saveCheckSettings = getSaveCheckSettings(settingsRows, data.saveCheckSettings)
     const preparedRows = prepareReportRows(rows, duplicateRows.map(toDuplicateControlRecord))
     const tasks = buildVisibleDispatcherTasks({
       acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
@@ -68,6 +75,7 @@ export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
       dispatcherReminderSettings,
       dispatcherSettings,
       rows: preparedRows,
+      saveCheckSettings,
       welderStamps: stampRows.map(toWelderStampRecord),
       welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
     })
@@ -90,6 +98,12 @@ function getDispatcherSettings(rows: AppSetting[], fallback?: Partial<Dispatcher
 function getDispatcherReminderSettings(rows: AppSetting[], fallback?: Partial<DispatcherReminderSettings>) {
   return normalizeDispatcherReminderSettings(
     fallback ?? getStoredSetting(rows, PROJECT_SETTING_KEYS.dispatcherReminders) ?? DEFAULT_DISPATCHER_REMINDER_SETTINGS,
+  )
+}
+
+function getSaveCheckSettings(rows: AppSetting[], fallback?: Partial<SaveCheckSettings>) {
+  return normalizeSaveCheckSettings(
+    fallback ?? getStoredSetting(rows, PROJECT_SETTING_KEYS.saveCheck) ?? DEFAULT_SAVE_CHECK_SETTINGS,
   )
 }
 

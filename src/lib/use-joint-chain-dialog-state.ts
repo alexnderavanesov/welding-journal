@@ -1,20 +1,22 @@
-import { useMemo } from 'react'
-import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
+import { useQuery } from '@tanstack/react-query'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { listWeldJointChain } from '@/server/welds'
 
 type UseJointChainDialogStateOptions = {
-  rows: WeldRow[]
   chainRecord: WeldRow | null
   onClose: () => void
 }
 
 export function useJointChainDialogState({
-  rows,
   chainRecord,
   onClose,
 }: UseJointChainDialogStateOptions) {
-  const chainRows = useMemo(() => (chainRecord ? getJointChainRows(rows, chainRecord) : []), [chainRecord, rows])
+  const chainQuery = useQuery({
+    queryKey: ['weld-joint-chain', chainRecord?.id ?? null],
+    queryFn: async () => listWeldJointChain({ data: { id: chainRecord!.id } }),
+    enabled: Boolean(chainRecord),
+  })
 
   useWindowEscapeKey(Boolean(chainRecord), (event) => {
     event.preventDefault()
@@ -23,6 +25,9 @@ export function useJointChainDialogState({
   })
 
   return {
-    chainRows,
+    chainRows: chainQuery.data?.rows ?? [],
+    chainRowsError: chainQuery.error instanceof Error ? chainQuery.error.message : null,
+    isChainRowsLoading: chainQuery.isLoading,
+    retryChainRows: () => chainQuery.refetch(),
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronDown, Download, ExternalLink, FileSpreadsheet, FileText, Search, Trash2, X } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { Button } from '@/components/ui/button'
@@ -6,12 +6,12 @@ import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import {
-  DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
   DOCUMENT_TEMPLATE_STORAGE_EVENT,
+  createWeldingJournalDocumentPreview,
   createWeldingJournalBlobFromTemplate,
-  isKnownTemplateMarkerField,
+  getWeldingJournalTemplateOptions,
   loadDocumentTemplate,
-  parseTemplateMarkerToken,
+  type DocumentTemplateWorkbookPreview,
   type StoredDocumentTemplate,
 } from '@/lib/document-template-storage'
 import {
@@ -25,14 +25,9 @@ import {
   type StoredGeneratedDocument,
 } from '@/lib/generated-document-storage'
 import { isUnofficialJoint } from '@/lib/joint-display'
-import { FIELD_BY_KEY, FIELD_BY_LABEL, WELD_FIELDS, normalizeHeader, type WeldFieldKey } from '@/lib/weld-fields'
+import { isRevisionNotActual } from '@/lib/revision-actuality'
+import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
-import {
-  STAMP_NAME_TEMPLATE_FIELDS,
-  getWelderNameForTemplateStamp,
-  getWelderNamesForOfficialStamps,
-  type TemplateStampNameFieldKey,
-} from '@/lib/welder-stamp-names'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type DocumentsPageProps = {
@@ -52,14 +47,9 @@ type DocumentScope = {
   lines: string[]
 }
 
-type TemplatePreviewColumn = {
-  id: string
-  header: string
-  source: string
-  fields: string[]
-}
-
 const EXCEL_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const DOCUMENT_PREVIEW_ROW_LIMIT = 3
+const DOCUMENT_PREVIEW_SCALE = 0.78
 
 const WELDING_JOURNAL_FIELD_KEYS: WeldFieldKey[] = [
   'projectTitle',
@@ -104,33 +94,6 @@ const WELDING_JOURNAL_FIELDS: JournalField[] = WELDING_JOURNAL_FIELD_KEYS.map((k
   const field = FIELD_BY_KEY.get(key)
   return { key, label: field?.label ?? key }
 })
-
-type TemplatePreviewSystemField = '__index' | '__welderName' | `__welderName:${TemplateStampNameFieldKey}`
-
-const TEMPLATE_PREVIEW_FIELD_ALIASES = new Map<string, string | TemplatePreviewSystemField>([
-  [normalizeTemplateFieldName('№'), '__index'],
-  [normalizeTemplateFieldName('№ п/п'), '__index'],
-  [normalizeTemplateFieldName('N'), '__index'],
-  [normalizeTemplateFieldName('Номер'), '__index'],
-  [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
-])
-
-for (const field of STAMP_NAME_TEMPLATE_FIELDS) {
-  TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(`${field.label}ФИО сварщика`), `__welderName:${field.key}`)
-  TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(`${field.label} ФИО сварщика`), `__welderName:${field.key}`)
-}
-
-for (const field of WELD_FIELDS) {
-  TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(field.label), field.key)
-}
-
-for (const [label, field] of FIELD_BY_LABEL.entries()) {
-  TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(label), field.key)
-}
-
-for (const field of WELDING_JOURNAL_FIELDS) {
-  TEMPLATE_PREVIEW_FIELD_ALIASES.set(normalizeTemplateFieldName(field.label), field.key)
-}
 
 function toInputDate(date: Date) {
   const year = date.getFullYear()
@@ -197,10 +160,6 @@ function getCellValue(row: WeldRow, key: string) {
   return value == null || value === '' ? '-' : String(value)
 }
 
-function normalizeTemplateFieldName(value: string) {
-  return normalizeHeader(value).replace(/[{}]/g, '').trim()
-}
-
 function buildExportRows(rows: WeldRow[]) {
   return rows.map((row, index) => {
     const exportRow: Record<string, string | number> = { '№': index + 1 }
@@ -265,116 +224,6 @@ function ensureXlsxFileName(value: string) {
   return `${baseName}.xlsx`
 }
 
-function extractTemplateFields(source: string) {
-  const fields: string[] = []
-  const markerPattern = /\{\{\s*([^{}]+?)\s*\}\}/g
-  let marker: RegExpExecArray | null
-
-  while ((marker = markerPattern.exec(source)) !== null) {
-    const fieldName = marker[1]?.trim()
-    if (fieldName) fields.push(fieldName)
-  }
-
-  return fields
-}
-
-function decodeTemplateCellAddress(address: string) {
-  const match = address.match(/^([A-Z]+)(\d+)$/i)
-  if (!match) return { row: 0, column: 0 }
-
-  const column = match[1]
-    .toUpperCase()
-    .split('')
-    .reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0)
-
-  return {
-    row: Number(match[2]) - 1,
-    column: column - 1,
-  }
-}
-
-function buildTemplatePreviewColumns(template: StoredDocumentTemplate | null) {
-  if (!template?.locations.length) return []
-
-  const locations = template.locations
-    .map((location) => ({
-      ...location,
-      fields: location.fields.filter(isKnownTemplateMarkerField),
-      decoded: decodeTemplateCellAddress(location.cell),
-    }))
-    .filter((location) => location.fields.length > 0)
-
-  const rowScores = new Map<number, number>()
-  for (const location of locations) {
-    rowScores.set(location.decoded.row, (rowScores.get(location.decoded.row) ?? 0) + location.fields.length)
-  }
-
-  const primaryRow = Array.from(rowScores.entries()).sort((left, right) => {
-    const countDelta = right[1] - left[1]
-    if (countDelta !== 0) return countDelta
-    return right[0] - left[0]
-  })[0]?.[0]
-
-  if (primaryRow === undefined) return []
-
-  return locations
-    .filter((location) => location.decoded.row === primaryRow)
-    .sort((left, right) => left.decoded.column - right.decoded.column)
-    .map<TemplatePreviewColumn>((location) => ({
-      id: `${location.sheet}:${location.cell}`,
-      header: formatTemplatePreviewHeader(location.source, location.fields),
-      source: location.source,
-      fields: location.fields,
-    }))
-}
-
-function formatTemplatePreviewHeader(source: string, fields: string[]) {
-  const label = source
-    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, fieldName: string) => {
-      const marker = parseTemplateMarkerToken(fieldName)
-      return isKnownTemplateMarkerField(marker.fieldName) ? marker.fieldName : ''
-    })
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  return label || fields.join(' / ') || 'Поле'
-}
-
-function getTemplatePreviewCellValue(source: string, row: WeldRow, rowIndex: number, welderStamps: WelderStampRecord[]) {
-  const singleMarker = source.match(/^\s*\{\{\s*([^{}]+?)\s*\}\}\s*$/)
-  if (singleMarker) return getTemplatePreviewFieldValue(singleMarker[1], row, rowIndex, welderStamps)
-
-  return source.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, fieldName: string) =>
-    String(getTemplatePreviewFieldValue(fieldName, row, rowIndex, welderStamps) ?? ''),
-  )
-}
-
-function getTemplatePreviewFieldValue(fieldName: string, row: WeldRow, rowIndex: number, welderStamps: WelderStampRecord[]) {
-  const marker = parseTemplateMarkerToken(fieldName)
-  const mappedKey = TEMPLATE_PREVIEW_FIELD_ALIASES.get(normalizeTemplateFieldName(marker.fieldName))
-  if (!mappedKey) return ''
-  if (mappedKey === '__index') return rowIndex + 1
-  if (mappedKey === '__welderName') return formatTemplatePreviewFieldValue(getWelderNamesForOfficialStamps(row, welderStamps), marker.fallback)
-  if (isTemplateStampWelderNamePreviewField(mappedKey)) {
-    return formatTemplatePreviewFieldValue(
-      getWelderNameForTemplateStamp(row, mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey, welderStamps),
-      marker.fallback,
-    )
-  }
-
-  return formatTemplatePreviewFieldValue(getCellValue(row, mappedKey), marker.fallback)
-}
-
-function formatTemplatePreviewFieldValue(value: unknown, fallback: string | undefined) {
-  if (typeof value === 'number') return value
-  const text = String(value ?? '').trim()
-  return text && text !== '-' ? text : fallback ?? ''
-}
-
-function isTemplateStampWelderNamePreviewField(value: string | TemplatePreviewSystemField): value is `__welderName:${TemplateStampNameFieldKey}` {
-  return value.startsWith('__welderName:')
-}
-
 export function DocumentsPage({ rows, welderStamps, generationRequest }: DocumentsPageProps) {
   const initialRange = useMemo(() => getCurrentMonthRange(), [])
   const [periodFrom, setPeriodFrom] = useState(initialRange.from)
@@ -385,9 +234,12 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
   const [manualFileName, setManualFileName] = useState('')
   const [isDownloading, setIsDownloading] = useState(false)
   const [weldingJournalTemplate, setWeldingJournalTemplate] = useState<StoredDocumentTemplate | null>(null)
+  const [templateDocumentPreview, setTemplateDocumentPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
+  const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null)
+  const [isTemplatePreviewLoading, setIsTemplatePreviewLoading] = useState(false)
   const [generatedDocuments, setGeneratedDocuments] = useState<StoredGeneratedDocument[]>([])
   const [isGenerationOpen, setIsGenerationOpen] = useState(true)
-  const weldingJournalOptions = weldingJournalTemplate?.options?.weldingJournal ?? DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS
+  const weldingJournalOptions = getWeldingJournalTemplateOptions(weldingJournalTemplate?.options?.weldingJournal)
   const sourceRows = generationRequest?.type === 'weldingJournal' ? generationRequest.rows : rows
 
   useEffect(() => {
@@ -468,6 +320,7 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
         if (!matchesSelection(row.line, selectedLines)) return false
         if (weldingJournalOptions.officialOnly && isUnofficialJoint(row)) return false
         if (weldingJournalOptions.goodOnly && normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)) !== 'годен') return false
+        if (weldingJournalOptions.actualOnly && isRevisionNotActual(row.revisionActuality)) return false
         return true
       })
       .sort((a, b) => {
@@ -484,6 +337,7 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
     selectedProjects,
     selectedSubtitles,
     sourceRows,
+    weldingJournalOptions.actualOnly,
     weldingJournalOptions.goodOnly,
     weldingJournalOptions.officialOnly,
   ])
@@ -503,10 +357,42 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
   )
   const downloadFileName = normalizeManualFileName(manualFileName) || exportFileName
 
-  const previewRows = journalRows.slice(0, 5)
-  const templatePreviewColumns = useMemo(() => buildTemplatePreviewColumns(weldingJournalTemplate), [weldingJournalTemplate])
-  const showTemplatePreview = weldingJournalTemplate && templatePreviewColumns.length > 0
+  const previewRows = useMemo(
+    () => journalRows.slice(0, DOCUMENT_PREVIEW_ROW_LIMIT),
+    [journalRows],
+  )
   const wdiTotal = journalRows.reduce((sum, row) => sum + (Number(row.wdi) || 0), 0)
+
+  useEffect(() => {
+    let isActive = true
+    if (!weldingJournalTemplate || previewRows.length === 0) {
+      setTemplateDocumentPreview(null)
+      setTemplatePreviewError(null)
+      setIsTemplatePreviewLoading(false)
+      return () => {
+        isActive = false
+      }
+    }
+
+    setIsTemplatePreviewLoading(true)
+    setTemplatePreviewError(null)
+    createWeldingJournalDocumentPreview(weldingJournalTemplate, previewRows, { welderStamps })
+      .then((preview) => {
+        if (isActive) setTemplateDocumentPreview(preview)
+      })
+      .catch((error) => {
+        if (!isActive) return
+        setTemplateDocumentPreview(null)
+        setTemplatePreviewError(error instanceof Error ? error.message : 'Не удалось сформировать предпросмотр документа.')
+      })
+      .finally(() => {
+        if (isActive) setIsTemplatePreviewLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
+  }, [previewRows, weldingJournalTemplate, welderStamps])
 
   return (
     <div className="space-y-5">
@@ -552,12 +438,13 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
                 </>
               )}
             </div>
-            {weldingJournalTemplate && (weldingJournalOptions.officialOnly || weldingJournalOptions.goodOnly) ? (
+            {weldingJournalTemplate && (weldingJournalOptions.officialOnly || weldingJournalOptions.goodOnly || weldingJournalOptions.actualOnly) ? (
               <div className="mt-2 text-xs text-slate-500">
                 Фильтр шаблона:{' '}
                 {[
                   weldingJournalOptions.officialOnly ? 'только официальные стыки' : null,
                   weldingJournalOptions.goodOnly ? 'только годные стыки' : null,
+                  weldingJournalOptions.actualOnly ? 'только актуальные стыки' : null,
                 ]
                   .filter(Boolean)
                   .join(' · ')}
@@ -704,16 +591,32 @@ export function DocumentsPage({ rows, welderStamps, generationRequest }: Documen
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Предпросмотр</div>
                   <div className="text-xs text-slate-500">
-                    {showTemplatePreview ? 'По текущему шаблону: ' : ''}
+                    {weldingJournalTemplate ? `Лист «${templateDocumentPreview?.sheetName ?? weldingJournalTemplate.constructorConfig?.sheetName ?? weldingJournalTemplate.sheetNames?.[0] ?? 'Excel'}»: ` : ''}
                     показаны первые {previewRows.length} из {journalRows.length}
                   </div>
                 </div>
               </div>
-              <div className="overflow-x-auto">
-                {showTemplatePreview ? (
-                  <TemplatePreviewTable columns={templatePreviewColumns} rows={previewRows} totalRows={journalRows.length} welderStamps={welderStamps} />
+              <div>
+                {weldingJournalTemplate ? (
+                  isTemplatePreviewLoading ? (
+                    <DocumentPreviewLoading />
+                  ) : templatePreviewError ? (
+                    <div className="m-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+                      {templatePreviewError}
+                    </div>
+                  ) : templateDocumentPreview ? (
+                    <SpreadsheetDocumentPreview
+                      preview={templateDocumentPreview}
+                      previewedRows={previewRows.length}
+                      totalRows={journalRows.length}
+                    />
+                  ) : (
+                    <DocumentPreviewEmpty />
+                  )
                 ) : (
-                  <BasePreviewTable rows={previewRows} totalRows={journalRows.length} />
+                  <div className="overflow-x-auto">
+                    <BasePreviewTable rows={previewRows} totalRows={journalRows.length} />
+                  </div>
                 )}
               </div>
             </div>
@@ -965,55 +868,109 @@ function formatSelectedFilterSummary(values: string[]) {
   return `${values.length} выбрано · ${values.slice(0, 2).join(', ')}${values.length > 2 ? ` +${values.length - 2}` : ''}`
 }
 
-function TemplatePreviewTable({
-  columns,
-  rows,
+function SpreadsheetDocumentPreview({
+  preview,
+  previewedRows,
   totalRows,
-  welderStamps,
 }: {
-  columns: TemplatePreviewColumn[]
-  rows: WeldRow[]
+  preview: DocumentTemplateWorkbookPreview
+  previewedRows: number
   totalRows: number
-  welderStamps: WelderStampRecord[]
 }) {
+  const cellsByRow = new Map<number, typeof preview.cells>()
+  for (const cell of preview.cells) {
+    const rowCells = cellsByRow.get(cell.row) ?? []
+    rowCells.push(cell)
+    cellsByRow.set(cell.row, rowCells)
+  }
+
   return (
-    <table className="w-full border-collapse text-sm" style={{ minWidth: `${Math.max(760, columns.length * 150)}px` }}>
-      <thead className="bg-slate-100 text-slate-600">
-        <tr>
-          {columns.map((column) => (
-            <th key={column.id} className="px-3 py-2 text-left font-semibold">
-              {column.header}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length > 0 ? (
-          rows.map((row, rowIndex) => (
-            <tr key={row.id} className="border-t border-slate-100">
-              {columns.map((column) => (
-                <td key={column.id} className="whitespace-pre-line px-3 py-2 align-top text-slate-700">
-                  {getTemplatePreviewCellValue(column.source, row, rowIndex, welderStamps) || '-'}
-                </td>
+    <>
+      <div className="max-h-[440px] overflow-auto bg-slate-100/80 p-3">
+        <div className="inline-block min-w-full overflow-hidden rounded border border-slate-300 bg-white shadow-sm">
+          <table className="border-separate border-spacing-0 text-slate-800">
+            <colgroup>
+              {preview.columnWidths.map((width, index) => (
+                <col
+                  key={`${preview.sheetName}:column:${preview.startColumn + index}`}
+                  style={{ width: `${Math.round(width * DOCUMENT_PREVIEW_SCALE)}px` }}
+                />
               ))}
-            </tr>
-          ))
-        ) : (
-          <tr>
-            <td colSpan={Math.max(columns.length, 1)} className="px-3 py-8 text-center text-slate-500">
-              За выбранный период сваренных стыков не найдено.
-            </td>
-          </tr>
-        )}
-        {rows.length > 0 && totalRows > rows.length ? (
-          <tr className="border-t border-slate-100 bg-slate-50">
-            <td colSpan={Math.max(columns.length, 1)} className="px-3 py-2 text-xs text-slate-500">
-              В предпросмотре показаны первые 5 строк. В документ попадут все {totalRows}.
-            </td>
-          </tr>
-        ) : null}
-      </tbody>
-    </table>
+            </colgroup>
+            <tbody>
+              {Array.from({ length: preview.rowCount }, (_, index) => preview.startRow + index).map((row, rowIndex) => {
+                const rowCells = (cellsByRow.get(row) ?? []).sort((left, right) => left.column - right.column)
+                return (
+                  <tr
+                    key={`${preview.sheetName}:row:${row}`}
+                    style={{ height: `${Math.round((preview.rowHeights[rowIndex] ?? 28) * DOCUMENT_PREVIEW_SCALE)}px` }}
+                  >
+                    {rowCells.map((cell) => (
+                      <td
+                        key={cell.address}
+                        rowSpan={cell.rowSpan}
+                        colSpan={cell.columnSpan}
+                        title={cell.value || cell.address}
+                        className="max-w-[360px] overflow-hidden px-1.5 py-1"
+                        style={getSpreadsheetPreviewCellStyle(cell.style)}
+                      >
+                        <div className={cell.style.whiteSpace === 'pre-line' ? 'whitespace-pre-line' : 'truncate'}>
+                          {cell.value}
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+        <span>Уменьшенная копия сформированного Excel-листа.</span>
+        <span>
+          Показано стыков: {previewedRows} из {totalRows}
+          {preview.truncated ? ' · область листа сокращена' : ''}
+        </span>
+      </div>
+    </>
+  )
+}
+
+function getSpreadsheetPreviewCellStyle(
+  style: DocumentTemplateWorkbookPreview['cells'][number]['style'],
+): CSSProperties {
+  return {
+    ...style,
+    fontSize: `${Math.max((style.fontSize ?? 11) * DOCUMENT_PREVIEW_SCALE, 8)}px`,
+    lineHeight: 1.25,
+    minWidth: 0,
+    borderRight: style.borderRight ?? '1px solid #eef2f7',
+    borderBottom: style.borderBottom ?? '1px solid #eef2f7',
+    backgroundColor: style.backgroundColor ?? '#ffffff',
+    verticalAlign: style.verticalAlign ?? 'middle',
+  }
+}
+
+function DocumentPreviewLoading() {
+  return (
+    <div className="space-y-2 bg-slate-100/80 p-3" aria-label="Формируется предпросмотр документа">
+      {Array.from({ length: 5 }, (_, index) => (
+        <div
+          key={index}
+          className="h-8 animate-pulse rounded border border-slate-200 bg-white"
+          style={{ width: `${94 - index * 3}%` }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function DocumentPreviewEmpty() {
+  return (
+    <div className="px-3 py-10 text-center text-sm text-slate-500">
+      За выбранный период сваренных стыков не найдено.
+    </div>
   )
 }
 
@@ -1059,7 +1016,7 @@ function BasePreviewTable({ rows, totalRows }: { rows: WeldRow[]; totalRows: num
         {rows.length > 0 && totalRows > rows.length ? (
           <tr className="border-t border-slate-100 bg-slate-50">
             <td colSpan={6} className="px-3 py-2 text-xs text-slate-500">
-              В предпросмотре показаны первые 5 строк. В документ попадут все {totalRows}.
+              В предпросмотре показаны первые {rows.length} строк. В документ попадут все {totalRows}.
             </td>
           </tr>
         ) : null}

@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { LoaderCircle, RotateCcw, X } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogInlineEmptyState } from '@/components/dialog-inline-empty-state'
@@ -11,12 +11,24 @@ import { getJointChainSubtitle } from '@/lib/joint-display'
 type JointChainDialogProps = {
   record: WeldRow
   rows: WeldRow[]
+  errorMessage: string | null
+  isLoading: boolean
   onClose: () => void
   onOpenBase: (row: WeldRow) => void
   onOpenRow: (row: WeldRow) => void
+  onRetry: () => void
 }
 
-export function JointChainDialog({ record, rows, onClose, onOpenBase, onOpenRow }: JointChainDialogProps) {
+export function JointChainDialog({
+  record,
+  rows,
+  errorMessage,
+  isLoading,
+  onClose,
+  onOpenBase,
+  onOpenRow,
+  onRetry,
+}: JointChainDialogProps) {
   return (
     <LargeDialogShell
       maxWidthClassName="max-w-4xl"
@@ -47,7 +59,23 @@ export function JointChainDialog({ record, rows, onClose, onOpenBase, onOpenRow 
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {rows.length === 0 ? (
+        {isLoading ? (
+          <DialogInlineEmptyState>
+            <span className="inline-flex items-center gap-2">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              Загружаем цепочку стыка...
+            </span>
+          </DialogInlineEmptyState>
+        ) : errorMessage ? (
+          <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-5 text-center">
+            <p className="text-sm font-medium text-rose-800">Не удалось загрузить цепочку стыка.</p>
+            <p className="mt-1 text-xs text-rose-700">{errorMessage}</p>
+            <Button type="button" variant="outline" size="sm" className="mt-3 gap-2 bg-white" onClick={onRetry}>
+              <RotateCcw className="h-4 w-4" />
+              Повторить
+            </Button>
+          </div>
+        ) : rows.length === 0 ? (
           <DialogInlineEmptyState>
             По этому стыку цепочка не найдена.
           </DialogInlineEmptyState>

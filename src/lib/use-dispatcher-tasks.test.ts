@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_DISPATCHER_REMINDER_SETTINGS, DEFAULT_DISPATCHER_SETTINGS, type DispatcherSettings } from '@/lib/dispatcher-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/use-dispatcher-tasks'
+import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 describe('buildVisibleDispatcherTasks', () => {
   it('keeps dispatcher row tasks tied to their individual settings', () => {
@@ -104,6 +106,73 @@ describe('buildVisibleDispatcherTasks', () => {
 
     expect(disabledTasks.repeatedJointTasks).toEqual([])
   })
+
+  it('uses the same enabled stamp checks as the weld form', () => {
+    const rows = [
+      row({
+        id: 1,
+        joint: 'F1',
+        stamp1K: 'ABC1',
+        weldingMethod: 'РАД',
+      }),
+    ]
+    const welderStamps = [stampRecord('OTHER')]
+    const dispatcherSettings = {
+      ...disabledSettings(),
+      'check-welder-stamp': true,
+    }
+
+    const enabled = buildTasks(dispatcherSettings, { rows, welderStamps })
+    expect(enabled.repeatedJointTasks).toHaveLength(1)
+    expect(enabled.repeatedJointTasks[0]).toMatchObject({ reason: 'проверить клеймо' })
+
+    const disabled = buildTasks(dispatcherSettings, {
+      rows,
+      saveCheckSettings: {
+        ...DEFAULT_SAVE_CHECK_SETTINGS,
+        officialRegistry: false,
+      },
+      welderStamps,
+    })
+    expect(disabled.repeatedJointTasks).toEqual([])
+  })
+
+  it('keeps Latin and Cyrillic material group codes distinct in DZ-18', () => {
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1',
+            materialGroup: 'M01',
+            stamp1K: 'ABC1',
+            weldingMethod: 'РАД',
+          }),
+        ],
+        saveCheckSettings: {
+          ...DEFAULT_SAVE_CHECK_SETTINGS,
+          officialArchive: false,
+          officialNaksDate: false,
+          officialSuspension: false,
+          officialDiameter: false,
+          officialThickness: false,
+          officialDls: false,
+        },
+        welderStamps: [stampRecordWithPermit('ABC1', 'М01')],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toHaveLength(1)
+    expect(tasks.repeatedJointTasks[0]).toMatchObject({
+      reason: 'проверить клеймо',
+    })
+    expect(tasks.repeatedJointTasks[0]?.details).toContain('группу материалов M01')
+  })
+
 })
 
 function buildTasks(
@@ -113,6 +182,8 @@ function buildTasks(
     dismissedRepeatedJointTaskKeys?: Set<string>
     includeRepeatedJointTasks?: boolean
     rows?: WeldRow[]
+    saveCheckSettings?: SaveCheckSettings
+    welderStamps?: WelderStampRecord[]
   } = {},
 ) {
   return buildVisibleDispatcherTasks({
@@ -125,9 +196,51 @@ function buildTasks(
       row({ id: 1, line: 'LIN-1', joint: 'F1', weldControlPercent: '100' }),
       row({ id: 2, line: 'LIN-1', joint: 'F2', weldControlPercent: '10' }),
     ],
-    welderStamps: [],
+    saveCheckSettings: overrides.saveCheckSettings ?? DEFAULT_SAVE_CHECK_SETTINGS,
+    welderStamps: overrides.welderStamps ?? [],
     welderStampSuspensions: [],
   })
+}
+
+function stampRecord(naksStamp: string): WelderStampRecord {
+  return {
+    id: 1,
+    naksStamp,
+    welderName: '',
+    internalStamp: '',
+    weldType: 'РАД',
+    materialGroups: '',
+    diameterFrom: '',
+    diameterTo: '',
+    thicknessFrom: '',
+    thicknessTo: '',
+    validFrom: '',
+    validTo: '',
+    naksPermits: [],
+    dlsPermits: [],
+    archived: false,
+  }
+}
+
+function stampRecordWithPermit(naksStamp: string, materialGroups: string): WelderStampRecord {
+  return {
+    ...stampRecord(naksStamp),
+    materialGroups,
+    naksPermits: [
+      {
+        id: 'naks-1',
+        weldType: 'РАД',
+        materialGroups,
+        diameterFrom: '',
+        diameterTo: '',
+        thicknessFrom: '',
+        thicknessTo: '',
+        validFrom: '',
+        validTo: '',
+        note: '',
+      },
+    ],
+  }
 }
 
 function disabledSettings(): DispatcherSettings {

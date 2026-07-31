@@ -332,7 +332,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.excessControls).toBe(0)
   })
 
-  it('sorts percentage lines by required controls from highest to lowest', () => {
+  it('sorts percentage lines by required controls, project, subtitle and line', () => {
     const rows = [
       makeRow(1, { line: 'LINE-LOW', joint: 'S1' }),
       makeRow(2, { line: 'LINE-HIGH', joint: 'S2', weldControlPercent: '25' }),
@@ -340,12 +340,30 @@ describe('buildPercentageLineSummaries', () => {
       makeRow(4, { line: 'LINE-HIGH', joint: 'S4', weldControlPercent: '25' }),
       makeRow(5, { line: 'LINE-HIGH', joint: 'S5', weldControlPercent: '25' }),
       makeRow(6, { line: 'LINE-HIGH', joint: 'S6', weldControlPercent: '25' }),
+      makeRow(7, { projectTitle: 'A', subtitleCode: '500', line: 'LINE-SAME-B', joint: 'S7' }),
+      makeRow(8, { projectTitle: 'A', subtitleCode: '400', line: 'LINE-SAME-A', joint: 'S8' }),
     ]
 
     const summaries = buildPercentageLineSummaries(rows)
 
-    expect(summaries.map((summary) => summary.line)).toEqual(['LINE-HIGH', 'LINE-LOW'])
-    expect(summaries.map((summary) => summary.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0))).toEqual([2, 1])
+    expect(summaries.map((summary) => summary.line)).toEqual(['LINE-HIGH', 'LINE-SAME-A', 'LINE-SAME-B', 'LINE-LOW'])
+    expect(summaries.map((summary) => summary.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0))).toEqual([2, 1, 1, 1])
+  })
+
+  it('sorts stamps inside a percentage line by welded count, excess controls and stamp name', () => {
+    const rows = [
+      makeRow(1, { joint: 'S1', stamp1K: 'BBB2' }),
+      makeRow(2, { joint: 'S2', stamp1K: 'AAA1', hasRk: 'да' }),
+      makeRow(3, { joint: 'S3', stamp1K: 'AAA1', hasRk: 'да' }),
+      makeRow(4, { joint: 'S4', stamp1K: 'CCC3', hasRk: 'да' }),
+      makeRow(5, { joint: 'S5', stamp1K: 'CCC3', hasRk: 'да' }),
+    ]
+
+    const stamps = buildPercentageLineSummaries(rows)[0].stamps
+
+    expect(stamps.map((stamp) => stamp.stamp)).toEqual(['AAA1', 'CCC3', 'BBB2'])
+    expect(stamps.map((stamp) => stamp.officialJointCount)).toEqual([2, 2, 1])
+    expect(stamps.map((stamp) => stamp.excessControls)).toEqual([1, 1, 0])
   })
 
   it('does not treat a line with missing percent values as a percentage line', () => {

@@ -109,6 +109,7 @@ export function buildPercentageLineSummaries(rows: WeldRow[]): PercentageLineSum
     .sort(
       (left, right) =>
         getLineRequiredControls(right) - getLineRequiredControls(left) ||
+        right.stamps.length - left.stamps.length ||
         left.projectTitle.localeCompare(right.projectTitle, 'ru', { numeric: true }) ||
         left.subtitleCode.localeCompare(right.subtitleCode, 'ru', { numeric: true }) ||
         left.line.localeCompare(right.line, 'ru', { numeric: true }),
@@ -172,7 +173,7 @@ function buildStampSummaries(group: LineGroup) {
     .map((entry) => buildStampSummary(group, entry))
     .sort(
       (left, right) =>
-        right.missingControls - left.missingControls ||
+        right.officialJointCount - left.officialJointCount ||
         right.excessControls - left.excessControls ||
         left.stamp.localeCompare(right.stamp, 'ru', { numeric: true }),
     )

@@ -18,19 +18,20 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
+import { DocumentTemplateBuilder } from '@/components/document-template-builder'
 import {
   deleteDocumentTemplate,
-  DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
   DOCUMENT_TEMPLATE_TYPES,
   formatFileSize,
-  isKnownTemplateMarkerField,
+  getWeldingJournalTemplateOptions,
   loadDocumentTemplates,
   parseDocumentTemplateFile,
   saveDocumentTemplate,
+  updateDocumentTemplateConstructor,
   updateDocumentTemplateOptions,
+  type DocumentTemplateConstructorConfig,
   type DocumentTemplateId,
   type StoredDocumentTemplate,
-  type TemplateUploadInfo,
   type WeldingJournalTemplateOptions,
 } from '@/lib/document-template-storage'
 import {
@@ -1285,9 +1286,10 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const [uploads, setUploads] = useState<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>({})
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true)
+  const [builderTemplate, setBuilderTemplate] = useState<StoredDocumentTemplate | null>(null)
   const activeTemplate = DOCUMENT_TEMPLATE_TYPES.find((template) => template.id === activeTemplateId) ?? DOCUMENT_TEMPLATE_TYPES[0]
   const activeUpload = uploads[activeTemplateId]
-  const weldingJournalOptions = activeUpload?.options?.weldingJournal ?? DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS
+  const weldingJournalOptions = getWeldingJournalTemplateOptions(activeUpload?.options?.weldingJournal)
 
   useEffect(() => {
     let isMounted = true
@@ -1367,25 +1369,13 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
               <h3 className="text-base font-semibold text-slate-900">Шаблоны документов</h3>
             </div>
             <div className="mt-2 max-w-4xl space-y-1.5 text-sm leading-6 text-slate-600">
-              <p>Загружайте Excel-шаблон под конкретный тип документа и ставьте маркеры в тех ячейках, куда нужно подставить данные.</p>
-              <TemplateHintLine label="Основные маркеры">
-                <TemplateToken>Линия</TemplateToken>
-                <TemplateToken>Дата сварки</TemplateToken>
-                <TemplateToken>№ п/п</TemplateToken>
-              </TemplateHintLine>
-              <p>В маркерах можно использовать название любого системного столбца из журнала.</p>
+              <p>Загрузите чистый Excel с готовым оформлением, картинками, границами и объединенными ячейками.</p>
               <p>
-                Если нужно вывести текст при пустом поле, добавьте его после слэша: <TemplateToken>Стык/"н/п"</TemplateToken> или{' '}
-                <TemplateToken>Стык/«н/п»</TemplateToken>.
+                Затем откройте конструктор: выберите строку-пример и назначьте нужным ячейкам поля системы. Писать маркеры в Excel вручную
+                больше не требуется.
               </p>
-              <TemplateHintLine label="ФИО по официальному клейму">
-                <TemplateToken>Корень_1ФИО сварщика</TemplateToken>
-                <TemplateToken>Заполнение_1ФИО сварщика</TemplateToken>
-                <TemplateToken>Облицовка_1ФИО сварщика</TemplateToken>
-              </TemplateHintLine>
               <p>
-                В одной ячейке можно указать несколько маркеров, например <TemplateToken>Линия</TemplateToken> и{' '}
-                <TemplateToken>Контроль швов, (%)</TemplateToken> на разных строках.
+                Для отдельных ячеек доступны списки значений, уникальные значения, количество, сумма и текст на случай пустого поля.
               </p>
             </div>
           </div>
@@ -1441,6 +1431,16 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
             </div>
             {activeUpload ? (
               <div className="flex flex-wrap gap-2">
+                {['xlsx', 'xls'].includes(activeUpload.fileType) ? (
+                  <button
+                    type="button"
+                    onClick={() => setBuilderTemplate(activeUpload)}
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-100"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Открыть конструктор
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleTemplateDownload}
@@ -1489,6 +1489,23 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           </div>
         </div>
       </div>
+      {builderTemplate ? (
+        <DocumentTemplateBuilder
+          template={builderTemplate}
+          onClose={() => setBuilderTemplate(null)}
+          onSave={async (config: DocumentTemplateConstructorConfig) => {
+            return runProtectedSettingsChange(async () => {
+              const savedTemplate = await updateDocumentTemplateConstructor(builderTemplate.id, config)
+              if (!savedTemplate) throw new Error('Шаблон больше не найден.')
+              setUploads((currentUploads) => ({
+                ...currentUploads,
+                [savedTemplate.id]: savedTemplate,
+              }))
+              setBuilderTemplate(savedTemplate)
+            })
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1508,7 +1525,7 @@ function WeldingJournalTemplateOptionsPanel({
       <p className="mt-1 text-sm text-slate-500">
         Эти галочки применяются только к документу, который формируется по шаблону сварочного журнала.
       </p>
-      <div className="mt-3 grid gap-2 md:grid-cols-2">
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
         <TemplateOptionCheckbox
           checked={options.officialOnly}
           disabled={disabled}
@@ -1522,6 +1539,13 @@ function WeldingJournalTemplateOptionsPanel({
           label="Учет только годных стыков"
           description="В документ попадут только стыки с итоговым статусом «годен»."
           onChange={(checked) => onChange('goodOnly', checked)}
+        />
+        <TemplateOptionCheckbox
+          checked={options.actualOnly}
+          disabled={disabled}
+          label="Учет только актуальных стыков"
+          description="Будут исключены строки со значением «не актуален» в поле «Актуальность по ИЗМу». Пустое значение считается актуальным."
+          onChange={(checked) => onChange('actualOnly', checked)}
         />
       </div>
       {disabled ? <div className="mt-2 text-xs text-slate-500">Загрузите шаблон, чтобы сохранить эти настройки.</div> : null}
@@ -1585,85 +1609,49 @@ function EmptyTemplateState() {
   return (
     <div className="p-4">
       <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-        Шаблон пока не загружен. Подготовьте Excel-файл с нужным оформлением и укажите в последней строке или в нужных ячейках маркеры
-        подстановки. Система распознает несколько маркеров в одной ячейке, включая вариант с переносом строки.
+        Шаблон пока не загружен. Подготовьте чистый Excel с нужным оформлением. После загрузки откройте конструктор и укажите, какие
+        данные должны попадать в нужные ячейки.
       </div>
     </div>
   )
 }
 
-function TemplateUploadPreview({ upload }: { upload: TemplateUploadInfo }) {
-  const knownFields = upload.fields.filter(isKnownTemplateMarkerField)
-  const knownLocations = upload.locations
-    .map((location) => ({
-      ...location,
-      fields: location.fields.filter(isKnownTemplateMarkerField),
-    }))
-    .filter((location) => location.fields.length > 0)
-
+function TemplateUploadPreview({ upload }: { upload: StoredDocumentTemplate }) {
   return (
     <div className="space-y-4 p-4">
       <div className="grid gap-3 md:grid-cols-3">
         <TemplateMetaCard label="Файл" value={upload.fileName} detail={`${upload.fileType.toUpperCase()} · ${formatFileSize(upload.fileSize)}`} />
-        <TemplateMetaCard label="Найдено маркеров" value={String(knownLocations.reduce((count, location) => count + location.fields.length, 0))} detail={`уникальных полей: ${knownFields.length}`} />
+        <TemplateMetaCard
+          label="Листы"
+          value={String(upload.sheetNames?.length || 1)}
+          detail={upload.sheetNames?.join(', ') || 'основной лист'}
+        />
         <TemplateMetaCard label="Загружен" value={upload.uploadedAt} detail="сохранен для формирования документов" />
       </div>
 
-      {upload.warnings.length ? (
-        <div className="space-y-2">
-          {upload.warnings.map((warning) => (
-            <div key={warning} className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {warning}
-            </div>
-          ))}
+      <div
+        className={`rounded-md border px-4 py-3 ${
+          upload.constructorConfig?.bindings.length
+            ? 'border-emerald-200 bg-emerald-50'
+            : 'border-amber-200 bg-amber-50'
+        }`}
+      >
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          {upload.constructorConfig?.bindings.length ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+          ) : (
+            <AlertTriangle className="h-4 w-4 text-amber-700" />
+          )}
+          {upload.constructorConfig?.bindings.length ? 'Конструктор настроен' : 'Нужно настроить заполнение'}
         </div>
-      ) : null}
-
-      <div>
-        <div className="text-sm font-semibold text-slate-900">Поля, найденные в шаблоне</div>
-        {knownFields.length ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {knownFields.map((field) => (
-              <span key={field} className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
-                {field}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-2 text-sm text-slate-500">Пока не найдено ни одного маркера вида {'{{Поле}}'}.</div>
-        )}
+        <p className="mt-1 text-xs leading-5 text-slate-600">
+          {upload.constructorConfig?.bindings.length
+            ? `Лист «${upload.constructorConfig.sheetName}» · назначено ячеек: ${upload.constructorConfig.bindings.length}${
+                upload.constructorConfig.repeatRow ? ` · строка-пример: ${upload.constructorConfig.repeatRow}` : ''
+              }.`
+            : 'Откройте конструктор, выберите строку-пример и назначьте ячейкам данные системы.'}
+        </p>
       </div>
-
-      {knownLocations.length ? (
-        <div className="overflow-hidden rounded-md border border-slate-200">
-          <div className="grid grid-cols-[130px_90px_1fr] bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <div>Лист</div>
-            <div>Ячейка</div>
-            <div>Маркеры</div>
-          </div>
-          <div className="max-h-72 overflow-auto">
-            {knownLocations.map((location, index) => (
-              <div
-                key={`${location.sheet}-${location.cell}-${index}`}
-                className="grid grid-cols-[130px_90px_1fr] gap-0 border-t border-slate-100 px-3 py-2 text-sm text-slate-700"
-              >
-                <div className="truncate pr-3 font-medium text-slate-900" title={location.sheet}>
-                  {location.sheet}
-                </div>
-                <div className="font-mono text-xs text-slate-500">{location.cell}</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {location.fields.map((field) => (
-                    <span key={`${location.cell}-${field}`} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-                      {field}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -1768,7 +1756,6 @@ function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runPro
             description={card.description}
             placeholder={card.placeholder}
             settings={settings[card.id]}
-            showMethodHint={card.id === 'lnkConclusion'}
             onModeChange={(defaultMode) => updateSettings(card.id, { defaultMode })}
             onPatternSave={(systemPattern) => updateSettings(card.id, { systemPattern })}
           />
@@ -1783,7 +1770,6 @@ function RequestNamingSettingsCard({
   description,
   placeholder,
   settings,
-  showMethodHint,
   onModeChange,
   onPatternSave,
 }: {
@@ -1791,7 +1777,6 @@ function RequestNamingSettingsCard({
   description: string
   placeholder: string
   settings: RequestConclusionSettings[RequestConclusionNamingKind]
-  showMethodHint: boolean
   onModeChange: (mode: RequestNamingState['mode']) => void
   onPatternSave: (pattern: string) => Promise<boolean>
 }) {

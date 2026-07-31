@@ -373,7 +373,6 @@ export function useHomePageController() {
     activeReport === 'percentageLines' ||
     activeReport === 'documents' ||
     activeReport === 'settings' ||
-    Boolean(chainRecord) ||
     Boolean(editing) ||
     Boolean(heatTreatmentFieldEditing) ||
     Boolean(documentGenerationRequest) ||
@@ -409,6 +408,7 @@ export function useHomePageController() {
     includeRepeatedJointTasks: shouldBuildRepeatedDispatcherTasks,
     includeWelderStampExpiryTasks: shouldBuildWelderStampExpiryTasks,
     rows,
+    saveCheckSettings,
     setExpandedRepeatedJointTaskKeys,
     welderStamps,
     welderStampSuspensions,
@@ -477,8 +477,12 @@ export function useHomePageController() {
     pstoRequestSearch,
     lnkRequestSearch,
   })
-  const { chainRows } = useJointChainDialogState({
-    rows,
+  const {
+    chainRows,
+    chainRowsError,
+    isChainRowsLoading,
+    retryChainRows,
+  } = useJointChainDialogState({
     chainRecord,
     onClose: () => setChainRecord(null),
   })
@@ -1658,24 +1662,20 @@ export function useHomePageController() {
           icon: ListFilter,
           onSelect: () => filterSelectedRowsInCurrentReport(contextRows),
         },
-        ...(isGroupAction
-          ? [
-              {
-                id: 'generate-selected',
-                label: 'Сформировать',
-                icon: FileSpreadsheet,
-                onSelect: () => undefined,
-                children: [
-                  {
-                    id: 'generate-selected-welding-journal',
-                    label: 'Сварочный журнал',
-                    icon: FileSpreadsheet,
-                    onSelect: () => generateWeldingJournalDocumentForRows(contextRows),
-                  },
-                ],
-              } satisfies ContextActionMenuItem,
-            ]
-          : []),
+        {
+          id: 'generate-selected',
+          label: 'Сформировать',
+          icon: FileSpreadsheet,
+          onSelect: () => undefined,
+          children: [
+            {
+              id: 'generate-selected-welding-journal',
+              label: 'Сварочный журнал',
+              icon: FileSpreadsheet,
+              onSelect: () => generateWeldingJournalDocumentForRows(contextRows),
+            },
+          ],
+        },
         { type: 'separator', id: 'selection-filter-separator' },
       )
     }
@@ -2073,9 +2073,12 @@ export function useHomePageController() {
   const reportChainDialogProps = createReportChainDialogProps({
     chainRecord,
     chainRows,
+    errorMessage: chainRowsError,
+    isLoading: isChainRowsLoading,
     onClose: () => setChainRecord(null),
     onOpenBase: openChainBaseInCurrentReport,
     onOpenRow: openChainRowInCurrentReport,
+    onRetry: retryChainRows,
   })
   const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
   const reportWeldEditorProps = createReportWeldEditorProps({

@@ -343,6 +343,23 @@ describe('existing rows report import preview', () => {
     expect(preview.errors[0].fieldKeys).toEqual(['weldingMethod'])
   })
 
+  it('requires imported material groups to match the configured alphabet exactly', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['М01'] })
+    const file = buildWeldingJournalImportFile({ joint: 'S1', materialGroup: 'M01', material1: '09Г2С' })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0].message).toContain('Значение "M01" не подходит')
+    expect(preview.errors[0].fieldKeys).toEqual(['materialGroup'])
+  })
+
   it('points existing row validation errors to the exact changed import field', async () => {
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Корень_1', 'Марка стали 1'], [[7, 'S1', 'BAD', '09Г2С']])
     const preview = await buildReportMassFillPreview({

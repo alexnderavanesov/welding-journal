@@ -7,7 +7,6 @@ import {
   parseRowIdListFilter,
 } from '@/lib/report-hidden-filters'
 import {
-  buildWeldColumnValueFilter,
   normalizeWeldColumnChoiceValue,
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-column-choice-filter'

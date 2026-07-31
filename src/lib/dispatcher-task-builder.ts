@@ -10,6 +10,7 @@ import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   buildRepeatedJointTasks,
 } from '@/lib/repeated-joint-tasks'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import { buildWelderStampExpiryTasks } from '@/lib/welder-stamp-expiry-tasks'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
@@ -38,6 +39,7 @@ export type BuildVisibleDispatcherTasksInput = {
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
   rows: WeldRow[]
+  saveCheckSettings: SaveCheckSettings
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
 }
@@ -50,6 +52,7 @@ export function buildVisibleDispatcherTasks({
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
   rows,
+  saveCheckSettings,
   welderStamps,
   welderStampSuspensions,
 }: BuildVisibleDispatcherTasksInput) {
@@ -60,6 +63,7 @@ export function buildVisibleDispatcherTasks({
         includeLineConsistencyTasks: isAnyDispatcherSettingEnabled(LINE_CONSISTENCY_DISPATCHER_SETTING_IDS, dispatcherSettings),
         includePercentageLineControlTasks: isAnyDispatcherSettingEnabled(PERCENTAGE_LINE_DISPATCHER_SETTING_IDS, dispatcherSettings),
         includeWelderStampCompatibilityChecks: isDispatcherSettingEnabled('check-welder-stamp', dispatcherSettings),
+        saveCheckSettings,
       }).filter(
         (task) => !hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings),
       )

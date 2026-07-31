@@ -261,10 +261,6 @@ function getReportImportTemplateSheetName(activeReport: ActiveReport) {
   return 'Импорт сварочного журнала'
 }
 
-function getMassFillTemplateSheetName(activeReport: ActiveReport) {
-  return getExistingRowsTemplateSheetName(activeReport, 'massFill')
-}
-
 function getExistingRowsTemplateSheetName(activeReport: ActiveReport, mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
   if (mode === 'replaceData') {
     if (activeReport === 'heatTreatment') return 'Замена ПСТО'

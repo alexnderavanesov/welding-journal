@@ -119,8 +119,6 @@ export function WeldTable({
     availableSections,
     collapsedSections,
     duplicateKeys: tableDuplicateKeys,
-    filteredFields,
-    filteredRows,
     paginatedRows,
     filteredSections,
     hasChainAction,

@@ -11,6 +11,7 @@ import { getDispatcherPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export function buildControlDateBeforeWeldDateCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
@@ -92,6 +93,7 @@ export function buildWelderStampCompatibilityCheckTasks(
   rows: WeldRow[],
   welderStampRecords: WelderStampRecord[],
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
+  saveCheckSettings?: SaveCheckSettings,
 ): RepeatedJointCheckTask[] {
   if (welderStampRecords.length === 0 && welderStampSuspensions.length === 0) return []
 
@@ -99,6 +101,7 @@ export function buildWelderStampCompatibilityCheckTasks(
   for (const row of rows) {
     const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, {
       ignoreArchivedMissingRegistry: true,
+      saveCheckSettings,
       suspensions: welderStampSuspensions,
     })
     if (issues.length === 0) continue
