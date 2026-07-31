@@ -10,12 +10,12 @@ import type {
   OfficialStampCompatibilityOptions,
 } from '@/lib/welder-stamp-compatibility-types'
 import {
+  arePermitDiametersCompatible,
+  arePermitThicknessesCompatible,
   formatOfficialStampDiameterList,
   getOfficialStampJointDiameters,
   getOfficialStampJointThicknesses,
   getWeldDateOrderValue,
-  isPermitDiameterCompatible,
-  isPermitThicknessCompatible,
   normalizeStampForCompare,
   normalizeStampSelectValue,
   parseOfficialStampMaterialGroup,
@@ -291,10 +291,11 @@ function getStampMethodCompatibilityIssue(
     }
   }
 
-  const diameterPermits = saveCheckSettings.officialDiameter && diameters.length > 0
-    ? datePermits.filter(({ permit }) => diameters.every((diameter) => isPermitDiameterCompatible(diameter, permit)))
-    : datePermits
-  if (saveCheckSettings.officialDiameter && diameters.length > 0 && diameterPermits.length === 0) {
+  if (
+    saveCheckSettings.officialDiameter &&
+    diameters.length > 0 &&
+    !arePermitDiametersCompatible(diameters, datePermits.map(({ permit }) => permit))
+  ) {
     return {
       fieldKey: entry.fieldKey,
       stamp: entry.stamp,
@@ -304,10 +305,11 @@ function getStampMethodCompatibilityIssue(
     }
   }
 
-  const thicknessPermits = saveCheckSettings.officialThickness && thicknesses.length > 0
-    ? diameterPermits.filter(({ permit }) => thicknesses.every((thickness) => isPermitThicknessCompatible(thickness, permit)))
-    : diameterPermits
-  if (saveCheckSettings.officialThickness && thicknesses.length > 0 && thicknessPermits.length === 0) {
+  if (
+    saveCheckSettings.officialThickness &&
+    thicknesses.length > 0 &&
+    !arePermitThicknessesCompatible(thicknesses, datePermits.map(({ permit }) => permit))
+  ) {
     return {
       fieldKey: entry.fieldKey,
       stamp: entry.stamp,
@@ -353,15 +355,16 @@ function hasArchivedNaksCandidateWaitingForWeldDate(
   thicknesses: number[],
   saveCheckSettings: ReturnType<typeof loadSaveCheckSettings>,
 ) {
-  return records
+  const permits = records
     .flatMap((record) => getAllWelderStampNaksPermits(record))
     .filter((permit) => permit.archived)
     .filter((permit) => !saveCheckSettings.officialWeldingMethod || !method || splitPermitValues(permit.weldType).includes(method))
     .filter((permit) => !saveCheckSettings.officialMaterialGroup || !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
-    .some((permit) =>
-      (!saveCheckSettings.officialDiameter || diameters.every((diameter) => isPermitDiameterCompatible(diameter, permit))) &&
-      (!saveCheckSettings.officialThickness || thicknesses.every((thickness) => isPermitThicknessCompatible(thickness, permit))),
-    )
+  return (
+    permits.length > 0 &&
+    (!saveCheckSettings.officialDiameter || arePermitDiametersCompatible(diameters, permits)) &&
+    (!saveCheckSettings.officialThickness || arePermitThicknessesCompatible(thicknesses, permits))
+  )
 }
 
 function hasArchivedDlsCandidateWaitingForWeldDate(
@@ -371,15 +374,12 @@ function hasArchivedDlsCandidateWaitingForWeldDate(
   diameters: number[],
   thicknesses: number[],
 ) {
-  return records
+  const permits = records
     .flatMap((record) => getAllWelderStampDlsPermits(record))
     .filter((permit) => permit.archived)
     .filter((permit) => !method || splitPermitValues(permit.weldType).includes(method))
     .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
-    .some((permit) =>
-      diameters.every((diameter) => isPermitDiameterCompatible(diameter, permit)) &&
-      thicknesses.every((thickness) => isPermitThicknessCompatible(thickness, permit)),
-    )
+  return permits.length > 0 && arePermitDiametersCompatible(diameters, permits) && arePermitThicknessesCompatible(thicknesses, permits)
 }
 
 function getDlsBlockReason(
@@ -404,15 +404,14 @@ function getDlsBlockReason(
     : materialGroupPermits
   if (weldDateValue && datePermits.length === 0) return `не имеет ДЛС на дату сварки ${formatDisplayDate(weldDate) || '-'}`
 
-  const diameterPermits = diameters.length > 0
-    ? datePermits.filter(({ permit }) => diameters.every((diameter) => isPermitDiameterCompatible(diameter, permit)))
-    : datePermits
-  if (diameters.length > 0 && diameterPermits.length === 0) return `не имеет ДЛС на диаметр ${formatOfficialStampDiameterList(diameters)}`
+  const effectivePermits = datePermits.map(({ permit }) => permit)
+  if (diameters.length > 0 && !arePermitDiametersCompatible(diameters, effectivePermits)) {
+    return `не имеет ДЛС на диаметр ${formatOfficialStampDiameterList(diameters)}`
+  }
 
-  const thicknessPermits = thicknesses.length > 0
-    ? diameterPermits.filter(({ permit }) => thicknesses.every((thickness) => isPermitThicknessCompatible(thickness, permit)))
-    : diameterPermits
-  if (thicknesses.length > 0 && thicknessPermits.length === 0) return `не имеет ДЛС на толщину ${formatOfficialStampDiameterList(thicknesses)}`
+  if (thicknesses.length > 0 && !arePermitThicknessesCompatible(thicknesses, effectivePermits)) {
+    return `не имеет ДЛС на толщину ${formatOfficialStampDiameterList(thicknesses)}`
+  }
 
   return ''
 }

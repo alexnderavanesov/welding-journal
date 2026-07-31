@@ -90,7 +90,7 @@ export type DocumentTemplateFieldKey =
   | '__welderName'
   | `__welderName:${TemplateStampNameFieldKey}`
 
-export type DocumentTemplateBindingMode = 'row' | 'list' | 'uniqueList' | 'count' | 'sum'
+export type DocumentTemplateBindingMode = 'row' | 'list' | 'uniqueList' | 'summary' | 'count' | 'sum'
 
 export type DocumentTemplateEmptyMode = 'blank' | 'np' | 'custom'
 
@@ -107,6 +107,7 @@ export type DocumentTemplateCellBinding = {
   field?: DocumentTemplateFieldKey
   parts?: DocumentTemplateCellPart[]
   uniqueParts?: boolean
+  uniqueValues?: boolean
   separator?: 'comma' | 'newline' | 'custom'
   customSeparator?: string
   emptyMode?: DocumentTemplateEmptyMode
@@ -954,7 +955,9 @@ function getConstructorRowValue(
 
 function getConstructorBindingParts(binding: DocumentTemplateCellBinding) {
   if (binding.parts?.length) return binding.parts
-  return binding.mode === 'row' && binding.field ? [{ field: binding.field }] : []
+  return (binding.mode === 'row' || binding.mode === 'summary') && binding.field
+    ? [{ field: binding.field }]
+    : []
 }
 
 function getConstructorAggregateValue(
@@ -963,6 +966,28 @@ function getConstructorAggregateValue(
   context: WeldingJournalTemplateContext,
 ) {
   if (binding.mode === 'count') return records.length
+
+  if (binding.mode === 'summary') {
+    const separator = getConstructorListSeparator(binding)
+    const value = getConstructorBindingParts(binding)
+      .map((part) => {
+        const values = records
+          .map((record, recordIndex) => getTemplateFieldValueByKey(part.field, record, recordIndex, context))
+          .map((partValue) => String(partValue ?? '').trim())
+          .filter(Boolean)
+        const outputValues =
+          binding.uniqueValues === false
+            ? values
+            : Array.from(
+                new Map(values.map((partValue) => [partValue.toLocaleLowerCase('ru'), partValue])).values(),
+              )
+        if (!outputValues.length) return ''
+        return `${part.prefix ?? ''}${outputValues.join(separator)}${part.suffix ?? ''}${part.lineBreakAfter ? '\n' : ''}`
+      })
+      .join('')
+      .replace(/\n+$/, '')
+    return applyConstructorEmptyValue(value, binding)
+  }
 
   const field = binding.field
   if (!field) return applyConstructorEmptyValue('', binding)
@@ -980,16 +1005,16 @@ function getConstructorAggregateValue(
     .map((value) => String(value ?? '').trim())
     .filter(Boolean)
   const outputValues =
-    binding.mode === 'uniqueList'
+    binding.mode === 'uniqueList' || binding.uniqueValues
       ? Array.from(new Map(values.map((value) => [value.toLocaleLowerCase('ru'), value])).values())
       : values
-  const separator =
-    binding.separator === 'newline'
-      ? '\n'
-      : binding.separator === 'custom'
-        ? binding.customSeparator || ', '
-        : ', '
-  return applyConstructorEmptyValue(outputValues.join(separator), binding)
+  return applyConstructorEmptyValue(outputValues.join(getConstructorListSeparator(binding)), binding)
+}
+
+function getConstructorListSeparator(binding: DocumentTemplateCellBinding) {
+  if (binding.separator === 'newline') return '\n'
+  if (binding.separator === 'custom') return binding.customSeparator || ', '
+  return ', '
 }
 
 function applyConstructorEmptyValue(value: unknown, binding: DocumentTemplateCellBinding) {

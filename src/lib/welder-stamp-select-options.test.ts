@@ -638,6 +638,86 @@ describe('welder stamp select options', () => {
     expect(blockReason).toContain('10')
   })
 
+  it('combines matching NAKS and DLS ranges of the same official stamp', () => {
+    const activeStamp = {
+      ...stampRecord('E0SM', false, 'РАД'),
+      naksPermits: [
+        {
+          id: 'naks-large',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '28.5',
+          diameterTo: '',
+          thicknessFrom: '3',
+          thicknessTo: '12',
+          validFrom: '2026-01-01',
+          validTo: '2028-12-31',
+          note: '',
+        },
+        {
+          id: 'naks-small',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '18',
+          diameterTo: '36',
+          thicknessFrom: '3',
+          thicknessTo: '6',
+          validFrom: '2026-01-01',
+          validTo: '2028-12-31',
+          note: '',
+        },
+      ],
+      dlsPermits: [
+        {
+          id: 'dls-large',
+          number: 'ДЛС-1',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '28.5',
+          diameterTo: '',
+          thicknessFrom: '3',
+          thicknessTo: '12',
+          validFrom: '2026-06-12',
+          validTo: '2026-09-12',
+          note: '',
+        },
+        {
+          id: 'dls-small',
+          number: 'ДЛС-2',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '18',
+          diameterTo: '36',
+          thicknessFrom: '3',
+          thicknessTo: '6',
+          validFrom: '2026-06-12',
+          validTo: '2026-09-12',
+          note: '',
+        },
+      ],
+    }
+    const row = {
+      stamp1K: 'E0SM',
+      weldingMethod: 'РАД',
+      materialGroup: 'M01',
+      d1: '108',
+      d2: '22',
+      t1: '8',
+      t2: '5',
+      weldDate: '20.07.2026',
+    } as WeldInput
+    const saveCheckSettings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      officialDls: true,
+    }
+
+    const options = buildWeldFormStampSelectOptions([activeStamp], row, [], [], { saveCheckSettings })
+    const selectedOption = options.stamp1K?.find((option) => option.value === 'E0SM')
+
+    expect(selectedOption?.disabled).toBe(false)
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp], { saveCheckSettings })).toBeNull()
+  })
+
   it('allows disabling required DLS compatibility in save checks', () => {
     const activeStamp = {
       ...stampRecord('AAAA', false, 'РАД'),

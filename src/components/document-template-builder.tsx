@@ -22,11 +22,31 @@ type DocumentTemplateBuilderProps = {
 }
 
 const MODE_OPTIONS: Array<{ value: DocumentTemplateBindingMode; label: string; description: string }> = [
-  { value: 'row', label: 'Поле одного стыка', description: 'Ячейка повторяется для каждого выбранного стыка.' },
-  { value: 'list', label: 'Все значения', description: 'Все значения попадут в одну ячейку.' },
-  { value: 'uniqueList', label: 'Уникальные значения', description: 'Повторы будут удалены.' },
-  { value: 'count', label: 'Количество стыков', description: 'Количество выбранных строк.' },
-  { value: 'sum', label: 'Сумма', description: 'Сумма выбранного числового поля.' },
+  {
+    value: 'row',
+    label: 'Поле одного стыка',
+    description: 'Для каждого стыка, вошедшего в документ, система скопирует строку-пример и заполнит эту ячейку его данными.',
+  },
+  {
+    value: 'list',
+    label: 'Все значения',
+    description: 'Все значения выбранного поля у стыков, вошедших в документ, попадут в одну ячейку. Повторяющиеся значения сохранятся.',
+  },
+  {
+    value: 'summary',
+    label: 'Сводка из нескольких полей',
+    description: 'Значения нескольких полей у стыков, вошедших в документ, соберутся в одну ячейку вместе с вашими подписями.',
+  },
+  {
+    value: 'count',
+    label: 'Количество стыков',
+    description: 'В ячейке будет указано количество стыков, вошедших в документ после применения выбора и настроек шаблона.',
+  },
+  {
+    value: 'sum',
+    label: 'Сумма',
+    description: 'В ячейке будет указана сумма выбранного числового поля по всем стыкам, вошедшим в документ.',
+  },
 ]
 
 const SPECIAL_FIELDS: Array<{ key: DocumentTemplateFieldKey; label: string; group: string }> = [
@@ -76,14 +96,27 @@ function getBindingParts(binding: DocumentTemplateCellBinding | undefined): Docu
   return binding?.field ? [{ field: binding.field }] : []
 }
 
+function normalizeConstructorConfig(config: DocumentTemplateConstructorConfig) {
+  return {
+    ...config,
+    bindings: config.bindings.map((binding) =>
+      binding.mode === 'uniqueList'
+        ? { ...binding, mode: 'list' as const, uniqueValues: true }
+        : binding,
+    ),
+  }
+}
+
 export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentTemplateBuilderProps) {
   const [preview, setPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
   const [draft, setDraft] = useState<DocumentTemplateConstructorConfig>(
-    template.constructorConfig ?? {
-      version: 1,
-      sheetName: template.sheetNames?.[0] ?? '',
-      bindings: [],
-    },
+    template.constructorConfig
+      ? normalizeConstructorConfig(template.constructorConfig)
+      : {
+          version: 1,
+          sheetName: template.sheetNames?.[0] ?? '',
+          bindings: [],
+        },
   )
   const [selectedCell, setSelectedCell] = useState(template.constructorConfig?.bindings[0]?.cell ?? '')
   const [isLoading, setIsLoading] = useState(true)
@@ -169,12 +202,14 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
 
   const changeSelectedBindingMode = (mode: DocumentTemplateBindingMode) => {
     if (!selectedBinding) return
-    if (mode === 'row') {
+    if (mode === 'row' || mode === 'summary') {
       const parts = getBindingParts(selectedBinding)
       updateSelectedBinding({
         mode,
         parts,
         field: undefined,
+        uniqueParts: mode === 'row' ? selectedBinding.uniqueParts : undefined,
+        uniqueValues: mode === 'summary' ? selectedBinding.uniqueValues ?? true : undefined,
       })
       return
     }
@@ -183,6 +218,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       field: selectedBinding.field ?? getBindingParts(selectedBinding)[0]?.field,
       parts: undefined,
       uniqueParts: undefined,
+      uniqueValues: mode === 'list' ? selectedBinding.uniqueValues ?? false : undefined,
     })
   }
 
@@ -209,7 +245,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     }
     if (
       draft.bindings.some((binding) =>
-        binding.mode === 'row'
+        binding.mode === 'row' || binding.mode === 'summary'
           ? getBindingParts(binding).length === 0
           : binding.mode !== 'count' && !binding.field,
       )
@@ -378,13 +414,24 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                 </span>
               </label>
 
-              {selectedBinding.mode === 'row' ? (
+              {selectedBinding.mode === 'row' || selectedBinding.mode === 'summary' ? (
                 <CellPartsEditor
                   parts={getBindingParts(selectedBinding)}
-                  uniqueParts={Boolean(selectedBinding.uniqueParts)}
+                  deduplicateValues={
+                    selectedBinding.mode === 'row'
+                      ? Boolean(selectedBinding.uniqueParts)
+                      : selectedBinding.uniqueValues !== false
+                  }
+                  mode={selectedBinding.mode}
                   fieldGroups={fieldGroups}
                   onChange={updateSelectedParts}
-                  onUniquePartsChange={(uniqueParts) => updateSelectedBinding({ uniqueParts })}
+                  onDeduplicateChange={(checked) =>
+                    updateSelectedBinding(
+                      selectedBinding.mode === 'row'
+                        ? { uniqueParts: checked }
+                        : { uniqueValues: checked },
+                    )
+                  }
                 />
               ) : selectedBinding.mode !== 'count' ? (
                 <label className="block">
@@ -408,9 +455,11 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                 </label>
               ) : null}
 
-              {selectedBinding.mode === 'list' || selectedBinding.mode === 'uniqueList' ? (
+              {selectedBinding.mode === 'list' || selectedBinding.mode === 'summary' ? (
                 <div>
-                  <div className="text-xs font-semibold uppercase text-slate-500">Разделитель</div>
+                  <div className="text-xs font-semibold uppercase text-slate-500">
+                    {selectedBinding.mode === 'summary' ? 'Разделитель значений каждого поля' : 'Разделитель'}
+                  </div>
                   <div className="mt-2 grid grid-cols-3 gap-1">
                     {[
                       ['comma', 'Запятая'],
@@ -440,6 +489,14 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                     />
                   ) : null}
                 </div>
+              ) : null}
+
+              {selectedBinding.mode === 'list' ? (
+                <DeduplicateValuesToggle
+                  checked={Boolean(selectedBinding.uniqueValues)}
+                  onChange={(checked) => updateSelectedBinding({ uniqueValues: checked })}
+                  description="Одинаковые значения выбранного поля будут записаны в ячейку только один раз."
+                />
               ) : null}
 
               {selectedBinding.mode !== 'count' && selectedBinding.mode !== 'sum' ? (
@@ -536,16 +593,18 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
 
 function CellPartsEditor({
   parts,
-  uniqueParts,
+  deduplicateValues,
+  mode,
   fieldGroups,
   onChange,
-  onUniquePartsChange,
+  onDeduplicateChange,
 }: {
   parts: DocumentTemplateCellPart[]
-  uniqueParts: boolean
+  deduplicateValues: boolean
+  mode: 'row' | 'summary'
   fieldGroups: Array<[string, typeof FIELD_OPTIONS]>
   onChange: (parts: DocumentTemplateCellPart[]) => void
-  onUniquePartsChange: (checked: boolean) => void
+  onDeduplicateChange: (checked: boolean) => void
 }) {
   const updatePart = (index: number, patch: Partial<DocumentTemplateCellPart>) => {
     onChange(parts.map((part, partIndex) => (partIndex === index ? { ...part, ...patch } : part)))
@@ -573,7 +632,9 @@ function CellPartsEditor({
       <div>
         <div className="text-xs font-semibold uppercase text-slate-500">Содержимое ячейки</div>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          Части собираются сверху вниз. Текст до и после поля выводится только когда само поле заполнено.
+          {mode === 'summary'
+            ? 'Для каждой части система соберет уникальные значения поля по всем выбранным стыкам. Текст до и после выводится только при наличии значений.'
+            : 'Части собираются сверху вниз. Текст до и после поля выводится только когда само поле заполнено.'}
         </p>
       </div>
 
@@ -667,30 +728,52 @@ function CellPartsEditor({
 
       <button
         type="button"
-        onClick={() => onChange([...parts, { field: '__index' }])}
+        onClick={() => onChange([...parts, { field: mode === 'summary' ? 'projectTitle' : '__index' }])}
         className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-100"
       >
         <Plus className="h-4 w-4" />
         Добавить поле в ячейку
       </button>
 
-      <label className="flex items-start gap-2 rounded-md border border-slate-200 px-3 py-2 text-xs leading-5 text-slate-600">
-        <input
-          type="checkbox"
-          checked={uniqueParts}
-          onChange={(event) => onUniquePartsChange(event.target.checked)}
-          className="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-        />
-        <span>
-          <span className="block font-semibold text-slate-700">Не повторять одинаковые значения</span>
-          Если одно клеймо или ФИО встречается в нескольких слоях, оно будет записано один раз.
-        </span>
-      </label>
+      <DeduplicateValuesToggle
+        checked={deduplicateValues}
+        onChange={onDeduplicateChange}
+        description={
+          mode === 'row'
+            ? 'Если одно клеймо или ФИО встречается в нескольких частях этой строки, оно будет записано один раз.'
+            : 'Повторяющиеся значения каждого выбранного поля будут записаны в сводку только один раз.'
+        }
+      />
 
       <div className="rounded-md border border-slate-200 bg-white p-3">
         <div className="text-[11px] font-semibold uppercase text-slate-400">Схема ячейки</div>
         <div className="mt-1 whitespace-pre-line text-xs leading-5 text-slate-700">{preview || 'Добавьте хотя бы одно поле.'}</div>
       </div>
     </div>
+  )
+}
+
+function DeduplicateValuesToggle({
+  checked,
+  description,
+  onChange,
+}: {
+  checked: boolean
+  description: string
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex items-start gap-2 rounded-md border border-slate-200 px-3 py-2 text-xs leading-5 text-slate-600">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+      />
+      <span>
+        <span className="block font-semibold text-slate-700">Убрать повторяющиеся значения</span>
+        {description}
+      </span>
+    </label>
   )
 }

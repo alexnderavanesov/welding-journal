@@ -208,6 +208,78 @@ describe('document template storage', () => {
     expect(worksheet.D4?.v).toBe('н/п')
   })
 
+  it('combines unique values from several fields into one summary cell', async () => {
+    const template = createXlsxTemplate([
+      ['Оглавление'],
+      ['Стык'],
+    ])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        {
+          cell: 'A1',
+          mode: 'summary',
+          uniqueValues: true,
+          separator: 'comma',
+          parts: [
+            { field: 'subtitleCode', prefix: 'Шифр ', suffix: '. ' },
+            { field: 'line', prefix: 'Линия ', suffix: '.' },
+          ],
+        },
+        { cell: 'A2', mode: 'row', field: 'joint' },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { subtitleCode: '1', line: 'А', joint: 'S1' },
+      { subtitleCode: '1', line: 'А', joint: 'S2' },
+      { subtitleCode: '2', line: 'Б', joint: 'S3' },
+      { subtitleCode: '2', line: 'Б', joint: 'S4' },
+    ])
+
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.A1?.v).toBe('Шифр 1, 2. Линия А, Б.')
+    expect(worksheet.A2?.v).toBe('S1')
+    expect(worksheet.A5?.v).toBe('S4')
+  })
+
+  it('uses the duplicate-removal checkbox for lists and summaries', async () => {
+    const template = createXlsxTemplate([
+      ['Линии без повторов', 'Линии со всеми повторами', 'Сводка со всеми повторами'],
+    ])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      bindings: [
+        { cell: 'A1', mode: 'list', field: 'line', uniqueValues: true },
+        { cell: 'B1', mode: 'list', field: 'line', uniqueValues: false },
+        {
+          cell: 'C1',
+          mode: 'summary',
+          uniqueValues: false,
+          parts: [{ field: 'line', prefix: 'Линия ', suffix: '.' }],
+        },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { line: 'А' },
+      { line: 'А' },
+      { line: 'Б' },
+    ])
+
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.A1?.v).toBe('А, Б')
+    expect(worksheet.B1?.v).toBe('А, А, Б')
+    expect(worksheet.C1?.v).toBe('Линия А, А, Б.')
+  })
+
   it('combines several fields, text and unique welder values in one row cell', async () => {
     const template = createXlsxTemplate([
       ['Стык', 'Сварщики'],

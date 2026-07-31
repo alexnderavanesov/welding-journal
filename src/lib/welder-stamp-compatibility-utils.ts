@@ -75,6 +75,20 @@ export function isPermitThicknessCompatible(thickness: number, permit: Pick<Weld
   return thickness >= from && (to === null || thickness <= to)
 }
 
+export function arePermitDiametersCompatible(
+  diameters: number[],
+  permits: Array<Pick<WelderStampNaksPermit, 'diameterFrom' | 'diameterTo'>>,
+) {
+  return diameters.every((diameter) => permits.some((permit) => isPermitDiameterCompatible(diameter, permit)))
+}
+
+export function arePermitThicknessesCompatible(
+  thicknesses: number[],
+  permits: Array<Pick<WelderStampNaksPermit, 'thicknessFrom' | 'thicknessTo'>>,
+) {
+  return thicknesses.every((thickness) => permits.some((permit) => isPermitThicknessCompatible(thickness, permit)))
+}
+
 export function getWeldDateOrderValue(value: unknown) {
   const raw = String(value ?? '').trim()
   const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)

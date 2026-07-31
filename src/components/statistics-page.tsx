@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Download,
   FlaskConical,
   Gauge,
   LineChart,
@@ -47,6 +48,7 @@ import {
 import { buildWeldingDynamics, type WeldingDynamicsSummary } from '@/lib/welding-dynamics'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
+import { openPrintableReport, type PrintableReport } from '@/lib/printable-report'
 import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue } from '@/lib/report-value-utils'
 import { cn } from '@/lib/utils'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
@@ -173,6 +175,7 @@ export function StatisticsPage({
   const [periodMode, setPeriodMode] = useState<StatisticsPeriodMode>('events')
   const [projectFilter, setProjectFilter] = useState('')
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
+  const [percentageLineSearch, setPercentageLineSearch] = useState('')
   const isGeneralLikeTab = activeTab === 'general' || activeTab === 'lnk'
   const unit = activeTab === 'welders' ? weldersUnit : activeTab === 'lineSummary' ? lineSummaryUnit : generalUnit
   const setUnit = activeTab === 'welders' ? setWeldersUnit : activeTab === 'lineSummary' ? setLineSummaryUnit : setGeneralUnit
@@ -250,6 +253,44 @@ export function StatisticsPage({
     periodMode === 'events'
       ? 'Заявки считаются по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки.'
       : 'Все блоки показывают текущее состояние стыков, сваренных в выбранный период.'
+  const printableReport = useMemo(
+    () =>
+      buildStatisticsPrintableReport({
+        activeTab,
+        dynamics: weldingDynamics,
+        jointFilter,
+        lineSummary,
+        lnkMethods,
+        percentageLines: filterPercentageLineSummaries(percentageLineSummary, percentageLineSearch),
+        periodLabel: allPeriod || !periodFrom || !periodTo ? 'За весь период' : `${formatDisplayDate(periodFrom)} - ${formatDisplayDate(periodTo)}`,
+        periodModeDescription,
+        scopeLabel,
+        summary,
+        unofficialCount,
+        unofficialValue,
+        unit,
+        welderSummary,
+      }),
+    [
+      activeTab,
+      allPeriod,
+      jointFilter,
+      lineSummary,
+      lnkMethods,
+      percentageLineSearch,
+      percentageLineSummary,
+      periodFrom,
+      periodModeDescription,
+      periodTo,
+      scopeLabel,
+      summary,
+      unofficialCount,
+      unofficialValue,
+      unit,
+      welderSummary,
+      weldingDynamics,
+    ],
+  )
   return (
     <section className="w-full max-w-full min-w-0 space-y-4 pb-8">
       <div className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
@@ -315,7 +356,18 @@ export function StatisticsPage({
             </p>
           </div>
 
-          <div className="flex flex-1 justify-end">
+          <div className="flex flex-1 flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-2 rounded-md border-sky-200 bg-white text-sky-800 hover:bg-sky-50"
+              onClick={() => openPrintableReport(printableReport)}
+              title="Открыть печатный отчет в новой вкладке"
+            >
+              <Download className="h-4 w-4" />
+              Отчет PDF
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -604,6 +656,8 @@ export function StatisticsPage({
           summary={percentageLineSummary}
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
           onOpenWeldRowIds={onOpenWeldRowIds}
+          search={percentageLineSearch}
+          onSearchChange={setPercentageLineSearch}
         />
       ) : (
         <LineSummaryPanel summary={lineSummary} unit={lineSummaryUnit} />
@@ -1563,6 +1617,8 @@ function PercentageLinesPanel({
   summary,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
+  search,
+  onSearchChange,
 }: {
   onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
@@ -1570,8 +1626,9 @@ function PercentageLinesPanel({
   summary: ReturnType<typeof buildPercentageLineSummaries>
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
+  search: string
+  onSearchChange: (value: string) => void
 }) {
-  const [search, setSearch] = useState('')
   const [collapsedLineKeys, setCollapsedLineKeys] = useState<Set<string>>(() => new Set())
   const [detailDialog, setDetailDialog] = useState<PercentageLineJointDetailDialogState | null>(null)
   const [assignMissingDialog, setAssignMissingDialog] = useState<PercentageLineAssignMissingDialogState | null>(null)
@@ -1590,22 +1647,7 @@ function PercentageLinesPanel({
       ),
     [summary],
   )
-  const filteredSummary = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return summary
-
-    return summary.flatMap((line) => {
-      const lineMatches =
-        line.line.toLowerCase().includes(query) ||
-        line.projectTitle.toLowerCase().includes(query) ||
-        line.subtitleCode.toLowerCase().includes(query)
-
-      if (lineMatches) return [line]
-
-      const stamps = line.stamps.filter((stamp) => stamp.stamp.toLowerCase().includes(query))
-      return stamps.length > 0 ? [{ ...line, stamps }] : []
-    })
-  }, [search, summary])
+  const filteredSummary = useMemo(() => filterPercentageLineSummaries(summary, search), [search, summary])
   const allVisibleLinesCollapsed =
     filteredSummary.length > 0 && filteredSummary.every((line) => collapsedLineKeys.has(line.lineKey))
   const totals = useMemo(
@@ -1717,7 +1759,7 @@ function PercentageLinesPanel({
             Поиск по линии или клейму
             <Input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Линия, проект, шифр или клеймо"
               className="h-9 rounded-md border-slate-200 bg-white text-sm"
             />
@@ -1739,7 +1781,7 @@ function PercentageLinesPanel({
               {allVisibleLinesCollapsed ? 'Развернуть все' : 'Свернуть все'}
             </Button>
             {search.trim() ? (
-              <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => setSearch('')}>
+              <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => onSearchChange('')}>
                 Очистить поиск
               </Button>
             ) : null}
@@ -2778,7 +2820,7 @@ function LineSummaryPanel({
         <MetricCard
           icon={Gauge}
           label="Линий всего"
-          value={summary.rows.length}
+          value={String(summary.rows.length)}
           detail="Количество линий в выбранном срезе"
           accent="slate"
         />
@@ -2980,6 +3022,425 @@ function LineBodyCell({
       {children}
     </td>
   )
+}
+
+type StatisticsPrintableReportInput = {
+  activeTab: StatisticsTab
+  dynamics: WeldingDynamicsSummary
+  jointFilter: WelderStatisticsJointFilter
+  lineSummary: LineSummary
+  lnkMethods: StatisticsMethodSummary[]
+  percentageLines: PercentageLineSummary[]
+  periodLabel: string
+  periodModeDescription: string
+  scopeLabel: string
+  summary: StatisticsSummary
+  unofficialCount: number
+  unofficialValue: number
+  unit: StatisticsUnit
+  welderSummary: WelderStatisticsSummary
+}
+
+function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): PrintableReport {
+  const {
+    activeTab,
+    dynamics,
+    jointFilter,
+    lineSummary,
+    lnkMethods,
+    percentageLines,
+    periodLabel,
+    periodModeDescription,
+    scopeLabel,
+    summary,
+    unofficialCount,
+    unofficialValue,
+    unit,
+    welderSummary,
+  } = input
+  const unitLabel = unit === 'wdi' ? 'WDI' : 'стыки'
+  const baseMeta = [
+    { label: 'Срез', value: scopeLabel },
+    { label: 'Период', value: activeTab === 'lineSummary' || activeTab === 'percentageLines' ? 'Текущие данные' : periodLabel },
+    ...(activeTab === 'percentageLines' ? [] : [{ label: 'Единица', value: unitLabel }]),
+  ]
+
+  if (activeTab === 'general') {
+    const statusRows: Array<[string, number]> = [
+      ['Годен', summary.good],
+      ['Не годен', summary.rejected],
+      ['Ожидает заявку', summary.waitingRequest],
+      ['Ожидает НК', summary.waitingControl],
+      ['Ожидает ремонт', summary.waitingRepair],
+      ['Ожидает сварку', summary.waitingWeld],
+    ]
+    return {
+      title: 'Статистика сварки',
+      subtitle: periodModeDescription,
+      meta: [...baseMeta, { label: 'Тип стыка', value: getJointFilterLabel(jointFilter) }],
+      metrics: [
+        {
+          label: 'Сварено за период',
+          value: formatStatisticValue(summary.welded, unit),
+          detail: `${formatPercent(summary.weldedShare)} от общего количества`,
+          tone: 'blue',
+        },
+        {
+          label: 'Годность',
+          value: formatPercent(summary.qualityPercent),
+          detail: `${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`,
+          tone: 'green',
+        },
+        {
+          label: `В смену, ${unitLabel}`,
+          value: formatAverageStatisticValue(dynamics.periodDays > 0 ? dynamics.totalValue / dynamics.periodDays : 0),
+          detail: `${formatStatisticValue(dynamics.totalValue, unit)} за ${dynamics.periodDays} дн.`,
+          tone: 'amber',
+        },
+        {
+          label: 'Количество сварщиков',
+          value: String(dynamics.totalWelders),
+          detail: 'Уникальные фактические клейма за период',
+          tone: 'blue',
+        },
+        {
+          label: 'Ремонтов выполнено',
+          value: formatStatisticValue(summary.completedRepairs, unit),
+          detail: 'Повторные стыки с завершенной сваркой',
+          tone: 'slate',
+        },
+      ],
+      charts: [
+        {
+          title: 'Динамика сварки',
+          subtitle: `Объем по периодам, ${unitLabel}; в подписи указано число сварщиков по фактическим клеймам.`,
+          valueLabel: unitLabel,
+          items: dynamics.buckets.map((bucket) => ({
+            label: bucket.shortLabel,
+            value: bucket.value,
+            detail: `${bucket.welderCount} св.`,
+          })),
+        },
+      ],
+      tables: [
+        {
+          title: 'Состояние стыков',
+          columns: ['Состояние', unitLabel, 'Доля'],
+          rows: statusRows.map(([label, value]) => [
+            label,
+            formatStatisticValue(value, unit),
+            formatPercent(summary.totalRows > 0 ? (value / summary.totalRows) * 100 : 0),
+          ]),
+        },
+      ],
+    }
+  }
+
+  if (activeTab === 'lnk') {
+    const methods = [...lnkMethods, summary.pstoMethod]
+    return {
+      title: 'Статистика ЛНК и ПСТО',
+      subtitle: 'Заявки, заключения, результаты и текущие очереди по видам контроля.',
+      meta: [...baseMeta, { label: 'Режим периода', value: periodModeDescription }],
+      metrics: [
+        {
+          label: 'Годность',
+          value: formatPercent(summary.qualityPercent),
+          detail: `${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`,
+          tone: 'green',
+        },
+        {
+          label: 'ЛНК закрыто',
+          value: formatPercent(summary.lnkClosurePercent),
+          detail: `${formatStatisticValue(summary.lnkClosed, unit)} из ${formatStatisticValue(summary.lnkRequests, unit)} заявок`,
+          tone: 'blue',
+        },
+        {
+          label: 'ПСТО закрыто',
+          value: formatPercent(summary.pstoClosurePercent),
+          detail: `${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок`,
+          tone: 'amber',
+        },
+        {
+          label: 'Неофициальные стыки',
+          value: String(unofficialCount),
+          detail: `${formatStatisticValue(unofficialValue, unit)} в выбранной единице`,
+          tone: 'slate',
+        },
+      ],
+      charts: [
+        {
+          title: 'Закрытие заявок по видам контроля',
+          valueLabel: unitLabel,
+          items: methods.map((method) => ({
+            label: method.code,
+            value: method.closed,
+            detail: `из ${formatStatisticValue(method.requests, unit)}`,
+          })),
+        },
+      ],
+      tables: [
+        {
+          title: 'Лаборатория по видам контроля',
+          columns: ['Вид', 'Заявок', 'Закрыто', 'Всего результатов', 'Без заявки', 'Ожидает НК', 'Годен', 'Не годен', 'Закрытие'],
+          rows: methods.map((method) => [
+            method.code,
+            formatStatisticValue(method.requests, unit),
+            formatStatisticValue(method.closed, unit),
+            formatStatisticValue(method.totalClosed, unit),
+            formatStatisticValue(method.waitingRequest, unit),
+            formatStatisticValue(method.waitingControl, unit),
+            formatStatisticValue(method.good, unit),
+            method.code === 'ПСТО' ? '—' : formatStatisticValue(method.rejected, unit),
+            formatPercent(method.closurePercent),
+          ]),
+        },
+      ],
+    }
+  }
+
+  if (activeTab === 'welders') {
+    const controlled = welderSummary.good + welderSummary.rejected
+    return {
+      title: 'Статистика сварщиков',
+      subtitle: 'Расчет выполнен по фактическим клеймам. Вклад распределяется между сварщиками по выполненным слоям.',
+      meta: [...baseMeta, { label: 'Тип стыка', value: getJointFilterLabel(jointFilter) }],
+      metrics: [
+        { label: 'Сварщиков', value: String(welderSummary.totalWelders), detail: 'Уникальные фактические клейма', tone: 'blue' },
+        {
+          label: 'Всего работ',
+          value: formatStatisticValue(welderSummary.total, unit),
+          detail: unitLabel,
+          tone: 'slate',
+        },
+        {
+          label: 'Годен',
+          value: formatStatisticValue(welderSummary.good, unit),
+          detail: `Ожидает заявку ${formatStatisticValue(welderSummary.waitingRequest, unit)}`,
+          tone: 'green',
+        },
+        {
+          label: 'Проконтролировано',
+          value: formatStatisticValue(controlled, unit),
+          detail: 'Годные + негодные',
+          tone: 'blue',
+        },
+        {
+          label: '% брака',
+          value: formatPercent(welderSummary.defectPercent),
+          detail: `${formatStatisticValue(welderSummary.rejected, unit)} не годен`,
+          tone: welderSummary.defectPercent > 25 ? 'rose' : welderSummary.defectPercent >= 5 ? 'amber' : 'green',
+        },
+      ],
+      charts: [
+        {
+          title: 'Объем по сварщикам',
+          subtitle: `Первые ${Math.min(24, welderSummary.rows.length)} сварщика по расчетному объему.`,
+          valueLabel: unitLabel,
+          items: [...welderSummary.rows]
+            .sort((left, right) => right.total - left.total)
+            .slice(0, 24)
+            .map((row) => ({
+              label: row.stamp,
+              value: row.total,
+              detail: row.welderName || '',
+            })),
+        },
+      ],
+      tables: [
+        {
+          title: 'Отчет по сварщикам',
+          columns: ['Клеймо', 'ФИО', 'Всего', 'Годен', 'Ожидает заявку', 'Ожидает НК', 'Не годен', '% брака', 'Группы материалов'],
+          rows: welderSummary.rows.map((row) => [
+            row.stamp,
+            row.welderName || '—',
+            formatStatisticValue(row.total, unit),
+            formatStatisticValue(row.good, unit),
+            formatStatisticValue(row.waitingRequest, unit),
+            formatStatisticValue(row.waitingControl, unit),
+            formatStatisticValue(row.rejected, unit),
+            formatPercent(row.defectPercent),
+            row.materialGroups
+              .map((group) => `${group.key}: ${formatStatisticValue(group.total, unit)}`)
+              .join('; ') || '—',
+          ]),
+        },
+      ],
+    }
+  }
+
+  if (activeTab === 'lineSummary') {
+    return {
+      title: 'Полинейная сводка',
+      subtitle: 'Актуальный объем, выполнение и остаток по проектам, шифрам и линиям.',
+      meta: baseMeta,
+      metrics: [
+        { label: 'Линий', value: String(lineSummary.rows.length), detail: 'В текущем срезе', tone: 'slate' },
+        { label: `Всего, ${unitLabel}`, value: formatStatisticValue(lineSummary.total, unit), tone: 'blue' },
+        {
+          label: 'Выполнено',
+          value: formatPercent(lineSummary.total > 0 ? (lineSummary.completed / lineSummary.total) * 100 : 0),
+          detail: `${formatStatisticValue(lineSummary.completed, unit)} из ${formatStatisticValue(lineSummary.total, unit)}`,
+          tone: 'green',
+        },
+        { label: `Остаток, ${unitLabel}`, value: formatStatisticValue(lineSummary.remaining, unit), tone: 'amber' },
+      ],
+      charts: [
+        {
+          title: 'Выполнение по линиям',
+          subtitle: `Первые ${Math.min(24, lineSummary.rows.length)} линии по общему объему.`,
+          valueLabel: unitLabel,
+          items: [...lineSummary.rows]
+            .sort((left, right) => right.total - left.total)
+            .slice(0, 24)
+            .map((row) => ({
+              label: row.line,
+              value: row.completed,
+              detail: `из ${formatStatisticValue(row.total, unit)}`,
+            })),
+        },
+      ],
+      tables: [
+        {
+          title: 'Линии',
+          columns: ['Проект', 'Шифр', 'Линия', 'Группа трубопровода', 'Категория трубопровода', 'Контроль, %', 'Всего', 'Выполнено', 'Остаток'],
+          rows: lineSummary.rows.map((row) => [
+            row.projectTitle,
+            row.subtitleCode,
+            row.line,
+            row.groupName,
+            row.category,
+            row.weldControlPercent,
+            formatStatisticValue(row.total, unit),
+            formatStatisticValue(row.completed, unit),
+            formatStatisticValue(row.remaining, unit),
+          ]),
+        },
+      ],
+    }
+  }
+
+  const percentageTotals = getPercentageLineReportTotals(percentageLines)
+  const percentageLineRows = percentageLines.map((line) => {
+    const stamps = getPercentageLineStampTotals(line.stamps)
+    return {
+      line,
+      ...stamps,
+    }
+  })
+  return {
+    title: 'Отчет по процентным линиям',
+    subtitle: 'Расчет РК/УЗК по официальным клеймам на линиях с единым процентом контроля меньше 100.',
+    meta: baseMeta,
+    metrics: [
+      { label: 'Процентных линий', value: String(percentageLines.length), detail: `${percentageTotals.joints} сваренных стыков`, tone: 'blue' },
+      { label: 'Клейм', value: String(percentageTotals.stamps), detail: 'Участвуют в расчете', tone: 'slate' },
+      { label: 'Требуется контроля', value: String(percentageTotals.required), detail: 'РК/УЗК по расчету', tone: 'green' },
+      { label: 'Осталось закрыть', value: String(percentageTotals.missing), detail: `Закрыто ${percentageTotals.covered}`, tone: 'amber' },
+      { label: 'Лишнее “да”', value: String(percentageTotals.excess), detail: `100% по клейму: ${percentageTotals.fullControl}`, tone: 'rose' },
+    ],
+    charts: [
+      {
+        title: 'Требуется контроля по линиям',
+        subtitle: `Первые ${Math.min(24, percentageLineRows.length)} линии по требуемому количеству РК/УЗК.`,
+        valueLabel: 'контролей',
+        items: percentageLineRows.slice(0, 24).map((row) => ({
+          label: row.line.line,
+          value: row.required,
+          detail: `закрыто ${row.covered}`,
+        })),
+      },
+    ],
+    tables: [
+      {
+        title: 'Сводка по линиям',
+        columns: ['Проект', 'Шифр', 'Линия', '%', 'Стыков', 'Клейм', 'Требуется', 'Назначено', 'Закрыто', 'Осталось', 'Лишнее'],
+        rows: percentageLineRows.map((row) => [
+          row.line.projectTitle,
+          row.line.subtitleCode,
+          row.line.line,
+          row.line.percent,
+          row.line.rows.length,
+          row.line.stamps.length,
+          row.required,
+          row.assigned,
+          row.covered,
+          row.missing,
+          row.excess,
+        ]),
+      },
+      {
+        title: 'Расчет по официальным клеймам',
+        columns: ['Проект', 'Шифр', 'Линия', 'Клеймо', 'Стыков', 'Требуется', 'Назначено', 'Закрыто', 'Выполнено', 'Осталось', 'Лишнее', '100%'],
+        rows: percentageLines.flatMap((line) =>
+          line.stamps.map((stamp) => [
+            line.projectTitle,
+            line.subtitleCode,
+            line.line,
+            stamp.stamp,
+            stamp.officialJointCount,
+            stamp.requiredControls,
+            stamp.assignedControls,
+            stamp.coveredControls,
+            stamp.completedControls,
+            stamp.missingControls,
+            stamp.excessControls,
+            stamp.fullControlRequired ? 'да' : 'нет',
+          ]),
+        ),
+      },
+    ],
+  }
+}
+
+function filterPercentageLineSummaries(summary: PercentageLineSummary[], search: string) {
+  const query = search.trim().toLowerCase()
+  if (!query) return summary
+  return summary.flatMap((line) => {
+    const lineMatches =
+      line.line.toLowerCase().includes(query) ||
+      line.projectTitle.toLowerCase().includes(query) ||
+      line.subtitleCode.toLowerCase().includes(query)
+    if (lineMatches) return [line]
+    const stamps = line.stamps.filter((stamp) => stamp.stamp.toLowerCase().includes(query))
+    return stamps.length > 0 ? [{ ...line, stamps }] : []
+  })
+}
+
+function getPercentageLineReportTotals(lines: PercentageLineSummary[]) {
+  return lines.reduce(
+    (totals, line) => {
+      totals.joints += line.rows.length
+      totals.stamps += line.stamps.length
+      const stampTotals = getPercentageLineStampTotals(line.stamps)
+      totals.required += stampTotals.required
+      totals.assigned += stampTotals.assigned
+      totals.covered += stampTotals.covered
+      totals.missing += stampTotals.missing
+      totals.excess += stampTotals.excess
+      totals.fullControl += stampTotals.fullControl
+      return totals
+    },
+    { joints: 0, stamps: 0, required: 0, assigned: 0, covered: 0, missing: 0, excess: 0, fullControl: 0 },
+  )
+}
+
+function getPercentageLineStampTotals(stamps: PercentageLineStampSummary[]) {
+  return stamps.reduce(
+    (totals, stamp) => ({
+      required: totals.required + stamp.requiredControls,
+      assigned: totals.assigned + stamp.assignedControls,
+      covered: totals.covered + stamp.coveredControls,
+      missing: totals.missing + stamp.missingControls,
+      excess: totals.excess + stamp.excessControls,
+      fullControl: totals.fullControl + (stamp.fullControlRequired ? 1 : 0),
+    }),
+    { required: 0, assigned: 0, covered: 0, missing: 0, excess: 0, fullControl: 0 },
+  )
+}
+
+function getJointFilterLabel(filter: WelderStatisticsJointFilter) {
+  return jointFilterOptions.find(([value]) => value === filter)?.[1] ?? 'Все'
 }
 
 function segmentButtonClass(active: boolean) {

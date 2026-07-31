@@ -283,6 +283,64 @@ describe('existing rows report import preview', () => {
     expect(allowedPreview.validRecords).toHaveLength(1)
   })
 
+  it('combines several matching DLS ranges during import preview', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: true })
+    const stamp = {
+      ...buildWelderStampRecord('E0SM'),
+      dlsPermits: [
+        {
+          id: 'dls-large',
+          number: 'ДЛС-1',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '28.5',
+          diameterTo: '',
+          thicknessFrom: '3',
+          thicknessTo: '12',
+          validFrom: '2026-06-12',
+          validTo: '2026-09-12',
+          note: '',
+        },
+        {
+          id: 'dls-small',
+          number: 'ДЛС-2',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '18',
+          diameterTo: '36',
+          thicknessFrom: '3',
+          thicknessTo: '6',
+          validFrom: '2026-06-12',
+          validTo: '2026-09-12',
+          note: '',
+        },
+      ],
+    }
+    const file = buildWeldingJournalImportFile({
+      joint: 'F1A',
+      weldingMethod: 'РАД',
+      materialGroup: 'M01',
+      d1: '108',
+      d2: '22',
+      t1: '8',
+      t2: '5',
+      weldDate: '20.07.2026',
+      stamp1K: 'E0SM',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: { stamp1K: [{ value: 'E0SM' }] },
+      welderStamps: [stamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
+  })
+
   it('uses archived DLS permits for historical weld dates during import preview', async () => {
     saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
     saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: true })

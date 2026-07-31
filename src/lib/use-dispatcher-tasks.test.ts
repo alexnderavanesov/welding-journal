@@ -204,6 +204,68 @@ describe('buildVisibleDispatcherTasks', () => {
 
     expect(tasks.repeatedJointTasks).toEqual([])
   })
+
+  it('does not create DZ-18 when several DLS ranges of one stamp cover the joint together', () => {
+    const stamp = stampRecordWithPermit('E0SM', 'M01')
+    stamp.dlsPermits = [
+      {
+        id: 'dls-large',
+        number: 'ДЛС-1',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '28.5',
+        diameterTo: '',
+        thicknessFrom: '3',
+        thicknessTo: '12',
+        validFrom: '2026-06-12',
+        validTo: '2026-09-12',
+        note: '',
+      },
+      {
+        id: 'dls-small',
+        number: 'ДЛС-2',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '18',
+        diameterTo: '36',
+        thicknessFrom: '3',
+        thicknessTo: '6',
+        validFrom: '2026-06-12',
+        validTo: '2026-09-12',
+        note: '',
+      },
+    ]
+
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1A',
+            materialGroup: 'M01',
+            stamp1K: 'E0SM',
+            weldingMethod: 'РАД',
+            d1: '108',
+            d2: '22',
+            t1: '8',
+            t2: '5',
+            weldDate: '20.07.2026',
+          }),
+        ],
+        saveCheckSettings: {
+          ...DEFAULT_SAVE_CHECK_SETTINGS,
+          officialDls: true,
+        },
+        welderStamps: [stamp],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toEqual([])
+  })
 })
 
 function buildTasks(
