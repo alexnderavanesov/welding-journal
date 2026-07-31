@@ -22,7 +22,7 @@ import {
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/dispatcher-task-builder'
-import type { RepeatedJointTask } from '@/lib/dispatcher-types'
+import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
@@ -80,16 +80,53 @@ export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
       welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
     })
     const rowIds = [...getDispatcherTaskRowIds(tasks.repeatedJointTasks)].sort((left, right) => left - right)
+    const repeatedJointTasks = compactDispatcherTasksForTransport(tasks.repeatedJointTasks)
 
     return {
       rowIds,
       duplicateKeys: [...getDuplicateKeys(preparedRows)].sort(),
-      repeatedJointTasks: tasks.repeatedJointTasks,
+      repeatedJointTasks,
       repeatedTaskCount: tasks.repeatedJointTasks.length,
       welderStampExpiryTaskCount: tasks.welderStampExpiryTasks.length,
       computedAt: new Date().toISOString(),
     }
   })
+
+const DISPATCHER_ROW_CONTEXT_KEYS = [
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'joint',
+  'status',
+  'weldDate',
+] as const
+
+function compactDispatcherRow(row: WeldRow): WeldRow {
+  const compact: WeldRow = { id: row.id }
+  for (const key of DISPATCHER_ROW_CONTEXT_KEYS) {
+    if (row[key] !== undefined) compact[key] = row[key]
+  }
+  return compact
+}
+
+export function compactDispatcherTasksForTransport(tasks: RepeatedJointTask[]): RepeatedJointTask[] {
+  return tasks.map((task) => {
+    if (task.kind === 'check') {
+      return {
+        ...task,
+        row: compactDispatcherRow(task.row),
+        sourceRow: compactDispatcherRow(task.sourceRow),
+      }
+    }
+    if (task.kind === 'duplicate-check' || task.kind === 'line-consistency') {
+      return {
+        ...task,
+        row: compactDispatcherRow(task.row),
+      }
+    }
+    return task
+  })
+}
 
 function getDispatcherSettings(rows: AppSetting[], fallback?: Partial<DispatcherSettings>) {
   return normalizeDispatcherSettings(fallback ?? getStoredSetting(rows, PROJECT_SETTING_KEYS.dispatcher) ?? DEFAULT_DISPATCHER_SETTINGS)

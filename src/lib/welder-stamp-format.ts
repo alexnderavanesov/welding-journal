@@ -24,13 +24,18 @@ export function splitWelderStampMaterialGroups(
   value: string,
   options: readonly string[] = loadDataListSettings().materialGroups,
 ) {
-  const normalized = String(value ?? '').toUpperCase().replace(/;/g, ',')
-  return options.filter((option) =>
-    normalized
-      .split(',')
-      .map((item) => item.trim())
-      .includes(option),
-  )
+  const normalizedValues = String(value ?? '')
+    .toUpperCase()
+    .replace(/;/g, ',')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  // Server-side dispatcher checks run before browser settings exist. Preserve
+  // exact stored codes there instead of dropping every material group.
+  if (options.length === 0) return [...new Set(normalizedValues)]
+
+  return options.filter((option) => normalizedValues.includes(option))
 }
 
 export function normalizeWelderStampMaterialGroups(

@@ -1,6 +1,7 @@
 import { WelderStampNotificationGroup } from '@/components/welder-stamp-notification-card'
 import { Button } from '@/components/ui/button'
 import type { DispatcherTask, RepeatedJointTaskGroup, WelderStampExpiryTask } from '@/lib/dispatcher-types'
+import { useIncrementalDispatcherGroups } from '@/lib/use-incremental-dispatcher-groups'
 
 type WelderStampNotificationPanelProps = {
   tasks: WelderStampExpiryTask[]
@@ -17,6 +18,8 @@ export function WelderStampNotificationPanel({
   onToggleDetails,
   onDismissAll,
 }: WelderStampNotificationPanelProps) {
+  const { visibleGroups, visibleCount, hasMore, loadMore, loadMoreRef } = useIncrementalDispatcherGroups(groups)
+
   if (tasks.length === 0) return null
 
   return (
@@ -40,7 +43,7 @@ export function WelderStampNotificationPanel({
           </Button>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <WelderStampNotificationGroup
               key={group.key}
               group={group}
@@ -49,6 +52,22 @@ export function WelderStampNotificationPanel({
             />
           ))}
         </div>
+        {hasMore ? (
+          <div ref={loadMoreRef} className="flex items-center justify-between gap-3 border-t border-amber-200/70 pt-2">
+            <span className="text-xs text-amber-800">
+              Показано групп: {visibleCount} из {groups.length}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={loadMore}
+              className="h-7 border-amber-300 bg-white px-3 text-xs text-amber-900 hover:bg-amber-100"
+            >
+              Показать ещё
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   )

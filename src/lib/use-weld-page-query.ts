@@ -56,6 +56,7 @@ export function useWeldPageQuery({ enabled, report = 'weldingJournal', columnFil
         pageSize: serverPageSize,
         columnFilters: normalizedColumnFilters,
       }),
+    staleTime: 15_000,
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore || lastPage.pageSize === WELD_PAGE_ALL_SIZE) return undefined
       return lastPage.page + 1

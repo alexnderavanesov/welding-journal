@@ -11,5 +11,6 @@ export function useWeldsQuery({ enabled = true }: { enabled?: boolean } = {}) {
     queryKey: ['weld-joints', emptyFilters],
     queryFn: async () => listWeldJoints({ data: emptyFilters }),
     enabled,
+    staleTime: 15_000,
   })
 }

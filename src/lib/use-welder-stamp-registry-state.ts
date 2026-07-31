@@ -50,6 +50,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const welderStampsQuery = useQuery({
     queryKey: ['welder-stamps'],
     queryFn: async () => listWelderStampRecords(),
+    staleTime: 30_000,
   })
 
   const welderStampsMutation = useMutation({
@@ -69,6 +70,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const welderStampSuspensionsQuery = useQuery({
     queryKey: ['welder-stamp-suspensions'],
     queryFn: async () => listWelderStampSuspensionRecords(),
+    staleTime: 30_000,
   })
 
   const welderStampSuspensionsMutation = useMutation({

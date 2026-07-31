@@ -4,11 +4,13 @@ import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 
 export const DUPLICATE_CONTROLS_QUERY_KEY = ['duplicate-controls'] as const
 
-export function useDuplicateControls() {
+export function useDuplicateControls({ enabled = true }: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient()
   const duplicateControlsQuery = useQuery({
     queryKey: DUPLICATE_CONTROLS_QUERY_KEY,
     queryFn: async () => listDuplicateControls(),
+    enabled,
+    staleTime: 30_000,
   })
 
   const saveDuplicateControlMutation = useMutation({
@@ -29,7 +31,6 @@ export function useDuplicateControls() {
 
   return {
     duplicateControls: duplicateControlsQuery.data ?? [],
-    duplicateControlsQuery,
     saveDuplicateControlMutation,
     deleteDuplicateControlMutation,
   }

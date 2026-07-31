@@ -21,14 +21,15 @@ export function prepareReportRows(
     duplicateControlsByWeldId.set(control.weldJointId, current)
   }
   const rows = (sourceRows ?? []).map((row): WeldRow => {
-    const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(row as WeldRow)))
+    const sourceRow = row as WeldRow
+    const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(sourceRow)))
     const withTimestamps = withPstoCreatedAt([normalizedRow])[0]
     const withPendingLnk = withPendingLnkResults(withTimestamps)
     const withPendingPsto = withPendingPstoResultStatus(withPendingLnk)
     const prepared = toControlCancellationReportRow(withPendingPsto)
     return {
       ...prepared,
-      duplicateControls: duplicateControlsByWeldId.get(Number(prepared.id)) ?? [],
+      duplicateControls: duplicateControlsByWeldId.get(Number(prepared.id)) ?? sourceRow.duplicateControls ?? [],
     }
   })
   const finalStatusRows = finalStatusSourceRows ?? rows

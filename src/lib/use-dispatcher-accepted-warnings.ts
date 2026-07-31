@@ -13,6 +13,7 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
   const acceptedWarningsQuery = useQuery({
     queryKey: ['dispatcher-accepted-warnings'],
     queryFn: async () => listDispatcherAcceptedWarnings(),
+    staleTime: 30_000,
   })
 
   const acceptedDispatcherWarningKeys = useMemo(

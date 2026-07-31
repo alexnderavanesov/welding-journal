@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
 import { getRepeatedJointTaskDetails, getRepeatedJointTaskDetailsHeading } from '@/lib/dispatcher-text'
@@ -29,12 +29,17 @@ export function DispatcherTaskDetails({ task }: DispatcherTaskDetailsProps) {
 type DispatcherTaskGroupFrameProps = {
   group: RepeatedJointTaskGroup
   reminder?: boolean
-  children: ReactNode
+  children: ReactNode | (() => ReactNode)
 }
 
 export function DispatcherTaskGroupFrame({ group, reminder = false, children }: DispatcherTaskGroupFrameProps) {
+  const [isOpen, setIsOpen] = useState(false)
+
   return (
-    <details key={group.key} className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm">
+    <details
+      className="group w-fit max-w-full rounded-md border border-amber-200 bg-white/95 open:shadow-sm"
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 text-sm marker:hidden">
         <span className="font-semibold text-slate-900">{group.baseJoint}</span>
         <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
@@ -47,7 +52,11 @@ export function DispatcherTaskGroupFrame({ group, reminder = false, children }: 
           свернуть
         </span>
       </summary>
-      <div className="flex max-w-full flex-col gap-1 border-t border-amber-100 p-1.5">{children}</div>
+      {isOpen ? (
+        <div className="flex max-w-full flex-col gap-1 border-t border-amber-100 p-1.5">
+          {typeof children === 'function' ? children() : children}
+        </div>
+      ) : null}
     </details>
   )
 }

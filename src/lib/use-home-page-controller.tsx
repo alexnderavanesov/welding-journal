@@ -105,6 +105,7 @@ import {
   getDefaultNamingState,
   useRequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
+import { getWeldJointById } from '@/server/welds'
 
 export function useHomePageController() {
   const saveCheckSettings = useSaveCheckSettings()
@@ -384,15 +385,14 @@ export function useHomePageController() {
   const weldsQuery = useWeldsQuery({ enabled: shouldLoadFullWeldRows })
   const {
     duplicateControls,
-    duplicateControlsQuery,
     saveDuplicateControlMutation,
     deleteDuplicateControlMutation,
-  } = useDuplicateControls()
+  } = useDuplicateControls({
+    enabled: shouldLoadFullWeldRows || isDuplicateControlModalOpen,
+  })
 
   const rows = useReportRows(weldsQuery.data, duplicateControls)
   const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
-  const shouldBuildRepeatedDispatcherTasks =
-    !isServerPagedTab && (activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment')
   const shouldBuildWelderStampExpiryTasks = activeReport === 'welderStamps'
 
   const {
@@ -405,7 +405,7 @@ export function useHomePageController() {
     acceptedDispatcherWarningKeys,
     activeReport,
     dismissedRepeatedJointTaskKeys,
-    includeRepeatedJointTasks: shouldBuildRepeatedDispatcherTasks,
+    includeRepeatedJointTasks: false,
     includeWelderStampExpiryTasks: shouldBuildWelderStampExpiryTasks,
     rows,
     saveCheckSettings,
@@ -876,7 +876,12 @@ export function useHomePageController() {
     columnFilters: isServerPagedTab ? activeColumnFilters : {},
   })
   const fullFinalStatusContext = useMemo(() => buildFinalStatusRowsContext(rows), [rows])
-  const pagedReportRows = useReportRows(weldPageQuery.rows, duplicateControls, rows, fullFinalStatusContext)
+  const pagedReportRows = useReportRows(
+    weldPageQuery.rows,
+    duplicateControls,
+    rows.length > 0 ? rows : undefined,
+    rows.length > 0 ? fullFinalStatusContext : undefined,
+  )
   const tableActionRows = rows.length > 0 ? (visibleRows as WeldRow[]) : pagedReportRows
   const refetchWeldData = async () => {
     await Promise.all([
@@ -1174,7 +1179,6 @@ export function useHomePageController() {
     for (const payload of payloads) {
       await saveDuplicateControlMutation.mutateAsync(payload)
     }
-    await duplicateControlsQuery.refetch()
     closeDuplicateControlModal()
     setMessage(duplicateControlDraft.id ? 'Дубль-контроль обновлен' : `Дубль-контроль внесен: ${payloads.length}`)
   }
@@ -1191,7 +1195,6 @@ export function useHomePageController() {
     })
     if (!confirmed) return
     await deleteDuplicateControlMutation.mutateAsync(control.id)
-    await duplicateControlsQuery.refetch()
     setMessage('Дубль-контроль удален')
   }
 
@@ -1206,7 +1209,14 @@ export function useHomePageController() {
   }
 
   async function handleProtectedEditRecord(row: WeldRow, fieldKey?: Parameters<typeof handleEditRecord>[1]) {
-    await runProtectedEdit('редактирование стыка', () => handleEditRecord(row, fieldKey))
+    await runProtectedEdit('редактирование стыка', async () => {
+      const fullRecord = await getWeldJointById({ data: { id: row.id } })
+      if (!fullRecord) {
+        setMessage('Стык больше не найден. Обновите отчет и повторите действие.')
+        return
+      }
+      handleEditRecord(fullRecord, fieldKey)
+    })
   }
 
   async function deleteWeldRowById(id: number) {

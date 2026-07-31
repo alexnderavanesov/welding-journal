@@ -173,6 +173,37 @@ describe('buildVisibleDispatcherTasks', () => {
     expect(tasks.repeatedJointTasks[0]?.details).toContain('группу материалов M01')
   })
 
+  it('keeps exact stored material groups during server-side DZ-18 checks', () => {
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1',
+            materialGroup: 'М01',
+            stamp1K: 'ABC1',
+            weldingMethod: 'РАД',
+          }),
+        ],
+        saveCheckSettings: {
+          ...DEFAULT_SAVE_CHECK_SETTINGS,
+          officialArchive: false,
+          officialNaksDate: false,
+          officialSuspension: false,
+          officialDiameter: false,
+          officialThickness: false,
+          officialDls: false,
+        },
+        welderStamps: [stampRecordWithPermit('ABC1', 'М01')],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toEqual([])
+  })
 })
 
 function buildTasks(

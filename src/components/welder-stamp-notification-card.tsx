@@ -43,11 +43,13 @@ export function WelderStampNotificationCard({ task, isTaskExpanded, onToggleDeta
 export function WelderStampNotificationGroup({ group, isTaskExpanded, onToggleDetails }: WelderStampNotificationGroupProps) {
   return (
     <DispatcherTaskGroupFrame group={group} reminder>
-      {group.tasks
-        .filter((task): task is WelderStampExpiryTask => task.kind === 'welder-stamp-expiry')
-        .map((task) => (
-          <WelderStampNotificationCard key={task.key} task={task} isTaskExpanded={isTaskExpanded} onToggleDetails={onToggleDetails} />
-        ))}
+      {() =>
+        group.tasks
+          .filter((task): task is WelderStampExpiryTask => task.kind === 'welder-stamp-expiry')
+          .map((task) => (
+            <WelderStampNotificationCard key={task.key} task={task} isTaskExpanded={isTaskExpanded} onToggleDetails={onToggleDetails} />
+          ))
+      }
     </DispatcherTaskGroupFrame>
   )
 }

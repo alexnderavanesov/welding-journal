@@ -4,10 +4,13 @@ import {
   buildWeldColumnFilterOptionsFromRows,
   buildWeldReportPageFromRows,
   canPaginateReportSource,
+  compactWeldRowsForTransport,
+  mergeDuplicateControlsIntoRows,
   normalizeWeldPageRequest,
   normalizeWeldPageSize,
 } from './welds'
 import type { WeldJoint } from '@/db/schema'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   PERCENTAGE_LINE_STAMP_FILTER_KEY,
   ROW_ID_LIST_FILTER_KEY,
@@ -47,6 +50,29 @@ describe('weld server pagination helpers', () => {
     })
 
     expect(normalizeWeldPageRequest({ page: 2.9, pageSize: WELD_PAGE_ALL_SIZE }).page).toBe(2)
+  })
+
+  it('removes only empty transport fields while preserving meaningful false and zero values', () => {
+    expect(
+      compactWeldRowsForTransport([
+        {
+          id: 7,
+          joint: 'F7',
+          line: '',
+          d1: 0,
+          hasVik: false,
+          materialGroup: null,
+          duplicateControls: [],
+        } as unknown as WeldRow,
+      ]),
+    ).toEqual([
+      {
+        id: 7,
+        joint: 'F7',
+        d1: 0,
+        hasVik: false,
+      },
+    ])
   })
 
   it('keeps hidden report filters used by selected rows and percentage line navigation', () => {
@@ -132,6 +158,35 @@ describe('weld server pagination helpers', () => {
       { value: 'LIN-1', label: 'LIN-1', count: 2 },
       { value: 'LIN-2', label: 'LIN-2', count: 1 },
     ])
+  })
+
+  it('attaches only duplicate controls that belong to returned page rows', () => {
+    const rows = mergeDuplicateControlsIntoRows(
+      [row({ id: 1, joint: 'S1' }), row({ id: 2, joint: 'S2' })] as WeldRow[],
+      [
+        {
+          id: 10,
+          weldJointId: 2,
+          method: 'РК',
+          result: 'ремонт',
+          controlDate: '2026-07-02',
+          conclusion: 'Заключение',
+          conclusionDate: '2026-07-02',
+        },
+        {
+          id: 11,
+          weldJointId: 99,
+          method: 'УЗК',
+          result: 'годен',
+          controlDate: '',
+          conclusion: '',
+          conclusionDate: '',
+        },
+      ],
+    )
+
+    expect(rows[0].duplicateControls).toEqual([])
+    expect(rows[1].duplicateControls?.map((control) => control.id)).toEqual([10])
   })
 })
 

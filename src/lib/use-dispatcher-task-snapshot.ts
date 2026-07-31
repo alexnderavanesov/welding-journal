@@ -42,6 +42,7 @@ export function useDispatcherTaskSnapshot({
           saveCheckSettings,
         },
       }),
+    staleTime: 15_000,
   })
   const dispatcherTaskRowIds = useMemo(() => new Set(query.data?.rowIds ?? []), [query.data?.rowIds])
   const duplicateKeys = useMemo(() => new Set(query.data?.duplicateKeys ?? []), [query.data?.duplicateKeys])

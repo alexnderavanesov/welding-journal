@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, count, desc, eq, ilike, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { weldJoints, type NewWeldJoint, type WeldJoint } from '@/db/schema'
+import { duplicateControls, weldJoints, type DuplicateControl, type NewWeldJoint, type WeldJoint } from '@/db/schema'
 import {
   clearCancelledRejectedLnkGeneratedData,
   clearDisabledLnkRequests,
@@ -27,6 +27,7 @@ import {
 } from '@/lib/weld-fields'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
+import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 import { filterWeldRowsByColumns, getWeldColumnFilterCellText } from '@/lib/weld-table-filtering'
 import { buildHeatTreatmentReportRows, buildLnkReportRows } from '@/lib/report-row-utils'
@@ -240,9 +241,16 @@ export const listWeldJointChain = createServerFn({ method: 'GET' })
     }
   })
 
-export const listWeldJointPage = createServerFn({ method: 'GET' })
-  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
-  .handler(async ({ data }): Promise<WeldPageResult> => listReportPage(data.report ?? 'weldingJournal', data))
+export const getWeldJointById = createServerFn({ method: 'GET' })
+  .validator((data: { id: number }) => ({ id: Math.max(0, Math.floor(Number(data?.id) || 0)) }))
+  .handler(async ({ data }): Promise<WeldRow | null> => {
+    if (!data.id) return null
+    const db = requireDb()
+    const [record] = await db.select().from(weldJoints).where(eq(weldJoints.id, data.id)).limit(1)
+    if (!record) return null
+    const [recordWithDuplicateControls] = await attachDuplicateControlsToPage([record])
+    return recordWithDuplicateControls as unknown as WeldRow
+  })
 
 export const listWeldingJournalPage = createServerFn({ method: 'GET' })
   .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
@@ -276,9 +284,11 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
           ? query
           : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
       const [[{ total }], rows] = await Promise.all([countQuery, rowsQuery])
+      const reportRows = buildServerReportRows(rows, report)
+      const rowsWithDuplicateControls = compactWeldRowsForTransport(await attachDuplicateControlsToPage(reportRows))
 
       return {
-        rows: buildServerReportRows(rows, report) as WeldRow[],
+        rows: rowsWithDuplicateControls,
         total,
         page: data.page,
         pageSize: data.pageSize,
@@ -291,7 +301,8 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       .from(weldJoints)
       .where(where)
       .orderBy(...getReportOrderBy(report))
-    return buildWeldReportPageFromRows(rows, data, report)
+    const page = buildWeldReportPageFromRows(rows, data, report)
+    return { ...page, rows: compactWeldRowsForTransport(await attachDuplicateControlsToPage(page.rows)) }
   }
 
   const where = buildWhere(data)
@@ -313,14 +324,83 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       ? query
       : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
   const [[{ total }], [{ total: acceptedWdiTotal }], rows] = await Promise.all([countQuery, acceptedWdiTotalQuery, rowsQuery])
+  const rowsWithDuplicateControls = compactWeldRowsForTransport(await attachDuplicateControlsToPage(rows))
 
   return {
-    rows: rows as WeldRow[],
+    rows: rowsWithDuplicateControls,
     total,
     acceptedWdiTotal,
     page: data.page,
     pageSize: data.pageSize,
     hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
+  }
+}
+
+type DuplicateControlCarrier = {
+  id: number
+  duplicateControls?: DuplicateControlRecord[]
+}
+
+async function attachDuplicateControlsToPage<Row extends DuplicateControlCarrier>(rows: Row[]) {
+  if (rows.length === 0) return rows
+  const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
+  if (ids.length === 0) return rows
+
+  const db = requireDb()
+  const idChunks = Array.from({ length: Math.ceil(ids.length / 1000) }, (_, index) =>
+    ids.slice(index * 1000, (index + 1) * 1000),
+  )
+  const controls = (
+    await Promise.all(
+      idChunks.map((idChunk) =>
+        db
+          .select()
+          .from(duplicateControls)
+          .where(inArray(duplicateControls.weldJointId, idChunk))
+          .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)),
+      ),
+    )
+  ).flat()
+
+  return mergeDuplicateControlsIntoRows(rows, controls.map(toDuplicateControlRecord))
+}
+
+export function mergeDuplicateControlsIntoRows<Row extends DuplicateControlCarrier>(
+  rows: Row[],
+  controls: DuplicateControlRecord[],
+) {
+  const byWeldId = new Map<number, DuplicateControlRecord[]>()
+  for (const control of controls) {
+    const current = byWeldId.get(control.weldJointId) ?? []
+    current.push(control)
+    byWeldId.set(control.weldJointId, current)
+  }
+  return rows.map((row) => ({ ...row, duplicateControls: byWeldId.get(row.id) ?? [] }))
+}
+
+export function compactWeldRowsForTransport<Row extends DuplicateControlCarrier>(rows: Row[]): WeldRow[] {
+  return rows.map((row) => {
+    const compact = Object.fromEntries(
+      Object.entries(row as Record<string, unknown>).filter(
+        ([, value]) => value !== null && value !== undefined && value !== '',
+      ),
+    ) as WeldRow
+    if (Array.isArray(compact.duplicateControls) && compact.duplicateControls.length === 0) {
+      delete compact.duplicateControls
+    }
+    return compact
+  })
+}
+
+function toDuplicateControlRecord(row: DuplicateControl): DuplicateControlRecord {
+  return {
+    id: row.id,
+    weldJointId: row.weldJointId,
+    method: row.method as DuplicateControlRecord['method'],
+    result: row.result as DuplicateControlRecord['result'],
+    controlDate: row.controlDate ?? '',
+    conclusion: row.conclusion ?? '',
+    conclusionDate: row.conclusionDate ?? '',
   }
 }
 

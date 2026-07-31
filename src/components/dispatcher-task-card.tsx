@@ -67,9 +67,11 @@ export function DispatcherTaskGroup({ group, ...handlers }: DispatcherTaskGroupP
   const isReminderGroup = group.tasks.every((task) => task.kind === 'welder-stamp-expiry')
   return (
     <DispatcherTaskGroupFrame group={group} reminder={isReminderGroup}>
-      {group.tasks.map((task) => (
-        <DispatcherTaskCard key={task.key} task={task} nested {...handlers} />
-      ))}
+      {() =>
+        group.tasks.map((task) => (
+          <DispatcherTaskCard key={task.key} task={task} nested {...handlers} />
+        ))
+      }
     </DispatcherTaskGroupFrame>
   )
 }

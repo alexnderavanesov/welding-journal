@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { DispatcherTaskGroup, type DispatcherTaskCardHandlers } from '@/components/dispatcher-task-card'
 import type { DispatcherTask, RepeatedJointTask, RepeatedJointTaskGroup } from '@/lib/dispatcher-types'
+import { useIncrementalDispatcherGroups } from '@/lib/use-incremental-dispatcher-groups'
 
 type DispatcherTaskPanelProps = {
   tasks: RepeatedJointTask[]
@@ -11,6 +12,8 @@ type DispatcherTaskPanelProps = {
 }
 
 export function DispatcherTaskPanel({ tasks, groups, stickyLeft, handlers, onDismissAll }: DispatcherTaskPanelProps) {
+  const { visibleGroups, visibleCount, hasMore, loadMore, loadMoreRef } = useIncrementalDispatcherGroups(groups)
+
   if (tasks.length === 0) return null
 
   return (
@@ -37,10 +40,26 @@ export function DispatcherTaskPanel({ tasks, groups, stickyLeft, handlers, onDis
           </Button>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <DispatcherTaskGroup key={group.key} group={group} {...handlers} />
           ))}
         </div>
+        {hasMore ? (
+          <div ref={loadMoreRef} className="flex items-center justify-between gap-3 border-t border-amber-200/70 pt-2">
+            <span className="text-xs text-amber-800">
+              Показано групп: {visibleCount} из {groups.length}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={loadMore}
+              className="h-7 border-amber-300 bg-white px-3 text-xs text-amber-900 hover:bg-amber-100"
+            >
+              Показать ещё
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   )
