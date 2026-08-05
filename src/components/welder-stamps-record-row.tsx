@@ -2,7 +2,7 @@ import { Archive, CalendarClock, CheckCircle2, ChevronDown, Pencil, RotateCcw, S
 import { useState } from 'react'
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { WelderStampExpandedDetails } from '@/components/welder-stamp-detail-panel'
-import { formatWelderStampDlsSummary } from '@/lib/welder-stamp-format'
+import { formatWelderStampDate, formatWelderStampDlsSummary } from '@/lib/welder-stamp-format'
 import { getWelderStampNaksPermits } from '@/lib/welder-stamp-permits'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -99,7 +99,7 @@ export function WelderStampsRecordRow({
         </td>
         <td className={`break-words ${cellBorderClassName} px-3 py-3 text-center ${textClassName}`}>{record.internalStamp || '-'}</td>
         <td className={`${cellBorderClassName} px-3 py-3 text-center`}>
-          <RecordStatusBadge archived={isArchived} />
+          <RecordStatusBadge archived={isArchived} archivedAt={record.archivedAt} />
         </td>
         <td className={`break-words ${cellBorderClassName} px-3 py-3 text-center ${textClassName}`}>{record.weldType || '-'}</td>
         <td className={`break-words ${cellBorderClassName} px-3 py-3 text-center ${textClassName}`}>{record.materialGroups || '-'}</td>
@@ -156,9 +156,18 @@ function PermitStateIcon({ state }: { state: PermitState }) {
   return <Icon className={`h-4 w-4 ${className}`} />
 }
 
-function RecordStatusBadge({ archived }: { archived: boolean }) {
+function RecordStatusBadge({ archived, archivedAt }: { archived: boolean; archivedAt?: string }) {
   if (archived) {
-    return <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-500">в архиве</span>
+    const archiveDate = formatWelderStampDate(archivedAt ?? '')
+    return (
+      <span
+        className="inline-flex flex-col rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold leading-4 text-slate-500"
+        title={archiveDate ? `Дата архивации: ${archiveDate}` : 'Дата архивации не указана'}
+      >
+        <span>в архиве</span>
+        {archiveDate ? <span className="font-normal text-slate-400">с {archiveDate}</span> : null}
+      </span>
+    )
   }
 
   return (

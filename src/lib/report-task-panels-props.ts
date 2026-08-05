@@ -14,6 +14,8 @@ type CreateReportTaskPanelsPropsOptions = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
   onDismissTasks: (tasks: DispatcherTask[]) => void
+  columnFilters: Record<string, string>
+  onColumnFiltersChange: (filters: Record<string, string>) => void
 }
 
 export function createReportTaskPanelsProps({
@@ -27,6 +29,8 @@ export function createReportTaskPanelsProps({
   isTaskExpanded,
   onToggleDetails,
   onDismissTasks,
+  columnFilters,
+  onColumnFiltersChange,
 }: CreateReportTaskPanelsPropsOptions): ReportTaskPanelsProps {
   return {
     activeReport,
@@ -39,5 +43,7 @@ export function createReportTaskPanelsProps({
     isTaskExpanded,
     onToggleDetails,
     onDismissTasks,
+    columnFilters,
+    onColumnFiltersChange,
   }
 }

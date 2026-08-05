@@ -6,9 +6,9 @@ import {
 } from './weld-import-rows'
 import { readFirstSheetRows } from './weld-import-sheet-reader'
 
-export async function parseWorkbook(buffer: ArrayBuffer): Promise<ImportResult> {
+export async function parseWorkbook(buffer: ArrayBuffer, requiredHeaders?: readonly string[]): Promise<ImportResult> {
   const rows = await readFirstSheetRows(buffer, 'array')
-  return parseWorksheetRows(rows)
+  return parseWorksheetRows(rows, requiredHeaders)
 }
 
 export async function parseEditableWorkbook(buffer: ArrayBuffer, options: EditableImportOptions): Promise<ImportResult> {
@@ -16,9 +16,9 @@ export async function parseEditableWorkbook(buffer: ArrayBuffer, options: Editab
   return parseEditableWorksheetRows(rows, options)
 }
 
-export async function parseCsv(text: string): Promise<ImportResult> {
+export async function parseCsv(text: string, requiredHeaders?: readonly string[]): Promise<ImportResult> {
   const rows = await readFirstSheetRows(text, 'string')
-  return parseWorksheetRows(rows)
+  return parseWorksheetRows(rows, requiredHeaders)
 }
 
 export async function parseEditableCsv(text: string, options: EditableImportOptions): Promise<ImportResult> {

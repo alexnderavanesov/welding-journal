@@ -15,6 +15,7 @@ import {
 } from '@/lib/weld-table-row-state'
 import { getCellKey, getDuplicateKey } from '@/lib/weld-table-utils'
 import { RESULT_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
+import type { SystemDocumentType } from '@/lib/system-document-types'
 
 type WeldTableBodyRowsProps = {
   rows: WeldRow[]
@@ -44,6 +45,8 @@ type WeldTableBodyRowsProps = {
   onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onDelete?: (id: number) => void
   onContextMenu?: (event: MouseEvent, row: WeldRow) => void
+  onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentType>
 }
 
 export function WeldTableBodyRows({
@@ -74,6 +77,8 @@ export function WeldTableBodyRows({
   onEdit,
   onDelete,
   onContextMenu,
+  onOpenDocument,
+  availableSystemDocumentTypes,
 }: WeldTableBodyRowsProps) {
   const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
   const hasControlColumn = selectable || hasChainAction
@@ -154,6 +159,8 @@ export function WeldTableBodyRows({
                     stickyBackgroundClassName={stickyBackgroundClassName}
                     isSectionEnd={isSectionEnd}
                     onEdit={onEdit}
+                    onOpenDocument={onOpenDocument}
+                    availableSystemDocumentTypes={availableSystemDocumentTypes}
                   />
                 )
               }),

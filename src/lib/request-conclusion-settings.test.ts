@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSystemNameFromPattern, REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
+import {
+  buildSystemNameFromPattern,
+  parseRequestNamingPattern,
+  REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  serializeRequestNamingPattern,
+} from '@/lib/request-conclusion-settings'
 import { formatLnkConclusionName } from '@/lib/report-conclusion-naming'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -29,5 +34,26 @@ describe('request and conclusion naming settings', () => {
     ] as WeldRow[]
 
     expect(formatLnkConclusionName(rows, '2026-07-10', 'rkRequest', settings)).toBe('Закл-РК-10.07.26-002')
+  })
+
+  it('round-trips a visual naming formula without changing its behavior', () => {
+    const pattern = 'Заключение-{{Метод}}-{{Дата}}-{{№}}'
+    const parts = parseRequestNamingPattern(pattern)
+
+    expect(parts).toEqual([
+      { type: 'text', value: 'Заключение-' },
+      { type: 'field', field: 'method' },
+      { type: 'text', value: '-' },
+      { type: 'field', field: 'date' },
+      { type: 'text', value: '-' },
+      { type: 'field', field: 'number' },
+    ])
+    expect(serializeRequestNamingPattern(parts)).toBe(pattern)
+  })
+
+  it('preserves unknown legacy tokens as text in the visual constructor', () => {
+    const pattern = 'Документ-{{СтароеПоле}}-{{Дата}}'
+
+    expect(serializeRequestNamingPattern(parseRequestNamingPattern(pattern))).toBe(pattern)
   })
 })

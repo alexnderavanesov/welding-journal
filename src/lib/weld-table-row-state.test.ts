@@ -68,4 +68,10 @@ describe('weld table row state', () => {
       }),
     ).toContain('bg-[#cfeeff]')
   })
+
+  it('uses a generic hint for temporary system highlights', () => {
+    expect(getWeldTableRowTitle({ isHighlighted: true, isDuplicate: false, hasDispatcherTask: false })).toBe(
+      'Строка временно выделена системой',
+    )
+  })
 })

@@ -2,7 +2,7 @@ import { useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefOb
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldFormConnectionTypeField, WeldFormMaterialGroupField } from '@/components/weld-form-connection-type-field'
-import { WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
+import { WeldFormTestTypesField, WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { cn } from '@/lib/utils'
 import { getWeldFormSuggestions, type WeldFormSuggestion } from '@/lib/weld-form-suggestions'
@@ -88,6 +88,19 @@ export function WeldFormField({
             setDraft((current) => ({
               ...current,
               weldingMethod,
+            }))
+          }
+        />
+      ) : field.key === 'testTypes' ? (
+        <WeldFormTestTypesField
+          value={getTextDraftValue(draft.testTypes)}
+          inputRef={(element) => {
+            fieldRefs.current[field.key] = element
+          }}
+          onChange={(testTypes) =>
+            setDraft((current) => ({
+              ...current,
+              testTypes,
             }))
           }
         />

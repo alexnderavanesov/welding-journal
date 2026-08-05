@@ -10,6 +10,7 @@ export type PercentageLineStampFilter = {
 
 export type RowIdListFilter = {
   rowIds: number[]
+  mode?: 'include' | 'exclude'
 }
 
 function trimRowText(value: unknown) {
@@ -30,10 +31,14 @@ export function buildPercentageLineStampFilters(filter: PercentageLineStampFilte
   }
 }
 
-export function buildRowIdListFilters(rowIds: number[]) {
+export function buildRowIdListFilters(rowIds: number[], mode: 'include' | 'exclude' = 'include') {
   const uniqueRowIds = Array.from(new Set(rowIds.filter(Number.isFinite)))
   return {
-    [ROW_ID_LIST_FILTER_KEY]: JSON.stringify({ rowIds: uniqueRowIds } satisfies RowIdListFilter),
+    [ROW_ID_LIST_FILTER_KEY]: JSON.stringify(
+      mode === 'exclude'
+        ? ({ rowIds: uniqueRowIds, mode } satisfies RowIdListFilter)
+        : ({ rowIds: uniqueRowIds } satisfies RowIdListFilter),
+    ),
   }
 }
 
@@ -58,7 +63,8 @@ export function parseRowIdListFilter(value: string): RowIdListFilter | null {
     const rowIds = Array.isArray(parsed.rowIds)
       ? parsed.rowIds.map((rowId) => Number(rowId)).filter(Number.isFinite)
       : []
-    return rowIds.length > 0 ? { rowIds } : null
+    const mode = parsed.mode === 'exclude' ? 'exclude' : 'include'
+    return { rowIds, mode }
   } catch {
     return null
   }

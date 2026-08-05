@@ -16,14 +16,12 @@ export type WdiTableSettings = {
 }
 
 export type OtherSettings = {
-  includeArchivedWelderStampsInForm: boolean
   requireDlsForOfficialStamps: boolean
   wdiCalculationMode: WdiCalculationMode
   wdiTable: WdiTableSettings | null
 }
 
 export const DEFAULT_OTHER_SETTINGS: OtherSettings = {
-  includeArchivedWelderStampsInForm: false,
   requireDlsForOfficialStamps: false,
   wdiCalculationMode: 'manual',
   wdiTable: null,
@@ -78,7 +76,6 @@ export function normalizeOtherSettings(value: unknown): OtherSettings {
       : legacyWdiInputMode ?? DEFAULT_OTHER_SETTINGS.wdiCalculationMode
   const wdiTable = normalizeWdiTableSettings(source.wdiTable)
   return {
-    includeArchivedWelderStampsInForm: source.includeArchivedWelderStampsInForm === true,
     requireDlsForOfficialStamps: source.requireDlsForOfficialStamps === true,
     wdiCalculationMode: wdiCalculationMode === 'table' && !wdiTable ? 'manual' : wdiCalculationMode,
     wdiTable,

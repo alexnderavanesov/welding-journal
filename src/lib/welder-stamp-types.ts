@@ -43,6 +43,7 @@ export type WelderStampRecord = {
   naksPermits: WelderStampNaksPermit[]
   dlsPermits: WelderStampDlsPermit[]
   archived: boolean
+  archivedAt?: string
 }
 
 export type WelderStampFilters = {

@@ -1,6 +1,8 @@
-import { type ChangeEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Bell,
   CheckCircle2,
   ChevronDown,
@@ -11,8 +13,9 @@ import {
   Hash,
   Inbox,
   LockKeyhole,
-  Pencil,
+  MoreHorizontal,
   Plus,
+  Save,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
@@ -34,11 +37,24 @@ import {
   type StoredDocumentTemplate,
   type WeldingJournalTemplateOptions,
 } from '@/lib/document-template-storage'
+import { WELDING_JOURNAL_DOCUMENT_SPLIT_MODES } from '@/lib/welding-journal-document-splitting'
 import {
+  loadGeneratedDocumentSequence,
+  resetGeneratedDocumentSequence,
+} from '@/lib/generated-document-storage'
+import type { GeneratedDocumentType } from '@/server/generated-documents'
+import { isGeneratedDocumentType } from '@/lib/generated-document-types'
+import {
+  REQUEST_NAMING_PATTERN_FIELDS,
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  buildSystemNameFromPattern,
+  parseRequestNamingPattern,
   saveRequestConclusionSettings,
+  serializeRequestNamingPattern,
   useRequestConclusionSettings,
   type RequestConclusionNamingKind,
+  type RequestNamingPatternField,
+  type RequestNamingPatternPart,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import type { RequestNamingState } from '@/lib/request-naming-state'
@@ -75,6 +91,7 @@ import { saveOtherSettings, useOtherSettings, type WdiCalculationMode, type WdiT
 import { buildWdiTableXlsxBytes, getWdiTableMatrix, parseWdiTableFile } from '@/lib/wdi-table-import'
 import {
   DEFAULT_DATA_LIST_SETTINGS,
+  getDataListOptionInputError,
   normalizeDataListOption,
   saveDataListSettings,
   useDataListSettings,
@@ -192,6 +209,7 @@ const SECURITY_PASSWORD_KEYS = {
   settings: 'settingsPassword',
   edit: 'editPassword',
   importReplace: 'importReplacePassword',
+  documentGeneration: 'documentGenerationPassword',
   delete: 'deletePassword',
 } as const satisfies Record<SecurityScope, keyof SecuritySettings>
 
@@ -200,6 +218,7 @@ const SECURITY_FLAG_KEYS = {
   settings: 'protectSettings',
   edit: 'protectEdit',
   importReplace: 'protectImportReplace',
+  documentGeneration: 'protectDocumentGeneration',
   delete: 'protectDelete',
 } as const satisfies Record<SecurityScope, keyof SecuritySettings>
 
@@ -239,6 +258,15 @@ const SECURITY_RULE_CARDS: Array<{
     example: 'Пользователь загрузил шаблон замены данных, проверил предпросмотр, нажал заменить и ввел пароль импорта.',
   },
   {
+    scope: 'documentGeneration',
+    title: 'Формирование документов',
+    passwordTitle: 'Пароль на формирование документов',
+    description:
+      'Перед ручным созданием или переформированием пользовательского документа будет запрошен пароль.',
+    example:
+      'Пользователь формирует ЖСР, Чек-лист или ЗНИ через ПКМ либо раздел “Документы” и вводит пароль. Открытие и скачивание свободны; удаление защищается отдельным паролем удаления. Системные заявки и заключения ЛНК/ПСТО эта защита не затрагивает.',
+  },
+  {
     scope: 'delete',
     title: 'Удаление',
     passwordTitle: 'Пароль на удаление',
@@ -254,6 +282,7 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
     settings: '',
     edit: '',
     importReplace: '',
+    documentGeneration: '',
     delete: '',
   })
   const [repeatDrafts, setRepeatDrafts] = useState<Record<SecurityScope, string>>({
@@ -261,6 +290,7 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
     settings: '',
     edit: '',
     importReplace: '',
+    documentGeneration: '',
     delete: '',
   })
   const [editingPasswordScopes, setEditingPasswordScopes] = useState<Set<SecurityScope>>(() => new Set())
@@ -341,8 +371,8 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
     await runProtectedSettingsChange(() => {
       clearSecuritySettings()
     })
-    setPasswordDrafts({ entry: '', settings: '', edit: '', importReplace: '', delete: '' })
-    setRepeatDrafts({ entry: '', settings: '', edit: '', importReplace: '', delete: '' })
+    setPasswordDrafts({ entry: '', settings: '', edit: '', importReplace: '', documentGeneration: '', delete: '' })
+    setRepeatDrafts({ entry: '', settings: '', edit: '', importReplace: '', documentGeneration: '', delete: '' })
     setEditingPasswordScopes(new Set())
     setMessage('Все пароли и блокировки отключены')
   }
@@ -375,7 +405,9 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
           </div>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
             <div className="font-semibold text-slate-900">2. Включите защиты</div>
-            <div className="mt-1 leading-5 text-slate-500">Отдельно включаются вход, настройки, редактирование, замена импортом и удаление.</div>
+            <div className="mt-1 leading-5 text-slate-500">
+              Отдельно включаются вход, настройки, редактирование, замена импортом, формирование документов и удаление.
+            </div>
           </div>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
             <div className="font-semibold text-slate-900">3. Пользователь вводит пароль</div>
@@ -853,12 +885,14 @@ function DataSettingsPanel({
     weldingTypes: '',
     connectionTypes: '',
     materialGroups: '',
+    testTypes: '',
   })
   const [message, setMessage] = useState<string | null>(null)
   const usageCountsByKey: Record<DataListSettingsKey, Map<string, number>> = {
     weldingTypes: getWeldingTypeUsageCounts(rows),
     connectionTypes: getConnectionTypeUsageCounts(rows),
     materialGroups: getMaterialGroupUsageCounts(rows),
+    testTypes: getTestTypeUsageCounts(rows),
   }
 
   async function addListValue(config: DataListConfig) {
@@ -866,6 +900,11 @@ function DataSettingsPanel({
     const values = settings[config.key]
     if (!nextValue) {
       setMessage(`Введите значение для списка “${config.title}”.`)
+      return
+    }
+    const inputError = getDataListOptionInputError(config.key, nextValue)
+    if (inputError) {
+      setMessage(`${config.title}: ${inputError}`)
       return
     }
     if (values.includes(nextValue)) {
@@ -977,71 +1016,89 @@ function DataSettingsPanel({
         </p>
       </div>
 
-      {DATA_LIST_CONFIGS.map((config) => (
-        <div key={config.key} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
-          <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-base font-semibold text-slate-900">{config.title}</div>
-              <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-500">{config.description}</p>
-              <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">{config.protectionHint}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => resetListValues(config)}
-              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              {config.resetButtonLabel}
-            </button>
-          </div>
+      {DATA_LIST_CONFIGS.map((config) => {
+        const inputError = getDataListOptionInputError(config.key, drafts[config.key])
+        const hasRestrictedAlphabet = config.key !== 'testTypes'
 
-          <div className="space-y-4 p-4">
-            {settings[config.key].length > 0 ? (
-              <div className="flex flex-wrap gap-2">{settings[config.key].map((value) => renderListValue(config, value))}</div>
-            ) : (
-              <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
-                {config.emptyListText}
+        return (
+          <div key={config.key} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-base font-semibold text-slate-900">{config.title}</div>
+                <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-500">{config.description}</p>
+                <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">{config.protectionHint}</p>
               </div>
-            )}
-
-            <div className="grid gap-3 md:grid-cols-[minmax(220px,360px)_auto] md:items-end md:justify-start">
-              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                <span>Новое значение</span>
-                <input
-                  type="text"
-                  value={drafts[config.key]}
-                  onChange={(event) => {
-                    setDrafts((current) => ({ ...current, [config.key]: event.target.value }))
-                    setMessage(null)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      void addListValue(config)
-                    }
-                  }}
-                  placeholder={config.placeholder}
-                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm shadow-slate-200/50 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                />
-              </label>
               <button
                 type="button"
-                onClick={() => addListValue(config)}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                onClick={() => resetListValues(config)}
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
-                <Plus className="h-4 w-4" />
-                Добавить
+                {config.resetButtonLabel}
               </button>
             </div>
+
+            <div className="space-y-4 p-4">
+              {settings[config.key].length > 0 ? (
+                <div className="flex flex-wrap gap-2">{settings[config.key].map((value) => renderListValue(config, value))}</div>
+              ) : (
+                <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                  {config.emptyListText}
+                </div>
+              )}
+
+              <div className="grid gap-3 md:grid-cols-[minmax(220px,360px)_auto] md:items-end md:justify-start">
+                <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+                  <span>Новое значение</span>
+                  <input
+                    type="text"
+                    value={drafts[config.key]}
+                    onChange={(event) => {
+                      setDrafts((current) => ({ ...current, [config.key]: event.target.value }))
+                      setMessage(null)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void addListValue(config)
+                      }
+                    }}
+                    placeholder={config.placeholder}
+                    aria-invalid={inputError ? true : undefined}
+                    className={`h-10 w-full rounded-md border bg-white px-3 text-sm text-slate-900 shadow-sm shadow-slate-200/50 focus:outline-none focus:ring-2 ${
+                      inputError
+                        ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
+                        : 'border-slate-300 focus:border-sky-400 focus:ring-sky-100'
+                    }`}
+                  />
+                  {inputError ? (
+                    <span className="block text-xs font-normal leading-5 text-rose-600">{inputError}</span>
+                  ) : hasRestrictedAlphabet ? (
+                    <span className="block text-xs font-normal leading-5 text-slate-500">
+                      Разрешены кириллические буквы, цифры и пробелы.
+                    </span>
+                  ) : null}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => addListValue(config)}
+                  disabled={Boolean(inputError)}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <Plus className="h-4 w-4" />
+                  Добавить
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
 
       {message ? <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">{message}</div> : null}
     </div>
   )
 }
 
-type DataListSettingsKey = 'weldingTypes' | 'connectionTypes' | 'materialGroups'
+type DataListSettingsKey = 'weldingTypes' | 'connectionTypes' | 'materialGroups' | 'testTypes'
 
 type DataListConfig = {
   key: DataListSettingsKey
@@ -1102,6 +1159,20 @@ const DATA_LIST_CONFIGS: DataListConfig[] = [
     usedValueText: 'эта группа материалов',
     minOptionsMessage: '',
   },
+  {
+    key: 'testTypes',
+    title: 'Вид испытаний',
+    description:
+      'В разделе “Испытания” формы стыка пользователь сможет выбрать один или несколько вариантов. Несколько видов сохраняются одной записью через запятую, например: “ГИ, ПИ”.',
+    protectionHint: 'Если вид испытаний уже используется хотя бы в одном стыке, удалить его из настроек нельзя.',
+    placeholder: 'Например: ГИ',
+    emptyListText: 'Список пуст. Добавьте виды испытаний, которые используются на проекте.',
+    resetButtonLabel: 'Вернуть ГИ/ПИ',
+    resetBlockedAction: 'вернуть список к ГИ/ПИ',
+    resetSuccessMessage: 'Список “Вид испытаний” возвращен к значениям по умолчанию.',
+    usedValueText: 'этот вид испытаний',
+    minOptionsMessage: '',
+  },
 ]
 
 function getWeldingTypeUsageCounts(rows: WeldRow[]) {
@@ -1131,9 +1202,25 @@ function getMaterialGroupUsageCounts(rows: WeldRow[]) {
   return counts
 }
 
+function getTestTypeUsageCounts(rows: WeldRow[]) {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const values = new Set(splitDataListMultiValues(row.testTypes))
+    values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1))
+  }
+  return counts
+}
+
 function splitWeldingMethodValues(value: unknown) {
   return String(value ?? '')
     .split(/[+,;]+/)
+    .map((part) => normalizeDataListOption(part))
+    .filter(Boolean)
+}
+
+function splitDataListMultiValues(value: unknown) {
+  return String(value ?? '')
+    .split(/[,;+]+/)
     .map((part) => normalizeDataListOption(part))
     .filter(Boolean)
 }
@@ -1287,9 +1374,20 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true)
   const [builderTemplate, setBuilderTemplate] = useState<StoredDocumentTemplate | null>(null)
+  const [nextDocumentNumber, setNextDocumentNumber] = useState<number | null>(null)
+  const [isResettingDocumentNumber, setIsResettingDocumentNumber] = useState(false)
+  const [isUploadingTemplate, setIsUploadingTemplate] = useState(false)
+  const templateFileInputRef = useRef<HTMLInputElement>(null)
+  const templateFileMenuRef = useRef<HTMLDetailsElement>(null)
+  const confirmAction = useConfirmAction()
+  const { requireDeletePassword } = useSecurityGuard()
   const activeTemplate = DOCUMENT_TEMPLATE_TYPES.find((template) => template.id === activeTemplateId) ?? DOCUMENT_TEMPLATE_TYPES[0]
   const activeUpload = uploads[activeTemplateId]
-  const weldingJournalOptions = getWeldingJournalTemplateOptions(activeUpload?.options?.weldingJournal)
+  const documentOptions = getWeldingJournalTemplateOptions(
+    isGeneratedDocumentType(activeTemplateId)
+      ? activeUpload?.options?.[activeTemplateId]
+      : undefined,
+  )
 
   useEffect(() => {
     let isMounted = true
@@ -1308,39 +1406,92 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     }
   }, [])
 
+  useEffect(() => {
+    if (!isGeneratedDocumentType(activeTemplateId)) {
+      setNextDocumentNumber(null)
+      return
+    }
+    let isMounted = true
+    setNextDocumentNumber(null)
+    loadGeneratedDocumentSequence(activeTemplateId)
+      .then((result) => {
+        if (isMounted) setNextDocumentNumber(result.nextNumber)
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setUploadError(error instanceof Error ? error.message : 'Не удалось загрузить номер следующего документа.')
+        }
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [activeTemplateId])
+
+  useEffect(() => {
+    templateFileMenuRef.current?.removeAttribute('open')
+  }, [activeTemplateId])
+
+  const handleTemplateUploadRequest = async () => {
+    setUploadError(null)
+    const allowed = await runProtectedSettingsChange(() => undefined)
+    if (!allowed) return
+    templateFileMenuRef.current?.removeAttribute('open')
+    templateFileInputRef.current?.click()
+  }
+
   const handleTemplateUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
 
+    if (activeUpload) {
+      const confirmed = await confirmAction({
+        title: `Заменить шаблон «${activeTemplate.label}»?`,
+        itemName: `${activeUpload.fileName} → ${file.name}`,
+        description:
+          'Новый файл станет общим шаблоном для всех пользователей. Данные стыков, история документов и правила формирования не изменятся.',
+        warning:
+          'Настройки ячеек конструктора будут сброшены, потому что в новом Excel могут отличаться листы, строки и адреса ячеек. После замены потребуется заново открыть конструктор и проверить заполнение.',
+        confirmLabel: 'Заменить шаблон',
+        tone: 'danger',
+      })
+      if (!confirmed) return
+    }
+
     setUploadError(null)
-    await runProtectedSettingsChange(async () => {
-      try {
-        const parsedTemplate = await parseDocumentTemplateFile(file)
-        const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate)
-        setUploads((currentUploads) => ({
-          ...currentUploads,
-          [activeTemplateId]: savedTemplate,
-        }))
-      } catch (error) {
-        setUploadError(error instanceof Error ? error.message : 'Не удалось прочитать шаблон.')
-      }
-    })
+    setIsUploadingTemplate(true)
+    try {
+      const parsedTemplate = await parseDocumentTemplateFile(file)
+      const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate)
+      setUploads((currentUploads) => ({
+        ...currentUploads,
+        [activeTemplateId]: savedTemplate,
+      }))
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Не удалось прочитать шаблон.')
+    } finally {
+      setIsUploadingTemplate(false)
+    }
   }
 
-  const handleWeldingJournalOptionChange = async (optionKey: keyof WeldingJournalTemplateOptions, checked: boolean) => {
-    if (!activeUpload || activeTemplateId !== 'weldingJournal') return
+  const handleDocumentOptionChange = async (
+    optionKey: keyof WeldingJournalTemplateOptions,
+    value: WeldingJournalTemplateOptions[keyof WeldingJournalTemplateOptions],
+  ) => {
+    if (!activeUpload || !isGeneratedDocumentType(activeTemplateId)) return
 
     const nextOptions = {
-      ...weldingJournalOptions,
-      [optionKey]: checked,
+      ...documentOptions,
+      [optionKey]: value,
     }
     await runProtectedSettingsChange(async () => {
-      const savedTemplate = await updateDocumentTemplateOptions('weldingJournal', { weldingJournal: nextOptions })
+      const savedTemplate = await updateDocumentTemplateOptions(activeTemplateId, {
+        [activeTemplateId]: nextOptions,
+      })
       if (!savedTemplate) return
       setUploads((currentUploads) => ({
         ...currentUploads,
-        weldingJournal: savedTemplate,
+        [activeTemplateId]: savedTemplate,
       }))
     })
   }
@@ -1359,10 +1510,73 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     URL.revokeObjectURL(url)
   }
 
+  const handleTemplateDelete = async () => {
+    if (!activeUpload) return
+    if (!(await requireDeletePassword('удаление шаблона документа'))) return
+
+    const confirmed = await confirmAction({
+      title: 'Удалить шаблон документа?',
+      itemName: `${activeTemplate.label} · ${activeUpload.fileName}`,
+      description: 'Общий исходный файл и настройки конструктора будут удалены для всех пользователей проекта.',
+      warning:
+        'Данные стыков и уже созданные записи истории не изменятся, но новые документы этого типа нельзя будет сформировать до загрузки нового шаблона.',
+      confirmLabel: 'Удалить шаблон',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+
+    setUploadError(null)
+    try {
+      await deleteDocumentTemplate(activeTemplateId)
+      setUploads((currentUploads) => {
+        const nextUploads = { ...currentUploads }
+        delete nextUploads[activeTemplateId]
+        return nextUploads
+      })
+      setBuilderTemplate((currentTemplate) => currentTemplate?.id === activeTemplateId ? null : currentTemplate)
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Не удалось удалить шаблон.')
+    }
+  }
+
+  const handleDocumentSequenceReset = async () => {
+    if (!isGeneratedDocumentType(activeTemplateId)) return
+    const confirmed = await confirmAction({
+      title: 'Обнулить счетчик документов?',
+      itemName: activeTemplate.label,
+      description: 'Следующий новый документ этого типа получит порядковый номер 1.',
+      warning:
+        'Номера уже сформированных документов не изменятся. Поэтому после обнуления в истории могут появиться документы с одинаковыми порядковыми номерами.',
+      confirmLabel: 'Обнулить счетчик',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+
+    setIsResettingDocumentNumber(true)
+    setUploadError(null)
+    try {
+      await runProtectedSettingsChange(async () => {
+        const result = await resetGeneratedDocumentSequence(activeTemplateId as GeneratedDocumentType)
+        setNextDocumentNumber(result.nextNumber)
+      })
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Не удалось обнулить счетчик документов.')
+    } finally {
+      setIsResettingDocumentNumber(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
+      <input
+        ref={templateFileInputRef}
+        type="file"
+        accept=".xlsx,.xls,.docx"
+        className="hidden"
+        onChange={handleTemplateUpload}
+      />
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
           <div>
             <div className="flex items-center gap-2">
               <Upload className="h-5 w-5 text-slate-500" />
@@ -1375,15 +1589,10 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 больше не требуется.
               </p>
               <p>
-                Для отдельных ячеек доступны списки значений, уникальные значения, количество, сумма и текст на случай пустого поля.
+                Для строк-примеров можно выбрать повторение по стыкам, проектам, шифрам или линиям. Ячейки внутри блока автоматически получают данные текущего стыка или текущей группы.
               </p>
             </div>
           </div>
-          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100">
-            <Upload className="h-4 w-4" />
-            Загрузить шаблон
-            <input type="file" accept=".xlsx,.xls,.docx" className="hidden" onChange={handleTemplateUpload} />
-          </label>
         </div>
 
         {uploadError ? (
@@ -1435,47 +1644,123 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                   <button
                     type="button"
                     onClick={() => setBuilderTemplate(activeUpload)}
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-100"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100"
                   >
                     <SlidersHorizontal className="h-4 w-4" />
                     Открыть конструктор
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={handleTemplateDownload}
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                <details
+                  ref={templateFileMenuRef}
+                  className="relative"
                 >
-                  <Download className="h-4 w-4" />
-                  Скачать шаблон
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await runProtectedSettingsChange(async () => {
-                      await deleteDocumentTemplate(activeTemplateId)
-                      setUploads((currentUploads) => {
-                        const nextUploads = { ...currentUploads }
-                        delete nextUploads[activeTemplateId]
-                        return nextUploads
-                      })
-                    })
-                  }}
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Удалить шаблон
-                </button>
+                  <summary
+                    className="inline-flex h-full min-h-10 cursor-pointer list-none items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 [&::-webkit-details-marker]:hidden"
+                    title="Управление файлом шаблона"
+                    aria-label="Управление файлом шаблона"
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                  </summary>
+                  <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-md border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-300/40">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        templateFileMenuRef.current?.removeAttribute('open')
+                        handleTemplateDownload()
+                      }}
+                      className="flex w-full items-start gap-3 rounded px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-sky-50 hover:text-sky-900"
+                    >
+                      <Download className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        <span className="block font-semibold">Скачать шаблон</span>
+                        <span className="mt-0.5 block text-xs leading-4 text-slate-500">
+                          Скачать текущий исходный файл без изменений.
+                        </span>
+                      </span>
+                    </button>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      disabled={isUploadingTemplate}
+                      onClick={() => void handleTemplateUploadRequest()}
+                      className="flex w-full items-start gap-3 rounded px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50"
+                    >
+                      <Upload className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        <span className="block font-semibold">
+                          {isUploadingTemplate ? 'Загружаю...' : 'Заменить файл шаблона'}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-4 text-slate-500">
+                          Потребуется пароль настроек и подтверждение.
+                        </span>
+                      </span>
+                    </button>
+                    <div className="my-1 border-t border-slate-100" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        templateFileMenuRef.current?.removeAttribute('open')
+                        void handleTemplateDelete()
+                      }}
+                      className="flex w-full items-start gap-3 rounded px-3 py-2.5 text-left text-sm text-rose-700 hover:bg-rose-50"
+                    >
+                      <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        <span className="block font-semibold">Удалить шаблон</span>
+                        <span className="mt-0.5 block text-xs leading-4 text-rose-600">
+                          Потребуется пароль удаления и подтверждение.
+                        </span>
+                      </span>
+                    </button>
+                  </div>
+                </details>
               </div>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                disabled={isUploadingTemplate}
+                onClick={() => void handleTemplateUploadRequest()}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+              >
+                <Upload className="h-4 w-4" />
+                {isUploadingTemplate ? 'Загружаю...' : 'Загрузить первый шаблон'}
+              </button>
+            )}
           </div>
 
           <div className="space-y-6">
-            {activeTemplateId === 'weldingJournal' ? (
+            {activeUpload && isGeneratedDocumentType(activeTemplateId) ? (
+              <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600">
+                    <Hash className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Нумерация документов</div>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                      Следующий новый документ получит номер{' '}
+                      <span className="font-semibold text-slate-800">{nextDocumentNumber ?? '…'}</span>.
+                      Повторное формирование существующего документа сохраняет его номер.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleDocumentSequenceReset()}
+                  disabled={isResettingDocumentNumber}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <Hash className="h-4 w-4" />
+                  {isResettingDocumentNumber ? 'Обнуляю...' : 'Обнулить счетчик'}
+                </button>
+              </div>
+            ) : null}
+            {isGeneratedDocumentType(activeTemplateId) ? (
               <WeldingJournalTemplateOptionsPanel
                 disabled={!activeUpload}
-                options={weldingJournalOptions}
-                onChange={handleWeldingJournalOptionChange}
+                documentLabel={activeTemplate.label}
+                options={documentOptions}
+                onChange={handleDocumentOptionChange}
               />
             ) : null}
 
@@ -1512,18 +1797,23 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
 
 function WeldingJournalTemplateOptionsPanel({
   disabled,
+  documentLabel,
   options,
   onChange,
 }: {
   disabled: boolean
+  documentLabel: string
   options: WeldingJournalTemplateOptions
-  onChange: (optionKey: keyof WeldingJournalTemplateOptions, checked: boolean) => void
+  onChange: (
+    optionKey: keyof WeldingJournalTemplateOptions,
+    value: WeldingJournalTemplateOptions[keyof WeldingJournalTemplateOptions],
+  ) => void
 }) {
   return (
     <div className="border-b border-slate-100 px-4 py-4">
-      <div className="text-sm font-semibold text-slate-900">Правила формирования сварочного журнала</div>
+      <div className="text-sm font-semibold text-slate-900">Правила формирования: {documentLabel}</div>
       <p className="mt-1 text-sm text-slate-500">
-        Эти галочки применяются только к документу, который формируется по шаблону сварочного журнала.
+        Эти правила применяются только к документам типа «{documentLabel}».
       </p>
       <div className="mt-3 grid gap-2 md:grid-cols-3">
         <TemplateOptionCheckbox
@@ -1547,6 +1837,29 @@ function WeldingJournalTemplateOptionsPanel({
           description="Будут исключены строки со значением «не актуален» в поле «Актуальность по ИЗМу». Пустое значение считается актуальным."
           onChange={(checked) => onChange('actualOnly', checked)}
         />
+      </div>
+      <div className={`mt-3 flex flex-col gap-3 rounded-md border px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${
+        disabled ? 'border-slate-200 bg-slate-50' : 'border-sky-100 bg-sky-50/50'
+      }`}>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-900">Разделение формирования</div>
+          <p className="mt-0.5 text-xs leading-5 text-slate-500">
+            Определяет, сколько отдельных документов «{documentLabel}» будет создано из выбранных стыков.
+          </p>
+        </div>
+        <label className="flex shrink-0 items-center gap-2 text-sm text-slate-600">
+          <span>Разделять по</span>
+          <select
+            value={options.splitMode}
+            disabled={disabled}
+            onChange={(event) => onChange('splitMode', event.target.value as WeldingJournalTemplateOptions['splitMode'])}
+            className="h-9 min-w-36 rounded-md border-slate-200 bg-white py-1 pl-3 pr-8 text-sm font-medium text-slate-800 disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            {WELDING_JOURNAL_DOCUMENT_SPLIT_MODES.map((mode) => (
+              <option key={mode.value} value={mode.value}>{mode.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
       {disabled ? <div className="mt-2 text-xs text-slate-500">Загрузите шаблон, чтобы сохранить эти настройки.</div> : null}
     </div>
@@ -1587,10 +1900,6 @@ function TemplateOptionCheckbox({
   )
 }
 
-function TemplateToken({ children }: { children: string }) {
-  return <span className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-xs text-slate-800">{`{{${children}}}`}</span>
-}
-
 function TemplateHintLine({ label, children }: { label: string; children: ReactNode }) {
   return (
     <p>
@@ -1626,7 +1935,11 @@ function TemplateUploadPreview({ upload }: { upload: StoredDocumentTemplate }) {
           value={String(upload.sheetNames?.length || 1)}
           detail={upload.sheetNames?.join(', ') || 'основной лист'}
         />
-        <TemplateMetaCard label="Загружен" value={upload.uploadedAt} detail="сохранен для формирования документов" />
+        <TemplateMetaCard
+          label="Загружен"
+          value={formatStoredTemplateDate(upload.uploadedAt)}
+          detail="общий шаблон для всех пользователей"
+        />
       </div>
 
       <div
@@ -1647,9 +1960,16 @@ function TemplateUploadPreview({ upload }: { upload: StoredDocumentTemplate }) {
         <p className="mt-1 text-xs leading-5 text-slate-600">
           {upload.constructorConfig?.bindings.length
             ? `Лист «${upload.constructorConfig.sheetName}» · назначено ячеек: ${upload.constructorConfig.bindings.length}${
-                upload.constructorConfig.repeatRow ? ` · строка-пример: ${upload.constructorConfig.repeatRow}` : ''
+                upload.constructorConfig.repeatRow
+                  ? ` · повторяемый блок: ${upload.constructorConfig.repeatRow}${
+                      upload.constructorConfig.repeatRowEnd &&
+                      upload.constructorConfig.repeatRowEnd !== upload.constructorConfig.repeatRow
+                        ? `–${upload.constructorConfig.repeatRowEnd}`
+                        : ''
+                    }`
+                  : ''
               }.`
-            : 'Откройте конструктор, выберите строку-пример и назначьте ячейкам данные системы.'}
+            : 'Откройте конструктор, выберите повторяемый блок строк и назначьте ячейкам данные системы.'}
         </p>
       </div>
     </div>
@@ -1666,6 +1986,11 @@ function TemplateMetaCard({ label, value, detail }: { label: string; value: stri
       <div className="mt-1 text-xs text-slate-500">{detail}</div>
     </div>
   )
+}
+
+function formatStoredTemplateDate(value: string) {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('ru-RU')
 }
 
 const REQUEST_NAMING_CARDS: Array<{
@@ -1699,6 +2024,17 @@ const REQUEST_NAMING_CARDS: Array<{
     placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoConclusion.systemPattern,
   },
 ]
+
+type RequestNamingPatternDraftPart = RequestNamingPatternPart & { id: string }
+
+let requestNamingPatternPartCounter = 0
+
+function createRequestNamingPatternDraftParts(pattern: string): RequestNamingPatternDraftPart[] {
+  return parseRequestNamingPattern(pattern).map((part) => ({
+    ...part,
+    id: `request-name-part-${requestNamingPatternPartCounter += 1}`,
+  }))
+}
 
 function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useRequestConclusionSettings()
@@ -1740,18 +2076,13 @@ function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runPro
             Вернуть стандартные правила
           </button>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-          <TemplateToken>Дата</TemplateToken>
-          <TemplateToken>ДатаКороткая</TemplateToken>
-          <TemplateToken>Метод</TemplateToken>
-          <TemplateToken>№</TemplateToken>
-        </div>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
         {REQUEST_NAMING_CARDS.map((card) => (
           <RequestNamingSettingsCard
             key={card.id}
+            kind={card.id}
             title={card.title}
             description={card.description}
             placeholder={card.placeholder}
@@ -1766,6 +2097,7 @@ function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runPro
 }
 
 function RequestNamingSettingsCard({
+  kind,
   title,
   description,
   placeholder,
@@ -1773,6 +2105,7 @@ function RequestNamingSettingsCard({
   onModeChange,
   onPatternSave,
 }: {
+  kind: RequestConclusionNamingKind
   title: string
   description: string
   placeholder: string
@@ -1780,16 +2113,60 @@ function RequestNamingSettingsCard({
   onModeChange: (mode: RequestNamingState['mode']) => void
   onPatternSave: (pattern: string) => Promise<boolean>
 }) {
-  const [isEditingPattern, setIsEditingPattern] = useState(false)
-  const [patternDraft, setPatternDraft] = useState(settings.systemPattern)
+  const [isPatternExpanded, setIsPatternExpanded] = useState(false)
+  const [parts, setParts] = useState<RequestNamingPatternDraftPart[]>(() =>
+    createRequestNamingPatternDraftParts(settings.systemPattern),
+  )
 
   useEffect(() => {
-    if (!isEditingPattern) setPatternDraft(settings.systemPattern)
-  }, [isEditingPattern, settings.systemPattern])
+    setParts(createRequestNamingPatternDraftParts(settings.systemPattern))
+  }, [settings.systemPattern])
 
-  async function savePatternDraft() {
-    const saved = await onPatternSave(patternDraft)
-    if (saved) setIsEditingPattern(false)
+  const availableFields = REQUEST_NAMING_PATTERN_FIELDS.filter(
+    (field) => field.id !== 'method' || kind === 'lnkConclusion',
+  )
+  const patternDraft = serializeRequestNamingPattern(parts)
+  const hasPattern = patternDraft.trim().length > 0
+  const hasChanges = patternDraft !== settings.systemPattern
+  const preview = buildSystemNameFromPattern(
+    hasPattern ? patternDraft : placeholder,
+    {
+      date: new Date(),
+      methodCode: kind === 'lnkConclusion' ? 'РК' : undefined,
+    },
+    [],
+  )
+
+  function addPart(type: RequestNamingPatternPart['type']) {
+    setParts((current) => [
+      ...current,
+      type === 'field'
+        ? {
+            id: `request-name-part-${requestNamingPatternPartCounter += 1}`,
+            type: 'field',
+            field: availableFields[0]?.id ?? 'date',
+          }
+        : {
+            id: `request-name-part-${requestNamingPatternPartCounter += 1}`,
+            type: 'text',
+            value: '',
+          },
+    ])
+  }
+
+  function updatePart(id: string, patch: Partial<RequestNamingPatternPart>) {
+    setParts((current) => current.map((part) => (part.id === id ? { ...part, ...patch } as RequestNamingPatternDraftPart : part)))
+  }
+
+  function movePart(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= parts.length) return
+    setParts((current) => {
+      const next = [...current]
+      const [part] = next.splice(index, 1)
+      next.splice(targetIndex, 0, part)
+      return next
+    })
   }
 
   return (
@@ -1818,37 +2195,165 @@ function RequestNamingSettingsCard({
       </div>
 
       <div className="mt-4">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Правило системного имени</span>
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Правило системного имени</div>
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Пример имени</div>
+            <div className="mt-1 break-words text-sm font-semibold text-slate-900">{preview}</div>
+          </div>
           <button
             type="button"
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            onClick={() => {
-              if (isEditingPattern) {
-                void savePatternDraft()
-                return
-              }
-              setPatternDraft(settings.systemPattern)
-              setIsEditingPattern(true)
-            }}
+            onClick={() => setIsPatternExpanded((current) => !current)}
+            aria-expanded={isPatternExpanded}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-sky-200 bg-white px-2.5 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-100"
           >
-            <Pencil className="h-3.5 w-3.5" />
-            {isEditingPattern ? 'Сохранить' : 'Изменить'}
+            {isPatternExpanded ? 'Свернуть' : 'Раскрыть'}
+            <ChevronDown className={`h-4 w-4 transition-transform ${isPatternExpanded ? 'rotate-180' : ''}`} />
           </button>
         </div>
-        {isEditingPattern ? (
-          <input
-            type="text"
-            value={patternDraft}
-            onChange={(event) => setPatternDraft(event.target.value)}
-            placeholder={placeholder}
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm shadow-slate-200/50 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-          />
-        ) : (
-          <div className="mt-1 min-h-9 truncate rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-700" title={settings.systemPattern}>
-            {settings.systemPattern || placeholder}
-          </div>
-        )}
+
+        {isPatternExpanded ? (
+          <>
+            <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+              <div className="grid grid-cols-[2rem_6rem_minmax(0,1fr)_5rem] items-center gap-2 bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <span>№</span>
+                <span>Тип</span>
+                <span>Содержимое</span>
+                <span className="text-center">Порядок</span>
+              </div>
+              {parts.length ? (
+                parts.map((part, index) => (
+                  <div
+                    key={part.id}
+                    className="grid grid-cols-[2rem_6rem_minmax(0,1fr)_5rem] items-center gap-2 border-t border-slate-200 bg-white px-2 py-2"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-100 text-xs font-semibold text-slate-500">
+                      {index + 1}
+                    </span>
+                  <select
+                    value={part.type}
+                    onChange={(event) => {
+                      const nextType = event.target.value as RequestNamingPatternPart['type']
+                      updatePart(
+                        part.id,
+                        nextType === 'field'
+                          ? { type: 'field', field: availableFields[0]?.id ?? 'date' }
+                          : { type: 'text', value: '' },
+                      )
+                    }}
+                    className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    aria-label={`Тип части ${index + 1}`}
+                  >
+                    <option value="field">Поле</option>
+                    <option value="text">Текст</option>
+                  </select>
+
+                    {part.type === 'field' ? (
+                      <select
+                        value={part.field}
+                        onChange={(event) => updatePart(part.id, { field: event.target.value as RequestNamingPatternField })}
+                        className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                        aria-label={`Поле части ${index + 1}`}
+                      >
+                        {availableFields.map((field) => (
+                          <option key={field.id} value={field.id}>
+                            {field.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={part.value}
+                        onChange={(event) => updatePart(part.id, { value: event.target.value })}
+                        placeholder="Постоянный текст"
+                        className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                        aria-label={`Текст части ${index + 1}`}
+                      />
+                    )}
+
+                    <div className="flex items-center justify-end gap-0.5">
+                      <button
+                        type="button"
+                        title="Поднять"
+                        aria-label={`Поднять часть ${index + 1}`}
+                        disabled={index === 0}
+                        onClick={() => movePart(index, -1)}
+                        className="inline-flex h-8 w-7 items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-200"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Опустить"
+                        aria-label={`Опустить часть ${index + 1}`}
+                        disabled={index === parts.length - 1}
+                        onClick={() => movePart(index, 1)}
+                        className="inline-flex h-8 w-7 items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-200"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Удалить"
+                        aria-label={`Удалить часть ${index + 1}`}
+                        onClick={() => setParts((current) => current.filter((item) => item.id !== part.id))}
+                        className="inline-flex h-8 w-7 items-center justify-center rounded text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="border-t border-slate-200 px-3 py-4 text-center text-xs text-slate-500">
+                  Добавьте поле или постоянный текст.
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => addPart('field')}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Добавить поле
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addPart('text')}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Добавить текст
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                {hasChanges ? (
+                  <button
+                    type="button"
+                    onClick={() => setParts(createRequestNamingPatternDraftParts(settings.systemPattern))}
+                    className="h-9 rounded-md px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    Отменить
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!hasPattern || !hasChanges}
+                  onClick={() => void onPatternSave(patternDraft)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md bg-sky-700 px-3 text-xs font-semibold text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                >
+                  <Save className="h-4 w-4" />
+                  Сохранить правило
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   )
@@ -2147,7 +2652,6 @@ function DispatcherReminderDaysInput({
 
 function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useSaveCheckSettings()
-  const otherSettings = useOtherSettings()
   const confirmAction = useConfirmAction()
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set())
   const enabledCount = Object.values(settings).filter(Boolean).length
@@ -2202,15 +2706,6 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
         ...settings,
         ...Object.fromEntries(groupIds.map((id) => [id, enabled])),
       } as SaveCheckSettings)
-    })
-  }
-
-  function updateArchivedWelderStampsSetting(checked: boolean) {
-    void runProtectedSettingsChange(() => {
-      saveOtherSettings({
-        ...otherSettings,
-        includeArchivedWelderStampsInForm: checked,
-      })
     })
   }
 
@@ -2317,42 +2812,6 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
             </div>
             {!collapsed ? (
               <div className="space-y-3 p-4">
-                {group.id === 'official-stamps' ? (
-                  <label
-                    className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 transition-colors ${
-                      otherSettings.includeArchivedWelderStampsInForm
-                        ? 'border-sky-200 bg-sky-50/70 hover:bg-sky-50'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={otherSettings.includeArchivedWelderStampsInForm}
-                      onChange={(event) => updateArchivedWelderStampsSetting(event.currentTarget.checked)}
-                      className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">Учитывать архив клейм в форме стыка</span>
-                        <span
-                          className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
-                            otherSettings.includeArchivedWelderStampsInForm
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                              : 'border-slate-200 bg-white text-slate-500'
-                          }`}
-                        >
-                          {otherSettings.includeArchivedWelderStampsInForm ? 'включено' : 'выключено'}
-                        </span>
-                      </span>
-                      <span className="mt-1 block text-sm leading-5 text-slate-500">
-                        Архивные клейма будут доступны в выпадающих списках при создании и редактировании стыков.
-                      </span>
-                      <span className="mt-2 block rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-500">
-                        Это отвечает только за показ архивных клейм в списке. Запрет сохранения с архивным официальным клеймом настраивается отдельной проверкой “Архив клейм”.
-                      </span>
-                    </span>
-                  </label>
-                ) : null}
                 <div className="grid gap-3 lg:grid-cols-2">
                   {group.items.map((item) => {
                     const enabled = settings[item.id]

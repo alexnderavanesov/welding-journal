@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import {
+  DISPATCHER_TASKS_FIELD_KEY,
+  DISPATCHER_TASKS_WITH_FILTER,
+  DISPATCHER_TASKS_WITHOUT_FILTER,
+} from '@/lib/dispatcher-task-row-codes'
 import { buildPercentageLineStampFilters, buildRowIdListFilters } from '@/lib/report-navigation'
 import {
   buildWeldColumnValueFilter,
@@ -66,6 +71,42 @@ describe('filterWeldRowsByColumns', () => {
       line: 'LIN-1',
       ...buildRowIdListFilters([2, 3]),
     })
+
+    expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S2'])
+  })
+
+  it('filters virtual dispatcher task codes without changing stored weld data', () => {
+    const rows = [
+      row({ id: 1, joint: 'S1', dispatcherTasks: 'ДЗ-18, ДЗ-24' }),
+      row({ id: 2, joint: 'S2', dispatcherTasks: 'ДЗ-24' }),
+      row({ id: 3, joint: 'S3', dispatcherTasks: '' }),
+    ]
+
+    expect(
+      filterWeldRowsByColumns(rows, {
+        [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITH_FILTER,
+      }).map((candidate) => candidate.joint),
+    ).toEqual(['S1', 'S2'])
+    expect(
+      filterWeldRowsByColumns(rows, {
+        [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITHOUT_FILTER,
+      }).map((candidate) => candidate.joint),
+    ).toEqual(['S3'])
+    expect(
+      filterWeldRowsByColumns(rows, {
+        [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['ДЗ-18']),
+      }).map((candidate) => candidate.joint),
+    ).toEqual(['S1'])
+  })
+
+  it('supports an excluded row-id list', () => {
+    const rows = [
+      row({ id: 1, joint: 'S1' }),
+      row({ id: 2, joint: 'S2' }),
+      row({ id: 3, joint: 'S3' }),
+    ]
+
+    const filteredRows = filterWeldRowsByColumns(rows, buildRowIdListFilters([1, 3], 'exclude'))
 
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S2'])
   })

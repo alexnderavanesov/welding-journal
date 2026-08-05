@@ -60,7 +60,7 @@ export function getWeldTableRowTitle({
   isDuplicate: boolean
   hasDispatcherTask: boolean
 }) {
-  if (isHighlighted) return 'Строка недавно изменена'
+  if (isHighlighted) return 'Строка временно выделена системой'
   if (isDuplicate) return 'Возможный дубль: совпадают ключевые поля стыка'
   if (hasDispatcherTask) return 'По этому стыку есть активная задача диспетчера'
   return undefined

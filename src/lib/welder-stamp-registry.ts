@@ -4,7 +4,7 @@ import {
   normalizeWelderStampWeldType,
 } from '@/lib/welder-stamp-format'
 import { loadDataListSettings } from '@/lib/data-list-settings'
-import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { getDateInputValidationReason, getTodayIsoDate, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
 import {
   createEmptyNaksPermit,
@@ -37,6 +37,7 @@ export function createEmptyWelderStampDraft(): WelderStampRecord {
     naksPermits: [createEmptyNaksPermit()],
     dlsPermits: [],
     archived: false,
+    archivedAt: '',
   }
 }
 
@@ -59,6 +60,7 @@ export function normalizeWelderStampRecord(record: WelderStampRecord): WelderSta
     naksPermits,
     dlsPermits,
     archived: Boolean(record.archived),
+    archivedAt: record.archived ? normalizeDateLikeForStorage(record.archivedAt) ?? '' : '',
   })
 }
 
@@ -83,6 +85,9 @@ export function normalizeWelderStampRecordsForRegistry(records: WelderStampRecor
       naksPermits: [...existing.naksPermits, ...record.naksPermits],
       dlsPermits: [...existing.dlsPermits, ...record.dlsPermits],
       archived: existing.archived && record.archived,
+      archivedAt: existing.archived && record.archived
+        ? getLatestDate([existing.archivedAt, record.archivedAt])
+        : '',
     })
     cards.set(key, merged)
     const index = result.findIndex((candidate) => candidate.id === existing.id)
@@ -154,6 +159,9 @@ export function validateWelderStampRecord(record: WelderStampRecord) {
   if (validFromReason) return validFromReason
   const validToReason = record.validTo ? getDateInputValidationReason(record.validTo, 'Срок действия до') : ''
   if (validToReason) return validToReason
+  if (record.archived && !record.archivedAt) return 'Укажите дату архивации клейма'
+  const archivedAtReason = record.archivedAt ? getDateInputValidationReason(record.archivedAt, 'Дата архивации клейма') : ''
+  if (archivedAtReason) return archivedAtReason
   if (diameterFrom !== null && diameterTo !== null && diameterFrom > diameterTo) {
     return 'Диапазон диаметра заполнен некорректно: значение «от» больше значения «до»'
   }
@@ -223,7 +231,19 @@ function joinUniqueText(values: string[]) {
 }
 
 export function setWelderStampRecordArchived(records: WelderStampRecord[], id: number, archived: boolean) {
-  return records.map((record) => (record.id === id ? { ...record, archived } : record))
+  return records.map((record) =>
+    record.id === id
+      ? {
+          ...record,
+          archived,
+          archivedAt: archived ? getTodayIsoDate() : '',
+        }
+      : record,
+  )
+}
+
+function getLatestDate(values: Array<string | undefined>) {
+  return values.map((value) => normalizeDateLikeForStorage(value) ?? '').filter(Boolean).sort().at(-1) ?? ''
 }
 
 export function removeWelderStampRecord(records: WelderStampRecord[], id: number) {

@@ -49,6 +49,57 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, material1: '12Х18Н10Т' }])
   })
 
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('reads report notes only from rows already present in LNK and PSTO during %s', async (_, buildPreview) => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+    })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Примечание ЛНК', 'Примечание ПСТО'],
+      [
+        [7, 'F1', 'Примечание ЛНК', 'Примечание ПСТО'],
+        [8, 'F2', 'Не читать ЛНК', 'Не читать ПСТО'],
+      ],
+    )
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [
+        {
+          id: 7,
+          joint: 'F1',
+          weldDate: '2026-07-31',
+          hasVik: 'да',
+          pstoRequired: 'да',
+          lnkNote: null,
+          pstoNote: null,
+          finalStatus: 'ожидает заявку',
+        } as WeldRow,
+        {
+          id: 8,
+          joint: 'F2',
+          weldDate: null,
+          hasVik: null,
+          pstoRequired: null,
+          lnkNote: null,
+          pstoNote: null,
+          finalStatus: 'ожидает сварку',
+        } as WeldRow,
+      ],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([
+      { id: 7, lnkNote: 'Примечание ЛНК', pstoNote: 'Примечание ПСТО' },
+    ])
+  })
+
   it('keeps derived system WDI updates when WDI inputs changed', async () => {
     saveOtherSettings({
       ...DEFAULT_OTHER_SETTINGS,
@@ -193,13 +244,115 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
   })
 
-  it('keeps an existing archived official stamp allowed when mass fill changes another field', async () => {
+  it('blocks mass fill of a joint that still uses an archived official stamp', async () => {
     const archivedStamp = buildWelderStampRecord('ABC1', true)
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
     const preview = await buildReportMassFillPreview({
       activeReport: 'weldingJournal',
       file,
-      rows: [{ id: 7, joint: 'F1', stamp1K: 'ABC1', material1: null } as WeldRow],
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        stamp1K: 'ABC1',
+        material1: null,
+      } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [] },
+      welderStamps: [archivedStamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('Клеймо ABC1 находится в архиве')
+    expect(preview.validRecords).toEqual([])
+  })
+
+  it('allows mass fill of a historical joint welded before the stamp card archive date', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    const archivedStamp = {
+      ...buildWelderStampRecord('ABC1', true),
+      archivedAt: '2026-08-01',
+    }
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
+    const preview = await buildReportMassFillPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        stamp1K: 'ABC1',
+        weldingMethod: 'РАД',
+        materialGroup: 'M01',
+        d1: '11',
+        d2: '11',
+        t1: '6',
+        t2: '6',
+        weldDate: '2026-07-31',
+        material1: null,
+      } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [] },
+      welderStamps: [archivedStamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
+  })
+
+  it('blocks mass fill of a joint welded after the stamp card archive date', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    const archivedStamp = {
+      ...buildWelderStampRecord('ABC1', true),
+      archivedAt: '2026-08-01',
+    }
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
+    const preview = await buildReportMassFillPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        stamp1K: 'ABC1',
+        weldingMethod: 'РАД',
+        materialGroup: 'M01',
+        d1: '11',
+        d2: '11',
+        t1: '6',
+        t2: '6',
+        weldDate: '2026-08-02',
+        material1: null,
+      } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [] },
+      welderStamps: [archivedStamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('архиве с 01.08.2026')
+    expect(preview.validRecords).toEqual([])
+  })
+
+  it('allows mass fill with an archived official stamp when the archive check is disabled', async () => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      officialArchive: false,
+      officialWeldingMethod: false,
+      officialMaterialGroup: false,
+      officialNaksDate: false,
+      officialDiameter: false,
+      officialThickness: false,
+      officialDls: false,
+    })
+    const archivedStamp = buildWelderStampRecord('ABC1', true)
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
+    const preview = await buildReportMassFillPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        stamp1K: 'ABC1',
+        material1: null,
+      } as WeldRow],
       weldFormStampSelectOptions: { stamp1K: [] },
       welderStamps: [archivedStamp],
       welderStampSuspensions: [],
@@ -333,6 +486,152 @@ describe('existing rows report import preview', () => {
       activeReport: 'weldingJournal',
       file,
       weldFormStampSelectOptions: { stamp1K: [{ value: 'E0SM' }] },
+      welderStamps: [stamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
+  })
+
+  it('reports only the unsupported thickness during import preview', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    const stamp = {
+      ...buildWelderStampRecord('9PC6'),
+      naksPermits: buildWelderStampRecord('9PC6').naksPermits.map((permit) => ({
+        ...permit,
+        thicknessFrom: '2',
+        thicknessTo: '8',
+      })),
+    }
+    const file = buildWeldingJournalImportFile({
+      joint: 'F5B',
+      weldingMethod: 'РАД',
+      materialGroup: 'M01',
+      d1: '530',
+      d2: '38',
+      t1: '14',
+      t2: '6',
+      weldDate: '26.07.2026',
+      stamp1K: '9PC6',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: { stamp1K: [{ value: '9PC6' }] },
+      welderStamps: [stamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('толщину 14.')
+    expect(preview.errors[0]?.message).not.toContain('толщину 14, 6')
+  })
+
+  it('combines one stamp own RAD and RD ranges during import preview', async () => {
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      weldingTypes: ['РАД', 'РД'],
+      materialGroups: ['M01'],
+    })
+    const stamp = {
+      ...buildWelderStampRecord('AAAA'),
+      naksPermits: [
+        {
+          id: 'naks-rad',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '1',
+          diameterTo: '50',
+          thicknessFrom: '1',
+          thicknessTo: '5',
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          note: '',
+        },
+        {
+          id: 'naks-rd',
+          weldType: 'РД',
+          materialGroups: 'M01',
+          diameterFrom: '50',
+          diameterTo: '100',
+          thicknessFrom: '5',
+          thicknessTo: '10',
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          note: '',
+        },
+      ],
+    }
+    const file = buildWeldingJournalImportFile({
+      joint: 'F1A',
+      weldingMethod: 'РАД+РД',
+      materialGroup: 'M01',
+      d1: '57',
+      d2: '57',
+      t1: '3',
+      t2: '3',
+      weldDate: '20.07.2026',
+      stamp1K: 'AAAA',
+      stamp1Z: 'AAAA',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {
+        stamp1K: [{ value: 'AAAA' }],
+        stamp1Z: [{ value: 'AAAA' }],
+      },
+      welderStamps: [stamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
+  })
+
+  it('uses only the smaller material D and paired T for an angular connection during import preview', async () => {
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['У17'],
+      materialGroups: ['M01'],
+    })
+    const stamp = {
+      ...buildWelderStampRecord('AAAA'),
+      naksPermits: [
+        {
+          id: 'naks-angular-branch',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '20',
+          diameterTo: '30',
+          thicknessFrom: '2',
+          thicknessTo: '4',
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          note: '',
+        },
+      ],
+    }
+    const file = buildWeldingJournalImportFile({
+      joint: 'F1A',
+      weldingMethod: 'РАД',
+      connectionType: 'У17',
+      materialGroup: 'M01',
+      d1: '530',
+      t1: '30',
+      d2: '25',
+      t2: '3',
+      weldDate: '20.07.2026',
+      stamp1K: 'AAAA',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: { stamp1K: [{ value: 'AAAA' }] },
       welderStamps: [stamp],
       welderStampSuspensions: [],
     })

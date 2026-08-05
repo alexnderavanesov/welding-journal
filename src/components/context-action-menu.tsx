@@ -1,4 +1,4 @@
-import { useEffect, type ComponentType } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronRight } from 'lucide-react'
 import { setContextActionMenuOpen } from '@/lib/context-action-menu-state'
@@ -33,9 +33,15 @@ type ContextActionMenuProps = {
 }
 
 export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
+  const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
+
   useEffect(() => {
     setContextActionMenuOpen(Boolean(menu))
     return () => setContextActionMenuOpen(false)
+  }, [menu])
+
+  useEffect(() => {
+    setOpenSubmenuId(null)
   }, [menu])
 
   useEffect(() => {
@@ -67,6 +73,7 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
   const menuHeight = estimateMenuHeight(menu.items)
   const maxMenuHeight = Math.max(160, window.innerHeight - viewportPadding * 2)
   const menuLeft = Math.min(menu.x, window.innerWidth - menuWidth - viewportPadding)
+  const submenuOpensLeft = menuLeft + menuWidth * 2 + 4 > window.innerWidth - viewportPadding
   const preferredTop =
     menu.y + Math.min(menuHeight, maxMenuHeight) > window.innerHeight - viewportPadding
       ? menu.y - Math.min(menuHeight, maxMenuHeight)
@@ -93,13 +100,15 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
 
           const Icon = item.icon
           const hasChildren = Boolean(item.children?.length)
-          const firstEnabledChild = item.children?.find((child) => child.type !== 'separator' && !child.disabled)
+          const isSubmenuOpen = openSubmenuId === item.id
           return (
             <div key={item.id} className="group/context-submenu relative">
               <button
                 type="button"
                 disabled={item.disabled}
                 title={item.title}
+                aria-haspopup={hasChildren ? 'menu' : undefined}
+                aria-expanded={hasChildren ? isSubmenuOpen : undefined}
                 className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
                   item.danger
                     ? 'text-rose-600 hover:bg-rose-50 hover:text-rose-700'
@@ -108,9 +117,7 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
                 onClick={() => {
                   if (item.disabled) return
                   if (hasChildren) {
-                    if (!firstEnabledChild || firstEnabledChild.type === 'separator') return
-                    onClose()
-                    firstEnabledChild.onSelect()
+                    setOpenSubmenuId((currentId) => (currentId === item.id ? null : item.id))
                     return
                   }
                   onClose()
@@ -122,7 +129,16 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
                 {hasChildren ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> : null}
               </button>
               {hasChildren ? (
-                <div className="invisible absolute left-full top-0 z-[101] ml-1 min-w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1.5 opacity-0 shadow-xl shadow-slate-900/12 transition-opacity group-hover/context-submenu:visible group-hover/context-submenu:opacity-100">
+                <div
+                  role="menu"
+                  className={`absolute top-0 z-[101] min-w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 transition-opacity ${
+                    submenuOpensLeft ? 'right-full mr-1' : 'left-full ml-1'
+                  } ${
+                    isSubmenuOpen
+                      ? 'visible opacity-100'
+                      : 'invisible opacity-0 group-hover/context-submenu:visible group-hover/context-submenu:opacity-100'
+                  }`}
+                >
                   {item.children?.map((child) => {
                     if (child.type === 'separator') return <div key={child.id} className="my-1 border-t border-slate-100" />
                     const ChildIcon = child.icon

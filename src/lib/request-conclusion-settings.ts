@@ -14,6 +14,23 @@ export type RequestConclusionNamingItemSettings = {
   systemPattern: string
 }
 
+export type RequestNamingPatternField = 'date' | 'shortDate' | 'method' | 'number'
+
+export type RequestNamingPatternPart =
+  | { type: 'field'; field: RequestNamingPatternField }
+  | { type: 'text'; value: string }
+
+export const REQUEST_NAMING_PATTERN_FIELDS: Array<{
+  id: RequestNamingPatternField
+  label: string
+  token: string
+}> = [
+  { id: 'date', label: 'Дата', token: 'Дата' },
+  { id: 'shortDate', label: 'Дата короткая', token: 'ДатаКороткая' },
+  { id: 'method', label: 'Метод', token: 'Метод' },
+  { id: 'number', label: 'Порядковый номер', token: '№' },
+]
+
 export type RequestConclusionSettings = Record<RequestConclusionNamingKind, RequestConclusionNamingItemSettings>
 
 export const REQUEST_CONCLUSION_DEFAULT_SETTINGS: RequestConclusionSettings = {
@@ -103,6 +120,38 @@ export function buildSystemNameFromPattern(pattern: string, context: NamingPatte
   return renderNamingPattern(normalizedPattern, context, 10_000)
 }
 
+export function parseRequestNamingPattern(pattern: string): RequestNamingPatternPart[] {
+  const parts: RequestNamingPatternPart[] = []
+  const tokenPattern = /\{\{\s*([^{}]+?)\s*\}\}/g
+  let cursor = 0
+
+  for (const match of pattern.matchAll(tokenPattern)) {
+    const matchIndex = match.index ?? cursor
+    appendTextPart(parts, pattern.slice(cursor, matchIndex))
+
+    const field = getPatternFieldByToken(match[1])
+    if (field) {
+      parts.push({ type: 'field', field })
+    } else {
+      appendTextPart(parts, match[0])
+    }
+    cursor = matchIndex + match[0].length
+  }
+
+  appendTextPart(parts, pattern.slice(cursor))
+  return parts
+}
+
+export function serializeRequestNamingPattern(parts: RequestNamingPatternPart[]) {
+  return parts
+    .map((part) => {
+      if (part.type === 'text') return part.value
+      const field = REQUEST_NAMING_PATTERN_FIELDS.find((item) => item.id === part.field)
+      return field ? `{{${field.token}}}` : ''
+    })
+    .join('')
+}
+
 export function normalizeRequestConclusionSettings(value: unknown): RequestConclusionSettings {
   const source = typeof value === 'object' && value ? (value as Partial<Record<RequestConclusionNamingKind, Partial<RequestConclusionNamingItemSettings>>>) : {}
 
@@ -121,6 +170,25 @@ function normalizeSettingsItem(
   const defaultMode = value?.defaultMode === 'custom' ? 'custom' : 'system'
   const systemPattern = String(value?.systemPattern ?? '').trim() || fallback.systemPattern
   return { defaultMode, systemPattern }
+}
+
+function appendTextPart(parts: RequestNamingPatternPart[], value: string) {
+  if (!value) return
+  const previousPart = parts.at(-1)
+  if (previousPart?.type === 'text') {
+    previousPart.value += value
+    return
+  }
+  parts.push({ type: 'text', value })
+}
+
+function getPatternFieldByToken(token: string): RequestNamingPatternField | null {
+  const normalizedToken = token.trim().toLowerCase()
+  if (normalizedToken === 'дата') return 'date'
+  if (normalizedToken === 'датакороткая' || normalizedToken === 'короткая дата') return 'shortDate'
+  if (normalizedToken === 'метод') return 'method'
+  if (normalizedToken === '№' || normalizedToken === 'номер') return 'number'
+  return null
 }
 
 function renderNamingPattern(pattern: string, context: NamingPatternContext, number: number) {

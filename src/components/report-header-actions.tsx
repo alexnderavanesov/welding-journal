@@ -11,6 +11,8 @@ export type ReportHeaderActionsProps = {
   isWeldingJournalGenerateMenuOpen: boolean
   onToggleWeldingJournalGenerateMenu: () => void
   onGenerateWeldingJournalDocument: () => void
+  onGenerateChecklistDocument: () => void
+  onGenerateZniDocument: () => void
   onOpenWeldingJournalCurrentReport: () => void
   onOpenWeldingJournalWaitingWeldReport: () => void
   onOpenWeldingJournalWaitingRequestReport: () => void
@@ -53,6 +55,8 @@ export function ReportHeaderActions({
   isWeldingJournalGenerateMenuOpen,
   onToggleWeldingJournalGenerateMenu,
   onGenerateWeldingJournalDocument,
+  onGenerateChecklistDocument,
+  onGenerateZniDocument,
   onOpenWeldingJournalCurrentReport,
   onOpenWeldingJournalWaitingWeldReport,
   onOpenWeldingJournalWaitingRequestReport,
@@ -127,6 +131,8 @@ export function ReportHeaderActions({
           isGenerateMenuOpen={isWeldingJournalGenerateMenuOpen}
           onToggleGenerateMenu={onToggleWeldingJournalGenerateMenu}
           onGenerateWeldingJournalDocument={onGenerateWeldingJournalDocument}
+          onGenerateChecklistDocument={onGenerateChecklistDocument}
+          onGenerateZniDocument={onGenerateZniDocument}
           onOpenCurrentReport={onOpenWeldingJournalCurrentReport}
           onOpenWaitingWeldReport={onOpenWeldingJournalWaitingWeldReport}
           onOpenWaitingRequestReport={onOpenWeldingJournalWaitingRequestReport}

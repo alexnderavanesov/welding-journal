@@ -17,7 +17,7 @@ function HomeRoute() {
   )
 }
 
-function HomeRouteLoading() {
+export function HomeRouteLoading() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
       <div className="rounded-md border border-slate-200 bg-white px-5 py-4 text-sm font-medium text-slate-600 shadow-sm">

@@ -29,6 +29,7 @@ export function createReportWeldEditorProps({
       ? {
           value: editing.record,
           focusField: editing.focusField,
+          returnPageScrollPosition: editing.returnPageScrollPosition,
           suggestionRows: rows,
           stampSelectOptions,
           getExternalSaveBlockReason,

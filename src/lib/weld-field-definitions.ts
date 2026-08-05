@@ -7,6 +7,7 @@ export type WeldField = {
   kind: FieldKind
   group: FieldGroup
   visible?: boolean
+  virtual?: boolean
 }
 
 export type FieldGroup =
@@ -15,9 +16,11 @@ export type FieldGroup =
   | 'Материалы'
   | 'Материал (дополнительно)'
   | 'Сварка'
+  | 'Сварочный материал и ТК'
   | 'Клейма'
   | 'Контроль'
   | 'Испытания'
+  | 'Документы'
   | 'Статусы/отчетность'
 
 export const WELD_FIELDS = [
@@ -62,6 +65,55 @@ export const WELD_FIELDS = [
   { key: 't2', dbName: 't2', label: 'T2', kind: 'number', group: 'Сварка' },
   { key: 'wdi', dbName: 'wdi', label: 'WDI', kind: 'number', group: 'Сварка' },
   { key: 'responsible', dbName: 'responsible', label: 'Ответственный', kind: 'text', group: 'Сварка', visible: true },
+  {
+    key: 'technologyCardNumber',
+    dbName: 'technology_card_number',
+    label: 'Номер технологической карты',
+    kind: 'text',
+    group: 'Сварочный материал и ТК',
+  },
+  {
+    key: 'weldingElectrodes',
+    dbName: 'welding_electrodes',
+    label: 'Сварочные электроды',
+    kind: 'text',
+    group: 'Сварочный материал и ТК',
+  },
+  {
+    key: 'weldingElectrodesCertificateNumber',
+    dbName: 'welding_electrodes_certificate_number',
+    label: 'Номер сертификата (электроды)',
+    kind: 'text',
+    group: 'Сварочный материал и ТК',
+  },
+  {
+    key: 'fillerWire',
+    dbName: 'filler_wire',
+    label: 'Присадочная проволока',
+    kind: 'text',
+    group: 'Сварочный материал и ТК',
+  },
+  {
+    key: 'fillerWireCertificateNumber',
+    dbName: 'filler_wire_certificate_number',
+    label: 'Номер сертификата (проволока)',
+    kind: 'text',
+    group: 'Сварочный материал и ТК',
+  },
+  {
+    key: 'shieldingGas',
+    dbName: 'shielding_gas',
+    label: 'Защитный газ',
+    kind: 'text',
+    group: 'Сварочный материал и ТК',
+  },
+  {
+    key: 'shieldingGasCertificateNumber',
+    dbName: 'shielding_gas_certificate_number',
+    label: 'Номер сертификата (газ)',
+    kind: 'text',
+    group: 'Сварочный материал и ТК',
+  },
   { key: 'stamp1K', dbName: 'stamp_1_k', label: 'Корень_1', kind: 'text', group: 'Клейма' },
   { key: 'stamp1Z', dbName: 'stamp_1_z', label: 'Заполнение_1', kind: 'text', group: 'Клейма' },
   { key: 'stamp1O', dbName: 'stamp_1_o', label: 'Облицовка_1', kind: 'text', group: 'Клейма' },
@@ -100,18 +152,18 @@ export const WELD_FIELDS = [
   { key: 'stlsRequestDate', dbName: 'stls_request_date', label: 'Дата заявки СТЛС', kind: 'date', group: 'Контроль', visible: true },
   { key: 'mkkRequest', dbName: 'mkk_request', label: 'Заявка МКК', kind: 'text', group: 'Контроль', visible: true },
   { key: 'mkkRequestDate', dbName: 'mkk_request_date', label: 'Дата заявки МКК', kind: 'date', group: 'Контроль', visible: true },
-  { key: 'pstoDate', dbName: 'psto_date', label: 'дата ПСТО', kind: 'date', group: 'Контроль', visible: true },
-  { key: 'pstoResult', dbName: 'psto_result', label: 'результат ПСТО', kind: 'text', group: 'Контроль' },
-  { key: 'heatTreatmentDiagram', dbName: 'heat_treatment_diagram', label: 'диаграмма термообработки', kind: 'text', group: 'Контроль', visible: true },
-  { key: 'pstoNote', dbName: 'psto_note', label: 'примечание', kind: 'text', group: 'Контроль', visible: true },
-  { key: 'vikResult', dbName: 'vik_result', label: 'результат ВИК', kind: 'text', group: 'Контроль' },
-  { key: 'rkResult', dbName: 'rk_result', label: 'результат РК', kind: 'text', group: 'Контроль' },
-  { key: 'uzkResult', dbName: 'uzk_result', label: 'результат УЗК', kind: 'text', group: 'Контроль' },
-  { key: 'pvkResult', dbName: 'pvk_result', label: 'результат ПВК', kind: 'text', group: 'Контроль' },
-  { key: 'tvmtResult', dbName: 'tvmt_result', label: 'результат ТВМТ', kind: 'text', group: 'Контроль' },
-  { key: 'rfaResult', dbName: 'rfa_result', label: 'результат РФА', kind: 'text', group: 'Контроль' },
-  { key: 'stlsResult', dbName: 'stls_result', label: 'результат СТЛС', kind: 'text', group: 'Контроль' },
-  { key: 'mkkResult', dbName: 'mkk_result', label: 'результат МКК', kind: 'text', group: 'Контроль' },
+  { key: 'pstoDate', dbName: 'psto_date', label: 'Дата ПСТО', kind: 'date', group: 'Контроль', visible: true },
+  { key: 'pstoResult', dbName: 'psto_result', label: 'Результат ПСТО', kind: 'text', group: 'Контроль' },
+  { key: 'heatTreatmentDiagram', dbName: 'heat_treatment_diagram', label: 'Диаграмма термообработки', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'pstoNote', dbName: 'psto_note', label: 'Примечание ПСТО', kind: 'text', group: 'Контроль', visible: true },
+  { key: 'vikResult', dbName: 'vik_result', label: 'Результат ВИК', kind: 'text', group: 'Контроль' },
+  { key: 'rkResult', dbName: 'rk_result', label: 'Результат РК', kind: 'text', group: 'Контроль' },
+  { key: 'uzkResult', dbName: 'uzk_result', label: 'Результат УЗК', kind: 'text', group: 'Контроль' },
+  { key: 'pvkResult', dbName: 'pvk_result', label: 'Результат ПВК', kind: 'text', group: 'Контроль' },
+  { key: 'tvmtResult', dbName: 'tvmt_result', label: 'Результат ТВМТ', kind: 'text', group: 'Контроль' },
+  { key: 'rfaResult', dbName: 'rfa_result', label: 'Результат РФА', kind: 'text', group: 'Контроль' },
+  { key: 'stlsResult', dbName: 'stls_result', label: 'Результат СТЛС', kind: 'text', group: 'Контроль' },
+  { key: 'mkkResult', dbName: 'mkk_result', label: 'Результат МКК', kind: 'text', group: 'Контроль' },
   { key: 'vikConclusionDate', dbName: 'vik_conclusion_date', label: 'Дата ВИК', kind: 'date', group: 'Контроль' },
   { key: 'vikConclusion', dbName: 'vik_conclusion', label: 'Заключение ВИК', kind: 'text', group: 'Контроль' },
   { key: 'rkConclusionDate', dbName: 'rk_conclusion_date', label: 'Дата РК', kind: 'date', group: 'Контроль' },
@@ -129,14 +181,52 @@ export const WELD_FIELDS = [
   { key: 'mkkConclusionDate', dbName: 'mkk_conclusion_date', label: 'Дата МКК', kind: 'date', group: 'Контроль' },
   { key: 'mkkConclusion', dbName: 'mkk_conclusion', label: 'Заключение МКК', kind: 'text', group: 'Контроль' },
   { key: 'lnkDefectDescription', dbName: 'lnk_defect_description', label: 'Описание дефектов', kind: 'text', group: 'Контроль' },
-  { key: 'lnkNote', dbName: 'lnk_note', label: 'Примечание', kind: 'text', group: 'Контроль' },
+  { key: 'lnkNote', dbName: 'lnk_note', label: 'Примечание ЛНК', kind: 'text', group: 'Контроль' },
+  { key: 'weldingJournalNote', dbName: 'welding_journal_note', label: 'Примечание сварочный журнал', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'finalStatus', dbName: 'final_status', label: 'Итоговый статус', kind: 'text', group: 'Статусы/отчетность', visible: true },
+  { key: 'testTypes', dbName: 'test_types', label: 'Вид испытаний', kind: 'text', group: 'Испытания' },
   { key: 'testContour', dbName: 'test_contour', label: 'Контур', kind: 'text', group: 'Испытания' },
-  { key: 'testDate', dbName: 'test_date', label: 'Дата испытаний', kind: 'date', group: 'Испытания' },
+  { key: 'testDate', dbName: 'test_date', label: 'Дата ГИ', kind: 'date', group: 'Испытания' },
+  { key: 'piDate', dbName: 'pi_date', label: 'Дата ПИ', kind: 'date', group: 'Испытания' },
   { key: 'boq', dbName: 'boq', label: 'BoQ сварка', kind: 'text', group: 'Статусы/отчетность' },
-  { key: 'testBoq', dbName: 'test_boq', label: 'BoQ испытания', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'testBoq', dbName: 'test_boq', label: 'BoQ ГИ', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'piBoq', dbName: 'pi_boq', label: 'BoQ ПИ', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'ks3', dbName: 'ks3', label: 'КС3 сварка', kind: 'text', group: 'Статусы/отчетность' },
-  { key: 'testKs3', dbName: 'test_ks3', label: 'КС3 испытания', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'testKs3', dbName: 'test_ks3', label: 'КС3 ГИ', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'piKs3', dbName: 'pi_ks3', label: 'КС3 ПИ', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'id', dbName: 'id', label: 'Номер записи', kind: 'number', group: 'Статусы/отчетность' },
+  {
+    key: 'dispatcherTasks',
+    dbName: '__dispatcher_tasks',
+    label: 'Задачи диспетчера',
+    kind: 'text',
+    group: 'Статусы/отчетность',
+    virtual: true,
+  },
+  {
+    key: 'jsrDocument',
+    dbName: '__jsr_document',
+    label: 'ЖСР',
+    kind: 'text',
+    group: 'Документы',
+    virtual: true,
+  },
+  {
+    key: 'checklistDocument',
+    dbName: '__checklist_document',
+    label: 'Чек-лист',
+    kind: 'text',
+    group: 'Документы',
+    virtual: true,
+  },
+  {
+    key: 'zniDocument',
+    dbName: '__zni_document',
+    label: 'ЗНИ',
+    kind: 'text',
+    group: 'Документы',
+    virtual: true,
+  },
   { key: 'createdAt', dbName: 'created_at', label: 'Внесен сварка', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoBoq', dbName: 'psto_boq', label: 'BoQ ПСТО', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoKs3', dbName: 'psto_ks3', label: 'КС3 ПСТО', kind: 'text', group: 'Статусы/отчетность' },
@@ -163,6 +253,16 @@ export const WELD_FIELDS = [
 export type WeldFieldKey = (typeof WELD_FIELDS)[number]['key']
 export type WeldInput = Partial<Record<WeldFieldKey, string | number | boolean | null>>
 
+export const WELDING_MATERIAL_FIELD_KEYS = [
+  'technologyCardNumber',
+  'weldingElectrodes',
+  'weldingElectrodesCertificateNumber',
+  'fillerWire',
+  'fillerWireCertificateNumber',
+  'shieldingGas',
+  'shieldingGasCertificateNumber',
+] as const satisfies readonly WeldFieldKey[]
+
 export const MATERIAL_ADDITIONAL_FIELD_KEYS = [
   'orderCode1',
   'orderCode2',
@@ -185,3 +285,7 @@ export function normalizeHeader(value: unknown) {
 
 export const FIELD_BY_LABEL = new Map(WELD_FIELDS.map((field) => [normalizeHeader(field.label), field] as const))
 export const FIELD_BY_KEY = new Map(WELD_FIELDS.map((field) => [field.key, field]))
+
+export function isVirtualWeldField(field: WeldField | undefined) {
+  return field?.virtual === true
+}

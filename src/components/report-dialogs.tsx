@@ -5,6 +5,7 @@ import type { ReportLnkDialogsProps } from '@/components/report-lnk-dialogs'
 import type { ReportPstoDialogsProps } from '@/components/report-psto-dialogs'
 import type { ReportImportDialogProps } from '@/components/report-import-dialog'
 import type { ReportWeldEditorProps } from '@/components/report-weld-editor'
+import type { WeldingJournalGenerationDialogProps } from '@/components/welding-journal-generation-dialog'
 
 const ReportChainDialog = lazy(() => import('@/components/report-chain-dialog').then((module) => ({ default: module.ReportChainDialog })))
 const ReportWeldEditor = lazy(() => import('@/components/report-weld-editor').then((module) => ({ default: module.ReportWeldEditor })))
@@ -14,6 +15,9 @@ const ReportLnkDialogs = lazy(() => import('@/components/report-lnk-dialogs').th
 const ReportImportDialog = lazy(() =>
   import('@/components/report-import-dialog').then((module) => ({ default: module.ReportImportDialog })),
 )
+const WeldingJournalGenerationDialog = lazy(() =>
+  import('@/components/welding-journal-generation-dialog').then((module) => ({ default: module.WeldingJournalGenerationDialog })),
+)
 
 type ReportDialogsProps = {
   chainDialogProps: ReportChainDialogProps
@@ -22,6 +26,7 @@ type ReportDialogsProps = {
   lnkDialogsProps: ReportLnkDialogsProps
   fieldEditorProps: ReportFieldEditorProps
   importDialogProps: ReportImportDialogProps
+  generationDialogProps?: WeldingJournalGenerationDialogProps | null
 }
 
 export function ReportDialogs({
@@ -31,6 +36,7 @@ export function ReportDialogs({
   lnkDialogsProps,
   fieldEditorProps,
   importDialogProps,
+  generationDialogProps,
 }: ReportDialogsProps) {
   return (
     <>
@@ -71,6 +77,11 @@ export function ReportDialogs({
       {importDialogProps.open ? (
         <Suspense fallback={null}>
           <ReportImportDialog {...importDialogProps} />
+        </Suspense>
+      ) : null}
+      {generationDialogProps ? (
+        <Suspense fallback={null}>
+          <WeldingJournalGenerationDialog {...generationDialogProps} />
         </Suspense>
       ) : null}
     </>

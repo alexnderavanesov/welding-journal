@@ -21,15 +21,15 @@ import {
   type DispatcherReminderSettings,
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
-import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/dispatcher-task-builder'
+import { buildVisibleDispatcherTasks } from '@/lib/dispatcher-task-builder'
+import {
+  buildDispatcherTaskCodesByRowId,
+  serializeDispatcherTaskCodesByRowId,
+  type DispatcherTaskCodeRow,
+} from '@/lib/dispatcher-task-row-codes'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
-import {
-  DEFAULT_SAVE_CHECK_SETTINGS,
-  normalizeSaveCheckSettings,
-  type SaveCheckSettings,
-} from '@/lib/save-check-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import type { WelderStampDlsPermit, WelderStampNaksPermit, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
@@ -38,11 +38,11 @@ export type DispatcherTaskSnapshotRequest = {
   dismissedRepeatedJointTaskKeys?: string[]
   dispatcherSettings?: Partial<DispatcherSettings>
   dispatcherReminderSettings?: Partial<DispatcherReminderSettings>
-  saveCheckSettings?: Partial<SaveCheckSettings>
 }
 
 export type DispatcherTaskSnapshotResult = {
   rowIds: number[]
+  rowTaskCodes: DispatcherTaskCodeRow[]
   duplicateKeys: string[]
   repeatedJointTasks: RepeatedJointTask[]
   repeatedTaskCount: number
@@ -67,7 +67,6 @@ export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
     ])
     const dispatcherSettings = getDispatcherSettings(settingsRows, data.dispatcherSettings)
     const dispatcherReminderSettings = getDispatcherReminderSettings(settingsRows, data.dispatcherReminderSettings)
-    const saveCheckSettings = getSaveCheckSettings(settingsRows, data.saveCheckSettings)
     const preparedRows = prepareReportRows(rows, duplicateRows.map(toDuplicateControlRecord))
     const tasks = buildVisibleDispatcherTasks({
       acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
@@ -75,15 +74,17 @@ export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
       dispatcherReminderSettings,
       dispatcherSettings,
       rows: preparedRows,
-      saveCheckSettings,
       welderStamps: stampRows.map(toWelderStampRecord),
       welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
     })
-    const rowIds = [...getDispatcherTaskRowIds(tasks.repeatedJointTasks)].sort((left, right) => left - right)
+    const taskCodesByRowId = buildDispatcherTaskCodesByRowId(tasks.repeatedJointTasks, preparedRows)
+    const rowTaskCodes = serializeDispatcherTaskCodesByRowId(taskCodesByRowId)
+    const rowIds = rowTaskCodes.map((row) => row.rowId)
     const repeatedJointTasks = compactDispatcherTasksForTransport(tasks.repeatedJointTasks)
 
     return {
       rowIds,
+      rowTaskCodes,
       duplicateKeys: [...getDuplicateKeys(preparedRows)].sort(),
       repeatedJointTasks,
       repeatedTaskCount: tasks.repeatedJointTasks.length,
@@ -138,12 +139,6 @@ function getDispatcherReminderSettings(rows: AppSetting[], fallback?: Partial<Di
   )
 }
 
-function getSaveCheckSettings(rows: AppSetting[], fallback?: Partial<SaveCheckSettings>) {
-  return normalizeSaveCheckSettings(
-    fallback ?? getStoredSetting(rows, PROJECT_SETTING_KEYS.saveCheck) ?? DEFAULT_SAVE_CHECK_SETTINGS,
-  )
-}
-
 function getStoredSetting(rows: AppSetting[], key: string) {
   const row = rows.find((candidate) => candidate.key === key)
   if (!row) return null
@@ -182,6 +177,7 @@ function toWelderStampRecord(row: WelderStamp): WelderStampRecord {
     naksPermits: parseJsonArray<WelderStampNaksPermit>(row.naksPermits),
     dlsPermits: parseJsonArray<WelderStampDlsPermit>(row.dlsPermits),
     archived: Boolean(row.archived),
+    archivedAt: row.archivedAt ?? '',
   }
 }
 

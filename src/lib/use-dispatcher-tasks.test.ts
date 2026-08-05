@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_DISPATCHER_REMINDER_SETTINGS, DEFAULT_DISPATCHER_SETTINGS, type DispatcherSettings } from '@/lib/dispatcher-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/use-dispatcher-tasks'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -107,7 +106,7 @@ describe('buildVisibleDispatcherTasks', () => {
     expect(disabledTasks.repeatedJointTasks).toEqual([])
   })
 
-  it('uses the same enabled stamp checks as the weld form', () => {
+  it('controls the complete stamp audit only with the dispatcher setting', () => {
     const rows = [
       row({
         id: 1,
@@ -126,14 +125,13 @@ describe('buildVisibleDispatcherTasks', () => {
     expect(enabled.repeatedJointTasks).toHaveLength(1)
     expect(enabled.repeatedJointTasks[0]).toMatchObject({ reason: 'проверить клеймо' })
 
-    const disabled = buildTasks(dispatcherSettings, {
-      rows,
-      saveCheckSettings: {
-        ...DEFAULT_SAVE_CHECK_SETTINGS,
-        officialRegistry: false,
+    const disabled = buildTasks(
+      {
+        ...dispatcherSettings,
+        'check-welder-stamp': false,
       },
-      welderStamps,
-    })
+      { rows, welderStamps },
+    )
     expect(disabled.repeatedJointTasks).toEqual([])
   })
 
@@ -153,15 +151,6 @@ describe('buildVisibleDispatcherTasks', () => {
             weldingMethod: 'РАД',
           }),
         ],
-        saveCheckSettings: {
-          ...DEFAULT_SAVE_CHECK_SETTINGS,
-          officialArchive: false,
-          officialNaksDate: false,
-          officialSuspension: false,
-          officialDiameter: false,
-          officialThickness: false,
-          officialDls: false,
-        },
         welderStamps: [stampRecordWithPermit('ABC1', 'М01')],
       },
     )
@@ -189,20 +178,87 @@ describe('buildVisibleDispatcherTasks', () => {
             weldingMethod: 'РАД',
           }),
         ],
-        saveCheckSettings: {
-          ...DEFAULT_SAVE_CHECK_SETTINGS,
-          officialArchive: false,
-          officialNaksDate: false,
-          officialSuspension: false,
-          officialDiameter: false,
-          officialThickness: false,
-          officialDls: false,
-        },
         welderStamps: [stampRecordWithPermit('ABC1', 'М01')],
       },
     )
 
     expect(tasks.repeatedJointTasks).toEqual([])
+  })
+
+  it('does not create DZ-18 only because the stamp card was archived after the weld date', () => {
+    const stamp = stampRecordWithPermit('ABC1', 'М01')
+    stamp.archived = true
+    stamp.archivedAt = '2026-08-01'
+
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1',
+            materialGroup: 'М01',
+            stamp1K: 'ABC1',
+            weldingMethod: 'РАД',
+            d1: '57',
+            t1: '3',
+            weldDate: '2026-07-01',
+          }),
+        ],
+        welderStamps: [stamp],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toEqual([])
+  })
+
+  it('keeps real permit errors visible after the stamp card is archived', () => {
+    const stamp = stampRecordWithPermit('ABC1', 'М01')
+    stamp.archived = true
+    stamp.archivedAt = '2026-08-01'
+    stamp.naksPermits = [
+      {
+        id: 'naks-limited',
+        weldType: 'РАД',
+        materialGroups: 'М01',
+        diameterFrom: '1',
+        diameterTo: '50',
+        thicknessFrom: '1',
+        thicknessTo: '5',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      },
+    ]
+
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1',
+            materialGroup: 'М01',
+            stamp1K: 'ABC1',
+            weldingMethod: 'РАД',
+            d1: '57',
+            t1: '3',
+            weldDate: '2026-07-01',
+          }),
+        ],
+        welderStamps: [stamp],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toHaveLength(1)
+    expect(tasks.repeatedJointTasks[0]?.details).toContain('не имеет допуска на диаметр 57')
+    expect(tasks.repeatedJointTasks[0]?.details).not.toContain('находится в архиве')
   })
 
   it('does not create DZ-18 when several DLS ranges of one stamp cover the joint together', () => {
@@ -256,10 +312,112 @@ describe('buildVisibleDispatcherTasks', () => {
             weldDate: '20.07.2026',
           }),
         ],
-        saveCheckSettings: {
-          ...DEFAULT_SAVE_CHECK_SETTINGS,
-          officialDls: true,
-        },
+        welderStamps: [stamp],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toEqual([])
+  })
+
+  it('does not create DZ-18 when one stamp own RAD and RD ranges cover D and T separately', () => {
+    const stamp = stampRecordWithPermit('AAAA', 'M01')
+    stamp.naksPermits = [
+      {
+        id: 'naks-rad',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '1',
+        diameterTo: '50',
+        thicknessFrom: '1',
+        thicknessTo: '5',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      },
+      {
+        id: 'naks-rd',
+        weldType: 'РД',
+        materialGroups: 'M01',
+        diameterFrom: '50',
+        diameterTo: '100',
+        thicknessFrom: '5',
+        thicknessTo: '10',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      },
+    ]
+    stamp.dlsPermits = [
+      broadDlsPermit('dls-rad', 'РАД', 'M01'),
+      broadDlsPermit('dls-rd', 'РД', 'M01'),
+    ]
+
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1A',
+            materialGroup: 'M01',
+            stamp1K: 'AAAA',
+            stamp1Z: 'AAAA',
+            weldingMethod: 'РАД+РД',
+            d1: '57',
+            d2: '57',
+            t1: '3',
+            t2: '3',
+            weldDate: '20.07.2026',
+          }),
+        ],
+        welderStamps: [stamp],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toEqual([])
+  })
+
+  it('does not create DZ-18 for the larger base pipe of an angular connection', () => {
+    const stamp = stampRecordWithPermit('AAAA', 'M01')
+    stamp.naksPermits = [
+      {
+        id: 'naks-angular-branch',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '20',
+        diameterTo: '30',
+        thicknessFrom: '2',
+        thicknessTo: '4',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      },
+    ]
+
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1A',
+            connectionType: 'У17',
+            materialGroup: 'M01',
+            stamp1K: 'AAAA',
+            weldingMethod: 'РАД',
+            d1: '530',
+            t1: '30',
+            d2: '25',
+            t2: '3',
+            weldDate: '20.07.2026',
+          }),
+        ],
         welderStamps: [stamp],
       },
     )
@@ -275,7 +433,6 @@ function buildTasks(
     dismissedRepeatedJointTaskKeys?: Set<string>
     includeRepeatedJointTasks?: boolean
     rows?: WeldRow[]
-    saveCheckSettings?: SaveCheckSettings
     welderStamps?: WelderStampRecord[]
   } = {},
 ) {
@@ -289,7 +446,6 @@ function buildTasks(
       row({ id: 1, line: 'LIN-1', joint: 'F1', weldControlPercent: '100' }),
       row({ id: 2, line: 'LIN-1', joint: 'F2', weldControlPercent: '10' }),
     ],
-    saveCheckSettings: overrides.saveCheckSettings ?? DEFAULT_SAVE_CHECK_SETTINGS,
     welderStamps: overrides.welderStamps ?? [],
     welderStampSuspensions: [],
   })
@@ -333,6 +489,23 @@ function stampRecordWithPermit(naksStamp: string, materialGroups: string): Welde
         note: '',
       },
     ],
+    dlsPermits: [broadDlsPermit('dls-1', 'РАД', materialGroups)],
+  }
+}
+
+function broadDlsPermit(id: string, weldType: string, materialGroups: string) {
+  return {
+    id,
+    number: id.toUpperCase(),
+    weldType,
+    materialGroups,
+    diameterFrom: '',
+    diameterTo: '',
+    thicknessFrom: '',
+    thicknessTo: '',
+    validFrom: '',
+    validTo: '',
+    note: '',
   }
 }
 

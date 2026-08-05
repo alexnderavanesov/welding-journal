@@ -1,0 +1,1 @@
+ALTER TABLE "generated_documents" ADD COLUMN "document_number" integer;

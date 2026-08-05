@@ -9,26 +9,30 @@ export type SecuritySettings = {
   settingsPassword: string
   editPassword: string
   importReplacePassword: string
+  documentGenerationPassword: string
   deletePassword: string
   requirePasswordOnEntry: boolean
   protectSettings: boolean
   protectEdit: boolean
   protectImportReplace: boolean
+  protectDocumentGeneration: boolean
   protectDelete: boolean
 }
 
-export type SecurityScope = 'entry' | 'settings' | 'edit' | 'importReplace' | 'delete'
+export type SecurityScope = 'entry' | 'settings' | 'edit' | 'importReplace' | 'documentGeneration' | 'delete'
 
 export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   entryPassword: '',
   settingsPassword: '',
   editPassword: '',
   importReplacePassword: '',
+  documentGenerationPassword: '',
   deletePassword: '',
   requirePasswordOnEntry: false,
   protectSettings: false,
   protectEdit: false,
   protectImportReplace: false,
+  protectDocumentGeneration: false,
   protectDelete: false,
 }
 
@@ -83,6 +87,7 @@ export function isSecurityScopeEnabled(settings: SecuritySettings, scope: Securi
   if (scope === 'settings') return settings.protectSettings
   if (scope === 'edit') return settings.protectEdit
   if (scope === 'importReplace') return settings.protectImportReplace
+  if (scope === 'documentGeneration') return settings.protectDocumentGeneration
   return settings.protectDelete
 }
 
@@ -91,6 +96,7 @@ export function getSecurityScopePassword(settings: SecuritySettings, scope: Secu
   if (scope === 'settings') return settings.settingsPassword
   if (scope === 'edit') return settings.editPassword
   if (scope === 'importReplace') return settings.importReplacePassword
+  if (scope === 'documentGeneration') return settings.documentGenerationPassword
   return settings.deletePassword
 }
 
@@ -102,6 +108,8 @@ export function normalizeSecuritySettings(value: unknown): SecuritySettings {
   const settingsPassword = typeof source.settingsPassword === 'string' ? source.settingsPassword : legacyPassword
   const editPassword = typeof source.editPassword === 'string' ? source.editPassword : legacyPassword
   const importReplacePassword = typeof source.importReplacePassword === 'string' ? source.importReplacePassword : ''
+  const documentGenerationPassword =
+    typeof source.documentGenerationPassword === 'string' ? source.documentGenerationPassword : ''
   const deletePassword = typeof source.deletePassword === 'string' ? source.deletePassword : legacyPassword
   const legacyProtectEditDelete = legacySource.protectEditDelete === true
   return {
@@ -109,11 +117,13 @@ export function normalizeSecuritySettings(value: unknown): SecuritySettings {
     settingsPassword,
     editPassword,
     importReplacePassword,
+    documentGenerationPassword,
     deletePassword,
     requirePasswordOnEntry: entryPassword ? source.requirePasswordOnEntry === true : false,
     protectSettings: settingsPassword ? source.protectSettings === true : false,
     protectEdit: editPassword ? source.protectEdit === true || legacyProtectEditDelete : false,
     protectImportReplace: importReplacePassword ? source.protectImportReplace === true : false,
+    protectDocumentGeneration: documentGenerationPassword ? source.protectDocumentGeneration === true : false,
     protectDelete: deletePassword ? source.protectDelete === true || legacyProtectEditDelete : false,
   }
 }

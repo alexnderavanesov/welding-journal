@@ -11,6 +11,7 @@ import {
 } from '@/lib/weld-fields'
 import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-import-export'
 import type { WeldDraft } from '@/lib/dispatcher-types'
+import type { PageScrollPosition } from '@/lib/page-scroll-position'
 import { useOtherSettings } from '@/lib/other-settings'
 import { formatSaveCheckBlockReason, useSaveCheckSettings } from '@/lib/save-check-settings'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
@@ -22,6 +23,7 @@ import {
   getWeldFormSaveBlockReason,
   getWeldStampSaveBlockReason,
   secondaryWeldFormFieldKeys,
+  weldingMaterialWeldFormFieldKeys,
   withCalculatedFinalStatus,
   type StampSelectOptions,
   yesEmptyFieldKeys,
@@ -32,6 +34,7 @@ export type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-util
 type WeldFormProps = {
   value: WeldDraft
   focusField?: WeldFieldKey
+  returnPageScrollPosition?: PageScrollPosition
   suggestionRows?: readonly WeldInput[]
   stampSelectOptions?: StampSelectOptions | ((value: WeldInput) => StampSelectOptions)
   getExternalSaveBlockReason?: (value: WeldInput) => string | null
@@ -40,7 +43,17 @@ type WeldFormProps = {
   busy?: boolean
 }
 
-export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOptions, getExternalSaveBlockReason, onSave, onCancel, busy }: WeldFormProps) {
+export function WeldForm({
+  value,
+  focusField,
+  returnPageScrollPosition,
+  suggestionRows = [],
+  stampSelectOptions,
+  getExternalSaveBlockReason,
+  onSave,
+  onCancel,
+  busy,
+}: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
   const otherSettings = useOtherSettings()
   const saveCheckSettings = useSaveCheckSettings()
@@ -152,10 +165,11 @@ export function WeldForm({ value, focusField, suggestionRows = [], stampSelectOp
   return (
     <LargeDialogShell
       maxWidthClassName="max-w-[min(1500px,96vw)]"
-      maxHeightClassName="max-h-[96vh]"
+      maxHeightClassName="h-[calc(100dvh-2rem)] max-h-[96vh]"
       overlayClassName="z-40 bg-slate-950/20 py-4"
       panelShadowClassName="shadow-slate-950/10"
       panelClassName="bg-slate-50"
+      returnPageScrollPosition={returnPageScrollPosition}
     >
       <WeldFormHeader draft={draft} isEditing={Boolean(value.id)} onCancel={onCancel} />
 
@@ -194,6 +208,7 @@ function formatRequiredRootStampMessage(message: string | null) {
 function getWeldFormTabForField(fieldKey?: WeldFieldKey): WeldFormTab {
   if (!fieldKey) return 'joint'
   if (yesEmptyFieldKeys.has(fieldKey)) return 'control'
+  if (weldingMaterialWeldFormFieldKeys.has(fieldKey)) return 'weldingMaterials'
   if (secondaryWeldFormFieldKeys.has(fieldKey)) return 'workClosure'
   return 'joint'
 }

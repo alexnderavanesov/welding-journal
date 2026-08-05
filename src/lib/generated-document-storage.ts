@@ -1,45 +1,56 @@
+import {
+  deleteRemoteGeneratedDocument,
+  getRemoteGeneratedDocument,
+  getRemoteGeneratedDocumentSequence,
+  getRemoteGeneratedDocumentRows,
+  listRemoteGeneratedDocuments,
+  resetRemoteGeneratedDocumentSequence,
+  saveRemoteGeneratedDocuments,
+  type RemoteGeneratedDocument,
+  type SaveGeneratedDocumentInput,
+} from '@/server/generated-documents'
+
 export const GENERATED_DOCUMENT_STORAGE_EVENT = 'generated-document-storage-change'
 
-const GENERATED_DOCUMENT_DB_NAME = 'welding-generated-documents'
-const GENERATED_DOCUMENT_STORE_NAME = 'documents'
+export type StoredGeneratedDocument = RemoteGeneratedDocument
 
-export type GeneratedDocumentType = 'weldingJournal'
+export type GeneratedDocumentPreviewRecord = Pick<
+  StoredGeneratedDocument,
+  'title' | 'fileName' | 'mimeType'
+>
 
-export type StoredGeneratedDocument = {
-  id: string
-  type: GeneratedDocumentType
-  title: string
-  fileName?: string
-  mimeType: string
+type MaterializedGeneratedDocument = GeneratedDocumentPreviewRecord & {
   fileData: ArrayBuffer
-  createdAt: string
-  periodFrom?: string
-  periodTo?: string
-  rowCount?: number
-  wdiTotal?: number
 }
 
-export async function saveGeneratedDocument(input: Omit<StoredGeneratedDocument, 'id' | 'createdAt'>) {
-  const record: StoredGeneratedDocument = {
-    id: createGeneratedDocumentId(),
-    createdAt: new Date().toISOString(),
-    ...input,
-  }
-  const db = await openGeneratedDocumentDb()
-  await runGeneratedDocumentStoreRequest(db, 'readwrite', (store) => store.put(record))
-  notifyGeneratedDocumentStorageChanged()
-  return record
+export async function saveGeneratedDocuments(inputs: SaveGeneratedDocumentInput[]) {
+  const records = await saveRemoteGeneratedDocuments({ data: inputs })
+  if (records.length > 0) notifyGeneratedDocumentStorageChanged()
+  return records
 }
 
 export async function loadGeneratedDocuments() {
-  const db = await openGeneratedDocumentDb()
-  const records = await runGeneratedDocumentStoreRequest<StoredGeneratedDocument[]>(db, 'readonly', (store) => store.getAll())
-  return records.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+  return listRemoteGeneratedDocuments()
 }
 
-export async function deleteGeneratedDocument(id: string) {
-  const db = await openGeneratedDocumentDb()
-  await runGeneratedDocumentStoreRequest(db, 'readwrite', (store) => store.delete(id))
+export async function loadGeneratedDocumentSequence(type: SaveGeneratedDocumentInput['type']) {
+  return getRemoteGeneratedDocumentSequence({ data: { type } })
+}
+
+export async function resetGeneratedDocumentSequence(type: SaveGeneratedDocumentInput['type']) {
+  return resetRemoteGeneratedDocumentSequence({ data: { type } })
+}
+
+export async function loadGeneratedDocumentRows(id: number) {
+  return getRemoteGeneratedDocumentRows({ data: { id } })
+}
+
+export async function loadGeneratedDocument(id: number) {
+  return getRemoteGeneratedDocument({ data: { id } })
+}
+
+export async function deleteGeneratedDocument(id: number) {
+  await deleteRemoteGeneratedDocument({ data: { id } })
   notifyGeneratedDocumentStorageChanged()
 }
 
@@ -54,18 +65,26 @@ export function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url)
 }
 
-export async function openGeneratedDocument(documentRecord: StoredGeneratedDocument) {
+export async function openGeneratedDocument(
+  documentRecord: GeneratedDocumentPreviewRecord,
+  createDocumentBlob: () => Promise<Blob>,
+) {
   const previewWindow = window.open('', '_blank')
   if (!previewWindow) {
     window.alert('Браузер заблокировал открытие новой вкладки.')
-    return
+    return null
   }
 
   previewWindow.opener = null
   writeGeneratedDocumentPreview(previewWindow, buildGeneratedDocumentLoadingHtml(documentRecord))
 
   try {
-    const workbookPreviewHtml = await buildGeneratedDocumentPreviewHtml(documentRecord)
+    const blob = await createDocumentBlob()
+    const materializedDocument: MaterializedGeneratedDocument = {
+      ...documentRecord,
+      fileData: await blob.arrayBuffer(),
+    }
+    const workbookPreviewHtml = await buildGeneratedDocumentPreviewHtml(materializedDocument)
     if (previewWindow.closed) return
     writeGeneratedDocumentPreview(previewWindow, workbookPreviewHtml)
   } catch (error) {
@@ -80,47 +99,12 @@ export async function openGeneratedDocument(documentRecord: StoredGeneratedDocum
   }
 }
 
-export function downloadGeneratedDocument(documentRecord: StoredGeneratedDocument) {
-  const blob = new Blob([documentRecord.fileData], { type: documentRecord.mimeType })
-  downloadBlob(blob, getGeneratedDocumentFileName(documentRecord))
-}
-
-function createGeneratedDocumentId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function openGeneratedDocumentDb() {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(GENERATED_DOCUMENT_DB_NAME, 1)
-    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть хранилище документов.'))
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(GENERATED_DOCUMENT_STORE_NAME)) {
-        db.createObjectStore(GENERATED_DOCUMENT_STORE_NAME, { keyPath: 'id' })
-      }
-    }
-  })
-}
-
-function runGeneratedDocumentStoreRequest<T = void>(
-  db: IDBDatabase,
-  mode: IDBTransactionMode,
-  createRequest: (store: IDBObjectStore) => IDBRequest,
+export async function downloadGeneratedDocument(
+  documentRecord: GeneratedDocumentPreviewRecord,
+  createDocumentBlob: () => Promise<Blob>,
 ) {
-  return new Promise<T>((resolve, reject) => {
-    const transaction = db.transaction(GENERATED_DOCUMENT_STORE_NAME, mode)
-    const store = transaction.objectStore(GENERATED_DOCUMENT_STORE_NAME)
-    const request = createRequest(store)
-    request.onerror = () => reject(request.error ?? new Error('Не удалось выполнить операцию с документом.'))
-    request.onsuccess = () => resolve(request.result as T)
-    transaction.oncomplete = () => db.close()
-    transaction.onerror = () => {
-      db.close()
-      reject(transaction.error ?? new Error('Не удалось сохранить документ.'))
-    }
-  })
+  const blob = await createDocumentBlob()
+  downloadBlob(blob, getGeneratedDocumentFileName(documentRecord))
 }
 
 function notifyGeneratedDocumentStorageChanged() {
@@ -128,7 +112,7 @@ function notifyGeneratedDocumentStorageChanged() {
   window.dispatchEvent(new Event(GENERATED_DOCUMENT_STORAGE_EVENT))
 }
 
-async function buildGeneratedDocumentPreviewHtml(documentRecord: StoredGeneratedDocument) {
+async function buildGeneratedDocumentPreviewHtml(documentRecord: MaterializedGeneratedDocument) {
   const XLSX = await import('xlsx')
   const workbook = XLSX.read(documentRecord.fileData, { type: 'array', cellDates: true })
   const sheetName = workbook.SheetNames[0]
@@ -158,7 +142,7 @@ function writeGeneratedDocumentPreview(previewWindow: Window, html: string) {
   previewWindow.document.close()
 }
 
-function buildGeneratedDocumentLoadingHtml(documentRecord: StoredGeneratedDocument) {
+function buildGeneratedDocumentLoadingHtml(documentRecord: GeneratedDocumentPreviewRecord) {
   return buildGeneratedDocumentShellHtml({
     documentRecord,
     content: '<div class="empty">Готовим предпросмотр документа...</div>',
@@ -166,17 +150,15 @@ function buildGeneratedDocumentLoadingHtml(documentRecord: StoredGeneratedDocume
   })
 }
 
-function buildGeneratedDocumentErrorHtml(documentRecord: StoredGeneratedDocument, message: string) {
-  const downloadScript = buildGeneratedDocumentDownloadScript(documentRecord)
+function buildGeneratedDocumentErrorHtml(documentRecord: GeneratedDocumentPreviewRecord, message: string) {
   return buildGeneratedDocumentShellHtml({
     documentRecord,
     content: `<div class="empty">Предпросмотр недоступен: ${escapeHtml(message)}</div>`,
     subtitle: 'Предпросмотр недоступен',
-    downloadScript,
   })
 }
 
-function buildGeneratedDocumentTableHtml(documentRecord: StoredGeneratedDocument, sheetName: string, rows: string[][]) {
+function buildGeneratedDocumentTableHtml(documentRecord: MaterializedGeneratedDocument, sheetName: string, rows: string[][]) {
   const downloadScript = buildGeneratedDocumentDownloadScript(documentRecord)
   const rowCount = Math.max(rows.length - 1, 0)
   const content = `
@@ -216,7 +198,7 @@ function buildGeneratedDocumentShellHtml({
   subtitle,
   downloadScript = '',
 }: {
-  documentRecord: StoredGeneratedDocument
+  documentRecord: GeneratedDocumentPreviewRecord
   content: string
   subtitle: string
   downloadScript?: string
@@ -260,7 +242,7 @@ function buildGeneratedDocumentShellHtml({
 </html>`
 }
 
-function buildGeneratedDocumentDownloadScript(documentRecord: StoredGeneratedDocument) {
+function buildGeneratedDocumentDownloadScript(documentRecord: MaterializedGeneratedDocument) {
   const base64 = arrayBufferToBase64(documentRecord.fileData)
   const fileName = getGeneratedDocumentFileName(documentRecord)
   return `<script>
@@ -282,7 +264,7 @@ function buildGeneratedDocumentDownloadScript(documentRecord: StoredGeneratedDoc
   </script>`
 }
 
-function getGeneratedDocumentFileName(documentRecord: StoredGeneratedDocument) {
+function getGeneratedDocumentFileName(documentRecord: GeneratedDocumentPreviewRecord) {
   const value = String(documentRecord.fileName || documentRecord.title || 'Сварочный журнал').trim()
   const baseName = value.replace(/\.xlsx$/i, '').trim() || 'Сварочный журнал'
   return `${baseName}.xlsx`

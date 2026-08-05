@@ -7,11 +7,17 @@ import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-config'
 import { getWeldLineAutofillState } from '@/lib/weld-line-autofill'
 import { getWeldStampAutofillState } from '@/lib/weld-stamp-autofill'
-import { getStampSelectValue, secondaryWeldFormSectionNames, yesEmptyFieldKeys, type StampSelectOptions } from '@/lib/weld-form-utils'
+import {
+  getStampSelectValue,
+  secondaryWeldFormSectionNames,
+  weldingMaterialWeldFormSectionNames,
+  yesEmptyFieldKeys,
+  type StampSelectOptions,
+} from '@/lib/weld-form-utils'
 import { parseOfficialStampWeldingMethods, normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
-export type WeldFormTab = 'joint' | 'control' | 'workClosure'
+export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'workClosure'
 
 type WeldFormEditableField = WeldField & { key: WeldFieldKey }
 
@@ -57,8 +63,19 @@ export function WeldFormSections({
       fields: group.fields.filter((field) => !yesEmptyFieldKeys.has(field.key)),
     }))
     .filter((group) => group.fields.length > 0)
+  const weldingMaterialFieldsByGroup = fieldsByGroup
+    .filter((group) => weldingMaterialWeldFormSectionNames.has(group.section))
+    .map((group) => ({
+      ...group,
+      fields: group.fields.filter((field) => !yesEmptyFieldKeys.has(field.key)),
+    }))
+    .filter((group) => group.fields.length > 0)
   const regularFieldsByGroup = fieldsByGroup
-    .filter((group) => !secondaryWeldFormSectionNames.has(group.section))
+    .filter(
+      (group) =>
+        !secondaryWeldFormSectionNames.has(group.section) &&
+        !weldingMaterialWeldFormSectionNames.has(group.section),
+    )
     .map((group) => ({
       ...group,
       fields: group.fields.filter((field) => !yesEmptyFieldKeys.has(field.key)),
@@ -88,6 +105,15 @@ export function WeldFormSections({
               className={activeTab === 'control' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
             >
               Назначение контроля
+            </button>
+          ) : null}
+          {weldingMaterialFieldsByGroup.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => onActiveTabChange('weldingMaterials')}
+              className={activeTab === 'weldingMaterials' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
+            >
+              Сварочный материал и ТК
             </button>
           ) : null}
           {workClosureFieldsByGroup.length > 0 ? (
@@ -127,6 +153,36 @@ export function WeldFormSections({
             ))}
           </div>
         </section>
+      ) : null}
+      {activeTab === 'weldingMaterials' ? (
+        <div className="space-y-8">
+          {weldingMaterialFieldsByGroup.map(({ section, fields }) => (
+            <section key={section}>
+              <WeldFormSectionHeader
+                section={section}
+                fieldsCount={fields.length}
+                collapsed={collapsedSections.has(section)}
+                onToggle={() => onToggleSection(section)}
+              />
+              {collapsedSections.has(section) ? null : (
+                <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+                  {fields.map((field) => (
+                    <WeldFormField
+                      key={field.key}
+                      field={field}
+                      draft={draft}
+                      suggestionRows={suggestionRows}
+                      stampSelectOptions={stampSelectOptions}
+                      systemWdiEnabled={systemWdiEnabled}
+                      fieldRefs={fieldRefs}
+                      setDraft={setDraft}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
       ) : null}
       {activeTab === 'workClosure' ? (
         <div className="space-y-8">

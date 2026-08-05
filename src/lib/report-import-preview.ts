@@ -21,6 +21,7 @@ import {
   REPLACE_DELETE_ROW_HEADER,
   getReportImportCheckedFieldKeys,
   getReportImportPreviewFields,
+  getReportImportTemplateFields,
   isExistingRowsImportLockedField,
   isMassFillFieldLocked,
   isSystemImportField,
@@ -295,7 +296,7 @@ function hasChangedLnkRepairRuleInputs(candidate: ReportImportRecord, existingRo
 
 function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ActiveReport, field: WeldField, existingRow: WeldRow) {
   if (isExistingRowsImportLockedField(field)) return true
-  if (mode === 'replaceData') return isSystemImportField(activeReport, field)
+  if (mode === 'replaceData') return isSystemImportField(activeReport, field, existingRow)
   return isMassFillFieldLocked(activeReport, field, existingRow)
 }
 
@@ -510,9 +511,10 @@ async function parseReportImportFile(activeReport: ActiveReport, file: File) {
       : await parseEditableWorkbook(await file.arrayBuffer(), options)
   }
 
+  const requiredHeaders = getReportImportTemplateFields(activeReport).map((field) => field.label)
   return file.name.toLowerCase().endsWith('.csv')
-    ? await parseCsv(await file.text())
-    : await parseWorkbook(await file.arrayBuffer())
+    ? await parseCsv(await file.text(), requiredHeaders)
+    : await parseWorkbook(await file.arrayBuffer(), requiredHeaders)
 }
 
 async function parseMassFillImportFile(file: File) {

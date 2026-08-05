@@ -1,4 +1,4 @@
-import type { WeldFieldKey } from '@/lib/weld-fields'
+import { WELDING_MATERIAL_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-field-definitions'
 
 export const yesEmptyFieldKeys = new Set([
   'pstoRequired',
@@ -25,11 +25,18 @@ export const factualWelderStampFieldKeys = new Set<WeldFieldKey>([
 
 export const secondaryWeldFormSectionNames = new Set(['Испытания', 'Код работ', 'Закрытие'])
 
+export const weldingMaterialWeldFormSectionNames = new Set(['Сварочный материал и ТК'])
+
+export const weldingMaterialWeldFormFieldKeys = new Set<WeldFieldKey>(WELDING_MATERIAL_FIELD_KEYS)
+
 export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
+  'testTypes',
   'testContour',
   'testDate',
+  'piDate',
   'boq',
   'testBoq',
+  'piBoq',
   'pstoBoq',
   'vikBoq',
   'rkBoq',
@@ -41,6 +48,7 @@ export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
   'mkkBoq',
   'ks3',
   'testKs3',
+  'piKs3',
   'pstoKs3',
   'vikKs3',
   'rkKs3',
@@ -53,6 +61,8 @@ export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
 ])
 
 export const formHiddenFieldKeys = new Set<WeldFieldKey>([
+  'id',
+  'dispatcherTasks',
   'status',
   'createdAt',
   'vikRequest',

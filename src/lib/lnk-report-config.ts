@@ -97,6 +97,7 @@ export const LNK_GENERATED_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 export const LNK_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_EDITABLE_REPORT_FIELD_KEYS,
+  'lnkNote',
 ])
 export const LNK_IMPORT_MATCH_FIELD_KEYS = new Set<WeldFieldKey>(['line', 'joint'])
 

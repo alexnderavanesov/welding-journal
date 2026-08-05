@@ -38,7 +38,6 @@ import {
 } from '@/lib/repeated-joint-task-helpers'
 import { getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
-import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
@@ -60,7 +59,6 @@ type BuildRepeatedJointTasksOptions = {
   includeLineConsistencyTasks?: boolean
   includePercentageLineControlTasks?: boolean
   includeWelderStampCompatibilityChecks?: boolean
-  saveCheckSettings?: SaveCheckSettings
 }
 
 export function buildRepeatedJointTasks(
@@ -74,7 +72,6 @@ export function buildRepeatedJointTasks(
     includeLineConsistencyTasks = true,
     includePercentageLineControlTasks = true,
     includeWelderStampCompatibilityChecks = true,
-    saveCheckSettings,
   } = options
   const tasks: RepeatedJointTask[] = []
   const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows)
@@ -86,7 +83,7 @@ export function buildRepeatedJointTasks(
     ...buildPstoChronologyCheckTasks(rows),
     ...buildForbiddenRepairByDiameterCheckTasks(rows),
     ...(includeWelderStampCompatibilityChecks
-      ? buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions, saveCheckSettings)
+      ? buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions)
       : []),
     ...(includeIncompleteStampChecks ? buildIncompleteWelderStampGroupTasks(rows) : []),
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))

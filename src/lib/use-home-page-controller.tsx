@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import {
@@ -14,6 +14,12 @@ import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
 import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useDispatcherTaskSnapshot } from '@/lib/use-dispatcher-task-snapshot'
+import {
+  DISPATCHER_TASKS_FIELD_KEY,
+  attachDispatcherTaskCodes,
+  buildDispatcherTaskFilterOptions,
+  buildDispatcherTaskServerFilters,
+} from '@/lib/dispatcher-task-row-codes'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
 import { useReportRows } from '@/lib/use-report-rows'
@@ -57,6 +63,11 @@ import { createReportHeaderActionsProps } from '@/lib/report-header-actions-prop
 import { createReportSummaryBarProps } from '@/lib/report-summary-props'
 import { createReportTaskPanelsProps } from '@/lib/report-task-panels-props'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
+import {
+  getGeneratedDocumentProfile,
+  isGeneratedDocumentFieldKey,
+} from '@/lib/generated-document-types'
+import { getPageScrollPosition } from '@/lib/page-scroll-position'
 import { createReportChainDialogProps } from '@/lib/report-chain-dialog-props'
 import { createReportWeldEditorProps } from '@/lib/report-weld-editor-props'
 import { createReportFieldEditorProps } from '@/lib/report-field-editor-props'
@@ -106,13 +117,22 @@ import {
   useRequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import { getWeldJointById } from '@/server/welds'
+import { openGeneratedDocumentForRow } from '@/lib/welding-journal-document'
+import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/generated-document-storage'
+import { openSystemDocumentForRow } from '@/lib/system-document-storage'
+import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
 
 export function useHomePageController() {
   const saveCheckSettings = useSaveCheckSettings()
+  const availableSystemDocumentTypes = useSystemDocumentTemplateAvailability()
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
   const confirmAction = useConfirmAction()
-  const { requireEditPassword, requireImportReplacePassword, requireDeletePassword } = useSecurityGuard()
+  const {
+    requireEditPassword,
+    requireImportReplacePassword,
+    requireDeletePassword,
+  } = useSecurityGuard()
   const {
     activeReport,
     columnFilters,
@@ -408,7 +428,6 @@ export function useHomePageController() {
     includeRepeatedJointTasks: false,
     includeWelderStampExpiryTasks: shouldBuildWelderStampExpiryTasks,
     rows,
-    saveCheckSettings,
     setExpandedRepeatedJointTaskKeys,
     welderStamps,
     welderStampSuspensions,
@@ -870,17 +889,29 @@ export function useHomePageController() {
     setHeatTreatmentFilters,
     setLnkFilters,
   })
+  const dispatcherTaskServerFilters = useMemo(
+    () => buildDispatcherTaskServerFilters(activeColumnFilters, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId),
+    [activeColumnFilters, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId],
+  )
   const weldPageQuery = useWeldPageQuery({
     enabled: isServerPagedTab,
     report: isServerPagedTab ? activeReport : 'weldingJournal',
-    columnFilters: isServerPagedTab ? activeColumnFilters : {},
+    columnFilters: isServerPagedTab ? dispatcherTaskServerFilters : {},
   })
   const fullFinalStatusContext = useMemo(() => buildFinalStatusRowsContext(rows), [rows])
-  const pagedReportRows = useReportRows(
+  const basePagedReportRows = useReportRows(
     weldPageQuery.rows,
     duplicateControls,
     rows.length > 0 ? rows : undefined,
     rows.length > 0 ? fullFinalStatusContext : undefined,
+  )
+  const pagedReportRows = useMemo(
+    () => attachDispatcherTaskCodes(basePagedReportRows, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId),
+    [basePagedReportRows, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId],
+  )
+  const dispatcherTaskFilterOptions = useMemo(
+    () => buildDispatcherTaskFilterOptions(dispatcherTaskSnapshot.dispatcherTaskCodesByRowId),
+    [dispatcherTaskSnapshot.dispatcherTaskCodesByRowId],
   )
   const tableActionRows = rows.length > 0 ? (visibleRows as WeldRow[]) : pagedReportRows
   const refetchWeldData = async () => {
@@ -889,6 +920,14 @@ export function useHomePageController() {
       isServerPagedTab ? weldPageQuery.refetch() : Promise.resolve(),
     ])
   }
+  useEffect(() => {
+    const refreshDocumentAssignments = () => {
+      void weldsQuery.refetch()
+      if (isServerPagedTab) void weldPageQuery.refetch()
+    }
+    window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
+    return () => window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
+  }, [isServerPagedTab, weldPageQuery.refetch, weldsQuery.refetch])
   const activeReportManualPagination = useMemo(
     () =>
       isServerPagedTab
@@ -927,17 +966,32 @@ export function useHomePageController() {
     () => (activeReport === 'weldingJournal' ? sumAcceptedWdi(filteredVisibleRows) : 0),
     [activeReport, filteredVisibleRows],
   )
-  const generateWeldingJournalDocumentForRows = (documentRows: WeldRow[]) => {
+  const generateDocumentForRows = (
+    type: DocumentGenerationRequest['type'],
+    documentRows: WeldRow[],
+  ) => {
+    const documentLabel = getGeneratedDocumentProfile(type).formationLabel
+    if (documentRows.length === 0) {
+      setMessage(`Нет стыков для формирования ${documentLabel}.`)
+      return
+    }
     setDocumentGenerationRequest({
       id: Date.now(),
-      type: 'weldingJournal',
+      type,
       rows: documentRows,
     })
     setIsWeldingJournalGenerateMenuOpen(false)
     setIsWeldingJournalShowMenuOpen(false)
-    setActiveReport('documents')
   }
+  const generateWeldingJournalDocumentForRows = (documentRows: WeldRow[]) =>
+    generateDocumentForRows('weldingJournal', documentRows)
+  const generateChecklistDocumentForRows = (documentRows: WeldRow[]) =>
+    generateDocumentForRows('checklist', documentRows)
+  const generateZniDocumentForRows = (documentRows: WeldRow[]) =>
+    generateDocumentForRows('zni', documentRows)
   const generateWeldingJournalDocument = () => generateWeldingJournalDocumentForRows(filteredVisibleRows)
+  const generateChecklistDocument = () => generateChecklistDocumentForRows(filteredVisibleRows)
+  const generateZniDocument = () => generateZniDocumentForRows(filteredVisibleRows)
   const {
     openLnkConclusionsReport,
     openLnkCurrentReport,
@@ -1209,13 +1263,14 @@ export function useHomePageController() {
   }
 
   async function handleProtectedEditRecord(row: WeldRow, fieldKey?: Parameters<typeof handleEditRecord>[1]) {
+    const returnPageScrollPosition = getPageScrollPosition()
     await runProtectedEdit('редактирование стыка', async () => {
       const fullRecord = await getWeldJointById({ data: { id: row.id } })
       if (!fullRecord) {
         setMessage('Стык больше не найден. Обновите отчет и повторите действие.')
         return
       }
-      handleEditRecord(fullRecord, fieldKey)
+      handleEditRecord(fullRecord, fieldKey, returnPageScrollPosition)
     })
   }
 
@@ -1273,6 +1328,19 @@ export function useHomePageController() {
     setEditing(null)
     setColumnFilters(buildRowIdListFilters(rowIds))
     setMessage(messageText || `Показано стыков: ${rowIds.length}.`)
+  }
+
+  const openGeneratedDocumentRows = (rowIds: number[], documentTitle: string) => {
+    const uniqueRowIds = Array.from(new Set(rowIds)).filter(Number.isFinite)
+    openWeldRowIds(
+      uniqueRowIds,
+      `Показаны стыки ЖСР «${documentTitle}»: ${uniqueRowIds.length}. Строки документа выделены зеленым.`,
+    )
+    highlightChangedRows(uniqueRowIds.map((id) => ({ id })))
+  }
+
+  const handleDocumentGenerationRequest = (requestId: number) => {
+    setDocumentGenerationRequest((current) => (current?.id === requestId ? null : current))
   }
 
   const assignPercentageLineMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
@@ -1680,9 +1748,21 @@ export function useHomePageController() {
           children: [
             {
               id: 'generate-selected-welding-journal',
-              label: 'Сварочный журнал',
+              label: 'ЖСР',
               icon: FileSpreadsheet,
               onSelect: () => generateWeldingJournalDocumentForRows(contextRows),
+            },
+            {
+              id: 'generate-selected-checklist',
+              label: 'Чек-лист',
+              icon: FileSpreadsheet,
+              onSelect: () => generateChecklistDocumentForRows(contextRows),
+            },
+            {
+              id: 'generate-selected-zni',
+              label: 'ЗНИ',
+              icon: FileSpreadsheet,
+              onSelect: () => generateZniDocumentForRows(contextRows),
             },
           ],
         },
@@ -1852,9 +1932,17 @@ export function useHomePageController() {
     onOpenChain: (row) => setChainRecord(row),
     onFilterLine: filterLineInCurrentReport,
     onOpenLinkedReport: openLinkedReportRow,
+    onOpenDocument: (row, fieldKey) =>
+      isGeneratedDocumentFieldKey(fieldKey)
+        ? openGeneratedDocumentForRow(row, fieldKey, welderStamps)
+        : openSystemDocumentForRow(row, fieldKey, welderStamps),
+    availableSystemDocumentTypes,
     onOpenDuplicateControl: openDuplicateControlModalForRow,
     rowActionHandlers,
     getContextMenuItems: getReportContextMenuItems,
+    manualFilterOptions: {
+      [DISPATCHER_TASKS_FIELD_KEY]: dispatcherTaskFilterOptions,
+    },
     selectable: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     selectedRowIds: activeSelectedRowIds,
     onSelectedRowIdsChange: setActiveSelectedRowIds,
@@ -1901,6 +1989,8 @@ export function useHomePageController() {
     isWeldingJournalGenerateMenuOpen,
     onToggleWeldingJournalGenerateMenu: () => setIsWeldingJournalGenerateMenuOpen((current) => !current),
     onGenerateWeldingJournalDocument: generateWeldingJournalDocument,
+    onGenerateChecklistDocument: generateChecklistDocument,
+    onGenerateZniDocument: generateZniDocument,
     onOpenWeldingJournalCurrentReport: openWeldingJournalCurrentReport,
     onOpenWeldingJournalWaitingWeldReport: openWeldingJournalWaitingWeldReport,
     onOpenWeldingJournalWaitingRequestReport: openWeldingJournalWaitingRequestReport,
@@ -2079,6 +2169,8 @@ export function useHomePageController() {
     isTaskExpanded: isRepeatedJointTaskExpanded,
     onToggleDetails: toggleRepeatedJointTaskDetails,
     onDismissTasks: dismissRepeatedJointTasks,
+    columnFilters: activeColumnFilters,
+    onColumnFiltersChange: activeFiltersSetter,
   })
   const reportChainDialogProps = createReportChainDialogProps({
     chainRecord,
@@ -2097,8 +2189,6 @@ export function useHomePageController() {
     stampSelectOptions: (draft) => getWeldFormStampSelectOptions(draft, allowedArchivedOfficialStampsForEditing),
     getExternalSaveBlockReason: (draft) =>
       getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
-        allowedArchivedOfficialStamps: allowedArchivedOfficialStampsForEditing,
-        ignoreArchivedMissingRegistry: loadOtherSettings().includeArchivedWelderStampsInForm,
         saveCheckSettings,
         suspensions: welderStampSuspensions,
       }),
@@ -2384,6 +2474,7 @@ export function useHomePageController() {
     reportSummaryBarProps,
     reportTaskPanelsProps,
     documentGenerationRequest,
+    documentGenerationContextLoading: Boolean(documentGenerationRequest) && weldsQuery.isLoading,
     statisticsRows: rows,
     welderStamps,
     welderStampsRegistryProps,
@@ -2392,6 +2483,9 @@ export function useHomePageController() {
     onCancelPercentageLineMissingControls: cancelPercentageLineMissingControls,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenWeldRowIds: openWeldRowIds,
+    onDocumentGenerationRequestHandled: handleDocumentGenerationRequest,
+    onDocumentGenerated: setMessage,
+    onOpenDocumentRows: openGeneratedDocumentRows,
     reportChainDialogProps,
     reportWeldEditorProps,
     reportPstoDialogsProps,

@@ -1,4 +1,10 @@
-import { FIELD_BY_KEY, MATERIAL_ADDITIONAL_FIELD_KEYS, type WeldField, type WeldFieldKey } from './weld-field-definitions'
+import {
+  FIELD_BY_KEY,
+  MATERIAL_ADDITIONAL_FIELD_KEYS,
+  WELDING_MATERIAL_FIELD_KEYS,
+  type WeldField,
+  type WeldFieldKey,
+} from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
 
 export const HEAT_TREATMENT_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -39,6 +45,7 @@ export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
 
 export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   ...MATERIAL_ADDITIONAL_FIELD_KEYS,
+  ...WELDING_MATERIAL_FIELD_KEYS,
   'hasVik',
   'hasRk',
   'hasUzk',
@@ -73,10 +80,18 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'mkkResult',
   'pstoBoq',
   'pstoKs3',
+  'testTypes',
   'testContour',
   'testDate',
+  'piDate',
   'testBoq',
+  'piBoq',
   'testKs3',
+  'piKs3',
+  'weldingJournalNote',
+  'jsrDocument',
+  'checklistDocument',
+  'zniDocument',
   'boq',
   'ks3',
   'createdAt',

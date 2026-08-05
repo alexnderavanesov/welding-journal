@@ -12,7 +12,8 @@ import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
-import type { WeldReportKind } from '@/server/welds'
+import type { WeldColumnFilterOption, WeldReportKind } from '@/server/welds'
+import type { SystemDocumentType } from '@/lib/system-document-types'
 
 export type WeldTableProps = {
   rows: WeldRow[]
@@ -23,6 +24,7 @@ export type WeldTableProps = {
   columnFilters: Record<string, string>
   manualFiltering?: boolean
   manualFilterOptionsReport?: WeldReportKind
+  manualFilterOptions?: Record<string, WeldColumnFilterOption[]>
   manualPagination?: {
     totalCount: number
     firstItemNumber: number
@@ -47,6 +49,8 @@ export type WeldTableProps = {
   onOpenChain?: (row: WeldRow) => void
   onFilterLine?: (row: WeldRow) => void
   onOpenLinkedReport?: (row: WeldRow) => void
+  onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentType>
   openLinkedReportTitle?: string
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>
@@ -70,6 +74,7 @@ export function WeldTable({
   columnFilters,
   manualFiltering = false,
   manualFilterOptionsReport,
+  manualFilterOptions,
   manualPagination,
   onColumnFiltersChange,
   onEdit,
@@ -86,6 +91,8 @@ export function WeldTable({
   onOpenChain,
   onFilterLine,
   onOpenLinkedReport,
+  onOpenDocument,
+  availableSystemDocumentTypes = new Set(),
   selectable = false,
   selectedRowIds = new Set(),
   onSelectedRowIdsChange,
@@ -168,7 +175,29 @@ export function WeldTable({
   const actionSourceRows = actionRows ?? stateRows
   const headerFilterRows = filterOptionRows ?? rows
   const rowsById = useMemo(() => new Map(actionSourceRows.map((row) => [row.id, row])), [actionSourceRows])
-  const getActionRow = useCallback((row: WeldRow) => rowsById.get(row.id) ?? row, [rowsById])
+  const getActionRow = useCallback((row: WeldRow) => {
+    const actionRow = rowsById.get(row.id)
+    if (!actionRow) return row
+    if (!row.jsrDocumentId && !row.checklistDocumentId && !row.zniDocumentId) return actionRow
+    return {
+      ...actionRow,
+      ...(row.jsrDocumentId
+        ? { jsrDocument: row.jsrDocument, jsrDocumentId: row.jsrDocumentId }
+        : {}),
+      ...(row.checklistDocumentId
+        ? {
+            checklistDocument: row.checklistDocument,
+            checklistDocumentId: row.checklistDocumentId,
+          }
+        : {}),
+      ...(row.zniDocumentId
+        ? {
+            zniDocument: row.zniDocument,
+            zniDocumentId: row.zniDocumentId,
+          }
+        : {}),
+    }
+  }, [rowsById])
   const selectedRows = useMemo(
     () => Array.from(selectedRowIds).map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)),
     [rowsById, selectedRowIds],
@@ -235,6 +264,7 @@ export function WeldTable({
             columnFilters={columnFilters}
             canEditField={canEditField}
             manualFilterOptionsReport={manualFilterOptionsReport}
+            manualFilterOptions={manualFilterOptions}
             onColumnFiltersChange={onColumnFiltersChange}
           />
           <tbody>
@@ -266,6 +296,8 @@ export function WeldTable({
               onEdit={onEdit}
               onDelete={onDelete}
               onContextMenu={getContextMenuItems ? openRowContextMenu : undefined}
+              onOpenDocument={onOpenDocument}
+              availableSystemDocumentTypes={availableSystemDocumentTypes}
             />
           </tbody>
         </table>

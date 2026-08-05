@@ -216,7 +216,7 @@ export function buildExistingRowImportUpdates(rows: WeldRow[], records: ReportIm
       const isDerivedWdi = field.key === 'wdi' && isDerivedSystemWdiUpdate(record)
       if (!isDerivedWdi && isExistingRowsImportLockedField(field)) continue
       if (!isDerivedWdi && mode === 'massFill' && isMassFillFieldLocked('weldingJournal', field, currentRow)) continue
-      if (!isDerivedWdi && mode === 'replaceData' && isSystemImportField('weldingJournal', field)) continue
+      if (!isDerivedWdi && mode === 'replaceData' && isSystemImportField('weldingJournal', field, currentRow)) continue
 
       const key = field.key as WeldFieldKey
       if (normalizeChangedValue(value) === normalizeChangedValue(currentRow[key])) continue

@@ -26,7 +26,6 @@ import {
 import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
 import { loadDataListSettings, normalizeDataListOption } from '@/lib/data-list-settings'
 import {
-  getArchivedOfficialStampValuesForRecord,
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
@@ -76,11 +75,6 @@ export function prepareWeldSaveValue({
   validateManualJointNameForSave(preparedValue, rows, saveCheckSettings)
   const previousRow = preparedValue.id ? rows.find((row) => row.id === preparedValue.id) : undefined
   validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
-    allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(
-      previousRow,
-      welderStamps,
-    ),
-    ignoreArchivedMissingRegistry: otherSettings.includeArchivedWelderStampsInForm,
     suspensions: welderStampSuspensions,
   })
   if (shouldCheckDocumentChronologyForSave(preparedValue, previousRow)) {
@@ -126,9 +120,9 @@ export function prepareImportedWeldRecords({
   normalizeWeldingMethodsForImport(preparedRecords)
   normalizeConnectionTypesForImport(preparedRecords)
   normalizeMaterialGroupsForImport(preparedRecords)
+  normalizeTestTypesForImport(preparedRecords)
   validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions, allowedArchivedOfficialStamps, saveCheckSettings)
   validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, {
-    allowedArchivedOfficialStamps,
     saveCheckSettings,
     suspensions: welderStampSuspensions,
   })
@@ -196,6 +190,35 @@ function normalizeMaterialGroupsForImport(records: WeldInput[]) {
       )
     }
     record.materialGroup = value
+  })
+}
+
+function normalizeTestTypesForImport(records: WeldInput[]) {
+  const testTypeOptions = loadDataListSettings().testTypes
+
+  records.forEach((record, index) => {
+    const rawValue = String(record.testTypes ?? '').trim()
+    if (!rawValue) {
+      record.testTypes = null
+      return
+    }
+
+    const values = rawValue
+      .split(/[,;+]+/)
+      .map((part) => normalizeDataListOption(part))
+      .filter(Boolean)
+    const uniqueValues = [...new Set(values)]
+    const rowLabel = getImportRowLabel(index)
+    if (testTypeOptions.length === 0) {
+      throw new Error(`Импорт остановлен: ${rowLabel}. Поле "Вид испытаний" заполнено, но список в настройках пока пуст.`)
+    }
+    const unknownValues = uniqueValues.filter((value) => !testTypeOptions.includes(value))
+    if (unknownValues.length > 0) {
+      throw new Error(
+        `Импорт остановлен: ${rowLabel}. Поле "Вид испытаний" может содержать только значения из настроек: ${testTypeOptions.join(', ')}. Не подходят: ${unknownValues.join(', ')}.`,
+      )
+    }
+    record.testTypes = testTypeOptions.filter((option) => uniqueValues.includes(option)).join(', ')
   })
 }
 

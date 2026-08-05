@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react'
 import type { WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
@@ -18,7 +17,6 @@ const UserGuidePage = lazy(() => import('@/components/user-guide-page').then((mo
 
 type ReportMainContentProps = {
   activeReport: ActiveReport
-  documentGenerationRequest?: DocumentGenerationRequest | null
   statisticsRows: WeldRow[]
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
@@ -27,11 +25,11 @@ type ReportMainContentProps = {
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
+  onOpenDocumentRows?: (rowIds: number[], documentTitle: string) => void
 }
 
 export function ReportMainContent({
   activeReport,
-  documentGenerationRequest,
   statisticsRows,
   welderStamps,
   welderStampsRegistryProps,
@@ -40,6 +38,7 @@ export function ReportMainContent({
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
+  onOpenDocumentRows,
 }: ReportMainContentProps) {
   if (activeReport === 'statistics' || activeReport === 'percentageLines') {
     return (
@@ -69,7 +68,11 @@ export function ReportMainContent({
   if (activeReport === 'documents') {
     return (
       <Suspense fallback={<ReportSectionFallback label="Загружаем документы" />}>
-        <DocumentsPage rows={statisticsRows} welderStamps={welderStamps} generationRequest={documentGenerationRequest} />
+        <DocumentsPage
+          rows={statisticsRows}
+          welderStamps={welderStamps}
+          onOpenDocumentRows={onOpenDocumentRows}
+        />
       </Suspense>
     )
   }

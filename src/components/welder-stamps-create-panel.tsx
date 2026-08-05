@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Archive, Check, Plus, RotateCcw, Trash2, X } from 'lucide-react'
+import { Archive, CalendarDays, Check, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WelderStampWeldTypeSelector } from '@/components/welder-stamp-weld-type-selector'
@@ -284,6 +284,32 @@ export function WelderStampsCreatePanel({
             />
           ))}
         </PermitSection>
+      ) : null}
+
+      {draft.archived ? (
+        <section className="rounded-lg border border-slate-300 bg-slate-50/80 p-4 shadow-sm shadow-slate-100">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <CalendarDays className="h-4 w-4 text-slate-500" />
+                Дата архивации клейма
+              </div>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                Клеймо будет доступно для исторических стыков с датой сварки не позже этой даты. Для более поздних стыков сработает
+                защита ЗВ-02, а сохраненное нарушение покажет диспетчер как ДЗ-18.
+              </p>
+            </div>
+            <label className="w-full shrink-0 space-y-1.5 text-sm font-medium text-slate-700 sm:w-56">
+              <span>Архивировано с</span>
+              <Input
+                type="date"
+                value={draft.archivedAt ?? ''}
+                onChange={(event) => onDraftChange('archivedAt', event.target.value)}
+                required
+              />
+            </label>
+          </div>
+        </section>
       ) : null}
 
       {nameSyncHint ? (

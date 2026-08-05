@@ -1,7 +1,15 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, count, desc, eq, ilike, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, ilike, inArray, notExists, notInArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { duplicateControls, weldJoints, type DuplicateControl, type NewWeldJoint, type WeldJoint } from '@/db/schema'
+import {
+  duplicateControls,
+  generatedDocuments,
+  generatedDocumentWeldJoints,
+  weldJoints,
+  type DuplicateControl,
+  type NewWeldJoint,
+  type WeldJoint,
+} from '@/db/schema'
 import {
   clearCancelledRejectedLnkGeneratedData,
   clearDisabledLnkRequests,
@@ -22,6 +30,7 @@ import { hasWeldDate, isYesText, normalizeControlAvailabilityValue } from '@/lib
 import {
   FIELD_BY_KEY,
   WELD_FIELDS,
+  isVirtualWeldField,
   type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
@@ -39,6 +48,7 @@ import {
   parsePercentageLineStampFilter,
   parseRowIdListFilter,
 } from '@/lib/report-hidden-filters'
+import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
 
 export type WeldFilters = {
   search?: string
@@ -116,7 +126,20 @@ const controlColumns = {
   СТЛС: weldJoints.hasStls,
   МКК: weldJoints.hasMkk,
 } as const
-const SYSTEM_FIELD_KEYS = new Set(['createdAt', 'updatedAt'])
+const SYSTEM_FIELD_KEYS = new Set([
+  'id',
+  'dispatcherTasks',
+  'jsrDocument',
+  'checklistDocument',
+  'zniDocument',
+  'createdAt',
+  'updatedAt',
+])
+const GENERATED_DOCUMENT_FIELD_TYPES = {
+  jsrDocument: 'weldingJournal',
+  checklistDocument: 'checklist',
+  zniDocument: 'zni',
+} as const satisfies Partial<Record<WeldFieldKey, string>>
 const WELDING_JOURNAL_ORDER_BY = [
   sql`${weldJoints.createdAt} desc nulls last`,
   sql`${weldJoints.weldDate} desc nulls last`,
@@ -126,7 +149,9 @@ const WELDING_JOURNAL_ORDER_BY = [
 const WELD_TABLE_SELECT = {
   id: weldJoints.id,
   ...Object.fromEntries(
-    WELD_FIELDS.map((field) => [field.key, getWeldColumn(field.key as WeldFieldKey)] as const),
+    WELD_FIELDS.filter((field) => field.key !== 'id' && !isVirtualWeldField(field)).map(
+      (field) => [field.key, getWeldColumn(field.key as WeldFieldKey)] as const,
+    ),
   ),
 } as Record<'id' | WeldFieldKey, SQL>
 const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
@@ -172,6 +197,13 @@ const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   't2',
   'wdi',
   'responsible',
+  'technologyCardNumber',
+  'weldingElectrodes',
+  'weldingElectrodesCertificateNumber',
+  'fillerWire',
+  'fillerWireCertificateNumber',
+  'shieldingGas',
+  'shieldingGasCertificateNumber',
   'stamp1K',
   'stamp1Z',
   'stamp1O',
@@ -192,12 +224,18 @@ const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'hasRfa',
   'hasStls',
   'hasMkk',
+  'pstoNote',
+  'lnkNote',
+  'testTypes',
   'testContour',
   'testDate',
+  'piDate',
   'boq',
   'testBoq',
+  'piBoq',
   'ks3',
   'testKs3',
+  'piKs3',
   'createdAt',
 ])
 
@@ -324,7 +362,9 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       ? query
       : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
   const [[{ total }], [{ total: acceptedWdiTotal }], rows] = await Promise.all([countQuery, acceptedWdiTotalQuery, rowsQuery])
-  const rowsWithDuplicateControls = compactWeldRowsForTransport(await attachDuplicateControlsToPage(rows))
+  const rowsWithDuplicateControls = compactWeldRowsForTransport(
+    await attachGeneratedDocumentFields(await attachDuplicateControlsToPage(rows)),
+  )
 
   return {
     rows: rowsWithDuplicateControls,
@@ -461,6 +501,16 @@ export const deleteWeldJoint = createServerFn({ method: 'POST' })
     const db = requireDb()
 
     await db.delete(weldJoints).where(eq(weldJoints.id, data.id))
+    await db
+      .delete(generatedDocuments)
+      .where(
+        notExists(
+          db
+            .select({ value: sql`1` })
+            .from(generatedDocumentWeldJoints)
+            .where(eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id)),
+        ),
+      )
     return { ok: true }
   })
 
@@ -477,24 +527,37 @@ export const importWeldJoints = createServerFn({ method: 'POST' })
 
 export const clearLnkGeneratedWeldData = createServerFn({ method: 'POST' }).handler(async () => {
   const db = requireDb()
-  const rows = await db.select().from(weldJoints).limit(5000)
   const updatedRows = []
+  const batchSize = 1000
+  let lastProcessedId = 0
 
-  for (const row of rows) {
-    const weldRow = row as unknown as WeldInput & { id: number }
-    const cleanedRow = clearLnkGeneratedData(weldRow)
-    if (!hasLnkGeneratedDataChanged(weldRow, cleanedRow)) continue
-    const updateData = [...LNK_GENERATED_FIELD_KEYS].reduce<Record<string, null>>((data, fieldKey) => {
-      data[fieldKey] = null
-      return data
-    }, {})
-    const { finalStatus } = withLnkFinalStatus(cleanedRow)
-    const [updated] = await db
-      .update(weldJoints)
-      .set({ ...updateData, finalStatus, updatedAt: new Date() })
-      .where(eq(weldJoints.id, row.id))
-      .returning()
-    if (updated) updatedRows.push(updated)
+  while (true) {
+    const rows = await db
+      .select()
+      .from(weldJoints)
+      .where(gt(weldJoints.id, lastProcessedId))
+      .orderBy(asc(weldJoints.id))
+      .limit(batchSize)
+    if (rows.length === 0) break
+
+    for (const row of rows) {
+      const weldRow = row as unknown as WeldInput & { id: number }
+      const cleanedRow = clearLnkGeneratedData(weldRow)
+      if (!hasLnkGeneratedDataChanged(weldRow, cleanedRow)) continue
+      const updateData = [...LNK_GENERATED_FIELD_KEYS].reduce<Record<string, null>>((data, fieldKey) => {
+        data[fieldKey] = null
+        return data
+      }, {})
+      const { finalStatus } = withLnkFinalStatus(cleanedRow)
+      const [updated] = await db
+        .update(weldJoints)
+        .set({ ...updateData, finalStatus, updatedAt: new Date() })
+        .where(eq(weldJoints.id, row.id))
+        .returning()
+      if (updated) updatedRows.push(updated)
+    }
+
+    lastProcessedId = rows[rows.length - 1].id
   }
 
   return updatedRows
@@ -546,6 +609,11 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
     return buildWeldColumnFilterOptionsFromRows(reportRows, data.fieldKey)
   }
 
+  const generatedDocumentType = GENERATED_DOCUMENT_FIELD_TYPES[data.fieldKey as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
+  if (generatedDocumentType) {
+    return listGeneratedDocumentColumnFilterOptions({ ...data, columnFilters }, generatedDocumentType)
+  }
+
   const column = getWeldColumn(data.fieldKey)
   if (!column) return []
   const db = requireDb()
@@ -563,6 +631,48 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
       count: row.count,
       label: row.value || '(пусто)',
     })),
+  )
+}
+
+async function listGeneratedDocumentColumnFilterOptions(
+  data: ReturnType<typeof normalizeWeldColumnFilterOptionsRequest>,
+  documentType: string,
+) {
+  const db = requireDb()
+  const valueExpression = sql<string>`coalesce(${generatedDocuments.title}, '')`
+  const where = buildWhere({ ...data, columnFilters: data.columnFilters })
+  const rows = await db
+    .select({ value: valueExpression, count: count() })
+    .from(weldJoints)
+    .innerJoin(
+      generatedDocumentWeldJoints,
+      eq(generatedDocumentWeldJoints.weldJointId, weldJoints.id),
+    )
+    .innerJoin(
+      generatedDocuments,
+      and(
+        eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
+        eq(generatedDocuments.type, documentType),
+      ),
+    )
+    .where(where)
+    .groupBy(valueExpression)
+  const [{ count: emptyCount }] = await db
+    .select({ count: count() })
+    .from(weldJoints)
+    .where(and(where, buildGeneratedDocumentColumnWhere('=', documentType)))
+
+  return sortColumnFilterOptions(
+    [
+      ...rows.map((row) => ({
+        value: row.value,
+        count: row.count,
+        label: row.value || '(пусто)',
+      })),
+      ...(Number(emptyCount) > 0
+        ? [{ value: '', count: Number(emptyCount), label: '(пусто)' }]
+        : []),
+    ],
   )
 }
 
@@ -663,6 +773,13 @@ function buildWhere(filters: WeldFilters & { columnFilters?: Record<string, stri
         ilike(weldJoints.materialNormativeDocument2, search),
         ilike(weldJoints.materialCertificateNumber1, search),
         ilike(weldJoints.materialCertificateNumber2, search),
+        ilike(weldJoints.technologyCardNumber, search),
+        ilike(weldJoints.weldingElectrodes, search),
+        ilike(weldJoints.weldingElectrodesCertificateNumber, search),
+        ilike(weldJoints.fillerWire, search),
+        ilike(weldJoints.fillerWireCertificateNumber, search),
+        ilike(weldJoints.shieldingGas, search),
+        ilike(weldJoints.shieldingGasCertificateNumber, search),
         ilike(weldJoints.responsible, search),
       ),
     )
@@ -690,7 +807,7 @@ function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, st
 
     if (key === ROW_ID_LIST_FILTER_KEY) {
       const filter = parseRowIdListFilter(query)
-      if (filter) clauses.push(or(...filter.rowIds.map((id) => eq(weldJoints.id, id))) ?? sql`false`)
+      if (filter) clauses.push(buildRowIdListWhere(filter))
       continue
     }
 
@@ -701,6 +818,11 @@ function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, st
     }
 
     if (!FIELD_BY_KEY.has(key as WeldFieldKey)) continue
+    const generatedDocumentType = GENERATED_DOCUMENT_FIELD_TYPES[key as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
+    if (generatedDocumentType) {
+      clauses.push(buildGeneratedDocumentColumnWhere(query, generatedDocumentType))
+      continue
+    }
     const column = getWeldColumn(key as WeldFieldKey)
     if (!column) continue
 
@@ -717,6 +839,47 @@ function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, st
 
     clauses.push(sql`coalesce(${column}::text, '') ilike ${`%${query}%`}`)
   }
+}
+
+function buildGeneratedDocumentColumnWhere(query: string, documentType: string) {
+  const titleMatch = (value: string) =>
+    sql`exists (
+      select 1
+      from ${generatedDocumentWeldJoints}
+      inner join ${generatedDocuments}
+        on ${generatedDocuments.id} = ${generatedDocumentWeldJoints.documentId}
+      where ${generatedDocumentWeldJoints.weldJointId} = ${weldJoints.id}
+        and ${generatedDocuments.type} = ${documentType}
+        and lower(trim(coalesce(${generatedDocuments.title}, ''))) = lower(trim(${value}))
+    )`
+  const withoutDocument = sql`not exists (
+    select 1
+    from ${generatedDocumentWeldJoints}
+    inner join ${generatedDocuments}
+      on ${generatedDocuments.id} = ${generatedDocumentWeldJoints.documentId}
+    where ${generatedDocumentWeldJoints.weldJointId} = ${weldJoints.id}
+      and ${generatedDocuments.type} = ${documentType}
+  )`
+  const choiceFilter = parseWeldColumnChoiceFilter(query)
+  if (choiceFilter?.kind === 'values') {
+    const values = [...new Set(choiceFilter.values.map((value) => String(value ?? '').trim()))]
+    const choices = values.filter(Boolean).map(titleMatch)
+    if (values.includes('')) choices.push(withoutDocument)
+    return choices.length > 0 ? or(...choices) ?? sql`false` : sql`false`
+  }
+  if (query.startsWith('=')) {
+    const value = query.slice(1).trim().replace(/^["']|["']$/g, '')
+    return value ? titleMatch(value) : withoutDocument
+  }
+  return sql`exists (
+    select 1
+    from ${generatedDocumentWeldJoints}
+    inner join ${generatedDocuments}
+      on ${generatedDocuments.id} = ${generatedDocumentWeldJoints.documentId}
+    where ${generatedDocumentWeldJoints.weldJointId} = ${weldJoints.id}
+      and ${generatedDocuments.type} = ${documentType}
+      and coalesce(${generatedDocuments.title}, '') ilike ${`%${query}%`}
+  )`
 }
 
 function buildReportSourceWhere(filters: WeldFilters & { columnFilters?: Record<string, string> }) {
@@ -757,7 +920,7 @@ function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters: Recor
 
     if (key === ROW_ID_LIST_FILTER_KEY) {
       const filter = parseRowIdListFilter(query)
-      if (filter) clauses.push(or(...filter.rowIds.map((id) => eq(weldJoints.id, id))) ?? sql`false`)
+      if (filter) clauses.push(buildRowIdListWhere(filter))
       continue
     }
 
@@ -798,6 +961,11 @@ function buildColumnChoiceWhere(column: SQL, values: readonly string[]) {
 
 function buildColumnTextEqualsWhere(column: SQL, value: string) {
   return sql`lower(trim(coalesce(${column}::text, ''))) = lower(trim(${value}))`
+}
+
+function buildRowIdListWhere(filter: NonNullable<ReturnType<typeof parseRowIdListFilter>>) {
+  if (filter.rowIds.length === 0) return filter.mode === 'exclude' ? sql`true` : sql`false`
+  return filter.mode === 'exclude' ? notInArray(weldJoints.id, filter.rowIds) : inArray(weldJoints.id, filter.rowIds)
 }
 
 function normalizedTextEquals(column: SQLWrapper, value: unknown) {

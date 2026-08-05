@@ -1,4 +1,11 @@
-import { FIELD_BY_KEY, MATERIAL_ADDITIONAL_FIELD_KEYS, WELD_FIELDS, type WeldField, type WeldFieldKey } from './weld-field-definitions'
+import {
+  FIELD_BY_KEY,
+  MATERIAL_ADDITIONAL_FIELD_KEYS,
+  WELD_FIELDS,
+  WELDING_MATERIAL_FIELD_KEYS,
+  type WeldField,
+  type WeldFieldKey,
+} from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_METHODS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
 
 export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -29,12 +36,16 @@ export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoResult',
   'heatTreatmentDiagram',
   'pstoNote',
+  'testTypes',
   'testContour',
   'testDate',
+  'piDate',
   'boq',
   'testBoq',
+  'piBoq',
   'ks3',
   'testKs3',
+  'piKs3',
   'createdAt',
   'pstoBoq',
   'pstoKs3',
@@ -58,6 +69,7 @@ export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'mkkKs3',
   'lnkDefectDescription',
   'lnkNote',
+  'weldingJournalNote',
   'finalStatus',
   'status',
 ])
@@ -83,6 +95,11 @@ export const REQUEST_AND_RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
 
 export const WELDING_JOURNAL_BLOCKED_FIELD_KEYS = new Set<WeldFieldKey>([
   ...REQUEST_AND_RESULT_FIELD_KEYS,
+  'id',
+  'dispatcherTasks',
+  'jsrDocument',
+  'checklistDocument',
+  'zniDocument',
   'status',
   'createdAt',
   'finalStatus',
@@ -99,6 +116,7 @@ export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
 
 export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   ...MATERIAL_ADDITIONAL_FIELD_KEYS,
+  ...WELDING_MATERIAL_FIELD_KEYS,
   'pstoRequired',
   'pstoRequest',
   'pstoRequestDate',
@@ -109,11 +127,19 @@ export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoBoq',
   'pstoKs3',
   'pstoCreatedAt',
+  'weldingJournalNote',
+  'jsrDocument',
+  'checklistDocument',
+  'zniDocument',
   'boq',
+  'testTypes',
   'testContour',
   'testDate',
+  'piDate',
   'testBoq',
+  'piBoq',
   'testKs3',
+  'piKs3',
   'ks3',
   'createdAt',
   ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt'),

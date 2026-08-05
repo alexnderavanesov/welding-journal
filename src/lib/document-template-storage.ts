@@ -1,5 +1,5 @@
 import type * as XLSXTypes from 'xlsx-js-style'
-import { FIELD_BY_LABEL, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, FIELD_BY_LABEL, isVirtualWeldField, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
 import { formatExportDate, formatExportNumber } from '@/lib/weld-export-utils'
 import {
@@ -9,6 +9,26 @@ import {
   type TemplateStampNameFieldKey,
 } from '@/lib/welder-stamp-names'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import {
+  isWeldingJournalDocumentSplitMode,
+  type WeldingJournalDocumentSplitMode,
+} from '@/lib/welding-journal-document-splitting'
+import {
+  DOCUMENT_FORMATION_DATE_TOKEN,
+  DOCUMENT_SEQUENCE_NUMBER_TOKEN,
+} from '@/lib/generated-document-naming'
+import { getGeneratedDocumentProfile, isGeneratedDocumentType } from '@/lib/generated-document-types'
+import {
+  getSystemDocumentRowResult,
+  type SystemDocumentTemplateContext,
+} from '@/lib/system-document-types'
+import {
+  deleteRemoteDocumentTemplate,
+  getRemoteDocumentTemplate,
+  listRemoteDocumentTemplates,
+  saveRemoteDocumentTemplate,
+  updateRemoteDocumentTemplate,
+} from '@/server/document-templates'
 
 export const DOCUMENT_TEMPLATE_STORAGE_EVENT = 'document-template-storage-change'
 
@@ -28,13 +48,21 @@ async function loadXlsxJsStyle() {
   return xlsxModulePromise
 }
 
-const DOCUMENT_TEMPLATE_DB_NAME = 'welding-document-templates'
-const DOCUMENT_TEMPLATE_STORE_NAME = 'templates'
 export const DOCUMENT_TEMPLATE_TYPES = [
   {
     id: 'weldingJournal',
-    label: 'Сварочный журнал',
-    description: 'Периодический журнал сваренных стыков.',
+    label: 'ЖСР',
+    description: 'Журнал сварочных работ по выбранным стыкам.',
+  },
+  {
+    id: 'checklist',
+    label: 'Чек-лист',
+    description: 'Чек-лист по выбранным стыкам.',
+  },
+  {
+    id: 'zni',
+    label: 'ЗНИ',
+    description: 'Запрос на инспекцию по выбранным стыкам.',
   },
   {
     id: 'lnkRequest',
@@ -47,9 +75,14 @@ export const DOCUMENT_TEMPLATE_TYPES = [
     description: 'Шаблон заключения по результатам НК.',
   },
   {
-    id: 'psto',
-    label: 'ПСТО',
-    description: 'Шаблон документов по термообработке.',
+    id: 'pstoRequest',
+    label: 'Заявка ПСТО',
+    description: 'Шаблон заявки на проведение термообработки.',
+  },
+  {
+    id: 'pstoConclusion',
+    label: 'Заключение ПСТО',
+    description: 'Шаблон заключения по результатам термообработки.',
   },
 ] as const
 
@@ -78,10 +111,13 @@ export type WeldingJournalTemplateOptions = {
   officialOnly: boolean
   goodOnly: boolean
   actualOnly: boolean
+  splitMode: WeldingJournalDocumentSplitMode
 }
 
 export type DocumentTemplateOptions = {
   weldingJournal?: WeldingJournalTemplateOptions
+  checklist?: WeldingJournalTemplateOptions
+  zni?: WeldingJournalTemplateOptions
 }
 
 export type DocumentTemplateFieldKey =
@@ -89,8 +125,14 @@ export type DocumentTemplateFieldKey =
   | '__index'
   | '__welderName'
   | `__welderName:${TemplateStampNameFieldKey}`
+  | '__systemDocumentTitle'
+  | '__systemDocumentDate'
+  | '__systemDocumentMethods'
+  | '__systemDocumentResult'
 
-export type DocumentTemplateBindingMode = 'row' | 'list' | 'uniqueList' | 'summary' | 'count' | 'sum'
+export type DocumentTemplateBindingMode = 'row' | 'summary'
+export type DocumentTemplateRepeatMode = 'rows' | 'groups'
+export type DocumentTemplateBindingScope = 'document' | 'group'
 
 export type DocumentTemplateEmptyMode = 'blank' | 'np' | 'custom'
 
@@ -110,15 +152,194 @@ export type DocumentTemplateCellBinding = {
   uniqueValues?: boolean
   separator?: 'comma' | 'newline' | 'custom'
   customSeparator?: string
+  scope?: DocumentTemplateBindingScope
   emptyMode?: DocumentTemplateEmptyMode
   emptyText?: string
+}
+
+export type DocumentTemplateNameFieldKey =
+  | keyof WeldInput
+  | '__periodFrom'
+  | '__periodTo'
+  | '__formationDate'
+  | '__documentNumber'
+
+export type DocumentTemplateNamePart = {
+  type: 'text' | 'field'
+  text?: string
+  field?: DocumentTemplateNameFieldKey
+}
+
+export type DocumentTemplateNameConfig = {
+  parts: DocumentTemplateNamePart[]
 }
 
 export type DocumentTemplateConstructorConfig = {
   version: 1
   sheetName: string
   repeatRow?: number
+  repeatRowEnd?: number
+  repeatMode?: DocumentTemplateRepeatMode
+  repeatGroupBy?: DocumentTemplateFieldKey
   bindings: DocumentTemplateCellBinding[]
+  nameConfig?: DocumentTemplateNameConfig
+}
+
+export function createDefaultDocumentTemplateNameConfig(
+  templateId: DocumentTemplateId = 'weldingJournal',
+): DocumentTemplateNameConfig {
+  const documentLabel =
+    templateId === 'weldingJournal'
+      ? 'Сварочный журнал'
+      : isGeneratedDocumentType(templateId)
+        ? getGeneratedDocumentProfile(templateId).label
+        : 'Документ'
+  return {
+    parts: [
+      { type: 'field', field: 'subtitleCode' },
+      { type: 'text', text: ` - ${documentLabel} - ` },
+      { type: 'field', field: '__periodFrom' },
+      { type: 'text', text: ' - ' },
+      { type: 'field', field: '__periodTo' },
+    ],
+  }
+}
+
+export function normalizeDocumentTemplateConstructorConfig(
+  config: DocumentTemplateConstructorConfig,
+): DocumentTemplateConstructorConfig {
+  const repeatRow = config.repeatRow && config.repeatRow > 0 ? Math.floor(config.repeatRow) : undefined
+  const repeatRowEnd =
+    repeatRow === undefined
+      ? undefined
+      : Math.max(repeatRow, Math.floor(config.repeatRowEnd || repeatRow))
+  const collapsedJointGrouping =
+    config.repeatMode === 'groups' && config.repeatGroupBy === 'joint'
+  const repeatMode =
+    config.repeatMode === 'groups' && !collapsedJointGrouping ? 'groups' : 'rows'
+  const usesCurrentGroup = (binding: DocumentTemplateCellBinding) => {
+    if (repeatMode !== 'groups' || binding.mode !== 'summary' || !repeatRow || !repeatRowEnd) return false
+    const bindingRow = decodeCellReference(binding.cell)?.row ?? 0
+    return bindingRow >= repeatRow && bindingRow <= repeatRowEnd
+  }
+  return {
+    ...config,
+    repeatRow,
+    repeatRowEnd,
+    repeatMode,
+    repeatGroupBy: repeatMode === 'groups' ? config.repeatGroupBy : undefined,
+    nameConfig: config.nameConfig
+      ? {
+          parts: config.nameConfig.parts.map((part) => ({ ...part })),
+        }
+      : undefined,
+    bindings: config.bindings.flatMap((binding) => {
+      const legacyBinding = binding as Omit<DocumentTemplateCellBinding, 'mode'> & {
+        mode: DocumentTemplateBindingMode | 'list' | 'uniqueList' | 'count' | 'sum'
+        sourceCell?: string
+      }
+      const { sourceCell: _legacySourceCell, ...bindingWithoutSource } = legacyBinding
+      if (legacyBinding.mode === 'count' || legacyBinding.mode === 'sum') return []
+      if (legacyBinding.mode !== 'list' && legacyBinding.mode !== 'uniqueList') {
+        let normalizedBinding = bindingWithoutSource as DocumentTemplateCellBinding
+        if (
+          collapsedJointGrouping &&
+          normalizedBinding.mode === 'summary' &&
+          normalizedBinding.scope === 'group' &&
+          repeatRow &&
+          repeatRowEnd
+        ) {
+          const bindingRow = decodeCellReference(normalizedBinding.cell)?.row ?? 0
+          if (bindingRow >= repeatRow && bindingRow <= repeatRowEnd) {
+            normalizedBinding = {
+              ...normalizedBinding,
+              mode: 'row',
+              uniqueParts: normalizedBinding.uniqueParts ?? normalizedBinding.uniqueValues,
+              uniqueValues: undefined,
+              scope: undefined,
+            }
+          }
+        }
+        const groupBinding = usesCurrentGroup(normalizedBinding)
+        return [{
+          ...normalizedBinding,
+          scope: groupBinding ? 'group' : undefined,
+        }]
+      }
+
+      return [{
+        ...bindingWithoutSource,
+        mode: 'summary',
+        field: undefined,
+        parts: legacyBinding.parts?.length
+          ? legacyBinding.parts.map((part) => ({ ...part }))
+          : legacyBinding.field
+            ? [{ field: legacyBinding.field }]
+            : [],
+        uniqueValues: legacyBinding.mode === 'uniqueList' ? true : legacyBinding.uniqueValues ?? false,
+        scope: undefined,
+      }]
+    }),
+  }
+}
+
+export function buildDocumentTemplateName({
+  config,
+  records,
+  periodFrom,
+  periodTo,
+}: {
+  config?: DocumentTemplateNameConfig
+  records: WeldInput[]
+  periodFrom: string
+  periodTo: string
+}) {
+  const currentConfig = config ?? createDefaultDocumentTemplateNameConfig()
+  const value = currentConfig.parts
+    .map((part) => {
+      if (part.type === 'text') return part.text ?? ''
+      if (!part.field) return ''
+      if (part.field === '__periodFrom') return formatDocumentNameDate(periodFrom)
+      if (part.field === '__periodTo') return formatDocumentNameDate(periodTo)
+      if (part.field === '__formationDate') return DOCUMENT_FORMATION_DATE_TOKEN
+      if (part.field === '__documentNumber') return DOCUMENT_SEQUENCE_NUMBER_TOKEN
+
+      const field = FIELD_BY_KEY.get(part.field)
+      const values = Array.from(
+        new Set(
+          records
+            .map((record) => {
+              const rawValue = record[part.field as keyof WeldInput]
+              if (rawValue == null || rawValue === '') return ''
+              return field?.kind === 'date'
+                ? formatDocumentNameDate(String(rawValue))
+                : String(rawValue).trim()
+            })
+            .filter(Boolean),
+        ),
+      ).sort((left, right) => left.localeCompare(right, 'ru', { numeric: true }))
+
+      if (values.length <= 3) return values.join(', ')
+      return `${values.slice(0, 3).join(', ')} и еще ${values.length - 3}`
+    })
+    .join('')
+
+  return sanitizeDocumentName(value) || 'Сварочный журнал'
+}
+
+function formatDocumentNameDate(value: string) {
+  const rawValue = value.trim()
+  const isoMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoMatch) return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1].slice(-2)}`
+
+  const displayMatch = rawValue.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  if (displayMatch) return `${displayMatch[1]}.${displayMatch[2]}.${displayMatch[3].slice(-2)}`
+
+  return rawValue
+}
+
+function sanitizeDocumentName(value: string) {
+  return value.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 export type StoredDocumentTemplate = TemplateUploadInfo & {
@@ -173,6 +394,7 @@ export const DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS: WeldingJournalTemplateOpt
   officialOnly: false,
   goodOnly: false,
   actualOnly: false,
+  splitMode: 'project',
 }
 
 export function getWeldingJournalTemplateOptions(
@@ -181,6 +403,7 @@ export function getWeldingJournalTemplateOptions(
   return {
     ...DEFAULT_WELDING_JOURNAL_TEMPLATE_OPTIONS,
     ...options,
+    splitMode: isWeldingJournalDocumentSplitMode(options?.splitMode) ? options.splitMode : 'project',
   }
 }
 
@@ -192,10 +415,18 @@ type TemplateMarkerCell = {
   fields: string[]
 }
 
-type TemplateSystemField = '__index' | '__welderName' | `__welderName:${TemplateStampNameFieldKey}`
+type TemplateSystemField =
+  | '__index'
+  | '__welderName'
+  | `__welderName:${TemplateStampNameFieldKey}`
+  | '__systemDocumentTitle'
+  | '__systemDocumentDate'
+  | '__systemDocumentMethods'
+  | '__systemDocumentResult'
 
-type WeldingJournalTemplateContext = {
+export type WeldingJournalTemplateContext = {
   welderStamps?: WelderStampRecord[]
+  systemDocument?: SystemDocumentTemplateContext
 }
 
 const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | TemplateSystemField>([
@@ -204,6 +435,10 @@ const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | TemplateSystemF
   [normalizeTemplateFieldName('N'), '__index'],
   [normalizeTemplateFieldName('Номер'), '__index'],
   [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
+  [normalizeTemplateFieldName('Наименование системного документа'), '__systemDocumentTitle'],
+  [normalizeTemplateFieldName('Дата системного документа'), '__systemDocumentDate'],
+  [normalizeTemplateFieldName('Виды контроля системного документа'), '__systemDocumentMethods'],
+  [normalizeTemplateFieldName('Результат системного документа'), '__systemDocumentResult'],
 ])
 
 for (const field of STAMP_NAME_TEMPLATE_FIELDS) {
@@ -212,10 +447,12 @@ for (const field of STAMP_NAME_TEMPLATE_FIELDS) {
 }
 
 for (const field of WELD_FIELDS) {
+  if (isVirtualWeldField(field)) continue
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(field.label), field.key as keyof WeldInput)
 }
 
 for (const [label, field] of FIELD_BY_LABEL.entries()) {
+  if (isVirtualWeldField(field)) continue
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(label), field.key as keyof WeldInput)
 }
 
@@ -278,15 +515,21 @@ export async function parseDocumentTemplateFile(file: File): Promise<TemplateUpl
 }
 
 export async function saveDocumentTemplate(templateId: DocumentTemplateId, parsedTemplate: TemplateUploadInfo & { fileData: ArrayBuffer }) {
-  const existingTemplate = await loadDocumentTemplate(templateId).catch(() => undefined)
-  const record: StoredDocumentTemplate = {
-    id: templateId,
-    ...parsedTemplate,
-    options: existingTemplate?.options,
-    constructorConfig: undefined,
-  }
-  const db = await openDocumentTemplateDb()
-  await runStoreRequest(db, 'readwrite', (store) => store.put(record))
+  const remote = await saveRemoteDocumentTemplate({
+    data: {
+      id: templateId,
+      fileName: parsedTemplate.fileName,
+      fileType: parsedTemplate.fileType,
+      fileSize: parsedTemplate.fileSize,
+      fileDataBase64: arrayBufferToBase64(parsedTemplate.fileData),
+      sheetNames: parsedTemplate.sheetNames,
+      fields: parsedTemplate.fields,
+      markerCount: parsedTemplate.markerCount,
+      locations: parsedTemplate.locations,
+      warnings: parsedTemplate.warnings,
+    },
+  })
+  const record = fromRemoteDocumentTemplate(remote)
   notifyDocumentTemplateStorageChanged()
   return record
 }
@@ -295,15 +538,14 @@ export async function updateDocumentTemplateConstructor(
   templateId: DocumentTemplateId,
   constructorConfig: DocumentTemplateConstructorConfig,
 ) {
-  const existingTemplate = await loadDocumentTemplate(templateId)
-  if (!existingTemplate) return null
-
-  const record: StoredDocumentTemplate = {
-    ...existingTemplate,
-    constructorConfig,
-  }
-  const db = await openDocumentTemplateDb()
-  await runStoreRequest(db, 'readwrite', (store) => store.put(record))
+  const saved = await updateRemoteDocumentTemplate({
+    data: {
+      id: templateId,
+      constructorConfig: normalizeDocumentTemplateConstructorConfig(constructorConfig),
+    },
+  })
+  if (!saved) return null
+  const record = await loadDocumentTemplate(templateId)
   notifyDocumentTemplateStorageChanged()
   return record
 }
@@ -312,36 +554,50 @@ export async function updateDocumentTemplateOptions(templateId: DocumentTemplate
   const existingTemplate = await loadDocumentTemplate(templateId)
   if (!existingTemplate) return null
 
-  const record: StoredDocumentTemplate = {
-    ...existingTemplate,
-    options: {
+  await updateRemoteDocumentTemplate({
+    data: {
+      id: templateId,
+      options: {
       ...existingTemplate.options,
       ...options,
+      },
     },
-  }
-  const db = await openDocumentTemplateDb()
-  await runStoreRequest(db, 'readwrite', (store) => store.put(record))
+  })
+  const record = await loadDocumentTemplate(templateId)
   notifyDocumentTemplateStorageChanged()
   return record
 }
 
 export async function loadDocumentTemplate(templateId: DocumentTemplateId) {
-  const db = await openDocumentTemplateDb()
-  return runStoreRequest<StoredDocumentTemplate | undefined>(db, 'readonly', (store) => store.get(templateId))
+  const remote = await getRemoteDocumentTemplate({ data: { id: templateId } })
+  return remote ? fromRemoteDocumentTemplate(remote) : undefined
 }
 
 export async function loadDocumentTemplates() {
-  const db = await openDocumentTemplateDb()
-  const records = await runStoreRequest<StoredDocumentTemplate[]>(db, 'readonly', (store) => store.getAll())
+  const summaries = await listRemoteDocumentTemplates()
+  const records = await Promise.all(
+    summaries.map(async (summary) => {
+      try {
+        return await loadDocumentTemplate(summary.id)
+      } catch (error) {
+        if (
+          error instanceof Error
+          && error.message.includes('Файл шаблона не найден в общем хранилище')
+        ) {
+          return undefined
+        }
+        throw error
+      }
+    }),
+  )
   return records.reduce<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>((accumulator, record) => {
-    accumulator[record.id] = record
+    if (record) accumulator[record.id] = record
     return accumulator
   }, {})
 }
 
 export async function deleteDocumentTemplate(templateId: DocumentTemplateId) {
-  const db = await openDocumentTemplateDb()
-  await runStoreRequest(db, 'readwrite', (store) => store.delete(templateId))
+  await deleteRemoteDocumentTemplate({ data: { id: templateId } })
   notifyDocumentTemplateStorageChanged()
 }
 
@@ -380,7 +636,14 @@ export async function createWeldingJournalBlobFromTemplate(
   if (!worksheet) throw new Error('В шаблоне не найден выбранный лист.')
 
   if (constructorConfig?.bindings.length) {
-    return createWeldingJournalBlobFromConstructor(template, workbook, worksheet, records, constructorConfig, context)
+    return createWeldingJournalBlobFromConstructor(
+      template,
+      workbook,
+      worksheet,
+      records,
+      normalizeDocumentTemplateConstructorConfig(constructorConfig),
+      context,
+    )
   }
 
   const markerCells = collectTemplateMarkerCells(worksheet)
@@ -811,6 +1074,47 @@ function normalizePreviewVerticalAlignment(value: unknown): DocumentTemplatePrev
   return undefined
 }
 
+type ConstructorRepeatUnit = {
+  record: WeldInput | null
+  records: WeldInput[]
+}
+
+function getConstructorRepeatUnits(
+  records: WeldInput[],
+  config: DocumentTemplateConstructorConfig,
+): ConstructorRepeatUnit[] {
+  if (config.repeatMode !== 'groups' || !config.repeatGroupBy) {
+    return records.map((record) => ({ record, records: [record] }))
+  }
+
+  const groupingFields = getConstructorGroupingFields(config.repeatGroupBy)
+  const groups = new Map<string, WeldInput[]>()
+  for (const record of records) {
+    const key = groupingFields
+      .map((field) => normalizeConstructorGroupValue(record[field as keyof WeldInput]))
+      .join('\u001f')
+    const groupRecords = groups.get(key) ?? []
+    groupRecords.push(record)
+    groups.set(key, groupRecords)
+  }
+
+  return Array.from(groups.values()).map((groupRecords) => ({
+    record: groupRecords[0] ?? null,
+    records: groupRecords,
+  }))
+}
+
+function getConstructorGroupingFields(field: DocumentTemplateFieldKey): DocumentTemplateFieldKey[] {
+  if (field === 'projectTitle') return ['projectTitle']
+  if (field === 'subtitleCode') return ['projectTitle', 'subtitleCode']
+  if (field === 'line') return ['projectTitle', 'subtitleCode', 'line']
+  return [field]
+}
+
+function normalizeConstructorGroupValue(value: unknown) {
+  return String(value ?? '').trim().toLocaleLowerCase('ru')
+}
+
 async function createWeldingJournalBlobFromConstructor(
   template: StoredDocumentTemplate,
   workbook: XLSXTypes.WorkBook,
@@ -820,29 +1124,52 @@ async function createWeldingJournalBlobFromConstructor(
   context: WeldingJournalTemplateContext,
 ) {
   const XLSX = await loadXlsxJsStyle()
-  const repeatRowIndex = config.repeatRow ? config.repeatRow - 1 : undefined
+  const repeatRowStartIndex = config.repeatRow ? config.repeatRow - 1 : undefined
+  const repeatRowEndIndex =
+    repeatRowStartIndex === undefined
+      ? undefined
+      : Math.max(repeatRowStartIndex, (config.repeatRowEnd || config.repeatRow || 1) - 1)
+  const repeatBlockHeight =
+    repeatRowStartIndex === undefined || repeatRowEndIndex === undefined
+      ? 1
+      : repeatRowEndIndex - repeatRowStartIndex + 1
   const rowBindings = config.bindings.filter((binding) => binding.mode === 'row')
-  const aggregateBindings = config.bindings.filter((binding) => binding.mode !== 'row')
+  const groupBindings = config.bindings.filter(
+    (binding) => binding.mode === 'summary' && binding.scope === 'group',
+  )
+  const aggregateBindings = config.bindings.filter(
+    (binding) => binding.mode === 'summary' && binding.scope !== 'group',
+  )
+  const repeatBindings = [...rowBindings, ...groupBindings]
+  const repeatUnits = getConstructorRepeatUnits(records, config)
 
-  if (rowBindings.length && repeatRowIndex === undefined) {
-    throw new Error('В конструкторе не выбрана строка, которая должна повторяться для каждого стыка.')
+  if (repeatBindings.length && repeatRowStartIndex === undefined) {
+    throw new Error('В конструкторе не выбран блок строк, который должен повторяться для каждого стыка.')
   }
-  if (repeatRowIndex !== undefined) {
-    for (const binding of rowBindings) {
-      if (XLSX.utils.decode_cell(binding.cell).r !== repeatRowIndex) {
-        throw new Error(`Поле ${binding.cell} должно находиться в повторяемой строке ${config.repeatRow}.`)
+  if (repeatRowStartIndex !== undefined && repeatRowEndIndex !== undefined) {
+    for (const binding of repeatBindings) {
+      const bindingRow = XLSX.utils.decode_cell(binding.cell).r
+      if (bindingRow < repeatRowStartIndex || bindingRow > repeatRowEndIndex) {
+        throw new Error(
+          `Поле ${binding.cell} должно находиться в повторяемом блоке строк ${config.repeatRow}–${config.repeatRowEnd || config.repeatRow}.`,
+        )
       }
     }
     for (const binding of aggregateBindings) {
-      if (XLSX.utils.decode_cell(binding.cell).r >= repeatRowIndex) {
-        throw new Error(`Сводное поле ${binding.cell} должно находиться выше повторяемой строки ${config.repeatRow}.`)
+      if (XLSX.utils.decode_cell(binding.cell).r >= repeatRowStartIndex) {
+        throw new Error(`Сводное поле ${binding.cell} должно находиться выше повторяемого блока строк.`)
       }
     }
   }
-
+  if (groupBindings.length && config.repeatMode !== 'groups') {
+    throw new Error('Данные текущей группы доступны только когда повторяемый блок настроен по группам.')
+  }
+  if (config.repeatMode === 'groups' && !config.repeatGroupBy) {
+    throw new Error('Выберите поле, по которому должен группироваться повторяемый блок.')
+  }
   const initialRange = worksheet['!ref']
     ? XLSX.utils.decode_range(worksheet['!ref'])
-    : { s: { r: repeatRowIndex ?? 0, c: 0 }, e: { r: repeatRowIndex ?? 0, c: 0 } }
+    : { s: { r: repeatRowStartIndex ?? 0, c: 0 }, e: { r: repeatRowEndIndex ?? 0, c: 0 } }
 
   for (const binding of aggregateBindings) {
     writeConstructorCell(
@@ -852,50 +1179,69 @@ async function createWeldingJournalBlobFromConstructor(
     )
   }
 
-  if (repeatRowIndex !== undefined && rowBindings.length) {
-    const extraRows = Math.max(records.length - 1, 0)
-    if (extraRows > 0) shiftWorksheetRows(worksheet, repeatRowIndex + 1, extraRows)
+  if (repeatRowStartIndex !== undefined && repeatRowEndIndex !== undefined && repeatBindings.length) {
+    assertRepeatBlockMergesAreContained(worksheet, repeatRowStartIndex, repeatRowEndIndex)
+    const blockSnapshot = snapshotWorksheetRowBlock(
+      worksheet,
+      repeatRowStartIndex,
+      repeatRowEndIndex,
+      initialRange.s.c,
+      initialRange.e.c,
+    )
+    const outputRecordCount = Math.max(repeatUnits.length, 1)
+    const extraRows = Math.max(outputRecordCount - 1, 0) * repeatBlockHeight
+    if (extraRows > 0) shiftWorksheetRows(worksheet, repeatRowEndIndex + 1, extraRows)
 
     const sourceCells = new Map(
-      rowBindings.map((binding) => {
+      repeatBindings.map((binding) => {
         const sourceCell = worksheet[binding.cell]
         return [binding.cell, sourceCell ? cloneTemplateRowCell(sourceCell) : undefined] as const
       }),
     )
 
-    const rowsToWrite = records.length ? records : [null]
-    rowsToWrite.forEach((record, recordIndex) => {
-      const targetRow = repeatRowIndex + recordIndex
-      copyWorksheetRow(worksheet, repeatRowIndex, targetRow, initialRange.s.c, initialRange.e.c)
-      copyWorksheetRowMerges(worksheet, repeatRowIndex, targetRow)
+    const unitsToWrite = repeatUnits.length
+      ? repeatUnits
+      : [{ record: null, records: [] }]
+    unitsToWrite.forEach((unit, unitIndex) => {
+      const targetBlockStart = repeatRowStartIndex + unitIndex * repeatBlockHeight
+      restoreWorksheetRowBlock(worksheet, blockSnapshot, targetBlockStart)
 
-      for (const binding of rowBindings) {
+      for (const binding of repeatBindings) {
         const decoded = XLSX.utils.decode_cell(binding.cell)
-        const targetAddress = XLSX.utils.encode_cell({ r: targetRow, c: decoded.c })
+        const targetAddress = XLSX.utils.encode_cell({
+          r: targetBlockStart + (decoded.r - repeatRowStartIndex),
+          c: decoded.c,
+        })
         const sourceCell = sourceCells.get(binding.cell)
         if (sourceCell) worksheet[targetAddress] = cloneTemplateRowCell(sourceCell)
-        const value = record
-          ? getConstructorRowValue(binding, record, recordIndex, context)
-          : applyConstructorEmptyValue('', binding)
+        const value =
+          binding.mode === 'row' && unit.record
+            ? getConstructorRowValue(binding, unit.record, unitIndex, context)
+            : binding.mode === 'summary'
+              ? getConstructorAggregateValue(binding, unit.records, context)
+              : applyConstructorEmptyValue('', binding)
         writeConstructorCell(worksheet, targetAddress, value)
       }
-      enableAutoRowHeight(worksheet, targetRow)
+      for (let rowOffset = 0; rowOffset < repeatBlockHeight; rowOffset += 1) {
+        enableAutoRowHeight(worksheet, targetBlockStart + rowOffset)
+      }
     })
 
     expandWorksheetRef(
       worksheet,
-      repeatRowIndex + Math.max(records.length - 1, 0),
+      repeatRowStartIndex + outputRecordCount * repeatBlockHeight - 1,
       initialRange.e.c,
     )
   }
 
   const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
   const preservedWorkbookData =
-    repeatRowIndex === undefined
+    repeatRowStartIndex === undefined
       ? workbookData
       : preserveTemplateWorkbookXml(template.fileData, workbookData, {
-          markerRow: repeatRowIndex,
-          recordCount: records.length,
+          markerRow: repeatRowStartIndex,
+          markerRowCount: repeatBlockHeight,
+          recordCount: repeatUnits.length,
           sheetIndex: workbook.SheetNames.indexOf(config.sheetName),
         })
   return new Blob([preservedWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
@@ -965,50 +1311,25 @@ function getConstructorAggregateValue(
   records: WeldInput[],
   context: WeldingJournalTemplateContext,
 ) {
-  if (binding.mode === 'count') return records.length
-
-  if (binding.mode === 'summary') {
-    const separator = getConstructorListSeparator(binding)
-    const value = getConstructorBindingParts(binding)
-      .map((part) => {
-        const values = records
-          .map((record, recordIndex) => getTemplateFieldValueByKey(part.field, record, recordIndex, context))
-          .map((partValue) => String(partValue ?? '').trim())
-          .filter(Boolean)
-        const outputValues =
-          binding.uniqueValues === false
-            ? values
-            : Array.from(
-                new Map(values.map((partValue) => [partValue.toLocaleLowerCase('ru'), partValue])).values(),
-              )
-        if (!outputValues.length) return ''
-        return `${part.prefix ?? ''}${outputValues.join(separator)}${part.suffix ?? ''}${part.lineBreakAfter ? '\n' : ''}`
-      })
-      .join('')
-      .replace(/\n+$/, '')
-    return applyConstructorEmptyValue(value, binding)
-  }
-
-  const field = binding.field
-  if (!field) return applyConstructorEmptyValue('', binding)
-  if (binding.mode === 'sum') {
-    const total = records.reduce((sum, record, recordIndex) => {
-      const value = getTemplateFieldValueByKey(field, record, recordIndex, context)
-      const numericValue = typeof value === 'number' ? value : Number(String(value).replace(',', '.'))
-      return sum + (Number.isFinite(numericValue) ? numericValue : 0)
-    }, 0)
-    return Math.round(total * 1000) / 1000
-  }
-
-  const values = records
-    .map((record, recordIndex) => getTemplateFieldValueByKey(field, record, recordIndex, context))
-    .map((value) => String(value ?? '').trim())
-    .filter(Boolean)
-  const outputValues =
-    binding.mode === 'uniqueList' || binding.uniqueValues
-      ? Array.from(new Map(values.map((value) => [value.toLocaleLowerCase('ru'), value])).values())
-      : values
-  return applyConstructorEmptyValue(outputValues.join(getConstructorListSeparator(binding)), binding)
+  const separator = getConstructorListSeparator(binding)
+  const value = getConstructorBindingParts(binding)
+    .map((part) => {
+      const values = records
+        .map((record, recordIndex) => getTemplateFieldValueByKey(part.field, record, recordIndex, context))
+        .map((partValue) => String(partValue ?? '').trim())
+        .filter(Boolean)
+      const outputValues =
+        binding.uniqueValues === false
+          ? values
+          : Array.from(
+              new Map(values.map((partValue) => [partValue.toLocaleLowerCase('ru'), partValue])).values(),
+            )
+      if (!outputValues.length) return ''
+      return `${part.prefix ?? ''}${outputValues.join(separator)}${part.suffix ?? ''}${part.lineBreakAfter ? '\n' : ''}`
+    })
+    .join('')
+    .replace(/\n+$/, '')
+  return applyConstructorEmptyValue(value, binding)
 }
 
 function getConstructorListSeparator(binding: DocumentTemplateCellBinding) {
@@ -1137,6 +1458,14 @@ function getTemplateFieldValueByKey(
 ) {
   if (mappedKey === '__index') return recordIndex + 1
   if (mappedKey === '__welderName') return getWelderNamesForOfficialStamps(record, context.welderStamps ?? [])
+  if (mappedKey === '__systemDocumentTitle') return context.systemDocument?.title ?? ''
+  if (mappedKey === '__systemDocumentDate') return formatExportDate(context.systemDocument?.date)
+  if (mappedKey === '__systemDocumentMethods') return context.systemDocument?.methodCodes.join(', ') ?? ''
+  if (mappedKey === '__systemDocumentResult') {
+    return context.systemDocument
+      ? getSystemDocumentRowResult(record, context.systemDocument)
+      : ''
+  }
   if (isTemplateStampWelderNameField(mappedKey)) {
     return getWelderNameForTemplateStamp(
       record,
@@ -1247,6 +1576,103 @@ function copyWorksheetRowMerges(worksheet: XLSXTypes.WorkSheet, sourceRow: numbe
   }
 }
 
+type WorksheetRowBlockSnapshot = {
+  startRow: number
+  endRow: number
+  startColumn: number
+  endColumn: number
+  cells: Map<string, XLSXTypes.CellObject>
+  rows: Map<number, XLSXTypes.RowInfo>
+  merges: XLSXTypes.Range[]
+}
+
+function assertRepeatBlockMergesAreContained(
+  worksheet: XLSXTypes.WorkSheet,
+  startRow: number,
+  endRow: number,
+) {
+  const crossingMerge = (worksheet['!merges'] ?? []).find((merge) => {
+    const intersectsBlock = merge.e.r >= startRow && merge.s.r <= endRow
+    const containedInBlock = merge.s.r >= startRow && merge.e.r <= endRow
+    return intersectsBlock && !containedInBlock
+  })
+  if (!crossingMerge) return
+  throw new Error(
+    `Объединение ${XLSX.utils.encode_range(crossingMerge)} пересекает границу повторяемого блока. Включите объединение целиком в блок строк.`,
+  )
+}
+
+function snapshotWorksheetRowBlock(
+  worksheet: XLSXTypes.WorkSheet,
+  startRow: number,
+  endRow: number,
+  startColumn: number,
+  endColumn: number,
+): WorksheetRowBlockSnapshot {
+  const cells = new Map<string, XLSXTypes.CellObject>()
+  const rows = new Map<number, XLSXTypes.RowInfo>()
+  for (let row = startRow; row <= endRow; row += 1) {
+    for (let column = startColumn; column <= endColumn; column += 1) {
+      const address = XLSX.utils.encode_cell({ r: row, c: column })
+      const cell = worksheet[address]
+      if (cell) cells.set(`${row - startRow}:${column}`, cloneTemplateRowCell(cell))
+    }
+    const rowInfo = worksheet['!rows']?.[row]
+    if (rowInfo) rows.set(row - startRow, { ...rowInfo })
+  }
+
+  return {
+    startRow,
+    endRow,
+    startColumn,
+    endColumn,
+    cells,
+    rows,
+    merges: (worksheet['!merges'] ?? [])
+      .filter((merge) => merge.s.r >= startRow && merge.e.r <= endRow)
+      .map((merge) => ({
+        s: { r: merge.s.r - startRow, c: merge.s.c },
+        e: { r: merge.e.r - startRow, c: merge.e.c },
+      })),
+  }
+}
+
+function restoreWorksheetRowBlock(
+  worksheet: XLSXTypes.WorkSheet,
+  snapshot: WorksheetRowBlockSnapshot,
+  targetStartRow: number,
+) {
+  const blockHeight = snapshot.endRow - snapshot.startRow + 1
+  for (let rowOffset = 0; rowOffset < blockHeight; rowOffset += 1) {
+    const targetRow = targetStartRow + rowOffset
+    for (let column = snapshot.startColumn; column <= snapshot.endColumn; column += 1) {
+      const targetAddress = XLSX.utils.encode_cell({ r: targetRow, c: column })
+      const sourceCell = snapshot.cells.get(`${rowOffset}:${column}`)
+      if (sourceCell) worksheet[targetAddress] = cloneTemplateRowCell(sourceCell)
+      else delete worksheet[targetAddress]
+    }
+    const sourceRowInfo = snapshot.rows.get(rowOffset)
+    if (sourceRowInfo) {
+      worksheet['!rows'] ??= []
+      worksheet['!rows'][targetRow] = { ...sourceRowInfo }
+    } else if (worksheet['!rows']) {
+      delete worksheet['!rows'][targetRow]
+    }
+  }
+
+  worksheet['!merges'] ??= []
+  const targetEndRow = targetStartRow + blockHeight - 1
+  worksheet['!merges'] = worksheet['!merges'].filter(
+    (merge) => merge.e.r < targetStartRow || merge.s.r > targetEndRow,
+  )
+  worksheet['!merges'].push(
+    ...snapshot.merges.map((merge) => ({
+      s: { r: targetStartRow + merge.s.r, c: merge.s.c },
+      e: { r: targetStartRow + merge.e.r, c: merge.e.c },
+    })),
+  )
+}
+
 function enableAutoRowHeight(worksheet: XLSXTypes.WorkSheet, row: number) {
   const rowInfo = worksheet['!rows']?.[row]
   if (!rowInfo) return
@@ -1294,6 +1720,7 @@ function hasCellContent(cell: XLSXTypes.CellObject) {
 
 type WorkbookXmlPreservationContext = {
   markerRow: number
+  markerRowCount?: number
   recordCount: number
   sheetIndex: number
 }
@@ -1308,9 +1735,14 @@ function preserveTemplateWorkbookXml(
     const generatedCfb = XLSX.CFB.read(new Uint8Array(generatedData), { type: 'array' })
     copyCfbFile(templateCfb, generatedCfb, 'xl/styles.xml')
     copyCfbFile(templateCfb, generatedCfb, 'xl/theme/theme1.xml')
-    copyCfbFile(templateCfb, generatedCfb, '[Content_Types].xml')
     copyCfbDirectory(templateCfb, generatedCfb, 'xl/media/')
     copyCfbDirectory(templateCfb, generatedCfb, 'xl/drawings/')
+    copyCfbDirectory(templateCfb, generatedCfb, 'xl/printerSettings/')
+    mergePreservedPartContentTypes(templateCfb, generatedCfb, [
+      'xl/media/',
+      'xl/drawings/',
+      'xl/printerSettings/',
+    ])
 
     const templateSheetPath = getWorksheetPath(templateCfb, context.sheetIndex)
     const generatedSheetPath = getWorksheetPath(generatedCfb, context.sheetIndex)
@@ -1318,14 +1750,16 @@ function preserveTemplateWorkbookXml(
     const templateSheetXml = readCfbText(templateCfb, templateSheetPath)
     const generatedSheetXml = readCfbText(generatedCfb, generatedSheetPath)
     if (templateSheetXml && generatedSheetXml) {
+      const templateStylesXml = readCfbText(templateCfb, 'xl/styles.xml')
       const styleByCell = extractCellStyleMap(templateSheetXml)
+      fillMissingMergedCellStyles(templateSheetXml, templateStylesXml, styleByCell)
       const styledSheetXml = applyTemplateCellStyles(generatedSheetXml, styleByCell, context)
       const wrappedWorkbook = ensureGeneratedMultilineCellWrapping(
         styledSheetXml,
-        readCfbText(templateCfb, 'xl/styles.xml'),
+        templateStylesXml,
         context,
       )
-      const patchedSheetXml = preserveWorksheetDrawingReferences(
+      const patchedSheetXml = preserveWorksheetPresentationElements(
         templateSheetXml,
         applyGeneratedRowAutoHeights(
           wrappedWorkbook.sheetXml,
@@ -1335,6 +1769,7 @@ function preserveTemplateWorkbookXml(
       )
       if (wrappedWorkbook.stylesXml) writeCfbText(generatedCfb, 'xl/styles.xml', wrappedWorkbook.stylesXml)
       writeCfbText(generatedCfb, generatedSheetPath, patchedSheetXml)
+      sanitizeGeneratedWorkbookDefinedNames(generatedCfb, patchedSheetXml, context.sheetIndex)
     }
 
     return XLSX.CFB.write(generatedCfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
@@ -1371,6 +1806,93 @@ function copyCfbDirectory(sourceCfb: CfbContainer, targetCfb: CfbContainer, dire
   }
 }
 
+function mergePreservedPartContentTypes(
+  sourceCfb: CfbContainer,
+  targetCfb: CfbContainer,
+  preservedDirectories: string[],
+) {
+  const sourceXml = readCfbText(sourceCfb, '[Content_Types].xml')
+  const targetXml = readCfbText(targetCfb, '[Content_Types].xml')
+  if (!sourceXml || !targetXml) return
+
+  const targetPaths = new Set(
+    targetCfb.FullPaths.map((path) => path.replace(/^Root Entry\//, '').replace(/^\/+/, '')),
+  )
+  const preservedPaths = Array.from(targetPaths).filter((path) =>
+    preservedDirectories.some((directory) => path.startsWith(directory)),
+  )
+  if (!preservedPaths.length) return
+
+  const requiredExtensions = new Set(
+    preservedPaths
+      .map((path) => path.split('.').pop()?.toLowerCase())
+      .filter((extension): extension is string => Boolean(extension)),
+  )
+  const additions: string[] = []
+  const existingDefaults = new Map(
+    (targetXml.match(/<Default\b[^>]*\/?>/g) ?? [])
+      .map((tag) => {
+        const attrs = parseXmlAttributes(tag)
+        return [
+          attrs.get('Extension')?.toLowerCase(),
+          attrs.get('ContentType'),
+        ] as const
+      })
+      .filter((entry): entry is readonly [string, string] => Boolean(entry[0] && entry[1])),
+  )
+  const existingOverrides = new Set(
+    (targetXml.match(/<Override\b[^>]*\/?>/g) ?? [])
+      .map((tag) => parseXmlAttributes(tag).get('PartName')?.replace(/^\/+/, ''))
+      .filter((path): path is string => Boolean(path)),
+  )
+
+  for (const tag of sourceXml.match(/<Default\b[^>]*\/?>/g) ?? []) {
+    const attrs = parseXmlAttributes(tag)
+    const extension = attrs.get('Extension')?.toLowerCase()
+    const contentType = attrs.get('ContentType')
+    if (!extension || !contentType || !requiredExtensions.has(extension)) continue
+    const existingContentType = existingDefaults.get(extension)
+    if (!existingContentType) {
+      additions.push(tag)
+      existingDefaults.set(extension, contentType)
+      continue
+    }
+    if (existingContentType === contentType) continue
+
+    for (const partName of preservedPaths.filter(
+      (path) => path.split('.').pop()?.toLowerCase() === extension,
+    )) {
+      if (existingOverrides.has(partName)) continue
+      additions.push(
+        `<Override PartName="/${escapeXmlAttribute(partName)}" ContentType="${escapeXmlAttribute(contentType)}"/>`,
+      )
+      existingOverrides.add(partName)
+    }
+  }
+
+  for (const tag of sourceXml.match(/<Override\b[^>]*\/?>/g) ?? []) {
+    const partName = parseXmlAttributes(tag).get('PartName')?.replace(/^\/+/, '')
+    if (
+      !partName ||
+      !targetPaths.has(partName) ||
+      !preservedDirectories.some((directory) => partName.startsWith(directory)) ||
+      existingOverrides.has(partName)
+    ) {
+      continue
+    }
+    additions.push(tag)
+    existingOverrides.add(partName)
+  }
+
+  if (additions.length) {
+    writeCfbText(
+      targetCfb,
+      '[Content_Types].xml',
+      targetXml.replace(/<\/Types>$/, `${additions.join('')}</Types>`),
+    )
+  }
+}
+
 function readCfbText(cfb: CfbContainer, path: string) {
   const index = findCfbFileIndex(cfb, path)
   if (index < 0) return ''
@@ -1402,17 +1924,184 @@ function getWorksheetRelationshipsPath(worksheetPath: string) {
   return `xl/worksheets/_rels/${fileName}.rels`
 }
 
-function preserveWorksheetDrawingReferences(templateSheetXml: string, generatedSheetXml: string) {
-  const referenceTags = templateSheetXml.match(/<(?:drawing|legacyDrawing|legacyDrawingHF)\b[^>]*\/>/g) ?? []
-  if (!referenceTags.length) return generatedSheetXml
+const preservedGeneratedWorkbookNames = new Set([
+  '_xlnm.Print_Area',
+  '_xlnm.Print_Titles',
+])
 
-  let nextXml = generatedSheetXml
-  for (const tag of referenceTags) {
-    const relationshipId = parseXmlAttributes(tag).get('r:id')
-    if (relationshipId && nextXml.includes(`r:id="${relationshipId}"`)) continue
-    nextXml = nextXml.replace(/<\/worksheet>$/, `${tag}</worksheet>`)
+function sanitizeGeneratedWorkbookDefinedNames(
+  generatedCfb: CfbContainer,
+  generatedSheetXml: string,
+  sheetIndex: number,
+) {
+  const workbookPath = 'xl/workbook.xml'
+  const workbookXml = readCfbText(generatedCfb, workbookPath)
+  const definedNamesMatch = workbookXml.match(/<definedNames\b[^>]*>[\s\S]*?<\/definedNames>/)
+  if (!workbookXml || !definedNamesMatch) return
+
+  const sheetTags = workbookXml.match(/<sheet\b[^>]*\/?>/g) ?? []
+  const sheetName = decodeXmlText(parseXmlAttributes(sheetTags[sheetIndex] ?? '').get('name') ?? '')
+  const worksheetDimension = parseWorksheetDimension(generatedSheetXml)
+  const keptNames = (definedNamesMatch[0].match(/<definedName\b[^>]*>[\s\S]*?<\/definedName>/g) ?? [])
+    .map((definedNameXml) =>
+      sanitizeGeneratedWorkbookDefinedName(
+        definedNameXml,
+        sheetIndex,
+        sheetName,
+        worksheetDimension,
+      ),
+    )
+    .filter((definedNameXml): definedNameXml is string => Boolean(definedNameXml))
+
+  writeCfbText(
+    generatedCfb,
+    workbookPath,
+    workbookXml.replace(definedNamesMatch[0], keptNames.length
+      ? `<definedNames>${keptNames.join('')}</definedNames>`
+      : ''),
+  )
+}
+
+function sanitizeGeneratedWorkbookDefinedName(
+  definedNameXml: string,
+  generatedSheetIndex: number,
+  generatedSheetName: string,
+  worksheetDimension: string,
+) {
+  const openingTag = definedNameXml.match(/^<definedName\b[^>]*>/)?.[0] ?? ''
+  const attrs = parseXmlAttributes(openingTag)
+  const name = decodeXmlText(attrs.get('name') ?? '')
+  const localSheetId = Number(attrs.get('localSheetId'))
+  const formula = definedNameXml
+    .replace(/^<definedName\b[^>]*>/, '')
+    .replace(/<\/definedName>$/, '')
+
+  if (
+    !preservedGeneratedWorkbookNames.has(name) ||
+    !Number.isInteger(localSheetId) ||
+    /#REF!|\[\d+\]/i.test(formula)
+  ) {
+    return null
   }
-  return nextXml
+
+  if (
+    name !== '_xlnm.Print_Area' ||
+    localSheetId !== generatedSheetIndex ||
+    !generatedSheetName ||
+    !worksheetDimension
+  ) {
+    return definedNameXml
+  }
+
+  const updatedFormula = updatePrintAreaFormula(
+    decodeXmlText(formula),
+    generatedSheetName,
+    worksheetDimension,
+  )
+  return `${openingTag}${escapeXmlText(updatedFormula)}</definedName>`
+}
+
+function parseWorksheetDimension(sheetXml: string) {
+  const dimensionTag = sheetXml.match(/<dimension\b[^>]*\/?>/)?.[0] ?? ''
+  return parseXmlAttributes(dimensionTag).get('ref') ?? ''
+}
+
+function updatePrintAreaFormula(
+  formula: string,
+  sheetName: string,
+  worksheetDimension: string,
+) {
+  const dimensionRange = worksheetDimension.match(/^([A-Z]+\d+):([A-Z]+\d+)$/i)
+  const existingRange = formula.match(/!\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)$/i)
+  if (!dimensionRange || !existingRange) return formula
+
+  const dimensionEnd = decodeCellReference(dimensionRange[2])
+  if (!dimensionEnd) return formula
+
+  const startColumn = existingRange[1].toUpperCase()
+  const startRow = Number(existingRange[2])
+  const endColumn = existingRange[3].toUpperCase()
+  const endRow = Math.max(Number(existingRange[4]), dimensionEnd.row)
+  const quotedSheetName = `'${sheetName.replace(/'/g, "''")}'`
+  return `${quotedSheetName}!$${startColumn}$${startRow}:$${endColumn}$${endRow}`
+}
+
+const worksheetPresentationElementOrder = [
+  'printOptions',
+  'pageMargins',
+  'pageSetup',
+  'headerFooter',
+  'rowBreaks',
+  'colBreaks',
+  'customProperties',
+  'cellWatches',
+  'ignoredErrors',
+  'smartTags',
+  'drawing',
+  'legacyDrawing',
+  'legacyDrawingHF',
+  'picture',
+  'oleObjects',
+  'controls',
+  'webPublishItems',
+  'tableParts',
+  'extLst',
+] as const
+
+function preserveWorksheetPresentationElements(
+  templateSheetXml: string,
+  generatedSheetXml: string,
+) {
+  const templateElements = [
+    ...extractWorksheetElements(templateSheetXml, [
+      'printOptions',
+      'pageMargins',
+      'pageSetup',
+      'headerFooter',
+      'drawing',
+      'legacyDrawing',
+      'legacyDrawingHF',
+    ]),
+  ]
+  if (!templateElements.length) return generatedSheetXml
+
+  return templateElements.reduce((sheetXml, element) => {
+    const existingPattern = createWorksheetElementPattern(element.name)
+    if (existingPattern.test(sheetXml)) {
+      return sheetXml.replace(existingPattern, element.xml)
+    }
+    return insertWorksheetElementInSchemaOrder(sheetXml, element.name, element.xml)
+  }, generatedSheetXml)
+}
+
+function extractWorksheetElements(sheetXml: string, names: string[]) {
+  return names.flatMap((name) => {
+    const match = sheetXml.match(createWorksheetElementPattern(name))
+    return match ? [{ name, xml: match[0] }] : []
+  })
+}
+
+function createWorksheetElementPattern(name: string) {
+  return new RegExp(`<(?:${name})\\b[^>]*(?:\\/>|>[\\s\\S]*?<\\/(?:${name})>)`)
+}
+
+function insertWorksheetElementInSchemaOrder(
+  sheetXml: string,
+  elementName: string,
+  elementXml: string,
+) {
+  const elementIndex = worksheetPresentationElementOrder.indexOf(
+    elementName as (typeof worksheetPresentationElementOrder)[number],
+  )
+  const laterElements =
+    elementIndex >= 0 ? worksheetPresentationElementOrder.slice(elementIndex + 1) : []
+  const insertionPattern = laterElements.length
+    ? new RegExp(`<(?:${laterElements.join('|')})\\b`)
+    : /<\/worksheet>$/
+  const match = insertionPattern.exec(sheetXml)
+  const insertionIndex = match?.index ?? sheetXml.lastIndexOf('</worksheet>')
+  if (insertionIndex < 0) return sheetXml
+  return `${sheetXml.slice(0, insertionIndex)}${elementXml}${sheetXml.slice(insertionIndex)}`
 }
 
 function extractCellStyleMap(sheetXml: string) {
@@ -1429,14 +2118,54 @@ function extractCellStyleMap(sheetXml: string) {
   return styleByCell
 }
 
+function fillMissingMergedCellStyles(
+  sheetXml: string,
+  stylesXml: string,
+  styleByCell: Map<string, string>,
+) {
+  const cellFormats = extractXmlCollection(stylesXml, 'cellXfs', 'xf')
+  const borders = extractXmlCollection(stylesXml, 'borders', 'border')
+  for (const tag of sheetXml.match(/<mergeCell\b[^>]*\/?>/g) ?? []) {
+    const range = parseXmlAttributes(tag).get('ref')
+    const [startRef, endRef] = range?.split(':') ?? []
+    const start = startRef ? decodeCellReference(startRef) : null
+    const end = endRef ? decodeCellReference(endRef) : null
+    if (!start || !end) continue
+    const anchorStyle = styleByCell.get(`${start.row}:${start.column}`)
+    if (anchorStyle === undefined || !cellStyleHasVisibleBorder(anchorStyle, cellFormats, borders)) continue
+
+    for (let row = start.row; row <= end.row; row += 1) {
+      for (let column = start.column; column <= end.column; column += 1) {
+        const key = `${row}:${column}`
+        const currentStyle = styleByCell.get(key)
+        if (
+          currentStyle === undefined ||
+          !cellStyleHasVisibleBorder(currentStyle, cellFormats, borders)
+        ) {
+          styleByCell.set(key, anchorStyle)
+        }
+      }
+    }
+  }
+}
+
+function cellStyleHasVisibleBorder(styleId: string, cellFormats: string[], borders: string[]) {
+  const cellFormat = cellFormats[Number(styleId)] ?? ''
+  const openingTag = cellFormat.match(/^<xf\b[^>]*\/?>/)?.[0]
+  const borderId = Number(openingTag ? parseXmlAttributes(openingTag).get('borderId') ?? 0 : 0)
+  const borderXml = Number.isFinite(borderId) ? borders[borderId] ?? '' : ''
+  return /<(?:left|right|top|bottom)\b[^>]*\bstyle="[^"]+"/.test(borderXml)
+}
+
 function applyTemplateCellStyles(
   sheetXml: string,
   styleByCell: Map<string, string>,
-  { markerRow, recordCount }: WorkbookXmlPreservationContext,
+  { markerRow, markerRowCount = 1, recordCount, sheetIndex }: WorkbookXmlPreservationContext,
 ) {
-  const extraRows = Math.max(recordCount - 1, 0)
+  const outputRecordCount = Math.max(recordCount, 1)
+  const extraRows = Math.max(outputRecordCount - 1, 0) * markerRowCount
   const generatedStartRow = markerRow + 1
-  const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
+  const generatedEndRow = generatedStartRow + outputRecordCount * markerRowCount - 1
 
   const styledSheetXml = sheetXml.replace(/<c\b[^>]*>/g, (tag) => {
     const attrs = parseXmlAttributes(tag)
@@ -1450,85 +2179,135 @@ function applyTemplateCellStyles(
       decoded.row < generatedStartRow
         ? decoded.row
         : decoded.row <= generatedEndRow
-          ? generatedStartRow
+          ? generatedStartRow + ((decoded.row - generatedStartRow) % markerRowCount)
           : decoded.row - extraRows
     const styleId = styleByCell.get(`${sourceRow}:${decoded.column}`)
     return styleId === undefined ? removeXmlAttribute(tag, 's') : setXmlAttribute(tag, 's', styleId)
   })
 
-  return ensureGeneratedStyledEmptyCells(styledSheetXml, styleByCell, {
+  return ensureTemplateStyledEmptyCells(styledSheetXml, styleByCell, {
     markerRow,
+    markerRowCount,
     recordCount,
+    sheetIndex,
   })
 }
 
-function ensureGeneratedStyledEmptyCells(
+function ensureTemplateStyledEmptyCells(
   sheetXml: string,
   styleByCell: Map<string, string>,
-  { markerRow, recordCount }: WorkbookXmlPreservationContext,
+  { markerRow, markerRowCount = 1, recordCount }: WorkbookXmlPreservationContext,
 ) {
+  const outputRecordCount = Math.max(recordCount, 1)
+  const extraRows = Math.max(outputRecordCount - 1, 0) * markerRowCount
   const generatedStartRow = markerRow + 1
-  const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
-  const styleByColumn = new Map<number, string>()
+  const generatedSourceEndRow = generatedStartRow + markerRowCount - 1
+  const stylesByOutputRow = new Map<number, Map<number, string>>()
 
-  for (const entry of Array.from(styleByCell.entries())
-    .map(([key, styleId]) => {
-      const [row, column] = key.split(':').map(Number)
-      return row === generatedStartRow && Number.isFinite(column) ? { column, styleId } : null
-    })
-    .filter((entry): entry is { column: number; styleId: string } => Boolean(entry))
-    .sort((left, right) => left.column - right.column)) {
-    if (!styleByColumn.has(entry.column)) styleByColumn.set(entry.column, entry.styleId)
-  }
-
-  for (const rowXml of sheetXml.match(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g) ?? []) {
-    const rowNumber = Number(parseXmlAttributes(rowXml).get('r'))
-    if (!Number.isFinite(rowNumber) || rowNumber < generatedStartRow || rowNumber > generatedEndRow) continue
-
-    for (const cellTag of rowXml.match(/<c\b[^>]*>/g) ?? []) {
-      const attrs = parseXmlAttributes(cellTag)
-      const cellRef = attrs.get('r')
-      const styleId = attrs.get('s')
-      const decoded = cellRef ? decodeCellReference(cellRef) : null
-      if (decoded && styleId !== undefined && !styleByColumn.has(decoded.column)) styleByColumn.set(decoded.column, styleId)
+  for (const [key, styleId] of styleByCell.entries()) {
+    const [sourceRow, column] = key.split(':').map(Number)
+    if (!Number.isFinite(sourceRow) || !Number.isFinite(column)) continue
+    const outputRows =
+      sourceRow >= generatedStartRow && sourceRow <= generatedSourceEndRow
+        ? Array.from(
+            { length: outputRecordCount },
+            (_, index) => sourceRow + index * markerRowCount,
+          )
+        : [sourceRow > generatedSourceEndRow ? sourceRow + extraRows : sourceRow]
+    for (const outputRow of outputRows) {
+      const rowStyles = stylesByOutputRow.get(outputRow) ?? new Map<number, string>()
+      rowStyles.set(column, styleId)
+      stylesByOutputRow.set(outputRow, rowStyles)
     }
   }
 
-  if (!styleByColumn.size) return sheetXml
+  if (!stylesByOutputRow.size) return sheetXml
 
-  return sheetXml.replace(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g, (rowXml) => {
-    const rowAttrs = parseXmlAttributes(rowXml)
-    const rowNumber = Number(rowAttrs.get('r'))
-    if (!Number.isFinite(rowNumber) || rowNumber < generatedStartRow || rowNumber > generatedEndRow) return rowXml
+  return sheetXml.replace(
+    /(<sheetData\b[^>]*>)([\s\S]*?)(<\/sheetData>)/,
+    (_sheetData, openingTag: string, innerXml: string, closingTag: string) => {
+      const rows = new Map<number, string>()
+      for (const rowXml of innerXml.match(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g) ?? []) {
+        const rowOpeningTag = rowXml.match(/^<row\b[^>]*\/?>/)?.[0]
+        const rowNumber = Number(rowOpeningTag ? parseXmlAttributes(rowOpeningTag).get('r') : 0)
+        if (!Number.isFinite(rowNumber) || rowNumber <= 0) continue
+        const styleByColumn = stylesByOutputRow.get(rowNumber)
+        rows.set(
+          rowNumber,
+          styleByColumn?.size
+            ? applyStylesToWorksheetRow(rowXml, rowNumber, styleByColumn)
+            : rowXml,
+        )
+      }
 
-    const existingColumns = new Set<number>()
-    const styledRowXml = rowXml.replace(/<c\b[^>]*>/g, (cellTag) => {
-      const cellRef = parseXmlAttributes(cellTag).get('r')
-      const decoded = cellRef ? decodeCellReference(cellRef) : null
-      if (decoded) existingColumns.add(decoded.column)
-      const styleId = decoded ? styleByColumn.get(decoded.column) : undefined
-      return styleId === undefined ? cellTag : setXmlAttribute(cellTag, 's', styleId)
-    })
+      for (const [rowNumber, styleByColumn] of stylesByOutputRow.entries()) {
+        if (rows.has(rowNumber)) continue
+        rows.set(
+          rowNumber,
+          applyStylesToWorksheetRow(`<row r="${rowNumber}"/>`, rowNumber, styleByColumn),
+        )
+      }
 
-    const missingCells = Array.from(styleByColumn.entries())
-      .sort((left, right) => left[0] - right[0])
-      .filter(([column]) => !existingColumns.has(column))
-      .map(([column, styleId]) => `<c r="${encodeCellReference(rowNumber, column)}" s="${escapeXmlAttribute(styleId)}"/>`)
-      .join('')
+      return `${openingTag}${Array.from(rows.entries())
+        .sort((left, right) => left[0] - right[0])
+        .map(([, rowXml]) => rowXml)
+        .join('')}${closingTag}`
+    },
+  )
+}
 
-    if (!missingCells) return styledRowXml
-    if (/\/>$/.test(styledRowXml)) return styledRowXml.replace(/\/>$/, `>${missingCells}</row>`)
-    return styledRowXml.replace(/<\/row>$/, `${missingCells}</row>`)
-  })
+function applyStylesToWorksheetRow(
+  rowXml: string,
+  rowNumber: number,
+  styleByColumn: Map<number, string>,
+) {
+  const rowOpeningTag = rowXml.match(/^<row\b[^>]*\/?>/)?.[0] ?? `<row r="${rowNumber}"/>`
+  const cells = new Map<number, string>()
+
+  for (const cellXml of rowXml.match(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g) ?? []) {
+    const cellOpeningTag = cellXml.match(/^<c\b[^>]*\/?>/)?.[0]
+    const cellRef = cellOpeningTag ? parseXmlAttributes(cellOpeningTag).get('r') : undefined
+    const decoded = cellRef ? decodeCellReference(cellRef) : null
+    if (!cellOpeningTag || !decoded) continue
+    const styleId = styleByColumn.get(decoded.column)
+    cells.set(
+      decoded.column,
+      styleId === undefined
+        ? cellXml
+        : cellXml.replace(cellOpeningTag, setXmlAttribute(cellOpeningTag, 's', styleId)),
+    )
+  }
+
+  for (const [column, styleId] of styleByColumn.entries()) {
+    if (!cells.has(column)) {
+      cells.set(
+        column,
+        `<c r="${encodeCellReference(rowNumber, column)}" s="${escapeXmlAttribute(styleId)}"/>`,
+      )
+    }
+  }
+
+  const normalizedOpeningTag = rowOpeningTag.replace(/\/>$/, '>')
+  const innerXml = /\/>$/.test(rowXml)
+    ? ''
+    : rowXml
+        .replace(/^<row\b[^>]*>/, '')
+        .replace(/<\/row>$/, '')
+  const nonCellXml = innerXml.replace(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g, '')
+  return `${normalizedOpeningTag}${Array.from(cells.entries())
+    .sort((left, right) => left[0] - right[0])
+    .map(([, cellXml]) => cellXml)
+    .join('')}${nonCellXml}</row>`
 }
 
 function ensureGeneratedMultilineCellWrapping(
   sheetXml: string,
   stylesXml: string,
-  { markerRow, recordCount }: WorkbookXmlPreservationContext,
+  { markerRow, markerRowCount = 1, recordCount }: WorkbookXmlPreservationContext,
 ) {
   const generatedStartRow = markerRow + 1
-  const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
+  const generatedEndRow =
+    generatedStartRow + Math.max(recordCount, 1) * markerRowCount - 1
   const cellFormats = extractXmlCollection(stylesXml, 'cellXfs', 'xf')
   if (!cellFormats.length) return { sheetXml, stylesXml }
 
@@ -1599,13 +2378,15 @@ function cellFormatWrapsText(cellFormat: string) {
 function applyGeneratedRowAutoHeights(
   sheetXml: string,
   stylesXml: string,
-  { markerRow, recordCount }: WorkbookXmlPreservationContext,
+  { markerRow, markerRowCount = 1, recordCount }: WorkbookXmlPreservationContext,
 ) {
   const generatedStartRow = markerRow + 1
-  const generatedEndRow = generatedStartRow + Math.max(recordCount - 1, 0)
+  const generatedEndRow =
+    generatedStartRow + Math.max(recordCount, 1) * markerRowCount - 1
   const columnWidths = extractWorksheetColumnWidths(sheetXml)
   const mergeColumnSpans = extractWorksheetMergeColumnSpans(sheetXml)
   const cellFormats = extractXmlCollection(stylesXml, 'cellXfs', 'xf')
+  const fonts = extractXmlCollection(stylesXml, 'fonts', 'font')
 
   return sheetXml.replace(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g, (rowXml) => {
     const openingTag = rowXml.match(/^<row\b[^>]*>/)?.[0]
@@ -1613,7 +2394,7 @@ function applyGeneratedRowAutoHeights(
     const rowNumber = Number(parseXmlAttributes(openingTag).get('r'))
     if (!Number.isFinite(rowNumber) || rowNumber < generatedStartRow || rowNumber > generatedEndRow) return rowXml
 
-    let requiredLines = 1
+    let requiredHeight = 0
     for (const cellXml of rowXml.match(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g) ?? []) {
       const cellOpeningTag = cellXml.match(/^<c\b[^>]*>/)?.[0]
       if (!cellOpeningTag) continue
@@ -1635,13 +2416,15 @@ function applyGeneratedRowAutoHeights(
         (total, line) => total + Math.max(1, Math.ceil(Math.max(line.length, 1) / Math.max(availableCharacters, 1))),
         0,
       )
-      requiredLines = Math.max(requiredLines, lineCount)
+      const fontSize = getCellFormatFontSize(cellFormats[styleId] ?? '', fonts)
+      const lineHeight = Math.max(fontSize * 1.25, 15)
+      requiredHeight = Math.max(requiredHeight, lineCount * lineHeight + 3)
     }
 
     const clearedOpeningTag = removeXmlAttribute(removeXmlAttribute(openingTag, 'ht'), 'customHeight')
-    if (requiredLines <= 1) return rowXml.replace(openingTag, clearedOpeningTag)
+    if (requiredHeight <= 18) return rowXml.replace(openingTag, clearedOpeningTag)
     const existingHeight = Number(parseXmlAttributes(openingTag).get('ht') ?? 0)
-    const calculatedHeight = Math.min(Math.max(requiredLines * 15 + 3, existingHeight, 18), 409)
+    const calculatedHeight = Math.min(Math.max(requiredHeight, existingHeight, 18), 409)
     const fittedOpeningTag = setXmlAttribute(
       setXmlAttribute(clearedOpeningTag, 'ht', String(calculatedHeight)),
       'customHeight',
@@ -1649,6 +2432,15 @@ function applyGeneratedRowAutoHeights(
     )
     return rowXml.replace(openingTag, fittedOpeningTag)
   })
+}
+
+function getCellFormatFontSize(cellFormat: string, fonts: string[]) {
+  const openingTag = cellFormat.match(/^<xf\b[^>]*\/?>/)?.[0]
+  const fontId = Number(openingTag ? parseXmlAttributes(openingTag).get('fontId') ?? 0 : 0)
+  const fontXml = Number.isFinite(fontId) ? fonts[fontId] ?? '' : ''
+  const sizeTag = fontXml.match(/<sz\b[^>]*\/?>/)?.[0]
+  const size = Number(sizeTag ? parseXmlAttributes(sizeTag).get('val') : 0)
+  return Number.isFinite(size) && size > 0 ? size : 11
 }
 
 function extractWorksheetColumnWidths(sheetXml: string) {
@@ -1721,6 +2513,10 @@ function escapeXmlAttribute(value: string) {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+function escapeXmlText(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 function decodeCellReference(value: string) {
   const match = value.match(/^([A-Z]+)(\d+)$/i)
   if (!match) return null
@@ -1752,36 +2548,36 @@ function encodeColumnReference(column: number) {
   return value
 }
 
-function openDocumentTemplateDb() {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DOCUMENT_TEMPLATE_DB_NAME, 1)
-    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть хранилище шаблонов.'))
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(DOCUMENT_TEMPLATE_STORE_NAME)) {
-        db.createObjectStore(DOCUMENT_TEMPLATE_STORE_NAME, { keyPath: 'id' })
-      }
-    }
-  })
-}
-
-function runStoreRequest<T = void>(db: IDBDatabase, mode: IDBTransactionMode, createRequest: (store: IDBObjectStore) => IDBRequest) {
-  return new Promise<T>((resolve, reject) => {
-    const transaction = db.transaction(DOCUMENT_TEMPLATE_STORE_NAME, mode)
-    const store = transaction.objectStore(DOCUMENT_TEMPLATE_STORE_NAME)
-    const request = createRequest(store)
-    request.onerror = () => reject(request.error ?? new Error('Не удалось выполнить операцию с шаблоном.'))
-    request.onsuccess = () => resolve(request.result as T)
-    transaction.oncomplete = () => db.close()
-    transaction.onerror = () => {
-      db.close()
-      reject(transaction.error ?? new Error('Не удалось сохранить шаблон.'))
-    }
-  })
-}
-
 function notifyDocumentTemplateStorageChanged() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new Event(DOCUMENT_TEMPLATE_STORAGE_EVENT))
+}
+
+function fromRemoteDocumentTemplate(
+  remote: Awaited<ReturnType<typeof getRemoteDocumentTemplate>> & { fileDataBase64: string },
+): StoredDocumentTemplate {
+  return {
+    ...remote,
+    constructorConfig: remote.constructorConfig
+      ? normalizeDocumentTemplateConstructorConfig(remote.constructorConfig)
+      : undefined,
+    fileData: base64ToArrayBuffer(remote.fileDataBase64),
+  }
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)))
+  }
+  return btoa(binary)
+}
+
+function base64ToArrayBuffer(value: string) {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes.buffer
 }

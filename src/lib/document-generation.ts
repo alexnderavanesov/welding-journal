@@ -1,7 +1,8 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { GeneratedDocumentType } from '@/lib/generated-document-types'
 
 export type DocumentGenerationRequest = {
   id: number
-  type: 'weldingJournal'
+  type: GeneratedDocumentType
   rows: WeldRow[]
 }

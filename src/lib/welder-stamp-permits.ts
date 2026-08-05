@@ -185,23 +185,27 @@ function validatePermitBase(
 function getDlsOutOfNaksBoundsReason(permit: WelderStampDlsPermit, naksPermits: readonly WelderStampNaksPermit[], prefix: string) {
   const dlsMethods = splitPermitValues(permit.weldType)
   const dlsGroups = splitPermitValues(permit.materialGroups)
-  const naksCandidates = naksPermits.filter((candidate) => isDateRangeInside(permit, candidate))
 
   for (const method of dlsMethods) {
     for (const group of dlsGroups.length > 0 ? dlsGroups : ['']) {
-      const isCovered = naksCandidates.some((candidate) => {
+      const candidates = naksPermits.filter((candidate) => {
         const candidateMethods = splitPermitValues(candidate.weldType)
         const candidateGroups = splitPermitValues(candidate.materialGroups)
-        return (
-          candidateMethods.includes(method) &&
-          (!group || candidateGroups.includes(group)) &&
-          isRangeInside(permit.diameterFrom, permit.diameterTo, candidate.diameterFrom, candidate.diameterTo) &&
-          isRangeInside(permit.thicknessFrom, permit.thicknessTo, candidate.thicknessFrom, candidate.thicknessTo)
-        )
+        return candidateMethods.includes(method) && (!group || candidateGroups.includes(group))
       })
+      const scope = `${method}${group ? `, ${group}` : ''}`
 
-      if (!isCovered) {
+      if (candidates.length === 0) {
         return `${prefix}: допуск ДЛС ${method}${group ? `, ${group}` : ''} выходит за границы НАКС`
+      }
+      if (!isNumberRangeCoveredByUnion(permit.diameterFrom, permit.diameterTo, candidates, 'diameterFrom', 'diameterTo')) {
+        return `${prefix}: диапазон диаметра ДЛС ${scope} не покрыт совокупностью НАКС`
+      }
+      if (!isNumberRangeCoveredByUnion(permit.thicknessFrom, permit.thicknessTo, candidates, 'thicknessFrom', 'thicknessTo')) {
+        return `${prefix}: диапазон толщины ДЛС ${scope} не покрыт совокупностью НАКС`
+      }
+      if (!isDateRangeCoveredByUnion(permit.validFrom, permit.validTo, candidates)) {
+        return `${prefix}: срок действия ДЛС ${scope} не покрыт непрерывной совокупностью НАКС`
       }
     }
   }
@@ -218,17 +222,79 @@ function validateRange(fromValue: string, toValue: string, label: string) {
   return ''
 }
 
-function isRangeInside(fromValue: string, toValue: string, parentFromValue: string, parentToValue: string) {
-  const from = parseWelderStampNumber(fromValue)
-  const to = parseWelderStampNumber(toValue) ?? from
-  const parentFrom = parseWelderStampNumber(parentFromValue) ?? 0
-  const parentTo = parseWelderStampNumber(parentToValue)
-  if (from === null || to === null) return false
-  return from >= parentFrom && (parentTo === null || to <= parentTo)
+function isNumberRangeCoveredByUnion(
+  targetFromValue: string,
+  targetToValue: string,
+  permits: readonly WelderStampNaksPermit[],
+  fromKey: 'diameterFrom' | 'thicknessFrom',
+  toKey: 'diameterTo' | 'thicknessTo',
+) {
+  const targetFrom = parseWelderStampNumber(targetFromValue)
+  const targetTo = targetToValue ? parseWelderStampNumber(targetToValue) : Number.POSITIVE_INFINITY
+  if (targetFrom === null || targetTo === null) return false
+
+  const intervals = permits
+    .map((permit) => {
+      const from = parseWelderStampNumber(permit[fromKey])
+      const to = permit[toKey] ? parseWelderStampNumber(permit[toKey]) : Number.POSITIVE_INFINITY
+      return from === null || to === null ? null : { from, to }
+    })
+    .filter((interval): interval is { from: number; to: number } => interval !== null)
+    .sort((left, right) => left.from - right.from || right.to - left.to)
+
+  let coveredTo = Number.NEGATIVE_INFINITY
+  for (const interval of intervals) {
+    if (interval.to < targetFrom) continue
+    if (coveredTo === Number.NEGATIVE_INFINITY) {
+      if (interval.from > targetFrom) return false
+      coveredTo = interval.to
+    } else {
+      if (interval.from > coveredTo) return false
+      coveredTo = Math.max(coveredTo, interval.to)
+    }
+    if (coveredTo >= targetTo) return true
+  }
+  return false
 }
 
-function isDateRangeInside(permit: Pick<WelderStampDlsPermit, 'validFrom' | 'validTo'>, parent: Pick<WelderStampNaksPermit, 'validFrom' | 'validTo'>) {
-  return (!parent.validFrom || permit.validFrom >= parent.validFrom) && (!parent.validTo || permit.validTo <= parent.validTo)
+function isDateRangeCoveredByUnion(
+  targetFromValue: string,
+  targetToValue: string,
+  permits: readonly WelderStampNaksPermit[],
+) {
+  const targetFrom = getDateEpochDay(targetFromValue)
+  const targetTo = getDateEpochDay(targetToValue)
+  if (!targetFrom || !targetTo) return false
+
+  const intervals = permits
+    .map((permit) => {
+      const from = getDateEpochDay(permit.validFrom)
+      const to = getDateEpochDay(permit.validTo)
+      return !from || !to ? null : { from, to }
+    })
+    .filter((interval): interval is { from: number; to: number } => interval !== null)
+    .sort((left, right) => left.from - right.from || right.to - left.to)
+
+  let coveredTo = 0
+  for (const interval of intervals) {
+    if (interval.to < targetFrom) continue
+    if (!coveredTo) {
+      if (interval.from > targetFrom) return false
+      coveredTo = interval.to
+    } else {
+      if (interval.from > coveredTo + 1) return false
+      coveredTo = Math.max(coveredTo, interval.to)
+    }
+    if (coveredTo >= targetTo) return true
+  }
+  return false
+}
+
+function getDateEpochDay(value: string) {
+  const normalized = normalizeDateLikeForStorage(value)
+  if (!normalized || !/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return 0
+  const timestamp = Date.parse(`${normalized}T00:00:00Z`)
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 86_400_000) : 0
 }
 
 function isPermitEffectiveForWeldDate(permit: WelderStampNaksPermit | WelderStampDlsPermit, weldDateValue: number) {

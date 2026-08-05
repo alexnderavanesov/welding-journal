@@ -1,9 +1,20 @@
-import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import {
+  FIELD_BY_KEY,
+  isVirtualWeldField,
+  type WeldField,
+  type WeldFieldKey,
+  type WeldInput,
+} from '@/lib/weld-fields'
 import { createZip } from '@/lib/weld-export-zip'
 import { escapeXml, getExportColumnWidth, normalizeSheetName } from '@/lib/weld-export-utils'
 import type { ActiveReport } from '@/lib/home-state'
 import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import { LNK_REQUEST_DATE_FIELD_KEYS } from '@/lib/report-config'
+import {
+  hasHeatTreatmentReportState,
+  hasLnkReportEntry,
+} from '@/lib/report-control-state'
+import { hasWeldDate } from '@/lib/report-value-utils'
 import { VISIBLE_FIELDS } from '@/lib/weld-visible-field-layout'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { loadOtherSettings } from '@/lib/other-settings'
@@ -16,6 +27,8 @@ export const MASS_FILL_ROW_ID_HEADER = 'ID записи'
 export const REPLACE_DELETE_ROW_HEADER = 'Удалить строку'
 
 const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
+  'id',
+  'dispatcherTasks',
   'status',
   'finalStatus',
   'revisionActuality',
@@ -71,6 +84,7 @@ const WELD_IMPORT_CHECKED_FIELD_KEYS = new Set<string>([
   'weldingMethod',
   'connectionType',
   'materialGroup',
+  'testTypes',
   'd1',
   'd2',
   'stamp1K',
@@ -115,14 +129,21 @@ const PREVIEW_FIELD_KEYS = [
   'hasRk',
 ] as const
 
+const REPORT_SPECIFIC_NOTE_FIELD_KEYS = new Set<WeldFieldKey>(['pstoNote', 'lnkNote'])
+
 export function getReportImportTemplateFields(activeReport: ActiveReport) {
+  const visibleImportFields = VISIBLE_FIELDS.filter(
+    (field) =>
+      field.key !== 'id' &&
+      !isVirtualWeldField(field),
+  )
   if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
     const options = getReportImportFieldKeys(activeReport)
-    if (!options) return VISIBLE_FIELDS
+    if (!options) return visibleImportFields
     const allowedKeys = new Set([...options.matchFieldKeys, ...options.editableFieldKeys])
-    return VISIBLE_FIELDS.filter((field) => allowedKeys.has(field.key))
+    return visibleImportFields.filter((field) => allowedKeys.has(field.key))
   }
-  return VISIBLE_FIELDS
+  return visibleImportFields
 }
 
 export function getReportImportPreviewFields(activeReport: ActiveReport) {
@@ -135,6 +156,7 @@ export function getReportImportPreviewFields(activeReport: ActiveReport) {
 }
 
 export function getReportImportCellKind(activeReport: ActiveReport, fieldKey: string): ImportTemplateCellKind {
+  if (fieldKey === 'id' || isVirtualWeldField(FIELD_BY_KEY.get(fieldKey as WeldFieldKey))) return 'ignored'
   if (activeReport === 'weldingJournal') {
     if (WELD_IMPORT_IGNORED_FIELD_KEYS.has(fieldKey)) return 'ignored'
     if (isDynamicSystemImportField(activeReport, fieldKey)) return 'ignored'
@@ -450,19 +472,38 @@ function getExistingRowsBodyStyleId(
 ) {
   if (!field || !record) return 2
   if (isExistingRowsImportLockedField(field)) return 2
+  if (activeReport === 'weldingJournal' && isReportSpecificNoteField(field.key)) {
+    if (!canEditReportSpecificNote(record, field.key)) return 2
+    return mode === 'massFill' && hasMassFillValue(record[field.key as keyof WeldInput]) ? 2 : 0
+  }
   if (mode === 'massFill' && isMassFillFieldLocked(activeReport, field, record)) return 2
-  if (mode === 'replaceData' && isSystemImportField(activeReport, field)) return 2
+  if (mode === 'replaceData' && isSystemImportField(activeReport, field, record)) return 2
   return getTemplateStyleId(activeReport, field.key)
 }
 
 export function isMassFillFieldLocked(activeReport: ActiveReport, field: WeldField, record: WeldInput) {
   if (isExistingRowsImportLockedField(field)) return true
+  if (activeReport === 'weldingJournal' && isReportSpecificNoteField(field.key)) {
+    return !canEditReportSpecificNote(record, field.key) || hasMassFillValue(record[field.key as keyof WeldInput])
+  }
   if (isSystemImportField(activeReport, field)) return true
   return hasMassFillValue(record[field.key as keyof WeldInput])
 }
 
-export function isSystemImportField(activeReport: ActiveReport, field: WeldField) {
+export function isSystemImportField(activeReport: ActiveReport, field: WeldField, record?: WeldInput | null) {
+  if (activeReport === 'weldingJournal' && isReportSpecificNoteField(field.key)) {
+    return !record || !canEditReportSpecificNote(record, field.key)
+  }
   return getReportImportCellKind(activeReport, field.key) === 'ignored'
+}
+
+export function isReportSpecificNoteField(fieldKey: string): fieldKey is 'lnkNote' | 'pstoNote' {
+  return REPORT_SPECIFIC_NOTE_FIELD_KEYS.has(fieldKey as WeldFieldKey)
+}
+
+export function canEditReportSpecificNote(record: WeldInput, fieldKey: 'lnkNote' | 'pstoNote') {
+  if (fieldKey === 'lnkNote') return hasLnkReportEntry(record)
+  return hasWeldDate(record) && hasHeatTreatmentReportState(record)
 }
 
 function hasMassFillValue(value: unknown) {

@@ -11,6 +11,8 @@ type CreateReportHeaderActionsPropsOptions = {
   isWeldingJournalGenerateMenuOpen: boolean
   onToggleWeldingJournalGenerateMenu: () => void
   onGenerateWeldingJournalDocument: () => void
+  onGenerateChecklistDocument: () => void
+  onGenerateZniDocument: () => void
   onOpenWeldingJournalCurrentReport: () => void
   onOpenWeldingJournalWaitingWeldReport: () => void
   onOpenWeldingJournalWaitingRequestReport: () => void
@@ -53,6 +55,8 @@ export function createReportHeaderActionsProps({
   isWeldingJournalGenerateMenuOpen,
   onToggleWeldingJournalGenerateMenu,
   onGenerateWeldingJournalDocument,
+  onGenerateChecklistDocument,
+  onGenerateZniDocument,
   onOpenWeldingJournalCurrentReport,
   onOpenWeldingJournalWaitingWeldReport,
   onOpenWeldingJournalWaitingRequestReport,
@@ -94,6 +98,8 @@ export function createReportHeaderActionsProps({
     isWeldingJournalGenerateMenuOpen,
     onToggleWeldingJournalGenerateMenu,
     onGenerateWeldingJournalDocument,
+    onGenerateChecklistDocument,
+    onGenerateZniDocument,
     onOpenWeldingJournalCurrentReport,
     onOpenWeldingJournalWaitingWeldReport,
     onOpenWeldingJournalWaitingRequestReport,

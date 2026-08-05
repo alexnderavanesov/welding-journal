@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joints" ADD COLUMN "welding_journal_note" text;

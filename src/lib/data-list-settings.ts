@@ -8,17 +8,26 @@ const DATA_LIST_SETTINGS_STORAGE_KEY = 'welding-data-list-settings'
 export const DEFAULT_WELDING_TYPE_OPTIONS = ['РАД', 'РД'] as const
 export const DEFAULT_CONNECTION_TYPE_OPTIONS = [] as const
 export const DEFAULT_MATERIAL_GROUP_OPTIONS = [] as const
+export const DEFAULT_TEST_TYPE_OPTIONS = ['ГИ', 'ПИ'] as const
 
 export type DataListSettings = {
   weldingTypes: string[]
   connectionTypes: string[]
   materialGroups: string[]
+  testTypes: string[]
 }
+
+const CYRILLIC_NUMERIC_DATA_LIST_KEYS = new Set<keyof DataListSettings>([
+  'weldingTypes',
+  'connectionTypes',
+  'materialGroups',
+])
 
 export const DEFAULT_DATA_LIST_SETTINGS: DataListSettings = {
   weldingTypes: [...DEFAULT_WELDING_TYPE_OPTIONS],
   connectionTypes: [...DEFAULT_CONNECTION_TYPE_OPTIONS],
   materialGroups: [...DEFAULT_MATERIAL_GROUP_OPTIONS],
+  testTypes: [...DEFAULT_TEST_TYPE_OPTIONS],
 }
 
 export function useDataListSettings() {
@@ -72,11 +81,15 @@ export function normalizeDataListSettings(value: unknown): DataListSettings {
   const materialGroups = Array.isArray(source.materialGroups)
     ? normalizeDataListOptions(source.materialGroups)
     : DEFAULT_DATA_LIST_SETTINGS.materialGroups
+  const testTypes = Array.isArray(source.testTypes)
+    ? normalizeDataListOptions(source.testTypes)
+    : DEFAULT_DATA_LIST_SETTINGS.testTypes
 
   return {
     weldingTypes: weldingTypes.length > 0 ? weldingTypes : DEFAULT_DATA_LIST_SETTINGS.weldingTypes,
     connectionTypes,
     materialGroups,
+    testTypes,
   }
 }
 
@@ -93,4 +106,14 @@ export function normalizeDataListOptions(values: unknown[]) {
 
 export function normalizeDataListOption(value: unknown) {
   return String(value ?? '').trim().replace(/\s+/g, ' ').toUpperCase()
+}
+
+export function getDataListOptionInputError(key: keyof DataListSettings, value: unknown) {
+  if (!CYRILLIC_NUMERIC_DATA_LIST_KEYS.has(key)) return null
+
+  const option = normalizeDataListOption(value)
+  if (!option) return null
+  if (/^[А-ЯЁ0-9 ]+$/u.test(option)) return null
+
+  return 'Разрешены только кириллические буквы, цифры и пробелы. Латиница и другие символы недоступны.'
 }

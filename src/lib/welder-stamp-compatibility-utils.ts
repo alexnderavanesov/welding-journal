@@ -33,17 +33,11 @@ export function parseOfficialStampMaterialGroup(value: unknown) {
 }
 
 export function getOfficialStampJointDiameters(record: WeldInput) {
-  const diameters = [parseJointDiameterValue(record.d1), parseJointDiameterValue(record.d2)].filter(
-    (value): value is number => value !== null,
-  )
-  return [...new Set(diameters)]
+  return getOfficialStampJointDimensions(record).diameters
 }
 
 export function getOfficialStampJointThicknesses(record: WeldInput) {
-  const thicknesses = [parseJointDiameterValue(record.t1), parseJointDiameterValue(record.t2)].filter(
-    (value): value is number => value !== null,
-  )
-  return [...new Set(thicknesses)]
+  return getOfficialStampJointDimensions(record).thicknesses
 }
 
 export function formatOfficialStampDiameterList(diameters: number[]) {
@@ -79,14 +73,28 @@ export function arePermitDiametersCompatible(
   diameters: number[],
   permits: Array<Pick<WelderStampNaksPermit, 'diameterFrom' | 'diameterTo'>>,
 ) {
-  return diameters.every((diameter) => permits.some((permit) => isPermitDiameterCompatible(diameter, permit)))
+  return getUnsupportedPermitDiameters(diameters, permits).length === 0
 }
 
 export function arePermitThicknessesCompatible(
   thicknesses: number[],
   permits: Array<Pick<WelderStampNaksPermit, 'thicknessFrom' | 'thicknessTo'>>,
 ) {
-  return thicknesses.every((thickness) => permits.some((permit) => isPermitThicknessCompatible(thickness, permit)))
+  return getUnsupportedPermitThicknesses(thicknesses, permits).length === 0
+}
+
+export function getUnsupportedPermitDiameters(
+  diameters: number[],
+  permits: Array<Pick<WelderStampNaksPermit, 'diameterFrom' | 'diameterTo'>>,
+) {
+  return diameters.filter((diameter) => !permits.some((permit) => isPermitDiameterCompatible(diameter, permit)))
+}
+
+export function getUnsupportedPermitThicknesses(
+  thicknesses: number[],
+  permits: Array<Pick<WelderStampNaksPermit, 'thicknessFrom' | 'thicknessTo'>>,
+) {
+  return thicknesses.filter((thickness) => !permits.some((permit) => isPermitThicknessCompatible(thickness, permit)))
 }
 
 export function getWeldDateOrderValue(value: unknown) {
@@ -96,6 +104,41 @@ export function getWeldDateOrderValue(value: unknown) {
   const displayMatch = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
   if (displayMatch) return Number(`${displayMatch[3]}${displayMatch[2]}${displayMatch[1]}`)
   return 0
+}
+
+export type WelderStampArchiveCompatibility =
+  | 'active'
+  | 'historical'
+  | 'missing-weld-date'
+  | 'unknown-archive-date'
+  | 'after-archive'
+
+export function getWelderStampArchiveCompatibility(
+  records: readonly WelderStampRecord[],
+  weldDate: unknown,
+): WelderStampArchiveCompatibility {
+  if (records.some((record) => !record.archived)) return 'active'
+  if (records.length === 0) return 'active'
+
+  const weldDateValue = getWeldDateOrderValue(weldDate)
+  if (!weldDateValue) return 'missing-weld-date'
+
+  const archiveDateValues = records
+    .map((record) => getWeldDateOrderValue(record.archivedAt))
+    .filter((value) => value > 0)
+  if (archiveDateValues.length === 0) return 'unknown-archive-date'
+
+  return archiveDateValues.some((archiveDateValue) => weldDateValue <= archiveDateValue)
+    ? 'historical'
+    : 'after-archive'
+}
+
+export function getLatestWelderStampArchiveDate(records: readonly WelderStampRecord[]) {
+  return records
+    .map((record) => String(record.archivedAt ?? '').trim())
+    .filter(Boolean)
+    .sort()
+    .at(-1) ?? ''
 }
 
 export function splitOfficialStampWeldTypes(record: WelderStampRecord) {
@@ -113,4 +156,49 @@ function parseJointDiameterValue(value: unknown) {
   if (!match) return null
   const parsed = Number(match[0])
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function getOfficialStampJointDimensions(record: WeldInput) {
+  const diameters = [
+    parseJointDiameterValue(record.d1),
+    parseJointDiameterValue(record.d2),
+  ] as const
+  const thicknesses = [
+    parseJointDiameterValue(record.t1),
+    parseJointDiameterValue(record.t2),
+  ] as const
+
+  if (isAngularConnectionType(record.connectionType)) {
+    const smallerMaterialIndex = getSmallerDiameterMaterialIndex(diameters)
+    if (smallerMaterialIndex !== null) {
+      return {
+        diameters: toUniqueNumbers([diameters[smallerMaterialIndex]]),
+        thicknesses: toUniqueNumbers([thicknesses[smallerMaterialIndex]]),
+      }
+    }
+  }
+
+  return {
+    diameters: toUniqueNumbers(diameters),
+    thicknesses: toUniqueNumbers(thicknesses),
+  }
+}
+
+function isAngularConnectionType(value: unknown) {
+  return String(value ?? '').trim().toUpperCase().startsWith('У')
+}
+
+function getSmallerDiameterMaterialIndex(diameters: readonly [number | null, number | null]): 0 | 1 | null {
+  const [d1, d2] = diameters
+  if (d1 !== null && d2 !== null) {
+    if (d1 === d2) return null
+    return d1 < d2 ? 0 : 1
+  }
+  if (d1 !== null) return 0
+  if (d2 !== null) return 1
+  return null
+}
+
+function toUniqueNumbers(values: readonly (number | null)[]) {
+  return [...new Set(values.filter((value): value is number => value !== null))]
 }

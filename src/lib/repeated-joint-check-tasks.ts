@@ -11,8 +11,13 @@ import { getDispatcherPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
-import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+
+const WELDER_STAMP_AUDIT_CHECK_SETTINGS = {
+  ...DEFAULT_SAVE_CHECK_SETTINGS,
+  officialDls: true,
+}
 
 export function buildControlDateBeforeWeldDateCheckTasks(rows: WeldRow[]): RepeatedJointCheckTask[] {
   const tasks: RepeatedJointCheckTask[] = []
@@ -93,15 +98,14 @@ export function buildWelderStampCompatibilityCheckTasks(
   rows: WeldRow[],
   welderStampRecords: WelderStampRecord[],
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
-  saveCheckSettings?: SaveCheckSettings,
 ): RepeatedJointCheckTask[] {
   if (welderStampRecords.length === 0 && welderStampSuspensions.length === 0) return []
 
   const tasks: RepeatedJointCheckTask[] = []
   for (const row of rows) {
     const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, {
-      ignoreArchivedMissingRegistry: true,
-      saveCheckSettings,
+      archiveValidationMode: 'audit',
+      saveCheckSettings: WELDER_STAMP_AUDIT_CHECK_SETTINGS,
       suspensions: welderStampSuspensions,
     })
     if (issues.length === 0) continue

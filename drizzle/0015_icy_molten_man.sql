@@ -1,0 +1,2 @@
+DROP INDEX "generated_document_weld_joints_weld_joint_idx";--> statement-breakpoint
+CREATE INDEX "generated_document_weld_joints_weld_joint_idx" ON "generated_document_weld_joints" USING btree ("weld_joint_id");

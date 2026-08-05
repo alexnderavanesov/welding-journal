@@ -1,4 +1,4 @@
-import { boolean, date, index, integer, numeric, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core'
+import { boolean, date, index, integer, numeric, pgTable, primaryKey, serial, text, timestamp } from 'drizzle-orm/pg-core'
 
 const numericNumber = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
 
@@ -47,6 +47,13 @@ export const weldJoints = pgTable(
     t2: numericNumber('t2'),
     wdi: numericNumber('wdi'),
     responsible: text('responsible'),
+    technologyCardNumber: text('technology_card_number'),
+    weldingElectrodes: text('welding_electrodes'),
+    weldingElectrodesCertificateNumber: text('welding_electrodes_certificate_number'),
+    fillerWire: text('filler_wire'),
+    fillerWireCertificateNumber: text('filler_wire_certificate_number'),
+    shieldingGas: text('shielding_gas'),
+    shieldingGasCertificateNumber: text('shielding_gas_certificate_number'),
     stamp1K: text('stamp_1_k'),
     stamp1Z: text('stamp_1_z'),
     stamp1O: text('stamp_1_o'),
@@ -115,13 +122,18 @@ export const weldJoints = pgTable(
     mkkConclusion: text('mkk_conclusion'),
     lnkDefectDescription: text('lnk_defect_description'),
     lnkNote: text('lnk_note'),
+    weldingJournalNote: text('welding_journal_note'),
     finalStatus: text('final_status'),
+    testTypes: text('test_types'),
     testContour: text('test_contour'),
     testDate: date('test_date'),
+    piDate: date('pi_date'),
     boq: text('boq'),
     testBoq: text('test_boq'),
+    piBoq: text('pi_boq'),
     ks3: text('ks3'),
     testKs3: text('test_ks3'),
+    piKs3: text('pi_ks3'),
     pstoBoq: text('psto_boq'),
     pstoKs3: text('psto_ks3'),
     pstoCreatedAt: timestamp('psto_created_at', { withTimezone: true }),
@@ -176,6 +188,7 @@ export const welderStamps = pgTable('welder_stamps', {
   naksPermits: text('naks_permits'),
   dlsPermits: text('dls_permits'),
   archived: boolean('archived').default(false).notNull(),
+  archivedAt: date('archived_at'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -230,3 +243,63 @@ export const appSettings = pgTable('app_settings', {
 
 export type AppSetting = typeof appSettings.$inferSelect
 export type NewAppSetting = typeof appSettings.$inferInsert
+
+export const documentTemplates = pgTable('document_templates', {
+  id: text('id').primaryKey(),
+  blobKey: text('blob_key').notNull(),
+  fileName: text('file_name').notNull(),
+  fileType: text('file_type').notNull(),
+  fileSize: integer('file_size').notNull(),
+  metadata: text('metadata').notNull(),
+  options: text('options'),
+  constructorConfig: text('constructor_config'),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type DocumentTemplate = typeof documentTemplates.$inferSelect
+export type NewDocumentTemplate = typeof documentTemplates.$inferInsert
+
+export const generatedDocuments = pgTable(
+  'generated_documents',
+  {
+    id: serial('id').primaryKey(),
+    type: text('type').notNull(),
+    title: text('title').notNull(),
+    fileName: text('file_name').notNull(),
+    mimeType: text('mime_type').notNull(),
+    periodFrom: date('period_from'),
+    periodTo: date('period_to'),
+    rowCount: integer('row_count').notNull().default(0),
+    wdiTotal: numericNumber('wdi_total'),
+    documentNumber: integer('document_number'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('generated_documents_type_created_at_idx').on(table.type, table.createdAt),
+  ],
+)
+
+export type GeneratedDocument = typeof generatedDocuments.$inferSelect
+export type NewGeneratedDocument = typeof generatedDocuments.$inferInsert
+
+export const generatedDocumentWeldJoints = pgTable(
+  'generated_document_weld_joints',
+  {
+    documentId: integer('document_id')
+      .notNull()
+      .references(() => generatedDocuments.id, { onDelete: 'cascade' }),
+    weldJointId: integer('weld_joint_id')
+      .notNull()
+      .references(() => weldJoints.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.documentId, table.weldJointId] }),
+    index('generated_document_weld_joints_weld_joint_idx').on(table.weldJointId),
+  ],
+)
+
+export type GeneratedDocumentWeldJoint = typeof generatedDocumentWeldJoints.$inferSelect
+export type NewGeneratedDocumentWeldJoint = typeof generatedDocumentWeldJoints.$inferInsert

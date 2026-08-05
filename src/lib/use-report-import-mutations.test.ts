@@ -27,4 +27,46 @@ describe('buildExistingRowImportUpdates', () => {
     expect([...changedFieldKeys]).toContain('material1')
     expect([...changedFieldKeys]).not.toContain('joint')
   })
+
+  it('updates LNK and PSTO notes only for rows that belong to the corresponding reports', () => {
+    const rows = [
+      {
+        id: 7,
+        joint: 'F1',
+        weldDate: '2026-07-31',
+        hasVik: 'да',
+        pstoRequired: 'да',
+        lnkNote: null,
+        pstoNote: null,
+        finalStatus: 'ожидает заявку',
+      },
+      {
+        id: 8,
+        joint: 'F2',
+        weldDate: null,
+        hasVik: null,
+        pstoRequired: null,
+        lnkNote: null,
+        pstoNote: null,
+        finalStatus: 'ожидает сварку',
+      },
+    ] as WeldRow[]
+
+    const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(
+      rows,
+      [
+        { id: 7, lnkNote: 'Примечание ЛНК', pstoNote: 'Примечание ПСТО' },
+        { id: 8, lnkNote: 'Не читать', pstoNote: 'Не читать' },
+      ],
+      'replaceData',
+    )
+
+    expect(updatedRows).toHaveLength(1)
+    expect(updatedRows[0]).toMatchObject({
+      id: 7,
+      lnkNote: 'Примечание ЛНК',
+      pstoNote: 'Примечание ПСТО',
+    })
+    expect([...changedFieldKeys]).toEqual(expect.arrayContaining(['lnkNote', 'pstoNote']))
+  })
 })

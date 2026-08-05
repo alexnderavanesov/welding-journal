@@ -11,6 +11,8 @@ type WeldingJournalHeaderActionsProps = {
   isGenerateMenuOpen: boolean
   onToggleGenerateMenu: () => void
   onGenerateWeldingJournalDocument: () => void
+  onGenerateChecklistDocument: () => void
+  onGenerateZniDocument: () => void
   onOpenCurrentReport: () => void
   onOpenWaitingWeldReport: () => void
   onOpenWaitingRequestReport: () => void
@@ -29,6 +31,8 @@ export function WeldingJournalHeaderActions({
   isGenerateMenuOpen,
   onToggleGenerateMenu,
   onGenerateWeldingJournalDocument,
+  onGenerateChecklistDocument,
+  onGenerateZniDocument,
   onOpenCurrentReport,
   onOpenWaitingWeldReport,
   onOpenWaitingRequestReport,
@@ -62,7 +66,11 @@ export function WeldingJournalHeaderActions({
         isOpen={isGenerateMenuOpen}
         onToggle={onToggleGenerateMenu}
         widthClassName="w-56"
-        items={[{ label: 'Сварочный журнал', onClick: onGenerateWeldingJournalDocument }]}
+        items={[
+          { label: 'ЖСР', onClick: onGenerateWeldingJournalDocument },
+          { label: 'Чек-лист', onClick: onGenerateChecklistDocument },
+          { label: 'ЗНИ', onClick: onGenerateZniDocument },
+        ]}
       />
       <Button variant="outline" onClick={onOpenImportDialog} disabled={importDisabled}>
         <Upload className="mr-2 h-4 w-4" />

@@ -7,7 +7,6 @@ import {
   saveWelderStampSuspensionRecords,
 } from '@/server/welder-stamps'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import { useOtherSettings } from '@/lib/other-settings'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import { createEmptyWelderStampFilters, filterWelderStampRecords } from '@/lib/welder-stamp-filters'
@@ -35,7 +34,6 @@ type WelderStampRegistryStateInput = {
 export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryStateInput) {
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
-  const otherSettings = useOtherSettings()
   const saveCheckSettings = useSaveCheckSettings()
   const [welderStamps, setWelderStamps] = useState<WelderStampRecord[]>([])
   const [welderStampDraft, setWelderStampDraft] = useState<WelderStampRecord>(() => createEmptyWelderStampDraft())
@@ -102,18 +100,16 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const weldFormStampSelectOptions = useMemo(
     () =>
       buildWeldFormStampSelectOptions(welderStamps, undefined, [], welderStampSuspensions, {
-        includeArchivedStamps: otherSettings.includeArchivedWelderStampsInForm,
         saveCheckSettings,
       }),
-    [otherSettings.includeArchivedWelderStampsInForm, saveCheckSettings, welderStampSuspensions, welderStamps],
+    [saveCheckSettings, welderStampSuspensions, welderStamps],
   )
   const getWeldFormStampSelectOptions = useMemo(
     () => (draft: WeldInput, allowedArchivedOfficialStamps: readonly string[] = []) =>
       buildWeldFormStampSelectOptions(welderStamps, draft, allowedArchivedOfficialStamps, welderStampSuspensions, {
-        includeArchivedStamps: otherSettings.includeArchivedWelderStampsInForm,
         saveCheckSettings,
       }),
-    [otherSettings.includeArchivedWelderStampsInForm, saveCheckSettings, welderStampSuspensions, welderStamps],
+    [saveCheckSettings, welderStampSuspensions, welderStamps],
   )
   const filteredWelderStamps = useMemo(
     () => filterWelderStampRecords(welderStamps, welderStampSearch, welderStampFilters),

@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ActiveReport, EditingState, HeatTreatmentFieldEditingState } from '@/lib/home-state'
+import type { PageScrollPosition } from '@/lib/page-scroll-position'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { isLnkRequestAllowedForRow, isLnkRequestField, isLnkResultField } from '@/lib/lnk-field-updates'
 import {
@@ -47,7 +48,11 @@ export function useReportEditActions({
   setHeatTreatmentFieldEditing,
   setMessage,
 }: UseReportEditActionsParams) {
-  function handleEditRecord(record: WeldRow, focusField?: WeldFieldKey) {
+  function handleEditRecord(
+    record: WeldRow,
+    focusField?: WeldFieldKey,
+    returnPageScrollPosition?: PageScrollPosition,
+  ) {
     if (activeReport === 'heatTreatment') {
       if (focusField && HEAT_TREATMENT_EDITABLE_FIELD_KEYS.has(focusField)) {
         const field = FIELD_BY_KEY.get(focusField)
@@ -87,7 +92,7 @@ export function useReportEditActions({
       return
     }
 
-    setEditing({ record, focusField })
+    setEditing({ record, focusField, returnPageScrollPosition })
   }
 
   function saveEditedHeatTreatmentField() {

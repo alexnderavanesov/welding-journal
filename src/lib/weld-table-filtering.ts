@@ -1,6 +1,11 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import {
+  DISPATCHER_TASKS_FIELD_KEY,
+  DISPATCHER_TASKS_WITH_FILTER,
+  DISPATCHER_TASKS_WITHOUT_FILTER,
+} from '@/lib/dispatcher-task-row-codes'
+import {
   PERCENTAGE_LINE_STAMP_FILTER_KEY,
   ROW_ID_LIST_FILTER_KEY,
   parsePercentageLineStampFilter,
@@ -38,7 +43,21 @@ function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): W
     if (key === ROW_ID_LIST_FILTER_KEY) {
       const filter = parseRowIdListFilter(value)
       const rowIds = new Set(filter?.rowIds ?? [])
-      return [(row: WeldRow) => rowIds.has(row.id)]
+      return [(row: WeldRow) => (filter?.mode === 'exclude' ? !rowIds.has(row.id) : rowIds.has(row.id))]
+    }
+
+    if (key === DISPATCHER_TASKS_FIELD_KEY) {
+      const choiceFilter = parseWeldColumnChoiceFilter(value)
+      return [(row: WeldRow) => {
+        const rowCodes = getDispatcherTaskCodesFromRow(row)
+        if (query === DISPATCHER_TASKS_WITH_FILTER) return rowCodes.length > 0
+        if (query === DISPATCHER_TASKS_WITHOUT_FILTER) return rowCodes.length === 0
+        if (choiceFilter?.kind === 'values') {
+          const selectedCodes = new Set(choiceFilter.values.map(normalizeWeldColumnChoiceValue))
+          return rowCodes.some((code) => selectedCodes.has(normalizeWeldColumnChoiceValue(code)))
+        }
+        return rowCodes.some((code) => code.toLowerCase().includes(query))
+      }]
     }
 
     const choiceFilter = parseWeldColumnChoiceFilter(value)
@@ -79,4 +98,11 @@ function matchesPercentageLineStampFilter(row: WeldRow, filter: ReturnType<typeo
 
 function normalizeFilterValue(value: unknown) {
   return String(value ?? '').trim().toLowerCase()
+}
+
+function getDispatcherTaskCodesFromRow(row: WeldRow) {
+  return String(row.dispatcherTasks ?? '')
+    .split(',')
+    .map((code) => code.trim())
+    .filter(Boolean)
 }

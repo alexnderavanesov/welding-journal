@@ -2,6 +2,7 @@ export {
   FIELD_BY_KEY,
   FIELD_BY_LABEL,
   WELD_FIELDS,
+  isVirtualWeldField,
   normalizeHeader,
 } from './weld-field-definitions'
 export type {

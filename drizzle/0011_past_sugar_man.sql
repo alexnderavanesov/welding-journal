@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joints" ADD COLUMN "test_types" text;

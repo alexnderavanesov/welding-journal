@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx-js-style'
 
 import {
+  buildDocumentTemplateName,
   createWeldingJournalDocumentPreview,
   createWeldingJournalBlobFromTemplate,
   extractTemplateFields,
   getWeldingJournalTemplateOptions,
+  normalizeDocumentTemplateConstructorConfig,
+  type DocumentTemplateConstructorConfig,
   type StoredDocumentTemplate,
 } from '@/lib/document-template-storage'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -16,6 +19,7 @@ describe('document template storage', () => {
       officialOnly: true,
       goodOnly: false,
       actualOnly: false,
+      splitMode: 'project',
     })
   })
 
@@ -168,9 +172,9 @@ describe('document template storage', () => {
     expect(sheetXml).toMatch(/<c r="C2" s="\d+"/)
   })
 
-  it('fills a constructor row and summary cells without manual markers', async () => {
+  it('fills constructor rows and document summaries without manual markers', async () => {
     const template = createXlsxTemplate([
-      ['Количество', 'Проекты', 'WDI всего'],
+      ['Проекты', '', '', ''],
       ['', '', '', ''],
     ])
     template.constructorConfig = {
@@ -178,15 +182,18 @@ describe('document template storage', () => {
       sheetName: 'Шаблон',
       repeatRow: 2,
       bindings: [
-        { cell: 'A1', mode: 'count' },
-        { cell: 'B1', mode: 'uniqueList', field: 'projectTitle', separator: 'newline' },
-        { cell: 'C1', mode: 'sum', field: 'wdi' },
+        {
+          cell: 'A1',
+          mode: 'summary',
+          parts: [{ field: 'projectTitle' }],
+          separator: 'newline',
+        },
         { cell: 'A2', mode: 'row', field: '__index' },
         { cell: 'B2', mode: 'row', field: 'line' },
         { cell: 'C2', mode: 'row', field: 'joint' },
         { cell: 'D2', mode: 'row', field: 'materialId1', emptyMode: 'np' },
       ],
-    }
+    } as unknown as DocumentTemplateConstructorConfig
 
     const blob = await createWeldingJournalBlobFromTemplate(template, [
       { projectTitle: 'Проект 1', line: 'LIN-1', joint: 'S1', materialId1: '', wdi: 1.25 },
@@ -197,15 +204,109 @@ describe('document template storage', () => {
     const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
     const worksheet = workbook.Sheets.Шаблон
 
-    expect(worksheet.A1?.v).toBe(3)
-    expect(worksheet.B1?.v).toBe('Проект 1\nПроект 2')
-    expect(worksheet.C1?.v).toBe(4)
+    expect(worksheet.A1?.v).toBe('Проект 1\nПроект 2')
     expect(worksheet.A2?.v).toBe(1)
     expect(worksheet.B3?.v).toBe('LIN-2')
     expect(worksheet.C4?.v).toBe('S3')
     expect(worksheet.D2?.v).toBe('н/п')
     expect(worksheet.D3?.v).toBe('MAT-2')
     expect(worksheet.D4?.v).toBe('н/п')
+  })
+
+  it('repeats a merged multi-row block by composite line groups', async () => {
+    const template = createXlsxTemplate(
+      [
+        ['Линия', 'Стыки линии', 'Чек-листы линии'],
+        ['', '', ''],
+        ['', '', ''],
+        ['Подпись', '', ''],
+      ],
+      {
+        merges: ['A2:A3', 'B2:B3', 'C2:C3'],
+      },
+    )
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      repeatRowEnd: 3,
+      repeatMode: 'groups',
+      repeatGroupBy: 'line',
+      bindings: [
+        { cell: 'A2', mode: 'row', parts: [{ field: 'line' }] },
+        {
+          cell: 'B2',
+          mode: 'summary',
+          scope: 'group',
+          parts: [{ field: 'joint' }],
+          separator: 'comma',
+        },
+        {
+          cell: 'C2',
+          mode: 'summary',
+          scope: 'group',
+          parts: [{ field: 'checklistDocument' }],
+          separator: 'newline',
+        },
+      ],
+    } as unknown as DocumentTemplateConstructorConfig
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      {
+        projectTitle: 'Проект 1',
+        subtitleCode: '100',
+        line: 'Линия А',
+        joint: 'S1',
+        checklistDocument: 'Чек-лист №1',
+      },
+      {
+        projectTitle: 'Проект 1',
+        subtitleCode: '100',
+        line: 'Линия А',
+        joint: 'S2',
+        checklistDocument: 'Чек-лист №2',
+      },
+      {
+        projectTitle: 'Проект 1',
+        subtitleCode: '100',
+        line: 'Линия Б',
+        joint: 'S3',
+        checklistDocument: 'Чек-лист №3',
+      },
+      {
+        projectTitle: 'Проект 1',
+        subtitleCode: '200',
+        line: 'Линия А',
+        joint: 'S4',
+        checklistDocument: 'Чек-лист №4',
+      },
+    ] as WeldInput[])
+
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.A2?.v).toBe('Линия А')
+    expect(worksheet.B2?.v).toBe('S1, S2')
+    expect(worksheet.C2?.v).toBe('Чек-лист №1\nЧек-лист №2')
+    expect(worksheet.A4?.v).toBe('Линия Б')
+    expect(worksheet.B4?.v).toBe('S3')
+    expect(worksheet.A6?.v).toBe('Линия А')
+    expect(worksheet.B6?.v).toBe('S4')
+    expect(worksheet.C6?.v).toBe('Чек-лист №4')
+    expect(worksheet.A8?.v).toBe('Подпись')
+    expect(
+      (worksheet['!merges'] ?? []).map((range) => XLSX.utils.encode_range(range)),
+    ).toEqual(expect.arrayContaining([
+      'A2:A3',
+      'B2:B3',
+      'C2:C3',
+      'A4:A5',
+      'B4:B5',
+      'C4:C5',
+      'A6:A7',
+      'B6:B7',
+      'C6:C7',
+    ]))
   })
 
   it('combines unique values from several fields into one summary cell', async () => {
@@ -264,7 +365,7 @@ describe('document template storage', () => {
           parts: [{ field: 'line', prefix: 'Линия ', suffix: '.' }],
         },
       ],
-    }
+    } as unknown as DocumentTemplateConstructorConfig
 
     const blob = await createWeldingJournalBlobFromTemplate(template, [
       { line: 'А' },
@@ -278,6 +379,146 @@ describe('document template storage', () => {
     expect(worksheet.A1?.v).toBe('А, Б')
     expect(worksheet.B1?.v).toBe('А, А, Б')
     expect(worksheet.C1?.v).toBe('Линия А, А, Б.')
+  })
+
+  it('converts legacy value lists into a one-field selected-joints summary', () => {
+    const normalized = normalizeDocumentTemplateConstructorConfig({
+      version: 1,
+      sheetName: 'Шаблон',
+      bindings: [
+        { cell: 'A1', mode: 'list', field: 'line', separator: 'newline', uniqueValues: false },
+        { cell: 'B1', mode: 'uniqueList', field: 'subtitleCode', separator: 'comma' },
+      ],
+    } as unknown as DocumentTemplateConstructorConfig)
+
+    expect(normalized.bindings).toEqual([
+      {
+        cell: 'A1',
+        mode: 'summary',
+        field: undefined,
+        parts: [{ field: 'line' }],
+        separator: 'newline',
+        uniqueValues: false,
+      },
+      {
+        cell: 'B1',
+        mode: 'summary',
+        field: undefined,
+        parts: [{ field: 'subtitleCode' }],
+        separator: 'comma',
+        uniqueValues: true,
+      },
+    ])
+  })
+
+  it('removes legacy count and sum bindings and defaults old templates to per-joint rows', () => {
+    const normalized = normalizeDocumentTemplateConstructorConfig({
+      version: 1,
+      sheetName: 'Шаблон',
+      bindings: [
+        { cell: 'A1', mode: 'count' },
+        { cell: 'B1', mode: 'sum', field: 'wdi' },
+        { cell: 'A2', mode: 'row', field: 'joint' },
+      ],
+    } as unknown as DocumentTemplateConstructorConfig)
+
+    expect(normalized.repeatMode).toBe('rows')
+    expect(normalized.bindings).toEqual([
+      {
+        cell: 'A2',
+        mode: 'row',
+        field: 'joint',
+        scope: undefined,
+      },
+    ])
+  })
+
+  it('collapses legacy grouping by joint into ordinary per-joint rows', () => {
+    const normalized = normalizeDocumentTemplateConstructorConfig({
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      repeatMode: 'groups',
+      repeatGroupBy: 'joint',
+      bindings: [
+        { cell: 'A2', mode: 'row', parts: [{ field: 'joint' }] },
+        {
+          cell: 'B2',
+          mode: 'summary',
+          scope: 'group',
+          parts: [{ field: 'checklistDocument' }],
+        },
+      ],
+    })
+
+    expect(normalized.repeatMode).toBe('rows')
+    expect(normalized.repeatGroupBy).toBeUndefined()
+    expect(normalized.bindings).toEqual([
+      { cell: 'A2', mode: 'row', parts: [{ field: 'joint' }], scope: undefined },
+      {
+        cell: 'B2',
+        mode: 'row',
+        scope: undefined,
+        parts: [{ field: 'checklistDocument' }],
+        uniqueParts: undefined,
+        uniqueValues: undefined,
+      },
+    ])
+  })
+
+  it('keeps the previous welding journal name for templates without a custom name rule', () => {
+    expect(
+      buildDocumentTemplateName({
+        records: [
+          { subtitleCode: '400' },
+          { subtitleCode: '100' },
+          { subtitleCode: '400' },
+        ],
+        periodFrom: '2026-07-01',
+        periodTo: '2026-07-31',
+      }),
+    ).toBe('100, 400 - Сварочный журнал - 01.07.26 - 31.07.26')
+  })
+
+  it('builds a document name from configured fields, unique values, period dates and text', () => {
+    expect(
+      buildDocumentTemplateName({
+        config: {
+          parts: [
+            { type: 'field', field: 'projectTitle' },
+            { type: 'text', text: ' - ЖСР - ' },
+            { type: 'field', field: 'line' },
+            { type: 'text', text: ' - ' },
+            { type: 'field', field: '__periodFrom' },
+          ],
+        },
+        records: [
+          { projectTitle: 'Риформинг', line: 'LIN-B' },
+          { projectTitle: 'Риформинг', line: 'LIN-A' },
+          { projectTitle: 'Риформинг', line: 'LIN-A' },
+        ],
+        periodFrom: '2026-07-01',
+        periodTo: '2026-07-31',
+      }),
+    ).toBe('Риформинг - ЖСР - LIN-A, LIN-B - 01.07.26')
+  })
+
+  it('keeps system placeholders in the name until the server assigns formation values', () => {
+    expect(
+      buildDocumentTemplateName({
+        config: {
+          parts: [
+            { type: 'text', text: 'ЖСР №' },
+            { type: 'field', field: '__documentNumber' },
+            { type: 'text', text: ' от ' },
+            { type: 'field', field: '__formationDate' },
+          ],
+        },
+        records: [{ joint: 'F1' }],
+        periodFrom: '2026-07-01',
+        periodTo: '2026-07-31',
+      }),
+    ).toBe('ЖСР №[[DOCUMENT_SEQUENCE_NUMBER]] от [[DOCUMENT_FORMATION_DATE]]')
   })
 
   it('combines several fields, text and unique welder values in one row cell', async () => {
@@ -393,6 +634,60 @@ describe('document template storage', () => {
     }
   })
 
+  it('keeps borders in styled empty header cells and fits multiline rows to the template font size', async () => {
+    const template = createXlsxTemplate([
+      ['', '', '', ''],
+      ['', '', '', ''],
+    ], {
+      style: {
+        font: { sz: 18 },
+        border: {
+          top: { style: 'thin', color: { rgb: 'FF000000' } },
+          bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+          left: { style: 'thin', color: { rgb: 'FF000000' } },
+          right: { style: 'thin', color: { rgb: 'FF000000' } },
+        },
+      },
+      styledCells: ['A1', 'B1', 'C1', 'D1', 'A2', 'B2', 'C2', 'D2'],
+      columns: [{ wch: 8 }, { wch: 12 }, { wch: 24 }, { wch: 12 }],
+    })
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        {
+          cell: 'A1',
+          mode: 'summary',
+          parts: [{ field: 'line' }],
+          uniqueValues: true,
+        },
+        { cell: 'A2', mode: 'row', field: '__index' },
+        {
+          cell: 'C2',
+          mode: 'row',
+          parts: [
+            { field: 'stamp1K', lineBreakAfter: true },
+            { field: 'stamp2K' },
+          ],
+        },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { line: 'LIN-1', stamp1K: 'ABC1', stamp2K: 'ABC3' },
+      { line: 'LIN-1', stamp1K: 'ABC1', stamp2K: 'ABC3' },
+    ])
+    const generatedData = await readBlobAsArrayBuffer(blob)
+    const sheetXml = readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')
+
+    for (const address of ['A1', 'B1', 'C1', 'D1', 'A2', 'B2', 'C2', 'D2', 'A3', 'B3', 'C3', 'D3']) {
+      expect(sheetXml).toMatch(new RegExp(`<c r="${address}" s="\\d+"`))
+    }
+    expect(sheetXml).toMatch(/<row r="2"[^>]*\bht="48"[^>]*\bcustomHeight="1"/)
+    expect(sheetXml).toMatch(/<row r="3"[^>]*\bht="48"[^>]*\bcustomHeight="1"/)
+  })
+
   it('keeps merged cells and row formatting when a constructor row is repeated', async () => {
     const template = createXlsxTemplate([
       ['Шапка', ''],
@@ -428,6 +723,111 @@ describe('document template storage', () => {
     expect(merges).toContain('A2:B2')
     expect(merges).toContain('A3:B3')
     expect(readXlsxFileText(generatedData, 'xl/styles.xml')).toMatch(/wrapText="(?:1|true)"/)
+  })
+
+  it('repeats a multi-row block with vertical merges for every weld joint', async () => {
+    const template = createXlsxTemplate([
+      ['Чек-лист', '', '', ''],
+      ['', '', '', ''],
+      ['', '', '', ''],
+      ['Подпись', '', '', ''],
+    ], {
+      style: {
+        border: {
+          top: { style: 'thin', color: { rgb: 'FF000000' } },
+          bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+          left: { style: 'thin', color: { rgb: 'FF000000' } },
+          right: { style: 'thin', color: { rgb: 'FF000000' } },
+        },
+        alignment: { wrapText: true, vertical: 'center' },
+      },
+      styledCells: [
+        'A2', 'A3', 'B2', 'B3', 'C2', 'C3', 'D2', 'D3',
+      ],
+      merges: ['A2:A3', 'B2:B3', 'C2:C3'],
+    })
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      repeatRowEnd: 3,
+      bindings: [
+        { cell: 'A2', mode: 'row', field: '__index' },
+        { cell: 'B2', mode: 'row', field: 'joint' },
+        { cell: 'C2', mode: 'row', field: 'line' },
+        { cell: 'D2', mode: 'row', field: 'element1' },
+        { cell: 'D3', mode: 'row', field: 'element2' },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { joint: 'S1', line: 'LIN-1', element1: 'Труба', element2: 'Отвод' },
+      { joint: 'S2', line: 'LIN-2', element1: 'Труба', element2: 'Тройник' },
+    ])
+    const generatedData = await readBlobAsArrayBuffer(blob)
+    const workbook = XLSX.read(generatedData, { type: 'array', cellStyles: true })
+    const worksheet = workbook.Sheets.Шаблон
+    const merges = (worksheet['!merges'] ?? []).map((merge) => XLSX.utils.encode_range(merge))
+
+    expect(worksheet.A2?.v).toBe(1)
+    expect(worksheet.B2?.v).toBe('S1')
+    expect(worksheet.D2?.v).toBe('Труба')
+    expect(worksheet.D3?.v).toBe('Отвод')
+    expect(worksheet.A4?.v).toBe(2)
+    expect(worksheet.B4?.v).toBe('S2')
+    expect(worksheet.D4?.v).toBe('Труба')
+    expect(worksheet.D5?.v).toBe('Тройник')
+    expect(worksheet.A6?.v).toBe('Подпись')
+    expect(merges).toEqual(expect.arrayContaining([
+      'A2:A3', 'B2:B3', 'C2:C3',
+      'A4:A5', 'B4:B5', 'C4:C5',
+    ]))
+  })
+
+  it('extends the anchor border across a merged summary cell when Excel omits styled child cells', async () => {
+    const template = createXlsxTemplate([
+      ['', '', '', ''],
+      ['', '', '', ''],
+    ], {
+      style: {
+        border: {
+          top: { style: 'thin', color: { rgb: 'FF000000' } },
+          bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+          left: { style: 'thin', color: { rgb: 'FF000000' } },
+          right: { style: 'thin', color: { rgb: 'FF000000' } },
+        },
+      },
+      styledCells: ['A1', 'A2', 'B2', 'C2', 'D2'],
+      merges: ['A1:D1'],
+    })
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        {
+          cell: 'A1',
+          mode: 'summary',
+          uniqueValues: true,
+          parts: [{ field: 'line' }],
+        },
+        { cell: 'A2', mode: 'row', field: 'joint' },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { line: 'LIN-1', joint: 'S1' },
+      { line: 'LIN-1', joint: 'S2' },
+    ])
+    const generatedData = await readBlobAsArrayBuffer(blob)
+    const sheetXml = readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')
+
+    expect(sheetXml).toContain('<mergeCell ref="A1:D1"/>')
+    const anchorStyleId = getWorksheetCellStyleId(sheetXml, 'A1')
+    expect(anchorStyleId).toBeTruthy()
+    expect(getWorksheetCellStyleId(sheetXml, 'B1')).toBe(anchorStyleId)
+    expect(getWorksheetCellStyleId(sheetXml, 'C1')).toBe(anchorStyleId)
+    expect(getWorksheetCellStyleId(sheetXml, 'D1')).toBe(anchorStyleId)
   })
 
   it('builds a lightweight preview from the generated document layout', async () => {
@@ -501,8 +901,54 @@ describe('document template storage', () => {
 
     expect(paths).toContain('xl/media/image1.png')
     expect(paths).toContain('xl/drawings/drawing1.xml')
+    expect(paths).toContain('xl/printerSettings/printerSettings1.bin')
     expect(paths).toContain('xl/worksheets/_rels/sheet1.xml.rels')
-    expect(readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')).toContain('<drawing r:id="rId1"/>')
+    const worksheetXml = readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')
+    expect(worksheetXml).toContain('<drawing r:id="rId1"/>')
+    expect(worksheetXml).toContain('<pageSetup r:id="rId2"/>')
+    expect(worksheetXml.indexOf('<pageSetup')).toBeLessThan(
+      worksheetXml.indexOf('<ignoredErrors'),
+    )
+    expect(worksheetXml.indexOf('<ignoredErrors')).toBeLessThan(
+      worksheetXml.indexOf('<drawing'),
+    )
+    const contentTypesXml = readXlsxFileText(generatedData, '[Content_Types].xml')
+    expect(contentTypesXml).toContain('Extension="png" ContentType="image/png"')
+    expect(contentTypesXml).toContain('PartName="/xl/printerSettings/printerSettings1.bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"')
+    expect(contentTypesXml).toContain('PartName="/xl/drawings/drawing1.xml"')
+    expect(contentTypesXml).not.toContain('/xl/sharedStrings.xml')
+  })
+
+  it('removes broken template names and keeps a valid print area in generated documents', async () => {
+    const template = addTemplateDefinedNames(createXlsxTemplate([
+      ['Заголовок'],
+      [''],
+      ['Подпись'],
+    ], {
+      sheetName: 'ЧЕК-ЛИСТ',
+    }))
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'ЧЕК-ЛИСТ',
+      repeatRow: 2,
+      bindings: [{ cell: 'A2', mode: 'row', field: 'joint' }],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { joint: 'S1' },
+      { joint: 'S2' },
+      { joint: 'S3' },
+    ] as WeldInput[])
+    const generatedData = await readBlobAsArrayBuffer(blob)
+    const workbookXml = readXlsxFileText(generatedData, 'xl/workbook.xml')
+
+    expect(workbookXml).toContain(
+      '<definedName name="_xlnm.Print_Area" localSheetId="0">\'ЧЕК-ЛИСТ\'!$A$1:$C$5</definedName>',
+    )
+    expect(workbookXml).not.toContain('_xlnm._FilterDatabase')
+    expect(workbookXml).not.toContain('Кнопка_пров_ТО')
+    expect(workbookXml).not.toContain('#REF!')
+    expect(workbookXml).not.toContain('[1]Сварка')
   })
 })
 
@@ -538,9 +984,14 @@ function welderStamp(overrides: Partial<import('@/lib/welder-stamp-types').Welde
 
 function readXlsxFileText(fileData: ArrayBuffer, path: string) {
   const cfb = XLSX.CFB.read(new Uint8Array(fileData), { type: 'array' })
-  const index = cfb.FullPaths.findIndex((fullPath) => fullPath.replace(/^Root Entry\//, '') === path)
+  const index = cfb.FullPaths.findIndex((fullPath: string) => fullPath.replace(/^Root Entry\//, '') === path)
   if (index < 0) return ''
   return new TextDecoder().decode(cfb.FileIndex[index].content)
+}
+
+function getWorksheetCellStyleId(sheetXml: string, address: string) {
+  const cellTag = sheetXml.match(new RegExp(`<c\\b[^>]*\\br="${address}"[^>]*>`))?.[0] ?? ''
+  return cellTag.match(/\bs="(\d+)"/)?.[1] ?? ''
 }
 
 function createXlsxTemplate(
@@ -585,13 +1036,16 @@ function createXlsxTemplate(
 function addFakeTemplateDrawing(template: StoredDocumentTemplate) {
   const cfb = XLSX.CFB.read(new Uint8Array(template.fileData), { type: 'array' })
   const sheetPath = 'xl/worksheets/sheet1.xml'
-  const sheetXml = readCfbText(cfb, sheetPath).replace(/<\/worksheet>$/, '<drawing r:id="rId1"/></worksheet>')
+  const sheetXml = readCfbText(cfb, sheetPath).replace(
+    /<\/worksheet>$/,
+    '<pageSetup r:id="rId2"/><drawing r:id="rId1"/></worksheet>',
+  )
   writeCfbText(cfb, sheetPath, sheetXml)
   XLSX.CFB.utils.cfb_add(
     cfb,
     'xl/worksheets/_rels/sheet1.xml.rels',
     new TextEncoder().encode(
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/printerSettings" Target="../printerSettings/printerSettings1.bin"/></Relationships>',
     ),
   )
   XLSX.CFB.utils.cfb_add(
@@ -602,6 +1056,24 @@ function addFakeTemplateDrawing(template: StoredDocumentTemplate) {
     ),
   )
   XLSX.CFB.utils.cfb_add(cfb, 'xl/media/image1.png', new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
+  XLSX.CFB.utils.cfb_add(cfb, 'xl/printerSettings/printerSettings1.bin', new Uint8Array([1, 2, 3, 4]))
+  const contentTypesXml = readCfbText(cfb, '[Content_Types].xml').replace(
+    /<\/Types>$/,
+    '<Default Extension="png" ContentType="image/png"/><Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>',
+  )
+  writeCfbText(cfb, '[Content_Types].xml', contentTypesXml)
+  const fileData = XLSX.CFB.write(cfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
+  return { ...template, fileData, fileSize: fileData.byteLength }
+}
+
+function addTemplateDefinedNames(template: StoredDocumentTemplate) {
+  const cfb = XLSX.CFB.read(new Uint8Array(template.fileData), { type: 'array' })
+  const workbookPath = 'xl/workbook.xml'
+  const workbookXml = readCfbText(cfb, workbookPath).replace(
+    /<\/workbook>$/,
+    '<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">\'ЧЕК-ЛИСТ\'!#REF!</definedName><definedName name="Кнопка_пров_ТО">[1]Сварка!$AV$2</definedName><definedName name="_xlnm.Print_Area" localSheetId="0">\'ЧЕК-ЛИСТ\'!$A$1:$C$3</definedName></definedNames></workbook>',
+  )
+  writeCfbText(cfb, workbookPath, workbookXml)
   const fileData = XLSX.CFB.write(cfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
   return { ...template, fileData, fileSize: fileData.byteLength }
 }

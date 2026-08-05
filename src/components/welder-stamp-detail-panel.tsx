@@ -73,7 +73,7 @@ export function WelderStampExpandedDetails({
         <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <h3 className="text-sm font-semibold text-slate-900">{record.welderName || 'Без ФИО'}</h3>
-            <StatusBadge state={record.archived ? 'archived' : 'active'} />
+            <StatusBadge state={record.archived ? 'archived' : 'active'} archivedAt={record.archivedAt} />
             <span className="rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[11px] font-bold text-indigo-800 shadow-sm shadow-indigo-100">
               {record.naksStamp || '-'}
             </span>
@@ -323,10 +323,20 @@ function PermitStateBadge({ state, archived = false }: { state: PermitState; arc
   )
 }
 
-function StatusBadge({ state }: { state: 'active' | 'archived' }) {
-  return state === 'archived' ? (
-    <span className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">в архиве</span>
-  ) : (
+function StatusBadge({ state, archivedAt }: { state: 'active' | 'archived'; archivedAt?: string }) {
+  if (state === 'archived') {
+    const archiveDate = formatWelderStampDate(archivedAt ?? '')
+    return (
+      <span
+        className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+        title={archiveDate ? `Дата архивации: ${archiveDate}` : 'Дата архивации не указана'}
+      >
+        {archiveDate ? `в архиве с ${archiveDate}` : 'в архиве'}
+      </span>
+    )
+  }
+
+  return (
     <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
       <CheckCircle2 className="h-3 w-3" />
       активен

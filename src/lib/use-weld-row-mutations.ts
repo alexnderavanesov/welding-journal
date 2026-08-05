@@ -26,9 +26,12 @@ export function useWeldRowMutations({
     },
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [variables], variables.id && editingFocusField ? [editingFocusField] : [])
-      setEditing(null)
       setMessage('Запись сохранена')
-      await invalidateWeldJoints(queryClient)
+      try {
+        await invalidateWeldJoints(queryClient)
+      } finally {
+        setEditing(null)
+      }
     },
     onError: (error) => {
       setMessage((error as Error).message)

@@ -1,5 +1,5 @@
 import { Check, ListFilter } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
@@ -18,6 +18,7 @@ import {
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-table-filtering'
 import { listWeldColumnFilterOptions, type WeldReportKind } from '@/server/welds'
+import type { WeldColumnFilterOption } from '@/server/welds'
 
 const openFilterMenus: Array<{ id: number; close: () => void }> = []
 let filterMenuId = 0
@@ -39,6 +40,7 @@ type WeldTableFieldHeaderRowsProps = {
   stickyIdentityColumns: boolean
   canEditField: (fieldKey: WeldFieldKey) => boolean
   manualFilterOptionsReport?: WeldReportKind
+  manualFilterOptions?: Record<string, WeldColumnFilterOption[]>
   onColumnFiltersChange: (filters: Record<string, string>) => void
 }
 
@@ -52,6 +54,7 @@ export function WeldTableFieldHeaderRows({
   stickyIdentityColumns,
   canEditField,
   manualFilterOptionsReport,
+  manualFilterOptions,
   onColumnFiltersChange,
 }: WeldTableFieldHeaderRowsProps) {
   const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
@@ -80,6 +83,7 @@ export function WeldTableFieldHeaderRows({
                 rows={rows}
                 columnFilters={columnFilters}
                 manualFilterOptionsReport={manualFilterOptionsReport}
+                manualFilterOptions={manualFilterOptions?.[field.key]}
                 onColumnFiltersChange={onColumnFiltersChange}
               />
             </th>
@@ -100,6 +104,7 @@ function WeldColumnFilterControl({
   rows,
   columnFilters,
   manualFilterOptionsReport,
+  manualFilterOptions,
   onColumnFiltersChange,
 }: {
   fieldKey: WeldFieldKey
@@ -108,11 +113,15 @@ function WeldColumnFilterControl({
   rows: WeldRow[]
   columnFilters: Record<string, string>
   manualFilterOptionsReport?: WeldReportKind
+  manualFilterOptions?: WeldColumnFilterOption[]
   onColumnFiltersChange: (filters: Record<string, string>) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [optionSearch, setOptionSearch] = useState('')
   const menuIdRef = useRef<number | null>(null)
+  const optionListRef = useRef<HTMLDivElement | null>(null)
+  const optionListScrollTopRef = useRef(0)
+  const pendingOptionListScrollTopRef = useRef<number | null>(null)
   const filterValue = columnFilters[fieldKey] ?? ''
   const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
   const hasActiveFilter = Boolean(filterValue.trim())
@@ -122,16 +131,16 @@ function WeldColumnFilterControl({
   const localOptions = useMemo(
     () => {
       if (!isOpen) return []
-      if (manualFilterOptionsReport) return []
+      if (manualFilterOptions || manualFilterOptionsReport) return []
       return getColumnFilterOptions(rows, fieldKey, columnFilters).filter((option) =>
         option.label.toLowerCase().includes(optionSearch.trim().toLowerCase()),
       )
     },
-    [columnFilters, fieldKey, isOpen, manualFilterOptionsReport, optionSearch, rows],
+    [columnFilters, fieldKey, isOpen, manualFilterOptions, manualFilterOptionsReport, optionSearch, rows],
   )
   const filterOptionsQuery = useQuery({
     queryKey: ['weld-column-filter-options', manualFilterOptionsReport, fieldKey, columnFilters],
-    enabled: Boolean(isOpen && manualFilterOptionsReport),
+    enabled: Boolean(isOpen && manualFilterOptionsReport && !manualFilterOptions),
     queryFn: async () =>
       listWeldColumnFilterOptions({
         data: {
@@ -148,11 +157,19 @@ function WeldColumnFilterControl({
       ),
     [filterOptionsQuery.data, optionSearch],
   )
-  const options = manualFilterOptionsReport ? serverOptions : localOptions
-  const isOptionsLoading = Boolean(manualFilterOptionsReport && filterOptionsQuery.isLoading)
+  const providedOptions = useMemo(
+    () =>
+      (manualFilterOptions ?? []).filter((option) =>
+        option.label.toLowerCase().includes(optionSearch.trim().toLowerCase()),
+      ),
+    [manualFilterOptions, optionSearch],
+  )
+  const options = manualFilterOptions ? providedOptions : manualFilterOptionsReport ? serverOptions : localOptions
+  const isOptionsLoading = Boolean(manualFilterOptionsReport && !manualFilterOptions && filterOptionsQuery.isLoading)
   const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
 
   const setFilterValue = (value: string) => {
+    pendingOptionListScrollTopRef.current = optionListRef.current?.scrollTop ?? optionListScrollTopRef.current
     const nextFilters = { ...omitHiddenReportFilters(columnFilters) }
     if (value) nextFilters[fieldKey] = value
     else delete nextFilters[fieldKey]
@@ -176,6 +193,17 @@ function WeldColumnFilterControl({
     setFilterValue(selectedSet.size > 0 ? buildWeldColumnValueFilter(Array.from(selectedSet)) : '')
   }
 
+  useLayoutEffect(() => {
+    if (!isOpen || isOptionsLoading || pendingOptionListScrollTopRef.current === null) return
+    const optionList = optionListRef.current
+    if (!optionList) return
+
+    const scrollTop = pendingOptionListScrollTopRef.current
+    optionList.scrollTop = scrollTop
+    optionListScrollTopRef.current = scrollTop
+    pendingOptionListScrollTopRef.current = null
+  }, [filterValue, isOpen, isOptionsLoading, options])
+
   useEffect(() => {
     if (!isOpen) return undefined
     const id = ++filterMenuId
@@ -196,7 +224,13 @@ function WeldColumnFilterControl({
       <button
         type="button"
         onClick={() => {
-          setIsOpen((current) => !current)
+          setIsOpen((current) => {
+            if (!current) {
+              optionListScrollTopRef.current = 0
+              pendingOptionListScrollTopRef.current = null
+            }
+            return !current
+          })
           setOptionSearch('')
         }}
         className={`group/header-filter relative -mx-1 flex min-h-8 w-[calc(100%+0.5rem)] min-w-0 items-center justify-center rounded-md px-1 py-1 text-[13px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
@@ -247,7 +281,14 @@ function WeldColumnFilterControl({
               <FilterQuickButton label="Очистить" onClick={() => setFilterValue('')} />
             </div>
           </div>
-          <div className="max-h-60 overflow-auto border-t border-slate-100">
+          <div
+            ref={optionListRef}
+            className="max-h-60 overflow-auto border-t border-slate-100"
+            onScroll={(event) => {
+              if (pendingOptionListScrollTopRef.current !== null) return
+              optionListScrollTopRef.current = event.currentTarget.scrollTop
+            }}
+          >
             {isDateField ? (
               <DateFilterOptions
                 options={options}

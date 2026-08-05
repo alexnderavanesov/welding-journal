@@ -4,6 +4,7 @@ import {
 } from '@/lib/report-config'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { StampSelectOption } from '@/lib/weld-form-utils'
+import { formatDisplayDate } from '@/lib/date-format'
 import {
   formatWelderStampSuspensionBlockReason,
   getSuspensionOverlapForStamp,
@@ -13,8 +14,12 @@ import {
   arePermitDiametersCompatible,
   arePermitThicknessesCompatible,
   formatOfficialStampDiameterList,
+  getLatestWelderStampArchiveDate,
   getOfficialStampJointDiameters,
   getOfficialStampJointThicknesses,
+  getUnsupportedPermitDiameters,
+  getUnsupportedPermitThicknesses,
+  getWelderStampArchiveCompatibility,
   getWeldDateOrderValue,
   normalizeStampForCompare,
   normalizeStampSelectValue,
@@ -36,36 +41,39 @@ export function buildWeldFormStampSelectOptions(
   draft?: WeldInput,
   allowedArchivedOfficialStamps: readonly string[] = [],
   suspensions: readonly WelderStampSuspensionRecord[] = [],
-  options: { includeArchivedStamps?: boolean; saveCheckSettings?: SaveCheckSettings } = {},
+  options: { saveCheckSettings?: SaveCheckSettings } = {},
 ): Partial<Record<WeldFieldKey, readonly StampSelectOption[]>> {
   const saveCheckSettings = options.saveCheckSettings ?? loadSaveCheckSettings()
   const activeRecords = records.filter((record) => !record.archived)
-  const includeArchivedOptions = options.includeArchivedStamps || !saveCheckSettings.officialArchive
-  const optionRecords = includeArchivedOptions ? records : activeRecords
-  const allowedArchivedStampValues = getExistingArchivedOfficialStampValues(allowedArchivedOfficialStamps, records)
-  const configuredArchivedStampValues = includeArchivedOptions
-    ? uniqueStampValues(records.filter((record) => record.archived).map((record) => record.naksStamp))
+  const allowedArchivedStampValues = getExistingArchivedOfficialStampValues(
+    [
+      ...allowedArchivedOfficialStamps,
+      ...getArchivedOfficialStampValuesForRecord(draft, records),
+    ],
+    records,
+  )
+  const historicalArchivedStampValues = draft
+    ? getHistoricalArchivedOfficialStampValues(records, draft.weldDate)
     : []
-  const allowedArchivedStampSet = new Set(allowedArchivedStampValues.map(normalizeStampForCompare))
-  const configuredArchivedStampSet = new Set(configuredArchivedStampValues.map(normalizeStampForCompare))
   const officialOptions = uniqueStampValues([
     ...activeRecords.map((record) => record.naksStamp),
     ...allowedArchivedStampValues,
-    ...configuredArchivedStampValues,
+    ...historicalArchivedStampValues,
   ]).map((value) => {
-    const comparableRecords = saveCheckSettings.officialArchive ? activeRecords : records
-    const hasActiveRecord = comparableRecords.some(
+    const stampRecords = records.filter(
       (record) => normalizeStampForCompare(record.naksStamp) === normalizeStampForCompare(value),
     )
-    const normalizedValue = normalizeStampForCompare(value)
-    const isAllowedArchivedOnly = !hasActiveRecord && allowedArchivedStampSet.has(normalizedValue)
-    const isConfiguredArchivedOnly = !hasActiveRecord && configuredArchivedStampSet.has(normalizedValue)
     const suspension = saveCheckSettings.officialSuspension && draft ? getSuspensionOverlapForStamp(suspensions, value, draft.weldDate) : null
     const suspensionReason = suspension ? formatWelderStampSuspensionBlockReason(suspension) : ''
+    const archiveReason = saveCheckSettings.officialArchive && draft
+      ? getWelderStampCardArchiveSelectReason(value, stampRecords, draft.weldDate)
+      : null
     const blockReason = suspensionReason
       ? { reason: suspensionReason, hard: true }
-      : !isAllowedArchivedOnly && !isConfiguredArchivedOnly && draft
-        ? getOfficialStampSelectBlockReason(value, draft, comparableRecords, saveCheckSettings)
+      : archiveReason
+        ? archiveReason
+        : draft
+          ? getOfficialStampSelectBlockReason(value, draft, records, saveCheckSettings)
         : null
     return {
       value,
@@ -74,7 +82,7 @@ export function buildWeldFormStampSelectOptions(
     }
   })
   const factualOptions = uniqueStampValues(
-    optionRecords.flatMap((record) => {
+    activeRecords.flatMap((record) => {
       const naksStamp = normalizeStampSelectValue(record.naksStamp)
       if (naksStamp) return [naksStamp]
 
@@ -87,6 +95,25 @@ export function buildWeldFormStampSelectOptions(
     ...Object.fromEntries(officialWelderStampFieldKeys.map((fieldKey) => [fieldKey, officialOptions])),
     ...Object.fromEntries(factualWelderStampFieldKeys.map((fieldKey) => [fieldKey, factualOptions])),
   }
+}
+
+function getHistoricalArchivedOfficialStampValues(records: WelderStampRecord[], weldDate: unknown) {
+  const archivedRecordsByStamp = new Map<string, WelderStampRecord[]>()
+
+  records.forEach((record) => {
+    if (!record.archived) return
+    const normalizedStamp = normalizeStampForCompare(record.naksStamp)
+    if (!normalizedStamp) return
+    const stampRecords = archivedRecordsByStamp.get(normalizedStamp) ?? []
+    stampRecords.push(record)
+    archivedRecordsByStamp.set(normalizedStamp, stampRecords)
+  })
+
+  return uniqueStampValues(
+    [...archivedRecordsByStamp.values()]
+      .filter((stampRecords) => getWelderStampArchiveCompatibility(stampRecords, weldDate) === 'historical')
+      .map((stampRecords) => stampRecords[0]?.naksStamp),
+  )
 }
 
 export function getArchivedOfficialStampValuesForRecord(record: WeldInput | undefined, records: WelderStampRecord[]) {
@@ -120,6 +147,24 @@ function getExistingArchivedOfficialStampValues(values: readonly string[], recor
 type SelectBlockReason = {
   reason: string
   hard: boolean
+}
+
+function getWelderStampCardArchiveSelectReason(
+  stamp: string,
+  records: WelderStampRecord[],
+  weldDate: unknown,
+): SelectBlockReason | null {
+  const compatibility = getWelderStampArchiveCompatibility(records, weldDate)
+  if (compatibility === 'active' || compatibility === 'historical') return null
+  if (compatibility === 'missing-weld-date') {
+    return softReason('клеймо в архиве: укажите дату сварки')
+  }
+  if (compatibility === 'unknown-archive-date') {
+    return hardReason('клеймо в архиве, дата архивации не указана')
+  }
+
+  const archivedAt = getLatestWelderStampArchiveDate(records)
+  return hardReason(`клеймо в архиве с ${formatDisplayDate(archivedAt)}`)
 }
 
 function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, activeRecords: WelderStampRecord[], saveCheckSettings: SaveCheckSettings): SelectBlockReason | null {
@@ -163,29 +208,45 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
   }
 
   if (saveCheckSettings.officialWeldingMethod && methods.length > 1) {
-    const dlsMaterialGroup = saveCheckSettings.officialMaterialGroup ? materialGroup : ''
-    const dlsDiameters = saveCheckSettings.officialDiameter ? diameters : []
-    const dlsThicknesses = saveCheckSettings.officialThickness ? thicknesses : []
+    const checkedMaterialGroup = saveCheckSettings.officialMaterialGroup ? materialGroup : ''
+    const checkedWeldDateValue = saveCheckSettings.officialNaksDate ? weldDateValue : 0
     const archivedDateReason = !weldDateValue
-      ? getCombinedMethodArchivedDateReason(stampRecords, methods, saveCheckSettings.officialMaterialGroup ? materialGroup : '', diameters, thicknesses, requireDls, saveCheckSettings)
+      ? getCombinedMethodArchivedDateReason(stampRecords, methods, checkedMaterialGroup, diameters, thicknesses, requireDls, saveCheckSettings)
       : null
     if (archivedDateReason) return archivedDateReason
 
-    const hasCompatibleMethod = methods.some((method) => {
-      const materialGroupRecords = getNaksPermitCandidates(
-        stampRecords,
-        method,
-        saveCheckSettings.officialMaterialGroup ? materialGroup : '',
-        saveCheckSettings.officialNaksDate ? weldDateValue : 0,
-      )
-      return (
-        materialGroupRecords.length > 0 &&
-        !getPermitRangeBlockReason(materialGroupRecords, diameters, thicknesses, saveCheckSettings) &&
-        (!requireDls || getDlsPermitCandidates(stampRecords, method, dlsMaterialGroup, weldDateValue, dlsDiameters, dlsThicknesses).length > 0)
-      )
-    })
+    const naksMethods = new Set(
+      methods.filter((method) => getNaksPermitCandidates(stampRecords, method, checkedMaterialGroup, checkedWeldDateValue).length > 0),
+    )
+    const dlsMethods = requireDls
+      ? new Set(methods.filter((method) => getDlsPermitCandidates(stampRecords, method, checkedMaterialGroup, weldDateValue, [], []).length > 0))
+      : new Set(methods)
+    const compatibleMethods = methods.filter((method) => naksMethods.has(method) && dlsMethods.has(method))
 
-    if (hasCompatibleMethod) return null
+    if (compatibleMethods.length > 0) {
+      const combinedNaksPermits = getNaksPermitCandidatesForMethods(
+        stampRecords,
+        methods,
+        checkedMaterialGroup,
+        checkedWeldDateValue,
+      )
+      const rangeReason = getPermitRangeBlockReason(combinedNaksPermits, diameters, thicknesses, saveCheckSettings)
+      if (rangeReason) return rangeReason
+
+      if (requireDls) {
+        const dlsReason = getCombinedDlsSelectBlockReason(
+          stampRecords,
+          methods,
+          checkedMaterialGroup,
+          weldDateValue,
+          saveCheckSettings.officialDiameter ? diameters : [],
+          saveCheckSettings.officialThickness ? thicknesses : [],
+        )
+        if (dlsReason) return dlsReason
+      }
+
+      return null
+    }
   }
 
   for (const method of methods) {
@@ -276,12 +337,43 @@ function getDlsSelectBlockReason(
     : materialGroupPermits
   if (weldDateValue && datePermits.length === 0) return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, 'нет ДЛС на дату сварки')
 
-  if (diameters.length > 0 && !arePermitDiametersCompatible(diameters, datePermits)) {
-    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на диаметр ${formatOfficialStampDiameterList(diameters)}`)
+  const unsupportedDiameters = getUnsupportedPermitDiameters(diameters, datePermits)
+  if (unsupportedDiameters.length > 0) {
+    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на диаметр ${formatOfficialStampDiameterList(unsupportedDiameters)}`)
   }
 
-  if (thicknesses.length > 0 && !arePermitThicknessesCompatible(thicknesses, datePermits)) {
-    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на толщину ${formatOfficialStampDiameterList(thicknesses)}`)
+  const unsupportedThicknesses = getUnsupportedPermitThicknesses(thicknesses, datePermits)
+  if (unsupportedThicknesses.length > 0) {
+    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на толщину ${formatOfficialStampDiameterList(unsupportedThicknesses)}`)
+  }
+
+  return null
+}
+
+function getCombinedDlsSelectBlockReason(
+  records: WelderStampRecord[],
+  methods: string[],
+  materialGroup: string,
+  weldDateValue: number,
+  diameters: number[],
+  thicknesses: number[],
+) {
+  const allDlsPermits = records.flatMap((record) => getAllWelderStampDlsPermits(record))
+  if (allDlsPermits.length === 0) return hardReason(`нет ДЛС на способы сварки ${methods.join('+')}`)
+
+  const permits = records
+    .flatMap((record) => getWelderStampDlsPermitsForWeldDate(record, weldDateValue))
+    .filter((permit) => methods.some((method) => splitPermitValues(permit.weldType).includes(method)))
+    .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
+    .filter((permit) => !weldDateValue || isPermitDateCompatible(weldDateValue, permit))
+
+  const unsupportedDiameters = getUnsupportedPermitDiameters(diameters, permits)
+  if (unsupportedDiameters.length > 0) {
+    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на диаметр ${formatOfficialStampDiameterList(unsupportedDiameters)}`)
+  }
+  const unsupportedThicknesses = getUnsupportedPermitThicknesses(thicknesses, permits)
+  if (unsupportedThicknesses.length > 0) {
+    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на толщину ${formatOfficialStampDiameterList(unsupportedThicknesses)}`)
   }
 
   return null
@@ -291,6 +383,19 @@ function getNaksPermitCandidates(records: WelderStampRecord[], method: string, m
   return records
     .flatMap((record) => getWelderStampNaksPermitsForWeldDate(record, weldDateValue))
     .filter((permit) => !method || splitPermitValues(permit.weldType).includes(method))
+    .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
+    .filter((permit) => !weldDateValue || isPermitDateCompatible(weldDateValue, permit))
+}
+
+function getNaksPermitCandidatesForMethods(
+  records: WelderStampRecord[],
+  methods: string[],
+  materialGroup: string,
+  weldDateValue: number,
+) {
+  return records
+    .flatMap((record) => getWelderStampNaksPermitsForWeldDate(record, weldDateValue))
+    .filter((permit) => methods.some((method) => splitPermitValues(permit.weldType).includes(method)))
     .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
     .filter((permit) => !weldDateValue || isPermitDateCompatible(weldDateValue, permit))
 }
@@ -317,11 +422,13 @@ function getPermitRangeBlockReason(
   thicknesses: number[],
   saveCheckSettings: SaveCheckSettings,
 ) {
-  if (saveCheckSettings.officialDiameter && diameters.length > 0 && !arePermitDiametersCompatible(diameters, permits)) {
-    return softReason(`не подходит по диаметру ${formatOfficialStampDiameterList(diameters)}`)
+  const unsupportedDiameters = getUnsupportedPermitDiameters(diameters, permits)
+  if (saveCheckSettings.officialDiameter && unsupportedDiameters.length > 0) {
+    return softReason(`не подходит по диаметру ${formatOfficialStampDiameterList(unsupportedDiameters)}`)
   }
-  if (saveCheckSettings.officialThickness && thicknesses.length > 0 && !arePermitThicknessesCompatible(thicknesses, permits)) {
-    return softReason(`не подходит по толщине ${formatOfficialStampDiameterList(thicknesses)}`)
+  const unsupportedThicknesses = getUnsupportedPermitThicknesses(thicknesses, permits)
+  if (saveCheckSettings.officialThickness && unsupportedThicknesses.length > 0) {
+    return softReason(`не подходит по толщине ${formatOfficialStampDiameterList(unsupportedThicknesses)}`)
   }
   return null
 }

@@ -18,10 +18,13 @@ export type EditableImportOptions = {
   matchFieldKeys: ReadonlySet<string>
 }
 
-export function parseWorksheetRows(rows: unknown[][]): ImportResult {
+export function parseWorksheetRows(
+  rows: unknown[][],
+  requiredHeaders: readonly string[] = FULL_EXCEL_HEADERS,
+): ImportResult {
   const [rawHeaders = [], ...dataRows] = rows
   const headers = normalizeImportHeaders(rawHeaders)
-  const missingHeaders = FULL_EXCEL_HEADERS.filter((header) => !headers.includes(header))
+  const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header))
 
   if (missingHeaders.length > 0) {
     throw new Error(`Не найдены обязательные колонки: ${missingHeaders.join(', ')}`)

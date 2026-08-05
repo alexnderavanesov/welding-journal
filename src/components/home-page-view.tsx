@@ -6,6 +6,7 @@ import { ReportPageHeader } from '@/components/report-page-header'
 import { ReportSummaryBar, type ReportSummaryBarProps } from '@/components/report-summary-bar'
 import { ReportTaskPanels, type ReportTaskPanelsProps } from '@/components/report-task-panels'
 import { ReportWorkspace } from '@/components/report-workspace'
+import type { DocumentGenerationRequest } from '@/lib/document-generation'
 
 type HomePageViewProps = {
   activeReport: ComponentProps<typeof ReportWorkspace>['activeReport']
@@ -18,7 +19,8 @@ type HomePageViewProps = {
   reportHeaderActionsProps: ReportHeaderActionsProps
   reportSummaryBarProps: ReportSummaryBarProps
   reportTaskPanelsProps: ReportTaskPanelsProps
-  documentGenerationRequest: ComponentProps<typeof ReportMainContent>['documentGenerationRequest']
+  documentGenerationRequest: DocumentGenerationRequest | null
+  documentGenerationContextLoading: boolean
   statisticsRows: ComponentProps<typeof ReportMainContent>['statisticsRows']
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
@@ -27,6 +29,9 @@ type HomePageViewProps = {
   onCancelPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onCancelPercentageLineMissingControls']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
+  onDocumentGenerationRequestHandled: (requestId: number) => void
+  onDocumentGenerated: (message: string) => void
+  onOpenDocumentRows: ComponentProps<typeof ReportMainContent>['onOpenDocumentRows']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
   reportWeldEditorProps: ComponentProps<typeof ReportDialogs>['weldEditorProps']
   reportPstoDialogsProps: ComponentProps<typeof ReportDialogs>['pstoDialogsProps']
@@ -47,6 +52,7 @@ export function HomePageView({
   reportSummaryBarProps,
   reportTaskPanelsProps,
   documentGenerationRequest,
+  documentGenerationContextLoading,
   statisticsRows,
   welderStamps,
   welderStampsRegistryProps,
@@ -55,6 +61,9 @@ export function HomePageView({
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
+  onDocumentGenerationRequestHandled,
+  onDocumentGenerated,
+  onOpenDocumentRows,
   reportChainDialogProps,
   reportWeldEditorProps,
   reportPstoDialogsProps,
@@ -97,7 +106,6 @@ export function HomePageView({
 
       <ReportMainContent
         activeReport={activeReport}
-        documentGenerationRequest={documentGenerationRequest}
         statisticsRows={statisticsRows}
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}
@@ -106,6 +114,7 @@ export function HomePageView({
         onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenWeldRowIds={onOpenWeldRowIds}
+        onOpenDocumentRows={onOpenDocumentRows}
       />
 
       <ReportDialogs
@@ -115,6 +124,17 @@ export function HomePageView({
         lnkDialogsProps={reportLnkDialogsProps}
         fieldEditorProps={reportFieldEditorProps}
         importDialogProps={reportImportDialogProps}
+        generationDialogProps={
+          documentGenerationRequest
+            ? {
+                request: documentGenerationRequest,
+                contextRows: statisticsRows,
+                contextLoading: documentGenerationContextLoading,
+                onClose: () => onDocumentGenerationRequestHandled(documentGenerationRequest.id),
+                onGenerated: onDocumentGenerated,
+              }
+            : null
+        }
       />
     </ReportWorkspace>
   )

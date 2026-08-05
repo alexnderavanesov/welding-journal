@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
+import { EXCEL_FIELDS, VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
 import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections, getFilteredWeldTableSections } from './weld-table-sections'
-import { HEAT_TREATMENT_HIDDEN_FIELD_KEYS, LNK_HIDDEN_FIELD_KEYS, WELDING_JOURNAL_HIDDEN_FIELD_KEYS } from './report-config'
-import { formHiddenFieldKeys, secondaryWeldFormFieldKeys } from './weld-form-field-sets'
+import {
+  HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+  LNK_HIDDEN_FIELD_KEYS,
+  WELDING_JOURNAL_BLOCKED_FIELD_KEYS,
+  WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+} from './report-config'
+import {
+  formHiddenFieldKeys,
+  secondaryWeldFormFieldKeys,
+  weldingMaterialWeldFormFieldKeys,
+} from './weld-form-field-sets'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -38,11 +47,83 @@ describe('weld field order', () => {
       'Результат',
       'Заключения',
       'Испытания',
-      'Код работ',
-      'Закрытие',
+      'Документы',
       'Прочее',
       'Материал (дополнительно)',
+      'Сварочный материал и ТК',
+      'Код работ',
+      'Закрытие',
     ])
+  })
+
+  it('shows JSR and Checklist document links only in the welding journal', () => {
+    const journalSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const lnkSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+
+    expect(journalSections.find((group) => group.section === 'Документы')?.fields.map((field) => field.key)).toEqual([
+      'jsrDocument',
+      'checklistDocument',
+      'zniDocument',
+    ])
+    expect(lnkSections.some((group) => group.section === 'Документы')).toBe(false)
+    expect(pstoSections.some((group) => group.section === 'Документы')).toBe(false)
+  })
+
+  it('keeps document fields system-controlled and outside Excel imports', () => {
+    expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('jsrDocument')).toBe(true)
+    expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('checklistDocument')).toBe(true)
+    expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('zniDocument')).toBe(true)
+    expect(EXCEL_FIELDS.some((field) => field.key === 'jsrDocument')).toBe(false)
+    expect(EXCEL_FIELDS.some((field) => field.key === 'checklistDocument')).toBe(false)
+    expect(EXCEL_FIELDS.some((field) => field.key === 'zniDocument')).toBe(false)
+  })
+
+  it('shows welding materials and technology card only in the welding journal', () => {
+    const expectedFieldKeys = [
+      'technologyCardNumber',
+      'weldingElectrodes',
+      'weldingElectrodesCertificateNumber',
+      'fillerWire',
+      'fillerWireCertificateNumber',
+      'shieldingGas',
+      'shieldingGasCertificateNumber',
+    ]
+    const journalSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const lnkSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+
+    expect(
+      journalSections.find((group) => group.section === 'Сварочный материал и ТК')?.fields.map((field) => field.key),
+    ).toEqual(expectedFieldKeys)
+    expect(lnkSections.some((group) => group.section === 'Сварочный материал и ТК')).toBe(false)
+    expect(pstoSections.some((group) => group.section === 'Сварочный материал и ТК')).toBe(false)
+  })
+
+  it('starts every user-facing field label with an uppercase letter or a number', () => {
+    const lowercaseLabels = VISIBLE_FIELDS
+      .map((field) => field.label)
+      .filter((label) => /^[а-яёa-z]/u.test(label))
+
+    expect(lowercaseLabels).toEqual([])
   })
 
   it('hides additional material fields from LNK and PSTO reports only', () => {
@@ -80,13 +161,13 @@ describe('weld field order', () => {
 
     expect(journalSections.some((group) => group.section === 'Испытания')).toBe(true)
     expect(journalSections.flatMap((group) => group.fields).map((field) => field.key)).toEqual(
-      expect.arrayContaining(['testContour', 'testDate', 'testBoq', 'testKs3']),
+      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']),
     )
     expect(lnkSections.flatMap((group) => group.fields).map((field) => field.key)).not.toEqual(
-      expect.arrayContaining(['testContour', 'testDate', 'testBoq', 'testKs3']),
+      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']),
     )
     expect(pstoSections.flatMap((group) => group.fields).map((field) => field.key)).not.toEqual(
-      expect.arrayContaining(['testContour', 'testDate', 'testBoq', 'testKs3']),
+      expect.arrayContaining(['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']),
     )
   })
 
@@ -131,7 +212,7 @@ describe('weld field order', () => {
       'Заключение МКК',
       'Дата МКК',
       'Описание дефектов',
-      'Примечание',
+      'Примечание ЛНК',
     ])
   })
 
@@ -141,12 +222,13 @@ describe('weld field order', () => {
     const acceptance = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Закрытие')
 
     expect(tests?.fields.map((field) => field.label)).toEqual([
+      'Вид испытаний',
       'Контур',
-      'Дата испытаний',
+      'Дата ГИ',
+      'Дата ПИ',
     ])
     expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
       'BoQ сварка',
-      'BoQ испытания',
       'BoQ ПСТО',
       'BoQ ВИК',
       'BoQ РК',
@@ -156,10 +238,11 @@ describe('weld field order', () => {
       'BoQ РФА',
       'BoQ СТЛС',
       'BoQ МКК',
+      'BoQ ГИ',
+      'BoQ ПИ',
     ])
     expect(acceptance?.fields.map((field) => field.label)).toEqual([
       'КС3 сварка',
-      'КС3 испытания',
       'КС3 ПСТО',
       'КС3 ВИК',
       'КС3 РК',
@@ -169,19 +252,38 @@ describe('weld field order', () => {
       'КС3 РФА',
       'КС3 СТЛС',
       'КС3 МКК',
+      'КС3 ГИ',
+      'КС3 ПИ',
     ])
   })
 
   it('keeps work code and acceptance fields available in the weld form secondary tab', () => {
     expect([...secondaryWeldFormFieldKeys].some((fieldKey) => formHiddenFieldKeys.has(fieldKey))).toBe(false)
+    expect(secondaryWeldFormFieldKeys.has('testTypes')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('testContour')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('testDate')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('piDate')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('boq')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('ks3')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('testBoq')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('piBoq')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('testKs3')).toBe(true)
+    expect(secondaryWeldFormFieldKeys.has('piKs3')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('pstoBoq')).toBe(true)
     expect(secondaryWeldFormFieldKeys.has('pstoKs3')).toBe(true)
+  })
+
+  it('keeps welding materials available in their dedicated weld form tab', () => {
+    expect([...weldingMaterialWeldFormFieldKeys].some((fieldKey) => formHiddenFieldKeys.has(fieldKey))).toBe(false)
+    expect([...weldingMaterialWeldFormFieldKeys]).toEqual([
+      'technologyCardNumber',
+      'weldingElectrodes',
+      'weldingElectrodesCertificateNumber',
+      'fillerWire',
+      'fillerWireCertificateNumber',
+      'shieldingGas',
+      'shieldingGasCertificateNumber',
+    ])
   })
 
   it('keeps BoQ and KS3 fields visible in the welding journal report', () => {
@@ -194,12 +296,13 @@ describe('weld field order', () => {
     const tests = sections.find((group) => group.section === 'Испытания')
 
     expect(tests?.fields.map((field) => field.label)).toEqual([
+      'Вид испытаний',
       'Контур',
-      'Дата испытаний',
+      'Дата ГИ',
+      'Дата ПИ',
     ])
     expect(customerWorkCode?.fields.map((field) => field.label)).toEqual([
       'BoQ сварка',
-      'BoQ испытания',
       'BoQ ПСТО',
       'BoQ ВИК',
       'BoQ РК',
@@ -209,10 +312,11 @@ describe('weld field order', () => {
       'BoQ РФА',
       'BoQ СТЛС',
       'BoQ МКК',
+      'BoQ ГИ',
+      'BoQ ПИ',
     ])
     expect(acceptance?.fields.map((field) => field.label)).toEqual([
       'КС3 сварка',
-      'КС3 испытания',
       'КС3 ПСТО',
       'КС3 ВИК',
       'КС3 РК',
@@ -222,6 +326,8 @@ describe('weld field order', () => {
       'КС3 РФА',
       'КС3 СТЛС',
       'КС3 МКК',
+      'КС3 ГИ',
+      'КС3 ПИ',
     ])
   })
 
@@ -229,10 +335,62 @@ describe('weld field order', () => {
     const misc = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Прочее')
 
     expect(misc?.fields.map((field) => field.label)).toEqual([
+      'Номер записи',
+      'Задачи диспетчера',
+      'Примечание сварочный журнал',
       'Внесен сварка',
       'Внесен ПСТО',
       'Внесен ЛНК',
     ])
+  })
+
+  it('shows read-only system fields in all three reports', () => {
+    const journalFields = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    }).flatMap((group) => group.fields)
+    const lnkFields = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    }).flatMap((group) => group.fields)
+    const pstoFields = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    }).flatMap((group) => group.fields)
+
+    expect(journalFields.some((field) => field.key === 'id')).toBe(true)
+    expect(lnkFields.some((field) => field.key === 'id')).toBe(true)
+    expect(pstoFields.some((field) => field.key === 'id')).toBe(true)
+    expect(journalFields.some((field) => field.key === 'dispatcherTasks')).toBe(true)
+    expect(lnkFields.some((field) => field.key === 'dispatcherTasks')).toBe(true)
+    expect(pstoFields.some((field) => field.key === 'dispatcherTasks')).toBe(true)
+    expect(formHiddenFieldKeys.has('id')).toBe(true)
+    expect(formHiddenFieldKeys.has('dispatcherTasks')).toBe(true)
+  })
+
+  it('keeps every note in its own report and exposes the journal note in the weld form', () => {
+    const journalFields = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    }).flatMap((group) => group.fields)
+    const lnkFields = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    }).flatMap((group) => group.fields)
+    const pstoFields = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    }).flatMap((group) => group.fields)
+
+    expect(journalFields.some((field) => field.key === 'weldingJournalNote')).toBe(true)
+    expect(journalFields.some((field) => field.key === 'lnkNote' || field.key === 'pstoNote')).toBe(false)
+    expect(lnkFields.some((field) => field.key === 'lnkNote')).toBe(true)
+    expect(lnkFields.some((field) => field.key === 'weldingJournalNote' || field.key === 'pstoNote')).toBe(false)
+    expect(pstoFields.some((field) => field.key === 'pstoNote')).toBe(true)
+    expect(pstoFields.some((field) => field.key === 'weldingJournalNote' || field.key === 'lnkNote')).toBe(false)
+    expect(formHiddenFieldKeys.has('weldingJournalNote')).toBe(false)
+    expect(formHiddenFieldKeys.has('lnkNote')).toBe(true)
+    expect(formHiddenFieldKeys.has('pstoNote')).toBe(true)
   })
 
   it('shows request columns in the same control order as results', () => {
@@ -257,7 +415,7 @@ describe('weld field order', () => {
       'Дата заявки СТЛС',
       'Заявка МКК',
       'Дата заявки МКК',
-      'дата ПСТО',
+      'Дата ПСТО',
     ])
   })
 
@@ -265,7 +423,7 @@ describe('weld field order', () => {
     const results = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Результат')
     const labels = results?.fields.map((field) => field.label) ?? []
 
-    expect(labels.indexOf('результат ПСТО')).toBeLessThan(labels.indexOf('диаграмма термообработки'))
+    expect(labels.indexOf('Результат ПСТО')).toBeLessThan(labels.indexOf('Диаграмма термообработки'))
   })
 
   it('does not treat cancelled controls with old results as an error', () => {

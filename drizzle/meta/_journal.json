@@ -71,6 +71,62 @@
       "when": 1785402760540,
       "tag": "0009_glorious_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785511640796,
+      "tag": "0010_open_zaran",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785512993357,
+      "tag": "0011_past_sugar_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785520174869,
+      "tag": "0012_high_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785542513594,
+      "tag": "0013_typical_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785550959130,
+      "tag": "0014_lonely_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785707426294,
+      "tag": "0015_icy_molten_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785743504410,
+      "tag": "0016_eminent_jimmy_woo",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785928165417,
+      "tag": "0017_absurd_wasp",
+      "breakpoints": true
     }
   ]
 }

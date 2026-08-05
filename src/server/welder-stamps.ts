@@ -26,6 +26,7 @@ export type WelderStampPayload = {
   naksPermits: import('@/lib/welder-stamp-types').WelderStampNaksPermit[]
   dlsPermits: import('@/lib/welder-stamp-types').WelderStampDlsPermit[]
   archived: boolean
+  archivedAt?: string
 }
 
 export type WelderStampSuspensionPayload = {
@@ -69,6 +70,7 @@ const toPayload = (row: WelderStamp): WelderStampPayload => ({
   naksPermits: parseJsonArray(row.naksPermits),
   dlsPermits: parseJsonArray(row.dlsPermits),
   archived: Boolean(row.archived),
+  archivedAt: row.archivedAt ?? '',
 })
 
 const toDbInsert = (record: WelderStampPayload): NewWelderStamp => ({
@@ -87,6 +89,7 @@ const toDbInsert = (record: WelderStampPayload): NewWelderStamp => ({
   naksPermits: jsonOrNull(record.naksPermits),
   dlsPermits: jsonOrNull(record.dlsPermits),
   archived: Boolean(record.archived),
+  archivedAt: textOrNull(record.archivedAt),
 })
 
 const suspensionToPayload = (row: WelderStampSuspension): WelderStampSuspensionPayload => ({
@@ -113,18 +116,20 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
   .validator((data: { records: WelderStampPayload[] }) => data)
   .handler(async ({ data }) => {
     const db = requireDb()
-    await db.delete(welderStamps)
+    return db.transaction(async (tx) => {
+      await tx.delete(welderStamps)
 
-    if (data.records.length === 0) {
-      await db.execute(sql`select setval(pg_get_serial_sequence('welder_stamps','id'), 1, false)`)
-      return []
-    }
+      if (data.records.length === 0) {
+        await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamps','id'), 1, false)`)
+        return []
+      }
 
-    const rows = await db.insert(welderStamps).values(data.records.map(toDbInsert)).returning()
-    await db.execute(
-      sql`select setval(pg_get_serial_sequence('welder_stamps','id'), coalesce((select max(id) from welder_stamps), 1), true)`,
-    )
-    return rows.map(toPayload)
+      const rows = await tx.insert(welderStamps).values(data.records.map(toDbInsert)).returning()
+      await tx.execute(
+        sql`select setval(pg_get_serial_sequence('welder_stamps','id'), coalesce((select max(id) from welder_stamps), 1), true)`,
+      )
+      return rows.map(toPayload)
+    })
   })
 
 export const listWelderStampSuspensionRecords = createServerFn({ method: 'GET' }).handler(async () => {
@@ -137,16 +142,18 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
   .validator((data: { records: WelderStampSuspensionPayload[] }) => data)
   .handler(async ({ data }) => {
     const db = requireDb()
-    await db.delete(welderStampSuspensions)
+    return db.transaction(async (tx) => {
+      await tx.delete(welderStampSuspensions)
 
-    if (data.records.length === 0) {
-      await db.execute(sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), 1, false)`)
-      return []
-    }
+      if (data.records.length === 0) {
+        await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), 1, false)`)
+        return []
+      }
 
-    const rows = await db.insert(welderStampSuspensions).values(data.records.map(suspensionToDbInsert)).returning()
-    await db.execute(
-      sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), coalesce((select max(id) from welder_stamp_suspensions), 1), true)`,
-    )
-    return rows.map(suspensionToPayload)
+      const rows = await tx.insert(welderStampSuspensions).values(data.records.map(suspensionToDbInsert)).returning()
+      await tx.execute(
+        sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), coalesce((select max(id) from welder_stamp_suspensions), 1), true)`,
+      )
+      return rows.map(suspensionToPayload)
+    })
   })

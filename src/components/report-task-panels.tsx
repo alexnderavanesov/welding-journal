@@ -15,6 +15,8 @@ export type ReportTaskPanelsProps = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
   onDismissTasks: (tasks: DispatcherTask[]) => void
+  columnFilters: Record<string, string>
+  onColumnFiltersChange: (filters: Record<string, string>) => void
 }
 
 export function ReportTaskPanels({
@@ -28,6 +30,8 @@ export function ReportTaskPanels({
   isTaskExpanded,
   onToggleDetails,
   onDismissTasks,
+  columnFilters,
+  onColumnFiltersChange,
 }: ReportTaskPanelsProps) {
   if (activeReport === 'welderStamps') {
     return (
@@ -50,6 +54,8 @@ export function ReportTaskPanels({
       stickyLeft={stickyLeft}
       handlers={handlers}
       onDismissAll={onDismissTasks}
+      columnFilters={columnFilters}
+      onColumnFiltersChange={onColumnFiltersChange}
     />
   )
 }
