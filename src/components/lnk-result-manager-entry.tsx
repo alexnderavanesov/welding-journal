@@ -54,7 +54,7 @@ export function LnkResultManagerEntry({
   const conclusionName = String(row[method.conclusionKey] ?? '').trim()
   const conclusionDate = String(row[method.conclusionDateKey] ?? '').trim()
   const conclusionDraft = conclusionDrafts[changeKey] ?? conclusionName
-  const fixedDateConclusionDraft = formatCustomDocumentName(conclusionDraft, conclusionDate)
+  const customConclusionDraft = formatCustomDocumentName(conclusionDraft)
   const pendingResult = pendingResultChanges[changeKey] ?? ''
   const activeChangeHint =
     pendingResult && pendingResult !== currentResult
@@ -82,8 +82,8 @@ export function LnkResultManagerEntry({
           disabled={isConclusionCorrectionPending}
           canRename={
             !isConclusionCorrectionPending &&
-            Boolean(fixedDateConclusionDraft) &&
-            fixedDateConclusionDraft !== conclusionName
+            Boolean(customConclusionDraft) &&
+            customConclusionDraft !== conclusionName
           }
           onChange={(value) => onConclusionDraftChange(changeKey, value)}
           onRename={() => onRenameConclusion(row, method.requestKey)}

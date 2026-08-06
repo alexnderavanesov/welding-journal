@@ -1,13 +1,11 @@
 import { Input } from '@/components/ui/input'
 import type { RequestNamingState } from '@/lib/request-naming-state'
-import { formatCustomRequestName } from '@/lib/report-naming'
 
 export function RequestNamingControls({
   naming,
   systemName,
   label,
   placeholder = 'Введите наименование заявки',
-  customDate,
   disabled = false,
   onChange,
 }: {
@@ -15,12 +13,9 @@ export function RequestNamingControls({
   systemName: string
   label: string
   placeholder?: string
-  customDate?: unknown
   disabled?: boolean
   onChange: (value: RequestNamingState) => void
 }) {
-  const customPreview = formatCustomRequestName(naming.customName, customDate)
-
   return (
     <div className="space-y-3">
       <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
@@ -52,9 +47,9 @@ export function RequestNamingControls({
               placeholder={placeholder}
               disabled={disabled}
             />
-            {customPreview ? (
-              <span className="block text-xs leading-4 text-slate-500">Будет сохранено: {customPreview}</span>
-            ) : null}
+            <span className="block text-xs leading-4 text-slate-500">
+              Название сохранится в указанном виде. Дата документа хранится отдельно.
+            </span>
           </>
         )}
       </label>

@@ -26,9 +26,7 @@ export function useLnkResultModalState() {
     createDefaultLnkOfficialityDraft(),
   )
   const [isLnkResultManagerOpen, setIsLnkResultManagerOpen] = useState(false)
-  const [managedLnkResultRequestName, setManagedLnkResultRequestName] = useState('')
   const [managedLnkResultMethodKey, setManagedLnkResultMethodKey] = useState<WeldFieldKey | ''>('')
-  const [managedLnkResultRequestSearch, setManagedLnkResultRequestSearch] = useState('')
   const [managedLnkConclusionDrafts, setManagedLnkConclusionDrafts] = useState<Record<string, string>>({})
   const [managedLnkResultOrderIds, setManagedLnkResultOrderIds] = useState<number[] | null>(null)
   const [managedLnkResultChangeHint, setManagedLnkResultChangeHint] = useState<ManagedLnkResultChangeHintState>(null)
@@ -44,9 +42,7 @@ export function useLnkResultModalState() {
     isLnkOfficialityModalOpen,
     lnkOfficialityDraft,
     isLnkResultManagerOpen,
-    managedLnkResultRequestName,
     managedLnkResultMethodKey,
-    managedLnkResultRequestSearch,
     managedLnkConclusionDrafts,
     managedLnkResultOrderIds,
     managedLnkResultChangeHint,
@@ -60,9 +56,7 @@ export function useLnkResultModalState() {
     setIsLnkOfficialityModalOpen,
     setLnkOfficialityDraft,
     setIsLnkResultManagerOpen,
-    setManagedLnkResultRequestName,
     setManagedLnkResultMethodKey,
-    setManagedLnkResultRequestSearch,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
     setManagedLnkResultChangeHint,

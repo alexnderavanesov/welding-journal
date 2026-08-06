@@ -11,15 +11,19 @@ import {
   getSelectedLnkResultRows,
   getVisibleLnkResultRows,
 } from '@/lib/lnk-result-derived-utils'
-import { filterRequestNamesBySearch, withCurrentOption } from '@/lib/report-naming'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  filterRequestDocumentIdentitiesBySearch,
+  type RequestDocumentIdentity,
+  withCurrentRequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 type LnkResultDerivedStateParams = {
   lnkRows: WeldRow[]
   lnkResultSelectedRows: WeldRow[]
-  lnkResultRequestOptions: string[]
+  lnkResultRequestOptions: RequestDocumentIdentity[]
   lnkResultRequestSearch: string
   selectedLnkResultRequestRows: WeldRow[]
   lnkResultDraft: LnkResultDraftState
@@ -51,11 +55,22 @@ export function useLnkResultDerivedState({
 
   const filteredLnkResultRequestOptions = useMemo(
     () =>
-      withCurrentOption(
-        filterRequestNamesBySearch(lnkResultAvailableRequestOptions, lnkResultRequestSearch),
-        lnkResultDraft.requestName,
+      withCurrentRequestDocumentIdentity(
+        filterRequestDocumentIdentitiesBySearch(
+          lnkResultAvailableRequestOptions,
+          lnkResultRequestSearch,
+        ),
+        {
+          name: lnkResultDraft.requestName,
+          date: lnkResultDraft.requestDate,
+        },
       ),
-    [lnkResultAvailableRequestOptions, lnkResultDraft.requestName, lnkResultRequestSearch],
+    [
+      lnkResultAvailableRequestOptions,
+      lnkResultDraft.requestDate,
+      lnkResultDraft.requestName,
+      lnkResultRequestSearch,
+    ],
   )
 
   const lnkResultSearchRows = useMemo(

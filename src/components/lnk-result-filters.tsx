@@ -1,16 +1,17 @@
 import { ResultFilters } from '@/components/result-filters'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 type LnkResultFiltersProps = {
   search: string
   requestSearch: string
-  requestName: string
-  filteredRequestOptions: string[]
+  requestKey: string
+  filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptionsCount: number
   filteredRowsCount: number
   selectedRowsCount: number
   onSearchChange: (value: string) => void
   onRequestSearchChange: (value: string) => void
-  onRequestChange: (requestName: string) => void
+  onRequestChange: (request: RequestDocumentIdentity | null) => void
   onClearRequestSearch: () => void
   onClearSearch: () => void
 }
@@ -18,7 +19,7 @@ type LnkResultFiltersProps = {
 export function LnkResultFilters({
   search,
   requestSearch,
-  requestName,
+  requestKey,
   filteredRequestOptions,
   availableRequestOptionsCount,
   filteredRowsCount,
@@ -33,7 +34,7 @@ export function LnkResultFilters({
     <ResultFilters
       search={search}
       requestSearch={requestSearch}
-      requestName={requestName}
+      requestKey={requestKey}
       filteredRequestOptions={filteredRequestOptions}
       availableRequestOptionsCount={availableRequestOptionsCount}
       filteredRowsCount={filteredRowsCount}

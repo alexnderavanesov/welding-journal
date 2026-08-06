@@ -4,6 +4,7 @@ import type { ConfirmAction } from '@/lib/confirm-action-context'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 export type RowWithId = WeldRow
 
@@ -17,10 +18,12 @@ export type PstoRequestVariables = {
   requestName: string
   requestDate: string
   mode?: 'create' | 'edit'
+  useSystemName?: boolean
 }
 
 export type PstoRequestManagerVariables = {
   requestName: string
+  requestDate: string
   nextRequestName?: string
   action: 'rename' | 'delete'
 }
@@ -35,6 +38,7 @@ export type PstoResultVariables = {
   result: string
   diagramName: string
   rows: RowWithId[]
+  useSystemName?: boolean
 }
 
 export type PstoResultCorrectionVariables = {
@@ -51,10 +55,11 @@ export type UsePstoReportActionsOptions = {
   filteredPstoResultRows: RowWithId[]
   managedPstoDiagramDrafts: Record<number, string>
   managedPstoRequestName: string
+  managedPstoRequestDate: string
   managedPstoRequestNameDraft: string
   nextPstoDiagramName: string
   nextPstoRequestName: string
-  pstoRequestManagerOptions: string[]
+  pstoRequestManagerOptions: RequestDocumentIdentity[]
   pstoRequestDate: string
   pstoRequestNaming: RequestNamingState
   pstoResultDraft: PstoResultDraftState
@@ -75,6 +80,7 @@ export type UsePstoReportActionsOptions = {
   setIsPstoResultModalOpen: (value: boolean) => void
   setManagedPstoDiagramDrafts: Dispatch<SetStateAction<Record<number, string>>>
   setManagedPstoRequestName: (value: string) => void
+  setManagedPstoRequestDate: (value: string) => void
   setManagedPstoRequestNameDraft: (value: string) => void
   setMessage: (value: string) => void
   setPstoRequestDate: (value: string) => void

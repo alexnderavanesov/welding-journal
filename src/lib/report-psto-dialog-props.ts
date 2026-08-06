@@ -50,7 +50,9 @@ export function createReportPstoDialogsProps({
           ...result,
           allFilteredSelectableRowsSelected: isEveryFilteredLnkRequestRowSelected(
             result.draft.rowIds,
-            result.filteredRows.filter((row) => canSelectPstoResultRow(row, result.draft.requestName)),
+            result.filteredRows.filter((row) =>
+              canSelectPstoResultRow(row, result.draft.requestName, result.draft.requestDate),
+            ),
           ),
           canSelectRow: canSelectPstoResultRow,
         }

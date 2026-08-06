@@ -19,6 +19,7 @@ import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagination } from '@/lib/use-pagination'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 export type PstoRequestDialogProps = {
   nextRequestName: string
@@ -27,7 +28,7 @@ export type PstoRequestDialogProps = {
   requestDate: string
   requestSearch: string
   message?: string | null
-  requestManagerOptions: string[]
+  requestManagerOptions: RequestDocumentIdentity[]
   heatTreatmentRowsCount: number
   filteredRows: WeldRow[]
   availableRowsCount: number
@@ -77,7 +78,7 @@ export function PstoRequestDialog({
     defaultPageSize: 100,
     resetKeys: paginationResetKeys,
   })
-  const requestName = getRequestNameFromNaming(requestNaming, nextRequestName, requestDate)
+  const requestName = getRequestNameFromNaming(requestNaming, nextRequestName)
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ПСТО')
   const chronologyReason = useMemo(() => {
     if (selectedRows.length === 0 || !requestName || requestDateReason) return ''
@@ -128,7 +129,6 @@ export function PstoRequestDialog({
               naming={requestNaming}
               systemName={nextRequestName}
               label="Наименование заявки ПСТО"
-              customDate={requestDate}
               onChange={onRequestNamingChange}
             />
           </div>

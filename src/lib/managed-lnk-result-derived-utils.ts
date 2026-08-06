@@ -2,37 +2,18 @@ import { LNK_METHODS } from '@/lib/report-config'
 import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
 import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
 import {
-  filterLnkRowsByRequestName,
   getLnkResultMethodsForRows,
   isLnkResultRowApplicable,
 } from '@/lib/report-modal-rows'
 import { sortRowsByPreservedOrder } from '@/lib/report-row-utils'
-import { filterRequestNamesBySearch, withCurrentOption } from '@/lib/report-naming'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-export function getFilteredManagedLnkResultRequestOptions({
-  lnkResultRequestOptions,
-  managedLnkResultRequestSearch,
-  managedLnkResultRequestName,
-}: {
-  lnkResultRequestOptions: string[]
-  managedLnkResultRequestSearch: string
-  managedLnkResultRequestName: string
-}) {
-  return withCurrentOption(
-    filterRequestNamesBySearch(lnkResultRequestOptions, managedLnkResultRequestSearch),
-    managedLnkResultRequestName,
-  )
-}
-
 export function getManagedLnkResultRows({
   lnkRows,
-  managedLnkResultRequestName,
   managedLnkResultOrderIds,
 }: {
   lnkRows: WeldRow[]
-  managedLnkResultRequestName: string
   managedLnkResultOrderIds: number[] | null
 }) {
   if (managedLnkResultOrderIds) {
@@ -42,27 +23,25 @@ export function getManagedLnkResultRows({
       managedLnkResultOrderIds,
     )
   }
-  return filterLnkRowsByRequestName(lnkRows, managedLnkResultRequestName)
+  return []
 }
 
-export function getManagedLnkResultMethods(managedLnkResultRows: WeldRow[], managedLnkResultRequestName: string) {
-  return getLnkResultMethodsForRows(managedLnkResultRows, managedLnkResultRequestName)
+export function getManagedLnkResultMethods(managedLnkResultRows: WeldRow[]) {
+  return getLnkResultMethodsForRows(managedLnkResultRows, '')
 }
 
 export function getManagedLnkResultMethodRows({
   managedLnkResultRows,
-  managedLnkResultRequestName,
   managedLnkResultMethodKey,
 }: {
   managedLnkResultRows: WeldRow[]
-  managedLnkResultRequestName: string
   managedLnkResultMethodKey: WeldFieldKey | ''
 }) {
   return managedLnkResultRows.filter((row) => {
     const method = getLnkMethodByRequestKey(managedLnkResultMethodKey)
     return Boolean(
       method &&
-        isLnkResultRowApplicable(row, managedLnkResultRequestName, managedLnkResultMethodKey) &&
+        isLnkResultRowApplicable(row, '', managedLnkResultMethodKey) &&
         isFinalLnkResultValue(row[method.resultKey]),
     )
   })
@@ -71,12 +50,10 @@ export function getManagedLnkResultMethodRows({
 export function getManagedLnkResultEntries({
   managedLnkResultRows,
   managedLnkResultMethodRows,
-  managedLnkResultRequestName,
   managedLnkResultMethodKey,
 }: {
   managedLnkResultRows: WeldRow[]
   managedLnkResultMethodRows: WeldRow[]
-  managedLnkResultRequestName: string
   managedLnkResultMethodKey: WeldFieldKey | ''
 }) {
   if (managedLnkResultMethodKey) {
@@ -88,7 +65,7 @@ export function getManagedLnkResultEntries({
 
   return managedLnkResultRows.flatMap((row) =>
     LNK_METHODS.flatMap((method) =>
-      isLnkResultRowApplicable(row, managedLnkResultRequestName, method.requestKey) &&
+      isLnkResultRowApplicable(row, '', method.requestKey) &&
       isFinalLnkResultValue(row[method.resultKey])
         ? [{ row, method, changeKey: getManagedLnkResultChangeKey(row.id, method.requestKey) }]
         : [],

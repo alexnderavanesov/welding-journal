@@ -1,9 +1,11 @@
-import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
+import { parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import {
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  addRowsToNamingPatternContext,
   buildSystemNameFromPattern,
+  buildSystemNameWithNumber,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/lib/report-config'
@@ -14,10 +16,19 @@ export function formatPstoRequestName(
   rows: WeldRow[],
   settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
   requestDate?: string,
+  documentNumber?: number,
 ) {
+  const context = addRowsToNamingPatternContext({ date: getNamingDate(requestDate) }, rows)
+  if (documentNumber) {
+    return buildSystemNameWithNumber(
+      settings.pstoRequest.systemPattern,
+      context,
+      documentNumber,
+    )
+  }
   return buildSystemNameFromPattern(
     settings.pstoRequest.systemPattern,
-    { date: getNamingDate(requestDate) },
+    context,
     rows.map((row) => String(row.pstoRequest ?? '').trim()),
   )
 }
@@ -26,10 +37,19 @@ export function formatLnkRequestName(
   rows: WeldRow[],
   settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
   requestDate?: string,
+  documentNumber?: number,
 ) {
+  const context = addRowsToNamingPatternContext({ date: getNamingDate(requestDate) }, rows)
+  if (documentNumber) {
+    return buildSystemNameWithNumber(
+      settings.lnkRequest.systemPattern,
+      context,
+      documentNumber,
+    )
+  }
   return buildSystemNameFromPattern(
     settings.lnkRequest.systemPattern,
-    { date: getNamingDate(requestDate) },
+    context,
     rows.flatMap((row) => LNK_METHODS.map((method) => String(row[method.requestKey] ?? '').trim())),
   )
 }
@@ -60,25 +80,12 @@ export function filterRequestNamesBySearch(requestNames: string[], search: strin
   })
 }
 
-export function getRequestNameFromNaming(naming: RequestNamingState, systemName: string, customDate?: unknown) {
-  return naming.mode === 'system' ? systemName.trim() : formatCustomDocumentName(naming.customName, customDate)
+export function getRequestNameFromNaming(naming: RequestNamingState, systemName: string) {
+  return naming.mode === 'system' ? systemName.trim() : formatCustomDocumentName(naming.customName)
 }
 
-export function formatCustomRequestName(name: string, dateValue?: unknown) {
-  return formatCustomDocumentName(name, dateValue)
-}
-
-export function formatCustomDocumentName(name: string, dateValue?: unknown) {
-  const trimmedName = stripDocumentDateSuffix(name)
-  if (!trimmedName) return ''
-  const isoDate = parseDateLikeToIso(dateValue)
-  if (!isoDate) return trimmedName
-  return `${trimmedName} от ${formatDisplayDate(isoDate)}`
-}
-
-export function stripDocumentDateSuffix(name: string) {
-  const trimmedName = name.trim()
-  return trimmedName.replace(/\s+от\s+\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})$/i, '').trim()
+export function formatCustomDocumentName(name: string) {
+  return name.trim()
 }
 
 export function isSystemLnkRequestName(name: string) {

@@ -4,12 +4,13 @@ import { FilterStatText } from '@/components/filter-stat-text'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 export type ResultFiltersProps = {
   search: string
   requestSearch: string
-  requestName: string
-  filteredRequestOptions: string[]
+  requestKey: string
+  filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptionsCount: number
   filteredRowsCount: number
   selectedRowsCount: number
@@ -17,7 +18,7 @@ export type ResultFiltersProps = {
   showClearFilters: boolean
   onSearchChange: (value: string) => void
   onRequestSearchChange: (value: string) => void
-  onRequestChange: (requestName: string) => void
+  onRequestChange: (request: RequestDocumentIdentity | null) => void
   onClearRequestSearch: () => void
   onClearFilters: () => void
 }
@@ -25,7 +26,7 @@ export type ResultFiltersProps = {
 export function ResultFilters({
   search,
   requestSearch,
-  requestName,
+  requestKey,
   filteredRequestOptions,
   availableRequestOptionsCount,
   filteredRowsCount,
@@ -52,11 +53,18 @@ export function ResultFilters({
         placeholder="Поиск заявки"
         className="h-9 min-w-44 flex-[0.45] bg-white"
       />
-      <Select value={requestName} onChange={(event) => onRequestChange(event.target.value)} className="h-9 min-w-48 flex-[0.5] bg-white">
+      <Select
+        value={requestKey}
+        onChange={(event) => {
+          const key = event.target.value
+          onRequestChange(filteredRequestOptions.find((option) => option.key === key) ?? null)
+        }}
+        className="h-9 min-w-48 flex-[0.5] bg-white"
+      >
         <option value="">Все заявки</option>
         {filteredRequestOptions.map((option) => (
-          <option key={option} value={option}>
-            {option}
+          <option key={option.key} value={option.key}>
+            {option.label}
           </option>
         ))}
       </Select>

@@ -11,6 +11,7 @@ export type LnkRequestMutation = {
     methodKeys: WeldFieldKey[]
     requestName: string
     requestDate: string
+    useSystemName?: boolean
   }) => void
 }
 

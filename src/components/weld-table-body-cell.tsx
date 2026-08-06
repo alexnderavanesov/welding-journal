@@ -102,6 +102,7 @@ export function WeldTableBodyCell({
 
   return (
     <td
+      data-weld-field-key={field.key}
       className={`${bodyCellClass(
         field.key,
         !isEditableCell,

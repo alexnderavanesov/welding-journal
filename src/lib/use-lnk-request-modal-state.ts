@@ -11,6 +11,7 @@ export function useLnkRequestModalState() {
   const [isLnkRequestModalOpen, setIsLnkRequestModalOpen] = useState(false)
   const [isLnkRequestManagerOpen, setIsLnkRequestManagerOpen] = useState(false)
   const [managedLnkRequestName, setManagedLnkRequestName] = useState('')
+  const [managedLnkRequestDate, setManagedLnkRequestDate] = useState('')
   const [managedLnkRequestNameDraft, setManagedLnkRequestNameDraft] = useState('')
   const [lnkRequestSearch, setLnkRequestSearch] = useState('')
 
@@ -20,6 +21,7 @@ export function useLnkRequestModalState() {
     isLnkRequestModalOpen,
     isLnkRequestManagerOpen,
     managedLnkRequestName,
+    managedLnkRequestDate,
     managedLnkRequestNameDraft,
     lnkRequestSearch,
     setLnkRequestDraft,
@@ -27,6 +29,7 @@ export function useLnkRequestModalState() {
     setIsLnkRequestModalOpen,
     setIsLnkRequestManagerOpen,
     setManagedLnkRequestName,
+    setManagedLnkRequestDate,
     setManagedLnkRequestNameDraft,
     setLnkRequestSearch,
   }

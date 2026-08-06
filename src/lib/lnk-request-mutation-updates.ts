@@ -13,6 +13,7 @@ import {
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
+import { isSameRequestDocument } from '@/lib/request-document-identity'
 
 export type LnkRequestManagerAction = 'rename' | 'delete'
 
@@ -103,11 +104,13 @@ export function buildLnkRequestCorrectionRow({
 export function buildLnkRequestManagerRows({
   records,
   requestName,
+  requestDate,
   nextRequestName,
   action,
 }: {
   records: RowWithId[]
   requestName: string
+  requestDate: string
   nextRequestName: string
   action: LnkRequestManagerAction
 }) {
@@ -116,7 +119,14 @@ export function buildLnkRequestManagerRows({
     const nextRecord = { ...record } as RowWithId
     let changed = false
     for (const method of LNK_METHODS) {
-      if (String(record[method.requestKey] ?? '').trim() !== requestName) continue
+      if (
+        !isSameRequestDocument(record[method.requestKey], record[method.requestDateKey], {
+          name: requestName,
+          date: requestDate,
+        })
+      ) {
+        continue
+      }
       if (action === 'rename') {
         nextRecord[method.requestKey] = nextRequestName
       } else {

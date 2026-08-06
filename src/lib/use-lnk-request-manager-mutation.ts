@@ -4,16 +4,17 @@ import {
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
 } from '@/lib/report-config'
 import { buildLnkRequestManagerRows } from '@/lib/lnk-report-mutation-updates'
-import { isSystemLnkRequestName } from '@/lib/report-naming'
+import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
+import { isSameRequestDocument } from '@/lib/request-document-identity'
 
 export function useLnkRequestManagerMutation({
   lnkRows,
-  lnkRequestOptions,
   setMessage,
   highlightChangedRows,
   setManagedLnkRequestName,
@@ -25,10 +26,12 @@ export function useLnkRequestManagerMutation({
   return useMutation({
     mutationFn: async ({
       requestName,
+      requestDate,
       nextRequestName,
       action,
     }: {
       requestName: string
+      requestDate: string
       nextRequestName?: string
       action: 'rename' | 'delete'
     }) => {
@@ -36,15 +39,35 @@ export function useLnkRequestManagerMutation({
       const renamedName = nextRequestName?.trim() ?? ''
       if (!currentName) throw new Error('Выберите заявку ЛНК')
       if (action === 'rename') {
-        if (isSystemLnkRequestName(currentName)) throw new Error('Системную заявку ЛНК нельзя переименовать')
+        if (
+          isSystemDocumentNameForRows(
+            lnkRows,
+            'lnkRequest',
+            currentName,
+            loadRequestConclusionSettings(),
+          )
+        ) {
+          throw new Error('Системную заявку ЛНК нельзя переименовать')
+        }
         if (!renamedName) throw new Error('Введите новое наименование заявки')
         if (renamedName === currentName) throw new Error('Новое наименование совпадает с текущим')
-        if (renamedName !== currentName && lnkRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')
+        const sameDatedRequestExists = lnkRows.some((row) =>
+          LNK_METHODS.some((method) =>
+            isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+              name: renamedName,
+              date: requestDate,
+            }),
+          ),
+        )
+        if (renamedName !== currentName && sameDatedRequestExists) {
+          throw new Error('Заявка с таким наименованием и датой уже существует')
+        }
       }
 
       const updatedRecords = buildLnkRequestManagerRows({
         records: lnkRows,
         requestName: currentName,
+        requestDate,
         nextRequestName: renamedName,
         action,
       })

@@ -11,18 +11,24 @@ import {
   RequestRenamePanel,
 } from '@/components/request-manager-panels'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { isSystemPstoRequestName } from '@/lib/report-request-naming'
 import { hasText } from '@/lib/report-value-utils'
+import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
+import {
+  createRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 export type PstoRequestManagerDialogProps = {
   requestName: string
-  requestOptions: string[]
+  requestDate: string
+  requestOptions: RequestDocumentIdentity[]
   requestRows: WeldRow[]
   requestNameDraft: string
   isManagerPending: boolean
   isCorrectionPending: boolean
   onClose: () => void
-  onChangeRequest: (requestName: string) => void
+  onChangeRequest: (request: RequestDocumentIdentity) => void
   onRequestNameDraftChange: (requestName: string) => void
   onRenameRequest: () => void
   onClearPosition: (row: WeldRow) => void
@@ -31,6 +37,7 @@ export type PstoRequestManagerDialogProps = {
 
 export function PstoRequestManagerDialog({
   requestName,
+  requestDate,
   requestOptions,
   requestRows,
   requestNameDraft,
@@ -44,7 +51,14 @@ export function PstoRequestManagerDialog({
   onDeleteRequest,
 }: PstoRequestManagerDialogProps) {
   const resultCount = requestRows.filter((row) => hasText(row.pstoResult)).length
-  const isSystemRequest = isSystemPstoRequestName(requestName)
+  const requestConclusionSettings = useRequestConclusionSettings()
+  const isSystemRequest = isSystemDocumentNameForRows(
+    requestRows,
+    'pstoRequest',
+    requestName,
+    requestConclusionSettings,
+  )
+  const selectedIdentity = createRequestDocumentIdentity(requestName, requestDate)
 
   return (
     <LargeDialogShell maxWidthClassName="max-w-[920px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[60] bg-slate-950/30">
@@ -55,7 +69,12 @@ export function PstoRequestManagerDialog({
       />
 
       <div className="min-h-0 space-y-4 overflow-auto px-5 py-4">
-        <RequestManagerSelect label="Заявка ПСТО" value={requestName} options={requestOptions} onChange={onChangeRequest} />
+        <RequestManagerSelect
+          label="Заявка ПСТО"
+          value={selectedIdentity?.key ?? ''}
+          options={requestOptions}
+          onChange={onChangeRequest}
+        />
 
         {requestName ? (
           <RequestManagerUsagePanel>

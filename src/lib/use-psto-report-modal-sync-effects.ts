@@ -7,10 +7,14 @@ import {
   canSelectPstoResultRow,
   filterPstoRowsByRequestName,
 } from '@/lib/report-modal-rows'
-import { collectRequestNames, sortPstoRequestNamesNewestFirst } from '@/lib/report-naming'
 import { filterPstoResultRows } from '@/lib/report-row-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
+import {
+  findRequestDocumentIdentity,
+  getPstoRequestDocumentIdentities,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 type SetNumberSet = Dispatch<SetStateAction<Set<number>>>
 
@@ -20,7 +24,7 @@ export type PstoReportModalSyncEffectsOptions = {
   isPstoResultManagerOpen: boolean
   isPstoResultModalOpen: boolean
   managedPstoResultRows: WeldRow[]
-  pstoResultRequestOptions: string[]
+  pstoResultRequestOptions: RequestDocumentIdentity[]
   setManagedPstoDiagramDrafts: Dispatch<SetStateAction<Record<number, string>>>
   setPstoResultDraft: Dispatch<SetStateAction<PstoResultDraftState>>
   setSelectedHeatTreatmentIds: SetNumberSet
@@ -49,13 +53,33 @@ export function usePstoReportModalSyncEffects({
     setPstoResultDraft((current) => {
       if (!isPstoResultModalOpen) return current
       const selectedRows = heatTreatmentRows.filter((row) => current.rowIds.has(row.id))
-      const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
+      const requestOptions = getPstoRequestDocumentIdentities(selectedRows)
       const allowedRequestOptions = requestOptions.length > 0 ? requestOptions : pstoResultRequestOptions
-      const requestName = !current.requestName || allowedRequestOptions.includes(current.requestName) ? current.requestName : ''
-      const availableRows = filterPstoResultRows(requestName ? filterPstoRowsByRequestName(heatTreatmentRows, requestName) : heatTreatmentRows, current.search)
-      const availableIds = new Set(availableRows.filter((row) => canSelectPstoResultRow(row, requestName)).map((row) => row.id))
+      const selectedRequest = findRequestDocumentIdentity(
+        allowedRequestOptions,
+        current.requestName,
+        current.requestDate,
+      )
+      const keepsCurrentRequest = Boolean(
+        selectedRequest &&
+          selectedRequest.name === current.requestName &&
+          selectedRequest.date === current.requestDate,
+      )
+      const requestName = keepsCurrentRequest ? current.requestName : ''
+      const requestDate = keepsCurrentRequest ? current.requestDate : ''
+      const availableRows = filterPstoResultRows(
+        requestName
+          ? filterPstoRowsByRequestName(heatTreatmentRows, requestName, requestDate)
+          : heatTreatmentRows,
+        current.search,
+      )
+      const availableIds = new Set(
+        availableRows
+          .filter((row) => canSelectPstoResultRow(row, requestName, requestDate))
+          .map((row) => row.id),
+      )
       const rowIds = new Set([...current.rowIds].filter((id) => availableIds.has(id)))
-      return { ...current, requestName, rowIds }
+      return { ...current, requestName, requestDate, rowIds }
     })
   }, [heatTreatmentRows, isPstoResultModalOpen, pstoResultRequestOptions, setPstoResultDraft])
 

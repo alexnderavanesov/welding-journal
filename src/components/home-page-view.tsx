@@ -33,6 +33,8 @@ type HomePageViewProps = {
   onDocumentGenerationRequestHandled: (requestId: number) => void
   onDocumentGenerated: (message: string) => void
   onOpenDocumentRows: ComponentProps<typeof ReportMainContent>['onOpenDocumentRows']
+  systemDocumentNavigationRequest: ComponentProps<typeof ReportMainContent>['systemDocumentNavigationRequest']
+  onSystemDocumentNavigationRequestHandled: ComponentProps<typeof ReportMainContent>['onSystemDocumentNavigationRequestHandled']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
   reportWeldEditorProps: ComponentProps<typeof ReportDialogs>['weldEditorProps']
   reportPstoDialogsProps: ComponentProps<typeof ReportDialogs>['pstoDialogsProps']
@@ -65,6 +67,8 @@ export function HomePageView({
   onDocumentGenerationRequestHandled,
   onDocumentGenerated,
   onOpenDocumentRows,
+  systemDocumentNavigationRequest,
+  onSystemDocumentNavigationRequestHandled,
   reportChainDialogProps,
   reportWeldEditorProps,
   reportPstoDialogsProps,
@@ -115,6 +119,8 @@ export function HomePageView({
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenWeldRowIds={onOpenWeldRowIds}
         onOpenDocumentRows={onOpenDocumentRows}
+        systemDocumentNavigationRequest={systemDocumentNavigationRequest}
+        onSystemDocumentNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
       />
 
       <ReportDialogs

@@ -12,20 +12,24 @@ import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import { usePagination } from '@/lib/use-pagination'
+import {
+  createRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 export type PstoResultDialogProps = {
   draft: PstoResultDraftState
   requestSearch: string
   nextDiagramName: string
   filteredRows: WeldRow[]
-  filteredRequestOptions: string[]
-  availableRequestOptions: string[]
+  filteredRequestOptions: RequestDocumentIdentity[]
+  availableRequestOptions: RequestDocumentIdentity[]
   saveBlockReason: string | null
   allFilteredSelectableRowsSelected: boolean
-  canSelectRow: (row: WeldRow, requestName: string) => boolean
+  canSelectRow: (row: WeldRow, requestName: string, requestDate?: string) => boolean
   onDraftChange: Dispatch<SetStateAction<PstoResultDraftState>>
   onRequestSearchChange: (value: string) => void
-  onRequestChange: (requestName: string) => void
+  onRequestChange: (request: RequestDocumentIdentity | null) => void
   onClearFilters: () => void
   onToggleAll: () => void
   onToggleRow: (rowId: number) => void
@@ -55,14 +59,15 @@ export function PstoResultDialog({
   onSave,
 }: PstoResultDialogProps) {
   const paginationResetKeys = useMemo(
-    () => [draft.search, draft.requestName, requestSearch, filteredRows],
-    [draft.requestName, draft.search, filteredRows, requestSearch],
+    () => [draft.search, draft.requestName, draft.requestDate, requestSearch, filteredRows],
+    [draft.requestDate, draft.requestName, draft.search, filteredRows, requestSearch],
   )
   const rowsPagination = usePagination({
     items: filteredRows,
     defaultPageSize: 100,
     resetKeys: paginationResetKeys,
   })
+  const selectedRequest = createRequestDocumentIdentity(draft.requestName, draft.requestDate)
 
   return (
     <LargeDialogShell
@@ -99,7 +104,7 @@ export function PstoResultDialog({
             <PstoResultFilters
               search={draft.search}
               requestSearch={requestSearch}
-              requestName={draft.requestName}
+              requestKey={selectedRequest?.key ?? ''}
               filteredRequestOptions={filteredRequestOptions}
               availableRequestOptionsCount={availableRequestOptions.length}
               filteredRowsCount={filteredRows.length}
@@ -123,7 +128,7 @@ export function PstoResultDialog({
                 key={row.id}
                 row={row}
                 selected={draft.rowIds.has(row.id)}
-                disabled={!canSelectRow(row, draft.requestName)}
+                disabled={!canSelectRow(row, draft.requestName, draft.requestDate)}
                 onToggle={onToggleRow}
               />
             ))}

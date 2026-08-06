@@ -127,6 +127,7 @@ export type DocumentTemplateFieldKey =
   | `__welderName:${TemplateStampNameFieldKey}`
   | '__systemDocumentTitle'
   | '__systemDocumentDate'
+  | '__systemDocumentNumber'
   | '__systemDocumentMethods'
   | '__systemDocumentResult'
 
@@ -135,9 +136,14 @@ export type DocumentTemplateRepeatMode = 'rows' | 'groups'
 export type DocumentTemplateBindingScope = 'document' | 'group'
 
 export type DocumentTemplateEmptyMode = 'blank' | 'np' | 'custom'
+export type DocumentTemplateFilledMode = 'value' | 'custom'
+export type DocumentTemplateNumericOperation = 'min' | 'max'
 
 export type DocumentTemplateCellPart = {
   field: DocumentTemplateFieldKey
+  numericOperation?: DocumentTemplateNumericOperation
+  compareField?: DocumentTemplateFieldKey
+  multiplier?: string
   prefix?: string
   suffix?: string
   lineBreakAfter?: boolean
@@ -155,6 +161,8 @@ export type DocumentTemplateCellBinding = {
   scope?: DocumentTemplateBindingScope
   emptyMode?: DocumentTemplateEmptyMode
   emptyText?: string
+  filledMode?: DocumentTemplateFilledMode
+  filledText?: string
 }
 
 export type DocumentTemplateNameFieldKey =
@@ -421,6 +429,7 @@ type TemplateSystemField =
   | `__welderName:${TemplateStampNameFieldKey}`
   | '__systemDocumentTitle'
   | '__systemDocumentDate'
+  | '__systemDocumentNumber'
   | '__systemDocumentMethods'
   | '__systemDocumentResult'
 
@@ -437,6 +446,8 @@ const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | TemplateSystemF
   [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
   [normalizeTemplateFieldName('Наименование системного документа'), '__systemDocumentTitle'],
   [normalizeTemplateFieldName('Дата системного документа'), '__systemDocumentDate'],
+  [normalizeTemplateFieldName('№ системного документа'), '__systemDocumentNumber'],
+  [normalizeTemplateFieldName('Номер системного документа'), '__systemDocumentNumber'],
   [normalizeTemplateFieldName('Виды контроля системного документа'), '__systemDocumentMethods'],
   [normalizeTemplateFieldName('Результат системного документа'), '__systemDocumentResult'],
 ])
@@ -1275,14 +1286,14 @@ function getConstructorRowValue(
       !singlePart.lineBreakAfter
     ) {
       return applyConstructorEmptyValue(
-        getTemplateFieldValueByKey(singlePart.field, record, recordIndex, context),
+        getConstructorPartValue(singlePart, record, recordIndex, context),
         binding,
       )
     }
     const seenValues = new Set<string>()
     const value = parts
       .map((part) => {
-        const rawValue = getTemplateFieldValueByKey(part.field, record, recordIndex, context)
+        const rawValue = getConstructorPartValue(part, record, recordIndex, context)
         const normalizedValue = String(rawValue ?? '').trim()
         if (!normalizedValue) return ''
         const uniqueKey = normalizedValue.toLocaleLowerCase('ru')
@@ -1315,7 +1326,7 @@ function getConstructorAggregateValue(
   const value = getConstructorBindingParts(binding)
     .map((part) => {
       const values = records
-        .map((record, recordIndex) => getTemplateFieldValueByKey(part.field, record, recordIndex, context))
+        .map((record, recordIndex) => getConstructorPartValue(part, record, recordIndex, context))
         .map((partValue) => String(partValue ?? '').trim())
         .filter(Boolean)
       const outputValues =
@@ -1339,11 +1350,58 @@ function getConstructorListSeparator(binding: DocumentTemplateCellBinding) {
 }
 
 function applyConstructorEmptyValue(value: unknown, binding: DocumentTemplateCellBinding) {
-  if (typeof value === 'number') return value
-  if (String(value ?? '').trim()) return String(value)
+  const hasValue = typeof value === 'number' || Boolean(String(value ?? '').trim())
+  if (hasValue) {
+    if (binding.filledMode === 'custom') return binding.filledText ?? ''
+    return typeof value === 'number' ? value : String(value)
+  }
   if (binding.emptyMode === 'np') return 'н/п'
   if (binding.emptyMode === 'custom') return binding.emptyText ?? ''
   return ''
+}
+
+function getConstructorPartValue(
+  part: DocumentTemplateCellPart,
+  record: WeldInput,
+  recordIndex: number,
+  context: WeldingJournalTemplateContext,
+) {
+  const primaryValue = getTemplateFieldValueByKey(part.field, record, recordIndex, context)
+  const hasNumericFormula = Boolean(part.numericOperation || part.multiplier?.trim())
+  if (!hasNumericFormula) return primaryValue
+
+  let result = parseConstructorNumericValue(primaryValue)
+  if (part.numericOperation) {
+    const compareValue = part.compareField
+      ? parseConstructorNumericValue(
+          getTemplateFieldValueByKey(part.compareField, record, recordIndex, context),
+        )
+      : undefined
+    const values = [result, compareValue].filter((value): value is number => value !== undefined)
+    if (!values.length) return ''
+    result = part.numericOperation === 'min' ? Math.min(...values) : Math.max(...values)
+  }
+
+  if (result === undefined) return ''
+  const multiplier = parseConstructorNumericValue(part.multiplier)
+  if (part.multiplier?.trim() && multiplier === undefined) return ''
+  if (multiplier !== undefined) result *= multiplier
+  return roundConstructorNumericValue(result)
+}
+
+function parseConstructorNumericValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  const normalized = String(value ?? '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(',', '.')
+  if (!normalized || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return undefined
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function roundConstructorNumericValue(value: number) {
+  return Number(value.toFixed(12))
 }
 
 export function extractTemplateFields(source: string) {
@@ -1460,6 +1518,7 @@ function getTemplateFieldValueByKey(
   if (mappedKey === '__welderName') return getWelderNamesForOfficialStamps(record, context.welderStamps ?? [])
   if (mappedKey === '__systemDocumentTitle') return context.systemDocument?.title ?? ''
   if (mappedKey === '__systemDocumentDate') return formatExportDate(context.systemDocument?.date)
+  if (mappedKey === '__systemDocumentNumber') return context.systemDocument?.number ?? ''
   if (mappedKey === '__systemDocumentMethods') return context.systemDocument?.methodCodes.join(', ') ?? ''
   if (mappedKey === '__systemDocumentResult') {
     return context.systemDocument

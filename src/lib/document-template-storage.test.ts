@@ -59,6 +59,29 @@ describe('document template storage', () => {
     expect(worksheet.C1?.v).toBe('LIN-1')
   })
 
+  it('writes the padded system document number into the template', async () => {
+    const template = createXlsxTemplate([['{{№ системного документа}}']])
+    const blob = await createWeldingJournalBlobFromTemplate(
+      template,
+      [{ joint: 'S1' }] as WeldInput[],
+      {
+        systemDocument: {
+          type: 'lnkRequest',
+          label: 'Заявка ЛНК',
+          title: 'Заявка-01.08.2026-001',
+          date: '2026-08-01',
+          number: '001',
+          methodCodes: ['ВИК'],
+        },
+      },
+    )
+
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+
+    expect(worksheet.A1?.v).toBe('001')
+  })
+
   it('uses welder names for exact official stamp template fields', async () => {
     const template = createXlsxTemplate([
       ['{{Корень_1ФИО сварщика}}', '{{Заполнение_1ФИО сварщика}}', '{{Облицовка_2ФИО сварщика}}', '{{Корень_2 ФИО сварщика}}'],
@@ -346,6 +369,96 @@ describe('document template storage', () => {
     expect(worksheet.A1?.v).toBe('Шифр 1, 2. Линия А, Б.')
     expect(worksheet.A2?.v).toBe('S1')
     expect(worksheet.A5?.v).toBe('S4')
+  })
+
+  it('writes configured text when the constructor value is filled', async () => {
+    const template = createXlsxTemplate([['Стык']])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 1,
+      bindings: [
+        {
+          cell: 'A1',
+          mode: 'row',
+          parts: [{ field: 'joint' }],
+          filledMode: 'custom',
+          filledText: 'есть',
+          emptyMode: 'custom',
+          emptyText: 'нет',
+        },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { joint: 'S1' },
+      { joint: '' },
+    ])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.A1?.v).toBe('есть')
+    expect(worksheet.A2?.v).toBe('нет')
+  })
+
+  it('calculates min and max between numeric fields and multiplies the result', async () => {
+    const template = createXlsxTemplate([['Минимум', 'Максимум', 'Одно поле']])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 1,
+      bindings: [
+        {
+          cell: 'A1',
+          mode: 'row',
+          parts: [{ field: 'd1', numericOperation: 'min', compareField: 'd2', multiplier: '3,14' }],
+        },
+        {
+          cell: 'B1',
+          mode: 'row',
+          parts: [{ field: 'd1', numericOperation: 'max', compareField: 'd2' }],
+        },
+        {
+          cell: 'C1',
+          mode: 'row',
+          parts: [{ field: 't1', multiplier: '2.5' }],
+        },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { d1: 57, d2: 25, t1: 3 },
+    ])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.A1?.v).toBe(78.5)
+    expect(worksheet.B1?.v).toBe(57)
+    expect(worksheet.C1?.v).toBe(7.5)
+  })
+
+  it('uses the available numeric value when one side of min or max is empty', async () => {
+    const template = createXlsxTemplate([['Минимум']])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 1,
+      bindings: [
+        {
+          cell: 'A1',
+          mode: 'row',
+          parts: [{ field: 'd1', numericOperation: 'min', compareField: 'd2' }],
+        },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { d1: 57, d2: '' },
+    ])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.A1?.v).toBe(57)
   })
 
   it('uses the duplicate-removal checkbox for lists and summaries', async () => {

@@ -1,15 +1,29 @@
-import { collectRequestNames, sortPstoRequestNamesNewestFirst } from '@/lib/report-naming'
 import { canSelectPstoResultRow, rowBelongsToPstoRequest } from '@/lib/report-modal-rows'
 import { hasText } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
+import {
+  findRequestDocumentIdentity,
+  getPstoRequestDocumentIdentities,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 type RowWithId = WeldRow
 
-export function getPstoResultRequestName(currentRequestName: string, selectedRows: RowWithId[]) {
-  const requestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
-  if (currentRequestName && requestOptions.includes(currentRequestName)) return currentRequestName
-  return requestOptions.length === 1 ? requestOptions[0] : ''
+export function getPstoResultRequestIdentity(
+  currentRequest: Pick<RequestDocumentIdentity, 'name' | 'date'>,
+  selectedRows: RowWithId[],
+) {
+  const requestOptions = getPstoRequestDocumentIdentities(selectedRows)
+  const current = findRequestDocumentIdentity(
+    requestOptions,
+    currentRequest.name,
+    currentRequest.date,
+  )
+  if (current && current.name === currentRequest.name && current.date === currentRequest.date) {
+    return current
+  }
+  return requestOptions.length === 1 ? requestOptions[0] : null
 }
 
 export function buildManagedPstoDiagramDrafts(rows: RowWithId[]) {
@@ -23,16 +37,21 @@ export function buildManagedPstoDiagramDrafts(rows: RowWithId[]) {
 export function resolvePstoResultDraftAfterRequestChange(
   current: PstoResultDraftState,
   heatTreatmentRows: RowWithId[],
-  requestName: string,
+  request: RequestDocumentIdentity | null,
 ) {
-  if (!requestName) return { ...current, requestName: '' }
+  if (!request) return { ...current, requestName: '', requestDate: '' }
   const rowIds = new Set(
     [...current.rowIds].filter((id) => {
       const row = heatTreatmentRows.find((candidate) => candidate.id === id)
-      return row ? rowBelongsToPstoRequest(row, requestName) : false
+      return row ? rowBelongsToPstoRequest(row, request.name, request.date) : false
     }),
   )
-  return { ...current, requestName, rowIds }
+  return {
+    ...current,
+    requestName: request.name,
+    requestDate: request.date,
+    rowIds,
+  }
 }
 
 export function resolvePstoResultDraftAfterRowIdsChange(
@@ -41,8 +60,16 @@ export function resolvePstoResultDraftAfterRowIdsChange(
   rowIds: Set<number>,
 ) {
   const selectedRows = heatTreatmentRows.filter((row) => rowIds.has(row.id))
-  const requestName = getPstoResultRequestName(current.requestName, selectedRows)
-  return { ...current, requestName, rowIds }
+  const request = getPstoResultRequestIdentity(
+    { name: current.requestName, date: current.requestDate },
+    selectedRows,
+  )
+  return {
+    ...current,
+    requestName: request?.name ?? '',
+    requestDate: request?.date ?? '',
+    rowIds,
+  }
 }
 
 export function resolvePstoResultDraftAfterRowToggle(
@@ -65,7 +92,11 @@ export function resolvePstoResultDraftAfterBulkToggle(
   heatTreatmentRows: RowWithId[],
 ) {
   const filteredIds = new Set(
-    filteredRows.filter((row) => canSelectPstoResultRow(row, current.requestName)).map((row) => row.id),
+    filteredRows
+      .filter((row) =>
+        canSelectPstoResultRow(row, current.requestName, current.requestDate),
+      )
+      .map((row) => row.id),
   )
   if (filteredIds.size === 0) return current
   const allSelected = [...filteredIds].every((id) => current.rowIds.has(id))

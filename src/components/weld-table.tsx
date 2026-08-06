@@ -63,7 +63,11 @@ export type WeldTableProps = {
   rowActions?: ReportRowActions
   extraColumns?: WeldTableExtraColumn[]
   stickyIdentityColumns?: boolean
-  getContextMenuItems?: (row: WeldRow, selectedRows: WeldRow[]) => ContextActionMenuItem[]
+  getContextMenuItems?: (
+    row: WeldRow,
+    selectedRows: WeldRow[],
+    fieldKey?: WeldFieldKey,
+  ) => ContextActionMenuItem[]
 }
 
 export function WeldTable({
@@ -213,8 +217,11 @@ export function WeldTable({
   } = useWindowTableVirtualization({ rows: paginatedRows })
   const openRowContextMenu = useCallback(
     (event: MouseEvent, row: WeldRow) => {
-      const contextRows = selectedRowIds.has(row.id) && selectedRows.length > 1 ? selectedRows : [getActionRow(row)]
-      const items = getContextMenuItems?.(row, contextRows).filter((item, index, list) => {
+      const actionRow = getActionRow(row)
+      const contextRows = selectedRowIds.has(row.id) && selectedRows.length > 1 ? selectedRows : [actionRow]
+      const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-weld-field-key]')
+      const fieldKey = cell?.dataset.weldFieldKey as WeldFieldKey | undefined
+      const items = getContextMenuItems?.(actionRow, contextRows, fieldKey).filter((item, index, list) => {
         if (item.type !== 'separator') return true
         return index > 0 && list[index - 1]?.type !== 'separator' && list[index + 1]?.type !== 'separator'
       })

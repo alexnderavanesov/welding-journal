@@ -8,6 +8,10 @@ import {
   resolvePstoResultDraftAfterRowToggle,
 } from '@/lib/psto-report-action-utils'
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
+import {
+  createRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 export function createPstoResultActionHandlers({
   confirmAction,
@@ -43,9 +47,11 @@ export function createPstoResultActionHandlers({
       return
     }
 
+    const request = createRequestDocumentIdentity(requestName, row.pstoRequestDate)
     setPstoResultDraft({
       ...createDefaultPstoResultDraft(defaultConclusionNaming),
       requestName,
+      requestDate: request?.date ?? '',
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
     })
@@ -88,13 +94,22 @@ export function createPstoResultActionHandlers({
     pstoResultCorrectionMutation.mutate({ record: row, action: 'deleteResult' })
   }
 
-  function changePstoResultRequest(requestName: string) {
-    setPstoResultDraft((current) => resolvePstoResultDraftAfterRequestChange(current, heatTreatmentRows, requestName))
+  function changePstoResultRequest(request: RequestDocumentIdentity | null) {
+    setPstoResultDraft((current) =>
+      resolvePstoResultDraftAfterRequestChange(current, heatTreatmentRows, request),
+    )
   }
 
   function togglePstoResultRow(rowId: number) {
     const row = filteredPstoResultRows.find((candidate) => candidate.id === rowId)
-    if (!row || !canSelectPstoResultRow(row, pstoResultDraft.requestName)) return
+    if (
+      !row ||
+      !canSelectPstoResultRow(
+        row,
+        pstoResultDraft.requestName,
+        pstoResultDraft.requestDate,
+      )
+    ) return
 
     setPstoResultDraft((current) => resolvePstoResultDraftAfterRowToggle(current, heatTreatmentRows, rowId))
   }
@@ -129,7 +144,6 @@ export function createPstoResultActionHandlers({
     const diagramName = getRequestNameFromNaming(
       pstoResultDraft.diagramNaming,
       nextPstoDiagramName,
-      pstoResultDraft.pstoDate,
     )
     if (saveCheckSettings.pstoResultDiagramRequired && !diagramName) {
       setMessage('Укажите наименование диаграммы термообработки')
@@ -142,6 +156,7 @@ export function createPstoResultActionHandlers({
       result: pstoResultDraft.result,
       diagramName,
       rows,
+      useSystemName: pstoResultDraft.diagramNaming.mode === 'system',
     })
   }
 

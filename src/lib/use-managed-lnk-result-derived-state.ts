@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import {
-  getFilteredManagedLnkResultRequestOptions,
   getManagedLnkPendingResultRows,
   getManagedLnkResultEntries,
   getManagedLnkResultMethodRows,
@@ -12,9 +11,6 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 
 type ManagedLnkResultDerivedStateParams = {
   lnkRows: WeldRow[]
-  lnkResultRequestOptions: string[]
-  managedLnkResultRequestSearch: string
-  managedLnkResultRequestName: string
   managedLnkResultOrderIds: number[] | null
   managedLnkResultMethodKey: WeldFieldKey | ''
   managedLnkPendingResultChanges: Record<string, string>
@@ -22,46 +18,31 @@ type ManagedLnkResultDerivedStateParams = {
 
 export function useManagedLnkResultDerivedState({
   lnkRows,
-  lnkResultRequestOptions,
-  managedLnkResultRequestSearch,
-  managedLnkResultRequestName,
   managedLnkResultOrderIds,
   managedLnkResultMethodKey,
   managedLnkPendingResultChanges,
 }: ManagedLnkResultDerivedStateParams) {
-  const filteredManagedLnkResultRequestOptions = useMemo(
-    () =>
-      getFilteredManagedLnkResultRequestOptions({
-        lnkResultRequestOptions,
-        managedLnkResultRequestSearch,
-        managedLnkResultRequestName,
-      }),
-    [lnkResultRequestOptions, managedLnkResultRequestName, managedLnkResultRequestSearch],
-  )
-
   const managedLnkResultRows = useMemo(
     () =>
       getManagedLnkResultRows({
         lnkRows,
-        managedLnkResultRequestName,
         managedLnkResultOrderIds,
       }),
-    [lnkRows, managedLnkResultOrderIds, managedLnkResultRequestName],
+    [lnkRows, managedLnkResultOrderIds],
   )
 
   const managedLnkResultMethods = useMemo(
-    () => getManagedLnkResultMethods(managedLnkResultRows, managedLnkResultRequestName),
-    [managedLnkResultRequestName, managedLnkResultRows],
+    () => getManagedLnkResultMethods(managedLnkResultRows),
+    [managedLnkResultRows],
   )
 
   const managedLnkResultMethodRows = useMemo(
     () =>
       getManagedLnkResultMethodRows({
         managedLnkResultRows,
-        managedLnkResultRequestName,
         managedLnkResultMethodKey,
       }),
-    [managedLnkResultMethodKey, managedLnkResultRequestName, managedLnkResultRows],
+    [managedLnkResultMethodKey, managedLnkResultRows],
   )
 
   const managedLnkResultEntries = useMemo(
@@ -69,10 +50,9 @@ export function useManagedLnkResultDerivedState({
       getManagedLnkResultEntries({
         managedLnkResultRows,
         managedLnkResultMethodRows,
-        managedLnkResultRequestName,
         managedLnkResultMethodKey,
       }),
-    [managedLnkResultMethodKey, managedLnkResultMethodRows, managedLnkResultRequestName, managedLnkResultRows],
+    [managedLnkResultMethodKey, managedLnkResultMethodRows, managedLnkResultRows],
   )
 
   const managedLnkPendingResultRows = useMemo(
@@ -81,7 +61,6 @@ export function useManagedLnkResultDerivedState({
   )
 
   return {
-    filteredManagedLnkResultRequestOptions,
     managedLnkResultRows,
     managedLnkResultMethods,
     managedLnkResultEntries,

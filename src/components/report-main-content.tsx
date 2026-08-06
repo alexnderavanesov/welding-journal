@@ -5,6 +5,7 @@ import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { SystemDocumentNavigationRequest } from '@/lib/system-document-types'
 
 const StatisticsPage = lazy(() => import('@/components/statistics-page').then((module) => ({ default: module.StatisticsPage })))
 const WelderStampsRegistry = lazy(() =>
@@ -23,7 +24,13 @@ type ReportMainContentProps = {
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
-  onOpenDocumentRows?: (rowIds: number[], documentTitle: string) => void
+  onOpenDocumentRows?: (
+    rowIds: number[],
+    documentTitle: string,
+    targetReport?: 'weldingJournal' | 'lnk' | 'heatTreatment',
+  ) => void
+  systemDocumentNavigationRequest?: SystemDocumentNavigationRequest | null
+  onSystemDocumentNavigationRequestHandled?: (requestId: number) => void
 }
 
 export function ReportMainContent({
@@ -36,6 +43,8 @@ export function ReportMainContent({
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
   onOpenDocumentRows,
+  systemDocumentNavigationRequest,
+  onSystemDocumentNavigationRequestHandled,
 }: ReportMainContentProps) {
   if (activeReport === 'statistics' || activeReport === 'percentageLines') {
     return (
@@ -65,6 +74,8 @@ export function ReportMainContent({
       <Suspense fallback={<ReportSectionFallback label="Загружаем документы" />}>
         <DocumentsPage
           welderStamps={welderStamps}
+          navigationRequest={systemDocumentNavigationRequest}
+          onNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
           onOpenDocumentRows={onOpenDocumentRows}
         />
       </Suspense>

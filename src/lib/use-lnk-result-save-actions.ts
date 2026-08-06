@@ -19,6 +19,7 @@ type LnkResultMutation = {
     controlDate: string
     resultById: Record<number, string>
     conclusionName: string
+    useSystemName?: boolean
   }) => void
 }
 
@@ -92,7 +93,7 @@ export function useLnkResultSaveActions({
       return
     }
     const conclusionName =
-      !hasNonEmptyResult ? '' : getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName, draft.controlDate)
+      !hasNonEmptyResult ? '' : getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
     if (saveCheckSettings.lnkResultConclusionRequired && hasNonEmptyResult && !conclusionName) {
       setMessage('Укажите наименование заключения')
       return
@@ -104,6 +105,7 @@ export function useLnkResultSaveActions({
       controlDate: draft.controlDate,
       resultById,
       conclusionName,
+      useSystemName: hasNonEmptyResult && draft.conclusionNaming.mode === 'system',
     })
   }
 

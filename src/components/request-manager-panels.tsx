@@ -4,23 +4,30 @@ import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 type RequestManagerSelectProps = {
   label: string
   value: string
-  options: string[]
-  onChange: (requestName: string) => void
+  options: RequestDocumentIdentity[]
+  onChange: (request: RequestDocumentIdentity) => void
 }
 
 export function RequestManagerSelect({ label, value, options, onChange }: RequestManagerSelectProps) {
   return (
     <label className="block space-y-1.5 text-sm">
       <span className="text-[13px] font-medium leading-none text-slate-700">{label}</span>
-      <Select value={value} onChange={(event) => onChange(event.target.value)}>
+      <Select
+        value={value}
+        onChange={(event) => {
+          const option = options.find((candidate) => candidate.key === event.target.value)
+          if (option) onChange(option)
+        }}
+      >
         <option value="">Выберите заявку</option>
         {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
+          <option key={option.key} value={option.key}>
+            {option.label}
           </option>
         ))}
       </Select>

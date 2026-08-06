@@ -4,46 +4,24 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS } from '@/lib/report-config'
 import {
-  collectLnkResultRequestNames,
   collectRequestNames,
   formatLnkConclusionName,
   formatLnkRequestName,
-  parseLnkRequestName,
   formatPstoDiagramName,
   formatPstoRequestName,
-  sortLnkRequestNamesNewestFirst,
-  sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
 import {
   countLnkRequestTargets,
-  filterLnkRowsByRequestName,
-  filterPstoRowsByRequestName,
-  getLnkRequestMethodsForRows,
 } from '@/lib/report-modal-rows'
+import {
+  getLnkRequestDocumentIdentities,
+  getPstoRequestDocumentIdentities,
+  isSameRequestDocument,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 export function getSelectedRowsByIds(rows: WeldRow[], ids: Set<number>) {
   return rows.filter((row) => ids.has(row.id))
-}
-
-export function getLnkRequestDateForRequest(rows: WeldRow[], requestName: string) {
-  const name = requestName.trim()
-  if (!name) return ''
-  const dates = [
-    ...new Set(
-      rows.flatMap((row) =>
-        LNK_METHODS.flatMap((method) => {
-          if (String(row[method.requestKey] ?? '').trim() !== name) return []
-          const requestDate = String(row[method.requestDateKey] ?? '').trim()
-          return requestDate ? [requestDate] : []
-        }),
-      ),
-    ),
-  ]
-  if (dates.length === 1) return dates[0]
-  if (dates.length > 1) return ''
-
-  const parsed = parseLnkRequestName(name)
-  return parsed?.isoDate ?? ''
 }
 
 export function getSelectedLnkMethodKeys(lnkRequestDraft: LnkRequestDraftState) {
@@ -54,60 +32,85 @@ export function getSelectedLnkRequestTargetCount(selectedLnkRows: WeldRow[], sel
   return countLnkRequestTargets(selectedLnkRows, selectedLnkMethodKeys)
 }
 
-export function getNextPstoRequestName(heatTreatmentRows: WeldRow[], settings: RequestConclusionSettings, requestDate?: string) {
-  return formatPstoRequestName(heatTreatmentRows, settings, requestDate)
+export function getNextPstoRequestName(heatTreatmentRows: WeldRow[], settings: RequestConclusionSettings, requestDate?: string, documentNumber?: number) {
+  return formatPstoRequestName(heatTreatmentRows, settings, requestDate, documentNumber)
 }
 
-export function getNextLnkRequestName(rows: WeldRow[], settings: RequestConclusionSettings, requestDate?: string) {
-  return formatLnkRequestName(rows, settings, requestDate)
+export function getNextLnkRequestName(rows: WeldRow[], settings: RequestConclusionSettings, requestDate?: string, documentNumber?: number) {
+  return formatLnkRequestName(rows, settings, requestDate, documentNumber)
 }
 
 export function getPstoRequestOptions(rows: WeldRow[]) {
   return collectRequestNames(rows, ['pstoRequest'])
 }
 
-export function getPstoRequestManagerOptions(pstoRequestOptions: string[]) {
-  return sortPstoRequestNamesNewestFirst(pstoRequestOptions)
+export function getPstoRequestManagerOptions(rows: WeldRow[]) {
+  return getPstoRequestDocumentIdentities(rows)
 }
 
-export function getManagedPstoRequestRows(heatTreatmentRows: WeldRow[], managedPstoRequestName: string) {
-  return filterPstoRowsByRequestName(heatTreatmentRows, managedPstoRequestName)
+export function getManagedPstoRequestRows(
+  heatTreatmentRows: WeldRow[],
+  identity: Pick<RequestDocumentIdentity, 'name' | 'date'>,
+) {
+  return heatTreatmentRows.filter((row) =>
+    isSameRequestDocument(row.pstoRequest, row.pstoRequestDate, identity),
+  )
 }
 
 export function getPstoResultRequestOptions(heatTreatmentRows: WeldRow[]) {
-  return sortPstoRequestNamesNewestFirst(collectRequestNames(heatTreatmentRows, ['pstoRequest']))
+  return getPstoRequestDocumentIdentities(heatTreatmentRows)
 }
 
 export function getLnkRequestOptions(rows: WeldRow[]) {
   return collectRequestNames(rows, LNK_REQUEST_FIELD_KEYS)
 }
 
-export function getLnkRequestManagerOptions(lnkRequestOptions: string[]) {
-  return sortLnkRequestNamesNewestFirst(lnkRequestOptions)
+export function getLnkRequestManagerOptions(rows: WeldRow[]) {
+  return getLnkRequestDocumentIdentities(rows)
 }
 
 export function getLnkResultRequestOptions(lnkRows: WeldRow[]) {
-  return collectLnkResultRequestNames(lnkRows)
+  return getLnkRequestDocumentIdentities(lnkRows)
 }
 
-export function getManagedLnkRequestRows(lnkRows: WeldRow[], managedLnkRequestName: string) {
-  return filterLnkRowsByRequestName(lnkRows, managedLnkRequestName)
+export function getManagedLnkRequestRows(
+  lnkRows: WeldRow[],
+  identity: Pick<RequestDocumentIdentity, 'name' | 'date'>,
+) {
+  return lnkRows.filter((row) =>
+    LNK_METHODS.some((method) =>
+      isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], identity),
+    ),
+  )
 }
 
-export function getManagedLnkRequestMethods(managedLnkRequestRows: WeldRow[], managedLnkRequestName: string) {
-  return getLnkRequestMethodsForRows(managedLnkRequestRows, managedLnkRequestName)
+export function getManagedLnkRequestMethods(
+  managedLnkRequestRows: WeldRow[],
+  identity: Pick<RequestDocumentIdentity, 'name' | 'date'>,
+) {
+  return LNK_METHODS.filter((method) =>
+    managedLnkRequestRows.some((row) =>
+      isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], identity),
+    ),
+  )
 }
 
-export function getNextLnkConclusionName(rows: WeldRow[], lnkResultDraft: LnkResultDraftState, settings: RequestConclusionSettings) {
-  return formatLnkConclusionName(rows, lnkResultDraft.controlDate, lnkResultDraft.methodKey, settings)
+export function getNextLnkConclusionName(rows: WeldRow[], lnkResultDraft: LnkResultDraftState, settings: RequestConclusionSettings, documentNumber?: number) {
+  return formatLnkConclusionName(rows, lnkResultDraft.controlDate, lnkResultDraft.methodKey, settings, documentNumber)
 }
 
-export function getNextPstoDiagramName(rows: WeldRow[], pstoResultDraft: PstoResultDraftState, settings: RequestConclusionSettings) {
-  return formatPstoDiagramName(rows, pstoResultDraft.pstoDate, settings)
+export function getNextPstoDiagramName(rows: WeldRow[], pstoResultDraft: PstoResultDraftState, settings: RequestConclusionSettings, documentNumber?: number) {
+  return formatPstoDiagramName(rows, pstoResultDraft.pstoDate, settings, documentNumber)
 }
 
 export function getSelectedPstoResultRequestRows(heatTreatmentRows: WeldRow[], pstoResultDraft: PstoResultDraftState) {
-  return filterPstoRowsByRequestName(heatTreatmentRows, pstoResultDraft.requestName)
+  if (!pstoResultDraft.requestName) return []
+  return heatTreatmentRows.filter((row) =>
+    isSameRequestDocument(row.pstoRequest, row.pstoRequestDate, {
+      name: pstoResultDraft.requestName,
+      date: pstoResultDraft.requestDate,
+    }),
+  )
 }
 
 export function getPstoResultSelectedRows(heatTreatmentRows: WeldRow[], pstoResultDraft: PstoResultDraftState) {
@@ -115,7 +118,15 @@ export function getPstoResultSelectedRows(heatTreatmentRows: WeldRow[], pstoResu
 }
 
 export function getSelectedLnkResultRequestRows(lnkRows: WeldRow[], lnkResultDraft: LnkResultDraftState) {
-  return filterLnkRowsByRequestName(lnkRows, lnkResultDraft.requestName)
+  if (!lnkResultDraft.requestName) return []
+  return lnkRows.filter((row) =>
+    LNK_METHODS.some((method) =>
+      isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+        name: lnkResultDraft.requestName,
+        date: lnkResultDraft.requestDate,
+      }),
+    ),
+  )
 }
 
 export function getLnkResultSelectedRows(lnkRows: WeldRow[], lnkResultDraft: LnkResultDraftState) {

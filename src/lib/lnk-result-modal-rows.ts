@@ -15,11 +15,25 @@ import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { normalizeFinalStatus } from '@/lib/weld-status'
+import {
+  collectRequestDocumentIdentities,
+  createRequestDocumentIdentity,
+  isSameRequestDocument,
+} from '@/lib/request-document-identity'
 
-export function filterLnkRowsByRequestName(rows: WeldRow[], requestName: string) {
+export function filterLnkRowsByRequestName(rows: WeldRow[], requestName: string, requestDate?: string) {
   const name = requestName.trim()
   if (!name) return []
-  return rows.filter((row) => LNK_METHODS.some((method) => String(row[method.requestKey] ?? '').trim() === name))
+  return rows.filter((row) =>
+    LNK_METHODS.some((method) =>
+      requestDate === undefined
+        ? String(row[method.requestKey] ?? '').trim() === name
+        : isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+            name,
+            date: requestDate.trim(),
+          }),
+    ),
+  )
 }
 
 export function getLnkRowRequestNames(row: WeldInput) {
@@ -30,11 +44,25 @@ export function getLnkRowRequestNames(row: WeldInput) {
   ]
 }
 
-export function getLnkRowRequestMethods(row: WeldInput, requestName: string) {
+export function getLnkRowRequestDocumentIdentities(row: WeldInput) {
+  return collectRequestDocumentIdentities(
+    LNK_METHODS.flatMap((method) => {
+      const identity = createRequestDocumentIdentity(row[method.requestKey], row[method.requestDateKey])
+      return identity ? [identity] : []
+    }),
+  )
+}
+
+export function getLnkRowRequestMethods(row: WeldInput, requestName: string, requestDate?: string) {
   const name = requestName.trim()
   return LNK_METHODS.filter((method) => {
     const rowRequestName = String(row[method.requestKey] ?? '').trim()
-    return name ? rowRequestName === name : rowRequestName.length > 0
+    if (!name) return rowRequestName.length > 0
+    if (requestDate === undefined) return rowRequestName === name
+    return isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+      name,
+      date: requestDate.trim(),
+    })
   })
 }
 
@@ -71,14 +99,24 @@ export function getLnkResultEntryPriority(row: WeldInput, methodKey: WeldFieldKe
   return 3
 }
 
-export function isLnkResultRowApplicable(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
+export function isLnkResultRowApplicable(
+  row: WeldInput,
+  requestName: string,
+  methodKey: WeldFieldKey | '',
+  requestDate?: string,
+) {
   const method = methodKey ? getLnkMethodByRequestKey(methodKey) : null
   if (!method) return false
   if (!isEnabledControlValue(row[method.enabledKey])) return false
   const rowRequestName = String(row[method.requestKey] ?? '').trim()
   if (!rowRequestName) return false
   const name = requestName.trim()
-  return !name || rowRequestName === name
+  if (!name) return true
+  if (requestDate === undefined) return rowRequestName === name
+  return isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+    name,
+    date: requestDate.trim(),
+  })
 }
 
 export function getLnkResultMethodsForRows(rows: WeldInput[], requestName: string) {
@@ -93,18 +131,33 @@ export function getLnkResultMethodsForRows(rows: WeldInput[], requestName: strin
   )
 }
 
-export function rowBelongsToLnkRequest(row: WeldInput, requestName: string) {
+export function rowBelongsToLnkRequest(row: WeldInput, requestName: string, requestDate?: string) {
   const name = requestName.trim()
-  return Boolean(name && LNK_METHODS.some((method) => String(row[method.requestKey] ?? '').trim() === name))
+  return Boolean(
+    name &&
+      LNK_METHODS.some((method) =>
+        requestDate === undefined
+          ? String(row[method.requestKey] ?? '').trim() === name
+          : isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+              name,
+              date: requestDate.trim(),
+            }),
+      ),
+  )
 }
 
-export function canSelectLnkResultRow(row: WeldInput, requestName: string, methodKey: WeldFieldKey | '') {
+export function canSelectLnkResultRow(
+  row: WeldInput,
+  requestName: string,
+  methodKey: WeldFieldKey | '',
+  requestDate?: string,
+) {
   if (methodKey) {
     const method = getLnkMethodByRequestKey(methodKey)
-    if (!method || !isLnkResultRowApplicable(row, requestName, methodKey)) return false
+    if (!method || !isLnkResultRowApplicable(row, requestName, methodKey, requestDate)) return false
     if (isLnkMethodNoNeed(row, method)) return false
     return !isFinalLnkResultValue(row[method.resultKey])
   }
-  if (requestName.trim()) return rowBelongsToLnkRequest(row, requestName)
+  if (requestName.trim()) return rowBelongsToLnkRequest(row, requestName, requestDate)
   return getLnkRowRequestNames(row).length > 0
 }

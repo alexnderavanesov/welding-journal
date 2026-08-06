@@ -116,7 +116,6 @@ export function LnkResultSettings({
           systemName={nextConclusionName}
           label="Наименование заключения"
           placeholder="Введите наименование заключения"
-          customDate={draft.controlDate}
           disabled={!hasNonEmptyRows}
           onChange={onConclusionNamingChange}
         />

@@ -77,10 +77,10 @@ export function buildLnkConclusionCorrectionRows({
   const proposedRecords = records
     .filter((record) => hasText(record[method.resultKey]))
     .map((record) => {
-      const fixedDateConclusionName = formatCustomDocumentName(nextConclusionName, record[method.conclusionDateKey])
+      const customConclusionName = formatCustomDocumentName(nextConclusionName)
       const proposedRecord = {
         ...record,
-        [method.conclusionKey]: fixedDateConclusionName,
+        [method.conclusionKey]: customConclusionName,
       } as RowWithId
       return withTouchedLnkFinalStatus(proposedRecord)
     })

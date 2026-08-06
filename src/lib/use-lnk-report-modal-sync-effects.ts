@@ -12,6 +12,10 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import {
+  findRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 type SetNumberSet = Dispatch<SetStateAction<Set<number>>>
 
@@ -29,12 +33,11 @@ export type LnkReportModalSyncEffectsOptions = {
   isLnkResultManagerOpen: boolean
   isLnkResultModalOpen: boolean
   lnkRequestOptions: string[]
-  lnkResultRequestOptions: string[]
+  lnkResultRequestOptions: RequestDocumentIdentity[]
   lnkRows: WeldRow[]
   managedLnkResultEntries: ManagedLnkResultEntry[]
   managedLnkResultMethodKey: WeldFieldKey | ''
   managedLnkResultMethods: Array<{ requestKey: WeldFieldKey }>
-  managedLnkResultRequestName: string
   setLnkResultDraft: Dispatch<SetStateAction<LnkResultDraftState>>
   setManagedLnkConclusionDrafts: Dispatch<SetStateAction<Record<string, string>>>
   setManagedLnkResultMethodKey: Dispatch<SetStateAction<WeldFieldKey | ''>>
@@ -51,7 +54,6 @@ export function useLnkReportModalSyncEffects({
   managedLnkResultEntries,
   managedLnkResultMethodKey,
   managedLnkResultMethods,
-  managedLnkResultRequestName,
   setLnkResultDraft,
   setManagedLnkConclusionDrafts,
   setManagedLnkResultMethodKey,
@@ -75,7 +77,6 @@ export function useLnkReportModalSyncEffects({
     isLnkResultManagerOpen,
     managedLnkResultMethodKey,
     managedLnkResultMethods,
-    managedLnkResultRequestName,
     setManagedLnkResultMethodKey,
   ])
 
@@ -91,18 +92,39 @@ export function useLnkReportModalSyncEffects({
     setLnkResultDraft((current) => {
       if (!isLnkResultModalOpen) return current
       const selectedRows = lnkRows.filter((row) => current.rowIds.has(row.id))
-      const requestName = !current.requestName || lnkResultRequestOptions.includes(current.requestName) ? current.requestName : ''
-      const requestRows = filterLnkRowsByRequestName(lnkRows, requestName)
+      const selectedRequest = findRequestDocumentIdentity(
+        lnkResultRequestOptions,
+        current.requestName,
+        current.requestDate,
+      )
+      const keepsCurrentRequest = Boolean(
+        selectedRequest &&
+          selectedRequest.name === current.requestName &&
+          selectedRequest.date === current.requestDate,
+      )
+      const requestName = keepsCurrentRequest ? current.requestName : ''
+      const requestDate = keepsCurrentRequest ? current.requestDate : ''
+      const requestRows = filterLnkRowsByRequestName(lnkRows, requestName, requestDate)
       const methodRows = current.rowIds.size > 0 ? [...selectedRows, ...requestRows] : requestName ? requestRows : lnkRows
       const methods = getLnkInputMethodsForRows(methodRows, '')
       const methodKey = !current.methodKey || methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
       const rowIds = new Set(
         [...current.rowIds].filter((id) => {
           const row = lnkRows.find((candidate) => candidate.id === id)
-          return row ? !methodKey || canSelectLnkResultRow(row, '', methodKey) : false
+          return row
+            ? !methodKey ||
+                canSelectLnkResultRow(row, requestName, methodKey, requestDate)
+            : false
         }),
       )
-      return { ...current, requestName, methodKey, rowIds, rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds) }
+      return {
+        ...current,
+        requestName,
+        requestDate,
+        methodKey,
+        rowIds,
+        rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),
+      }
     })
   }, [isLnkResultModalOpen, lnkRequestOptions, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
 }

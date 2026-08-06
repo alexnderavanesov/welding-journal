@@ -9,6 +9,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 type LnkResultRowRequestBadgesProps = {
   row: WeldRow
   requestName: string
+  requestDate: string
   methodKey: WeldFieldKey | ''
   selected: boolean
   rowRequestNames: string[]
@@ -17,6 +18,7 @@ type LnkResultRowRequestBadgesProps = {
 export function LnkResultRowRequestBadges({
   row,
   requestName,
+  requestDate,
   methodKey,
   selected,
   rowRequestNames,
@@ -31,7 +33,7 @@ export function LnkResultRowRequestBadges({
 
   return (
     <>
-      {getLnkRowRequestMethods(row, requestName).map((availableMethod) => {
+      {getLnkRowRequestMethods(row, requestName, requestName ? requestDate : undefined).map((availableMethod) => {
         const requestNameValue = String(row[availableMethod.requestKey] ?? '').trim()
         const conclusionName = String(row[availableMethod.conclusionKey] ?? '').trim()
         const hasNoNeed = isLnkMethodNoNeed(row, availableMethod)

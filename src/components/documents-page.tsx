@@ -1,10 +1,18 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle2,
   ChevronDown,
   Download,
   ExternalLink,
+  FilePenLine,
   FileSpreadsheet,
   FileText,
   Maximize2,
@@ -61,20 +69,34 @@ import {
 } from '@/lib/welding-journal-generation'
 import {
   downloadSystemDocument,
+  loadSystemDocumentRows,
   loadSystemDocuments,
   openSystemDocument,
+  renameSystemDocumentToCurrentName,
 } from '@/lib/system-document-storage'
 import {
+  getSystemDocumentId,
   getSystemDocumentProfile,
+  getSystemDocumentTargetReport,
   isSystemDocumentType,
+  type SystemDocumentNavigationRequest,
   type SystemDocumentSummary,
 } from '@/lib/system-document-types'
-import { WELD_JOINTS_QUERY_KEY } from '@/lib/weld-query-utils'
+import {
+  SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
+} from '@/lib/system-document-sequence-storage'
+import { invalidateWeldJoints, WELD_JOINTS_QUERY_KEY } from '@/lib/weld-query-utils'
 import { getDocumentGenerationData } from '@/server/welds'
 
 type DocumentsPageProps = {
   welderStamps: WelderStampRecord[]
-  onOpenDocumentRows?: (rowIds: number[], documentTitle: string) => void
+  navigationRequest?: SystemDocumentNavigationRequest | null
+  onNavigationRequestHandled?: (requestId: number) => void
+  onOpenDocumentRows?: (
+    rowIds: number[],
+    documentTitle: string,
+    targetReport?: 'weldingJournal' | 'lnk' | 'heatTreatment',
+  ) => void
 }
 
 const DOCUMENT_PREVIEW_ROW_LIMIT = 3
@@ -165,6 +187,8 @@ function getTextValue(value: unknown) {
 
 export function DocumentsPage({
   welderStamps,
+  navigationRequest,
+  onNavigationRequestHandled,
   onOpenDocumentRows,
 }: DocumentsPageProps) {
   const queryClient = useQueryClient()
@@ -177,7 +201,11 @@ export function DocumentsPage({
   const [selectedLines, setSelectedLines] = useState<string[]>([])
   const [manualFileName, setManualFileName] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
-  const [activeDocumentType, setActiveDocumentType] = useState<DocumentTemplateId>('weldingJournal')
+  const [activeNavigationRequest, setActiveNavigationRequest] =
+    useState<SystemDocumentNavigationRequest | null>(navigationRequest ?? null)
+  const [activeDocumentType, setActiveDocumentType] = useState<DocumentTemplateId>(
+    () => navigationRequest?.type ?? 'weldingJournal',
+  )
   const [activeDocumentTemplate, setActiveDocumentTemplate] = useState<StoredDocumentTemplate | null>(null)
   const [templateDocumentPreview, setTemplateDocumentPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
   const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null)
@@ -231,6 +259,16 @@ export function DocumentsPage({
     placeholderData: keepPreviousData,
   })
   const rows = generationDataQuery.data?.rows ?? []
+
+  useEffect(() => {
+    if (!navigationRequest) return
+    setActiveNavigationRequest(navigationRequest)
+    setActiveDocumentType(navigationRequest.type)
+    setActiveWorkspaceTab('history')
+    setTemplateDocumentPreview(null)
+    setTemplatePreviewError(null)
+    onNavigationRequestHandled?.(navigationRequest.requestId)
+  }, [navigationRequest, onNavigationRequestHandled])
 
   useEffect(() => {
     try {
@@ -513,6 +551,7 @@ export function DocumentsPage({
                 key={option.type}
                 type="button"
                 onClick={() => {
+                  setActiveNavigationRequest(null)
                   setActiveDocumentType(option.type)
                   setManualFileName('')
                   setTemplateDocumentPreview(null)
@@ -533,6 +572,7 @@ export function DocumentsPage({
               key={option.id}
               type="button"
               onClick={() => {
+                setActiveNavigationRequest(null)
                 setActiveDocumentType(option.id)
                 setActiveWorkspaceTab('history')
                 setTemplateDocumentPreview(null)
@@ -914,12 +954,38 @@ export function DocumentsPage({
       {activeWorkspaceTab === 'history' ? (
         isSystemDocument ? (
           <SystemDocumentsPanel
+            key={activeDocumentType}
             documents={systemDocuments}
             documentLabel={getSystemDocumentProfile(activeDocumentType).label}
+            navigationRequest={
+              activeNavigationRequest?.type === activeDocumentType
+                ? activeNavigationRequest
+                : null
+            }
             template={activeDocumentTemplate}
             isLoading={isSystemDocumentsLoading}
             error={systemDocumentsError}
             welderStamps={welderStamps}
+            onOpenRows={async (documentRecord) => {
+              const documentRows = await loadSystemDocumentRows(documentRecord)
+              if (documentRows.length === 0) throw new Error('В документе больше нет стыков.')
+              onOpenDocumentRows?.(
+                documentRows.map((row) => row.id),
+                documentRecord.title,
+                getSystemDocumentTargetReport(documentRecord.type),
+              )
+            }}
+            onRenamed={async () => {
+              if (!isSystemDocumentType(activeDocumentType)) return
+              const nextDocuments = await loadSystemDocuments(activeDocumentType)
+              setSystemDocuments(nextDocuments)
+              await Promise.all([
+                invalidateWeldJoints(queryClient),
+                queryClient.invalidateQueries({
+                  queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
+                }),
+              ])
+            }}
           />
         ) : (
           <GeneratedDocumentsPanel
@@ -946,6 +1012,17 @@ export function DocumentsPage({
       ) : null}
     </div>
   )
+}
+
+function clearDocumentSearchOnEscape(
+  event: ReactKeyboardEvent<HTMLInputElement>,
+  clearSearch: () => void,
+) {
+  if (event.key !== 'Escape' || !event.currentTarget.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  clearSearch()
 }
 
 function GeneratedDocumentsPanel({
@@ -1039,6 +1116,7 @@ function GeneratedDocumentsPanel({
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
               placeholder="Найти документ"
               aria-label="Найти документ"
               className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-9 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
@@ -1217,24 +1295,43 @@ function GeneratedDocumentsPanel({
 function SystemDocumentsPanel({
   documents,
   documentLabel,
+  navigationRequest,
   template,
   isLoading,
   error,
   welderStamps,
+  onOpenRows,
+  onRenamed,
 }: {
   documents: SystemDocumentSummary[]
   documentLabel: string
+  navigationRequest: SystemDocumentNavigationRequest | null
   template: StoredDocumentTemplate | null
   isLoading: boolean
   error: string | null
   welderStamps: WelderStampRecord[]
+  onOpenRows: (documentRecord: SystemDocumentSummary) => Promise<void>
+  onRenamed: () => Promise<void>
 }) {
+  const { requireEditPassword } = useSecurityGuard()
+  const confirmAction = useConfirmAction()
   const [searchQuery, setSearchQuery] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
+  const navigationDocumentId = navigationRequest
+    ? getSystemDocumentId(navigationRequest)
+    : null
+
+  useEffect(() => {
+    if (!navigationRequest) return
+    setSearchQuery(navigationRequest.title)
+  }, [navigationRequest])
+
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('ru-RU')
   const filteredDocuments = useMemo(
-    () =>
-      normalizedSearchQuery
+    () => {
+      const matchingDocuments = normalizedSearchQuery
         ? documents.filter((documentRecord) =>
             [
               documentRecord.title,
@@ -1248,12 +1345,20 @@ function SystemDocumentsPanel({
               String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery),
             ),
           )
-        : documents,
-    [documents, normalizedSearchQuery],
+        : documents
+      if (!navigationDocumentId) return matchingDocuments
+      return [...matchingDocuments].sort((left, right) => {
+        const leftMatch = left.id === navigationDocumentId ? 1 : 0
+        const rightMatch = right.id === navigationDocumentId ? 1 : 0
+        return rightMatch - leftMatch
+      })
+    },
+    [documents, navigationDocumentId, normalizedSearchQuery],
   )
 
   const runAction = async (action: () => Promise<unknown> | void) => {
     setActionError(null)
+    setActionNotice(null)
     try {
       await action()
     } catch (actionFailure) {
@@ -1263,6 +1368,39 @@ function SystemDocumentsPanel({
           : 'Не удалось сформировать актуальную версию документа.',
       )
     }
+  }
+
+  const renameDocumentRecord = async (documentRecord: SystemDocumentSummary) => {
+    if (
+      !(await requireEditPassword(
+        `переименование документа «${documentRecord.title}» по текущему системному правилу`,
+      ))
+    ) {
+      return
+    }
+    const confirmed = await confirmAction({
+      title: 'Привести к системному имени',
+      itemName: documentRecord.title,
+      description:
+        'Название будет заново собрано по текущему правилу из настроек. Дата, состав стыков, виды контроля и результаты документа не изменятся.',
+      warning:
+        'Если документ раньше имел системное имя, его номер сохранится. Для пользовательского имени система выделит следующий номер этого типа документа.',
+      confirmLabel: 'Переименовать',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+
+    setRenamingDocumentId(documentRecord.id)
+    await runAction(async () => {
+      const result = await renameSystemDocumentToCurrentName(documentRecord)
+      if (result.changed) await onRenamed()
+      setActionNotice(
+        result.changed
+          ? `Документ переименован: «${result.previousName}» → «${result.nextName}».`
+          : 'Название документа уже соответствует текущему системному правилу.',
+      )
+    })
+    setRenamingDocumentId(null)
   }
 
   return (
@@ -1288,6 +1426,7 @@ function SystemDocumentsPanel({
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
               placeholder="Найти документ"
               aria-label="Найти документ"
               className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-9 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
@@ -1312,6 +1451,11 @@ function SystemDocumentsPanel({
           {error ?? actionError}
         </div>
       ) : null}
+      {actionNotice ? (
+        <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+          {actionNotice}
+        </div>
+      ) : null}
 
       {!template ? (
         <div className="px-4 py-10 text-center">
@@ -1331,7 +1475,7 @@ function SystemDocumentsPanel({
         </div>
       ) : (
         <div className="min-w-0">
-          <div className="grid grid-cols-[minmax(0,1fr)_70px_130px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#60778a] lg:grid-cols-[minmax(220px,1.5fr)_90px_minmax(120px,0.8fr)_minmax(110px,0.7fr)_70px_120px_100px]">
+          <div className="grid grid-cols-[minmax(0,1fr)_70px_140px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#60778a] lg:grid-cols-[minmax(220px,1.5fr)_90px_minmax(120px,0.8fr)_minmax(110px,0.7fr)_70px_120px_140px]">
             <span>Документ</span>
             <span className="hidden lg:block">Вид НК</span>
             <span className="hidden lg:block">Проект / шифр</span>
@@ -1345,8 +1489,12 @@ function SystemDocumentsPanel({
               {filteredDocuments.map((documentRecord, documentIndex) => (
                 <div
                   key={documentRecord.id}
-                  className={`grid min-w-0 grid-cols-[minmax(0,1fr)_70px_130px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] lg:grid-cols-[minmax(220px,1.5fr)_90px_minmax(120px,0.8fr)_minmax(110px,0.7fr)_70px_120px_100px] ${
-                    documentIndex % 2 === 0 ? 'bg-white' : 'bg-[#f4f8fa]'
+                  className={`grid min-w-0 grid-cols-[minmax(0,1fr)_70px_140px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] lg:grid-cols-[minmax(220px,1.5fr)_90px_minmax(120px,0.8fr)_minmax(110px,0.7fr)_70px_120px_140px] ${
+                    documentRecord.id === navigationDocumentId
+                      ? 'bg-sky-50 ring-1 ring-inset ring-sky-300'
+                      : documentIndex % 2 === 0
+                        ? 'bg-white'
+                        : 'bg-[#f4f8fa]'
                   }`}
                 >
                   <button
@@ -1395,6 +1543,29 @@ function SystemDocumentsPanel({
                     {formatDate(documentRecord.date) || '-'}
                   </span>
                   <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void runAction(() => onOpenRows(documentRecord))}
+                      title={`Показать стыки документа в отчете ${
+                        getSystemDocumentTargetReport(documentRecord.type) === 'lnk' ? 'ЛНК' : 'ПСТО'
+                      }`}
+                      aria-label={`Показать стыки документа в отчете ${
+                        getSystemDocumentTargetReport(documentRecord.type) === 'lnk' ? 'ЛНК' : 'ПСТО'
+                      }`}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    >
+                      <Rows3 className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void renameDocumentRecord(documentRecord)}
+                      disabled={renamingDocumentId === documentRecord.id}
+                      title="Переименовать по текущему системному правилу"
+                      aria-label="Переименовать документ по текущему системному правилу"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      <FilePenLine className="h-4 w-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() =>

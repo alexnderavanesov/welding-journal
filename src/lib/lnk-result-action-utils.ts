@@ -8,6 +8,7 @@ import {
 } from '@/lib/report-modal-rows'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 function keepAvailableMethodKey(
   methodKey: WeldFieldKey | '',
@@ -22,11 +23,21 @@ function keepAvailableMethodKey(
 export function resolveLnkResultDraftAfterRequestChange(
   current: LnkResultDraftState,
   lnkRows: WeldRow[],
-  requestName: string,
+  request: RequestDocumentIdentity | null,
 ): LnkResultDraftState {
-  const rowIds = new Set(current.rowIds)
+  const requestName = request?.name ?? ''
+  const requestDate = request?.date ?? ''
+  const rowIds = new Set(
+    [...current.rowIds].filter((id) => {
+      if (!request) return true
+      const row = lnkRows.find((candidate) => candidate.id === id)
+      return row ? rowBelongsToLnkRequest(row, requestName, requestDate) : false
+    }),
+  )
   const selectedRows = lnkRows.filter((row) => rowIds.has(row.id))
-  const requestRows = requestName ? filterLnkRowsByRequestName(lnkRows, requestName) : []
+  const requestRows = request
+    ? filterLnkRowsByRequestName(lnkRows, requestName, requestDate)
+    : []
   const methodRows = selectedRows.length > 0
     ? [...selectedRows, ...requestRows]
     : requestName
@@ -36,6 +47,7 @@ export function resolveLnkResultDraftAfterRequestChange(
   return {
     ...current,
     requestName,
+    requestDate,
     methodKey,
     rowIds,
     rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),
@@ -51,7 +63,14 @@ export function resolveLnkResultDraftAfterMethodChange(
   const rowIds = new Set(
     [...current.rowIds].filter((id) => {
       const row = lnkRows.find((candidate) => candidate.id === id)
-      return row ? canSelectLnkResultRow(row, '', methodKey) : false
+      return row
+        ? canSelectLnkResultRow(
+            row,
+            current.requestName,
+            methodKey,
+            current.requestDate,
+          )
+        : false
     }),
   )
   return {
@@ -69,11 +88,14 @@ export function resolveLnkResultDraftAfterRowIdsChange(
 ): LnkResultDraftState {
   const selectedRows = lnkRows.filter((candidate) => rowIds.has(candidate.id))
   const requestName = current.requestName
-    && selectedRows.some((candidate) => rowBelongsToLnkRequest(candidate, current.requestName))
+    && selectedRows.some((candidate) =>
+      rowBelongsToLnkRequest(candidate, current.requestName, current.requestDate),
+    )
     ? current.requestName
     : ''
+  const requestDate = requestName ? current.requestDate : ''
   const methodRows = requestName
-    ? filterLnkRowsByRequestName(lnkRows, requestName)
+    ? filterLnkRowsByRequestName(lnkRows, requestName, requestDate)
     : selectedRows.length > 0
       ? selectedRows
       : lnkRows
@@ -81,6 +103,7 @@ export function resolveLnkResultDraftAfterRowIdsChange(
   return {
     ...current,
     requestName,
+    requestDate,
     methodKey,
     rowIds,
     rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),

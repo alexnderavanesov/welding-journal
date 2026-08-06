@@ -46,6 +46,11 @@ import {
 import type { GeneratedDocumentType } from '@/server/generated-documents'
 import { isGeneratedDocumentType } from '@/lib/generated-document-types'
 import {
+  loadSystemDocumentSequence,
+  resetStoredSystemDocumentSequence,
+} from '@/lib/system-document-sequence-storage'
+import { isSystemDocumentType, type SystemDocumentType } from '@/lib/system-document-types'
+import {
   REQUEST_NAMING_PATTERN_FIELDS,
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
   buildSystemNameFromPattern,
@@ -1405,13 +1410,16 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }, [])
 
   useEffect(() => {
-    if (!isGeneratedDocumentType(activeTemplateId)) {
+    if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentType(activeTemplateId)) {
       setNextDocumentNumber(null)
       return
     }
     let isMounted = true
     setNextDocumentNumber(null)
-    loadGeneratedDocumentSequence(activeTemplateId)
+    const loadSequence = isGeneratedDocumentType(activeTemplateId)
+      ? loadGeneratedDocumentSequence(activeTemplateId)
+      : loadSystemDocumentSequence(activeTemplateId)
+    loadSequence
       .then((result) => {
         if (isMounted) setNextDocumentNumber(result.nextNumber)
       })
@@ -1538,13 +1546,16 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }
 
   const handleDocumentSequenceReset = async () => {
-    if (!isGeneratedDocumentType(activeTemplateId)) return
+    if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentType(activeTemplateId)) return
+    const isSystemDocument = isSystemDocumentType(activeTemplateId)
     const confirmed = await confirmAction({
       title: 'Обнулить счетчик документов?',
       itemName: activeTemplate.label,
       description: 'Следующий новый документ этого типа получит порядковый номер 1.',
       warning:
-        'Номера уже сформированных документов не изменятся. Поэтому после обнуления в истории могут появиться документы с одинаковыми порядковыми номерами.',
+        isSystemDocument
+          ? 'Имена уже созданных заявок и заключений не изменятся. Если сочетание системного имени и даты уже занято, система пропустит такой номер, чтобы не объединить разные документы.'
+          : 'Номера уже сформированных документов не изменятся. Поэтому после обнуления в истории могут появиться документы с одинаковыми порядковыми номерами.',
       confirmLabel: 'Обнулить счетчик',
       tone: 'danger',
     })
@@ -1554,7 +1565,9 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     setUploadError(null)
     try {
       await runProtectedSettingsChange(async () => {
-        const result = await resetGeneratedDocumentSequence(activeTemplateId as GeneratedDocumentType)
+        const result = isSystemDocument
+          ? await resetStoredSystemDocumentSequence(activeTemplateId as SystemDocumentType)
+          : await resetGeneratedDocumentSequence(activeTemplateId as GeneratedDocumentType)
         setNextDocumentNumber(result.nextNumber)
       })
     } catch (error) {
@@ -1727,7 +1740,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           </div>
 
           <div className="space-y-6">
-            {activeUpload && isGeneratedDocumentType(activeTemplateId) ? (
+            {activeUpload && (isGeneratedDocumentType(activeTemplateId) || isSystemDocumentType(activeTemplateId)) ? (
               <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
                   <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600">
@@ -1738,7 +1751,9 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                     <p className="mt-0.5 text-xs leading-5 text-slate-500">
                       Следующий новый документ получит номер{' '}
                       <span className="font-semibold text-slate-800">{nextDocumentNumber ?? '…'}</span>.
-                      Повторное формирование существующего документа сохраняет его номер.
+                      {isSystemDocumentType(activeTemplateId)
+                        ? ' Пользовательское имя и изменение состава существующего документа счетчик не расходуют. При приведении пользовательского имени к системному выделяется следующий номер.'
+                        : ' Повторное формирование существующего документа сохраняет его номер.'}
                     </p>
                   </div>
                 </div>
@@ -2125,12 +2140,16 @@ function RequestNamingSettingsCard({
   )
   const patternDraft = serializeRequestNamingPattern(parts)
   const hasPattern = patternDraft.trim().length > 0
+  const hasNumberField = parts.some((part) => part.type === 'field' && part.field === 'number')
   const hasChanges = patternDraft !== settings.systemPattern
   const preview = buildSystemNameFromPattern(
     hasPattern ? patternDraft : placeholder,
     {
       date: new Date(),
       methodCode: kind === 'lnkConclusion' ? 'РК' : undefined,
+      projectTitle: 'Риформинг',
+      subtitleCode: '400',
+      line: 'LIN-001',
     },
     [],
   )
@@ -2341,7 +2360,7 @@ function RequestNamingSettingsCard({
                 ) : null}
                 <button
                   type="button"
-                  disabled={!hasPattern || !hasChanges}
+                  disabled={!hasPattern || !hasNumberField || !hasChanges}
                   onClick={() => void onPatternSave(patternDraft)}
                   className="inline-flex h-9 items-center gap-1.5 rounded-md bg-sky-700 px-3 text-xs font-semibold text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
                 >
@@ -2350,6 +2369,12 @@ function RequestNamingSettingsCard({
                 </button>
               </div>
             </div>
+            {!hasNumberField ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                Добавьте поле «Порядковый номер». Без него системные заявки и заключения нельзя создавать:
+                после обнуления счётчика документы могли бы получить одинаковые имена.
+              </div>
+            ) : null}
           </>
         ) : null}
       </div>

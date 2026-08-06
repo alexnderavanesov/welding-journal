@@ -27,9 +27,7 @@ export type UseManagedLnkResultActionsOptions = {
   }>
   setMessage: (value: string | null) => void
   setIsLnkResultManagerOpen: (value: boolean) => void
-  setManagedLnkResultRequestName: (value: string) => void
   setManagedLnkResultMethodKey: Dispatch<SetStateAction<WeldFieldKey | ''>>
-  setManagedLnkResultRequestSearch: (value: string) => void
   setManagedLnkConclusionDrafts: Dispatch<SetStateAction<Record<string, string>>>
   setManagedLnkResultOrderIds: Dispatch<SetStateAction<number[] | null>>
   setManagedLnkResultChangeHint: Dispatch<SetStateAction<ManagedLnkResultChangeHintState>>

@@ -50,29 +50,49 @@ const SPECIAL_FIELDS: Array<{ key: DocumentTemplateFieldKey; label: string; grou
   })),
 ]
 
-const SYSTEM_DOCUMENT_FIELDS: Array<{ key: DocumentTemplateFieldKey; label: string; group: string }> = [
-  { key: '__systemDocumentTitle', label: 'Наименование документа', group: 'Текущий системный документ' },
-  { key: '__systemDocumentDate', label: 'Дата документа', group: 'Текущий системный документ' },
-  { key: '__systemDocumentMethods', label: 'Виды контроля документа', group: 'Текущий системный документ' },
-  { key: '__systemDocumentResult', label: 'Результат документа', group: 'Текущий системный документ' },
+const SYSTEM_DOCUMENT_FIELDS: Array<{
+  key: DocumentTemplateFieldKey
+  label: string
+  group: string
+  kind: 'text'
+}> = [
+  { key: '__systemDocumentTitle', label: 'Наименование документа', group: 'Текущий системный документ', kind: 'text' },
+  { key: '__systemDocumentDate', label: 'Дата документа', group: 'Текущий системный документ', kind: 'text' },
+  { key: '__systemDocumentNumber', label: '№ документа', group: 'Текущий системный документ', kind: 'text' },
 ]
 
 type TemplateFieldOption = {
   key: DocumentTemplateFieldKey
   label: string
   group: string
+  kind: 'text' | 'number'
 }
 
 const BASE_FIELD_OPTIONS: TemplateFieldOption[] = [
-  ...SPECIAL_FIELDS,
+  ...SPECIAL_FIELDS.map((field) => ({ ...field, kind: field.key === '__index' ? 'number' as const : 'text' as const })),
   ...WELD_FIELDS.filter(
     (field) => !isVirtualWeldField(field) || isGeneratedDocumentFieldKey(field.key),
   ).map((field) => ({
     key: field.key as DocumentTemplateFieldKey,
     label: field.label,
     group: field.group,
+    kind: field.kind === 'number' ? 'number' as const : 'text' as const,
   })),
 ]
+
+const NUMERIC_TEMPLATE_FIELD_KEYS = new Set(
+  BASE_FIELD_OPTIONS.filter((field) => field.kind === 'number').map((field) => field.key),
+)
+
+function isNumericTemplateField(field: DocumentTemplateFieldKey | undefined) {
+  return Boolean(field && NUMERIC_TEMPLATE_FIELD_KEYS.has(field))
+}
+
+function isValidTemplateMultiplier(value: string | undefined) {
+  if (!value?.trim()) return true
+  const normalized = value.trim().replace(/\s+/g, '').replace(',', '.')
+  return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized) && Number.isFinite(Number(normalized))
+}
 
 export type DocumentTemplateRepeatTarget = 'joint' | 'projectTitle' | 'subtitleCode' | 'line'
 
@@ -292,6 +312,23 @@ export function validateDocumentTemplateBuilderConfig(
   }
   if (draft.bindings.some((binding) => getBindingParts(binding).length === 0)) {
     return 'Для каждой назначенной ячейки выберите поле.'
+  }
+  for (const binding of draft.bindings) {
+    const parts = getBindingParts(binding)
+    for (const [partIndex, part] of parts.entries()) {
+      if ((part.numericOperation || part.multiplier?.trim()) && !isNumericTemplateField(part.field)) {
+        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: числовая формула доступна только для числового поля.`
+      }
+      if (part.numericOperation && !part.compareField) {
+        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: выберите второе числовое поле.`
+      }
+      if (part.compareField && !isNumericTemplateField(part.compareField)) {
+        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: второе поле формулы должно быть числовым.`
+      }
+      if (!isValidTemplateMultiplier(part.multiplier)) {
+        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: укажите корректный коэффициент умножения.`
+      }
+    }
   }
   if (draft.repeatMode === 'groups' && !draft.repeatGroupBy) {
     return 'Выберите поле группировки повторяемого блока.'
@@ -905,6 +942,28 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                       />
                     ) : null}
                   </div>
+
+                  <div>
+                    <div className="text-xs font-semibold uppercase text-slate-500">Если значение заполнено</div>
+                    <select
+                      value={selectedBinding.filledMode ?? 'value'}
+                      onChange={(event) =>
+                        updateSelectedBinding({ filledMode: event.target.value as DocumentTemplateCellBinding['filledMode'] })
+                      }
+                      className="mt-1 w-full rounded-md border-slate-300 text-sm"
+                    >
+                      <option value="value">Оставить рассчитанное значение</option>
+                      <option value="custom">Написать свой текст</option>
+                    </select>
+                    {selectedBinding.filledMode === 'custom' ? (
+                      <input
+                        value={selectedBinding.filledText ?? ''}
+                        onChange={(event) => updateSelectedBinding({ filledText: event.target.value })}
+                        placeholder="Текст для заполненного значения"
+                        className="mt-2 w-full rounded-md border-slate-300 text-sm"
+                      />
+                    ) : null}
+                  </div>
                 </div>
               </details>
 
@@ -1217,10 +1276,20 @@ function CellPartsEditor({
   }
 
   const fieldOptions = fieldGroups.flatMap(([, fields]) => fields)
+  const numericFieldGroups = fieldGroups
+    .map(([group, fields]) => [group, fields.filter((field) => field.kind === 'number')] as const)
+    .filter(([, fields]) => fields.length)
   const preview = parts
     .map((part) => {
       const label = fieldOptions.find((field) => field.key === part.field)?.label ?? 'Поле'
-      return `${part.prefix ?? ''}[${label}]${part.suffix ?? ''}${part.lineBreakAfter ? '\n' : ''}`
+      const compareLabel = fieldOptions.find((field) => field.key === part.compareField)?.label ?? 'второе поле'
+      const operation = part.numericOperation
+        ? `${part.numericOperation}([${label}], [${compareLabel}])`
+        : `[${label}]`
+      const formula = part.multiplier?.trim()
+        ? `${operation} × ${part.multiplier.trim()}`
+        : operation
+      return `${part.prefix ?? ''}${formula}${part.suffix ?? ''}${part.lineBreakAfter ? '\n' : ''}`
     })
     .join('')
     .replace(/\n+$/, '')
@@ -1276,7 +1345,20 @@ function CellPartsEditor({
 
             <select
               value={part.field}
-              onChange={(event) => updatePart(index, { field: event.target.value as DocumentTemplateFieldKey })}
+              onChange={(event) => {
+                const field = event.target.value as DocumentTemplateFieldKey
+                updatePart(
+                  index,
+                  isNumericTemplateField(field)
+                    ? { field }
+                    : {
+                        field,
+                        numericOperation: undefined,
+                        compareField: undefined,
+                        multiplier: undefined,
+                      },
+                )
+              }}
               className="w-full rounded-md border-slate-300 text-sm"
             >
               {fieldGroups.map(([group, fields]) => (
@@ -1289,6 +1371,80 @@ function CellPartsEditor({
                 </optgroup>
               ))}
             </select>
+
+            {isNumericTemplateField(part.field) ? (
+              <details className="mt-2 rounded border border-sky-200 bg-sky-50/60">
+                <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-sky-800">
+                  Числовая формула
+                </summary>
+                <div className="space-y-3 border-t border-sky-200 bg-white p-2">
+                  <label className="block">
+                    <span className="text-[11px] font-medium text-slate-500">Минимум или максимум</span>
+                    <select
+                      value={part.numericOperation ?? 'none'}
+                      onChange={(event) => {
+                        const numericOperation =
+                          event.target.value === 'min' || event.target.value === 'max'
+                            ? event.target.value
+                            : undefined
+                        updatePart(index, {
+                          numericOperation,
+                          compareField: numericOperation
+                            ? part.compareField ?? numericFieldGroups[0]?.[1][0]?.key
+                            : undefined,
+                        })
+                      }}
+                      className="mt-1 w-full rounded-md border-slate-300 px-2 py-1.5 text-xs"
+                    >
+                      <option value="none">Не сравнивать</option>
+                      <option value="min">Минимальное из двух полей</option>
+                      <option value="max">Максимальное из двух полей</option>
+                    </select>
+                  </label>
+
+                  {part.numericOperation ? (
+                    <label className="block">
+                      <span className="text-[11px] font-medium text-slate-500">Второе числовое поле</span>
+                      <select
+                        value={part.compareField ?? ''}
+                        onChange={(event) =>
+                          updatePart(index, { compareField: event.target.value as DocumentTemplateFieldKey })
+                        }
+                        className="mt-1 w-full rounded-md border-slate-300 px-2 py-1.5 text-xs"
+                      >
+                        {numericFieldGroups.map(([group, fields]) => (
+                          <optgroup key={group} label={group}>
+                            {fields.map((field) => (
+                              <option key={field.key} value={field.key}>
+                                {field.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  <label className="block">
+                    <span className="text-[11px] font-medium text-slate-500">Умножить результат на</span>
+                    <input
+                      value={part.multiplier ?? ''}
+                      onChange={(event) => updatePart(index, { multiplier: event.target.value })}
+                      inputMode="decimal"
+                      placeholder="Например: 3,14"
+                      className={`mt-1 w-full rounded-md px-2 py-1.5 text-xs ${
+                        isValidTemplateMultiplier(part.multiplier)
+                          ? 'border-slate-300'
+                          : 'border-rose-300 bg-rose-50'
+                      }`}
+                    />
+                    <span className="mt-1 block text-[11px] leading-4 text-slate-500">
+                      Можно умножить одно поле или результат min/max. Допустимы запятая и точка.
+                    </span>
+                  </label>
+                </div>
+              </details>
+            ) : null}
 
             <details className="mt-2 rounded border border-slate-200 bg-white">
               <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-slate-600">

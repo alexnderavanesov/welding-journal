@@ -17,25 +17,28 @@ import {
   getLnkInputMethodsForRows,
   isLnkResultRowApplicable,
 } from '@/lib/report-modal-rows'
-import { getRequestNameFromNaming, sortLnkRequestNamesNewestFirst } from '@/lib/report-naming'
+import { getRequestNameFromNaming } from '@/lib/report-naming'
+import {
+  collectRequestDocumentIdentities,
+  createRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 export function getLnkResultMethodRequestOptions(
   lnkRows: WeldRow[],
-  requestOptions: string[],
+  requestOptions: RequestDocumentIdentity[],
   methodKey: LnkResultDraftState['methodKey'],
 ) {
   const method = getLnkMethodByRequestKey(methodKey)
   if (!method) return requestOptions
 
-  return sortLnkRequestNamesNewestFirst([
-    ...new Set(
-      lnkRows.flatMap((row) => {
-        const requestName = String(row[method.requestKey] ?? '').trim()
-        if (!requestName || isFinalLnkResultValue(row[method.resultKey])) return []
-        return [requestName]
-      }),
-    ),
-  ])
+  return collectRequestDocumentIdentities(
+    lnkRows.flatMap((row) => {
+      if (isFinalLnkResultValue(row[method.resultKey])) return []
+      const identity = createRequestDocumentIdentity(row[method.requestKey], row[method.requestDateKey])
+      return identity ? [identity] : []
+    }),
+  )
 }
 
 export function getLnkResultSearchRows({
@@ -53,7 +56,7 @@ export function getLnkResultSearchRows({
 
   return baseRows.filter(
     (row) =>
-      isLnkResultRowApplicable(row, draft.requestName, draft.methodKey) &&
+      isLnkResultRowApplicable(row, draft.requestName, draft.methodKey, draft.requestDate) &&
       !isFinalLnkResultValue(row[method.resultKey]),
   )
 }
@@ -98,7 +101,9 @@ export function getVisibleLnkResultRows(
 }
 
 export function getSelectableVisibleLnkResultRows(rows: WeldRow[], draft: LnkResultDraftState) {
-  return rows.filter((row) => canSelectLnkResultRow(row, draft.requestName, draft.methodKey))
+  return rows.filter((row) =>
+    canSelectLnkResultRow(row, draft.requestName, draft.methodKey, draft.requestDate),
+  )
 }
 
 export function canBulkToggleLnkResultRows({
@@ -118,7 +123,11 @@ export function canBulkToggleLnkResultRows({
 }
 
 export function getSelectedLnkResultRows(lnkRows: WeldRow[], draft: LnkResultDraftState) {
-  return lnkRows.filter((row) => draft.rowIds.has(row.id) && canSelectLnkResultRow(row, '', draft.methodKey))
+  return lnkRows.filter(
+    (row) =>
+      draft.rowIds.has(row.id) &&
+      canSelectLnkResultRow(row, draft.requestName, draft.methodKey, draft.requestDate),
+  )
 }
 
 export function getLnkResultSaveBlockReason({
@@ -155,7 +164,7 @@ export function getLnkResultSaveBlockReason({
   if (
     saveCheckSettings.lnkResultConclusionRequired &&
     hasNonEmptyRows &&
-    !getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName, draft.controlDate)
+    !getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
   ) {
     return formatSaveCheckBlockReason('lnkResultConclusionRequired', 'Укажите наименование заключения.')
   }
@@ -199,7 +208,7 @@ function buildProposedLnkResultRowsForChecks(
   const method = getLnkMethodByRequestKey(draft.methodKey)
   if (!method) return selectedRows
   const normalizedControlDate = normalizeDateLikeForStorage(draft.controlDate)
-  const conclusionName = getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName, draft.controlDate)
+  const conclusionName = getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
   return selectedRows.map((row) => {
     const result = draft.rowResults[row.id] ?? draft.result
     if (!isFinalLnkResultValue(result)) return row

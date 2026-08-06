@@ -7,10 +7,11 @@ import {
 import type { UseLnkResultActionsOptions } from '@/lib/lnk-report-action-types'
 import {
   canSelectLnkResultRow,
-  getLnkRowRequestNames,
+  getLnkRowRequestDocumentIdentities,
 } from '@/lib/report-modal-rows'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 export function useLnkResultActions({
   filteredRows,
@@ -35,18 +36,19 @@ export function useLnkResultActions({
   }
 
   function openAddLnkResultModalForRow(row: WeldRow) {
-    const requestNames = getLnkRowRequestNames(row)
-    if (requestNames.length === 0) {
+    const requests = getLnkRowRequestDocumentIdentities(row)
+    if (requests.length === 0) {
       setMessage('Сначала создайте заявку ЛНК для этого стыка')
       return
     }
 
-    const requestName = requestNames.length === 1 ? requestNames[0] : ''
+    const request = requests.length === 1 ? requests[0] : null
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
-    setRequestSearch(requestName)
+    setRequestSearch(request?.name ?? '')
     setDraft({
       ...createDefaultLnkResultDraft(defaultConclusionNaming),
-      requestName,
+      requestName: request?.name ?? '',
+      requestDate: request?.date ?? '',
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
     })
@@ -62,8 +64,8 @@ export function useLnkResultActions({
     setIsModalOpen(false)
   }
 
-  function changeLnkResultRequest(requestName: string) {
-    setDraft((current) => resolveLnkResultDraftAfterRequestChange(current, lnkRows, requestName))
+  function changeLnkResultRequest(request: RequestDocumentIdentity | null) {
+    setDraft((current) => resolveLnkResultDraftAfterRequestChange(current, lnkRows, request))
   }
 
   function changeLnkResultMethod(methodKey: WeldFieldKey | '') {
@@ -72,7 +74,15 @@ export function useLnkResultActions({
 
   function toggleLnkResultRow(rowId: number) {
     const row = filteredRows.find((candidate) => candidate.id === rowId)
-    if (!row || !canSelectLnkResultRow(row, draft.requestName, draft.methodKey)) return
+    if (
+      !row ||
+      !canSelectLnkResultRow(
+        row,
+        draft.requestName,
+        draft.methodKey,
+        draft.requestDate,
+      )
+    ) return
 
     setDraft((current) => {
       const rowIds = new Set(current.rowIds)
@@ -89,7 +99,14 @@ export function useLnkResultActions({
     setDraft((current) => {
       const filteredIds = new Set(
         filteredRows
-          .filter((row) => canSelectLnkResultRow(row, current.requestName, current.methodKey))
+          .filter((row) =>
+            canSelectLnkResultRow(
+              row,
+              current.requestName,
+              current.methodKey,
+              current.requestDate,
+            ),
+          )
           .map((row) => row.id),
       )
       if (filteredIds.size === 0) return current

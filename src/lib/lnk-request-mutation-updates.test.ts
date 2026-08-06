@@ -40,6 +40,7 @@ describe('lnk request mutation updates', () => {
     const [updated] = buildLnkRequestManagerRows({
       records,
       requestName: 'Заявка №3434 от 21.07.2026',
+      requestDate: '2026-07-21',
       nextRequestName: 'Заявка №3434-А от 21.07.2026',
       action: 'rename',
     })
@@ -69,6 +70,7 @@ describe('lnk request mutation updates', () => {
     const [updated] = buildLnkRequestManagerRows({
       records,
       requestName: 'Заявка-ВИК',
+      requestDate: '2026-07-21',
       nextRequestName: '',
       action: 'delete',
     })
@@ -80,5 +82,33 @@ describe('lnk request mutation updates', () => {
     expect(updated.vikConclusion).toBeNull()
     expect(updated.rkRequest).toBe('Заявка-РК')
     expect(updated.rkResult).toBe('годен')
+  })
+
+  it('renames only the LNK request with the matching name and date', () => {
+    const records = [
+      {
+        id: 1,
+        vikRequest: 'Заявка пользователя',
+        vikRequestDate: '2026-07-21',
+      },
+      {
+        id: 2,
+        vikRequest: 'Заявка пользователя',
+        vikRequestDate: '2026-08-06',
+      },
+    ] as RowWithId[]
+
+    const updated = buildLnkRequestManagerRows({
+      records,
+      requestName: 'Заявка пользователя',
+      requestDate: '2026-08-06',
+      nextRequestName: 'Заявка пользователя новая',
+      action: 'rename',
+    })
+
+    expect(updated).toHaveLength(1)
+    expect(updated[0]?.id).toBe(2)
+    expect(updated[0]?.vikRequest).toBe('Заявка пользователя новая')
+    expect(updated[0]?.vikRequestDate).toBe('2026-08-06')
   })
 })

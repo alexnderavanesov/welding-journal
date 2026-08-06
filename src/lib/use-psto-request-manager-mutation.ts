@@ -2,15 +2,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type PstoRequestManagerAction } from '@/lib/psto-field-updates'
 import { buildPstoRequestManagerRows } from '@/lib/psto-report-mutation-updates'
 import { PSTO_GENERATED_HIGHLIGHT_FIELDS } from '@/lib/psto-report-mutation-highlight-fields'
-import { isSystemPstoRequestName } from '@/lib/report-request-naming'
+import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
+import { isSameRequestDocument } from '@/lib/request-document-identity'
 
 export function usePstoRequestManagerMutation({
   heatTreatmentRows,
-  pstoRequestOptions,
   setMessage,
   highlightChangedRows,
   setManagedPstoRequestName,
@@ -22,10 +23,12 @@ export function usePstoRequestManagerMutation({
   return useMutation({
     mutationFn: async ({
       requestName,
+      requestDate,
       nextRequestName,
       action,
     }: {
       requestName: string
+      requestDate: string
       nextRequestName?: string
       action: PstoRequestManagerAction
     }) => {
@@ -33,15 +36,34 @@ export function usePstoRequestManagerMutation({
       const renamedName = nextRequestName?.trim() ?? ''
       if (!currentName) throw new Error('Выберите заявку ПСТО')
       if (action === 'rename') {
-        if (isSystemPstoRequestName(currentName)) throw new Error('Системную заявку ПСТО нельзя переименовать')
+        if (
+          isSystemDocumentNameForRows(
+            heatTreatmentRows,
+            'pstoRequest',
+            currentName,
+            loadRequestConclusionSettings(),
+          )
+        ) {
+          throw new Error('Системную заявку ПСТО нельзя переименовать')
+        }
         if (!renamedName) throw new Error('Введите новое наименование заявки')
         if (renamedName === currentName) throw new Error('Новое наименование совпадает с текущим')
-        if (pstoRequestOptions.includes(renamedName)) throw new Error('Заявка с таким наименованием уже существует')
+        if (
+          heatTreatmentRows.some((row) =>
+            isSameRequestDocument(row.pstoRequest, row.pstoRequestDate, {
+              name: renamedName,
+              date: requestDate,
+            }),
+          )
+        ) {
+          throw new Error('Заявка с таким наименованием и датой уже существует')
+        }
       }
 
       const updatedRecords = buildPstoRequestManagerRows({
         heatTreatmentRows,
         requestName: currentName,
+        requestDate,
         nextRequestName: renamedName,
         action,
       })

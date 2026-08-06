@@ -196,4 +196,40 @@ describe('document template builder repeat block', () => {
       validateDocumentTemplateBuilderConfig(config, preview, { requireNameConfig: false }),
     ).toBeNull()
   })
+
+  it('accepts a numeric min formula with a decimal-comma multiplier', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      ...createConfig(),
+      repeatRow: 18,
+      repeatRowEnd: 19,
+      bindings: [
+        {
+          cell: 'B18',
+          mode: 'row',
+          parts: [{ field: 'd1', numericOperation: 'min', compareField: 'd2', multiplier: '3,14' }],
+        },
+      ],
+    }
+
+    expect(validateDocumentTemplateBuilderConfig(config, preview)).toBeNull()
+  })
+
+  it('rejects an incomplete numeric formula', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      ...createConfig(),
+      repeatRow: 18,
+      repeatRowEnd: 19,
+      bindings: [
+        {
+          cell: 'B18',
+          mode: 'row',
+          parts: [{ field: 'd1', numericOperation: 'min', multiplier: 'три' }],
+        },
+      ],
+    }
+
+    expect(validateDocumentTemplateBuilderConfig(config, preview)).toBe(
+      'В ячейке B18, часть 1: выберите второе числовое поле.',
+    )
+  })
 })

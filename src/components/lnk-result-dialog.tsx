@@ -14,6 +14,10 @@ import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { usePagination } from '@/lib/use-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import {
+  createRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -23,8 +27,8 @@ export type LnkResultDialogProps = {
   selectedMethods: LnkResultMethod[]
   selectedRows: WeldRow[]
   visibleRows: WeldRow[]
-  filteredRequestOptions: string[]
-  availableRequestOptions: string[]
+  filteredRequestOptions: RequestDocumentIdentity[]
+  availableRequestOptions: RequestDocumentIdentity[]
   nextConclusionName: string
   saveBlockReason: string | null
   isSaveDisabled: boolean
@@ -41,7 +45,7 @@ export type LnkResultDialogProps = {
   onToggleAllRows: () => void
   onSearchChange: (search: string) => void
   onRequestSearchChange: (search: string) => void
-  onRequestChange: (requestName: string) => void
+  onRequestChange: (request: RequestDocumentIdentity | null) => void
   onClearRequestSearch: () => void
   onClearSearch: () => void
   onToggleRow: (rowId: number) => void
@@ -83,14 +87,15 @@ export function LnkResultDialog({
   onSave,
 }: LnkResultDialogProps) {
   const paginationResetKeys = useMemo(
-    () => [draft.search, draft.requestName, draft.methodKey, requestSearch, visibleRows],
-    [draft.methodKey, draft.requestName, draft.search, requestSearch, visibleRows],
+    () => [draft.search, draft.requestName, draft.requestDate, draft.methodKey, requestSearch, visibleRows],
+    [draft.methodKey, draft.requestDate, draft.requestName, draft.search, requestSearch, visibleRows],
   )
   const rowsPagination = usePagination({
     items: visibleRows,
     defaultPageSize: 100,
     resetKeys: paginationResetKeys,
   })
+  const selectedRequest = createRequestDocumentIdentity(draft.requestName, draft.requestDate)
 
   return (
     <LargeDialogShell
@@ -145,7 +150,7 @@ export function LnkResultDialog({
             <LnkResultFilters
               search={draft.search}
               requestSearch={requestSearch}
-              requestName={draft.requestName}
+              requestKey={selectedRequest?.key ?? ''}
               filteredRequestOptions={filteredRequestOptions}
               availableRequestOptionsCount={availableRequestOptions.length}
               filteredRowsCount={visibleRows.length}

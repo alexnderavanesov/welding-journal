@@ -11,11 +11,12 @@ import {
   getPstoResultSearchRows,
   getSelectedPstoResultRows,
 } from '@/lib/psto-result-derived-utils'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 type PstoResultDerivedStateParams = {
   heatTreatmentRows: WeldRow[]
   pstoResultSelectedRows: WeldRow[]
-  pstoResultRequestOptions: string[]
+  pstoResultRequestOptions: RequestDocumentIdentity[]
   pstoResultRequestSearch: string
   selectedPstoResultRequestRows: WeldRow[]
   pstoResultDraft: PstoResultDraftState
@@ -58,7 +59,12 @@ export function usePstoResultDerivedState({
 
   const selectedPstoResultRows = useMemo(
     () => getSelectedPstoResultRows(filteredPstoResultRows, pstoResultDraft),
-    [filteredPstoResultRows, pstoResultDraft.requestName, pstoResultDraft.rowIds],
+    [
+      filteredPstoResultRows,
+      pstoResultDraft.requestDate,
+      pstoResultDraft.requestName,
+      pstoResultDraft.rowIds,
+    ],
   )
 
   const pstoResultSaveBlockReason = useMemo(

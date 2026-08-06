@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { formatLongDate, formatPstoDiagramLongDate, formatPstoDiagramShortDateFromLong, formatShortDate } from '@/lib/date-format'
-import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import {
+  persistProjectSettingToRemoteAndWait,
+  PROJECT_SETTING_KEYS,
+} from '@/lib/project-settings-remote'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 
 export const REQUEST_CONCLUSION_SETTINGS_EVENT = 'request-conclusion-settings-change'
@@ -12,9 +15,17 @@ export type RequestConclusionNamingKind = 'lnkRequest' | 'lnkConclusion' | 'psto
 export type RequestConclusionNamingItemSettings = {
   defaultMode: RequestNamingState['mode']
   systemPattern: string
+  systemPatternHistory?: string[]
 }
 
-export type RequestNamingPatternField = 'date' | 'shortDate' | 'method' | 'number'
+export type RequestNamingPatternField =
+  | 'date'
+  | 'shortDate'
+  | 'method'
+  | 'number'
+  | 'projectTitle'
+  | 'subtitleCode'
+  | 'line'
 
 export type RequestNamingPatternPart =
   | { type: 'field'; field: RequestNamingPatternField }
@@ -29,6 +40,9 @@ export const REQUEST_NAMING_PATTERN_FIELDS: Array<{
   { id: 'shortDate', label: 'Дата короткая', token: 'ДатаКороткая' },
   { id: 'method', label: 'Метод', token: 'Метод' },
   { id: 'number', label: 'Порядковый номер', token: '№' },
+  { id: 'projectTitle', label: 'Проект', token: 'Проект' },
+  { id: 'subtitleCode', label: 'Шифр', token: 'Шифр' },
+  { id: 'line', label: 'Линия', token: 'Линия' },
 ]
 
 export type RequestConclusionSettings = Record<RequestConclusionNamingKind, RequestConclusionNamingItemSettings>
@@ -52,10 +66,31 @@ export const REQUEST_CONCLUSION_DEFAULT_SETTINGS: RequestConclusionSettings = {
   },
 }
 
-type NamingPatternContext = {
+export type NamingPatternContext = {
   date: Date
   methodCode?: string
   shortDate?: string
+  projectTitle?: string
+  subtitleCode?: string
+  line?: string
+}
+
+type NamingPatternRow = {
+  projectTitle?: unknown
+  subtitleCode?: unknown
+  line?: unknown
+}
+
+export function addRowsToNamingPatternContext(
+  context: NamingPatternContext,
+  rows: NamingPatternRow[],
+): NamingPatternContext {
+  return {
+    ...context,
+    projectTitle: collectNamingValues(rows, 'projectTitle'),
+    subtitleCode: collectNamingValues(rows, 'subtitleCode'),
+    line: collectNamingValues(rows, 'line'),
+  }
 }
 
 export function useRequestConclusionSettings() {
@@ -88,14 +123,26 @@ export function loadRequestConclusionSettings(): RequestConclusionSettings {
 
 export function saveRequestConclusionSettings(settings: RequestConclusionSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
-  const normalizedSettings = normalizeRequestConclusionSettings(settings)
-  window.localStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
-  window.dispatchEvent(new Event(REQUEST_CONCLUSION_SETTINGS_EVENT))
-  if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.requestConclusion, normalizedSettings)
+  const normalizedSettings = rememberPreviousSystemPatterns(
+    loadRequestConclusionSettings(),
+    normalizeRequestConclusionSettings(settings),
+  )
+  const applyLocal = () => {
+    window.localStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+    window.dispatchEvent(new Event(REQUEST_CONCLUSION_SETTINGS_EVENT))
+  }
+  if (options.syncRemote === false) return applyLocal()
+  return persistProjectSettingToRemoteAndWait(
+    PROJECT_SETTING_KEYS.requestConclusion,
+    normalizedSettings,
+  ).then(applyLocal)
 }
 
 export function applyRemoteRequestConclusionSettings(settings: unknown) {
-  saveRequestConclusionSettings(normalizeRequestConclusionSettings(settings), { syncRemote: false })
+  const normalizedSettings = normalizeRequestConclusionSettings(settings)
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  window.dispatchEvent(new Event(REQUEST_CONCLUSION_SETTINGS_EVENT))
 }
 
 export function getDefaultNamingState(settings: RequestConclusionSettings, kind: RequestConclusionNamingKind): RequestNamingState {
@@ -118,6 +165,54 @@ export function buildSystemNameFromPattern(pattern: string, context: NamingPatte
   }
 
   return renderNamingPattern(normalizedPattern, context, 10_000)
+}
+
+export function buildSystemNameWithNumber(
+  pattern: string,
+  context: NamingPatternContext,
+  number: number,
+) {
+  const normalizedPattern = pattern.trim() || '{{Дата}}-{{№}}'
+  return renderNamingPattern(normalizedPattern, context, Math.max(1, Math.floor(number)))
+}
+
+export function hasSystemDocumentNumberField(pattern: string) {
+  return hasPatternToken(pattern, ['№', 'Номер'])
+}
+
+export function extractSystemNameNumber(
+  pattern: string,
+  context: NamingPatternContext,
+  name: string,
+) {
+  const normalizedPattern = pattern.trim() || '{{Дата}}-{{№}}'
+  if (!hasPatternToken(normalizedPattern, ['№', 'Номер'])) return ''
+
+  const marker = '__SYSTEM_DOCUMENT_NUMBER__'
+  const valueMarkers = {
+    projectTitle: '__SYSTEM_DOCUMENT_PROJECT__',
+    subtitleCode: '__SYSTEM_DOCUMENT_SUBTITLE__',
+    line: '__SYSTEM_DOCUMENT_LINE__',
+  }
+  const renderedPattern = renderNamingPatternWithNumberText(
+    normalizedPattern,
+    {
+      ...context,
+      projectTitle: context.projectTitle ?? valueMarkers.projectTitle,
+      subtitleCode: context.subtitleCode ?? valueMarkers.subtitleCode,
+      line: context.line ?? valueMarkers.line,
+    },
+    marker,
+  )
+  const escapedMarker = escapeRegExp(marker)
+  let numberPattern = escapeRegExp(renderedPattern)
+    .split(escapedMarker)
+    .join('(\\d+)')
+  for (const valueMarker of Object.values(valueMarkers)) {
+    numberPattern = numberPattern.split(escapeRegExp(valueMarker)).join('.*?')
+  }
+  const match = name.trim().match(new RegExp(`^${numberPattern}$`, 'u'))
+  return match?.[1] ?? ''
 }
 
 export function parseRequestNamingPattern(pattern: string): RequestNamingPatternPart[] {
@@ -169,7 +264,39 @@ function normalizeSettingsItem(
 ): RequestConclusionNamingItemSettings {
   const defaultMode = value?.defaultMode === 'custom' ? 'custom' : 'system'
   const systemPattern = String(value?.systemPattern ?? '').trim() || fallback.systemPattern
-  return { defaultMode, systemPattern }
+  const systemPatternHistory = Array.from(
+    new Set(
+      (Array.isArray(value?.systemPatternHistory) ? value.systemPatternHistory : [])
+        .map((pattern) => String(pattern ?? '').trim())
+        .filter((pattern) => pattern && pattern !== systemPattern),
+    ),
+  ).slice(0, 20)
+  return { defaultMode, systemPattern, systemPatternHistory }
+}
+
+function rememberPreviousSystemPatterns(
+  previous: RequestConclusionSettings,
+  next: RequestConclusionSettings,
+): RequestConclusionSettings {
+  return Object.fromEntries(
+    (Object.keys(next) as RequestConclusionNamingKind[]).map((kind) => {
+      const previousItem = previous[kind]
+      const nextItem = next[kind]
+      const history = Array.from(
+        new Set([
+          ...(previousItem.systemPattern !== nextItem.systemPattern
+            ? [previousItem.systemPattern]
+            : []),
+          ...(nextItem.systemPatternHistory ?? []),
+          ...(previousItem.systemPatternHistory ?? []),
+        ]),
+      )
+        .map((pattern) => pattern.trim())
+        .filter((pattern) => pattern && pattern !== nextItem.systemPattern)
+        .slice(0, 20)
+      return [kind, { ...nextItem, systemPatternHistory: history }]
+    }),
+  ) as RequestConclusionSettings
 }
 
 function appendTextPart(parts: RequestNamingPatternPart[], value: string) {
@@ -188,13 +315,23 @@ function getPatternFieldByToken(token: string): RequestNamingPatternField | null
   if (normalizedToken === 'датакороткая' || normalizedToken === 'короткая дата') return 'shortDate'
   if (normalizedToken === 'метод') return 'method'
   if (normalizedToken === '№' || normalizedToken === 'номер') return 'number'
+  if (normalizedToken === 'проект') return 'projectTitle'
+  if (normalizedToken === 'шифр') return 'subtitleCode'
+  if (normalizedToken === 'линия') return 'line'
   return null
 }
 
 function renderNamingPattern(pattern: string, context: NamingPatternContext, number: number) {
+  return renderNamingPatternWithNumberText(pattern, context, String(number).padStart(3, '0'))
+}
+
+function renderNamingPatternWithNumberText(
+  pattern: string,
+  context: NamingPatternContext,
+  numberText: string,
+) {
   const longDate = formatLongDate(context.date)
   const shortDate = context.shortDate ?? formatShortDate(context.date)
-  const numberText = String(number).padStart(3, '0')
 
   return pattern.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, token: string) => {
     const normalizedToken = token.trim().toLowerCase()
@@ -202,8 +339,17 @@ function renderNamingPattern(pattern: string, context: NamingPatternContext, num
     if (normalizedToken === 'датакороткая' || normalizedToken === 'короткая дата') return shortDate
     if (normalizedToken === 'метод') return context.methodCode ?? ''
     if (normalizedToken === '№' || normalizedToken === 'номер') return numberText
+    if (normalizedToken === 'проект') return context.projectTitle ?? ''
+    if (normalizedToken === 'шифр') return context.subtitleCode ?? ''
+    if (normalizedToken === 'линия') return context.line ?? ''
     return ''
   })
+}
+
+function collectNamingValues(rows: NamingPatternRow[], key: keyof NamingPatternRow) {
+  return Array.from(new Set(rows.map((row) => String(row[key] ?? '').trim()).filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right, 'ru', { numeric: true, sensitivity: 'base' }))
+    .join(', ')
 }
 
 function hasPatternToken(pattern: string, tokens: string[]) {

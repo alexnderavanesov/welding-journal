@@ -12,6 +12,7 @@ export type LnkRequestDraftState = {
 
 export type LnkResultDraftState = {
   requestName: string
+  requestDate: string
   methodKey: WeldFieldKey | ''
   rowIds: Set<number>
   rowResults: Record<number, string>
@@ -29,6 +30,7 @@ export type LnkOfficialityDraftState = {
 
 export type PstoResultDraftState = {
   requestName: string
+  requestDate: string
   rowIds: Set<number>
   pstoDate: string
   result: string
@@ -39,6 +41,7 @@ export type PstoResultDraftState = {
 export function createDefaultLnkResultDraft(conclusionNaming: RequestNamingState = defaultRequestNamingState): LnkResultDraftState {
   return {
     requestName: '',
+    requestDate: '',
     methodKey: '',
     rowIds: new Set(),
     rowResults: {},
@@ -67,6 +70,7 @@ export function createDefaultLnkOfficialityDraft(): LnkOfficialityDraftState {
 export function createDefaultPstoResultDraft(diagramNaming: RequestNamingState = defaultRequestNamingState): PstoResultDraftState {
   return {
     requestName: '',
+    requestDate: '',
     rowIds: new Set(),
     pstoDate: formatDateInputValue(new Date()),
     result: '',

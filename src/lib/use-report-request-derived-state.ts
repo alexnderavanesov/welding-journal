@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   getLnkRequestManagerOptions,
   getLnkRequestOptions,
@@ -24,6 +25,10 @@ import {
 import type { LnkRequestDraftState, LnkResultDraftState, PstoResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import {
+  SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
+  loadSystemDocumentSequences,
+} from '@/lib/system-document-sequence-storage'
 
 interface ReportRequestDerivedStateOptions {
   enableLnkRequestState?: boolean
@@ -42,7 +47,9 @@ interface ReportRequestDerivedStateOptions {
   pstoResultDraft: PstoResultDraftState
   lnkResultDraft: LnkResultDraftState
   managedPstoRequestName: string
+  managedPstoRequestDate: string
   managedLnkRequestName: string
+  managedLnkRequestDate: string
   requestConclusionSettings: RequestConclusionSettings
 }
 
@@ -63,9 +70,19 @@ export function useReportRequestDerivedState({
   pstoResultDraft,
   lnkResultDraft,
   managedPstoRequestName,
+  managedPstoRequestDate,
   managedLnkRequestName,
+  managedLnkRequestDate,
   requestConclusionSettings,
 }: ReportRequestDerivedStateOptions) {
+  const shouldLoadSystemDocumentSequences =
+    enableLnkRequestState || enableLnkResultState || enablePstoRequestState || enablePstoResultState
+  const { data: systemDocumentSequences } = useQuery({
+    queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
+    queryFn: loadSystemDocumentSequences,
+    enabled: shouldLoadSystemDocumentSequences,
+    staleTime: 30_000,
+  })
   const selectedHeatTreatmentRows = useMemo(
     () => (enablePstoRequestState ? getSelectedRowsByIds(availablePstoRequestRows, selectedHeatTreatmentIds) : []),
     [availablePstoRequestRows, enablePstoRequestState, selectedHeatTreatmentIds],
@@ -79,13 +96,21 @@ export function useReportRequestDerivedState({
     () => (enableLnkRequestState ? getSelectedLnkRequestTargetCount(selectedLnkRows, selectedLnkMethodKeys) : 0),
     [enableLnkRequestState, selectedLnkMethodKeys, selectedLnkRows],
   )
+  const pstoResultSelectedRows = useMemo(
+    () => (enablePstoResultState ? getPstoResultSelectedRows(heatTreatmentRows, pstoResultDraft) : []),
+    [enablePstoResultState, heatTreatmentRows, pstoResultDraft],
+  )
+  const lnkResultSelectedRows = useMemo(
+    () => (enableLnkResultState ? getLnkResultSelectedRows(lnkRows, lnkResultDraft) : []),
+    [enableLnkResultState, lnkResultDraft, lnkRows],
+  )
   const nextPstoRequestName = useMemo(
-    () => (enablePstoRequestState ? getNextPstoRequestName(heatTreatmentRows, requestConclusionSettings, pstoRequestDate) : ''),
-    [enablePstoRequestState, heatTreatmentRows, pstoRequestDate, requestConclusionSettings],
+    () => (enablePstoRequestState ? getNextPstoRequestName(selectedHeatTreatmentRows, requestConclusionSettings, pstoRequestDate, systemDocumentSequences?.pstoRequest) : ''),
+    [enablePstoRequestState, pstoRequestDate, requestConclusionSettings, selectedHeatTreatmentRows, systemDocumentSequences?.pstoRequest],
   )
   const nextLnkRequestName = useMemo(
-    () => (enableLnkRequestState ? getNextLnkRequestName(rows, requestConclusionSettings, lnkRequestDraft.requestDate) : ''),
-    [enableLnkRequestState, lnkRequestDraft.requestDate, requestConclusionSettings, rows],
+    () => (enableLnkRequestState ? getNextLnkRequestName(selectedLnkRows, requestConclusionSettings, lnkRequestDraft.requestDate, systemDocumentSequences?.lnkRequest) : ''),
+    [enableLnkRequestState, lnkRequestDraft.requestDate, requestConclusionSettings, selectedLnkRows, systemDocumentSequences?.lnkRequest],
   )
   const pstoRequestOptions = useMemo(() => (enablePstoRequestState || enablePstoResultState ? getPstoRequestOptions(rows) : []), [
     enablePstoRequestState,
@@ -93,12 +118,18 @@ export function useReportRequestDerivedState({
     rows,
   ])
   const pstoRequestManagerOptions = useMemo(
-    () => (enablePstoRequestState ? getPstoRequestManagerOptions(pstoRequestOptions) : []),
-    [enablePstoRequestState, pstoRequestOptions],
+    () => (enablePstoRequestState ? getPstoRequestManagerOptions(heatTreatmentRows) : []),
+    [enablePstoRequestState, heatTreatmentRows],
   )
   const managedPstoRequestRows = useMemo(
-    () => (enablePstoRequestState ? getManagedPstoRequestRows(heatTreatmentRows, managedPstoRequestName) : []),
-    [enablePstoRequestState, heatTreatmentRows, managedPstoRequestName],
+    () =>
+      enablePstoRequestState
+        ? getManagedPstoRequestRows(heatTreatmentRows, {
+            name: managedPstoRequestName,
+            date: managedPstoRequestDate,
+          })
+        : [],
+    [enablePstoRequestState, heatTreatmentRows, managedPstoRequestDate, managedPstoRequestName],
   )
   const pstoResultRequestOptions = useMemo(
     () => (enablePstoResultState ? getPstoResultRequestOptions(heatTreatmentRows) : []),
@@ -110,43 +141,52 @@ export function useReportRequestDerivedState({
     rows,
   ])
   const lnkRequestManagerOptions = useMemo(
-    () => (enableLnkRequestState ? getLnkRequestManagerOptions(lnkRequestOptions) : []),
-    [enableLnkRequestState, lnkRequestOptions],
+    () => (enableLnkRequestState ? getLnkRequestManagerOptions(lnkRows) : []),
+    [enableLnkRequestState, lnkRows],
   )
   const lnkResultRequestOptions = useMemo(() => (enableLnkResultState ? getLnkResultRequestOptions(lnkRows) : []), [
     enableLnkResultState,
     lnkRows,
   ])
   const managedLnkRequestRows = useMemo(
-    () => (enableLnkRequestState ? getManagedLnkRequestRows(lnkRows, managedLnkRequestName) : []),
-    [enableLnkRequestState, lnkRows, managedLnkRequestName],
+    () =>
+      enableLnkRequestState
+        ? getManagedLnkRequestRows(lnkRows, {
+            name: managedLnkRequestName,
+            date: managedLnkRequestDate,
+          })
+        : [],
+    [enableLnkRequestState, lnkRows, managedLnkRequestDate, managedLnkRequestName],
   )
   const managedLnkRequestMethods = useMemo(
-    () => (enableLnkRequestState ? getManagedLnkRequestMethods(managedLnkRequestRows, managedLnkRequestName) : []),
-    [enableLnkRequestState, managedLnkRequestName, managedLnkRequestRows],
+    () =>
+      enableLnkRequestState
+        ? getManagedLnkRequestMethods(managedLnkRequestRows, {
+            name: managedLnkRequestName,
+            date: managedLnkRequestDate,
+          })
+        : [],
+    [
+      enableLnkRequestState,
+      managedLnkRequestDate,
+      managedLnkRequestName,
+      managedLnkRequestRows,
+    ],
   )
   const nextLnkConclusionName = useMemo(
-    () => (enableLnkResultState ? getNextLnkConclusionName(rows, lnkResultDraft, requestConclusionSettings) : ''),
-    [enableLnkResultState, lnkResultDraft, requestConclusionSettings, rows],
+    () => (enableLnkResultState ? getNextLnkConclusionName(lnkResultSelectedRows, lnkResultDraft, requestConclusionSettings, systemDocumentSequences?.lnkConclusion) : ''),
+    [enableLnkResultState, lnkResultDraft, lnkResultSelectedRows, requestConclusionSettings, systemDocumentSequences?.lnkConclusion],
   )
   const nextPstoDiagramName = useMemo(
-    () => (enablePstoResultState ? getNextPstoDiagramName(rows, pstoResultDraft, requestConclusionSettings) : ''),
-    [enablePstoResultState, pstoResultDraft, requestConclusionSettings, rows],
+    () => (enablePstoResultState ? getNextPstoDiagramName(pstoResultSelectedRows, pstoResultDraft, requestConclusionSettings, systemDocumentSequences?.pstoConclusion) : ''),
+    [enablePstoResultState, pstoResultDraft, pstoResultSelectedRows, requestConclusionSettings, systemDocumentSequences?.pstoConclusion],
   )
   const selectedPstoResultRequestRows = useMemo(
     () => (enablePstoResultState ? getSelectedPstoResultRequestRows(heatTreatmentRows, pstoResultDraft) : []),
     [enablePstoResultState, heatTreatmentRows, pstoResultDraft],
   )
-  const pstoResultSelectedRows = useMemo(
-    () => (enablePstoResultState ? getPstoResultSelectedRows(heatTreatmentRows, pstoResultDraft) : []),
-    [enablePstoResultState, heatTreatmentRows, pstoResultDraft],
-  )
   const selectedLnkResultRequestRows = useMemo(
     () => (enableLnkResultState ? getSelectedLnkResultRequestRows(lnkRows, lnkResultDraft) : []),
-    [enableLnkResultState, lnkResultDraft, lnkRows],
-  )
-  const lnkResultSelectedRows = useMemo(
-    () => (enableLnkResultState ? getLnkResultSelectedRows(lnkRows, lnkResultDraft) : []),
     [enableLnkResultState, lnkResultDraft, lnkRows],
   )
 

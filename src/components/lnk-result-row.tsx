@@ -26,7 +26,7 @@ type LnkResultRowProps = {
 export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkResultRowProps) {
   const saveCheckSettings = useSaveCheckSettings()
   const method = getLnkMethodByRequestKey(draft.methodKey)
-  const disabled = !canSelectLnkResultRow(row, draft.requestName, draft.methodKey)
+  const disabled = !canSelectLnkResultRow(row, draft.requestName, draft.methodKey, draft.requestDate)
   const selected = draft.rowIds.has(row.id) && !disabled
   const rowRequestNames = getLnkRowRequestNames(row)
   const rowResult = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
@@ -91,6 +91,7 @@ export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkRes
         <LnkResultRowRequestBadges
           row={row}
           requestName={draft.requestName}
+          requestDate={draft.requestDate}
           methodKey={draft.methodKey}
           selected={selected}
           rowRequestNames={rowRequestNames}

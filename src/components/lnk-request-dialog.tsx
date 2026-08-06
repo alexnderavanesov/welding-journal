@@ -21,6 +21,7 @@ import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagination } from '@/lib/use-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 export type LnkRequestDialogProps = {
   nextRequestName: string
@@ -29,7 +30,7 @@ export type LnkRequestDialogProps = {
   selectedTargetCount: number
   requestNaming: RequestNamingState
   requestDate: string
-  requestManagerOptions: string[]
+  requestManagerOptions: RequestDocumentIdentity[]
   selectedMethodKeys: readonly WeldFieldKey[]
   selectedMethods: ReadonlySet<WeldFieldKey>
   requestSearch: string
@@ -41,7 +42,7 @@ export type LnkRequestDialogProps = {
   isPending: boolean
   saveCheckSettings: SaveCheckSettings
   onClose: () => void
-  onOpenRequestManager: (requestName?: string) => void
+  onOpenRequestManager: (requestName?: string, requestDate?: string) => void
   onRequestNamingChange: (value: RequestNamingState) => void
   onRequestDateChange: (value: string) => void
   onToggleMethod: (methodKey: WeldFieldKey) => void
@@ -89,7 +90,7 @@ export function LnkRequestDialog({
   const allFilteredRowsSelected = isEveryFilteredLnkRequestRowSelected(selectedIds, filteredAvailableRows)
   const [showCreatedRequests, setShowCreatedRequests] = useState(false)
   const [createdRequestSearch, setCreatedRequestSearch] = useState('')
-  const requestName = getRequestNameFromNaming(requestNaming, nextRequestName, requestDate)
+  const requestName = getRequestNameFromNaming(requestNaming, nextRequestName)
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ЛНК')
   const chronologyReason = useMemo(() => {
     if (selectedRows.length === 0 || selectedMethodKeys.length === 0 || !requestName || requestDateReason) return ''
@@ -114,7 +115,7 @@ export function LnkRequestDialog({
   const filteredRequestManagerOptions = useMemo(() => {
     const query = createdRequestSearch.trim().toLowerCase()
     if (!query) return requestManagerOptions
-    return requestManagerOptions.filter((requestName) => requestName.toLowerCase().includes(query))
+    return requestManagerOptions.filter((request) => request.label.toLowerCase().includes(query))
   }, [createdRequestSearch, requestManagerOptions])
 
   return (
@@ -145,7 +146,6 @@ export function LnkRequestDialog({
                 naming={requestNaming}
                 systemName={nextRequestName}
                 label="Наименование заявки ЛНК"
-                customDate={requestDate}
                 onChange={onRequestNamingChange}
               />
             </div>
@@ -179,15 +179,15 @@ export function LnkRequestDialog({
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {filteredRequestManagerOptions.map((requestName) => (
+                {filteredRequestManagerOptions.map((request) => (
                   <button
-                    key={requestName}
+                    key={request.key}
                     type="button"
-                    onClick={() => onOpenRequestManager(requestName)}
+                    onClick={() => onOpenRequestManager(request.name, request.date)}
                     className="flex w-full items-center justify-between gap-3 bg-white px-4 py-3 text-left transition hover:bg-slate-50"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{requestName}</span>
+                      <span className="block truncate text-sm font-semibold text-slate-900">{request.label}</span>
                       <span className="text-xs text-slate-500">Открыть управление заявкой</span>
                     </span>
                     <span className="inline-flex shrink-0 items-center rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700">

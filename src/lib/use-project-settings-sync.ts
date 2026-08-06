@@ -84,7 +84,7 @@ export function useProjectSettingsSync() {
     if (!shouldSyncProjectSettingsRemote()) return undefined
 
     const persistRemoteSetting = (event: Event) => {
-      const { key, value } = (event as CustomEvent<ProjectSettingRemotePersistDetail>).detail ?? {}
+      const { key, value, resolve, reject } = (event as CustomEvent<ProjectSettingRemotePersistDetail>).detail ?? {}
       if (!key) return
       void saveAppSetting({ data: { key, value: value as AppSettingValue } })
         .then(async () => {
@@ -100,9 +100,11 @@ export function useProjectSettingsSync() {
               queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
             ])
           }
+          resolve?.()
         })
         .catch((error) => {
           console.warn('Не удалось сохранить настройку проекта в БД', key, error)
+          reject?.(error)
         })
     }
 

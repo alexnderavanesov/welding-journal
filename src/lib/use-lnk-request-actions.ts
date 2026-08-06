@@ -42,7 +42,7 @@ export function useLnkRequestActions({
       return
     }
 
-    const requestName = getRequestNameFromNaming(naming, nextRequestName, draft.requestDate)
+    const requestName = getRequestNameFromNaming(naming, nextRequestName)
     if (!requestName) {
       setMessage('Укажите пользовательское наименование заявки ЛНК')
       return
@@ -53,7 +53,13 @@ export function useLnkRequestActions({
       return
     }
 
-    mutation.mutate({ records: selectedRows, methodKeys, requestName, requestDate: draft.requestDate })
+    mutation.mutate({
+      records: selectedRows,
+      methodKeys,
+      requestName,
+      requestDate: draft.requestDate,
+      useSystemName: naming.mode === 'system',
+    })
   }
 
   function openCreateLnkRequestModal() {

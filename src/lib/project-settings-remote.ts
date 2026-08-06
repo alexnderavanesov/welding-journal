@@ -15,6 +15,8 @@ export const PROJECT_SETTING_REMOTE_PERSIST_EVENT = 'project-setting-remote-pers
 export type ProjectSettingRemotePersistDetail = {
   key: ProjectSettingKey
   value: unknown
+  resolve?: () => void
+  reject?: (error: unknown) => void
 }
 
 export function shouldSyncProjectSettingsRemote() {
@@ -28,4 +30,13 @@ export function persistProjectSettingToRemote(key: ProjectSettingKey, value: unk
   window.dispatchEvent(new CustomEvent<ProjectSettingRemotePersistDetail>(PROJECT_SETTING_REMOTE_PERSIST_EVENT, {
     detail: { key, value },
   }))
+}
+
+export function persistProjectSettingToRemoteAndWait(key: ProjectSettingKey, value: unknown) {
+  if (!shouldSyncProjectSettingsRemote()) return Promise.resolve()
+  return new Promise<void>((resolve, reject) => {
+    window.dispatchEvent(new CustomEvent<ProjectSettingRemotePersistDetail>(PROJECT_SETTING_REMOTE_PERSIST_EVENT, {
+      detail: { key, value, resolve, reject },
+    }))
+  })
 }

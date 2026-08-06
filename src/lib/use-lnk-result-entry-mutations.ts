@@ -3,6 +3,7 @@ import { clearLnkGeneratedWeldData } from '@/server/welds'
 import {
   LNK_EMPTY_RESULT_VALUE,
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
+  LNK_METHODS,
 } from '@/lib/report-config'
 import { getLnkResultHighlightFields } from '@/lib/lnk-report-mutation-highlight-fields'
 import { buildClearLnkGeneratedRows, buildLnkResultRows } from '@/lib/lnk-report-mutation-updates'
@@ -31,16 +32,34 @@ export function useLnkResultEntryMutations({
       controlDate,
       resultById,
       conclusionName,
+      useSystemName,
     }: {
       records: RowWithId[]
       methodKey: WeldFieldKey
       controlDate: string
       resultById: Record<number, string>
       conclusionName: string
+      useSystemName?: boolean
     }) => {
       const updatedRecords = buildLnkResultRows({ records, methodKey, controlDate, resultById, conclusionName })
 
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const method = LNK_METHODS.find((candidate) => candidate.requestKey === methodKey)
+      const hasConclusion = Object.values(resultById).some((result) => result !== LNK_EMPTY_RESULT_VALUE)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось сохранить часть записей',
+        useSystemName && hasConclusion && method
+          ? {
+              systemDocumentSequence: {
+                type: 'lnkConclusion',
+                date: controlDate,
+                methodCode: method.code,
+                fieldKeys: [method.conclusionKey],
+                provisionalName: conclusionName,
+              },
+            }
+          : {},
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -54,6 +73,7 @@ export function useLnkResultEntryMutations({
       setIsLnkResultModalOpen(false)
       setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
       await invalidateWeldJoints(queryClient)
+      await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

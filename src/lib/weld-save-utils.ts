@@ -5,6 +5,7 @@ import {
   updateWeldJoints,
 } from '@/server/welds'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
@@ -39,9 +40,13 @@ export async function updateWeldRowOrThrow<T extends RowWithId>(record: T, error
 export async function updateWeldRowsOrThrow<T extends RowWithId>(
   records: T[],
   errorMessage = 'Не удалось сохранить часть записей',
+  options: { systemDocumentSequence?: SystemDocumentSequenceUpdate } = {},
 ) {
   const savedRows = await updateWeldJoints({
-    data: { records: records.map((record) => normalizeDateFieldsForSave(record)) },
+    data: {
+      records: records.map((record) => normalizeDateFieldsForSave(record)),
+      ...options,
+    },
   })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
   return savedRows

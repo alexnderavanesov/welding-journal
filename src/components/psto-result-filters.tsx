@@ -1,23 +1,24 @@
 import { ResultFilters } from '@/components/result-filters'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 type PstoResultFiltersProps = {
   search: string
   requestSearch: string
-  requestName: string
-  filteredRequestOptions: string[]
+  requestKey: string
+  filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptionsCount: number
   filteredRowsCount: number
   selectedRowsCount: number
   onSearchChange: (value: string) => void
   onRequestSearchChange: (value: string) => void
-  onRequestChange: (requestName: string) => void
+  onRequestChange: (request: RequestDocumentIdentity | null) => void
   onClearFilters: () => void
 }
 
 export function PstoResultFilters({
   search,
   requestSearch,
-  requestName,
+  requestKey,
   filteredRequestOptions,
   availableRequestOptionsCount,
   filteredRowsCount,
@@ -31,7 +32,7 @@ export function PstoResultFilters({
     <ResultFilters
       search={search}
       requestSearch={requestSearch}
-      requestName={requestName}
+      requestKey={requestKey}
       filteredRequestOptions={filteredRequestOptions}
       availableRequestOptionsCount={availableRequestOptionsCount}
       filteredRowsCount={filteredRowsCount}

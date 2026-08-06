@@ -19,6 +19,7 @@ import { hasText } from '@/lib/report-value-utils'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/psto-report-mutation-types'
+import { isSameRequestDocument } from '@/lib/request-document-identity'
 
 export function buildPstoRequestRows({
   records,
@@ -98,17 +99,26 @@ export function buildPstoResultRows({
 export function buildPstoRequestManagerRows({
   heatTreatmentRows,
   requestName,
+  requestDate,
   nextRequestName,
   action,
 }: {
   heatTreatmentRows: RowWithId[]
   requestName: string
+  requestDate: string
   nextRequestName: string
   action: PstoRequestManagerAction
 }) {
   const pstoUpdatedAt = new Date().toISOString()
   return heatTreatmentRows.flatMap((record) => {
-    if (String(record.pstoRequest ?? '').trim() !== requestName) return []
+    if (
+      !isSameRequestDocument(record.pstoRequest, record.pstoRequestDate, {
+        name: requestName,
+        date: requestDate,
+      })
+    ) {
+      return []
+    }
     return [applyPstoRequestManagerAction({ record, nextRequestName, action, pstoCreatedAt: pstoUpdatedAt }) as RowWithId]
   })
 }
@@ -128,9 +138,9 @@ export function buildPstoResultCorrectionRow({
 }) {
   const nextDiagramName = diagramName?.trim() ?? ''
   if (action === 'renameDiagram' && !nextDiagramName) throw new Error('Укажите наименование диаграммы')
-  const fixedDateDiagramName =
-    action === 'renameDiagram' ? formatCustomDocumentName(nextDiagramName, record.pstoDate) : nextDiagramName
-  return applyPstoResultCorrection({ record, action, diagramName: fixedDateDiagramName }) as RowWithId
+  const customDiagramName =
+    action === 'renameDiagram' ? formatCustomDocumentName(nextDiagramName) : nextDiagramName
+  return applyPstoResultCorrection({ record, action, diagramName: customDiagramName }) as RowWithId
 }
 
 export function buildHeatTreatmentFieldRow({

@@ -2,15 +2,18 @@ import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { RowWithId, UseManagedLnkRequestActionsOptions } from '@/lib/managed-lnk-request-action-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { findRequestDocumentIdentity, type RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 export function useManagedLnkRequestActions({
   lnkRequestManagerOptions,
   managedLnkRequestName,
+  managedLnkRequestDate,
   managedLnkRequestNameDraft,
   lnkRequestCorrectionMutation,
   lnkRequestManagerMutation,
   setIsLnkRequestManagerOpen,
   setManagedLnkRequestName,
+  setManagedLnkRequestDate,
   setManagedLnkRequestNameDraft,
 }: UseManagedLnkRequestActionsOptions) {
   const confirmAction = useConfirmAction()
@@ -19,10 +22,15 @@ export function useManagedLnkRequestActions({
     lnkRequestCorrectionMutation.mutate({ record: row, methodKey, requestName: null })
   }
 
-  function openLnkRequestManager(requestNameOverride?: string) {
-    const requestName = requestNameOverride || managedLnkRequestName || lnkRequestManagerOptions[0] || ''
-    setManagedLnkRequestName(requestName)
-    setManagedLnkRequestNameDraft(requestName)
+  function openLnkRequestManager(requestNameOverride?: string, requestDateOverride?: string) {
+    const request = findRequestDocumentIdentity(
+      lnkRequestManagerOptions,
+      requestNameOverride || managedLnkRequestName,
+      requestDateOverride || managedLnkRequestDate,
+    )
+    setManagedLnkRequestName(request?.name ?? '')
+    setManagedLnkRequestDate(request?.date ?? '')
+    setManagedLnkRequestNameDraft(request?.name ?? '')
     setIsLnkRequestManagerOpen(true)
   }
 
@@ -30,15 +38,17 @@ export function useManagedLnkRequestActions({
     setIsLnkRequestManagerOpen(false)
   }
 
-  function changeManagedLnkRequest(requestName: string) {
-    setManagedLnkRequestName(requestName)
-    setManagedLnkRequestNameDraft(requestName)
+  function changeManagedLnkRequest(request: RequestDocumentIdentity) {
+    setManagedLnkRequestName(request.name)
+    setManagedLnkRequestDate(request.date)
+    setManagedLnkRequestNameDraft(request.name)
   }
 
   function renameManagedLnkRequest() {
     lnkRequestManagerMutation.mutate({
       action: 'rename',
       requestName: managedLnkRequestName,
+      requestDate: managedLnkRequestDate,
       nextRequestName: managedLnkRequestNameDraft,
     })
   }
@@ -53,7 +63,11 @@ export function useManagedLnkRequestActions({
       warning: 'Это действие нельзя отменить.',
     })
     if (!confirmed) return
-    lnkRequestManagerMutation.mutate({ action: 'delete', requestName })
+    lnkRequestManagerMutation.mutate({
+      action: 'delete',
+      requestName,
+      requestDate: managedLnkRequestDate,
+    })
   }
 
   async function clearManagedLnkRequestPosition(row: RowWithId, methodKey: WeldFieldKey) {

@@ -35,7 +35,7 @@ export function PstoResultManagerEntry({
   const requestName = String(row.pstoRequest ?? '').trim()
   const pstoDate = String(row.pstoDate ?? '').trim()
   const diagramName = String(row.heatTreatmentDiagram ?? '').trim()
-  const fixedDateDiagramDraft = formatCustomDocumentName(diagramDraft, pstoDate)
+  const customDiagramDraft = formatCustomDocumentName(diagramDraft)
 
   return (
     <div className="grid grid-cols-[minmax(420px,1fr)_minmax(230px,0.45fr)] gap-4 px-4 py-3 text-sm">
@@ -59,7 +59,7 @@ export function PstoResultManagerEntry({
           placeholder="Наименование диаграммы для этого стыка"
           hint="Дата ПСТО фиксируется отдельно и не меняется через название."
           disabled={isPending}
-          canRename={!isPending && Boolean(fixedDateDiagramDraft) && fixedDateDiagramDraft !== diagramName}
+          canRename={!isPending && Boolean(customDiagramDraft) && customDiagramDraft !== diagramName}
           onChange={(value) => onDiagramDraftChange(row.id, value)}
           onRename={() => onRenameDiagram(row)}
         />

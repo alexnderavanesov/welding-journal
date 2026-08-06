@@ -6,7 +6,6 @@ import {
   getManagedLnkResultChangeHint,
 } from '@/lib/managed-lnk-result-utils'
 import type { RowWithId, UseManagedLnkResultActionsOptions } from '@/lib/managed-lnk-result-action-types'
-import { filterLnkRowsByRequestName } from '@/lib/report-modal-rows'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export function useManagedLnkResultActions({
@@ -20,9 +19,7 @@ export function useManagedLnkResultActions({
   lnkConclusionCorrectionMutation,
   setMessage,
   setIsLnkResultManagerOpen,
-  setManagedLnkResultRequestName,
   setManagedLnkResultMethodKey,
-  setManagedLnkResultRequestSearch,
   setManagedLnkConclusionDrafts,
   setManagedLnkResultOrderIds,
   setManagedLnkResultChangeHint,
@@ -48,22 +45,11 @@ export function useManagedLnkResultActions({
       setMessage('Выберите один или несколько стыков для редактирования результатов')
       return
     }
-    setManagedLnkResultRequestName('')
     setManagedLnkResultMethodKey('')
-    setManagedLnkResultRequestSearch('')
     setManagedLnkResultOrderIds(selectedRows.map((row) => row.id))
     setManagedLnkPendingResultChanges({})
     setManagedLnkResultChangeHint(null)
     setIsLnkResultManagerOpen(true)
-  }
-
-  function changeManagedLnkResultRequest(requestName: string) {
-    const rowsForRequest = filterLnkRowsByRequestName(lnkRows, requestName)
-    setManagedLnkResultRequestName(requestName)
-    setManagedLnkResultMethodKey('')
-    setManagedLnkResultOrderIds(rowsForRequest.map((row) => row.id))
-    setManagedLnkPendingResultChanges({})
-    setManagedLnkResultChangeHint(null)
   }
 
   function changeManagedLnkResultMethod(nextMethodKey: WeldFieldKey | '') {
@@ -131,7 +117,6 @@ export function useManagedLnkResultActions({
   return {
     changeManagedLnkConclusionDraft,
     changeManagedLnkResultMethod,
-    changeManagedLnkResultRequest,
     clearLnkResult,
     closeLnkResultManager,
     openLnkResultManager,

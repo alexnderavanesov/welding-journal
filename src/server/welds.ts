@@ -57,6 +57,10 @@ import {
   ensureDispatcherTaskIndexFresh,
 } from '@/server/dispatcher-task-index'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import {
+  reserveSystemDocumentName,
+  type SystemDocumentSequenceUpdate,
+} from '@/server/system-document-sequences'
 
 export type WeldFilters = {
   search?: string
@@ -776,14 +780,36 @@ export const createWeldJoints = createServerFn({ method: 'POST' })
   })
 
 export const updateWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: { records: WeldPayload[] }) => data)
+  .validator((data: { records: WeldPayload[]; systemDocumentSequence?: SystemDocumentSequenceUpdate }) => data)
   .handler(async ({ data }) => {
     if (data.records.length === 0) return []
     if (data.records.some((record) => !record.id)) throw new Error('Не передан id одной из записей')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      let records = data.records
+      if (data.systemDocumentSequence) {
+        const hasProvisionalName = data.records.some((record) =>
+          data.systemDocumentSequence!.fieldKeys.some(
+            (fieldKey) =>
+              String(record[fieldKey] ?? '').trim() ===
+              String(data.systemDocumentSequence!.provisionalName ?? '').trim(),
+          ),
+        )
+        if (!hasProvisionalName) {
+          throw new Error('Не найдены строки с предварительным именем системного документа.')
+        }
+        const reserved = await reserveSystemDocumentName(tx, data.systemDocumentSequence, data.records)
+        records = data.records.map((record) => {
+          let nextRecord = record
+          for (const fieldKey of reserved.request.fieldKeys) {
+            if (String(record[fieldKey] ?? '').trim() !== reserved.request.provisionalName) continue
+            nextRecord = { ...nextRecord, [fieldKey]: reserved.name }
+          }
+          return nextRecord
+        })
+      }
       const updated = []
-      for (const record of data.records) {
+      for (const record of records) {
         const [row] = await tx
           .update(weldJoints)
           .set({ ...toDbInsert(record), updatedAt: new Date() })

@@ -4,23 +4,31 @@ import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import { findFirstPstoChronologySaveBlockReason } from '@/lib/psto-chronology-checks'
 import { findFirstDateBeforeWeldDateIssue } from '@/lib/report-date-rules'
 import {
-  collectRequestNames,
-  filterRequestNamesBySearch,
   getRequestNameFromNaming,
-  sortPstoRequestNamesNewestFirst,
 } from '@/lib/report-naming'
 import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { filterPstoResultRows } from '@/lib/report-row-utils'
 import { hasText } from '@/lib/report-value-utils'
 import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  filterRequestDocumentIdentitiesBySearch,
+  getPstoRequestDocumentIdentities,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
-export function getPstoResultAvailableRequestOptions(selectedRows: WeldRow[], requestOptions: string[]) {
-  const selectedRequestOptions = sortPstoRequestNamesNewestFirst(collectRequestNames(selectedRows, ['pstoRequest']))
+export function getPstoResultAvailableRequestOptions(
+  selectedRows: WeldRow[],
+  requestOptions: RequestDocumentIdentity[],
+) {
+  const selectedRequestOptions = getPstoRequestDocumentIdentities(selectedRows)
   return selectedRequestOptions.length > 0 ? selectedRequestOptions : requestOptions
 }
 
-export function getFilteredPstoResultRequestOptions(requestOptions: string[], search: string) {
-  return filterRequestNamesBySearch(requestOptions, search)
+export function getFilteredPstoResultRequestOptions(
+  requestOptions: RequestDocumentIdentity[],
+  search: string,
+) {
+  return filterRequestDocumentIdentitiesBySearch(requestOptions, search)
 }
 
 export function getPstoResultSearchRows({
@@ -40,7 +48,11 @@ export function getFilteredPstoResultRows(rows: WeldRow[], draft: PstoResultDraf
 }
 
 export function getSelectedPstoResultRows(rows: WeldRow[], draft: PstoResultDraftState) {
-  return rows.filter((row) => draft.rowIds.has(row.id) && canSelectPstoResultRow(row, draft.requestName))
+  return rows.filter(
+    (row) =>
+      draft.rowIds.has(row.id) &&
+      canSelectPstoResultRow(row, draft.requestName, draft.requestDate),
+  )
 }
 
 export function getPstoResultSaveBlockReason({
@@ -75,7 +87,7 @@ export function getPstoResultSaveBlockReason({
 
   if (
     saveCheckSettings.pstoResultDiagramRequired &&
-    !getRequestNameFromNaming(draft.diagramNaming, nextDiagramName, draft.pstoDate)
+    !getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)
   ) {
     return formatSaveCheckBlockReason('pstoResultDiagramRequired', 'Укажите наименование диаграммы термообработки.')
   }
@@ -95,7 +107,7 @@ function buildProposedPstoResultRowsForChecks(
   nextDiagramName: string,
 ) {
   const pstoDate = normalizeDateLikeForStorage(draft.pstoDate) ?? draft.pstoDate
-  const diagramName = getRequestNameFromNaming(draft.diagramNaming, nextDiagramName, draft.pstoDate)
+  const diagramName = getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)
   return selectedRows.map((row) => ({
     ...row,
     pstoDate,

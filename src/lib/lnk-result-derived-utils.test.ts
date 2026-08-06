@@ -4,12 +4,16 @@ import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { buildLnkResultDraftById } from '@/lib/lnk-result-draft'
 import { buildLnkConclusionCorrectionRows } from '@/lib/lnk-result-correction-updates'
 import { buildLnkResultRows } from '@/lib/lnk-result-create-updates'
-import { getLnkResultSaveBlockReason } from '@/lib/lnk-result-derived-utils'
+import {
+  getLnkResultSaveBlockReason,
+  getSelectedLnkResultRows,
+} from '@/lib/lnk-result-derived-utils'
 import { LNK_CUSTOM_RESULT_VALUE } from '@/lib/report-config'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 const baseDraft: LnkResultDraftState = {
   requestName: 'Заявка-001',
+  requestDate: '2026-07-03',
   methodKey: 'rkRequest',
   search: '',
   rowIds: new Set([1]),
@@ -39,6 +43,24 @@ const baseRow = {
 } as WeldRow
 
 describe('getLnkResultSaveBlockReason', () => {
+  it('selects only rows from the matching LNK request date', () => {
+    const rows = [
+      baseRow,
+      {
+        ...baseRow,
+        id: 2,
+        rkRequestDate: '2026-08-06',
+      },
+    ] as WeldRow[]
+
+    expect(
+      getSelectedLnkResultRows(rows, {
+        ...baseDraft,
+        rowIds: new Set([1, 2]),
+      }).map((row) => row.id),
+    ).toEqual([1])
+  })
+
   it('blocks LNK control date before weld date when the check is enabled', () => {
     expect(
       getLnkResultSaveBlockReason({
@@ -124,6 +146,7 @@ describe('getLnkResultSaveBlockReason', () => {
           controlDate: '2026-07-04',
           methodKey: 'uzkRequest',
           requestName: 'Заявка-УЗК',
+          requestDate: '2026-07-03',
           rowResults: { 1: 'годен' },
           result: LNK_CUSTOM_RESULT_VALUE,
         },
@@ -173,6 +196,7 @@ describe('getLnkResultSaveBlockReason', () => {
           controlDate: '2026-07-04',
           methodKey: 'vikRequest',
           requestName: 'Заявка-ВИК',
+          requestDate: '',
           rowResults: { 1: 'годен' },
           result: LNK_CUSTOM_RESULT_VALUE,
         },
@@ -192,7 +216,7 @@ describe('getLnkResultSaveBlockReason', () => {
     ).not.toThrow()
   })
 
-  it('keeps the stored conclusion date when renaming an LNK conclusion', () => {
+  it('keeps the stored conclusion date separate from a custom LNK conclusion name', () => {
     const row = {
       ...baseRow,
       rkResult: 'годен',
@@ -203,10 +227,10 @@ describe('getLnkResultSaveBlockReason', () => {
     const [updated] = buildLnkConclusionCorrectionRows({
       records: [row],
       methodKey: 'rkRequest',
-      conclusionName: 'Заключение №77 от 20.07.2026',
+      conclusionName: 'Заключение №77',
     })
 
     expect(updated.rkConclusionDate).toBe('2026-07-21')
-    expect(updated.rkConclusion).toBe('Заключение №77 от 21.07.2026')
+    expect(updated.rkConclusion).toBe('Заключение №77')
   })
 })

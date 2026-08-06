@@ -24,14 +24,29 @@ export function usePstoRequestCreateMutation({
       records,
       requestName,
       requestDate,
+      useSystemName,
     }: {
       records: RowWithId[]
       requestName: string
       requestDate: string
       mode?: 'create' | 'edit'
+      useSystemName?: boolean
     }) => {
       const updatedRecords = buildPstoRequestRows({ records, requestName, requestDate })
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось сохранить часть записей',
+        useSystemName
+          ? {
+              systemDocumentSequence: {
+                type: 'pstoRequest',
+                date: requestDate,
+                fieldKeys: ['pstoRequest'],
+                provisionalName: requestName,
+              },
+            }
+          : {},
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (_result, variables) => {
@@ -39,7 +54,10 @@ export function usePstoRequestCreateMutation({
       setMessage(
         variables.mode === 'edit'
           ? 'Заявка ПСТО обновлена'
-          : formatRequestCreatedMessage(variables.requestName, variables.records.length),
+          : formatRequestCreatedMessage(
+              String(_result[0]?.pstoRequest ?? variables.requestName),
+              variables.records.length,
+            ),
       )
       setSelectedHeatTreatmentIds(new Set())
       setPstoRequestNaming(defaultPstoRequestNaming)
@@ -47,6 +65,7 @@ export function usePstoRequestCreateMutation({
       setPstoRequestDate('')
       setIsPstoRequestModalOpen(false)
       await invalidateWeldJoints(queryClient)
+      await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

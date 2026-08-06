@@ -13,20 +13,27 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
-import { isSystemLnkRequestName } from '@/lib/report-naming'
+import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
+import {
+  createRequestDocumentIdentity,
+  isSameRequestDocument,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 type LnkRequestMethod = (typeof LNK_METHODS)[number]
 
 export type LnkRequestManagerDialogProps = {
   requestName: string
-  requestOptions: string[]
+  requestDate: string
+  requestOptions: RequestDocumentIdentity[]
   requestRows: WeldRow[]
   requestMethods: LnkRequestMethod[]
   requestNameDraft: string
   isManagerPending: boolean
   isCorrectionPending: boolean
   onClose: () => void
-  onChangeRequest: (requestName: string) => void
+  onChangeRequest: (request: RequestDocumentIdentity) => void
   onRequestNameDraftChange: (requestName: string) => void
   onRenameRequest: () => void
   onClearPosition: (row: WeldRow, requestKey: LnkRequestMethod['requestKey']) => void
@@ -35,6 +42,7 @@ export type LnkRequestManagerDialogProps = {
 
 export function LnkRequestManagerDialog({
   requestName,
+  requestDate,
   requestOptions,
   requestRows,
   requestMethods,
@@ -48,11 +56,25 @@ export function LnkRequestManagerDialog({
   onClearPosition,
   onDeleteRequest,
 }: LnkRequestManagerDialogProps) {
-  const isSystemRequest = isSystemLnkRequestName(requestName)
+  const requestConclusionSettings = useRequestConclusionSettings()
+  const isSystemRequest = isSystemDocumentNameForRows(
+    requestRows,
+    'lnkRequest',
+    requestName,
+    requestConclusionSettings,
+  )
   const positionCount = LNK_METHODS.reduce(
-    (count, method) => count + requestRows.filter((row) => String(row[method.requestKey] ?? '').trim() === requestName).length,
+    (count, method) =>
+      count +
+      requestRows.filter((row) =>
+        isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+          name: requestName,
+          date: requestDate,
+        }),
+      ).length,
     0,
   )
+  const selectedIdentity = createRequestDocumentIdentity(requestName, requestDate)
 
   return (
     <LargeDialogShell maxWidthClassName="max-w-[920px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[60] bg-slate-950/30">
@@ -63,7 +85,12 @@ export function LnkRequestManagerDialog({
       />
 
       <div className="min-h-0 space-y-4 overflow-auto px-5 py-4">
-        <RequestManagerSelect label="Заявка ЛНК" value={requestName} options={requestOptions} onChange={onChangeRequest} />
+        <RequestManagerSelect
+          label="Заявка ЛНК"
+          value={selectedIdentity?.key ?? ''}
+          options={requestOptions}
+          onChange={onChangeRequest}
+        />
 
         {requestName ? (
           <RequestManagerUsagePanel>
@@ -78,7 +105,15 @@ export function LnkRequestManagerDialog({
                   key={method.requestKey}
                   className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800"
                 >
-                  {method.code}: {requestRows.filter((row) => String(row[method.requestKey] ?? '').trim() === requestName).length}
+                  {method.code}:{' '}
+                  {
+                    requestRows.filter((row) =>
+                      isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+                        name: requestName,
+                        date: requestDate,
+                      }),
+                    ).length
+                  }
                 </span>
               ))}
             </div>
@@ -114,7 +149,7 @@ export function LnkRequestManagerDialog({
           emptyText="Выберите заявку, чтобы увидеть ее стыки и методы контроля."
         >
           {requestRows.map((row) => {
-            const methods = getLnkRowRequestMethods(row, requestName)
+            const methods = getLnkRowRequestMethods(row, requestName, requestDate)
             return (
               <LnkRequestManagerPosition
                 key={row.id}

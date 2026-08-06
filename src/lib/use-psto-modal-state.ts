@@ -17,6 +17,7 @@ export function usePstoModalState() {
   const [isPstoRequestModalOpen, setIsPstoRequestModalOpen] = useState(false)
   const [isPstoRequestManagerOpen, setIsPstoRequestManagerOpen] = useState(false)
   const [managedPstoRequestName, setManagedPstoRequestName] = useState('')
+  const [managedPstoRequestDate, setManagedPstoRequestDate] = useState('')
   const [managedPstoRequestNameDraft, setManagedPstoRequestNameDraft] = useState('')
   const [isPstoResultModalOpen, setIsPstoResultModalOpen] = useState(false)
   const [isPstoResultManagerOpen, setIsPstoResultManagerOpen] = useState(false)
@@ -31,6 +32,7 @@ export function usePstoModalState() {
     isPstoRequestModalOpen,
     isPstoRequestManagerOpen,
     managedPstoRequestName,
+    managedPstoRequestDate,
     managedPstoRequestNameDraft,
     isPstoResultModalOpen,
     isPstoResultManagerOpen,
@@ -43,6 +45,7 @@ export function usePstoModalState() {
     setIsPstoRequestModalOpen,
     setIsPstoRequestManagerOpen,
     setManagedPstoRequestName,
+    setManagedPstoRequestDate,
     setManagedPstoRequestNameDraft,
     setIsPstoResultModalOpen,
     setIsPstoResultManagerOpen,

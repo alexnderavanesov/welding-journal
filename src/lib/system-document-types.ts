@@ -1,5 +1,13 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
+import {
+  REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+  addRowsToNamingPatternContext,
+  buildSystemNameWithNumber,
+  extractSystemNameNumber,
+  getPstoConclusionDateParts,
+  type RequestConclusionSettings,
+} from '@/lib/request-conclusion-settings'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
 export const SYSTEM_DOCUMENT_TYPES = [
@@ -10,12 +18,17 @@ export const SYSTEM_DOCUMENT_TYPES = [
 ] as const
 
 export type SystemDocumentType = (typeof SYSTEM_DOCUMENT_TYPES)[number]
+export type SystemDocumentTargetReport = 'lnk' | 'heatTreatment'
 
 export type SystemDocumentReference = {
   type: SystemDocumentType
   title: string
   date: string
   methodCode?: string
+}
+
+export type SystemDocumentNavigationRequest = SystemDocumentReference & {
+  requestId: number
 }
 
 export type SystemDocumentSummary = SystemDocumentReference & {
@@ -38,6 +51,7 @@ export type SystemDocumentTemplateContext = {
   label: string
   title: string
   date: string
+  number: string
   methodCodes: string[]
   methodCode?: string
 }
@@ -70,6 +84,12 @@ export function isSystemDocumentType(value: unknown): value is SystemDocumentTyp
 
 export function getSystemDocumentProfile(type: SystemDocumentType) {
   return SYSTEM_DOCUMENT_PROFILES[type]
+}
+
+export function getSystemDocumentTargetReport(
+  type: SystemDocumentType,
+): SystemDocumentTargetReport {
+  return type === 'lnkRequest' || type === 'lnkConclusion' ? 'lnk' : 'heatTreatment'
 }
 
 export function getSystemDocumentTypeForField(fieldKey: WeldFieldKey): SystemDocumentType | null {
@@ -171,13 +191,120 @@ export function buildSystemDocumentSummaries(
 }
 
 export function createSystemDocumentTemplateContext(
-  reference: SystemDocumentReference,
+  reference: SystemDocumentReference | SystemDocumentSummary,
   methodCodes: string[] = reference.methodCode ? [reference.methodCode] : [],
+  settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
 ): SystemDocumentTemplateContext {
   return {
     ...reference,
     label: getSystemDocumentProfile(reference.type).label,
+    number: getSystemDocumentNumber(reference, settings),
     methodCodes,
+  }
+}
+
+export function getSystemDocumentNumber(
+  reference: SystemDocumentReference | SystemDocumentSummary,
+  settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+) {
+  const date = reference.date
+    ? new Date(`${reference.date}T00:00:00`)
+    : new Date()
+  const baseContext = reference.type === 'pstoConclusion'
+    ? getPstoConclusionDateParts(reference.date)
+    : { date, methodCode: reference.methodCode }
+  const context = 'projects' in reference
+    ? {
+        ...baseContext,
+        projectTitle: reference.projects.join(', '),
+        subtitleCode: reference.subtitleCodes.join(', '),
+        line: reference.lines.join(', '),
+      }
+    : baseContext
+  const namingSettings = settings[reference.type]
+  const patterns = Array.from(
+    new Set([
+      namingSettings.systemPattern,
+      ...(namingSettings.systemPatternHistory ?? []),
+      REQUEST_CONCLUSION_DEFAULT_SETTINGS[reference.type].systemPattern,
+    ]),
+  )
+  const candidates = patterns
+    .map((pattern) => extractSystemNameNumber(pattern, context, reference.title))
+    .filter((number) => /^\d+$/.test(number))
+    .map((number) => Number(number))
+    .filter((number) => Number.isSafeInteger(number) && number > 0)
+    .sort((left, right) => left - right)
+  const number = candidates[0]
+  return number ? String(number).padStart(3, '0') : ''
+}
+
+export function isSystemDocumentNameForRows(
+  rows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
+  type: SystemDocumentType,
+  title: string,
+  settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+) {
+  const normalizedTitle = title.trim()
+  if (!normalizedTitle) return false
+  return buildSystemDocumentSummaries(rows, type).some(
+    (summary) =>
+      summary.title === normalizedTitle &&
+      Boolean(getSystemDocumentNumber(summary, settings)),
+  )
+}
+
+export function buildCurrentSystemDocumentName(
+  reference: SystemDocumentReference | SystemDocumentSummary,
+  rows: Array<Partial<Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>>>,
+  settings: RequestConclusionSettings,
+  number: number,
+) {
+  const baseContext = reference.type === 'pstoConclusion'
+    ? getPstoConclusionDateParts(reference.date)
+    : {
+        date: reference.date ? new Date(`${reference.date}T00:00:00`) : new Date(),
+        methodCode: reference.methodCode,
+      }
+  return buildSystemNameWithNumber(
+    settings[reference.type].systemPattern,
+    addRowsToNamingPatternContext(baseContext, rows),
+    number,
+  )
+}
+
+export function buildSystemDocumentRenameRows(
+  reference: SystemDocumentReference,
+  rows: WeldRow[],
+  nextName: string,
+) {
+  const fieldKeys = new Set<WeldFieldKey>()
+  const records = rows.flatMap((row) => {
+    let nextRow: WeldRow | null = null
+    const renameField = (fieldKey: WeldFieldKey, dateKey: WeldFieldKey) => {
+      if (normalizeText(row[fieldKey]) !== reference.title) return
+      if (normalizeDateValue(row[dateKey]) !== reference.date) return
+      nextRow = { ...(nextRow ?? row), [fieldKey]: nextName }
+      fieldKeys.add(fieldKey)
+    }
+
+    if (reference.type === 'lnkRequest') {
+      for (const method of LNK_METHODS) renameField(method.requestKey, method.requestDateKey)
+    } else if (reference.type === 'lnkConclusion') {
+      const method = LNK_METHODS.find((candidate) => candidate.code === reference.methodCode)
+      if (method) renameField(method.conclusionKey, method.conclusionDateKey)
+    } else if (reference.type === 'pstoRequest') {
+      renameField('pstoRequest', 'pstoRequestDate')
+    } else {
+      renameField('heatTreatmentDiagram', 'pstoDate')
+    }
+
+    return nextRow ? [nextRow] : []
+  })
+
+  return {
+    records,
+    fieldKeys: Array.from(fieldKeys),
   }
 }
 

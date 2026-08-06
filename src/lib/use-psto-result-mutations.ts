@@ -37,15 +37,30 @@ export function usePstoResultMutations({
       result,
       diagramName,
       rows,
+      useSystemName,
     }: {
       records: RowWithId[]
       pstoDate: string
       result: string
       diagramName: string
       rows: RowWithId[]
+      useSystemName?: boolean
     }) => {
       const updatedRecords = buildPstoResultRows({ records, pstoDate, result, diagramName, rows })
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось сохранить часть записей',
+        useSystemName
+          ? {
+              systemDocumentSequence: {
+                type: 'pstoConclusion',
+                date: pstoDate,
+                fieldKeys: ['heatTreatmentDiagram'],
+                provisionalName: diagramName,
+              },
+            }
+          : {},
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows) => {
@@ -54,6 +69,7 @@ export function usePstoResultMutations({
       setIsPstoResultModalOpen(false)
       setPstoResultDraft(createDefaultPstoResultDraft(defaultPstoConclusionNaming))
       await invalidateWeldJoints(queryClient)
+      await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

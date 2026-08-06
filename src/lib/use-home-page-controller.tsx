@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
+import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   useAutoCollapseNavOnHorizontalScroll,
@@ -93,6 +93,10 @@ import { canCreatePstoRequest } from '@/lib/psto-status'
 import { canCreateLnkRequest } from '@/lib/report-control-state'
 import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
 import {
+  getLnkRequestDocumentIdentities,
+  getPstoRequestDocumentIdentities,
+} from '@/lib/request-document-identity'
+import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-compatibility'
@@ -119,14 +123,21 @@ import {
 import { getWeldJointById, listWeldJointRowsByIds } from '@/server/welds'
 import { openGeneratedDocumentForRow } from '@/lib/welding-journal-document'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/generated-document-storage'
-import { openSystemDocumentForRow } from '@/lib/system-document-storage'
+import { loadSystemDocumentRows, openSystemDocumentForRow } from '@/lib/system-document-storage'
 import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
+import {
+  getSystemDocumentReferenceForField,
+  type SystemDocumentReference,
+  type SystemDocumentNavigationRequest,
+} from '@/lib/system-document-types'
 
 export function useHomePageController() {
   const queryClient = useQueryClient()
   const saveCheckSettings = useSaveCheckSettings()
   const availableSystemDocumentTypes = useSystemDocumentTemplateAvailability()
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [systemDocumentNavigationRequest, setSystemDocumentNavigationRequest] =
+    useState<SystemDocumentNavigationRequest | null>(null)
   const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
   const confirmAction = useConfirmAction()
   const {
@@ -178,6 +189,7 @@ export function useHomePageController() {
     isLnkRequestModalOpen,
     isLnkRequestManagerOpen,
     managedLnkRequestName,
+    managedLnkRequestDate,
     managedLnkRequestNameDraft,
     lnkRequestSearch,
     setLnkRequestDraft,
@@ -185,6 +197,7 @@ export function useHomePageController() {
     setIsLnkRequestModalOpen,
     setIsLnkRequestManagerOpen,
     setManagedLnkRequestName,
+    setManagedLnkRequestDate,
     setManagedLnkRequestNameDraft,
     setLnkRequestSearch,
   } = useLnkRequestModalState()
@@ -196,6 +209,7 @@ export function useHomePageController() {
     isPstoRequestModalOpen,
     isPstoRequestManagerOpen,
     managedPstoRequestName,
+    managedPstoRequestDate,
     managedPstoRequestNameDraft,
     isPstoResultModalOpen,
     isPstoResultManagerOpen,
@@ -208,6 +222,7 @@ export function useHomePageController() {
     setIsPstoRequestModalOpen,
     setIsPstoRequestManagerOpen,
     setManagedPstoRequestName,
+    setManagedPstoRequestDate,
     setManagedPstoRequestNameDraft,
     setIsPstoResultModalOpen,
     setIsPstoResultManagerOpen,
@@ -223,9 +238,7 @@ export function useHomePageController() {
     isLnkOfficialityModalOpen,
     lnkOfficialityDraft,
     isLnkResultManagerOpen,
-    managedLnkResultRequestName,
     managedLnkResultMethodKey,
-    managedLnkResultRequestSearch,
     managedLnkConclusionDrafts,
     managedLnkResultOrderIds,
     managedLnkResultChangeHint,
@@ -239,9 +252,7 @@ export function useHomePageController() {
     setIsLnkOfficialityModalOpen,
     setLnkOfficialityDraft,
     setIsLnkResultManagerOpen,
-    setManagedLnkResultRequestName,
     setManagedLnkResultMethodKey,
-    setManagedLnkResultRequestSearch,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
     setManagedLnkResultChangeHint,
@@ -544,7 +555,9 @@ export function useHomePageController() {
     pstoResultDraft,
     lnkResultDraft,
     managedPstoRequestName,
+    managedPstoRequestDate,
     managedLnkRequestName,
+    managedLnkRequestDate,
     requestConclusionSettings,
   })
   const {
@@ -619,11 +632,13 @@ export function useHomePageController() {
   } = useManagedLnkRequestActions({
     lnkRequestManagerOptions,
     managedLnkRequestName,
+    managedLnkRequestDate,
     managedLnkRequestNameDraft,
     lnkRequestCorrectionMutation,
     lnkRequestManagerMutation,
     setIsLnkRequestManagerOpen,
     setManagedLnkRequestName,
+    setManagedLnkRequestDate,
     setManagedLnkRequestNameDraft,
   })
   const {
@@ -794,9 +809,6 @@ export function useHomePageController() {
     managedLnkPendingResultRows,
   } = useManagedLnkResultDerivedState({
     lnkRows,
-    lnkResultRequestOptions,
-    managedLnkResultRequestSearch,
-    managedLnkResultRequestName,
     managedLnkResultOrderIds,
     managedLnkResultMethodKey,
     managedLnkPendingResultChanges,
@@ -822,9 +834,7 @@ export function useHomePageController() {
     lnkConclusionCorrectionMutation,
     setMessage,
     setIsLnkResultManagerOpen,
-    setManagedLnkResultRequestName,
     setManagedLnkResultMethodKey,
-    setManagedLnkResultRequestSearch,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
     setManagedLnkResultChangeHint,
@@ -1039,7 +1049,6 @@ export function useHomePageController() {
     managedLnkResultEntries,
     managedLnkResultMethodKey,
     managedLnkResultMethods,
-    managedLnkResultRequestName,
     managedPstoResultRows,
     pstoResultRequestOptions,
     setLnkResultDraft,
@@ -1080,6 +1089,7 @@ export function useHomePageController() {
     filteredPstoResultRows,
     managedPstoDiagramDrafts,
     managedPstoRequestName,
+    managedPstoRequestDate,
     managedPstoRequestNameDraft,
     nextPstoDiagramName,
     nextPstoRequestName,
@@ -1102,6 +1112,7 @@ export function useHomePageController() {
     setIsPstoResultModalOpen,
     setManagedPstoDiagramDrafts,
     setManagedPstoRequestName,
+    setManagedPstoRequestDate,
     setManagedPstoRequestNameDraft,
     setMessage,
     setPstoRequestDate,
@@ -1336,8 +1347,28 @@ export function useHomePageController() {
     setMessage(messageText || `Показано стыков: ${rowIds.length}.`)
   }
 
-  const openGeneratedDocumentRows = (rowIds: number[], documentTitle: string) => {
+  const openGeneratedDocumentRows = (
+    rowIds: number[],
+    documentTitle: string,
+    targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment' = 'weldingJournal',
+  ) => {
     const uniqueRowIds = Array.from(new Set(rowIds)).filter(Number.isFinite)
+    if (targetReport === 'lnk') {
+      setActiveReport('lnk')
+      setChainRecord(null)
+      setEditing(null)
+      setLnkFilters(buildRowIdListFilters(uniqueRowIds))
+      setMessage(`Показаны стыки системного документа ЛНК «${documentTitle}»: ${uniqueRowIds.length}.`)
+      return
+    }
+    if (targetReport === 'heatTreatment') {
+      setActiveReport('heatTreatment')
+      setChainRecord(null)
+      setEditing(null)
+      setHeatTreatmentFilters(buildRowIdListFilters(uniqueRowIds))
+      setMessage(`Показаны стыки системного документа ПСТО «${documentTitle}»: ${uniqueRowIds.length}.`)
+      return
+    }
     openWeldRowIds(
       uniqueRowIds,
       `Показаны стыки ЖСР «${documentTitle}»: ${uniqueRowIds.length}. Строки документа выделены зеленым.`,
@@ -1347,6 +1378,12 @@ export function useHomePageController() {
 
   const handleDocumentGenerationRequest = (requestId: number) => {
     setDocumentGenerationRequest((current) => (current?.id === requestId ? null : current))
+  }
+
+  const handleSystemDocumentNavigationRequest = (requestId: number) => {
+    setSystemDocumentNavigationRequest((current) =>
+      current?.requestId === requestId ? null : current,
+    )
   }
 
   const assignPercentageLineMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
@@ -1463,9 +1500,9 @@ export function useHomePageController() {
       return
     }
 
-    const requestName = getLnkRowRequestNames(row)[0]
-    if (requestName) {
-      openLnkRequestManager(requestName)
+    const request = getLnkRequestDocumentIdentities([row])[0]
+    if (request) {
+      openLnkRequestManager(request.name, request.date)
       return
     }
 
@@ -1478,9 +1515,9 @@ export function useHomePageController() {
       return
     }
 
-    const requestName = String(row.pstoRequest ?? '').trim()
-    if (requestName) {
-      openPstoRequestManager(requestName)
+    const request = getPstoRequestDocumentIdentities([row])[0]
+    if (request) {
+      openPstoRequestManager(request.name, request.date)
       return
     }
 
@@ -1496,21 +1533,19 @@ export function useHomePageController() {
     setIsLnkOfficialityModalOpen(true)
   }
 
-  const getCommonLnkRequestNames = (selectedRows: WeldRow[]) => {
+  const getCommonLnkRequests = (selectedRows: WeldRow[]) => {
     if (selectedRows.length === 0) return []
     const [firstRow, ...restRows] = selectedRows
-    const common = new Set(getLnkRowRequestNames(firstRow))
+    const firstRequests = getLnkRequestDocumentIdentities([firstRow])
+    const common = new Set(firstRequests.map((request) => request.key))
     for (const selectedRow of restRows) {
-      const names = new Set(getLnkRowRequestNames(selectedRow))
-      for (const name of [...common]) {
-        if (!names.has(name)) common.delete(name)
+      const keys = new Set(getLnkRequestDocumentIdentities([selectedRow]).map((request) => request.key))
+      for (const key of [...common]) {
+        if (!keys.has(key)) common.delete(key)
       }
     }
-    return [...common]
+    return firstRequests.filter((request) => common.has(request.key))
   }
-
-  const getUniquePstoRequestNames = (selectedRows: WeldRow[]) =>
-    Array.from(new Set(selectedRows.map((selectedRow) => String(selectedRow.pstoRequest ?? '').trim()).filter(Boolean)))
 
   const areRowsOnSameLine = (selectedRows: WeldRow[]) => {
     if (selectedRows.length <= 1) return true
@@ -1540,6 +1575,29 @@ export function useHomePageController() {
       ...buildRowIdListFilters(rowIds),
     } as typeof activeColumnFilters)
     setMessage(`Показаны выбранные стыки: ${rowIds.length}.`)
+  }
+
+  const filterSystemDocumentRowsInCurrentReport = async (
+    reference: SystemDocumentReference,
+  ) => {
+    setMessage(`Загружаем стыки документа «${reference.title}»...`)
+    try {
+      const documentRows = await loadSystemDocumentRows(reference)
+      const rowIds = Array.from(new Set(documentRows.map((documentRow) => documentRow.id)))
+        .filter(Number.isFinite)
+      if (rowIds.length === 0) {
+        setMessage(`В документе «${reference.title}» больше нет стыков.`)
+        return
+      }
+      activeFiltersSetter(buildRowIdListFilters(rowIds) as typeof activeColumnFilters)
+      setMessage(`Показаны все стыки документа «${reference.title}»: ${rowIds.length}.`)
+    } catch (reason) {
+      setMessage(
+        reason instanceof Error
+          ? reason.message
+          : `Не удалось загрузить стыки документа «${reference.title}».`,
+      )
+    }
   }
 
   const activeSelectedRowIds =
@@ -1576,9 +1634,9 @@ export function useHomePageController() {
     }
 
     if (creatableRows.length === 0) {
-      const commonRequestNames = getCommonLnkRequestNames(selectedRows)
-      if (commonRequestNames.length === 1) {
-        openLnkRequestManager(commonRequestNames[0])
+      const commonRequests = getCommonLnkRequests(selectedRows)
+      if (commonRequests.length === 1) {
+        openLnkRequestManager(commonRequests[0].name, commonRequests[0].date)
         return
       }
     }
@@ -1602,9 +1660,9 @@ export function useHomePageController() {
     }
 
     if (creatableRows.length === 0) {
-      const requestNames = getUniquePstoRequestNames(selectedRows)
-      if (requestNames.length === 1) {
-        openPstoRequestManager(requestNames[0])
+      const requests = getPstoRequestDocumentIdentities(selectedRows)
+      if (requests.length === 1) {
+        openPstoRequestManager(requests[0].name, requests[0].date)
         return
       }
     }
@@ -1622,13 +1680,14 @@ export function useHomePageController() {
       return
     }
 
-    const commonRequestNames = getCommonLnkRequestNames(selectedRows)
-    const requestName = commonRequestNames.length === 1 ? commonRequestNames[0] : ''
+    const commonRequests = getCommonLnkRequests(selectedRows)
+    const request = commonRequests.length === 1 ? commonRequests[0] : null
     setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
-    setLnkResultRequestSearch(requestName)
+    setLnkResultRequestSearch(request?.name ?? '')
     setLnkResultDraft({
       ...createDefaultLnkResultDraft(defaultLnkConclusionNaming),
-      requestName,
+      requestName: request?.name ?? '',
+      requestDate: request?.date ?? '',
       rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
       search: '',
     })
@@ -1641,20 +1700,25 @@ export function useHomePageController() {
       openAddPstoResultModalForRow(selectedRows[0])
       return
     }
-    const requestNames = getUniquePstoRequestNames(selectedRows)
-    if (requestNames.length !== 1) {
+    if (selectedRows.some((selectedRow) => getPstoRequestDocumentIdentities([selectedRow]).length === 0)) {
+      setMessage('Для части выбранных стыков нет заявки ПСТО')
+      return
+    }
+    const requests = getPstoRequestDocumentIdentities(selectedRows)
+    if (requests.length !== 1) {
       setMessage('Для результата ПСТО выберите стыки одной заявки ПСТО')
       return
     }
 
-    const requestName = requestNames[0]
+    const request = requests[0]
     setPstoResultDraft({
       ...createDefaultPstoResultDraft(defaultPstoConclusionNaming),
-      requestName,
+      requestName: request.name,
+      requestDate: request.date,
       rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
       search: '',
     })
-    setPstoResultRequestSearch(requestName)
+    setPstoResultRequestSearch(request.name)
     setIsPstoResultModalOpen(true)
   }
 
@@ -1690,7 +1754,7 @@ export function useHomePageController() {
       return 'Часть стыков требует создания заявки, а часть уже находится в заявке'
     }
     if (creatableCount === selectedRows.length) return undefined
-    return getCommonLnkRequestNames(selectedRows).length === 1 ? undefined : 'Выбранные стыки находятся в разных заявках ЛНК'
+    return getCommonLnkRequests(selectedRows).length === 1 ? undefined : 'Выбранные стыки находятся в разных заявках ЛНК'
   }
 
   const getPstoRequestGroupDisabledReason = (selectedRows: WeldRow[]) => {
@@ -1700,7 +1764,12 @@ export function useHomePageController() {
       return 'Часть стыков требует создания заявки, а часть уже находится в заявке'
     }
     if (creatableCount === selectedRows.length) return undefined
-    return getUniquePstoRequestNames(selectedRows).length === 1 ? undefined : 'Выбранные стыки находятся в разных заявках ПСТО'
+    const allRowsHaveRequest = selectedRows.every(
+      (selectedRow) => getPstoRequestDocumentIdentities([selectedRow]).length > 0,
+    )
+    return allRowsHaveRequest && getPstoRequestDocumentIdentities(selectedRows).length === 1
+      ? undefined
+      : 'Выбранные стыки находятся в разных заявках ПСТО'
   }
 
   const getSelectedRowsReportCount = (selectedRows: WeldRow[], report: 'weldingJournal' | 'lnk' | 'heatTreatment') => {
@@ -1709,7 +1778,11 @@ export function useHomePageController() {
     return buildLnkReportRows(selectedRows).length
   }
 
-  const getReportContextMenuItems = (row: WeldRow, selectedRows: WeldRow[] = [row]): ContextActionMenuItem[] => {
+  const getReportContextMenuItems = (
+    row: WeldRow,
+    selectedRows: WeldRow[] = [row],
+    fieldKey?: WeldFieldKey,
+  ): ContextActionMenuItem[] => {
     const contextRows = selectedRows.length > 0 ? selectedRows : [row]
     const isGroupAction = contextRows.length > 1
     const sameLine = areRowsOnSameLine(contextRows)
@@ -1726,15 +1799,52 @@ export function useHomePageController() {
       activeReport === 'lnk' && contextRows.some((selectedRow) => getLnkRowRequestNames(selectedRow).length === 0)
         ? 'Сначала создайте заявку ЛНК для всех выбранных стыков'
         : undefined
-    const pstoResultRequestNames = activeReport === 'heatTreatment' ? getUniquePstoRequestNames(contextRows) : []
+    const pstoResultRequests = activeReport === 'heatTreatment'
+      ? getPstoRequestDocumentIdentities(contextRows)
+      : []
+    const pstoResultRowsHaveRequests =
+      activeReport !== 'heatTreatment' ||
+      contextRows.every((selectedRow) => getPstoRequestDocumentIdentities([selectedRow]).length > 0)
     const pstoResultDisabledReason =
-      activeReport === 'heatTreatment' && (pstoResultRequestNames.length === 0 || (isGroupAction && pstoResultRequestNames.length !== 1))
+      activeReport === 'heatTreatment' &&
+      (!pstoResultRowsHaveRequests || pstoResultRequests.length === 0 || (isGroupAction && pstoResultRequests.length !== 1))
         ? isGroupAction
           ? 'Для результата ПСТО выберите стыки одной заявки ПСТО'
           : 'Сначала создайте заявку ПСТО для этого стыка'
         : undefined
 
     const items: ContextActionMenuItem[] = []
+    const systemDocumentReference = fieldKey
+      ? getSystemDocumentReferenceForField(row, fieldKey)
+      : null
+
+    if (systemDocumentReference) {
+      items.push(
+        {
+          id: 'open-in-documents',
+          label: 'Открыть в документах',
+          icon: FileText,
+          onSelect: () => {
+            setSystemDocumentNavigationRequest({
+              requestId: Date.now(),
+              ...systemDocumentReference,
+            })
+            setChainRecord(null)
+            setEditing(null)
+            setActiveReport('documents')
+          },
+        },
+        {
+          id: 'filter-system-document-rows',
+          label: 'Показать все стыки документа',
+          icon: ListFilter,
+          onSelect: () => {
+            void filterSystemDocumentRowsInCurrentReport(systemDocumentReference)
+          },
+        },
+        { type: 'separator', id: 'document-navigation-separator' },
+      )
+    }
 
     if (activeSelectedRowIds.has(row.id)) {
       items.push(
@@ -2245,6 +2355,7 @@ export function useHomePageController() {
     requestManagerOpen: isPstoRequestManagerOpen,
     requestManager: {
       requestName: managedPstoRequestName,
+      requestDate: managedPstoRequestDate,
       requestOptions: pstoRequestManagerOptions,
       requestRows: managedPstoRequestRows,
       requestNameDraft: managedPstoRequestNameDraft,
@@ -2332,6 +2443,7 @@ export function useHomePageController() {
     requestManagerOpen: isLnkRequestManagerOpen,
     requestManager: {
       requestName: managedLnkRequestName,
+      requestDate: managedLnkRequestDate,
       requestOptions: lnkRequestManagerOptions,
       requestRows: managedLnkRequestRows,
       requestMethods: managedLnkRequestMethods,
@@ -2495,6 +2607,8 @@ export function useHomePageController() {
     onDocumentGenerationRequestHandled: handleDocumentGenerationRequest,
     onDocumentGenerated: setMessage,
     onOpenDocumentRows: openGeneratedDocumentRows,
+    systemDocumentNavigationRequest,
+    onSystemDocumentNavigationRequestHandled: handleSystemDocumentNavigationRequest,
     reportChainDialogProps,
     reportWeldEditorProps,
     reportPstoDialogsProps,

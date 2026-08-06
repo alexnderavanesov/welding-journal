@@ -3,11 +3,13 @@ import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
 import { canCreatePstoRequest } from '@/lib/psto-status'
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
+import { findRequestDocumentIdentity, type RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 export function createPstoRequestActionHandlers({
   confirmAction,
   filteredAvailablePstoRequestRows,
   managedPstoRequestName,
+  managedPstoRequestDate,
   managedPstoRequestNameDraft,
   nextPstoRequestName,
   pstoRequestManagerOptions,
@@ -21,6 +23,7 @@ export function createPstoRequestActionHandlers({
   setIsPstoRequestManagerOpen,
   setIsPstoRequestModalOpen,
   setManagedPstoRequestName,
+  setManagedPstoRequestDate,
   setManagedPstoRequestNameDraft,
   setMessage,
   setPstoRequestDate,
@@ -34,13 +37,19 @@ export function createPstoRequestActionHandlers({
       return
     }
 
-    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName, pstoRequestDate)
+    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
     if (!requestName) {
       setMessage('Укажите пользовательское наименование заявки ПСТО')
       return
     }
 
-    pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, requestDate: pstoRequestDate, mode: 'create' })
+    pstoRequestMutation.mutate({
+      records: selectedHeatTreatmentRows,
+      requestName,
+      requestDate: pstoRequestDate,
+      mode: 'create',
+      useSystemName: pstoRequestNaming.mode === 'system',
+    })
   }
 
   function openCreatePstoRequestModal() {
@@ -69,22 +78,29 @@ export function createPstoRequestActionHandlers({
     setIsPstoRequestModalOpen(false)
   }
 
-  function openPstoRequestManager(requestNameOverride?: string) {
-    const requestName = requestNameOverride || managedPstoRequestName || pstoRequestManagerOptions[0] || ''
-    setManagedPstoRequestName(requestName)
-    setManagedPstoRequestNameDraft(requestName)
+  function openPstoRequestManager(requestNameOverride?: string, requestDateOverride?: string) {
+    const request = findRequestDocumentIdentity(
+      pstoRequestManagerOptions,
+      requestNameOverride || managedPstoRequestName,
+      requestDateOverride || managedPstoRequestDate,
+    )
+    setManagedPstoRequestName(request?.name ?? '')
+    setManagedPstoRequestDate(request?.date ?? '')
+    setManagedPstoRequestNameDraft(request?.name ?? '')
     setIsPstoRequestManagerOpen(true)
   }
 
-  function changeManagedPstoRequest(requestName: string) {
-    setManagedPstoRequestName(requestName)
-    setManagedPstoRequestNameDraft(requestName)
+  function changeManagedPstoRequest(request: RequestDocumentIdentity) {
+    setManagedPstoRequestName(request.name)
+    setManagedPstoRequestDate(request.date)
+    setManagedPstoRequestNameDraft(request.name)
   }
 
   function renameManagedPstoRequest() {
     pstoRequestManagerMutation.mutate({
       action: 'rename',
       requestName: managedPstoRequestName,
+      requestDate: managedPstoRequestDate,
       nextRequestName: managedPstoRequestNameDraft,
     })
   }
@@ -99,7 +115,11 @@ export function createPstoRequestActionHandlers({
       warning: 'Это действие нельзя отменить.',
     })
     if (!confirmed) return
-    pstoRequestManagerMutation.mutate({ action: 'delete', requestName })
+    pstoRequestManagerMutation.mutate({
+      action: 'delete',
+      requestName,
+      requestDate: managedPstoRequestDate,
+    })
   }
 
   async function clearManagedPstoRequestPosition(record: RowWithId) {
@@ -116,12 +136,18 @@ export function createPstoRequestActionHandlers({
   }
 
   function submitCreatePstoRequest() {
-    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName, pstoRequestDate)
+    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
     if (!requestName) {
       setMessage('Укажите пользовательское наименование заявки ПСТО')
       return
     }
-    pstoRequestMutation.mutate({ records: selectedHeatTreatmentRows, requestName, requestDate: pstoRequestDate, mode: 'create' })
+    pstoRequestMutation.mutate({
+      records: selectedHeatTreatmentRows,
+      requestName,
+      requestDate: pstoRequestDate,
+      mode: 'create',
+      useSystemName: pstoRequestNaming.mode === 'system',
+    })
   }
 
   function togglePstoRequestRow(rowId: number) {
