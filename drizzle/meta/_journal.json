@@ -127,6 +127,20 @@
       "when": 1785928165417,
       "tag": "0017_absurd_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785962913386,
+      "tag": "0018_secret_miss_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785963975599,
+      "tag": "0019_aberrant_mentor",
+      "breakpoints": true
     }
   ]
 }

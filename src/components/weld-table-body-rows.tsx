@@ -7,7 +7,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
-import type { MouseEvent } from 'react'
+import type { MouseEvent, RefCallback } from 'react'
 import {
   getWeldTableRowClassName,
   getWeldTableRowTitle,
@@ -19,6 +19,8 @@ import type { SystemDocumentType } from '@/lib/system-document-types'
 
 type WeldTableBodyRowsProps = {
   rows: WeldRow[]
+  rowIndexes?: number[]
+  measureRow?: RefCallback<HTMLTableRowElement>
   sections: WeldTableDisplaySection[]
   colSpan: number
   readOnly: boolean
@@ -51,6 +53,8 @@ type WeldTableBodyRowsProps = {
 
 export function WeldTableBodyRows({
   rows,
+  rowIndexes,
+  measureRow,
   sections,
   colSpan,
   readOnly,
@@ -89,7 +93,8 @@ export function WeldTableBodyRows({
 
   return (
     <>
-      {rows.map((row, rowIndex) => {
+      {rows.map((row, visibleRowIndex) => {
+        const rowIndex = rowIndexes?.[visibleRowIndex] ?? visibleRowIndex
         const actionRow = getActionRow(row)
         const isDuplicate = duplicateKeys.has(getDuplicateKey(row) ?? '')
         const isHighlighted = highlightedRowIds.has(row.id)
@@ -109,6 +114,8 @@ export function WeldTableBodyRows({
         return (
           <tr
             key={row.id}
+            ref={measureRow}
+            data-index={rowIndex}
             className={getWeldTableRowClassName({ readOnly, isHighlighted, isSelected, isDuplicate, hasDispatcherTask, isContextMenuAnchor })}
             title={getWeldTableRowTitle({ isHighlighted, isDuplicate, hasDispatcherTask })}
             onContextMenu={onContextMenu ? (event) => onContextMenu(event, row) : undefined}

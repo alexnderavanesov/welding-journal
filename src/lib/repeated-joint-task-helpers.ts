@@ -1,4 +1,4 @@
-import { type WeldInput } from '@/lib/weld-fields'
+import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import {
   LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
   LNK_METHODS,
@@ -18,11 +18,19 @@ import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 
+const repeatedJointUsageFieldKeys = [
+  ...lnkRequestFieldKeys,
+  ...lnkGeneratedFieldKeys,
+  'pstoRequest',
+  'pstoRequestDate',
+  'pstoDate',
+  'pstoResult',
+  'heatTreatmentDiagram',
+] as const satisfies readonly WeldFieldKey[]
+
 export function isUnusedRepeatedJointDraft(row: WeldInput) {
   if (hasText(row.weldDate)) return false
-  return ![...lnkRequestFieldKeys, ...lnkGeneratedFieldKeys, 'pstoRequest', 'pstoRequestDate', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram'].some((fieldKey) =>
-    hasText(row[fieldKey]),
-  )
+  return !repeatedJointUsageFieldKeys.some((fieldKey) => hasText(row[fieldKey]))
 }
 
 export function getPrimaryRejectedLnkResult(row: WeldInput) {

@@ -235,6 +235,60 @@ export const dispatcherAcceptedWarnings = pgTable('dispatcher_accepted_warnings'
 export type DispatcherAcceptedWarning = typeof dispatcherAcceptedWarnings.$inferSelect
 export type NewDispatcherAcceptedWarning = typeof dispatcherAcceptedWarnings.$inferInsert
 
+export const dispatcherTaskIndexState = pgTable('dispatcher_task_index_state', {
+  id: integer('id').primaryKey(),
+  sourceRevision: integer('source_revision').default(0).notNull(),
+  computedRevision: integer('computed_revision').default(-1).notNull(),
+  repeatedTasks: text('repeated_tasks').default('[]').notNull(),
+  welderStampExpiryTasks: text('welder_stamp_expiry_tasks').default('[]').notNull(),
+  duplicateKeys: text('duplicate_keys').default('[]').notNull(),
+  computedAt: timestamp('computed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type DispatcherTaskIndexState = typeof dispatcherTaskIndexState.$inferSelect
+
+export const dispatcherRowTasks = pgTable(
+  'dispatcher_row_tasks',
+  {
+    weldJointId: integer('weld_joint_id')
+      .notNull()
+      .references(() => weldJoints.id, { onDelete: 'cascade' }),
+    taskKey: text('task_key').notNull(),
+    code: text('code').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.weldJointId, table.taskKey] }),
+    index('dispatcher_row_tasks_code_idx').on(table.code),
+    index('dispatcher_row_tasks_task_key_idx').on(table.taskKey),
+  ],
+)
+
+export type DispatcherRowTask = typeof dispatcherRowTasks.$inferSelect
+
+export const derivedCalculationState = pgTable('derived_calculation_state', {
+  id: integer('id').primaryKey(),
+  sourceRevision: integer('source_revision').default(0).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type DerivedCalculationState = typeof derivedCalculationState.$inferSelect
+
+export const derivedCalculationCache = pgTable(
+  'derived_calculation_cache',
+  {
+    cacheKey: text('cache_key').primaryKey(),
+    sourceRevision: integer('source_revision').notNull(),
+    payload: text('payload').notNull(),
+    computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('derived_calculation_cache_source_revision_idx').on(table.sourceRevision),
+  ],
+)
+
+export type DerivedCalculationCache = typeof derivedCalculationCache.$inferSelect
+
 export const appSettings = pgTable('app_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),

@@ -206,7 +206,7 @@ async function buildExistingRowsImportPreview({
       const value = parseCell(field, row[columnIndex])
       if (mode === 'massFill' && emptyToNull(value) === null) return
       if (mode === 'replaceData' && normalizePreviewValue(value) === normalizePreviewValue(existingRow[field.key as keyof WeldRow])) return
-      updates[field.key] = value
+      ;(updates as Record<string, unknown>)[field.key] = value
     })
 
     const changedKeys = Object.keys(updates).filter((key) => key !== 'id')
@@ -237,7 +237,7 @@ async function buildExistingRowsImportPreview({
       changedKeys.forEach((key) => {
         const field = FIELD_BY_KEY.get(key as WeldFieldKey)
         if (!field) return
-        preparedUpdates[field.key] = prepared[field.key]
+        ;(preparedUpdates as Record<string, unknown>)[field.key] = prepared[field.key]
       })
       applyPreparedDerivedUpdates(preparedUpdates, prepared, existingRow, changedKeys)
       validRecords.push(preparedUpdates)
@@ -392,7 +392,7 @@ function fixImportRecordCheckedCells(record: WeldInput, options: ReportImportPre
 function clearImportRecordFields(record: WeldInput, fieldKeys: readonly WeldFieldKey[]) {
   const nextRecord = { ...record }
   for (const fieldKey of fieldKeys) {
-    nextRecord[fieldKey] = null
+    ;(nextRecord as Record<string, unknown>)[fieldKey] = null
   }
   return nextRecord
 }

@@ -4,10 +4,10 @@ import {
   DISPATCHER_TASKS_FIELD_KEY,
   DISPATCHER_TASKS_WITH_FILTER,
   DISPATCHER_TASKS_WITHOUT_FILTER,
-  attachDispatcherTaskCodes,
-  buildDispatcherTaskCodesByRowId,
-  buildDispatcherTaskFilterOptions,
+  DISPATCHER_TASK_FILTER_KEY,
+  buildDispatcherTaskIndexRows,
   buildDispatcherTaskServerFilters,
+  parseDispatcherTaskServerFilter,
 } from '@/lib/dispatcher-task-row-codes'
 import { ROW_ID_LIST_FILTER_KEY, buildRowIdListFilters, parseRowIdListFilter } from '@/lib/report-hidden-filters'
 import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
@@ -54,91 +54,66 @@ function stampTask(rowValue: WeldRow): DispatcherTask {
 }
 
 describe('dispatcher task row codes', () => {
-  it('assigns a line task to every row of the exact project, code and line', () => {
-    const rows = [
-      row(1),
-      row(2),
-      row(3, { subtitleCode: 'Шифр 2' }),
-      row(4, { projectTitle: 'Проект 2' }),
-      row(5, { line: 'Линия 2' }),
-    ]
-
-    const codes = buildDispatcherTaskCodesByRowId([lineTask(rows[0])], rows)
-
-    expect([...codes.entries()]).toEqual([
-      [1, ['ДЗ-24']],
-      [2, ['ДЗ-24']],
-    ])
-  })
-
-  it('keeps several task codes on one row without duplicates', () => {
-    const rows = [row(1), row(2)]
-    const codes = buildDispatcherTaskCodesByRowId(
-      [lineTask(rows[0]), stampTask(rows[0]), stampTask(rows[0])],
-      rows,
-    )
-
-    expect(codes.get(1)).toEqual(['ДЗ-18', 'ДЗ-24'])
-    expect(codes.get(2)).toEqual(['ДЗ-24'])
-    expect(attachDispatcherTaskCodes(rows, codes).map((candidate) => candidate.dispatcherTasks)).toEqual([
-      'ДЗ-18, ДЗ-24',
-      'ДЗ-24',
-    ])
-    expect(buildDispatcherTaskFilterOptions(codes)).toEqual([
-      { value: 'ДЗ-18', label: 'ДЗ-18', count: 1 },
-      { value: 'ДЗ-24', label: 'ДЗ-24', count: 2 },
-    ])
-  })
-
   it('translates task filters into server row filters for the whole report', () => {
-    const codes = new Map<number, string[]>([
-      [1, ['ДЗ-18', 'ДЗ-24']],
-      [2, ['ДЗ-24']],
-    ])
-
     const withTasks = buildDispatcherTaskServerFilters(
       { [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITH_FILTER },
-      codes,
     )
     const withoutTasks = buildDispatcherTaskServerFilters(
       { [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITHOUT_FILTER },
-      codes,
     )
     const exactCode = buildDispatcherTaskServerFilters(
       { [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['ДЗ-18']) },
-      codes,
     )
 
-    expect(parseRowIdListFilter(withTasks[ROW_ID_LIST_FILTER_KEY])).toEqual({
-      rowIds: [1, 2],
-      mode: 'include',
+    expect(parseDispatcherTaskServerFilter(withTasks[DISPATCHER_TASK_FILTER_KEY])).toEqual({
+      mode: 'with',
+      codes: [],
+      dismissedTaskKeys: [],
     })
-    expect(parseRowIdListFilter(withoutTasks[ROW_ID_LIST_FILTER_KEY])).toEqual({
-      rowIds: [1, 2],
-      mode: 'exclude',
+    expect(parseDispatcherTaskServerFilter(withoutTasks[DISPATCHER_TASK_FILTER_KEY])).toEqual({
+      mode: 'without',
+      codes: [],
+      dismissedTaskKeys: [],
     })
-    expect(parseRowIdListFilter(exactCode[ROW_ID_LIST_FILTER_KEY])).toEqual({
-      rowIds: [1],
-      mode: 'include',
+    expect(parseDispatcherTaskServerFilter(exactCode[DISPATCHER_TASK_FILTER_KEY])).toEqual({
+      mode: 'codes',
+      codes: ['ДЗ-18'],
+      dismissedTaskKeys: [],
     })
+    expect(Object.keys(withTasks)).not.toContain(ROW_ID_LIST_FILTER_KEY)
   })
 
-  it('combines the task filter with an existing selected-row filter', () => {
-    const codes = new Map<number, string[]>([
-      [1, ['ДЗ-18']],
-      [2, ['ДЗ-24']],
-    ])
+  it('keeps an existing selected-row filter and sends dismissed task keys separately', () => {
     const filters = buildDispatcherTaskServerFilters(
       {
         ...buildRowIdListFilters([2, 3]),
         [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITH_FILTER,
       },
-      codes,
+      ['task-hidden', 'task-hidden'],
     )
 
     expect(parseRowIdListFilter(filters[ROW_ID_LIST_FILTER_KEY])).toEqual({
-      rowIds: [2],
+      rowIds: [2, 3],
       mode: 'include',
     })
+    expect(parseDispatcherTaskServerFilter(filters[DISPATCHER_TASK_FILTER_KEY])).toEqual({
+      mode: 'with',
+      codes: [],
+      dismissedTaskKeys: ['task-hidden'],
+    })
+  })
+
+  it('builds a persistent row index with exact task keys and all rows of a line', () => {
+    const rows = [
+      row(1),
+      row(2),
+      row(3, { subtitleCode: 'Шифр 2' }),
+    ]
+
+    expect(buildDispatcherTaskIndexRows([lineTask(rows[0]), stampTask(rows[0])], rows)).toEqual([
+      { rowId: 1, taskKey: 'stamp-1', code: 'ДЗ-18' },
+      { rowId: 1, taskKey: 'line-percent', code: 'ДЗ-24' },
+      { rowId: 2, taskKey: 'line-percent', code: 'ДЗ-24' },
+    ])
   })
 })

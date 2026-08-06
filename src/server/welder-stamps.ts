@@ -9,6 +9,7 @@ import {
   type WelderStamp,
   type WelderStampSuspension,
 } from '@/db/schema'
+import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 
 export type WelderStampPayload = {
   id: number
@@ -54,7 +55,7 @@ const parseJsonArray = <T,>(value: unknown): T[] => {
 
 const jsonOrNull = (value: unknown[]) => (value.length > 0 ? JSON.stringify(value) : null)
 
-const toPayload = (row: WelderStamp): WelderStampPayload => ({
+export const toWelderStampPayload = (row: WelderStamp): WelderStampPayload => ({
   id: row.id,
   naksStamp: row.naksStamp ?? '',
   welderName: row.welderName ?? '',
@@ -109,7 +110,7 @@ const suspensionToDbInsert = (record: WelderStampSuspensionPayload): NewWelderSt
 export const listWelderStampRecords = createServerFn({ method: 'GET' }).handler(async () => {
   const db = requireDb()
   const rows = await db.select().from(welderStamps).orderBy(asc(welderStamps.id))
-  return rows.map(toPayload)
+  return rows.map(toWelderStampPayload)
 })
 
 export const saveWelderStampRecords = createServerFn({ method: 'POST' })
@@ -121,6 +122,7 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
 
       if (data.records.length === 0) {
         await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamps','id'), 1, false)`)
+        await markDispatcherTaskIndexDirty(tx)
         return []
       }
 
@@ -128,7 +130,8 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
       await tx.execute(
         sql`select setval(pg_get_serial_sequence('welder_stamps','id'), coalesce((select max(id) from welder_stamps), 1), true)`,
       )
-      return rows.map(toPayload)
+      await markDispatcherTaskIndexDirty(tx)
+      return rows.map(toWelderStampPayload)
     })
   })
 
@@ -147,6 +150,7 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
 
       if (data.records.length === 0) {
         await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), 1, false)`)
+        await markDispatcherTaskIndexDirty(tx)
         return []
       }
 
@@ -154,6 +158,7 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
       await tx.execute(
         sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), coalesce((select max(id) from welder_stamp_suspensions), 1), true)`,
       )
+      await markDispatcherTaskIndexDirty(tx)
       return rows.map(suspensionToPayload)
     })
   })

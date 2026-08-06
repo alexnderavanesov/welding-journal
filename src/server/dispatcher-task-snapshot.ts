@@ -1,203 +1,32 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asc, desc } from 'drizzle-orm'
-import { requireDb } from '@/db'
-import {
-  appSettings,
-  duplicateControls,
-  dispatcherAcceptedWarnings,
-  welderStampSuspensions,
-  welderStamps,
-  weldJoints,
-  type AppSetting,
-  type DuplicateControl,
-  type WelderStamp,
-  type WelderStampSuspension,
-} from '@/db/schema'
-import {
-  DEFAULT_DISPATCHER_REMINDER_SETTINGS,
-  DEFAULT_DISPATCHER_SETTINGS,
-  normalizeDispatcherReminderSettings,
-  normalizeDispatcherSettings,
-  type DispatcherReminderSettings,
-  type DispatcherSettings,
-} from '@/lib/dispatcher-settings'
-import { buildVisibleDispatcherTasks } from '@/lib/dispatcher-task-builder'
-import {
-  buildDispatcherTaskCodesByRowId,
-  serializeDispatcherTaskCodesByRowId,
-  type DispatcherTaskCodeRow,
-} from '@/lib/dispatcher-task-row-codes'
-import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
-import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
-import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
-import { prepareReportRows } from '@/lib/use-report-rows'
-import { getDuplicateKeys } from '@/lib/weld-table-utils'
-import type { WelderStampDlsPermit, WelderStampNaksPermit, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import type {
+  RepeatedJointTask,
+  WelderStampExpiryTask,
+} from '@/lib/dispatcher-types'
+import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
 
 export type DispatcherTaskSnapshotRequest = {
   dismissedRepeatedJointTaskKeys?: string[]
-  dispatcherSettings?: Partial<DispatcherSettings>
-  dispatcherReminderSettings?: Partial<DispatcherReminderSettings>
 }
 
 export type DispatcherTaskSnapshotResult = {
-  rowIds: number[]
-  rowTaskCodes: DispatcherTaskCodeRow[]
   duplicateKeys: string[]
   repeatedJointTasks: RepeatedJointTask[]
-  repeatedTaskCount: number
-  welderStampExpiryTaskCount: number
+  taskFilterOptions: Array<{ value: string; count: number; label: string }>
+  welderStampExpiryTasks: WelderStampExpiryTask[]
   computedAt: string
 }
 
 export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
   .validator((data: DispatcherTaskSnapshotRequest | undefined) => data ?? {})
   .handler(async ({ data }): Promise<DispatcherTaskSnapshotResult> => {
-    const db = requireDb()
-    const [rows, stampRows, suspensionRows, duplicateRows, acceptedWarnings, settingsRows] = await Promise.all([
-      db
-        .select()
-        .from(weldJoints)
-        .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)),
-      db.select().from(welderStamps).orderBy(asc(welderStamps.id)),
-      db.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
-      db.select().from(duplicateControls).orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)),
-      db.select().from(dispatcherAcceptedWarnings).orderBy(asc(dispatcherAcceptedWarnings.acceptedAt)),
-      db.select().from(appSettings),
-    ])
-    const dispatcherSettings = getDispatcherSettings(settingsRows, data.dispatcherSettings)
-    const dispatcherReminderSettings = getDispatcherReminderSettings(settingsRows, data.dispatcherReminderSettings)
-    const preparedRows = prepareReportRows(rows, duplicateRows.map(toDuplicateControlRecord))
-    const tasks = buildVisibleDispatcherTasks({
-      acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
-      dismissedRepeatedJointTaskKeys: new Set(data.dismissedRepeatedJointTaskKeys ?? []),
-      dispatcherReminderSettings,
-      dispatcherSettings,
-      rows: preparedRows,
-      welderStamps: stampRows.map(toWelderStampRecord),
-      welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
-    })
-    const taskCodesByRowId = buildDispatcherTaskCodesByRowId(tasks.repeatedJointTasks, preparedRows)
-    const rowTaskCodes = serializeDispatcherTaskCodesByRowId(taskCodesByRowId)
-    const rowIds = rowTaskCodes.map((row) => row.rowId)
-    const repeatedJointTasks = compactDispatcherTasksForTransport(tasks.repeatedJointTasks)
+    const snapshot = await getDispatcherTaskIndexSnapshot(data.dismissedRepeatedJointTaskKeys)
 
     return {
-      rowIds,
-      rowTaskCodes,
-      duplicateKeys: [...getDuplicateKeys(preparedRows)].sort(),
-      repeatedJointTasks,
-      repeatedTaskCount: tasks.repeatedJointTasks.length,
-      welderStampExpiryTaskCount: tasks.welderStampExpiryTasks.length,
-      computedAt: new Date().toISOString(),
+      duplicateKeys: snapshot.duplicateKeys,
+      repeatedJointTasks: snapshot.repeatedJointTasks,
+      taskFilterOptions: snapshot.taskFilterOptions,
+      welderStampExpiryTasks: snapshot.welderStampExpiryTasks,
+      computedAt: snapshot.computedAt,
     }
   })
-
-const DISPATCHER_ROW_CONTEXT_KEYS = [
-  'projectTitle',
-  'subtitleCode',
-  'line',
-  'joint',
-  'status',
-  'weldDate',
-] as const
-
-function compactDispatcherRow(row: WeldRow): WeldRow {
-  const compact: WeldRow = { id: row.id }
-  for (const key of DISPATCHER_ROW_CONTEXT_KEYS) {
-    if (row[key] !== undefined) compact[key] = row[key]
-  }
-  return compact
-}
-
-export function compactDispatcherTasksForTransport(tasks: RepeatedJointTask[]): RepeatedJointTask[] {
-  return tasks.map((task) => {
-    if (task.kind === 'check') {
-      return {
-        ...task,
-        row: compactDispatcherRow(task.row),
-        sourceRow: compactDispatcherRow(task.sourceRow),
-      }
-    }
-    if (task.kind === 'duplicate-check' || task.kind === 'line-consistency') {
-      return {
-        ...task,
-        row: compactDispatcherRow(task.row),
-      }
-    }
-    return task
-  })
-}
-
-function getDispatcherSettings(rows: AppSetting[], fallback?: Partial<DispatcherSettings>) {
-  return normalizeDispatcherSettings(fallback ?? getStoredSetting(rows, PROJECT_SETTING_KEYS.dispatcher) ?? DEFAULT_DISPATCHER_SETTINGS)
-}
-
-function getDispatcherReminderSettings(rows: AppSetting[], fallback?: Partial<DispatcherReminderSettings>) {
-  return normalizeDispatcherReminderSettings(
-    fallback ?? getStoredSetting(rows, PROJECT_SETTING_KEYS.dispatcherReminders) ?? DEFAULT_DISPATCHER_REMINDER_SETTINGS,
-  )
-}
-
-function getStoredSetting(rows: AppSetting[], key: string) {
-  const row = rows.find((candidate) => candidate.key === key)
-  if (!row) return null
-  try {
-    return JSON.parse(row.value)
-  } catch {
-    return null
-  }
-}
-
-function parseJsonArray<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[]
-  if (typeof value !== 'string' || !value.trim()) return []
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? (parsed as T[]) : []
-  } catch {
-    return []
-  }
-}
-
-function toWelderStampRecord(row: WelderStamp): WelderStampRecord {
-  return {
-    id: row.id,
-    naksStamp: row.naksStamp ?? '',
-    welderName: row.welderName ?? '',
-    internalStamp: row.internalStamp ?? '',
-    weldType: row.weldType ?? '',
-    materialGroups: row.materialGroups ?? '',
-    diameterFrom: row.diameterFrom ?? '',
-    diameterTo: row.diameterTo ?? '',
-    thicknessFrom: row.thicknessFrom ?? '',
-    thicknessTo: row.thicknessTo ?? '',
-    validFrom: row.validFrom ?? '',
-    validTo: row.validTo ?? '',
-    naksPermits: parseJsonArray<WelderStampNaksPermit>(row.naksPermits),
-    dlsPermits: parseJsonArray<WelderStampDlsPermit>(row.dlsPermits),
-    archived: Boolean(row.archived),
-    archivedAt: row.archivedAt ?? '',
-  }
-}
-
-function toWelderStampSuspensionRecord(row: WelderStampSuspension): WelderStampSuspensionRecord {
-  return {
-    id: row.id,
-    naksStamp: row.naksStamp ?? '',
-    suspendedFrom: row.suspendedFrom ?? '',
-    suspendedTo: row.suspendedTo ?? '',
-  }
-}
-
-function toDuplicateControlRecord(row: DuplicateControl): DuplicateControlRecord {
-  return {
-    id: row.id,
-    weldJointId: row.weldJointId,
-    method: row.method as DuplicateControlRecord['method'],
-    result: row.result as DuplicateControlRecord['result'],
-    controlDate: row.controlDate ?? '',
-    conclusion: row.conclusion ?? '',
-    conclusionDate: row.conclusionDate ?? '',
-  }
-}

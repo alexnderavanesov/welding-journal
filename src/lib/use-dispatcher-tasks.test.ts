@@ -158,8 +158,8 @@ describe('buildVisibleDispatcherTasks', () => {
     expect(tasks.repeatedJointTasks).toHaveLength(1)
     expect(tasks.repeatedJointTasks[0]).toMatchObject({
       reason: 'проверить клеймо',
+      details: expect.stringContaining('группу материалов M01'),
     })
-    expect(tasks.repeatedJointTasks[0]?.details).toContain('группу материалов M01')
   })
 
   it('keeps exact stored material groups during server-side DZ-18 checks', () => {
@@ -256,9 +256,16 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toHaveLength(1)
-    expect(tasks.repeatedJointTasks[0]?.details).toContain('не имеет допуска на диаметр 57')
-    expect(tasks.repeatedJointTasks[0]?.details).not.toContain('находится в архиве')
+    expect(tasks.repeatedJointTasks).toEqual([
+      expect.objectContaining({
+        details: expect.stringContaining('не имеет допуска на диаметр 57'),
+      }),
+    ])
+    expect(tasks.repeatedJointTasks[0]).not.toEqual(
+      expect.objectContaining({
+        details: expect.stringContaining('находится в архиве'),
+      }),
+    )
   })
 
   it('does not create DZ-18 when several DLS ranges of one stamp cover the joint together', () => {

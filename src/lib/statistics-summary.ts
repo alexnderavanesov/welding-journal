@@ -228,7 +228,7 @@ function sumRows(rows: WeldRow[], unit: StatisticsUnit) {
   return rows.reduce((total, row) => total + getRowWeight(row, unit), 0)
 }
 
-function sumRowsByStatus(rows: WeldRow[], statuses: string[], unit: StatisticsUnit, status: string) {
+function sumRowsByStatus(rows: WeldRow[], statuses: Array<string | null>, unit: StatisticsUnit, status: string) {
   return rows.reduce((total, row, index) => total + (statuses[index] === status ? getRowWeight(row, unit) : 0), 0)
 }
 

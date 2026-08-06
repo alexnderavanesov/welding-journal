@@ -4,7 +4,7 @@ import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
-import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
+import { getConfiguredBaseJointType, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export type WelderStatisticsJointFilter = 'all' | 'f' | 's'
@@ -102,10 +102,13 @@ export function buildWelderStatisticsSummary(
   to: string,
   unit: StatisticsUnit,
   jointFilter: WelderStatisticsJointFilter = 'all',
+  systemIndexSettings?: SystemIndexSettings,
 ): WelderStatisticsSummary {
   const stampLabels = buildWelderStampLabelMap(welderStamps)
   const welderNames = buildWelderNameMap(welderStamps)
-  const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to) && matchesJointFilter(row, jointFilter))
+  const periodRows = rows.filter(
+    (row) => isDateInRange(row.weldDate, from, to) && matchesJointFilter(row, jointFilter, systemIndexSettings),
+  )
   const finalStatusContext = buildFinalStatusRowsContext(rows)
   const stats = new Map<string, WelderStatisticsDraftRow>()
 
@@ -115,8 +118,8 @@ export function buildWelderStatisticsSummary(
 
     const hasSecondWelder = indexTwoFactStampParts.some((part) => hasText(row[part.key]))
     const parts = hasSecondWelder ? [...indexOneFactStampParts, ...indexTwoFactStampParts] : indexOneFactStampParts
-    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
-    const jointType = getJointType(row)
+    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)) ?? ''
+    const jointType = getJointType(row, systemIndexSettings)
 
     for (const part of parts) {
       const rawStamp = String(row[part.key] ?? '').trim()
@@ -284,14 +287,14 @@ function addWelderDetail(row: WelderStatisticsDraftRow, sourceRow: WeldRow, valu
   row.materialGroupMap.set(materialGroup, group)
 }
 
-function matchesJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter) {
+function matchesJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter, systemIndexSettings?: SystemIndexSettings) {
   if (filter === 'all') return true
-  return getJointType(row) === filter
+  return getJointType(row, systemIndexSettings) === filter
 }
 
-function getJointType(row: WeldRow): 'f' | 's' | null {
+function getJointType(row: WeldRow, systemIndexSettings?: SystemIndexSettings): 'f' | 's' | null {
   const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
-  return getConfiguredBaseJointType(baseJoint)
+  return getConfiguredBaseJointType(baseJoint, systemIndexSettings)
 }
 
 function buildWelderStampLabelMap(records: WelderStampRecord[]) {

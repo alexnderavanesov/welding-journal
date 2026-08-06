@@ -1,4 +1,5 @@
 import { type ChangeEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowDown,
@@ -113,7 +114,8 @@ import {
 } from '@/lib/security-settings'
 import { useSecurityGuard } from '@/lib/security-context'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import { WELD_JOINTS_QUERY_KEY } from '@/lib/weld-query-utils'
+import { getWeldDataUsageSummary, type WeldDataUsageSummary } from '@/server/welds'
 
 const SETTINGS_TABS = [
   { id: 'templates', label: 'Шаблоны документов', icon: FileText },
@@ -141,8 +143,24 @@ const DISPATCHER_INPUT_PROTECTED_TASK_IDS = new Set<DispatcherSettingId>([
   'check-psto-request-date-order',
 ])
 
-export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: WeldRow[]; rowsCount?: number }) {
+const EMPTY_WELD_DATA_USAGE: WeldDataUsageSummary = {
+  rowsCount: 0,
+  weldingTypes: [],
+  connectionTypes: [],
+  materialGroups: [],
+  testTypes: [],
+}
+
+export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('templates')
+  const needsWeldDataUsage = activeTab === 'data' || activeTab === 'indexes'
+  const weldDataUsageQuery = useQuery({
+    queryKey: [...WELD_JOINTS_QUERY_KEY, 'settings-data-usage'],
+    queryFn: () => getWeldDataUsageSummary(),
+    enabled: needsWeldDataUsage,
+    staleTime: 15_000,
+  })
+  const weldDataUsage = weldDataUsageQuery.data ?? EMPTY_WELD_DATA_USAGE
   const { requireSettingsChangePassword } = useSecurityGuard()
   const runProtectedSettingsChange = useCallback<ProtectedSettingsChange>(
     async (action) => {
@@ -183,12 +201,25 @@ export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: We
         <div className="border-t border-slate-200 bg-slate-50 p-5">
           {activeTab === 'templates' ? (
             <DocumentTemplatesSettings runProtectedSettingsChange={runProtectedSettingsChange} />
+          ) : activeTab === 'data' && weldDataUsageQuery.isPending ? (
+            <SettingsDataLoading />
+          ) : activeTab === 'data' && weldDataUsageQuery.error ? (
+            <SettingsDataError error={weldDataUsageQuery.error} />
           ) : activeTab === 'data' ? (
-            <DataSettingsPanel rows={rows} runProtectedSettingsChange={runProtectedSettingsChange} />
+            <DataSettingsPanel usage={weldDataUsage} runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'requests' ? (
             <RequestConclusionSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'indexes' ? (
-            <SystemIndexesSettingsPanel rowsCount={rowsCount} runProtectedSettingsChange={runProtectedSettingsChange} />
+            weldDataUsageQuery.isPending ? (
+              <SettingsDataLoading />
+            ) : weldDataUsageQuery.error ? (
+              <SettingsDataError error={weldDataUsageQuery.error} />
+            ) : (
+              <SystemIndexesSettingsPanel
+                rowsCount={weldDataUsage.rowsCount}
+                runProtectedSettingsChange={runProtectedSettingsChange}
+              />
+            )
           ) : activeTab === 'dispatcher' ? (
             <DispatcherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'saveChecks' ? (
@@ -200,6 +231,23 @@ export function SettingsPage({ rows = [], rowsCount = rows.length }: { rows?: We
           )}
         </div>
       </section>
+    </div>
+  )
+}
+
+function SettingsDataLoading() {
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+      Загружаем сведения об использовании значений...
+    </div>
+  )
+}
+
+function SettingsDataError({ error }: { error: unknown }) {
+  return (
+    <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      Не удалось загрузить сведения об использовании значений:{' '}
+      {error instanceof Error ? error.message : 'неизвестная ошибка'}
     </div>
   )
 }
@@ -874,10 +922,10 @@ function getWdiModeLabel(mode: WdiCalculationMode) {
 }
 
 function DataSettingsPanel({
-  rows,
+  usage,
   runProtectedSettingsChange,
 }: {
-  rows: WeldRow[]
+  usage: WeldDataUsageSummary
   runProtectedSettingsChange: ProtectedSettingsChange
 }) {
   const settings = useDataListSettings()
@@ -889,10 +937,10 @@ function DataSettingsPanel({
   })
   const [message, setMessage] = useState<string | null>(null)
   const usageCountsByKey: Record<DataListSettingsKey, Map<string, number>> = {
-    weldingTypes: getWeldingTypeUsageCounts(rows),
-    connectionTypes: getConnectionTypeUsageCounts(rows),
-    materialGroups: getMaterialGroupUsageCounts(rows),
-    testTypes: getTestTypeUsageCounts(rows),
+    weldingTypes: new Map(usage.weldingTypes),
+    connectionTypes: new Map(usage.connectionTypes),
+    materialGroups: new Map(usage.materialGroups),
+    testTypes: new Map(usage.testTypes),
   }
 
   async function addListValue(config: DataListConfig) {
@@ -1174,56 +1222,6 @@ const DATA_LIST_CONFIGS: DataListConfig[] = [
     minOptionsMessage: '',
   },
 ]
-
-function getWeldingTypeUsageCounts(rows: WeldRow[]) {
-  const counts = new Map<string, number>()
-  for (const row of rows) {
-    const values = new Set(splitWeldingMethodValues(row.weldingMethod))
-    values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1))
-  }
-  return counts
-}
-
-function getConnectionTypeUsageCounts(rows: WeldRow[]) {
-  const counts = new Map<string, number>()
-  for (const row of rows) {
-    const value = normalizeDataListOption(row.connectionType)
-    if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
-  }
-  return counts
-}
-
-function getMaterialGroupUsageCounts(rows: WeldRow[]) {
-  const counts = new Map<string, number>()
-  for (const row of rows) {
-    const value = normalizeDataListOption(row.materialGroup)
-    if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
-  }
-  return counts
-}
-
-function getTestTypeUsageCounts(rows: WeldRow[]) {
-  const counts = new Map<string, number>()
-  for (const row of rows) {
-    const values = new Set(splitDataListMultiValues(row.testTypes))
-    values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1))
-  }
-  return counts
-}
-
-function splitWeldingMethodValues(value: unknown) {
-  return String(value ?? '')
-    .split(/[+,;]+/)
-    .map((part) => normalizeDataListOption(part))
-    .filter(Boolean)
-}
-
-function splitDataListMultiValues(value: unknown) {
-  return String(value ?? '')
-    .split(/[,;+]+/)
-    .map((part) => normalizeDataListOption(part))
-    .filter(Boolean)
-}
 
 const SYSTEM_INDEX_ROWS: Array<{
   id: SystemIndexKey

@@ -1,8 +1,8 @@
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldInput } from '@/lib/weld-fields'
 import { LNK_METHODS } from '@/lib/report-config'
 import { getAvailableLnkRequestMethods, getLnkEffectiveResultValue, isLnkMethodNoNeed } from '@/lib/lnk-status'
 
-export function buildLnkWaitingNkRows(rows: WeldRow[]) {
+export function buildLnkWaitingNkRows(rows: WeldInput[]) {
   return rows.flatMap((row) =>
     LNK_METHODS.flatMap((method) => {
       const result = String(getLnkEffectiveResultValue(row, method) ?? '').trim().toLowerCase()
@@ -28,7 +28,7 @@ export function buildLnkWaitingNkRows(rows: WeldRow[]) {
   )
 }
 
-export function buildLnkToRequestRows(rows: WeldRow[]) {
+export function buildLnkToRequestRows(rows: WeldInput[]) {
   return rows.flatMap((row) =>
     getAvailableLnkRequestMethods(row).map((method) => ({
       projectTitle: row.projectTitle ?? '',
@@ -46,7 +46,7 @@ export function buildLnkToRequestRows(rows: WeldRow[]) {
   )
 }
 
-export function buildLnkConclusionsRows(rows: WeldRow[]) {
+export function buildLnkConclusionsRows(rows: WeldInput[]) {
   return rows.flatMap((row) =>
     LNK_METHODS.flatMap((method) => {
       const result = String(getLnkEffectiveResultValue(row, method) ?? '').trim()

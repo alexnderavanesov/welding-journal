@@ -38,7 +38,7 @@ export function parseWorksheetRows(
     const record: WeldInput = {}
     fieldsByColumn.forEach((field, index) => {
       if (!field) return
-      record[field.key] = parseCell(field, row[index])
+      ;(record as Record<string, unknown>)[field.key] = parseCell(field, row[index])
     })
 
     if (!isMeaningfulRecord(record)) {
@@ -72,7 +72,7 @@ export function parseEditableWorksheetRows(rows: unknown[][], options: EditableI
       if (!field) return
       if (!options.editableFieldKeys.has(field.key) && !options.matchFieldKeys.has(field.key)) return
 
-      record[field.key] = parseCell(field, row[index])
+      ;(record as Record<string, unknown>)[field.key] = parseCell(field, row[index])
       if (options.editableFieldKeys.has(field.key)) {
         hasEditableColumn = true
       }

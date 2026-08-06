@@ -16,7 +16,7 @@ export function buildLnkReportHtml(
     .map(
       (row) => `
         <tr>
-          ${fields.map((field) => `<td>${escapeHtml(formatLnkReportCell(row[field.key], field))}</td>`).join('')}
+          ${fields.map((field) => `<td>${escapeHtml(formatLnkReportCell(row[field.key as keyof WeldInput], field))}</td>`).join('')}
         </tr>
       `,
     )

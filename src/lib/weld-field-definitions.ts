@@ -251,7 +251,10 @@ export const WELD_FIELDS = [
 ] as const satisfies readonly WeldField[]
 
 export type WeldFieldKey = (typeof WELD_FIELDS)[number]['key']
-export type WeldInput = Partial<Record<WeldFieldKey, string | number | boolean | null>>
+export type WeldFieldValue = string | number | boolean | Date | null
+export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldValue>> & {
+  id?: number
+}
 
 export const WELDING_MATERIAL_FIELD_KEYS = [
   'technologyCardNumber',

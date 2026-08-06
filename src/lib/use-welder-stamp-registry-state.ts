@@ -25,7 +25,11 @@ import {
   removeWelderStampSuspensionRecord,
 } from '@/lib/welder-stamp-suspensions'
 import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
-import { DISPATCHER_TASK_SNAPSHOT_QUERY_KEY } from '@/lib/weld-query-utils'
+import {
+  DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
+  STATISTICS_SERVER_QUERY_KEY,
+  WELD_JOINT_PAGES_QUERY_KEY,
+} from '@/lib/weld-query-utils'
 
 type WelderStampRegistryStateInput = {
   setMessage: (message: string | null) => void
@@ -58,6 +62,8 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['welder-stamps'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
       ])
     },
     onError: (error) => {
@@ -78,6 +84,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['welder-stamp-suspensions'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
       ])
     },
     onError: (error) => {

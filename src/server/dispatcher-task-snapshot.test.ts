@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
-import { compactDispatcherTasksForTransport } from '@/server/dispatcher-task-snapshot'
+import { compactDispatcherTasksForTransport } from '@/server/dispatcher-task-index'
 
 describe('dispatcher task snapshot transport', () => {
   it('keeps only navigation context in informational check tasks', () => {

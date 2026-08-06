@@ -145,7 +145,9 @@ function getDominantLineValues(rows: readonly WeldLineInput[]) {
   const values: Partial<WeldInput> = {}
   for (const key of LINE_AUTOFILL_FIELD_KEYS) {
     const value = getUnambiguousValue(rows, key)
-    if (!isEmptyValue(value)) values[key] = value
+    if (!isEmptyValue(value)) {
+      ;(values as Record<string, unknown>)[key] = value
+    }
   }
   return values
 }

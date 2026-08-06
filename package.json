@@ -15,13 +15,15 @@
     "db:remote-migration": "drizzle-kit migrate --config=drizzle.remote.config.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.11",
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-router": "^1.168.18",
     "@tanstack/react-start": "^1.168.25",
+    "@tanstack/react-virtual": "^3.14.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.4.2",

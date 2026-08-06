@@ -1,84 +1,96 @@
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
-import { ROW_ID_LIST_FILTER_KEY, buildRowIdListFilters, parseRowIdListFilter } from '@/lib/report-hidden-filters'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 
 export const DISPATCHER_TASKS_FIELD_KEY = 'dispatcherTasks' as const
+export const DISPATCHER_TASK_FILTER_KEY = '__dispatcherTaskFilter' as const
 export const DISPATCHER_TASKS_WITH_FILTER = '__with_dispatcher_tasks__'
 export const DISPATCHER_TASKS_WITHOUT_FILTER = '__without_dispatcher_tasks__'
 
-export type DispatcherTaskCodeRow = {
+export type DispatcherTaskIndexRow = {
   rowId: number
-  codes: string[]
+  taskKey: string
+  code: string
 }
 
-export function buildDispatcherTaskCodesByRowId(tasks: DispatcherTask[], rows: WeldRow[]) {
-  const codesByRowId = new Map<number, Set<string>>()
+export function buildDispatcherTaskIndexRows(tasks: DispatcherTask[], rows: WeldRow[]): DispatcherTaskIndexRow[] {
+  const entries = new Map<string, DispatcherTaskIndexRow>()
 
   for (const task of tasks) {
     if (task.kind === 'welder-stamp-expiry') continue
     const code = getDispatcherTaskCode(task)
     for (const rowId of getDispatcherTaskTargetRowIds(task, rows)) {
-      const codes = codesByRowId.get(rowId) ?? new Set<string>()
-      codes.add(code)
-      codesByRowId.set(rowId, codes)
+      const entry = { rowId, taskKey: task.key, code }
+      entries.set(`${rowId}\u0000${task.key}`, entry)
     }
   }
 
-  return new Map(
-    [...codesByRowId.entries()].map(([rowId, codes]) => [rowId, [...codes].sort(compareDispatcherTaskCodes)]),
+  return [...entries.values()].sort(
+    (left, right) =>
+      left.rowId - right.rowId ||
+      compareDispatcherTaskCodes(left.code, right.code) ||
+      left.taskKey.localeCompare(right.taskKey, 'ru'),
   )
-}
-
-export function serializeDispatcherTaskCodesByRowId(codesByRowId: ReadonlyMap<number, readonly string[]>) {
-  return [...codesByRowId.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([rowId, codes]) => ({ rowId, codes: [...codes] }))
-}
-
-export function deserializeDispatcherTaskCodesByRowId(rows: readonly DispatcherTaskCodeRow[]) {
-  return new Map(rows.map((row) => [row.rowId, [...row.codes]]))
 }
 
 export function formatDispatcherTaskCodes(codes: readonly string[] | undefined) {
   return [...(codes ?? [])].sort(compareDispatcherTaskCodes).join(', ')
 }
 
-export function attachDispatcherTaskCodes<Row extends WeldRow>(
-  rows: Row[],
-  codesByRowId: ReadonlyMap<number, readonly string[]>,
-) {
-  return rows.map((row) => ({
-    ...row,
-    dispatcherTasks: formatDispatcherTaskCodes(codesByRowId.get(row.id)),
-  }))
-}
-
-export function buildDispatcherTaskFilterOptions(codesByRowId: ReadonlyMap<number, readonly string[]>) {
-  const counts = new Map<string, number>()
-  for (const codes of codesByRowId.values()) {
-    for (const code of codes) counts.set(code, (counts.get(code) ?? 0) + 1)
-  }
-  return [...counts.entries()]
-    .sort(([left], [right]) => compareDispatcherTaskCodes(left, right))
-    .map(([value, count]) => ({ value, count, label: value }))
-}
-
 export function buildDispatcherTaskServerFilters(
   columnFilters: Record<string, string>,
-  codesByRowId: ReadonlyMap<number, readonly string[]>,
+  dismissedTaskKeys: readonly string[] = [],
 ) {
   const taskFilterValue = String(columnFilters[DISPATCHER_TASKS_FIELD_KEY] ?? '').trim()
-  if (!taskFilterValue) return columnFilters
-
   const filters = { ...columnFilters }
   delete filters[DISPATCHER_TASKS_FIELD_KEY]
+  const dismissedKeys = [...new Set(dismissedTaskKeys.map((key) => key.trim()).filter(Boolean))]
+  if (!taskFilterValue && dismissedKeys.length === 0) return filters
 
-  const matchingTaskRowIds = getMatchingDispatcherTaskRowIds(taskFilterValue, codesByRowId)
-  const existingRowFilter = parseRowIdListFilter(String(filters[ROW_ID_LIST_FILTER_KEY] ?? ''))
-  const combinedFilter = combineRowIdFilters(existingRowFilter, matchingTaskRowIds)
-  Object.assign(filters, buildRowIdListFilters(combinedFilter.rowIds, combinedFilter.mode))
+  const choiceFilter = parseWeldColumnChoiceFilter(taskFilterValue)
+  const codes = choiceFilter?.kind === 'values'
+    ? choiceFilter.values
+    : taskFilterValue &&
+        taskFilterValue !== DISPATCHER_TASKS_WITH_FILTER &&
+        taskFilterValue !== DISPATCHER_TASKS_WITHOUT_FILTER
+      ? [taskFilterValue]
+      : []
+  filters[DISPATCHER_TASK_FILTER_KEY] = JSON.stringify({
+    mode: getDispatcherTaskFilterMode(taskFilterValue),
+    codes,
+    dismissedTaskKeys: dismissedKeys,
+  })
   return filters
+}
+
+export type DispatcherTaskServerFilter = {
+  mode: 'all' | 'with' | 'without' | 'codes'
+  codes: string[]
+  dismissedTaskKeys: string[]
+}
+
+export function parseDispatcherTaskServerFilter(value: string | undefined): DispatcherTaskServerFilter | null {
+  if (!value?.trim()) return null
+  try {
+    const parsed = JSON.parse(value) as Partial<DispatcherTaskServerFilter>
+    const mode = parsed.mode === 'with' || parsed.mode === 'without' || parsed.mode === 'codes'
+      ? parsed.mode
+      : 'all'
+    return {
+      mode,
+      codes: [...new Set((Array.isArray(parsed.codes) ? parsed.codes : []).map(String).map((code) => code.trim()).filter(Boolean))],
+      dismissedTaskKeys: [
+        ...new Set(
+          (Array.isArray(parsed.dismissedTaskKeys) ? parsed.dismissedTaskKeys : [])
+            .map(String)
+            .map((key) => key.trim())
+            .filter(Boolean),
+        ),
+      ],
+    }
+  } catch {
+    return null
+  }
 }
 
 export function getDispatcherTaskFilterMode(value: string | undefined) {
@@ -108,45 +120,4 @@ function getDispatcherTaskTargetRowIds(task: Exclude<DispatcherTask, { kind: 'we
 
 function normalizeLinePart(value: unknown) {
   return String(value ?? '').trim().toLowerCase()
-}
-
-function getMatchingDispatcherTaskRowIds(
-  filterValue: string,
-  codesByRowId: ReadonlyMap<number, readonly string[]>,
-) {
-  if (filterValue === DISPATCHER_TASKS_WITH_FILTER) {
-    return { rowIds: [...codesByRowId.keys()], mode: 'include' as const }
-  }
-  if (filterValue === DISPATCHER_TASKS_WITHOUT_FILTER) {
-    return { rowIds: [...codesByRowId.keys()], mode: 'exclude' as const }
-  }
-
-  const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
-  const selectedCodes = new Set(choiceFilter?.kind === 'values' ? choiceFilter.values : [filterValue])
-  return {
-    rowIds: [...codesByRowId.entries()]
-      .filter(([, codes]) => codes.some((code) => selectedCodes.has(code)))
-      .map(([rowId]) => rowId),
-    mode: 'include' as const,
-  }
-}
-
-function combineRowIdFilters(
-  existingFilter: ReturnType<typeof parseRowIdListFilter>,
-  taskFilter: { rowIds: number[]; mode: 'include' | 'exclude' },
-) {
-  if (!existingFilter) return taskFilter
-
-  const existingIds = new Set(existingFilter.rowIds)
-  const taskIds = new Set(taskFilter.rowIds)
-  if (existingFilter.mode !== 'exclude' && taskFilter.mode === 'include') {
-    return { rowIds: [...existingIds].filter((rowId) => taskIds.has(rowId)), mode: 'include' as const }
-  }
-  if (existingFilter.mode !== 'exclude' && taskFilter.mode === 'exclude') {
-    return { rowIds: [...existingIds].filter((rowId) => !taskIds.has(rowId)), mode: 'include' as const }
-  }
-  if (existingFilter.mode === 'exclude' && taskFilter.mode === 'include') {
-    return { rowIds: [...taskIds].filter((rowId) => !existingIds.has(rowId)), mode: 'include' as const }
-  }
-  return { rowIds: [...new Set([...existingIds, ...taskIds])], mode: 'exclude' as const }
 }

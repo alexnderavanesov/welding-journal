@@ -7,6 +7,7 @@ import { ReportSummaryBar, type ReportSummaryBarProps } from '@/components/repor
 import { ReportTaskPanels, type ReportTaskPanelsProps } from '@/components/report-task-panels'
 import { ReportWorkspace } from '@/components/report-workspace'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
+import type { WeldRow } from '@/lib/dispatcher-types'
 
 type HomePageViewProps = {
   activeReport: ComponentProps<typeof ReportWorkspace>['activeReport']
@@ -21,7 +22,7 @@ type HomePageViewProps = {
   reportTaskPanelsProps: ReportTaskPanelsProps
   documentGenerationRequest: DocumentGenerationRequest | null
   documentGenerationContextLoading: boolean
-  statisticsRows: ComponentProps<typeof ReportMainContent>['statisticsRows']
+  statisticsRows: WeldRow[]
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
@@ -106,7 +107,6 @@ export function HomePageView({
 
       <ReportMainContent
         activeReport={activeReport}
-        statisticsRows={statisticsRows}
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}
         weldTableProps={weldTableProps}

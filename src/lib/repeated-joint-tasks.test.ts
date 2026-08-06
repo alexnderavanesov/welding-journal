@@ -344,7 +344,7 @@ describe('buildRepeatedJointTasks', () => {
         stamp1K: 'ABC1',
         hasRk: index === 0 ? 'да' : '',
         rkResult: index === 0 ? 'годен' : '',
-        hasPsto: index === 1 ? 'да' : '',
+        pstoRequired: index === 1 ? 'да' : '',
         pstoResult: index === 1 ? 'вырез' : '',
       }),
     )

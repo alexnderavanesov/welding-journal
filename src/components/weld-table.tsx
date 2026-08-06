@@ -14,6 +14,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import { SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
 import type { WeldColumnFilterOption, WeldReportKind } from '@/server/welds'
 import type { SystemDocumentType } from '@/lib/system-document-types'
+import { useWindowTableVirtualization } from '@/lib/use-window-table-virtualization'
 
 export type WeldTableProps = {
   rows: WeldRow[]
@@ -202,6 +203,14 @@ export function WeldTable({
     () => Array.from(selectedRowIds).map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)),
     [rowsById, selectedRowIds],
   )
+  const {
+    bodyRef,
+    bottomSpacerHeight,
+    measureRow,
+    rowIndexes,
+    topSpacerHeight,
+    visibleRows,
+  } = useWindowTableVirtualization({ rows: paginatedRows })
   const openRowContextMenu = useCallback(
     (event: MouseEvent, row: WeldRow) => {
       const contextRows = selectedRowIds.has(row.id) && selectedRows.length > 1 ? selectedRows : [getActionRow(row)]
@@ -267,9 +276,12 @@ export function WeldTable({
             manualFilterOptions={manualFilterOptions}
             onColumnFiltersChange={onColumnFiltersChange}
           />
-          <tbody>
+          <tbody ref={bodyRef}>
+            <TableVirtualSpacer colSpan={fullTableColumnSpan} height={topSpacerHeight} />
             <WeldTableBodyRows
-              rows={paginatedRows}
+              rows={visibleRows}
+              rowIndexes={rowIndexes}
+              measureRow={measureRow}
               sections={filteredSections}
               colSpan={fullTableColumnSpan}
               readOnly={readOnly}
@@ -299,6 +311,7 @@ export function WeldTable({
               onOpenDocument={onOpenDocument}
               availableSystemDocumentTypes={availableSystemDocumentTypes}
             />
+            <TableVirtualSpacer colSpan={fullTableColumnSpan} height={bottomSpacerHeight} />
           </tbody>
         </table>
       </div>
@@ -321,5 +334,14 @@ export function WeldTable({
       </div>
       <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </div>
+  )
+}
+
+function TableVirtualSpacer({ colSpan, height }: { colSpan: number; height: number }) {
+  if (height <= 0) return null
+  return (
+    <tr aria-hidden="true">
+      <td colSpan={colSpan} style={{ height, padding: 0, border: 0 }} />
+    </tr>
   )
 }

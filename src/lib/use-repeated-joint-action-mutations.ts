@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { deleteWeldJoint } from '@/server/welds'
+import { deleteWeldJoint, getWeldJointById } from '@/server/welds'
 import {
   buildRenamedRepeatedJointRow,
   buildRepeatedJointRows,
@@ -24,7 +24,9 @@ export function useRepeatedJointActionMutations({
 
   const repeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => {
-      const drafts = buildRepeatedJointRows(task)
+      const sourceRow = await getWeldJointById({ data: { id: task.row.id } })
+      if (!sourceRow) throw new Error('Исходный стык не найден')
+      const drafts = buildRepeatedJointRows({ ...task, row: sourceRow as WeldRow })
       const savedRows = await createWeldRowsOrThrow(drafts, 'Не удалось создать повторный стык')
       return savedRows as WeldRow[]
     },
@@ -61,7 +63,9 @@ export function useRepeatedJointActionMutations({
 
   const renameRepeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointRenameTask) => {
-      const updatedRecord = buildRenamedRepeatedJointRow(task)
+      const sourceRow = await getWeldJointById({ data: { id: task.row.id } })
+      if (!sourceRow) throw new Error('Стык для переименования не найден')
+      const updatedRecord = buildRenamedRepeatedJointRow({ ...task, row: sourceRow as WeldRow })
       return updateWeldRowOrThrow(updatedRecord)
     },
     onSuccess: async (saved, task) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldInput } from '@/lib/weld-fields'
 import { buildJointChainConsistencyCheckTasks } from '@/lib/repeated-joint-consistency-tasks'
 
 const deps = {
@@ -56,7 +57,7 @@ describe('repeated joint chain consistency tasks', () => {
   it('creates a coil integrity task when one coil joint is missing and the coil is premature', () => {
     const rejectedDeps = {
       ...deps,
-      getPrimaryRejectedLnkResult: (currentRow: WeldRow) => (currentRow.pvkResult === 'вырез' ? { result: 'вырез' } : null),
+      getPrimaryRejectedLnkResult: (currentRow: WeldInput) => (currentRow.pvkResult === 'вырез' ? { result: 'вырез' } : null),
     }
     const tasks = buildJointChainConsistencyCheckTasks(
       [

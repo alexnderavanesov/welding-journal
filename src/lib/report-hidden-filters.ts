@@ -1,3 +1,5 @@
+import { DISPATCHER_TASK_FILTER_KEY } from '@/lib/dispatcher-task-row-codes'
+
 export const PERCENTAGE_LINE_STAMP_FILTER_KEY = '__percentageLineStamp'
 export const ROW_ID_LIST_FILTER_KEY = '__rowIdList'
 
@@ -71,5 +73,9 @@ export function parseRowIdListFilter(value: string): RowIdListFilter | null {
 }
 
 export function isHiddenReportFilterKey(key: string) {
-  return key === PERCENTAGE_LINE_STAMP_FILTER_KEY || key === ROW_ID_LIST_FILTER_KEY
+  return (
+    key === DISPATCHER_TASK_FILTER_KEY ||
+    key === PERCENTAGE_LINE_STAMP_FILTER_KEY ||
+    key === ROW_ID_LIST_FILTER_KEY
+  )
 }

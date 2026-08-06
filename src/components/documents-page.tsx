@@ -1,4 +1,5 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle2,
   ChevronDown,
@@ -68,9 +69,10 @@ import {
   isSystemDocumentType,
   type SystemDocumentSummary,
 } from '@/lib/system-document-types'
+import { WELD_JOINTS_QUERY_KEY } from '@/lib/weld-query-utils'
+import { getDocumentGenerationData } from '@/server/welds'
 
 type DocumentsPageProps = {
-  rows: WeldRow[]
   welderStamps: WelderStampRecord[]
   onOpenDocumentRows?: (rowIds: number[], documentTitle: string) => void
 }
@@ -161,17 +163,11 @@ function getTextValue(value: unknown) {
   return String(value ?? '').trim()
 }
 
-function getUniqueSortedValues(rows: WeldRow[], key: string) {
-  return Array.from(new Set(rows.map((row) => getTextValue((row as Record<string, unknown>)[key])).filter(Boolean))).sort((left, right) =>
-    left.localeCompare(right, 'ru', { numeric: true }),
-  )
-}
-
 export function DocumentsPage({
-  rows,
   welderStamps,
   onOpenDocumentRows,
 }: DocumentsPageProps) {
+  const queryClient = useQueryClient()
   const { requireDocumentGenerationPassword } = useSecurityGuard()
   const initialRange = useMemo(() => getCurrentMonthRange(), [])
   const [periodFrom, setPeriodFrom] = useState(initialRange.from)
@@ -217,6 +213,24 @@ export function DocumentsPage({
       activeGeneratedDocumentType,
     ],
   )
+  const generationDataRequest = useMemo(
+    () => ({
+      periodFrom,
+      periodTo,
+      projects: selectedProjects,
+      subtitles: selectedSubtitles,
+      lines: selectedLines,
+    }),
+    [periodFrom, periodTo, selectedLines, selectedProjects, selectedSubtitles],
+  )
+  const generationDataQuery = useQuery({
+    queryKey: [...WELD_JOINTS_QUERY_KEY, 'document-generation', generationDataRequest],
+    queryFn: () => getDocumentGenerationData({ data: generationDataRequest }),
+    enabled: !isSystemDocument,
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
+  })
+  const rows = generationDataQuery.data?.rows ?? []
 
   useEffect(() => {
     try {
@@ -237,14 +251,11 @@ export function DocumentsPage({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isPreviewFullscreen])
 
-  const scopeOptions = useMemo(
-    () => ({
-      projects: getUniqueSortedValues(rows, 'projectTitle'),
-      subtitles: getUniqueSortedValues(rows, 'subtitleCode'),
-      lines: getUniqueSortedValues(rows, 'line'),
-    }),
-    [rows],
-  )
+  const scopeOptions = generationDataQuery.data?.scopeOptions ?? {
+    projects: [],
+    subtitles: [],
+    lines: [],
+  }
 
   useEffect(() => {
     let isMounted = true
@@ -310,14 +321,20 @@ export function DocumentsPage({
           if (isMounted) setGeneratedDocuments([])
         })
     }
+    const handleGeneratedDocumentChange = () => {
+      syncGeneratedDocuments()
+      void queryClient.invalidateQueries({
+        queryKey: [...WELD_JOINTS_QUERY_KEY, 'document-generation'],
+      })
+    }
 
     syncGeneratedDocuments()
-    window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, syncGeneratedDocuments)
+    window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, handleGeneratedDocumentChange)
     return () => {
       isMounted = false
-      window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, syncGeneratedDocuments)
+      window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, handleGeneratedDocumentChange)
     }
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     if (!generationNotice) return
@@ -646,12 +663,14 @@ export function DocumentsPage({
               <Button
                 type="button"
                 onClick={() => void handleGenerateDocuments()}
-                disabled={journalRows.length === 0 || isGenerating}
+                disabled={journalRows.length === 0 || isGenerating || generationDataQuery.isFetching}
                 className="h-10 gap-2 bg-slate-900 px-4 text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 sm:min-w-40"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 {isGenerating
                   ? 'Формирую'
+                  : generationDataQuery.isFetching
+                    ? 'Обновляю'
                   : journalDocumentGroups.length > 1
                     ? `Сформировать (${journalDocumentGroups.length})`
                     : 'Сформировать'}

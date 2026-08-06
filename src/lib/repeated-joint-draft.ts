@@ -9,7 +9,7 @@ export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string)
   const draft = { ...sourceRow } as WeldDraft
   delete draft.id
   for (const fieldKey of repeatedJointClearedFieldKeys) {
-    draft[fieldKey] = null
+    ;(draft as Record<string, unknown>)[fieldKey] = null
   }
   restoreRepeatedJointControlAvailability(draft, sourceRow)
   draft.joint = targetJoint

@@ -60,10 +60,12 @@ describe('useWeldRowMutations', () => {
           rows: [],
           welderStamps: [],
           welderStampSuspensions: [],
+          weldFormStampSelectOptions: {},
           editingFocusField: undefined,
           setEditing,
           setMessage: vi.fn(),
           highlightChangedRows: vi.fn(),
+          dismissRepeatedJointTask: vi.fn(),
         }),
       { wrapper },
     )

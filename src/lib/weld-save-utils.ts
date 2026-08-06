@@ -1,4 +1,9 @@
-import { createWeldJoint, updateWeldJoint } from '@/server/welds'
+import {
+  createWeldJoint,
+  createWeldJoints,
+  updateWeldJoint,
+  updateWeldJoints,
+} from '@/server/welds'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
@@ -18,7 +23,9 @@ export async function createWeldRowsOrThrow<T extends WeldInput>(
   records: T[],
   errorMessage = 'Не удалось создать записи',
 ) {
-  const savedRows = await Promise.all(records.map((record) => createWeldJoint({ data: normalizeDateFieldsForSave(record) })))
+  const savedRows = await createWeldJoints({
+    data: { records: records.map((record) => normalizeDateFieldsForSave(record)) },
+  })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
   return savedRows
 }
@@ -33,7 +40,9 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
   records: T[],
   errorMessage = 'Не удалось сохранить часть записей',
 ) {
-  const savedRows = await Promise.all(records.map((record) => updateWeldJoint({ data: normalizeDateFieldsForSave(record) })))
+  const savedRows = await updateWeldJoints({
+    data: { records: records.map((record) => normalizeDateFieldsForSave(record)) },
+  })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
   return savedRows
 }

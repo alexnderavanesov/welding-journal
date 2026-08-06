@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import {
@@ -16,8 +17,6 @@ import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useDispatcherTaskSnapshot } from '@/lib/use-dispatcher-task-snapshot'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
-  attachDispatcherTaskCodes,
-  buildDispatcherTaskFilterOptions,
   buildDispatcherTaskServerFilters,
 } from '@/lib/dispatcher-task-row-codes'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
@@ -77,6 +76,7 @@ import { useWeldsQuery } from '@/lib/use-welds-query'
 import { useDuplicateControls } from '@/lib/use-duplicate-controls'
 import type { ContextActionMenuItem } from '@/components/context-action-menu'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
+import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
@@ -116,13 +116,14 @@ import {
   getDefaultNamingState,
   useRequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
-import { getWeldJointById } from '@/server/welds'
+import { getWeldJointById, listWeldJointRowsByIds } from '@/server/welds'
 import { openGeneratedDocumentForRow } from '@/lib/welding-journal-document'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/generated-document-storage'
 import { openSystemDocumentForRow } from '@/lib/system-document-storage'
 import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
 
 export function useHomePageController() {
+  const queryClient = useQueryClient()
   const saveCheckSettings = useSaveCheckSettings()
   const availableSystemDocumentTypes = useSystemDocumentTemplateAvailability()
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -390,10 +391,6 @@ export function useHomePageController() {
   })
 
   const shouldLoadFullWeldRows =
-    activeReport === 'statistics' ||
-    activeReport === 'percentageLines' ||
-    activeReport === 'documents' ||
-    activeReport === 'settings' ||
     Boolean(editing) ||
     Boolean(heatTreatmentFieldEditing) ||
     Boolean(documentGenerationRequest) ||
@@ -413,8 +410,6 @@ export function useHomePageController() {
 
   const rows = useReportRows(weldsQuery.data, duplicateControls)
   const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
-  const shouldBuildWelderStampExpiryTasks = activeReport === 'welderStamps'
-
   const {
     dispatcherTaskRowIds,
     repeatedJointTaskGroups,
@@ -426,7 +421,7 @@ export function useHomePageController() {
     activeReport,
     dismissedRepeatedJointTaskKeys,
     includeRepeatedJointTasks: false,
-    includeWelderStampExpiryTasks: shouldBuildWelderStampExpiryTasks,
+    includeWelderStampExpiryTasks: false,
     rows,
     setExpandedRepeatedJointTaskKeys,
     welderStamps,
@@ -434,11 +429,8 @@ export function useHomePageController() {
   })
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
-    enabled: isServerPagedTab,
+    enabled: isServerPagedTab || activeReport === 'welderStamps',
   })
-  const tableDispatcherTaskRowIds = isServerPagedTab && dispatcherTaskSnapshot.data
-    ? dispatcherTaskSnapshot.dispatcherTaskRowIds
-    : dispatcherTaskRowIds
   const tableDuplicateKeys = isServerPagedTab && dispatcherTaskSnapshot.data
     ? dispatcherTaskSnapshot.duplicateKeys
     : undefined
@@ -448,6 +440,14 @@ export function useHomePageController() {
   const visibleRepeatedJointTaskGroups = isServerPagedTab && dispatcherTaskSnapshot.data
     ? dispatcherTaskSnapshot.repeatedJointTaskGroups
     : repeatedJointTaskGroups
+  const visibleWelderStampExpiryTasks =
+    activeReport === 'welderStamps' && dispatcherTaskSnapshot.data
+      ? dispatcherTaskSnapshot.welderStampExpiryTasks
+      : welderStampExpiryTasks
+  const visibleWelderStampNotificationGroups =
+    activeReport === 'welderStamps' && dispatcherTaskSnapshot.data
+      ? dispatcherTaskSnapshot.welderStampNotificationGroups
+      : welderStampNotificationGroups
 
   const enablePstoRequestState =
     activeReport === 'heatTreatment' ||
@@ -890,8 +890,15 @@ export function useHomePageController() {
     setLnkFilters,
   })
   const dispatcherTaskServerFilters = useMemo(
-    () => buildDispatcherTaskServerFilters(activeColumnFilters, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId),
-    [activeColumnFilters, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId],
+    () =>
+      buildDispatcherTaskServerFilters(
+        activeColumnFilters,
+        [...dismissedRepeatedJointTaskKeys],
+      ),
+    [
+      activeColumnFilters,
+      dismissedRepeatedJointTaskKeys,
+    ],
   )
   const weldPageQuery = useWeldPageQuery({
     enabled: isServerPagedTab,
@@ -905,21 +912,20 @@ export function useHomePageController() {
     rows.length > 0 ? rows : undefined,
     rows.length > 0 ? fullFinalStatusContext : undefined,
   )
-  const pagedReportRows = useMemo(
-    () => attachDispatcherTaskCodes(basePagedReportRows, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId),
-    [basePagedReportRows, dispatcherTaskSnapshot.dispatcherTaskCodesByRowId],
+  const pagedReportRows = basePagedReportRows
+  const tableDispatcherTaskRowIds = useMemo(
+    () =>
+      isServerPagedTab
+        ? new Set(
+            pagedReportRows
+              .filter((row) => String(row.dispatcherTasks ?? '').trim())
+              .map((row) => row.id),
+          )
+        : dispatcherTaskRowIds,
+    [dispatcherTaskRowIds, isServerPagedTab, pagedReportRows],
   )
-  const dispatcherTaskFilterOptions = useMemo(
-    () => buildDispatcherTaskFilterOptions(dispatcherTaskSnapshot.dispatcherTaskCodesByRowId),
-    [dispatcherTaskSnapshot.dispatcherTaskCodesByRowId],
-  )
+  const dispatcherTaskFilterOptions = dispatcherTaskSnapshot.taskFilterOptions
   const tableActionRows = rows.length > 0 ? (visibleRows as WeldRow[]) : pagedReportRows
-  const refetchWeldData = async () => {
-    await Promise.all([
-      weldsQuery.refetch(),
-      isServerPagedTab ? weldPageQuery.refetch() : Promise.resolve(),
-    ])
-  }
   useEffect(() => {
     const refreshDocumentAssignments = () => {
       void weldsQuery.refetch()
@@ -1344,8 +1350,7 @@ export function useHomePageController() {
   }
 
   const assignPercentageLineMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
-    const targetIdSet = new Set(rowIds)
-    const targetRows = rows.filter((row) => targetIdSet.has(row.id))
+    const targetRows = await listWeldJointRowsByIds({ data: { ids: rowIds } })
     if (targetRows.length === 0) {
       setMessage('Стыки для назначения РК/УЗК не найдены')
       return
@@ -1361,12 +1366,11 @@ export function useHomePageController() {
     )
     highlightChangedRows(savedRows, [fieldKey])
     setMessage(`Назначен ${method} по процентной линии: ${savedRows.length}.`)
-    await refetchWeldData()
+    await invalidateWeldJoints(queryClient)
   }
 
   const cancelPercentageLineMissingControls = async (rowIds: number[]) => {
-    const targetIdSet = new Set(rowIds)
-    const targetRows = rows.filter((row) => targetIdSet.has(row.id))
+    const targetRows = await listWeldJointRowsByIds({ data: { ids: rowIds } })
     if (targetRows.length === 0) {
       setMessage('Стыки для закрытия недобора не найдены')
       return
@@ -1382,7 +1386,7 @@ export function useHomePageController() {
     )
     highlightChangedRows(savedRows, ['hasRk', 'hasUzk'])
     setMessage(`Недобор закрыт отменой РК/УЗК: ${savedRows.length}.`)
-    await refetchWeldData()
+    await invalidateWeldJoints(queryClient)
   }
 
   const filterLineInCurrentReport = (row: WeldRow) => {
@@ -2096,12 +2100,17 @@ export function useHomePageController() {
     return 'Диспетчер скроет текущее предупреждение о негодном первичном стыке процентной линии. Используй это только если стык должен остаться официальным, а увеличение объема РК/УЗК принято осознанно.'
   }
 
-  function editPercentageLineTaskStamp(task: PercentageLineControlTask) {
+  async function editPercentageLineTaskStamp(task: PercentageLineControlTask) {
     if (task.issue !== 'new-welder') return
+    const record = await getWeldJointById({ data: { id: task.row.id } })
+    if (!record) {
+      setMessage('Стык для редактирования не найден')
+      return
+    }
     setActiveReport('weldingJournal')
     setChainRecord(null)
     setColumnFilters(buildPercentageLineStampFilters(task))
-    setEditing({ record: task.row, focusField: 'stamp1K' })
+    setEditing({ record: record as WeldRow, focusField: 'stamp1K' })
     setMessage(`Открыто редактирование стыка ${String(task.row.joint ?? '-')}: проверь официальное клеймо ${task.stamp}`)
   }
 
@@ -2162,8 +2171,8 @@ export function useHomePageController() {
     activeReport,
     repeatedJointTasks: visibleRepeatedJointTasks,
     repeatedJointTaskGroups: visibleRepeatedJointTaskGroups,
-    welderStampExpiryTasks,
-    welderStampNotificationGroups,
+    welderStampExpiryTasks: visibleWelderStampExpiryTasks,
+    welderStampNotificationGroups: visibleWelderStampNotificationGroups,
     stickyLeft,
     handlers: dispatcherTaskCardProps,
     isTaskExpanded: isRepeatedJointTaskExpanded,

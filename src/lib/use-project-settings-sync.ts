@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { listAppSettings, saveAppSetting } from '@/server/app-settings'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { listAppSettings, saveAppSetting, type AppSettingValue } from '@/server/app-settings'
 import { applyRemoteDataListSettings } from '@/lib/data-list-settings'
 import {
   applyRemoteDispatcherReminderSettings,
@@ -17,6 +17,11 @@ import {
 import { applyRemoteRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { applyRemoteSaveCheckSettings } from '@/lib/save-check-settings'
 import { applyRemoteSystemIndexSettings } from '@/lib/system-index-settings'
+import {
+  DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
+  STATISTICS_SERVER_QUERY_KEY,
+  WELD_JOINT_PAGES_QUERY_KEY,
+} from '@/lib/weld-query-utils'
 
 type ProjectSettingSyncEntry = {
   key: ProjectSettingKey
@@ -55,6 +60,7 @@ const PROJECT_SETTING_SYNC_ENTRIES: ProjectSettingSyncEntry[] = [
 ]
 
 export function useProjectSettingsSync() {
+  const queryClient = useQueryClient()
   const settingsQuery = useQuery({
     queryKey: ['app-settings'],
     queryFn: async () => listAppSettings(),
@@ -80,12 +86,27 @@ export function useProjectSettingsSync() {
     const persistRemoteSetting = (event: Event) => {
       const { key, value } = (event as CustomEvent<ProjectSettingRemotePersistDetail>).detail ?? {}
       if (!key) return
-      void saveAppSetting({ data: { key, value } }).catch((error) => {
-        console.warn('Не удалось сохранить настройку проекта в БД', key, error)
-      })
+      void saveAppSetting({ data: { key, value: value as AppSettingValue } })
+        .then(async () => {
+          if (key === PROJECT_SETTING_KEYS.systemIndex) {
+            await queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
+          }
+          if (
+            key === PROJECT_SETTING_KEYS.dispatcher ||
+            key === PROJECT_SETTING_KEYS.dispatcherReminders
+          ) {
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+              queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+            ])
+          }
+        })
+        .catch((error) => {
+          console.warn('Не удалось сохранить настройку проекта в БД', key, error)
+        })
     }
 
     window.addEventListener(PROJECT_SETTING_REMOTE_PERSIST_EVENT, persistRemoteSetting)
     return () => window.removeEventListener(PROJECT_SETTING_REMOTE_PERSIST_EVENT, persistRemoteSetting)
-  }, [])
+  }, [queryClient])
 }

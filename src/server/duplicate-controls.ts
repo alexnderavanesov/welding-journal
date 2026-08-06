@@ -10,6 +10,7 @@ import {
   type DuplicateControlResult,
 } from '@/lib/duplicate-control-types'
 import { parseDateLikeToIso } from '@/lib/date-format'
+import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 
 export type DuplicateControlPayload = {
   id?: number
@@ -35,24 +36,31 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const db = requireDb()
     const insertData = toDbInsert(data)
-    if (data.id) {
-      const [updated] = await db
-        .update(duplicateControls)
-        .set({ ...insertData, updatedAt: new Date() })
-        .where(eq(duplicateControls.id, data.id))
-        .returning()
-      return toPayload(updated)
-    }
+    return db.transaction(async (tx) => {
+      if (data.id) {
+        const [updated] = await tx
+          .update(duplicateControls)
+          .set({ ...insertData, updatedAt: new Date() })
+          .where(eq(duplicateControls.id, data.id))
+          .returning()
+        await markDispatcherTaskIndexDirty(tx)
+        return toPayload(updated)
+      }
 
-    const [created] = await db.insert(duplicateControls).values(insertData).returning()
-    return toPayload(created)
+      const [created] = await tx.insert(duplicateControls).values(insertData).returning()
+      await markDispatcherTaskIndexDirty(tx)
+      return toPayload(created)
+    })
   })
 
 export const deleteDuplicateControl = createServerFn({ method: 'POST' })
   .validator((data: { id: number }) => data)
   .handler(async ({ data }) => {
     const db = requireDb()
-    await db.delete(duplicateControls).where(eq(duplicateControls.id, data.id))
+    await db.transaction(async (tx) => {
+      await tx.delete(duplicateControls).where(eq(duplicateControls.id, data.id))
+      await markDispatcherTaskIndexDirty(tx)
+    })
     return { ok: true }
   })
 

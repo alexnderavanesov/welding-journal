@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   WELD_PAGE_ALL_SIZE,
   buildWeldColumnFilterOptionsFromRows,
+  buildWeldDataUsageSummaryFromRows,
   buildWeldReportPageFromRows,
   canPaginateReportSource,
   compactWeldRowsForTransport,
   mergeDuplicateControlsIntoRows,
   normalizeWeldPageRequest,
   normalizeWeldPageSize,
+  normalizeWeldSnapshotPageRequest,
+  normalizeDocumentGenerationDataRequest,
 } from './welds'
 import type { WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -50,6 +53,73 @@ describe('weld server pagination helpers', () => {
     })
 
     expect(normalizeWeldPageRequest({ page: 2.9, pageSize: WELD_PAGE_ALL_SIZE }).page).toBe(2)
+  })
+
+  it('normalizes full-snapshot batches without allowing oversized responses', () => {
+    expect(normalizeWeldSnapshotPageRequest(undefined)).toEqual({ afterId: 0, batchSize: 1000 })
+    expect(normalizeWeldSnapshotPageRequest({ afterId: 12.9, batchSize: 300 })).toEqual({
+      afterId: 12,
+      batchSize: 300,
+    })
+    expect(normalizeWeldSnapshotPageRequest({ afterId: -2, batchSize: 5000 })).toEqual({
+      afterId: 0,
+      batchSize: 1000,
+    })
+  })
+
+  it('normalizes document generation scope without duplicate or empty values', () => {
+    expect(
+      normalizeDocumentGenerationDataRequest({
+        periodFrom: ' 2026-07-01 ',
+        periodTo: '2026-07-31',
+        projects: [' Проект ', 'Проект', ''],
+        subtitles: ['400', ' 400 ', '500'],
+        lines: ['LIN-1', ' ', 'LIN-2'],
+      }),
+    ).toEqual({
+      periodFrom: '2026-07-01',
+      periodTo: '2026-07-31',
+      projects: ['Проект'],
+      subtitles: ['400', '500'],
+      lines: ['LIN-1', 'LIN-2'],
+    })
+  })
+
+  it('counts settings values from lightweight rows without counting duplicates inside one joint', () => {
+    expect(
+      buildWeldDataUsageSummaryFromRows(
+        [
+          {
+            weldingMethod: 'РАД+РД+РАД',
+            connectionType: 'С17',
+            materialGroup: 'М01',
+            testTypes: 'ГИ, ПИ, ГИ',
+          },
+          {
+            weldingMethod: 'РД',
+            connectionType: 'С17',
+            materialGroup: 'М05',
+            testTypes: 'ПИ',
+          },
+        ],
+        25,
+      ),
+    ).toEqual({
+      rowsCount: 25,
+      weldingTypes: [
+        ['РАД', 1],
+        ['РД', 2],
+      ],
+      connectionTypes: [['С17', 2]],
+      materialGroups: [
+        ['М01', 1],
+        ['М05', 1],
+      ],
+      testTypes: [
+        ['ГИ', 1],
+        ['ПИ', 2],
+      ],
+    })
   })
 
   it('removes only empty transport fields while preserving meaningful false and zero values', () => {

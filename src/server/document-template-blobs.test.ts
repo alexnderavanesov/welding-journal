@@ -85,8 +85,8 @@ describe('document template blob cleanup', () => {
     const activeKey = createDocumentTemplateBlobKey('checklist', 'xlsx')
 
     try {
-      await store.set(previousKey, new Uint8Array([1]))
-      await store.set(activeKey, new Uint8Array([2, 3, 4]))
+      await store.set(previousKey, new Uint8Array([1]).buffer)
+      await store.set(activeKey, new Uint8Array([2, 3, 4]).buffer)
       await deleteDocumentTemplateBlobVersions(store, 'checklist', { keepKey: activeKey })
 
       expect(await store.get(previousKey, { type: 'arrayBuffer' })).toBeNull()

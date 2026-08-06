@@ -51,7 +51,7 @@ export function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: We
 export function clearLnkGeneratedData<T extends WeldInput>(row: T): T {
   const nextRow = { ...row } as T & Record<string, unknown>
   for (const fieldKey of LNK_GENERATED_FIELD_KEYS) {
-    nextRow[fieldKey] = null
+    ;(nextRow as Record<string, unknown>)[fieldKey] = null
   }
   return nextRow as T
 }

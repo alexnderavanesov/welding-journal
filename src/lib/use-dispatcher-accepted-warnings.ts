@@ -2,7 +2,10 @@ import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { acceptDispatcherWarning, listDispatcherAcceptedWarnings } from '@/server/dispatcher-warnings'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
-import { DISPATCHER_TASK_SNAPSHOT_QUERY_KEY } from '@/lib/weld-query-utils'
+import {
+  DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
+  WELD_JOINT_PAGES_QUERY_KEY,
+} from '@/lib/weld-query-utils'
 
 type UseDispatcherAcceptedWarningsInput = {
   setMessage: (message: string | null) => void
@@ -34,6 +37,7 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
       ])
     },
     onError: (error) => {

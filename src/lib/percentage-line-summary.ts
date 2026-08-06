@@ -69,6 +69,7 @@ export type PercentageLineSummary = {
   subtitleCode: string
   line: string
   percent: number
+  rowCount: number
   rows: WeldRow[]
   stamps: PercentageLineStampSummary[]
 }
@@ -102,6 +103,7 @@ export function buildPercentageLineSummaries(rows: WeldRow[]): PercentageLineSum
       subtitleCode: group.subtitleCode,
       line: group.line,
       percent: group.percent,
+      rowCount: group.rows.length,
       rows: group.rows,
       stamps: buildStampSummaries(group),
     }))

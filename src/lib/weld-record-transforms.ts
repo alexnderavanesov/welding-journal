@@ -19,7 +19,7 @@ export function recordsToExportRows(records: WeldInput[]) {
       if (field.kind === 'boolean') {
         row[field.label] = formatControlAvailabilityForExport(value)
       } else {
-        row[field.label] = value ?? ''
+        row[field.label] = value instanceof Date ? value.toISOString() : (value ?? '')
       }
     }
     return row
@@ -44,7 +44,7 @@ export function normalizeWeldInput(input: WeldInput) {
   for (const [key, value] of Object.entries(input)) {
     const field = FIELD_BY_KEY.get(key as WeldFieldKey)
     if (!field) continue
-    normalized[field.key as keyof WeldInput] = parseCell(field, value)
+    ;(normalized as Record<string, unknown>)[field.key] = parseCell(field, value)
   }
   const withAutoVik = withAutoVikForWeldDate(normalized)
   withAutoVik.finalStatus = calculateFinalStatus(withAutoVik)

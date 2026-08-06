@@ -1,6 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
-import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
+import { getConfiguredBaseJointType, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, type FinalStatusRowsContext } from '@/lib/weld-status'
 
@@ -36,7 +36,7 @@ type ChainRow = {
   order: number
 }
 
-export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit): LineSummary {
+export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIndexSettings?: SystemIndexSettings): LineSummary {
   const finalStatusContext = buildFinalStatusRowsContext(rows)
   const rowsForSummary = getActualLineRows(rows, finalStatusContext)
   const lineRows = new Map<string, LineSummaryRow>()
@@ -67,7 +67,7 @@ export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit): LineSum
         remainingS: 0,
       } satisfies LineSummaryRow)
 
-    const jointType = getJointType(row)
+    const jointType = getJointType(row, systemIndexSettings)
     const completed = hasText(row.weldDate)
     summaryRow.total += weight
     if (jointType === 'f') summaryRow.totalF += weight
@@ -175,9 +175,9 @@ function getChainKey(row: WeldRow) {
   ].join('|')
 }
 
-function getJointType(row: WeldRow): 'f' | 's' | null {
+function getJointType(row: WeldRow, systemIndexSettings?: SystemIndexSettings): 'f' | 's' | null {
   const base = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
-  return getConfiguredBaseJointType(base)
+  return getConfiguredBaseJointType(base, systemIndexSettings)
 }
 
 function getJointOrder(value: unknown) {

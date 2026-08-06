@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react'
 import type { WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
-import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
@@ -17,7 +16,6 @@ const UserGuidePage = lazy(() => import('@/components/user-guide-page').then((mo
 
 type ReportMainContentProps = {
   activeReport: ActiveReport
-  statisticsRows: WeldRow[]
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
   weldTableProps: WeldTableProps
@@ -30,7 +28,6 @@ type ReportMainContentProps = {
 
 export function ReportMainContent({
   activeReport,
-  statisticsRows,
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
@@ -46,8 +43,6 @@ export function ReportMainContent({
         <StatisticsPage
           key={activeReport}
           fixedTab={activeReport === 'percentageLines' ? 'percentageLines' : undefined}
-          rows={statisticsRows}
-          welderStamps={welderStamps}
           onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
           onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
@@ -69,7 +64,6 @@ export function ReportMainContent({
     return (
       <Suspense fallback={<ReportSectionFallback label="Загружаем документы" />}>
         <DocumentsPage
-          rows={statisticsRows}
           welderStamps={welderStamps}
           onOpenDocumentRows={onOpenDocumentRows}
         />
@@ -80,7 +74,7 @@ export function ReportMainContent({
   if (activeReport === 'settings') {
     return (
       <Suspense fallback={<ReportSectionFallback label="Загружаем настройки" />}>
-        <SettingsPage rows={statisticsRows} />
+        <SettingsPage />
       </Suspense>
     )
   }

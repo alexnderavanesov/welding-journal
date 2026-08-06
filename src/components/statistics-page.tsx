@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
 import {
   Activity,
   ChevronDown,
@@ -19,11 +19,8 @@ import { Input } from '@/components/ui/input'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { formatDisplayDate } from '@/lib/date-format'
-import { isUnofficialJoint } from '@/lib/joint-display'
-import { parseJointChainName } from '@/lib/joint-chain'
-import { getConfiguredBaseJointType } from '@/lib/system-index-settings'
+import { formatJointDiameterLabel } from '@/lib/joint-display'
 import {
-  buildStatisticsSummary,
   formatPercent,
   formatStatisticValue,
   getDefaultStatisticsPeriod,
@@ -32,32 +29,30 @@ import {
   type StatisticsSummary,
   type StatisticsUnit,
 } from '@/lib/statistics-summary'
-import { buildLineSummary, type LineSummary, type LineSummaryRow } from '@/lib/line-summary'
+import type { LineSummary, LineSummaryRow } from '@/lib/line-summary'
 import {
-  buildPercentageLineSummaries,
   type PercentageControlMethod,
   type PercentageLineSummary,
   type PercentageLineStampSummary,
 } from '@/lib/percentage-line-summary'
 import {
-  buildWelderStatisticsSummary,
   type WelderStatisticsJointFilter,
   type WelderStatisticsRow,
   type WelderStatisticsSummary,
 } from '@/lib/welder-statistics-summary'
-import { buildWeldingDynamics, type WeldingDynamicsSummary } from '@/lib/welding-dynamics'
-import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { WeldingDynamicsSummary } from '@/lib/welding-dynamics'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import { openPrintableReport, type PrintableReport } from '@/lib/printable-report'
 import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue } from '@/lib/report-value-utils'
 import { cn } from '@/lib/utils'
+import { useStatisticsServerQuery } from '@/lib/use-statistics-server-query'
+import { useWeldRowsByIdsQuery } from '@/lib/use-weld-rows-by-ids-query'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
+import { useWindowTableVirtualization } from '@/lib/use-window-table-virtualization'
 import { calculateFinalStatus, CONTROL_RESULT_PAIRS, formatFinalStatusDisplay, normalizeResultStatus } from '@/lib/weld-status'
 
 type StatisticsPageProps = {
   fixedTab?: StatisticsTab
-  rows: WeldRow[]
-  welderStamps: WelderStampRecord[]
   onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
@@ -154,8 +149,6 @@ const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
 
 export function StatisticsPage({
   fixedTab,
-  rows,
-  welderStamps,
   onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
@@ -182,60 +175,26 @@ export function StatisticsPage({
   const jointFilter = activeTab === 'welders' ? welderJointFilter : generalJointFilter
   const setJointFilter = activeTab === 'welders' ? setWelderJointFilter : setGeneralJointFilter
 
-  const projectOptions = useMemo(() => getUniqueSortedValues(rows.map((row) => row.projectTitle)), [rows])
-  const subtitleOptions = useMemo(
-    () =>
-      getUniqueSortedValues(
-        rows
-          .filter((row) => !projectFilter || normalizeFilterValue(row.projectTitle) === projectFilter)
-          .map((row) => row.subtitleCode),
-      ),
-    [projectFilter, rows],
-  )
-  const scopedRows = useMemo(
-    () =>
-      rows.filter((row) => {
-        const project = normalizeFilterValue(row.projectTitle)
-        const subtitle = normalizeFilterValue(row.subtitleCode)
-        const projectMatches = !projectFilter || project === projectFilter
-        const subtitleMatches = selectedSubtitles.length === 0 || selectedSubtitles.includes(subtitle)
-        return projectMatches && subtitleMatches
-      }),
-    [projectFilter, rows, selectedSubtitles],
-  )
   const periodFrom = allPeriod ? '' : period.from
   const periodTo = allPeriod ? '' : period.to
-  const generalRows = useMemo(
-    () => scopedRows.filter((row) => matchesStatisticsJointFilter(row, generalJointFilter)),
-    [generalJointFilter, scopedRows],
-  )
-  const summary = useMemo(
-    () => (isGeneralLikeTab ? buildStatisticsSummary(generalRows, periodFrom, periodTo, unit, periodMode) : EMPTY_STATISTICS_SUMMARY),
-    [generalRows, isGeneralLikeTab, periodFrom, periodTo, periodMode, unit],
-  )
-  const weldingDynamics = useMemo(
-    () => (activeTab === 'general' ? buildWeldingDynamics(summary.periodRows, periodFrom, periodTo, unit) : EMPTY_WELDING_DYNAMICS),
-    [activeTab, periodFrom, periodTo, summary.periodRows, unit],
-  )
-  const welderSummary = useMemo(
-    () =>
-      activeTab === 'welders'
-        ? buildWelderStatisticsSummary(scopedRows, welderStamps, periodFrom, periodTo, weldersUnit, welderJointFilter)
-        : EMPTY_WELDER_SUMMARY,
-    [activeTab, periodFrom, periodTo, scopedRows, welderJointFilter, welderStamps, weldersUnit],
-  )
-  const lineSummary = useMemo(
-    () => (activeTab === 'lineSummary' ? buildLineSummary(scopedRows, lineSummaryUnit) : EMPTY_LINE_SUMMARY),
-    [activeTab, lineSummaryUnit, scopedRows],
-  )
-  const percentageLineSummary = useMemo(
-    () => (activeTab === 'percentageLines' ? buildPercentageLineSummaries(scopedRows) : EMPTY_PERCENTAGE_LINE_SUMMARY),
-    [activeTab, scopedRows],
-  )
-  const generalProgressSummary = useMemo(
-    () => (activeTab === 'general' ? buildLineSummary(generalRows, unit) : EMPTY_LINE_SUMMARY),
-    [activeTab, generalRows, unit],
-  )
+  const statisticsQuery = useStatisticsServerQuery({
+    tab: activeTab,
+    projectFilter,
+    selectedSubtitles,
+    from: periodFrom,
+    to: periodTo,
+    unit,
+    jointFilter,
+    periodMode,
+  })
+  const projectOptions = statisticsQuery.data?.projectOptions ?? []
+  const subtitleOptions = statisticsQuery.data?.subtitleOptions ?? []
+  const summary = statisticsQuery.data?.summary ?? EMPTY_STATISTICS_SUMMARY
+  const weldingDynamics = statisticsQuery.data?.weldingDynamics ?? EMPTY_WELDING_DYNAMICS
+  const welderSummary = statisticsQuery.data?.welderSummary ?? EMPTY_WELDER_SUMMARY
+  const lineSummary = statisticsQuery.data?.lineSummary ?? EMPTY_LINE_SUMMARY
+  const percentageLineSummary = statisticsQuery.data?.percentageLineSummary ?? EMPTY_PERCENTAGE_LINE_SUMMARY
+  const generalProgressSummary = statisticsQuery.data?.generalProgressSummary ?? EMPTY_LINE_SUMMARY
   const orderedMethods = useMemo(() => {
     const methodsByCode = new Map([...summary.methods, summary.pstoMethod].map((method) => [method.code, method]))
     return ['ВИК', 'РК', 'УЗК', 'ПВК', 'ПСТО', 'ТВМТ', 'РФА', 'СТЛС', 'МКК']
@@ -243,9 +202,8 @@ export function StatisticsPage({
       .filter((method): method is StatisticsMethodSummary => Boolean(method))
   }, [summary.methods, summary.pstoMethod])
   const lnkMethods = useMemo(() => orderedMethods.filter((method) => method.code !== 'ПСТО'), [orderedMethods])
-  const unofficialRows = useMemo(() => summary.periodRows.filter(isUnofficialJoint), [summary.periodRows])
-  const unofficialCount = unofficialRows.length
-  const unofficialValue = sumStatisticRows(unofficialRows, unit)
+  const unofficialCount = statisticsQuery.data?.unofficialCount ?? 0
+  const unofficialValue = statisticsQuery.data?.unofficialValue ?? 0
   const lnkWaitingRequests = summary.methods.reduce((total, method) => total + method.waitingRequest, 0)
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
   const scopeLabel = getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
@@ -561,6 +519,16 @@ export function StatisticsPage({
         ) : null}
       </div>
 
+      {statisticsQuery.isLoading ? (
+        <div className="rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          Рассчитываем статистику по всей базе...
+        </div>
+      ) : statisticsQuery.error ? (
+        <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Не удалось рассчитать статистику: {(statisticsQuery.error as Error).message}
+        </div>
+      ) : null}
+
       {activeTab === 'general' ? (
         <>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -652,7 +620,6 @@ export function StatisticsPage({
         <PercentageLinesPanel
           onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
           onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
-          rows={scopedRows}
           summary={percentageLineSummary}
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
           onOpenWeldRowIds={onOpenWeldRowIds}
@@ -908,7 +875,7 @@ function LnkPstoStatisticsPanel({
 }: {
   lnkMethods: StatisticsMethodSummary[]
   lnkWaitingRequests: number
-  summary: ReturnType<typeof buildStatisticsSummary>
+  summary: StatisticsSummary
   unofficialCount: number
   unofficialValue: number
   unit: StatisticsUnit
@@ -1127,7 +1094,7 @@ function WeldersStatisticsPanel({
   unit,
 }: {
   jointFilter: WelderStatisticsJointFilter
-  summary: ReturnType<typeof buildWelderStatisticsSummary>
+  summary: WelderStatisticsSummary
   unit: StatisticsUnit
 }) {
   const controlled = summary.good + summary.rejected
@@ -1613,7 +1580,6 @@ function WelderBodyCell({ children, className }: { children: ReactNode; classNam
 function PercentageLinesPanel({
   onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
-  rows,
   summary,
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
@@ -1622,8 +1588,7 @@ function PercentageLinesPanel({
 }: {
   onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
-  rows: WeldRow[]
-  summary: ReturnType<typeof buildPercentageLineSummaries>
+  summary: PercentageLineSummary[]
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
   search: string
@@ -1632,7 +1597,19 @@ function PercentageLinesPanel({
   const [collapsedLineKeys, setCollapsedLineKeys] = useState<Set<string>>(() => new Set())
   const [detailDialog, setDetailDialog] = useState<PercentageLineJointDetailDialogState | null>(null)
   const [assignMissingDialog, setAssignMissingDialog] = useState<PercentageLineAssignMissingDialogState | null>(null)
-  const rowsById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows])
+  const requestedRowIds = useMemo(
+    () =>
+      detailDialog?.rowIds ??
+      (assignMissingDialog
+        ? Array.from(new Set([...assignMissingDialog.rowIds, ...assignMissingDialog.cancellationRowIds]))
+        : []),
+    [assignMissingDialog, detailDialog],
+  )
+  const detailRowsQuery = useWeldRowsByIdsQuery(requestedRowIds)
+  const rowsById = useMemo(
+    () => new Map((detailRowsQuery.data ?? []).map((row) => [row.id, row])),
+    [detailRowsQuery.data],
+  )
   const detailRows = useMemo(
     () => (detailDialog ? detailDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)) : []),
     [detailDialog, rowsById],
@@ -1819,6 +1796,7 @@ function PercentageLinesPanel({
         <PercentageLineJointDetailDialog
           detail={detailDialog}
           rows={detailRows}
+          loading={detailRowsQuery.isLoading}
           onClose={() => setDetailDialog(null)}
           onOpenRows={openRowsInWeldingJournal}
         />
@@ -1830,6 +1808,7 @@ function PercentageLinesPanel({
           cancellationRows={assignMissingDialog.cancellationRowIds
             .map((rowId) => rowsById.get(rowId))
             .filter((row): row is WeldRow => Boolean(row))}
+          loading={detailRowsQuery.isLoading}
           onClose={() => setAssignMissingDialog(null)}
           onOpenRows={openRowsInWeldingJournal}
           onCancelSave={closeMissingControlsByCancellation}
@@ -1855,11 +1834,13 @@ type PercentageLineMissingControlAction = PercentageControlMethod | 'отмен�
 
 function PercentageLineJointDetailDialog({
   detail,
+  loading,
   onClose,
   onOpenRows,
   rows,
 }: {
   detail: PercentageLineJointDetailDialogState
+  loading: boolean
   onClose: () => void
   onOpenRows: (rowIds: number[], message?: string) => void
   rows: WeldRow[]
@@ -1882,7 +1863,7 @@ function PercentageLineJointDetailDialog({
     <LargeDialogShell maxWidthClassName="max-w-[720px]" maxHeightClassName="max-h-[86vh]" overlayClassName="z-[80] bg-slate-950/25">
       <DialogHeader
         title={detail.title}
-        subtitle={`${detail.subtitle} · стыков: ${rows.length}`}
+        subtitle={`${detail.subtitle} · стыков: ${detail.rowIds.length}`}
         onClose={onClose}
         actions={
           rows.length > 0 ? (
@@ -1893,7 +1874,11 @@ function PercentageLineJointDetailDialog({
         }
       />
       <div className="overflow-y-auto p-4">
-        {rows.length > 0 ? (
+        {loading ? (
+          <div className="rounded-md border border-sky-100 bg-sky-50 p-6 text-sm text-sky-800">
+            Загружаем выбранные стыки...
+          </div>
+        ) : rows.length > 0 ? (
           <div className="space-y-2">
             {rows.map((row) => (
               <PercentageLineJointDetailRow key={row.id} row={row} onOpenRows={onOpenRows} />
@@ -1918,6 +1903,7 @@ function PercentageLineAssignMissingDialog({
   assignmentRows,
   cancellationRows,
   detail,
+  loading,
   onClose,
   onCancelSave,
   onOpenRows,
@@ -1926,6 +1912,7 @@ function PercentageLineAssignMissingDialog({
   assignmentRows: WeldRow[]
   cancellationRows: WeldRow[]
   detail: PercentageLineAssignMissingDialogState
+  loading: boolean
   onClose: () => void
   onCancelSave: (rowIds: number[]) => Promise<void> | void
   onOpenRows: (rowIds: number[], message?: string) => void
@@ -2053,7 +2040,11 @@ function PercentageLineAssignMissingDialog({
         {saveError ? (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</div>
         ) : null}
-        {activeRows.length > 0 ? (
+        {loading ? (
+          <div className="rounded-md border border-sky-100 bg-sky-50 p-5 text-sm text-sky-800">
+            Загружаем доступные стыки...
+          </div>
+        ) : activeRows.length > 0 ? (
           <div className="space-y-2">
             {activeRows.map((row) => {
               const checked = selectedIds.has(row.id)
@@ -2127,7 +2118,7 @@ function PercentageLineJointDetailRow({
         {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
       </div>
       <div className="mt-1 text-xs text-slate-500">
-        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {String(row.diameter ?? '').trim() || '-'} · Дата сварки:{' '}
+        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {formatJointDiameterLabel(row)} · Дата сварки:{' '}
         {formatDisplayDate(row.weldDate) || '-'}
       </div>
       {badges.length > 0 ? (
@@ -2157,7 +2148,7 @@ function PercentageLineJointSummary({ row }: { row: WeldRow }) {
         {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
       </div>
       <div className="mt-1 text-xs text-slate-500">
-        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {String(row.diameter ?? '').trim() || '-'} · Дата сварки:{' '}
+        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {formatJointDiameterLabel(row)} · Дата сварки:{' '}
         {formatDisplayDate(row.weldDate) || '-'}
       </div>
       {badges.length > 0 ? (
@@ -2182,7 +2173,7 @@ function PercentageLineGroup({
   onToggle,
 }: {
   collapsed: boolean
-  line: ReturnType<typeof buildPercentageLineSummaries>[number]
+  line: PercentageLineSummary
   onAssignMissing?: (detail: PercentageLineAssignMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
@@ -2261,7 +2252,7 @@ function PercentageLineGroup({
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
           <PercentageLineSummaryPill
             label="Стыков"
-            value={line.rows.length}
+            value={line.rowCount}
             title="Количество сваренных официальных стыков на этой процентной линии. Неофициальные, неактуальные по ИЗМу и строки без даты сварки не учитываются."
           />
           <PercentageLineSummaryPill
@@ -2375,7 +2366,7 @@ function PercentageLineTableRow({
   onOpenStamp,
   stamp,
 }: {
-  line: ReturnType<typeof buildPercentageLineSummaries>[number]
+  line: PercentageLineSummary
   onAssignMissing?: (detail: PercentageLineAssignMissingDialogState) => void
   onOpenDetail?: (detail: PercentageLineJointDetailDialogState) => void
   onOpenStamp?: (filter: PercentageLineStampFilter) => void
@@ -2802,7 +2793,7 @@ function LineSummaryPanel({
   summary,
   unit,
 }: {
-  summary: ReturnType<typeof buildLineSummary>
+  summary: LineSummary
   unit: StatisticsUnit
 }) {
   const [lineSearch, setLineSearch] = useState('')
@@ -2923,11 +2914,7 @@ function LineSummaryPanel({
                     <LineHeaderCell align="right">Остаток {unitColumnLabel}</LineHeaderCell>
                   </tr>
                 </thead>
-                <tbody>
-                  {filteredRows.map((row) => (
-                    <LineSummaryTableRow key={row.key} row={row} showLineDetails={showLineDetails} unit={unit} />
-                  ))}
-                </tbody>
+                <LineSummaryTableBody rows={filteredRows} showLineDetails={showLineDetails} unit={unit} />
               </table>
               {filteredRows.length === 0 ? (
                 <div className="border-t border-slate-100 bg-slate-50 p-5 text-sm text-slate-500">
@@ -2946,17 +2933,83 @@ function LineSummaryPanel({
   )
 }
 
+function LineSummaryTableBody({
+  rows,
+  showLineDetails,
+  unit,
+}: {
+  rows: LineSummaryRow[]
+  showLineDetails: boolean
+  unit: StatisticsUnit
+}) {
+  const {
+    bodyRef,
+    bottomSpacerHeight,
+    measureRow,
+    rowIndexes,
+    topSpacerHeight,
+    visibleRows,
+  } = useWindowTableVirtualization({
+    rows,
+    estimateRowHeight: 76,
+  })
+  const columnCount = showLineDetails ? 9 : 6
+
+  return (
+    <tbody ref={bodyRef}>
+      <LineSummaryVirtualSpacer colSpan={columnCount} height={topSpacerHeight} />
+      {visibleRows.map((row, visibleIndex) => (
+        <LineSummaryTableRow
+          key={row.key}
+          row={row}
+          rowIndex={rowIndexes[visibleIndex] ?? visibleIndex}
+          measureRow={measureRow}
+          showLineDetails={showLineDetails}
+          unit={unit}
+        />
+      ))}
+      <LineSummaryVirtualSpacer colSpan={columnCount} height={bottomSpacerHeight} />
+    </tbody>
+  )
+}
+
+function LineSummaryVirtualSpacer({
+  colSpan,
+  height,
+}: {
+  colSpan: number
+  height: number
+}) {
+  if (height <= 0) return null
+  return (
+    <tr aria-hidden="true">
+      <td colSpan={colSpan} style={{ height, padding: 0, border: 0 }} />
+    </tr>
+  )
+}
+
 function LineSummaryTableRow({
   row,
+  rowIndex,
+  measureRow,
   showLineDetails,
   unit,
 }: {
   row: LineSummaryRow
+  rowIndex: number
+  measureRow?: RefCallback<HTMLTableRowElement>
   showLineDetails: boolean
   unit: StatisticsUnit
 }) {
   return (
-    <tr className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
+    <tr
+      ref={measureRow}
+      data-index={rowIndex}
+      className={cn(
+        'border-t border-slate-100',
+        rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50/60',
+      )}
+    >
       <LineBodyCell align="left">{row.projectTitle}</LineBodyCell>
       <LineBodyCell align="left">{row.subtitleCode}</LineBodyCell>
       <LineBodyCell align="left" className="font-semibold text-slate-900">{row.line}</LineBodyCell>
@@ -3360,7 +3413,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
           row.line.subtitleCode,
           row.line.line,
           row.line.percent,
-          row.line.rows.length,
+          row.line.rowCount,
           row.line.stamps.length,
           row.required,
           row.assigned,
@@ -3410,7 +3463,7 @@ function filterPercentageLineSummaries(summary: PercentageLineSummary[], search:
 function getPercentageLineReportTotals(lines: PercentageLineSummary[]) {
   return lines.reduce(
     (totals, line) => {
-      totals.joints += line.rows.length
+      totals.joints += line.rowCount
       totals.stamps += line.stamps.length
       const stampTotals = getPercentageLineStampTotals(line.stamps)
       totals.required += stampTotals.required
@@ -3448,38 +3501,6 @@ function segmentButtonClass(active: boolean) {
     'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
     active ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
   )
-}
-
-function matchesStatisticsJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter) {
-  if (filter === 'all') return true
-  const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
-  return getConfiguredBaseJointType(baseJoint) === filter
-}
-
-function getUniqueSortedValues(values: unknown[]): Array<{ value: string; label: string }> {
-  return Array.from(
-    values.reduce((map, value) => {
-      const normalized = normalizeFilterValue(value)
-      if (normalized && !map.has(normalized)) {
-        map.set(normalized, String(value ?? '').trim())
-      }
-      return map
-    }, new Map<string, string>()),
-  )
-    .map(([value, label]) => ({ value, label }))
-    .sort((left, right) => left.label.localeCompare(right.label, 'ru', { numeric: true }))
-}
-
-function normalizeFilterValue(value: unknown) {
-  return String(value ?? '').trim().toLowerCase()
-}
-
-function sumStatisticRows(rows: readonly WeldRow[], unit: StatisticsUnit) {
-  if (unit === 'joints') return rows.length
-  return rows.reduce((total, row) => {
-    const value = Number(String(row.wdi ?? '').replace(',', '.'))
-    return total + (Number.isFinite(value) && value > 0 ? value : 0)
-  }, 0)
 }
 
 function getWeldingDynamicsBucketText(bucketUnitLabel: string) {
