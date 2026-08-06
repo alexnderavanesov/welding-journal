@@ -529,6 +529,47 @@ describe('existing rows report import preview', () => {
     expect(preview.errors[0]?.message).not.toContain('толщину 14, 6')
   })
 
+  it('checks maximum diameter and thickness independently during import preview', async () => {
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С18'],
+      materialGroups: ['M01'],
+    })
+    const stamp = {
+      ...buildWelderStampRecord('AAAA'),
+      naksPermits: buildWelderStampRecord('AAAA').naksPermits.map((permit) => ({
+        ...permit,
+        diameterFrom: '100',
+        diameterTo: '150',
+        thicknessFrom: '10',
+        thicknessTo: '15',
+      })),
+    }
+    const file = buildWeldingJournalImportFile({
+      joint: 'F1A',
+      weldingMethod: 'РАД',
+      connectionType: 'С18',
+      materialGroup: 'M01',
+      d1: '99',
+      d2: '105',
+      t1: '10',
+      t2: '12',
+      weldDate: '20.07.2026',
+      stamp1K: 'AAAA',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: { stamp1K: [{ value: 'AAAA' }] },
+      welderStamps: [stamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
+  })
+
   it('combines one stamp own RAD and RD ranges during import preview', async () => {
     saveDataListSettings({
       ...DEFAULT_DATA_LIST_SETTINGS,

@@ -52,6 +52,7 @@ type SaveDocumentTemplateInput = {
   markerCount: number
   locations: TemplateMarkerLocation[]
   warnings: string[]
+  constructorConfig?: DocumentTemplateConstructorConfig | null
 }
 
 type UpdateDocumentTemplateInput = {
@@ -109,6 +110,12 @@ export const saveRemoteDocumentTemplate = createServerFn({ method: 'POST' })
       warnings: data.warnings,
     }
     const now = new Date()
+    const constructorConfig =
+      data.constructorConfig === undefined
+        ? existing?.constructorConfig ?? null
+        : data.constructorConfig === null
+          ? null
+          : JSON.stringify(data.constructorConfig)
 
     let saved: typeof documentTemplates.$inferSelect
     try {
@@ -122,7 +129,7 @@ export const saveRemoteDocumentTemplate = createServerFn({ method: 'POST' })
           fileSize: fileData.byteLength,
           metadata: JSON.stringify(metadata),
           options: existing?.options ?? null,
-          constructorConfig: null,
+          constructorConfig,
           uploadedAt: now,
           updatedAt: now,
         })
@@ -134,7 +141,7 @@ export const saveRemoteDocumentTemplate = createServerFn({ method: 'POST' })
             fileType: data.fileType,
             fileSize: fileData.byteLength,
             metadata: JSON.stringify(metadata),
-            constructorConfig: null,
+            constructorConfig,
             uploadedAt: now,
             updatedAt: now,
           },
@@ -148,7 +155,9 @@ export const saveRemoteDocumentTemplate = createServerFn({ method: 'POST' })
       throw error
     }
 
-    await deleteDocumentTemplateBlobVersions(store, data.id, { keepKey: blobKey })
+    // The database already points to the verified new file. Stale versions can be
+    // cleaned up by the next replacement or deletion if storage cleanup is unavailable.
+    await deleteDocumentTemplateBlobVersions(store, data.id, { keepKey: blobKey }).catch(() => undefined)
     return {
       ...toTemplateSummary(saved),
       fileDataBase64: data.fileDataBase64,
@@ -217,6 +226,12 @@ function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocume
     markerCount: Math.max(0, Math.floor(Number(data?.markerCount) || 0)),
     locations: Array.isArray(data?.locations) ? data.locations : [],
     warnings: Array.isArray(data?.warnings) ? data.warnings.map(String) : [],
+    constructorConfig:
+      data?.constructorConfig === null
+        ? null
+        : data?.constructorConfig
+          ? data.constructorConfig
+          : undefined,
   }
 }
 

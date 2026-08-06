@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx-js-style'
 
 import {
+  analyzeDocumentTemplateReplacement,
   buildDocumentTemplateName,
   createWeldingJournalDocumentPreview,
   createWeldingJournalBlobFromTemplate,
@@ -14,6 +15,164 @@ import {
 import type { WeldInput } from '@/lib/weld-fields'
 
 describe('document template storage', () => {
+  it('keeps constructor settings when only template content changes', async () => {
+    const current = createXlsxTemplate([
+      ['Заголовок'],
+      ['', 'Стык'],
+      ['Подпись'],
+    ])
+    current.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [{ cell: 'A2', mode: 'row', field: 'joint' }],
+    }
+    const replacement = createXlsxTemplate([
+      ['Заголовок.'],
+      ['', 'Стык'],
+      ['Подпись'],
+    ])
+
+    const analysis = await analyzeDocumentTemplateReplacement(current, replacement)
+
+    expect(analysis.status).toBe('compatible')
+    expect(analysis.retainedBindingCount).toBe(1)
+    expect(analysis.constructorConfig).toEqual(
+      normalizeDocumentTemplateConstructorConfig(current.constructorConfig),
+    )
+  })
+
+  it('moves constructor settings after a uniform row insertion', async () => {
+    const current = createXlsxTemplate([
+      ['Заголовок'],
+      ['', 'Стык'],
+      ['Подпись'],
+    ])
+    current.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [{ cell: 'A2', mode: 'row', field: 'joint' }],
+    }
+    const replacement = createXlsxTemplate([
+      ['Новая строка'],
+      ['Заголовок'],
+      ['', 'Стык'],
+      ['Подпись'],
+    ])
+
+    const analysis = await analyzeDocumentTemplateReplacement(current, replacement)
+
+    expect(analysis.status).toBe('adjusted')
+    expect(analysis.rowOffset).toBe(1)
+    expect(analysis.constructorConfig?.repeatRow).toBe(3)
+    expect(analysis.constructorConfig?.bindings[0].cell).toBe('A3')
+  })
+
+  it('moves constructor settings after a uniform column insertion', async () => {
+    const current = createXlsxTemplate([
+      ['Заголовок', 'Стык'],
+      ['Подпись', ''],
+    ])
+    current.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [{ cell: 'B2', mode: 'row', field: 'joint' }],
+    }
+    const replacement = createXlsxTemplate([
+      ['Новая колонка', 'Заголовок', 'Стык'],
+      ['', 'Подпись', ''],
+    ])
+
+    const analysis = await analyzeDocumentTemplateReplacement(current, replacement)
+
+    expect(analysis.status).toBe('adjusted')
+    expect(analysis.columnOffset).toBe(1)
+    expect(analysis.constructorConfig?.repeatRow).toBe(2)
+    expect(analysis.constructorConfig?.bindings[0].cell).toBe('C2')
+  })
+
+  it('blocks silent replacement when a configured merged cell changes shape', async () => {
+    const current = createXlsxTemplate([
+      ['Заголовок'],
+      ['', ''],
+    ], {
+      merges: ['A2:B2'],
+    })
+    current.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [{ cell: 'A2', mode: 'row', field: 'joint' }],
+    }
+    const replacement = createXlsxTemplate([
+      ['Заголовок'],
+      ['', '', ''],
+    ], {
+      merges: ['A2:C2'],
+    })
+
+    const analysis = await analyzeDocumentTemplateReplacement(current, replacement, {
+      sheetName: 'Шаблон',
+      rowOffset: 0,
+      columnOffset: 0,
+    })
+
+    expect(analysis.status).toBe('incompatible')
+    expect(analysis.issues.some((issue) => issue.code === 'cell-merge-changed')).toBe(true)
+  })
+
+  it('asks for explicit mapping when the sheet size changes without reliable anchors', async () => {
+    const current = createXlsxTemplate([['Старый заголовок']])
+    current.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      bindings: [{ cell: 'A1', mode: 'summary', parts: [{ field: 'line' }] }],
+    }
+    const replacement = createXlsxTemplate([['Новый заголовок'], ['Новая подпись']])
+
+    const automatic = await analyzeDocumentTemplateReplacement(current, replacement)
+    const confirmed = await analyzeDocumentTemplateReplacement(current, replacement, {
+      sheetName: 'Шаблон',
+      rowOffset: 0,
+      columnOffset: 0,
+    })
+
+    expect(automatic.status).toBe('incompatible')
+    expect(automatic.issues.some((issue) => issue.code === 'structure-ambiguous')).toBe(true)
+    expect(confirmed.status).toBe('compatible')
+  })
+
+  it('asks for an explicit sheet when several renamed sheets are equally compatible', async () => {
+    const current = createXlsxTemplate([
+      ['Заголовок'],
+      ['Стык'],
+    ])
+    current.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [{ cell: 'A2', mode: 'row', field: 'joint' }],
+    }
+    const replacement = createXlsxTemplateWithSheets([
+      { name: 'Вариант 1', rows: [['Заголовок'], ['Стык']] },
+      { name: 'Вариант 2', rows: [['Заголовок'], ['Стык']] },
+    ])
+
+    const automatic = await analyzeDocumentTemplateReplacement(current, replacement)
+    const confirmed = await analyzeDocumentTemplateReplacement(current, replacement, {
+      sheetName: 'Вариант 2',
+      rowOffset: 0,
+      columnOffset: 0,
+    })
+
+    expect(automatic.status).toBe('incompatible')
+    expect(automatic.issues.some((issue) => issue.code === 'structure-ambiguous')).toBe(true)
+    expect(confirmed.status).toBe('adjusted')
+    expect(confirmed.constructorConfig?.sheetName).toBe('Вариант 2')
+  })
+
   it('adds disabled new welding journal rules to previously saved template options', () => {
     expect(getWeldingJournalTemplateOptions({ officialOnly: true, goodOnly: false })).toEqual({
       officialOnly: true,
@@ -1142,6 +1301,29 @@ function createXlsxTemplate(
     markerCount: 1,
     locations: [],
     warnings: [],
+    fileData,
+  }
+}
+
+function createXlsxTemplateWithSheets(
+  sheets: Array<{ name: string; rows: unknown[][] }>,
+): StoredDocumentTemplate {
+  const workbook = XLSX.utils.book_new()
+  for (const sheet of sheets) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(sheet.rows), sheet.name)
+  }
+  const fileData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
+  return {
+    id: 'weldingJournal',
+    fileName: 'template.xlsx',
+    fileType: 'xlsx',
+    fileSize: fileData.byteLength,
+    uploadedAt: '10.07.2026',
+    fields: [],
+    markerCount: 0,
+    locations: [],
+    warnings: [],
+    sheetNames: sheets.map((sheet) => sheet.name),
     fileData,
   }
 }

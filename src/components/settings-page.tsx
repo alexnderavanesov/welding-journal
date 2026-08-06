@@ -16,14 +16,18 @@ import {
   LockKeyhole,
   MoreHorizontal,
   Plus,
+  RefreshCw,
   Save,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
   Upload,
 } from 'lucide-react'
+import { DialogHeader } from '@/components/dialog-header'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
+import { LargeDialogShell } from '@/components/large-dialog-shell'
 import {
+  analyzeDocumentTemplateReplacement,
   deleteDocumentTemplate,
   DOCUMENT_TEMPLATE_TYPES,
   formatFileSize,
@@ -35,7 +39,9 @@ import {
   updateDocumentTemplateOptions,
   type DocumentTemplateConstructorConfig,
   type DocumentTemplateId,
+  type DocumentTemplateReplacementAnalysis,
   type StoredDocumentTemplate,
+  type TemplateUploadInfo,
   type WeldingJournalTemplateOptions,
 } from '@/lib/document-template-storage'
 import { WELDING_JOURNAL_DOCUMENT_SPLIT_MODES } from '@/lib/welding-journal-document-splitting'
@@ -135,6 +141,13 @@ const SETTINGS_TABS = [
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]['id']
 type ProtectedSettingsChange = (action: () => void | Promise<void>) => Promise<boolean>
+type PendingDocumentTemplateReplacement = {
+  templateId: DocumentTemplateId
+  templateLabel: string
+  currentTemplate: StoredDocumentTemplate
+  parsedTemplate: TemplateUploadInfo & { fileData: ArrayBuffer }
+  analysis: DocumentTemplateReplacementAnalysis
+}
 const DANGEROUS_SAVE_CHECK_SETTING_IDS = new Set<SaveCheckSettingId>([
   'manualJointName',
   'controlHistoryProtection',
@@ -1380,6 +1393,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const [nextDocumentNumber, setNextDocumentNumber] = useState<number | null>(null)
   const [isResettingDocumentNumber, setIsResettingDocumentNumber] = useState(false)
   const [isUploadingTemplate, setIsUploadingTemplate] = useState(false)
+  const [pendingTemplateReplacement, setPendingTemplateReplacement] =
+    useState<PendingDocumentTemplateReplacement | null>(null)
   const templateFileInputRef = useRef<HTMLInputElement>(null)
   const templateFileMenuRef = useRef<HTMLDetailsElement>(null)
   const confirmAction = useConfirmAction()
@@ -1450,25 +1465,53 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     event.target.value = ''
     if (!file) return
 
-    if (activeUpload) {
-      const confirmed = await confirmAction({
-        title: `Заменить шаблон «${activeTemplate.label}»?`,
-        itemName: `${activeUpload.fileName} → ${file.name}`,
-        description:
-          'Новый файл станет общим шаблоном для всех пользователей. Данные стыков, история документов и правила формирования не изменятся.',
-        warning:
-          'Настройки ячеек конструктора будут сброшены, потому что в новом Excel могут отличаться листы, строки и адреса ячеек. После замены потребуется заново открыть конструктор и проверить заполнение.',
-        confirmLabel: 'Заменить шаблон',
-        tone: 'danger',
-      })
-      if (!confirmed) return
-    }
-
     setUploadError(null)
     setIsUploadingTemplate(true)
     try {
       const parsedTemplate = await parseDocumentTemplateFile(file)
-      const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate)
+      if (activeUpload) {
+        const analysis = await analyzeDocumentTemplateReplacement(activeUpload, parsedTemplate)
+        if (analysis.status === 'incompatible') {
+          setPendingTemplateReplacement({
+            templateId: activeTemplateId,
+            templateLabel: activeTemplate.label,
+            currentTemplate: activeUpload,
+            parsedTemplate,
+            analysis,
+          })
+          return
+        }
+
+        const mappingDescription =
+          analysis.status === 'adjusted'
+            ? `Настройки будут перенесены на лист «${analysis.targetSheetName}» со сдвигом строк ${formatTemplateOffset(analysis.rowOffset)} и столбцов ${formatTemplateOffset(analysis.columnOffset)}.`
+            : analysis.bindingCount > 0
+              ? `Все назначения конструктора сохранены: ${analysis.retainedBindingCount} из ${analysis.bindingCount}.`
+              : 'У текущего шаблона нет назначений ячеек, поэтому перенос не требуется.'
+        const confirmed = await confirmAction({
+          title: `Заменить шаблон «${activeTemplate.label}»?`,
+          itemName: `${activeUpload.fileName} → ${file.name}`,
+          description:
+            'Система проверила листы, назначенные ячейки, повторяемый блок и объединения. Новый файл станет активным только после успешного сохранения.',
+          warning: mappingDescription,
+          confirmLabel: 'Заменить шаблон',
+          tone: 'warning',
+        })
+        if (!confirmed) return
+
+        const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate, {
+          constructorConfig: analysis.constructorConfig,
+        })
+        setUploads((currentUploads) => ({
+          ...currentUploads,
+          [activeTemplateId]: savedTemplate,
+        }))
+        return
+      }
+
+      const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate, {
+        constructorConfig: null,
+      })
       setUploads((currentUploads) => ({
         ...currentUploads,
         [activeTemplateId]: savedTemplate,
@@ -1478,6 +1521,47 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     } finally {
       setIsUploadingTemplate(false)
     }
+  }
+
+  const savePendingTemplateReplacement = async (
+    constructorConfig: DocumentTemplateConstructorConfig | null,
+  ) => {
+    const pending = pendingTemplateReplacement
+    if (!pending) return
+    setUploadError(null)
+    setIsUploadingTemplate(true)
+    try {
+      const savedTemplate = await saveDocumentTemplate(
+        pending.templateId,
+        pending.parsedTemplate,
+        { constructorConfig },
+      )
+      setUploads((currentUploads) => ({
+        ...currentUploads,
+        [pending.templateId]: savedTemplate,
+      }))
+      setPendingTemplateReplacement(null)
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Не удалось заменить шаблон.')
+    } finally {
+      setIsUploadingTemplate(false)
+    }
+  }
+
+  const handleResetConstructorAndReplace = async () => {
+    const pending = pendingTemplateReplacement
+    if (!pending) return
+    const confirmed = await confirmAction({
+      title: `Сбросить конструктор «${pending.templateLabel}»?`,
+      itemName: `${pending.currentTemplate.fileName} → ${pending.parsedTemplate.fileName}`,
+      description:
+        'Новый файл будет сохранен, но все назначения ячеек и повторяемого блока этого шаблона удалятся.',
+      warning:
+        'Используйте этот вариант только если структура Excel действительно создана заново и перенос старых адресов не нужен.',
+      confirmLabel: 'Заменить и сбросить',
+      tone: 'danger',
+    })
+    if (confirmed) await savePendingTemplateReplacement(null)
   }
 
   const handleDocumentOptionChange = async (
@@ -1804,8 +1888,221 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           }}
         />
       ) : null}
+      {pendingTemplateReplacement ? (
+        <DocumentTemplateReplacementDialog
+          replacement={pendingTemplateReplacement}
+          isSaving={isUploadingTemplate}
+          onClose={() => setPendingTemplateReplacement(null)}
+          onApply={(constructorConfig) => void savePendingTemplateReplacement(constructorConfig)}
+          onReset={() => void handleResetConstructorAndReplace()}
+        />
+      ) : null}
     </div>
   )
+}
+
+function DocumentTemplateReplacementDialog({
+  replacement,
+  isSaving,
+  onClose,
+  onApply,
+  onReset,
+}: {
+  replacement: PendingDocumentTemplateReplacement
+  isSaving: boolean
+  onClose: () => void
+  onApply: (constructorConfig: DocumentTemplateConstructorConfig) => void
+  onReset: () => void
+}) {
+  const [sheetName, setSheetName] = useState(
+    replacement.analysis.targetSheetName
+      ?? replacement.analysis.candidateSheetNames[0]
+      ?? '',
+  )
+  const [rowOffset, setRowOffset] = useState(replacement.analysis.rowOffset)
+  const [columnOffset, setColumnOffset] = useState(replacement.analysis.columnOffset)
+  const [analysis, setAnalysis] = useState(replacement.analysis)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [mappingDirty, setMappingDirty] = useState(false)
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || isSaving) return
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [isSaving, onClose])
+
+  const checkMapping = async () => {
+    setIsAnalyzing(true)
+    try {
+      const nextAnalysis = await analyzeDocumentTemplateReplacement(
+        replacement.currentTemplate,
+        replacement.parsedTemplate,
+        {
+          sheetName,
+          rowOffset,
+          columnOffset,
+        },
+      )
+      setAnalysis(nextAnalysis)
+      setMappingDirty(false)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  const canApply =
+    !isSaving
+    && !isAnalyzing
+    && !mappingDirty
+    && analysis.status !== 'incompatible'
+    && Boolean(analysis.constructorConfig)
+
+  return (
+    <LargeDialogShell
+      maxWidthClassName="max-w-[820px]"
+      maxHeightClassName="max-h-[90vh]"
+      overlayClassName="z-[150] bg-slate-950/35"
+      panelRadiusClassName="rounded-lg"
+      panelClassName="overflow-hidden"
+    >
+      <DialogHeader
+        title={`Проверить перенос конструктора «${replacement.templateLabel}»`}
+        subtitle={`${replacement.currentTemplate.fileName} → ${replacement.parsedTemplate.fileName}`}
+        onClose={() => {
+          if (!isSaving) onClose()
+        }}
+      />
+
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+          Новый Excel пока не активен. Система обнаружила структурные отличия и не будет удалять старый шаблон,
+          пока перенос не пройдет проверку или вы явно не выберете сброс конструктора.
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_150px_auto] sm:items-end">
+          <label className="space-y-1.5">
+            <span className="block text-xs font-semibold uppercase text-slate-500">Лист нового Excel</span>
+            <select
+              value={sheetName}
+              onChange={(event) => {
+                setSheetName(event.target.value)
+                setMappingDirty(true)
+              }}
+              className="h-10 w-full rounded-md border-slate-200 bg-white py-1 pl-3 pr-8 text-sm text-slate-800"
+            >
+              {analysis.candidateSheetNames.map((candidateSheetName) => (
+                <option key={candidateSheetName} value={candidateSheetName}>{candidateSheetName}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-xs font-semibold uppercase text-slate-500">Сдвиг строк</span>
+            <input
+              type="number"
+              value={rowOffset}
+              onChange={(event) => {
+                setRowOffset(Number(event.target.value) || 0)
+                setMappingDirty(true)
+              }}
+              className="h-10 w-full rounded-md border-slate-200 bg-white px-3 text-sm text-slate-800"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-xs font-semibold uppercase text-slate-500">Сдвиг столбцов</span>
+            <input
+              type="number"
+              value={columnOffset}
+              onChange={(event) => {
+                setColumnOffset(Number(event.target.value) || 0)
+                setMappingDirty(true)
+              }}
+              className="h-10 w-full rounded-md border-slate-200 bg-white px-3 text-sm text-slate-800"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={isAnalyzing || isSaving || !sheetName}
+            onClick={() => void checkMapping()}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 text-sm font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
+            Проверить
+          </button>
+        </div>
+
+        <div className={`rounded-md border px-4 py-3 ${
+          analysis.status === 'incompatible' || mappingDirty
+            ? 'border-rose-200 bg-rose-50'
+            : 'border-emerald-200 bg-emerald-50'
+        }`}>
+          <div className={`text-sm font-semibold ${
+            analysis.status === 'incompatible' || mappingDirty
+              ? 'text-rose-900'
+              : 'text-emerald-900'
+          }`}>
+            {mappingDirty
+              ? 'Параметры изменены. Нажмите «Проверить».'
+              : analysis.status === 'incompatible'
+                ? `Перенесено назначений: ${analysis.retainedBindingCount} из ${analysis.bindingCount}`
+                : `Все назначения сохранены: ${analysis.retainedBindingCount} из ${analysis.bindingCount}`}
+          </div>
+          {!mappingDirty && analysis.issues.length > 0 ? (
+            <ul className="mt-2 space-y-1.5 text-sm leading-5 text-rose-700">
+              {analysis.issues.map((issue) => (
+                <li key={`${issue.code}:${issue.message}`}>• {issue.message}</li>
+              ))}
+            </ul>
+          ) : null}
+          {!mappingDirty && analysis.status !== 'incompatible' ? (
+            <p className="mt-1 text-sm leading-5 text-emerald-700">
+              Лист, назначения ячеек, повторяемый блок и объединения совместимы.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex flex-col-reverse gap-3 border-t border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          disabled={isSaving}
+          onClick={onReset}
+          className="inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+        >
+          Заменить без настроек
+        </button>
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={onClose}
+            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            disabled={!canApply}
+            onClick={() => {
+              if (analysis.constructorConfig) onApply(analysis.constructorConfig)
+            }}
+            className="rounded-md border border-sky-700 bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-500"
+          >
+            {isSaving ? 'Сохраняю...' : 'Перенести и заменить'}
+          </button>
+        </div>
+      </div>
+    </LargeDialogShell>
+  )
+}
+
+function formatTemplateOffset(value: number) {
+  if (value > 0) return `+${value}`
+  return String(value)
 }
 
 function WeldingJournalTemplateOptionsPanel({

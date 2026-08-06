@@ -176,11 +176,16 @@ function getOfficialStampJointDimensions(record: WeldInput) {
         thicknesses: toUniqueNumbers([thicknesses[smallerMaterialIndex]]),
       }
     }
+
+    return {
+      diameters: toUniqueNumbers(diameters),
+      thicknesses: toUniqueNumbers(thicknesses),
+    }
   }
 
   return {
-    diameters: toUniqueNumbers(diameters),
-    thicknesses: toUniqueNumbers(thicknesses),
+    diameters: toMaximumNumber(diameters),
+    thicknesses: toMaximumNumber(thicknesses),
   }
 }
 
@@ -201,4 +206,9 @@ function getSmallerDiameterMaterialIndex(diameters: readonly [number | null, num
 
 function toUniqueNumbers(values: readonly (number | null)[]) {
   return [...new Set(values.filter((value): value is number => value !== null))]
+}
+
+function toMaximumNumber(values: readonly (number | null)[]) {
+  const numbers = values.filter((value): value is number => value !== null)
+  return numbers.length > 0 ? [Math.max(...numbers)] : []
 }

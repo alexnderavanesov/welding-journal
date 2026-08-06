@@ -431,6 +431,51 @@ describe('buildVisibleDispatcherTasks', () => {
 
     expect(tasks.repeatedJointTasks).toEqual([])
   })
+
+  it('does not create DZ-18 when maximum diameter and thickness are covered independently', () => {
+    const stamp = stampRecordWithPermit('AAAA', 'M01')
+    stamp.naksPermits = [
+      {
+        id: 'naks-max-dt',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '100',
+        diameterTo: '150',
+        thicknessFrom: '10',
+        thicknessTo: '15',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      },
+    ]
+
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1A',
+            connectionType: 'С18',
+            materialGroup: 'M01',
+            stamp1K: 'AAAA',
+            weldingMethod: 'РАД',
+            d1: '99',
+            d2: '105',
+            t1: '10',
+            t2: '12',
+            weldDate: '20.07.2026',
+          }),
+        ],
+        welderStamps: [stamp],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toEqual([])
+  })
 })
 
 function buildTasks(
