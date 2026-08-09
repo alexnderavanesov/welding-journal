@@ -88,6 +88,11 @@ describe('weld field order', () => {
     expect(EXCEL_FIELDS.some((field) => field.key === 'zniDocument')).toBe(false)
   })
 
+  it('keeps virtual RK exposure state and its hidden metadata outside Excel imports', () => {
+    expect(EXCEL_FIELDS.some((field) => field.key === 'rkExposureScheme')).toBe(false)
+    expect(EXCEL_FIELDS.some((field) => field.key === 'rkExposureConfirmedDiameter')).toBe(false)
+  })
+
   it('shows welding materials and technology card only in the welding journal', () => {
     const expectedFieldKeys = [
       'technologyCardNumber',
@@ -199,6 +204,8 @@ describe('weld field order', () => {
       'Дата ВИК',
       'Заключение РК',
       'Дата РК',
+      'Снимки (координаты мерного пояса)',
+      'Описание дефектов РК',
       'Заключение УЗК',
       'Дата УЗК',
       'Заключение ПВК',
@@ -211,7 +218,6 @@ describe('weld field order', () => {
       'Дата СТЛС',
       'Заключение МКК',
       'Дата МКК',
-      'Описание дефектов',
       'Примечание ЛНК',
     ])
   })

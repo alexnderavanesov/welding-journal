@@ -23,6 +23,12 @@ import {
   isSystemDocumentType,
   type SystemDocumentType,
 } from '@/lib/system-document-types'
+import {
+  SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
+  getSystemDocumentTemplateId,
+  isSystemDocumentTemplateId,
+  type SystemDocumentTemplateId,
+} from '@/lib/system-document-template-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type SystemDocumentSequenceUpdate = {
@@ -60,15 +66,22 @@ const SYSTEM_DOCUMENT_SEQUENCE_SELECT = {
 export const getSystemDocumentSequences = createServerFn({ method: 'GET' }).handler(async () => {
   const db = requireDb()
   const stored = await readStoredSequenceNumbers(db)
-  const needsInitialValues = SYSTEM_DOCUMENT_TYPES.some((type) => stored[type] === null)
+  const needsInitialValues = SYSTEM_DOCUMENT_TEMPLATE_PROFILES.some(
+    (profile) => stored[profile.id] === null,
+  )
   const initial = needsInitialValues ? await readInitialSequenceNumbers(db) : null
   return Object.fromEntries(
-    SYSTEM_DOCUMENT_TYPES.map((type) => [type, stored[type] ?? initial?.[type] ?? 1]),
-  ) as Record<SystemDocumentType, number>
+    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => [
+      profile.id,
+      stored[profile.id] ?? initial?.[profile.id] ?? 1,
+    ]),
+  ) as Record<SystemDocumentTemplateId, number>
 })
 
 export const getSystemDocumentSequence = createServerFn({ method: 'GET' })
-  .validator((data: { type: SystemDocumentType }) => ({ type: requireSystemDocumentType(data?.type) }))
+  .validator((data: { type: SystemDocumentTemplateId }) => ({
+    type: requireSystemDocumentTemplateId(data?.type),
+  }))
   .handler(async ({ data }) => {
     const db = requireDb()
     return {
@@ -78,7 +91,9 @@ export const getSystemDocumentSequence = createServerFn({ method: 'GET' })
   })
 
 export const resetSystemDocumentSequence = createServerFn({ method: 'POST' })
-  .validator((data: { type: SystemDocumentType }) => ({ type: requireSystemDocumentType(data?.type) }))
+  .validator((data: { type: SystemDocumentTemplateId }) => ({
+    type: requireSystemDocumentTemplateId(data?.type),
+  }))
   .handler(async ({ data }) => {
     const db = requireDb()
     await db.transaction(async (tx) => {
@@ -128,13 +143,37 @@ export function normalizeSystemDocumentSequenceUpdate(
   }
 }
 
+export function getInitialSystemDocumentSequenceNumbers(
+  weldRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
+  settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+) {
+  const summariesByType = new Map(
+    SYSTEM_DOCUMENT_TYPES.map((type) => [
+      type,
+      buildSystemDocumentSummaries(weldRows, type),
+    ] as const),
+  )
+  return Object.fromEntries(
+    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => {
+      const maxNumber = (summariesByType.get(profile.documentType) ?? [])
+        .filter((reference) => getSystemDocumentTemplateId(reference) === profile.id)
+        .reduce((currentMax, reference) => {
+          const number = Number(getSystemDocumentNumber(reference, settings))
+          return Number.isInteger(number) ? Math.max(currentMax, number) : currentMax
+        }, 0)
+      return [profile.id, maxNumber + 1]
+    }),
+  ) as Record<SystemDocumentTemplateId, number>
+}
+
 export async function reserveSystemDocumentName(
   tx: SystemDocumentSequenceTransaction,
   rawRequest: SystemDocumentSequenceUpdate,
   rows: Array<Partial<Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>>> = [],
 ) {
   const request = normalizeSystemDocumentSequenceUpdate(rawRequest)
-  await lockSystemDocumentNumberCounter(tx, request.type)
+  const sequenceId = getSystemDocumentTemplateId(request)
+  await lockSystemDocumentNumberCounter(tx, sequenceId)
   const settings = await readRequestConclusionSettings(tx)
   const pattern = settings[request.type].systemPattern
   if (!hasSystemDocumentNumberField(pattern)) {
@@ -143,7 +182,7 @@ export async function reserveSystemDocumentName(
     )
   }
   const context = createNamingContext(request, rows)
-  let number = await readSystemDocumentNextNumber(tx, request.type)
+  let number = await readSystemDocumentNextNumber(tx, sequenceId)
   let name = buildSystemNameWithNumber(pattern, context, number)
 
   while (number < 1_000_000 && await systemDocumentNameExists(tx, request, name)) {
@@ -151,50 +190,47 @@ export async function reserveSystemDocumentName(
     name = buildSystemNameWithNumber(pattern, context, number)
   }
 
-  await writeSystemDocumentNextNumber(tx, request.type, number + 1)
+  await writeSystemDocumentNextNumber(tx, sequenceId, number + 1)
   return { name, number, request }
 }
 
 async function readSystemDocumentNextNumber(
   db: Pick<Db, 'select'>,
-  type: SystemDocumentType,
+  sequenceId: SystemDocumentTemplateId,
 ) {
   const [setting] = await db
     .select({ value: appSettings.value })
     .from(appSettings)
-    .where(eq(appSettings.key, systemDocumentCounterKey(type)))
+    .where(eq(appSettings.key, systemDocumentCounterKey(sequenceId)))
     .limit(1)
   const stored = parsePositiveIntegerSetting(setting?.value)
   if (stored) return stored
   const initial = await readInitialSequenceNumbers(db)
-  return initial[type]
+  return initial[sequenceId]
 }
 
 async function readStoredSequenceNumbers(db: Pick<Db, 'select'>) {
-  const keys = SYSTEM_DOCUMENT_TYPES.map(systemDocumentCounterKey)
+  const keys = SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) =>
+    systemDocumentCounterKey(profile.id),
+  )
   const settings = await db
     .select({ key: appSettings.key, value: appSettings.value })
     .from(appSettings)
     .where(inArray(appSettings.key, keys))
   const values = new Map(settings.map((setting) => [setting.key, parsePositiveIntegerSetting(setting.value)]))
   return Object.fromEntries(
-    SYSTEM_DOCUMENT_TYPES.map((type) => [type, values.get(systemDocumentCounterKey(type)) ?? null]),
-  ) as Record<SystemDocumentType, number | null>
+    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => [
+      profile.id,
+      values.get(systemDocumentCounterKey(profile.id)) ?? null,
+    ]),
+  ) as Record<SystemDocumentTemplateId, number | null>
 }
 
 async function readInitialSequenceNumbers(db: Pick<Db, 'select'>) {
   const rows = await db.select(SYSTEM_DOCUMENT_SEQUENCE_SELECT).from(weldJoints)
   const settings = await readRequestConclusionSettings(db)
   const weldRows = rows as unknown as Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>
-  return Object.fromEntries(
-    SYSTEM_DOCUMENT_TYPES.map((type) => {
-      const maxNumber = buildSystemDocumentSummaries(weldRows, type).reduce((currentMax, reference) => {
-        const number = Number(getSystemDocumentNumber(reference, settings))
-        return Number.isInteger(number) ? Math.max(currentMax, number) : currentMax
-      }, 0)
-      return [type, maxNumber + 1]
-    }),
-  ) as Record<SystemDocumentType, number>
+  return getInitialSystemDocumentSequenceNumbers(weldRows, settings)
 }
 
 async function readRequestConclusionSettings(db: Pick<Db, 'select'>): Promise<RequestConclusionSettings> {
@@ -213,20 +249,22 @@ async function readRequestConclusionSettings(db: Pick<Db, 'select'>): Promise<Re
 
 async function lockSystemDocumentNumberCounter(
   tx: Pick<SystemDocumentSequenceTransaction, 'execute'>,
-  type: SystemDocumentType,
+  sequenceId: SystemDocumentTemplateId,
 ) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${systemDocumentCounterKey(type)}))`)
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${systemDocumentCounterKey(sequenceId)}))`,
+  )
 }
 
 async function writeSystemDocumentNextNumber(
   tx: Pick<SystemDocumentSequenceTransaction, 'insert'>,
-  type: SystemDocumentType,
+  sequenceId: SystemDocumentTemplateId,
   nextNumber: number,
 ) {
   const value = JSON.stringify(Math.max(1, Math.floor(nextNumber)))
   await tx
     .insert(appSettings)
-    .values({ key: systemDocumentCounterKey(type), value })
+    .values({ key: systemDocumentCounterKey(sequenceId), value })
     .onConflictDoUpdate({
       target: appSettings.key,
       set: { value, updatedAt: sql`now()` },
@@ -280,8 +318,8 @@ function dateEquals(column: SQLWrapper, value: string) {
   return sql`coalesce(${column}::text, '') = ${value}`
 }
 
-function systemDocumentCounterKey(type: SystemDocumentType) {
-  return `system-document-next-number:${type}`
+function systemDocumentCounterKey(sequenceId: SystemDocumentTemplateId) {
+  return `system-document-next-number:${sequenceId}`
 }
 
 function parsePositiveIntegerSetting(value: string | undefined) {
@@ -296,5 +334,12 @@ function parsePositiveIntegerSetting(value: string | undefined) {
 
 function requireSystemDocumentType(value: unknown): SystemDocumentType {
   if (!isSystemDocumentType(value)) throw new Error('Неизвестный тип системного документа.')
+  return value
+}
+
+function requireSystemDocumentTemplateId(value: unknown): SystemDocumentTemplateId {
+  if (!isSystemDocumentTemplateId(value)) {
+    throw new Error('Неизвестный счетчик системного документа.')
+  }
   return value
 }

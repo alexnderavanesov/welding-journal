@@ -8,28 +8,45 @@ import {
 import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import { hasText } from '@/lib/report-value-utils'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { loadOtherSettings } from '@/lib/other-settings'
+import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
+import type { RkExposureTableSettings } from '@/lib/other-settings'
 
 export function buildLnkResultCorrectionRow({
   record,
   methodKey,
   result,
+  rkExposureTable: suppliedRkExposureTable,
 }: {
   record: RowWithId
   methodKey: WeldFieldKey
   result: string | null
+  rkExposureTable?: RkExposureTableSettings | null
 }) {
   const saveCheckSettings = loadSaveCheckSettings()
+  const rkExposureTable = suppliedRkExposureTable === undefined
+    ? loadOtherSettings().rkExposureTable
+    : suppliedRkExposureTable
   const method = getLnkMethodByRequestKey(methodKey)
   if (!method) throw new Error('Выберите метод контроля')
   if (result) assertValidLnkResultValue(result)
   assertLnkRepairAllowed(record, result, saveCheckSettings)
+  const exposureRecord = method.code === 'РК'
+    ? applyRkExposureResultTransition(record, result, rkExposureTable)
+    : record
   const proposedRecord = {
     ...record,
     [method.resultKey]: result,
     [method.conclusionDateKey]: result ? record[method.conclusionDateKey] : null,
     [method.conclusionKey]: result ? record[method.conclusionKey] : null,
+    ...(method.code === 'РК'
+      ? {
+          lnkDefectDescription: exposureRecord.lnkDefectDescription,
+          rkExposureConfirmedDiameter: exposureRecord.rkExposureConfirmedDiameter,
+        }
+      : {}),
   } as RowWithId
   const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
   assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)
@@ -38,10 +55,15 @@ export function buildLnkResultCorrectionRow({
 
 export function buildLnkResultReplacementRows({
   updates,
+  rkExposureTable: suppliedRkExposureTable,
 }: {
   updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string }>
+  rkExposureTable?: RkExposureTableSettings | null
 }) {
   const saveCheckSettings = loadSaveCheckSettings()
+  const rkExposureTable = suppliedRkExposureTable === undefined
+    ? loadOtherSettings().rkExposureTable
+    : suppliedRkExposureTable
   const updatedById = new Map<number, RowWithId>()
   for (const { record, methodKey, result } of updates) {
     const method = getLnkMethodByRequestKey(methodKey)
@@ -49,9 +71,18 @@ export function buildLnkResultReplacementRows({
     assertValidLnkResultValue(result)
     assertLnkRepairAllowed(record, result, saveCheckSettings)
     const currentRecord = updatedById.get(record.id) ?? record
+    const exposureRecord = method.code === 'РК'
+      ? applyRkExposureResultTransition(currentRecord, result, rkExposureTable)
+      : currentRecord
     updatedById.set(record.id, {
       ...currentRecord,
       [method.resultKey]: result,
+      ...(method.code === 'РК'
+        ? {
+            lnkDefectDescription: exposureRecord.lnkDefectDescription,
+            rkExposureConfirmedDiameter: exposureRecord.rkExposureConfirmedDiameter,
+          }
+        : {}),
     } as RowWithId)
   }
   const proposedRecords = [...updatedById.values()].map((record) => withTouchedLnkFinalStatus(record))

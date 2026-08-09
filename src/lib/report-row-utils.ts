@@ -58,6 +58,28 @@ export function sortRowsByPreservedOrder(rows: WeldRow[], preservedIds: number[]
   })
 }
 
+export function pinInitiallySelectedRows<T extends { id: number }>(
+  rows: readonly T[],
+  selectedIds: ReadonlySet<number>,
+  initiallySelectedIds: ReadonlySet<number>,
+) {
+  if (rows.length === 0 || initiallySelectedIds.size === 0) return [...rows]
+
+  const pinnedIds = new Set<number>()
+  initiallySelectedIds.forEach((id) => {
+    if (selectedIds.has(id)) pinnedIds.add(id)
+  })
+  if (pinnedIds.size === 0) return [...rows]
+
+  const pinnedRows: T[] = []
+  const remainingRows: T[] = []
+  rows.forEach((row) => {
+    if (pinnedIds.has(row.id)) pinnedRows.push(row)
+    else remainingRows.push(row)
+  })
+  return [...pinnedRows, ...remainingRows]
+}
+
 export function compareHeatTreatmentReportRows(left: WeldRow, right: WeldRow) {
   const leftTime = parseReportTimestamp(left.pstoCreatedAt)
   const rightTime = parseReportTimestamp(right.pstoCreatedAt)

@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import type { ActiveReport, EditingState, HeatTreatmentFieldEditingState } from '@/lib/home-state'
+import type { ActiveReport, EditingState, HeatTreatmentFieldEditingState, RkExposureEditingState } from '@/lib/home-state'
 import type { PageScrollPosition } from '@/lib/page-scroll-position'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { isLnkRequestAllowedForRow, isLnkRequestField, isLnkResultField } from '@/lib/lnk-field-updates'
@@ -34,6 +34,7 @@ type UseReportEditActionsParams = {
   rows: WeldRow[]
   setEditing: Dispatch<SetStateAction<EditingState | null>>
   setHeatTreatmentFieldEditing: Dispatch<SetStateAction<HeatTreatmentFieldEditingState | null>>
+  setRkExposureEditing: Dispatch<SetStateAction<RkExposureEditingState | null>>
   setMessage: Dispatch<SetStateAction<string | null>>
 }
 
@@ -46,6 +47,7 @@ export function useReportEditActions({
   rows,
   setEditing,
   setHeatTreatmentFieldEditing,
+  setRkExposureEditing,
   setMessage,
 }: UseReportEditActionsParams) {
   function handleEditRecord(
@@ -69,6 +71,15 @@ export function useReportEditActions({
 
     if (activeReport === 'lnk') {
       if (focusField && LNK_EDITABLE_FIELD_KEYS.has(focusField)) {
+        if (focusField === 'rkExposureScheme' || focusField === 'lnkDefectDescription') {
+          const rkResult = String(record.rkResult ?? '').trim().toLocaleLowerCase('ru')
+          if (rkResult !== 'годен' && rkResult !== 'ремонт' && rkResult !== 'вырез') {
+            setMessage('Сначала внесите действующий результат РК: годен, ремонт или вырез')
+            return
+          }
+          setRkExposureEditing({ record, returnPageScrollPosition })
+          return
+        }
         if (isLnkRequestField(focusField) && !isLnkRequestAllowedForRow(record, focusField)) {
           setMessage('Сначала укажите назначение этого вида контроля в сварочном журнале')
           return

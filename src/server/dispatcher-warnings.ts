@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asc, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { dispatcherAcceptedWarnings, type DispatcherAcceptedWarning } from '@/db/schema'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
@@ -22,12 +22,6 @@ const toPayload = (row: DispatcherAcceptedWarning): DispatcherAcceptedWarningPay
   kind: row.kind,
   title: row.title ?? '',
   acceptedAt: row.acceptedAt.toISOString(),
-})
-
-export const listDispatcherAcceptedWarnings = createServerFn({ method: 'GET' }).handler(async () => {
-  const db = requireDb()
-  const rows = await db.select().from(dispatcherAcceptedWarnings).orderBy(asc(dispatcherAcceptedWarnings.acceptedAt))
-  return rows.map(toPayload)
 })
 
 export const acceptDispatcherWarning = createServerFn({ method: 'POST' })

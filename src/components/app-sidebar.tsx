@@ -11,6 +11,8 @@ import {
   Settings,
   Stamp,
 } from 'lucide-react'
+import { useLayoutEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import type { ActiveReport } from '@/lib/home-state'
 
@@ -36,14 +38,68 @@ const sidebarItems: Array<{
 ]
 
 export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {
+  const sidebarRef = useRef<HTMLElement>(null)
   const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }
   const guideItem = { report: 'userGuide' as const, label: 'Руководство пользователя', icon: BookOpenText }
+  const itemClassName = (isActive: boolean, muted = false) =>
+    `flex items-center gap-2 rounded-md text-left text-sm font-medium transition-colors ${
+      isActive
+        ? muted
+          ? 'bg-slate-100 text-slate-950'
+          : 'bg-primary text-primary-foreground'
+        : muted
+          ? 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+    } ${collapsed ? 'mx-auto h-10 w-10 shrink-0 justify-center p-0' : 'w-full px-3 py-2'}`
 
-  return (
+  useLayoutEffect(() => {
+    const sidebar = sidebarRef.current
+    if (!sidebar) return
+
+    let correction = Number.parseFloat(sidebar.style.getPropertyValue('--sidebar-viewport-x')) || 0
+    let frameId: number | null = null
+    let delayedAlignmentId: number | null = null
+
+    const alignToViewport = () => {
+      frameId = null
+      if (sidebar.scrollLeft !== 0) sidebar.scrollLeft = 0
+      const nextCorrection = getSidebarViewportCorrection(correction, sidebar.getBoundingClientRect().left)
+      if (Math.abs(nextCorrection - correction) < 0.5) return
+      correction = nextCorrection
+      sidebar.style.setProperty('--sidebar-viewport-x', `${correction}px`)
+    }
+
+    const scheduleAlignment = () => {
+      if (frameId !== null) return
+      frameId = window.requestAnimationFrame(alignToViewport)
+    }
+
+    alignToViewport()
+    window.addEventListener('scroll', scheduleAlignment, { passive: true })
+    window.addEventListener('resize', scheduleAlignment)
+    window.visualViewport?.addEventListener('scroll', scheduleAlignment, { passive: true })
+    window.visualViewport?.addEventListener('resize', scheduleAlignment)
+    sidebar.addEventListener('scroll', scheduleAlignment, { passive: true })
+    delayedAlignmentId = window.setTimeout(scheduleAlignment, 300)
+    return () => {
+      window.removeEventListener('scroll', scheduleAlignment)
+      window.removeEventListener('resize', scheduleAlignment)
+      window.visualViewport?.removeEventListener('scroll', scheduleAlignment)
+      window.visualViewport?.removeEventListener('resize', scheduleAlignment)
+      sidebar.removeEventListener('scroll', scheduleAlignment)
+      if (frameId !== null) window.cancelAnimationFrame(frameId)
+      if (delayedAlignmentId !== null) window.clearTimeout(delayedAlignmentId)
+    }
+  }, [activeReport, collapsed])
+
+  const sidebar = (
     <aside
-      className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-slate-100 bg-white px-3 py-5 transition-[width] duration-200 ${
+      ref={sidebarRef}
+      className={`fixed inset-y-0 left-0 z-30 flex h-screen flex-col overflow-x-clip border-r border-slate-100 bg-white px-3 py-5 transition-[width] duration-200 [backface-visibility:hidden] ${
         collapsed ? 'w-16' : 'w-48 lg:w-64 lg:px-4'
       }`}
+      data-app-sidebar="true"
+      style={{ transform: 'translate3d(var(--sidebar-viewport-x, 0px), 0, 0)' }}
     >
       <div className={`mb-3 flex items-start ${collapsed ? 'justify-center [&>div]:sr-only' : 'justify-between gap-3'}`}>
         <div className="text-lg font-semibold tracking-tight">Сварка</div>
@@ -65,9 +121,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
           return (
             <button
               key={item.report}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-                isActive ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-              } ${collapsed ? 'justify-center px-0' : ''}`}
+              className={itemClassName(isActive)}
               onClick={() => onReportChange(item.report)}
               title={item.label}
             >
@@ -84,9 +138,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
           return (
             <button
               key={settingsItem.report}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-                isActive ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-              } ${collapsed ? 'justify-center px-0' : ''}`}
+              className={itemClassName(isActive)}
               onClick={() => onReportChange(settingsItem.report)}
               title={settingsItem.label}
             >
@@ -101,9 +153,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
           return (
             <button
               key={guideItem.report}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-                isActive ? 'bg-slate-100 text-slate-950' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
-              } ${collapsed ? 'justify-center px-0' : ''}`}
+              className={itemClassName(isActive, true)}
               onClick={() => onReportChange(guideItem.report)}
               title={guideItem.label}
             >
@@ -115,4 +165,10 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
       </nav>
     </aside>
   )
+
+  return typeof document === 'undefined' ? sidebar : createPortal(sidebar, document.body)
+}
+
+export function getSidebarViewportCorrection(currentCorrection: number, renderedLeft: number) {
+  return currentCorrection - renderedLeft
 }

@@ -11,7 +11,14 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is not configured')
 }
 
-const pool = new pg.Pool({ connectionString })
+const configuredPoolMax = Number(process.env.DATABASE_POOL_MAX)
+const pool = new pg.Pool({
+  connectionString,
+  max: Number.isInteger(configuredPoolMax) && configuredPoolMax > 0 ? configuredPoolMax : 5,
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 30_000,
+  allowExitOnIdle: true,
+})
 
 export const db = drizzle(pool, { schema })
 

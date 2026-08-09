@@ -7,8 +7,6 @@ import {
 } from '@/lib/weld-fields'
 import { createZip } from '@/lib/weld-export-zip'
 import { escapeXml, getExportColumnWidth, normalizeSheetName } from '@/lib/weld-export-utils'
-import type { ActiveReport } from '@/lib/home-state'
-import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import { LNK_REQUEST_DATE_FIELD_KEYS } from '@/lib/report-config'
 import {
   hasHeatTreatmentReportState,
@@ -22,6 +20,7 @@ import { isSystemWdiMode } from '@/lib/wdi'
 
 export type ImportTemplateCellKind = 'free' | 'checked' | 'ignored'
 export type ReportImportMode = 'newRecords' | 'massFill' | 'replaceData'
+export type ImportableReport = 'weldingJournal'
 
 export const MASS_FILL_ROW_ID_HEADER = 'ID записи'
 export const REPLACE_DELETE_ROW_HEADER = 'Удалить строку'
@@ -75,6 +74,8 @@ const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
   'mkkConclusionDate',
   'mkkConclusion',
   'lnkDefectDescription',
+  'rkExposureScheme',
+  'rkExposureConfirmedDiameter',
   'lnkNote',
 ])
 
@@ -131,64 +132,42 @@ const PREVIEW_FIELD_KEYS = [
 
 const REPORT_SPECIFIC_NOTE_FIELD_KEYS = new Set<WeldFieldKey>(['pstoNote', 'lnkNote'])
 
-export function getReportImportTemplateFields(activeReport: ActiveReport) {
-  const visibleImportFields = VISIBLE_FIELDS.filter(
+export function getReportImportTemplateFields(_activeReport: ImportableReport) {
+  return VISIBLE_FIELDS.filter(
     (field) =>
       field.key !== 'id' &&
       !isVirtualWeldField(field),
   )
-  if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
-    const options = getReportImportFieldKeys(activeReport)
-    if (!options) return visibleImportFields
-    const allowedKeys = new Set([...options.matchFieldKeys, ...options.editableFieldKeys])
-    return visibleImportFields.filter((field) => allowedKeys.has(field.key))
-  }
-  return visibleImportFields
 }
 
-export function getReportImportPreviewFields(activeReport: ActiveReport) {
+export function getReportImportPreviewFields(activeReport: ImportableReport) {
   const fields = getReportImportTemplateFields(activeReport)
-  if (activeReport === 'weldingJournal') {
-    const priority = PREVIEW_FIELD_KEYS.map((key) => FIELD_BY_KEY.get(key)).filter(Boolean) as WeldField[]
-    return priority.filter((field) => fields.some((candidate) => candidate.key === field.key))
-  }
-  return fields.slice(0, 12)
+  const priority = PREVIEW_FIELD_KEYS.map((key) => FIELD_BY_KEY.get(key)).filter(Boolean) as WeldField[]
+  return priority.filter((field) => fields.some((candidate) => candidate.key === field.key))
 }
 
-export function getReportImportCellKind(activeReport: ActiveReport, fieldKey: string): ImportTemplateCellKind {
+export function getReportImportCellKind(activeReport: ImportableReport, fieldKey: string): ImportTemplateCellKind {
   if (fieldKey === 'id' || isVirtualWeldField(FIELD_BY_KEY.get(fieldKey as WeldFieldKey))) return 'ignored'
-  if (activeReport === 'weldingJournal') {
-    if (WELD_IMPORT_IGNORED_FIELD_KEYS.has(fieldKey)) return 'ignored'
-    if (isDynamicSystemImportField(activeReport, fieldKey)) return 'ignored'
-    if (WELD_IMPORT_CHECKED_FIELD_KEYS.has(fieldKey)) return 'checked'
-    return 'free'
-  }
-
-  const options = getReportImportFieldKeys(activeReport)
-  if (!options) return 'free'
-  if (options.matchFieldKeys.has(fieldKey as WeldFieldKey)) return 'checked'
+  if (WELD_IMPORT_IGNORED_FIELD_KEYS.has(fieldKey)) return 'ignored'
+  if (isDynamicSystemImportField(activeReport, fieldKey)) return 'ignored'
+  if (WELD_IMPORT_CHECKED_FIELD_KEYS.has(fieldKey)) return 'checked'
   return 'free'
 }
 
-export function getReportImportIgnoredFieldKeys(activeReport: ActiveReport) {
-  if (activeReport === 'weldingJournal') {
-    if (!isSystemWdiMode(loadOtherSettings())) return WELD_IMPORT_IGNORED_FIELD_KEYS
-    return new Set([...WELD_IMPORT_IGNORED_FIELD_KEYS, 'wdi'])
-  }
-  return new Set<string>()
+export function getReportImportIgnoredFieldKeys(_activeReport: ImportableReport) {
+  if (!isSystemWdiMode(loadOtherSettings())) return WELD_IMPORT_IGNORED_FIELD_KEYS
+  return new Set([...WELD_IMPORT_IGNORED_FIELD_KEYS, 'wdi'])
 }
 
-export function getReportImportCheckedFieldKeys(activeReport: ActiveReport) {
-  if (activeReport === 'weldingJournal') return WELD_IMPORT_CHECKED_FIELD_KEYS
-  const options = getReportImportFieldKeys(activeReport)
-  return options ? options.matchFieldKeys : new Set<string>()
+export function getReportImportCheckedFieldKeys(_activeReport: ImportableReport) {
+  return WELD_IMPORT_CHECKED_FIELD_KEYS
 }
 
-function isDynamicSystemImportField(activeReport: ActiveReport, fieldKey: string) {
-  return activeReport === 'weldingJournal' && fieldKey === 'wdi' && isSystemWdiMode(loadOtherSettings())
+function isDynamicSystemImportField(_activeReport: ImportableReport, fieldKey: string) {
+  return fieldKey === 'wdi' && isSystemWdiMode(loadOtherSettings())
 }
 
-export function stripIgnoredImportFields(record: WeldInput, activeReport: ActiveReport) {
+export function stripIgnoredImportFields(record: WeldInput, activeReport: ImportableReport) {
   const ignoredKeys = getReportImportIgnoredFieldKeys(activeReport)
   if (ignoredKeys.size === 0) return record
   const nextRecord = { ...record }
@@ -202,7 +181,7 @@ export function isExistingRowsImportLockedField(field: WeldField) {
   return EXISTING_ROWS_IMPORT_LOCKED_FIELD_KEYS.has(field.key)
 }
 
-export function buildImportTemplateXlsxBytes(activeReport: ActiveReport) {
+export function buildImportTemplateXlsxBytes(activeReport: ImportableReport) {
   const fields = getReportImportTemplateFields(activeReport)
   const sheetName = normalizeSheetName(getReportImportTemplateSheetName(activeReport))
   const rowCount = 60
@@ -221,15 +200,15 @@ export function buildImportTemplateXlsxBytes(activeReport: ActiveReport) {
   ])
 }
 
-export function buildMassFillTemplateXlsxBytes(activeReport: ActiveReport, records: readonly WeldRow[]) {
+export function buildMassFillTemplateXlsxBytes(activeReport: ImportableReport, records: readonly WeldRow[]) {
   return buildExistingRowsTemplateXlsxBytes(activeReport, records, 'massFill')
 }
 
-export function buildReplaceDataTemplateXlsxBytes(activeReport: ActiveReport, records: readonly WeldRow[]) {
+export function buildReplaceDataTemplateXlsxBytes(activeReport: ImportableReport, records: readonly WeldRow[]) {
   return buildExistingRowsTemplateXlsxBytes(activeReport, records, 'replaceData')
 }
 
-function buildExistingRowsTemplateXlsxBytes(activeReport: ActiveReport, records: readonly WeldRow[], mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
+function buildExistingRowsTemplateXlsxBytes(activeReport: ImportableReport, records: readonly WeldRow[], mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
   const fields = getReportImportTemplateFields(activeReport)
   const sheetName = normalizeSheetName(getExistingRowsTemplateSheetName(activeReport, mode))
   const serviceFields =
@@ -259,38 +238,26 @@ function buildExistingRowsTemplateXlsxBytes(activeReport: ActiveReport, records:
   ])
 }
 
-export function getReportImportTemplateFilename(activeReport: ActiveReport) {
-  if (activeReport === 'heatTreatment') return 'Шаблон импорта ПСТО.xlsx'
-  if (activeReport === 'lnk') return 'Шаблон импорта ЛНК.xlsx'
+export function getReportImportTemplateFilename(_activeReport: ImportableReport) {
   return 'Шаблон импорта сварочного журнала.xlsx'
 }
 
-export function getMassFillTemplateFilename(activeReport: ActiveReport) {
-  if (activeReport === 'heatTreatment') return 'Шаблон массового заполнения ПСТО.xlsx'
-  if (activeReport === 'lnk') return 'Шаблон массового заполнения ЛНК.xlsx'
+export function getMassFillTemplateFilename(_activeReport: ImportableReport) {
   return 'Шаблон массового заполнения сварочного журнала.xlsx'
 }
 
-export function getReplaceDataTemplateFilename(activeReport: ActiveReport) {
-  if (activeReport === 'heatTreatment') return 'Шаблон замены данных ПСТО.xlsx'
-  if (activeReport === 'lnk') return 'Шаблон замены данных ЛНК.xlsx'
+export function getReplaceDataTemplateFilename(_activeReport: ImportableReport) {
   return 'Шаблон замены данных сварочного журнала.xlsx'
 }
 
-function getReportImportTemplateSheetName(activeReport: ActiveReport) {
-  if (activeReport === 'heatTreatment') return 'Импорт ПСТО'
-  if (activeReport === 'lnk') return 'Импорт ЛНК'
+function getReportImportTemplateSheetName(_activeReport: ImportableReport) {
   return 'Импорт сварочного журнала'
 }
 
-function getExistingRowsTemplateSheetName(activeReport: ActiveReport, mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
+function getExistingRowsTemplateSheetName(_activeReport: ImportableReport, mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
   if (mode === 'replaceData') {
-    if (activeReport === 'heatTreatment') return 'Замена ПСТО'
-    if (activeReport === 'lnk') return 'Замена ЛНК'
     return 'Замена данных'
   }
-  if (activeReport === 'heatTreatment') return 'Заполнение ПСТО'
-  if (activeReport === 'lnk') return 'Заполнение ЛНК'
   return 'Заполнение журнала'
 }
 
@@ -357,7 +324,7 @@ function buildTemplateStylesXml() {
 </styleSheet>`
 }
 
-function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField[], activeReport: ActiveReport) {
+function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField[], activeReport: ImportableReport) {
   const cols = fields
     .map((field, index) => {
       const column = index + 1
@@ -390,7 +357,7 @@ function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField
 function buildExistingRowsWorksheetXml(
   rows: unknown[][],
   fields: readonly WeldField[],
-  activeReport: ActiveReport,
+  activeReport: ImportableReport,
   records: readonly WeldRow[],
   mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>,
 ) {
@@ -452,7 +419,7 @@ function encodeCellRef(rowIndex: number, columnIndex: number) {
   return `${columnName}${rowIndex + 1}`
 }
 
-function getTemplateStyleId(activeReport: ActiveReport, fieldKey?: string) {
+function getTemplateStyleId(activeReport: ImportableReport, fieldKey?: string) {
   if (!fieldKey) return 0
   const kind = getReportImportCellKind(activeReport, fieldKey)
   if (kind === 'ignored') return 2
@@ -465,14 +432,14 @@ function getTemplateHeaderStyleId() {
 }
 
 function getExistingRowsBodyStyleId(
-  activeReport: ActiveReport,
+  activeReport: ImportableReport,
   field?: WeldField,
   record?: WeldRow | null,
   mode: Extract<ReportImportMode, 'massFill' | 'replaceData'> = 'massFill',
 ) {
   if (!field || !record) return 2
   if (isExistingRowsImportLockedField(field)) return 2
-  if (activeReport === 'weldingJournal' && isReportSpecificNoteField(field.key)) {
+  if (isReportSpecificNoteField(field.key)) {
     if (!canEditReportSpecificNote(record, field.key)) return 2
     return mode === 'massFill' && hasMassFillValue(record[field.key as keyof WeldInput]) ? 2 : 0
   }
@@ -481,17 +448,17 @@ function getExistingRowsBodyStyleId(
   return getTemplateStyleId(activeReport, field.key)
 }
 
-export function isMassFillFieldLocked(activeReport: ActiveReport, field: WeldField, record: WeldInput) {
+export function isMassFillFieldLocked(activeReport: ImportableReport, field: WeldField, record: WeldInput) {
   if (isExistingRowsImportLockedField(field)) return true
-  if (activeReport === 'weldingJournal' && isReportSpecificNoteField(field.key)) {
+  if (isReportSpecificNoteField(field.key)) {
     return !canEditReportSpecificNote(record, field.key) || hasMassFillValue(record[field.key as keyof WeldInput])
   }
   if (isSystemImportField(activeReport, field)) return true
   return hasMassFillValue(record[field.key as keyof WeldInput])
 }
 
-export function isSystemImportField(activeReport: ActiveReport, field: WeldField, record?: WeldInput | null) {
-  if (activeReport === 'weldingJournal' && isReportSpecificNoteField(field.key)) {
+export function isSystemImportField(activeReport: ImportableReport, field: WeldField, record?: WeldInput | null) {
+  if (isReportSpecificNoteField(field.key)) {
     return !record || !canEditReportSpecificNote(record, field.key)
   }
   return getReportImportCellKind(activeReport, field.key) === 'ignored'

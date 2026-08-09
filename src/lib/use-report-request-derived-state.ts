@@ -25,6 +25,8 @@ import {
 import type { LnkRequestDraftState, LnkResultDraftState, PstoResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
   loadSystemDocumentSequences,
@@ -173,9 +175,23 @@ export function useReportRequestDerivedState({
       managedLnkRequestRows,
     ],
   )
+  const lnkConclusionSequenceId = useMemo(() => {
+    const method = LNK_METHODS.find(
+      (candidate) => candidate.requestKey === lnkResultDraft.methodKey,
+    )
+    return method
+      ? getSystemDocumentTemplateId({
+          type: 'lnkConclusion',
+          methodCode: method.code,
+        })
+      : null
+  }, [lnkResultDraft.methodKey])
+  const nextLnkConclusionNumber = lnkConclusionSequenceId
+    ? systemDocumentSequences?.[lnkConclusionSequenceId]
+    : undefined
   const nextLnkConclusionName = useMemo(
-    () => (enableLnkResultState ? getNextLnkConclusionName(lnkResultSelectedRows, lnkResultDraft, requestConclusionSettings, systemDocumentSequences?.lnkConclusion) : ''),
-    [enableLnkResultState, lnkResultDraft, lnkResultSelectedRows, requestConclusionSettings, systemDocumentSequences?.lnkConclusion],
+    () => (enableLnkResultState ? getNextLnkConclusionName(lnkResultSelectedRows, lnkResultDraft, requestConclusionSettings, nextLnkConclusionNumber) : ''),
+    [enableLnkResultState, lnkResultDraft, lnkResultSelectedRows, nextLnkConclusionNumber, requestConclusionSettings],
   )
   const nextPstoDiagramName = useMemo(
     () => (enablePstoResultState ? getNextPstoDiagramName(pstoResultSelectedRows, pstoResultDraft, requestConclusionSettings, systemDocumentSequences?.pstoConclusion) : ''),

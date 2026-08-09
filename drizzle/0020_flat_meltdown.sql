@@ -1,0 +1,3 @@
+CREATE INDEX "weld_joints_journal_order_idx" ON "weld_joints" USING btree ("created_at" DESC NULLS LAST,"weld_date" DESC NULLS LAST,"line","joint");--> statement-breakpoint
+CREATE INDEX "weld_joints_lnk_order_idx" ON "weld_joints" USING btree ("lnk_created_at" DESC NULLS LAST,"line","spool","joint");--> statement-breakpoint
+CREATE INDEX "weld_joints_psto_order_idx" ON "weld_joints" USING btree ("psto_created_at" DESC NULLS LAST,"line","spool","joint");

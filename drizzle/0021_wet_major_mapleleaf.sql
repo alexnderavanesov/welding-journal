@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joints" ADD COLUMN "rk_exposure_confirmed_diameter" numeric(12, 3);

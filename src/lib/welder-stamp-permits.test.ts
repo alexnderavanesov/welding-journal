@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateDlsPermit } from '@/lib/welder-stamp-permits'
+import { validateDlsPermit, validateNaksPermit } from '@/lib/welder-stamp-permits'
 import type { WelderStampDlsPermit, WelderStampNaksPermit } from '@/lib/welder-stamp-types'
 
 const baseNaks: WelderStampNaksPermit = {
@@ -112,5 +112,17 @@ describe('DLS cumulative NAKS coverage', () => {
     ]
 
     expect(validateDlsPermit(baseDls, 0, permits)).toContain('не покрыт совокупностью НАКС')
+  })
+})
+
+describe('welder stamp permit date boundary', () => {
+  it('allows a permit starting on 01.01.2023', () => {
+    expect(validateNaksPermit({ ...baseNaks, validFrom: '2023-01-01' }, 0)).toBe('')
+  })
+
+  it('rejects a permit starting before 01.01.2023', () => {
+    expect(validateNaksPermit({ ...baseNaks, validFrom: '2022-12-31' }, 0)).toBe(
+      'НАКС 1: срок действия от не может быть раньше 01.01.2023.',
+    )
   })
 })

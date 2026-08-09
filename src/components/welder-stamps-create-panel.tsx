@@ -16,6 +16,7 @@ import {
   getWelderStampNameSyncHint,
   normalizeNaksStamp,
 } from '@/lib/welder-stamp-registry'
+import { WELDER_STAMP_MIN_ALLOWED_DATE_ISO } from '@/lib/welder-stamp-date-limits'
 import type { WelderStampDlsPermit, WelderStampNaksPermit, WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type WelderStampsCreatePanelProps = {
@@ -303,6 +304,7 @@ export function WelderStampsCreatePanel({
               <span>Архивировано с</span>
               <Input
                 type="date"
+                min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
                 value={draft.archivedAt ?? ''}
                 onChange={(event) => onDraftChange('archivedAt', event.target.value)}
                 required
@@ -673,7 +675,12 @@ function DateField({ label, value, onChange }: { label: string; value: string; o
   return (
     <label className="space-y-1.5 text-sm font-medium text-slate-700">
       <span>{label}</span>
-      <Input type="date" value={value} onChange={(event) => onChange(event.target.value)} />
+      <Input
+        type="date"
+        min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </label>
   )
 }

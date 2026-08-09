@@ -13,7 +13,6 @@ import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
-import { useDispatcherTasks } from '@/lib/use-dispatcher-tasks'
 import { useDispatcherTaskSnapshot } from '@/lib/use-dispatcher-task-snapshot'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
@@ -46,7 +45,6 @@ import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
 import { useReportPageUiState } from '@/lib/use-report-page-ui-state'
 import { useReportImportMutations } from '@/lib/use-report-import-mutations'
-import { useReportImportActions } from '@/lib/use-report-import-actions'
 import { useReportChangeActions } from '@/lib/use-report-change-actions'
 import { usePstoReportMutations } from '@/lib/use-psto-report-mutations'
 import { usePstoReportActions } from '@/lib/use-psto-report-actions'
@@ -90,7 +88,7 @@ import {
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
 import { canCreatePstoRequest } from '@/lib/psto-status'
-import { canCreateLnkRequest } from '@/lib/report-control-state'
+import { canCreateLnkRequest, withOfficialJointStatus } from '@/lib/report-control-state'
 import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
 import {
   getLnkRequestDocumentIdentities,
@@ -121,10 +119,9 @@ import {
   useRequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import { getWeldJointById, listWeldJointRowsByIds } from '@/server/welds'
-import { openGeneratedDocumentForRow } from '@/lib/welding-journal-document'
-import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/generated-document-storage'
-import { loadSystemDocumentRows, openSystemDocumentForRow } from '@/lib/system-document-storage'
+import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
+import { useRkExposureMutation } from '@/lib/use-rk-exposure-mutation'
 import {
   getSystemDocumentReferenceForField,
   type SystemDocumentReference,
@@ -134,7 +131,6 @@ import {
 export function useHomePageController() {
   const queryClient = useQueryClient()
   const saveCheckSettings = useSaveCheckSettings()
-  const availableSystemDocumentTypes = useSystemDocumentTemplateAvailability()
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [systemDocumentNavigationRequest, setSystemDocumentNavigationRequest] =
     useState<SystemDocumentNavigationRequest | null>(null)
@@ -157,15 +153,20 @@ export function useHomePageController() {
     setLnkFilters,
     setNavCollapsed,
   } = useReportFilterState()
+  const availableSystemDocumentTypes = useSystemDocumentTemplateAvailability({
+    enabled: activeReport === 'lnk' || activeReport === 'heatTreatment',
+  })
   const {
     editing,
     chainRecord,
     heatTreatmentFieldEditing,
+    rkExposureEditing,
     message,
     lnkNotice,
     setEditing,
     setChainRecord,
     setHeatTreatmentFieldEditing,
+    setRkExposureEditing,
     setMessage,
     setLnkNotice,
   } = useReportPageUiState()
@@ -175,6 +176,11 @@ export function useHomePageController() {
     highlightChangedRows,
     replayLatestHighlight,
   } = useReportHighlights()
+  const rkExposureMutation = useRkExposureMutation({
+    setMessage,
+    setEditing: setRkExposureEditing,
+    highlightChangedRows,
+  })
   const {
     selectedHeatTreatmentIds,
     selectedLnkIds,
@@ -300,7 +306,7 @@ export function useHomePageController() {
     setExpandedRepeatedJointTaskKeys,
     toggleRepeatedJointTaskDetails,
   } = useDispatcherTaskUiState()
-  const { acceptedDispatcherWarningKeys, acceptDispatcherTaskWarning } = useDispatcherAcceptedWarnings({ setMessage })
+  const { acceptDispatcherTaskWarning } = useDispatcherAcceptedWarnings({ setMessage })
   const {
     welderStamps,
     welderStampSuspensions,
@@ -332,6 +338,7 @@ export function useHomePageController() {
   } = useWelderStampRegistryState({ setMessage })
   const isReportModalOpen =
     isImportDialogOpen ||
+    Boolean(rkExposureEditing) ||
     getReportModalOpenState({
       isPstoRequestModalOpen,
       isPstoRequestManagerOpen,
@@ -371,6 +378,7 @@ export function useHomePageController() {
     replayLatestHighlight,
     resetWelderStampForm,
     setHeatTreatmentFieldEditing,
+    setRkExposureEditing,
     setIsLnkRequestModalOpen,
     setIsLnkResultModalOpen,
     setIsLnkResultPreviewOpen,
@@ -404,6 +412,7 @@ export function useHomePageController() {
   const shouldLoadFullWeldRows =
     Boolean(editing) ||
     Boolean(heatTreatmentFieldEditing) ||
+    Boolean(rkExposureEditing) ||
     Boolean(documentGenerationRequest) ||
     isReportModalOpen ||
     isWeldingJournalGenerateMenuOpen ||
@@ -421,23 +430,6 @@ export function useHomePageController() {
 
   const rows = useReportRows(weldsQuery.data, duplicateControls)
   const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
-  const {
-    dispatcherTaskRowIds,
-    repeatedJointTaskGroups,
-    repeatedJointTasks,
-    welderStampExpiryTasks,
-    welderStampNotificationGroups,
-  } = useDispatcherTasks({
-    acceptedDispatcherWarningKeys,
-    activeReport,
-    dismissedRepeatedJointTaskKeys,
-    includeRepeatedJointTasks: false,
-    includeWelderStampExpiryTasks: false,
-    rows,
-    setExpandedRepeatedJointTaskKeys,
-    welderStamps,
-    welderStampSuspensions,
-  })
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
     enabled: isServerPagedTab || activeReport === 'welderStamps',
@@ -445,20 +437,36 @@ export function useHomePageController() {
   const tableDuplicateKeys = isServerPagedTab && dispatcherTaskSnapshot.data
     ? dispatcherTaskSnapshot.duplicateKeys
     : undefined
-  const visibleRepeatedJointTasks = isServerPagedTab && dispatcherTaskSnapshot.data
+  const visibleRepeatedJointTasks = isServerPagedTab
     ? dispatcherTaskSnapshot.repeatedJointTasks
-    : repeatedJointTasks
-  const visibleRepeatedJointTaskGroups = isServerPagedTab && dispatcherTaskSnapshot.data
+    : []
+  const visibleRepeatedJointTaskGroups = isServerPagedTab
     ? dispatcherTaskSnapshot.repeatedJointTaskGroups
-    : repeatedJointTaskGroups
+    : []
   const visibleWelderStampExpiryTasks =
-    activeReport === 'welderStamps' && dispatcherTaskSnapshot.data
+    activeReport === 'welderStamps'
       ? dispatcherTaskSnapshot.welderStampExpiryTasks
-      : welderStampExpiryTasks
+      : []
   const visibleWelderStampNotificationGroups =
-    activeReport === 'welderStamps' && dispatcherTaskSnapshot.data
+    activeReport === 'welderStamps'
       ? dispatcherTaskSnapshot.welderStampNotificationGroups
-      : welderStampNotificationGroups
+      : []
+  useEffect(() => {
+    const visibleTasks =
+      activeReport === 'welderStamps'
+        ? visibleWelderStampExpiryTasks
+        : visibleRepeatedJointTasks
+    const visibleKeys = new Set(visibleTasks.map((task) => task.key))
+    setExpandedRepeatedJointTaskKeys((current) => {
+      const next = new Set([...current].filter((key) => visibleKeys.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [
+    activeReport,
+    setExpandedRepeatedJointTaskKeys,
+    visibleRepeatedJointTasks,
+    visibleWelderStampExpiryTasks,
+  ])
 
   const enablePstoRequestState =
     activeReport === 'heatTreatment' ||
@@ -674,12 +682,8 @@ export function useHomePageController() {
     setMessage,
   })
 
-  const { heatTreatmentImportMutation, lnkImportMutation, weldMassFillMutation, weldReplaceDataMutation } = useReportImportMutations({
+  const { weldMassFillMutation, weldReplaceDataMutation } = useReportImportMutations({
     rows,
-    heatTreatmentRows,
-    lnkRows,
-    pstoRequestOptions,
-    lnkRequestOptions,
     setMessage,
     highlightChangedRows,
   })
@@ -723,6 +727,7 @@ export function useHomePageController() {
     rows,
     setEditing,
     setHeatTreatmentFieldEditing,
+    setRkExposureEditing,
     setMessage,
   })
   const {
@@ -925,25 +930,23 @@ export function useHomePageController() {
   const pagedReportRows = basePagedReportRows
   const tableDispatcherTaskRowIds = useMemo(
     () =>
-      isServerPagedTab
-        ? new Set(
-            pagedReportRows
-              .filter((row) => String(row.dispatcherTasks ?? '').trim())
-              .map((row) => row.id),
-          )
-        : dispatcherTaskRowIds,
-    [dispatcherTaskRowIds, isServerPagedTab, pagedReportRows],
+      new Set(
+        pagedReportRows
+          .filter((row) => String(row.dispatcherTasks ?? '').trim())
+          .map((row) => row.id),
+      ),
+    [pagedReportRows],
   )
   const dispatcherTaskFilterOptions = dispatcherTaskSnapshot.taskFilterOptions
   const tableActionRows = rows.length > 0 ? (visibleRows as WeldRow[]) : pagedReportRows
   useEffect(() => {
     const refreshDocumentAssignments = () => {
-      void weldsQuery.refetch()
+      if (shouldLoadFullWeldRows) void weldsQuery.refetch()
       if (isServerPagedTab) void weldPageQuery.refetch()
     }
     window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
     return () => window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
-  }, [isServerPagedTab, weldPageQuery.refetch, weldsQuery.refetch])
+  }, [isServerPagedTab, shouldLoadFullWeldRows, weldPageQuery.refetch, weldsQuery.refetch])
   const activeReportManualPagination = useMemo(
     () =>
       isServerPagedTab
@@ -1138,14 +1141,6 @@ export function useHomePageController() {
     setColumnFilters,
     setHeatTreatmentFilters,
     setLnkFilters,
-    setMessage,
-  })
-
-  const { handleImportRecords } = useReportImportActions({
-    activeReport,
-    heatTreatmentImportMutation,
-    lnkImportMutation,
-    importMutation,
     setMessage,
   })
 
@@ -1440,6 +1435,7 @@ export function useHomePageController() {
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
     isLnkResultManagerOpen,
+    isRkExposureModalOpen: Boolean(rkExposureEditing),
     isPstoResultModalOpen,
     isPstoRequestModalOpen,
     isLnkOfficialityModalOpen,
@@ -1454,11 +1450,13 @@ export function useHomePageController() {
       !lnkResultCorrectionMutation.isPending &&
       !lnkResultReplacementMutation.isPending &&
       !lnkConclusionCorrectionMutation.isPending,
+    canCloseRkExposureModal: !rkExposureMutation.isPending,
     onCloseLnkResultPreview: () => setIsLnkResultPreviewOpen(false),
     onClosePstoRequestManager: () => setIsPstoRequestManagerOpen(false),
     onClosePstoResultManager: () => setIsPstoResultManagerOpen(false),
     onCloseLnkRequestManager: () => setIsLnkRequestManagerOpen(false),
     onCloseLnkResultManager: closeLnkResultManager,
+    onCloseRkExposureModal: () => setRkExposureEditing(null),
     onClosePstoResultModal: closeAddPstoResultModal,
     onClosePstoRequestModal: closeCreatePstoRequestModal,
     onCloseLnkOfficialityModal: closeLnkOfficialityModal,
@@ -1582,6 +1580,7 @@ export function useHomePageController() {
   ) => {
     setMessage(`Загружаем стыки документа «${reference.title}»...`)
     try {
+      const { loadSystemDocumentRows } = await import('@/lib/system-document-storage')
       const documentRows = await loadSystemDocumentRows(reference)
       const rowIds = Array.from(new Set(documentRows.map((documentRow) => documentRow.id)))
         .filter(Number.isFinite)
@@ -2046,10 +2045,23 @@ export function useHomePageController() {
     onOpenChain: (row) => setChainRecord(row),
     onFilterLine: filterLineInCurrentReport,
     onOpenLinkedReport: openLinkedReportRow,
-    onOpenDocument: (row, fieldKey) =>
-      isGeneratedDocumentFieldKey(fieldKey)
-        ? openGeneratedDocumentForRow(row, fieldKey, welderStamps)
-        : openSystemDocumentForRow(row, fieldKey, welderStamps),
+    onOpenDocument: (row, fieldKey) => {
+      const previewWindow = openDocumentPreviewWindow()
+      if (!previewWindow) return
+      if (isGeneratedDocumentFieldKey(fieldKey)) {
+        void import('@/lib/welding-journal-document')
+          .then(({ openGeneratedDocumentForRow }) =>
+            openGeneratedDocumentForRow(row, fieldKey, welderStamps, previewWindow),
+          )
+          .catch((reason) => writeDocumentPreviewImportError(previewWindow, reason))
+        return
+      }
+      void import('@/lib/system-document-storage')
+        .then(({ openSystemDocumentForRow }) =>
+          openSystemDocumentForRow(row, fieldKey, welderStamps, previewWindow),
+        )
+        .catch((reason) => writeDocumentPreviewImportError(previewWindow, reason))
+    },
     availableSystemDocumentTypes,
     onOpenDuplicateControl: openDuplicateControlModalForRow,
     rowActionHandlers,
@@ -2097,7 +2109,7 @@ export function useHomePageController() {
     activeReport,
     onOpenImportDialog: () => setIsImportDialogOpen(true),
     onCreateWeldJoint: () => setEditing({ record: {} }),
-    importDisabled: importMutation.isPending || heatTreatmentImportMutation.isPending || lnkImportMutation.isPending,
+    importDisabled: importMutation.isPending,
     isWeldingJournalShowMenuOpen,
     onToggleWeldingJournalShowMenu: () => setIsWeldingJournalShowMenuOpen((current) => !current),
     isWeldingJournalGenerateMenuOpen,
@@ -2143,20 +2155,21 @@ export function useHomePageController() {
 
   const reportImportDialogProps = {
     open: isImportDialogOpen,
-    activeReport,
+    activeReport: 'weldingJournal' as const,
     isPending:
       importMutation.isPending ||
-      heatTreatmentImportMutation.isPending ||
-      lnkImportMutation.isPending ||
       weldMassFillMutation.isPending ||
       weldReplaceDataMutation.isPending,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
-    rows: activeReport === 'weldingJournal' ? filteredVisibleRows : (visibleRows as WeldRow[]),
+    rows: filteredVisibleRows,
     onClose: () => setIsImportDialogOpen(false),
     onImportRecords: (records: WeldInput[], skippedRows: number) =>
-      runProtectedEdit('импорт данных', () => handleImportRecords(records, skippedRows)),
+      runProtectedEdit('импорт данных', async () => {
+        const result = await importMutation.mutateAsync(records.map(withOfficialJointStatus))
+        setMessage(`Добавлено ${result.inserted}, пропущено служебных строк: ${skippedRows}`)
+      }),
     onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) =>
       runProtectedEdit('массовое заполнение данных', async () => {
         await weldMassFillMutation.mutateAsync({ records, skippedRows })
@@ -2326,6 +2339,25 @@ export function useHomePageController() {
     onClose: () => setHeatTreatmentFieldEditing(null),
     onSave: () => runProtectedEdit('сохранение поля отчета', saveEditedHeatTreatmentField),
   })
+  const reportRkExposureDialogProps = rkExposureEditing
+    ? {
+        editing: rkExposureEditing,
+        isSaving: rkExposureMutation.isPending,
+        onClose: () => setRkExposureEditing(null),
+        onSave: ({ lines, confirmedDiameter }: {
+          lines: import('@/lib/rk-exposure').RkExposureLine[]
+          confirmedDiameter: number | null
+        }) => {
+          void runProtectedEdit('сохранение снимков и описания РК', () => {
+            rkExposureMutation.mutate({
+              record: rkExposureEditing.record,
+              lines,
+              confirmedDiameter,
+            })
+          })
+        },
+      }
+    : null
   const reportPstoDialogsProps = createReportPstoDialogsProps({
     requestModalOpen: isPstoRequestModalOpen,
     request: {
@@ -2614,8 +2646,28 @@ export function useHomePageController() {
     reportPstoDialogsProps,
     reportLnkDialogsProps,
     reportFieldEditorProps,
+    reportRkExposureDialogProps,
     reportImportDialogProps,
   }
+}
+
+function openDocumentPreviewWindow() {
+  const previewWindow = window.open('', '_blank')
+  if (!previewWindow) {
+    window.alert('Браузер заблокировал открытие новой вкладки.')
+    return null
+  }
+  previewWindow.opener = null
+  previewWindow.document.title = 'Подготовка документа'
+  previewWindow.document.body.textContent = 'Подготавливаем документ...'
+  return previewWindow
+}
+
+function writeDocumentPreviewImportError(previewWindow: Window, reason: unknown) {
+  if (previewWindow.closed) return
+  previewWindow.document.title = 'Не удалось открыть документ'
+  previewWindow.document.body.textContent =
+    reason instanceof Error ? reason.message : 'Не удалось загрузить модуль документа.'
 }
 
 function filterDuplicateControlRows(rows: WeldRow[], search: string, _selectedIds: Set<number>) {

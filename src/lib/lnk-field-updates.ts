@@ -44,6 +44,10 @@ export function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: We
     nextRecord[requestMethod.requestDateKey] = null
     nextRecord[requestMethod.conclusionDateKey] = null
     nextRecord[requestMethod.conclusionKey] = null
+    if (requestMethod.code === 'РК') {
+      nextRecord.lnkDefectDescription = null
+      nextRecord.rkExposureConfirmedDiameter = null
+    }
   }
   return nextRecord as T
 }

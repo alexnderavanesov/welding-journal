@@ -92,7 +92,10 @@ export function useManagedLnkResultActions({
       return
     }
     const updates = buildManagedLnkResultReplacementUpdates(managedLnkPendingResultRows, managedLnkPendingResultChanges)
-    lnkResultReplacementMutation.mutate({ updates })
+    lnkResultReplacementMutation.mutate(
+      { updates },
+      { onSuccess: closeLnkResultManager },
+    )
   }
 
   async function clearLnkResult(row: RowWithId, methodKey: WeldFieldKey) {

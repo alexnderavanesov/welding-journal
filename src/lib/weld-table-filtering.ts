@@ -15,6 +15,7 @@ import {
   normalizeWeldColumnChoiceValue,
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-column-choice-filter'
+import { formatFinalStatusDisplay } from '@/lib/weld-status'
 
 export { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 
@@ -63,24 +64,27 @@ function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): W
     const choiceFilter = parseWeldColumnChoiceFilter(value)
     if (choiceFilter) {
       const normalizedValues = new Set(choiceFilter.values.map(normalizeWeldColumnChoiceValue))
-      return [(row: WeldRow) => normalizedValues.has(normalizeWeldColumnChoiceValue(getWeldColumnFilterCellText(row[key as keyof typeof row])))]
+      return [(row: WeldRow) => normalizedValues.has(normalizeWeldColumnChoiceValue(getWeldColumnFilterRowText(row, key)))]
     }
 
     if (query.startsWith('=')) {
       const expectedValue = query.slice(1).trim().replace(/^["']|["']$/g, '')
-      return [(row: WeldRow) => getNormalizedWeldColumnFilterCellText(row[key as keyof typeof row]) === expectedValue]
+      return [(row: WeldRow) => getWeldColumnFilterRowText(row, key).trim().toLowerCase() === expectedValue]
     }
 
-    return [(row: WeldRow) => getNormalizedWeldColumnFilterCellText(row[key as keyof typeof row]).includes(query)]
+    return [(row: WeldRow) => getWeldColumnFilterRowText(row, key).trim().toLowerCase().includes(query)]
   })
-}
-
-function getNormalizedWeldColumnFilterCellText(value: unknown) {
-  return getWeldColumnFilterCellText(value).trim().toLowerCase()
 }
 
 export function getWeldColumnFilterCellText(value: unknown) {
   return value === true ? 'да' : value === false || value == null ? '' : String(value)
+}
+
+export function getWeldColumnFilterRowText(row: WeldRow, fieldKey: string) {
+  const value = row[fieldKey as keyof WeldRow]
+  return fieldKey === 'finalStatus'
+    ? formatFinalStatusDisplay(row, value)
+    : getWeldColumnFilterCellText(value)
 }
 
 function matchesPercentageLineStampFilter(row: WeldRow, filter: ReturnType<typeof parsePercentageLineStampFilter>) {

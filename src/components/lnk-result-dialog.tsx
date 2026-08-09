@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
@@ -12,6 +12,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import { pinInitiallySelectedRows } from '@/lib/report-row-utils'
 import { usePagination } from '@/lib/use-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import {
@@ -86,12 +87,17 @@ export function LnkResultDialog({
   onOpenPreview,
   onSave,
 }: LnkResultDialogProps) {
+  const [initiallySelectedIds] = useState(() => new Set(draft.rowIds))
+  const orderedVisibleRows = useMemo(
+    () => pinInitiallySelectedRows(visibleRows, draft.rowIds, initiallySelectedIds),
+    [draft.rowIds, initiallySelectedIds, visibleRows],
+  )
   const paginationResetKeys = useMemo(
-    () => [draft.search, draft.requestName, draft.requestDate, draft.methodKey, requestSearch, visibleRows],
-    [draft.methodKey, draft.requestDate, draft.requestName, draft.search, requestSearch, visibleRows],
+    () => [draft.search, draft.requestName, draft.requestDate, draft.methodKey, requestSearch, orderedVisibleRows],
+    [draft.methodKey, draft.requestDate, draft.requestName, draft.search, orderedVisibleRows, requestSearch],
   )
   const rowsPagination = usePagination({
-    items: visibleRows,
+    items: orderedVisibleRows,
     defaultPageSize: 100,
     resetKeys: paginationResetKeys,
   })

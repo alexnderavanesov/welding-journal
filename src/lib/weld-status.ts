@@ -154,7 +154,7 @@ export function formatFinalStatusDisplay(record: WeldInput, value: unknown) {
         .map((control) => String(control.method ?? '').trim())
         .filter(Boolean),
     ),
-  )
+  ).sort((left, right) => left.localeCompare(right, 'ru', { numeric: true, sensitivity: 'base' }))
 
   return methods.length > 0 ? `${text} (${methods.join(', ')})` : text
 }

@@ -107,10 +107,16 @@ const suspensionToDbInsert = (record: WelderStampSuspensionPayload): NewWelderSt
   suspendedTo: textOrNull(record.suspendedTo),
 })
 
-export const listWelderStampRecords = createServerFn({ method: 'GET' }).handler(async () => {
+export const loadWelderStampRegistrySnapshot = createServerFn({ method: 'GET' }).handler(async () => {
   const db = requireDb()
-  const rows = await db.select().from(welderStamps).orderBy(asc(welderStamps.id))
-  return rows.map(toWelderStampPayload)
+  const [stampRows, suspensionRows] = await Promise.all([
+    db.select().from(welderStamps).orderBy(asc(welderStamps.id)),
+    db.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
+  ])
+  return {
+    stamps: stampRows.map(toWelderStampPayload),
+    suspensions: suspensionRows.map(suspensionToPayload),
+  }
 })
 
 export const saveWelderStampRecords = createServerFn({ method: 'POST' })
@@ -134,12 +140,6 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
       return rows.map(toWelderStampPayload)
     })
   })
-
-export const listWelderStampSuspensionRecords = createServerFn({ method: 'GET' }).handler(async () => {
-  const db = requireDb()
-  const rows = await db.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
-  return rows.map(suspensionToPayload)
-})
 
 export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' })
   .validator((data: { records: WelderStampSuspensionPayload[] }) => data)

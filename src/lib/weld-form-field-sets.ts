@@ -106,5 +106,7 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'mkkConclusionDate',
   'mkkConclusion',
   'lnkDefectDescription',
+  'rkExposureScheme',
+  'rkExposureConfirmedDiameter',
   'lnkNote',
 ])

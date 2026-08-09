@@ -4,9 +4,28 @@ import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import {
   getDispatcherLnkChronologyIssues,
   getLnkChronologyIssues,
+  getLnkResultRemovalBlockReason,
 } from '@/lib/lnk-chronology-checks'
 
 describe('getLnkChronologyIssues', () => {
+  it('explains why VIK cannot be removed while later NDT results exist', () => {
+    const row = {
+      joint: 'F1',
+      vikResult: 'годен',
+      rkResult: 'годен',
+      uzkResult: 'ремонт',
+    } as WeldInput
+
+    expect(getLnkResultRemovalBlockReason(row, 'vikRequest')).toBe(
+      'Результат ВИК нельзя удалить, пока сохранены результаты следующих видов НК: РК, УЗК. Сначала удалите их результаты.',
+    )
+    expect(getLnkResultRemovalBlockReason(row, 'rkRequest')).toBe('')
+    expect(getLnkResultRemovalBlockReason(row, 'vikRequest', {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      lnkResultVikRequiredBeforeOther: false,
+    })).toBe('')
+  })
+
   it('blocks a conclusion date before the LNK request date', () => {
     const issues = getLnkChronologyIssues([
       {

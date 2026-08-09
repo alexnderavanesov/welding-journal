@@ -54,7 +54,10 @@ export function ConfirmActionDialog({
       panelRadiusClassName="rounded-lg"
       panelClassName="overflow-hidden"
     >
-      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+      <div
+        data-confirm-action-dialog="true"
+        className="flex items-center justify-between border-b border-slate-200 px-6 py-5"
+      >
         <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
         <button
           type="button"

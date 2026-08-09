@@ -7,6 +7,7 @@ type ReportModalEscapeKeyOptions = {
   isPstoResultManagerOpen: boolean
   isLnkRequestManagerOpen: boolean
   isLnkResultManagerOpen: boolean
+  isRkExposureModalOpen: boolean
   isPstoResultModalOpen: boolean
   isPstoRequestModalOpen: boolean
   isLnkOfficialityModalOpen: boolean
@@ -18,11 +19,13 @@ type ReportModalEscapeKeyOptions = {
   canClosePstoResultManager: boolean
   canCloseLnkRequestManager: boolean
   canCloseLnkResultManager: boolean
+  canCloseRkExposureModal: boolean
   onCloseLnkResultPreview: () => void
   onClosePstoRequestManager: () => void
   onClosePstoResultManager: () => void
   onCloseLnkRequestManager: () => void
   onCloseLnkResultManager: () => void
+  onCloseRkExposureModal: () => void
   onClosePstoResultModal: () => void
   onClosePstoRequestModal: () => void
   onCloseLnkOfficialityModal: () => void
@@ -39,6 +42,7 @@ export function useReportModalEscapeKey({
   isPstoResultManagerOpen,
   isLnkRequestManagerOpen,
   isLnkResultManagerOpen,
+  isRkExposureModalOpen,
   isPstoResultModalOpen,
   isPstoRequestModalOpen,
   isLnkOfficialityModalOpen,
@@ -50,11 +54,13 @@ export function useReportModalEscapeKey({
   canClosePstoResultManager,
   canCloseLnkRequestManager,
   canCloseLnkResultManager,
+  canCloseRkExposureModal,
   onCloseLnkResultPreview,
   onClosePstoRequestManager,
   onClosePstoResultManager,
   onCloseLnkRequestManager,
   onCloseLnkResultManager,
+  onCloseRkExposureModal,
   onClosePstoResultModal,
   onClosePstoRequestModal,
   onCloseLnkOfficialityModal,
@@ -68,6 +74,7 @@ export function useReportModalEscapeKey({
 
     function handleReportModalKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
+      if (document.querySelector('[data-confirm-action-dialog="true"]')) return
       event.preventDefault()
       event.stopImmediatePropagation()
 
@@ -93,6 +100,10 @@ export function useReportModalEscapeKey({
       }
       if (isLnkResultManagerOpen) {
         if (canCloseLnkResultManager) onCloseLnkResultManager()
+        return
+      }
+      if (isRkExposureModalOpen) {
+        if (canCloseRkExposureModal) onCloseRkExposureModal()
         return
       }
       if (isPstoResultModalOpen) {
@@ -129,6 +140,7 @@ export function useReportModalEscapeKey({
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
     isLnkResultManagerOpen,
+    isRkExposureModalOpen,
     isPstoResultModalOpen,
     isPstoRequestModalOpen,
     isLnkOfficialityModalOpen,
@@ -140,11 +152,13 @@ export function useReportModalEscapeKey({
     canClosePstoResultManager,
     canCloseLnkRequestManager,
     canCloseLnkResultManager,
+    canCloseRkExposureModal,
     onCloseLnkResultPreview,
     onClosePstoRequestManager,
     onClosePstoResultManager,
     onCloseLnkRequestManager,
     onCloseLnkResultManager,
+    onCloseRkExposureModal,
     onClosePstoResultModal,
     onClosePstoRequestModal,
     onCloseLnkOfficialityModal,

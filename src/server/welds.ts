@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, asc, count, desc, eq, exists, getTableColumns, gt, gte, ilike, inArray, lte, notExists, notInArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
+  appSettings,
   duplicateControls,
   dispatcherRowTasks,
   generatedDocuments,
@@ -42,7 +43,7 @@ import {
   DISPATCHER_TASK_FILTER_KEY,
   parseDispatcherTaskServerFilter,
 } from '@/lib/dispatcher-task-row-codes'
-import { filterWeldRowsByColumns, getWeldColumnFilterCellText } from '@/lib/weld-table-filtering'
+import { filterWeldRowsByColumns, getWeldColumnFilterRowText } from '@/lib/weld-table-filtering'
 import { buildHeatTreatmentReportRows, buildLnkReportRows } from '@/lib/report-row-utils'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import {
@@ -53,6 +54,9 @@ import {
   parseRowIdListFilter,
 } from '@/lib/report-hidden-filters'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
+import { normalizeOtherSettings, type RkExposureTableSettings } from '@/lib/other-settings'
+import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import { getRkExposureSchemeState } from '@/lib/rk-exposure'
 import {
   ensureDispatcherTaskIndexFresh,
 } from '@/server/dispatcher-task-index'
@@ -194,6 +198,7 @@ const SYSTEM_FIELD_KEYS = new Set([
   'jsrDocument',
   'checklistDocument',
   'zniDocument',
+  'rkExposureScheme',
   'createdAt',
   'updatedAt',
 ])
@@ -217,6 +222,9 @@ const REPORT_DERIVED_FILTER_SELECT = {
   projectTitle: weldJoints.projectTitle,
   subtitleCode: weldJoints.subtitleCode,
   line: weldJoints.line,
+  connectionType: weldJoints.connectionType,
+  d1: weldJoints.d1,
+  d2: weldJoints.d2,
   spool: weldJoints.spool,
   joint: weldJoints.joint,
   status: weldJoints.status,
@@ -268,6 +276,8 @@ const REPORT_DERIVED_FILTER_SELECT = {
   rfaConclusion: weldJoints.rfaConclusion,
   stlsConclusion: weldJoints.stlsConclusion,
   mkkConclusion: weldJoints.mkkConclusion,
+  lnkDefectDescription: weldJoints.lnkDefectDescription,
+  rkExposureConfirmedDiameter: weldJoints.rkExposureConfirmedDiameter,
 }
 const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'id',
@@ -518,8 +528,9 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       .where(where)
       .orderBy(...getReportOrderBy(report))
     const sourceRowsWithControls = await attachDuplicateControlsToPage(sourceRows)
+    const reportRows = buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], report)
     const filteredRows = filterWeldRowsByColumns(
-      buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], report),
+      await attachRkExposureSchemeFilterValuesIfNeeded(reportRows, data.columnFilters),
       data.columnFilters,
     )
     const total = filteredRows.length
@@ -706,6 +717,43 @@ function buildServerReportRows(sourceRows: WeldJoint[], report: WeldReportKind) 
   const weldedRows = sourceRows.filter(hasWeldDate) as WeldRow[]
   if (report === 'heatTreatment') return buildHeatTreatmentReportRows(weldedRows) as WeldJoint[]
   return buildLnkReportRows(weldedRows) as WeldJoint[]
+}
+
+async function attachRkExposureSchemeFilterValuesIfNeeded<Row extends WeldRow>(
+  rows: Row[],
+  columnFilters: Record<string, string>,
+  optionFieldKey?: WeldFieldKey,
+) {
+  const needsRkExposureScheme =
+    optionFieldKey === 'rkExposureScheme' || Boolean(columnFilters.rkExposureScheme?.trim())
+  if (!needsRkExposureScheme) return rows
+
+  return attachRkExposureSchemeFilterValues(rows, await loadServerRkExposureTable())
+}
+
+export function attachRkExposureSchemeFilterValues<Row extends WeldRow>(
+  rows: Row[],
+  table: RkExposureTableSettings | null,
+): Row[] {
+  return rows.map((row) => ({
+    ...row,
+    rkExposureScheme: getRkExposureSchemeState(row, table).label,
+  }))
+}
+
+async function loadServerRkExposureTable() {
+  const [storedSettings] = await requireDb()
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, PROJECT_SETTING_KEYS.other))
+    .limit(1)
+  if (!storedSettings) return null
+
+  try {
+    return normalizeOtherSettings(JSON.parse(storedSettings.value)).rkExposureTable
+  } catch {
+    return null
+  }
 }
 
 async function getFullReportRowsByIds(ids: number[], report: Exclude<WeldReportKind, 'weldingJournal'>) {
@@ -972,8 +1020,9 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
       .where(where)
       .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
     const sourceRowsWithControls = await attachDuplicateControlsToPage(sourceRows)
+    const derivedRows = buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], data.report)
     const reportRows = filterWeldRowsByColumns(
-      buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], data.report),
+      await attachRkExposureSchemeFilterValuesIfNeeded(derivedRows, columnFilters, data.fieldKey),
       columnFilters,
     )
     return buildWeldColumnFilterOptionsFromRows(reportRows, data.fieldKey)
@@ -982,6 +1031,9 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
   const generatedDocumentType = GENERATED_DOCUMENT_FIELD_TYPES[data.fieldKey as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
   if (generatedDocumentType) {
     return listGeneratedDocumentColumnFilterOptions({ ...data, columnFilters }, generatedDocumentType)
+  }
+  if (data.fieldKey === 'finalStatus') {
+    return listFinalStatusColumnFilterOptions({ ...data, columnFilters })
   }
 
   const column = getWeldColumn(data.fieldKey)
@@ -993,6 +1045,44 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
     .select({ value: valueExpression, count: count() })
     .from(weldJoints)
     .where(where)
+    .groupBy(valueExpression)
+
+  return sortColumnFilterOptions(
+    rows.map((row) => ({
+      value: row.value,
+      count: row.count,
+      label: row.value || '(пусто)',
+    })),
+  )
+}
+
+async function listFinalStatusColumnFilterOptions(
+  data: ReturnType<typeof normalizeWeldColumnFilterOptionsRequest>,
+) {
+  const db = requireDb()
+  const rejectedDuplicateMethods = db
+    .select({
+      weldJointId: duplicateControls.weldJointId,
+      methods: sql<string>`string_agg(
+        distinct trim(${duplicateControls.method}),
+        ', ' order by trim(${duplicateControls.method})
+      )`.as('methods'),
+    })
+    .from(duplicateControls)
+    .where(inArray(duplicateControls.result, ['ремонт', 'вырез']))
+    .groupBy(duplicateControls.weldJointId)
+    .as('rejected_duplicate_methods')
+  const valueExpression = sql<string>`case
+    when lower(trim(coalesce(${weldJoints.finalStatus}, ''))) = 'не годен по дублю'
+      and coalesce(${rejectedDuplicateMethods.methods}, '') <> ''
+      then concat(${weldJoints.finalStatus}, ' (', ${rejectedDuplicateMethods.methods}, ')')
+    else coalesce(${weldJoints.finalStatus}, '')
+  end`
+  const rows = await db
+    .select({ value: valueExpression, count: count() })
+    .from(weldJoints)
+    .leftJoin(rejectedDuplicateMethods, eq(rejectedDuplicateMethods.weldJointId, weldJoints.id))
+    .where(buildWhere({ ...data, columnFilters: data.columnFilters }))
     .groupBy(valueExpression)
 
   return sortColumnFilterOptions(
@@ -1243,6 +1333,10 @@ function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, st
       clauses.push(buildGeneratedDocumentColumnWhere(query, generatedDocumentType))
       continue
     }
+    if (key === 'finalStatus') {
+      clauses.push(buildFinalStatusColumnWhere(query))
+      continue
+    }
     const column = getWeldColumn(key as WeldFieldKey)
     if (!column) continue
 
@@ -1379,6 +1473,74 @@ function getWeldColumn(fieldKey: WeldFieldKey) {
   return WELD_TABLE_COLUMNS[fieldKey as keyof typeof WELD_TABLE_COLUMNS]
 }
 
+function getWeldColumnFilterExpression(fieldKey: WeldFieldKey) {
+  if (fieldKey !== 'finalStatus') return getWeldColumn(fieldKey)
+
+  const rejectedDuplicateMethods = sql<string>`(
+    select string_agg(
+      distinct trim(${duplicateControls.method}),
+      ', ' order by trim(${duplicateControls.method})
+    )
+    from ${duplicateControls}
+    where ${duplicateControls.weldJointId} = ${weldJoints.id}
+      and ${duplicateControls.result} in ('ремонт', 'вырез')
+      and trim(${duplicateControls.method}) <> ''
+  )`
+
+  return sql<string>`case
+    when lower(trim(coalesce(${weldJoints.finalStatus}, ''))) = 'не годен по дублю'
+      then concat(
+        coalesce(${weldJoints.finalStatus}, ''),
+        nullif(concat(' (', ${rejectedDuplicateMethods}, ')'), ' ()')
+      )
+    else coalesce(${weldJoints.finalStatus}, '')
+  end`
+}
+
+function buildFinalStatusColumnWhere(query: string) {
+  const choiceFilter = parseWeldColumnChoiceFilter(query)
+  if (choiceFilter?.kind === 'values') {
+    return or(...choiceFilter.values.map(buildFinalStatusChoiceWhere)) ?? sql`false`
+  }
+  if (query.startsWith('=')) {
+    return buildFinalStatusChoiceWhere(query.slice(1).trim().replace(/^["']|["']$/g, ''))
+  }
+  return sql`coalesce(${getWeldColumnFilterExpression('finalStatus')}::text, '') ilike ${`%${query}%`}`
+}
+
+function buildFinalStatusChoiceWhere(value: string) {
+  const match = String(value ?? '').trim().match(/^не годен по дублю\s*\((.+)\)$/i)
+  if (!match) return buildColumnTextEqualsWhere(weldJoints.finalStatus, value)
+
+  const methods = Array.from(
+    new Set(
+      match[1]
+        .split(',')
+        .map((method) => method.trim())
+        .filter(Boolean),
+    ),
+  ).sort((left, right) => left.localeCompare(right, 'ru', { numeric: true, sensitivity: 'base' }))
+  if (methods.length === 0) return sql`false`
+  const expectedMethods = methods.join(', ')
+
+  return (
+    and(
+      buildColumnTextEqualsWhere(weldJoints.finalStatus, 'не годен по дублю'),
+      sql`${weldJoints.id} in (
+        select ${duplicateControls.weldJointId}
+        from ${duplicateControls}
+        where ${duplicateControls.result} in ('ремонт', 'вырез')
+          and trim(${duplicateControls.method}) <> ''
+        group by ${duplicateControls.weldJointId}
+        having lower(string_agg(
+          distinct trim(${duplicateControls.method}),
+          ', ' order by trim(${duplicateControls.method})
+        )) = lower(${expectedMethods})
+      )`,
+    ) ?? sql`false`
+  )
+}
+
 function buildColumnChoiceWhere(column: SQLWrapper, values: readonly string[]) {
   const normalizedValues = [...new Set(values.map((value) => String(value ?? '').trim()))]
   if (normalizedValues.length === 0) return sql`false`
@@ -1434,7 +1596,7 @@ export function canPaginateReportSource(columnFilters: Record<string, string>) {
 export function buildWeldColumnFilterOptionsFromRows(rows: WeldRow[], fieldKey: WeldFieldKey): WeldColumnFilterOption[] {
   const counts = new Map<string, number>()
   for (const row of rows) {
-    const value = getWeldColumnFilterCellText(row[fieldKey]).trim()
+    const value = getWeldColumnFilterRowText(row, fieldKey).trim()
     counts.set(value, (counts.get(value) ?? 0) + 1)
   }
 

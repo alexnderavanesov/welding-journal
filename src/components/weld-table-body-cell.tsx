@@ -10,8 +10,11 @@ import {
 import {
   getSystemDocumentProfile,
   getSystemDocumentTypeForField,
-  type SystemDocumentType,
 } from '@/lib/system-document-types'
+import {
+  getSystemDocumentTemplateIdForField,
+  type SystemDocumentTemplateId,
+} from '@/lib/system-document-template-types'
 
 const SYSTEM_FIELD_TOOLTIP =
   'Системное поле: заполняется через связанные окна ЛНК/ПСТО, заявки, результаты, заключения или другие действия системы.'
@@ -25,6 +28,11 @@ const CHECKLIST_DOCUMENT_TOOLTIP =
   'Системное поле: показывает Чек-лист, в который включен стык. Документы не изменяют данные, проверки, статусы или задачи диспетчера.'
 const ZNI_DOCUMENT_TOOLTIP =
   'Системное поле: показывает ЗНИ, в который включен стык. Документы не изменяют данные, проверки, статусы или задачи диспетчера.'
+
+export function composeWeldTableCellTooltip(value: unknown, description: string) {
+  const fullValue = String(value ?? '').trim()
+  return fullValue ? `${fullValue}\n\n${description}` : description
+}
 
 type WeldTableBodyCellProps = {
   row: WeldRow
@@ -44,7 +52,7 @@ type WeldTableBodyCellProps = {
   isSectionEnd: boolean
   onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
-  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentType>
+  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
 
 export function WeldTableBodyCell({
@@ -77,10 +85,14 @@ export function WeldTableBodyCell({
   const isZniDocumentLink =
     field.key === 'zniDocument' && Boolean(row.zniDocumentId) && Boolean(visibleValue)
   const systemDocumentType = getSystemDocumentTypeForField(field.key as WeldFieldKey)
+  const systemDocumentTemplateId = getSystemDocumentTemplateIdForField(field.key as WeldFieldKey)
   const isSystemDocumentLink =
     Boolean(systemDocumentType) &&
     Boolean(visibleValue) &&
-    Boolean(systemDocumentType && availableSystemDocumentTypes.has(systemDocumentType))
+    Boolean(
+      systemDocumentTemplateId &&
+      availableSystemDocumentTypes.has(systemDocumentTemplateId),
+    )
   const isDocumentLink =
     isJsrDocumentLink || isChecklistDocumentLink || isZniDocumentLink || isSystemDocumentLink
   const documentLabel = systemDocumentType && isSystemDocumentLink
@@ -89,7 +101,22 @@ export function WeldTableBodyCell({
       ? GENERATED_DOCUMENT_PROFILES.checklist.label
       : isZniDocumentLink
         ? GENERATED_DOCUMENT_PROFILES.zni.label
-        : GENERATED_DOCUMENT_PROFILES.weldingJournal.label
+      : GENERATED_DOCUMENT_PROFILES.weldingJournal.label
+  const documentTooltip = composeWeldTableCellTooltip(
+    visibleValue,
+    `Открыть актуальную версию документа «${documentLabel}» в новой вкладке`,
+  )
+  const systemFieldTooltip = field.key === 'id'
+    ? RECORD_NUMBER_TOOLTIP
+    : field.key === 'dispatcherTasks'
+      ? DISPATCHER_TASKS_TOOLTIP
+      : field.key === 'jsrDocument'
+        ? JSR_DOCUMENT_TOOLTIP
+        : field.key === 'checklistDocument'
+          ? CHECKLIST_DOCUMENT_TOOLTIP
+          : field.key === 'zniDocument'
+            ? ZNI_DOCUMENT_TOOLTIP
+            : SYSTEM_FIELD_TOOLTIP
   const contentClass = `block h-full min-h-10 w-full border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
     isDocumentLink
       ? 'cursor-pointer font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:bg-sky-50 hover:text-sky-900'
@@ -134,22 +161,14 @@ export function WeldTableBodyCell({
         finalStatusErrorReason
           ? finalStatusErrorReason
           : isEditableCell
-          ? undefined
+          ? field.key === 'lnkDefectDescription' || field.key === 'rkExposureScheme'
+            ? String(displayValue ?? '') || undefined
+            : undefined
           : isDocumentLink
-            ? `Открыть актуальную версию документа «${documentLabel}» в новой вкладке`
+            ? documentTooltip
           : isBlockedEditableCell
             ? 'Недоступно: отсутствует отметка "да" в назначении соответствующего контроля'
-            : field.key === 'id'
-              ? RECORD_NUMBER_TOOLTIP
-              : field.key === 'dispatcherTasks'
-                ? DISPATCHER_TASKS_TOOLTIP
-              : field.key === 'jsrDocument'
-                ? JSR_DOCUMENT_TOOLTIP
-              : field.key === 'checklistDocument'
-                ? CHECKLIST_DOCUMENT_TOOLTIP
-              : field.key === 'zniDocument'
-                ? ZNI_DOCUMENT_TOOLTIP
-              : SYSTEM_FIELD_TOOLTIP
+            : composeWeldTableCellTooltip(visibleValue, systemFieldTooltip)
       }
     >
       {isDocumentLink ? (
@@ -160,7 +179,7 @@ export function WeldTableBodyCell({
             event.stopPropagation()
             onOpenDocument?.(row, field.key as WeldFieldKey)
           }}
-          title={`Открыть актуальную версию документа «${documentLabel}» в новой вкладке`}
+          title={documentTooltip}
         >
           <WeldTableValue field={field} value={visibleValue} isResultField={isResultField} />
         </button>

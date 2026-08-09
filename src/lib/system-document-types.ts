@@ -207,6 +207,18 @@ export function getSystemDocumentNumber(
   reference: SystemDocumentReference | SystemDocumentSummary,
   settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
 ) {
+  const candidates = getSystemDocumentRawNumberCandidates(reference, settings)
+    .map((number) => Number(number))
+    .filter((number) => Number.isSafeInteger(number) && number > 0)
+    .sort((left, right) => left - right)
+  const number = candidates[0]
+  return number ? String(number).padStart(3, '0') : ''
+}
+
+function getSystemDocumentRawNumberCandidates(
+  reference: SystemDocumentReference | SystemDocumentSummary,
+  settings: RequestConclusionSettings,
+) {
   const date = reference.date
     ? new Date(`${reference.date}T00:00:00`)
     : new Date()
@@ -232,11 +244,33 @@ export function getSystemDocumentNumber(
   const candidates = patterns
     .map((pattern) => extractSystemNameNumber(pattern, context, reference.title))
     .filter((number) => /^\d+$/.test(number))
-    .map((number) => Number(number))
+  return candidates
+}
+
+export function getSystemDocumentRenameNumber(
+  reference: SystemDocumentReference | SystemDocumentSummary,
+  settings: RequestConclusionSettings,
+  nextNumber: number,
+) {
+  const normalizedNextNumber = Math.max(1, Math.floor(nextNumber))
+  const expectedWidth = Math.max(3, String(Math.max(1, normalizedNextNumber - 1)).length)
+  const candidates = getSystemDocumentRawNumberCandidates(reference, settings)
+    .flatMap((rawNumber) => {
+      const parsedNumber = Number(rawNumber)
+      if (parsedNumber < normalizedNextNumber) return [parsedNumber]
+
+      for (let length = Math.min(expectedWidth, rawNumber.length - 1); length >= 1; length -= 1) {
+        const candidate = Number(rawNumber.slice(0, length))
+        if (Number.isSafeInteger(candidate) && candidate > 0 && candidate < normalizedNextNumber) {
+          return [candidate]
+        }
+      }
+      return rawNumber.length <= expectedWidth ? [parsedNumber] : []
+    })
     .filter((number) => Number.isSafeInteger(number) && number > 0)
     .sort((left, right) => left - right)
-  const number = candidates[0]
-  return number ? String(number).padStart(3, '0') : ''
+
+  return candidates[0] ? String(candidates[0]).padStart(3, '0') : ''
 }
 
 export function isSystemDocumentNameForRows(

@@ -15,7 +15,7 @@ import {
 } from '@/lib/weld-table-row-state'
 import { getCellKey, getDuplicateKey } from '@/lib/weld-table-utils'
 import { RESULT_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
-import type { SystemDocumentType } from '@/lib/system-document-types'
+import type { SystemDocumentTemplateId } from '@/lib/system-document-template-types'
 
 type WeldTableBodyRowsProps = {
   rows: WeldRow[]
@@ -48,7 +48,7 @@ type WeldTableBodyRowsProps = {
   onDelete?: (id: number) => void
   onContextMenu?: (event: MouseEvent, row: WeldRow) => void
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
-  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentType>
+  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
 
 export function WeldTableBodyRows({

@@ -8,7 +8,8 @@ import {
   type PstoResultDraftState,
 } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
-import type { ActiveReport, HeatTreatmentFieldEditingState } from '@/lib/home-state'
+import type { ActiveReport, HeatTreatmentFieldEditingState, RkExposureEditingState } from '@/lib/home-state'
+import { resetPageScrollPosition } from '@/lib/page-scroll-position'
 
 type SetState<T> = Dispatch<SetStateAction<T>>
 
@@ -17,6 +18,7 @@ type ReportSwitchResetInput = {
   replayLatestHighlight: () => void
   resetWelderStampForm: () => void
   setHeatTreatmentFieldEditing: SetState<HeatTreatmentFieldEditingState | null>
+  setRkExposureEditing: SetState<RkExposureEditingState | null>
   setIsLnkRequestModalOpen: SetState<boolean>
   setIsLnkResultModalOpen: SetState<boolean>
   setIsLnkResultPreviewOpen: SetState<boolean>
@@ -52,6 +54,7 @@ export function useReportSwitchReset({
   replayLatestHighlight,
   resetWelderStampForm,
   setHeatTreatmentFieldEditing,
+  setRkExposureEditing,
   setIsLnkRequestModalOpen,
   setIsLnkResultModalOpen,
   setIsLnkResultPreviewOpen,
@@ -88,7 +91,7 @@ export function useReportSwitchReset({
     if (previousReportRef.current !== activeReport) {
       previousReportRef.current = activeReport
       frameId = window.requestAnimationFrame(() => {
-        window.scrollTo({ left: 0, top: 0, behavior: 'auto' })
+        resetPageScrollPosition()
       })
       replayLatestHighlight()
     }
@@ -110,6 +113,7 @@ export function useReportSwitchReset({
       setIsPstoShowMenuOpen(false)
     }
     if (activeReport !== 'lnk') {
+      setRkExposureEditing(null)
       setSelectedLnkIds(new Set())
       setLnkRequestDraft(createDefaultLnkRequestDraft())
       setLnkRequestNaming(defaultLnkRequestNaming)

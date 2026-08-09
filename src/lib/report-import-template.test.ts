@@ -66,22 +66,18 @@ describe('welding journal import template', () => {
     }
   })
 
-  it('keeps GI and PI fields only in welding journal import templates', () => {
+  it('keeps GI and PI fields in welding journal import templates', () => {
     const testingFieldKeys = ['testTypes', 'testContour', 'testDate', 'piDate', 'testBoq', 'piBoq', 'testKs3', 'piKs3']
 
     for (const fieldKey of testingFieldKeys) {
       expect(getReportImportTemplateFields('weldingJournal').some((field) => field.key === fieldKey)).toBe(true)
-      expect(getReportImportTemplateFields('lnk').some((field) => field.key === fieldKey)).toBe(false)
-      expect(getReportImportTemplateFields('heatTreatment').some((field) => field.key === fieldKey)).toBe(false)
     }
   })
 
-  it('keeps welding material fields editable only in welding journal import templates', () => {
+  it('keeps welding material fields editable in welding journal import templates', () => {
     for (const fieldKey of WELDING_MATERIAL_KEYS) {
       expect(getReportImportTemplateFields('weldingJournal').some((field) => field.key === fieldKey)).toBe(true)
       expect(getReportImportCellKind('weldingJournal', fieldKey)).toBe('free')
-      expect(getReportImportTemplateFields('lnk').some((field) => field.key === fieldKey)).toBe(false)
-      expect(getReportImportTemplateFields('heatTreatment').some((field) => field.key === fieldKey)).toBe(false)
     }
   })
 
@@ -93,11 +89,6 @@ describe('welding journal import template', () => {
     expect(getReportImportCellKind('weldingJournal', 'lnkNote')).toBe('ignored')
     expect(getReportImportCellKind('weldingJournal', 'pstoNote')).toBe('ignored')
 
-    expect(getReportImportTemplateFields('lnk').some((field) => field.key === 'lnkNote')).toBe(true)
-    expect(getReportImportTemplateFields('lnk').some((field) => field.key === 'weldingJournalNote' || field.key === 'pstoNote')).toBe(false)
-
-    expect(getReportImportTemplateFields('heatTreatment').some((field) => field.key === 'pstoNote')).toBe(true)
-    expect(getReportImportTemplateFields('heatTreatment').some((field) => field.key === 'weldingJournalNote' || field.key === 'lnkNote')).toBe(false)
     expect(stripIgnoredImportFields({ lnkNote: 'ЛНК', pstoNote: 'ПСТО' }, 'weldingJournal')).toEqual({})
 
     const payload = new TextDecoder().decode(buildImportTemplateXlsxBytes('weldingJournal'))

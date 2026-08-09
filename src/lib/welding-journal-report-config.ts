@@ -68,6 +68,7 @@ export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'mkkBoq',
   'mkkKs3',
   'lnkDefectDescription',
+  'rkExposureConfirmedDiameter',
   'lnkNote',
   'weldingJournalNote',
   'finalStatus',
@@ -103,6 +104,8 @@ export const WELDING_JOURNAL_BLOCKED_FIELD_KEYS = new Set<WeldFieldKey>([
   'status',
   'createdAt',
   'finalStatus',
+  'rkExposureScheme',
+  'rkExposureConfirmedDiameter',
 ])
 
 export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -111,6 +114,8 @@ export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoNote',
   'pstoCreatedAt',
   'lnkCreatedAt',
+  'rkExposureScheme',
+  'rkExposureConfirmedDiameter',
   ...LNK_CONCLUSION_FIELD_KEYS,
 ])
 
@@ -142,6 +147,7 @@ export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'piKs3',
   'ks3',
   'createdAt',
+  'rkExposureConfirmedDiameter',
   ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt'),
 ])
 

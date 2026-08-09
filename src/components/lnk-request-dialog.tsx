@@ -17,6 +17,7 @@ import { getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
 import { isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
+import { pinInitiallySelectedRows } from '@/lib/report-row-utils'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagination } from '@/lib/use-pagination'
@@ -80,10 +81,18 @@ export function LnkRequestDialog({
   onToggleRow,
   onSubmit,
 }: LnkRequestDialogProps) {
+  const [initiallySelectedIds] = useState(() => new Set(selectedIds))
   const hasSearch = requestSearch.trim().length > 0
-  const paginationResetKeys = useMemo(() => [requestSearch, filteredAvailableRows], [filteredAvailableRows, requestSearch])
+  const orderedAvailableRows = useMemo(
+    () => pinInitiallySelectedRows(filteredAvailableRows, selectedIds, initiallySelectedIds),
+    [filteredAvailableRows, initiallySelectedIds, selectedIds],
+  )
+  const paginationResetKeys = useMemo(
+    () => [requestSearch, orderedAvailableRows],
+    [orderedAvailableRows, requestSearch],
+  )
   const rowsPagination = usePagination({
-    items: filteredAvailableRows,
+    items: orderedAvailableRows,
     defaultPageSize: 100,
     resetKeys: paginationResetKeys,
   })

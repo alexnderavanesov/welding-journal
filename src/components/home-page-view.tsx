@@ -41,6 +41,7 @@ type HomePageViewProps = {
   reportLnkDialogsProps: ComponentProps<typeof ReportDialogs>['lnkDialogsProps']
   reportFieldEditorProps: ComponentProps<typeof ReportDialogs>['fieldEditorProps']
   reportImportDialogProps: ComponentProps<typeof ReportDialogs>['importDialogProps']
+  reportRkExposureDialogProps: ComponentProps<typeof ReportDialogs>['rkExposureDialogProps']
 }
 
 export function HomePageView({
@@ -75,6 +76,7 @@ export function HomePageView({
   reportLnkDialogsProps,
   reportFieldEditorProps,
   reportImportDialogProps,
+  reportRkExposureDialogProps,
 }: HomePageViewProps) {
   const isFluidReport =
     activeReport === 'statistics' ||
@@ -130,6 +132,7 @@ export function HomePageView({
         lnkDialogsProps={reportLnkDialogsProps}
         fieldEditorProps={reportFieldEditorProps}
         importDialogProps={reportImportDialogProps}
+        rkExposureDialogProps={reportRkExposureDialogProps}
         generationDialogProps={
           documentGenerationRequest
             ? {

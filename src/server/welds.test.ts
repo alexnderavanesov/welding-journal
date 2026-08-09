@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   WELD_PAGE_ALL_SIZE,
+  attachRkExposureSchemeFilterValues,
   buildWeldColumnFilterOptionsFromRows,
   buildWeldDataUsageSummaryFromRows,
   buildWeldReportPageFromRows,
@@ -227,6 +228,65 @@ describe('weld server pagination helpers', () => {
       { value: '', label: '(пусто)', count: 1 },
       { value: 'LIN-1', label: 'LIN-1', count: 2 },
       { value: 'LIN-2', label: 'LIN-2', count: 1 },
+    ])
+  })
+
+  it('builds filters from saved RK descriptions and calculated exposure schemes', () => {
+    const rows = attachRkExposureSchemeFilterValues(
+      [
+        row({
+          id: 1,
+          connectionType: 'С17',
+          d1: 57,
+          d2: 57,
+          rkExposureConfirmedDiameter: 57,
+          lnkDefectDescription: '1: ДНО\n2: ДНО',
+        }) as WeldRow,
+      ],
+      {
+        fileName: 'Экспозиции.xlsx',
+        uploadedAt: '2026-08-08',
+        entries: [
+          {
+            diameter: 50,
+            options: [
+              { label: 'по 2 экспозициям', values: ['1', '2'], isDefault: true, note: '' },
+            ],
+          },
+        ],
+      },
+    )
+
+    expect(buildWeldColumnFilterOptionsFromRows(rows, 'rkExposureScheme')).toEqual([
+      { value: 'по 2 экспозициям', label: 'по 2 экспозициям', count: 1 },
+    ])
+    expect(buildWeldColumnFilterOptionsFromRows(rows, 'lnkDefectDescription')).toEqual([
+      { value: '1: ДНО\n2: ДНО', label: '1: ДНО\n2: ДНО', count: 1 },
+    ])
+  })
+
+  it('builds final-status filter options from the same duplicate-control labels shown in rows', () => {
+    const options = buildWeldColumnFilterOptionsFromRows(
+      [
+        {
+          ...row({ id: 1, finalStatus: 'не годен по дублю' }),
+          duplicateControls: [
+            { id: 11, weldJointId: 1, method: 'РК', result: 'ремонт', controlDate: '', conclusion: '', conclusionDate: '' },
+          ],
+        } as WeldRow,
+        {
+          ...row({ id: 2, finalStatus: 'не годен по дублю' }),
+          duplicateControls: [
+            { id: 12, weldJointId: 2, method: 'УЗК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' },
+          ],
+        } as WeldRow,
+      ],
+      'finalStatus',
+    )
+
+    expect(options).toEqual([
+      { value: 'не годен по дублю (РК)', label: 'не годен по дублю (РК)', count: 1 },
+      { value: 'не годен по дублю (УЗК)', label: 'не годен по дублю (УЗК)', count: 1 },
     ])
   })
 

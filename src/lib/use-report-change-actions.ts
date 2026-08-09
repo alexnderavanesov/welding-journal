@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ActiveReport } from '@/lib/home-state'
+import { resetPageScrollPosition } from '@/lib/page-scroll-position'
 import type { WeldInput } from '@/lib/weld-fields'
 
 type EditingState = {
@@ -17,6 +18,7 @@ export function useReportChangeActions({
   setEditing,
 }: UseReportChangeActionsOptions) {
   function changeActiveReport(report: ActiveReport) {
+    resetPageScrollPosition()
     setActiveReport(report)
     if (
       report === 'heatTreatment' ||

@@ -32,11 +32,8 @@ import { useConfirmAction } from '@/lib/confirm-action-context'
 import { useSecurityGuard } from '@/lib/security-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
-  DOCUMENT_TEMPLATE_TYPES,
-  DOCUMENT_TEMPLATE_STORAGE_EVENT,
   createWeldingJournalDocumentPreview,
   getWeldingJournalTemplateOptions,
-  type DocumentTemplateId,
   loadDocumentTemplate,
   type DocumentTemplateWorkbookPreview,
   type StoredDocumentTemplate,
@@ -44,12 +41,15 @@ import {
 import {
   deleteGeneratedDocument,
   downloadGeneratedDocument,
-  GENERATED_DOCUMENT_STORAGE_EVENT,
   loadGeneratedDocumentRows,
   loadGeneratedDocuments,
   openGeneratedDocument,
   type StoredGeneratedDocument,
 } from '@/lib/generated-document-storage'
+import {
+  DOCUMENT_TEMPLATE_STORAGE_EVENT,
+  GENERATED_DOCUMENT_STORAGE_EVENT,
+} from '@/lib/document-storage-events'
 import { previewGeneratedDocumentNamePattern } from '@/lib/generated-document-naming'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import { createCurrentGeneratedDocumentBlob } from '@/lib/welding-journal-document'
@@ -75,13 +75,23 @@ import {
   renameSystemDocumentToCurrentName,
 } from '@/lib/system-document-storage'
 import {
+  SYSTEM_DOCUMENT_TYPES,
   getSystemDocumentId,
   getSystemDocumentProfile,
   getSystemDocumentTargetReport,
   isSystemDocumentType,
   type SystemDocumentNavigationRequest,
   type SystemDocumentSummary,
+  type SystemDocumentType,
 } from '@/lib/system-document-types'
+import {
+  LNK_CONCLUSION_TEMPLATE_PROFILES,
+  getLnkConclusionTemplateProfile,
+  getSystemDocumentTemplateId,
+  type LnkConclusionTemplateId,
+  type SystemDocumentTemplateId,
+} from '@/lib/system-document-template-types'
+import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
 import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
 } from '@/lib/system-document-sequence-storage'
@@ -132,9 +142,12 @@ const DOCUMENT_TYPE_OPTIONS: Array<{
   },
 ]
 
-const SYSTEM_DOCUMENT_TYPE_OPTIONS = DOCUMENT_TEMPLATE_TYPES.filter(
-  (templateType) => !DOCUMENT_TYPE_OPTIONS.some((option) => option.type === templateType.id),
-)
+const SYSTEM_DOCUMENT_TYPE_OPTIONS = SYSTEM_DOCUMENT_TYPES.map((type) => ({
+  id: type,
+  label: type === 'lnkConclusion' ? 'Заключения ЛНК' : getSystemDocumentProfile(type).label,
+}))
+
+type DocumentsPageType = GeneratedDocumentType | SystemDocumentType
 
 function toInputDate(date: Date) {
   const year = date.getFullYear()
@@ -203,7 +216,7 @@ export function DocumentsPage({
   const [isGenerating, setIsGenerating] = useState(false)
   const [activeNavigationRequest, setActiveNavigationRequest] =
     useState<SystemDocumentNavigationRequest | null>(navigationRequest ?? null)
-  const [activeDocumentType, setActiveDocumentType] = useState<DocumentTemplateId>(
+  const [activeDocumentType, setActiveDocumentType] = useState<DocumentsPageType>(
     () => navigationRequest?.type ?? 'weldingJournal',
   )
   const [activeDocumentTemplate, setActiveDocumentTemplate] = useState<StoredDocumentTemplate | null>(null)
@@ -224,6 +237,7 @@ export function DocumentsPage({
     text: string
   } | null>(null)
   const isSystemDocument = isSystemDocumentType(activeDocumentType)
+  const availableSystemDocumentTemplates = useSystemDocumentTemplateAvailability()
   const activeGeneratedDocumentType: GeneratedDocumentType = isGeneratedDocumentType(activeDocumentType)
     ? activeDocumentType
     : 'weldingJournal'
@@ -297,6 +311,12 @@ export function DocumentsPage({
 
   useEffect(() => {
     let isMounted = true
+    if (isSystemDocument) {
+      setActiveDocumentTemplate(null)
+      return () => {
+        isMounted = false
+      }
+    }
     const syncTemplate = () => {
       loadDocumentTemplate(activeDocumentType)
         .then((template) => {
@@ -313,11 +333,11 @@ export function DocumentsPage({
       isMounted = false
       window.removeEventListener(DOCUMENT_TEMPLATE_STORAGE_EVENT, syncTemplate)
     }
-  }, [activeDocumentType])
+  }, [activeDocumentType, isSystemDocument])
 
   useEffect(() => {
     let isMounted = true
-    if (!isSystemDocument || !activeDocumentTemplate) {
+    if (!isSystemDocument) {
       setSystemDocuments([])
       setSystemDocumentsError(null)
       setIsSystemDocumentsLoading(false)
@@ -346,7 +366,7 @@ export function DocumentsPage({
     return () => {
       isMounted = false
     }
-  }, [activeDocumentTemplate, activeDocumentType, isSystemDocument])
+  }, [activeDocumentType, isSystemDocument])
 
   useEffect(() => {
     let isMounted = true
@@ -590,49 +610,47 @@ export function DocumentsPage({
         </div>
       </div>
 
-      <div
-        className="flex min-w-0 items-center gap-1 rounded-md border border-[#c8dbe4] bg-[#eaf3f6] p-1"
-        role="tablist"
-        aria-label="Раздел документов"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeWorkspaceTab === 'history'}
-          onClick={() => setActiveWorkspaceTab('history')}
-          className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition ${
-            activeWorkspaceTab === 'history'
-              ? 'bg-[#17627d] text-white shadow-sm'
-              : 'text-slate-600 hover:bg-white hover:text-[#17627d]'
-          }`}
+      {!isSystemDocument ? (
+        <div
+          className="flex min-w-0 items-center gap-1 rounded-md border border-[#c8dbe4] bg-[#eaf3f6] p-1"
+          role="tablist"
+          aria-label="Раздел документов"
         >
-          <FileText className="h-4 w-4" />
-          История
-          <span className={`rounded px-1.5 py-0.5 text-[11px] ${
-            activeWorkspaceTab === 'history' ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
-          }`}>
-            {isSystemDocument
-              ? systemDocuments.length
-              : generatedDocuments.filter((documentRecord) => documentRecord.type === activeGeneratedDocumentType).length}
-          </span>
-        </button>
-        {!isSystemDocument ? (
           <button
-          type="button"
-          role="tab"
-          aria-selected={activeWorkspaceTab === 'generation'}
-          onClick={() => setActiveWorkspaceTab('generation')}
-          className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition ${
-            activeWorkspaceTab === 'generation'
-              ? 'bg-[#17627d] text-white shadow-sm'
-              : 'text-slate-600 hover:bg-white hover:text-[#17627d]'
-          }`}
-        >
-          <FileSpreadsheet className="h-4 w-4" />
-          Формирование
+            type="button"
+            role="tab"
+            aria-selected={activeWorkspaceTab === 'history'}
+            onClick={() => setActiveWorkspaceTab('history')}
+            className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition ${
+              activeWorkspaceTab === 'history'
+                ? 'bg-[#17627d] text-white shadow-sm'
+                : 'text-slate-600 hover:bg-white hover:text-[#17627d]'
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            История
+            <span className={`rounded px-1.5 py-0.5 text-[11px] ${
+              activeWorkspaceTab === 'history' ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
+            }`}>
+              {generatedDocuments.filter((documentRecord) => documentRecord.type === activeGeneratedDocumentType).length}
+            </span>
           </button>
-        ) : null}
-      </div>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeWorkspaceTab === 'generation'}
+            onClick={() => setActiveWorkspaceTab('generation')}
+            className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition ${
+              activeWorkspaceTab === 'generation'
+                ? 'bg-[#17627d] text-white shadow-sm'
+                : 'text-slate-600 hover:bg-white hover:text-[#17627d]'
+            }`}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Формирование
+          </button>
+        </div>
+      ) : null}
 
       {!isSystemDocument && activeWorkspaceTab === 'generation' ? (
       <section className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white">
@@ -951,18 +969,19 @@ export function DocumentsPage({
         </div>
       ) : null}
 
-      {activeWorkspaceTab === 'history' ? (
+      {isSystemDocument || activeWorkspaceTab === 'history' ? (
         isSystemDocument ? (
           <SystemDocumentsPanel
             key={activeDocumentType}
             documents={systemDocuments}
             documentLabel={getSystemDocumentProfile(activeDocumentType).label}
+            documentType={activeDocumentType}
             navigationRequest={
               activeNavigationRequest?.type === activeDocumentType
                 ? activeNavigationRequest
                 : null
             }
-            template={activeDocumentTemplate}
+            availableTemplateIds={availableSystemDocumentTemplates}
             isLoading={isSystemDocumentsLoading}
             error={systemDocumentsError}
             welderStamps={welderStamps}
@@ -1295,8 +1314,9 @@ function GeneratedDocumentsPanel({
 function SystemDocumentsPanel({
   documents,
   documentLabel,
+  documentType,
   navigationRequest,
-  template,
+  availableTemplateIds,
   isLoading,
   error,
   welderStamps,
@@ -1305,8 +1325,9 @@ function SystemDocumentsPanel({
 }: {
   documents: SystemDocumentSummary[]
   documentLabel: string
+  documentType: SystemDocumentType
   navigationRequest: SystemDocumentNavigationRequest | null
-  template: StoredDocumentTemplate | null
+  availableTemplateIds: ReadonlySet<SystemDocumentTemplateId>
   isLoading: boolean
   error: string | null
   welderStamps: WelderStampRecord[]
@@ -1319,6 +1340,8 @@ function SystemDocumentsPanel({
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
+  const [lnkConclusionTemplateFilter, setLnkConclusionTemplateFilter] =
+    useState<'all' | LnkConclusionTemplateId>('all')
   const navigationDocumentId = navigationRequest
     ? getSystemDocumentId(navigationRequest)
     : null
@@ -1326,13 +1349,29 @@ function SystemDocumentsPanel({
   useEffect(() => {
     if (!navigationRequest) return
     setSearchQuery(navigationRequest.title)
+    if (navigationRequest.type === 'lnkConclusion') {
+      setLnkConclusionTemplateFilter(
+        getLnkConclusionTemplateProfile(navigationRequest.methodCode).id,
+      )
+    }
   }, [navigationRequest])
 
+  const documentsForSelectedForm = useMemo(
+    () =>
+      documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all'
+        ? documents.filter(
+            (documentRecord) =>
+              getLnkConclusionTemplateProfile(documentRecord.methodCode).id ===
+              lnkConclusionTemplateFilter,
+          )
+        : documents,
+    [documentType, documents, lnkConclusionTemplateFilter],
+  )
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('ru-RU')
   const filteredDocuments = useMemo(
     () => {
       const matchingDocuments = normalizedSearchQuery
-        ? documents.filter((documentRecord) =>
+        ? documentsForSelectedForm.filter((documentRecord) =>
             [
               documentRecord.title,
               documentRecord.label,
@@ -1345,7 +1384,7 @@ function SystemDocumentsPanel({
               String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery),
             ),
           )
-        : documents
+        : documentsForSelectedForm
       if (!navigationDocumentId) return matchingDocuments
       return [...matchingDocuments].sort((left, right) => {
         const leftMatch = left.id === navigationDocumentId ? 1 : 0
@@ -1353,8 +1392,19 @@ function SystemDocumentsPanel({
         return rightMatch - leftMatch
       })
     },
-    [documents, navigationDocumentId, normalizedSearchQuery],
+    [documentsForSelectedForm, navigationDocumentId, normalizedSearchQuery],
   )
+
+  const hasTemplateForDocument = (documentRecord: SystemDocumentSummary) =>
+    availableTemplateIds.has(getSystemDocumentTemplateId(documentRecord))
+  const availableFormCount =
+    documentType === 'lnkConclusion'
+      ? LNK_CONCLUSION_TEMPLATE_PROFILES.filter((profile) =>
+          availableTemplateIds.has(profile.id),
+        ).length
+      : availableTemplateIds.has(getSystemDocumentTemplateId({ type: documentType }))
+        ? 1
+        : 0
 
   const runAction = async (action: () => Promise<unknown> | void) => {
     setActionError(null)
@@ -1413,13 +1463,16 @@ function SystemDocumentsPanel({
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold text-slate-900">История документов</h2>
             <p className="text-xs text-slate-500">
-              {template
-                ? `${documents.length} ${formatDocumentCount(documents.length)} · актуальные данные системы`
-                : `Загрузите шаблон «${documentLabel}» в настройках.`}
+              {documents.length} {formatDocumentCount(documents.length)} · актуальные данные системы
+              {documentType === 'lnkConclusion'
+                ? ` · форм загружено ${availableFormCount}/${LNK_CONCLUSION_TEMPLATE_PROFILES.length}`
+                : availableFormCount > 0
+                  ? ''
+                  : ` · шаблон «${documentLabel}» не загружен`}
             </p>
           </div>
         </div>
-        {template && documents.length > 0 ? (
+        {documents.length > 0 ? (
           <label className="relative w-full sm:w-80">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -1446,6 +1499,59 @@ function SystemDocumentsPanel({
         ) : null}
       </div>
 
+      {documentType === 'lnkConclusion' ? (
+        <div
+          className="flex flex-wrap gap-2 border-b border-[#d8e5eb] bg-white px-4 py-3"
+          role="tablist"
+          aria-label="Вид заключения ЛНК"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={lnkConclusionTemplateFilter === 'all'}
+            onClick={() => setLnkConclusionTemplateFilter('all')}
+            className={`h-8 rounded-md border px-3 text-xs font-semibold transition-colors ${
+              lnkConclusionTemplateFilter === 'all'
+                ? 'border-[#17627d] bg-[#17627d] text-white'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
+            }`}
+          >
+            Все
+          </button>
+          {LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => {
+            const isActive = lnkConclusionTemplateFilter === profile.id
+            const documentCount = documents.filter(
+              (documentRecord) =>
+                getLnkConclusionTemplateProfile(documentRecord.methodCode).id === profile.id,
+            ).length
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setLnkConclusionTemplateFilter(profile.id)}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition-colors ${
+                  isActive
+                    ? 'border-[#17627d] bg-[#17627d] text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
+                }`}
+              >
+                {profile.label}
+                <span className={`rounded px-1.5 py-0.5 text-[10px] ${
+                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {documentCount}
+                </span>
+                {availableTemplateIds.has(profile.id) ? (
+                  <CheckCircle2 className={`h-3.5 w-3.5 ${isActive ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
       {error || actionError ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
           {error ?? actionError}
@@ -1457,14 +1563,7 @@ function SystemDocumentsPanel({
         </div>
       ) : null}
 
-      {!template ? (
-        <div className="px-4 py-10 text-center">
-          <div className="text-sm font-medium text-slate-700">Шаблон не загружен</div>
-          <div className="mt-1 text-xs text-slate-500">
-            Существующие заявки и заключения сохраняются без изменений, но Excel-документы пока недоступны.
-          </div>
-        </div>
-      ) : isLoading ? (
+      {isLoading ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
       ) : documents.length === 0 ? (
         <div className="px-4 py-10 text-center">
@@ -1499,18 +1598,22 @@ function SystemDocumentsPanel({
                 >
                   <button
                     type="button"
-                    className="min-w-0 text-left"
+                    className="min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!hasTemplateForDocument(documentRecord)}
                     onClick={() =>
                       void runAction(() =>
                         openSystemDocument({
                           reference: documentRecord,
                           summary: documentRecord,
                           welderStamps,
-                          template,
                         }),
                       )
                     }
-                    title="Сформировать актуальную версию и открыть в новой вкладке"
+                    title={
+                      hasTemplateForDocument(documentRecord)
+                        ? 'Сформировать актуальную версию и открыть в новой вкладке'
+                        : 'Для этого вида НК шаблон еще не загружен'
+                    }
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <FileSpreadsheet className="h-4 w-4 shrink-0 text-[#14779a]" />
@@ -1568,37 +1671,45 @@ function SystemDocumentsPanel({
                     </button>
                     <button
                       type="button"
+                      disabled={!hasTemplateForDocument(documentRecord)}
                       onClick={() =>
                         void runAction(() =>
                           openSystemDocument({
                             reference: documentRecord,
                             summary: documentRecord,
                             welderStamps,
-                            template,
                           }),
                         )
                       }
-                      title="Сформировать актуальную версию и открыть"
+                      title={
+                        hasTemplateForDocument(documentRecord)
+                          ? 'Сформировать актуальную версию и открыть'
+                          : 'Для этого вида НК шаблон еще не загружен'
+                      }
                       aria-label="Открыть актуальный документ"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </button>
                     <button
                       type="button"
+                      disabled={!hasTemplateForDocument(documentRecord)}
                       onClick={() =>
                         void runAction(() =>
                           downloadSystemDocument({
                             reference: documentRecord,
                             summary: documentRecord,
                             welderStamps,
-                            template,
                           }),
                         )
                       }
-                      title="Скачать актуальный Excel"
+                      title={
+                        hasTemplateForDocument(documentRecord)
+                          ? 'Скачать актуальный Excel'
+                          : 'Для этого вида НК шаблон еще не загружен'
+                      }
                       aria-label="Скачать актуальный документ"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
                     >
                       <Download className="h-4 w-4" />
                     </button>
@@ -1613,7 +1724,7 @@ function SystemDocumentsPanel({
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2 text-xs text-slate-500">
-            <span>Найдено: {filteredDocuments.length} из {documents.length}</span>
+            <span>Найдено: {filteredDocuments.length} из {documentsForSelectedForm.length}</span>
             <span>Документ каждый раз формируется по текущему шаблону и актуальным данным.</span>
           </div>
         </div>

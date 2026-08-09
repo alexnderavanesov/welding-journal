@@ -31,7 +31,7 @@ import {
   type StoredDocumentTemplate,
 } from '@/lib/document-template-storage'
 import { isGeneratedDocumentFieldKey } from '@/lib/generated-document-types'
-import { isSystemDocumentType } from '@/lib/system-document-types'
+import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { WELD_FIELDS, isVirtualWeldField, type WeldInput } from '@/lib/weld-fields'
 import { STAMP_NAME_TEMPLATE_FIELDS } from '@/lib/welder-stamp-names'
 
@@ -43,6 +43,8 @@ type DocumentTemplateBuilderProps = {
 
 const SPECIAL_FIELDS: Array<{ key: DocumentTemplateFieldKey; label: string; group: string }> = [
   { key: '__index', label: '№ п/п', group: 'Системные поля' },
+  { key: '__rkExposureCoordinate', label: 'Снимок/координаты РК', group: 'РК по снимкам' },
+  { key: '__rkExposureDescription', label: 'Описание по снимку РК', group: 'РК по снимкам' },
   ...STAMP_NAME_TEMPLATE_FIELDS.map((field) => ({
     key: `__welderName:${field.key}` as DocumentTemplateFieldKey,
     label: `${field.label} ФИО сварщика`,
@@ -171,7 +173,7 @@ function getInitialDraft(template: StoredDocumentTemplate): DocumentTemplateCons
 
   return {
     ...normalized,
-    nameConfig: isSystemDocumentType(template.id)
+    nameConfig: isSystemDocumentTemplateId(template.id)
       ? undefined
       : normalized.nameConfig ?? createDefaultDocumentTemplateNameConfig(template.id),
   }
@@ -349,7 +351,7 @@ export function validateDocumentTemplateBuilderConfig(
 }
 
 export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentTemplateBuilderProps) {
-  const isSystemTemplate = isSystemDocumentType(template.id)
+  const isSystemTemplate = isSystemDocumentTemplateId(template.id)
   const [preview, setPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
   const [draft, setDraft] = useState<DocumentTemplateConstructorConfig>(() => getInitialDraft(template))
   const [selectedCell, setSelectedCell] = useState(template.constructorConfig?.bindings[0]?.cell ?? '')

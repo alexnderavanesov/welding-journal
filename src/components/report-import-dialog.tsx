@@ -12,6 +12,7 @@ import {
   getMassFillTemplateFilename,
   getReplaceDataTemplateFilename,
   getReportImportTemplateFilename,
+  type ImportableReport,
   type ReportImportMode,
 } from '@/lib/report-import-template'
 import {
@@ -23,7 +24,6 @@ import {
   type ReportImportRecord,
 } from '@/lib/report-import-preview'
 import { cn } from '@/lib/utils'
-import type { ActiveReport } from '@/lib/home-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -33,7 +33,7 @@ type PreviewRowLimit = 50 | 100 | 'all'
 
 export type ReportImportDialogProps = {
   open: boolean
-  activeReport: ActiveReport
+  activeReport: ImportableReport
   isPending: boolean
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
@@ -77,7 +77,6 @@ export function ReportImportDialog({
   const visiblePreviewRecords = preview ? getVisiblePreviewRecords(preview.records, previewRowLimit) : []
   const stickyPreviewColumns = preview ? getStickyPreviewColumns(preview) : []
   const isPreviewLimited = preview ? visiblePreviewRecords.length < preview.records.length : false
-  const supportsExistingRowsImport = activeReport === 'weldingJournal'
   const modeCopy = getImportModeCopy(mode, activeReport)
 
   const handleDownloadTemplate = () => {
@@ -199,23 +198,11 @@ export function ReportImportDialog({
             label="Импорт данных"
             onClick={() => handleModeChange('newRecords')}
           />
-          {supportsExistingRowsImport ? (
-            <ImportModeTab
-              active={mode === 'massFill'}
-              label="Массовое заполнение"
-              onClick={() => handleModeChange('massFill')}
-            />
-          ) : null}
-          {supportsExistingRowsImport ? (
-            <ImportModeTab
-              active={mode === 'replaceData'}
-              label="Замена данных"
-              onClick={() => handleModeChange('replaceData')}
-            />
-          ) : null}
+          <ImportModeTab active={mode === 'massFill'} label="Массовое заполнение" onClick={() => handleModeChange('massFill')} />
+          <ImportModeTab active={mode === 'replaceData'} label="Замена данных" onClick={() => handleModeChange('replaceData')} />
         </div>
 
-        {supportsExistingRowsImport && mode !== 'newRecords' ? (
+        {mode !== 'newRecords' ? (
           <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
             В шаблон попадут стыки из текущего фильтра сварочного журнала: {rows.length}. Если фильтр не задан, попадут все стыки.
           </div>
@@ -483,7 +470,7 @@ function ImportModeTab({ active, label, onClick }: { active: boolean; label: str
   )
 }
 
-function getImportModeCopy(mode: ReportImportMode, activeReport: ActiveReport) {
+function getImportModeCopy(mode: ReportImportMode, _activeReport: ImportableReport) {
   if (mode === 'replaceData') {
     return {
       subtitle: 'редкий осторожный режим: скачайте текущие стыки, измените нужные разрешенные ячейки и загрузите файл для проверки.',
@@ -510,10 +497,7 @@ function getImportModeCopy(mode: ReportImportMode, activeReport: ActiveReport) {
 
   return {
     subtitle: 'сначала скачайте шаблон, затем загрузите заполненный файл для проверки.',
-    templateText:
-      activeReport === 'weldingJournal'
-        ? 'Серые ячейки игнорируются, желтые проверяются, белые можно заполнять свободно.'
-        : 'В шаблоне остаются только колонки, нужные для выбранного отчета.',
+    templateText: 'Серые ячейки игнорируются, желтые проверяются, белые можно заполнять свободно.',
     uploadText: 'После загрузки файл будет проверен. Ошибки можно очистить в предпросмотре без удаления строки.',
     previewText: 'Перед импортом можно увидеть найденные строки и список ошибок по проверочным ячейкам.',
     grayLegend: 'Не заполнять, импорт игнорирует',

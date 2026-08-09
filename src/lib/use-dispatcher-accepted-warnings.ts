@@ -1,6 +1,5 @@
-import { useMemo } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { acceptDispatcherWarning, listDispatcherAcceptedWarnings } from '@/server/dispatcher-warnings'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { acceptDispatcherWarning } from '@/server/dispatcher-warnings'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
 import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
@@ -13,16 +12,6 @@ type UseDispatcherAcceptedWarningsInput = {
 
 export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAcceptedWarningsInput) {
   const queryClient = useQueryClient()
-  const acceptedWarningsQuery = useQuery({
-    queryKey: ['dispatcher-accepted-warnings'],
-    queryFn: async () => listDispatcherAcceptedWarnings(),
-    staleTime: 30_000,
-  })
-
-  const acceptedDispatcherWarningKeys = useMemo(
-    () => new Set((acceptedWarningsQuery.data ?? []).map((warning) => warning.key)),
-    [acceptedWarningsQuery.data],
-  )
 
   const acceptWarningMutation = useMutation({
     mutationFn: async (task: DispatcherTask) =>
@@ -35,7 +24,6 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
       }),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
       ])
@@ -50,7 +38,6 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
   }
 
   return {
-    acceptedDispatcherWarningKeys,
     acceptDispatcherTaskWarning,
     isAcceptingDispatcherWarning: acceptWarningMutation.isPending,
   }

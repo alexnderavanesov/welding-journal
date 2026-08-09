@@ -9,8 +9,11 @@ import {
 } from '@/lib/lnk-result-draft'
 import { formatDateBeforeWeldDateSaveReason, isDateBeforeWeldDate } from '@/lib/report-date-rules'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { loadOtherSettings } from '@/lib/other-settings'
+import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
+import type { RkExposureTableSettings } from '@/lib/other-settings'
 
 export function buildLnkResultRows({
   records,
@@ -18,14 +21,19 @@ export function buildLnkResultRows({
   controlDate,
   resultById,
   conclusionName,
+  rkExposureTable: suppliedRkExposureTable,
 }: {
   records: RowWithId[]
   methodKey: WeldFieldKey
   controlDate: string
   resultById: Record<number, string>
   conclusionName: string
+  rkExposureTable?: RkExposureTableSettings | null
 }) {
   const saveCheckSettings = loadSaveCheckSettings()
+  const rkExposureTable = suppliedRkExposureTable === undefined
+    ? loadOtherSettings().rkExposureTable
+    : suppliedRkExposureTable
   const method = getLnkMethodByRequestKey(methodKey)
   if (!method) throw new Error('Выберите метод контроля')
   const results = records.map((record) => resultById[record.id] ?? '')
@@ -46,12 +54,24 @@ export function buildLnkResultRows({
   const proposedRecords = records.map((record) => {
     const result = resultById[record.id] ?? ''
     const shouldClearResult = result === LNK_EMPTY_RESULT_VALUE
-    const proposedRecord = {
+    let proposedRecord = {
       ...record,
       [method.resultKey]: shouldClearResult ? null : result,
       [method.conclusionDateKey]: shouldClearResult ? null : normalizedControlDate,
       [method.conclusionKey]: shouldClearResult ? null : conclusionName.trim(),
       lnkCreatedAt: lnkUpdatedAt,
+    } as RowWithId
+    if (method.code === 'РК') {
+      const exposureRecord = applyRkExposureResultTransition(
+        record,
+        shouldClearResult ? null : result,
+        rkExposureTable,
+      )
+      proposedRecord = {
+        ...proposedRecord,
+        lnkDefectDescription: exposureRecord.lnkDefectDescription,
+        rkExposureConfirmedDiameter: exposureRecord.rkExposureConfirmedDiameter,
+      }
     }
     return withLnkFinalStatus(proposedRecord)
   })

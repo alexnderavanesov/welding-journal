@@ -1,4 +1,5 @@
 import type * as XLSXTypes from 'xlsx-js-style'
+import { DOCUMENT_TEMPLATE_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, isVirtualWeldField, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
 import { formatExportDate, formatExportNumber } from '@/lib/weld-export-utils'
@@ -17,7 +18,9 @@ import {
   DOCUMENT_FORMATION_DATE_TOKEN,
   DOCUMENT_SEQUENCE_NUMBER_TOKEN,
 } from '@/lib/generated-document-naming'
+import { parseRkExposureDescription, type RkExposureLine } from '@/lib/rk-exposure'
 import { getGeneratedDocumentProfile, isGeneratedDocumentType } from '@/lib/generated-document-types'
+import { SYSTEM_DOCUMENT_TEMPLATE_PROFILES } from '@/lib/system-document-template-types'
 import {
   getSystemDocumentRowResult,
   type SystemDocumentTemplateContext,
@@ -29,8 +32,6 @@ import {
   saveRemoteDocumentTemplate,
   updateRemoteDocumentTemplate,
 } from '@/server/document-templates'
-
-export const DOCUMENT_TEMPLATE_STORAGE_EVENT = 'document-template-storage-change'
 
 type XlsxModule = typeof import('xlsx-js-style')
 
@@ -64,26 +65,7 @@ export const DOCUMENT_TEMPLATE_TYPES = [
     label: 'ЗНИ',
     description: 'Запрос на инспекцию по выбранным стыкам.',
   },
-  {
-    id: 'lnkRequest',
-    label: 'Заявка ЛНК',
-    description: 'Шаблон заявки на контроль.',
-  },
-  {
-    id: 'lnkConclusion',
-    label: 'Заключение ЛНК',
-    description: 'Шаблон заключения по результатам НК.',
-  },
-  {
-    id: 'pstoRequest',
-    label: 'Заявка ПСТО',
-    description: 'Шаблон заявки на проведение термообработки.',
-  },
-  {
-    id: 'pstoConclusion',
-    label: 'Заключение ПСТО',
-    description: 'Шаблон заключения по результатам термообработки.',
-  },
+  ...SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
 ] as const
 
 export type DocumentTemplateId = (typeof DOCUMENT_TEMPLATE_TYPES)[number]['id']
@@ -130,6 +112,8 @@ export type DocumentTemplateFieldKey =
   | '__systemDocumentNumber'
   | '__systemDocumentMethods'
   | '__systemDocumentResult'
+  | '__rkExposureCoordinate'
+  | '__rkExposureDescription'
 
 export type DocumentTemplateBindingMode = 'row' | 'summary'
 export type DocumentTemplateRepeatMode = 'rows' | 'groups'
@@ -1718,6 +1702,8 @@ function normalizePreviewVerticalAlignment(value: unknown): DocumentTemplatePrev
 type ConstructorRepeatUnit = {
   record: WeldInput | null
   records: WeldInput[]
+  recordIndex: number
+  rkExposureLine?: RkExposureLine
 }
 
 function getConstructorRepeatUnits(
@@ -1725,7 +1711,17 @@ function getConstructorRepeatUnits(
   config: DocumentTemplateConstructorConfig,
 ): ConstructorRepeatUnit[] {
   if (config.repeatMode !== 'groups' || !config.repeatGroupBy) {
-    return records.map((record) => ({ record, records: [record] }))
+    const expandsRkExposures = config.bindings.some(
+      (binding) => binding.mode === 'row' && bindingUsesRkExposureField(binding),
+    )
+    if (!expandsRkExposures) {
+      return records.map((record, recordIndex) => ({ record, records: [record], recordIndex }))
+    }
+    return records.flatMap((record, recordIndex) => {
+      const lines = parseRkExposureDescription(record.lnkDefectDescription)
+      if (!lines.length) return [{ record, records: [record], recordIndex }]
+      return lines.map((rkExposureLine) => ({ record, records: [record], recordIndex, rkExposureLine }))
+    })
   }
 
   const groupingFields = getConstructorGroupingFields(config.repeatGroupBy)
@@ -1739,10 +1735,17 @@ function getConstructorRepeatUnits(
     groups.set(key, groupRecords)
   }
 
-  return Array.from(groups.values()).map((groupRecords) => ({
+  return Array.from(groups.values()).map((groupRecords, recordIndex) => ({
     record: groupRecords[0] ?? null,
     records: groupRecords,
+    recordIndex,
   }))
+}
+
+function bindingUsesRkExposureField(binding: DocumentTemplateCellBinding) {
+  return getConstructorBindingParts(binding).some(
+    (part) => part.field === '__rkExposureCoordinate' || part.field === '__rkExposureDescription',
+  )
 }
 
 function getConstructorGroupingFields(field: DocumentTemplateFieldKey): DocumentTemplateFieldKey[] {
@@ -1842,7 +1845,7 @@ async function createWeldingJournalBlobFromConstructor(
 
     const unitsToWrite = repeatUnits.length
       ? repeatUnits
-      : [{ record: null, records: [] }]
+      : [{ record: null, records: [], recordIndex: 0 }]
     unitsToWrite.forEach((unit, unitIndex) => {
       const targetBlockStart = repeatRowStartIndex + unitIndex * repeatBlockHeight
       restoreWorksheetRowBlock(worksheet, blockSnapshot, targetBlockStart)
@@ -1857,7 +1860,13 @@ async function createWeldingJournalBlobFromConstructor(
         if (sourceCell) worksheet[targetAddress] = cloneTemplateRowCell(sourceCell)
         const value =
           binding.mode === 'row' && unit.record
-            ? getConstructorRowValue(binding, unit.record, unitIndex, context)
+            ? getConstructorRowValue(
+                binding,
+                unit.record,
+                unit.recordIndex,
+                context,
+                unit.rkExposureLine,
+              )
             : binding.mode === 'summary'
               ? getConstructorAggregateValue(binding, unit.records, context)
               : applyConstructorEmptyValue('', binding)
@@ -1867,6 +1876,15 @@ async function createWeldingJournalBlobFromConstructor(
         enableAutoRowHeight(worksheet, targetBlockStart + rowOffset)
       }
     })
+    if (repeatBlockHeight === 1) {
+      mergeRepeatedRkExposureJointCells({
+        worksheet,
+        repeatBindings,
+        units: unitsToWrite,
+        repeatRowStartIndex,
+        blockSnapshot,
+      })
+    }
 
     expandWorksheetRef(
       worksheet,
@@ -1899,11 +1917,99 @@ function writeConstructorCell(worksheet: XLSXTypes.WorkSheet, address: string, v
   }
 }
 
+function mergeRepeatedRkExposureJointCells({
+  worksheet,
+  repeatBindings,
+  units,
+  repeatRowStartIndex,
+  blockSnapshot,
+}: {
+  worksheet: XLSXTypes.WorkSheet
+  repeatBindings: DocumentTemplateCellBinding[]
+  units: ConstructorRepeatUnit[]
+  repeatRowStartIndex: number
+  blockSnapshot: WorksheetRowBlockSnapshot
+}) {
+  if (!units.some((unit) => unit.rkExposureLine)) return
+  const exposureColumnRanges = repeatBindings
+    .filter((binding) => binding.mode === 'row' && bindingUsesRkExposureField(binding))
+    .map((binding) => {
+      const column = XLSX.utils.decode_cell(binding.cell).c
+      const sourceMerge = blockSnapshot.merges.find(
+        (merge) => merge.s.r === 0 && merge.e.r === 0 && merge.s.c <= column && merge.e.c >= column,
+      )
+      return {
+        startColumn: sourceMerge?.s.c ?? column,
+        endColumn: sourceMerge?.e.c ?? column,
+      }
+    })
+
+  const ordinaryCellRanges: Array<{ startColumn: number; endColumn: number }> = []
+  const collectedRanges = new Set<string>()
+  for (let column = blockSnapshot.startColumn; column <= blockSnapshot.endColumn; column += 1) {
+    const sourceMerge = blockSnapshot.merges.find(
+      (merge) => merge.s.r === 0 && merge.e.r === 0 && merge.s.c <= column && merge.e.c >= column,
+    )
+    const startColumn = sourceMerge?.s.c ?? column
+    const endColumn = sourceMerge?.e.c ?? column
+    const key = `${startColumn}:${endColumn}`
+    if (collectedRanges.has(key)) continue
+    collectedRanges.add(key)
+
+    const containsExposureField = exposureColumnRanges.some(
+      (range) => range.startColumn <= endColumn && range.endColumn >= startColumn,
+    )
+    if (!containsExposureField) ordinaryCellRanges.push({ startColumn, endColumn })
+  }
+
+  const recordRanges: Array<{ start: number; end: number }> = []
+  let start = 0
+  for (let index = 1; index <= units.length; index += 1) {
+    if (index < units.length && units[index].recordIndex === units[start].recordIndex) continue
+    if (index - start > 1) recordRanges.push({ start, end: index - 1 })
+    start = index
+  }
+
+  for (const range of recordRanges) {
+    const targetStartRow = repeatRowStartIndex + range.start
+    const targetEndRow = repeatRowStartIndex + range.end
+    for (const { startColumn, endColumn } of ordinaryCellRanges) {
+      worksheet['!merges'] ??= []
+      worksheet['!merges'] = worksheet['!merges'].filter((merge) => !(
+        merge.s.r >= targetStartRow &&
+        merge.e.r <= targetEndRow &&
+        merge.s.c === startColumn &&
+        merge.e.c === endColumn
+      ))
+      worksheet['!merges'].push({
+        s: { r: targetStartRow, c: startColumn },
+        e: { r: targetEndRow, c: endColumn },
+      })
+      for (let row = targetStartRow; row <= targetEndRow; row += 1) {
+        for (let currentColumn = startColumn; currentColumn <= endColumn; currentColumn += 1) {
+          if (row === targetStartRow && currentColumn === startColumn) continue
+          clearMergedCellValue(worksheet, XLSX.utils.encode_cell({ r: row, c: currentColumn }))
+        }
+      }
+    }
+  }
+}
+
+function clearMergedCellValue(worksheet: XLSXTypes.WorkSheet, address: string) {
+  const cell = worksheet[address]
+  if (!cell) return
+  delete cell.v
+  delete cell.w
+  delete cell.f
+  delete cell.t
+}
+
 function getConstructorRowValue(
   binding: DocumentTemplateCellBinding,
   record: WeldInput,
   recordIndex: number,
   context: WeldingJournalTemplateContext,
+  rkExposureLine?: RkExposureLine,
 ) {
   const parts = getConstructorBindingParts(binding)
   if (parts.length) {
@@ -1916,14 +2022,14 @@ function getConstructorRowValue(
       !singlePart.lineBreakAfter
     ) {
       return applyConstructorEmptyValue(
-        getConstructorPartValue(singlePart, record, recordIndex, context),
+        getConstructorPartValue(singlePart, record, recordIndex, context, rkExposureLine),
         binding,
       )
     }
     const seenValues = new Set<string>()
     const value = parts
       .map((part) => {
-        const rawValue = getConstructorPartValue(part, record, recordIndex, context)
+        const rawValue = getConstructorPartValue(part, record, recordIndex, context, rkExposureLine)
         const normalizedValue = String(rawValue ?? '').trim()
         if (!normalizedValue) return ''
         const uniqueKey = normalizedValue.toLocaleLowerCase('ru')
@@ -1936,7 +2042,7 @@ function getConstructorRowValue(
     return applyConstructorEmptyValue(value, binding)
   }
   if (!binding.field) return applyConstructorEmptyValue('', binding)
-  const value = getTemplateFieldValueByKey(binding.field, record, recordIndex, context)
+  const value = getTemplateFieldValueByKey(binding.field, record, recordIndex, context, rkExposureLine)
   return applyConstructorEmptyValue(value, binding)
 }
 
@@ -1995,8 +2101,9 @@ function getConstructorPartValue(
   record: WeldInput,
   recordIndex: number,
   context: WeldingJournalTemplateContext,
+  rkExposureLine?: RkExposureLine,
 ) {
-  const primaryValue = getTemplateFieldValueByKey(part.field, record, recordIndex, context)
+  const primaryValue = getTemplateFieldValueByKey(part.field, record, recordIndex, context, rkExposureLine)
   const hasNumericFormula = Boolean(part.numericOperation || part.multiplier?.trim())
   if (!hasNumericFormula) return primaryValue
 
@@ -2004,7 +2111,7 @@ function getConstructorPartValue(
   if (part.numericOperation) {
     const compareValue = part.compareField
       ? parseConstructorNumericValue(
-          getTemplateFieldValueByKey(part.compareField, record, recordIndex, context),
+          getTemplateFieldValueByKey(part.compareField, record, recordIndex, context, rkExposureLine),
         )
       : undefined
     const values = [result, compareValue].filter((value): value is number => value !== undefined)
@@ -2143,6 +2250,7 @@ function getTemplateFieldValueByKey(
   record: WeldInput,
   recordIndex: number,
   context: WeldingJournalTemplateContext,
+  rkExposureLine?: RkExposureLine,
 ) {
   if (mappedKey === '__index') return recordIndex + 1
   if (mappedKey === '__welderName') return getWelderNamesForOfficialStamps(record, context.welderStamps ?? [])
@@ -2154,6 +2262,18 @@ function getTemplateFieldValueByKey(
     return context.systemDocument
       ? getSystemDocumentRowResult(record, context.systemDocument)
       : ''
+  }
+  if (mappedKey === '__rkExposureCoordinate') {
+    if (rkExposureLine) return rkExposureLine.coordinate
+    return parseRkExposureDescription(record.lnkDefectDescription)
+      .map((line) => line.coordinate)
+      .join('\n')
+  }
+  if (mappedKey === '__rkExposureDescription') {
+    if (rkExposureLine) return rkExposureLine.description
+    return parseRkExposureDescription(record.lnkDefectDescription)
+      .map((line) => line.description)
+      .join('\n')
   }
   if (isTemplateStampWelderNameField(mappedKey)) {
     return getWelderNameForTemplateStamp(

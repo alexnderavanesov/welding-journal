@@ -20,3 +20,12 @@ export function getPageScrollPosition(): PageScrollPosition {
     ),
   }
 }
+
+export function resetPageScrollPosition() {
+  const scrollingElement = document.scrollingElement
+
+  if (scrollingElement) scrollingElement.scrollLeft = 0
+  document.documentElement.scrollLeft = 0
+  document.body.scrollLeft = 0
+  window.scrollTo({ left: 0, top: 0, behavior: 'auto' })
+}

@@ -50,14 +50,20 @@ export function normalizeDateLikeForStorage(value: unknown) {
 export function getDateInputValidationReason(
   value: unknown,
   label = 'Дата',
-  options: { disallowFuture?: boolean } = {},
+  options: {
+    disallowFuture?: boolean
+    minDateIso?: string
+    minDateDisplay?: string
+  } = {},
 ) {
   const text = String(value ?? '').trim()
   if (!text || text === '-') return ''
 
   const isoDate = parseDateLikeToIso(text)
+  const minDateIso = options.minDateIso ?? MIN_ALLOWED_DATE_ISO
+  const minDateDisplay = options.minDateDisplay ?? MIN_ALLOWED_DATE_DISPLAY
   if (!isoDate) return `${label}: укажите дату в формате ${DATE_INPUT_FORMAT_HINT}.`
-  if (isoDate < MIN_ALLOWED_DATE_ISO) return `${label} не может быть раньше ${MIN_ALLOWED_DATE_DISPLAY}.`
+  if (isoDate < minDateIso) return `${label} не может быть раньше ${minDateDisplay}.`
   if (options.disallowFuture && isoDate > getTodayIsoDate()) return `${label} не может быть позже сегодняшней.`
   return ''
 }

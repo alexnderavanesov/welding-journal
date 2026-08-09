@@ -31,6 +31,25 @@ describe('clearCancelledRejectedLnkGeneratedData', () => {
     expect(row.vikConclusionDate).toBe('30.06.2026')
     expect(row.vikConclusion).toBe('Заключение-ВИК-30.06.2026-001')
   })
+
+  it('keeps RK exposure history when a rejected RK result is cancelled', () => {
+    const row = clearCancelledRejectedLnkGeneratedData({
+      hasRk: 'отменен',
+      rkRequest: 'Заявка-РК-001',
+      rkResult: 'ремонт',
+      rkConclusionDate: '30.06.2026',
+      rkConclusion: 'Заключение-РК-30.06.2026-001',
+      lnkDefectDescription: '0-250: дефект 12 мм\n250-0:',
+      rkExposureConfirmedDiameter: 159,
+    } as WeldInput)
+
+    expect(row.rkRequest).toBeNull()
+    expect(row.rkResult).toBeNull()
+    expect(row.rkConclusionDate).toBeNull()
+    expect(row.rkConclusion).toBeNull()
+    expect(row.lnkDefectDescription).toBe('0-250: дефект 12 мм\n250-0:')
+    expect(row.rkExposureConfirmedDiameter).toBe(159)
+  })
 })
 
 describe('clearDisabledLnkRequests', () => {

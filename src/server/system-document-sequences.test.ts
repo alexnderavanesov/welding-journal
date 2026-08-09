@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeSystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
+import {
+  getInitialSystemDocumentSequenceNumbers,
+  normalizeSystemDocumentSequenceUpdate,
+} from '@/server/system-document-sequences'
 
 describe('system document sequence update', () => {
   it('accepts several LNK request fields in one system request', () => {
@@ -40,5 +43,36 @@ describe('system document sequence update', () => {
         provisionalName: '',
       }),
     ).toThrow('Не указано предварительное имя системного документа.')
+  })
+
+  it('continues LNK conclusion numbering independently for every form', () => {
+    const sequences = getInitialSystemDocumentSequenceNumbers([
+      {
+        id: 1,
+        vikConclusion: 'Заключение-ВИК-06.08.2026-007',
+        vikConclusionDate: '2026-08-06',
+      },
+      {
+        id: 2,
+        rkConclusion: 'Заключение-РК-06.08.2026-002',
+        rkConclusionDate: '2026-08-06',
+      },
+      {
+        id: 3,
+        rfaConclusion: 'Заключение-РФА-06.08.2026-004',
+        rfaConclusionDate: '2026-08-06',
+      },
+      {
+        id: 4,
+        tvmtConclusion: 'Заключение-ТВМТ-06.08.2026-006',
+        tvmtConclusionDate: '2026-08-06',
+      },
+    ])
+
+    expect(sequences.lnkConclusionVik).toBe(8)
+    expect(sequences.lnkConclusionRk).toBe(3)
+    expect(sequences.lnkConclusionUzk).toBe(1)
+    expect(sequences.lnkConclusionPvk).toBe(1)
+    expect(sequences.lnkConclusionOther).toBe(7)
   })
 })

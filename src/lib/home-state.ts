@@ -18,6 +18,11 @@ export type HeatTreatmentFieldEditingState = {
   mode?: 'text' | 'request' | 'result'
 }
 
+export type RkExposureEditingState = {
+  record: WeldRow
+  returnPageScrollPosition?: PageScrollPosition
+}
+
 export type ActiveReport =
   | 'weldingJournal'
   | 'heatTreatment'

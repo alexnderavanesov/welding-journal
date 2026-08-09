@@ -7,7 +7,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 export type RowWithId = WeldRow
 
 export type MutationLike<TVariables> = {
-  mutate: (variables: TVariables) => void
+  mutate: (variables: TVariables, options?: { onSuccess?: () => void }) => void
 }
 
 export type UseManagedLnkResultActionsOptions = {

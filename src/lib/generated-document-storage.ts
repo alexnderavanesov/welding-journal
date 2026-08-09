@@ -9,8 +9,7 @@ import {
   type RemoteGeneratedDocument,
   type SaveGeneratedDocumentInput,
 } from '@/server/generated-documents'
-
-export const GENERATED_DOCUMENT_STORAGE_EVENT = 'generated-document-storage-change'
+import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 
 export type StoredGeneratedDocument = RemoteGeneratedDocument
 
@@ -68,8 +67,9 @@ export function downloadBlob(blob: Blob, fileName: string) {
 export async function openGeneratedDocument(
   documentRecord: GeneratedDocumentPreviewRecord,
   createDocumentBlob: () => Promise<Blob>,
+  existingPreviewWindow?: Window | null,
 ) {
-  const previewWindow = window.open('', '_blank')
+  const previewWindow = existingPreviewWindow ?? window.open('', '_blank')
   if (!previewWindow) {
     window.alert('Браузер заблокировал открытие новой вкладки.')
     return null

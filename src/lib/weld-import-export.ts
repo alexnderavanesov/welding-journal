@@ -8,10 +8,9 @@ export {
 } from './weld-import-parsers'
 export {
   isMeaningfulRecord,
-  parseEditableWorksheetRows,
   parseWorksheetRows,
 } from './weld-import-rows'
-export type { EditableImportOptions, ImportResult } from './weld-import-rows'
+export type { ImportResult } from './weld-import-rows'
 export {
   appendImportedWelds,
   getRequiredRootStampMessage,

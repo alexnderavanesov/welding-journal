@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { buildLnkResultDraftById } from '@/lib/lnk-result-draft'
-import { buildLnkConclusionCorrectionRows } from '@/lib/lnk-result-correction-updates'
+import { buildLnkConclusionCorrectionRows, buildLnkResultCorrectionRow } from '@/lib/lnk-result-correction-updates'
 import { buildLnkResultRows } from '@/lib/lnk-result-create-updates'
 import {
   getLnkResultSaveBlockReason,
@@ -41,6 +41,15 @@ const baseRow = {
   rkRequestDate: '2026-07-03',
   rkResult: 'ожидает НК',
 } as WeldRow
+
+const rkExposureTable = {
+  fileName: 'Экспозиции.xlsx',
+  uploadedAt: '2026-08-07T00:00:00.000Z',
+  entries: [{
+    diameter: 89,
+    options: [{ label: 'по 2 экспозициям', values: ['1', '2'], isDefault: true, note: '' }],
+  }],
+}
 
 describe('getLnkResultSaveBlockReason', () => {
   it('selects only rows from the matching LNK request date', () => {
@@ -232,5 +241,41 @@ describe('getLnkResultSaveBlockReason', () => {
 
     expect(updated.rkConclusionDate).toBe('2026-07-21')
     expect(updated.rkConclusion).toBe('Заключение №77')
+  })
+
+  it('creates the default RK exposure description when the RK result is first saved', () => {
+    const [updated] = buildLnkResultRows({
+      records: [{ ...baseRow, d1: 95, d2: 95, connectionType: 'С17' }],
+      methodKey: 'rkRequest',
+      controlDate: '2026-07-04',
+      resultById: { 1: 'годен' },
+      conclusionName: 'Заключение-РК',
+      rkExposureTable,
+    })
+
+    expect(updated.lnkDefectDescription).toBe('1: ДНО\n2: ДНО')
+    expect(updated.rkExposureConfirmedDiameter).toBe(95)
+  })
+
+  it('preserves manually edited RK descriptions when the same result is saved again', () => {
+    const updated = buildLnkResultCorrectionRow({
+      record: {
+        ...baseRow,
+        d1: 95,
+        d2: 95,
+        connectionType: 'С17',
+        rkResult: 'годен',
+        rkConclusionDate: '2026-07-04',
+        rkConclusion: 'Заключение-РК',
+        lnkDefectDescription: '1: участок 1а\n2: участок 2б',
+        rkExposureConfirmedDiameter: 95,
+      },
+      methodKey: 'rkRequest',
+      result: 'годен',
+      rkExposureTable,
+    })
+
+    expect(updated.lnkDefectDescription).toBe('1: участок 1а\n2: участок 2б')
+    expect(updated.rkExposureConfirmedDiameter).toBe(95)
   })
 })

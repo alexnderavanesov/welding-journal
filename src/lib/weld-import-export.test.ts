@@ -12,7 +12,7 @@ import { buildExportXlsxBytes } from './weld-export-xlsx-xml'
 import { recordsToVisibleExportMatrix } from './weld-export-utils'
 import { emptyToNull, excelSerialDateToIso, parseBoolean, parseDate } from './weld-import-parsers'
 import { parseWorkbook } from './weld-import-readers'
-import { parseEditableWorksheetRows, parseWorksheetRows } from './weld-import-rows'
+import { parseWorksheetRows } from './weld-import-rows'
 
 const label = (key: string) => {
   const field = FIELD_BY_KEY.get(key as never)
@@ -92,6 +92,15 @@ describe('weld import/export', () => {
 
     expect(normalized.weldDate).toBe('2025-03-20')
     expect(normalized.hasVik).toBe(true)
+  })
+
+  it('preserves RK exposure rows when normalizing a weld for storage', () => {
+    const normalized = normalizeWeldInput({
+      joint: 'S13',
+      lnkDefectDescription: ' 1: дно \r\n 2: дно ',
+    })
+
+    expect(normalized.lnkDefectDescription).toBe('1: дно\n2: дно')
   })
 
   it('keeps WDI as a numeric Excel value during export and import', () => {
@@ -248,28 +257,6 @@ describe('weld import/export', () => {
     expect(result.records[0].hasVik).toBe(true)
   })
 
-  it('imports only editable heat treatment fields from a partial worksheet', () => {
-    const result = parseEditableWorksheetRows(
-      [
-        [label('line'), label('joint'), label('pstoDate'), label('pstoResult'), label('responsible'), label('weldDate')],
-        ['330-FL-02-004', 'S13', 45736, 'проведено', 'ignored responsible', 45700],
-      ],
-      {
-        editableFieldKeys: new Set(['pstoRequest', 'pstoDate', 'pstoResult', 'pstoNote', 'pstoBoq', 'pstoKs3']),
-        matchFieldKeys: new Set(['line', 'joint']),
-      },
-    )
-
-    expect(result.records).toEqual([
-      {
-        line: '330-FL-02-004',
-        joint: 'S13',
-        pstoDate: '2025-03-20',
-        pstoResult: 'проведено',
-      },
-    ])
-  })
-
   it('round-trips an exported workbook through the import parser', async () => {
     const workbook = buildExportWorkbook([
       {
@@ -378,20 +365,9 @@ describe('weld import/export', () => {
     const worksheet = workbook.Sheets['ЛНК']
     const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true, defval: null })
     const payload = new TextDecoder().decode(bytes)
-    const result = parseEditableWorksheetRows(rows, {
-      editableFieldKeys: new Set(['vikResult', 'rkResult', 'pstoResult']),
-      matchFieldKeys: new Set(['joint']),
-    })
-
     expect(payload).not.toContain('<drawing')
     expect(payload).not.toContain('/media/')
     expect(rows[1]).toEqual(['S13', 'ожидает НК', 'ремонт', 'проведено', 'не годен'])
-    expect(result.records[0]).toMatchObject({
-      joint: 'S13',
-      vikResult: 'ожидает НК',
-      rkResult: 'ремонт',
-      pstoResult: 'проведено',
-    })
   })
 
   it('appends imported rows without changing existing register rows', () => {

@@ -141,6 +141,20 @@
       "when": 1785963975599,
       "tag": "0019_aberrant_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786045777653,
+      "tag": "0020_flat_meltdown",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786139257358,
+      "tag": "0021_wet_major_mapleleaf",
+      "breakpoints": true
     }
   ]
 }

@@ -9,7 +9,6 @@ import {
   ChevronDown,
   Database,
   Download,
-  ExternalLink,
   FileText,
   Hash,
   Inbox,
@@ -26,6 +25,10 @@ import {
 import { DialogHeader } from '@/components/dialog-header'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import {
+  RkExposureTableEditorDialog,
+  WdiTableEditorDialog,
+} from '@/components/settings-reference-table-dialogs'
 import {
   analyzeDocumentTemplateReplacement,
   deleteDocumentTemplate,
@@ -55,7 +58,11 @@ import {
   loadSystemDocumentSequence,
   resetStoredSystemDocumentSequence,
 } from '@/lib/system-document-sequence-storage'
-import { isSystemDocumentType, type SystemDocumentType } from '@/lib/system-document-types'
+import {
+  LNK_CONCLUSION_TEMPLATE_PROFILES,
+  isLnkConclusionTemplateId,
+  isSystemDocumentTemplateId,
+} from '@/lib/system-document-template-types'
 import {
   REQUEST_NAMING_PATTERN_FIELDS,
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
@@ -99,8 +106,11 @@ import {
   type SystemIndexKey,
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
-import { saveOtherSettings, useOtherSettings, type WdiCalculationMode, type WdiTableSettings } from '@/lib/other-settings'
-import { buildWdiTableXlsxBytes, getWdiTableMatrix, parseWdiTableFile } from '@/lib/wdi-table-import'
+import {
+  saveOtherSettings,
+  useOtherSettings,
+  type WdiCalculationMode,
+} from '@/lib/other-settings'
 import {
   DEFAULT_DATA_LIST_SETTINGS,
   getDataListOptionInputError,
@@ -672,10 +682,10 @@ function SecurityToggle({
 
 function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useOtherSettings()
-  const [wdiMessage, setWdiMessage] = useState<string | null>(null)
+  const [isWdiEditorOpen, setIsWdiEditorOpen] = useState(false)
+  const [isRkExposureEditorOpen, setIsRkExposureEditorOpen] = useState(false)
 
   function updateWdiCalculationMode(mode: WdiCalculationMode) {
-    setWdiMessage(null)
     void runProtectedSettingsChange(() => {
       saveOtherSettings({
         ...settings,
@@ -684,62 +694,19 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
     })
   }
 
-  async function handleWdiTableUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0]
-    event.currentTarget.value = ''
-    if (!file) return
+  const saveWdiTable = useCallback(
+    (table: NonNullable<typeof settings.wdiTable>) => runProtectedSettingsChange(() => {
+      saveOtherSettings({ ...settings, wdiCalculationMode: 'table', wdiTable: table })
+    }),
+    [runProtectedSettingsChange, settings],
+  )
 
-    setWdiMessage(null)
-    try {
-      await runProtectedSettingsChange(async () => {
-        const table = await parseWdiTableFile(file)
-        saveOtherSettings({
-          ...settings,
-          wdiCalculationMode: 'table',
-          wdiTable: table,
-        })
-        setWdiMessage(`Таблица загружена: ${table.diameters.length} диаметров × ${table.thicknesses.length} толщин.`)
-      })
-    } catch (error) {
-      setWdiMessage((error as Error).message)
-    }
-  }
-
-  function openWdiTablePreview() {
-    if (!settings.wdiTable) {
-      setWdiMessage('Сначала загрузите таблицу дюйм-диаметров.')
-      return
-    }
-
-    const html = buildWdiTablePreviewHtml(settings.wdiTable)
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank', 'noopener,noreferrer')
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  }
-
-  async function downloadWdiTable() {
-    if (!settings.wdiTable) {
-      setWdiMessage('Сначала загрузите таблицу дюйм-диаметров.')
-      return
-    }
-
-    setWdiMessage(null)
-    try {
-      const bytes = await buildWdiTableXlsxBytes(settings.wdiTable)
-      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = getWdiTableDownloadName(settings.wdiTable.fileName)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-    } catch (error) {
-      setWdiMessage((error as Error).message)
-    }
-  }
+  const saveRkExposureTable = useCallback(
+    (table: NonNullable<typeof settings.rkExposureTable>) => runProtectedSettingsChange(() => {
+      saveOtherSettings({ ...settings, rkExposureTable: table })
+    }),
+    [runProtectedSettingsChange, settings],
+  )
 
   return (
     <div className="space-y-6">
@@ -781,11 +748,11 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
           />
           <WdiModeCard
             title="Системный: таблица D/T"
-            description="Берется меньший D1/D2 и меньший T1/T2, затем значение ищется в загруженной таблице."
+            description="Берется меньший D1/D2 и меньший T1/T2, затем значение ищется в настроенной таблице."
             active={settings.wdiCalculationMode === 'table'}
             onClick={() => {
               if (!settings.wdiTable) {
-                setWdiMessage('Сначала загрузите таблицу дюйм-диаметров.')
+                setIsWdiEditorOpen(true)
                 return
               }
               updateWdiCalculationMode('table')
@@ -799,39 +766,67 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
               <div className="font-semibold text-slate-800">Таблица дюйм-диаметров</div>
               <div className="mt-1">
                 {settings.wdiTable
-                  ? `${settings.wdiTable.fileName}: ${settings.wdiTable.diameters.length} диаметров × ${settings.wdiTable.thicknesses.length} толщин`
-                  : 'Таблица пока не загружена.'}
+                  ? `${settings.wdiTable.diameters.length} диаметров × ${settings.wdiTable.thicknesses.length} толщин`
+                  : 'Справочник пока не заполнен.'}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={openWdiTablePreview}
-                disabled={!settings.wdiTable}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Открыть
-              </button>
-              <button
-                type="button"
-                onClick={() => void downloadWdiTable()}
-                disabled={!settings.wdiTable}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Download className="h-4 w-4" />
-                Скачать
-              </button>
-              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40 hover:bg-slate-50">
-                <Upload className="h-4 w-4" />
-                Загрузить
-                <input type="file" accept=".xlsx,.xls" onChange={handleWdiTableUpload} className="hidden" />
-              </label>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsWdiEditorOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 shadow-sm shadow-sky-100/50 hover:bg-sky-100"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {settings.wdiTable ? 'Редактировать справочник' : 'Заполнить справочник'}
+            </button>
           </div>
-          {wdiMessage ? <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">{wdiMessage}</div> : null}
         </div>
       </section>
+
+      <section className="rounded-md border border-slate-300 bg-white p-4 shadow-sm shadow-slate-200/60">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="max-w-4xl">
+            <h4 className="text-sm font-semibold text-slate-900">Экспозиции по диаметрам</h4>
+            <p className="mt-1 text-sm leading-5 text-slate-500">
+              Таблица задаёт варианты снимков или координат мерного пояса для РК. Диаметр строки действует до следующего диаметра,
+              а знак «+» отмечает вариант по умолчанию. Замена таблицы не переписывает уже сохранённые описания дефектов.
+            </p>
+          </div>
+          <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+            settings.rkExposureTable
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-slate-200 bg-slate-50 text-slate-500'
+          }`}>
+            {settings.rkExposureTable ? 'настроено' : 'не настроено'}
+          </span>
+        </div>
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 text-sm text-slate-600">
+              <div className="font-semibold text-slate-800">Справочник снимков РК</div>
+              <div className="mt-1">
+                {settings.rkExposureTable
+                  ? `${settings.rkExposureTable.entries.length} диапазонов · ${settings.rkExposureTable.entries.reduce((sum, entry) => sum + entry.options.length, 0)} вариантов`
+                  : 'Справочник пока не заполнен.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsRkExposureEditorOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 shadow-sm shadow-sky-100/50 hover:bg-sky-100"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {settings.rkExposureTable ? 'Редактировать справочник' : 'Заполнить справочник'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {isWdiEditorOpen ? (
+        <WdiTableEditorDialog table={settings.wdiTable} onClose={() => setIsWdiEditorOpen(false)} onSave={saveWdiTable} />
+      ) : null}
+      {isRkExposureEditorOpen ? (
+        <RkExposureTableEditorDialog table={settings.rkExposureTable} onClose={() => setIsRkExposureEditorOpen(false)} onSave={saveRkExposureTable} />
+      ) : null}
     </div>
   )
 }
@@ -862,75 +857,6 @@ function WdiModeCard({
       <span className="mt-2 block text-sm leading-5 text-slate-500">{description}</span>
     </button>
   )
-}
-
-function buildWdiTablePreviewHtml(table: WdiTableSettings) {
-  const matrix = getWdiTableMatrix(table)
-  const [headerRow = [], ...dataRows] = matrix
-  const headerCells = headerRow
-    .map((cell) => `<th>${escapeHtml(formatWdiTableCell(cell))}</th>`)
-    .join('')
-  const rows = dataRows
-    .map((row) => `<tr>${row.map((cell, index) => `${index === 0 ? '<th>' : '<td>'}${escapeHtml(formatWdiTableCell(cell))}${index === 0 ? '</th>' : '</td>'}`).join('')}</tr>`)
-    .join('')
-  const uploadedAt = table.uploadedAt ? new Date(table.uploadedAt).toLocaleString('ru-RU') : 'не указано'
-
-  return `<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(table.fileName)} · WDI</title>
-  <style>
-    :root { color-scheme: light; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; background: #f8fafc; color: #0f172a; }
-    main { padding: 28px; }
-    .header { margin-bottom: 18px; }
-    h1 { margin: 0; font-size: 22px; line-height: 1.25; }
-    .meta { margin-top: 8px; color: #64748b; font-size: 14px; }
-    .table-wrap { max-height: calc(100vh - 132px); overflow: auto; border: 1px solid #dbe3ef; border-radius: 10px; background: white; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); }
-    table { border-collapse: separate; border-spacing: 0; min-width: 100%; }
-    th, td { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 9px 12px; text-align: center; white-space: nowrap; font-size: 14px; }
-    thead th { position: sticky; top: 0; z-index: 2; background: #e8eef6; font-weight: 700; }
-    tbody th { position: sticky; left: 0; z-index: 1; background: #eaf6ff; font-weight: 700; color: #0f466b; }
-    thead th:first-child { left: 0; z-index: 3; background: linear-gradient(135deg, #d7e1ef 0%, #eef4fb 100%); }
-    tbody tr:nth-child(even) td { background: #fbfdff; }
-    td:empty::after { content: "—"; color: #cbd5e1; }
-  </style>
-</head>
-<body>
-  <main>
-    <div class="header">
-      <h1>Таблица дюйм-диаметров WDI</h1>
-      <div class="meta">${escapeHtml(table.fileName)} · ${table.diameters.length} диаметров × ${table.thicknesses.length} толщин · загружено: ${escapeHtml(uploadedAt)}</div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>${headerCells}</tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  </main>
-</body>
-</html>`
-}
-
-function getWdiTableDownloadName(fileName: string) {
-  const baseName = fileName.trim().replace(/\.(xlsx|xls)$/i, '') || 'Таблица WDI'
-  return `${baseName}.xlsx`
-}
-
-function formatWdiTableCell(value: number | string) {
-  return typeof value === 'number' ? String(value).replace('.', ',') : value
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
 }
 
 function getWdiModeLabel(mode: WdiCalculationMode) {
@@ -1425,7 +1351,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }, [])
 
   useEffect(() => {
-    if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentType(activeTemplateId)) {
+    if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentTemplateId(activeTemplateId)) {
       setNextDocumentNumber(null)
       return
     }
@@ -1630,8 +1556,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   }
 
   const handleDocumentSequenceReset = async () => {
-    if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentType(activeTemplateId)) return
-    const isSystemDocument = isSystemDocumentType(activeTemplateId)
+    if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentTemplateId(activeTemplateId)) return
+    const isSystemDocument = isSystemDocumentTemplateId(activeTemplateId)
     const confirmed = await confirmAction({
       title: 'Обнулить счетчик документов?',
       itemName: activeTemplate.label,
@@ -1650,7 +1576,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     try {
       await runProtectedSettingsChange(async () => {
         const result = isSystemDocument
-          ? await resetStoredSystemDocumentSequence(activeTemplateId as SystemDocumentType)
+          ? await resetStoredSystemDocumentSequence(activeTemplateId)
           : await resetGeneratedDocumentSequence(activeTemplateId as GeneratedDocumentType)
         setNextDocumentNumber(result.nextNumber)
       })
@@ -1670,28 +1596,19 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
         className="hidden"
         onChange={handleTemplateUpload}
       />
-      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
-        <div>
-          <div>
-            <div className="flex items-center gap-2">
-              <Upload className="h-5 w-5 text-slate-500" />
-              <h3 className="text-base font-semibold text-slate-900">Шаблоны документов</h3>
-            </div>
-            <div className="mt-2 max-w-4xl space-y-1.5 text-sm leading-6 text-slate-600">
-              <p>Загрузите чистый Excel с готовым оформлением, картинками, границами и объединенными ячейками.</p>
-              <p>
-                Затем откройте конструктор: выберите строку-пример и назначьте нужным ячейкам поля системы. Писать маркеры в Excel вручную
-                больше не требуется.
-              </p>
-              <p>
-                Для строк-примеров можно выбрать повторение по стыкам, проектам, шифрам или линиям. Ячейки внутри блока автоматически получают данные текущего стыка или текущей группы.
-              </p>
-            </div>
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 px-4 py-3 shadow-sm shadow-slate-200/60">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-slate-500" />
+            <h3 className="text-base font-semibold text-slate-900">Шаблоны документов</h3>
           </div>
+          <p className="text-sm leading-5 text-slate-600">
+            Загрузите оформленный Excel и назначьте его ячейкам поля в конструкторе. Поддерживаются повторяемые строки и группы.
+          </p>
         </div>
 
         {uploadError ? (
-          <div className="mt-4 flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             {uploadError}
           </div>
@@ -1701,6 +1618,52 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
         <div className="rounded-md border border-slate-300 bg-white p-2 shadow-sm shadow-slate-200/60">
           {DOCUMENT_TEMPLATE_TYPES.map((templateType) => {
+            if (
+              isLnkConclusionTemplateId(templateType.id) &&
+              templateType.id !== LNK_CONCLUSION_TEMPLATE_PROFILES[0].id
+            ) {
+              return null
+            }
+            if (templateType.id === LNK_CONCLUSION_TEMPLATE_PROFILES[0].id) {
+              const isActive = isLnkConclusionTemplateId(activeTemplateId)
+              const uploadedCount = LNK_CONCLUSION_TEMPLATE_PROFILES.filter(
+                (profile) => Boolean(uploads[profile.id]),
+              ).length
+              return (
+                <button
+                  key="lnkConclusion"
+                  type="button"
+                  onClick={() =>
+                    setActiveTemplateId(
+                      isLnkConclusionTemplateId(activeTemplateId)
+                        ? activeTemplateId
+                        : LNK_CONCLUSION_TEMPLATE_PROFILES[0].id,
+                    )
+                  }
+                  className={`flex w-full items-start justify-between gap-3 rounded-md px-3 py-3 text-left transition-colors ${
+                    isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span>
+                    <span className="block text-sm font-semibold">Заключения ЛНК</span>
+                    <span className={`mt-1 block text-xs ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                      Отдельные формы ВИК, РК, УЗК, ПВК и прочих видов НК.
+                    </span>
+                  </span>
+                  {uploadedCount > 0 ? (
+                    <span
+                      className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
+                        isActive
+                          ? 'border-slate-600 bg-slate-800 text-emerald-300'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      }`}
+                    >
+                      {uploadedCount}/{LNK_CONCLUSION_TEMPLATE_PROFILES.length}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            }
             const isActive = activeTemplateId === templateType.id
             const hasUpload = Boolean(uploads[templateType.id])
             return (
@@ -1725,6 +1688,41 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
         </div>
 
         <div className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+          {isLnkConclusionTemplateId(activeTemplateId) ? (
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Форма заключения
+              </div>
+              <div className="flex flex-wrap gap-2" role="tablist" aria-label="Форма заключения ЛНК">
+                {LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => {
+                  const isActive = activeTemplateId === profile.id
+                  return (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => setActiveTemplateId(profile.id)}
+                      className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors ${
+                        isActive
+                          ? 'border-sky-700 bg-sky-700 text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
+                      }`}
+                    >
+                      {profile.label}
+                      {uploads[profile.id] ? (
+                        <CheckCircle2 className={`h-3.5 w-3.5 ${isActive ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                «Прочие» используется для видов НК без отдельной формы. Новую самостоятельную форму,
+                например РФА, можно будет добавить без изменения созданных заключений.
+              </p>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -1824,7 +1822,8 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           </div>
 
           <div className="space-y-6">
-            {activeUpload && (isGeneratedDocumentType(activeTemplateId) || isSystemDocumentType(activeTemplateId)) ? (
+            {(activeUpload && isGeneratedDocumentType(activeTemplateId)) ||
+            isSystemDocumentTemplateId(activeTemplateId) ? (
               <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
                   <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600">
@@ -1833,9 +1832,9 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                   <div>
                     <div className="text-sm font-semibold text-slate-900">Нумерация документов</div>
                     <p className="mt-0.5 text-xs leading-5 text-slate-500">
-                      Следующий новый документ получит номер{' '}
+                      Следующий новый {isLnkConclusionTemplateId(activeTemplateId) ? 'документ этой формы' : 'документ'} получит номер{' '}
                       <span className="font-semibold text-slate-800">{nextDocumentNumber ?? '…'}</span>.
-                      {isSystemDocumentType(activeTemplateId)
+                      {isSystemDocumentTemplateId(activeTemplateId)
                         ? ' Пользовательское имя и изменение состава существующего документа счетчик не расходуют. При приведении пользовательского имени к системному выделяется следующий номер.'
                         : ' Повторное формирование существующего документа сохраняет его номер.'}
                     </p>

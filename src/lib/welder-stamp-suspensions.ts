@@ -1,4 +1,5 @@
-import { formatDisplayDate, getDateInputValidationReason, getTodayIsoDate, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { formatDisplayDate, getTodayIsoDate, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { getWelderStampDateInputValidationReason } from '@/lib/welder-stamp-date-limits'
 import { normalizeNaksStamp } from '@/lib/welder-stamp-registry'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
@@ -26,9 +27,9 @@ export function validateWelderStampSuspensionRecord(record: WelderStampSuspensio
   if (draft.naksStamp.length !== 4) return 'Клеймо НАКС должно состоять из 4 латинских букв или цифр'
   if (!draft.suspendedFrom) return 'Укажите дату отстранения от'
 
-  const fromReason = getDateInputValidationReason(draft.suspendedFrom, 'Дата отстранения от')
+  const fromReason = getWelderStampDateInputValidationReason(draft.suspendedFrom, 'Дата отстранения от')
   if (fromReason) return fromReason
-  const toReason = draft.suspendedTo ? getDateInputValidationReason(draft.suspendedTo, 'Дата отстранения до') : ''
+  const toReason = draft.suspendedTo ? getWelderStampDateInputValidationReason(draft.suspendedTo, 'Дата отстранения до') : ''
   if (toReason) return toReason
   if (draft.suspendedTo && draft.suspendedFrom > draft.suspendedTo) {
     return 'Период отстранения заполнен некорректно: дата «от» позже даты «до»'

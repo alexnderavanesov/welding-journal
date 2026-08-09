@@ -84,11 +84,11 @@ export function LnkResultSettings({
           </label>
 
           <label className="block space-y-1.5 text-sm">
-            <span className="text-[13px] font-medium leading-none text-slate-700">Результат по умолчанию</span>
+            <span className="text-[13px] font-medium leading-none text-slate-700">Результат для всех выбранных</span>
             <Select value={draft.result} onChange={(event) => onDefaultResultChange(event.target.value)}>
               <option value="">Выберите результат</option>
               <option value={LNK_CUSTOM_RESULT_VALUE} disabled>
-                пользовательский
+                Разные результаты
               </option>
               {LNK_RESULT_OPTIONS.map((option) => (
                 <option key={option} value={option} disabled={option === 'ремонт' && hasRepairForbiddenRows}>

@@ -4,7 +4,15 @@ import {
   normalizeHeader,
 } from './weld-field-definitions'
 
-const EXCLUDED_EXCEL_FIELD_KEYS = new Set(['id', 'materialId1', 'materialId2', 'createdAt', 'pstoCreatedAt', 'lnkCreatedAt'])
+const EXCLUDED_EXCEL_FIELD_KEYS = new Set([
+  'id',
+  'materialId1',
+  'materialId2',
+  'createdAt',
+  'pstoCreatedAt',
+  'lnkCreatedAt',
+  'rkExposureConfirmedDiameter',
+])
 
 export const EXCEL_FIELDS = WELD_FIELDS.filter(
   (field) => !isVirtualWeldField(field) && !EXCLUDED_EXCEL_FIELD_KEYS.has(field.key),

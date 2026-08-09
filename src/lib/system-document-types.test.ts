@@ -6,6 +6,7 @@ import {
   buildSystemDocumentSummaries,
   getSystemDocumentReferenceForField,
   getSystemDocumentNumber,
+  getSystemDocumentRenameNumber,
   getSystemDocumentTargetReport,
   isSystemDocumentNameForRows,
 } from '@/lib/system-document-types'
@@ -197,6 +198,106 @@ describe('system document grouping', () => {
         settings,
       ),
     ).toBe('003')
+  })
+
+  it('restores the allocated number when digits were appended manually to a system name', () => {
+    const settings = {
+      ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      lnkRequest: {
+        defaultMode: 'system' as const,
+        systemPattern: 'Заявка НК №{{Шифр}}-{{№}}',
+      },
+    }
+
+    expect(
+      getSystemDocumentRenameNumber(
+        {
+          type: 'lnkRequest',
+          title: 'Заявка НК №400-0055',
+          date: '2026-08-08',
+          projects: ['Риформинг'],
+          subtitleCodes: ['400'],
+          lines: ['LIN-001'],
+        } as Parameters<typeof getSystemDocumentRenameNumber>[0],
+        settings,
+        6,
+      ),
+    ).toBe('005')
+  })
+
+  it('restores a one-digit allocated number after one digit was appended', () => {
+    const settings = {
+      ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      lnkRequest: {
+        defaultMode: 'system' as const,
+        systemPattern: 'Заявка НК №{{Шифр}}-{{№}}',
+      },
+    }
+
+    expect(
+      getSystemDocumentRenameNumber(
+        {
+          type: 'lnkRequest',
+          title: 'Заявка НК №400-55',
+          date: '2026-08-08',
+          projects: ['Риформинг'],
+          subtitleCodes: ['400'],
+          lines: ['LIN-001'],
+        } as Parameters<typeof getSystemDocumentRenameNumber>[0],
+        settings,
+        6,
+      ),
+    ).toBe('005')
+  })
+
+  it('does not accept an implausible appended digit sequence as a document number', () => {
+    const settings = {
+      ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      lnkRequest: {
+        defaultMode: 'system' as const,
+        systemPattern: 'Заявка НК №{{Шифр}}-{{№}}',
+      },
+    }
+
+    expect(
+      getSystemDocumentRenameNumber(
+        {
+          type: 'lnkRequest',
+          title: 'Заявка НК №400-555555',
+          date: '2026-08-08',
+          projects: ['Риформинг'],
+          subtitleCodes: ['400'],
+          lines: ['LIN-001'],
+        } as Parameters<typeof getSystemDocumentRenameNumber>[0],
+        settings,
+        6,
+      ),
+    ).toBe('005')
+  })
+
+  it('keeps an unchanged system number after the counter has advanced', () => {
+    const settings = {
+      ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      lnkRequest: {
+        defaultMode: 'system' as const,
+        systemPattern: 'Заявка НК №{{Шифр}}-{{№}}',
+      },
+    }
+
+    expect(
+      getSystemDocumentRenameNumber(
+        {
+          type: 'lnkRequest',
+          title: 'Заявка НК №400-005',
+          date: '2026-08-08',
+          projects: ['Риформинг'],
+          subtitleCodes: ['400'],
+          lines: ['LIN-001'],
+        } as Parameters<typeof getSystemDocumentRenameNumber>[0],
+        settings,
+        6,
+      ),
+    ).toBe('005')
   })
 
   it('does not treat digits in a custom document name as a system number', () => {

@@ -22,7 +22,11 @@ const DOCUMENT_TEMPLATE_IDS = new Set<DocumentTemplateId>([
   'checklist',
   'zni',
   'lnkRequest',
-  'lnkConclusion',
+  'lnkConclusionVik',
+  'lnkConclusionRk',
+  'lnkConclusionUzk',
+  'lnkConclusionPvk',
+  'lnkConclusionOther',
   'pstoRequest',
   'pstoConclusion',
 ])
@@ -65,6 +69,14 @@ export const listRemoteDocumentTemplates = createServerFn({ method: 'GET' }).han
   const db = requireDb()
   const rows = await db.select().from(documentTemplates)
   return rows.map(toTemplateSummary)
+})
+
+export const listRemoteDocumentTemplateIds = createServerFn({ method: 'GET' }).handler(async () => {
+  const db = requireDb()
+  return db
+    .select({ id: documentTemplates.id })
+    .from(documentTemplates)
+    .then((rows) => rows.map((row) => row.id))
 })
 
 export const getRemoteDocumentTemplate = createServerFn({ method: 'GET' })

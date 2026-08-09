@@ -14,7 +14,7 @@ import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
-  getWeldColumnFilterCellText,
+  getWeldColumnFilterRowText,
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-table-filtering'
 import { listWeldColumnFilterOptions, type WeldReportKind } from '@/server/welds'
@@ -149,6 +149,7 @@ function WeldColumnFilterControl({
           columnFilters,
         },
       }),
+    staleTime: 15_000,
   })
   const serverOptions = useMemo(
     () =>
@@ -484,7 +485,7 @@ function getColumnFilterOptions(rows: WeldRow[], fieldKey: WeldFieldKey, columnF
   const sourceRows = filterWeldRowsByColumns(rows, filtersWithoutCurrent)
   const counts = new Map<string, number>()
   for (const row of sourceRows) {
-    const value = getWeldColumnFilterCellText(row[fieldKey]).trim()
+    const value = getWeldColumnFilterRowText(row, fieldKey).trim()
     counts.set(value, (counts.get(value) ?? 0) + 1)
   }
   return Array.from(counts.entries())

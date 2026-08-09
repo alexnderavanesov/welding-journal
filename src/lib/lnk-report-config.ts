@@ -92,15 +92,16 @@ export const LNK_REQUEST_DATE_FIELD_KEYS = LNK_METHODS.map((method) => method.re
 export const LNK_GENERATED_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]),
   'lnkDefectDescription',
+  'rkExposureConfirmedDiameter',
   'lnkNote',
   'lnkCreatedAt',
 ])
 export const LNK_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_EDITABLE_REPORT_FIELD_KEYS,
+  'rkExposureScheme',
+  'lnkDefectDescription',
   'lnkNote',
 ])
-export const LNK_IMPORT_MATCH_FIELD_KEYS = new Set<WeldFieldKey>(['line', 'joint'])
-
 function getReportField(key: WeldFieldKey, group: string): WeldField {
   const field = FIELD_BY_KEY.get(key)
   if (!field) throw new Error(`Unknown LNK report field: ${key}`)

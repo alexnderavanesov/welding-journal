@@ -1,4 +1,5 @@
-import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { normalizeDateLikeForStorage } from '@/lib/date-format'
+import { getWelderStampDateInputValidationReason } from '@/lib/welder-stamp-date-limits'
 import { normalizeWelderStampMaterialGroups, normalizeWelderStampWeldType } from '@/lib/welder-stamp-format'
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
 import type { WelderStampDlsPermit, WelderStampNaksPermit, WelderStampRecord } from '@/lib/welder-stamp-types'
@@ -171,9 +172,9 @@ function validatePermitBase(
   const thicknessError = validateRange(permit.thicknessFrom, permit.thicknessTo, `${prefix}: диапазон толщины`)
   if (thicknessError) return thicknessError
 
-  const validFromReason = permit.validFrom ? getDateInputValidationReason(permit.validFrom, `${prefix}: срок действия от`) : ''
+  const validFromReason = permit.validFrom ? getWelderStampDateInputValidationReason(permit.validFrom, `${prefix}: срок действия от`) : ''
   if (validFromReason) return validFromReason
-  const validToReason = permit.validTo ? getDateInputValidationReason(permit.validTo, `${prefix}: срок действия до`) : ''
+  const validToReason = permit.validTo ? getWelderStampDateInputValidationReason(permit.validTo, `${prefix}: срок действия до`) : ''
   if (validToReason) return validToReason
   if (permit.validFrom && permit.validTo && permit.validFrom > permit.validTo) {
     return `${prefix}: срок действия заполнен некорректно, дата «от» позже даты «до»`

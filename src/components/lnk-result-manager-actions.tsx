@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
 import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
@@ -29,40 +30,49 @@ export function LnkResultManagerActions({
   onClearResult,
 }: LnkResultManagerActionsProps) {
   const saveCheckSettings = useSaveCheckSettings()
+  const removalBlockReason = getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
   return (
-    <div className="flex flex-wrap content-start justify-end gap-1.5">
-      <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
-      {LNK_RESULT_OPTIONS.map((option) => {
-        const disabledByRepairRule = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
-        return (
-          <button
-            key={option}
-            type="button"
-            onClick={() => {
-              if (!disabledByRepairRule) onReplaceResult(row, method.requestKey, option)
-            }}
-            disabled={disabledByRepairRule || isResultCorrectionPending || isResultReplacementPending}
-            title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
-            className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-              disabledByRepairRule
-                ? 'border-slate-200 bg-slate-50 text-slate-400'
-                : (pendingResult || currentResult) === option
-                  ? getLnkResultBadgeClass(option)
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            {option}
-          </button>
-        )
-      })}
-      <button
-        type="button"
-        onClick={() => onClearResult(row, method.requestKey)}
-        disabled={!currentResult || isResultCorrectionPending || isResultReplacementPending}
-        className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        удалить результат
-      </button>
+    <div className="flex content-start flex-col items-end gap-1.5">
+      <div className="flex flex-wrap justify-end gap-1.5">
+        <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
+        {LNK_RESULT_OPTIONS.map((option) => {
+          const disabledByRepairRule = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => {
+                if (!disabledByRepairRule) onReplaceResult(row, method.requestKey, option)
+              }}
+              disabled={disabledByRepairRule || isResultCorrectionPending || isResultReplacementPending}
+              title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
+              className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                disabledByRepairRule
+                  ? 'border-slate-200 bg-slate-50 text-slate-400'
+                  : (pendingResult || currentResult) === option
+                    ? getLnkResultBadgeClass(option)
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {option}
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          onClick={() => {
+            if (!removalBlockReason) onClearResult(row, method.requestKey)
+          }}
+          disabled={!currentResult || Boolean(removalBlockReason) || isResultCorrectionPending || isResultReplacementPending}
+          title={removalBlockReason || undefined}
+          className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          удалить результат
+        </button>
+      </div>
+      {removalBlockReason ? (
+        <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{removalBlockReason}</p>
+      ) : null}
     </div>
   )
 }

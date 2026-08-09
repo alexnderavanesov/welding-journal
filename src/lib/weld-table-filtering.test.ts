@@ -60,6 +60,47 @@ describe('filterWeldRowsByColumns', () => {
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1', 'S3'])
   })
 
+  it('filters by a calculated RK exposure scheme supplied by the server', () => {
+    const rows = [
+      row({ id: 1, joint: 'S1', rkExposureScheme: 'по 2 экспозициям' }),
+      row({ id: 2, joint: 'S2', rkExposureScheme: 'по 4 экспозициям' }),
+    ]
+
+    const filteredRows = filterWeldRowsByColumns(rows, {
+      rkExposureScheme: buildWeldColumnValueFilter(['по 4 экспозициям']),
+    })
+
+    expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S2'])
+  })
+
+  it('filters rejected duplicate statuses by the same method-qualified text shown in the table', () => {
+    const rows = [
+      row({
+        id: 1,
+        joint: 'S1',
+        finalStatus: 'не годен по дублю',
+        duplicateControls: [
+          { id: 11, weldJointId: 1, method: 'РК', result: 'ремонт', controlDate: '', conclusion: '', conclusionDate: '' },
+        ],
+      }),
+      row({
+        id: 2,
+        joint: 'S2',
+        finalStatus: 'не годен по дублю',
+        duplicateControls: [
+          { id: 12, weldJointId: 2, method: 'УЗК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' },
+        ],
+      }),
+      row({ id: 3, joint: 'S3', finalStatus: 'не годен' }),
+    ]
+
+    const filteredRows = filterWeldRowsByColumns(rows, {
+      finalStatus: buildWeldColumnValueFilter(['не годен по дублю (РК)']),
+    })
+
+    expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1'])
+  })
+
   it('combines selected row filter with ordinary column filters', () => {
     const rows = [
       row({ id: 1, joint: 'S1', line: 'LIN-1' }),

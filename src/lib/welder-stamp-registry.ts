@@ -4,7 +4,8 @@ import {
   normalizeWelderStampWeldType,
 } from '@/lib/welder-stamp-format'
 import { loadDataListSettings } from '@/lib/data-list-settings'
-import { getDateInputValidationReason, getTodayIsoDate, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { getTodayIsoDate, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { getWelderStampDateInputValidationReason } from '@/lib/welder-stamp-date-limits'
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
 import {
   createEmptyNaksPermit,
@@ -155,12 +156,12 @@ export function validateWelderStampRecord(record: WelderStampRecord) {
 
   if (diameterFrom === null && record.diameterFrom) return 'Диаметр от должен быть числом'
   if (diameterTo === null && record.diameterTo) return 'Диаметр до должен быть числом'
-  const validFromReason = record.validFrom ? getDateInputValidationReason(record.validFrom, 'Срок действия от') : ''
+  const validFromReason = record.validFrom ? getWelderStampDateInputValidationReason(record.validFrom, 'Срок действия от') : ''
   if (validFromReason) return validFromReason
-  const validToReason = record.validTo ? getDateInputValidationReason(record.validTo, 'Срок действия до') : ''
+  const validToReason = record.validTo ? getWelderStampDateInputValidationReason(record.validTo, 'Срок действия до') : ''
   if (validToReason) return validToReason
   if (record.archived && !record.archivedAt) return 'Укажите дату архивации клейма'
-  const archivedAtReason = record.archivedAt ? getDateInputValidationReason(record.archivedAt, 'Дата архивации клейма') : ''
+  const archivedAtReason = record.archivedAt ? getWelderStampDateInputValidationReason(record.archivedAt, 'Дата архивации клейма') : ''
   if (archivedAtReason) return archivedAtReason
   if (diameterFrom !== null && diameterTo !== null && diameterFrom > diameterTo) {
     return 'Диапазон диаметра заполнен некорректно: значение «от» больше значения «до»'

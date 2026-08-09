@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
+import { WELDER_STAMP_MIN_ALLOWED_DATE_ISO } from '@/lib/welder-stamp-date-limits'
 import { countWelderStampFilters, createEmptyWelderStampFilters } from '@/lib/welder-stamp-filters'
 import type { WelderStampFilters } from '@/lib/welder-stamp-types'
 
@@ -106,7 +106,7 @@ export function WelderStampsFiltersPanel({
             <span>Срок от</span>
             <Input
               type="date"
-              min={MIN_ALLOWED_DATE_ISO}
+              min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
               value={filters.validFrom}
               onChange={(event) => updateFilter('validFrom', event.target.value)}
               className="h-10"
@@ -116,7 +116,7 @@ export function WelderStampsFiltersPanel({
             <span>Срок до</span>
             <Input
               type="date"
-              min={MIN_ALLOWED_DATE_ISO}
+              min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
               value={filters.validTo}
               onChange={(event) => updateFilter('validTo', event.target.value)}
               className="h-10"

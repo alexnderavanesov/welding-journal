@@ -14,11 +14,17 @@ import {
   isReadOnlyReport,
   shouldMergePstoSections,
 } from '@/lib/report-ui-state'
-import type { SystemDocumentType } from '@/lib/system-document-types'
+import {
+  LNK_CONCLUSION_TEMPLATE_PROFILES,
+  type SystemDocumentTemplateId,
+} from '@/lib/system-document-template-types'
 
-const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentType>(['lnkRequest', 'lnkConclusion'])
-const PSTO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentType>(['pstoRequest', 'pstoConclusion'])
-const NO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentType>()
+const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
+  'lnkRequest',
+  ...LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => profile.id),
+])
+const PSTO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>(['pstoRequest', 'pstoConclusion'])
+const NO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>()
 
 type CreateWeldTablePropsOptions = {
   activeReport: ActiveReport
@@ -144,8 +150,8 @@ export function createWeldTableProps({
 }
 
 function intersectSystemDocumentTypes(
-  availableTypes: ReadonlySet<SystemDocumentType> | undefined,
-  reportTypes: ReadonlySet<SystemDocumentType>,
+  availableTypes: ReadonlySet<SystemDocumentTemplateId> | undefined,
+  reportTypes: ReadonlySet<SystemDocumentTemplateId>,
 ) {
   if (!availableTypes?.size) return NO_SYSTEM_DOCUMENT_TYPES
   return new Set(Array.from(availableTypes).filter((type) => reportTypes.has(type)))

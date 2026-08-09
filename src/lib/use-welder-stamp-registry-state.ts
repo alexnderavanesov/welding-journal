@@ -1,8 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  listWelderStampRecords,
-  listWelderStampSuspensionRecords,
+  loadWelderStampRegistrySnapshot,
   saveWelderStampRecords,
   saveWelderStampSuspensionRecords,
 } from '@/server/welder-stamps'
@@ -35,6 +34,8 @@ type WelderStampRegistryStateInput = {
   setMessage: (message: string | null) => void
 }
 
+const WELDER_STAMP_REGISTRY_QUERY_KEY = ['welder-stamp-registry'] as const
+
 export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryStateInput) {
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
@@ -49,18 +50,25 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     createEmptyWelderStampSuspensionDraft(),
   )
 
-  const welderStampsQuery = useQuery({
-    queryKey: ['welder-stamps'],
-    queryFn: async () => listWelderStampRecords(),
+  const welderStampRegistryQuery = useQuery({
+    queryKey: WELDER_STAMP_REGISTRY_QUERY_KEY,
+    queryFn: async () => loadWelderStampRegistrySnapshot(),
     staleTime: 30_000,
   })
 
   const welderStampsMutation = useMutation({
     mutationFn: async (records: WelderStampRecord[]) => saveWelderStampRecords({ data: { records } }),
     onSuccess: async (records) => {
-      setWelderStamps(normalizeWelderStampRecordsForRegistry(records))
+      const normalizedRecords = normalizeWelderStampRecordsForRegistry(records)
+      setWelderStamps(normalizedRecords)
+      queryClient.setQueryData(
+        WELDER_STAMP_REGISTRY_QUERY_KEY,
+        (current: { stamps: WelderStampRecord[]; suspensions: WelderStampSuspensionRecord[] } | undefined) => ({
+          stamps: normalizedRecords,
+          suspensions: current?.suspensions ?? welderStampSuspensions,
+        }),
+      )
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['welder-stamps'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
@@ -71,18 +79,18 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     },
   })
 
-  const welderStampSuspensionsQuery = useQuery({
-    queryKey: ['welder-stamp-suspensions'],
-    queryFn: async () => listWelderStampSuspensionRecords(),
-    staleTime: 30_000,
-  })
-
   const welderStampSuspensionsMutation = useMutation({
     mutationFn: async (records: WelderStampSuspensionRecord[]) => saveWelderStampSuspensionRecords({ data: { records } }),
     onSuccess: async (records) => {
       setWelderStampSuspensions(records)
+      queryClient.setQueryData(
+        WELDER_STAMP_REGISTRY_QUERY_KEY,
+        (current: { stamps: WelderStampRecord[]; suspensions: WelderStampSuspensionRecord[] } | undefined) => ({
+          stamps: current?.stamps ?? welderStamps,
+          suspensions: records,
+        }),
+      )
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['welder-stamp-suspensions'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
       ])
@@ -93,16 +101,11 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   })
 
   useEffect(() => {
-    if (welderStampsQuery.data) {
-      setWelderStamps(normalizeWelderStampRecordsForRegistry(welderStampsQuery.data))
+    if (welderStampRegistryQuery.data) {
+      setWelderStamps(normalizeWelderStampRecordsForRegistry(welderStampRegistryQuery.data.stamps))
+      setWelderStampSuspensions(welderStampRegistryQuery.data.suspensions)
     }
-  }, [welderStampsQuery.data])
-
-  useEffect(() => {
-    if (welderStampSuspensionsQuery.data) {
-      setWelderStampSuspensions(welderStampSuspensionsQuery.data)
-    }
-  }, [welderStampSuspensionsQuery.data])
+  }, [welderStampRegistryQuery.data])
 
   const weldFormStampSelectOptions = useMemo(
     () =>

@@ -5,6 +5,7 @@ import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { WELDER_STAMP_MIN_ALLOWED_DATE_ISO } from '@/lib/welder-stamp-date-limits'
 import { formatWelderStampSuspensionPeriod, validateWelderStampSuspensionRecord } from '@/lib/welder-stamp-suspensions'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
@@ -212,6 +213,7 @@ export function WelderStampSuspensionsPanel({
                 <span className="font-medium text-slate-700">Отстранен от</span>
                 <Input
                   type="date"
+                  min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
                   value={draft.suspendedFrom}
                   onChange={(event) => onDraftChange('suspendedFrom', event.target.value)}
                 />
@@ -220,6 +222,7 @@ export function WelderStampSuspensionsPanel({
                 <span className="font-medium text-slate-700">Отстранен до</span>
                 <Input
                   type="date"
+                  min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
                   value={draft.suspendedTo}
                   onChange={(event) => onDraftChange('suspendedTo', event.target.value)}
                 />

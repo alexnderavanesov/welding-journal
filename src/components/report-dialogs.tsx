@@ -6,6 +6,7 @@ import type { ReportPstoDialogsProps } from '@/components/report-psto-dialogs'
 import type { ReportImportDialogProps } from '@/components/report-import-dialog'
 import type { ReportWeldEditorProps } from '@/components/report-weld-editor'
 import type { WeldingJournalGenerationDialogProps } from '@/components/welding-journal-generation-dialog'
+import type { RkExposureEditDialogProps } from '@/components/rk-exposure-edit-dialog'
 
 const ReportChainDialog = lazy(() => import('@/components/report-chain-dialog').then((module) => ({ default: module.ReportChainDialog })))
 const ReportWeldEditor = lazy(() => import('@/components/report-weld-editor').then((module) => ({ default: module.ReportWeldEditor })))
@@ -18,6 +19,9 @@ const ReportImportDialog = lazy(() =>
 const WeldingJournalGenerationDialog = lazy(() =>
   import('@/components/welding-journal-generation-dialog').then((module) => ({ default: module.WeldingJournalGenerationDialog })),
 )
+const RkExposureEditDialog = lazy(() =>
+  import('@/components/rk-exposure-edit-dialog').then((module) => ({ default: module.RkExposureEditDialog })),
+)
 
 type ReportDialogsProps = {
   chainDialogProps: ReportChainDialogProps
@@ -27,6 +31,7 @@ type ReportDialogsProps = {
   fieldEditorProps: ReportFieldEditorProps
   importDialogProps: ReportImportDialogProps
   generationDialogProps?: WeldingJournalGenerationDialogProps | null
+  rkExposureDialogProps?: RkExposureEditDialogProps | null
 }
 
 export function ReportDialogs({
@@ -37,6 +42,7 @@ export function ReportDialogs({
   fieldEditorProps,
   importDialogProps,
   generationDialogProps,
+  rkExposureDialogProps,
 }: ReportDialogsProps) {
   return (
     <>
@@ -82,6 +88,11 @@ export function ReportDialogs({
       {generationDialogProps ? (
         <Suspense fallback={null}>
           <WeldingJournalGenerationDialog {...generationDialogProps} />
+        </Suspense>
+      ) : null}
+      {rkExposureDialogProps ? (
+        <Suspense fallback={null}>
+          <RkExposureEditDialog {...rkExposureDialogProps} />
         </Suspense>
       ) : null}
     </>

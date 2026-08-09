@@ -395,6 +395,60 @@ describe('document template storage', () => {
     expect(worksheet.D4?.v).toBe('н/п')
   })
 
+  it('expands RK exposures into rows and vertically merges the other joint fields', async () => {
+    const template = createXlsxTemplate(
+      [
+        ['№', 'Стык', 'Снимок', 'Описание', 'Примечание', 'Другое поле', ''],
+        ['', '', '', '', '', '', ''],
+      ],
+      { merges: ['F2:G2'] },
+    )
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        { cell: 'A2', mode: 'row', field: '__index' },
+        { cell: 'B2', mode: 'row', field: 'joint' },
+        { cell: 'C2', mode: 'row', field: '__rkExposureCoordinate' },
+        { cell: 'D2', mode: 'row', field: '__rkExposureDescription' },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      {
+        joint: 'S1',
+        lnkDefectDescription: '0-100: ДНО\n100-200: ДНО\n200-0: ДНО',
+      },
+      {
+        joint: 'S2',
+        lnkDefectDescription: '1: участок 1а',
+      },
+    ])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array', cellStyles: true })
+    const worksheet = workbook.Sheets.Шаблон
+    const merges = (worksheet['!merges'] ?? []).map((merge) => XLSX.utils.encode_range(merge))
+
+    expect(worksheet.A2?.v).toBe(1)
+    expect(worksheet.B2?.v).toBe('S1')
+    expect(worksheet.C2?.v).toBe('0-100')
+    expect(worksheet.C3?.v).toBe('100-200')
+    expect(worksheet.C4?.v).toBe('200-0')
+    expect(worksheet.D2?.v).toBe('ДНО')
+    expect(worksheet.D3?.v).toBe('ДНО')
+    expect(worksheet.D4?.v).toBe('ДНО')
+    expect(worksheet.A5?.v).toBe(2)
+    expect(worksheet.B5?.v).toBe('S2')
+    expect(worksheet.C5?.v).toBe('1')
+    expect(worksheet.D5?.v).toBe('участок 1а')
+    expect(merges).toContain('A2:A4')
+    expect(merges).toContain('B2:B4')
+    expect(merges).toContain('E2:E4')
+    expect(merges).toContain('F2:G4')
+    expect(merges).not.toContain('C2:C4')
+    expect(merges).not.toContain('D2:D4')
+  })
+
   it('repeats a merged multi-row block by composite line groups', async () => {
     const template = createXlsxTemplate(
       [

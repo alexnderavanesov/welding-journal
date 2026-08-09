@@ -13,7 +13,7 @@ import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
 import type { WeldColumnFilterOption, WeldReportKind } from '@/server/welds'
-import type { SystemDocumentType } from '@/lib/system-document-types'
+import type { SystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { useWindowTableVirtualization } from '@/lib/use-window-table-virtualization'
 
 export type WeldTableProps = {
@@ -51,7 +51,7 @@ export type WeldTableProps = {
   onFilterLine?: (row: WeldRow) => void
   onOpenLinkedReport?: (row: WeldRow) => void
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
-  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentType>
+  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
   openLinkedReportTitle?: string
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>

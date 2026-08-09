@@ -1,7 +1,8 @@
 import type { WeldInput } from '@/lib/weld-fields'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import { LNK_METHODS } from '@/lib/report-config'
-import { isFinalLnkResultValue } from '@/lib/lnk-status'
+import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
   formatSaveCheckBlockReason,
@@ -67,6 +68,22 @@ export function findFirstLnkChronologySaveBlockReason(rows: WeldInput[], setting
 export function assertNoLnkChronologyIssues(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
   const issue = findFirstLnkChronologyIssue(rows, settings)
   if (issue) throw new Error(issue)
+}
+
+export function getLnkResultRemovalBlockReason(
+  row: WeldInput,
+  methodKey: WeldFieldKey,
+  settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  const method = getLnkMethodByRequestKey(methodKey)
+  if (method?.code !== 'ВИК' || !settings.lnkResultVikRequiredBeforeOther) return ''
+
+  const dependentMethods = LNK_METHODS.slice(1)
+    .filter((candidate) => hasFinalLnkResult(row, candidate))
+    .map((candidate) => candidate.code)
+
+  if (dependentMethods.length === 0) return ''
+  return `Результат ВИК нельзя удалить, пока сохранены результаты следующих видов НК: ${dependentMethods.join(', ')}. Сначала удалите их результаты.`
 }
 
 function getLnkChronologyIssueSaveCheckSettingId(issue: LnkChronologyIssue): SaveCheckSettingId {

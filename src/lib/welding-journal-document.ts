@@ -107,6 +107,7 @@ export function openGeneratedDocumentForRow(
   row: WeldRow,
   fieldKey: GeneratedDocumentFieldKey,
   welderStamps: WelderStampRecord[],
+  previewWindow?: Window | null,
 ) {
   const type = (
     Object.entries(GENERATED_DOCUMENT_PROFILES) as Array<
@@ -132,11 +133,15 @@ export function openGeneratedDocumentForRow(
     createdAt: '',
     updatedAt: '',
   }
-  void openGeneratedDocument(documentRecord, async () => {
-    const rows = await loadGeneratedDocumentRows(documentId)
-    if (rows.length === 0) throw new Error('В документе больше нет стыков.')
-    return createCurrentGeneratedDocumentBlob({ type, rows, welderStamps })
-  })
+  void openGeneratedDocument(
+    documentRecord,
+    async () => {
+      const rows = await loadGeneratedDocumentRows(documentId)
+      if (rows.length === 0) throw new Error('В документе больше нет стыков.')
+      return createCurrentGeneratedDocumentBlob({ type, rows, welderStamps })
+    },
+    previewWindow,
+  )
 }
 
 export async function createBaseWeldingJournalDocumentBlob(

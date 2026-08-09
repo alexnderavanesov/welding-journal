@@ -54,7 +54,7 @@ export function getSystemWdiValidationError(record: WeldInput, settings: Pick<Ot
   const calculatedWdi = calculateWdi(record, settings)
   if (calculatedWdi === null) {
     return settings.wdiCalculationMode === 'table'
-      ? 'WDI заполнен, но по D1/D2/T1/T2 и загруженной таблице значение не найдено. Укажите размеры, загрузите таблицу или очистите WDI.'
+      ? 'WDI заполнен, но по D1/D2/T1/T2 и настроенной таблице значение не найдено. Укажите размеры, заполните таблицу или очистите WDI.'
       : 'WDI заполнен, но D1/D2 пустые. Укажите диаметр или очистите WDI.'
   }
   if (Math.abs(enteredWdi - calculatedWdi) <= WDI_TOLERANCE) return null

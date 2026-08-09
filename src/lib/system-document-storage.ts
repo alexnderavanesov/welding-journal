@@ -15,12 +15,15 @@ import {
   buildSystemDocumentSummaries,
   createSystemDocumentTemplateContext,
   getSystemDocumentNumber,
+  getSystemDocumentRenameNumber,
   getSystemDocumentReferenceForField,
   type SystemDocumentReference,
   type SystemDocumentSummary,
   type SystemDocumentType,
 } from '@/lib/system-document-types'
+import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { loadSystemDocumentSequence } from '@/lib/system-document-sequence-storage'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
@@ -44,7 +47,12 @@ export async function renameSystemDocumentToCurrentName(
   if (rows.length === 0) throw new Error('В документе больше нет стыков.')
 
   const settings = loadRequestConclusionSettings()
-  const previousNumber = getSystemDocumentNumber(reference, settings)
+  const sequence = await loadSystemDocumentSequence(getSystemDocumentTemplateId(reference))
+  const previousNumber = getSystemDocumentRenameNumber(
+    reference,
+    settings,
+    sequence.nextNumber,
+  )
   const usesExistingNumber = /^\d+$/.test(previousNumber)
   const provisionalName = usesExistingNumber
     ? buildCurrentSystemDocumentName(reference, rows, settings, Number(previousNumber))
@@ -123,7 +131,7 @@ export async function createCurrentSystemDocumentBlob({
   template?: StoredDocumentTemplate | null
 }) {
   const currentTemplate = template === undefined
-    ? await loadDocumentTemplate(reference.type)
+    ? await loadDocumentTemplate(getSystemDocumentTemplateId(reference))
     : template
   if (!currentTemplate || !['xlsx', 'xls'].includes(currentTemplate.fileType)) {
     throw new Error('Шаблон системного документа не загружен.')
@@ -158,20 +166,25 @@ export function openSystemDocument({
   summary,
   welderStamps,
   template,
+  previewWindow,
 }: {
   reference: SystemDocumentReference
   summary?: SystemDocumentSummary
   welderStamps: WelderStampRecord[]
   template?: StoredDocumentTemplate | null
+  previewWindow?: Window | null
 }) {
   const previewRecord = createSystemDocumentPreviewRecord(reference)
-  return openGeneratedDocument(previewRecord, () =>
-    createCurrentSystemDocumentBlob({
-      reference,
-      summary,
-      welderStamps,
-      template,
-    }),
+  return openGeneratedDocument(
+    previewRecord,
+    () =>
+      createCurrentSystemDocumentBlob({
+        reference,
+        summary,
+        welderStamps,
+        template,
+      }),
+    previewWindow,
   )
 }
 
@@ -201,10 +214,11 @@ export function openSystemDocumentForRow(
   row: WeldRow,
   fieldKey: WeldFieldKey,
   welderStamps: WelderStampRecord[],
+  previewWindow?: Window | null,
 ) {
   const reference = getSystemDocumentReferenceForField(row, fieldKey)
   if (!reference) return
-  return openSystemDocument({ reference, welderStamps })
+  return openSystemDocument({ reference, welderStamps, previewWindow })
 }
 
 function createSystemDocumentPreviewRecord(

@@ -27,6 +27,7 @@ beforeEach(() => {
     requireDlsForOfficialStamps: false,
     wdiCalculationMode: 'manual',
     wdiTable: null,
+    rkExposureTable: null,
   })
 })
 
@@ -1206,6 +1207,7 @@ describe('welder stamp select options', () => {
       requireDlsForOfficialStamps: true,
       wdiCalculationMode: 'manual',
       wdiTable: null,
+      rkExposureTable: null,
     })
     const activeStamp = {
       ...stampRecord('AAAA', false, 'РАД'),

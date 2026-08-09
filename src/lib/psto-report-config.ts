@@ -12,8 +12,6 @@ export const HEAT_TREATMENT_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoBoq',
   'pstoKs3',
 ])
-export const HEAT_TREATMENT_IMPORT_MATCH_FIELD_KEYS = new Set<WeldFieldKey>(['line', 'joint'])
-
 export const PSTO_WAITING_REQUEST_FIELDS = [
   getReportField('projectTitle', 'ПСТО'),
   getReportField('subtitleCode', 'ПСТО'),
@@ -95,6 +93,8 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'boq',
   'ks3',
   'createdAt',
+  'rkExposureScheme',
+  'rkExposureConfirmedDiameter',
   ...LNK_REPORT_FIELD_KEYS,
   ...LNK_CONCLUSION_FIELD_KEYS,
 ])

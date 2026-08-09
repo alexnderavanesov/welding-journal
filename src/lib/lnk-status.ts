@@ -19,6 +19,8 @@ import {
   isYesText,
 } from '@/lib/report-value-utils'
 import { parseJointChainName } from '@/lib/joint-chain'
+import { loadOtherSettings } from '@/lib/other-settings'
+import { getRkExposureSchemeState } from '@/lib/rk-exposure'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 import { getDuplicateControls, getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
@@ -99,6 +101,9 @@ export function getLnkRequestMethodBadgeClass(row: WeldInput, method: (typeof LN
 }
 
 export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  if (fieldKey === 'rkExposureScheme') {
+    return getRkExposureSchemeState(row, loadOtherSettings().rkExposureTable).label
+  }
   const method = getLnkMethodByResultKey(fieldKey)
   if (method && isCancelledControlValue(row[method.enabledKey])) return getCancelledLnkResultDisplay(row[method.resultKey])
   if (method && isLnkMethodNoNeed(row, method)) return 'нет потребности'

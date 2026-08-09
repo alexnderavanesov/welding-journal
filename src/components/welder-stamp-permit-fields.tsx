@@ -1,5 +1,5 @@
 import { Input } from '@/components/ui/input'
-import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
+import { WELDER_STAMP_MIN_ALLOWED_DATE_ISO } from '@/lib/welder-stamp-date-limits'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type WelderStampPermitFieldsProps = {
@@ -45,7 +45,7 @@ export function WelderStampPermitFields({
         <span>Срок действия от</span>
         <Input
           type="date"
-          min={MIN_ALLOWED_DATE_ISO}
+          min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
           value={draft.validFrom}
           onChange={(event) => onDraftChange('validFrom', event.target.value)}
           required={requiresPermitFields}
@@ -55,7 +55,7 @@ export function WelderStampPermitFields({
         <span>Срок действия до</span>
         <Input
           type="date"
-          min={MIN_ALLOWED_DATE_ISO}
+          min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
           value={draft.validTo}
           onChange={(event) => onDraftChange('validTo', event.target.value)}
           required={requiresPermitFields}

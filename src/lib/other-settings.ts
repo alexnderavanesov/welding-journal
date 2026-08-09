@@ -4,6 +4,8 @@ import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/proje
 export const OTHER_SETTINGS_EVENT = 'other-settings-change'
 
 const OTHER_SETTINGS_STORAGE_KEY = 'welding-other-settings'
+let cachedOtherSettingsRaw: string | null | undefined
+let cachedOtherSettings: OtherSettings | undefined
 
 export type WdiCalculationMode = 'manual' | 'formula' | 'table'
 
@@ -15,16 +17,34 @@ export type WdiTableSettings = {
   values: Array<Array<number | null>>
 }
 
+export type RkExposureOption = {
+  label: string
+  values: string[]
+  isDefault: boolean
+  note: string
+}
+
+export type RkExposureTableSettings = {
+  fileName: string
+  uploadedAt: string
+  entries: Array<{
+    diameter: number
+    options: RkExposureOption[]
+  }>
+}
+
 export type OtherSettings = {
   requireDlsForOfficialStamps: boolean
   wdiCalculationMode: WdiCalculationMode
   wdiTable: WdiTableSettings | null
+  rkExposureTable: RkExposureTableSettings | null
 }
 
 export const DEFAULT_OTHER_SETTINGS: OtherSettings = {
   requireDlsForOfficialStamps: false,
   wdiCalculationMode: 'manual',
   wdiTable: null,
+  rkExposureTable: null,
 }
 
 export function useOtherSettings() {
@@ -49,7 +69,10 @@ export function loadOtherSettings(): OtherSettings {
   try {
     const rawValue = window.localStorage.getItem(OTHER_SETTINGS_STORAGE_KEY)
     if (!rawValue) return DEFAULT_OTHER_SETTINGS
-    return normalizeOtherSettings(JSON.parse(rawValue))
+    if (rawValue === cachedOtherSettingsRaw && cachedOtherSettings) return cachedOtherSettings
+    cachedOtherSettingsRaw = rawValue
+    cachedOtherSettings = normalizeOtherSettings(JSON.parse(rawValue))
+    return cachedOtherSettings
   } catch {
     return DEFAULT_OTHER_SETTINGS
   }
@@ -58,7 +81,10 @@ export function loadOtherSettings(): OtherSettings {
 export function saveOtherSettings(settings: OtherSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeOtherSettings(settings)
-  window.localStorage.setItem(OTHER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  const serializedSettings = JSON.stringify(normalizedSettings)
+  cachedOtherSettingsRaw = serializedSettings
+  cachedOtherSettings = normalizedSettings
+  window.localStorage.setItem(OTHER_SETTINGS_STORAGE_KEY, serializedSettings)
   window.dispatchEvent(new Event(OTHER_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.other, normalizedSettings)
 }
@@ -75,10 +101,50 @@ export function normalizeOtherSettings(value: unknown): OtherSettings {
       ? source.wdiCalculationMode
       : legacyWdiInputMode ?? DEFAULT_OTHER_SETTINGS.wdiCalculationMode
   const wdiTable = normalizeWdiTableSettings(source.wdiTable)
+  const rkExposureTable = normalizeRkExposureTableSettings(source.rkExposureTable)
   return {
     requireDlsForOfficialStamps: source.requireDlsForOfficialStamps === true,
     wdiCalculationMode: wdiCalculationMode === 'table' && !wdiTable ? 'manual' : wdiCalculationMode,
     wdiTable,
+    rkExposureTable,
+  }
+}
+
+function normalizeRkExposureTableSettings(value: unknown): RkExposureTableSettings | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Partial<RkExposureTableSettings>
+  const entries = Array.isArray(source.entries)
+    ? source.entries.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') return []
+        const diameter = normalizeNullableNumber((entry as { diameter?: unknown }).diameter)
+        const options = Array.isArray((entry as { options?: unknown }).options)
+          ? (entry as { options: unknown[] }).options.flatMap((option) => {
+              if (!option || typeof option !== 'object') return []
+              const optionSource = option as Partial<RkExposureOption>
+              const values = Array.isArray(optionSource.values)
+                ? optionSource.values.map((item) => String(item ?? '').trim()).filter(Boolean)
+                : []
+              if (values.length === 0) return []
+              return [{
+                label: String(optionSource.label ?? '').trim() || values.join(' / '),
+                values,
+                isDefault: optionSource.isDefault === true,
+                note: String(optionSource.note ?? '').trim(),
+              }]
+            })
+          : []
+        return diameter === null || options.length === 0 ? [] : [{ diameter, options }]
+      })
+    : []
+  if (entries.length === 0) return null
+  entries.sort((left, right) => left.diameter - right.diameter)
+  entries.forEach((entry) => {
+    if (!entry.options.some((option) => option.isDefault)) entry.options[0].isDefault = true
+  })
+  return {
+    fileName: typeof source.fileName === 'string' ? source.fileName : 'Экспозиции по диаметрам',
+    uploadedAt: typeof source.uploadedAt === 'string' ? source.uploadedAt : '',
+    entries,
   }
 }
 

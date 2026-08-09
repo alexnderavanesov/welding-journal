@@ -121,6 +121,7 @@ export const weldJoints = pgTable(
     mkkConclusionDate: date('mkk_conclusion_date'),
     mkkConclusion: text('mkk_conclusion'),
     lnkDefectDescription: text('lnk_defect_description'),
+    rkExposureConfirmedDiameter: numericNumber('rk_exposure_confirmed_diameter'),
     lnkNote: text('lnk_note'),
     weldingJournalNote: text('welding_journal_note'),
     finalStatus: text('final_status'),
@@ -166,6 +167,24 @@ export const weldJoints = pgTable(
     index('weld_joints_final_status_idx').on(table.finalStatus),
     index('weld_joints_psto_required_idx').on(table.pstoRequired),
     index('weld_joints_line_joint_idx').on(table.line, table.joint),
+    index('weld_joints_journal_order_idx').on(
+      table.createdAt.desc().nullsLast(),
+      table.weldDate.desc().nullsLast(),
+      table.line.asc(),
+      table.joint.asc(),
+    ),
+    index('weld_joints_lnk_order_idx').on(
+      table.lnkCreatedAt.desc().nullsLast(),
+      table.line.asc(),
+      table.spool.asc(),
+      table.joint.asc(),
+    ),
+    index('weld_joints_psto_order_idx').on(
+      table.pstoCreatedAt.desc().nullsLast(),
+      table.line.asc(),
+      table.spool.asc(),
+      table.joint.asc(),
+    ),
   ],
 )
 

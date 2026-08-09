@@ -50,11 +50,23 @@ export function parseCell(field: WeldField, value: unknown) {
   if (field.kind === 'boolean') return parseBoolean(value)
   if (field.kind === 'number') return parseNumber(value)
   if (field.kind === 'date') return parseDate(value)
+  if (field.key === 'lnkDefectDescription') return multilineTextToNull(value)
   if (field.key === 'status') return parseJointStatus(value)
   if (field.key === 'finalStatus') return parseFinalStatus(value)
   if (field.key === 'pstoResult') return parsePstoResultStatus(value)
   if (RESULT_FIELD_KEYS.has(field.key as never)) return parseResultStatus(value)
   return emptyToNull(value)
+}
+
+function multilineTextToNull(value: unknown) {
+  if (value === null || value === undefined) return null
+  const normalized = String(value)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .join('\n')
+    .trim()
+  return normalized === '' || normalized === '-' ? null : normalized
 }
 
 function parsePstoResultStatus(value: unknown) {

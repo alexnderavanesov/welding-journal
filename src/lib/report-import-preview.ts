@@ -1,12 +1,9 @@
-import { getEditableReportImportLabel } from '@/lib/report-display-state'
 import {
   emptyToNull,
   parseCell,
 } from '@/lib/weld-import-parsers'
 import {
   parseCsv,
-  parseEditableCsv,
-  parseEditableWorkbook,
   parseWorkbook,
 } from '@/lib/weld-import-readers'
 import { readFirstSheetRows } from '@/lib/weld-import-sheet-reader'
@@ -26,13 +23,12 @@ import {
   isMassFillFieldLocked,
   isSystemImportField,
   stripIgnoredImportFields,
+  type ImportableReport,
 } from '@/lib/report-import-template'
-import { getReportImportFieldKeys } from '@/lib/report-field-state'
 import { loadOtherSettings } from '@/lib/other-settings'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import { isSystemWdiMode } from '@/lib/wdi'
 import { LNK_METHODS } from '@/lib/report-config'
-import type { ActiveReport } from '@/lib/home-state'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -58,14 +54,14 @@ export type ReportImportPreview = {
 }
 
 type ReportImportPreviewValidationOptions = {
-  activeReport: ActiveReport
+  activeReport: ImportableReport
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
 }
 
 type BuildReportImportPreviewOptions = {
-  activeReport: ActiveReport
+  activeReport: ImportableReport
   file: File
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
@@ -86,17 +82,6 @@ export async function buildReportImportPreview({
   const parsed = await parseReportImportFile(activeReport, file)
   const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport))
   const fields = getReportImportPreviewFields(activeReport)
-
-  if (activeReport !== 'weldingJournal' && activeReport !== 'lnk') {
-    return {
-      fileName: file.name,
-      fields,
-      records,
-      validRecords: records,
-      errors: [],
-      skippedRows: parsed.skippedRows,
-    }
-  }
 
   const { validRecords, errors } = validateReportImportRecords(records, {
     activeReport,
@@ -162,10 +147,6 @@ async function buildExistingRowsImportPreview({
   welderStamps,
   welderStampSuspensions,
 }: BuildReportMassFillPreviewOptions & { mode: 'massFill' | 'replaceData' }): Promise<ReportImportPreview> {
-  if (activeReport !== 'weldingJournal') {
-    throw new Error(mode === 'replaceData' ? 'Замена данных пока доступна только для сварочного журнала.' : 'Массовое заполнение пока доступно только для сварочного журнала.')
-  }
-
   const parsed = await parseMassFillImportFile(file)
   const fieldsByColumn = mapMassFillHeadersToFields(parsed.headers)
   const fields = getExistingRowsPreviewFields(fieldsByColumn)
@@ -294,7 +275,7 @@ function hasChangedLnkRepairRuleInputs(candidate: ReportImportRecord, existingRo
   )
 }
 
-function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ActiveReport, field: WeldField, existingRow: WeldRow) {
+function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ImportableReport, field: WeldField, existingRow: WeldRow) {
   if (isExistingRowsImportLockedField(field)) return true
   if (mode === 'replaceData') return isSystemImportField(activeReport, field, existingRow)
   return isMassFillFieldLocked(activeReport, field, existingRow)
@@ -335,23 +316,17 @@ function validateReportImportRecords(
   records: ReportImportRecord[],
   { activeReport, weldFormStampSelectOptions, welderStamps, welderStampSuspensions }: ReportImportPreviewValidationOptions,
 ) {
-  if (activeReport !== 'weldingJournal' && activeReport !== 'lnk') {
-    return { validRecords: records, errors: [] as ReportImportPreviewError[] }
-  }
-
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
 
   records.forEach((record, index) => {
     try {
-      const prepared = activeReport === 'weldingJournal'
-        ? prepareImportedWeldRecords({
-            records: [{ ...withOfficialJointStatus(record) }],
-            weldFormStampSelectOptions,
-            welderStamps,
-            welderStampSuspensions,
-          })
-        : [record]
+      const prepared = prepareImportedWeldRecords({
+        records: [{ ...withOfficialJointStatus(record) }],
+        weldFormStampSelectOptions,
+        welderStamps,
+        welderStampSuspensions,
+      })
       const saveCheckSettings = loadSaveCheckSettings()
       assertNoLnkChronologyIssues(prepared, saveCheckSettings)
       assertNoPstoChronologyIssues(prepared, saveCheckSettings)
@@ -401,7 +376,7 @@ function getKnownFieldKeys(keys: readonly string[]) {
   return keys.filter((key): key is WeldFieldKey => FIELD_BY_KEY.has(key as WeldFieldKey))
 }
 
-function getRecordFallbackErrorFieldKeys(record: WeldInput, activeReport: ActiveReport) {
+function getRecordFallbackErrorFieldKeys(record: WeldInput, activeReport: ImportableReport) {
   const checkedFieldKeys = [...getReportImportCheckedFieldKeys(activeReport)] as WeldFieldKey[]
   const filledCheckedKeys = checkedFieldKeys.filter((fieldKey) => emptyToNull(record[fieldKey]) !== null)
   return filledCheckedKeys.length ? filledCheckedKeys : checkedFieldKeys
@@ -415,7 +390,7 @@ function getImportErrorFieldKeys({
 }: {
   message: string
   record: WeldInput
-  activeReport: ActiveReport
+  activeReport: ImportableReport
   fallbackFieldKeys: readonly WeldFieldKey[]
 }) {
   const matchedFieldKeys = collectImportErrorFieldKeys(message, record)
@@ -500,17 +475,7 @@ function normalizeStampForCompare(value: unknown) {
   return String(value ?? '').trim().toUpperCase()
 }
 
-async function parseReportImportFile(activeReport: ActiveReport, file: File) {
-  if (activeReport === 'heatTreatment' || activeReport === 'lnk') {
-    const options = getReportImportFieldKeys(activeReport)
-    if (!options) {
-      throw new Error(`Для отчета ${getEditableReportImportLabel(activeReport)} импорт не настроен.`)
-    }
-    return file.name.toLowerCase().endsWith('.csv')
-      ? await parseEditableCsv(await file.text(), options)
-      : await parseEditableWorkbook(await file.arrayBuffer(), options)
-  }
-
+async function parseReportImportFile(activeReport: ImportableReport, file: File) {
   const requiredHeaders = getReportImportTemplateFields(activeReport).map((field) => field.label)
   return file.name.toLowerCase().endsWith('.csv')
     ? await parseCsv(await file.text(), requiredHeaders)
