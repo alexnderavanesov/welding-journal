@@ -12,6 +12,7 @@ import {
 } from '@/lib/repeated-joint-tasks'
 import { buildWelderStampExpiryTasks } from '@/lib/welder-stamp-expiry-tasks'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import type { DataListSettings } from '@/lib/data-list-settings'
 
 const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-missing',
@@ -35,6 +36,7 @@ export type BuildVisibleDispatcherTasksInput = {
   dismissedRepeatedJointTaskKeys: Set<string>
   dispatcherReminderSettings: DispatcherReminderSettings
   dispatcherSettings: DispatcherSettings
+  dataListSettings?: DataListSettings
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
   rows: WeldRow[]
@@ -47,6 +49,7 @@ export function buildVisibleDispatcherTasks({
   dismissedRepeatedJointTaskKeys,
   dispatcherReminderSettings,
   dispatcherSettings,
+  dataListSettings,
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
   rows,
@@ -56,6 +59,7 @@ export function buildVisibleDispatcherTasks({
   const hiddenDispatcherTaskKeys = new Set([...dismissedRepeatedJointTaskKeys, ...acceptedDispatcherWarningKeys])
   const repeatedJointTasks = includeRepeatedJointTasks
     ? buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
+        dataListSettings,
         includeIncompleteStampChecks: isDispatcherSettingEnabled('check-incomplete-stamps', dispatcherSettings),
         includeLineConsistencyTasks: isAnyDispatcherSettingEnabled(LINE_CONSISTENCY_DISPATCHER_SETTING_IDS, dispatcherSettings),
         includePercentageLineControlTasks: isAnyDispatcherSettingEnabled(PERCENTAGE_LINE_DISPATCHER_SETTING_IDS, dispatcherSettings),

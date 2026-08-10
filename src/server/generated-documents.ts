@@ -8,11 +8,13 @@ import { buildGeneratedDocumentAssignmentPlan } from '@/lib/generated-document-a
 import { resolveGeneratedDocumentNamePattern } from '@/lib/generated-document-naming'
 
 import {
+  GENERATED_DOCUMENT_TYPES,
   getGeneratedDocumentProfile,
   isGeneratedDocumentType,
   type GeneratedDocumentType,
 } from '@/lib/generated-document-types'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
+import { assertSecurityScope } from '@/server/security-functions'
 
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
 
@@ -55,11 +57,14 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).ha
   await db
     .delete(generatedDocuments)
     .where(
-      notExists(
-        db
-          .select({ value: sql`1` })
-          .from(generatedDocumentWeldJoints)
-          .where(eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id)),
+      and(
+        inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+        notExists(
+          db
+            .select({ value: sql`1` })
+            .from(generatedDocumentWeldJoints)
+            .where(eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id)),
+        ),
       ),
     )
   const records = await db
@@ -94,6 +99,7 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).ha
     .from(generatedDocuments)
     .leftJoin(generatedDocumentWeldJoints, eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id))
     .leftJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
+    .where(inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]))
     .groupBy(generatedDocuments.id)
     .orderBy(sql`${generatedDocuments.updatedAt} desc`)
 
@@ -118,7 +124,12 @@ export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })
     const [record] = await db
       .select()
       .from(generatedDocuments)
-      .where(eq(generatedDocuments.id, data.id))
+      .where(
+        and(
+          eq(generatedDocuments.id, data.id),
+          inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+        ),
+      )
       .limit(1)
     return record ? toRemoteGeneratedDocument(record) : null
   })
@@ -126,6 +137,7 @@ export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })
 export const saveRemoteGeneratedDocuments = createServerFn({ method: 'POST' })
   .validator(normalizeSaveGeneratedDocumentBatch)
   .handler(async ({ data }): Promise<RemoteGeneratedDocument[]> => {
+    await assertSecurityScope('documentGeneration')
     const db = requireDb()
     return db.transaction(async (tx) => {
       const numberSequence = await lockGeneratedDocumentNumberSequence(tx, data[0].type)
@@ -151,6 +163,7 @@ export const getRemoteGeneratedDocumentSequence = createServerFn({ method: 'GET'
 export const resetRemoteGeneratedDocumentSequence = createServerFn({ method: 'POST' })
   .validator((data: { type: GeneratedDocumentType }) => ({ type: requireGeneratedDocumentType(data?.type) }))
   .handler(async ({ data }) => {
+    await assertSecurityScope('settings')
     const db = requireDb()
     await db.transaction(async (tx) => {
       await lockGeneratedDocumentNumberCounter(tx, data.type)
@@ -294,6 +307,13 @@ export const getRemoteGeneratedDocumentRows = createServerFn({ method: 'GET' })
     const rows = await db
       .select({ weld: weldJoints })
       .from(generatedDocumentWeldJoints)
+      .innerJoin(
+        generatedDocuments,
+        and(
+          eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
+          inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+        ),
+      )
       .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
       .where(eq(generatedDocumentWeldJoints.documentId, data.id))
       .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
@@ -305,8 +325,16 @@ export const getRemoteGeneratedDocumentRows = createServerFn({ method: 'GET' })
 export const deleteRemoteGeneratedDocument = createServerFn({ method: 'POST' })
   .validator((data: { id: number }) => ({ id: requirePositiveId(data?.id, 'документа') }))
   .handler(async ({ data }) => {
+    await assertSecurityScope('delete')
     const db = requireDb()
-    await db.delete(generatedDocuments).where(eq(generatedDocuments.id, data.id))
+    await db
+      .delete(generatedDocuments)
+      .where(
+        and(
+          eq(generatedDocuments.id, data.id),
+          inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+        ),
+      )
     return { ok: true }
   })
 

@@ -1,4 +1,5 @@
-import type * as XLSXTypes from 'xlsx-js-style'
+import type * as XLSXTypes from 'xlsx'
+import { formatBusinessDateTime } from '@/lib/business-date'
 import { DOCUMENT_TEMPLATE_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, isVirtualWeldField, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
@@ -33,15 +34,15 @@ import {
   updateRemoteDocumentTemplate,
 } from '@/server/document-templates'
 
-type XlsxModule = typeof import('xlsx-js-style')
+type XlsxModule = typeof import('xlsx')
 
 let XLSX = null as unknown as XlsxModule
 let xlsxModule: XlsxModule | null = null
 let xlsxModulePromise: Promise<XlsxModule> | null = null
 
-async function loadXlsxJsStyle() {
+async function loadXlsx() {
   if (xlsxModule) return xlsxModule
-  xlsxModulePromise ??= import('xlsx-js-style').then((module) => {
+  xlsxModulePromise ??= import('xlsx').then((module) => {
     XLSX = module
     xlsxModule = module
     return module
@@ -496,7 +497,7 @@ export async function parseDocumentTemplateFile(file: File): Promise<TemplateUpl
       fileName: file.name,
       fileType: extension,
       fileSize: file.size,
-      uploadedAt: new Date().toLocaleString('ru-RU'),
+      uploadedAt: formatBusinessDateTime(new Date()),
       sheetNames: [],
       fields: [],
       markerCount: 0,
@@ -508,7 +509,7 @@ export async function parseDocumentTemplateFile(file: File): Promise<TemplateUpl
     }
   }
 
-  const XLSX = await loadXlsxJsStyle()
+  const XLSX = await loadXlsx()
   const workbook = XLSX.read(fileData, { type: 'array' })
   const fieldSet = new Set<string>()
   const locations: TemplateMarkerLocation[] = []
@@ -531,7 +532,7 @@ export async function parseDocumentTemplateFile(file: File): Promise<TemplateUpl
     fileName: file.name,
     fileType: extension,
     fileSize: file.size,
-    uploadedAt: new Date().toLocaleString('ru-RU'),
+    uploadedAt: formatBusinessDateTime(new Date()),
     sheetNames: [...workbook.SheetNames],
     fields,
     markerCount: locations.reduce((count, location) => count + location.fields.length, 0),
@@ -834,7 +835,7 @@ type DocumentTemplateWorkbookStructure = {
 async function readDocumentTemplateWorkbookStructure(
   fileData: ArrayBuffer,
 ): Promise<DocumentTemplateWorkbookStructure> {
-  const XLSX = await loadXlsxJsStyle()
+  const XLSX = await loadXlsx()
   const workbook = XLSX.read(fileData, { type: 'array', cellStyles: true })
   const sheets = new Map<string, DocumentTemplateSheetStructure>()
 
@@ -1250,7 +1251,7 @@ export async function createWeldingJournalBlobFromTemplate(
   records: WeldInput[],
   context: WeldingJournalTemplateContext = {},
 ) {
-  const XLSX = await loadXlsxJsStyle()
+  const XLSX = await loadXlsx()
   const workbook = XLSX.read(template.fileData, { type: 'array', cellStyles: true })
   const constructorConfig = template.constructorConfig
   const sheetName =
@@ -1367,7 +1368,7 @@ async function readDocumentWorkbookPreview(
   requestedSheetName: string | undefined,
   options: WorkbookPreviewReadOptions,
 ): Promise<DocumentTemplateWorkbookPreview> {
-  const XLSX = await loadXlsxJsStyle()
+  const XLSX = await loadXlsx()
   const workbook = XLSX.read(fileData, { type: 'array', cellStyles: true })
   const sheetName =
     requestedSheetName && workbook.SheetNames.includes(requestedSheetName)
@@ -1767,7 +1768,7 @@ async function createWeldingJournalBlobFromConstructor(
   config: DocumentTemplateConstructorConfig,
   context: WeldingJournalTemplateContext,
 ) {
-  const XLSX = await loadXlsxJsStyle()
+  const XLSX = await loadXlsx()
   const repeatRowStartIndex = config.repeatRow ? config.repeatRow - 1 : undefined
   const repeatRowEndIndex =
     repeatRowStartIndex === undefined

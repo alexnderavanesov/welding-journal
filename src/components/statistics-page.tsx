@@ -161,6 +161,7 @@ export function StatisticsPage({
   const [period, setPeriod] = useState(defaultPeriod)
   const [allPeriod, setAllPeriod] = useState(false)
   const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('wdi')
+  const [lnkUnit, setLnkUnit] = useState<StatisticsUnit>('joints')
   const [weldersUnit, setWeldersUnit] = useState<StatisticsUnit>('joints')
   const [lineSummaryUnit, setLineSummaryUnit] = useState<StatisticsUnit>('joints')
   const [generalJointFilter, setGeneralJointFilter] = useState<WelderStatisticsJointFilter>('all')
@@ -170,8 +171,22 @@ export function StatisticsPage({
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
   const [percentageLineSearch, setPercentageLineSearch] = useState('')
   const isGeneralLikeTab = activeTab === 'general' || activeTab === 'lnk'
-  const unit = activeTab === 'welders' ? weldersUnit : activeTab === 'lineSummary' ? lineSummaryUnit : generalUnit
-  const setUnit = activeTab === 'welders' ? setWeldersUnit : activeTab === 'lineSummary' ? setLineSummaryUnit : setGeneralUnit
+  const unit =
+    activeTab === 'lnk'
+      ? lnkUnit
+      : activeTab === 'welders'
+        ? weldersUnit
+        : activeTab === 'lineSummary'
+          ? lineSummaryUnit
+          : generalUnit
+  const setUnit =
+    activeTab === 'lnk'
+      ? setLnkUnit
+      : activeTab === 'welders'
+        ? setWeldersUnit
+        : activeTab === 'lineSummary'
+          ? setLineSummaryUnit
+          : setGeneralUnit
   const jointFilter = activeTab === 'welders' ? welderJointFilter : generalJointFilter
   const setJointFilter = activeTab === 'welders' ? setWelderJointFilter : setGeneralJointFilter
 

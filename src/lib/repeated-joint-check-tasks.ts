@@ -12,6 +12,7 @@ import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIss
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+import type { DataListSettings } from '@/lib/data-list-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 const WELDER_STAMP_AUDIT_CHECK_SETTINGS = {
@@ -98,6 +99,7 @@ export function buildWelderStampCompatibilityCheckTasks(
   rows: WeldRow[],
   welderStampRecords: WelderStampRecord[],
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
+  dataListSettings?: DataListSettings,
 ): RepeatedJointCheckTask[] {
   if (welderStampRecords.length === 0 && welderStampSuspensions.length === 0) return []
 
@@ -105,8 +107,10 @@ export function buildWelderStampCompatibilityCheckTasks(
   for (const row of rows) {
     const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, {
       archiveValidationMode: 'audit',
+      materialGroups: dataListSettings?.materialGroups,
       saveCheckSettings: WELDER_STAMP_AUDIT_CHECK_SETTINGS,
       suspensions: welderStampSuspensions,
+      weldingTypes: dataListSettings?.weldingTypes,
     })
     if (issues.length === 0) continue
 

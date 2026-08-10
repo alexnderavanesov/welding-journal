@@ -1,5 +1,5 @@
 import { type ChangeEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowDown,
@@ -127,16 +127,28 @@ import {
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
 import {
+  DEFAULT_SECURITY_SETTINGS,
+  SERVER_SECURITY_PASSWORD_PLACEHOLDER,
+  toLocalSecuritySettings,
   clearSecuritySettings,
   saveSecuritySettings,
-  useSecuritySettings,
   type SecurityScope,
   type SecuritySettings,
 } from '@/lib/security-settings'
-import { useSecurityGuard } from '@/lib/security-context'
+import { useResolvedSecuritySettings, useSecurityGuard } from '@/lib/security-context'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import { WELD_JOINTS_QUERY_KEY } from '@/lib/weld-query-utils'
 import { getWeldDataUsageSummary, type WeldDataUsageSummary } from '@/server/welds'
+import { saveRemoteSecuritySettings } from '@/server/security-functions'
+import {
+  listDispatcherAcceptedWarnings,
+  revokeDispatcherAcceptedWarning,
+} from '@/server/dispatcher-warnings'
+import {
+  DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
+  WELD_JOINTS_QUERY_KEY,
+  WELD_JOINT_PAGES_QUERY_KEY,
+} from '@/lib/weld-query-utils'
+import { getAcceptedWarningContextParts } from '@/lib/dispatcher-accepted-warning-display'
 
 const SETTINGS_TABS = [
   { id: 'templates', label: 'Шаблоны документов', icon: FileText },
@@ -352,7 +364,7 @@ const SECURITY_RULE_CARDS: Array<{
 ]
 
 function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
-  const settings = useSecuritySettings()
+  const settings = useResolvedSecuritySettings()
   const [passwordDrafts, setPasswordDrafts] = useState<Record<SecurityScope, string>>({
     entry: '',
     settings: '',
@@ -375,6 +387,11 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
     Boolean(settings[SECURITY_PASSWORD_KEYS[card.scope]]) && settings[SECURITY_FLAG_KEYS[card.scope]] === true,
   ).length
   const configuredPasswordsCount = SECURITY_RULE_CARDS.filter((card) => Boolean(settings[SECURITY_PASSWORD_KEYS[card.scope]])).length
+
+  const persistSecuritySettings = async (nextSettings: SecuritySettings) => {
+    const remoteSettings = await saveRemoteSecuritySettings({ data: nextSettings })
+    saveSecuritySettings(toLocalSecuritySettings(remoteSettings))
+  }
 
   const updatePasswordDraft = (scope: SecurityScope, value: string) => {
     setPasswordDrafts((current) => ({ ...current, [scope]: value }))
@@ -405,8 +422,8 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
       setMessage('Пароли не совпадают')
       return
     }
-    await runProtectedSettingsChange(() => {
-      saveSecuritySettings({
+    await runProtectedSettingsChange(async () => {
+      await persistSecuritySettings({
         ...settings,
         [SECURITY_PASSWORD_KEYS[scope]]: nextPassword,
         ...(enableAfterSave ? { [SECURITY_FLAG_KEYS[scope]]: true } : {}),
@@ -423,15 +440,15 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
       setMessage('Сначала задайте пароль для этой защиты')
       return
     }
-    await runProtectedSettingsChange(() => {
-      saveSecuritySettings({ ...settings, [SECURITY_FLAG_KEYS[scope]]: value })
+    await runProtectedSettingsChange(async () => {
+      await persistSecuritySettings({ ...settings, [SECURITY_FLAG_KEYS[scope]]: value })
     })
     setMessage(value ? 'Защита включена. Теперь в этом месте будет запрашиваться свой пароль.' : 'Защита выключена для этого действия.')
   }
 
   async function resetSecurityScope(scope: SecurityScope) {
-    await runProtectedSettingsChange(() => {
-      saveSecuritySettings({
+    await runProtectedSettingsChange(async () => {
+      await persistSecuritySettings({
         ...settings,
         [SECURITY_PASSWORD_KEYS[scope]]: '',
         [SECURITY_FLAG_KEYS[scope]]: false,
@@ -444,8 +461,9 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
   }
 
   async function resetSecurity() {
-    await runProtectedSettingsChange(() => {
+    await runProtectedSettingsChange(async () => {
       clearSecuritySettings()
+      await saveRemoteSecuritySettings({ data: DEFAULT_SECURITY_SETTINGS })
     })
     setPasswordDrafts({ entry: '', settings: '', edit: '', importReplace: '', documentGeneration: '', delete: '' })
     setRepeatDrafts({ entry: '', settings: '', edit: '', importReplace: '', documentGeneration: '', delete: '' })
@@ -2709,8 +2727,25 @@ function RequestNamingModeButton({
 function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useDispatcherSettings()
   const reminderSettings = useDispatcherReminderSettings()
+  const [acceptedWarningsExpanded, setAcceptedWarningsExpanded] = useState(true)
   const disabledCount = Object.values(settings).filter((enabled) => !enabled).length
   const totalCount = Object.values(settings).length
+  const confirmAction = useConfirmAction()
+  const queryClient = useQueryClient()
+  const acceptedWarningsQuery = useQuery({
+    queryKey: ['dispatcher-accepted-warnings'],
+    queryFn: () => listDispatcherAcceptedWarnings(),
+  })
+  const revokeAcceptedWarningMutation = useMutation({
+    mutationFn: (key: string) => revokeDispatcherAcceptedWarning({ data: { key } }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+      ])
+    },
+  })
 
   const updateSetting = (id: DispatcherSettingId, enabled: boolean) => {
     runProtectedSettingsChange(() => saveDispatcherSettings({ ...settings, [id]: enabled }))
@@ -2727,6 +2762,20 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
       nextSettings[item.id] = enabled
     })
     runProtectedSettingsChange(() => saveDispatcherSettings(nextSettings))
+  }
+
+  const revokeAcceptedWarning = async (key: string, label: string) => {
+    const confirmed = await confirmAction({
+      title: 'Отменить принятое исключение',
+      itemName: label,
+      description: 'Если нарушение все еще существует, после пересчета оно снова появится в диспетчере.',
+      confirmLabel: 'Отменить исключение',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+    await runProtectedSettingsChange(async () => {
+      await revokeAcceptedWarningMutation.mutateAsync(key)
+    })
   }
 
   return (
@@ -2781,8 +2830,108 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
           />
         ))}
       </div>
+
+      <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+        <div className={`flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 ${acceptedWarningsExpanded ? 'border-b border-slate-200' : ''}`}>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-sm font-semibold text-slate-900">Принятые исключения</h4>
+              <span className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
+                {acceptedWarningsQuery.data?.length ?? 0}
+              </span>
+            </div>
+            <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
+              Здесь хранятся ситуации, которые пользователь осознанно разрешил кнопкой «Принять». Диспетчер продолжает показывать все остальные
+              задачи. Исключение можно отменить в любой момент.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            onClick={() => setAcceptedWarningsExpanded((current) => !current)}
+            aria-expanded={acceptedWarningsExpanded}
+          >
+            {acceptedWarningsExpanded ? 'Свернуть' : 'Развернуть'}
+            <ChevronDown className={`h-4 w-4 transition-transform ${acceptedWarningsExpanded ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+        {acceptedWarningsExpanded ? (
+          acceptedWarningsQuery.isLoading ? (
+            <div className="px-4 py-5 text-sm text-slate-500">Загружаем исключения...</div>
+          ) : acceptedWarningsQuery.data?.length ? (
+            <div className="divide-y divide-slate-100">
+              {acceptedWarningsQuery.data.map((warning) => {
+                const category = getAcceptedWarningCategory(warning.kind)
+                const label = warning.title || category
+                const contextParts = getAcceptedWarningContextParts(warning)
+                return (
+                  <div key={warning.key} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                      {warning.code || category}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-slate-900">{label}</div>
+                      {contextParts.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-slate-600">
+                          {contextParts.map((part, index) => (
+                            <span key={`${part.label}:${part.value}:${index}`}>
+                              <span className="font-semibold text-slate-500">{part.label}:</span> {part.value}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        Принято: {formatSettingsTimestamp(warning.acceptedAt)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                      onClick={() => void revokeAcceptedWarning(warning.key, warning.context || label)}
+                      disabled={revokeAcceptedWarningMutation.isPending}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Отменить
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="px-4 py-5 text-sm text-slate-500">Принятых исключений пока нет.</div>
+          )
+        ) : null}
+      </section>
     </div>
   )
+}
+
+function getAcceptedWarningCategory(kind: string) {
+  switch (kind) {
+    case 'create':
+    case 'coil':
+    case 'delete':
+    case 'rename':
+      return 'Цепочка стыков'
+    case 'check':
+    case 'duplicate-check':
+      return 'Проверка стыка'
+    case 'line-consistency':
+      return 'Проверка линии'
+    case 'percentage-line-control':
+      return 'Процентная линия'
+    case 'welder-stamp-expiry':
+      return 'Клеймо и допуски'
+    default:
+      return 'Исключение'
+  }
+}
+
+function formatSettingsTimestamp(value: string) {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })
 }
 
 function DispatcherSettingsGroupCard({

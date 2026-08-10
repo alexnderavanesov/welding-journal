@@ -11,12 +11,51 @@ import {
 } from './report-import-preview'
 import type { WeldRow } from './dispatcher-types'
 import type { WelderStampRecord } from './welder-stamp-types'
+import { WELD_IMPORT_MAX_ROWS } from './weld-import-limits'
 
 describe('existing rows report import preview', () => {
   afterEach(() => {
     saveOtherSettings(DEFAULT_OTHER_SETTINGS)
     saveDataListSettings(DEFAULT_DATA_LIST_SETTINGS)
     saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('rejects more than 2000 non-empty rows during %s preview', async (_, buildPreview) => {
+    const dataRows = Array.from(
+      { length: WELD_IMPORT_MAX_ROWS + 1 },
+      (_, index) => [index + 1, `S${index + 1}`],
+    )
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык'], dataRows)
+
+    await expect(buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })).rejects.toThrow('не более 2000 строк')
+  })
+
+  it('rejects more than 2000 new weld rows before validating their contents', async () => {
+    const fields = getReportImportTemplateFields('weldingJournal')
+    const file = buildWorkbookFile(
+      fields.map((field) => field.label),
+      Array.from({ length: WELD_IMPORT_MAX_ROWS + 1 }, (_, index) =>
+        fields.map((field) => field.key === 'joint' ? `S${index + 1}` : ''),
+      ),
+    )
+
+    await expect(buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })).rejects.toThrow('не более 2000 строк')
   })
 
   it('keeps unofficial status out of mass fill update payloads', async () => {

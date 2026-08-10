@@ -14,25 +14,21 @@ export function useDispatcherTaskSnapshot({
   dismissedRepeatedJointTaskKeys,
   enabled = true,
 }: UseDispatcherTaskSnapshotInput) {
-  const dismissedKeys = useMemo(
-    () => [...dismissedRepeatedJointTaskKeys].sort(),
-    [dismissedRepeatedJointTaskKeys],
-  )
-
   const query = useQuery({
-    queryKey: [...DISPATCHER_TASK_SNAPSHOT_QUERY_KEY, dismissedKeys],
+    queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
     enabled,
-    queryFn: async () =>
-      getDispatcherTaskSnapshot({
-        data: {
-          dismissedRepeatedJointTaskKeys: dismissedKeys,
-        },
-      }),
+    queryFn: async () => getDispatcherTaskSnapshot({ data: {} }),
     staleTime: 15_000,
   })
   const duplicateKeys = useMemo(() => new Set(query.data?.duplicateKeys ?? []), [query.data?.duplicateKeys])
-  const repeatedJointTasks = query.data?.repeatedJointTasks ?? []
-  const welderStampExpiryTasks = query.data?.welderStampExpiryTasks ?? []
+  const repeatedJointTasks = useMemo(
+    () => filterDismissedDispatcherTasks(query.data?.repeatedJointTasks, dismissedRepeatedJointTaskKeys),
+    [dismissedRepeatedJointTaskKeys, query.data?.repeatedJointTasks],
+  )
+  const welderStampExpiryTasks = useMemo(
+    () => filterDismissedDispatcherTasks(query.data?.welderStampExpiryTasks, dismissedRepeatedJointTaskKeys),
+    [dismissedRepeatedJointTaskKeys, query.data?.welderStampExpiryTasks],
+  )
   const { repeatedJointTaskGroups, welderStampNotificationGroups } = useMemo(
     () =>
       buildDispatcherTaskGroups({
@@ -52,4 +48,11 @@ export function useDispatcherTaskSnapshot({
     welderStampExpiryTasks,
     welderStampNotificationGroups,
   }
+}
+
+export function filterDismissedDispatcherTasks<Task extends { key: string }>(
+  tasks: readonly Task[] | undefined,
+  dismissedTaskKeys: ReadonlySet<string>,
+) {
+  return (tasks ?? []).filter((task) => !dismissedTaskKeys.has(task.key))
 }

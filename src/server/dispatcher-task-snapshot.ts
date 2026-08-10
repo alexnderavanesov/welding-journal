@@ -5,9 +5,7 @@ import type {
 } from '@/lib/dispatcher-types'
 import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
 
-export type DispatcherTaskSnapshotRequest = {
-  dismissedRepeatedJointTaskKeys?: string[]
-}
+export type DispatcherTaskSnapshotRequest = Record<string, never>
 
 export type DispatcherTaskSnapshotResult = {
   duplicateKeys: string[]
@@ -19,8 +17,8 @@ export type DispatcherTaskSnapshotResult = {
 
 export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
   .validator((data: DispatcherTaskSnapshotRequest | undefined) => data ?? {})
-  .handler(async ({ data }): Promise<DispatcherTaskSnapshotResult> => {
-    const snapshot = await getDispatcherTaskIndexSnapshot(data.dismissedRepeatedJointTaskKeys)
+  .handler(async (): Promise<DispatcherTaskSnapshotResult> => {
+    const snapshot = await getDispatcherTaskIndexSnapshot()
 
     return {
       duplicateKeys: snapshot.duplicateKeys,

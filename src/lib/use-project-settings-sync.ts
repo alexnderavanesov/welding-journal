@@ -10,6 +10,7 @@ import { applyRemoteOtherSettings } from '@/lib/other-settings'
 import {
   PROJECT_SETTING_KEYS,
   PROJECT_SETTING_REMOTE_PERSIST_EVENT,
+  projectSettingAffectsDispatcherIndex,
   type ProjectSettingRemotePersistDetail,
   type ProjectSettingKey,
   shouldSyncProjectSettingsRemote,
@@ -91,10 +92,7 @@ export function useProjectSettingsSync() {
           if (key === PROJECT_SETTING_KEYS.systemIndex) {
             await queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
           }
-          if (
-            key === PROJECT_SETTING_KEYS.dispatcher ||
-            key === PROJECT_SETTING_KEYS.dispatcherReminders
-          ) {
+          if (projectSettingAffectsDispatcherIndex(key)) {
             await Promise.all([
               queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
               queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),

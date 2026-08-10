@@ -905,15 +905,8 @@ export function useHomePageController() {
     setLnkFilters,
   })
   const dispatcherTaskServerFilters = useMemo(
-    () =>
-      buildDispatcherTaskServerFilters(
-        activeColumnFilters,
-        [...dismissedRepeatedJointTaskKeys],
-      ),
-    [
-      activeColumnFilters,
-      dismissedRepeatedJointTaskKeys,
-    ],
+    () => buildDispatcherTaskServerFilters(activeColumnFilters),
+    [activeColumnFilters],
   )
   const weldPageQuery = useWeldPageQuery({
     enabled: isServerPagedTab,
@@ -2208,6 +2201,7 @@ export function useHomePageController() {
       tone: 'warning',
     })
     if (!confirmed) return
+    if (!(await requireEditPassword('принятие исключения диспетчера'))) return
     await acceptDispatcherTaskWarning(task)
     dismissRepeatedJointTask(task)
     setMessage(`Предупреждение принято: ${task.title.toLowerCase()}`)
@@ -2261,6 +2255,7 @@ export function useHomePageController() {
       tone: 'warning',
     })
     if (!confirmed) return
+    if (!(await requireEditPassword('принятие исключения диспетчера'))) return
     await acceptDispatcherTaskWarning(task)
     dismissRepeatedJointTask(task)
     setMessage(`Предупреждение об отстранении клейма ${task.stamp} скрыто`)

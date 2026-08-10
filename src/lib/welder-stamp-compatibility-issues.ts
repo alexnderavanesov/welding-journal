@@ -54,8 +54,8 @@ export function getOfficialStampCompatibilityIssues(
   options: OfficialStampCompatibilityOptions = {},
 ) {
   const saveCheckSettings = options.saveCheckSettings ?? loadSaveCheckSettings()
-  const methods = parseOfficialStampWeldingMethods(record.weldingMethod)
-  const materialGroup = parseOfficialStampMaterialGroup(record.materialGroup)
+  const methods = parseOfficialStampWeldingMethods(record.weldingMethod, options.weldingTypes)
+  const materialGroup = parseOfficialStampMaterialGroup(record.materialGroup, options.materialGroups)
   const diameters = getOfficialStampJointDiameters(record)
   const thicknesses = getOfficialStampJointThicknesses(record)
   const weldDateValue = getWeldDateOrderValue(record.weldDate)

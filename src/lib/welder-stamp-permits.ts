@@ -1,6 +1,5 @@
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { getWelderStampDateInputValidationReason } from '@/lib/welder-stamp-date-limits'
-import { normalizeWelderStampMaterialGroups, normalizeWelderStampWeldType } from '@/lib/welder-stamp-format'
 import { parseWelderStampNumber } from '@/lib/welder-stamp-number'
 import type { WelderStampDlsPermit, WelderStampNaksPermit, WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -46,8 +45,8 @@ export function createEmptyDlsPermit(): WelderStampDlsPermit {
 export function normalizeNaksPermit(permit: Partial<WelderStampNaksPermit>): WelderStampNaksPermit {
   return {
     id: String(permit.id ?? '').trim() || createWelderStampPermitId('naks'),
-    weldType: normalizeWelderStampWeldType(String(permit.weldType ?? '')),
-    materialGroups: normalizeWelderStampMaterialGroups(String(permit.materialGroups ?? '')),
+    weldType: normalizePermitValueList(permit.weldType),
+    materialGroups: normalizePermitValueList(permit.materialGroups),
     diameterFrom: String(permit.diameterFrom ?? '').trim(),
     diameterTo: String(permit.diameterTo ?? '').trim(),
     thicknessFrom: String(permit.thicknessFrom ?? '').trim(),
@@ -63,8 +62,8 @@ export function normalizeDlsPermit(permit: Partial<WelderStampDlsPermit>): Welde
   return {
     id: String(permit.id ?? '').trim() || createWelderStampPermitId('dls'),
     number: String(permit.number ?? '').trim(),
-    weldType: normalizeWelderStampWeldType(String(permit.weldType ?? '')),
-    materialGroups: normalizeWelderStampMaterialGroups(String(permit.materialGroups ?? '')),
+    weldType: normalizePermitValueList(permit.weldType),
+    materialGroups: normalizePermitValueList(permit.materialGroups),
     diameterFrom: String(permit.diameterFrom ?? '').trim(),
     diameterTo: String(permit.diameterTo ?? '').trim(),
     thicknessFrom: String(permit.thicknessFrom ?? '').trim(),
@@ -320,6 +319,10 @@ export function splitPermitValues(value: string) {
     .split(/[+,;/]+/)
     .map((part) => part.trim().toUpperCase())
     .filter(Boolean)
+}
+
+function normalizePermitValueList(value: unknown) {
+  return [...new Set(splitPermitValues(String(value ?? '')))].join(', ')
 }
 
 function hasMeaningfulNaksPermit(permit: WelderStampNaksPermit) {

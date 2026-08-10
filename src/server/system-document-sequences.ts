@@ -30,6 +30,7 @@ import {
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { assertSecurityScope } from '@/server/security-functions'
 
 export type SystemDocumentSequenceUpdate = {
   type: SystemDocumentType
@@ -95,6 +96,7 @@ export const resetSystemDocumentSequence = createServerFn({ method: 'POST' })
     type: requireSystemDocumentTemplateId(data?.type),
   }))
   .handler(async ({ data }) => {
+    await assertSecurityScope('settings')
     const db = requireDb()
     await db.transaction(async (tx) => {
       await lockSystemDocumentNumberCounter(tx, data.type)

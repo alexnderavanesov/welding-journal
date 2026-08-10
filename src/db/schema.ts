@@ -247,7 +247,9 @@ export type NewDuplicateControl = typeof duplicateControls.$inferInsert
 export const dispatcherAcceptedWarnings = pgTable('dispatcher_accepted_warnings', {
   key: text('key').primaryKey(),
   kind: text('kind').notNull(),
+  code: text('code'),
   title: text('title'),
+  context: text('context'),
   acceptedAt: timestamp('accepted_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
@@ -261,6 +263,8 @@ export const dispatcherTaskIndexState = pgTable('dispatcher_task_index_state', {
   repeatedTasks: text('repeated_tasks').default('[]').notNull(),
   welderStampExpiryTasks: text('welder_stamp_expiry_tasks').default('[]').notNull(),
   duplicateKeys: text('duplicate_keys').default('[]').notNull(),
+  dirtyScopes: text('dirty_scopes').default('[]').notNull(),
+  fullRebuild: boolean('full_rebuild').default(true).notNull(),
   computedAt: timestamp('computed_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -346,11 +350,13 @@ export const generatedDocuments = pgTable(
     rowCount: integer('row_count').notNull().default(0),
     wdiTotal: numericNumber('wdi_total'),
     documentNumber: integer('document_number'),
+    sourceMetadata: text('source_metadata'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('generated_documents_type_created_at_idx').on(table.type, table.createdAt),
+    index('generated_documents_type_period_title_idx').on(table.type, table.periodFrom, table.title),
   ],
 )
 

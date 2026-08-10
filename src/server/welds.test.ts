@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   WELD_PAGE_ALL_SIZE,
   attachRkExposureSchemeFilterValues,
+  buildDerivedReportCacheKey,
   buildWeldColumnFilterOptionsFromRows,
   buildWeldDataUsageSummaryFromRows,
   buildWeldReportPageFromRows,
@@ -173,6 +174,30 @@ describe('weld server pagination helpers', () => {
     expect(canPaginateReportSource(buildRowIdListFilters([1, 2]))).toBe(true)
     expect(canPaginateReportSource({ finalStatus: 'годен' })).toBe(false)
     expect(canPaginateReportSource({ unknownDerivedField: 'value' })).toBe(false)
+  })
+
+  it('separates derived report caches by every server filter but not by page', () => {
+    const firstPage = buildDerivedReportCacheKey('report:v2', 'lnk', {
+      projectTitle: 'Проект 1',
+      line: 'LIN-1',
+      search: 'F1',
+      columnFilters: { finalStatus: '=годен' },
+    })
+    const secondPage = buildDerivedReportCacheKey('report:v2', 'lnk', {
+      projectTitle: 'Проект 1',
+      line: 'LIN-1',
+      search: 'F1',
+      columnFilters: { finalStatus: '=годен' },
+    })
+    const anotherProject = buildDerivedReportCacheKey('report:v2', 'lnk', {
+      projectTitle: 'Проект 2',
+      line: 'LIN-1',
+      search: 'F1',
+      columnFilters: { finalStatus: '=годен' },
+    })
+
+    expect(firstPage).toBe(secondPage)
+    expect(firstPage).not.toBe(anotherProject)
   })
 
   it('builds LNK report pages after applying filters to all report rows', () => {

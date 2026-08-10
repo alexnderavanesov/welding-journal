@@ -2,6 +2,7 @@ import { Archive, CalendarClock, CheckCircle2, Pencil, RotateCcw, ShieldAlert, S
 import { useState } from 'react'
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { Button } from '@/components/ui/button'
+import { getTodayIsoDate } from '@/lib/date-format'
 import { formatWelderStampDate } from '@/lib/welder-stamp-format'
 import {
   getArchivedWelderStampDlsPermits,
@@ -278,7 +279,7 @@ function getPermitState(validToValues: string[]): PermitState {
   const nearest = values[0]
   if (!nearest) return 'active'
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayIsoDate()
   if (nearest < today) return 'expired'
 
   const todayDate = new Date(`${today}T00:00:00`)

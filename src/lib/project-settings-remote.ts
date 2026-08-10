@@ -10,6 +10,16 @@ export const PROJECT_SETTING_KEYS = {
 
 export type ProjectSettingKey = (typeof PROJECT_SETTING_KEYS)[keyof typeof PROJECT_SETTING_KEYS]
 
+export function projectSettingAffectsDispatcherIndex(key: unknown) {
+  return key === PROJECT_SETTING_KEYS.dataList ||
+    key === PROJECT_SETTING_KEYS.dispatcher ||
+    key === PROJECT_SETTING_KEYS.dispatcherReminders
+}
+
+export function projectSettingAffectsDerivedCalculations(key: unknown) {
+  return key === PROJECT_SETTING_KEYS.other || key === PROJECT_SETTING_KEYS.systemIndex
+}
+
 export const PROJECT_SETTING_REMOTE_PERSIST_EVENT = 'project-setting-remote-persist'
 
 export type ProjectSettingRemotePersistDetail = {

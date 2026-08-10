@@ -1,6 +1,7 @@
 import { getStore } from '@netlify/blobs'
 import { createServerFn } from '@tanstack/react-start'
 import { eq } from 'drizzle-orm'
+import { resolve } from 'node:path'
 
 import { requireDb } from '@/db'
 import { documentTemplates } from '@/db/schema'
@@ -15,6 +16,7 @@ import {
   createDocumentTemplateBlobKey,
   deleteDocumentTemplateBlobVersions,
 } from '@/server/document-template-blobs'
+import { assertSecurityScope } from '@/server/security-functions'
 
 const DOCUMENT_TEMPLATE_STORE = 'document-templates'
 const DOCUMENT_TEMPLATE_IDS = new Set<DocumentTemplateId>([
@@ -86,7 +88,8 @@ export const getRemoteDocumentTemplate = createServerFn({ method: 'GET' })
     const [record] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
     if (!record) return null
 
-    const fileData = await getTemplateStore().get(record.blobKey, { type: 'arrayBuffer', consistency: 'strong' })
+    const store = await getTemplateStore()
+    const fileData = await store.get(record.blobKey, { type: 'arrayBuffer', consistency: 'strong' })
     if (!fileData) throw new Error('Файл шаблона не найден в общем хранилище.')
 
     return {
@@ -98,13 +101,14 @@ export const getRemoteDocumentTemplate = createServerFn({ method: 'GET' })
 export const saveRemoteDocumentTemplate = createServerFn({ method: 'POST' })
   .validator(normalizeSaveTemplateInput)
   .handler(async ({ data }): Promise<RemoteDocumentTemplate> => {
+    await assertSecurityScope('settings')
     const db = requireDb()
     const [existing] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
     const blobKey = createDocumentTemplateBlobKey(data.id, data.fileType)
     const fileData = Buffer.from(data.fileDataBase64, 'base64')
     if (fileData.byteLength === 0) throw new Error('Файл шаблона пуст.')
 
-    const store = getTemplateStore()
+    const store = await getTemplateStore()
     await store.set(blobKey, fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength), {
       metadata: { fileName: data.fileName, fileType: data.fileType },
     })
@@ -179,6 +183,7 @@ export const saveRemoteDocumentTemplate = createServerFn({ method: 'POST' })
 export const updateRemoteDocumentTemplate = createServerFn({ method: 'POST' })
   .validator(normalizeUpdateTemplateInput)
   .handler(async ({ data }) => {
+    await assertSecurityScope('settings')
     const db = requireDb()
     const update: Partial<typeof documentTemplates.$inferInsert> = {
       updatedAt: new Date(),
@@ -197,9 +202,10 @@ export const updateRemoteDocumentTemplate = createServerFn({ method: 'POST' })
 export const deleteRemoteDocumentTemplate = createServerFn({ method: 'POST' })
   .validator((data: { id: DocumentTemplateId }) => ({ id: requireTemplateId(data?.id) }))
   .handler(async ({ data }) => {
+    await assertSecurityScope('delete')
     const db = requireDb()
     const [record] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
-    const store = getTemplateStore()
+    const store = await getTemplateStore()
     const backup = record?.blobKey
       ? await store.getWithMetadata(record.blobKey, {
           type: 'arrayBuffer',
@@ -222,8 +228,37 @@ export const deleteRemoteDocumentTemplate = createServerFn({ method: 'POST' })
     return { ok: true, deletedBlobCount: deletedBlobKeys.length }
   })
 
-function getTemplateStore() {
+async function getTemplateStore() {
+  if (process.env.NODE_ENV !== 'production') return getLocalTemplateStore()
   return getStore({ name: DOCUMENT_TEMPLATE_STORE, consistency: 'strong' })
+}
+
+const LOCAL_BLOB_SERVER_GLOBAL_KEY = '__weldingJournalLocalBlobStorePromise'
+const LOCAL_BLOB_SITE_ID = '0'
+const LOCAL_BLOB_TOKEN = 'welding-journal-local-development'
+
+async function getLocalTemplateStore() {
+  const globalState = globalThis as typeof globalThis & {
+    [LOCAL_BLOB_SERVER_GLOBAL_KEY]?: Promise<ReturnType<typeof getStore>>
+  }
+  globalState[LOCAL_BLOB_SERVER_GLOBAL_KEY] ??= startLocalTemplateStore()
+  return globalState[LOCAL_BLOB_SERVER_GLOBAL_KEY]
+}
+
+async function startLocalTemplateStore() {
+  const { BlobsServer } = await import('@netlify/blobs/server')
+  const server = new BlobsServer({
+    directory: resolve(process.cwd(), '.netlify/blobs-serve'),
+    token: LOCAL_BLOB_TOKEN,
+  })
+  const { address } = await server.start()
+  return getStore({
+    edgeURL: address,
+    name: DOCUMENT_TEMPLATE_STORE,
+    siteID: LOCAL_BLOB_SITE_ID,
+    token: LOCAL_BLOB_TOKEN,
+    uncachedEdgeURL: address,
+  })
 }
 
 function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocumentTemplateInput {

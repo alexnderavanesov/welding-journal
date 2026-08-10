@@ -130,8 +130,8 @@ export function WdiTableEditorDialog({
         onClose={() => void requestClose()}
       />
 
-      <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4">
-        <div className="mb-3 flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
+      <div className="flex min-h-0 flex-1 flex-col bg-slate-50 p-4">
+        <div className="mb-3 flex shrink-0 flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
           <label className="space-y-1 text-sm">
             <span className="font-medium text-slate-700">Проверить диаметр</span>
             <Input value={testDiameter} onChange={(event) => setTestDiameter(event.target.value)} inputMode="decimal" className="w-40" placeholder="Например, 57" />
@@ -143,34 +143,38 @@ export function WdiTableEditorDialog({
           <div className={`min-w-52 rounded-md border px-3 py-2 text-sm ${testResult.kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-sky-200 bg-sky-50 text-sky-800'}`}>
             {testResult.text}
           </div>
-          <div className="ml-auto flex gap-2">
-            <Button type="button" variant="outline" onClick={addDiameterRow}><Plus className="mr-2 h-4 w-4" />Диаметр</Button>
-            <Button type="button" variant="outline" onClick={addThicknessColumn}><Plus className="mr-2 h-4 w-4" />Толщина</Button>
+          <div className="ml-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs text-slate-500">
+            <div className="font-semibold text-slate-700">{normalizedGrid.length - 1} D × {columnCount - 1} T</div>
+            <div>ячейки редактируются напрямую</div>
           </div>
         </div>
 
-        <div className="overflow-auto rounded-md border border-slate-300 bg-white shadow-sm">
-          <table className="min-w-max border-separate border-spacing-0 text-sm">
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border border-slate-300 bg-white shadow-sm">
+          <table className="table-fixed border-separate border-spacing-0 text-sm" style={{ width: 112 + Math.max(1, columnCount - 1) * 72 }}>
+            <colgroup>
+              <col style={{ width: 112 }} />
+              {normalizedGrid[0].slice(1).map((_, columnIndex) => <col key={columnIndex} style={{ width: 72 }} />)}
+            </colgroup>
             <thead className="sticky top-0 z-20">
               <tr>
                 {normalizedGrid[0].map((value, columnIndex) => (
                   <th
                     key={columnIndex}
-                    className={`border-b border-r border-slate-300 bg-slate-100 p-0 align-top ${columnIndex === 0 ? 'sticky left-0 z-30 w-36 min-w-36' : 'w-24 min-w-24'}`}
+                    className={`border-b border-r border-slate-300 bg-slate-100 p-0 align-top ${columnIndex === 0 ? 'sticky left-0 z-30' : ''}`}
                   >
                     {columnIndex === 0 ? (
-                      <div className="flex h-[58px] items-center justify-center bg-slate-200 px-2 font-semibold text-slate-700">
+                      <div className="flex h-[52px] items-center justify-center bg-slate-200 px-2 font-semibold text-slate-700">
                         D \ T
                       </div>
                     ) : (
-                      <div className="flex h-[58px] flex-col bg-slate-100">
+                      <div className="flex h-[52px] flex-col bg-slate-100">
                         <input
                           value={value}
                           onChange={(event) => updateCell(0, columnIndex, event.target.value)}
                           onPaste={(event) => pasteCells(event, 0, columnIndex)}
                           inputMode="decimal"
                           aria-label={`Толщина ${columnIndex}`}
-                          className="h-8 w-full border-0 bg-transparent px-2 text-center font-semibold outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400"
+                          className="h-7 w-full border-0 bg-transparent px-1 text-center font-semibold outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400"
                         />
                         <div className="flex h-6 items-center justify-center border-t border-slate-200 bg-slate-50/80">
                           <CompactGridButton label={`Переместить толщину ${columnIndex} влево`} disabled={columnIndex === 1} onClick={() => moveThicknessColumn(columnIndex, -1)}><ArrowLeft /></CompactGridButton>
@@ -186,20 +190,22 @@ export function WdiTableEditorDialog({
             <tbody>
               {normalizedGrid.slice(1).map((row, offset) => {
                 const rowIndex = offset + 1
+                const rowBackground = rowIndex % 2 === 0 ? 'bg-slate-50/40' : 'bg-white'
+                const stickyCellBackground = rowIndex % 2 === 0 ? 'bg-slate-100/80' : 'bg-slate-50'
                 return (
-                  <tr key={rowIndex}>
+                  <tr key={rowIndex} className={rowBackground}>
                     {row.map((value, columnIndex) => columnIndex === 0 ? (
-                      <td key={columnIndex} className="sticky left-0 z-10 h-9 border-b border-r border-slate-300 bg-slate-50 p-0">
-                        <div className="flex h-9 items-stretch">
+                      <td key={columnIndex} className={`sticky left-0 z-10 h-8 border-b border-r border-slate-300 p-0 ${stickyCellBackground}`}>
+                        <div className="flex h-8 items-stretch">
                           <input
                             value={value}
                             onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
                             onPaste={(event) => pasteCells(event, rowIndex, columnIndex)}
                             inputMode="decimal"
                             aria-label={`Диаметр ${rowIndex}`}
-                            className="min-w-0 flex-1 border-0 bg-transparent px-2 text-center font-semibold outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400"
+                            className="w-12 min-w-0 flex-1 border-0 bg-transparent px-1 text-center font-semibold outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400"
                           />
-                          <div className="flex w-[60px] shrink-0 items-center justify-center border-l border-slate-200 bg-white/70">
+                          <div className="flex w-[54px] shrink-0 items-center justify-center border-l border-slate-200 bg-white/70">
                             <CompactGridButton label={`Поднять диаметр ${rowIndex}`} disabled={rowIndex === 1} onClick={() => moveDiameterRow(rowIndex, -1)}><ArrowUp /></CompactGridButton>
                             <CompactGridButton label={`Опустить диаметр ${rowIndex}`} disabled={rowIndex === normalizedGrid.length - 1} onClick={() => moveDiameterRow(rowIndex, 1)}><ArrowDown /></CompactGridButton>
                             <CompactGridButton label={`Удалить строку ${rowIndex}`} disabled={normalizedGrid.length <= 2} tone="danger" onClick={() => removeDiameterRow(rowIndex)}><Trash2 /></CompactGridButton>
@@ -207,14 +213,14 @@ export function WdiTableEditorDialog({
                         </div>
                       </td>
                     ) : (
-                      <td key={columnIndex} className="h-9 border-b border-r border-slate-200 bg-white p-0">
+                      <td key={columnIndex} className="h-8 border-b border-r border-slate-200 bg-transparent p-0">
                         <input
                           value={value}
                           onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
                           onPaste={(event) => pasteCells(event, rowIndex, columnIndex)}
                           inputMode="decimal"
                           aria-label={`WDI ${rowIndex}:${columnIndex}`}
-                          className="h-9 w-full border-0 bg-transparent px-2 text-center outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400"
+                          className="h-8 w-full border-0 bg-transparent px-1 text-center outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400"
                         />
                       </td>
                     ))}
@@ -226,7 +232,18 @@ export function WdiTableEditorDialog({
         </div>
       </div>
 
-      <DialogFooter error={error} isSaving={isSaving} onCancel={() => void requestClose()} onSave={() => void save()} />
+      <DialogFooter
+        error={error}
+        isSaving={isSaving}
+        onCancel={() => void requestClose()}
+        onSave={() => void save()}
+        startActions={(
+          <>
+            <Button type="button" variant="outline" onClick={addDiameterRow}><Plus className="mr-2 h-4 w-4" />Добавить диаметр</Button>
+            <Button type="button" variant="outline" onClick={addThicknessColumn}><Plus className="mr-2 h-4 w-4" />Добавить толщину</Button>
+          </>
+        )}
+      />
     </LargeDialogShell>
   )
 }
@@ -323,8 +340,8 @@ export function RkExposureTableEditorDialog({
         onClose={() => void requestClose()}
       />
 
-      <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4">
-        <div className="mb-3 flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
+      <div className="flex min-h-0 flex-1 flex-col bg-slate-50 p-4">
+        <div className="mb-3 flex shrink-0 flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
           <label className="space-y-1 text-sm">
             <span className="font-medium text-slate-700">Проверить диаметр</span>
             <Input value={testDiameter} onChange={(event) => setTestDiameter(event.target.value)} inputMode="decimal" className="w-44" placeholder="Например, 89" />
@@ -332,18 +349,28 @@ export function RkExposureTableEditorDialog({
           <div className={`min-w-80 max-w-2xl rounded-md border px-3 py-2 text-sm ${testResult.kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-sky-200 bg-sky-50 text-sky-800'}`}>
             {testResult.text}
           </div>
-          <Button type="button" variant="outline" onClick={addRow} className="ml-auto"><Plus className="mr-2 h-4 w-4" />Добавить строку</Button>
+          <div className="ml-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs text-slate-500">
+            <div className="font-semibold text-slate-700">{normalizedGrid.length} строк</div>
+            <div>диапазоны и варианты</div>
+          </div>
         </div>
 
-        <div className="overflow-auto rounded-md border border-slate-300 bg-white shadow-sm">
-          <table className="w-full min-w-[840px] border-separate border-spacing-0 text-sm">
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border border-slate-300 bg-white shadow-sm">
+          <table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0 text-sm">
+            <colgroup>
+              <col className="w-40" />
+              <col className="w-[28rem]" />
+              <col className="w-28" />
+              <col />
+              <col className="w-32" />
+            </colgroup>
             <thead className="sticky top-0 z-20 bg-slate-100 text-xs font-semibold uppercase text-slate-500">
               <tr>
-                <th className="w-36 border-b border-r border-slate-300 px-2 py-2 text-left">Диаметр от</th>
+                <th className="border-b border-r border-slate-300 px-2 py-2 text-left">Диаметр от</th>
                 <th className="border-b border-r border-slate-300 px-2 py-2 text-left">Снимок / координата</th>
-                <th className="w-36 border-b border-r border-slate-300 px-2 py-2 text-center">Основной</th>
-                <th className="w-64 border-b border-r border-slate-300 px-2 py-2 text-left">Примечание</th>
-                <th className="w-24 border-b border-slate-300 px-2 py-2 text-center">Порядок</th>
+                <th className="border-b border-r border-slate-300 px-2 py-2 text-center">Основной</th>
+                <th className="border-b border-r border-slate-300 px-2 py-2 text-left">Примечание</th>
+                <th className="border-b border-slate-300 px-2 py-2 text-center">Порядок</th>
               </tr>
             </thead>
             <tbody>
@@ -401,7 +428,13 @@ export function RkExposureTableEditorDialog({
         </div>
       </div>
 
-      <DialogFooter error={error} isSaving={isSaving} onCancel={() => void requestClose()} onSave={() => void save()} />
+      <DialogFooter
+        error={error}
+        isSaving={isSaving}
+        onCancel={() => void requestClose()}
+        onSave={() => void save()}
+        startActions={<Button type="button" variant="outline" onClick={addRow}><Plus className="mr-2 h-4 w-4" />Добавить строку</Button>}
+      />
     </LargeDialogShell>
   )
 }
@@ -411,15 +444,18 @@ function DialogFooter({
   isSaving,
   onCancel,
   onSave,
+  startActions,
 }: {
   error: string | null
   isSaving: boolean
   onCancel: () => void
   onSave: () => void
+  startActions?: React.ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-white px-5 py-4">
-      <div className="min-w-0 text-sm text-red-600">{error}</div>
+    <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-200 bg-white px-5 py-3">
+      {startActions ? <div className="flex flex-wrap items-center gap-2">{startActions}</div> : null}
+      <div className="min-w-0 flex-1 text-sm text-red-600">{error}</div>
       <div className="flex shrink-0 gap-2">
         <Button type="button" variant="outline" onClick={onCancel}>Отмена</Button>
         <Button type="button" onClick={onSave} disabled={isSaving}>

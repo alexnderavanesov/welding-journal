@@ -1,10 +1,12 @@
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import tsconfigPaths from 'vite-tsconfig-paths'
 import netlify from '@netlify/vite-plugin-tanstack-start'
 
 export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+  },
   server: {
     port: 3000,
   },
@@ -13,7 +15,6 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined
-          if (id.includes('/xlsx-js-style/')) return 'vendor-xlsx-style'
           if (id.includes('/xlsx/')) return 'vendor-xlsx'
           if (id.includes('/lucide-react/')) return 'vendor-icons'
           return undefined
@@ -21,5 +22,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [tsconfigPaths(), tanstackStart(), react(), netlify()],
+  plugins: [tanstackStart(), react(), netlify()],
 })

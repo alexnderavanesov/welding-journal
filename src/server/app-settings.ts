@@ -1,6 +1,12 @@
-import { createServerFn } from '@tanstack/react-start'
-import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
-import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { createServerFn, createServerOnlyFn } from '@tanstack/react-start'
+import {
+  projectSettingAffectsDerivedCalculations,
+  projectSettingAffectsDispatcherIndex,
+} from '@/lib/project-settings-remote'
+import {
+  invalidateDerivedCalculationCache,
+  markDispatcherTaskIndexDirty,
+} from '@/server/dispatcher-task-index-dirty'
 
 export type AppSettingValue =
   | string
@@ -16,6 +22,11 @@ export type AppSettingPayload = {
   key: string
   value: AppSettingValue
 }
+
+const assertSettingsSecurityScope = createServerOnlyFn(async () => {
+  const { assertSecurityScope } = await import('@/server/security')
+  await assertSecurityScope('settings')
+})
 
 function parseStoredSetting(value: string) {
   try {
@@ -41,6 +52,7 @@ async function listAppSettingsFromDb() {
 }
 
 async function saveAppSettingToDb({ key, value }: AppSettingPayload) {
+  await assertSettingsSecurityScope()
   const { sql } = await import('drizzle-orm')
   const { requireDb } = await import('@/db')
   const { appSettings } = await import('@/db/schema')
@@ -61,12 +73,10 @@ async function saveAppSettingToDb({ key, value }: AppSettingPayload) {
           updatedAt: sql`now()`,
         },
       })
-    if (
-      normalizedKey === PROJECT_SETTING_KEYS.dispatcher ||
-      normalizedKey === PROJECT_SETTING_KEYS.dispatcherReminders ||
-      normalizedKey === PROJECT_SETTING_KEYS.systemIndex
-    ) {
+    if (projectSettingAffectsDispatcherIndex(normalizedKey)) {
       await markDispatcherTaskIndexDirty(tx)
+    } else if (projectSettingAffectsDerivedCalculations(normalizedKey)) {
+      await invalidateDerivedCalculationCache(tx)
     }
   })
 
@@ -74,6 +84,7 @@ async function saveAppSettingToDb({ key, value }: AppSettingPayload) {
 }
 
 async function saveAppSettingsToDb(settings: AppSettingsMap) {
+  await assertSettingsSecurityScope()
   const entries = Object.entries(settings).filter(([key]) => normalizeSettingKey(key))
   if (entries.length === 0) return listAppSettingsFromDb()
 
@@ -97,15 +108,10 @@ async function saveAppSettingsToDb(settings: AppSettingsMap) {
           },
         })
     }
-    if (
-      entries.some(
-        ([key]) =>
-          normalizeSettingKey(key) === PROJECT_SETTING_KEYS.dispatcher ||
-          normalizeSettingKey(key) === PROJECT_SETTING_KEYS.dispatcherReminders ||
-          normalizeSettingKey(key) === PROJECT_SETTING_KEYS.systemIndex,
-      )
-    ) {
+    if (entries.some(([key]) => projectSettingAffectsDispatcherIndex(normalizeSettingKey(key)))) {
       await markDispatcherTaskIndexDirty(tx)
+    } else if (entries.some(([key]) => projectSettingAffectsDerivedCalculations(normalizeSettingKey(key)))) {
+      await invalidateDerivedCalculationCache(tx)
     }
   })
   return listAppSettingsFromDb()

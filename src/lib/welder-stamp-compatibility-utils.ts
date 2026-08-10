@@ -13,8 +13,8 @@ export function normalizeStampForCompare(value: unknown) {
   return normalizeStampSelectValue(value).toUpperCase()
 }
 
-export function parseOfficialStampWeldingMethods(value: unknown) {
-  const weldingTypeOptions = loadDataListSettings().weldingTypes
+export function parseOfficialStampWeldingMethods(value: unknown, configuredOptions?: readonly string[]) {
+  const weldingTypeOptions = configuredOptions ?? loadDataListSettings().weldingTypes
   const selected = new Set(
     String(value ?? '')
       .toUpperCase()
@@ -25,10 +25,10 @@ export function parseOfficialStampWeldingMethods(value: unknown) {
   return weldingTypeOptions.filter((option) => selected.has(option))
 }
 
-export function parseOfficialStampMaterialGroup(value: unknown) {
+export function parseOfficialStampMaterialGroup(value: unknown, configuredOptions?: readonly string[]) {
   const raw = String(value ?? '').trim().toUpperCase()
   if (!raw) return ''
-  const materialGroupOptions = loadDataListSettings().materialGroups
+  const materialGroupOptions = configuredOptions ?? loadDataListSettings().materialGroups
   return materialGroupOptions.find((option) => option === raw) ?? raw
 }
 

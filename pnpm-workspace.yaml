@@ -5,3 +5,24 @@ allowBuilds:
   '@parcel/watcher': true
   esbuild: true
   sharp: true
+
+minimumReleaseAgeExclude:
+  - '@tanstack/react-router@1.170.25'
+  - '@tanstack/react-start-client@1.168.23'
+  - '@tanstack/react-start-rsc@0.1.41'
+  - '@tanstack/react-start-server@1.167.30'
+  - '@tanstack/react-start@1.168.42'
+  - '@tanstack/router-core@1.171.21'
+  - '@tanstack/router-generator@1.167.27'
+  - '@tanstack/router-plugin@1.168.29'
+  - '@tanstack/start-client-core@1.170.21'
+  - '@tanstack/start-plugin-core@1.171.33'
+  - '@tanstack/start-server-core@1.169.25'
+  - '@tanstack/start-storage-context@1.167.23'
+
+overrides:
+  'esbuild@>=0.27.3 <0.28.1': '0.28.1'
+  'image-size@<=2.0.2': 'file:vendor/image-size-2.0.3-security.0.tgz'
+  'js-yaml@>=4.0.0 <4.3.1': '4.3.1'
+  'nanoid@>=3.0.0 <3.3.17': '3.3.17'
+  'postcss@<=8.5.22': '8.5.26'

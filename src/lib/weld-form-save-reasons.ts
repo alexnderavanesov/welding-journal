@@ -61,7 +61,16 @@ export function getWeldFormSaveBlockReason(
 
 function shouldCheckDocumentChronologyForForm(draft: WeldInput, initialValue: WeldDraft) {
   if (!initialValue.id) return true
-  return normalizeDateForComparison(draft.weldDate) !== normalizeDateForComparison(initialValue.weldDate)
+
+  const chronologyFields: WeldFieldKey[] = [
+    'weldDate',
+    'pstoRequestDate',
+    'pstoDate',
+    ...LNK_METHODS.flatMap((method) => [method.requestDateKey, method.conclusionDateKey]),
+  ]
+  return chronologyFields.some(
+    (fieldKey) => normalizeDateForComparison(draft[fieldKey]) !== normalizeDateForComparison(initialValue[fieldKey]),
+  )
 }
 
 function shouldCheckLnkRepairDiameterForForm(
@@ -73,7 +82,10 @@ function shouldCheckLnkRepairDiameterForForm(
   if (!initialValue.id) return true
 
   return normalizeDiameterForComparison(draft.d1) !== normalizeDiameterForComparison(initialValue.d1) ||
-    normalizeDiameterForComparison(draft.d2) !== normalizeDiameterForComparison(initialValue.d2)
+    normalizeDiameterForComparison(draft.d2) !== normalizeDiameterForComparison(initialValue.d2) ||
+    LNK_METHODS.some(
+      (method) => getNormalizedResult(draft[method.resultKey]) !== getNormalizedResult(initialValue[method.resultKey]),
+    )
 }
 
 function normalizeDiameterForComparison(value: unknown) {

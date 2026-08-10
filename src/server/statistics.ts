@@ -20,10 +20,8 @@ import {
 } from '@/lib/system-index-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { toWelderStampPayload } from '@/server/welder-stamps'
-import {
-  buildDerivedCalculationCacheKey,
-  getOrComputeDerivedCalculation,
-} from '@/server/derived-calculation-cache'
+import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
+import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
 
 const STATISTICS_ROW_SELECT = {
   id: weldJoints.id,

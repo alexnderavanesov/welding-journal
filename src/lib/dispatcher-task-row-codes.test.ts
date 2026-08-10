@@ -68,28 +68,24 @@ describe('dispatcher task row codes', () => {
     expect(parseDispatcherTaskServerFilter(withTasks[DISPATCHER_TASK_FILTER_KEY])).toEqual({
       mode: 'with',
       codes: [],
-      dismissedTaskKeys: [],
     })
     expect(parseDispatcherTaskServerFilter(withoutTasks[DISPATCHER_TASK_FILTER_KEY])).toEqual({
       mode: 'without',
       codes: [],
-      dismissedTaskKeys: [],
     })
     expect(parseDispatcherTaskServerFilter(exactCode[DISPATCHER_TASK_FILTER_KEY])).toEqual({
       mode: 'codes',
       codes: ['ДЗ-18'],
-      dismissedTaskKeys: [],
     })
     expect(Object.keys(withTasks)).not.toContain(ROW_ID_LIST_FILTER_KEY)
   })
 
-  it('keeps an existing selected-row filter and sends dismissed task keys separately', () => {
+  it('keeps an existing selected-row filter without mixing local task visibility into server data', () => {
     const filters = buildDispatcherTaskServerFilters(
       {
         ...buildRowIdListFilters([2, 3]),
         [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITH_FILTER,
       },
-      ['task-hidden', 'task-hidden'],
     )
 
     expect(parseRowIdListFilter(filters[ROW_ID_LIST_FILTER_KEY])).toEqual({
@@ -99,7 +95,6 @@ describe('dispatcher task row codes', () => {
     expect(parseDispatcherTaskServerFilter(filters[DISPATCHER_TASK_FILTER_KEY])).toEqual({
       mode: 'with',
       codes: [],
-      dismissedTaskKeys: ['task-hidden'],
     })
   })
 

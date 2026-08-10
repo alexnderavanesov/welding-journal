@@ -11,6 +11,7 @@ import {
 } from '@/lib/duplicate-control-types'
 import { parseDateLikeToIso } from '@/lib/date-format'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { assertSecurityScope } from '@/server/security-functions'
 
 export type DuplicateControlPayload = {
   id?: number
@@ -34,6 +35,7 @@ export const listDuplicateControls = createServerFn({ method: 'GET' }).handler(a
 export const saveDuplicateControl = createServerFn({ method: 'POST' })
   .validator((data: DuplicateControlPayload) => data)
   .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
     const db = requireDb()
     const insertData = toDbInsert(data)
     return db.transaction(async (tx) => {
@@ -56,6 +58,7 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
 export const deleteDuplicateControl = createServerFn({ method: 'POST' })
   .validator((data: { id: number }) => data)
   .handler(async ({ data }) => {
+    await assertSecurityScope('delete')
     const db = requireDb()
     await db.transaction(async (tx) => {
       await tx.delete(duplicateControls).where(eq(duplicateControls.id, data.id))

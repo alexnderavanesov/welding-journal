@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getBusinessDateIso } from '@/lib/business-date'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import {
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
@@ -21,6 +22,7 @@ export type SystemDocumentType = (typeof SYSTEM_DOCUMENT_TYPES)[number]
 export type SystemDocumentTargetReport = 'lnk' | 'heatTreatment'
 
 export type SystemDocumentReference = {
+  documentId?: number
   type: SystemDocumentType
   title: string
   date: string
@@ -33,6 +35,7 @@ export type SystemDocumentNavigationRequest = SystemDocumentReference & {
 
 export type SystemDocumentSummary = SystemDocumentReference & {
   id: string
+  documentId: number
   label: string
   fileName: string
   methodCodes: string[]
@@ -44,6 +47,7 @@ export type SystemDocumentSummary = SystemDocumentReference & {
   periodFrom: string
   periodTo: string
   updatedAt: string
+  rowIds: number[]
 }
 
 export type SystemDocumentTemplateContext = {
@@ -104,9 +108,11 @@ export function getSystemDocumentReferenceForField(
   row: WeldRow,
   fieldKey: WeldFieldKey,
 ): SystemDocumentReference | null {
+  const documentId = row.systemDocumentIds?.[fieldKey]
   const requestMethod = LNK_REQUEST_METHOD_BY_FIELD.get(fieldKey)
   if (requestMethod) {
     return createReference({
+      documentId,
       type: 'lnkRequest',
       title: row[requestMethod.requestKey],
       date: row[requestMethod.requestDateKey],
@@ -116,6 +122,7 @@ export function getSystemDocumentReferenceForField(
   const conclusionMethod = LNK_CONCLUSION_METHOD_BY_FIELD.get(fieldKey)
   if (conclusionMethod) {
     return createReference({
+      documentId,
       type: 'lnkConclusion',
       title: row[conclusionMethod.conclusionKey],
       date: row[conclusionMethod.conclusionDateKey],
@@ -125,6 +132,7 @@ export function getSystemDocumentReferenceForField(
 
   if (fieldKey === 'pstoRequest') {
     return createReference({
+      documentId,
       type: 'pstoRequest',
       title: row.pstoRequest,
       date: row.pstoRequestDate,
@@ -133,6 +141,7 @@ export function getSystemDocumentReferenceForField(
 
   if (fieldKey === 'heatTreatmentDiagram') {
     return createReference({
+      documentId,
       type: 'pstoConclusion',
       title: row.heatTreatmentDiagram,
       date: row.pstoDate,
@@ -353,6 +362,7 @@ export function getSystemDocumentRowResult(
 }
 
 export function getSystemDocumentId(reference: SystemDocumentReference) {
+  if (reference.documentId) return `system-document:${reference.documentId}`
   return JSON.stringify([
     reference.type,
     reference.title,
@@ -362,11 +372,13 @@ export function getSystemDocumentId(reference: SystemDocumentReference) {
 }
 
 function createReference({
+  documentId,
   type,
   title,
   date,
   methodCode,
 }: {
+  documentId?: number
   type: SystemDocumentType
   title: unknown
   date: unknown
@@ -375,6 +387,7 @@ function createReference({
   const normalizedTitle = normalizeText(title)
   if (!normalizedTitle) return null
   return {
+    ...(Number(documentId) > 0 ? { documentId: Number(documentId) } : {}),
     type,
     title: normalizedTitle,
     date: normalizeDateValue(date),
@@ -431,6 +444,7 @@ function finalizeSystemDocumentSummary(group: MutableSystemDocumentSummary): Sys
     date: group.date,
     ...(group.methodCode ? { methodCode: group.methodCode } : {}),
     id: getSystemDocumentId(group),
+    documentId: group.documentId ?? 0,
     label: getSystemDocumentProfile(group.type).label,
     fileName: `${sanitizeFileName(group.title)}.xlsx`,
     methodCodes: sortValues(group.methodCodes),
@@ -442,6 +456,7 @@ function finalizeSystemDocumentSummary(group: MutableSystemDocumentSummary): Sys
     periodFrom: weldDates[0] ?? '',
     periodTo: weldDates[weldDates.length - 1] ?? '',
     updatedAt: group.updatedAt,
+    rowIds: Array.from(group.rowIds).sort((left, right) => left - right),
   }
 }
 
@@ -460,7 +475,7 @@ function normalizeText(value: unknown) {
 
 function normalizeDateValue(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10)
+    return getBusinessDateIso(value)
   }
   return normalizeText(value).slice(0, 10)
 }

@@ -1,4 +1,4 @@
-import { asc, countDistinct, desc, eq, notInArray, sql } from 'drizzle-orm'
+import { and, asc, countDistinct, desc, eq, inArray, or, sql, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   appSettings,
@@ -28,6 +28,7 @@ import {
 import type { RepeatedJointTask, WeldRow, WelderStampExpiryTask } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import { DEFAULT_DATA_LIST_SETTINGS, normalizeDataListSettings } from '@/lib/data-list-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import type {
@@ -41,8 +42,11 @@ import {
   DISPATCHER_INDEX_STATE_ID,
 } from '@/server/dispatcher-task-index-constants'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { getBusinessDateIso } from '@/lib/business-date'
+import type { DispatcherDirtyScope } from '@/server/dispatcher-task-index-dirty'
 
 const INSERT_CHUNK_SIZE = 1_000
+type DispatcherIndexTransaction = Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0]
 
 export type DispatcherTaskIndexSnapshot = {
   duplicateKeys: string[]
@@ -52,32 +56,20 @@ export type DispatcherTaskIndexSnapshot = {
   computedAt: string
 }
 
-export async function getDispatcherTaskIndexSnapshot(
-  dismissedTaskKeys: readonly string[] = [],
-): Promise<DispatcherTaskIndexSnapshot> {
+export async function getDispatcherTaskIndexSnapshot(): Promise<DispatcherTaskIndexSnapshot> {
   const db = requireDb()
   const state = await ensureDispatcherTaskIndexFresh()
-  const dismissedKeys = [...new Set(dismissedTaskKeys.map((key) => key.trim()).filter(Boolean))]
-  const rowTaskWhere = dismissedKeys.length > 0
-    ? notInArray(dispatcherRowTasks.taskKey, dismissedKeys)
-    : undefined
   const taskOptionRows = await db
     .select({
       value: dispatcherRowTasks.code,
       count: countDistinct(dispatcherRowTasks.weldJointId),
     })
     .from(dispatcherRowTasks)
-    .where(rowTaskWhere)
     .groupBy(dispatcherRowTasks.code)
     .orderBy(asc(dispatcherRowTasks.code))
 
-  const dismissedSet = new Set(dismissedKeys)
-  const repeatedJointTasks = parseJsonArray<RepeatedJointTask>(state.repeatedTasks).filter(
-    (task) => !dismissedSet.has(task.key),
-  )
-  const welderStampExpiryTasks = parseJsonArray<WelderStampExpiryTask>(state.welderStampExpiryTasks).filter(
-    (task) => !dismissedSet.has(task.key),
-  )
+  const repeatedJointTasks = parseJsonArray<RepeatedJointTask>(state.repeatedTasks)
+  const welderStampExpiryTasks = parseJsonArray<WelderStampExpiryTask>(state.welderStampExpiryTasks)
   const taskFilterOptions = taskOptionRows
     .sort((left, right) => compareDispatcherTaskCodes(left.value, right.value))
     .map((row) => ({ value: row.value, count: Number(row.count), label: row.value }))
@@ -117,6 +109,22 @@ export async function ensureDispatcherTaskIndexFresh() {
       .limit(1)
     if (isDispatcherTaskIndexFresh(lockedState)) return lockedState
 
+    const dirtyScopes = parseJsonArray<DispatcherDirtyScope>(lockedState.dirtyScopes)
+    if (!lockedState.fullRebuild && dirtyScopes.length > 0 && lockedState.computedAt) {
+      return rebuildScopedDispatcherTaskIndex(tx, lockedState, dirtyScopes)
+    }
+
+    return rebuildFullDispatcherTaskIndex(tx, lockedState)
+  })
+
+  return state
+}
+
+async function rebuildFullDispatcherTaskIndex(
+  tx: DispatcherIndexTransaction,
+  lockedState: typeof dispatcherTaskIndexState.$inferSelect,
+) {
+
     // One transaction uses one PostgreSQL client. Sequential reads keep the
     // snapshot consistent and avoid concurrent client.query calls.
     const rows = await tx
@@ -143,6 +151,7 @@ export async function ensureDispatcherTaskIndexFresh() {
       dismissedRepeatedJointTaskKeys: new Set(),
       dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
       dispatcherSettings: getDispatcherSettings(settingsRows),
+      dataListSettings: getDataListSettings(settingsRows),
       rows: preparedRows,
       welderStamps: stampRows.map(toWelderStampRecord),
       welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
@@ -171,20 +180,138 @@ export async function ensureDispatcherTaskIndexFresh() {
         repeatedTasks: JSON.stringify(compactRepeatedTasks),
         welderStampExpiryTasks: JSON.stringify(tasks.welderStampExpiryTasks),
         duplicateKeys: JSON.stringify([...getDuplicateKeys(preparedRows)].sort()),
+        dirtyScopes: '[]',
+        fullRebuild: false,
         computedAt,
         updatedAt: computedAt,
       })
       .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID))
       .returning()
     return updatedState
-  })
+}
 
-  return state
+async function rebuildScopedDispatcherTaskIndex(
+  tx: DispatcherIndexTransaction,
+  lockedState: typeof dispatcherTaskIndexState.$inferSelect,
+  dirtyScopes: DispatcherDirtyScope[],
+) {
+  const scopeWhere = or(...dirtyScopes.map((scope) => and(
+    normalizedTextEquals(weldJoints.projectTitle, scope.projectTitle),
+    normalizedTextEquals(weldJoints.subtitleCode, scope.subtitleCode),
+    normalizedTextEquals(weldJoints.line, scope.line),
+  ))) ?? sql`false`
+  const rows = await tx
+    .select()
+    .from(weldJoints)
+    .where(scopeWhere)
+    .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+  const rowIds = rows.map((row) => row.id)
+  const stampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
+  const suspensionRows = await tx
+    .select()
+    .from(welderStampSuspensions)
+    .orderBy(asc(welderStampSuspensions.id))
+  const duplicateRows = rowIds.length
+    ? await tx
+        .select()
+        .from(duplicateControls)
+        .where(inArray(duplicateControls.weldJointId, rowIds))
+        .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
+    : []
+  const acceptedWarnings = await tx
+    .select()
+    .from(dispatcherAcceptedWarnings)
+    .orderBy(asc(dispatcherAcceptedWarnings.acceptedAt))
+  const settingsRows = await tx.select().from(appSettings)
+  const preparedRows = prepareReportRows(rows, duplicateRows.map(toDuplicateControlRecord))
+  const scopedTasks = buildVisibleDispatcherTasks({
+    acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
+    dismissedRepeatedJointTaskKeys: new Set(),
+    dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
+    dispatcherSettings: getDispatcherSettings(settingsRows),
+    dataListSettings: getDataListSettings(settingsRows),
+    rows: preparedRows,
+    welderStamps: stampRows.map(toWelderStampRecord),
+    welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
+  })
+  const previousTasks = parseJsonArray<RepeatedJointTask>(lockedState.repeatedTasks)
+  const compactScopedTasks = compactDispatcherTasksForTransport(scopedTasks.repeatedJointTasks)
+  const repeatedTasks = [
+    ...previousTasks.filter((task) => !isDispatcherTaskInScopes(task, dirtyScopes)),
+    ...compactScopedTasks,
+  ]
+  const rowIdSet = new Set(rowIds)
+  const taskIndexRows = buildDispatcherTaskIndexRows(compactScopedTasks, preparedRows)
+    .filter((taskRow) => rowIdSet.has(taskRow.rowId))
+
+  if (rowIds.length > 0) {
+    await tx.delete(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, rowIds))
+  }
+  for (let index = 0; index < taskIndexRows.length; index += INSERT_CHUNK_SIZE) {
+    const chunk = taskIndexRows.slice(index, index + INSERT_CHUNK_SIZE)
+    if (chunk.length === 0) continue
+    await tx.insert(dispatcherRowTasks).values(
+      chunk.map((row) => ({
+        weldJointId: row.rowId,
+        taskKey: row.taskKey,
+        code: row.code,
+      })),
+    ).onConflictDoNothing()
+  }
+
+  const [updatedState] = await tx
+    .update(dispatcherTaskIndexState)
+    .set({
+      computedRevision: lockedState.sourceRevision,
+      repeatedTasks: JSON.stringify(repeatedTasks),
+      duplicateKeys: JSON.stringify(await listDuplicateWeldKeys(tx)),
+      dirtyScopes: '[]',
+      fullRebuild: false,
+      computedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID))
+    .returning()
+  return updatedState
+}
+
+function normalizedTextEquals(column: SQLWrapper, value: string) {
+  return sql`btrim(coalesce(${column}, '')) = ${String(value ?? '').trim()}`
+}
+
+function isDispatcherTaskInScopes(task: RepeatedJointTask, scopes: DispatcherDirtyScope[]) {
+  const taskScope = task.kind === 'line-consistency' || task.kind === 'percentage-line-control'
+    ? task
+    : task.row
+  return scopes.some((scope) =>
+    String(taskScope.projectTitle ?? '').trim() === String(scope.projectTitle ?? '').trim() &&
+    String(taskScope.subtitleCode ?? '').trim() === String(scope.subtitleCode ?? '').trim() &&
+    String(taskScope.line ?? '').trim() === String(scope.line ?? '').trim(),
+  )
+}
+
+async function listDuplicateWeldKeys(tx: DispatcherIndexTransaction) {
+  const project = normalizedDuplicatePart(weldJoints.projectTitle)
+  const subtitle = normalizedDuplicatePart(weldJoints.subtitleCode)
+  const line = normalizedDuplicatePart(weldJoints.line)
+  const joint = normalizedDuplicatePart(weldJoints.joint)
+  const key = sql<string>`concat(${project}, '|', ${subtitle}, '|', ${line}, '|', ${joint})`
+  const rows = await tx
+    .select({ key })
+    .from(weldJoints)
+    .where(sql`lower(btrim(coalesce(${weldJoints.status}, ''))) <> 'неофициальный'`)
+    .groupBy(project, subtitle, line, joint)
+    .having(sql`count(*) > 1 and not (${project} = '' and ${subtitle} = '' and ${line} = '' and ${joint} = '')`)
+  return rows.map((row) => row.key).sort()
+}
+
+function normalizedDuplicatePart(column: SQLWrapper) {
+  return sql<string>`lower(regexp_replace(coalesce(${column}, ''), '\\s+', '', 'g'))`
 }
 
 function isDispatcherTaskIndexFresh(state: typeof dispatcherTaskIndexState.$inferSelect | undefined) {
   if (!state || state.computedRevision !== state.sourceRevision || !state.computedAt) return false
-  return state.computedAt.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+  return getBusinessDateIso(state.computedAt) === getBusinessDateIso()
 }
 
 const DISPATCHER_ROW_CONTEXT_KEYS = [
@@ -232,6 +359,12 @@ function getDispatcherSettings(rows: AppSetting[]) {
 function getDispatcherReminderSettings(rows: AppSetting[]) {
   return normalizeDispatcherReminderSettings(
     getStoredSetting(rows, PROJECT_SETTING_KEYS.dispatcherReminders) ?? DEFAULT_DISPATCHER_REMINDER_SETTINGS,
+  )
+}
+
+function getDataListSettings(rows: AppSetting[]) {
+  return normalizeDataListSettings(
+    getStoredSetting(rows, PROJECT_SETTING_KEYS.dataList) ?? DEFAULT_DATA_LIST_SETTINGS,
   )
 }
 

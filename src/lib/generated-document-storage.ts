@@ -10,6 +10,7 @@ import {
   type SaveGeneratedDocumentInput,
 } from '@/server/generated-documents'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
+import { serializeInlineScriptString } from '@/lib/inline-script-string'
 
 export type StoredGeneratedDocument = RemoteGeneratedDocument
 
@@ -251,11 +252,11 @@ function buildGeneratedDocumentDownloadScript(documentRecord: MaterializedGenera
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-      const blob = new Blob([bytes], { type: "${escapeJsString(documentRecord.mimeType)}" });
+      const blob = new Blob([bytes], { type: ${serializeInlineScriptString(documentRecord.mimeType)} });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "${escapeJsString(fileName)}";
+      link.download = ${serializeInlineScriptString(fileName)};
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -287,8 +288,4 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
-}
-
-function escapeJsString(value: unknown) {
-  return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r')
 }

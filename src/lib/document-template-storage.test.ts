@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import * as XLSX from 'xlsx-js-style'
+import * as XLSX from 'xlsx'
 
 import {
   analyzeDocumentTemplateReplacement,
@@ -324,7 +324,7 @@ describe('document template storage', () => {
     const stylesXml = readXlsxFileText(generatedData, 'xl/styles.xml')
 
     expect(workbook.SheetNames[0]).toBe('Журнал шаблон')
-    expect(sheetXml).toContain('<c r="A1" s="3"')
+    expect(getWorksheetCellStyleId(sheetXml, 'A1')).toBeTruthy()
     expect(sheetXml).toMatch(/<row\b[^>]*\bht="33"/)
     expect(sheetXml).toMatch(/<row\b[^>]*\bcustomHeight="1"/)
     expect(stylesXml).toContain('<top style="thin">')
@@ -348,10 +348,10 @@ describe('document template storage', () => {
     const generatedData = await readBlobAsArrayBuffer(blob)
     const sheetXml = readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')
 
-    expect(sheetXml).toMatch(/<c r="B1" s="\d+"/)
-    expect(sheetXml).toMatch(/<c r="C1" s="\d+"/)
-    expect(sheetXml).toMatch(/<c r="B2" s="\d+"/)
-    expect(sheetXml).toMatch(/<c r="C2" s="\d+"/)
+    expect(getWorksheetCellStyleId(sheetXml, 'B1')).toBeTruthy()
+    expect(getWorksheetCellStyleId(sheetXml, 'C1')).toBeTruthy()
+    expect(getWorksheetCellStyleId(sheetXml, 'B2')).toBeTruthy()
+    expect(getWorksheetCellStyleId(sheetXml, 'C2')).toBeTruthy()
   })
 
   it('fills constructor rows and document summaries without manual markers', async () => {
@@ -951,12 +951,12 @@ describe('document template storage', () => {
     const stylesXml = readXlsxFileText(generatedData, 'xl/styles.xml')
 
     expect(worksheet.C2?.v).toBe('ABC1\nABC3')
-    expect(sheetXml).toContain('<c r="C2" s="4"')
-    expect(stylesXml).toMatch(/<xf\b[^>]*borderId="2"[^>]*applyAlignment="1"><alignment wrapText="1"\/><\/xf>/)
+    expect(getWorksheetCellStyleId(sheetXml, 'C2')).toBeTruthy()
+    expect(stylesXml).toMatch(/<xf\b[^>]*borderId="[1-9]\d*"[^>]*applyAlignment="1"><alignment wrapText="1"\/><\/xf>/)
     expect(sheetXml).toMatch(/<row r="2"[^>]*\bht="33"[^>]*\bcustomHeight="1"/)
     expect(sheetXml).toMatch(/<row r="3"[^>]*\bht="33"[^>]*\bcustomHeight="1"/)
     for (const address of ['A2', 'B2', 'C2', 'D2', 'A3', 'B3', 'C3', 'D3']) {
-      expect(sheetXml).toMatch(new RegExp(`<c r="${address}" s="\\d+"`))
+      expect(getWorksheetCellStyleId(sheetXml, address)).toBeTruthy()
     }
   })
 
@@ -1008,7 +1008,7 @@ describe('document template storage', () => {
     const sheetXml = readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')
 
     for (const address of ['A1', 'B1', 'C1', 'D1', 'A2', 'B2', 'C2', 'D2', 'A3', 'B3', 'C3', 'D3']) {
-      expect(sheetXml).toMatch(new RegExp(`<c r="${address}" s="\\d+"`))
+      expect(getWorksheetCellStyleId(sheetXml, address)).toBeTruthy()
     }
     expect(sheetXml).toMatch(/<row r="2"[^>]*\bht="48"[^>]*\bcustomHeight="1"/)
     expect(sheetXml).toMatch(/<row r="3"[^>]*\bht="48"[^>]*\bcustomHeight="1"/)
@@ -1344,7 +1344,14 @@ function createXlsxTemplate(
   if (options.columns) worksheet['!cols'] = options.columns
   if (options.merges) worksheet['!merges'] = options.merges.map((range) => XLSX.utils.decode_range(range))
   XLSX.utils.book_append_sheet(workbook, worksheet, options.sheetName ?? 'Шаблон')
-  const fileData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
+  let fileData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
+  if (options.style) {
+    fileData = applyTestWorkbookStyle(
+      fileData,
+      options.style,
+      Array.from(new Set(['A1', ...(options.styledCells ?? [])])),
+    )
+  }
   return {
     id: 'weldingJournal',
     fileName: 'template.xlsx',
@@ -1357,6 +1364,74 @@ function createXlsxTemplate(
     warnings: [],
     fileData,
   }
+}
+
+function applyTestWorkbookStyle(
+  fileData: ArrayBuffer,
+  style: Record<string, unknown>,
+  addresses: string[],
+) {
+  const cfb = XLSX.CFB.read(new Uint8Array(fileData), { type: 'array' })
+  const sheetPath = 'xl/worksheets/sheet1.xml'
+  const addressSet = new Set(addresses)
+  const sheetXml = readCfbText(cfb, sheetPath).replace(/<c\b[^>]*>/g, (tag) => {
+    const address = tag.match(/\br="([^"]+)"/)?.[1]
+    if (!address || !addressSet.has(address)) return tag
+    const withoutStyle = tag.replace(/\s+s="[^"]*"/, '')
+    return withoutStyle.replace(`r="${address}"`, `r="${address}" s="1"`)
+  })
+  writeCfbText(cfb, sheetPath, sheetXml)
+  writeCfbText(cfb, 'xl/styles.xml', createTestStylesXml(style))
+  return XLSX.CFB.write(cfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
+}
+
+function createTestStylesXml(style: Record<string, unknown>) {
+  const font = asRecord(style.font)
+  const fill = asRecord(style.fill)
+  const border = asRecord(style.border)
+  const alignment = asRecord(style.alignment)
+  const fontXml = [
+    font.bold ? '<b/>' : '',
+    `<sz val="${escapeTestXml(String(font.sz ?? 12))}"/>`,
+    colorXml(font.color),
+    '<name val="Calibri"/><family val="2"/><scheme val="minor"/>',
+  ].join('')
+  const customFill = fill.patternType
+    ? `<fill><patternFill patternType="${escapeTestXml(String(fill.patternType))}">${colorXml(fill.fgColor, 'fgColor')}</patternFill></fill>`
+    : ''
+  const borderXml = ['left', 'right', 'top', 'bottom', 'diagonal']
+    .map((side) => {
+      const value = asRecord(border[side])
+      if (!value.style) return `<${side}/>`
+      return `<${side} style="${escapeTestXml(String(value.style))}">${colorXml(value.color)}</${side}>`
+    })
+    .join('')
+  const alignmentAttributes = [
+    alignment.horizontal ? `horizontal="${escapeTestXml(String(alignment.horizontal))}"` : '',
+    alignment.vertical ? `vertical="${escapeTestXml(String(alignment.vertical))}"` : '',
+    alignment.wrapText ? 'wrapText="1"' : '',
+  ].filter(Boolean).join(' ')
+  const alignmentXml = alignmentAttributes ? `<alignment ${alignmentAttributes}/>` : ''
+  const fillId = customFill ? 2 : 0
+  const borderId = Object.keys(border).length ? 1 : 0
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="0"/><fonts count="2"><font><sz val="12"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font><font>${fontXml}</font></fonts><fills count="${customFill ? 3 : 2}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${customFill}</fills><borders count="${borderId ? 2 : 1}"><border><left/><right/><top/><bottom/><diagonal/></border>${borderId ? `<border>${borderXml}</border>` : ''}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="${fillId}" borderId="${borderId}" xfId="0" applyFont="1" applyFill="1" applyBorder="1"${alignmentXml ? ' applyAlignment="1"' : ''}>${alignmentXml}</xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium9" defaultPivotStyle="PivotStyleLight16"/></styleSheet>`
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {}
+}
+
+function colorXml(value: unknown, element = 'color') {
+  const color = asRecord(value)
+  return color.rgb ? `<${element} rgb="${escapeTestXml(String(color.rgb))}"/>` : ''
+}
+
+function escapeTestXml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 function createXlsxTemplateWithSheets(

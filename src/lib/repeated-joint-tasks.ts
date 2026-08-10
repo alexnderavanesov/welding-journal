@@ -39,6 +39,7 @@ import {
 import { getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import type { DataListSettings } from '@/lib/data-list-settings'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
@@ -55,6 +56,7 @@ type ObsoleteRepeatedJointInfo = {
 type MatchingJointRowsIndex = Map<string, WeldRow[]>
 
 type BuildRepeatedJointTasksOptions = {
+  dataListSettings?: DataListSettings
   includeIncompleteStampChecks?: boolean
   includeLineConsistencyTasks?: boolean
   includePercentageLineControlTasks?: boolean
@@ -83,7 +85,7 @@ export function buildRepeatedJointTasks(
     ...buildPstoChronologyCheckTasks(rows),
     ...buildForbiddenRepairByDiameterCheckTasks(rows),
     ...(includeWelderStampCompatibilityChecks
-      ? buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions)
+      ? buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions, options.dataListSettings)
       : []),
     ...(includeIncompleteStampChecks ? buildIncompleteWelderStampGroupTasks(rows) : []),
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))

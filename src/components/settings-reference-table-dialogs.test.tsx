@@ -74,4 +74,36 @@ describe('settings reference table dialogs', () => {
     })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps row and column creation available in the WDI dialog footer', () => {
+    renderWithConfirmAction(
+      <WdiTableEditorDialog
+        table={{
+          fileName: 'Таблица WDI',
+          uploadedAt: '2026-08-09T00:00:00.000Z',
+          diameters: [25],
+          thicknesses: [3],
+          values: [[1]],
+        }}
+        onClose={vi.fn()}
+        onSave={vi.fn().mockResolvedValue(true)}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить диаметр' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить толщину' }))
+
+    expect(screen.getByLabelText('Диаметр 2')).toBeInTheDocument()
+    expect(screen.getByLabelText('Толщина 2')).toBeInTheDocument()
+  })
+
+  it('keeps row creation available in the RK exposure dialog footer', () => {
+    renderWithConfirmAction(
+      <RkExposureTableEditorDialog table={null} onClose={vi.fn()} onSave={vi.fn().mockResolvedValue(true)} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить строку' }))
+
+    expect(screen.getByLabelText('Диаметр строки 2')).toBeInTheDocument()
+  })
 })

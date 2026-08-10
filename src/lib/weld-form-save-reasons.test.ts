@@ -152,6 +152,24 @@ describe('getWeldFormSaveBlockReason', () => {
     )
   })
 
+  it('blocks request date edits when the new date breaks LNK chronology', () => {
+    const initialValue = {
+      id: 1,
+      joint: 'S1',
+      weldDate: '07.07.2026',
+      rkRequest: 'Заявка-РК',
+      rkRequestDate: '08.07.2026',
+    } as WeldDraft
+    const draft = {
+      ...initialValue,
+      rkRequestDate: '06.07.2026',
+    } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
+      'ЗВ-16 · Стык S1: дата заявки РК 06.07.2026 раньше даты сварки 07.07.2026.',
+    )
+  })
+
   it('allows unrelated weld form edits when an old PSTO chronology issue already exists', () => {
     const initialValue = {
       id: 1,
@@ -186,6 +204,24 @@ describe('getWeldFormSaveBlockReason', () => {
     )
   })
 
+  it('blocks request date edits when the new date breaks PSTO chronology', () => {
+    const initialValue = {
+      id: 1,
+      joint: 'S1',
+      weldDate: '07.07.2026',
+      pstoRequest: 'Заявка-ПСТО',
+      pstoRequestDate: '08.07.2026',
+    } as WeldDraft
+    const draft = {
+      ...initialValue,
+      pstoRequestDate: '06.07.2026',
+    } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
+      'ЗВ-24 · Стык S1: дата заявки ПСТО 06.07.2026 раньше даты сварки 07.07.2026.',
+    )
+  })
+
   it('reads old RK/UZK replacement values as additional availability in form hints', () => {
     const draft = { id: 1, joint: 'S1', hasPvk: 'замена РК/УЗК' } as WeldInput
 
@@ -205,6 +241,25 @@ describe('getWeldFormSaveBlockReason', () => {
       ...initialValue,
       d1: '55',
       d2: '57',
+    } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
+      'ЗВ-20 · результат РК - «ремонт» нельзя сохранить при минимальном диаметре 55 мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.',
+    )
+  })
+
+  it('blocks saving a new repair result on an existing small-diameter weld', () => {
+    const initialValue = {
+      id: 1,
+      joint: 'S1',
+      d1: '55',
+      d2: '57',
+      hasRk: 'да',
+      rkResult: 'годен',
+    } as WeldDraft
+    const draft = {
+      ...initialValue,
+      rkResult: 'ремонт',
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(

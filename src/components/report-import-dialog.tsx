@@ -28,6 +28,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import { WELD_IMPORT_MAX_ROWS } from '@/lib/weld-import-limits'
 
 type PreviewRowLimit = 50 | 100 | 'all'
 
@@ -202,11 +203,12 @@ export function ReportImportDialog({
           <ImportModeTab active={mode === 'replaceData'} label="Замена данных" onClick={() => handleModeChange('replaceData')} />
         </div>
 
-        {mode !== 'newRecords' ? (
-          <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-            В шаблон попадут стыки из текущего фильтра сварочного журнала: {rows.length}. Если фильтр не задан, попадут все стыки.
-          </div>
-        ) : null}
+        <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          {mode !== 'newRecords'
+            ? `В шаблон попадут стыки из текущего фильтра сварочного журнала: ${rows.length}. Если фильтр не задан, попадут все стыки. `
+            : ''}
+          За одну загрузку обрабатывается не более {WELD_IMPORT_MAX_ROWS} непустых строк.
+        </div>
 
         <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1.15fr]">
           <ImportStepCard

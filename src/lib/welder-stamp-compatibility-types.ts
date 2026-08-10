@@ -23,6 +23,8 @@ export type OfficialStampCompatibilityIssue = {
 
 export type OfficialStampCompatibilityOptions = {
   archiveValidationMode?: 'save' | 'audit'
+  materialGroups?: readonly string[]
   suspensions?: readonly WelderStampSuspensionRecord[]
   saveCheckSettings?: SaveCheckSettings
+  weldingTypes?: readonly string[]
 }

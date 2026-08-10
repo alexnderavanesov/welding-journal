@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_DISPATCHER_REMINDER_SETTINGS, DEFAULT_DISPATCHER_SETTINGS, type DispatcherSettings } from '@/lib/dispatcher-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/use-dispatcher-tasks'
+import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/dispatcher-task-builder'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 describe('buildVisibleDispatcherTasks', () => {

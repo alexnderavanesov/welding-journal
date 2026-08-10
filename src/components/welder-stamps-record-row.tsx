@@ -2,6 +2,7 @@ import { Archive, CalendarClock, CheckCircle2, ChevronDown, Pencil, RotateCcw, S
 import { useState } from 'react'
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { WelderStampExpandedDetails } from '@/components/welder-stamp-detail-panel'
+import { getTodayIsoDate } from '@/lib/date-format'
 import { formatWelderStampDate, formatWelderStampDlsSummary } from '@/lib/welder-stamp-format'
 import { getWelderStampNaksPermits } from '@/lib/welder-stamp-permits'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
@@ -143,7 +144,7 @@ function getRecordPermitState(record: WelderStampRecord): PermitState {
   const nearest = values[0]
   if (!nearest) return 'active'
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getTodayIsoDate()
   if (nearest < today) return 'expired'
 
   const daysLeft = Math.ceil((new Date(`${nearest}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000)

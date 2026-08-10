@@ -1,4 +1,4 @@
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 
@@ -8,6 +8,7 @@ export type WeldRow = WeldInput & {
   jsrDocumentId?: number
   checklistDocumentId?: number
   zniDocumentId?: number
+  systemDocumentIds?: Partial<Record<WeldFieldKey, number>>
 }
 export type WeldDraft = WeldInput & { id?: number }
 

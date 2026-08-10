@@ -39,13 +39,11 @@ export function formatDispatcherTaskCodes(codes: readonly string[] | undefined) 
 
 export function buildDispatcherTaskServerFilters(
   columnFilters: Record<string, string>,
-  dismissedTaskKeys: readonly string[] = [],
 ) {
   const taskFilterValue = String(columnFilters[DISPATCHER_TASKS_FIELD_KEY] ?? '').trim()
   const filters = { ...columnFilters }
   delete filters[DISPATCHER_TASKS_FIELD_KEY]
-  const dismissedKeys = [...new Set(dismissedTaskKeys.map((key) => key.trim()).filter(Boolean))]
-  if (!taskFilterValue && dismissedKeys.length === 0) return filters
+  if (!taskFilterValue) return filters
 
   const choiceFilter = parseWeldColumnChoiceFilter(taskFilterValue)
   const codes = choiceFilter?.kind === 'values'
@@ -58,7 +56,6 @@ export function buildDispatcherTaskServerFilters(
   filters[DISPATCHER_TASK_FILTER_KEY] = JSON.stringify({
     mode: getDispatcherTaskFilterMode(taskFilterValue),
     codes,
-    dismissedTaskKeys: dismissedKeys,
   })
   return filters
 }
@@ -66,7 +63,6 @@ export function buildDispatcherTaskServerFilters(
 export type DispatcherTaskServerFilter = {
   mode: 'all' | 'with' | 'without' | 'codes'
   codes: string[]
-  dismissedTaskKeys: string[]
 }
 
 export function parseDispatcherTaskServerFilter(value: string | undefined): DispatcherTaskServerFilter | null {
@@ -79,14 +75,6 @@ export function parseDispatcherTaskServerFilter(value: string | undefined): Disp
     return {
       mode,
       codes: [...new Set((Array.isArray(parsed.codes) ? parsed.codes : []).map(String).map((code) => code.trim()).filter(Boolean))],
-      dismissedTaskKeys: [
-        ...new Set(
-          (Array.isArray(parsed.dismissedTaskKeys) ? parsed.dismissedTaskKeys : [])
-            .map(String)
-            .map((key) => key.trim())
-            .filter(Boolean),
-        ),
-      ],
     }
   } catch {
     return null

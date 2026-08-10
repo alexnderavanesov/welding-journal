@@ -1,3 +1,5 @@
+import { getBusinessDateIso } from '@/lib/business-date'
+
 export const MIN_ALLOWED_DATE_ISO = '2024-01-01'
 export const MIN_ALLOWED_DATE_DISPLAY = '01.01.2024'
 export const DATE_INPUT_FORMAT_HINT = 'ДД.ММ.ГГГГ или ДД.ММ.ГГ'
@@ -15,7 +17,7 @@ export function formatDateInputValue(date: Date) {
 }
 
 export function getTodayIsoDate() {
-  return formatDateInputValue(new Date())
+  return getBusinessDateIso()
 }
 
 export function parseDateLikeToIso(value: unknown) {

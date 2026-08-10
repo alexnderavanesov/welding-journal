@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
+import {
+  getRemoteSecuritySettings,
+  saveRemoteSecuritySettings,
+} from '@/server/security-functions'
 
 export const SECURITY_SETTINGS_EVENT = 'security-settings-change'
 
 const SECURITY_SETTINGS_STORAGE_KEY = 'welding-security-settings'
+export const SERVER_SECURITY_PASSWORD_PLACEHOLDER = '__server__'
 
 export type SecuritySettings = {
   entryPassword: string
@@ -20,6 +25,11 @@ export type SecuritySettings = {
 }
 
 export type SecurityScope = 'entry' | 'settings' | 'edit' | 'importReplace' | 'documentGeneration' | 'delete'
+
+export type SecurityPublicSettings = Record<SecurityScope, boolean> & {
+  configured: boolean
+  configuredScopes: Record<SecurityScope, boolean>
+}
 
 export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   entryPassword: '',
@@ -52,6 +62,40 @@ export function useSecuritySettings() {
   return settings
 }
 
+export function useEffectiveSecuritySettingsState() {
+  const localSettings = useSecuritySettings()
+  const [remoteSettings, setRemoteSettings] = useState<SecurityPublicSettings | null>(null)
+  const [resolved, setResolved] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setResolved(false)
+    void getRemoteSecuritySettings()
+      .then(async (settings) => {
+        const hasLocalProtection = hasMigratableLocalSecurityPasswords(localSettings)
+        const resolvedSettings = !settings.configured && hasLocalProtection
+          ? await saveRemoteSecuritySettings({ data: localSettings })
+          : settings
+        if (active) {
+          saveSecuritySettings(toLocalSecuritySettings(resolvedSettings))
+          setRemoteSettings(resolvedSettings)
+          setResolved(true)
+        }
+      })
+      .catch(() => {
+        if (active) setResolved(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [localSettings])
+
+  return {
+    settings: remoteSettings ? applyRemoteSecurityFlags(localSettings, remoteSettings) : localSettings,
+    resolved,
+  }
+}
+
 export function loadSecuritySettings(): SecuritySettings {
   if (typeof window === 'undefined') return DEFAULT_SECURITY_SETTINGS
 
@@ -67,7 +111,9 @@ export function loadSecuritySettings(): SecuritySettings {
 export function saveSecuritySettings(settings: SecuritySettings) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeSecuritySettings(settings)
-  window.localStorage.setItem(SECURITY_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  const serialized = JSON.stringify(normalizedSettings)
+  if (window.localStorage.getItem(SECURITY_SETTINGS_STORAGE_KEY) === serialized) return
+  window.localStorage.setItem(SECURITY_SETTINGS_STORAGE_KEY, serialized)
   window.dispatchEvent(new Event(SECURITY_SETTINGS_EVENT))
 }
 
@@ -126,4 +172,45 @@ export function normalizeSecuritySettings(value: unknown): SecuritySettings {
     protectDocumentGeneration: documentGenerationPassword ? source.protectDocumentGeneration === true : false,
     protectDelete: deletePassword ? source.protectDelete === true || legacyProtectEditDelete : false,
   }
+}
+
+function applyRemoteSecurityFlags(
+  settings: SecuritySettings,
+  remote: SecurityPublicSettings,
+): SecuritySettings {
+  if (!remote.configured) return settings
+  return {
+    ...settings,
+    ...toLocalSecuritySettings(remote),
+  }
+}
+
+export function toLocalSecuritySettings(remote: SecurityPublicSettings): SecuritySettings {
+  const password = (scope: SecurityScope) =>
+    remote.configuredScopes[scope] ? SERVER_SECURITY_PASSWORD_PLACEHOLDER : ''
+  return {
+    entryPassword: password('entry'),
+    settingsPassword: password('settings'),
+    editPassword: password('edit'),
+    importReplacePassword: password('importReplace'),
+    documentGenerationPassword: password('documentGeneration'),
+    deletePassword: password('delete'),
+    requirePasswordOnEntry: remote.entry,
+    protectSettings: remote.settings,
+    protectEdit: remote.edit,
+    protectImportReplace: remote.importReplace,
+    protectDocumentGeneration: remote.documentGeneration,
+    protectDelete: remote.delete,
+  }
+}
+
+export function hasMigratableLocalSecurityPasswords(settings: SecuritySettings) {
+  return [
+    settings.entryPassword,
+    settings.settingsPassword,
+    settings.editPassword,
+    settings.importReplacePassword,
+    settings.documentGenerationPassword,
+    settings.deletePassword,
+  ].some((password) => Boolean(password) && password !== SERVER_SECURITY_PASSWORD_PLACEHOLDER)
 }

@@ -27,7 +27,10 @@ import { loadSystemDocumentSequence } from '@/lib/system-document-sequence-stora
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
-import { getSystemDocumentRows, listSystemDocuments } from '@/server/system-documents'
+import {
+  getSystemDocumentRows,
+  listSystemDocuments,
+} from '@/server/system-documents'
 
 const SYSTEM_DOCUMENT_MIME_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -108,7 +111,6 @@ export async function renameSystemDocumentToCurrentName(
     provisionalName,
   )
   if (!nextName) throw new Error('Система не вернула новое имя документа.')
-
   return {
     previousName: reference.title,
     nextName,

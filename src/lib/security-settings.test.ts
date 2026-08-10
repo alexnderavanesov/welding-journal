@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_SECURITY_SETTINGS,
+  SERVER_SECURITY_PASSWORD_PLACEHOLDER,
   isSecurityScopeEnabled,
+  hasMigratableLocalSecurityPasswords,
   normalizeSecuritySettings,
   verifySecurityPassword,
+  toLocalSecuritySettings,
 } from '@/lib/security-settings'
 
 describe('security settings', () => {
@@ -37,5 +40,50 @@ describe('security settings', () => {
 
     expect(settings).toEqual(DEFAULT_SECURITY_SETTINGS)
     expect(isSecurityScopeEnabled(settings, 'documentGeneration')).toBe(false)
+  })
+})
+
+describe('toLocalSecuritySettings', () => {
+  it('keeps only server placeholders in browser storage', () => {
+    expect(
+      toLocalSecuritySettings({
+        configured: true,
+        configuredScopes: {
+          entry: false,
+          settings: true,
+          edit: true,
+          importReplace: false,
+          documentGeneration: false,
+          delete: true,
+        },
+        entry: false,
+        settings: true,
+        edit: false,
+        importReplace: false,
+        documentGeneration: false,
+        delete: true,
+      }),
+    ).toMatchObject({
+      entryPassword: '',
+      settingsPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
+      editPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
+      deletePassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
+      protectSettings: true,
+      protectEdit: false,
+      protectDelete: true,
+    })
+  })
+})
+
+describe('legacy security migration', () => {
+  it('migrates real browser passwords but never the server placeholder', () => {
+    expect(hasMigratableLocalSecurityPasswords({
+      ...DEFAULT_SECURITY_SETTINGS,
+      settingsPassword: 'legacy-password',
+    })).toBe(true)
+    expect(hasMigratableLocalSecurityPasswords({
+      ...DEFAULT_SECURITY_SETTINGS,
+      settingsPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
+    })).toBe(false)
   })
 })

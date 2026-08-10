@@ -6,6 +6,7 @@ import {
 import { normalizeDispatcherReminderDays, type DispatcherReminderSettings } from '@/lib/dispatcher-settings'
 import { getWelderStampDlsPermits, getWelderStampNaksPermits } from '@/lib/welder-stamp-permits'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import { getBusinessDateIso } from '@/lib/business-date'
 
 export function buildWelderStampExpiryTasks(records: WelderStampRecord[], reminderSettings?: Partial<DispatcherReminderSettings>): WelderStampExpiryTask[] {
   const today = parseIsoDateStart(getTodayIsoDate())
@@ -94,5 +95,5 @@ function parseIsoDateStart(value: string) {
 }
 
 function getTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10)
+  return getBusinessDateIso()
 }

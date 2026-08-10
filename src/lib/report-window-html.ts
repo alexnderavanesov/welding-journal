@@ -1,4 +1,5 @@
 import { formatDisplayDate } from '@/lib/date-format'
+import { serializeInlineScriptString } from '@/lib/inline-script-string'
 import { LNK_WAITING_NK_FIELDS } from '@/lib/report-config'
 import type { ExportWorkbookOptions } from '@/lib/weld-export-types'
 import type { WeldField, WeldInput } from '@/lib/weld-fields'
@@ -69,7 +70,7 @@ export function buildLnkReportHtml(
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "${escapeJsString(filename)}";
+      link.download = ${serializeInlineScriptString(filename)};
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -109,8 +110,4 @@ function escapeHtml(value: unknown) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
-}
-
-function escapeJsString(value: unknown) {
-  return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r')
 }

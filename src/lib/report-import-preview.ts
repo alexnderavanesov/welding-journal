@@ -33,6 +33,7 @@ import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
 
 export type ReportImportPreviewError = {
   rowNumber: number
@@ -80,6 +81,7 @@ export async function buildReportImportPreview({
   welderStampSuspensions,
 }: BuildReportImportPreviewOptions): Promise<ReportImportPreview> {
   const parsed = await parseReportImportFile(activeReport, file)
+  assertWeldImportRowLimit(parsed.records.length)
   const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport))
   const fields = getReportImportPreviewFields(activeReport)
 
@@ -148,6 +150,7 @@ async function buildExistingRowsImportPreview({
   welderStampSuspensions,
 }: BuildReportMassFillPreviewOptions & { mode: 'massFill' | 'replaceData' }): Promise<ReportImportPreview> {
   const parsed = await parseMassFillImportFile(file)
+  assertWeldImportRowLimit(parsed.dataRows.filter((row) => !isEmptyWorksheetRow(row)).length)
   const fieldsByColumn = mapMassFillHeadersToFields(parsed.headers)
   const fields = getExistingRowsPreviewFields(fieldsByColumn)
   const idColumnIndex = getMassFillIdColumnIndex(parsed.headers)

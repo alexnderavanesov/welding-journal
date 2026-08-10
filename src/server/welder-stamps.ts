@@ -10,6 +10,7 @@ import {
   type WelderStampSuspension,
 } from '@/db/schema'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { assertSecurityScope } from '@/server/security-functions'
 
 export type WelderStampPayload = {
   id: number
@@ -122,6 +123,7 @@ export const loadWelderStampRegistrySnapshot = createServerFn({ method: 'GET' })
 export const saveWelderStampRecords = createServerFn({ method: 'POST' })
   .validator((data: { records: WelderStampPayload[] }) => data)
   .handler(async ({ data }) => {
+    await assertSecurityScope('settings')
     const db = requireDb()
     return db.transaction(async (tx) => {
       await tx.delete(welderStamps)
@@ -144,6 +146,7 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
 export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' })
   .validator((data: { records: WelderStampSuspensionPayload[] }) => data)
   .handler(async ({ data }) => {
+    await assertSecurityScope('settings')
     const db = requireDb()
     return db.transaction(async (tx) => {
       await tx.delete(welderStampSuspensions)

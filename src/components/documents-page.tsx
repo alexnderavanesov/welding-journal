@@ -1737,6 +1737,7 @@ function formatGeneratedDocumentDate(value: string) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

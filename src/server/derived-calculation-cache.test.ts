@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDerivedCalculationCacheKey } from '@/server/derived-calculation-cache'
+import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 
 describe('derived calculation cache keys', () => {
   it('does not depend on object key order', () => {

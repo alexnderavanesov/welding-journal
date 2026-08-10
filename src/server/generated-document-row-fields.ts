@@ -2,6 +2,9 @@ import { eq, inArray } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { generatedDocuments, generatedDocumentWeldJoints } from '@/db/schema'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type GeneratedDocumentRowFields = {
   jsrDocument?: string | null
@@ -10,6 +13,7 @@ export type GeneratedDocumentRowFields = {
   checklistDocumentId?: number
   zniDocument?: string | null
   zniDocumentId?: number
+  systemDocumentIds?: Partial<Record<WeldFieldKey, number>>
 }
 
 type GeneratedDocumentCarrier = {
@@ -21,6 +25,7 @@ export type GeneratedDocumentRowAssignment = {
   documentId: number
   type: string
   title: string
+  periodFrom?: string | null
 }
 
 export function applyGeneratedDocumentFields<Row extends GeneratedDocumentCarrier>(
@@ -40,6 +45,7 @@ export function applyGeneratedDocumentFields<Row extends GeneratedDocumentCarrie
     const jsrAssignment = weldAssignments.find((assignment) => assignment.type === 'weldingJournal')
     const checklistAssignment = weldAssignments.find((assignment) => assignment.type === 'checklist')
     const zniAssignment = weldAssignments.find((assignment) => assignment.type === 'zni')
+    const systemDocumentIds = buildSystemDocumentIds(row, weldAssignments)
     return {
       ...row,
       ...(jsrAssignment
@@ -57,8 +63,54 @@ export function applyGeneratedDocumentFields<Row extends GeneratedDocumentCarrie
             zniDocumentId: zniAssignment.documentId,
           }
         : {}),
+      ...(Object.keys(systemDocumentIds).length > 0 ? { systemDocumentIds } : {}),
     } as Row & GeneratedDocumentRowFields
   })
+}
+
+function buildSystemDocumentIds<Row extends GeneratedDocumentCarrier>(
+  row: Row,
+  assignments: GeneratedDocumentRowAssignment[],
+) {
+  const values = row as Record<string, unknown>
+  const result: Partial<Record<WeldFieldKey, number>> = {}
+  const fields: Array<{ fieldKey: WeldFieldKey; dateKey: WeldFieldKey }> = [
+    ...LNK_METHODS.map((method) => ({
+      fieldKey: method.requestKey,
+      dateKey: method.requestDateKey,
+    })),
+    ...LNK_METHODS.map((method) => ({
+      fieldKey: method.conclusionKey,
+      dateKey: method.conclusionDateKey,
+    })),
+    { fieldKey: 'pstoRequest', dateKey: 'pstoRequestDate' },
+    { fieldKey: 'heatTreatmentDiagram', dateKey: 'pstoDate' },
+  ]
+
+  for (const { fieldKey, dateKey } of fields) {
+    const title = normalizeText(values[fieldKey])
+    if (!title) continue
+    const templateId = getSystemDocumentTemplateIdForField(fieldKey)
+    if (!templateId) continue
+    const date = normalizeDate(values[dateKey])
+    const assignment = assignments.find(
+      (candidate) =>
+        candidate.type === `system:${templateId}` &&
+        normalizeText(candidate.title) === title &&
+        normalizeDate(candidate.periodFrom) === date,
+    )
+    if (assignment) result[fieldKey] = assignment.documentId
+  }
+
+  return result
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? '').trim()
+}
+
+function normalizeDate(value: unknown) {
+  return String(value ?? '').trim().slice(0, 10)
 }
 
 export async function attachGeneratedDocumentFields<Row extends GeneratedDocumentCarrier>(
@@ -75,6 +127,7 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
       documentId: generatedDocuments.id,
       type: generatedDocuments.type,
       title: generatedDocuments.title,
+      periodFrom: generatedDocuments.periodFrom,
     })
     .from(generatedDocumentWeldJoints)
     .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))

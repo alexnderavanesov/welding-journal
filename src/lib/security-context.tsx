@@ -6,11 +6,11 @@ import { Input } from '@/components/ui/input'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import {
   isSecurityScopeEnabled,
-  loadSecuritySettings,
-  useSecuritySettings,
-  verifySecurityPassword,
+  useEffectiveSecuritySettingsState,
   type SecurityScope,
+  type SecuritySettings,
 } from '@/lib/security-settings'
+import { authenticateSecurityScope } from '@/server/security-functions'
 
 type SecurityPasswordOptions = {
   title: string
@@ -24,10 +24,17 @@ type PendingSecurityPasswordRequest = SecurityPasswordOptions & {
   resolve: (confirmed: boolean) => void
 }
 
-const SecurityPasswordContext = createContext<SecurityPasswordRequest | null>(null)
+type SecurityContextValue = {
+  requestPassword: SecurityPasswordRequest
+  settings: SecuritySettings
+  settingsResolved: boolean
+}
+
+const SecurityPasswordContext = createContext<SecurityContextValue | null>(null)
 
 export function SecurityProvider({ children }: { children: ReactNode }) {
   const [pendingRequest, setPendingRequest] = useState<PendingSecurityPasswordRequest | null>(null)
+  const { settings, resolved: settingsResolved } = useEffectiveSecuritySettingsState()
 
   const requestPassword = useCallback<SecurityPasswordRequest>(
     (options) =>
@@ -44,7 +51,10 @@ export function SecurityProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const contextValue = useMemo(() => requestPassword, [requestPassword])
+  const contextValue = useMemo(
+    () => ({ requestPassword, settings, settingsResolved }),
+    [requestPassword, settings, settingsResolved],
+  )
 
   return (
     <SecurityPasswordContext.Provider value={contextValue}>
@@ -63,11 +73,11 @@ export function SecurityProvider({ children }: { children: ReactNode }) {
 }
 
 export function useSecurityGuard() {
-  const settings = useSecuritySettings()
-  const requestPassword = useContext(SecurityPasswordContext)
-  if (!requestPassword) {
+  const context = useContext(SecurityPasswordContext)
+  if (!context) {
     throw new Error('useSecurityGuard must be used inside SecurityProvider')
   }
+  const { requestPassword, settings } = context
 
   const requirePassword = useCallback(
     async (scope: SecurityScope, options: SecurityPasswordOptions) => {
@@ -112,8 +122,18 @@ export function useSecurityGuard() {
 }
 
 export function SiteSecurityGate({ children }: { children: ReactNode }) {
-  const settings = useSecuritySettings()
-  const [unlocked, setUnlocked] = useState(() => !isSecurityScopeEnabled(loadSecuritySettings(), 'entry'))
+  const context = useContext(SecurityPasswordContext)
+  const [unlocked, setUnlocked] = useState(false)
+  if (!context) throw new Error('SiteSecurityGate must be used inside SecurityProvider')
+  const { settings, settingsResolved } = context
+
+  if (!settingsResolved) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-sm text-slate-500">
+        Проверяем доступ...
+      </div>
+    )
+  }
 
   if (!isSecurityScopeEnabled(settings, 'entry') || unlocked) return <>{children}</>
 
@@ -133,6 +153,12 @@ export function SiteSecurityGate({ children }: { children: ReactNode }) {
       </div>
     </div>
   )
+}
+
+export function useResolvedSecuritySettings() {
+  const context = useContext(SecurityPasswordContext)
+  if (!context) throw new Error('useResolvedSecuritySettings must be used inside SecurityProvider')
+  return context.settings
 }
 
 function SecurityPasswordDialog({
@@ -189,15 +215,21 @@ function PasswordForm({
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (verifySecurityPassword(loadSecuritySettings(), scope, password)) {
+    setSubmitting(true)
+    try {
+      await authenticateSecurityScope({ data: { scope, password } })
       setError(null)
       setPassword('')
       onSuccess()
-      return
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Пароль не подходит')
+    } finally {
+      setSubmitting(false)
     }
-    setError('Пароль не подходит')
   }
 
   return (
@@ -222,7 +254,7 @@ function PasswordForm({
             Отмена
           </Button>
         ) : null}
-        <Button type="submit">{submitLabel}</Button>
+        <Button type="submit" disabled={submitting}>{submitting ? 'Проверяем...' : submitLabel}</Button>
       </div>
     </form>
   )

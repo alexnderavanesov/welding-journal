@@ -6,11 +6,11 @@ import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { isExistingRowsImportLockedField, isMassFillFieldLocked, isSystemImportField } from '@/lib/report-import-template'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
-import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
-import { deleteWeldJoint } from '@/server/welds'
+import { replaceWeldRowsOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { parseDateLikeToIso } from '@/lib/date-format'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
 
 type UseReportImportMutationsOptions = {
   rows: WeldRow[]
@@ -27,6 +27,7 @@ export function useReportImportMutations({
 
   const weldMassFillMutation = useMutation({
     mutationFn: async ({ records, skippedRows }: { records: ReportImportRecord[]; skippedRows: number }) => {
+      assertWeldImportRowLimit(records.length)
       const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(rows, records, 'massFill')
 
       if (updatedRows.length === 0) {
@@ -38,7 +39,11 @@ export function useReportImportMutations({
       assertNoLnkChronologyIssues(chronologyRows, saveCheckSettings)
       assertNoPstoChronologyIssues(chronologyRows, saveCheckSettings)
 
-      const savedRows = await updateWeldRowsOrThrow(updatedRows, 'Не удалось сохранить часть записей массового заполнения')
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRows,
+        'Не удалось сохранить часть записей массового заполнения',
+        { importOperation: 'massFill' },
+      )
       return {
         updated: savedRows.length,
         rows: savedRows as unknown as WeldRow[],
@@ -58,6 +63,7 @@ export function useReportImportMutations({
 
   const weldReplaceDataMutation = useMutation({
     mutationFn: async ({ records, skippedRows }: { records: ReportImportRecord[]; skippedRows: number }) => {
+      assertWeldImportRowLimit(records.length)
       const deleteRecords = records.filter((record) => record.deleteRequested && record.id)
       const updateRecords = records.filter((record) => !record.deleteRequested)
       const { updatedRows, changedFieldKeys } = buildExistingRowImportUpdates(rows, updateRecords, 'replaceData')
@@ -69,17 +75,13 @@ export function useReportImportMutations({
         assertNoLnkChronologyIssues(chronologyRows, saveCheckSettings)
         assertNoPstoChronologyIssues(chronologyRows, saveCheckSettings)
       }
-      const savedRows =
-        updatedRows.length > 0
-          ? await updateWeldRowsOrThrow(updatedRows, 'Не удалось сохранить часть записей замены данных')
-          : []
-      const deletedResults = await Promise.all(
-        deleteRecords.map(async (record) => {
-          if (!record.id) return null
-          return deleteWeldJoint({ data: { id: record.id } })
-        }),
+      const replacement = await replaceWeldRowsOrThrow(
+        updatedRows,
+        deleteRecords.flatMap((record) => record.id ? [record.id] : []),
+        'Не удалось сохранить замену данных',
       )
-      const deleted = deletedResults.filter(Boolean).length
+      const savedRows = replacement.rows
+      const deleted = replacement.deleted
 
       if (savedRows.length === 0) {
         return { updated: 0, deleted, rows: [], changedFieldKeys: [...changedFieldKeys], skipped: updateRecords.length + skippedRows }
