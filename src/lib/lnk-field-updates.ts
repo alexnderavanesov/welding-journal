@@ -1,9 +1,5 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
-import {
-  hasAnyLnkGeneratedData,
-  hasLnkMethodReportHistory,
-  hasLnkReportEntry,
-} from '@/lib/report-control-state'
+import { hasLnkMethodReportHistory } from '@/lib/report-control-state'
 import {
   LNK_GENERATED_FIELD_KEYS,
   LNK_METHODS,
@@ -124,13 +120,13 @@ function isRejectedLnkResultValue(value: unknown) {
   return text === 'ремонт' || text === 'вырез'
 }
 
-export function withLnkCreatedAt<T extends WeldInput>(rows: T[]) {
-  const lnkCreatedAt = new Date().toISOString()
-  return rows.map((row) => ((hasLnkReportEntry(row) || hasAnyLnkGeneratedData(row)) && !row.lnkCreatedAt ? { ...row, lnkCreatedAt } : row))
-}
-
 export function withTouchedLnkTimestamp<T extends WeldInput>(row: T): T {
-  return { ...row, lnkCreatedAt: new Date().toISOString() }
+  const lnkUpdatedAt = new Date().toISOString()
+  return {
+    ...row,
+    lnkCreatedAt: row.lnkCreatedAt ?? lnkUpdatedAt,
+    lnkUpdatedAt,
+  }
 }
 
 export function withLnkFinalStatus<T extends WeldInput>(row: T) {

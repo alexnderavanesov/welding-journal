@@ -26,9 +26,9 @@ import {
   restoreActivePstoCancelledResult,
   withPendingPstoResultStatus,
 } from '@/lib/psto-field-updates'
-import { LNK_GENERATED_FIELD_KEYS, LNK_METHODS } from '@/lib/report-config'
+import { LNK_GENERATED_FIELD_KEYS, LNK_METHODS, LNK_REPORT_FIELD_KEYS } from '@/lib/report-config'
 import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
-import { hasAnyLnkGeneratedData, hasLnkReportEntry, withPendingLnkResults } from '@/lib/report-control-state'
+import { hasHeatTreatmentReportState, hasLnkReportEntry, withPendingLnkResults } from '@/lib/report-control-state'
 import { hasWeldDate, isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
 import {
   FIELD_BY_KEY,
@@ -60,9 +60,15 @@ import {
   parseJointChainFilter,
 } from '@/lib/report-hidden-filters'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
-import { normalizeOtherSettings, type RkExposureTableSettings } from '@/lib/other-settings'
+import {
+  DEFAULT_OTHER_SETTINGS,
+  normalizeOtherSettings,
+  type OtherSettings,
+  type RkExposureTableSettings,
+} from '@/lib/other-settings'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { getRkExposureSchemeState } from '@/lib/rk-exposure'
+import { calculateWdi, isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import {
   ensureDispatcherTaskIndexFresh,
 } from '@/server/dispatcher-task-index'
@@ -77,6 +83,7 @@ import {
 } from '@/server/system-document-sequences'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-documents'
 import { assertSecurityScope } from '@/server/security-functions'
+import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import {
   getOrComputeDerivedCalculation,
@@ -138,6 +145,12 @@ export type WeldPageRequest = WeldFilters & {
 }
 
 export type WeldReportKind = 'weldingJournal' | 'lnk' | 'heatTreatment'
+
+export type WeldImportSecurityAction = 'newRecords' | 'massFill' | 'replaceData'
+
+export function getWeldImportSecurityScope(_action: WeldImportSecurityAction) {
+  return DATA_IMPORT_SECURITY_SCOPE
+}
 
 export type WeldPageResult = {
   rows: WeldRow[]
@@ -256,8 +269,54 @@ const SYSTEM_FIELD_KEYS = new Set([
   'zniDocument',
   'rkExposureScheme',
   'createdAt',
+  'weldingUpdatedAt',
+  'pstoCreatedAt',
+  'pstoUpdatedAt',
+  'lnkCreatedAt',
+  'lnkUpdatedAt',
   'updatedAt',
 ])
+const LNK_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...LNK_METHODS.flatMap((method) => [
+    method.enabledKey,
+    method.requestKey,
+    method.requestDateKey,
+    method.resultKey,
+    method.conclusionDateKey,
+    method.conclusionKey,
+  ]),
+  ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt' && fieldKey !== 'lnkUpdatedAt'),
+  'lnkDefectDescription',
+  'rkExposureConfirmedDiameter',
+  'lnkNote',
+  'status',
+])
+const PSTO_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
+  'pstoRequired',
+  'pstoRequest',
+  'pstoRequestDate',
+  'pstoDate',
+  'pstoResult',
+  'heatTreatmentDiagram',
+  'pstoNote',
+  'pstoBoq',
+  'pstoKs3',
+])
+const NON_WELDING_LNK_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...LNK_PROFILE_FIELD_KEYS,
+  ...LNK_METHODS.map((method) => method.enabledKey),
+])
+for (const method of LNK_METHODS) NON_WELDING_LNK_FIELD_KEYS.delete(method.enabledKey)
+const NON_WELDING_PSTO_FIELD_KEYS = new Set(PSTO_PROFILE_FIELD_KEYS)
+NON_WELDING_PSTO_FIELD_KEYS.delete('pstoRequired')
+const WELDING_PROFILE_FIELD_KEYS = WELD_FIELDS
+  .map((field) => field.key)
+  .filter((fieldKey): fieldKey is WeldFieldKey =>
+    !SYSTEM_FIELD_KEYS.has(fieldKey) &&
+    !NON_WELDING_LNK_FIELD_KEYS.has(fieldKey) &&
+    !NON_WELDING_PSTO_FIELD_KEYS.has(fieldKey) &&
+    fieldKey !== 'finalStatus',
+  )
 const GENERATED_DOCUMENT_FIELD_TYPES = {
   jsrDocument: 'weldingJournal',
   checklistDocument: 'checklist',
@@ -285,6 +344,9 @@ const REPORT_DERIVED_FILTER_SELECT = {
   connectionType: weldJoints.connectionType,
   d1: weldJoints.d1,
   d2: weldJoints.d2,
+  t1: weldJoints.t1,
+  t2: weldJoints.t2,
+  wdi: weldJoints.wdi,
   spool: weldJoints.spool,
   joint: weldJoints.joint,
   status: weldJoints.status,
@@ -295,7 +357,9 @@ const REPORT_DERIVED_FILTER_SELECT = {
   pstoDate: weldJoints.pstoDate,
   pstoResult: weldJoints.pstoResult,
   pstoCreatedAt: weldJoints.pstoCreatedAt,
+  pstoUpdatedAt: weldJoints.pstoUpdatedAt,
   lnkCreatedAt: weldJoints.lnkCreatedAt,
+  lnkUpdatedAt: weldJoints.lnkUpdatedAt,
   hasVik: weldJoints.hasVik,
   hasRk: weldJoints.hasRk,
   hasPvk: weldJoints.hasPvk,
@@ -422,6 +486,11 @@ const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'testKs3',
   'piKs3',
   'createdAt',
+  'weldingUpdatedAt',
+  'pstoCreatedAt',
+  'pstoUpdatedAt',
+  'lnkCreatedAt',
+  'lnkUpdatedAt',
 ])
 
 export const listWeldJointSnapshotPage = createServerFn({ method: 'GET' })
@@ -462,8 +531,9 @@ export const listWeldJointChain = createServerFn({ method: 'GET' })
           normalizedTextEquals(weldJoints.line, record.line),
         ),
       )
-    const weldRecord = record as unknown as WeldRow
-    const weldCandidates = candidates as unknown as WeldRow[]
+    const otherSettings = await loadServerOtherSettings()
+    const [weldRecord] = applyCurrentSystemWdi([record as unknown as WeldRow], otherSettings)
+    const weldCandidates = applyCurrentSystemWdi(candidates as unknown as WeldRow[], otherSettings)
     const [systemIndexRow] = await db
       .select({ value: appSettings.value })
       .from(appSettings)
@@ -488,7 +558,9 @@ export const getWeldJointById = createServerFn({ method: 'GET' })
     const [record] = await db.select().from(weldJoints).where(eq(weldJoints.id, data.id)).limit(1)
     if (!record) return null
     const [recordWithDuplicateControls] = await attachGeneratedDocumentFields(
-      await attachDuplicateControlsToPage([record]),
+      await attachDuplicateControlsToPage(
+        applyCurrentSystemWdi([record], await loadServerOtherSettings()),
+      ),
     )
     return recordWithDuplicateControls as unknown as WeldRow
   })
@@ -520,7 +592,28 @@ export const listWeldingJournalImportScope = createServerFn({ method: 'GET' })
     await assertSecurityScope('entry')
     await ensureDispatcherTaskIndexFresh()
     const db = requireDb()
-    const where = buildWhere(data)
+    const otherSettings = await loadServerOtherSettings()
+    const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
+    const sourceFilterData = hasCurrentSystemWdiFilter
+      ? { ...data, columnFilters: getColumnFilterOptionFilters(data.columnFilters, 'wdi') }
+      : data
+    const where = buildWhere(sourceFilterData)
+
+    if (hasCurrentSystemWdiFilter) {
+      const sourceRows = await db
+        .select(WELD_IMPORT_SCOPE_SELECT)
+        .from(weldJoints)
+        .where(where)
+        .orderBy(...WELDING_JOURNAL_ORDER_BY)
+      const rows = filterWeldRowsByColumns(
+        applyCurrentSystemWdi(sourceRows, otherSettings),
+        { wdi: data.columnFilters.wdi },
+      )
+      return rows.length > WELD_IMPORT_MAX_ROWS
+        ? { rows: [], total: rows.length, limitExceeded: true }
+        : { rows: compactWeldRowsForTransport(rows), total: rows.length, limitExceeded: false }
+    }
+
     const [{ total }] = await db.select({ total: count() }).from(weldJoints).where(where)
     const normalizedTotal = Number(total) || 0
 
@@ -573,7 +666,11 @@ export const getDocumentGenerationData = createServerFn({ method: 'POST' })
 
     return {
       rows: compactWeldRowsForTransport(
-        await attachGeneratedDocumentFields(await attachDuplicateControlsToPage(rows)),
+        await attachGeneratedDocumentFields(
+          await attachDuplicateControlsToPage(
+            applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
+          ),
+        ),
       ),
       scopeOptions: {
         projects: getUniqueSortedTexts(projectRows.map((row) => row.value)),
@@ -657,9 +754,14 @@ function sortUsageAggregateRows(rows: UsageAggregateRow[]): Array<[string, numbe
 async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>) {
   await ensureDispatcherTaskIndexFresh()
   const db = requireDb()
+  const otherSettings = await loadServerOtherSettings()
+  const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
+  const sourceFilterData = hasCurrentSystemWdiFilter
+    ? { ...data, columnFilters: getColumnFilterOptionFilters(data.columnFilters, 'wdi') }
+    : data
   if (report !== 'weldingJournal') {
-    const where = and(buildReportKindWhere(report), buildReportSourceWhere(data)) ?? sql`true`
-    if (canPaginateReportSource(data.columnFilters)) {
+    const where = and(buildReportKindWhere(report), buildReportSourceWhere(sourceFilterData)) ?? sql`true`
+    if (canPaginateReportSource(data.columnFilters) && !hasCurrentSystemWdiFilter) {
       const query = db
         .select()
         .from(weldJoints)
@@ -671,7 +773,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
           ? query
           : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
       const [[{ total }], rows] = await Promise.all([countQuery, rowsQuery])
-      const reportRows = buildServerReportRows(rows, report)
+      const reportRows = applyCurrentSystemWdi(buildServerReportRows(rows, report), otherSettings)
       const rowsWithDuplicateControls = compactWeldRowsForTransport(
         await attachDispatcherTaskCodesToPage(
           await attachGeneratedDocumentFields(
@@ -695,13 +797,53 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       data.pageSize === WELD_PAGE_ALL_SIZE
         ? filteredIds
         : filteredIds.slice((data.page - 1) * data.pageSize, data.page * data.pageSize)
-    const rows = await attachDispatcherTaskCodesToPage(
-      await getFullReportRowsByIds(pageIds, report),
+    const rows = applyCurrentSystemWdi(
+      await attachDispatcherTaskCodesToPage(
+        await getFullReportRowsByIds(pageIds, report),
+      ),
+      otherSettings,
     )
 
     return {
       rows,
       total,
+      page: data.page,
+      pageSize: data.pageSize,
+      hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
+    }
+  }
+
+  if (hasCurrentSystemWdiFilter) {
+    const currentRows = applyCurrentSystemWdi(
+      await db
+        .select(WELD_TABLE_SELECT)
+        .from(weldJoints)
+        .where(buildWhere(sourceFilterData))
+        .orderBy(...WELDING_JOURNAL_ORDER_BY),
+      otherSettings,
+    )
+    const filteredRows = filterWeldRowsByColumns(currentRows, { wdi: data.columnFilters.wdi })
+    const total = filteredRows.length
+    const pageRows = data.pageSize === WELD_PAGE_ALL_SIZE
+      ? filteredRows
+      : filteredRows.slice((data.page - 1) * data.pageSize, data.page * data.pageSize)
+    const acceptedWdiTotal = filteredRows.reduce(
+      (sum, row) => String(row.finalStatus ?? '').trim().toLocaleLowerCase('ru') === 'годен'
+        ? sum + (Number(row.wdi) || 0)
+        : sum,
+      0,
+    )
+    const rows = compactWeldRowsForTransport(
+      await attachDispatcherTaskCodesToPage(
+        await attachGeneratedDocumentFields(
+          await attachDuplicateControlsToPage(pageRows),
+        ),
+      ),
+    )
+    return {
+      rows,
+      total,
+      acceptedWdiTotal,
       page: data.page,
       pageSize: data.pageSize,
       hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
@@ -716,20 +858,38 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     .orderBy(...WELDING_JOURNAL_ORDER_BY)
 
   const countQuery = db.select({ total: count() }).from(weldJoints).where(where)
-  const acceptedWdiTotalQuery = db
-    .select({
-      total: sql<number>`coalesce(sum(case when lower(trim(coalesce(${weldJoints.finalStatus}, ''))) = 'годен' then coalesce(${weldJoints.wdi}, 0) else 0 end), 0)::float`,
-    })
-    .from(weldJoints)
-    .where(where)
+  const acceptedWdiRowsQuery = data.page === 1
+    ? db
+        .select({
+          connectionType: weldJoints.connectionType,
+          d1: weldJoints.d1,
+          d2: weldJoints.d2,
+          t1: weldJoints.t1,
+          t2: weldJoints.t2,
+          wdi: weldJoints.wdi,
+        })
+        .from(weldJoints)
+        .where(
+          and(
+            where,
+            sql`lower(trim(coalesce(${weldJoints.finalStatus}, ''))) = 'годен'`,
+          ),
+        )
+    : Promise.resolve([])
   const rowsQuery =
     data.pageSize === WELD_PAGE_ALL_SIZE
       ? query
       : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
-  const [[{ total }], [{ total: acceptedWdiTotal }], rows] = await Promise.all([countQuery, acceptedWdiTotalQuery, rowsQuery])
+  const [[{ total }], acceptedWdiRows, rows] = await Promise.all([countQuery, acceptedWdiRowsQuery, rowsQuery])
+  const acceptedWdiTotal = acceptedWdiRows.reduce(
+    (sum, row) => sum + (calculateWdi(row, otherSettings) ?? 0),
+    0,
+  )
   const rowsWithDuplicateControls = compactWeldRowsForTransport(
     await attachDispatcherTaskCodesToPage(
-      await attachGeneratedDocumentFields(await attachDuplicateControlsToPage(rows)),
+      await attachGeneratedDocumentFields(
+        await attachDuplicateControlsToPage(applyCurrentSystemWdi(rows, otherSettings)),
+      ),
     ),
   )
 
@@ -897,18 +1057,26 @@ export function attachRkExposureSchemeFilterValues<Row extends WeldRow>(
 }
 
 async function loadServerRkExposureTable() {
+  return (await loadServerOtherSettings()).rkExposureTable
+}
+
+async function loadServerOtherSettings() {
   const [storedSettings] = await requireDb()
     .select({ value: appSettings.value })
     .from(appSettings)
     .where(eq(appSettings.key, PROJECT_SETTING_KEYS.other))
     .limit(1)
-  if (!storedSettings) return null
+  if (!storedSettings) return DEFAULT_OTHER_SETTINGS
 
   try {
-    return normalizeOtherSettings(JSON.parse(storedSettings.value)).rkExposureTable
+    return normalizeOtherSettings(JSON.parse(storedSettings.value))
   } catch {
-    return null
+    return DEFAULT_OTHER_SETTINGS
   }
+}
+
+function applyCurrentSystemWdi<Row extends WeldInput>(rows: Row[], settings: OtherSettings): Row[] {
+  return isSystemWdiMode(settings) ? rows.map((row) => withSystemWdi(row, settings)) : rows
 }
 
 async function getFullReportRowsByIds(ids: number[], report: Exclude<WeldReportKind, 'weldingJournal'>) {
@@ -952,7 +1120,7 @@ export const createWeldJoint = createServerFn({ method: 'POST' })
         previousRows: new Map(),
         context: validationContext,
       })
-      const [created] = await tx.insert(weldJoints).values(toDbInsert(data)).returning()
+      const [created] = await tx.insert(weldJoints).values(toDbInsert(data, true)).returning()
       await syncSystemDocumentsForWeldChangesInTransaction(tx, [created], new Map())
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([data], new Map()) })
       return created
@@ -1013,7 +1181,7 @@ export const updateSystemWeldJoint = createServerFn({ method: 'POST' })
       })
       const [updated] = await tx
         .update(weldJoints)
-        .set({ joint: data.targetJoint, updatedAt: new Date() })
+        .set({ joint: data.targetJoint, weldingUpdatedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(weldJoints.id, data.id), eq(weldJoints.joint, data.currentJoint)))
         .returning()
       if (!updated) throw new Error('Название стыка уже изменилось. Обновите диспетчер задач.')
@@ -1048,9 +1216,10 @@ async function updateWeldJointRecord(data: WeldPayload, allowSystemJointNames: b
       allowSystemJointNames,
     })
     const insertData = toDbInsert(record)
+    const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(id), new Date())
     const [updated] = await tx
       .update(weldJoints)
-      .set({ ...insertData, updatedAt: new Date() })
+      .set({ ...insertData, ...timestampUpdates, updatedAt: new Date() })
       .where(eq(weldJoints.id, id))
       .returning()
     if (!updated) throw new Error(`Запись ${id} не найдена`)
@@ -1086,15 +1255,12 @@ export const createWeldJoints = createServerFn({ method: 'POST' })
     })
   })
 
-export const updateWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: {
-    records: WeldPayload[]
-    systemDocumentSequence?: SystemDocumentSequenceUpdate
-    importOperation?: 'massFill'
-  }) => data)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    if (data.importOperation === 'massFill') assertWeldImportRowLimit(data.records.length)
+type WeldBatchUpdateData = {
+  records: WeldPayload[]
+  systemDocumentSequence?: SystemDocumentSequenceUpdate
+}
+
+async function updateWeldJointRows(data: WeldBatchUpdateData, importMode = false) {
     if (data.records.length === 0) return []
     if (data.records.some((record) => !record.id)) throw new Error('Не передан id одной из записей')
     assertUniqueWeldMutationTargets(data.records)
@@ -1124,7 +1290,7 @@ export const updateWeldJoints = createServerFn({ method: 'POST' })
       }
       const previousRows = await loadPreviousWeldRows(tx, records)
       const validationContext = await loadServerWeldValidationContext(tx)
-      if (data.importOperation === 'massFill') {
+      if (importMode) {
         assertExistingRowsImportPayload({
           records,
           previousRows,
@@ -1137,19 +1303,20 @@ export const updateWeldJoints = createServerFn({ method: 'POST' })
         records,
         previousRows,
         context: validationContext,
-        importMode: data.importOperation === 'massFill',
+        importMode,
       })
       validateServerWeldRecords({
         records,
         previousRows,
         context: validationContext,
-        importMode: data.importOperation === 'massFill',
+        importMode,
       })
       const updated = []
       for (const record of records) {
+        const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(record.id!), new Date())
         const [row] = await tx
           .update(weldJoints)
-          .set({ ...toDbInsert(record), updatedAt: new Date() })
+          .set({ ...toDbInsert(record), ...timestampUpdates, updatedAt: new Date() })
           .where(eq(weldJoints.id, record.id!))
           .returning()
         if (!row) throw new Error(`Запись ${record.id} не найдена`)
@@ -1157,10 +1324,24 @@ export const updateWeldJoints = createServerFn({ method: 'POST' })
       }
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, previousRows) })
-      return data.importOperation === 'massFill'
-        ? updated.map((row) => ({ id: row.id })) as typeof updated
-        : updated
+      return updated
     })
+}
+
+export const updateWeldJoints = createServerFn({ method: 'POST' })
+  .validator((data: WeldBatchUpdateData) => data)
+  .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
+    return updateWeldJointRows(data)
+  })
+
+export const massFillWeldJoints = createServerFn({ method: 'POST' })
+  .validator((data: { records: WeldPayload[] }) => data)
+  .handler(async ({ data }) => {
+    await assertSecurityScope(getWeldImportSecurityScope('massFill'))
+    assertWeldImportRowLimit(data.records.length)
+    const updated = await updateWeldJointRows(data, true)
+    return updated.map((row) => ({ id: row.id }))
   })
 
 export const replaceWeldJoints = createServerFn({ method: 'POST' })
@@ -1177,7 +1358,7 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
       : [],
   }))
   .handler(async ({ data }) => {
-    await assertSecurityScope('importReplace')
+    await assertSecurityScope(getWeldImportSecurityScope('replaceData'))
     assertWeldImportRowLimit(data.records.length + data.deleteIds.length)
     const db = requireDb()
     return db.transaction(async (tx) => {
@@ -1226,9 +1407,10 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
 
       const updated = []
       for (const record of records) {
+        const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(record.id!), new Date())
         const [row] = await tx
           .update(weldJoints)
-          .set({ ...toDbInsert(record), updatedAt: new Date() })
+          .set({ ...toDbInsert(record), ...timestampUpdates, updatedAt: new Date() })
           .where(eq(weldJoints.id, record.id!))
           .returning()
         if (!row) throw new Error(`Запись ${record.id} не найдена`)
@@ -1311,7 +1493,11 @@ export const listWeldJointRowsByIds = createServerFn({ method: 'POST' })
     const orderById = new Map(data.ids.map((id, index) => [id, index]))
     rows.sort((left, right) => (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER))
     return compactWeldRowsForTransport(
-      await attachGeneratedDocumentFields(await attachDuplicateControlsToPage(rows)),
+      await attachGeneratedDocumentFields(
+        await attachDuplicateControlsToPage(
+          applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
+        ),
+      ),
     )
   })
 
@@ -1399,7 +1585,7 @@ async function deleteEmptyGeneratedDocuments(tx: Parameters<Parameters<ReturnTyp
 export const importWeldJoints = createServerFn({ method: 'POST' })
   .validator((data: { records: WeldInput[] }) => data)
   .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
+    await assertSecurityScope(getWeldImportSecurityScope('newRecords'))
     assertWeldImportRowLimit(data.records.length)
     if (data.records.length === 0) return { inserted: 0, rows: [] }
     const db = requireDb()
@@ -1453,9 +1639,16 @@ export const clearLnkGeneratedWeldData = createServerFn({ method: 'POST' }).hand
           return data
         }, {})
         const { finalStatus } = withLnkFinalStatus(cleanedRow)
+        const now = new Date()
         const [updated] = await tx
           .update(weldJoints)
-          .set({ ...updateData, finalStatus, updatedAt: new Date() })
+          .set({
+            ...updateData,
+            finalStatus,
+            lnkCreatedAt: sql`coalesce(${weldJoints.lnkCreatedAt}, ${now})`,
+            lnkUpdatedAt: now,
+            updatedAt: now,
+          })
           .where(eq(weldJoints.id, row.id))
           .returning()
         if (updated) changedRows.push(updated)
@@ -1486,30 +1679,78 @@ function parseStoredJson(value: unknown) {
   }
 }
 
-function toDbInsert(input: WeldInput): NewWeldJoint {
+function toDbInsert(input: WeldInput, isCreate = false): NewWeldJoint {
   const normalized = prepareServerWeldInput(normalizeWeldInput(input))
   const data: Record<string, unknown> = {}
 
   for (const field of WELD_FIELDS) {
     if (SYSTEM_FIELD_KEYS.has(field.key)) continue
-    if (field.key === 'pstoCreatedAt' || field.key === 'lnkCreatedAt') {
-      data[field.key] = normalized[field.key] ? new Date(String(normalized[field.key])) : null
-      continue
-    }
     if (field.kind === 'boolean') {
       data[field.key] = normalizeControlAvailabilityValue(normalized[field.key])
       continue
     }
     data[field.key] = normalized[field.key] ?? null
   }
-  if (isYesText(normalized.pstoRequired) && !normalized.pstoCreatedAt) {
-    data.pstoCreatedAt = new Date()
-  }
-  if ((hasLnkReportEntry(normalized) || hasAnyLnkGeneratedData(normalized)) && !normalized.lnkCreatedAt) {
-    data.lnkCreatedAt = new Date()
+  if (isCreate) {
+    const now = new Date()
+    data.weldingUpdatedAt = now
+    if (hasPstoReportEntry(normalized)) {
+      data.pstoCreatedAt = now
+      data.pstoUpdatedAt = now
+    }
+    if (hasLnkReportEntry(normalized)) {
+      data.lnkCreatedAt = now
+      data.lnkUpdatedAt = now
+    }
   }
 
   return data as NewWeldJoint
+}
+
+export function getProfileTimestampUpdates(
+  record: WeldInput,
+  previous: WeldJoint | undefined,
+  now: Date,
+): Partial<NewWeldJoint> {
+  const lnkTouched = hasProfileChanged(record, previous, LNK_PROFILE_FIELD_KEYS)
+  const pstoTouched = hasProfileChanged(record, previous, PSTO_PROFILE_FIELD_KEYS)
+  const weldingTouched = hasProfileChanged(record, previous, WELDING_PROFILE_FIELD_KEYS)
+  const lnkEntered = !hasLnkReportEntry(previous ?? {}) && hasLnkReportEntry(record)
+  const pstoEntered = !hasPstoReportEntry(previous ?? {}) && hasPstoReportEntry(record)
+  const updates: Partial<NewWeldJoint> = {}
+
+  if (weldingTouched) updates.weldingUpdatedAt = now
+  if (lnkTouched || lnkEntered) {
+    if (!previous?.lnkCreatedAt && (lnkEntered || hasLnkReportEntry(previous ?? {}))) updates.lnkCreatedAt = now
+    updates.lnkUpdatedAt = now
+  }
+  if (pstoTouched || pstoEntered) {
+    if (!previous?.pstoCreatedAt && (pstoEntered || hasPstoReportEntry(previous ?? {}))) updates.pstoCreatedAt = now
+    updates.pstoUpdatedAt = now
+  }
+
+  return updates
+}
+
+function hasPstoReportEntry(record: WeldInput) {
+  return hasWeldDate(record) && hasHeatTreatmentReportState(record)
+}
+
+function hasProfileChanged(
+  record: WeldInput,
+  previous: WeldJoint | undefined,
+  fieldKeys: ReadonlySet<WeldFieldKey> | readonly WeldFieldKey[],
+) {
+  if (!previous) return true
+  return [...fieldKeys].some(
+    (fieldKey) => normalizeProfileValue(record[fieldKey]) !== normalizeProfileValue(previous[fieldKey as keyof WeldJoint]),
+  )
+}
+
+function normalizeProfileValue(value: unknown) {
+  if (value === null || value === undefined) return ''
+  if (value instanceof Date) return value.toISOString()
+  return String(value).trim()
 }
 
 async function insertWeldJointsInBatches(
@@ -1518,7 +1759,7 @@ async function insertWeldJointsInBatches(
 ) {
   const inserted: WeldJoint[] = []
   for (const batch of splitWeldImportInsertBatches(records)) {
-    const rows = await tx.insert(weldJoints).values(batch.map(toDbInsert)).returning()
+    const rows = await tx.insert(weldJoints).values(batch.map((record) => toDbInsert(record, true))).returning()
     inserted.push(...rows)
   }
   return inserted
@@ -1528,12 +1769,14 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
   if (!FIELD_BY_KEY.has(data.fieldKey)) return []
   await ensureDispatcherTaskIndexFresh()
   const columnFilters = getColumnFilterOptionFilters(data.columnFilters, data.fieldKey)
+  const currentWdiSettings = data.fieldKey === 'wdi' ? await loadServerOtherSettings() : null
+  const useCurrentSystemWdi = Boolean(currentWdiSettings && isSystemWdiMode(currentWdiSettings))
   if (data.fieldKey === DISPATCHER_TASKS_FIELD_KEY) {
     return listDispatcherTaskColumnFilterOptions({ ...data, columnFilters })
   }
   if (data.report !== 'weldingJournal') {
     const column = getWeldColumn(data.fieldKey)
-    if (column && REPORT_SOURCE_COLUMN_FILTER_KEYS.has(data.fieldKey) && canPaginateReportSource(columnFilters)) {
+    if (column && REPORT_SOURCE_COLUMN_FILTER_KEYS.has(data.fieldKey) && canPaginateReportSource(columnFilters) && !useCurrentSystemWdi) {
       return listSourceColumnFilterOptions(data.report, data.fieldKey, { ...data, columnFilters })
     }
 
@@ -1553,8 +1796,11 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
           .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
         const sourceRowsWithControls = await attachDuplicateControlsToPage(sourceRows)
         const derivedRows = buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], data.report)
+        const currentRows = currentWdiSettings
+          ? applyCurrentSystemWdi(derivedRows, currentWdiSettings)
+          : derivedRows
         const reportRows = filterWeldRowsByColumns(
-          await attachRkExposureSchemeFilterValuesIfNeeded(derivedRows, columnFilters, data.fieldKey),
+          await attachRkExposureSchemeFilterValuesIfNeeded(currentRows, columnFilters, data.fieldKey),
           columnFilters,
         )
         return buildWeldColumnFilterOptionsFromRows(reportRows, data.fieldKey)
@@ -1568,6 +1814,17 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
   }
   if (data.fieldKey === 'finalStatus') {
     return listFinalStatusColumnFilterOptions({ ...data, columnFilters })
+  }
+
+  if (currentWdiSettings && useCurrentSystemWdi) {
+    const rows = await requireDb()
+      .select(WELD_TABLE_SELECT)
+      .from(weldJoints)
+      .where(buildWhere({ ...data, columnFilters }))
+    return buildWeldColumnFilterOptionsFromRows(
+      applyCurrentSystemWdi(rows, currentWdiSettings),
+      data.fieldKey,
+    )
   }
 
   const column = getWeldColumn(data.fieldKey)
@@ -1686,7 +1943,10 @@ async function listDerivedReportRowIds(
         .where(where)
         .orderBy(...getReportOrderBy(report))
       const sourceRowsWithControls = await attachDuplicateControlsToPage(sourceRows)
-      const reportRows = buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], report)
+      const reportRows = applyCurrentSystemWdi(
+        buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], report),
+        await loadServerOtherSettings(),
+      )
       return filterWeldRowsByColumns(
         await attachRkExposureSchemeFilterValuesIfNeeded(reportRows, columnFilters),
         columnFilters,

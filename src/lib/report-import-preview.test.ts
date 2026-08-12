@@ -11,12 +11,30 @@ import {
 } from './report-import-template'
 import {
   buildReportImportPreview,
-  buildReportMassFillPreview,
-  buildReportReplaceDataPreview,
+  buildReportMassFillPreview as buildReportMassFillPreviewImpl,
+  buildReportReplaceDataPreview as buildReportReplaceDataPreviewImpl,
 } from './report-import-preview'
 import type { WeldRow } from './dispatcher-types'
 import type { WelderStampRecord } from './welder-stamp-types'
 import { WELD_IMPORT_MAX_ROWS } from './weld-import-limits'
+
+const REQUIRED_EXISTING_WELD_IDENTITY = {
+  projectTitle: 'Проект',
+  subtitleCode: 'Шифр',
+  line: 'Линия',
+}
+
+const buildReportMassFillPreview: typeof buildReportMassFillPreviewImpl = (options) =>
+  buildReportMassFillPreviewImpl({
+    ...options,
+    rows: options.rows.map((row) => ({ ...REQUIRED_EXISTING_WELD_IDENTITY, ...row })),
+  })
+
+const buildReportReplaceDataPreview: typeof buildReportReplaceDataPreviewImpl = (options) =>
+  buildReportReplaceDataPreviewImpl({
+    ...options,
+    rows: options.rows.map((row) => ({ ...REQUIRED_EXISTING_WELD_IDENTITY, ...row })),
+  })
 
 describe('existing rows report import preview', () => {
   afterEach(() => {
@@ -88,6 +106,93 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('ЗВ-30')
     expect(preview.errors[0]?.message).toContain('тип соединения')
+  })
+
+  it('shows a Cyrillic letter in a new joint name during ordinary import preview', async () => {
+    const file = buildWeldingJournalImportFile({
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'Линия',
+      joint: 'FВ013',
+    })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('кириллические символы')
+    expect(preview.errors[0]?.fieldKeys).toEqual(['joint'])
+  })
+
+  it('shows a Cyrillic joint name together with another invalid field during ordinary import', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С17'] })
+    const file = buildWeldingJournalImportFile({
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'Линия',
+      joint: 'FВ013',
+      connectionType: 'У18',
+    })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('кириллические символы')
+    expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['joint', 'connectionType']))
+  })
+
+  it('allows a Cyrillic letter in a new joint name when ZВ-26 is disabled', async () => {
+    saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, manualJointName: false })
+    const file = buildWeldingJournalImportFile({
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'Линия',
+      joint: 'FВ013',
+    })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
+  })
+
+  it('shows missing identity and another detectable error for one new row', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С17'] })
+    const file = buildWeldingJournalImportFile({
+      projectTitle: '',
+      joint: 'F1',
+      connectionType: 'У18',
+    })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('Обязательные поля не могут быть пустыми: Проект')
+    expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['projectTitle', 'connectionType']))
   })
 
   it.each([
@@ -552,6 +657,64 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, d1: 80, wdi: 3.15 }])
   })
 
+  it('ignores a value entered only into a protected system WDI cell', async () => {
+    saveOtherSettings({
+      ...DEFAULT_OTHER_SETTINGS,
+      wdiCalculationMode: 'formula',
+    })
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'WDI'], [[7, 'F1', 999]])
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', joint: 'F1', d1: 50.8, wdi: 2 } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.records).toEqual([])
+    expect(preview.validRecords).toEqual([])
+    expect(preview.skippedRows).toBe(1)
+  })
+
+  it('recalculates system WDI when replacement changes the connection type to У', async () => {
+    saveOtherSettings({
+      ...DEFAULT_OTHER_SETTINGS,
+      wdiCalculationMode: 'formula',
+    })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17', 'У17'],
+    })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Тип соединения'],
+      [[7, 'F1', 'У17']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [
+        {
+          id: 7,
+          joint: 'F1',
+          status: 'н/п',
+          connectionType: 'С17',
+          d1: 57,
+          d2: 108,
+          wdi: 4.25,
+          finalStatus: 'ожидает сварку',
+        } as WeldRow,
+      ],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, connectionType: 'У17', wdi: 2.24 }])
+  })
+
   it('shows changed existing rows with columns from the uploaded template', async () => {
     const file = buildWorkbookFile(
       [MASS_FILL_ROW_ID_HEADER, 'Линия', 'Стык', 'Марка стали 1', 'Ответственный'],
@@ -573,12 +736,13 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С', responsible: 'Иванов' }])
   })
 
-  it('does not validate locked existing joint names with system indexes', async () => {
-    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1R1', '09Г2С']])
-    const preview = await buildReportMassFillPreview({
+  it.each(['R', 'W', 'Y'])('accepts an unchanged downloaded system joint with the %s index', async (suffix) => {
+    const joint = `F1${suffix}1`
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, joint, '09Г2С']])
+    const preview = await buildReportReplaceDataPreview({
       activeReport: 'weldingJournal',
       file,
-      rows: [{ id: 7, joint: 'F1R1', material1: null } as WeldRow],
+      rows: [{ id: 7, rowVersion: 'v1', joint, material1: null } as WeldRow],
       weldFormStampSelectOptions: {},
       welderStamps: [],
       welderStampSuspensions: [],
@@ -586,6 +750,208 @@ describe('existing rows report import preview', () => {
 
     expect(preview.errors).toEqual([])
     expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('rejects a malformed stored joint before applying %s', async (_, buildPreview) => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, 'FВ013', '09Г2С']],
+    )
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', joint: 'FВ013', material1: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('кириллические символы')
+    expect(preview.errors[0]?.message).toContain('Исправьте номер в карточке стыка')
+    expect(preview.errors[0]?.fieldKeys).toEqual(['joint'])
+  })
+
+  it('finds one malformed stored joint in a 70-row replace file', async () => {
+    const rows = Array.from({ length: 70 }, (_, index) => ({
+      id: index + 1,
+      rowVersion: 'v1',
+      joint: index === 42 ? 'FВ013' : `F${index + 1}`,
+      material1: null,
+    })) as WeldRow[]
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      rows.map((row) => [row.id, row.joint, '09Г2С']),
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.records).toHaveLength(70)
+    expect(preview.validRecords).toHaveLength(69)
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]).toMatchObject({
+      rowNumber: 44,
+      id: 43,
+      title: 'Линия · FВ013',
+      fieldKeys: ['joint'],
+    })
+    expect(preview.errors[0]?.message).toContain('кириллические символы')
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('allows %s with a malformed stored joint when ZВ-26 is disabled', async (_, buildPreview) => {
+    saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, manualJointName: false })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, 'FВ013', '09Г2С']],
+    )
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', joint: 'FВ013', material1: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('shows missing stored identity fields before applying %s', async (_, buildPreview) => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, 'F1', '09Г2С']],
+    )
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        rowVersion: 'v1',
+        projectTitle: null,
+        subtitleCode: 'Шифр',
+        line: 'Линия',
+        joint: 'F1',
+        material1: null,
+      } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('Обязательные поля не могут быть пустыми: Проект')
+    expect(preview.errors[0]?.fieldKeys).toContain('projectTitle')
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('shows an inconsistent stored control history before applying %s', async (_, buildPreview) => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, 'F1', '09Г2С']],
+    )
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        rowVersion: 'v1',
+        projectTitle: 'Проект',
+        subtitleCode: 'Шифр',
+        line: 'Линия',
+        joint: 'F1',
+        material1: null,
+        hasRk: null,
+        rkResult: 'годен',
+      } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('ЗВ-27')
+    expect(preview.errors[0]?.message).toContain('РК')
+  })
+
+  it.each(['R', 'W', 'Y'])('ignores a new %s index entered into the protected joint cell', async (suffix) => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, `F1${suffix}1`, '09Г2С']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', joint: 'F1', material1: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
+    expect(preview.records[0]?.joint).toBe('F1')
+  })
+
+  it('ignores a protected joint change and reports another invalid field', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С17'] })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Тип соединения'],
+      [[7, 'F1R1', 'У18']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', joint: 'F1', connectionType: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
+    expect(preview.errors[0]?.fieldKeys).toEqual(['connectionType'])
+  })
+
+  it('reports a malformed stored joint together with an invalid changed field', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С17'] })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Тип соединения'],
+      [[7, 'FВ013', 'У18']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', joint: 'FВ013', connectionType: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['joint', 'connectionType']))
   })
 
   it('blocks mass fill of a joint that still uses an archived official stamp', async () => {
@@ -1230,9 +1596,10 @@ function buildWorkbookFile(headers: string[], rows: unknown[][], includeRowVersi
 
 function buildWeldingJournalImportFile(valuesByFieldKey: Record<string, unknown>) {
   const fields = getReportImportTemplateFields('weldingJournal')
+  const values = { ...REQUIRED_EXISTING_WELD_IDENTITY, ...valuesByFieldKey }
   return buildWorkbookFile(
     fields.map((field) => field.label),
-    [fields.map((field) => valuesByFieldKey[field.key] ?? '')],
+    [fields.map((field) => values[field.key as keyof typeof values] ?? '')],
   )
 }
 

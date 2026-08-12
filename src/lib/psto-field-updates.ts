@@ -10,14 +10,20 @@ export function assignPstoRequest<T extends PstoRow>({
   records,
   requestName,
   requestDate,
-  pstoCreatedAt = new Date().toISOString(),
+  pstoUpdatedAt = new Date().toISOString(),
 }: {
   records: T[]
   requestName: string
   requestDate: string | null
-  pstoCreatedAt?: string
+  pstoUpdatedAt?: string
 }) {
-  return records.map((record) => ({ ...record, pstoRequest: requestName, pstoRequestDate: requestDate, pstoCreatedAt }))
+  return records.map((record) => ({
+    ...record,
+    pstoRequest: requestName,
+    pstoRequestDate: requestDate,
+    pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
+    pstoUpdatedAt,
+  }))
 }
 
 export function applyPstoResult<T extends PstoRow>({
@@ -25,20 +31,21 @@ export function applyPstoResult<T extends PstoRow>({
   shouldClearResult,
   pstoDate,
   diagramName,
-  pstoCreatedAt = new Date().toISOString(),
+  pstoUpdatedAt = new Date().toISOString(),
 }: {
   record: T
   shouldClearResult: boolean
   pstoDate: string
   diagramName: string
-  pstoCreatedAt?: string
+  pstoUpdatedAt?: string
 }) {
   return {
     ...record,
     pstoDate: shouldClearResult ? null : pstoDate,
     pstoResult: shouldClearResult ? null : 'проведено',
     heatTreatmentDiagram: shouldClearResult ? null : diagramName.trim(),
-    pstoCreatedAt,
+    pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
+    pstoUpdatedAt,
   }
 }
 
@@ -46,12 +53,12 @@ export function applyPstoRequestManagerAction<T extends PstoRow>({
   record,
   nextRequestName,
   action,
-  pstoCreatedAt = new Date().toISOString(),
+  pstoUpdatedAt = new Date().toISOString(),
 }: {
   record: T
   nextRequestName: string
   action: PstoRequestManagerAction
-  pstoCreatedAt?: string
+  pstoUpdatedAt?: string
 }) {
   return {
     ...record,
@@ -60,11 +67,12 @@ export function applyPstoRequestManagerAction<T extends PstoRow>({
     pstoDate: action === 'rename' ? record.pstoDate : null,
     pstoResult: action === 'rename' ? record.pstoResult : null,
     heatTreatmentDiagram: action === 'rename' ? record.heatTreatmentDiagram : null,
-    pstoCreatedAt,
+    pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
+    pstoUpdatedAt,
   }
 }
 
-export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoCreatedAt = new Date().toISOString()) {
+export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoUpdatedAt = new Date().toISOString()) {
   return {
     ...record,
     pstoRequest: null,
@@ -72,7 +80,8 @@ export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoCreat
     pstoDate: null,
     pstoResult: null,
     heatTreatmentDiagram: null,
-    pstoCreatedAt,
+    pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
+    pstoUpdatedAt,
   }
 }
 
@@ -136,12 +145,12 @@ export function applyPstoResultCorrection<T extends PstoRow>({
   record,
   action,
   diagramName,
-  pstoCreatedAt = new Date().toISOString(),
+  pstoUpdatedAt = new Date().toISOString(),
 }: {
   record: T
   action: PstoResultCorrectionAction
   diagramName?: string
-  pstoCreatedAt?: string
+  pstoUpdatedAt?: string
 }) {
   const nextDiagramName = diagramName?.trim() ?? ''
   return {
@@ -149,6 +158,7 @@ export function applyPstoResultCorrection<T extends PstoRow>({
     pstoDate: action === 'deleteResult' ? null : record.pstoDate,
     pstoResult: action === 'deleteResult' ? null : record.pstoResult,
     heatTreatmentDiagram: action === 'deleteResult' ? null : nextDiagramName,
-    pstoCreatedAt,
+    pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
+    pstoUpdatedAt,
   }
 }

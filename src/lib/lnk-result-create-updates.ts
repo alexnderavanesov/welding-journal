@@ -59,7 +59,8 @@ export function buildLnkResultRows({
       [method.resultKey]: shouldClearResult ? null : result,
       [method.conclusionDateKey]: shouldClearResult ? null : normalizedControlDate,
       [method.conclusionKey]: shouldClearResult ? null : conclusionName.trim(),
-      lnkCreatedAt: lnkUpdatedAt,
+      lnkCreatedAt: record.lnkCreatedAt ?? lnkUpdatedAt,
+      lnkUpdatedAt,
     } as RowWithId
     if (method.code === 'РК') {
       const exposureRecord = applyRkExposureResultTransition(

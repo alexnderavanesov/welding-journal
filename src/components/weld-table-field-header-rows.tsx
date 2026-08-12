@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
+import { formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
@@ -15,8 +16,8 @@ import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
   getWeldColumnFilterRowText,
+  groupWeldDateTimeFilterOptions,
   parseWeldColumnChoiceFilter,
-  sortWeldDateTimeFilterOptions,
 } from '@/lib/weld-table-filtering'
 import { listWeldColumnFilterOptions, type WeldReportKind } from '@/server/welds'
 import type { WeldColumnFilterOption } from '@/server/welds'
@@ -126,10 +127,10 @@ function WeldColumnFilterControl({
   const filterValue = columnFilters[fieldKey] ?? ''
   const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
   const hasActiveFilter = Boolean(filterValue.trim())
-  const filterSummary = getColumnFilterSummary(filterValue, choiceFilter)
-  const activeFilterCount = getColumnFilterCount(filterValue, choiceFilter)
   const isDateField = FIELD_BY_KEY.get(fieldKey)?.kind === 'date'
   const isDateTimeField = DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)
+  const filterSummary = getColumnFilterSummary(filterValue, choiceFilter, isDateTimeField)
+  const activeFilterCount = getColumnFilterCount(filterValue, choiceFilter, isDateTimeField)
   const filterOptionRequestFilters = useMemo(
     () => buildWeldColumnFilterOptionsRequestFilters(columnFilters, fieldKey),
     [columnFilters, fieldKey],
@@ -139,7 +140,7 @@ function WeldColumnFilterControl({
       if (!isOpen) return []
       if (manualFilterOptions || manualFilterOptionsReport) return []
       return getColumnFilterOptions(rows, fieldKey, columnFilters).filter((option) =>
-        option.label.toLowerCase().includes(optionSearch.trim().toLowerCase()),
+        matchesColumnOptionSearch(option, optionSearch, isDateTimeField),
       )
     },
     [columnFilters, fieldKey, isOpen, manualFilterOptions, manualFilterOptionsReport, optionSearch, rows],
@@ -160,19 +161,21 @@ function WeldColumnFilterControl({
   const serverOptions = useMemo(
     () =>
       (filterOptionsQuery.data ?? []).filter((option) =>
-        option.label.toLowerCase().includes(optionSearch.trim().toLowerCase()),
+        matchesColumnOptionSearch(option, optionSearch, isDateTimeField),
       ),
-    [filterOptionsQuery.data, optionSearch],
+    [filterOptionsQuery.data, isDateTimeField, optionSearch],
   )
   const providedOptions = useMemo(
     () =>
       (manualFilterOptions ?? []).filter((option) =>
-        option.label.toLowerCase().includes(optionSearch.trim().toLowerCase()),
+        matchesColumnOptionSearch(option, optionSearch, isDateTimeField),
       ),
-    [manualFilterOptions, optionSearch],
+    [isDateTimeField, manualFilterOptions, optionSearch],
   )
   const sourceOptions = manualFilterOptions ? providedOptions : manualFilterOptionsReport ? serverOptions : localOptions
-  const options = isDateTimeField ? sortWeldDateTimeFilterOptions(sourceOptions) : sourceOptions
+  const options = isDateTimeField
+    ? groupWeldDateTimeFilterOptions(sourceOptions)
+    : sourceOptions.map((option) => ({ ...option, values: [option.value] }))
   const isOptionsLoading = Boolean(manualFilterOptionsReport && !manualFilterOptions && filterOptionsQuery.isLoading)
   const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
 
@@ -285,7 +288,10 @@ function WeldColumnFilterControl({
               className="h-8 rounded-md border-slate-200 bg-white text-xs font-normal shadow-none"
             />
             <div className="mt-2 flex items-center gap-2">
-              <FilterQuickButton label="Выбрать все" onClick={() => setFilterValue(buildWeldColumnValueFilter(options.map((option) => option.value)))} />
+              <FilterQuickButton
+                label="Выбрать все"
+                onClick={() => setFilterValue(buildWeldColumnValueFilter(options.flatMap((option) => option.values)))}
+              />
               <FilterQuickButton label="Очистить" onClick={() => setFilterValue('')} />
             </div>
           </div>
@@ -306,12 +312,12 @@ function WeldColumnFilterControl({
               />
             ) : options.length > 0 ? (
               options.map((option) => {
-                const checked = choiceFilter?.kind === 'values' && selectedValues.includes(option.value)
+                const checked = choiceFilter?.kind === 'values' && option.values.every((value) => selectedValues.includes(value))
                 return (
                   <button
-                    key={option.value || '__empty__'}
+                    key={isDateTimeField ? option.label : option.value || '__empty__'}
                     type="button"
-                    onClick={() => toggleValue(option.value)}
+                    onClick={() => toggleValues(option.values)}
                     className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs font-normal last:border-b-0 hover:bg-slate-50 ${
                       checked ? 'bg-sky-50/80 text-slate-900' : 'text-slate-700'
                     }`}
@@ -508,6 +514,19 @@ function getColumnFilterOptions(rows: WeldRow[], fieldKey: WeldFieldKey, columnF
     })
 }
 
+function matchesColumnOptionSearch(
+  option: Pick<ColumnFilterOption, 'value' | 'label'>,
+  search: string,
+  isDateTimeField: boolean,
+) {
+  const query = search.trim().toLocaleLowerCase('ru-RU')
+  if (!query) return true
+  const label = isDateTimeField && option.value
+    ? formatDateTimeWithSeconds(option.value)
+    : option.label
+  return label.toLocaleLowerCase('ru-RU').includes(query)
+}
+
 function getDateFilterGroups(options: ColumnFilterOption[]) {
   const emptyOptions = options.filter((option) => !parseDateLikeToIso(option.value))
   const dateOptions = options
@@ -577,8 +596,17 @@ function getMonthLabel(month: string) {
   return labels[Number(month) - 1] ?? month
 }
 
-function getColumnFilterSummary(value: string, filter: ReturnType<typeof parseWeldColumnChoiceFilter>) {
+function getColumnFilterSummary(
+  value: string,
+  filter: ReturnType<typeof parseWeldColumnChoiceFilter>,
+  isDateTimeField: boolean,
+) {
   if (filter) {
+    const labels = isDateTimeField
+      ? Array.from(new Set(filter.values.map((optionValue) => optionValue ? formatDateTimeWithSeconds(optionValue) : '(пусто)')))
+      : filter.values
+    if (labels.length === 1) return labels[0] || '(пусто)'
+    if (isDateTimeField) return `${labels.length}`
     if (filter.values.length === 1) return filter.values[0] || '(пусто)'
     return `${filter.values.length}`
   }
@@ -587,7 +615,14 @@ function getColumnFilterSummary(value: string, filter: ReturnType<typeof parseWe
   return text.length > 10 ? `${text.slice(0, 10)}...` : text
 }
 
-function getColumnFilterCount(value: string, filter: ReturnType<typeof parseWeldColumnChoiceFilter>) {
+function getColumnFilterCount(
+  value: string,
+  filter: ReturnType<typeof parseWeldColumnChoiceFilter>,
+  isDateTimeField: boolean,
+) {
+  if (filter && isDateTimeField) {
+    return new Set(filter.values.map((optionValue) => optionValue ? formatDateTimeWithSeconds(optionValue) : '')).size
+  }
   if (filter) return filter.values.length
   return value.trim() ? 1 : 0
 }

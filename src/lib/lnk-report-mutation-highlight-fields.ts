@@ -1,7 +1,7 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
-const LNK_COMMON_HIGHLIGHT_FIELDS = ['lnkCreatedAt', 'finalStatus'] as const
+const LNK_COMMON_HIGHLIGHT_FIELDS = ['lnkCreatedAt', 'lnkUpdatedAt', 'finalStatus'] as const
 
 export function getLnkRequestPositionHighlightFields(methodKey: WeldFieldKey): WeldFieldKey[] {
   const method = getLnkMethodByRequestKey(methodKey)

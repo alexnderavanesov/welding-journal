@@ -15,6 +15,7 @@ describe('RK exposure editor updates', () => {
     expect(updated.lnkDefectDescription).toBe('0-100: дефект 1а\n100-0:')
     expect(updated.rkExposureConfirmedDiameter).toBe(89)
     expect(updated.lnkCreatedAt).toBeTruthy()
+    expect(updated.lnkUpdatedAt).toBeTruthy()
   })
 
   it('rejects empty and duplicate coordinates', () => {

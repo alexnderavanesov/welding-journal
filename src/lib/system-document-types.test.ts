@@ -12,6 +12,7 @@ import {
 } from '@/lib/system-document-types'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 function row(id: number, values: Partial<WeldRow>): WeldRow {
   return {
@@ -479,6 +480,6 @@ describe('system document grouping', () => {
     )
 
     expect(result.fieldKeys).toEqual([fieldKey])
-    expect(result.records[0]?.[fieldKey]).toBe('Новое имя')
+    expect(result.records[0]?.[fieldKey as WeldFieldKey]).toBe('Новое имя')
   })
 })

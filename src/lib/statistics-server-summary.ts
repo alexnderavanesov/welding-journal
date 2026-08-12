@@ -108,9 +108,14 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   periodDays: 0,
   totalValue: 0,
   totalWelders: 0,
+  welderShiftCount: 0,
+  averageWeldersPerShift: 0,
+  averageValuePerWelderShift: 0,
   peakValue: 0,
   peakWelders: 0,
   materialGroups: [],
+  jointTypes: [],
+  materialJointTypes: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
@@ -186,7 +191,7 @@ export function buildStatisticsServerResult({
     summary: isGeneralLikeTab ? { ...calculatedSummary, periodRows: [] } : EMPTY_STATISTICS_SUMMARY,
     weldingDynamics:
       tab === 'general'
-        ? buildWeldingDynamics(calculatedSummary.periodRows, from, to, unit)
+        ? buildWeldingDynamics(calculatedSummary.periodRows, from, to, unit, systemIndexSettings)
         : EMPTY_WELDING_DYNAMICS,
     welderSummary:
       tab === 'welders'

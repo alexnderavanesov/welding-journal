@@ -98,7 +98,7 @@ import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-compatibility'
-import { loadOtherSettings } from '@/lib/other-settings'
+import { useOtherSettings } from '@/lib/other-settings'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 import {
@@ -131,6 +131,7 @@ import {
 export function useHomePageController() {
   const queryClient = useQueryClient()
   const saveCheckSettings = useSaveCheckSettings()
+  const otherSettings = useOtherSettings()
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [systemDocumentNavigationRequest, setSystemDocumentNavigationRequest] =
     useState<SystemDocumentNavigationRequest | null>(null)
@@ -138,7 +139,7 @@ export function useHomePageController() {
   const confirmAction = useConfirmAction()
   const {
     requireEditPassword,
-    requireImportReplacePassword,
+    requireImportPassword,
     requireDeletePassword,
   } = useSecurityGuard()
   const {
@@ -428,7 +429,7 @@ export function useHomePageController() {
     enabled: shouldLoadFullWeldRows || isDuplicateControlModalOpen,
   })
 
-  const rows = useReportRows(weldsQuery.data, duplicateControls)
+  const rows = useReportRows(weldsQuery.data, duplicateControls, undefined, undefined, otherSettings)
   const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
@@ -919,6 +920,7 @@ export function useHomePageController() {
     duplicateControls,
     rows.length > 0 ? rows : undefined,
     rows.length > 0 ? fullFinalStatusContext : undefined,
+    otherSettings,
   )
   const pagedReportRows = basePagedReportRows
   const tableDispatcherTaskRowIds = useMemo(
@@ -1257,6 +1259,12 @@ export function useHomePageController() {
   async function runProtectedEdit<T>(actionLabel: string, action: () => T | Promise<T>) {
     if (!(await requireEditPassword(actionLabel))) return undefined
     return action()
+  }
+
+  async function runProtectedImport(actionLabel: string, action: () => void | Promise<void>) {
+    if (!(await requireImportPassword(actionLabel))) return false
+    await action()
+    return true
   }
 
   async function runProtectedDelete(actionLabel: string, action: () => void | Promise<void>) {
@@ -2153,22 +2161,21 @@ export function useHomePageController() {
     columnFilters: dispatcherTaskServerFilters,
     onClose: () => setIsImportDialogOpen(false),
     onImportRecords: (records: WeldInput[], skippedRows: number) =>
-      runProtectedEdit('импорт данных', async () => {
+      runProtectedImport('импорт новых данных', async () => {
         const result = await importMutation.mutateAsync(records.map(withOfficialJointStatus))
         setMessage(`Добавлено ${result.inserted}, пропущено служебных строк: ${skippedRows}`)
       }),
     onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) =>
-      runProtectedEdit('массовое заполнение данных', async () => {
+      runProtectedImport('массовое заполнение данных', async () => {
         await weldMassFillMutation.mutateAsync({ records, skippedRows })
       }),
     onReplaceDataRecords: async (
       records: ReportImportRecord[],
       skippedRows: number,
       expectedVersions: WeldRowVersionTarget[],
-    ) => {
-      if (!(await requireImportReplacePassword('замену данных импортом'))) return
+    ) => runProtectedImport('замену данных импортом', async () => {
       await weldReplaceDataMutation.mutateAsync({ records, skippedRows, expectedVersions })
-    },
+    }),
   }
 
   function openPercentageLineTaskOfficiality(task: DispatcherTask) {

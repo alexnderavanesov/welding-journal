@@ -1,6 +1,12 @@
 import { formatDateInputValue, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
+import {
+  DEFAULT_SYSTEM_INDEX_SETTINGS,
+  getConfiguredBaseJointType,
+  type SystemIndexSettings,
+} from '@/lib/system-index-settings'
 
 export type WeldingDynamicsUnit = 'day' | 'week' | 'month' | 'quarter' | 'year'
 
@@ -8,6 +14,22 @@ export type WeldingDynamicsMaterialGroup = {
   key: string
   label: string
   value: number
+}
+
+export type WeldingDynamicsJointTypeKey = 's' | 'f' | 'unknown'
+
+export type WeldingDynamicsJointType = {
+  key: WeldingDynamicsJointTypeKey
+  code: string
+  label: string
+  value: number
+}
+
+export type WeldingDynamicsMaterialJointTypeGroup = WeldingDynamicsMaterialGroup & {
+  jointTypes: WeldingDynamicsJointType[]
+  welderCount: number
+  welderShiftCount: number
+  valuePerWelderShift: number
 }
 
 export type WeldingDynamicsBucket = {
@@ -18,7 +40,11 @@ export type WeldingDynamicsBucket = {
   weldedJoints: number
   wdi: number
   welderCount: number
+  welderShiftCount: number
+  valuePerWelderShift: number
   materialGroups: WeldingDynamicsMaterialGroup[]
+  jointTypes: WeldingDynamicsJointType[]
+  materialJointTypes: WeldingDynamicsMaterialJointTypeGroup[]
 }
 
 export type WeldingDynamicsSummary = {
@@ -28,9 +54,14 @@ export type WeldingDynamicsSummary = {
   periodDays: number
   totalValue: number
   totalWelders: number
+  welderShiftCount: number
+  averageWeldersPerShift: number
+  averageValuePerWelderShift: number
   peakValue: number
   peakWelders: number
   materialGroups: WeldingDynamicsMaterialGroup[]
+  jointTypes: WeldingDynamicsJointType[]
+  materialJointTypes: WeldingDynamicsMaterialJointTypeGroup[]
 }
 
 const FACTUAL_STAMP_KEYS = [
@@ -46,12 +77,14 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
 export const WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY = '__missing_material_group__'
 export const WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY = '__other_material_groups__'
 const MAX_SEPARATE_MATERIAL_GROUPS = 6
+const WELDING_DYNAMICS_JOINT_TYPE_ORDER: WeldingDynamicsJointTypeKey[] = ['s', 'unknown', 'f']
 
 export function buildWeldingDynamics(
   rows: readonly WeldRow[],
   from: string,
   to: string,
   unit: StatisticsUnit,
+  systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): WeldingDynamicsSummary {
   const datedRows = rows
     .map((row) => ({ row, date: parseDateLikeToIso(row.weldDate) }))
@@ -73,9 +106,16 @@ export function buildWeldingDynamics(
   }
 
   const weldersByBucket = new Map<string, Set<string>>()
+  const weldersByDate = new Map<string, Set<string>>()
   const allWelders = new Set<string>()
   const materialGroupsByBucket = new Map<string, Map<string, number>>()
   const materialGroupTotals = new Map<string, number>()
+  const jointTypesByBucket = new Map<string, Map<WeldingDynamicsJointTypeKey, number>>()
+  const jointTypeTotals = new Map<WeldingDynamicsJointTypeKey, number>()
+  const materialJointTypesByBucket = new Map<string, Map<string, Map<WeldingDynamicsJointTypeKey, number>>>()
+  const materialJointTypeTotals = new Map<string, Map<WeldingDynamicsJointTypeKey, number>>()
+  const materialWeldersByBucket = new Map<string, MaterialWelderParticipation>()
+  const materialWelderTotals: MaterialWelderParticipation = new Map()
 
   for (const { row, date } of datedRows) {
     if (date < startIso || date > endIso) continue
@@ -94,33 +134,80 @@ export function buildWeldingDynamics(
     materialGroupsByBucket.set(bucketKey, bucketMaterialGroups)
     materialGroupTotals.set(materialGroupKey, (materialGroupTotals.get(materialGroupKey) ?? 0) + materialGroupValue)
 
+    const jointTypeKey = getWeldingDynamicsJointTypeKey(row, systemIndexSettings)
+    const bucketJointTypes = jointTypesByBucket.get(bucketKey) ?? new Map<WeldingDynamicsJointTypeKey, number>()
+    bucketJointTypes.set(jointTypeKey, (bucketJointTypes.get(jointTypeKey) ?? 0) + materialGroupValue)
+    jointTypesByBucket.set(bucketKey, bucketJointTypes)
+    jointTypeTotals.set(jointTypeKey, (jointTypeTotals.get(jointTypeKey) ?? 0) + materialGroupValue)
+
+    addMaterialJointTypeValue(materialJointTypeTotals, materialGroupKey, jointTypeKey, materialGroupValue)
+    const bucketMaterialJointTypes = materialJointTypesByBucket.get(bucketKey) ?? new Map<string, Map<WeldingDynamicsJointTypeKey, number>>()
+    addMaterialJointTypeValue(bucketMaterialJointTypes, materialGroupKey, jointTypeKey, materialGroupValue)
+    materialJointTypesByBucket.set(bucketKey, bucketMaterialJointTypes)
+
+    const factualStamps = getFactualStamps(row)
+    addMaterialWelderParticipation(materialWelderTotals, materialGroupKey, date, factualStamps)
+    const bucketMaterialWelders = materialWeldersByBucket.get(bucketKey) ?? new Map()
+    addMaterialWelderParticipation(bucketMaterialWelders, materialGroupKey, date, factualStamps)
+    materialWeldersByBucket.set(bucketKey, bucketMaterialWelders)
+
     const bucketWelders = weldersByBucket.get(bucketKey) ?? new Set<string>()
-    for (const stamp of getFactualStamps(row)) {
+    const dateWelders = weldersByDate.get(date) ?? new Set<string>()
+    for (const stamp of factualStamps) {
       bucketWelders.add(stamp)
+      dateWelders.add(stamp)
       allWelders.add(stamp)
     }
     weldersByBucket.set(bucketKey, bucketWelders)
+    weldersByDate.set(date, dateWelders)
     bucket.welderCount = bucketWelders.size
   }
 
   const buckets = Array.from(bucketMap.values())
+  for (const [date, welders] of weldersByDate) {
+    const bucket = bucketMap.get(getBucketKey(date, startIso, bucketUnit))
+    if (bucket) bucket.welderShiftCount += welders.size
+  }
   const materialGroupLayout = buildMaterialGroupLayout(materialGroupTotals)
   for (const bucket of buckets) {
+    bucket.valuePerWelderShift = divideOrZero(bucket.value, bucket.welderShiftCount)
     bucket.materialGroups = buildBucketMaterialGroups(
       materialGroupsByBucket.get(bucket.key) ?? new Map<string, number>(),
       materialGroupLayout,
     )
+    bucket.jointTypes = buildJointTypes(
+      jointTypesByBucket.get(bucket.key) ?? new Map<WeldingDynamicsJointTypeKey, number>(),
+      systemIndexSettings,
+    )
+    bucket.materialJointTypes = buildMaterialJointTypeGroups(
+      materialJointTypesByBucket.get(bucket.key) ?? new Map<string, Map<WeldingDynamicsJointTypeKey, number>>(),
+      materialGroupLayout,
+      systemIndexSettings,
+      materialWeldersByBucket.get(bucket.key) ?? new Map(),
+    )
   }
+  const totalValue = buckets.reduce((total, bucket) => total + bucket.value, 0)
+  const welderShiftCount = buckets.reduce((total, bucket) => total + bucket.welderShiftCount, 0)
   return {
     bucketUnit,
     bucketUnitLabel,
     buckets,
     periodDays,
-    totalValue: buckets.reduce((total, bucket) => total + bucket.value, 0),
+    totalValue,
     totalWelders: allWelders.size,
+    welderShiftCount,
+    averageWeldersPerShift: divideOrZero(welderShiftCount, periodDays),
+    averageValuePerWelderShift: divideOrZero(totalValue, welderShiftCount),
     peakValue: Math.max(0, ...buckets.map((bucket) => bucket.value)),
     peakWelders: Math.max(0, ...buckets.map((bucket) => bucket.welderCount)),
     materialGroups: materialGroupLayout.groups,
+    jointTypes: buildJointTypes(jointTypeTotals, systemIndexSettings, true),
+    materialJointTypes: buildMaterialJointTypeGroups(
+      materialJointTypeTotals,
+      materialGroupLayout,
+      systemIndexSettings,
+      materialWelderTotals,
+    ),
   }
 }
 
@@ -141,9 +228,14 @@ function createEmptyDynamics(bucketUnit: WeldingDynamicsUnit): WeldingDynamicsSu
     periodDays: 0,
     totalValue: 0,
     totalWelders: 0,
+    welderShiftCount: 0,
+    averageWeldersPerShift: 0,
+    averageValuePerWelderShift: 0,
     peakValue: 0,
     peakWelders: 0,
     materialGroups: [],
+    jointTypes: [],
+    materialJointTypes: [],
   }
 }
 
@@ -203,8 +295,16 @@ function createBucket(key: string, label: string, shortLabel: string): WeldingDy
     weldedJoints: 0,
     wdi: 0,
     welderCount: 0,
+    welderShiftCount: 0,
+    valuePerWelderShift: 0,
     materialGroups: [],
+    jointTypes: [],
+    materialJointTypes: [],
   }
+}
+
+function divideOrZero(value: number, divisor: number) {
+  return divisor > 0 ? value / divisor : 0
 }
 
 type MaterialGroupLayout = {
@@ -248,6 +348,119 @@ function buildBucketMaterialGroups(
       : values.get(group.key) ?? 0
     return value > 0 ? [{ ...group, value }] : []
   })
+}
+
+function addMaterialJointTypeValue(
+  target: Map<string, Map<WeldingDynamicsJointTypeKey, number>>,
+  materialGroupKey: string,
+  jointTypeKey: WeldingDynamicsJointTypeKey,
+  value: number,
+) {
+  const jointTypes = target.get(materialGroupKey) ?? new Map<WeldingDynamicsJointTypeKey, number>()
+  jointTypes.set(jointTypeKey, (jointTypes.get(jointTypeKey) ?? 0) + value)
+  target.set(materialGroupKey, jointTypes)
+}
+
+function buildJointTypes(
+  values: Map<WeldingDynamicsJointTypeKey, number>,
+  systemIndexSettings: SystemIndexSettings,
+  includeKnownEmptyTypes = false,
+): WeldingDynamicsJointType[] {
+  const jointTypes: WeldingDynamicsJointType[] = []
+  for (const key of WELDING_DYNAMICS_JOINT_TYPE_ORDER) {
+    const value = values.get(key) ?? 0
+    if (value <= 0 && !(includeKnownEmptyTypes && (key === 's' || key === 'f'))) continue
+    if (key === 'f') {
+      jointTypes.push({ key, code: systemIndexSettings.fieldJoint, label: `${systemIndexSettings.fieldJoint} · поле`, value })
+      continue
+    }
+    if (key === 's') {
+      jointTypes.push({ key, code: systemIndexSettings.shopJoint, label: `${systemIndexSettings.shopJoint} · база`, value })
+      continue
+    }
+    jointTypes.push({ key, code: '—', label: 'Тип не определен', value })
+  }
+  return jointTypes
+}
+
+function buildMaterialJointTypeGroups(
+  values: Map<string, Map<WeldingDynamicsJointTypeKey, number>>,
+  layout: MaterialGroupLayout,
+  systemIndexSettings: SystemIndexSettings,
+  welderParticipation: MaterialWelderParticipation,
+): WeldingDynamicsMaterialJointTypeGroup[] {
+  return layout.groups.flatMap((group) => {
+    const jointTypeValues = new Map<WeldingDynamicsJointTypeKey, number>()
+    const sourceKeys = group.key === WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY
+      ? Array.from(layout.collapsedKeys)
+      : [group.key]
+    for (const sourceKey of sourceKeys) {
+      const sourceValues = values.get(sourceKey)
+      if (!sourceValues) continue
+      for (const [jointTypeKey, value] of sourceValues) {
+        jointTypeValues.set(jointTypeKey, (jointTypeValues.get(jointTypeKey) ?? 0) + value)
+      }
+    }
+    const jointTypes = buildJointTypes(jointTypeValues, systemIndexSettings)
+    const value = jointTypes.reduce((total, jointType) => total + jointType.value, 0)
+    const participation = summarizeMaterialWelderParticipation(welderParticipation, sourceKeys)
+    return value > 0
+      ? [{
+          ...group,
+          value,
+          jointTypes,
+          welderCount: participation.welderCount,
+          welderShiftCount: participation.welderShiftCount,
+          valuePerWelderShift: divideOrZero(value, participation.welderShiftCount),
+        }]
+      : []
+  })
+}
+
+type MaterialWelderParticipation = Map<string, Map<string, Set<string>>>
+
+function addMaterialWelderParticipation(
+  target: MaterialWelderParticipation,
+  materialGroupKey: string,
+  date: string,
+  stamps: ReadonlySet<string>,
+) {
+  if (stamps.size === 0) return
+  const dates = target.get(materialGroupKey) ?? new Map<string, Set<string>>()
+  const dateStamps = dates.get(date) ?? new Set<string>()
+  for (const stamp of stamps) dateStamps.add(stamp)
+  dates.set(date, dateStamps)
+  target.set(materialGroupKey, dates)
+}
+
+function summarizeMaterialWelderParticipation(
+  participation: MaterialWelderParticipation,
+  sourceKeys: readonly string[],
+) {
+  const stampsByDate = new Map<string, Set<string>>()
+  const allStamps = new Set<string>()
+  for (const sourceKey of sourceKeys) {
+    for (const [date, stamps] of participation.get(sourceKey) ?? []) {
+      const dateStamps = stampsByDate.get(date) ?? new Set<string>()
+      for (const stamp of stamps) {
+        dateStamps.add(stamp)
+        allStamps.add(stamp)
+      }
+      stampsByDate.set(date, dateStamps)
+    }
+  }
+  return {
+    welderCount: allStamps.size,
+    welderShiftCount: Array.from(stampsByDate.values()).reduce((total, stamps) => total + stamps.size, 0),
+  }
+}
+
+function getWeldingDynamicsJointTypeKey(
+  row: WeldRow,
+  systemIndexSettings: SystemIndexSettings,
+): WeldingDynamicsJointTypeKey {
+  const baseJoint = parseJointChainName(String(row.joint ?? ''), systemIndexSettings).base.trim().toUpperCase()
+  return getConfiguredBaseJointType(baseJoint, systemIndexSettings) ?? 'unknown'
 }
 
 function getMaterialGroupKey(value: unknown) {

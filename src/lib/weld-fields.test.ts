@@ -345,8 +345,11 @@ describe('weld field order', () => {
       'Задачи диспетчера',
       'Примечание сварочный журнал',
       'Внесен сварка',
+      'Обновлен сварка',
       'Внесен ПСТО',
+      'Обновлен ПСТО',
       'Внесен ЛНК',
+      'Обновлен ЛНК',
     ])
   })
 
@@ -372,6 +375,21 @@ describe('weld field order', () => {
     expect(pstoFields.some((field) => field.key === 'dispatcherTasks')).toBe(true)
     expect(formHiddenFieldKeys.has('id')).toBe(true)
     expect(formHiddenFieldKeys.has('dispatcherTasks')).toBe(true)
+    expect(journalFields.filter((field) => ['createdAt', 'weldingUpdatedAt'].includes(field.key)).map((field) => field.key)).toEqual([
+      'createdAt',
+      'weldingUpdatedAt',
+    ])
+    expect(journalFields.some((field) => field.key === 'lnkUpdatedAt' || field.key === 'pstoUpdatedAt')).toBe(false)
+    expect(lnkFields.filter((field) => ['lnkCreatedAt', 'lnkUpdatedAt'].includes(field.key)).map((field) => field.key)).toEqual([
+      'lnkCreatedAt',
+      'lnkUpdatedAt',
+    ])
+    expect(lnkFields.some((field) => field.key === 'weldingUpdatedAt' || field.key === 'pstoUpdatedAt')).toBe(false)
+    expect(pstoFields.filter((field) => ['pstoCreatedAt', 'pstoUpdatedAt'].includes(field.key)).map((field) => field.key)).toEqual([
+      'pstoCreatedAt',
+      'pstoUpdatedAt',
+    ])
+    expect(pstoFields.some((field) => field.key === 'weldingUpdatedAt' || field.key === 'lnkUpdatedAt')).toBe(false)
   })
 
   it('keeps every note in its own report and exposes the journal note in the weld form', () => {

@@ -93,6 +93,7 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'boq',
   'ks3',
   'createdAt',
+  'weldingUpdatedAt',
   'rkExposureScheme',
   'rkExposureConfirmedDiameter',
   ...LNK_REPORT_FIELD_KEYS,

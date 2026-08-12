@@ -12,7 +12,9 @@ import {
   Percent,
   Settings2,
   TimerReset,
+  UserRound,
   Users,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DialogHeader } from '@/components/dialog-header'
@@ -44,11 +46,13 @@ import {
 import {
   WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY,
   WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY,
+  type WeldingDynamicsJointType,
   type WeldingDynamicsMaterialGroup,
   type WeldingDynamicsSummary,
 } from '@/lib/welding-dynamics'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import { openPrintableReport, type PrintableReport } from '@/lib/printable-report'
+import { buildWeldingDynamicsJointTypeTable } from '@/lib/statistics-welding-dynamics-report'
 import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue } from '@/lib/report-value-utils'
 import { cn } from '@/lib/utils'
 import { useStatisticsServerQuery } from '@/lib/use-statistics-server-query'
@@ -66,6 +70,12 @@ type StatisticsPageProps = {
 }
 
 type StatisticsTab = 'general' | 'lnk' | 'welders' | 'lineSummary' | 'percentageLines'
+
+type StatisticsTimeSettings = {
+  period: ReturnType<typeof getDefaultStatisticsPeriod>
+  allPeriod: boolean
+  periodMode: StatisticsPeriodMode
+}
 
 const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
   code: '',
@@ -125,9 +135,14 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   periodDays: 0,
   totalValue: 0,
   totalWelders: 0,
+  welderShiftCount: 0,
+  averageWeldersPerShift: 0,
+  averageValuePerWelderShift: 0,
   peakValue: 0,
   peakWelders: 0,
   materialGroups: [],
+  jointTypes: [],
+  materialJointTypes: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
@@ -166,6 +181,27 @@ const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['s', 'S база'],
 ]
 
+function createDefaultStatisticsTimeSettings(): Record<StatisticsTab, StatisticsTimeSettings> {
+  const currentPeriod = getDefaultStatisticsPeriod()
+  const currentPeriodSettings = (): StatisticsTimeSettings => ({
+    period: { ...currentPeriod },
+    allPeriod: false,
+    periodMode: 'events',
+  })
+
+  return {
+    general: currentPeriodSettings(),
+    lnk: {
+      period: { from: '', to: '' },
+      allPeriod: true,
+      periodMode: 'events',
+    },
+    welders: currentPeriodSettings(),
+    lineSummary: currentPeriodSettings(),
+    percentageLines: currentPeriodSettings(),
+  }
+}
+
 export function StatisticsPage({
   fixedTab,
   onAssignPercentageLineMissingControls,
@@ -173,23 +209,23 @@ export function StatisticsPage({
   onOpenPercentageLineStampRows,
   onOpenWeldRowIds,
 }: StatisticsPageProps) {
-  const defaultPeriod = useMemo(() => getDefaultStatisticsPeriod(), [])
   const [selectedTab, setSelectedTab] = useState<StatisticsTab>(fixedTab ?? 'general')
   const activeTab = fixedTab ?? selectedTab
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [period, setPeriod] = useState(defaultPeriod)
-  const [allPeriod, setAllPeriod] = useState(false)
+  const [timeSettingsByTab, setTimeSettingsByTab] = useState<Record<StatisticsTab, StatisticsTimeSettings>>(
+    createDefaultStatisticsTimeSettings,
+  )
+  const { period, allPeriod, periodMode } = timeSettingsByTab[activeTab]
   const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('wdi')
   const [lnkUnit, setLnkUnit] = useState<StatisticsUnit>('joints')
   const [weldersUnit, setWeldersUnit] = useState<StatisticsUnit>('joints')
   const [lineSummaryUnit, setLineSummaryUnit] = useState<StatisticsUnit>('joints')
   const [generalJointFilter, setGeneralJointFilter] = useState<WelderStatisticsJointFilter>('all')
   const [welderJointFilter, setWelderJointFilter] = useState<WelderStatisticsJointFilter>('all')
-  const [periodMode, setPeriodMode] = useState<StatisticsPeriodMode>('events')
   const [projectFilter, setProjectFilter] = useState('')
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
   const [percentageLineSearch, setPercentageLineSearch] = useState('')
-  const isGeneralLikeTab = activeTab === 'general' || activeTab === 'lnk'
+  const showPeriodMode = activeTab === 'lnk'
   const unit =
     activeTab === 'lnk'
       ? lnkUnit
@@ -208,6 +244,12 @@ export function StatisticsPage({
           : setGeneralUnit
   const jointFilter = activeTab === 'welders' ? welderJointFilter : generalJointFilter
   const setJointFilter = activeTab === 'welders' ? setWelderJointFilter : setGeneralJointFilter
+  const updateActiveTimeSettings = (update: (current: StatisticsTimeSettings) => StatisticsTimeSettings) => {
+    setTimeSettingsByTab((current) => ({
+      ...current,
+      [activeTab]: update(current[activeTab]),
+    }))
+  }
 
   const periodFrom = allPeriod ? '' : period.from
   const periodTo = allPeriod ? '' : period.to
@@ -242,9 +284,11 @@ export function StatisticsPage({
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
   const scopeLabel = getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
   const periodModeDescription =
-    periodMode === 'events'
-      ? 'Заявки считаются по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки.'
-      : 'Все блоки показывают текущее состояние стыков, сваренных в выбранный период.'
+    activeTab === 'general'
+      ? 'Стыки отбираются по дате сварки, а их годность и состояние показываются на текущий момент.'
+      : periodMode === 'events'
+        ? 'Заявки считаются по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки.'
+        : 'Все блоки показывают текущее состояние стыков, сваренных в выбранный период.'
   const printableReport = useMemo(
     () =>
       buildStatisticsPrintableReport({
@@ -328,7 +372,7 @@ export function StatisticsPage({
               {activeTab === 'lnk'
                 ? 'Сводка по заявкам, заключениям, результатам ЛНК и ПСТО за выбранный период.'
                 : activeTab === 'general'
-                  ? 'Общий прогресс сварки, заявок, заключений и ПСТО за выбранный период.'
+                  ? 'Общий прогресс сварки, динамика и текущее состояние стыков за выбранный период.'
                 : activeTab === 'welders'
                   ? 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'
                   : activeTab === 'lineSummary'
@@ -385,8 +429,11 @@ export function StatisticsPage({
                       type="date"
                       value={period.from}
                       onChange={(event) => {
-                        setAllPeriod(false)
-                        setPeriod((current) => ({ ...current, from: event.target.value }))
+                        updateActiveTimeSettings((current) => ({
+                          ...current,
+                          allPeriod: false,
+                          period: { ...current.period, from: event.target.value },
+                        }))
                       }}
                       className="h-8 w-[128px] border-slate-200 text-sm"
                     />
@@ -396,8 +443,11 @@ export function StatisticsPage({
                       type="date"
                       value={period.to}
                       onChange={(event) => {
-                        setAllPeriod(false)
-                        setPeriod((current) => ({ ...current, to: event.target.value }))
+                        updateActiveTimeSettings((current) => ({
+                          ...current,
+                          allPeriod: false,
+                          period: { ...current.period, to: event.target.value },
+                        }))
                       }}
                       className="h-8 w-[128px] border-slate-200 text-sm"
                     />
@@ -405,8 +455,11 @@ export function StatisticsPage({
                       type="button"
                       className={segmentButtonClass(allPeriod)}
                       onClick={() => {
-                        setAllPeriod(true)
-                        setPeriod({ from: '', to: '' })
+                        updateActiveTimeSettings((current) => ({
+                          ...current,
+                          allPeriod: true,
+                          period: { from: '', to: '' },
+                        }))
                       }}
                     >
                       За весь период
@@ -452,14 +505,16 @@ export function StatisticsPage({
                   </div>
                 </div>
               ) : null}
-              {isGeneralLikeTab ? (
+              {showPeriodMode ? (
                 <div className="grid gap-1 text-xs font-medium text-slate-600">
                   Расчет периода
                   <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
                     <button
                       type="button"
                       className={segmentButtonClass(periodMode === 'events')}
-                      onClick={() => setPeriodMode('events')}
+                      onClick={() =>
+                        updateActiveTimeSettings((current) => ({ ...current, periodMode: 'events' }))
+                      }
                       title="Заявки по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки"
                     >
                       События
@@ -467,7 +522,9 @@ export function StatisticsPage({
                     <button
                       type="button"
                       className={segmentButtonClass(periodMode === 'welded-joints')}
-                      onClick={() => setPeriodMode('welded-joints')}
+                      onClick={() =>
+                        updateActiveTimeSettings((current) => ({ ...current, periodMode: 'welded-joints' }))
+                      }
                       title="Что происходит со стыками, сваренными в выбранный период"
                     >
                       Стыки периода
@@ -565,7 +622,7 @@ export function StatisticsPage({
 
       {activeTab === 'general' ? (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <MetricCard
               compact
               icon={ClipboardCheck}
@@ -600,6 +657,15 @@ export function StatisticsPage({
             />
             <MetricCard
               compact
+              wrapLabel
+              icon={UserRound}
+              label={getAveragePerWelderShiftLabel(unit)}
+              value={formatValuePerWelderShift(weldingDynamics.averageValuePerWelderShift, weldingDynamics.welderShiftCount)}
+              detail={`Среднее число сварщиков в смену: ${formatAverageStatisticValue(weldingDynamics.averageWeldersPerShift)}`}
+              accent="slate"
+            />
+            <MetricCard
+              compact
               icon={Activity}
               label="Сварено за период"
               value={formatStatisticValue(summary.welded, unit)}
@@ -608,7 +674,7 @@ export function StatisticsPage({
             />
           </div>
 
-          <WeldingDynamicsPanel summary={weldingDynamics} unit={unit} />
+          <WeldingDynamicsPanel jointFilter={generalJointFilter} summary={weldingDynamics} unit={unit} />
 
           <Panel
             title="Состояние стыков"
@@ -672,6 +738,7 @@ export function StatisticsPage({
 type MetricCardProps = {
   compact?: boolean
   wrapDetail?: boolean
+  wrapLabel?: boolean
   icon: typeof Activity
   label: string
   value: string
@@ -679,7 +746,7 @@ type MetricCardProps = {
   accent: 'blue' | 'green' | 'indigo' | 'amber' | 'slate'
 }
 
-function MetricCard({ compact = false, wrapDetail = false, icon: Icon, label, value, detail, accent }: MetricCardProps) {
+function MetricCard({ compact = false, wrapDetail = false, wrapLabel = false, icon: Icon, label, value, detail, accent }: MetricCardProps) {
   const accentClass = {
     blue: 'bg-sky-50 text-sky-700 border-sky-100',
     green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
@@ -695,7 +762,7 @@ function MetricCard({ compact = false, wrapDetail = false, icon: Icon, label, va
           <Icon className={cn(compact ? 'h-4 w-4' : 'h-5 w-5')} />
         </span>
         <div className="min-w-0">
-          <div className="truncate text-sm text-slate-500">{label}</div>
+          <div className={cn('text-sm text-slate-500', wrapLabel ? 'leading-snug' : 'truncate')} title={label}>{label}</div>
           <div className={cn('font-semibold tracking-tight text-slate-900', compact ? 'text-xl' : 'text-2xl')}>{value}</div>
         </div>
       </div>
@@ -724,128 +791,203 @@ function Panel({ title, subtitle, children }: { title: string; subtitle?: string
   )
 }
 
-function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSummary; unit: StatisticsUnit }) {
+function WeldingDynamicsPanel({
+  jointFilter,
+  summary,
+  unit,
+}: {
+  jointFilter: WelderStatisticsJointFilter
+  summary: WeldingDynamicsSummary
+  unit: StatisticsUnit
+}) {
   const unitLabel = unit === 'wdi' ? 'WDI' : 'стыков'
   const maxValue = Math.max(1, summary.peakValue)
   const maxWelders = Math.max(1, summary.peakWelders)
-  const chartMinWidth = Math.max(720, summary.buckets.length * 58)
+  const chartMinWidth = Math.max(720, summary.buckets.length * 112)
   const bucketText = getWeldingDynamicsBucketText(summary.bucketUnitLabel)
   const materialGroups = summary.materialGroups ?? []
+  const jointTypes = summary.jointTypes ?? []
+  const [colorMode, setColorMode] = useState<'joint-types' | 'materials'>('joint-types')
+  const [selectedBucketKey, setSelectedBucketKey] = useState<string | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(true)
+  const showJointTypeColors = jointFilter === 'all' && colorMode === 'joint-types'
   const materialGroupSignature = materialGroups.map((group) => group.key).join('\u0000')
-  const [hiddenMaterialGroupKeys, setHiddenMaterialGroupKeys] = useState<Set<string>>(() => new Set())
-  const visibleMaterialGroupKeys = useMemo(
-    () => new Set(materialGroups.map((group) => group.key).filter((key) => !hiddenMaterialGroupKeys.has(key))),
-    [hiddenMaterialGroupKeys, materialGroupSignature],
-  )
   const materialGroupColors = useMemo(
     () => new Map(materialGroups.map((group, index) => [group.key, getWeldingDynamicsMaterialGroupColor(group, index)])),
     [materialGroupSignature],
   )
 
   useEffect(() => {
-    setHiddenMaterialGroupKeys(new Set())
-  }, [materialGroupSignature])
+    if (jointFilter === 'all') setColorMode('joint-types')
+  }, [jointFilter])
 
-  const toggleMaterialGroup = (key: string) => {
-    setHiddenMaterialGroupKeys((current) => {
-      const next = new Set(current)
-      if (next.has(key)) {
-        next.delete(key)
-        return next
-      }
-      next.add(key)
-      return next
-    })
+  useEffect(() => {
+    setSelectedBucketKey(null)
+  }, [summary])
+
+  const selectedBucket = summary.buckets.find((bucket) => bucket.key === selectedBucketKey) ?? null
+  const detailLabel = selectedBucket?.label ?? 'За выбранный период'
+  const detailValue = selectedBucket?.value ?? summary.totalValue
+  const detailWelderCount = selectedBucket?.welderCount ?? summary.totalWelders
+  const detailWelderShiftCount = selectedBucket?.welderShiftCount ?? summary.welderShiftCount
+  const detailValuePerWelder = selectedBucket?.valuePerWelderShift ?? summary.averageValuePerWelderShift
+  const detailColumnCount = jointTypes.length + 4
+  const detailTableMinWidth = Math.max(960, detailColumnCount * 160)
+  const detailJointTypes = jointTypes.map((jointType) => ({
+    ...jointType,
+    value: selectedBucket
+      ? selectedBucket.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0
+      : jointType.value,
+  }))
+  const detailMaterialJointTypes = selectedBucket?.materialJointTypes ?? summary.materialJointTypes ?? []
+
+  useWindowEscapeKey(
+    Boolean(selectedBucket),
+    (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      const activeElement = document.activeElement
+      if (activeElement instanceof HTMLElement) activeElement.blur()
+      setSelectedBucketKey(null)
+    },
+    { capture: true },
+  )
+
+  const selectBucket = (bucketKey: string) => {
+    setDetailsOpen(true)
+    setSelectedBucketKey((current) => current === bucketKey ? null : bucketKey)
+  }
+
+  const closeDetails = () => {
+    setDetailsOpen(false)
+    setSelectedBucketKey(null)
   }
 
   return (
     <Panel
       title="Динамика сварки"
-      subtitle={`Интервал: ${bucketText}. Цветные сегменты столбиков показывают группы материалов в ${unitLabel}, точки - количество сварщиков по фактическим клеймам.`}
+      subtitle={`Интервал: ${bucketText}. Число над столбиком показывает общий объем в ${unitLabel}, точки - количество сварщиков.`}
     >
       {summary.buckets.length > 0 ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
-            <StatusLine label={`Всего за период, ${unitLabel}`} value={summary.totalValue} unit={unit} />
-            <StatusLine label="Сварщиков по факту" value={summary.totalWelders} unit="joints" />
-            <StatusLine label={`Пик за ${summary.bucketUnitLabel}, ${unitLabel}`} value={summary.peakValue} unit={unit} />
-          </div>
-
+        <div>
           <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="mr-1 font-medium text-slate-600">{unitLabel} по группам:</span>
-              {materialGroups.map((group) => {
-                const visible = visibleMaterialGroupKeys.has(group.key)
-                return (
+            {jointFilter === 'all' ? (
+              <div className="mb-2.5 flex justify-end">
+                <div className="inline-flex shrink-0 rounded-md border border-slate-200 bg-white p-0.5" aria-label="Расцветка диаграммы">
                   <button
-                    key={group.key}
                     type="button"
-                    aria-pressed={visible}
                     className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 font-medium transition',
-                      visible
-                        ? 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-slate-300'
-                        : 'border-slate-200 bg-slate-100 text-slate-400 hover:bg-white',
+                      'rounded px-2 py-1 text-xs font-medium transition-colors sm:rounded-md sm:px-3 sm:py-1.5 sm:text-sm',
+                      colorMode === 'joint-types'
+                        ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
                     )}
-                    title={`${visible ? 'Скрыть' : 'Показать'} группу ${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`}
-                    onClick={() => toggleMaterialGroup(group.key)}
+                    onClick={() => setColorMode('joint-types')}
                   >
-                    <span
-                      className={cn('h-2.5 w-2.5 rounded-sm', visible ? '' : 'opacity-30')}
-                      style={{ backgroundColor: materialGroupColors.get(group.key) }}
-                    />
-                    {group.label}
+                    <span className="sm:hidden">F/S</span>
+                    <span className="hidden sm:inline">Тип стыка</span>
                   </button>
-                )
-              })}
-              {hiddenMaterialGroupKeys.size > 0 ? (
-                <button
-                  type="button"
-                  className="h-7 rounded-md px-2 font-medium text-sky-700 hover:bg-sky-50"
-                  onClick={() => setHiddenMaterialGroupKeys(new Set())}
-                >
-                  Показать все
-                </button>
-              ) : null}
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full border border-indigo-200 bg-indigo-600" />
-                сварщики по фактическим клеймам
-              </span>
-            </div>
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded px-2 py-1 text-xs font-medium transition-colors sm:rounded-md sm:px-3 sm:py-1.5 sm:text-sm',
+                      colorMode === 'materials'
+                        ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                    )}
+                    onClick={() => setColorMode('materials')}
+                  >
+                    Материал
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="overflow-x-auto pb-3">
               <div
-                className="grid min-h-[246px] items-end gap-2"
+                className="grid items-end gap-2 pt-1"
                 style={{ gridTemplateColumns: `repeat(${summary.buckets.length}, minmax(44px, 1fr))`, minWidth: chartMinWidth }}
               >
                 {summary.buckets.map((bucket) => {
-                  const valuePercent = bucket.value > 0 ? Math.max(6, (bucket.value / maxValue) * 100) : 0
-                  const welderPercent = bucket.welderCount > 0 ? Math.max(8, (bucket.welderCount / maxWelders) * 100) : 0
+                  const valuePercent =
+                    bucket.value > 0
+                      ? Math.max(6, (bucket.value / maxValue) * WELDING_DYNAMICS_VALUE_PLOT_PERCENT)
+                      : 0
+                  const welderPercent =
+                    bucket.welderCount > 0
+                      ? Math.max(8, (bucket.welderCount / maxWelders) * WELDING_DYNAMICS_WELDER_PLOT_PERCENT)
+                      : 0
                   const materialGroupLines = bucket.materialGroups.map((group) =>
-                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}${visibleMaterialGroupKeys.has(group.key) ? '' : ' (скрыто)'}`,
+                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`,
                   )
+                  const bucketJointTypes = bucket.jointTypes ?? []
+                  const bucketMaterialJointTypes = bucket.materialJointTypes ?? []
+                  const jointTypeLines = bucketJointTypes.map((jointType) =>
+                    `${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`,
+                  )
+                  const materialJointTypeLines = bucketMaterialJointTypes.flatMap((group) => [
+                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`,
+                    ...group.jointTypes.map((jointType) => `  ${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`),
+                  ])
                   const title = [
-                    `${bucket.label}: ${formatStatisticValue(bucket.value, unit)} ${unitLabel}; сварщиков ${bucket.welderCount}`,
-                    ...materialGroupLines,
+                    `${bucket.label}: ${formatStatisticValue(bucket.value, unit)} ${unitLabel}; сварщиков ${bucket.welderCount}; на сварщика в смену ${formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} ${unitLabel}`,
+                    'Типы стыков:',
+                    ...jointTypeLines,
+                    'Группы материалов:',
+                    ...(materialJointTypeLines.length > 0 ? materialJointTypeLines : materialGroupLines),
                   ].join('\n')
-                  const visibleGroups = bucket.materialGroups.filter((group) => visibleMaterialGroupKeys.has(group.key))
+                  const segments = showJointTypeColors
+                    ? bucketJointTypes.map((jointType) => ({
+                        key: jointType.key,
+                        value: jointType.value,
+                        color: getWeldingDynamicsJointTypeColor(jointType),
+                      }))
+                    : bucket.materialGroups.map((group) => ({
+                        key: group.key,
+                        value: group.value,
+                        color: materialGroupColors.get(group.key),
+                      }))
 
                   return (
-                    <div key={bucket.key} className="flex min-w-0 flex-col items-center gap-2" title={title}>
-                      <div className="relative h-36 w-full rounded-md border border-slate-200 bg-white">
-                        <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-slate-100" />
-                        <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-slate-100" />
+                    <div
+                      key={bucket.key}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${title}. ${selectedBucketKey === bucket.key ? 'Показать весь период' : 'Открыть подробности'}`}
+                      aria-pressed={selectedBucketKey === bucket.key}
+                      className={cn(
+                        "relative flex min-w-0 cursor-pointer flex-col items-center gap-2 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300",
+                        selectedBucketKey === bucket.key && "bg-sky-50/40 after:pointer-events-none after:absolute after:inset-0 after:z-30 after:rounded-md after:border-2 after:border-sky-400 after:content-['']",
+                      )}
+                      title={title}
+                      onClick={() => selectBucket(bucket.key)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        selectBucket(bucket.key)
+                      }}
+                    >
+                      <div className="relative h-60 w-full rounded-md border border-slate-200 bg-white">
                         <div
-                          className="absolute bottom-0 left-1/2 flex w-7 -translate-x-1/2 flex-col-reverse overflow-hidden rounded-t-md bg-slate-100 shadow-sm ring-1 ring-inset ring-slate-200"
+                          className="absolute inset-x-0 border-t border-dashed border-slate-100"
+                          style={{ bottom: `${WELDING_DYNAMICS_VALUE_PLOT_PERCENT / 3}%` }}
+                        />
+                        <div
+                          className="absolute inset-x-0 border-t border-dashed border-slate-100"
+                          style={{ bottom: `${(WELDING_DYNAMICS_VALUE_PLOT_PERCENT * 2) / 3}%` }}
+                        />
+                        <div
+                          className="absolute bottom-0 left-1/2 flex w-10 -translate-x-1/2 flex-col-reverse overflow-hidden rounded-t-md bg-slate-100 shadow-sm ring-1 ring-inset ring-slate-200"
                           style={{ height: `${valuePercent}%` }}
                         >
-                          {visibleGroups.length > 0
-                            ? visibleGroups.map((group) => (
+                          {segments.length > 0
+                            ? segments.map((segment) => (
                                 <span
-                                  key={group.key}
+                                  key={segment.key}
                                   className="block w-full shrink-0 border-t border-white/50 first:border-t-0"
                                   style={{
-                                    backgroundColor: materialGroupColors.get(group.key),
-                                    height: `${bucket.value > 0 ? (group.value / bucket.value) * 100 : 0}%`,
+                                    backgroundColor: segment.color,
+                                    height: `${bucket.value > 0 ? (segment.value / bucket.value) * 100 : 0}%`,
                                   }}
                                 />
                               ))
@@ -853,23 +995,130 @@ function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSumma
                               ? <span className="block h-full w-full bg-sky-500/80" />
                               : null}
                         </div>
+                        {bucket.value > 0 ? (
+                          <span
+                            className="absolute left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-white/90 px-1.5 text-[11px] font-bold leading-5 text-slate-800 shadow-sm"
+                            style={{ bottom: `calc(${valuePercent}% + 3px)` }}
+                          >
+                            {formatStatisticValue(bucket.value, unit)}
+                          </span>
+                        ) : null}
                         {bucket.welderCount > 0 ? (
                           <span
-                            className="absolute left-1/2 z-10 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white bg-indigo-600 shadow"
-                            style={{ bottom: `calc(${welderPercent}% - 6px)` }}
+                            className="absolute z-10 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-white bg-slate-800 shadow ring-1 ring-slate-300"
+                            title={`${bucket.welderCount} сварщиков`}
+                            style={{
+                              bottom: `calc(${welderPercent}% - 6px)`,
+                              left: 'calc(50% + 20px)',
+                            }}
                           />
                         ) : null}
                       </div>
-                      <div className="w-full rounded-md border border-slate-200 bg-white px-1.5 py-1.5 text-center shadow-sm">
-                        <div className="truncate text-[11px] font-semibold text-slate-800">{bucket.shortLabel}</div>
-                        <div className="mt-0.5 truncate text-[11px] font-semibold text-sky-700">{formatStatisticValue(bucket.value, unit)}</div>
-                        <div className="truncate text-[10px] font-medium text-indigo-600">{bucket.welderCount} св.</div>
+                      <div className="flex h-[88px] w-full flex-col overflow-hidden rounded-md border border-slate-200 bg-white text-left shadow-sm">
+                        <div className="flex h-8 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-2 text-xs font-semibold text-slate-700">
+                          <span className="shrink-0">{bucket.shortLabel}</span>
+                          <span className="shrink-0 text-slate-500">{bucket.welderCount} св.</span>
+                        </div>
+                        <div className="flex min-h-0 flex-1 flex-col justify-center px-2 py-1.5 tabular-nums">
+                          <div className="truncate text-sm font-bold text-sky-700">
+                            {formatStatisticValue(bucket.value, unit)} <span className="text-[11px] font-semibold text-slate-500">{unit === 'wdi' ? 'WDI' : 'ст.'}</span>
+                          </div>
+                          <div className="mt-0.5 truncate text-xs font-semibold text-slate-700" title={`${bucket.welderCount} сварщиков; ${formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} ${unitLabel} на сварщика в смену`}>
+                            {bucket.welderShiftCount > 0 ? `${formatAverageStatisticValue(bucket.valuePerWelderShift)} ${unit === 'wdi' ? 'WDI' : 'ст.'}/св.` : '— на сварщика'}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )
                 })}
               </div>
             </div>
+            {detailsOpen ? (
+              <div className="relative mt-3 overflow-hidden rounded-md border border-slate-200 bg-white">
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  title="Закрыть подробности"
+                  aria-label="Закрыть подробности"
+                  onClick={closeDetails}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <div className="overflow-x-auto">
+                  <table
+                    className="w-full table-fixed border-collapse text-sm leading-5 text-slate-700"
+                    style={{ minWidth: detailTableMinWidth }}
+                  >
+                    <colgroup>
+                      {Array.from({ length: detailColumnCount }, (_, index) => (
+                        <col key={index} style={{ width: `${100 / detailColumnCount}%` }} />
+                      ))}
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/80">
+                        <th className="h-[62px] px-3 py-2.5 text-left align-middle font-semibold text-slate-700">{detailLabel}</th>
+                        {detailJointTypes.map((jointType) => (
+                          <th key={jointType.key} className="h-[62px] px-3 py-2.5 text-right align-middle font-normal tabular-nums">
+                            <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: getWeldingDynamicsJointTypeColor(jointType) }} />
+                              <span className="text-slate-500">{jointType.label}</span>
+                            </span>
+                            <span className="mt-0.5 block font-semibold text-slate-800">{formatStatisticValue(jointType.value, unit)}</span>
+                          </th>
+                        ))}
+                        <th className="h-[62px] px-3 py-2.5 text-right align-middle font-normal tabular-nums">
+                          <span className="block text-slate-500">Всего</span>
+                          <span className="mt-0.5 block font-semibold text-slate-800">{formatStatisticValue(detailValue, unit)} {unitLabel}</span>
+                        </th>
+                        <th className="h-[62px] px-3 py-2.5 text-right align-middle font-normal tabular-nums">
+                          <span className="block text-slate-500">Сварщики</span>
+                          <span className="mt-0.5 block font-semibold text-slate-800">{detailWelderCount}</span>
+                        </th>
+                        <th className="h-[62px] py-2.5 pl-3 pr-10 text-right align-middle font-normal tabular-nums">
+                          <span className="block whitespace-nowrap text-slate-500">На сварщика</span>
+                          <span className="mt-0.5 block font-semibold text-slate-800">
+                            {formatValuePerWelderShift(detailValuePerWelder, detailWelderShiftCount)} {unitLabel}
+                          </span>
+                        </th>
+                      </tr>
+                      <tr className="border-b border-slate-200 bg-white text-slate-500">
+                        <th className="px-3 py-2.5 text-left font-medium">Группа материала</th>
+                        {jointTypes.map((jointType) => (
+                          <th key={jointType.key} className="px-3 py-2.5 text-right font-medium">{jointType.code}</th>
+                        ))}
+                        <th className="px-3 py-2.5 text-right font-medium">Всего</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Сварщики</th>
+                        <th className="px-3 py-2.5 text-right font-medium">На сварщика в смену</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailMaterialJointTypes.map((group) => (
+                        <tr key={group.key} className="border-b border-slate-100 last:border-b-0 even:bg-slate-50/40">
+                          <td className="px-3 py-3 font-medium text-slate-800">
+                            <span className="inline-flex items-center gap-2">
+                              {!showJointTypeColors ? (
+                                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: materialGroupColors.get(group.key) }} />
+                              ) : null}
+                              {group.label}
+                            </span>
+                          </td>
+                          {jointTypes.map((jointType) => (
+                            <td key={jointType.key} className="px-3 py-3 text-right font-medium tabular-nums">
+                              {formatStatisticValue(group.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0, unit)}
+                            </td>
+                          ))}
+                          <td className="px-3 py-3 text-right font-medium tabular-nums">{formatStatisticValue(group.value, unit)}</td>
+                          <td className="px-3 py-3 text-right font-medium tabular-nums">{group.welderCount}</td>
+                          <td className="px-3 py-3 text-right font-medium tabular-nums">
+                            {formatValuePerWelderShift(group.valuePerWelderShift, group.welderShiftCount)} {group.welderShiftCount > 0 ? unitLabel : ''}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -889,6 +1138,19 @@ const WELDING_DYNAMICS_MATERIAL_GROUP_COLORS = [
   '#f43f5e',
   '#06b6d4',
 ] as const
+
+const WELDING_DYNAMICS_VALUE_PLOT_PERCENT = 78
+const WELDING_DYNAMICS_WELDER_PLOT_PERCENT = 72
+
+const WELDING_DYNAMICS_JOINT_TYPE_COLORS = {
+  s: '#f59e0b',
+  unknown: '#94a3b8',
+  f: '#2563eb',
+} as const
+
+function getWeldingDynamicsJointTypeColor(jointType: WeldingDynamicsJointType) {
+  return WELDING_DYNAMICS_JOINT_TYPE_COLORS[jointType.key]
+}
 
 function getWeldingDynamicsMaterialGroupColor(group: WeldingDynamicsMaterialGroup, index: number) {
   if (group.key === WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY) return '#94a3b8'
@@ -928,11 +1190,17 @@ function SegmentedProgress({
   )
 }
 
-function StatusLine({ label, value, unit }: { label: string; value: number; unit: StatisticsUnit }) {
+function StatusLine({ label, value, unit }: { label: string; value: number | string; unit: StatisticsUnit | 'average' }) {
   return (
     <div className="rounded border border-slate-100 bg-slate-50 px-3 py-2">
       <div className="text-xs text-slate-500">{label}</div>
-      <div className="font-semibold text-slate-800">{formatStatisticValue(value, unit)}</div>
+      <div className="font-semibold text-slate-800">
+        {typeof value === 'string'
+          ? value
+          : unit === 'average'
+            ? formatAverageStatisticValue(value)
+            : formatStatisticValue(value, unit)}
+      </div>
     </div>
   )
 }
@@ -3299,6 +3567,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
   ]
 
   if (activeTab === 'general') {
+    const jointTypeTable = buildWeldingDynamicsJointTypeTable(dynamics, jointFilter, unit)
     const statusRows: Array<[string, number]> = [
       ['Годен', summary.good],
       ['Не годен', summary.rejected],
@@ -3337,6 +3606,12 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
           tone: 'blue',
         },
         {
+          label: getAveragePerWelderShiftLabel(unit),
+          value: formatValuePerWelderShift(dynamics.averageValuePerWelderShift, dynamics.welderShiftCount),
+          detail: `Среднее число сварщиков в смену: ${formatAverageStatisticValue(dynamics.averageWeldersPerShift)}`,
+          tone: 'slate',
+        },
+        {
           label: 'Ремонтов выполнено',
           value: formatStatisticValue(summary.completedRepairs, unit),
           detail: 'Повторные стыки с завершенной сваркой',
@@ -3346,17 +3621,18 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
       charts: [
         {
           title: 'Динамика сварки',
-          subtitle: `Объем по периодам, ${unitLabel}; в подписи указано число сварщиков по фактическим клеймам. Распределение по группам приведено ниже.`,
+          subtitle: `Общий объем по периодам, ${unitLabel}; в подписи указано число сварщиков по фактическим клеймам. Распределение по типам стыков и группам материалов приведено ниже.`,
           valueLabel: unitLabel,
           items: dynamics.buckets.map((bucket) => ({
             label: bucket.shortLabel,
             value: bucket.value,
-            detail: `${bucket.welderCount} св.`,
+            detail: `${bucket.welderCount} св. · ${bucket.welderShiftCount > 0 ? `${formatAverageStatisticValue(bucket.valuePerWelderShift)} ${unitLabel}/св.` : '—'}`,
           })),
         },
       ],
       tables: [
-        ...(dynamics.materialGroups.length > 0
+        ...(jointTypeTable ? [jointTypeTable] : []),
+        ...(!jointTypeTable && dynamics.materialGroups.length > 0
           ? [{
               title: 'Группы материалов за период',
               columns: ['Группа материалов', unitLabel, 'Доля'],
@@ -3737,6 +4013,16 @@ function getWeldingDynamicsBucketText(bucketUnitLabel: string) {
 
 function formatAverageStatisticValue(value: number) {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0)
+}
+
+function formatValuePerWelderShift(value: number, welderShiftCount: number) {
+  return welderShiftCount > 0 ? formatAverageStatisticValue(value) : '—'
+}
+
+function getAveragePerWelderShiftLabel(unit: StatisticsUnit) {
+  return unit === 'wdi'
+    ? 'Средний WDI на сварщика в смену'
+    : 'Среднее количество стыков на сварщика в смену'
 }
 
 function getScopeLabel(

@@ -92,7 +92,7 @@ function getWidthClass(fieldKey: string) {
   const key = fieldKey as WeldFieldKey
   if (fieldKey === 'weldDate') return 'w-[124px] whitespace-nowrap'
   if (fieldKey === 'pstoRequestDate' || fieldKey === 'pstoDate') return 'w-[124px] whitespace-nowrap'
-  if (fieldKey === 'createdAt' || fieldKey === 'pstoCreatedAt') return 'w-[132px] whitespace-nowrap'
+  if (DATE_TIME_FIELD_KEYS.has(key)) return 'w-[132px] whitespace-nowrap'
   if (STAMP_FIELD_KEYS.has(key)) return 'w-[138px]'
   if (REQUEST_FIELD_KEYS.has(key)) return 'w-[182px]'
   if (RESULT_SECTION_FIELD_KEYS.has(key)) return 'w-[144px]'
@@ -100,6 +100,15 @@ function getWidthClass(fieldKey: string) {
   if (isCompactWeldColumn(fieldKey)) return 'w-[94px]'
   return 'max-w-72'
 }
+
+const DATE_TIME_FIELD_KEYS = new Set<WeldFieldKey>([
+  'createdAt',
+  'weldingUpdatedAt',
+  'pstoCreatedAt',
+  'pstoUpdatedAt',
+  'lnkCreatedAt',
+  'lnkUpdatedAt',
+])
 
 function hasHigherPriorityCellHighlight(isHighlightedRow: boolean, isHighlightedCell: boolean) {
   return isHighlightedRow || isHighlightedCell

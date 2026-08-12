@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
-import { replaceWeldRowsOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
+import { massFillWeldRowsOrThrow, replaceWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
 import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
@@ -26,10 +26,9 @@ export function useReportImportMutations({
         return { updated: 0, rows: [], changedFieldKeys: [...changedFieldKeys], skipped: invalidRecords + skippedRows }
       }
 
-      const savedRows = await updateWeldRowsOrThrow(
+      const savedRows = await massFillWeldRowsOrThrow(
         updatedRows,
         'Не удалось сохранить часть записей массового заполнения',
-        { importOperation: 'massFill' },
       )
       return {
         updated: savedRows.length,

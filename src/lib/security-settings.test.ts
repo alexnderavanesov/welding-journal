@@ -9,8 +9,20 @@ import {
   verifySecurityPassword,
   toLocalSecuritySettings,
 } from '@/lib/security-settings'
+import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 
 describe('security settings', () => {
+  it('keeps the existing import password scope for every import action', () => {
+    const settings = normalizeSecuritySettings({
+      importReplacePassword: 'import',
+      protectImportReplace: true,
+    })
+
+    expect(DATA_IMPORT_SECURITY_SCOPE).toBe('importReplace')
+    expect(isSecurityScopeEnabled(settings, DATA_IMPORT_SECURITY_SCOPE)).toBe(true)
+    expect(verifySecurityPassword(settings, DATA_IMPORT_SECURITY_SCOPE, 'import')).toBe(true)
+  })
+
   it('keeps document generation protection disabled for legacy settings', () => {
     const settings = normalizeSecuritySettings({
       editPassword: 'edit',

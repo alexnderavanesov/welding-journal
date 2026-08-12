@@ -111,9 +111,12 @@ import {
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
 import {
-  saveOtherSettings,
+  saveOtherSettingsAndWait,
   useOtherSettings,
+  WDI_CALCULATION_RULE_PRESETS,
+  type WdiCalculationRules,
   type WdiCalculationMode,
+  type WdiConnectionCalculationRule,
 } from '@/lib/other-settings'
 import {
   DEFAULT_DATA_LIST_SETTINGS,
@@ -146,6 +149,12 @@ import {
 import { useResolvedSecuritySettings, useSecurityGuard } from '@/lib/security-context'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { getWeldDataUsageSummary, type WeldDataUsageSummary } from '@/server/welds'
+import {
+  previewWdiRecalculation,
+  recalculateWdi,
+} from '@/server/wdi-recalculation'
+import type { WdiRecalculationPreview } from '@/lib/wdi-recalculation'
+import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { saveRemoteSecuritySettings } from '@/server/security-functions'
 import {
   listDispatcherAcceptedWarnings,
@@ -154,6 +163,7 @@ import {
 import {
   DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
+  invalidateWeldJoints,
   WELD_JOINTS_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
 } from '@/lib/weld-query-utils'
@@ -348,9 +358,9 @@ const SECURITY_RULE_CARDS: Array<{
   {
     scope: 'importReplace',
     title: 'Изменение данных импортом',
-    passwordTitle: 'Пароль на замену данных импортом',
-    description: 'Перед сохранением вкладки “Замена данных” в импорте будет запрошен отдельный пароль.',
-    example: 'Пользователь загрузил шаблон замены данных, проверил предпросмотр, нажал заменить и ввел пароль импорта.',
+    passwordTitle: 'Пароль на изменение данных импортом',
+    description: 'Перед применением любого режима импорта будет запрошен отдельный пароль: импорт новых строк, массовое заполнение или замена данных.',
+    example: 'Пользователь загрузил Excel, проверил предпросмотр, нажал применить изменения и ввел пароль импорта.',
   },
   {
     scope: 'documentGeneration',
@@ -511,7 +521,7 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
             <div className="font-semibold text-slate-900">2. Включите защиты</div>
             <div className="mt-1 leading-5 text-slate-500">
-              Отдельно включаются вход, настройки, редактирование, замена импортом, формирование документов и удаление.
+              Отдельно включаются вход, настройки, редактирование, импорт данных, формирование документов и удаление.
             </div>
           </div>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -711,31 +721,134 @@ function SecurityToggle({
 
 function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useOtherSettings()
+  const queryClient = useQueryClient()
+  const confirmAction = useConfirmAction()
   const [isWdiEditorOpen, setIsWdiEditorOpen] = useState(false)
   const [isRkExposureEditorOpen, setIsRkExposureEditorOpen] = useState(false)
+  const [isWdiRulesExpanded, setIsWdiRulesExpanded] = useState(false)
+  const [wdiRulesDraft, setWdiRulesDraft] = useState<WdiCalculationRules>(settings.wdiCalculationRules)
+  const [wdiRulesMessage, setWdiRulesMessage] = useState<string | null>(null)
+  const [wdiPreview, setWdiPreview] = useState<WdiRecalculationPreview | null>(null)
+  const [wdiPreviewError, setWdiPreviewError] = useState<string | null>(null)
+  const [isLoadingWdiPreview, setIsLoadingWdiPreview] = useState(false)
+  const [isRecalculatingWdi, setIsRecalculatingWdi] = useState(false)
+  const savedWdiRulesKey = JSON.stringify(settings.wdiCalculationRules)
+  const savedWdiCalculationKey = JSON.stringify({
+    mode: settings.wdiCalculationMode,
+    rules: settings.wdiCalculationRules,
+    table: settings.wdiTable,
+  })
+  const draftWdiRulesKey = JSON.stringify(wdiRulesDraft)
+  const wdiRulesDirty = savedWdiRulesKey !== draftWdiRulesKey
+
+  useEffect(() => {
+    setWdiRulesDraft(settings.wdiCalculationRules)
+    setWdiRulesMessage(null)
+  }, [savedWdiRulesKey])
+
+  useEffect(() => {
+    setWdiPreview(null)
+    setWdiPreviewError(null)
+  }, [savedWdiCalculationKey])
 
   function updateWdiCalculationMode(mode: WdiCalculationMode) {
-    void runProtectedSettingsChange(() => {
-      saveOtherSettings({
-        ...settings,
-        wdiCalculationMode: mode,
-      })
+    setWdiRulesMessage(null)
+    void runProtectedSettingsChange(() =>
+      saveOtherSettingsAndWait({ ...settings, wdiCalculationMode: mode }),
+    ).catch((error) => {
+      setWdiRulesMessage(getErrorMessage(error, 'Не удалось сохранить режим расчета WDI.'))
     })
   }
 
   const saveWdiTable = useCallback(
-    (table: NonNullable<typeof settings.wdiTable>) => runProtectedSettingsChange(() => {
-      saveOtherSettings({ ...settings, wdiCalculationMode: 'table', wdiTable: table })
-    }),
+    (table: NonNullable<typeof settings.wdiTable>) => runProtectedSettingsChange(() =>
+      saveOtherSettingsAndWait({ ...settings, wdiCalculationMode: 'table', wdiTable: table }),
+    ),
     [runProtectedSettingsChange, settings],
   )
 
   const saveRkExposureTable = useCallback(
-    (table: NonNullable<typeof settings.rkExposureTable>) => runProtectedSettingsChange(() => {
-      saveOtherSettings({ ...settings, rkExposureTable: table })
-    }),
+    (table: NonNullable<typeof settings.rkExposureTable>) => runProtectedSettingsChange(() =>
+      saveOtherSettingsAndWait({ ...settings, rkExposureTable: table }),
+    ),
     [runProtectedSettingsChange, settings],
   )
+
+  function updateWdiRule(
+    group: keyof WdiCalculationRules,
+    field: keyof WdiConnectionCalculationRule,
+    value: string,
+  ) {
+    setWdiRulesDraft((current) => ({
+      ...current,
+      [group]: {
+        ...current[group],
+        [field]: value,
+      },
+    }))
+    setWdiRulesMessage(null)
+    setWdiPreview(null)
+    setIsWdiRulesExpanded(true)
+  }
+
+  async function saveWdiRules() {
+    setWdiRulesMessage(null)
+    try {
+      const saved = await runProtectedSettingsChange(() =>
+        saveOtherSettingsAndWait({ ...settings, wdiCalculationRules: wdiRulesDraft }),
+      )
+      if (saved) setWdiRulesMessage('Правило расчета WDI сохранено для проекта.')
+    } catch (error) {
+      setWdiRulesMessage(getErrorMessage(error, 'Не удалось сохранить правило расчета WDI.'))
+    }
+  }
+
+  async function openWdiRecalculationPreview() {
+    setWdiPreviewError(null)
+    setIsLoadingWdiPreview(true)
+    try {
+      setWdiPreview(await previewWdiRecalculation())
+    } catch (error) {
+      setWdiPreviewError(getErrorMessage(error, 'Не удалось проверить пересчет WDI.'))
+    } finally {
+      setIsLoadingWdiPreview(false)
+    }
+  }
+
+  async function confirmWdiRecalculation() {
+    if (!wdiPreview || wdiPreview.changed === 0) return
+    const confirmed = await confirmAction({
+      title: 'Пересчитать WDI во всех стыках',
+      itemName: `Будет изменено стыков: ${wdiPreview.changed}`,
+      description: 'Система применит сохраненный метод расчета ко всем стыкам проекта одной операцией.',
+      warning: 'Текущие значения WDI в этих стыках будут заменены. Отменить массовое изменение автоматически нельзя.',
+      confirmLabel: 'Пересчитать WDI',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+
+    setWdiPreviewError(null)
+    setIsRecalculatingWdi(true)
+    try {
+      const saved = await runProtectedSettingsChange(async () => {
+        await recalculateWdi({
+          data: {
+            calculationSignature: wdiPreview.calculationSignature,
+            sourceSignature: wdiPreview.sourceSignature,
+          },
+        })
+      })
+      if (!saved) return
+      await invalidateWeldJoints(queryClient)
+      window.dispatchEvent(new Event(GENERATED_DOCUMENT_STORAGE_EVENT))
+      setWdiRulesMessage(`WDI пересчитан. Обновлено стыков: ${wdiPreview.changed}.`)
+      setWdiPreview(await previewWdiRecalculation())
+    } catch (error) {
+      setWdiPreviewError(getErrorMessage(error, 'Не удалось пересчитать WDI.'))
+    } finally {
+      setIsRecalculatingWdi(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -745,69 +858,223 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
           <h3 className="text-base font-semibold text-slate-900">Прочее</h3>
         </div>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-          Дополнительные параметры, которые меняют поведение рабочих форм без изменения данных журнала.
+          Дополнительные параметры рабочих форм, системных расчетов и связанных операций с данными журнала.
         </p>
       </div>
 
-      <section className="rounded-md border border-slate-300 bg-white p-4 shadow-sm shadow-slate-200/60">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h4 className="text-sm font-semibold text-slate-900">Расчет WDI</h4>
-            <p className="mt-1 text-sm leading-5 text-slate-500">
-              Режим влияет на новые сохранения и импорт. Уже сохраненные значения WDI при смене режима не пересчитываются.
-            </p>
-          </div>
-          <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-500">
-            {getWdiModeLabel(settings.wdiCalculationMode)}
-          </span>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <WdiModeCard
-            title="Пользовательский"
-            description="WDI вводится вручную в форме и в импорте."
-            active={settings.wdiCalculationMode === 'manual'}
-            onClick={() => updateWdiCalculationMode('manual')}
-          />
-          <WdiModeCard
-            title="Системный: D / 25,4"
-            description="Берется меньший D1/D2 и делится на 25,4. Результат округляется до 2 знаков."
-            active={settings.wdiCalculationMode === 'formula'}
-            onClick={() => updateWdiCalculationMode('formula')}
-          />
-          <WdiModeCard
-            title="Системный: таблица D/T"
-            description="Берется меньший D1/D2 и меньший T1/T2, затем значение ищется в настроенной таблице."
-            active={settings.wdiCalculationMode === 'table'}
-            onClick={() => {
-              if (!settings.wdiTable) {
-                setIsWdiEditorOpen(true)
-                return
-              }
-              updateWdiCalculationMode('table')
-            }}
-          />
-        </div>
-
-        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0 text-sm text-slate-600">
-              <div className="font-semibold text-slate-800">Таблица дюйм-диаметров</div>
-              <div className="mt-1">
-                {settings.wdiTable
-                  ? `${settings.wdiTable.diameters.length} диаметров × ${settings.wdiTable.thicknesses.length} толщин`
-                  : 'Справочник пока не заполнен.'}
-              </div>
+      <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+        <div className="border-b border-slate-300 bg-slate-100 px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-semibold text-slate-900">Расчет WDI</h4>
+              <p className="mt-1 text-sm leading-5 text-slate-500">
+                Режим расчета, справочник D/T и правило выбора исходных диаметра и толщины.
+              </p>
             </div>
+            <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600">
+              {getWdiModeLabel(settings.wdiCalculationMode)}
+            </span>
+          </div>
+        </div>
+        <div className="divide-y divide-slate-200">
+          <section className="p-4">
+            <div>
+              <div className="text-xs font-semibold uppercase text-slate-400">1. Режим</div>
+              <h5 className="mt-1 text-base font-semibold text-slate-900">Режим расчета</h5>
+              <p className="mt-1 text-sm leading-5 text-slate-500">
+                Определяет, вводится WDI вручную или рассчитывается системой во всех рабочих разделах.
+              </p>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <WdiModeCard
+                title="Пользовательский"
+                description="WDI вводится вручную в форме и в импорте."
+                active={settings.wdiCalculationMode === 'manual'}
+                onClick={() => updateWdiCalculationMode('manual')}
+              />
+              <WdiModeCard
+                title="Системный: D / 25,4"
+                description="Расчетный диаметр выбирается по настроенному правилу и делится на 25,4."
+                active={settings.wdiCalculationMode === 'formula'}
+                onClick={() => updateWdiCalculationMode('formula')}
+              />
+              <WdiModeCard
+                title="Системный: таблица D/T"
+                description="Диаметр и толщина выбираются по правилу, затем WDI находится в таблице D/T."
+                active={settings.wdiCalculationMode === 'table'}
+                onClick={() => {
+                  if (!settings.wdiTable) {
+                    setIsWdiEditorOpen(true)
+                    return
+                  }
+                  updateWdiCalculationMode('table')
+                }}
+              />
+            </div>
+          </section>
+
+          <section className="p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase text-slate-400">2. Справочник</div>
+                <h5 className="mt-1 text-base font-semibold text-slate-900">Таблица дюйм-диаметров D/T</h5>
+                <p className="mt-1 text-sm leading-5 text-slate-500">
+                  Значения для системного табличного режима WDI.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWdiEditorOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 shadow-sm shadow-sky-100/50 hover:bg-sky-100"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                {settings.wdiTable ? 'Редактировать справочник' : 'Заполнить справочник'}
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <WdiSettingFact label="Состояние" value={settings.wdiTable ? 'Настроена' : 'Не настроена'} />
+              <WdiSettingFact label="Диаметры" value={settings.wdiTable ? String(settings.wdiTable.diameters.length) : '—'} />
+              <WdiSettingFact label="Толщины" value={settings.wdiTable ? String(settings.wdiTable.thicknesses.length) : '—'} />
+            </div>
+          </section>
+
+          <section className="overflow-hidden">
             <button
               type="button"
-              onClick={() => setIsWdiEditorOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 shadow-sm shadow-sky-100/50 hover:bg-sky-100"
+              aria-expanded={isWdiRulesExpanded}
+              onClick={() => setIsWdiRulesExpanded((current) => !current)}
+              className={`flex w-full justify-between gap-4 px-4 text-left hover:bg-slate-50 ${
+                isWdiRulesExpanded ? 'items-start py-4' : 'items-center py-2.5'
+              }`}
             >
-              <SlidersHorizontal className="h-4 w-4" />
-              {settings.wdiTable ? 'Редактировать справочник' : 'Заполнить справочник'}
+              <span className={`min-w-0 ${isWdiRulesExpanded ? '' : 'flex items-center gap-3'}`}>
+                {isWdiRulesExpanded ? (
+                  <span className="block shrink-0">
+                    <span className="block text-xs font-semibold uppercase text-slate-400">3. Правило расчета</span>
+                    <span className="mt-1 block text-base font-semibold text-slate-900">
+                      Выбор диаметра и толщины
+                    </span>
+                  </span>
+                ) : (
+                  <span className="block shrink-0 text-sm font-semibold text-slate-900">3. Правило расчета</span>
+                )}
+                {isWdiRulesExpanded ? (
+                  <>
+                    <span className="mt-1 block text-sm leading-5 text-slate-500">
+                      Отдельные правила для соединений типа «У» и остальных типов.
+                    </span>
+                    <span className="mt-2 block text-xs leading-5 text-slate-600">
+                      <span className="font-semibold text-slate-800">У:</span> {formatWdiRuleSummary(settings.wdiCalculationRules.branch)}{' '}
+                      <span className="font-semibold text-slate-800">Другие:</span> {formatWdiRuleSummary(settings.wdiCalculationRules.other)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="hidden min-w-0 truncate border-l border-slate-200 pl-3 text-xs text-slate-500 md:block">
+                    У: {formatWdiRuleCompact(settings.wdiCalculationRules.branch)} · Другие: {formatWdiRuleCompact(settings.wdiCalculationRules.other)}
+                  </span>
+                )}
+              </span>
+              <span className={`flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-600 ${isWdiRulesExpanded ? 'pt-0.5' : ''}`}>
+                {isWdiRulesExpanded ? 'Скрыть' : 'Настроить'}
+                <ChevronDown className={`h-4 w-4 transition-transform ${isWdiRulesExpanded ? 'rotate-180' : ''}`} />
+              </span>
             </button>
-          </div>
+
+            {isWdiRulesExpanded ? (
+              <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <p className="max-w-3xl text-sm leading-5 text-slate-500">
+                    Толщина участвует только в табличном режиме. Пресет заполняет поля, после чего их можно изменить вручную.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <WdiRulePresetButton label="Dmax / У: Dmin" onClick={() => setWdiRulesDraft(cloneWdiRules(WDI_CALCULATION_RULE_PRESETS.current))} />
+                    <WdiRulePresetButton label="Все минимальные" onClick={() => setWdiRulesDraft(cloneWdiRules(WDI_CALCULATION_RULE_PRESETS.minimum))} />
+                    <WdiRulePresetButton label="Все максимальные" onClick={() => setWdiRulesDraft(cloneWdiRules(WDI_CALCULATION_RULE_PRESETS.maximum))} />
+                  </div>
+                </div>
+
+                <div className="mt-4 overflow-x-auto rounded-md border border-slate-200 bg-white">
+                  <div className="min-w-[760px]">
+                    <div className="grid grid-cols-[180px_repeat(3,minmax(0,1fr))] gap-3 border-b border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
+                      <div>Группа соединений</div>
+                      <div>Расчетный диаметр</div>
+                      <div>Толщина для таблицы</div>
+                      <div>Если D1 = D2</div>
+                    </div>
+                    <WdiRuleConstructorRow
+                      title="Тип начинается с У"
+                      rule={wdiRulesDraft.branch}
+                      onChange={(field, value) => updateWdiRule('branch', field, value)}
+                    />
+                    <WdiRuleConstructorRow
+                      title="Другие и пустой тип"
+                      rule={wdiRulesDraft.other}
+                      onChange={(field, value) => updateWdiRule('other', field, value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm leading-5 text-slate-600">
+                  <div><span className="font-semibold text-slate-800">Тип У:</span> {formatWdiRuleSummary(wdiRulesDraft.branch)}</div>
+                  <div className="mt-1"><span className="font-semibold text-slate-800">Другие типы:</span> {formatWdiRuleSummary(wdiRulesDraft.other)}</div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className={`text-sm ${wdiRulesMessage?.startsWith('Не удалось') ? 'text-rose-700' : 'text-slate-500'}`}>
+                    {wdiRulesDirty ? 'Есть несохраненные изменения правила.' : wdiRulesMessage ?? 'Правило сохранено и используется системой.'}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {wdiRulesDirty ? (
+                      <button
+                        type="button"
+                        onClick={() => setWdiRulesDraft(cloneWdiRules(settings.wdiCalculationRules))}
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        Отменить изменения
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={!wdiRulesDirty}
+                      onClick={() => void saveWdiRules()}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-500"
+                    >
+                      <Save className="h-4 w-4" />
+                      Сохранить правило
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-amber-200 pt-4">
+                  <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50/70 p-3 md:flex-row md:items-center md:justify-between">
+                    <div className="max-w-3xl">
+                      <div className="text-sm font-semibold text-slate-900">Сохраненные значения WDI</div>
+                      {wdiRulesDirty ? (
+                        <p className="mt-1 text-xs font-semibold text-amber-800">Сначала сохраните изменения правила выбора D/T.</p>
+                      ) : settings.wdiCalculationMode === 'manual' ? (
+                        <p className="mt-1 text-xs font-semibold text-slate-500">Пересчет доступен только в системном режиме.</p>
+                      ) : (
+                        <p className="mt-1 text-xs text-slate-600">Предварительная проверка сравнит сохраненные WDI с текущим методом без изменения данных.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={wdiRulesDirty || settings.wdiCalculationMode === 'manual' || isLoadingWdiPreview}
+                      onClick={() => void openWdiRecalculationPreview()}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isLoadingWdiPreview ? 'animate-spin' : ''}`} />
+                      {isLoadingWdiPreview ? 'Проверяем...' : 'Проверить и пересчитать WDI'}
+                    </button>
+                  </div>
+                  {wdiPreviewError && !wdiPreview ? (
+                    <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{wdiPreviewError}</div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </section>
         </div>
       </section>
 
@@ -856,8 +1123,257 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
       {isRkExposureEditorOpen ? (
         <RkExposureTableEditorDialog table={settings.rkExposureTable} onClose={() => setIsRkExposureEditorOpen(false)} onSave={saveRkExposureTable} />
       ) : null}
+      {wdiPreview ? (
+        <WdiRecalculationPreviewDialog
+          preview={wdiPreview}
+          error={wdiPreviewError}
+          isRecalculating={isRecalculatingWdi}
+          onClose={() => {
+            if (!isRecalculatingWdi) setWdiPreview(null)
+          }}
+          onRecalculate={() => void confirmWdiRecalculation()}
+        />
+      ) : null}
     </div>
   )
+}
+
+function WdiRulePresetButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+    >
+      {label}
+    </button>
+  )
+}
+
+function WdiSettingFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+      <div className="text-xs font-semibold text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-900">{value}</div>
+    </div>
+  )
+}
+
+function WdiRuleConstructorRow({
+  title,
+  rule,
+  onChange,
+}: {
+  title: string
+  rule: WdiConnectionCalculationRule
+  onChange: (field: keyof WdiConnectionCalculationRule, value: string) => void
+}) {
+  const selectClassName = 'h-10 w-full rounded-md border-slate-200 bg-white py-1 pl-3 pr-8 text-sm text-slate-800'
+  return (
+    <div className="grid grid-cols-[180px_repeat(3,minmax(0,1fr))] gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0">
+      <div className="flex items-center text-sm font-semibold text-slate-800">{title}</div>
+      <select
+        value={rule.diameter}
+        onChange={(event) => onChange('diameter', event.target.value)}
+        className={selectClassName}
+        aria-label={`${title}: расчетный диаметр`}
+      >
+        <option value="min">Dmin</option>
+        <option value="max">Dmax</option>
+      </select>
+      <select
+        value={rule.thickness}
+        onChange={(event) => onChange('thickness', event.target.value)}
+        className={selectClassName}
+        aria-label={`${title}: толщина`}
+      >
+        <option value="linked">T выбранного диаметра</option>
+        <option value="min">Tmin независимо</option>
+        <option value="max">Tmax независимо</option>
+      </select>
+      <select
+        value={rule.equalDiameterThickness}
+        disabled={rule.thickness !== 'linked'}
+        onChange={(event) => onChange('equalDiameterThickness', event.target.value)}
+        className={`${selectClassName} disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400`}
+        aria-label={`${title}: толщина при равных диаметрах`}
+      >
+        <option value="min">Tmin</option>
+        <option value="max">Tmax</option>
+      </select>
+    </div>
+  )
+}
+
+function WdiRecalculationPreviewDialog({
+  preview,
+  error,
+  isRecalculating,
+  onClose,
+  onRecalculate,
+}: {
+  preview: WdiRecalculationPreview
+  error: string | null
+  isRecalculating: boolean
+  onClose: () => void
+  onRecalculate: () => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || isRecalculating) return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [isRecalculating, onClose])
+
+  return (
+    <LargeDialogShell maxWidthClassName="max-w-[1040px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[150] bg-slate-950/35">
+      <DialogHeader
+        title={(
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Предварительный пересчет WDI</span>
+            <span className={`text-base ${getWdiDeltaToneClassName(preview.wdiDelta)}`}>
+              Изменение WDI {formatSignedWdiDelta(preview.wdiDelta)}
+            </span>
+          </span>
+        )}
+        subtitle="Данные еще не изменены"
+        onClose={onClose}
+      />
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+          Проверьте изменения перед массовым пересчетом. Подтверждение заменит сохраненное WDI во всех отмеченных ниже стыках.
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <WdiPreviewMetric label="Всего стыков" value={preview.total} />
+          <WdiPreviewMetric label="Изменится" value={preview.changed} tone="warning" />
+          <WdiPreviewMetric label="Без изменений" value={preview.unchanged} />
+          <WdiPreviewMetric label="Будет заполнено" value={preview.filled} tone="success" />
+          <WdiPreviewMetric label="Будет очищено" value={preview.cleared} tone="danger" />
+        </div>
+        {error ? (
+          <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+        ) : null}
+        {preview.examples.length > 0 ? (
+          <div className="overflow-hidden rounded-md border border-slate-200">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] table-fixed text-sm">
+                <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                  <tr>
+                    <th className="w-[150px] px-3 py-2">Проект / титул</th>
+                    <th className="w-[180px] px-3 py-2">Линия</th>
+                    <th className="w-[130px] px-3 py-2">Стык</th>
+                    <th className="w-[130px] px-3 py-2">Было WDI</th>
+                    <th className="px-3 py-2">Станет WDI по текущему методу расчета</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {preview.examples.map((example) => (
+                    <tr key={example.id} className="text-slate-700">
+                      <td className="break-words px-3 py-2">{[example.projectTitle, example.subtitleCode].filter(Boolean).join(' / ') || '—'}</td>
+                      <td className="break-words px-3 py-2">{example.line || '—'}</td>
+                      <td className="break-words px-3 py-2">{example.joint || `ID ${example.id}`}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-600">{formatWdiPreviewValue(example.before)}</td>
+                      <td className="px-3 py-2 font-semibold text-sky-800">{formatWdiPreviewValue(example.after)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {preview.examplesTruncated ? (
+              <div className="border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                Показаны первые {preview.examples.length} изменений из {preview.changed}.
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Все сохраненные значения уже соответствуют текущему методу расчета WDI.
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col-reverse gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
+        <button
+          type="button"
+          disabled={isRecalculating}
+          onClick={onClose}
+          className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          Закрыть
+        </button>
+        <button
+          type="button"
+          disabled={preview.changed === 0 || isRecalculating}
+          onClick={onRecalculate}
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-700 bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-500"
+        >
+          <RefreshCw className={`h-4 w-4 ${isRecalculating ? 'animate-spin' : ''}`} />
+          {isRecalculating ? 'Пересчитываем...' : `Пересчитать ${preview.changed} стыков`}
+        </button>
+      </div>
+    </LargeDialogShell>
+  )
+}
+
+function WdiPreviewMetric({ label, value, tone = 'neutral' }: { label: string; value: number; tone?: 'neutral' | 'warning' | 'success' | 'danger' }) {
+  const toneClassName = {
+    neutral: 'border-slate-200 bg-slate-50 text-slate-900',
+    warning: 'border-amber-200 bg-amber-50 text-amber-900',
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+    danger: 'border-rose-200 bg-rose-50 text-rose-900',
+  }[tone]
+  return (
+    <div className={`rounded-md border px-3 py-3 ${toneClassName}`}>
+      <div className="text-2xl font-semibold">{value}</div>
+      <div className="mt-1 text-xs font-medium">{label}</div>
+    </div>
+  )
+}
+
+function cloneWdiRules(rules: WdiCalculationRules): WdiCalculationRules {
+  return {
+    branch: { ...rules.branch },
+    other: { ...rules.other },
+  }
+}
+
+function formatWdiRuleSummary(rule: WdiConnectionCalculationRule) {
+  const diameter = rule.diameter === 'min' ? 'Dmin' : 'Dmax'
+  if (rule.thickness === 'min') return `${diameter}; в таблице используется Tmin независимо от диаметра.`
+  if (rule.thickness === 'max') return `${diameter}; в таблице используется Tmax независимо от диаметра.`
+  return `${diameter}; в таблице используется T выбранного материала, при D1 = D2 — ${rule.equalDiameterThickness === 'min' ? 'Tmin' : 'Tmax'}.`
+}
+
+function formatWdiRuleCompact(rule: WdiConnectionCalculationRule) {
+  const diameter = rule.diameter === 'min' ? 'Dmin' : 'Dmax'
+  if (rule.thickness === 'min') return `${diameter} / Tmin`
+  if (rule.thickness === 'max') return `${diameter} / Tmax`
+  return `${diameter} / T материала / D1 = D2: ${rule.equalDiameterThickness === 'min' ? 'Tmin' : 'Tmax'}`
+}
+
+function formatWdiPreviewValue(value: number | null) {
+  return value === null
+    ? 'не рассчитано'
+    : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(value)
+}
+
+function formatSignedWdiDelta(value: number) {
+  const formatted = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(Math.abs(value))
+  if (value > 0) return `+${formatted}`
+  if (value < 0) return `−${formatted}`
+  return '0'
+}
+
+function getWdiDeltaToneClassName(value: number) {
+  if (value > 0) return 'text-emerald-700'
+  if (value < 0) return 'text-rose-700'
+  return 'text-slate-500'
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
 function WdiModeCard({

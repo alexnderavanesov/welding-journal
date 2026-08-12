@@ -237,10 +237,13 @@ export const WELD_FIELDS = [
     virtual: true,
   },
   { key: 'createdAt', dbName: 'created_at', label: 'Внесен сварка', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'weldingUpdatedAt', dbName: 'welding_updated_at', label: 'Обновлен сварка', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoBoq', dbName: 'psto_boq', label: 'BoQ ПСТО', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoKs3', dbName: 'psto_ks3', label: 'КС3 ПСТО', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'pstoCreatedAt', dbName: 'psto_created_at', label: 'Внесен ПСТО', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'pstoUpdatedAt', dbName: 'psto_updated_at', label: 'Обновлен ПСТО', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'lnkCreatedAt', dbName: 'lnk_created_at', label: 'Внесен ЛНК', kind: 'text', group: 'Статусы/отчетность' },
+  { key: 'lnkUpdatedAt', dbName: 'lnk_updated_at', label: 'Обновлен ЛНК', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'vikBoq', dbName: 'vik_boq', label: 'BoQ ВИК', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'vikKs3', dbName: 'vik_ks3', label: 'КС3 ВИК', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'rkBoq', dbName: 'rk_boq', label: 'BoQ РК', kind: 'text', group: 'Статусы/отчетность' },
@@ -262,8 +265,11 @@ export const WELD_FIELDS = [
 export type WeldFieldKey = (typeof WELD_FIELDS)[number]['key']
 export const DATE_TIME_WELD_FIELD_KEYS = new Set<WeldFieldKey>([
   'createdAt',
+  'weldingUpdatedAt',
   'pstoCreatedAt',
+  'pstoUpdatedAt',
   'lnkCreatedAt',
+  'lnkUpdatedAt',
 ])
 export type WeldFieldValue = string | number | boolean | Date | null
 export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldValue>> & {

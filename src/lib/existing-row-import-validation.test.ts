@@ -83,6 +83,13 @@ describe('assertExistingRowsImportPayload', () => {
     })).not.toThrow()
 
     expect(() => assertExistingRowsImportPayload({
+      records: [{ id: 7, connectionType: 'У17', wdi: 2.24 }],
+      previousRows,
+      mode: 'replaceData',
+      otherSettings: systemSettings,
+    })).not.toThrow()
+
+    expect(() => assertExistingRowsImportPayload({
       records: [{ id: 7, wdi: 2.24 }],
       previousRows,
       mode: 'replaceData',

@@ -8,6 +8,8 @@ import {
   buildWeldReportPageFromRows,
   canPaginateReportSource,
   compactWeldRowsForTransport,
+  getWeldImportSecurityScope,
+  getProfileTimestampUpdates,
   mergeDuplicateControlsIntoRows,
   normalizeWeldPageRequest,
   normalizeWeldImportScopeRequest,
@@ -30,6 +32,79 @@ import {
 import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
 
 describe('weld server pagination helpers', () => {
+  it('uses the same dedicated password scope for every import mode', () => {
+    expect(getWeldImportSecurityScope('newRecords')).toBe('importReplace')
+    expect(getWeldImportSecurityScope('massFill')).toBe('importReplace')
+    expect(getWeldImportSecurityScope('replaceData')).toBe('importReplace')
+  })
+
+  it('updates only the profiles whose business data changed', () => {
+    const previous = row({
+      hasRk: 'да',
+      pstoRequired: 'да',
+      createdAt: new Date('2026-08-01T08:00:00.000Z'),
+      lnkCreatedAt: new Date('2026-08-01T09:00:00.000Z'),
+      pstoCreatedAt: new Date('2026-08-01T10:00:00.000Z'),
+    })
+    const now = new Date('2026-08-12T12:00:00.000Z')
+
+    expect(getProfileTimestampUpdates({ ...previous, responsible: 'Иванов' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+    })
+    expect(getProfileTimestampUpdates({ ...previous, rkResult: 'годен' }, previous, now)).toEqual({
+      lnkUpdatedAt: now,
+    })
+    expect(getProfileTimestampUpdates({ ...previous, pstoNote: 'Исправлено' }, previous, now)).toEqual({
+      pstoUpdatedAt: now,
+    })
+  })
+
+  it('records profile entry separately from later updates', () => {
+    const previous = row({ hasRk: null, pstoRequired: null, lnkCreatedAt: null, pstoCreatedAt: null })
+    const now = new Date('2026-08-12T12:00:00.000Z')
+
+    expect(getProfileTimestampUpdates({ ...previous, hasRk: 'да' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+      lnkCreatedAt: now,
+      lnkUpdatedAt: now,
+    })
+    expect(getProfileTimestampUpdates({ ...previous, pstoRequired: 'да' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+      pstoCreatedAt: now,
+      pstoUpdatedAt: now,
+    })
+  })
+
+  it('records the PSTO entry only when the joint actually enters the report', () => {
+    const previous = row({ weldDate: null, pstoRequired: null, pstoCreatedAt: null, pstoUpdatedAt: null })
+    const now = new Date('2026-08-12T12:00:00.000Z')
+
+    expect(getProfileTimestampUpdates({ ...previous, pstoRequired: 'да' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+      pstoUpdatedAt: now,
+    })
+    expect(getProfileTimestampUpdates({ ...previous, pstoRequired: 'да', weldDate: '2026-08-12' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+      pstoCreatedAt: now,
+      pstoUpdatedAt: now,
+    })
+  })
+
+  it('records the LNK entry only when the joint actually enters the report', () => {
+    const previous = row({ weldDate: null, hasRk: null, lnkCreatedAt: null, lnkUpdatedAt: null })
+    const now = new Date('2026-08-12T12:00:00.000Z')
+
+    expect(getProfileTimestampUpdates({ ...previous, hasRk: 'да' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+      lnkUpdatedAt: now,
+    })
+    expect(getProfileTimestampUpdates({ ...previous, hasRk: 'да', weldDate: '2026-08-12' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+      lnkCreatedAt: now,
+      lnkUpdatedAt: now,
+    })
+  })
+
   it('keeps supported page sizes and falls back to 100 for unknown values', () => {
     expect(normalizeWeldPageSize(100)).toBe(100)
     expect(normalizeWeldPageSize(300)).toBe(300)

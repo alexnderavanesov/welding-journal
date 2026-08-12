@@ -4,6 +4,7 @@ import {
   type WeldField,
   type WeldFieldKey,
   type WeldInput,
+  DATE_TIME_WELD_FIELD_KEYS,
 } from '@/lib/weld-fields'
 import { createZip } from '@/lib/weld-export-zip'
 import { escapeXml, getExportColumnWidth, normalizeSheetName } from '@/lib/weld-export-utils'
@@ -17,6 +18,9 @@ import { VISIBLE_FIELDS } from '@/lib/weld-visible-field-layout'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { loadOtherSettings } from '@/lib/other-settings'
 import { isSystemWdiMode } from '@/lib/wdi'
+import { formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
+import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 
 export type ImportTemplateCellKind = 'free' | 'checked' | 'ignored'
 export type ReportImportMode = 'newRecords' | 'massFill' | 'replaceData'
@@ -33,8 +37,11 @@ const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
   'finalStatus',
   'revisionActuality',
   'createdAt',
+  'weldingUpdatedAt',
   'pstoCreatedAt',
+  'pstoUpdatedAt',
   'lnkCreatedAt',
+  'lnkUpdatedAt',
   'vikRequest',
   'rkRequest',
   'uzkRequest',
@@ -80,7 +87,10 @@ const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
   'lnkNote',
 ])
 
-const WELD_IMPORT_CHECKED_FIELD_KEYS = new Set<string>([
+const WELD_IMPORT_ALWAYS_CHECKED_FIELD_KEYS = new Set<string>([
+  'projectTitle',
+  'subtitleCode',
+  'line',
   'joint',
   'weldDate',
   'weldingMethod',
@@ -89,18 +99,6 @@ const WELD_IMPORT_CHECKED_FIELD_KEYS = new Set<string>([
   'testTypes',
   'd1',
   'd2',
-  'stamp1K',
-  'stamp1Z',
-  'stamp1O',
-  'stamp1KFact',
-  'stamp1ZFact',
-  'stamp1OFact',
-  'stamp2K',
-  'stamp2Z',
-  'stamp2O',
-  'stamp2KFact',
-  'stamp2ZFact',
-  'stamp2OFact',
   'hasVik',
   'hasRk',
   'hasUzk',
@@ -148,24 +146,64 @@ export function getReportImportPreviewFields(activeReport: ImportableReport) {
 }
 
 export function getReportImportCellKind(activeReport: ImportableReport, fieldKey: string): ImportTemplateCellKind {
+  return getReportImportCellKindFromRules(fieldKey, getReportImportTemplateRules(activeReport))
+}
+
+function getReportImportCellKindFromRules(
+  fieldKey: string,
+  rules: ReturnType<typeof getReportImportTemplateRules>,
+): ImportTemplateCellKind {
   if (fieldKey === 'id' || isVirtualWeldField(FIELD_BY_KEY.get(fieldKey as WeldFieldKey))) return 'ignored'
-  if (WELD_IMPORT_IGNORED_FIELD_KEYS.has(fieldKey)) return 'ignored'
-  if (isDynamicSystemImportField(activeReport, fieldKey)) return 'ignored'
-  if (WELD_IMPORT_CHECKED_FIELD_KEYS.has(fieldKey)) return 'checked'
+  if (rules.ignoredFieldKeys.has(fieldKey)) return 'ignored'
+  if (rules.checkedFieldKeys.has(fieldKey)) return 'checked'
   return 'free'
 }
 
-export function getReportImportIgnoredFieldKeys(_activeReport: ImportableReport) {
-  if (!isSystemWdiMode(loadOtherSettings())) return WELD_IMPORT_IGNORED_FIELD_KEYS
-  return new Set([...WELD_IMPORT_IGNORED_FIELD_KEYS, 'wdi'])
+export function getReportImportIgnoredFieldKeys(activeReport: ImportableReport) {
+  return getReportImportTemplateRules(activeReport).ignoredFieldKeys
 }
 
-export function getReportImportCheckedFieldKeys(_activeReport: ImportableReport) {
-  return WELD_IMPORT_CHECKED_FIELD_KEYS
+export function getReportImportCheckedFieldKeys(activeReport: ImportableReport) {
+  return getReportImportTemplateRules(activeReport).checkedFieldKeys
 }
 
-function isDynamicSystemImportField(_activeReport: ImportableReport, fieldKey: string) {
-  return fieldKey === 'wdi' && isSystemWdiMode(loadOtherSettings())
+function getReportImportTemplateRules(_activeReport: ImportableReport) {
+  const otherSettings = loadOtherSettings()
+  const saveCheckSettings = loadSaveCheckSettings()
+  const ignoredFieldKeys = isSystemWdiMode(otherSettings)
+    ? new Set([...WELD_IMPORT_IGNORED_FIELD_KEYS, 'wdi'])
+    : WELD_IMPORT_IGNORED_FIELD_KEYS
+  const checkedFieldKeys = new Set(WELD_IMPORT_ALWAYS_CHECKED_FIELD_KEYS)
+
+  if (hasEnabledOfficialStampCheck(saveCheckSettings)) {
+    OFFICIAL_WELDER_STAMP_FIELD_KEYS.forEach((fieldKey) => checkedFieldKeys.add(fieldKey))
+  } else if (saveCheckSettings.requiredRootStampWithWeldDate) {
+    checkedFieldKeys.add('stamp1K')
+  }
+
+  if (
+    saveCheckSettings.officialThickness ||
+    (isSystemWdiMode(otherSettings) && otherSettings.wdiCalculationMode === 'table')
+  ) {
+    checkedFieldKeys.add('t1')
+    checkedFieldKeys.add('t2')
+  }
+
+  return { checkedFieldKeys, ignoredFieldKeys }
+}
+
+function hasEnabledOfficialStampCheck(settings: SaveCheckSettings) {
+  return (
+    settings.officialRegistry ||
+    settings.officialArchive ||
+    settings.officialNaksDate ||
+    settings.officialSuspension ||
+    settings.officialWeldingMethod ||
+    settings.officialMaterialGroup ||
+    settings.officialDiameter ||
+    settings.officialThickness ||
+    settings.officialDls
+  )
 }
 
 export function stripIgnoredImportFields(record: WeldInput, activeReport: ImportableReport) {
@@ -184,6 +222,7 @@ export function isExistingRowsImportLockedField(field: WeldField) {
 
 export function buildImportTemplateXlsxBytes(activeReport: ImportableReport) {
   const fields = getReportImportTemplateFields(activeReport)
+  const rules = getReportImportTemplateRules(activeReport)
   const sheetName = normalizeSheetName(getReportImportTemplateSheetName(activeReport))
   const rowCount = 60
   const rows = [
@@ -197,7 +236,7 @@ export function buildImportTemplateXlsxBytes(activeReport: ImportableReport) {
     { path: 'xl/workbook.xml', content: buildWorkbookXml(sheetName) },
     { path: 'xl/_rels/workbook.xml.rels', content: buildWorkbookRelsXml() },
     { path: 'xl/styles.xml', content: buildTemplateStylesXml() },
-    { path: 'xl/worksheets/sheet1.xml', content: buildTemplateWorksheetXml(rows, fields, activeReport) },
+    { path: 'xl/worksheets/sheet1.xml', content: buildTemplateWorksheetXml(rows, fields, rules) },
   ])
 }
 
@@ -211,6 +250,7 @@ export function buildReplaceDataTemplateXlsxBytes(activeReport: ImportableReport
 
 function buildExistingRowsTemplateXlsxBytes(activeReport: ImportableReport, records: readonly WeldRow[], mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>) {
   const fields = getReportImportTemplateFields(activeReport)
+  const rules = getReportImportTemplateRules(activeReport)
   const sheetName = normalizeSheetName(getExistingRowsTemplateSheetName(activeReport, mode))
   const serviceFields =
     mode === 'replaceData'
@@ -226,7 +266,12 @@ function buildExistingRowsTemplateXlsxBytes(activeReport: ImportableReport, reco
     ...records.map((record) => [
       record.id,
       ...(mode === 'replaceData' ? [record.rowVersion ?? '', ''] : []),
-      ...fields.map((field) => record[field.key as keyof WeldRow] ?? ''),
+      ...fields.map((field) => {
+        const value = record[field.key as keyof WeldRow]
+        return DATE_TIME_WELD_FIELD_KEYS.has(field.key as WeldFieldKey)
+          ? formatDateTimeWithSeconds(value)
+          : value ?? ''
+      }),
     ]),
   ]
 
@@ -236,7 +281,7 @@ function buildExistingRowsTemplateXlsxBytes(activeReport: ImportableReport, reco
     { path: 'xl/workbook.xml', content: buildWorkbookXml(sheetName) },
     { path: 'xl/_rels/workbook.xml.rels', content: buildWorkbookRelsXml() },
     { path: 'xl/styles.xml', content: buildTemplateStylesXml() },
-    { path: 'xl/worksheets/sheet1.xml', content: buildExistingRowsWorksheetXml(rows, fields, activeReport, records, mode) },
+    { path: 'xl/worksheets/sheet1.xml', content: buildExistingRowsWorksheetXml(rows, fields, activeReport, records, mode, rules) },
   ])
 }
 
@@ -326,7 +371,11 @@ function buildTemplateStylesXml() {
 </styleSheet>`
 }
 
-function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField[], activeReport: ImportableReport) {
+function buildTemplateWorksheetXml(
+  rows: unknown[][],
+  fields: readonly WeldField[],
+  rules: ReturnType<typeof getReportImportTemplateRules>,
+) {
   const cols = fields
     .map((field, index) => {
       const column = index + 1
@@ -338,7 +387,7 @@ function buildTemplateWorksheetXml(rows: unknown[][], fields: readonly WeldField
       const cells = row
         .map((value, columnIndex) => {
           const field = fields[columnIndex]
-          const styleId = rowIndex === 0 ? getTemplateHeaderStyleId() : getTemplateStyleId(activeReport, field?.key)
+          const styleId = rowIndex === 0 ? getTemplateHeaderStyleId() : getTemplateStyleId(field?.key, rules)
           const ref = encodeCellRef(rowIndex, columnIndex)
           const text = String(value ?? '')
           if (!text) return `<c r="${ref}" s="${styleId}"/>`
@@ -362,6 +411,7 @@ function buildExistingRowsWorksheetXml(
   activeReport: ImportableReport,
   records: readonly WeldRow[],
   mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>,
+  rules: ReturnType<typeof getReportImportTemplateRules>,
 ) {
   const serviceColumnCount = mode === 'replaceData' ? 3 : 1
   const allColumns =
@@ -396,7 +446,7 @@ function buildExistingRowsWorksheetXml(
                 ? 3
                 : isVersionColumn
                   ? 2
-                  : getExistingRowsBodyStyleId(activeReport, field ?? undefined, record, mode)
+                  : getExistingRowsBodyStyleId(activeReport, field ?? undefined, record, mode, rules)
           const ref = encodeCellRef(rowIndex, columnIndex)
           const text = String(value ?? '')
           if (!text) return `<c r="${ref}" s="${styleId}"/>`
@@ -426,9 +476,12 @@ function encodeCellRef(rowIndex: number, columnIndex: number) {
   return `${columnName}${rowIndex + 1}`
 }
 
-function getTemplateStyleId(activeReport: ImportableReport, fieldKey?: string) {
+function getTemplateStyleId(
+  fieldKey: string | undefined,
+  rules: ReturnType<typeof getReportImportTemplateRules>,
+) {
   if (!fieldKey) return 0
-  const kind = getReportImportCellKind(activeReport, fieldKey)
+  const kind = getReportImportCellKindFromRules(fieldKey, rules)
   if (kind === 'ignored') return 2
   if (kind === 'checked') return 3
   return 0
@@ -443,6 +496,7 @@ function getExistingRowsBodyStyleId(
   field?: WeldField,
   record?: WeldRow | null,
   mode: Extract<ReportImportMode, 'massFill' | 'replaceData'> = 'massFill',
+  rules = getReportImportTemplateRules(activeReport),
 ) {
   if (!field || !record) return 2
   if (isExistingRowsImportLockedField(field)) return 2
@@ -452,7 +506,7 @@ function getExistingRowsBodyStyleId(
   }
   if (mode === 'massFill' && isMassFillFieldLocked(activeReport, field, record)) return 2
   if (mode === 'replaceData' && isSystemImportField(activeReport, field, record)) return 2
-  return getTemplateStyleId(activeReport, field.key)
+  return getTemplateStyleId(field.key, rules)
 }
 
 export function isMassFillFieldLocked(activeReport: ImportableReport, field: WeldField, record: WeldInput) {

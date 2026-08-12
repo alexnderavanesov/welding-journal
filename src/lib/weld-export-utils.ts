@@ -1,6 +1,7 @@
-import { VISIBLE_FIELDS, type WeldField, type WeldInput } from './weld-fields'
+import { DATE_TIME_WELD_FIELD_KEYS, VISIBLE_FIELDS, type WeldField, type WeldInput } from './weld-fields'
 import { parseDate, parseNumber } from './weld-import-parsers'
 import { formatControlAvailabilityForExport } from './report-value-utils'
+import { formatDateTimeWithSeconds } from './weld-table-formatting'
 
 export function recordsToVisibleExportMatrix(records: WeldInput[], fields: readonly WeldField[] = VISIBLE_FIELDS) {
   return [
@@ -10,6 +11,7 @@ export function recordsToVisibleExportMatrix(records: WeldInput[], fields: reado
         const value = record[field.key as keyof WeldInput]
         if (field.kind === 'boolean') return formatControlAvailabilityForExport(value)
         if (field.kind === 'date') return formatExportDate(value)
+        if (DATE_TIME_WELD_FIELD_KEYS.has(field.key as never)) return formatDateTimeWithSeconds(value)
         if (field.key === 'wdi') return formatExportNumber(value)
         return value ?? ''
       }),
@@ -19,6 +21,7 @@ export function recordsToVisibleExportMatrix(records: WeldInput[], fields: reado
 
 export function getExportColumnWidth(field: WeldField) {
   if (field.kind === 'date') return 12
+  if (DATE_TIME_WELD_FIELD_KEYS.has(field.key as never)) return 20
   if (field.label.length <= 4) return 10
   return Math.min(Math.max(field.label.length + 4, 14), 28)
 }

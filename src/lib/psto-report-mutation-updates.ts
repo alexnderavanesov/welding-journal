@@ -52,7 +52,7 @@ export function buildPstoRequestDraftRows({
     records,
     requestName,
     requestDate: normalizedRequestDate,
-    pstoCreatedAt: new Date().toISOString(),
+    pstoUpdatedAt: new Date().toISOString(),
   })
 }
 
@@ -88,7 +88,7 @@ export function buildPstoResultRows({
     if (saveCheckSettings.pstoResultDateAfterWeldDate && isDateBeforeWeldDate(normalizedPstoDate ?? pstoDate, record.weldDate)) {
       throw new Error(formatDateBeforeWeldDateSaveReason(record, normalizedPstoDate ?? pstoDate, 'Дата ПСТО'))
     }
-    proposedRowsById.set(record.id, applyPstoResult({ record, shouldClearResult: false, pstoDate: normalizedPstoDate ?? pstoDate, diagramName, pstoCreatedAt: pstoUpdatedAt }))
+    proposedRowsById.set(record.id, applyPstoResult({ record, shouldClearResult: false, pstoDate: normalizedPstoDate ?? pstoDate, diagramName, pstoUpdatedAt }))
   }
   const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
   const changedRows = recalculatedRows.filter((row) => proposedRowsById.has(row.id))
@@ -119,7 +119,7 @@ export function buildPstoRequestManagerRows({
     ) {
       return []
     }
-    return [applyPstoRequestManagerAction({ record, nextRequestName, action, pstoCreatedAt: pstoUpdatedAt }) as RowWithId]
+    return [applyPstoRequestManagerAction({ record, nextRequestName, action, pstoUpdatedAt }) as RowWithId]
   })
 }
 
@@ -154,5 +154,11 @@ export function buildHeatTreatmentFieldRow({
   value: string | null
   rows: RowWithId[]
 }) {
-  return withAutoHeatTreatmentDiagram({ ...record, [fieldKey]: value }, rows) as RowWithId
+  const pstoUpdatedAt = new Date().toISOString()
+  return withAutoHeatTreatmentDiagram({
+    ...record,
+    [fieldKey]: value,
+    pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
+    pstoUpdatedAt,
+  }, rows) as RowWithId
 }

@@ -18,6 +18,7 @@ import {
   normalizeWeldColumnChoiceValue,
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-column-choice-filter'
+import { formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 
 export { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
@@ -26,8 +27,8 @@ export function sortWeldDateTimeFilterOptions<T extends { value: string; label: 
   options: readonly T[],
 ) {
   return [...options].sort((left, right) => {
-    if (left.value === '') return -1
-    if (right.value === '') return 1
+    if (left.value === '') return 1
+    if (right.value === '') return -1
 
     const leftTimestamp = Date.parse(left.value)
     const rightTimestamp = Date.parse(right.value)
@@ -40,6 +41,31 @@ export function sortWeldDateTimeFilterOptions<T extends { value: string; label: 
       sensitivity: 'base',
     })
   })
+}
+
+export function groupWeldDateTimeFilterOptions<
+  T extends { value: string; label: string; count: number },
+>(options: readonly T[]) {
+  const groups = new Map<string, T & { values: string[] }>()
+
+  for (const option of sortWeldDateTimeFilterOptions(options)) {
+    const label = option.value ? formatDateTimeWithSeconds(option.value) : option.label
+    const existing = groups.get(label)
+    if (existing) {
+      existing.count += option.count
+      if (!existing.values.includes(option.value)) existing.values.push(option.value)
+      continue
+    }
+
+    groups.set(label, {
+      ...option,
+      count: option.count,
+      label,
+      values: [option.value],
+    })
+  }
+
+  return Array.from(groups.values())
 }
 
 export function hasColumnFilters(columnFilters: Record<string, string>) {

@@ -73,11 +73,6 @@ export function normalizeRowPstoRequest<T extends WeldInput>(row: T) {
   return row.pstoRequest === pstoRequest ? row : { ...row, pstoRequest }
 }
 
-export function withPstoCreatedAt<T extends WeldInput>(rows: T[]) {
-  const pstoCreatedAt = new Date().toISOString()
-  return rows.map((row) => (isYesText(row.pstoRequired) && !row.pstoCreatedAt ? { ...row, pstoCreatedAt } : row))
-}
-
 export function withAutoHeatTreatmentDiagrams<T extends WeldRow>(rows: T[]) {
   const nextRows = [...rows]
   for (let index = 0; index < nextRows.length; index += 1) {

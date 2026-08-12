@@ -10,6 +10,7 @@ import {
   type SecurityScope,
   type SecuritySettings,
 } from '@/lib/security-settings'
+import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 import { authenticateSecurityScope } from '@/server/security-functions'
 
 type SecurityPasswordOptions = {
@@ -100,10 +101,10 @@ export function useSecurityGuard() {
         title: 'Подтверждение доступа',
         description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
       }),
-    requireImportReplacePassword: (actionLabel = 'замену данных импортом') =>
-      requirePassword('importReplace', {
-        scope: 'importReplace',
-        title: 'Замена данных импортом',
+    requireImportPassword: (actionLabel = 'импорт данных') =>
+      requirePassword(DATA_IMPORT_SECURITY_SCOPE, {
+        scope: DATA_IMPORT_SECURITY_SCOPE,
+        title: 'Изменение данных импортом',
         description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
       }),
     requireDocumentGenerationPassword: (actionLabel = 'формирование документа') =>

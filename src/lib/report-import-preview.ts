@@ -27,7 +27,11 @@ import {
   type ImportableReport,
 } from '@/lib/report-import-template'
 import { loadOtherSettings } from '@/lib/other-settings'
-import { loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { formatSaveCheckBlockReason, loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { loadSystemIndexSettings } from '@/lib/system-index-settings'
+import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
+import { getMissingWeldImportIdentityFields } from '@/lib/weld-import-identity'
+import { validateManualJointName } from '@/lib/joint-name'
 import { isSystemWdiMode } from '@/lib/wdi'
 import { LNK_METHODS } from '@/lib/report-config'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
@@ -169,6 +173,8 @@ async function buildExistingRowsImportPreview({
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
   const expectedRowVersions: WeldRowVersionTarget[] = []
+  const saveCheckSettings = loadSaveCheckSettings()
+  const systemIndexSettings = loadSystemIndexSettings()
   let skippedRows = parsed.skippedRows
 
   parsed.dataRows.forEach((row, index) => {
@@ -235,7 +241,33 @@ async function buildExistingRowsImportPreview({
 
     records.push(candidate)
     const changedFieldKeys = getKnownFieldKeys(changedKeys)
+    const validationMessages: string[] = []
+    const validationFieldKeys = new Set<WeldFieldKey>()
+    const formBlockReason = getWeldFormSaveBlockReason(candidate, existingRow, saveCheckSettings, {
+      systemIndexSettings,
+    })
+    if (formBlockReason) {
+      validationMessages.push(
+        formBlockReason.includes('ЗВ-26')
+          ? `${formBlockReason} Исправьте номер в карточке стыка: серое поле “Стык” не изменяется импортом.`
+          : formBlockReason,
+      )
+      getImportErrorFieldKeys({
+        message: formBlockReason,
+        record: candidate,
+        activeReport,
+        fallbackFieldKeys: changedFieldKeys,
+      }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+    }
+    const missingIdentityFields = getMissingWeldImportIdentityFields(candidate)
+    if (missingIdentityFields.length > 0) {
+      validationMessages.push(
+        `Обязательные поля не могут быть пустыми: ${missingIdentityFields.map(({ label }) => label).join(', ')}.`,
+      )
+      missingIdentityFields.forEach(({ fieldKey }) => validationFieldKeys.add(fieldKey))
+    }
 
+    let preparedUpdates: ReportImportRecord | null = null
     try {
       const candidateForPrepare = prepareCandidateForExistingRowsValidation(candidate)
       const prepared = prepareImportedWeldRecords({
@@ -250,31 +282,38 @@ async function buildExistingRowsImportPreview({
       if (hasChangedLnkRepairRuleInputs(candidate, existingRow)) {
         assertNoLnkRepairRuleIssues([prepared], loadSaveCheckSettings())
       }
-      const preparedUpdates: ReportImportRecord = { id: existingRow.id }
+      preparedUpdates = { id: existingRow.id }
       changedKeys.forEach((key) => {
         const field = FIELD_BY_KEY.get(key as WeldFieldKey)
         if (!field) return
         ;(preparedUpdates as Record<string, unknown>)[field.key] = prepared[field.key]
       })
       applyPreparedDerivedUpdates(preparedUpdates, prepared, existingRow, changedKeys)
-      validRecords.push(preparedUpdates)
-      if (mode === 'replaceData') {
-        expectedRowVersions.push({ id: existingRow.id, version: expectedRowVersion })
-      }
     } catch (error) {
       const message = getImportErrorMessage(error)
+      validationMessages.push(message)
+      getImportErrorFieldKeys({
+        message,
+        record: candidate,
+        activeReport,
+        fallbackFieldKeys: changedFieldKeys,
+      }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+    }
+
+    if (validationMessages.length > 0 || !preparedUpdates) {
       errors.push({
         rowNumber,
         title: getRecordTitle(existingRow),
-        message,
+        message: [...new Set(validationMessages)].join(' '),
         id: existingRow.id,
-        fieldKeys: getImportErrorFieldKeys({
-          message,
-          record: candidate,
-          activeReport,
-          fallbackFieldKeys: changedFieldKeys,
-        }),
+        fieldKeys: [...validationFieldKeys],
       })
+      return
+    }
+
+    validRecords.push(preparedUpdates)
+    if (mode === 'replaceData') {
+      expectedRowVersions.push({ id: existingRow.id, version: expectedRowVersion })
     }
   })
 
@@ -309,7 +348,7 @@ function applyPreparedDerivedUpdates(
   changedKeys: string[],
 ) {
   const changedKeySet = new Set(changedKeys)
-  const wdiInputTouched = ['d1', 'd2', 't1', 't2', 'wdi'].some((key) => changedKeySet.has(key))
+  const wdiInputTouched = ['connectionType', 'd1', 'd2', 't1', 't2', 'wdi'].some((key) => changedKeySet.has(key))
   if (wdiInputTouched && normalizePreviewValue(prepared.wdi) !== normalizePreviewValue(existingRow.wdi)) {
     updates.wdi = prepared.wdi
   }
@@ -371,34 +410,63 @@ function validateReportImportRecords(
 ) {
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
+  const saveCheckSettings = loadSaveCheckSettings()
+  const systemIndexSettings = loadSystemIndexSettings()
 
   records.forEach((record, index) => {
+    const candidate = { ...withOfficialJointStatus(record) }
+    const validationMessages: string[] = []
+    const validationFieldKeys = new Set<WeldFieldKey>()
+    const jointNameReason = saveCheckSettings.manualJointName
+      ? validateManualJointName(candidate.joint, systemIndexSettings)
+      : null
+    if (jointNameReason) {
+      validationMessages.push(formatSaveCheckBlockReason('manualJointName', jointNameReason))
+      validationFieldKeys.add('joint')
+    }
+    const missingIdentityFields = getMissingWeldImportIdentityFields(candidate)
+    if (missingIdentityFields.length > 0) {
+      validationMessages.push(
+        `Обязательные поля не могут быть пустыми: ${missingIdentityFields.map(({ label }) => label).join(', ')}.`,
+      )
+      missingIdentityFields.forEach(({ fieldKey }) => validationFieldKeys.add(fieldKey))
+    }
+
+    let preparedRecord: ReportImportRecord | null = null
     try {
       const prepared = prepareImportedWeldRecords({
-        records: [{ ...withOfficialJointStatus(record) }],
+        records: [candidate],
+        skipManualJointNameValidation: true,
         weldFormStampSelectOptions,
         welderStamps,
         welderStampSuspensions,
       })
-      const saveCheckSettings = loadSaveCheckSettings()
       assertNoLnkChronologyIssues(prepared, saveCheckSettings)
       assertNoPstoChronologyIssues(prepared, saveCheckSettings)
-      validRecords.push({ ...prepared[0], id: record.id })
+      preparedRecord = { ...prepared[0], id: record.id }
     } catch (error) {
       const message = getImportErrorMessage(error)
+      validationMessages.push(message)
+      getImportErrorFieldKeys({
+        message,
+        record,
+        activeReport,
+        fallbackFieldKeys: getRecordFallbackErrorFieldKeys(record, activeReport),
+      }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+    }
+
+    if (validationMessages.length > 0 || !preparedRecord) {
       errors.push({
         rowNumber: index + 2,
         title: getRecordTitle(record),
-        message,
+        message: [...new Set(validationMessages)].join(' '),
         id: record.id,
-        fieldKeys: getImportErrorFieldKeys({
-          message,
-          record,
-          activeReport,
-          fallbackFieldKeys: getRecordFallbackErrorFieldKeys(record, activeReport),
-        }),
+        fieldKeys: [...validationFieldKeys],
       })
+      return
     }
+
+    validRecords.push(preparedRecord)
   })
 
   return { validRecords, errors }

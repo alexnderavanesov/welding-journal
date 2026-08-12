@@ -20,6 +20,8 @@ describe('buildPstoResultCorrectionRow', () => {
 
     expect(updated.pstoDate).toBe('2026-07-21')
     expect(updated.heatTreatmentDiagram).toBe('Диаграмма №77')
+    expect(updated.pstoCreatedAt).toBeTruthy()
+    expect(updated.pstoUpdatedAt).toBeTruthy()
   })
 
   it('renames only the PSTO request with the matching name and date', () => {
@@ -48,5 +50,23 @@ describe('buildPstoResultCorrectionRow', () => {
     expect(updated[0]?.id).toBe(2)
     expect(updated[0]?.pstoRequest).toBe('Заявка пользователя новая')
     expect(updated[0]?.pstoRequestDate).toBe('2026-08-06')
+    expect(updated[0]?.pstoUpdatedAt).toBeTruthy()
+  })
+
+  it('keeps the first PSTO timestamp while updating the profile timestamp', () => {
+    const updated = buildPstoResultCorrectionRow({
+      record: {
+        id: 1,
+        pstoCreatedAt: '2026-07-01T10:00:00.000Z',
+        pstoDate: '2026-07-21',
+        pstoResult: 'проведено',
+        heatTreatmentDiagram: 'Диаграмма-001',
+      } as RowWithId,
+      action: 'renameDiagram',
+      diagramName: 'Диаграмма-002',
+    })
+
+    expect(updated.pstoCreatedAt).toBe('2026-07-01T10:00:00.000Z')
+    expect(updated.pstoUpdatedAt).toBeTruthy()
   })
 })

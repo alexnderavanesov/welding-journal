@@ -8,6 +8,7 @@ import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
   mergeWeldRecordsWithPrevious,
+  prepareServerWeldRecords,
   validateServerWeldRecords,
   type ServerWeldValidationContext,
 } from '@/server/weld-save-validation'
@@ -286,6 +287,35 @@ describe('validateServerWeldRecords', () => {
         responsible: 'Иванов',
       }),
     ])
+  })
+
+  it('recalculates system WDI when only the connection type changes', () => {
+    const previous = {
+      id: 6,
+      joint: 'F6',
+      connectionType: 'С17',
+      d1: 57,
+      d2: 108,
+      wdi: 4.25,
+    } as WeldJoint
+    const record = {
+      ...previous,
+      connectionType: 'У17',
+    } as unknown as WeldInput
+
+    prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        otherSettings: {
+          ...DEFAULT_OTHER_SETTINGS,
+          wdiCalculationMode: 'formula',
+        },
+      },
+    })
+
+    expect(record.wdi).toBe(2.24)
   })
 
   it('checks VIK chronology when only another NDT result is changed', () => {

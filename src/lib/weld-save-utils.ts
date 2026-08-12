@@ -1,6 +1,7 @@
 import {
   createWeldJoint,
   createWeldJoints,
+  massFillWeldJoints,
   replaceWeldJoints,
   updateWeldJoint,
   updateSystemWeldJoint,
@@ -58,15 +59,24 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
   errorMessage = 'Не удалось сохранить часть записей',
   options: {
     systemDocumentSequence?: SystemDocumentSequenceUpdate
-    importOperation?: 'massFill'
   } = {},
 ) {
   const savedRows = await updateWeldJoints({
     data: {
       records: records.map((record) => normalizeDateFieldsForSave(record)),
       systemDocumentSequence: options.systemDocumentSequence,
-      importOperation: options.importOperation,
     },
+  })
+  if (!savedRows.every(Boolean)) throw new Error(errorMessage)
+  return savedRows
+}
+
+export async function massFillWeldRowsOrThrow<T extends RowWithId>(
+  records: T[],
+  errorMessage = 'Не удалось сохранить часть записей массового заполнения',
+) {
+  const savedRows = await massFillWeldJoints({
+    data: { records: records.map((record) => normalizeDateFieldsForSave(record)) },
   })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
   return savedRows

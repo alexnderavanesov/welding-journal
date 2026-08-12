@@ -1,12 +1,13 @@
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
-export const PSTO_REQUEST_HIGHLIGHT_FIELDS = ['pstoRequest', 'pstoRequestDate', 'pstoCreatedAt'] as const satisfies readonly WeldFieldKey[]
+export const PSTO_REQUEST_HIGHLIGHT_FIELDS = ['pstoRequest', 'pstoRequestDate', 'pstoCreatedAt', 'pstoUpdatedAt'] as const satisfies readonly WeldFieldKey[]
 
 export const PSTO_RESULT_HIGHLIGHT_FIELDS = [
   'pstoDate',
   'pstoResult',
   'heatTreatmentDiagram',
   'pstoCreatedAt',
+  'pstoUpdatedAt',
 ] as const satisfies readonly WeldFieldKey[]
 
 export const PSTO_GENERATED_HIGHLIGHT_FIELDS = [

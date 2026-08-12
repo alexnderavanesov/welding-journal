@@ -14,6 +14,7 @@ export function expandHighlightFieldKeys(fieldKeys: WeldFieldKey[]) {
     expanded.has('heatTreatmentDiagram')
   ) {
     expanded.add('pstoCreatedAt')
+    expanded.add('pstoUpdatedAt')
   }
   if (
     LNK_METHODS.some(
@@ -26,6 +27,7 @@ export function expandHighlightFieldKeys(fieldKeys: WeldFieldKey[]) {
     )
   ) {
     expanded.add('lnkCreatedAt')
+    expanded.add('lnkUpdatedAt')
     expanded.add('finalStatus')
   }
   return [...expanded]

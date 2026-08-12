@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { FIELD_BY_KEY, FULL_EXCEL_HEADERS } from './weld-fields'
+import { FIELD_BY_KEY, FULL_EXCEL_HEADERS, type WeldField } from './weld-fields'
 import { hasReservedJointSystemPart, parseJointName, validateManualJointName } from './joint-name'
 import {
   appendImportedWelds,
@@ -14,6 +14,12 @@ import { emptyToNull, excelSerialDateToIso, parseBoolean, parseDate, parseImport
 import { parseWorkbook } from './weld-import-readers'
 import { parseWorksheetRows } from './weld-import-rows'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from './system-index-settings'
+import {
+  HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+  LNK_HIDDEN_FIELD_KEYS,
+  WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+} from './report-config'
+import { getAvailableWeldTableSections } from './weld-table-sections'
 
 const label = (key: string) => {
   const field = FIELD_BY_KEY.get(key as never)
@@ -43,6 +49,7 @@ describe('weld import/export', () => {
     expect(validateManualJointName('FB01')).toContain('отключен')
     expect(validateManualJointName('SB43', settingsWithLeadingLetterIndex)).toBeNull()
     expect(validateManualJointName('FБ01', settingsWithLeadingLetterIndex)).toContain('начинаться')
+    expect(validateManualJointName('FВ013', settingsWithLeadingLetterIndex)).toContain('кириллические символы')
     expect(validateManualJointName('FBC01', settingsWithLeadingLetterIndex)).toContain('начинаться')
 
     const emptyNameError = validateManualJointName('', settingsWithLeadingLetterIndex)
@@ -270,6 +277,48 @@ describe('weld import/export', () => {
     expect(FULL_EXCEL_HEADERS).not.toContain(label('createdAt'))
     expect(headers).toContain(label('createdAt'))
     expect(headers).toContain(label('joint'))
+  })
+
+  it('exports profile timestamps in full Moscow time', () => {
+    const fields = [
+      FIELD_BY_KEY.get('createdAt'),
+      FIELD_BY_KEY.get('weldingUpdatedAt'),
+    ].filter(Boolean) as WeldField[]
+    const [, row] = recordsToVisibleExportMatrix([
+      {
+        createdAt: '2026-08-12T12:22:36.000Z',
+        weldingUpdatedAt: '2026-08-12T13:05:07.000Z',
+      },
+    ], fields)
+
+    expect(row).toEqual(['12.08.26 15:22:36', '12.08.26 16:05:07'])
+  })
+
+  it('exports the corresponding timestamp pair in each main report', () => {
+    const reportCases = [
+      {
+        hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+        mergePstoSections: false,
+        expectedHeaders: ['Внесен сварка', 'Обновлен сварка'],
+      },
+      {
+        hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+        mergePstoSections: false,
+        expectedHeaders: ['Внесен ЛНК', 'Обновлен ЛНК'],
+      },
+      {
+        hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+        mergePstoSections: true,
+        expectedHeaders: ['Внесен ПСТО', 'Обновлен ПСТО'],
+      },
+    ]
+
+    for (const reportCase of reportCases) {
+      const fields = getAvailableWeldTableSections(reportCase).flatMap((section) => section.fields)
+      const [headers] = recordsToVisibleExportMatrix([], fields)
+      const timestampHeaders = headers.filter((header) => /^Внесен |^Обновлен /.test(String(header)))
+      expect(timestampHeaders).toEqual(reportCase.expectedHeaders)
+    }
   })
 
   it('imports the visible export shape produced by the app', () => {

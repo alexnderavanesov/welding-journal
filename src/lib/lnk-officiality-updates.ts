@@ -1,4 +1,5 @@
 import { hasRejectedLnkResult } from '@/lib/lnk-status'
+import { withTouchedLnkTimestamp } from '@/lib/lnk-field-updates'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 
 export function buildLnkOfficialityRows({
@@ -16,6 +17,6 @@ export function buildLnkOfficialityRows({
   }
   const nextStatus = status === 'unofficial' ? 'неофициальный' : null
   return records
-    .map((record) => ({ ...record, status: nextStatus }))
+    .map((record) => withTouchedLnkTimestamp({ ...record, status: nextStatus }))
     .filter((record, index) => String(records[index].status ?? '').trim() !== String(nextStatus ?? '').trim()) as RowWithId[]
 }

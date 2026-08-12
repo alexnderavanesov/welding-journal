@@ -9,8 +9,11 @@ const EXCLUDED_EXCEL_FIELD_KEYS = new Set([
   'materialId1',
   'materialId2',
   'createdAt',
+  'weldingUpdatedAt',
   'pstoCreatedAt',
+  'pstoUpdatedAt',
   'lnkCreatedAt',
+  'lnkUpdatedAt',
   'rkExposureConfirmedDiameter',
 ])
 

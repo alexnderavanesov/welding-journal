@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearCancelledRejectedLnkGeneratedData, clearDisabledLnkRequests, restoreActiveLnkCancelledResults } from './lnk-field-updates'
+import { clearCancelledRejectedLnkGeneratedData, clearDisabledLnkRequests, restoreActiveLnkCancelledResults, withTouchedLnkTimestamp } from './lnk-field-updates'
 import type { WeldInput } from './weld-fields'
 
 describe('clearCancelledRejectedLnkGeneratedData', () => {
@@ -140,5 +140,24 @@ describe('restoreActiveLnkCancelledResults', () => {
     } as WeldInput)
 
     expect(row.rkResult).toBe('отменен')
+  })
+})
+
+describe('withTouchedLnkTimestamp', () => {
+  it('keeps the first LNK timestamp and refreshes only the update timestamp', () => {
+    const row = withTouchedLnkTimestamp({
+      lnkCreatedAt: '2026-07-01T10:00:00.000Z',
+      lnkUpdatedAt: '2026-07-02T10:00:00.000Z',
+    } as WeldInput)
+
+    expect(row.lnkCreatedAt).toBe('2026-07-01T10:00:00.000Z')
+    expect(row.lnkUpdatedAt).not.toBe('2026-07-02T10:00:00.000Z')
+  })
+
+  it('initializes both LNK timestamps on the first profile action', () => {
+    const row = withTouchedLnkTimestamp({} as WeldInput)
+
+    expect(row.lnkCreatedAt).toBeTruthy()
+    expect(row.lnkUpdatedAt).toBe(row.lnkCreatedAt)
   })
 })

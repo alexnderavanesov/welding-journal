@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_OTHER_SETTINGS, saveOtherSettings } from './other-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, saveSaveCheckSettings } from './save-check-settings'
 import {
   buildImportTemplateXlsxBytes,
   buildMassFillTemplateXlsxBytes,
@@ -59,6 +60,7 @@ const WELDING_MATERIAL_KEYS = [
 describe('welding journal import template', () => {
   afterEach(() => {
     saveOtherSettings(DEFAULT_OTHER_SETTINGS)
+    saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
   })
 
   it('keeps work code and acceptance fields editable in the welding journal import', () => {
@@ -166,6 +168,98 @@ describe('welding journal import template', () => {
 
   it('marks configured test types as a checked import field', () => {
     expect(getReportImportCellKind('weldingJournal', 'testTypes')).toBe('checked')
+  })
+
+  it('colors official stamp checks from the current save-check settings', () => {
+    const withoutOfficialChecks = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      officialRegistry: false,
+      officialArchive: false,
+      officialNaksDate: false,
+      officialSuspension: false,
+      officialWeldingMethod: false,
+      officialMaterialGroup: false,
+      officialDiameter: false,
+      officialThickness: false,
+      officialDls: false,
+      requiredRootStampWithWeldDate: false,
+    }
+    saveSaveCheckSettings(withoutOfficialChecks)
+
+    expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('free')
+    expect(getReportImportCellKind('weldingJournal', 'stamp1KFact')).toBe('free')
+
+    saveSaveCheckSettings({ ...withoutOfficialChecks, requiredRootStampWithWeldDate: true })
+    expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
+    expect(getReportImportCellKind('weldingJournal', 'stamp1Z')).toBe('free')
+
+    saveSaveCheckSettings({ ...withoutOfficialChecks, officialArchive: true })
+    expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
+    expect(getReportImportCellKind('weldingJournal', 'stamp2O')).toBe('checked')
+  })
+
+  it('uses the current checks for yellow cells in all three templates', () => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      officialRegistry: false,
+      officialArchive: false,
+      officialNaksDate: false,
+      officialSuspension: false,
+      officialWeldingMethod: false,
+      officialMaterialGroup: false,
+      officialDiameter: false,
+      officialThickness: false,
+      officialDls: false,
+      requiredRootStampWithWeldDate: false,
+    })
+    const row = { id: 7, rowVersion: 'v1', joint: 'F7', stamp1K: null } as never
+
+    for (const bytes of [
+      buildImportTemplateXlsxBytes('weldingJournal'),
+      buildMassFillTemplateXlsxBytes('weldingJournal', [row]),
+      buildReplaceDataTemplateXlsxBytes('weldingJournal', [row]),
+    ]) {
+      const payload = new TextDecoder().decode(bytes)
+      const column = findTemplateHeaderColumn(payload, 'Корень_1')
+      expect(column).toBeTruthy()
+      expect(payload).toContain(`<c r="${column}2" s="0"/>`)
+    }
+
+    saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
+    for (const bytes of [
+      buildImportTemplateXlsxBytes('weldingJournal'),
+      buildMassFillTemplateXlsxBytes('weldingJournal', [row]),
+      buildReplaceDataTemplateXlsxBytes('weldingJournal', [row]),
+    ]) {
+      const payload = new TextDecoder().decode(bytes)
+      const column = findTemplateHeaderColumn(payload, 'Корень_1')
+      expect(column).toBeTruthy()
+      expect(payload).toContain(`<c r="${column}2" s="3"/>`)
+    }
+  })
+
+  it('marks thicknesses yellow when a thickness rule or table WDI uses them', () => {
+    saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialThickness: false })
+    expect(getReportImportCellKind('weldingJournal', 't1')).toBe('free')
+    expect(getReportImportCellKind('weldingJournal', 't2')).toBe('free')
+
+    saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
+    expect(getReportImportCellKind('weldingJournal', 't1')).toBe('checked')
+
+    saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialThickness: false })
+    saveOtherSettings({
+      ...DEFAULT_OTHER_SETTINGS,
+      wdiCalculationMode: 'table',
+      wdiTable: {
+        fileName: 'wdi.xlsx',
+        uploadedAt: '2026-08-12T00:00:00.000Z',
+        diameters: [100],
+        thicknesses: [10],
+        values: [[3.94]],
+      },
+    })
+    expect(getReportImportCellKind('weldingJournal', 't1')).toBe('checked')
+    expect(getReportImportCellKind('weldingJournal', 't2')).toBe('checked')
   })
 
   it('keeps virtual system fields out of import templates and ignores manual input', () => {

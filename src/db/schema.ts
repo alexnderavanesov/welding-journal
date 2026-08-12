@@ -138,7 +138,9 @@ export const weldJoints = pgTable(
     pstoBoq: text('psto_boq'),
     pstoKs3: text('psto_ks3'),
     pstoCreatedAt: timestamp('psto_created_at', { withTimezone: true }),
+    pstoUpdatedAt: timestamp('psto_updated_at', { withTimezone: true }),
     lnkCreatedAt: timestamp('lnk_created_at', { withTimezone: true }),
+    lnkUpdatedAt: timestamp('lnk_updated_at', { withTimezone: true }),
     vikBoq: text('vik_boq'),
     vikKs3: text('vik_ks3'),
     rkBoq: text('rk_boq'),
@@ -156,6 +158,7 @@ export const weldJoints = pgTable(
     mkkBoq: text('mkk_boq'),
     mkkKs3: text('mkk_ks3'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    weldingUpdatedAt: timestamp('welding_updated_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

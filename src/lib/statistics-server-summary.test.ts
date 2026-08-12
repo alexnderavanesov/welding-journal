@@ -1,12 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildLineSummary } from '@/lib/line-summary'
+import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
 import { buildStatisticsServerResult } from '@/lib/statistics-server-summary'
 import { buildStatisticsSummary } from '@/lib/statistics-summary'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
+import { prepareReportRows } from '@/lib/use-report-rows'
 import { buildWeldingDynamics } from '@/lib/welding-dynamics'
 
 describe('buildStatisticsServerResult', () => {
+  it('uses the current system WDI rule for stored rows before building statistics', () => {
+    const rows = prepareReportRows(
+      [
+        makeRow(1, { connectionType: 'С17', d1: 50.8, d2: 101.6, wdi: 2 }),
+        makeRow(2, { connectionType: 'У17', d1: 50.8, d2: 101.6, wdi: 4 }),
+      ],
+      [],
+      undefined,
+      undefined,
+      { ...DEFAULT_OTHER_SETTINGS, wdiCalculationMode: 'formula' },
+    )
+
+    expect(rows.map((row) => row.wdi)).toEqual([4, 2])
+    const result = buildStatisticsServerResult({
+      rows,
+      welderStamps: [],
+      systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
+      request: { tab: 'general', unit: 'wdi' },
+    })
+    expect(result.summary.totalRows).toBe(6)
+  })
+
   it('keeps the existing statistics formulas while removing source rows from the response', () => {
     const rows = [
       makeRow(1, { projectTitle: 'Проект А', subtitleCode: '400', joint: 'F1', wdi: '2.5' }),
@@ -120,6 +144,10 @@ describe('buildStatisticsServerResult', () => {
 
     expect(result.summary.completedRepairs).toBe(1)
     expect(result.generalProgressSummary.total).toBe(1)
+    expect(result.weldingDynamics.jointTypes).toEqual([
+      { key: 's', code: 'A', label: 'A · база', value: 0 },
+      { key: 'f', code: 'B', label: 'B · поле', value: 2 },
+    ])
   })
 
   it('does not count a configured repeated joint as a primary percentage-line rejection', () => {

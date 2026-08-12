@@ -71,7 +71,10 @@ export function validateJointNameStructure(
 
   const prefixMatch = normalized.match(getJointPrefixPattern(settings))
   if (!prefixMatch) {
-    return `Стык должен ${startRequirement}.`
+    const cyrillicHint = /[А-ЯЁ]/i.test(normalized)
+      ? ' Используйте латинские буквы: похожие кириллические символы, например «В» вместо «B», считаются другими символами.'
+      : ''
+    return `Стык должен ${startRequirement}.${cyrillicHint}`
   }
 
   const tail = normalized.slice(prefixMatch[1].length)

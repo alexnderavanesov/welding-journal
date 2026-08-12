@@ -43,9 +43,9 @@ export type ReportImportDialogProps = {
   welderStampSuspensions: WelderStampSuspensionRecord[]
   columnFilters: Record<string, string>
   onClose: () => void
-  onImportRecords: (records: WeldInput[], skippedRows: number) => Promise<void>
-  onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) => Promise<void>
-  onReplaceDataRecords: (records: ReportImportRecord[], skippedRows: number, expectedVersions: WeldRowVersionTarget[]) => Promise<void>
+  onImportRecords: (records: WeldInput[], skippedRows: number) => Promise<boolean>
+  onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) => Promise<boolean>
+  onReplaceDataRecords: (records: ReportImportRecord[], skippedRows: number, expectedVersions: WeldRowVersionTarget[]) => Promise<boolean>
 }
 
 export function ReportImportDialog({
@@ -182,15 +182,21 @@ export function ReportImportDialog({
   const handleImport = async () => {
     if (!preview || preview.validRecords.length === 0) return
     if (mode === 'replaceData' && preview.errors.length > 0) return
-    if (mode === 'replaceData') {
-      await onReplaceDataRecords(preview.validRecords, preview.skippedRows, preview.expectedRowVersions ?? [])
-    } else if (mode === 'massFill') {
-      await onMassFillRecords(preview.validRecords, preview.skippedRows)
-    } else {
-      await onImportRecords(preview.validRecords, preview.skippedRows)
+    setReadError(null)
+    try {
+      const saved = mode === 'replaceData'
+        ? await onReplaceDataRecords(preview.validRecords, preview.skippedRows, preview.expectedRowVersions ?? [])
+        : mode === 'massFill'
+          ? await onMassFillRecords(preview.validRecords, preview.skippedRows)
+          : await onImportRecords(preview.validRecords, preview.skippedRows)
+      if (!saved) return
+      resetImportState()
+      onClose()
+    } catch (error) {
+      setReadError(
+        `Сохранение не выполнено. ${error instanceof Error ? error.message : 'Сервер отклонил данные импорта.'}`,
+      )
     }
-    resetImportState()
-    onClose()
   }
 
   const handleFixPreviewErrors = () => {

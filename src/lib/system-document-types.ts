@@ -342,7 +342,14 @@ export function buildSystemDocumentRenameRows(
       renameField('heatTreatmentDiagram', 'pstoDate')
     }
 
-    return nextRow ? [nextRow] : []
+    const renamedRow = nextRow as WeldRow | null
+    if (!renamedRow) return []
+    const updatedAt = new Date().toISOString()
+    return [
+      reference.type.startsWith('lnk')
+        ? { ...renamedRow, lnkUpdatedAt: updatedAt }
+        : { ...renamedRow, pstoUpdatedAt: updatedAt },
+    ]
   })
 
   return {

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import {
+  persistProjectSettingToRemote,
+  persistProjectSettingToRemoteAndWait,
+  PROJECT_SETTING_KEYS,
+} from '@/lib/project-settings-remote'
 
 export const OTHER_SETTINGS_EVENT = 'other-settings-change'
 
@@ -8,6 +12,45 @@ let cachedOtherSettingsRaw: string | null | undefined
 let cachedOtherSettings: OtherSettings | undefined
 
 export type WdiCalculationMode = 'manual' | 'formula' | 'table'
+export type WdiDiameterSelection = 'min' | 'max'
+export type WdiThicknessSelection = 'linked' | 'min' | 'max'
+export type WdiEqualDiameterThicknessSelection = 'min' | 'max'
+
+export type WdiConnectionCalculationRule = {
+  diameter: WdiDiameterSelection
+  thickness: WdiThicknessSelection
+  equalDiameterThickness: WdiEqualDiameterThicknessSelection
+}
+
+export type WdiCalculationRules = {
+  branch: WdiConnectionCalculationRule
+  other: WdiConnectionCalculationRule
+}
+
+export const DEFAULT_WDI_CALCULATION_RULES: WdiCalculationRules = {
+  branch: {
+    diameter: 'min',
+    thickness: 'linked',
+    equalDiameterThickness: 'min',
+  },
+  other: {
+    diameter: 'max',
+    thickness: 'linked',
+    equalDiameterThickness: 'max',
+  },
+}
+
+export const WDI_CALCULATION_RULE_PRESETS = {
+  current: DEFAULT_WDI_CALCULATION_RULES,
+  minimum: {
+    branch: { diameter: 'min', thickness: 'min', equalDiameterThickness: 'min' },
+    other: { diameter: 'min', thickness: 'min', equalDiameterThickness: 'min' },
+  },
+  maximum: {
+    branch: { diameter: 'max', thickness: 'max', equalDiameterThickness: 'max' },
+    other: { diameter: 'max', thickness: 'max', equalDiameterThickness: 'max' },
+  },
+} satisfies Record<string, WdiCalculationRules>
 
 export type WdiTableSettings = {
   fileName: string
@@ -36,13 +79,17 @@ export type RkExposureTableSettings = {
 export type OtherSettings = {
   requireDlsForOfficialStamps: boolean
   wdiCalculationMode: WdiCalculationMode
+  wdiCalculationRules: WdiCalculationRules
   wdiTable: WdiTableSettings | null
   rkExposureTable: RkExposureTableSettings | null
 }
 
+type OtherSettingsInput = Omit<OtherSettings, 'wdiCalculationRules'> & Partial<Pick<OtherSettings, 'wdiCalculationRules'>>
+
 export const DEFAULT_OTHER_SETTINGS: OtherSettings = {
   requireDlsForOfficialStamps: false,
   wdiCalculationMode: 'manual',
+  wdiCalculationRules: DEFAULT_WDI_CALCULATION_RULES,
   wdiTable: null,
   rkExposureTable: null,
 }
@@ -78,7 +125,7 @@ export function loadOtherSettings(): OtherSettings {
   }
 }
 
-export function saveOtherSettings(settings: OtherSettings, options: { syncRemote?: boolean } = {}) {
+export function saveOtherSettings(settings: OtherSettingsInput, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeOtherSettings(settings)
   const serializedSettings = JSON.stringify(normalizedSettings)
@@ -87,6 +134,13 @@ export function saveOtherSettings(settings: OtherSettings, options: { syncRemote
   window.localStorage.setItem(OTHER_SETTINGS_STORAGE_KEY, serializedSettings)
   window.dispatchEvent(new Event(OTHER_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.other, normalizedSettings)
+}
+
+export async function saveOtherSettingsAndWait(settings: OtherSettingsInput) {
+  if (typeof window === 'undefined') return
+  const normalizedSettings = normalizeOtherSettings(settings)
+  saveOtherSettings(normalizedSettings, { syncRemote: false })
+  await persistProjectSettingToRemoteAndWait(PROJECT_SETTING_KEYS.other, normalizedSettings)
 }
 
 export function applyRemoteOtherSettings(settings: unknown) {
@@ -105,8 +159,36 @@ export function normalizeOtherSettings(value: unknown): OtherSettings {
   return {
     requireDlsForOfficialStamps: source.requireDlsForOfficialStamps === true,
     wdiCalculationMode: wdiCalculationMode === 'table' && !wdiTable ? 'manual' : wdiCalculationMode,
+    wdiCalculationRules: normalizeWdiCalculationRules(source.wdiCalculationRules),
     wdiTable,
     rkExposureTable,
+  }
+}
+
+export function normalizeWdiCalculationRules(value: unknown): WdiCalculationRules {
+  const source = value && typeof value === 'object' ? value as Partial<Record<keyof WdiCalculationRules, unknown>> : {}
+  return {
+    branch: normalizeWdiConnectionCalculationRule(source.branch, DEFAULT_WDI_CALCULATION_RULES.branch),
+    other: normalizeWdiConnectionCalculationRule(source.other, DEFAULT_WDI_CALCULATION_RULES.other),
+  }
+}
+
+function normalizeWdiConnectionCalculationRule(
+  value: unknown,
+  fallback: WdiConnectionCalculationRule,
+): WdiConnectionCalculationRule {
+  const source = value && typeof value === 'object'
+    ? value as Partial<Record<keyof WdiConnectionCalculationRule, unknown>>
+    : {}
+  return {
+    diameter: source.diameter === 'min' || source.diameter === 'max' ? source.diameter : fallback.diameter,
+    thickness: source.thickness === 'linked' || source.thickness === 'min' || source.thickness === 'max'
+      ? source.thickness
+      : fallback.thickness,
+    equalDiameterThickness:
+      source.equalDiameterThickness === 'min' || source.equalDiameterThickness === 'max'
+        ? source.equalDiameterThickness
+        : fallback.equalDiameterThickness,
   }
 }
 

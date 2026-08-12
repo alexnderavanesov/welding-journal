@@ -18,6 +18,7 @@ import {
   DEFAULT_SYSTEM_INDEX_SETTINGS,
   normalizeSystemIndexSettings,
 } from '@/lib/system-index-settings'
+import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings } from '@/lib/other-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { toWelderStampPayload } from '@/server/welder-stamps'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
@@ -38,6 +39,11 @@ const STATISTICS_ROW_SELECT = {
   revisionActuality: weldJoints.revisionActuality,
   wdi: weldJoints.wdi,
   materialGroup: weldJoints.materialGroup,
+  connectionType: weldJoints.connectionType,
+  d1: weldJoints.d1,
+  d2: weldJoints.d2,
+  t1: weldJoints.t1,
+  t2: weldJoints.t2,
   stamp1K: weldJoints.stamp1K,
   stamp1Z: weldJoints.stamp1Z,
   stamp1O: weldJoints.stamp1O,
@@ -112,7 +118,7 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
     await assertSecurityScope('entry')
     return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v3', data),
+      buildDerivedCalculationCacheKey('statistics:v7', data),
       () => computeStatisticsServerResult(data),
     )
   })
@@ -136,7 +142,10 @@ async function computeStatisticsServerResult(
     data.tab === 'welders'
       ? db.select().from(welderStamps).orderBy(asc(welderStamps.id))
       : Promise.resolve([]),
-    db.select().from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex)),
+    db
+      .select()
+      .from(appSettings)
+      .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other])),
   ])
   const sourceIds = sourceRows.map((row) => row.id)
   const duplicateRows = sourceIds.length > 0
@@ -154,7 +163,16 @@ async function computeStatisticsServerResult(
         )
       ).flat()
     : []
-  const rows = prepareReportRows(sourceRows, duplicateRows.map(toDuplicateControlRecord))
+  const otherSettings = normalizeOtherSettings(
+    getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.other) ?? DEFAULT_OTHER_SETTINGS,
+  )
+  const rows = prepareReportRows(
+    sourceRows,
+    duplicateRows.map(toDuplicateControlRecord),
+    undefined,
+    undefined,
+    otherSettings,
+  )
   const systemIndexSettings = normalizeSystemIndexSettings(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.systemIndex) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
   )

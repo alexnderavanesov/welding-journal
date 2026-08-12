@@ -45,6 +45,7 @@ export const LNK_CONCLUSIONS_FIELDS = [
 
 export const LNK_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
   'lnkCreatedAt',
+  'lnkUpdatedAt',
   'vikBoq',
   'vikKs3',
   'rkBoq',
@@ -85,7 +86,7 @@ export const LNK_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const LNK_EDITABLE_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
-  ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt'),
+  ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt' && fieldKey !== 'lnkUpdatedAt'),
 ])
 export const LNK_REQUEST_FIELD_KEYS = LNK_METHODS.map((method) => method.requestKey)
 export const LNK_REQUEST_DATE_FIELD_KEYS = LNK_METHODS.map((method) => method.requestDateKey)
@@ -94,7 +95,6 @@ export const LNK_GENERATED_FIELD_KEYS = new Set<WeldFieldKey>([
   'lnkDefectDescription',
   'rkExposureConfirmedDiameter',
   'lnkNote',
-  'lnkCreatedAt',
 ])
 export const LNK_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_EDITABLE_REPORT_FIELD_KEYS,

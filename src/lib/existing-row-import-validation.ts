@@ -43,8 +43,8 @@ export function assertExistingRowsImportPayload({
       }
 
       if (field.key === 'wdi' && isSystemWdiMode(otherSettings)) {
-        const hasDimensionUpdate = ['d1', 'd2', 't1', 't2'].some((key) => Object.hasOwn(record, key))
-        if (!hasDimensionUpdate) throwLockedFieldError(rowNumber, field.label)
+        const hasWdiInputUpdate = ['connectionType', 'd1', 'd2', 't1', 't2'].some((key) => Object.hasOwn(record, key))
+        if (!hasWdiInputUpdate) throwLockedFieldError(rowNumber, field.label)
         continue
       }
 

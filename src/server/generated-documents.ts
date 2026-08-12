@@ -6,13 +6,16 @@ import { appSettings, generatedDocuments, generatedDocumentWeldJoints, weldJoint
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildGeneratedDocumentAssignmentPlan } from '@/lib/generated-document-assignment'
 import { resolveGeneratedDocumentNamePattern } from '@/lib/generated-document-naming'
-
 import {
   GENERATED_DOCUMENT_TYPES,
   getGeneratedDocumentProfile,
   isGeneratedDocumentType,
   type GeneratedDocumentType,
 } from '@/lib/generated-document-types'
+import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings, type OtherSettings } from '@/lib/other-settings'
+import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import type { WeldInput } from '@/lib/weld-fields'
+import { calculateWdi, isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
 import { assertSecurityScope } from '@/server/security-functions'
 
@@ -61,7 +64,6 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).ha
       assignmentCount: count(generatedDocumentWeldJoints.weldJointId),
       periodFrom: min(weldJoints.weldDate),
       periodTo: max(weldJoints.weldDate),
-      wdiTotal: sql<number>`coalesce(sum(${weldJoints.wdi}), 0)::float`,
       projects: sql<string[]>`
         coalesce(
           array_agg(distinct ${weldJoints.projectTitle} order by ${weldJoints.projectTitle})
@@ -91,13 +93,14 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).ha
     .groupBy(generatedDocuments.id)
     .orderBy(sql`${generatedDocuments.updatedAt} desc`)
 
-  return records.map(({ document, assignmentCount, periodFrom, periodTo, wdiTotal, projects, subtitleCodes, lines }) =>
+  const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, records.map(({ document }) => document.id))
+  return records.map(({ document, assignmentCount, periodFrom, periodTo, projects, subtitleCodes, lines }) =>
     toRemoteGeneratedDocument({
       ...document,
       rowCount: Number(assignmentCount),
       periodFrom,
       periodTo,
-      wdiTotal,
+      wdiTotal: currentWdiTotals.get(document.id) ?? 0,
       projects,
       subtitleCodes,
       lines,
@@ -120,7 +123,12 @@ export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })
         ),
       )
       .limit(1)
-    return record ? toRemoteGeneratedDocument(record) : null
+    if (!record) return null
+    const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, [record.id])
+    return toRemoteGeneratedDocument({
+      ...record,
+      wdiTotal: currentWdiTotals.get(record.id) ?? record.wdiTotal,
+    })
   })
 
 export const saveRemoteGeneratedDocuments = createServerFn({ method: 'POST' })
@@ -130,9 +138,10 @@ export const saveRemoteGeneratedDocuments = createServerFn({ method: 'POST' })
     const db = requireDb()
     return db.transaction(async (tx) => {
       const numberSequence = await lockGeneratedDocumentNumberSequence(tx, data[0].type)
+      const otherSettings = await loadGeneratedDocumentOtherSettings(tx)
       const savedDocuments: RemoteGeneratedDocument[] = []
       for (const input of data) {
-        savedDocuments.push(await saveGeneratedDocumentInTransaction(tx, input, numberSequence))
+        savedDocuments.push(await saveGeneratedDocumentInTransaction(tx, input, numberSequence, otherSettings))
       }
       await numberSequence.persist()
       return savedDocuments
@@ -166,8 +175,10 @@ async function saveGeneratedDocumentInTransaction(
   tx: GeneratedDocumentsTransaction,
   data: SaveGeneratedDocumentInput,
   numberSequence: GeneratedDocumentNumberSequence,
+  otherSettings: OtherSettings,
 ): Promise<RemoteGeneratedDocument> {
   const selectedIds = data.weldJointIds
+  const currentWdiTotal = await calculateWeldJointWdiTotal(tx, selectedIds, otherSettings)
   const existingAssignments = await tx
     .select({
       documentId: generatedDocumentWeldJoints.documentId,
@@ -220,7 +231,7 @@ async function saveGeneratedDocumentInTransaction(
         periodFrom: data.periodFrom || null,
         periodTo: data.periodTo || null,
         rowCount: selectedIds.length,
-        wdiTotal: data.wdiTotal ?? null,
+        wdiTotal: currentWdiTotal,
         documentNumber,
         updatedAt: now,
       })
@@ -237,7 +248,7 @@ async function saveGeneratedDocumentInTransaction(
         periodFrom: data.periodFrom || null,
         periodTo: data.periodTo || null,
         rowCount: selectedIds.length,
-        wdiTotal: data.wdiTotal ?? null,
+        wdiTotal: currentWdiTotal,
         documentNumber,
       })
       .returning()
@@ -261,12 +272,11 @@ async function saveGeneratedDocumentInTransaction(
 
   const staleDocumentIds = assignmentPlan.affectedDocumentIds.filter((id) => id !== targetDocumentId)
   for (const staleDocumentId of staleDocumentIds) {
-    const [{ total, periodFrom, periodTo, wdiTotal }] = await tx
+    const [{ total, periodFrom, periodTo }] = await tx
       .select({
         total: count(),
         periodFrom: min(weldJoints.weldDate),
         periodTo: max(weldJoints.weldDate),
-        wdiTotal: sql<number>`coalesce(sum(${weldJoints.wdi}), 0)::float`,
       })
       .from(generatedDocumentWeldJoints)
       .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
@@ -274,18 +284,25 @@ async function saveGeneratedDocumentInTransaction(
     if (Number(total) === 0) {
       await tx.delete(generatedDocuments).where(eq(generatedDocuments.id, staleDocumentId))
     } else {
+      const currentStaleWdiTotal = await calculateGeneratedDocumentWdiTotals(
+        tx,
+        [staleDocumentId],
+        otherSettings,
+      )
       await tx
         .update(generatedDocuments)
         .set({
           rowCount: Number(total),
           periodFrom,
           periodTo,
-          wdiTotal,
+          wdiTotal: currentStaleWdiTotal.get(staleDocumentId) ?? 0,
           updatedAt: now,
         })
         .where(eq(generatedDocuments.id, staleDocumentId))
-    }
+      }
   }
+
+  await touchWeldingProfile(tx, selectedIds, now)
 
   return toRemoteGeneratedDocument(saved)
 }
@@ -308,8 +325,12 @@ export const getRemoteGeneratedDocumentRows = createServerFn({ method: 'GET' })
       .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
       .where(eq(generatedDocumentWeldJoints.documentId, data.id))
       .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+    const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+    const currentRows = rows.map(({ weld }) => weld as unknown as WeldRow)
     return attachGeneratedDocumentFields(
-      rows.map(({ weld }) => weld as unknown as WeldRow),
+      isSystemWdiMode(otherSettings)
+        ? currentRows.map((row) => withSystemWdi(row, otherSettings))
+        : currentRows,
     )
   })
 
@@ -318,14 +339,31 @@ export const deleteRemoteGeneratedDocument = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     await assertSecurityScope('delete')
     const db = requireDb()
-    await db
-      .delete(generatedDocuments)
-      .where(
-        and(
-          eq(generatedDocuments.id, data.id),
-          inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
-        ),
-      )
+    await db.transaction(async (tx) => {
+      const assignedRows = await tx
+        .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+        .from(generatedDocumentWeldJoints)
+        .innerJoin(
+          generatedDocuments,
+          and(
+            eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
+            inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+          ),
+        )
+        .where(eq(generatedDocumentWeldJoints.documentId, data.id))
+      const [deleted] = await tx
+        .delete(generatedDocuments)
+        .where(
+          and(
+            eq(generatedDocuments.id, data.id),
+            inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+          ),
+        )
+        .returning({ id: generatedDocuments.id })
+      if (deleted) {
+        await touchWeldingProfile(tx, assignedRows.map((row) => row.weldJointId))
+      }
+    })
     return { ok: true }
   })
 
@@ -478,6 +516,82 @@ function parsePositiveIntegerSetting(value: string | undefined) {
   } catch {
     return null
   }
+}
+
+async function loadGeneratedDocumentOtherSettings(
+  db: Pick<ReturnType<typeof requireDb>, 'select'>,
+) {
+  const [setting] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, PROJECT_SETTING_KEYS.other))
+    .limit(1)
+  if (!setting?.value) return DEFAULT_OTHER_SETTINGS
+  try {
+    return normalizeOtherSettings(JSON.parse(setting.value))
+  } catch {
+    return DEFAULT_OTHER_SETTINGS
+  }
+}
+
+async function calculateGeneratedDocumentWdiTotals(
+  db: Pick<ReturnType<typeof requireDb>, 'select'>,
+  documentIds: number[],
+  settings?: OtherSettings,
+) {
+  const totals = new Map(documentIds.map((documentId) => [documentId, 0]))
+  if (documentIds.length === 0) return totals
+  const otherSettings = settings ?? await loadGeneratedDocumentOtherSettings(db)
+  const rows = await db
+    .select({
+      documentId: generatedDocumentWeldJoints.documentId,
+      connectionType: weldJoints.connectionType,
+      d1: weldJoints.d1,
+      d2: weldJoints.d2,
+      t1: weldJoints.t1,
+      t2: weldJoints.t2,
+      wdi: weldJoints.wdi,
+    })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
+    .where(inArray(generatedDocumentWeldJoints.documentId, documentIds))
+
+  for (const row of rows) {
+    totals.set(row.documentId, (totals.get(row.documentId) ?? 0) + (calculateWdi(row as WeldInput, otherSettings) ?? 0))
+  }
+  return totals
+}
+
+async function calculateWeldJointWdiTotal(
+  db: Pick<ReturnType<typeof requireDb>, 'select'>,
+  weldJointIds: number[],
+  settings: OtherSettings,
+) {
+  const rows = await db
+    .select({
+      connectionType: weldJoints.connectionType,
+      d1: weldJoints.d1,
+      d2: weldJoints.d2,
+      t1: weldJoints.t1,
+      t2: weldJoints.t2,
+      wdi: weldJoints.wdi,
+    })
+    .from(weldJoints)
+    .where(inArray(weldJoints.id, weldJointIds))
+  return rows.reduce((sum, row) => sum + (calculateWdi(row as WeldInput, settings) ?? 0), 0)
+}
+
+async function touchWeldingProfile(
+  db: Pick<ReturnType<typeof requireDb>, 'update'>,
+  weldJointIds: number[],
+  now = new Date(),
+) {
+  const uniqueIds = [...new Set(weldJointIds)]
+  if (uniqueIds.length === 0) return
+  await db
+    .update(weldJoints)
+    .set({ weldingUpdatedAt: now, updatedAt: now })
+    .where(inArray(weldJoints.id, uniqueIds))
 }
 
 function requireGeneratedDocumentType(value: unknown): GeneratedDocumentType {

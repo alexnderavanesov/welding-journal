@@ -9,6 +9,7 @@ import { buildPercentageLineStampFilters, buildRowIdListFilters } from '@/lib/re
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
+  groupWeldDateTimeFilterOptions,
   sortWeldDateTimeFilterOptions,
 } from '@/lib/weld-table-filtering'
 
@@ -174,7 +175,7 @@ describe('filterWeldRowsByColumns', () => {
 })
 
 describe('sortWeldDateTimeFilterOptions', () => {
-  it('keeps empty first and orders timestamps from newest to oldest', () => {
+  it('orders timestamps from newest to oldest and keeps empty last', () => {
     const options = [
       { value: '2026-07-10 19:12:11.247669+00', label: '2026-07-10 19:12:11.247669+00' },
       { value: '', label: '(пусто)' },
@@ -183,10 +184,38 @@ describe('sortWeldDateTimeFilterOptions', () => {
     ]
 
     expect(sortWeldDateTimeFilterOptions(options).map((option) => option.value)).toEqual([
-      '',
       '2026-08-09 19:49:49.396316+00',
       '2026-07-15 16:29:25.23301+00',
       '2026-07-10 19:12:11.247669+00',
+      '',
+    ])
+  })
+
+  it('groups timestamps displayed within the same second', () => {
+    const options = [
+      { value: '2026-08-09 19:49:49.396316+00', label: 'first', count: 3 },
+      { value: '2026-08-09 19:49:49.112345+00', label: 'second', count: 5 },
+      { value: '2026-08-09 19:48:02.000000+00', label: 'third', count: 2 },
+      { value: '', label: '(пусто)', count: 1 },
+    ]
+
+    expect(groupWeldDateTimeFilterOptions(options)).toEqual([
+      {
+        value: '2026-08-09 19:49:49.396316+00',
+        label: '09.08.26 22:49:49',
+        count: 8,
+        values: [
+          '2026-08-09 19:49:49.396316+00',
+          '2026-08-09 19:49:49.112345+00',
+        ],
+      },
+      {
+        value: '2026-08-09 19:48:02.000000+00',
+        label: '09.08.26 22:48:02',
+        count: 2,
+        values: ['2026-08-09 19:48:02.000000+00'],
+      },
+      { value: '', label: '(пусто)', count: 1, values: [''] },
     ])
   })
 })

@@ -12,6 +12,7 @@ import { createKeyedTaskQueue } from '@/lib/keyed-task-queue'
 import {
   PROJECT_SETTING_KEYS,
   PROJECT_SETTING_REMOTE_PERSIST_EVENT,
+  projectSettingAffectsDerivedCalculations,
   projectSettingAffectsDispatcherIndex,
   type ProjectSettingRemotePersistDetail,
   type ProjectSettingKey,
@@ -24,6 +25,7 @@ import {
   DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   STATISTICS_SERVER_QUERY_KEY,
+  WELD_JOINTS_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 
@@ -108,8 +110,12 @@ export function useProjectSettingsSync() {
             },
           })
           if (saved.updatedAt) revisionsRef.current[key] = saved.updatedAt
-          if (key === PROJECT_SETTING_KEYS.systemIndex) {
-            await queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
+          if (projectSettingAffectsDerivedCalculations(key)) {
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
+              queryClient.invalidateQueries({ queryKey: WELD_JOINTS_QUERY_KEY }),
+              queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+            ])
           }
           if (projectSettingAffectsDispatcherIndex(key)) {
             await Promise.all([

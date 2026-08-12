@@ -43,6 +43,7 @@ import {
   normalizeSystemIndexSettings,
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
+import { getMissingWeldImportIdentityFields } from '@/lib/weld-import-identity'
 
 type Db = ReturnType<typeof requireDb>
 type ValidationDb = Pick<Db, 'select'>
@@ -126,10 +127,15 @@ export function prepareServerWeldRecords({
 
   records.forEach((record, index) => {
     const previous = record.id ? previousRows.get(Number(record.id)) : undefined
-    const dimensionsChanged = !previous || ['d1', 'd2', 't1', 't2', 'wdi'].some(
+    const dimensionsChanged = !previous || ['connectionType', 'd1', 'd2', 't1', 't2'].some(
       (fieldKey) => normalizeComparable(record[fieldKey as WeldFieldKey]) !== normalizeComparable(previous[fieldKey as keyof WeldJoint]),
     )
-    if (!dimensionsChanged) return
+    const wdiChanged = !previous || normalizeComparable(record.wdi) !== normalizeComparable(previous.wdi)
+    if (!dimensionsChanged && !wdiChanged) return
+    if (previous && dimensionsChanged && !wdiChanged) {
+      applySystemWdi(record, context.otherSettings)
+      return
+    }
     const validationError = getSystemWdiValidationError(record, context.otherSettings)
     if (validationError) {
       const prefix = importMode
@@ -223,17 +229,8 @@ export function validateServerWeldRecords({
   })
 }
 
-const REQUIRED_IMPORT_IDENTITY_FIELDS: Array<[WeldFieldKey, string]> = [
-  ['projectTitle', 'Проект'],
-  ['subtitleCode', 'Шифр'],
-  ['line', 'Линия'],
-  ['joint', 'Стык'],
-]
-
 function validateRequiredImportIdentity(record: WeldInput, prefix: string) {
-  const missing = REQUIRED_IMPORT_IDENTITY_FIELDS
-    .filter(([fieldKey]) => !String(record[fieldKey] ?? '').trim())
-    .map(([, label]) => label)
+  const missing = getMissingWeldImportIdentityFields(record).map(({ label }) => label)
   if (missing.length > 0) {
     throw new Error(`${prefix}обязательные поля не могут быть пустыми: ${missing.join(', ')}.`)
   }
