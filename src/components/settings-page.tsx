@@ -98,6 +98,10 @@ import {
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import {
+  saveDispatcherBackgroundSettings,
+  useDispatcherBackgroundSettings,
+} from '@/lib/dispatcher-background-settings'
+import {
   DEFAULT_SYSTEM_INDEX_SETTINGS,
   getSystemIndexValidationError,
   normalizeSystemIndexLetter,
@@ -127,6 +131,10 @@ import {
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
 import {
+  getDispatcherSettingIdsForSaveCheck,
+  getSaveCheckSettingIdsForDispatcher,
+} from '@/lib/save-check-dispatcher-links'
+import {
   DEFAULT_SECURITY_SETTINGS,
   SERVER_SECURITY_PASSWORD_PLACEHOLDER,
   toLocalSecuritySettings,
@@ -144,10 +152,15 @@ import {
   revokeDispatcherAcceptedWarning,
 } from '@/server/dispatcher-warnings'
 import {
+  DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   WELD_JOINTS_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
 } from '@/lib/weld-query-utils'
+import {
+  getDispatcherBackgroundStatus,
+  refreshDispatcherBackgroundNow,
+} from '@/server/dispatcher-background-task-functions'
 import { getAcceptedWarningContextParts } from '@/lib/dispatcher-accepted-warning-display'
 
 const SETTINGS_TABS = [
@@ -175,16 +188,9 @@ const DANGEROUS_SAVE_CHECK_SETTING_IDS = new Set<SaveCheckSettingId>([
   'controlHistoryProtection',
   'systemJointRenameProtection',
 ])
-const DISPATCHER_INPUT_PROTECTED_TASK_IDS = new Set<DispatcherSettingId>([
-  'check-control-before-weld',
-  'check-repair-diameter',
-  'check-lnk-request-date-order',
-  'check-lnk-vik-date-order',
-  'check-psto-request-date-order',
-])
-
 const EMPTY_WELD_DATA_USAGE: WeldDataUsageSummary = {
   rowsCount: 0,
+  leadingLetterIndexedRowsCount: 0,
   weldingTypes: [],
   connectionTypes: [],
   materialGroups: [],
@@ -257,6 +263,7 @@ export function SettingsPage() {
             ) : (
               <SystemIndexesSettingsPanel
                 rowsCount={weldDataUsage.rowsCount}
+                leadingLetterIndexedRowsCount={weldDataUsage.leadingLetterIndexedRowsCount}
                 runProtectedSettingsChange={runProtectedSettingsChange}
               />
             )
@@ -422,13 +429,14 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
       setMessage('Пароли не совпадают')
       return
     }
-    await runProtectedSettingsChange(async () => {
+    const saved = await runProtectedSettingsChange(async () => {
       await persistSecuritySettings({
         ...settings,
         [SECURITY_PASSWORD_KEYS[scope]]: nextPassword,
         ...(enableAfterSave ? { [SECURITY_FLAG_KEYS[scope]]: true } : {}),
       })
     })
+    if (!saved) return
     setPasswordDrafts((current) => ({ ...current, [scope]: '' }))
     setRepeatDrafts((current) => ({ ...current, [scope]: '' }))
     setPasswordEditorOpen(scope, false)
@@ -440,20 +448,22 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
       setMessage('Сначала задайте пароль для этой защиты')
       return
     }
-    await runProtectedSettingsChange(async () => {
+    const saved = await runProtectedSettingsChange(async () => {
       await persistSecuritySettings({ ...settings, [SECURITY_FLAG_KEYS[scope]]: value })
     })
+    if (!saved) return
     setMessage(value ? 'Защита включена. Теперь в этом месте будет запрашиваться свой пароль.' : 'Защита выключена для этого действия.')
   }
 
   async function resetSecurityScope(scope: SecurityScope) {
-    await runProtectedSettingsChange(async () => {
+    const saved = await runProtectedSettingsChange(async () => {
       await persistSecuritySettings({
         ...settings,
         [SECURITY_PASSWORD_KEYS[scope]]: '',
         [SECURITY_FLAG_KEYS[scope]]: false,
       })
     })
+    if (!saved) return
     setPasswordDrafts((current) => ({ ...current, [scope]: '' }))
     setRepeatDrafts((current) => ({ ...current, [scope]: '' }))
     setPasswordEditorOpen(scope, false)
@@ -461,10 +471,11 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
   }
 
   async function resetSecurity() {
-    await runProtectedSettingsChange(async () => {
+    const saved = await runProtectedSettingsChange(async () => {
       clearSecuritySettings()
       await saveRemoteSecuritySettings({ data: DEFAULT_SECURITY_SETTINGS })
     })
+    if (!saved) return
     setPasswordDrafts({ entry: '', settings: '', edit: '', importReplace: '', documentGeneration: '', delete: '' })
     setRepeatDrafts({ entry: '', settings: '', edit: '', importReplace: '', documentGeneration: '', delete: '' })
     setEditingPasswordScopes(new Set())
@@ -1219,16 +1230,20 @@ const SYSTEM_INDEX_ROWS: Array<{
 
 function SystemIndexesSettingsPanel({
   rowsCount,
+  leadingLetterIndexedRowsCount,
   runProtectedSettingsChange,
 }: {
   rowsCount: number
+  leadingLetterIndexedRowsCount: number
   runProtectedSettingsChange: ProtectedSettingsChange
 }) {
   const settings = useSystemIndexSettings()
   const [draft, setDraft] = useState<SystemIndexSettings>(settings)
-  const canEdit = rowsCount === 0
+  const canEditIndexLetters = rowsCount === 0
   const validationError = getSystemIndexValidationError(draft)
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(settings)
+  const indexLettersChanged = SYSTEM_INDEX_ROWS.some((row) => draft[row.id] !== settings[row.id])
+  const canSave = hasChanges && !validationError && (canEditIndexLetters || !indexLettersChanged)
 
   useEffect(() => {
     setDraft(settings)
@@ -1241,10 +1256,13 @@ function SystemIndexesSettingsPanel({
     }))
   }
 
-  const resetDraft = () => runProtectedSettingsChange(() => setDraft(DEFAULT_SYSTEM_INDEX_SETTINGS))
+  const resetDraft = () => runProtectedSettingsChange(() => setDraft((current) => ({
+    ...DEFAULT_SYSTEM_INDEX_SETTINGS,
+    allowLeadingLetterIndex: current.allowLeadingLetterIndex,
+  })))
 
   const saveDraft = async () => {
-    if (!canEdit || validationError) return
+    if (!canSave) return
     await runProtectedSettingsChange(() => saveSystemIndexSettings(draft))
   }
 
@@ -1261,14 +1279,14 @@ function SystemIndexesSettingsPanel({
               Индексы используются в именах стыков, задачах диспетчера, проверках цепочек, импорте и статистике. Менять их можно только до
               появления первого стыка в проекте.
             </p>
-            <div className={`mt-3 inline-flex rounded-md border px-3 py-1.5 text-xs font-semibold ${canEdit ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
-              {canEdit ? 'Проект пустой: редактирование доступно' : `Редактирование закрыто: в проекте стыков ${rowsCount}`}
+            <div className={`mt-3 inline-flex rounded-md border px-3 py-1.5 text-xs font-semibold ${canEditIndexLetters ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+              {canEditIndexLetters ? 'Проект пустой: буквы можно изменить' : `Буквы индексов закреплены: в проекте стыков ${rowsCount}`}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={!canEdit}
+              disabled={!canEditIndexLetters}
               onClick={resetDraft}
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -1276,11 +1294,11 @@ function SystemIndexesSettingsPanel({
             </button>
             <button
               type="button"
-              disabled={!canEdit || Boolean(validationError) || !hasChanges}
+              disabled={!canSave}
               onClick={saveDraft}
               className="inline-flex items-center justify-center rounded-md border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
             >
-              Сохранить индексы
+              Сохранить настройки
             </button>
           </div>
         </div>
@@ -1304,7 +1322,7 @@ function SystemIndexesSettingsPanel({
                 <input
                   type="text"
                   value={draft[row.id]}
-                  disabled={!canEdit}
+                  disabled={!canEditIndexLetters}
                   onChange={(event) => updateDraft(row.id, event.target.value)}
                   className="h-10 w-14 rounded-md border border-slate-300 bg-white text-center font-mono text-lg font-semibold text-slate-900 shadow-sm shadow-slate-200/50 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50 disabled:text-slate-400"
                   aria-label={row.title}
@@ -1317,6 +1335,30 @@ function SystemIndexesSettingsPanel({
           ))}
         </div>
       </div>
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-sky-200 bg-sky-50/70 p-4">
+        <input
+          type="checkbox"
+          checked={draft.allowLeadingLetterIndex}
+          onChange={(event) => setDraft((current) => ({
+            ...current,
+            allowLeadingLetterIndex: event.target.checked,
+          }))}
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+        />
+        <span>
+          <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+            <span>Разрешать буквенный индекс перед номером стыка</span>
+            <span className="inline-flex shrink-0 items-center rounded-md border border-sky-200 bg-white px-2 py-0.5 text-xs font-semibold text-sky-800">
+              Стыков: {leadingLetterIndexedRowsCount}
+            </span>
+          </span>
+          <span className="mt-1 block text-sm leading-5 text-slate-600">
+            Разрешает создавать и импортировать имена с одной латинской буквой после S/F, например FB01 или SB43.
+            Ранее созданные такие стыки и их цепочки остаются корректными, даже если настройку потом выключить.
+          </span>
+        </span>
+      </label>
 
       {validationError ? (
         <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -1610,7 +1652,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
       <input
         ref={templateFileInputRef}
         type="file"
-        accept=".xlsx,.xls,.docx"
+        accept=".xlsx,.xls"
         className="hidden"
         onChange={handleTemplateUpload}
       />
@@ -2236,7 +2278,6 @@ function TemplateHintLine({ label, children }: { label: string; children: ReactN
 }
 
 function getTemplateMimeType(fileType: string) {
-  if (fileType === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   if (fileType === 'xls') return 'application/vnd.ms-excel'
   return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 }
@@ -2727,6 +2768,7 @@ function RequestNamingModeButton({
 function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
   const settings = useDispatcherSettings()
   const reminderSettings = useDispatcherReminderSettings()
+  const backgroundSettings = useDispatcherBackgroundSettings()
   const [acceptedWarningsExpanded, setAcceptedWarningsExpanded] = useState(true)
   const disabledCount = Object.values(settings).filter((enabled) => !enabled).length
   const totalCount = Object.values(settings).length
@@ -2735,6 +2777,21 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
   const acceptedWarningsQuery = useQuery({
     queryKey: ['dispatcher-accepted-warnings'],
     queryFn: () => listDispatcherAcceptedWarnings(),
+  })
+  const backgroundStatusQuery = useQuery({
+    queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
+    queryFn: () => getDispatcherBackgroundStatus(),
+    refetchInterval: (query) => query.state.data?.status === 'running' ? 5_000 : false,
+  })
+  const refreshBackgroundMutation = useMutation({
+    mutationFn: () => refreshDispatcherBackgroundNow(),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+      ])
+    },
   })
   const revokeAcceptedWarningMutation = useMutation({
     mutationFn: (key: string) => revokeDispatcherAcceptedWarning({ data: { key } }),
@@ -2762,6 +2819,16 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
       nextSettings[item.id] = enabled
     })
     runProtectedSettingsChange(() => saveDispatcherSettings(nextSettings))
+  }
+
+  const updateBackgroundSetting = (enabled: boolean) => {
+    runProtectedSettingsChange(() => saveDispatcherBackgroundSettings({ enabled }))
+  }
+
+  const refreshBackgroundTasks = () => {
+    void runProtectedSettingsChange(async () => {
+      await refreshBackgroundMutation.mutateAsync()
+    })
   }
 
   const revokeAcceptedWarning = async (key: string, label: string) => {
@@ -2830,6 +2897,56 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
           />
         ))}
       </div>
+
+      <section className="rounded-md border border-sky-200 bg-sky-50/60 p-4 shadow-sm shadow-slate-200/40">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <label className="flex min-w-0 cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={backgroundSettings.enabled}
+              onChange={(event) => updateBackgroundSetting(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-900">Показывать коды выключенных проверок в отчетах</span>
+              <span className="mt-1 block max-w-4xl text-xs leading-5 text-slate-600">
+                Выключенные проверки не появятся в диспетчере, счетчике и подсветке строк. Их коды будут доступны только в системном поле
+                «Задачи диспетчера», чтобы находить и постепенно исправлять такие стыки через фильтр.
+              </span>
+            </span>
+          </label>
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={refreshBackgroundTasks}
+            disabled={!backgroundSettings.enabled || refreshBackgroundMutation.isPending || backgroundStatusQuery.data?.status === 'running'}
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshBackgroundMutation.isPending ? 'animate-spin' : ''}`} />
+            Обновить сейчас
+          </button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-sky-100 pt-3 text-xs text-slate-600">
+          <span>Автоматически: ежедневно в 03:00 МСК</span>
+          <span>
+            Последнее обновление: {backgroundStatusQuery.data?.computedAt
+              ? formatSettingsTimestamp(backgroundStatusQuery.data.computedAt)
+              : 'еще не выполнялось'}
+          </span>
+          {backgroundSettings.enabled && backgroundStatusQuery.data ? (
+            <span>Стыков с фоновыми кодами: {backgroundStatusQuery.data.rowCount}</span>
+          ) : null}
+        </div>
+        {backgroundStatusQuery.data?.status === 'failed' ? (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            Последнее обновление не завершилось. Старые рассчитанные коды сохранены; повторите обновление позже.
+          </div>
+        ) : null}
+        {refreshBackgroundMutation.isError ? (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            Не удалось обновить коды. Проверьте соединение и повторите попытку.
+          </div>
+        ) : null}
+      </section>
 
       <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
         <div className={`flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 ${acceptedWarningsExpanded ? 'border-b border-slate-200' : ''}`}>
@@ -2987,7 +3104,7 @@ function DispatcherSettingsGroupCard({
           const help = DISPATCHER_SETTING_HELP[item.id]
           const actionHelp = DISPATCHER_SETTING_ACTION_HELP[item.id]
           const isReminder = isDispatcherReminderSettingId(item.id)
-          const isInputProtectedTask = DISPATCHER_INPUT_PROTECTED_TASK_IDS.has(item.id)
+          const linkedSaveCheckIds = getSaveCheckSettingIdsForDispatcher(item.id)
           return (
             <div key={item.id} className="px-4 py-3 hover:bg-slate-50">
               <div className="flex items-start gap-3">
@@ -3001,12 +3118,15 @@ function DispatcherSettingsGroupCard({
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-400'}`}>{item.label}</span>
-                      <span className="inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                      <span className="inline-flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
                         {getDispatcherSettingCode(item.id)}
                       </span>
-                      {isInputProtectedTask ? (
-                        <span className="inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-                          не актуально при включенных защитах ввода
+                      {linkedSaveCheckIds.length > 0 ? (
+                        <span
+                          className="inline-flex shrink-0 items-center rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700"
+                          title="Связанные проверки при сохранении"
+                        >
+                          связанные ЗВ: {formatLinkedSaveCheckCodes(linkedSaveCheckIds)}
                         </span>
                       ) : null}
                     </span>
@@ -3283,6 +3403,7 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
                 <div className="grid gap-3 lg:grid-cols-2">
                   {group.items.map((item) => {
                     const enabled = settings[item.id]
+                    const linkedDispatcherIds = getDispatcherSettingIdsForSaveCheck(item.id)
                     return (
                       <label
                         key={item.id}
@@ -3304,6 +3425,14 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
                             <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
                               {getSaveCheckSettingCode(item.id)}
                             </span>
+                            {linkedDispatcherIds.length > 0 ? (
+                              <span
+                                className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700"
+                                title="Связанные задачи диспетчера"
+                              >
+                                связанные ДЗ: {linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')}
+                              </span>
+                            ) : null}
                             <span
                               className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
                                 enabled ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'
@@ -3328,4 +3457,15 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
       })}
     </div>
   )
+}
+
+function formatLinkedSaveCheckCodes(ids: SaveCheckSettingId[]) {
+  const codes = ids.map(getSaveCheckSettingCode)
+  if (codes.length === 0) return ''
+  const numbers = codes.map((code) => Number(code.match(/\d+/)?.[0] ?? Number.NaN))
+  const isContinuous = numbers.every((value, index) => index === 0 || value === numbers[index - 1] + 1)
+  if (codes.length > 2 && isContinuous) {
+    return `${codes[0]}…${codes.at(-1)}`
+  }
+  return codes.join(', ')
 }

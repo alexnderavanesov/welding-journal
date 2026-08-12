@@ -10,6 +10,12 @@ import {
 } from '@/lib/lnk-chronology-checks'
 import { PSTO_REQUEST_DATE_ORDER_REASON, isPstoChronologyCheckReason } from '@/lib/psto-chronology-checks'
 import {
+  CONTROL_HISTORY_REASON,
+  JOINT_CORE_DATA_REASON,
+  LNK_RESULT_COMPLETENESS_REASON,
+  PSTO_RESULT_COMPLETENESS_REASON,
+} from '@/lib/dispatcher-check-reasons'
+import {
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
@@ -45,7 +51,6 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
 
   const reason = task.reason ?? ''
   if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
-  if (reason === 'проверить дату сварки и контроля') return { joint: task.sourceJoint, type: 'Проверить дату сварки и контроля' }
   if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON) return { joint: task.sourceJoint, type: 'Проверить ремонт по диаметру' }
   if (reason === 'проверить клеймо') return { joint: task.sourceJoint, type: 'Проверить клеймо' }
   if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
@@ -55,6 +60,10 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (reason === LNK_VIK_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить порядок НК' }
   if (reason === LNK_VIK_REQUIRED_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить ВИК' }
   if (reason === PSTO_REQUEST_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить даты ПСТО' }
+  if (reason === JOINT_CORE_DATA_REASON) return { joint: task.sourceJoint, type: 'Проверить основные данные стыка' }
+  if (reason === LNK_RESULT_COMPLETENESS_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить результат ЛНК' }
+  if (reason === PSTO_RESULT_COMPLETENESS_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить результат ПСТО' }
+  if (reason === CONTROL_HISTORY_REASON) return { joint: task.sourceJoint, type: 'Проверить историю контроля' }
   if (reason === 'проверить целостность цепочки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
   if (reason === 'проверить целостность катушки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
   if (reason === 'годный стык неофициальный') return { joint: task.sourceJoint, type: 'Годный стык неофициальный' }
@@ -116,9 +125,6 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   const reason = task.reason ?? 'цепочка изменилась'
   if (reason === 'проверить даты сварки') {
     return `В цепочке ${task.baseJoint} обнаружена дата сварки, которая нарушает последовательность системных шагов ${getSystemIndexSummaryText()}. Проверь даты сварки у повторных стыков.`
-  }
-  if (reason === 'проверить дату сварки и контроля') {
-    return `В цепочке ${task.baseJoint} дата контроля или ПСТО оказалась раньше даты сварки. Проверь даты в сварочном журнале, ЛНК и ПСТО.`
   }
   if (reason === PSTO_REQUEST_DATE_ORDER_REASON) {
     return `В стыке ${task.sourceJoint} нарушен порядок дат ПСТО: дата сварки должна быть не позже даты заявки ПСТО, а дата заявки - не позже даты результата ПСТО.`

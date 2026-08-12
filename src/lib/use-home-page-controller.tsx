@@ -15,7 +15,6 @@ import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
 import { useDispatcherTaskSnapshot } from '@/lib/use-dispatcher-task-snapshot'
 import {
-  DISPATCHER_TASKS_FIELD_KEY,
   buildDispatcherTaskServerFilters,
 } from '@/lib/dispatcher-task-row-codes'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
@@ -81,6 +80,7 @@ import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import { buildHeatTreatmentReportRows, buildLnkReportRows, sumAcceptedWdi } from '@/lib/report-row-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import { buildFinalStatusRowsContext, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import {
   createDefaultLnkRequestDraft,
@@ -650,6 +650,7 @@ export function useHomePageController() {
     setManagedLnkRequestNameDraft,
   })
   const {
+    deleteManyMutation,
     deleteMutation,
     importMutation,
     obsoleteRepeatedJointMutation,
@@ -683,7 +684,6 @@ export function useHomePageController() {
   })
 
   const { weldMassFillMutation, weldReplaceDataMutation } = useReportImportMutations({
-    rows,
     setMessage,
     highlightChangedRows,
   })
@@ -925,12 +925,11 @@ export function useHomePageController() {
     () =>
       new Set(
         pagedReportRows
-          .filter((row) => String(row.dispatcherTasks ?? '').trim())
+          .filter((row) => String(row.activeDispatcherTasks ?? '').trim())
           .map((row) => row.id),
       ),
     [pagedReportRows],
   )
-  const dispatcherTaskFilterOptions = dispatcherTaskSnapshot.taskFilterOptions
   const tableActionRows = rows.length > 0 ? (visibleRows as WeldRow[]) : pagedReportRows
   useEffect(() => {
     const refreshDocumentAssignments = () => {
@@ -1235,9 +1234,7 @@ export function useHomePageController() {
       })),
     )
 
-    for (const payload of payloads) {
-      await saveDuplicateControlMutation.mutateAsync(payload)
-    }
+    await saveDuplicateControlMutation.mutateAsync(payloads)
     closeDuplicateControlModal()
     setMessage(duplicateControlDraft.id ? 'Дубль-контроль обновлен' : `Дубль-контроль внесен: ${payloads.length}`)
   }
@@ -1309,7 +1306,7 @@ export function useHomePageController() {
     if (!confirmed) return
 
     try {
-      await Promise.all(rowIds.map((id) => deleteMutation.mutateAsync(id)))
+      await deleteManyMutation.mutateAsync(rowIds)
       setSelectedWeldingJournalIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
       setSelectedLnkIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
       setSelectedHeatTreatmentIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
@@ -2059,9 +2056,6 @@ export function useHomePageController() {
     onOpenDuplicateControl: openDuplicateControlModalForRow,
     rowActionHandlers,
     getContextMenuItems: getReportContextMenuItems,
-    manualFilterOptions: {
-      [DISPATCHER_TASKS_FIELD_KEY]: dispatcherTaskFilterOptions,
-    },
     selectable: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     selectedRowIds: activeSelectedRowIds,
     onSelectedRowIdsChange: setActiveSelectedRowIds,
@@ -2156,7 +2150,7 @@ export function useHomePageController() {
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
-    rows: filteredVisibleRows,
+    columnFilters: dispatcherTaskServerFilters,
     onClose: () => setIsImportDialogOpen(false),
     onImportRecords: (records: WeldInput[], skippedRows: number) =>
       runProtectedEdit('импорт данных', async () => {
@@ -2167,9 +2161,13 @@ export function useHomePageController() {
       runProtectedEdit('массовое заполнение данных', async () => {
         await weldMassFillMutation.mutateAsync({ records, skippedRows })
       }),
-    onReplaceDataRecords: async (records: ReportImportRecord[], skippedRows: number) => {
+    onReplaceDataRecords: async (
+      records: ReportImportRecord[],
+      skippedRows: number,
+      expectedVersions: WeldRowVersionTarget[],
+    ) => {
       if (!(await requireImportReplacePassword('замену данных импортом'))) return
-      await weldReplaceDataMutation.mutateAsync({ records, skippedRows })
+      await weldReplaceDataMutation.mutateAsync({ records, skippedRows, expectedVersions })
     },
   }
 

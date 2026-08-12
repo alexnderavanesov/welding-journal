@@ -13,6 +13,8 @@ import {
 import { buildWelderStampExpiryTasks } from '@/lib/welder-stamp-expiry-tasks'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import type { DataListSettings } from '@/lib/data-list-settings'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import type { SystemIndexSettings } from '@/lib/system-index-settings'
 
 const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-missing',
@@ -37,6 +39,8 @@ export type BuildVisibleDispatcherTasksInput = {
   dispatcherReminderSettings: DispatcherReminderSettings
   dispatcherSettings: DispatcherSettings
   dataListSettings?: DataListSettings
+  saveCheckSettings?: SaveCheckSettings
+  systemIndexSettings?: SystemIndexSettings
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
   rows: WeldRow[]
@@ -50,6 +54,8 @@ export function buildVisibleDispatcherTasks({
   dispatcherReminderSettings,
   dispatcherSettings,
   dataListSettings,
+  saveCheckSettings,
+  systemIndexSettings,
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
   rows,
@@ -60,9 +66,15 @@ export function buildVisibleDispatcherTasks({
   const repeatedJointTasks = includeRepeatedJointTasks
     ? buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
         dataListSettings,
+        saveCheckSettings,
+        systemIndexSettings,
+        includeControlHistoryChecks: isDispatcherSettingEnabled('check-control-history', dispatcherSettings),
         includeIncompleteStampChecks: isDispatcherSettingEnabled('check-incomplete-stamps', dispatcherSettings),
+        includeJointCoreDataChecks: isDispatcherSettingEnabled('check-joint-core-data', dispatcherSettings),
         includeLineConsistencyTasks: isAnyDispatcherSettingEnabled(LINE_CONSISTENCY_DISPATCHER_SETTING_IDS, dispatcherSettings),
+        includeLnkResultCompletenessChecks: isDispatcherSettingEnabled('check-lnk-result-completeness', dispatcherSettings),
         includePercentageLineControlTasks: isAnyDispatcherSettingEnabled(PERCENTAGE_LINE_DISPATCHER_SETTING_IDS, dispatcherSettings),
+        includePstoResultCompletenessChecks: isDispatcherSettingEnabled('check-psto-result-completeness', dispatcherSettings),
         includeWelderStampCompatibilityChecks: isDispatcherSettingEnabled('check-welder-stamp', dispatcherSettings),
       }).filter(
         (task) => !hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings),

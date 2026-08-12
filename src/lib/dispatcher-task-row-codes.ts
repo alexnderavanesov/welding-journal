@@ -13,6 +13,20 @@ export type DispatcherTaskIndexRow = {
   code: string
 }
 
+export type DispatcherTaskCodeRow = {
+  rowId: number
+  code: string
+}
+
+export function buildMergedDispatcherTaskCodes(
+  activeTaskRows: DispatcherTaskCodeRow[],
+  backgroundTaskRows: DispatcherTaskCodeRow[],
+) {
+  const activeByRowId = buildDispatcherCodesByRowId(activeTaskRows)
+  const allByRowId = buildDispatcherCodesByRowId([...activeTaskRows, ...backgroundTaskRows])
+  return { activeByRowId, allByRowId }
+}
+
 export function buildDispatcherTaskIndexRows(tasks: DispatcherTask[], rows: WeldRow[]): DispatcherTaskIndexRow[] {
   const entries = new Map<string, DispatcherTaskIndexRow>()
 
@@ -60,6 +74,15 @@ export function buildDispatcherTaskServerFilters(
   return filters
 }
 
+export function buildWeldColumnFilterOptionsRequestFilters(
+  columnFilters: Record<string, string>,
+  fieldKey: string,
+) {
+  const filtersWithoutCurrent = { ...columnFilters }
+  delete filtersWithoutCurrent[fieldKey]
+  return buildDispatcherTaskServerFilters(filtersWithoutCurrent)
+}
+
 export type DispatcherTaskServerFilter = {
   mode: 'all' | 'with' | 'without' | 'codes'
   codes: string[]
@@ -89,6 +112,18 @@ export function getDispatcherTaskFilterMode(value: string | undefined) {
 
 export function compareDispatcherTaskCodes(left: string, right: string) {
   return left.localeCompare(right, 'ru', { numeric: true })
+}
+
+function buildDispatcherCodesByRowId(taskRows: DispatcherTaskCodeRow[]) {
+  const result = new Map<number, string>()
+  const sets = new Map<number, Set<string>>()
+  for (const taskRow of taskRows) {
+    const codes = sets.get(taskRow.rowId) ?? new Set<string>()
+    codes.add(taskRow.code)
+    sets.set(taskRow.rowId, codes)
+  }
+  for (const [rowId, codes] of sets) result.set(rowId, formatDispatcherTaskCodes([...codes]))
+  return result
 }
 
 function getDispatcherTaskTargetRowIds(task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>, rows: WeldRow[]) {

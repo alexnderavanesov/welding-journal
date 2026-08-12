@@ -9,9 +9,7 @@ import {
   isNoText,
   isYesText,
 } from '@/lib/weld-table-badges'
-import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
-
-const DATE_TIME_FIELD_KEYS = new Set<WeldFieldKey>(['createdAt', 'pstoCreatedAt', 'lnkCreatedAt'])
+import { DATE_TIME_WELD_FIELD_KEYS, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
 
 export function WeldTableValue({
   field,
@@ -32,10 +30,10 @@ export function WeldTableValue({
   }
 
   return (
-    <span className={field.kind === 'date' || DATE_TIME_FIELD_KEYS.has(fieldKey) || isResultField ? 'whitespace-nowrap' : 'line-clamp-2'}>
+    <span className={field.kind === 'date' || DATE_TIME_WELD_FIELD_KEYS.has(fieldKey) || isResultField ? 'whitespace-nowrap' : 'line-clamp-2'}>
       {field.kind === 'date' ? (
         formatDate(value)
-      ) : DATE_TIME_FIELD_KEYS.has(fieldKey) ? (
+      ) : DATE_TIME_WELD_FIELD_KEYS.has(fieldKey) ? (
         formatDateTime(value)
       ) : isResultField ? (
         <ResultBadge value={value} />

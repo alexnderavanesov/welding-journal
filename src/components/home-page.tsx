@@ -4,12 +4,16 @@ import { useProjectSettingsSync } from '@/lib/use-project-settings-sync'
 import { SiteSecurityGate } from '@/lib/security-context'
 
 export function HomePage() {
+  return (
+    <SiteSecurityGate>
+      <UnlockedHomePage />
+    </SiteSecurityGate>
+  )
+}
+
+function UnlockedHomePage() {
   useProjectSettingsSync()
   const props = useHomePageController()
 
-  return (
-    <SiteSecurityGate>
-      <HomePageView {...props} />
-    </SiteSecurityGate>
-  )
+  return <HomePageView {...props} />
 }

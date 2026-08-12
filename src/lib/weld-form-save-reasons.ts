@@ -1,6 +1,11 @@
 import type { WeldDraft } from '@/lib/dispatcher-types'
 import { getDateInputValidationReason, getTodayIsoDate, parseDateLikeToIso } from '@/lib/date-format'
-import { hasReservedJointSystemPart, normalizeJointName, validateManualJointName } from '@/lib/joint-name'
+import {
+  hasReservedJointSystemPart,
+  normalizeJointName,
+  validateJointNameStructure,
+  validateManualJointName,
+} from '@/lib/joint-name'
 import { formatJointDiameterLabel } from '@/lib/joint-display'
 import { isLnkRepairForbiddenByDiameter } from '@/lib/lnk-result-rules'
 import {
@@ -9,7 +14,11 @@ import {
   type SaveCheckSettingId,
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
-import { getSystemIndexSummaryText } from '@/lib/system-index-settings'
+import {
+  getSystemIndexSummaryText,
+  loadSystemIndexSettings,
+  type SystemIndexSettings,
+} from '@/lib/system-index-settings'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { findFirstLnkChronologySaveBlockReason } from '@/lib/lnk-chronology-checks'
 import { findFirstPstoChronologySaveBlockReason } from '@/lib/psto-chronology-checks'
@@ -21,6 +30,11 @@ import {
 } from '@/lib/report-value-utils'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { factualWelderStampFieldKeys } from '@/lib/weld-form-field-sets'
+import {
+  getRequiredConnectionTypeMessage,
+  getRequiredMaterialGroupMessage,
+  getRequiredWeldingMethodMessage,
+} from '@/lib/weld-validation'
 import type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-types'
 import { getStampSelectValue, isAdditionalValue, isCancelledValue, isYesValue } from '@/lib/weld-form-value-utils'
 
@@ -28,9 +42,34 @@ export function getWeldFormSaveBlockReason(
   draft: WeldInput,
   initialValue: WeldDraft,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  options: {
+    allowSystemJointName?: boolean
+    systemIndexSettings?: SystemIndexSettings
+  } = {},
 ) {
   const dateReason = getWeldFormDateSaveBlockReason(draft, saveCheckSettings)
   if (dateReason) return dateReason
+
+  if (saveCheckSettings.requiredMaterialGroupWithWeldDate) {
+    const materialGroupReason = getRequiredMaterialGroupMessage(draft)
+    if (materialGroupReason) {
+      return formatSaveCheckBlockReason('requiredMaterialGroupWithWeldDate', materialGroupReason)
+    }
+  }
+
+  if (saveCheckSettings.requiredConnectionTypeWithWeldDate) {
+    const connectionTypeReason = getRequiredConnectionTypeMessage(draft)
+    if (connectionTypeReason) {
+      return formatSaveCheckBlockReason('requiredConnectionTypeWithWeldDate', connectionTypeReason)
+    }
+  }
+
+  if (saveCheckSettings.requiredWeldingMethodWithWeldDate) {
+    const weldingMethodReason = getRequiredWeldingMethodMessage(draft)
+    if (weldingMethodReason) {
+      return formatSaveCheckBlockReason('requiredWeldingMethodWithWeldDate', weldingMethodReason)
+    }
+  }
 
   const reportHistoryReason = saveCheckSettings.controlHistoryProtection ? getControlAvailabilityReportHistoryReason(draft) : null
   if (reportHistoryReason) return formatSaveCheckBlockReason('controlHistoryProtection', reportHistoryReason)
@@ -42,54 +81,60 @@ export function getWeldFormSaveBlockReason(
     if (documentChronologyReason) return documentChronologyReason
   }
 
-  if (shouldCheckLnkRepairDiameterForForm(draft, initialValue, saveCheckSettings)) {
+  if (saveCheckSettings.lnkResultRepairRules) {
     const repairDiameterReason = getWeldFormRepairDiameterSaveBlockReason(draft)
     if (repairDiameterReason) return formatSaveCheckBlockReason('lnkResultRepairRules', repairDiameterReason)
   }
 
   const currentJoint = normalizeJointName(draft.joint)
   const initialJoint = normalizeJointName(initialValue.joint)
+  const systemIndexSettings = options.systemIndexSettings ?? loadSystemIndexSettings()
+  const jointStructureReason = saveCheckSettings.manualJointName
+    ? validateJointNameStructure(draft.joint, systemIndexSettings)
+    : null
+  if (jointStructureReason) return formatSaveCheckBlockReason('manualJointName', jointStructureReason)
   if (initialValue.id && currentJoint === initialJoint) return null
 
-  if (saveCheckSettings.systemJointRenameProtection && initialValue.id && hasReservedJointSystemPart(initialValue.joint)) {
-    return formatSaveCheckBlockReason('systemJointRenameProtection', `стык с системными индексами ${getSystemIndexSummaryText()} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`)
+  if (
+    !options.allowSystemJointName &&
+    saveCheckSettings.systemJointRenameProtection &&
+    initialValue.id &&
+    hasReservedJointSystemPart(initialValue.joint, systemIndexSettings)
+  ) {
+    return formatSaveCheckBlockReason('systemJointRenameProtection', `стык с системными индексами ${getSystemIndexSummaryText(systemIndexSettings)} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`)
   }
 
-  const manualJointNameReason = saveCheckSettings.manualJointName ? validateManualJointName(draft.joint) : null
+  const manualJointNameReason = saveCheckSettings.manualJointName && !options.allowSystemJointName
+    ? validateManualJointName(draft.joint, systemIndexSettings)
+    : null
   return manualJointNameReason ? formatSaveCheckBlockReason('manualJointName', manualJointNameReason) : null
 }
 
 function shouldCheckDocumentChronologyForForm(draft: WeldInput, initialValue: WeldDraft) {
   if (!initialValue.id) return true
 
-  const chronologyFields: WeldFieldKey[] = [
+  const chronologyDateFields: WeldFieldKey[] = [
     'weldDate',
     'pstoRequestDate',
     'pstoDate',
     ...LNK_METHODS.flatMap((method) => [method.requestDateKey, method.conclusionDateKey]),
   ]
-  return chronologyFields.some(
+  const chronologyValueFields: WeldFieldKey[] = [
+    'pstoRequired',
+    'pstoRequest',
+    'pstoResult',
+    ...LNK_METHODS.flatMap((method) => [
+      method.enabledKey,
+      method.requestKey,
+      method.resultKey,
+      method.conclusionKey,
+    ]),
+  ]
+  return chronologyDateFields.some(
     (fieldKey) => normalizeDateForComparison(draft[fieldKey]) !== normalizeDateForComparison(initialValue[fieldKey]),
+  ) || chronologyValueFields.some(
+    (fieldKey) => String(draft[fieldKey] ?? '').trim() !== String(initialValue[fieldKey] ?? '').trim(),
   )
-}
-
-function shouldCheckLnkRepairDiameterForForm(
-  draft: WeldInput,
-  initialValue: WeldDraft,
-  saveCheckSettings: SaveCheckSettings,
-) {
-  if (!saveCheckSettings.lnkResultRepairRules) return false
-  if (!initialValue.id) return true
-
-  return normalizeDiameterForComparison(draft.d1) !== normalizeDiameterForComparison(initialValue.d1) ||
-    normalizeDiameterForComparison(draft.d2) !== normalizeDiameterForComparison(initialValue.d2) ||
-    LNK_METHODS.some(
-      (method) => getNormalizedResult(draft[method.resultKey]) !== getNormalizedResult(initialValue[method.resultKey]),
-    )
-}
-
-function normalizeDiameterForComparison(value: unknown) {
-  return String(value ?? '').trim().replace(',', '.')
 }
 
 function getWeldFormRepairDiameterSaveBlockReason(row: WeldInput) {
@@ -105,22 +150,41 @@ function getWeldFormRepairDiameterSaveBlockReason(row: WeldInput) {
   return `результат ${methodCodes} - «ремонт» нельзя сохранить при минимальном диаметре ${diameterText} мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.`
 }
 
-function getControlAvailabilityReportHistoryReason(draft: WeldInput) {
+export type ControlAvailabilityReportHistoryIssue = {
+  code: string
+  message: string
+  report: 'lnk' | 'psto'
+}
+
+export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): ControlAvailabilityReportHistoryIssue[] {
+  const issues: ControlAvailabilityReportHistoryIssue[] = []
   for (const method of LNK_METHODS) {
     if (isActiveControlAvailability(draft[method.enabledKey])) continue
     if (!hasRealLnkReportHistory(draft, method)) continue
 
-    return `${method.code}: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.`
+    issues.push({
+      code: method.code,
+      message: `${method.code}: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.`,
+      report: 'lnk',
+    })
   }
 
   if (
     !isActiveControlAvailability(draft.pstoRequired) &&
     hasRealPstoReportHistory(draft)
   ) {
-    return 'ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.'
+    issues.push({
+      code: 'ПСТО',
+      message: 'ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.',
+      report: 'psto',
+    })
   }
 
-  return null
+  return issues
+}
+
+function getControlAvailabilityReportHistoryReason(draft: WeldInput) {
+  return getControlAvailabilityReportHistoryIssues(draft)[0]?.message ?? null
 }
 
 export function getWeldFormAutoClearHint(draft: WeldInput, initialValue: WeldDraft) {

@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { DialogHeader } from '@/components/dialog-header'
@@ -24,11 +25,12 @@ import {
   type ReportImportRecord,
 } from '@/lib/report-import-preview'
 import { cn } from '@/lib/utils'
-import type { WeldRow } from '@/lib/dispatcher-types'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import { WELD_IMPORT_MAX_ROWS } from '@/lib/weld-import-limits'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
+import { listWeldingJournalImportScope } from '@/server/welds'
 
 type PreviewRowLimit = 50 | 100 | 'all'
 
@@ -39,11 +41,11 @@ export type ReportImportDialogProps = {
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
-  rows: WeldRow[]
+  columnFilters: Record<string, string>
   onClose: () => void
   onImportRecords: (records: WeldInput[], skippedRows: number) => Promise<void>
   onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) => Promise<void>
-  onReplaceDataRecords: (records: ReportImportRecord[], skippedRows: number) => Promise<void>
+  onReplaceDataRecords: (records: ReportImportRecord[], skippedRows: number, expectedVersions: WeldRowVersionTarget[]) => Promise<void>
 }
 
 export function ReportImportDialog({
@@ -53,7 +55,7 @@ export function ReportImportDialog({
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
-  rows,
+  columnFilters,
   onClose,
   onImportRecords,
   onMassFillRecords,
@@ -68,6 +70,21 @@ export function ReportImportDialog({
   const [readError, setReadError] = useState<string | null>(null)
   const [isReading, setIsReading] = useState(false)
 
+  const importScopeQuery = useQuery({
+    queryKey: ['welding-journal-import-scope', columnFilters],
+    queryFn: () => listWeldingJournalImportScope({ data: { columnFilters } }),
+    enabled: open && mode !== 'newRecords',
+    staleTime: 0,
+  })
+  const rows = importScopeQuery.data?.rows ?? []
+  const scopeTotal = importScopeQuery.data?.total ?? 0
+  const scopeLimitExceeded = importScopeQuery.data?.limitExceeded === true
+  const isScopeLoading = mode !== 'newRecords' && importScopeQuery.isFetching
+  const scopeError =
+    mode !== 'newRecords' && importScopeQuery.error instanceof Error
+      ? importScopeQuery.error.message
+      : null
+
   if (!open) return null
 
   const validCount = preview?.validRecords.length ?? 0
@@ -81,6 +98,7 @@ export function ReportImportDialog({
   const modeCopy = getImportModeCopy(mode, activeReport)
 
   const handleDownloadTemplate = () => {
+    if (mode !== 'newRecords' && (isScopeLoading || scopeLimitExceeded || scopeError)) return
     const bytes =
       mode === 'replaceData'
         ? buildReplaceDataTemplateXlsxBytes(activeReport, rows)
@@ -163,8 +181,9 @@ export function ReportImportDialog({
 
   const handleImport = async () => {
     if (!preview || preview.validRecords.length === 0) return
+    if (mode === 'replaceData' && preview.errors.length > 0) return
     if (mode === 'replaceData') {
-      await onReplaceDataRecords(preview.validRecords, preview.skippedRows)
+      await onReplaceDataRecords(preview.validRecords, preview.skippedRows, preview.expectedRowVersions ?? [])
     } else if (mode === 'massFill') {
       await onMassFillRecords(preview.validRecords, preview.skippedRows)
     } else {
@@ -205,10 +224,25 @@ export function ReportImportDialog({
 
         <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           {mode !== 'newRecords'
-            ? `В шаблон попадут стыки из текущего фильтра сварочного журнала: ${rows.length}. Если фильтр не задан, попадут все стыки. `
+            ? isScopeLoading
+              ? 'Определяем стыки по текущему фильтру сварочного журнала. '
+              : `В шаблон попадут стыки из текущего фильтра сварочного журнала: ${scopeTotal}. Если фильтр не задан, попадут все стыки. `
             : ''}
           За одну загрузку обрабатывается не более {WELD_IMPORT_MAX_ROWS} непустых строк.
         </div>
+
+        {scopeLimitExceeded ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Текущий фильтр содержит {scopeTotal} строк. Для подготовки одного шаблона оставьте не более{' '}
+            {WELD_IMPORT_MAX_ROWS} строк: уточните фильтр по проекту, шифру, линии или другому столбцу.
+          </div>
+        ) : null}
+
+        {scopeError ? (
+          <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            Не удалось получить стыки текущего фильтра: {scopeError}
+          </div>
+        ) : null}
 
         <div className="grid gap-2 lg:grid-cols-[1fr_1fr_1.15fr]">
           <ImportStepCard
@@ -246,14 +280,19 @@ export function ReportImportDialog({
               }}
             />
             {!templateDownloaded ? (
-              <Button onClick={handleDownloadTemplate}>
-                <Download className="mr-2 h-4 w-4" />
+              <Button onClick={handleDownloadTemplate} disabled={isScopeLoading || scopeLimitExceeded || Boolean(scopeError)}>
+                {isScopeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                 Скачать шаблон
               </Button>
             ) : (
               <>
-                <Button variant="ghost" onClick={handleDownloadTemplate} className="text-muted-foreground">
-                  <Download className="mr-2 h-4 w-4" />
+                <Button
+                  variant="ghost"
+                  onClick={handleDownloadTemplate}
+                  className="text-muted-foreground"
+                  disabled={isScopeLoading || scopeLimitExceeded || Boolean(scopeError)}
+                >
+                  {isScopeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                   Скачать заново
                 </Button>
                 <Button onClick={() => fileInputRef.current?.click()} disabled={isReading}>
@@ -447,7 +486,10 @@ export function ReportImportDialog({
           <Button variant="outline" onClick={onClose} disabled={isPending || isReading}>
             Отмена
           </Button>
-          <Button onClick={handleImport} disabled={!preview || validCount === 0 || isPending || isReading}>
+          <Button
+            onClick={handleImport}
+            disabled={!preview || validCount === 0 || (mode === 'replaceData' && errorCount > 0) || isPending || isReading}
+          >
             {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
             {mode === 'replaceData' ? 'Заменить' : mode === 'massFill' ? 'Заполнить' : 'Импортировать'} {validCount ? `${validCount} строк` : ''}
           </Button>
@@ -476,8 +518,8 @@ function getImportModeCopy(mode: ReportImportMode, _activeReport: ImportableRepo
   if (mode === 'replaceData') {
     return {
       subtitle: 'редкий осторожный режим: скачайте текущие стыки, измените нужные разрешенные ячейки и загрузите файл для проверки.',
-      templateText: 'В шаблоне уже будут текущие стыки. Серые ячейки системные и не меняются; желтые проверяются; белые заменяются без специальной проверки.',
-      uploadText: 'После загрузки система сравнит файл с текущим журналом и подготовит только строки, где данные действительно изменились.',
+      templateText: 'В шаблоне уже будут текущие стыки и скрытые служебные версии строк. Серые ячейки системные и не меняются; желтые проверяются; белые заменяются без специальной проверки.',
+      uploadText: 'После загрузки система сравнит файл с текущим журналом и подготовит только строки, где данные действительно изменились. Устаревший файл не перезапишет более свежие правки.',
       previewText: 'Перед заменой проверьте список строк и ошибок. Пустая разрешенная ячейка заменит текущее значение на пусто.',
       grayLegend: 'Системные поля, не менять',
       yellowLegend: 'Проверяемые поля / удаление строки',

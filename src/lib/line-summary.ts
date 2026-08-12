@@ -38,7 +38,7 @@ type ChainRow = {
 
 export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIndexSettings?: SystemIndexSettings): LineSummary {
   const finalStatusContext = buildFinalStatusRowsContext(rows)
-  const rowsForSummary = getActualLineRows(rows, finalStatusContext)
+  const rowsForSummary = getActualLineRows(rows, finalStatusContext, systemIndexSettings)
   const lineRows = new Map<string, LineSummaryRow>()
 
   for (const row of rowsForSummary) {
@@ -104,31 +104,42 @@ export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIn
   }
 }
 
-function getActualLineRows(rows: WeldRow[], finalStatusContext: FinalStatusRowsContext) {
+function getActualLineRows(
+  rows: WeldRow[],
+  finalStatusContext: FinalStatusRowsContext,
+  systemIndexSettings?: SystemIndexSettings,
+) {
   const chainGroups = new Map<string, WeldRow[]>()
 
   for (const row of rows) {
     if (isRevisionNotActual(row)) continue
-    const key = getChainKey(row)
+    const key = getChainKey(row, systemIndexSettings)
     const current = chainGroups.get(key) ?? []
     current.push(row)
     chainGroups.set(key, current)
   }
 
-  return Array.from(chainGroups.values()).flatMap((chainRows) => getActualRowsFromChain(chainRows, rows, finalStatusContext))
+  return Array.from(chainGroups.values()).flatMap((chainRows) =>
+    getActualRowsFromChain(chainRows, rows, finalStatusContext, systemIndexSettings),
+  )
 }
 
-function getActualRowsFromChain(chainRows: WeldRow[], allRows: WeldRow[], finalStatusContext: FinalStatusRowsContext) {
+function getActualRowsFromChain(
+  chainRows: WeldRow[],
+  allRows: WeldRow[],
+  finalStatusContext: FinalStatusRowsContext,
+  systemIndexSettings?: SystemIndexSettings,
+) {
   const officialRows = chainRows.filter((row) => !isUnofficial(row.status))
   if (officialRows.length === 0) return []
 
   const goodOfficialRows = officialRows.filter((row) => normalizeStatus(calculateFinalStatusInRows(row, allRows, finalStatusContext)) === 'годен')
-  if (goodOfficialRows.length > 0) return [pickGoodChainRepresentative(goodOfficialRows)]
+  if (goodOfficialRows.length > 0) return [pickGoodChainRepresentative(goodOfficialRows, systemIndexSettings)]
 
   const prepared = officialRows.map((row) => ({
     row,
     normalizedJoint: normalizeJoint(row.joint),
-    order: getJointOrder(row.joint),
+    order: getJointOrder(row.joint, systemIndexSettings),
   }))
 
   return prepared
@@ -136,11 +147,11 @@ function getActualRowsFromChain(chainRows: WeldRow[], allRows: WeldRow[], finalS
     .map((candidate) => candidate.row)
 }
 
-function pickGoodChainRepresentative(rows: WeldRow[]) {
+function pickGoodChainRepresentative(rows: WeldRow[], systemIndexSettings?: SystemIndexSettings) {
   return [...rows].sort(
     (left, right) =>
       getComparableDate(right).localeCompare(getComparableDate(left), 'ru', { numeric: true }) ||
-      getJointOrder(right.joint) - getJointOrder(left.joint) ||
+      getJointOrder(right.joint, systemIndexSettings) - getJointOrder(left.joint, systemIndexSettings) ||
       Number(right.id ?? 0) - Number(left.id ?? 0),
   )[0]
 }
@@ -165,8 +176,8 @@ function getLineGroupKey(row: WeldRow) {
   ].join('|')
 }
 
-function getChainKey(row: WeldRow) {
-  const parsed = parseJointChainName(String(row.joint ?? ''))
+function getChainKey(row: WeldRow, systemIndexSettings?: SystemIndexSettings) {
+  const parsed = parseJointChainName(String(row.joint ?? ''), systemIndexSettings)
   return [
     normalizeText(row.projectTitle),
     normalizeText(row.subtitleCode),
@@ -176,12 +187,12 @@ function getChainKey(row: WeldRow) {
 }
 
 function getJointType(row: WeldRow, systemIndexSettings?: SystemIndexSettings): 'f' | 's' | null {
-  const base = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
+  const base = parseJointChainName(String(row.joint ?? ''), systemIndexSettings).base.trim().toUpperCase()
   return getConfiguredBaseJointType(base, systemIndexSettings)
 }
 
-function getJointOrder(value: unknown) {
-  return parseJointChainName(String(value ?? '')).segments.reduce((total, segment, index) => {
+function getJointOrder(value: unknown, systemIndexSettings?: SystemIndexSettings) {
+  return parseJointChainName(String(value ?? ''), systemIndexSettings).segments.reduce((total, segment, index) => {
     const suffixOrder = segment.suffix === 'R' ? 1 : segment.suffix === 'W' ? 2 : segment.suffix === 'Y' ? 3 : 4
     return total + suffixOrder * 1000 ** (10 - index) + segment.index
   }, 0)

@@ -18,6 +18,7 @@ import {
   getSystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
+import { assertSecurityScope } from '@/server/security-functions'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -67,6 +68,7 @@ export const listSystemDocuments = createServerFn({ method: 'GET' })
     type: requireSystemDocumentType(data?.type),
   }))
   .handler(async ({ data }): Promise<SystemDocumentSummary[]> => {
+    await assertSecurityScope('entry')
     const db = requireDb()
     return db.transaction(async (tx) => {
       await lockSystemDocumentIndex(tx, data.type)
@@ -87,6 +89,7 @@ export const listSystemDocuments = createServerFn({ method: 'GET' })
 export const getSystemDocumentRows = createServerFn({ method: 'GET' })
   .validator(normalizeSystemDocumentReference)
   .handler(async ({ data }): Promise<WeldRow[]> => {
+    await assertSecurityScope('entry')
     const db = requireDb()
     const expectedStorageType = systemDocumentStorageType(getSystemDocumentTemplateId(data))
     const rows = data.documentId

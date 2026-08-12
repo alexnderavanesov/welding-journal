@@ -8,11 +8,12 @@ import type { WeldInput } from '@/lib/weld-fields'
 
 type PstoChronologyRow = WeldInput & { id?: number }
 
-export const PSTO_REQUEST_DATE_ORDER_REASON = 'проверить даты заявки ПСТО'
+export const PSTO_REQUEST_DATE_ORDER_REASON = 'проверить даты ПСТО'
 
 export type PstoChronologyIssueKind =
   | 'request-date-missing'
   | 'weld-after-request'
+  | 'weld-after-result'
   | 'request-after-result'
 
 export type PstoChronologyIssue = {
@@ -23,6 +24,7 @@ export type PstoChronologyIssue = {
 }
 
 type PstoChronologyOptions = {
+  includeResultBeforeWeldIssue?: boolean
   includeMissingRequestDateIssue?: boolean
 }
 
@@ -55,7 +57,6 @@ export function getPstoChronologyIssues(
         row,
         message: `Стык ${joint}: у ПСТО есть результат, но нет даты заявки ПСТО.`,
       })
-      continue
     }
 
     if (requestDate && weldDate && requestDate < weldDate) {
@@ -64,6 +65,15 @@ export function getPstoChronologyIssues(
         reason: PSTO_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заявки ПСТО ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
+      })
+    }
+
+    if (options.includeResultBeforeWeldIssue && hasResult && resultDate && weldDate && resultDate < weldDate) {
+      issues.push({
+        kind: 'weld-after-result',
+        reason: PSTO_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата результата ПСТО ${formatDisplayDate(resultDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
       })
     }
 
@@ -110,6 +120,7 @@ export function getDispatcherPstoChronologyIssues(rows: PstoChronologyRow[]) {
       pstoResultRequestDateOrder: true,
     },
     {
+      includeResultBeforeWeldIssue: true,
       includeMissingRequestDateIssue: true,
     },
   )

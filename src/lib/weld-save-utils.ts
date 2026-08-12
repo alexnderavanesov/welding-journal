@@ -3,15 +3,17 @@ import {
   createWeldJoints,
   replaceWeldJoints,
   updateWeldJoint,
+  updateSystemWeldJoint,
   updateWeldJoints,
 } from '@/server/welds'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
+import type { RepeatedJointRenameTask } from '@/lib/dispatcher-types'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-import { compactWeldWritePayload } from '@/lib/weld-import-limits'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 
-type RowWithId = WeldRow
+type RowWithId = Pick<WeldRow, 'id'> & Partial<WeldInput>
 
 export async function createWeldRowOrThrow<T extends WeldInput>(
   record: T,
@@ -39,6 +41,18 @@ export async function updateWeldRowOrThrow<T extends RowWithId>(record: T, error
   return saved
 }
 
+export async function updateSystemWeldRowOrThrow(task: RepeatedJointRenameTask, errorMessage = 'Запись не найдена') {
+  const saved = await updateSystemWeldJoint({
+    data: {
+      id: task.row.id,
+      currentJoint: task.currentJoint,
+      targetJoint: task.targetJoint,
+    },
+  })
+  if (!saved) throw new Error(errorMessage)
+  return saved
+}
+
 export async function updateWeldRowsOrThrow<T extends RowWithId>(
   records: T[],
   errorMessage = 'Не удалось сохранить часть записей',
@@ -49,7 +63,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
 ) {
   const savedRows = await updateWeldJoints({
     data: {
-      records: records.map((record) => compactWeldWritePayload(normalizeDateFieldsForSave(record))),
+      records: records.map((record) => normalizeDateFieldsForSave(record)),
       systemDocumentSequence: options.systemDocumentSequence,
       importOperation: options.importOperation,
     },
@@ -61,12 +75,14 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
 export async function replaceWeldRowsOrThrow<T extends RowWithId>(
   records: T[],
   deleteIds: number[],
+  expectedVersions: WeldRowVersionTarget[],
   errorMessage = 'Не удалось заменить часть записей',
 ) {
   const result = await replaceWeldJoints({
     data: {
-      records: records.map((record) => compactWeldWritePayload(normalizeDateFieldsForSave(record))),
+      records: records.map((record) => normalizeDateFieldsForSave(record)),
       deleteIds,
+      expectedVersions,
     },
   })
   if (!result.rows.every(Boolean)) throw new Error(errorMessage)

@@ -4,7 +4,7 @@ import {
   calculateFinalStatus,
 } from './weld-fields'
 import { mapHeadersToFields, normalizeImportHeaders } from './weld-import-headers'
-import { parseCell } from './weld-import-parsers'
+import { parseImportCell } from './weld-import-parsers'
 
 export type ImportResult = {
   records: WeldInput[]
@@ -29,12 +29,17 @@ export function parseWorksheetRows(
   const records: WeldInput[] = []
   let skippedRows = 0
 
-  for (const row of dataRows) {
+  for (const [rowIndex, row] of dataRows.entries()) {
     const record: WeldInput = {}
-    fieldsByColumn.forEach((field, index) => {
-      if (!field) return
-      ;(record as Record<string, unknown>)[field.key] = parseCell(field, row[index])
-    })
+    try {
+      fieldsByColumn.forEach((field, index) => {
+        if (!field) return
+        ;(record as Record<string, unknown>)[field.key] = parseImportCell(field, row[index])
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'значение не распознано'
+      throw new Error(`Строка ${rowIndex + 2}: ${message}`)
+    }
 
     if (!isMeaningfulRecord(record)) {
       skippedRows += 1

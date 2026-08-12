@@ -4,6 +4,7 @@ import { compareJointChainSuffix, normalizeJointChainPart, parseJointChainName, 
 import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseDateLikeToIso } from '@/lib/date-format'
+import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 
 export function getRepeatedJointIdentity(row: WeldInput, jointOverride?: string) {
   const joint = String(jointOverride ?? row.joint ?? '').trim()
@@ -25,18 +26,25 @@ export function getDuplicateJointKey(row: WeldInput) {
   return values.join('|')
 }
 
-export function getRepeatedJointBranchKey(row: WeldInput) {
+export function getRepeatedJointBranchKey(
+  row: WeldInput,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   const joint = String(row.joint ?? '').trim()
   if (!joint) return null
-  const branchJoint = parseRepeatedJointName(joint).base
+  const branchJoint = parseRepeatedJointName(joint, settings).base
   const identity = getRepeatedJointIdentity(row, branchJoint)
   if (!identity) return null
   return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
 }
 
-export function compareJointChainRows(left: WeldRow, right: WeldRow) {
-  const leftParsed = parseJointChainName(String(left.joint ?? ''))
-  const rightParsed = parseJointChainName(String(right.joint ?? ''))
+export function compareJointChainRows(
+  left: WeldRow,
+  right: WeldRow,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
+  const leftParsed = parseJointChainName(String(left.joint ?? ''), settings)
+  const rightParsed = parseJointChainName(String(right.joint ?? ''), settings)
   const leftBase = normalizeJointChainPart(leftParsed.base)
   const rightBase = normalizeJointChainPart(rightParsed.base)
   if (leftBase !== rightBase) return leftBase.localeCompare(rightBase, 'ru', { numeric: true })
@@ -48,7 +56,7 @@ export function compareJointChainRows(left: WeldRow, right: WeldRow) {
     if (!leftSegment && rightSegment) return -1
     if (leftSegment && !rightSegment) return 1
     if (!leftSegment || !rightSegment) continue
-    const suffixDiff = compareJointChainSuffix(leftSegment.suffix, rightSegment.suffix)
+    const suffixDiff = compareJointChainSuffix(leftSegment.suffix, rightSegment.suffix, settings)
     if (suffixDiff !== 0) return suffixDiff
     if (leftSegment.index !== rightSegment.index) return leftSegment.index - rightSegment.index
   }
@@ -57,12 +65,16 @@ export function compareJointChainRows(left: WeldRow, right: WeldRow) {
   return compareReportRows(left, right)
 }
 
-export function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
-  const targetIdentity = getJointChainIdentity(targetRow)
+export function getJointChainRows(
+  rows: WeldRow[],
+  targetRow: WeldInput,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
+  const targetIdentity = getJointChainIdentity(targetRow, settings)
   if (!targetIdentity) return []
   return rows
     .filter((row) => {
-      const identity = getJointChainIdentity(row)
+      const identity = getJointChainIdentity(row, settings)
       return (
         identity &&
         identity.project === targetIdentity.project &&
@@ -71,7 +83,7 @@ export function getJointChainRows(rows: WeldRow[], targetRow: WeldInput) {
         identity.baseJoint === targetIdentity.baseJoint
       )
     })
-    .sort(compareJointChainRows)
+    .sort((left, right) => compareJointChainRows(left, right, settings))
 }
 
 function compareSameNameLifecycleOrder(left: WeldRow, right: WeldRow) {

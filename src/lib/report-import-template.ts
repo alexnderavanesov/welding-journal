@@ -23,6 +23,7 @@ export type ReportImportMode = 'newRecords' | 'massFill' | 'replaceData'
 export type ImportableReport = 'weldingJournal'
 
 export const MASS_FILL_ROW_ID_HEADER = 'ID записи'
+export const REPLACE_ROW_VERSION_HEADER = '__Версия записи'
 export const REPLACE_DELETE_ROW_HEADER = 'Удалить строку'
 
 const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
@@ -215,6 +216,7 @@ function buildExistingRowsTemplateXlsxBytes(activeReport: ImportableReport, reco
     mode === 'replaceData'
       ? [
           { key: '__rowId', label: MASS_FILL_ROW_ID_HEADER },
+          { key: '__rowVersion', label: REPLACE_ROW_VERSION_HEADER },
           { key: '__deleteRow', label: REPLACE_DELETE_ROW_HEADER },
         ]
       : [{ key: '__rowId', label: MASS_FILL_ROW_ID_HEADER }]
@@ -223,7 +225,7 @@ function buildExistingRowsTemplateXlsxBytes(activeReport: ImportableReport, reco
     templateFields.map((field) => field.label),
     ...records.map((record) => [
       record.id,
-      ...(mode === 'replaceData' ? [''] : []),
+      ...(mode === 'replaceData' ? [record.rowVersion ?? '', ''] : []),
       ...fields.map((field) => record[field.key as keyof WeldRow] ?? ''),
     ]),
   ]
@@ -361,11 +363,12 @@ function buildExistingRowsWorksheetXml(
   records: readonly WeldRow[],
   mode: Extract<ReportImportMode, 'massFill' | 'replaceData'>,
 ) {
-  const serviceColumnCount = mode === 'replaceData' ? 2 : 1
+  const serviceColumnCount = mode === 'replaceData' ? 3 : 1
   const allColumns =
     mode === 'replaceData'
       ? [
           { key: '__rowId', label: MASS_FILL_ROW_ID_HEADER },
+          { key: '__rowVersion', label: REPLACE_ROW_VERSION_HEADER },
           { key: '__deleteRow', label: REPLACE_DELETE_ROW_HEADER },
           ...fields,
         ]
@@ -373,8 +376,9 @@ function buildExistingRowsWorksheetXml(
   const cols = allColumns
     .map((field, index) => {
       const column = index + 1
-      const width = field.key === '__rowId' ? 10 : field.key === '__deleteRow' ? 16 : getExportColumnWidth(field as WeldField)
-      return `<col min="${column}" max="${column}" width="${width}" customWidth="1"/>`
+      const width = field.key === '__rowId' ? 10 : field.key === '__rowVersion' ? 2 : field.key === '__deleteRow' ? 16 : getExportColumnWidth(field as WeldField)
+      const hidden = field.key === '__rowVersion' ? ' hidden="1"' : ''
+      return `<col min="${column}" max="${column}" width="${width}" customWidth="1"${hidden}/>`
     })
     .join('')
   const rowXml = rows
@@ -382,14 +386,17 @@ function buildExistingRowsWorksheetXml(
       const record = rowIndex > 0 ? records[rowIndex - 1] : null
       const cells = row
         .map((value, columnIndex) => {
-          const isDeleteColumn = mode === 'replaceData' && columnIndex === 1
+          const isVersionColumn = mode === 'replaceData' && columnIndex === 1
+          const isDeleteColumn = mode === 'replaceData' && columnIndex === 2
           const field = columnIndex < serviceColumnCount ? null : fields[columnIndex - serviceColumnCount]
           const styleId =
             rowIndex === 0
               ? getTemplateHeaderStyleId()
               : isDeleteColumn
                 ? 3
-              : getExistingRowsBodyStyleId(activeReport, field ?? undefined, record, mode)
+                : isVersionColumn
+                  ? 2
+                  : getExistingRowsBodyStyleId(activeReport, field ?? undefined, record, mode)
           const ref = encodeCellRef(rowIndex, columnIndex)
           const text = String(value ?? '')
           if (!text) return `<c r="${ref}" s="${styleId}"/>`

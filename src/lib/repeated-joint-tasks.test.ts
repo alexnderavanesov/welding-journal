@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
+import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 describe('buildRepeatedJointTasks', () => {
@@ -80,6 +81,46 @@ describe('buildRepeatedJointTasks', () => {
         }),
       ]),
     )
+  })
+
+  it('creates the repair inside an indexed base chain', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'FB01', rkResult: 'ремонт' }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'create',
+        sourceJoint: 'FB01',
+        targetJoint: 'FB01R1',
+      }),
+    ]))
+  })
+
+  it('uses configured chain suffixes in server-side dispatcher calculations', () => {
+    const systemIndexSettings = {
+      ...DEFAULT_SYSTEM_INDEX_SETTINGS,
+      shopJoint: 'A',
+      fieldJoint: 'B',
+      repair: 'C',
+      cutout: 'D',
+      coil: 'E',
+    }
+
+    const tasks = buildRepeatedJointTasks(
+      [row({ id: 1, joint: 'B7', rkResult: 'ремонт' })],
+      [],
+      [],
+      { systemIndexSettings },
+    )
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'create',
+        sourceJoint: 'B7',
+        targetJoint: 'B7C1',
+      }),
+    ]))
   })
 
   it('uses the project control result before duplicate control when choosing R or W target', () => {

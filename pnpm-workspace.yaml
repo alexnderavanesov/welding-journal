@@ -6,6 +6,11 @@ allowBuilds:
   esbuild: true
   sharp: true
 
+auditConfig:
+  ignoreGhsas:
+    - GHSA-67mh-4wv8-2f99
+    - GHSA-f88m-g3jw-g9cj
+
 minimumReleaseAgeExclude:
   - '@tanstack/react-router@1.170.25'
   - '@tanstack/react-start-client@1.168.23'

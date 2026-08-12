@@ -12,11 +12,14 @@ import {
 import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import {
-  buildControlDateBeforeWeldDateCheckTasks,
+  buildControlHistoryCheckTasks,
   buildForbiddenRepairByDiameterCheckTasks,
   buildIncompleteWelderStampGroupTasks,
+  buildJointCoreDataCheckTasks,
   buildLnkChronologyCheckTasks,
+  buildLnkResultCompletenessCheckTasks,
   buildPstoChronologyCheckTasks,
+  buildPstoResultCompletenessCheckTasks,
   buildWelderStampCompatibilityCheckTasks,
 } from '@/lib/repeated-joint-check-tasks'
 import {
@@ -40,6 +43,8 @@ import { getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import type { DataListSettings } from '@/lib/data-list-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
@@ -57,9 +62,15 @@ type MatchingJointRowsIndex = Map<string, WeldRow[]>
 
 type BuildRepeatedJointTasksOptions = {
   dataListSettings?: DataListSettings
+  saveCheckSettings?: SaveCheckSettings
+  systemIndexSettings?: SystemIndexSettings
+  includeControlHistoryChecks?: boolean
   includeIncompleteStampChecks?: boolean
+  includeJointCoreDataChecks?: boolean
   includeLineConsistencyTasks?: boolean
+  includeLnkResultCompletenessChecks?: boolean
   includePercentageLineControlTasks?: boolean
+  includePstoResultCompletenessChecks?: boolean
   includeWelderStampCompatibilityChecks?: boolean
 }
 
@@ -70,26 +81,52 @@ export function buildRepeatedJointTasks(
   options: BuildRepeatedJointTasksOptions = {},
 ): RepeatedJointTask[] {
   const {
+    includeControlHistoryChecks = true,
     includeIncompleteStampChecks = true,
+    includeJointCoreDataChecks = true,
     includeLineConsistencyTasks = true,
+    includeLnkResultCompletenessChecks = true,
     includePercentageLineControlTasks = true,
+    includePstoResultCompletenessChecks = true,
     includeWelderStampCompatibilityChecks = true,
   } = options
+  const systemIndexSettings = options.systemIndexSettings ?? DEFAULT_SYSTEM_INDEX_SETTINGS
+  const getConfiguredOfficialRejectedJointChainRows = (
+    sourceRows: WeldRow[],
+    sourceRow: WeldInput,
+    sourceJoint: string,
+  ) => getOfficialRejectedJointChainRows(sourceRows, sourceRow, sourceJoint, systemIndexSettings)
   const tasks: RepeatedJointTask[] = []
-  const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows)
+  const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows, systemIndexSettings)
   const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
   const chainCheckTasks = [
-    ...buildJointChainConsistencyCheckTasks(rows, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }),
-    ...buildControlDateBeforeWeldDateCheckTasks(rows),
-    ...buildLnkChronologyCheckTasks(rows),
-    ...buildPstoChronologyCheckTasks(rows),
-    ...buildForbiddenRepairByDiameterCheckTasks(rows),
-    ...(includeWelderStampCompatibilityChecks
-      ? buildWelderStampCompatibilityCheckTasks(rows, welderStampRecords, welderStampSuspensions, options.dataListSettings)
+    ...buildJointChainConsistencyCheckTasks(
+      rows,
+      { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows: getConfiguredOfficialRejectedJointChainRows },
+      systemIndexSettings,
+    ),
+    ...buildLnkChronologyCheckTasks(rows, systemIndexSettings),
+    ...buildPstoChronologyCheckTasks(rows, systemIndexSettings),
+    ...buildForbiddenRepairByDiameterCheckTasks(rows, systemIndexSettings),
+    ...(includeJointCoreDataChecks
+      ? buildJointCoreDataCheckTasks(rows, systemIndexSettings)
       : []),
-    ...(includeIncompleteStampChecks ? buildIncompleteWelderStampGroupTasks(rows) : []),
+    ...(includeLnkResultCompletenessChecks ? buildLnkResultCompletenessCheckTasks(rows, systemIndexSettings) : []),
+    ...(includePstoResultCompletenessChecks ? buildPstoResultCompletenessCheckTasks(rows, systemIndexSettings) : []),
+    ...(includeControlHistoryChecks ? buildControlHistoryCheckTasks(rows, systemIndexSettings) : []),
+    ...(includeWelderStampCompatibilityChecks
+      ? buildWelderStampCompatibilityCheckTasks(
+          rows,
+          welderStampRecords,
+          welderStampSuspensions,
+          options.dataListSettings,
+          options.saveCheckSettings ?? DEFAULT_SAVE_CHECK_SETTINGS,
+          systemIndexSettings,
+        )
+      : []),
+    ...(includeIncompleteStampChecks ? buildIncompleteWelderStampGroupTasks(rows, systemIndexSettings) : []),
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))
-  const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows)
+  const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows, systemIndexSettings)
   const lineConsistencyTasks = includeLineConsistencyTasks ? buildLineConsistencyTasks(rows) : []
   const percentageLineControlTasks = includePercentageLineControlTasks
     ? buildPercentageLineControlTasks(rows, welderStampSuspensions)
@@ -99,36 +136,37 @@ export function buildRepeatedJointTasks(
     [
       ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),
       ...duplicateCheckTasks,
-    ].map((task) => getJointChainConsistencyKey(task.row)).filter(Boolean) as string[],
+    ].map((task) => getJointChainConsistencyKey(task.row, systemIndexSettings)).filter(Boolean) as string[],
   )
   const obsoleteByRowId = new Map<number, ObsoleteRepeatedJointInfo>()
   for (const row of rows) {
-    const repeated = getObsoleteRepeatedJointInfo(matchingJointRowsIndex, row)
+    const repeated = getObsoleteRepeatedJointInfo(matchingJointRowsIndex, row, systemIndexSettings)
     if (repeated) obsoleteByRowId.set(row.id, repeated)
   }
   const directObsoleteInfos = Array.from(obsoleteByRowId.values())
   for (const row of rows) {
     if (obsoleteByRowId.has(row.id)) continue
-    const repeated = getPropagatedObsoleteRepeatedJointInfo(row, directObsoleteInfos)
+    const repeated = getPropagatedObsoleteRepeatedJointInfo(row, directObsoleteInfos, systemIndexSettings)
     if (repeated) obsoleteByRowId.set(row.id, repeated)
   }
   const createTaskTargetKeys = new Set<string>()
 
   for (const row of rows) {
     if (obsoleteByRowId.has(row.id)) continue
-    if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys)) continue
+    if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys, systemIndexSettings)) continue
     const rejection = getPrimaryRejectedLnkResult(row)
     if (!rejection) continue
     const sourceJoint = String(row.joint ?? '').trim()
     if (!sourceJoint) continue
-    if (hasCompletedParentBranch(rows, row, sourceJoint)) continue
+    if (hasCompletedParentBranch(rows, row, sourceJoint, systemIndexSettings)) continue
 
     const suffix = getExpectedRepeatedJointSuffix(row, rejection.result)
-    const parsed = parseRepeatedJointName(sourceJoint)
-    const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint)
+    const parsed = parseRepeatedJointName(sourceJoint, systemIndexSettings)
+    const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint, systemIndexSettings)
     const lastOfficialRejectedRow = officialRejectedChainRows.at(-1)
     if (!isUnofficialJoint(row) && officialRejectedChainRows.length > 3 && lastOfficialRejectedRow?.id === row.id) {
-      const targetJoints = getCoilJointNames(parsed.base).filter((targetJoint) => !hasRepeatedJointTarget(rows, row, targetJoint))
+      const targetJoints = getCoilJointNames(parsed.base, systemIndexSettings)
+        .filter((targetJoint) => !hasRepeatedJointTarget(rows, row, targetJoint))
       if (targetJoints.length === 0) continue
 
       tasks.push({
@@ -143,7 +181,7 @@ export function buildRepeatedJointTasks(
       continue
     }
 
-    const targetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejection.result)
+    const targetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejection.result, systemIndexSettings)
     if (hasRepeatedJointTarget(rows, row, targetJoint)) continue
     const createTargetKey = getCreateTaskTargetKey(row, targetJoint)
     if (createTargetKey && createTaskTargetKeys.has(createTargetKey)) continue
@@ -164,7 +202,7 @@ export function buildRepeatedJointTasks(
   for (const row of rows) {
     const repeated = obsoleteByRowId.get(row.id)
     if (!repeated) continue
-    if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys)) continue
+    if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys, systemIndexSettings)) continue
     if (
       repeated.expectedTargetJoint &&
       normalizeJointChainPart(repeated.expectedTargetJoint) !== normalizeJointChainPart(repeated.targetJoint) &&
@@ -178,7 +216,7 @@ export function buildRepeatedJointTasks(
         sourceJoint: repeated.sourceJoint,
         currentJoint: repeated.targetJoint,
         targetJoint: repeated.expectedTargetJoint,
-        baseJoint: parseRepeatedJointName(repeated.expectedTargetJoint).base,
+        baseJoint: parseRepeatedJointName(repeated.expectedTargetJoint, systemIndexSettings).base,
       })
     } else if (isUnusedRepeatedJointDraft(row)) {
       tasks.push({
@@ -192,8 +230,8 @@ export function buildRepeatedJointTasks(
         reason: repeated.reason,
       })
     } else {
-      const identity = getJointChainIdentity(row)
-      const baseJoint = parseRepeatedJointName(repeated.targetJoint).base
+      const identity = getJointChainIdentity(row, systemIndexSettings)
+      const baseJoint = parseRepeatedJointName(repeated.targetJoint, systemIndexSettings).base
       const chainKey = identity
         ? `${identity.project}:${identity.subtitle}:${identity.line}:${identity.baseJoint}`
         : `${normalizeSearchText(row.projectTitle)}:${normalizeSearchText(row.subtitleCode)}:${normalizeSearchText(row.line)}:${normalizeSearchText(baseJoint)}`
@@ -225,16 +263,19 @@ export function buildRepeatedJointTasks(
   ]
 }
 
-function buildOrphanGoodRepeatedJointRenameTasks(rows: WeldRow[]): RepeatedJointRenameTask[] {
+function buildOrphanGoodRepeatedJointRenameTasks(
+  rows: WeldRow[],
+  systemIndexSettings: SystemIndexSettings,
+): RepeatedJointRenameTask[] {
   const tasks: RepeatedJointRenameTask[] = []
   for (const row of rows) {
     if (isUnofficialJoint(row) || getJointStatusLabel(row) !== 'годен') continue
     const currentJoint = String(row.joint ?? '').trim()
     if (!currentJoint) continue
-    const parsed = parseRepeatedJointName(currentJoint)
+    const parsed = parseRepeatedJointName(currentJoint, systemIndexSettings)
     if (parsed.segments.length === 0) continue
 
-    const sourceCandidates = getRepeatedJointSourceCandidates(parsed)
+    const sourceCandidates = getRepeatedJointSourceCandidates(parsed, systemIndexSettings)
     const targetJoint = sourceCandidates.find((candidate) => !hasRepeatedJointTarget(rows, row, candidate.sourceJoint))?.sourceJoint ?? ''
     if (!targetJoint) continue
     const hasAnySource = sourceCandidates.some((candidate) => hasRepeatedJointTarget(rows, row, candidate.sourceJoint))
@@ -248,7 +289,7 @@ function buildOrphanGoodRepeatedJointRenameTasks(rows: WeldRow[]): RepeatedJoint
       sourceJoint: targetJoint,
       currentJoint,
       targetJoint,
-      baseJoint: parseRepeatedJointName(targetJoint).base,
+      baseJoint: parseRepeatedJointName(targetJoint, systemIndexSettings).base,
     })
   }
   return tasks
@@ -260,8 +301,12 @@ function getCreateTaskTargetKey(row: WeldInput, targetJoint: string) {
   return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
 }
 
-function isRowInBlockedRepeatedJointChain(row: WeldInput, blockedChainKeys: Set<string>) {
-  const chainKey = getJointChainConsistencyKey(row)
+function isRowInBlockedRepeatedJointChain(
+  row: WeldInput,
+  blockedChainKeys: Set<string>,
+  systemIndexSettings: SystemIndexSettings,
+) {
+  const chainKey = getJointChainConsistencyKey(row, systemIndexSettings)
   return Boolean(chainKey && blockedChainKeys.has(chainKey))
 }
 
@@ -295,24 +340,32 @@ function findMatchingJointRowsInIndex(index: MatchingJointRowsIndex, sourceRow: 
   return index.get(getMatchingJointRowsIndexKey(sourceRow, joint)) ?? []
 }
 
-function getObsoleteRepeatedJointInfo(index: MatchingJointRowsIndex, row: WeldRow): ObsoleteRepeatedJointInfo | null {
+function getObsoleteRepeatedJointInfo(
+  index: MatchingJointRowsIndex,
+  row: WeldRow,
+  systemIndexSettings: SystemIndexSettings,
+): ObsoleteRepeatedJointInfo | null {
   const targetJoint = String(row.joint ?? '').trim()
-  const parsed = parseRepeatedJointName(targetJoint)
+  const parsed = parseRepeatedJointName(targetJoint, systemIndexSettings)
   if (parsed.segments.length === 0) return null
   let obsoleteCandidate: ObsoleteRepeatedJointInfo | null = null
-  for (const candidate of getRepeatedJointSourceCandidates(parsed)) {
+  for (const candidate of getRepeatedJointSourceCandidates(parsed, systemIndexSettings)) {
     const sourceRows = findMatchingJointRowsInIndex(index, row, candidate.sourceJoint)
     if (sourceRows.length === 0) continue
     const validSource = sourceRows.find((sourceRow) => {
       const rejection = getPrimaryRejectedLnkResult(sourceRow)
       const expectedSuffix = rejection ? (rejection.result === 'ремонт' ? 'R' : 'W') : null
-      const expectedTargetJoint = rejection ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result) : ''
+      const expectedTargetJoint = rejection
+        ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result, systemIndexSettings)
+        : ''
       return expectedSuffix === candidate.suffix && normalizeJointChainPart(expectedTargetJoint) === normalizeJointChainPart(targetJoint)
     })
     if (validSource) return null
     const sourceRow = sourceRows[0]
     const rejection = getPrimaryRejectedLnkResult(sourceRow)
-    const expectedTargetJoint = rejection ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result) : ''
+    const expectedTargetJoint = rejection
+      ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result, systemIndexSettings)
+      : ''
     obsoleteCandidate =
       obsoleteCandidate ?? {
         sourceRow,
@@ -329,9 +382,10 @@ function getObsoleteRepeatedJointInfo(index: MatchingJointRowsIndex, row: WeldRo
 function getPropagatedObsoleteRepeatedJointInfo(
   row: WeldRow,
   directObsoleteInfos: ObsoleteRepeatedJointInfo[],
+  systemIndexSettings: SystemIndexSettings,
 ): ObsoleteRepeatedJointInfo | null {
   const targetJoint = String(row.joint ?? '').trim()
-  const parsed = parseRepeatedJointName(targetJoint)
+  const parsed = parseRepeatedJointName(targetJoint, systemIndexSettings)
   if (parsed.segments.length === 0) return null
 
   for (const direct of directObsoleteInfos) {
@@ -339,8 +393,8 @@ function getPropagatedObsoleteRepeatedJointInfo(
     if (normalizeJointChainPart(direct.targetJoint) === normalizeJointChainPart(targetJoint)) continue
     if (!isSameRepeatedJointLine(row, direct.sourceRow)) continue
 
-    const directTarget = parseRepeatedJointName(direct.targetJoint)
-    const directExpected = parseRepeatedJointName(direct.expectedTargetJoint)
+    const directTarget = parseRepeatedJointName(direct.targetJoint, systemIndexSettings)
+    const directExpected = parseRepeatedJointName(direct.expectedTargetJoint, systemIndexSettings)
     if (directTarget.segments.length === 0) continue
     if (normalizeJointChainPart(parsed.base) !== normalizeJointChainPart(directTarget.base)) continue
 
@@ -362,7 +416,7 @@ function getPropagatedObsoleteRepeatedJointInfo(
     const expectedTargetJoint = formatRepeatedJointName(directExpected.base, [
       ...directExpected.segments,
       ...parsed.segments.slice(changedSegmentIndex),
-    ])
+    ], systemIndexSettings)
     if (normalizeJointChainPart(expectedTargetJoint) === normalizeJointChainPart(targetJoint)) continue
 
     return {

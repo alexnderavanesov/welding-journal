@@ -7,6 +7,7 @@ import {
   getSystemIndexSummaryText,
   loadSystemIndexSettings,
   type JointSystemSuffix,
+  type SystemIndexSettings,
 } from '@/lib/system-index-settings'
 
 export type { JointSystemSuffix } from '@/lib/system-index-settings'
@@ -27,9 +28,11 @@ export function normalizeJointName(value: unknown) {
   return String(value ?? '').trim().replace(/\s+/g, '')
 }
 
-export function parseJointName(value: unknown): ParsedJointName {
+export function parseJointName(
+  value: unknown,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+): ParsedJointName {
   const raw = normalizeJointName(value)
-  const settings = loadSystemIndexSettings()
   const jointPrefixPattern = getJointPrefixPattern(settings)
   const prefixMatch = raw.match(jointPrefixPattern)
   if (!prefixMatch) {
@@ -58,14 +61,52 @@ export function parseJointName(value: unknown): ParsedJointName {
   }
 }
 
-export function validateManualJointName(value: unknown) {
+export function validateJointNameStructure(
+  value: unknown,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   const normalized = normalizeJointName(value)
-  const settings = loadSystemIndexSettings()
-  if (!normalized) return `Укажите номер стыка. Он должен начинаться с ${getSystemIndexPrefixText(settings)} и порядкового номера.`
+  const startRequirement = getJointNameStartRequirement(settings)
+  if (!normalized) return `Укажите номер стыка. Он должен ${startRequirement}.`
 
   const prefixMatch = normalized.match(getJointPrefixPattern(settings))
   if (!prefixMatch) {
-    return `Стык должен начинаться с ${getSystemIndexPrefixText(settings)} и порядкового номера, например ${getSystemIndexExampleText(settings)}.`
+    return `Стык должен ${startRequirement}.`
+  }
+
+  const tail = normalized.slice(prefixMatch[1].length)
+  const segmentPattern = getSystemChainSegmentPattern(settings)
+  const firstSystemSegment = tail.search(new RegExp(`${segmentPattern}\\d+`, 'i'))
+  if (firstSystemSegment === -1) {
+    if (new RegExp(segmentPattern, 'i').test(tail)) {
+      return `После букв ${getSystemIndexSummaryText(settings)} в системной части имени должен стоять номер повторения.`
+    }
+    return null
+  }
+
+  const baseExtra = tail.slice(0, firstSystemSegment)
+  const systemTail = tail.slice(firstSystemSegment)
+  if (
+    new RegExp(segmentPattern, 'i').test(baseExtra) ||
+    !new RegExp(`^(?:${segmentPattern}\\d+)+$`, 'i').test(systemTail)
+  ) {
+    return `Системная часть имени должна состоять только из последовательных индексов ${getSystemIndexSummaryText(settings)} с номерами.`
+  }
+
+  return null
+}
+
+export function validateManualJointName(
+  value: unknown,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
+  const normalized = normalizeJointName(value)
+  const structureError = validateJointNameStructure(normalized, settings)
+  if (structureError) return structureError
+
+  const prefixMatch = normalized.match(getJointPrefixPattern(settings))!
+  if (hasLeadingLetterIndex(normalized, settings) && !settings.allowLeadingLetterIndex) {
+    return 'Буквенный индекс перед номером стыка отключен в настройках системных индексов.'
   }
 
   const manualTail = normalized.slice(prefixMatch[1].length)
@@ -76,14 +117,35 @@ export function validateManualJointName(value: unknown) {
   return null
 }
 
-export function hasReservedJointSystemPart(value: unknown) {
+export function hasLeadingLetterIndex(
+  value: unknown,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   const normalized = normalizeJointName(value)
-  const settings = loadSystemIndexSettings()
+  return new RegExp(
+    `^[${escapeRegExp(settings.shopJoint)}${escapeRegExp(settings.fieldJoint)}][A-Z]\\d+`,
+    'i',
+  ).test(normalized)
+}
+
+export function hasReservedJointSystemPart(
+  value: unknown,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
+  const normalized = normalizeJointName(value)
   const prefixMatch = normalized.match(getJointPrefixPattern(settings))
   if (!prefixMatch) return false
   return new RegExp(getSystemChainSegmentPattern(settings), 'i').test(normalized.slice(prefixMatch[1].length))
 }
 
 function getJointPrefixPattern(settings = loadSystemIndexSettings()) {
-  return new RegExp(`^([${escapeRegExp(settings.shopJoint)}${escapeRegExp(settings.fieldJoint)}]\\d+)`, 'i')
+  return new RegExp(`^([${escapeRegExp(settings.shopJoint)}${escapeRegExp(settings.fieldJoint)}](?:[A-Z])?\\d+)`, 'i')
+}
+
+function getJointNameStartRequirement(settings: SystemIndexSettings) {
+  if (settings.allowLeadingLetterIndex) {
+    return `начинаться с ${getSystemIndexPrefixText(settings)}; после него допускается одна латинская буква, затем номер, например ${settings.shopJoint}13 или ${settings.fieldJoint}B05`
+  }
+
+  return `начинаться с ${getSystemIndexPrefixText(settings)} и порядкового номера, например ${getSystemIndexExampleText(settings)}`
 }

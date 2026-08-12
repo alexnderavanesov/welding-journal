@@ -1,9 +1,10 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   loadWelderStampRegistrySnapshot,
   saveWelderStampRecords,
   saveWelderStampSuspensionRecords,
+  type WelderStampRegistrySnapshot,
 } from '@/server/welder-stamps'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
@@ -49,6 +50,28 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const [welderStampSuspensionDraft, setWelderStampSuspensionDraft] = useState<WelderStampSuspensionRecord>(() =>
     createEmptyWelderStampSuspensionDraft(),
   )
+  const registryRevisionRef = useRef('')
+
+  const applyRegistrySnapshot = (snapshot: WelderStampRegistrySnapshot) => {
+    const normalizedStamps = normalizeWelderStampRecordsForRegistry(snapshot.stamps)
+    setWelderStamps(normalizedStamps)
+    setWelderStampSuspensions(snapshot.suspensions)
+    registryRevisionRef.current = snapshot.revision
+    queryClient.setQueryData(WELDER_STAMP_REGISTRY_QUERY_KEY, {
+      ...snapshot,
+      stamps: normalizedStamps,
+    })
+  }
+
+  const restoreCurrentRegistrySnapshot = async (error: unknown) => {
+    setMessage((error as Error).message)
+    try {
+      const snapshot = await loadWelderStampRegistrySnapshot()
+      applyRegistrySnapshot(snapshot)
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: WELDER_STAMP_REGISTRY_QUERY_KEY })
+    }
+  }
 
   const welderStampRegistryQuery = useQuery({
     queryKey: WELDER_STAMP_REGISTRY_QUERY_KEY,
@@ -57,53 +80,35 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   })
 
   const welderStampsMutation = useMutation({
-    mutationFn: async (records: WelderStampRecord[]) => saveWelderStampRecords({ data: { records } }),
-    onSuccess: async (records) => {
-      const normalizedRecords = normalizeWelderStampRecordsForRegistry(records)
-      setWelderStamps(normalizedRecords)
-      queryClient.setQueryData(
-        WELDER_STAMP_REGISTRY_QUERY_KEY,
-        (current: { stamps: WelderStampRecord[]; suspensions: WelderStampSuspensionRecord[] } | undefined) => ({
-          stamps: normalizedRecords,
-          suspensions: current?.suspensions ?? welderStampSuspensions,
-        }),
-      )
+    mutationFn: async (records: WelderStampRecord[]) =>
+      saveWelderStampRecords({ data: { records, expectedRevision: registryRevisionRef.current || undefined } }),
+    onSuccess: async (snapshot) => {
+      applyRegistrySnapshot(snapshot)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
       ])
     },
-    onError: (error) => {
-      setMessage((error as Error).message)
-    },
+    onError: restoreCurrentRegistrySnapshot,
   })
 
   const welderStampSuspensionsMutation = useMutation({
-    mutationFn: async (records: WelderStampSuspensionRecord[]) => saveWelderStampSuspensionRecords({ data: { records } }),
-    onSuccess: async (records) => {
-      setWelderStampSuspensions(records)
-      queryClient.setQueryData(
-        WELDER_STAMP_REGISTRY_QUERY_KEY,
-        (current: { stamps: WelderStampRecord[]; suspensions: WelderStampSuspensionRecord[] } | undefined) => ({
-          stamps: current?.stamps ?? welderStamps,
-          suspensions: records,
-        }),
-      )
+    mutationFn: async (records: WelderStampSuspensionRecord[]) =>
+      saveWelderStampSuspensionRecords({ data: { records, expectedRevision: registryRevisionRef.current || undefined } }),
+    onSuccess: async (snapshot) => {
+      applyRegistrySnapshot(snapshot)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
       ])
     },
-    onError: (error) => {
-      setMessage((error as Error).message)
-    },
+    onError: restoreCurrentRegistrySnapshot,
   })
 
   useEffect(() => {
     if (welderStampRegistryQuery.data) {
-      setWelderStamps(normalizeWelderStampRecordsForRegistry(welderStampRegistryQuery.data.stamps))
-      setWelderStampSuspensions(welderStampRegistryQuery.data.suspensions)
+      applyRegistrySnapshot(welderStampRegistryQuery.data)
     }
   }, [welderStampRegistryQuery.data])
 

@@ -7,7 +7,9 @@ const SYSTEM_INDEX_SETTINGS_STORAGE_KEY = 'welding-system-index-settings'
 
 export type SystemIndexKey = 'shopJoint' | 'fieldJoint' | 'repair' | 'cutout' | 'coil'
 export type JointSystemSuffix = 'R' | 'W' | 'Y'
-export type SystemIndexSettings = Record<SystemIndexKey, string>
+export type SystemIndexSettings = Record<SystemIndexKey, string> & {
+  allowLeadingLetterIndex: boolean
+}
 
 export const DEFAULT_SYSTEM_INDEX_SETTINGS: SystemIndexSettings = {
   shopJoint: 'S',
@@ -15,6 +17,7 @@ export const DEFAULT_SYSTEM_INDEX_SETTINGS: SystemIndexSettings = {
   repair: 'R',
   cutout: 'W',
   coil: 'Y',
+  allowLeadingLetterIndex: false,
 }
 
 const suffixToSettingKey: Record<JointSystemSuffix, SystemIndexKey> = {
@@ -70,13 +73,16 @@ export function applyRemoteSystemIndexSettings(settings: unknown) {
 }
 
 export function normalizeSystemIndexSettings(value: unknown): SystemIndexSettings {
-  const source = typeof value === 'object' && value ? (value as Partial<Record<SystemIndexKey, unknown>>) : {}
+  const source = typeof value === 'object' && value
+    ? (value as Partial<Record<SystemIndexKey, unknown>> & { allowLeadingLetterIndex?: unknown })
+    : {}
   const settings = {
     shopJoint: normalizeSystemIndexLetter(source.shopJoint, DEFAULT_SYSTEM_INDEX_SETTINGS.shopJoint),
     fieldJoint: normalizeSystemIndexLetter(source.fieldJoint, DEFAULT_SYSTEM_INDEX_SETTINGS.fieldJoint),
     repair: normalizeSystemIndexLetter(source.repair, DEFAULT_SYSTEM_INDEX_SETTINGS.repair),
     cutout: normalizeSystemIndexLetter(source.cutout, DEFAULT_SYSTEM_INDEX_SETTINGS.cutout),
     coil: normalizeSystemIndexLetter(source.coil, DEFAULT_SYSTEM_INDEX_SETTINGS.coil),
+    allowLeadingLetterIndex: source.allowLeadingLetterIndex === true,
   }
   return getSystemIndexValidationError(settings) ? DEFAULT_SYSTEM_INDEX_SETTINGS : settings
 }
@@ -87,12 +93,14 @@ export function normalizeSystemIndexLetter(value: unknown, fallback = '') {
 }
 
 export function getSystemIndexValidationError(settings: SystemIndexSettings) {
-  const letters = Object.values(settings).map((letter) => letter.trim().toUpperCase())
+  const letters = systemIndexKeys.map((key) => settings[key].trim().toUpperCase())
   const empty = letters.some((letter) => !/^[A-Z]$/.test(letter))
   if (empty) return 'Для каждого системного индекса нужна одна латинская буква.'
   if (new Set(letters).size !== letters.length) return 'Буквы системных индексов не должны повторяться.'
   return null
 }
+
+const systemIndexKeys: SystemIndexKey[] = ['shopJoint', 'fieldJoint', 'repair', 'cutout', 'coil']
 
 export function getConfiguredJointChainSuffix(suffix: JointSystemSuffix, settings = loadSystemIndexSettings()) {
   return settings[suffixToSettingKey[suffix]]

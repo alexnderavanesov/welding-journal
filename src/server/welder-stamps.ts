@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { asc, sql } from 'drizzle-orm'
+import { createHash } from 'node:crypto'
 import { requireDb } from '@/db'
 import {
   welderStampSuspensions,
@@ -11,6 +12,11 @@ import {
 } from '@/db/schema'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { assertSecurityScope } from '@/server/security-functions'
+import {
+  assertWelderStampSuspensionsReferenceRegistry,
+  prepareWelderStampRecordsForPersistence,
+  prepareWelderStampSuspensionsForPersistence,
+} from '@/lib/welder-stamp-persistence-validation'
 
 export type WelderStampPayload = {
   id: number
@@ -36,6 +42,12 @@ export type WelderStampSuspensionPayload = {
   naksStamp: string
   suspendedFrom: string
   suspendedTo: string
+}
+
+export type WelderStampRegistrySnapshot = {
+  stamps: WelderStampPayload[]
+  suspensions: WelderStampSuspensionPayload[]
+  revision: string
 }
 
 const textOrNull = (value: unknown) => {
@@ -108,60 +120,100 @@ const suspensionToDbInsert = (record: WelderStampSuspensionPayload): NewWelderSt
   suspendedTo: textOrNull(record.suspendedTo),
 })
 
+const createRegistrySnapshot = (
+  stampRows: WelderStamp[],
+  suspensionRows: WelderStampSuspension[],
+): WelderStampRegistrySnapshot => {
+  const stamps = stampRows.map(toWelderStampPayload)
+  const suspensions = suspensionRows.map(suspensionToPayload)
+  return {
+    stamps,
+    suspensions,
+    revision: createHash('sha256').update(JSON.stringify({ stamps, suspensions })).digest('base64url'),
+  }
+}
+
+const assertRegistryRevision = (actualRevision: string, expectedRevision?: string) => {
+  if (expectedRevision && expectedRevision !== actualRevision) {
+    throw new Error(
+      'Справочник клейм уже изменён другим пользователем. Актуальные данные загружены заново; повторите изменение.',
+    )
+  }
+}
+
 export const loadWelderStampRegistrySnapshot = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertSecurityScope('entry')
   const db = requireDb()
   const [stampRows, suspensionRows] = await Promise.all([
     db.select().from(welderStamps).orderBy(asc(welderStamps.id)),
     db.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
   ])
-  return {
-    stamps: stampRows.map(toWelderStampPayload),
-    suspensions: suspensionRows.map(suspensionToPayload),
-  }
+  return createRegistrySnapshot(stampRows, suspensionRows)
 })
 
 export const saveWelderStampRecords = createServerFn({ method: 'POST' })
-  .validator((data: { records: WelderStampPayload[] }) => data)
+  .validator((data: { records: WelderStampPayload[]; expectedRevision?: string }) => data)
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
+    const preparedRecords = prepareWelderStampRecordsForPersistence(data.records)
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('welder_stamp_registry'))`)
+      const [currentStampRows, currentSuspensionRows] = await Promise.all([
+        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
+        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
+      ])
+      assertRegistryRevision(createRegistrySnapshot(currentStampRows, currentSuspensionRows).revision, data.expectedRevision)
+
       await tx.delete(welderStamps)
 
-      if (data.records.length === 0) {
+      if (preparedRecords.length === 0) {
         await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamps','id'), 1, false)`)
-        await markDispatcherTaskIndexDirty(tx)
-        return []
+      } else {
+        await tx.insert(welderStamps).values(preparedRecords.map(toDbInsert))
+        await tx.execute(
+          sql`select setval(pg_get_serial_sequence('welder_stamps','id'), coalesce((select max(id) from welder_stamps), 1), true)`,
+        )
       }
-
-      const rows = await tx.insert(welderStamps).values(data.records.map(toDbInsert)).returning()
-      await tx.execute(
-        sql`select setval(pg_get_serial_sequence('welder_stamps','id'), coalesce((select max(id) from welder_stamps), 1), true)`,
-      )
       await markDispatcherTaskIndexDirty(tx)
-      return rows.map(toWelderStampPayload)
+      const [savedStampRows, savedSuspensionRows] = await Promise.all([
+        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
+        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
+      ])
+      return createRegistrySnapshot(savedStampRows, savedSuspensionRows)
     })
   })
 
 export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' })
-  .validator((data: { records: WelderStampSuspensionPayload[] }) => data)
+  .validator((data: { records: WelderStampSuspensionPayload[]; expectedRevision?: string }) => data)
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
+    const preparedRecords = prepareWelderStampSuspensionsForPersistence(data.records)
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('welder_stamp_registry'))`)
+      const [currentStampRows, currentSuspensionRows] = await Promise.all([
+        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
+        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
+      ])
+      assertRegistryRevision(createRegistrySnapshot(currentStampRows, currentSuspensionRows).revision, data.expectedRevision)
+      assertWelderStampSuspensionsReferenceRegistry(preparedRecords, currentStampRows.map(toWelderStampPayload))
+
       await tx.delete(welderStampSuspensions)
 
-      if (data.records.length === 0) {
+      if (preparedRecords.length === 0) {
         await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), 1, false)`)
-        await markDispatcherTaskIndexDirty(tx)
-        return []
+      } else {
+        await tx.insert(welderStampSuspensions).values(preparedRecords.map(suspensionToDbInsert))
+        await tx.execute(
+          sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), coalesce((select max(id) from welder_stamp_suspensions), 1), true)`,
+        )
       }
-
-      const rows = await tx.insert(welderStampSuspensions).values(data.records.map(suspensionToDbInsert)).returning()
-      await tx.execute(
-        sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), coalesce((select max(id) from welder_stamp_suspensions), 1), true)`,
-      )
       await markDispatcherTaskIndexDirty(tx)
-      return rows.map(suspensionToPayload)
+      const [savedStampRows, savedSuspensionRows] = await Promise.all([
+        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
+        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
+      ])
+      return createRegistrySnapshot(savedStampRows, savedSuspensionRows)
     })
   })

@@ -4,6 +4,8 @@ import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 
 export type WeldRow = WeldInput & {
   id: number
+  rowVersion?: string
+  activeDispatcherTasks?: string
   duplicateControls?: DuplicateControlRecord[]
   jsrDocumentId?: number
   checklistDocumentId?: number

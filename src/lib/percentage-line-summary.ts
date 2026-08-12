@@ -9,6 +9,7 @@ import {
 } from '@/lib/report-value-utils'
 import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
+import type { SystemIndexSettings } from '@/lib/system-index-settings'
 
 export type PercentageControlMethod = 'РК' | 'УЗК'
 
@@ -93,7 +94,10 @@ const PERCENTAGE_CONTROL_METHODS = [
   { code: 'УЗК' as const, enabledKey: 'hasUzk' as const, resultKey: 'uzkResult' as const },
 ]
 
-export function buildPercentageLineSummaries(rows: WeldRow[]): PercentageLineSummary[] {
+export function buildPercentageLineSummaries(
+  rows: WeldRow[],
+  systemIndexSettings?: SystemIndexSettings,
+): PercentageLineSummary[] {
   const lineGroups = getPercentageLineGroups(rows)
 
   return lineGroups
@@ -105,7 +109,7 @@ export function buildPercentageLineSummaries(rows: WeldRow[]): PercentageLineSum
       percent: group.percent,
       rowCount: group.rows.length,
       rows: group.rows,
-      stamps: buildStampSummaries(group),
+      stamps: buildStampSummaries(group, systemIndexSettings),
     }))
     .filter((summary) => summary.stamps.length > 0)
     .sort(
@@ -160,7 +164,7 @@ function getPercentageLineGroups(rows: WeldRow[]) {
   })
 }
 
-function buildStampSummaries(group: LineGroup) {
+function buildStampSummaries(group: LineGroup, systemIndexSettings?: SystemIndexSettings) {
   const stampRows = new Map<string, StampAccumulator>()
 
   for (const row of group.rows) {
@@ -172,7 +176,7 @@ function buildStampSummaries(group: LineGroup) {
   }
 
   return Array.from(stampRows.values())
-    .map((entry) => buildStampSummary(group, entry))
+    .map((entry) => buildStampSummary(group, entry, systemIndexSettings))
     .sort(
       (left, right) =>
         right.officialJointCount - left.officialJointCount ||
@@ -181,10 +185,16 @@ function buildStampSummaries(group: LineGroup) {
     )
 }
 
-function buildStampSummary(group: LineGroup, entry: StampAccumulator): PercentageLineStampSummary {
+function buildStampSummary(
+  group: LineGroup,
+  entry: StampAccumulator,
+  systemIndexSettings?: SystemIndexSettings,
+): PercentageLineStampSummary {
   const officialJointCount = entry.rows.length
   const baseRequiredControls = getBaseRequiredControls(officialJointCount, group.percent)
-  const rejectedPrimaryControls = entry.rows.filter(isRejectedPrimaryPercentageControl).length
+  const rejectedPrimaryControls = entry.rows.filter((row) =>
+    isRejectedPrimaryPercentageControl(row, systemIndexSettings),
+  ).length
   const fullControlRequired = rejectedPrimaryControls >= 4
   const additionalRequiredControls = fullControlRequired
     ? Math.max(0, officialJointCount - baseRequiredControls)
@@ -227,8 +237,11 @@ function buildStampSummary(group: LineGroup, entry: StampAccumulator): Percentag
   const rejectedCoveredRowIds = entry.rows.filter(hasRejectedClosurePercentageControl).map(getRowId)
   const completedJointNames = entry.rows.filter(hasCompletedPercentageControl).map(getJointDisplayName)
   const completedRowIds = entry.rows.filter(hasCompletedPercentageControl).map(getRowId)
-  const rejectedPrimaryJointNames = entry.rows.filter(isRejectedPrimaryPercentageControl).map(getJointDisplayName)
-  const rejectedPrimaryRowIds = entry.rows.filter(isRejectedPrimaryPercentageControl).map((row) => row.id)
+  const rejectedPrimaryRows = entry.rows.filter((row) =>
+    isRejectedPrimaryPercentageControl(row, systemIndexSettings),
+  )
+  const rejectedPrimaryJointNames = rejectedPrimaryRows.map(getJointDisplayName)
+  const rejectedPrimaryRowIds = rejectedPrimaryRows.map((row) => row.id)
   const missingCandidateRows = entry.rows.filter(
     (row) => isPercentageControlRequiredAvailable(row) && !hasIntentionalRequiredPercentageControlCoverage(row),
   )
@@ -367,8 +380,8 @@ function hasCancelledPercentageControlCoverage(row: WeldRow) {
   return hasBothPercentageControlsCancelled(row)
 }
 
-function isRejectedPrimaryPercentageControl(row: WeldRow) {
-  if (parseJointChainName(String(row.joint ?? '')).segments.length > 0) return false
+function isRejectedPrimaryPercentageControl(row: WeldRow, systemIndexSettings?: SystemIndexSettings) {
+  if (parseJointChainName(String(row.joint ?? ''), systemIndexSettings).segments.length > 0) return false
   return hasRejectedPercentageControlResult(row)
 }
 

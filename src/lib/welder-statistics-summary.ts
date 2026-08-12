@@ -293,7 +293,7 @@ function matchesJointFilter(row: WeldRow, filter: WelderStatisticsJointFilter, s
 }
 
 function getJointType(row: WeldRow, systemIndexSettings?: SystemIndexSettings): 'f' | 's' | null {
-  const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
+  const baseJoint = parseJointChainName(String(row.joint ?? ''), systemIndexSettings).base.trim().toUpperCase()
   return getConfiguredBaseJointType(baseJoint, systemIndexSettings)
 }
 

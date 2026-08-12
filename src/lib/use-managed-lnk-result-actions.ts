@@ -103,7 +103,7 @@ export function useManagedLnkResultActions({
     if (!method) return
     setManagedLnkPendingResultChanges((current) => {
       const next = { ...current }
-      delete next[row.id]
+      delete next[getManagedLnkResultChangeKey(row.id, methodKey)]
       return next
     })
     const confirmed = await confirmAction({

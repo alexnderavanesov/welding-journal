@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_DATA_LIST_SETTINGS, saveDataListSettings } from './data-list-settings'
 import { DEFAULT_OTHER_SETTINGS, saveOtherSettings } from './other-settings'
 import { DEFAULT_SAVE_CHECK_SETTINGS, saveSaveCheckSettings } from './save-check-settings'
-import { MASS_FILL_ROW_ID_HEADER, getReportImportTemplateFields } from './report-import-template'
+import {
+  MASS_FILL_ROW_ID_HEADER,
+  REPLACE_DELETE_ROW_HEADER,
+  REPLACE_ROW_VERSION_HEADER,
+  getReportImportTemplateFields,
+} from './report-import-template'
 import {
   buildReportImportPreview,
   buildReportMassFillPreview,
@@ -58,6 +63,199 @@ describe('existing rows report import preview', () => {
     })).rejects.toThrow('не более 2000 строк')
   })
 
+  it('checks ZВ-30 for a new imported row after all Excel values are assembled', async () => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+      requiredMaterialGroupWithWeldDate: false,
+    })
+    const file = buildWeldingJournalImportFile({
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'Линия',
+      joint: 'F1',
+      weldDate: '01.07.2026',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('ЗВ-30')
+    expect(preview.errors[0]?.message).toContain('тип соединения')
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('checks ZВ-29 against the final stored row when %s imports only the weld date', async (_, buildPreview) => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+    })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'],
+      [[7, 'F1', '01.07.2026']],
+    )
+
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, joint: 'F1', weldDate: null, materialGroup: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('ЗВ-29')
+    expect(preview.errors[0]?.message).toContain('группу материалов')
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('checks ZВ-30 against the final stored row when %s imports only the weld date', async (_, buildPreview) => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+      requiredMaterialGroupWithWeldDate: false,
+    })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'],
+      [[7, 'F1', '01.07.2026']],
+    )
+
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, joint: 'F1', weldDate: null, connectionType: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('ЗВ-30')
+    expect(preview.errors[0]?.message).toContain('тип соединения')
+  })
+
+  it.each([
+    ['mass fill', buildReportMassFillPreview],
+    ['replace data', buildReportReplaceDataPreview],
+  ])('checks ZВ-31 against the final stored row when %s imports only the weld date', async (_, buildPreview) => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+      requiredMaterialGroupWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+    })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'],
+      [[7, 'F1', '01.07.2026']],
+    )
+
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, joint: 'F1', weldDate: null, weldingMethod: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('ЗВ-31')
+    expect(preview.errors[0]?.message).toContain('способ сварки')
+  })
+
+  it('reports all missing core weld fields for one imported row at once', async () => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+    })
+    const file = buildWeldingJournalImportFile({
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'Линия',
+      joint: 'F1',
+      weldDate: '01.07.2026',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors[0]?.message).toContain('ЗВ-29')
+    expect(preview.errors[0]?.message).toContain('ЗВ-30')
+    expect(preview.errors[0]?.message).toContain('ЗВ-31')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining([
+      'materialGroup',
+      'connectionType',
+      'weldingMethod',
+    ]))
+  })
+
+  it.each([
+    ['ЗВ-10', 'mass fill', buildReportMassFillPreview, {
+      requiredMaterialGroupWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+    }],
+    ['ЗВ-10', 'replace data', buildReportReplaceDataPreview, {
+      requiredMaterialGroupWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+    }],
+    ['ЗВ-12', 'mass fill', buildReportMassFillPreview, {
+      requiredRootStampWithWeldDate: false,
+      requiredMaterialGroupWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+      requiredWeldingMethodWithWeldDate: false,
+    }],
+    ['ЗВ-12', 'replace data', buildReportReplaceDataPreview, {
+      requiredRootStampWithWeldDate: false,
+      requiredMaterialGroupWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+      requiredWeldingMethodWithWeldDate: false,
+    }],
+  ])('does not bypass %s during %s when only the weld date is imported', async (
+    expectedCode,
+    _,
+    buildPreview,
+    disabledChecks,
+  ) => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      ...disabledChecks,
+    })
+    const weldDate = expectedCode === 'ЗВ-12' ? '01.01.2999' : '01.07.2026'
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'],
+      [[7, 'F1', weldDate]],
+    )
+
+    const preview = await buildPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, joint: 'F1', weldDate: null, stamp1K: null } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain(expectedCode)
+  })
+
   it('keeps unofficial status out of mass fill update payloads', async () => {
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Статус', 'Марка стали 1'], [[7, 'F1', '', '09Г2С']])
     const preview = await buildReportMassFillPreview({
@@ -86,6 +284,93 @@ describe('existing rows report import preview', () => {
 
     expect(preview.errors).toEqual([])
     expect(preview.validRecords).toEqual([{ id: 7, material1: '12Х18Н10Т' }])
+    expect(preview.expectedRowVersions).toEqual([{ id: 7, version: 'v1' }])
+  })
+
+  it('rejects a replace data workbook without the hidden row version column', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, 'F1', '12Х18Н10Т']],
+      false,
+    )
+
+    await expect(buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', joint: 'F1', material1: '09Г2С' } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })).rejects.toThrow('Скачайте свежий шаблон')
+  })
+
+  it('rejects a stale replace data workbook before preparing updates', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, 'F1', '12Х18Н10Т']],
+    )
+
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v2', joint: 'F1', material1: '09Г2С' } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.expectedRowVersions).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('изменен после скачивания Excel')
+  })
+
+  it('ignores a stale version on an unchanged row and protects only targeted changes', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [
+        [7, 'F1', '09Г2С'],
+        [8, 'F2', '12Х18Н10Т'],
+      ],
+    )
+
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [
+        { id: 7, rowVersion: 'v2', joint: 'F1', material1: '09Г2С' } as WeldRow,
+        { id: 8, rowVersion: 'v1', joint: 'F2', material1: '09Г2С' } as WeldRow,
+      ],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 8, material1: '12Х18Н10Т' }])
+    expect(preview.expectedRowVersions).toEqual([{ id: 8, version: 'v1' }])
+  })
+
+  it('carries the hidden row version for replace data deletions', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, REPLACE_DELETE_ROW_HEADER],
+      [[7, 'да']],
+    )
+
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, rowVersion: 'v1', line: 'Линия', joint: 'F1' } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([
+      expect.objectContaining({ id: 7, deleteRequested: true }),
+    ])
+    expect(preview.expectedRowVersions).toEqual([{ id: 7, version: 'v1' }])
   })
 
   it.each([
@@ -95,6 +380,12 @@ describe('existing rows report import preview', () => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
+    })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+      weldingTypes: ['РД'],
     })
     const file = buildWorkbookFile(
       [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Примечание ЛНК', 'Примечание ПСТО'],
@@ -111,6 +402,9 @@ describe('existing rows report import preview', () => {
           id: 7,
           joint: 'F1',
           weldDate: '2026-07-31',
+          connectionType: 'С17',
+          materialGroup: 'M01',
+          weldingMethod: 'РД',
           hasVik: 'да',
           pstoRequired: 'да',
           lnkNote: null,
@@ -159,7 +453,12 @@ describe('existing rows report import preview', () => {
   })
 
   it('blocks replace data changes that break PSTO request chronology', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+      weldingTypes: ['РАД'],
+    })
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'], [[7, 'F1', '10.07.2026']])
     const preview = await buildReportReplaceDataPreview({
       activeReport: 'weldingJournal',
@@ -170,6 +469,7 @@ describe('existing rows report import preview', () => {
           joint: 'F1',
           weldDate: '2026-07-01',
           weldingMethod: 'РАД',
+          connectionType: 'С17',
           materialGroup: 'M01',
           d1: '10',
           d2: '10',
@@ -192,7 +492,11 @@ describe('existing rows report import preview', () => {
   })
 
   it('respects disabled PSTO request chronology check during replace data preview', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       pstoResultRequestDateOrder: false,
@@ -207,6 +511,7 @@ describe('existing rows report import preview', () => {
           joint: 'F1',
           weldDate: '2026-07-01',
           weldingMethod: 'РАД',
+          connectionType: 'С17',
           materialGroup: 'M01',
           d1: '10',
           d2: '10',
@@ -306,7 +611,11 @@ describe('existing rows report import preview', () => {
   })
 
   it('allows mass fill of a historical joint welded before the stamp card archive date', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     const archivedStamp = {
       ...buildWelderStampRecord('ABC1', true),
       archivedAt: '2026-08-01',
@@ -320,6 +629,7 @@ describe('existing rows report import preview', () => {
         joint: 'F1',
         stamp1K: 'ABC1',
         weldingMethod: 'РАД',
+        connectionType: 'С17',
         materialGroup: 'M01',
         d1: '11',
         d2: '11',
@@ -338,7 +648,11 @@ describe('existing rows report import preview', () => {
   })
 
   it('blocks mass fill of a joint welded after the stamp card archive date', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     const archivedStamp = {
       ...buildWelderStampRecord('ABC1', true),
       archivedAt: '2026-08-01',
@@ -352,6 +666,7 @@ describe('existing rows report import preview', () => {
         joint: 'F1',
         stamp1K: 'ABC1',
         weldingMethod: 'РАД',
+        connectionType: 'С17',
         materialGroup: 'M01',
         d1: '11',
         d2: '11',
@@ -402,11 +717,23 @@ describe('existing rows report import preview', () => {
   })
 
   it('respects disabled root-stamp check during import preview', async () => {
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
     })
-    const file = buildWeldingJournalImportFile({ joint: 'S1', weldDate: '20.07.2026', material1: '09Г2С' })
+    const file = buildWeldingJournalImportFile({
+      joint: 'S1',
+      weldDate: '20.07.2026',
+      connectionType: 'С17',
+      materialGroup: 'M01',
+      weldingMethod: 'РД',
+      material1: '09Г2С',
+    })
     const preview = await buildReportImportPreview({
       activeReport: 'weldingJournal',
       file,
@@ -419,8 +746,31 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toHaveLength(1)
   })
 
+  it('requires a material group with a weld date during import preview', async () => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+    })
+    const file = buildWeldingJournalImportFile({ joint: 'S1', weldDate: '20.07.2026' })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('при заполненной дате сварки это поле обязательно')
+    expect(preview.validRecords).toEqual([])
+  })
+
   it('uses save-check DLS settings during import preview', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     const stamp = {
       ...buildWelderStampRecord('AAAA'),
       dlsPermits: [
@@ -442,6 +792,7 @@ describe('existing rows report import preview', () => {
     const file = buildWeldingJournalImportFile({
       joint: 'S1',
       weldingMethod: 'РАД',
+      connectionType: 'С17',
       materialGroup: 'M01',
       d1: '11',
       d2: '11',
@@ -476,7 +827,11 @@ describe('existing rows report import preview', () => {
   })
 
   it('combines several matching DLS ranges during import preview', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: true })
     const stamp = {
       ...buildWelderStampRecord('E0SM'),
@@ -512,6 +867,7 @@ describe('existing rows report import preview', () => {
     const file = buildWeldingJournalImportFile({
       joint: 'F1A',
       weldingMethod: 'РАД',
+      connectionType: 'С17',
       materialGroup: 'M01',
       d1: '108',
       d2: '22',
@@ -534,7 +890,11 @@ describe('existing rows report import preview', () => {
   })
 
   it('reports only the unsupported thickness during import preview', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     const stamp = {
       ...buildWelderStampRecord('9PC6'),
       naksPermits: buildWelderStampRecord('9PC6').naksPermits.map((permit) => ({
@@ -546,6 +906,7 @@ describe('existing rows report import preview', () => {
     const file = buildWeldingJournalImportFile({
       joint: 'F5B',
       weldingMethod: 'РАД',
+      connectionType: 'С17',
       materialGroup: 'M01',
       d1: '530',
       d2: '38',
@@ -612,6 +973,7 @@ describe('existing rows report import preview', () => {
   it('combines one stamp own RAD and RD ranges during import preview', async () => {
     saveDataListSettings({
       ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
       weldingTypes: ['РАД', 'РД'],
       materialGroups: ['M01'],
     })
@@ -647,6 +1009,7 @@ describe('existing rows report import preview', () => {
     const file = buildWeldingJournalImportFile({
       joint: 'F1A',
       weldingMethod: 'РАД+РД',
+      connectionType: 'С17',
       materialGroup: 'M01',
       d1: '57',
       d2: '57',
@@ -721,7 +1084,11 @@ describe('existing rows report import preview', () => {
   })
 
   it('uses archived DLS permits for historical weld dates during import preview', async () => {
-    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, materialGroups: ['M01'] })
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
     saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: true })
     const stamp = {
       ...buildWelderStampRecord('AAAA'),
@@ -745,6 +1112,7 @@ describe('existing rows report import preview', () => {
     const file = buildWeldingJournalImportFile({
       joint: 'S1',
       weldingMethod: 'РАД',
+      connectionType: 'С17',
       materialGroup: 'M01',
       d1: '11',
       d2: '11',
@@ -797,6 +1165,33 @@ describe('existing rows report import preview', () => {
     expect(preview.errors[0].fieldKeys).toEqual(['materialGroup'])
   })
 
+  it('shows connection type and material group errors together for the same import row', async () => {
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['М01'],
+    })
+    const file = buildWeldingJournalImportFile({
+      joint: 'S1',
+      connectionType: 'У18',
+      materialGroup: 'M2223',
+      material1: '09Г2С',
+    })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0].message).toContain('Поле "Тип соединения"')
+    expect(preview.errors[0].message).toContain('Поле "Группа материалов"')
+    expect(preview.errors[0].fieldKeys).toEqual(['connectionType', 'materialGroup'])
+  })
+
   it('points existing row validation errors to the exact changed import field', async () => {
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Корень_1', 'Марка стали 1'], [[7, 'S1', 'BAD', '09Г2С']])
     const preview = await buildReportMassFillPreview({
@@ -814,9 +1209,16 @@ describe('existing rows report import preview', () => {
   })
 })
 
-function buildWorkbookFile(headers: string[], rows: unknown[][]) {
+function buildWorkbookFile(headers: string[], rows: unknown[][], includeRowVersion = true) {
+  const needsRowVersion = includeRowVersion && headers.includes(MASS_FILL_ROW_ID_HEADER) && !headers.includes(REPLACE_ROW_VERSION_HEADER)
+  const workbookHeaders = needsRowVersion
+    ? [headers[0], REPLACE_ROW_VERSION_HEADER, ...headers.slice(1)]
+    : headers
+  const workbookRows = needsRowVersion
+    ? rows.map((row) => [row[0], 'v1', ...row.slice(1)])
+    : rows
   const workbook = XLSX.utils.book_new()
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  const worksheet = XLSX.utils.aoa_to_sheet([workbookHeaders, ...workbookRows])
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Импорт')
   const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
   return {

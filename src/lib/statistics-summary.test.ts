@@ -263,6 +263,64 @@ describe('buildStatisticsSummary', () => {
     expect(rk?.closurePercent).toBe(50)
   })
 
+  it('counts request coverage by welded joint positions independently of WDI and request dates', () => {
+    const rows = [
+      {
+        id: 1,
+        weldDate: '2026-07-10',
+        wdi: '',
+        hasVik: 'да',
+        vikRequest: 'Заявка-ВИК-001',
+        vikRequestDate: '2026-06-30',
+        hasRk: 'дополнительный',
+        pstoRequired: 'дополнительный',
+        pstoRequest: 'ПСТО-001',
+        pstoRequestDate: '2026-06-29',
+      },
+      {
+        id: 2,
+        weldDate: '2026-07-11',
+        wdi: '0',
+        hasVik: 'да',
+        pstoRequired: 'да',
+      },
+      {
+        id: 3,
+        weldDate: '2026-06-20',
+        wdi: '12',
+        hasVik: 'да',
+        vikRequest: 'Заявка-ВИК-002',
+        vikRequestDate: '2026-07-15',
+        pstoRequired: 'да',
+        pstoRequest: 'ПСТО-002',
+        pstoRequestDate: '2026-07-15',
+      },
+    ] as WeldRow[]
+
+    const summary = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'wdi', 'events')
+    const vik = summary.methods.find((method) => method.code === 'ВИК')
+    const rk = summary.methods.find((method) => method.code === 'РК')
+
+    expect(vik).toMatchObject({
+      requiredRequests: 2,
+      createdRequests: 1,
+      requestCoveragePercent: 50,
+      requests: 12,
+    })
+    expect(rk).toMatchObject({
+      requiredRequests: 1,
+      createdRequests: 0,
+      requestCoveragePercent: 0,
+    })
+    expect(summary.lnkRequiredRequests).toBe(3)
+    expect(summary.lnkCreatedRequests).toBe(1)
+    expect(summary.lnkRequestCoveragePercent).toBeCloseTo(100 / 3)
+    expect(summary.pstoRequiredRequests).toBe(2)
+    expect(summary.pstoCreatedRequests).toBe(1)
+    expect(summary.pstoRequestCoveragePercent).toBe(50)
+    expect(summary.pstoRequests).toBe(12)
+  })
+
   it('counts welded repeated joints as completed repairs', () => {
     const rows = [
       { id: 1, weldDate: '2026-07-01', joint: 'S1' },
@@ -277,7 +335,7 @@ describe('buildStatisticsSummary', () => {
     expect(summary.completedRepairs).toBe(3)
   })
 
-  it('keeps unwelded pending joints visible in status statistics', () => {
+  it('keeps the current unwelded backlog separate from period statistics', () => {
     const rows = [
       { id: 1, weldDate: '2026-07-01', hasVik: 'да', vikRequest: 'Заявка-001', vikResult: 'годен' },
       { id: 2, joint: 'S2' },
@@ -286,8 +344,11 @@ describe('buildStatisticsSummary', () => {
     const summary = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'joints')
 
     expect(summary.welded).toBe(1)
-    expect(summary.totalRows).toBe(2)
-    expect(summary.waitingWeld).toBe(1)
+    expect(summary.totalRows).toBe(1)
+    expect(summary.waitingWeld).toBe(0)
+    expect(summary.backlogTotal).toBe(1)
+    expect(summary.backlogWaitingWeld).toBe(1)
+    expect(summary.backlogWaitingRepair).toBe(0)
   })
 
   it('counts official same-name repeat after unofficial rejected joint as waiting repair', () => {
@@ -315,7 +376,8 @@ describe('buildStatisticsSummary', () => {
 
     const summary = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'joints')
 
-    expect(summary.waitingRepair).toBe(1)
+    expect(summary.waitingRepair).toBe(0)
     expect(summary.waitingWeld).toBe(0)
+    expect(summary.backlogWaitingRepair).toBe(1)
   })
 })

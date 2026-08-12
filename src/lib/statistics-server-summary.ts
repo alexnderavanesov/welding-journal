@@ -54,6 +54,9 @@ export type StatisticsServerResult = {
 
 const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   periodRows: [],
+  backlogTotal: 0,
+  backlogWaitingWeld: 0,
+  backlogWaitingRepair: 0,
   totalRows: 0,
   welded: 0,
   weldedShare: 0,
@@ -65,10 +68,16 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   waitingRepair: 0,
   completedRepairs: 0,
   qualityPercent: 0,
+  lnkRequiredRequests: 0,
+  lnkCreatedRequests: 0,
+  lnkRequestCoveragePercent: 0,
   lnkRequests: 0,
   lnkClosed: 0,
   lnkTotalClosed: 0,
   lnkClosurePercent: 0,
+  pstoRequiredRequests: 0,
+  pstoCreatedRequests: 0,
+  pstoRequestCoveragePercent: 0,
   pstoRequests: 0,
   pstoClosed: 0,
   pstoTotalClosed: 0,
@@ -76,6 +85,9 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   methods: [],
   pstoMethod: {
     code: 'ПСТО',
+    requiredRequests: 0,
+    createdRequests: 0,
+    requestCoveragePercent: 0,
     requests: 0,
     closed: 0,
     totalClosed: 0,
@@ -98,6 +110,7 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   totalWelders: 0,
   peakValue: 0,
   peakWelders: 0,
+  materialGroups: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
@@ -163,7 +176,7 @@ export function buildStatisticsServerResult({
   const generalRows = scopedRows.filter((row) => matchesJointFilter(row, jointFilter, systemIndexSettings))
   const isGeneralLikeTab = tab === 'general' || tab === 'lnk'
   const calculatedSummary = isGeneralLikeTab
-    ? buildStatisticsSummary(generalRows, from, to, unit, periodMode)
+    ? buildStatisticsSummary(generalRows, from, to, unit, periodMode, systemIndexSettings)
     : EMPTY_STATISTICS_SUMMARY
   const unofficialRows = isGeneralLikeTab ? calculatedSummary.periodRows.filter(isUnofficialJoint) : []
 
@@ -193,7 +206,7 @@ export function buildStatisticsServerResult({
         : EMPTY_LINE_SUMMARY,
     percentageLineSummary:
       tab === 'percentageLines'
-        ? buildPercentageLineSummaries(scopedRows).map((line) => ({ ...line, rows: [] }))
+        ? buildPercentageLineSummaries(scopedRows, systemIndexSettings).map((line) => ({ ...line, rows: [] }))
         : [],
     generalProgressSummary:
       tab === 'general'
@@ -214,7 +227,7 @@ function matchesJointFilter(
   systemIndexSettings: SystemIndexSettings,
 ) {
   if (filter === 'all') return true
-  const baseJoint = parseJointChainName(String(row.joint ?? '')).base.trim().toUpperCase()
+  const baseJoint = parseJointChainName(String(row.joint ?? ''), systemIndexSettings).base.trim().toUpperCase()
   return getConfiguredBaseJointType(baseJoint, systemIndexSettings) === filter
 }
 

@@ -19,8 +19,12 @@ import {
   normalizeLegacyControlAvailabilityForSave,
   validateManualJointNameForSave,
   validateManualJointNamesForImport,
+  validateRequiredConnectionTypeForSave,
+  validateRequiredMaterialGroupForSave,
   validateRequiredRootStampForSave,
   validateRequiredRootStampsForImport,
+  validateRequiredWeldCoreFieldsForImport,
+  validateRequiredWeldingMethodForSave,
   validateWeldDatesForImport,
 } from '@/lib/weld-validation'
 import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
@@ -72,6 +76,9 @@ export function prepareWeldSaveValue({
   )
   normalizeLegacyControlAvailabilityForSave(preparedValue)
   validateRequiredRootStampForSave(preparedValue, saveCheckSettings)
+  validateRequiredMaterialGroupForSave(preparedValue, saveCheckSettings)
+  validateRequiredConnectionTypeForSave(preparedValue, saveCheckSettings)
+  validateRequiredWeldingMethodForSave(preparedValue, saveCheckSettings)
   validateManualJointNameForSave(preparedValue, rows, saveCheckSettings)
   const previousRow = preparedValue.id ? rows.find((row) => row.id === preparedValue.id) : undefined
   validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
@@ -115,11 +122,11 @@ export function prepareImportedWeldRecords({
   normalizeSystemWdiForImport(preparedRecords)
   normalizeLegacyControlAvailabilityForImport(preparedRecords)
   validateRequiredRootStampsForImport(preparedRecords, saveCheckSettings)
+  validateRequiredWeldCoreFieldsForImport(preparedRecords, saveCheckSettings)
   if (!skipManualJointNameValidation) validateManualJointNamesForImport(preparedRecords, saveCheckSettings)
   validateWeldDatesForImport(preparedRecords, saveCheckSettings)
   normalizeWeldingMethodsForImport(preparedRecords)
-  normalizeConnectionTypesForImport(preparedRecords)
-  normalizeMaterialGroupsForImport(preparedRecords)
+  normalizeConnectionTypesAndMaterialGroupsForImport(preparedRecords)
   normalizeTestTypesForImport(preparedRecords)
   validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions, allowedArchivedOfficialStamps, saveCheckSettings)
   validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, {
@@ -145,52 +152,39 @@ function normalizeSystemWdiForImport(records: WeldInput[]) {
   })
 }
 
-function normalizeConnectionTypesForImport(records: WeldInput[]) {
-  const connectionTypeOptions = loadDataListSettings().connectionTypes
-
+function normalizeConnectionTypesAndMaterialGroupsForImport(records: WeldInput[]) {
+  const settings = loadDataListSettings()
   records.forEach((record, index) => {
-    const rawValue = String(record.connectionType ?? '').trim()
-    const value = normalizeDataListOption(rawValue)
-    if (!value) {
-      record.connectionType = null
-      return
+    const errors = [
+      normalizeConfiguredDataListField(record, 'connectionType', 'Тип соединения', settings.connectionTypes),
+      normalizeConfiguredDataListField(record, 'materialGroup', 'Группа материалов', settings.materialGroups),
+    ].filter((message): message is string => Boolean(message))
+    if (errors.length > 0) {
+      throw new Error(`Импорт остановлен: ${getImportRowLabel(index)}. ${errors.join(' ')}`)
     }
-
-    const rowLabel = getImportRowLabel(index)
-    if (connectionTypeOptions.length === 0) {
-      throw new Error(`Импорт остановлен: ${rowLabel}. Поле "Тип соединения" заполнено, но список в настройках пока пуст.`)
-    }
-    if (!connectionTypeOptions.includes(value)) {
-      throw new Error(
-        `Импорт остановлен: ${rowLabel}. Поле "Тип соединения" должно содержать одно значение из настроек: ${connectionTypeOptions.join(', ')}. Значение "${rawValue}" не подходит.`,
-      )
-    }
-    record.connectionType = value
   })
 }
 
-function normalizeMaterialGroupsForImport(records: WeldInput[]) {
-  const materialGroupOptions = loadDataListSettings().materialGroups
-
-  records.forEach((record, index) => {
-    const rawValue = String(record.materialGroup ?? '').trim()
-    const value = normalizeDataListOption(rawValue)
-    if (!value) {
-      record.materialGroup = null
-      return
-    }
-
-    const rowLabel = getImportRowLabel(index)
-    if (materialGroupOptions.length === 0) {
-      throw new Error(`Импорт остановлен: ${rowLabel}. Поле "Группа материалов" заполнено, но список в настройках пока пуст.`)
-    }
-    if (!materialGroupOptions.includes(value)) {
-      throw new Error(
-        `Импорт остановлен: ${rowLabel}. Поле "Группа материалов" должно содержать одно значение из настроек: ${materialGroupOptions.join(', ')}. Значение "${rawValue}" не подходит.`,
-      )
-    }
-    record.materialGroup = value
-  })
+function normalizeConfiguredDataListField(
+  record: WeldInput,
+  fieldKey: 'connectionType' | 'materialGroup',
+  fieldLabel: string,
+  options: string[],
+) {
+  const rawValue = String(record[fieldKey] ?? '').trim()
+  const value = normalizeDataListOption(rawValue)
+  if (!value) {
+    record[fieldKey] = null
+    return null
+  }
+  if (options.length === 0) {
+    return `Поле "${fieldLabel}" заполнено, но список в настройках пока пуст.`
+  }
+  if (!options.includes(value)) {
+    return `Поле "${fieldLabel}" должно содержать одно значение из настроек: ${options.join(', ')}. Значение "${rawValue}" не подходит.`
+  }
+  record[fieldKey] = value
+  return null
 }
 
 function normalizeTestTypesForImport(records: WeldInput[]) {

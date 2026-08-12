@@ -68,12 +68,14 @@ type UpdateDocumentTemplateInput = {
 }
 
 export const listRemoteDocumentTemplates = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertSecurityScope('entry')
   const db = requireDb()
   const rows = await db.select().from(documentTemplates)
   return rows.map(toTemplateSummary)
 })
 
 export const listRemoteDocumentTemplateIds = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertSecurityScope('entry')
   const db = requireDb()
   return db
     .select({ id: documentTemplates.id })
@@ -84,6 +86,7 @@ export const listRemoteDocumentTemplateIds = createServerFn({ method: 'GET' }).h
 export const getRemoteDocumentTemplate = createServerFn({ method: 'GET' })
   .validator((data: { id: DocumentTemplateId }) => ({ id: requireTemplateId(data?.id) }))
   .handler(async ({ data }): Promise<RemoteDocumentTemplate | null> => {
+    await assertSecurityScope('entry')
     const db = requireDb()
     const [record] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
     if (!record) return null
@@ -262,10 +265,14 @@ async function startLocalTemplateStore() {
 }
 
 function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocumentTemplateInput {
+  const fileType = String(data?.fileType ?? '').trim().toLowerCase()
+  if (fileType !== 'xlsx' && fileType !== 'xls') {
+    throw new Error('Поддерживаются только шаблоны Excel в форматах .xlsx и .xls.')
+  }
   return {
     id: requireTemplateId(data?.id),
     fileName: String(data?.fileName ?? '').trim(),
-    fileType: String(data?.fileType ?? '').trim().toLowerCase(),
+    fileType,
     fileSize: Math.max(0, Math.floor(Number(data?.fileSize) || 0)),
     fileDataBase64: String(data?.fileDataBase64 ?? ''),
     sheetNames: Array.isArray(data?.sheetNames) ? data.sheetNames.map(String) : [],

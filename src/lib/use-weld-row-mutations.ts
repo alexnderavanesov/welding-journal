@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { deleteWeldJoint } from '@/server/welds'
+import { deleteWeldJoint, deleteWeldJoints } from '@/server/welds'
 import { prepareWeldSaveValue } from '@/lib/weld-journal-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { createWeldRowOrThrow, updateWeldRowOrThrow } from '@/lib/weld-save-utils'
@@ -53,7 +53,18 @@ export function useWeldRowMutations({
     },
   })
 
+  const deleteManyMutation = useMutation({
+    mutationFn: async (ids: number[]) => deleteWeldJoints({ data: { ids } }),
+    onSuccess: async () => {
+      await invalidateWeldJoints(queryClient)
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
+
   return {
+    deleteManyMutation,
     deleteMutation,
     saveMutation,
   }

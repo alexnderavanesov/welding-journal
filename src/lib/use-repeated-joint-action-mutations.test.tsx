@@ -6,12 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRepeatedJointActionMutations } from '@/lib/use-repeated-joint-action-mutations'
 
 const mocks = vi.hoisted(() => ({
-  buildRenamedRepeatedJointRow: vi.fn(),
   buildRepeatedJointRows: vi.fn(),
   createWeldRowsOrThrow: vi.fn(),
   getWeldJointById: vi.fn(),
   invalidateWeldJoints: vi.fn(),
-  updateWeldRowOrThrow: vi.fn(),
+  updateSystemWeldRowOrThrow: vi.fn(),
 }))
 
 vi.mock('@/server/welds', () => ({
@@ -20,13 +19,12 @@ vi.mock('@/server/welds', () => ({
 }))
 
 vi.mock('@/lib/weld-journal-mutation-updates', () => ({
-  buildRenamedRepeatedJointRow: mocks.buildRenamedRepeatedJointRow,
   buildRepeatedJointRows: mocks.buildRepeatedJointRows,
 }))
 
 vi.mock('@/lib/weld-save-utils', () => ({
   createWeldRowsOrThrow: mocks.createWeldRowsOrThrow,
-  updateWeldRowOrThrow: mocks.updateWeldRowOrThrow,
+  updateSystemWeldRowOrThrow: mocks.updateSystemWeldRowOrThrow,
 }))
 
 vi.mock('@/lib/weld-query-utils', () => ({
@@ -64,8 +62,7 @@ describe('useRepeatedJointActionMutations', () => {
     expect(mocks.buildRepeatedJointRows).toHaveBeenCalledWith(expect.objectContaining({ row: fullRow }))
   })
 
-  it('loads the full weld row before renaming a repeated joint', async () => {
-    const fullRow = { id: 21, line: 'LIN-2', joint: 'S2R1', material2: 'отвод 90' }
+  it('sends the dispatcher rename task for authoritative server validation', async () => {
     const task = {
       kind: 'rename',
       key: 'rename:21',
@@ -76,17 +73,15 @@ describe('useRepeatedJointActionMutations', () => {
       targetJoint: 'S2W1',
       baseJoint: 'S2',
     } as const
-    mocks.getWeldJointById.mockResolvedValue(fullRow)
-    mocks.buildRenamedRepeatedJointRow.mockReturnValue({ ...fullRow, joint: 'S2W1' })
-    mocks.updateWeldRowOrThrow.mockResolvedValue({ ...fullRow, joint: 'S2W1' })
+    mocks.updateSystemWeldRowOrThrow.mockResolvedValue({ ...task.row, joint: 'S2W1' })
 
     const { result } = renderMutationHook()
     await act(async () => {
       await result.current.renameRepeatedJointMutation.mutateAsync(task)
     })
 
-    expect(mocks.getWeldJointById).toHaveBeenCalledWith({ data: { id: 21 } })
-    expect(mocks.buildRenamedRepeatedJointRow).toHaveBeenCalledWith(expect.objectContaining({ row: fullRow }))
+    expect(mocks.getWeldJointById).not.toHaveBeenCalled()
+    expect(mocks.updateSystemWeldRowOrThrow).toHaveBeenCalledWith(task)
   })
 })
 

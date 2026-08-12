@@ -1,8 +1,12 @@
 import { parseJointChainName } from '@/lib/joint-chain'
 import { getDuplicateJointKey, compareJointChainRows } from '@/lib/repeated-joint-row-utils'
 import type { RepeatedJointDuplicateCheckTask, WeldRow } from '@/lib/dispatcher-types'
+import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 
-export function buildDuplicateJointCheckTasks(rows: WeldRow[]): RepeatedJointDuplicateCheckTask[] {
+export function buildDuplicateJointCheckTasks(
+  rows: WeldRow[],
+  systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
+): RepeatedJointDuplicateCheckTask[] {
   const groups = new Map<string, WeldRow[]>()
   for (const row of rows) {
     const key = getDuplicateJointKey(row)
@@ -14,11 +18,11 @@ export function buildDuplicateJointCheckTasks(rows: WeldRow[]): RepeatedJointDup
 
   return [...groups.entries()].flatMap(([key, group]) => {
     if (group.length < 2) return []
-    const sortedGroup = [...group].sort(compareJointChainRows)
+    const sortedGroup = [...group].sort((left, right) => compareJointChainRows(left, right, systemIndexSettings))
     const row = sortedGroup[0]
     const sourceJoint = String(row.joint ?? '').trim()
     if (!sourceJoint) return []
-    const baseJoint = parseJointChainName(sourceJoint).base || sourceJoint
+    const baseJoint = parseJointChainName(sourceJoint, systemIndexSettings).base || sourceJoint
     return [
       {
         kind: 'duplicate-check' as const,

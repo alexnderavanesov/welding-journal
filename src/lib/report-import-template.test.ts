@@ -5,6 +5,7 @@ import {
   buildMassFillTemplateXlsxBytes,
   buildReplaceDataTemplateXlsxBytes,
   canEditReportSpecificNote,
+  REPLACE_ROW_VERSION_HEADER,
   getReportImportTemplateFields,
   getReportImportCheckedFieldKeys,
   getReportImportCellKind,
@@ -149,6 +150,18 @@ describe('welding journal import template', () => {
         expect(payload).toContain(`<c r="${column}3" s="2"/>`)
       }
     }
+  })
+
+  it('stores the row version in a hidden service column of replace data templates', () => {
+    const payload = new TextDecoder().decode(
+      buildReplaceDataTemplateXlsxBytes('weldingJournal', [
+        { id: 7, rowVersion: '42', joint: 'S1' } as never,
+      ]),
+    )
+
+    expect(payload).toContain(`<t>${REPLACE_ROW_VERSION_HEADER}</t>`)
+    expect(payload).toContain('<col min="2" max="2" width="2" customWidth="1" hidden="1"/>')
+    expect(payload).toContain('<c r="B2" t="inlineStr" s="2"><is><t>42</t></is></c>')
   })
 
   it('marks configured test types as a checked import field', () => {

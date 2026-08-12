@@ -17,6 +17,7 @@ import { isLnkRepairForbiddenByOfficialRepairLimit } from '@/lib/lnk-result-rule
 import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
+import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 
 const repeatedJointUsageFieldKeys = [
   ...lnkRequestFieldKeys,
@@ -55,18 +56,28 @@ export function getPrimaryRejectedLnkResult(row: WeldInput) {
   return null
 }
 
-export function getExpectedRepeatedJointName(sourceRow: WeldInput, sourceJoint: string, result: 'ремонт' | 'вырез') {
+export function getExpectedRepeatedJointName(
+  sourceRow: WeldInput,
+  sourceJoint: string,
+  result: 'ремонт' | 'вырез',
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   if (isUnofficialJoint(sourceRow)) return sourceJoint.trim()
   const suffix = getExpectedRepeatedJointSuffix(sourceRow, result)
-  return getNextRepeatedJointName(sourceJoint, suffix)
+  return getNextRepeatedJointName(sourceJoint, suffix, settings)
 }
 
 export function getExpectedRepeatedJointSuffix(sourceRow: WeldInput, result: 'ремонт' | 'вырез'): 'R' | 'W' {
   return result === 'ремонт' && !isLnkRepairForbiddenByOfficialRepairLimit(sourceRow) ? 'R' : 'W'
 }
 
-export function getOfficialRejectedJointChainRows(rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) {
-  const parsedSource = parseRepeatedJointName(sourceJoint)
+export function getOfficialRejectedJointChainRows(
+  rows: WeldRow[],
+  sourceRow: WeldInput,
+  sourceJoint: string,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
+  const parsedSource = parseRepeatedJointName(sourceJoint, settings)
   const sourceIdentity = getRepeatedJointIdentity(sourceRow, parsedSource.base)
   if (!sourceIdentity) return []
   return rows
@@ -74,7 +85,7 @@ export function getOfficialRejectedJointChainRows(rows: WeldRow[], sourceRow: We
       if (isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
       const rowJoint = String(row.joint ?? '').trim()
       if (!rowJoint) return false
-      const rowIdentity = getRepeatedJointIdentity(row, parseRepeatedJointName(rowJoint).base)
+      const rowIdentity = getRepeatedJointIdentity(row, parseRepeatedJointName(rowJoint, settings).base)
       if (!rowIdentity) return false
       return (
         rowIdentity.project === sourceIdentity.project &&
@@ -83,10 +94,13 @@ export function getOfficialRejectedJointChainRows(rows: WeldRow[], sourceRow: We
         rowIdentity.joint === sourceIdentity.joint
       )
     })
-    .sort(compareJointChainRows)
+    .sort((left, right) => compareJointChainRows(left, right, settings))
 }
 
-export function getRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseRepeatedJointName>) {
+export function getRepeatedJointSourceCandidates(
+  parsed: ReturnType<typeof parseRepeatedJointName>,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   return parsed.segments.flatMap((segment, index) => {
     if (segment.index <= 0) return []
     const segments = parsed.segments.map((current) => ({ ...current }))
@@ -95,7 +109,7 @@ export function getRepeatedJointSourceCandidates(parsed: ReturnType<typeof parse
     } else {
       segments.splice(index, 1)
     }
-    return [{ sourceJoint: formatRepeatedJointName(parsed.base, segments), suffix: segment.suffix }]
+    return [{ sourceJoint: formatRepeatedJointName(parsed.base, segments, settings), suffix: segment.suffix }]
   })
 }
 
@@ -115,8 +129,12 @@ export function findMatchingJointRows(rows: WeldRow[], sourceRow: WeldInput, joi
   })
 }
 
-function getNextRepeatedJointName(sourceJoint: string, suffix: 'R' | 'W') {
-  const parsed = parseRepeatedJointName(sourceJoint)
+function getNextRepeatedJointName(
+  sourceJoint: string,
+  suffix: 'R' | 'W',
+  settings: SystemIndexSettings,
+) {
+  const parsed = parseRepeatedJointName(sourceJoint, settings)
   const segments = parsed.segments.map((segment) => ({ ...segment }))
   const segmentIndex = findLastIndex(segments, (segment) => segment.suffix === suffix)
   if (segmentIndex >= 0) {
@@ -124,7 +142,7 @@ function getNextRepeatedJointName(sourceJoint: string, suffix: 'R' | 'W') {
   } else {
     segments.push({ suffix, index: 1 })
   }
-  return formatRepeatedJointName(parsed.base, segments)
+  return formatRepeatedJointName(parsed.base, segments, settings)
 }
 
 function findRepeatedJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: string) {

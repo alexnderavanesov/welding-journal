@@ -9,6 +9,7 @@ import { buildPercentageLineStampFilters, buildRowIdListFilters } from '@/lib/re
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
+  sortWeldDateTimeFilterOptions,
 } from '@/lib/weld-table-filtering'
 
 function row(partial: Partial<WeldRow>): WeldRow {
@@ -58,6 +59,25 @@ describe('filterWeldRowsByColumns', () => {
     })
 
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1', 'S3'])
+  })
+
+  it('combines project, subtitle, line and welder stamp filters as one scope', () => {
+    const rows = [
+      row({ joint: 'S1', projectTitle: 'Проект А', subtitleCode: '400', line: 'LIN-1', stamp1K: 'ABC1' }),
+      row({ joint: 'S2', projectTitle: 'Проект А', subtitleCode: '400', line: 'LIN-1', stamp1K: 'BBBB' }),
+      row({ joint: 'S3', projectTitle: 'Проект А', subtitleCode: '500', line: 'LIN-1', stamp1K: 'ABC1' }),
+      row({ joint: 'S4', projectTitle: 'Проект Б', subtitleCode: '400', line: 'LIN-1', stamp1K: 'ABC1' }),
+      row({ joint: 'S5', projectTitle: 'Проект А', subtitleCode: '400', line: 'LIN-2', stamp1K: 'ABC1' }),
+    ]
+
+    const filteredRows = filterWeldRowsByColumns(rows, {
+      projectTitle: buildWeldColumnValueFilter(['Проект А']),
+      subtitleCode: buildWeldColumnValueFilter(['400']),
+      line: buildWeldColumnValueFilter(['LIN-1']),
+      stamp1K: buildWeldColumnValueFilter(['ABC1']),
+    })
+
+    expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1'])
   })
 
   it('filters by a calculated RK exposure scheme supplied by the server', () => {
@@ -150,5 +170,23 @@ describe('filterWeldRowsByColumns', () => {
     const filteredRows = filterWeldRowsByColumns(rows, buildRowIdListFilters([1, 3], 'exclude'))
 
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S2'])
+  })
+})
+
+describe('sortWeldDateTimeFilterOptions', () => {
+  it('keeps empty first and orders timestamps from newest to oldest', () => {
+    const options = [
+      { value: '2026-07-10 19:12:11.247669+00', label: '2026-07-10 19:12:11.247669+00' },
+      { value: '', label: '(пусто)' },
+      { value: '2026-08-09 19:49:49.396316+00', label: '2026-08-09 19:49:49.396316+00' },
+      { value: '2026-07-15 16:29:25.23301+00', label: '2026-07-15 16:29:25.23301+00' },
+    ]
+
+    expect(sortWeldDateTimeFilterOptions(options).map((option) => option.value)).toEqual([
+      '',
+      '2026-08-09 19:49:49.396316+00',
+      '2026-07-15 16:29:25.23301+00',
+      '2026-07-10 19:12:11.247669+00',
+    ])
   })
 })

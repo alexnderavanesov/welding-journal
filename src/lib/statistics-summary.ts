@@ -3,6 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { getLnkDisplayValue, getPstoDisplayValue } from '@/lib/lnk-status'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
+import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import {
   hasRealLnkResultValue,
   hasText,
@@ -16,6 +17,9 @@ export type StatisticsPeriodMode = 'events' | 'welded-joints'
 
 export type StatisticsMethodSummary = {
   code: string
+  requiredRequests: number
+  createdRequests: number
+  requestCoveragePercent: number
   requests: number
   closed: number
   totalClosed: number
@@ -30,6 +34,9 @@ export type StatisticsMethodSummary = {
 
 export type StatisticsSummary = {
   periodRows: WeldRow[]
+  backlogTotal: number
+  backlogWaitingWeld: number
+  backlogWaitingRepair: number
   totalRows: number
   welded: number
   weldedShare: number
@@ -41,10 +48,16 @@ export type StatisticsSummary = {
   waitingRepair: number
   completedRepairs: number
   qualityPercent: number
+  lnkRequiredRequests: number
+  lnkCreatedRequests: number
+  lnkRequestCoveragePercent: number
   lnkRequests: number
   lnkClosed: number
   lnkTotalClosed: number
   lnkClosurePercent: number
+  pstoRequiredRequests: number
+  pstoCreatedRequests: number
+  pstoRequestCoveragePercent: number
   pstoRequests: number
   pstoClosed: number
   pstoTotalClosed: number
@@ -67,6 +80,7 @@ export function buildStatisticsSummary(
   to: string,
   unit: StatisticsUnit,
   mode: StatisticsPeriodMode = 'events',
+  systemIndexSettings?: SystemIndexSettings,
 ): StatisticsSummary {
   const finalStatusContext = buildFinalStatusRowsContext(rows)
   const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to))
@@ -75,22 +89,30 @@ export function buildStatisticsSummary(
     const status = String(calculateFinalStatusInRows(row, rows, finalStatusContext)).trim().toLowerCase()
     return status === 'ожидает сварку' || status === 'ожидает ремонт'
   })
-  const statusRows = [...periodRows, ...pendingWithoutWeldRows]
   const weightedRows = getWeightedRows(periodRows, unit)
-  const weightedStatusRows = getWeightedRows(statusRows, unit)
+  const weightedStatusRows = weightedRows
+  const weightedBacklogRows = getWeightedRows(pendingWithoutWeldRows, unit)
   const totalRows = sumRows(weightedStatusRows, unit)
   const welded = sumRows(weightedRows.filter((row) => hasText(row.weldDate)), unit)
 
   const statuses = weightedStatusRows.map((row) => normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)))
+  const backlogStatuses = weightedBacklogRows.map((row) =>
+    normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)),
+  )
   const good = sumRowsByStatus(weightedStatusRows, statuses, unit, 'годен')
   const rejected = sumRowsByStatus(weightedStatusRows, statuses, unit, 'не годен')
   const waitingWeld = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает сварку')
   const waitingRequest = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает заявку')
   const waitingControl = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает нк')
   const waitingRepair = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает ремонт')
-  const completedRepairs = sumRows(weightedRows.filter(isCompletedRepeatedJoint), unit)
+  const completedRepairs = sumRows(
+    weightedRows.filter((row) => isCompletedRepeatedJoint(row, systemIndexSettings)),
+    unit,
+  )
 
   const methods = LNK_METHODS.map((method) => {
+    const requiredRequestRows = periodRows.filter((row) => isStatisticsLnkActive(row, method))
+    const createdRequestRows = requiredRequestRows.filter((row) => hasStatisticsLnkRequest(row, method))
     const activeRows = weightedRows.filter((row) => isStatisticsLnkActive(row, method))
     const requestSourceRows =
       mode === 'events'
@@ -115,6 +137,9 @@ export function buildStatisticsSummary(
     })
     return {
       code: method.code,
+      requiredRequests: requiredRequestRows.length,
+      createdRequests: createdRequestRows.length,
+      requestCoveragePercent: getPercent(createdRequestRows.length, requiredRequestRows.length),
       requests,
       closed,
       totalClosed,
@@ -133,6 +158,8 @@ export function buildStatisticsSummary(
   const pstoClosedSourceRows =
     mode === 'events' ? getWeightedRows(rows.filter((row) => isDateInRange(row.pstoDate, from, to)), unit) : weightedRows
   const pstoRequestRows = pstoRequestSourceRows.filter(hasStatisticsPstoRequest)
+  const pstoRequiredRequestRows = periodRows.filter(isStatisticsPstoActive)
+  const pstoCreatedRequestRows = pstoRequiredRequestRows.filter(hasStatisticsPstoRequest)
   const pstoActiveRows = weightedRows.filter(isStatisticsPstoActive)
   const pstoClosedRows = pstoClosedSourceRows.filter(hasPstoClosedData)
   const pstoClosedRequestRows = pstoRequestRows.filter(hasPstoClosedData)
@@ -145,6 +172,9 @@ export function buildStatisticsSummary(
   const pstoWaitingControl = sumRows(pstoWaitingControlRows, unit)
   const pstoMethod = {
     code: 'ПСТО',
+    requiredRequests: pstoRequiredRequestRows.length,
+    createdRequests: pstoCreatedRequestRows.length,
+    requestCoveragePercent: getPercent(pstoCreatedRequestRows.length, pstoRequiredRequestRows.length),
     requests: pstoRequests,
     closed: pstoClosedByRequest,
     totalClosed: pstoClosed,
@@ -158,11 +188,16 @@ export function buildStatisticsSummary(
   }
 
   const lnkRequests = methods.reduce((total, method) => total + method.requests, 0)
+  const lnkRequiredRequests = methods.reduce((total, method) => total + method.requiredRequests, 0)
+  const lnkCreatedRequests = methods.reduce((total, method) => total + method.createdRequests, 0)
   const lnkClosed = methods.reduce((total, method) => total + method.closed, 0)
   const lnkTotalClosed = methods.reduce((total, method) => total + method.totalClosed, 0)
 
   return {
     periodRows,
+    backlogTotal: sumRows(weightedBacklogRows, unit),
+    backlogWaitingWeld: sumRowsByStatus(weightedBacklogRows, backlogStatuses, unit, 'ожидает сварку'),
+    backlogWaitingRepair: sumRowsByStatus(weightedBacklogRows, backlogStatuses, unit, 'ожидает ремонт'),
     totalRows,
     welded,
     weldedShare: getPercent(welded, totalRows),
@@ -174,10 +209,16 @@ export function buildStatisticsSummary(
     waitingRepair,
     completedRepairs,
     qualityPercent: getPercent(good, good + rejected),
+    lnkRequiredRequests,
+    lnkCreatedRequests,
+    lnkRequestCoveragePercent: getPercent(lnkCreatedRequests, lnkRequiredRequests),
     lnkRequests,
     lnkClosed,
     lnkTotalClosed,
     lnkClosurePercent: getPercent(lnkClosed, lnkRequests),
+    pstoRequiredRequests: pstoRequiredRequestRows.length,
+    pstoCreatedRequests: pstoCreatedRequestRows.length,
+    pstoRequestCoveragePercent: getPercent(pstoCreatedRequestRows.length, pstoRequiredRequestRows.length),
     pstoRequests,
     pstoClosed: pstoClosedByRequest,
     pstoTotalClosed: pstoClosed,
@@ -291,9 +332,9 @@ function getRowWeight(row: WeldRow, unit: StatisticsUnit) {
   return Number.isFinite(value) && value > 0 ? value : 0
 }
 
-function isCompletedRepeatedJoint(row: WeldRow) {
+function isCompletedRepeatedJoint(row: WeldRow, systemIndexSettings?: SystemIndexSettings) {
   if (!hasText(row.weldDate)) return false
-  return parseJointChainName(String(row.joint ?? '')).segments.length > 0
+  return parseJointChainName(String(row.joint ?? ''), systemIndexSettings).segments.length > 0
 }
 
 function getPercent(value: number, total: number) {

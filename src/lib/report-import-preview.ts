@@ -1,6 +1,6 @@
 import {
   emptyToNull,
-  parseCell,
+  parseImportCell,
 } from '@/lib/weld-import-parsers'
 import {
   parseCsv,
@@ -16,6 +16,7 @@ import { getArchivedOfficialStampValuesForRecord } from '@/lib/welder-stamp-comp
 import {
   MASS_FILL_ROW_ID_HEADER,
   REPLACE_DELETE_ROW_HEADER,
+  REPLACE_ROW_VERSION_HEADER,
   getReportImportCheckedFieldKeys,
   getReportImportPreviewFields,
   getReportImportTemplateFields,
@@ -34,6 +35,7 @@ import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader, type WeldField, type Wel
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 
 export type ReportImportPreviewError = {
   rowNumber: number
@@ -52,6 +54,7 @@ export type ReportImportPreview = {
   validRecords: ReportImportRecord[]
   errors: ReportImportPreviewError[]
   skippedRows: number
+  expectedRowVersions?: WeldRowVersionTarget[]
 }
 
 type ReportImportPreviewValidationOptions = {
@@ -155,10 +158,17 @@ async function buildExistingRowsImportPreview({
   const fields = getExistingRowsPreviewFields(fieldsByColumn)
   const idColumnIndex = getMassFillIdColumnIndex(parsed.headers)
   const deleteColumnIndex = mode === 'replaceData' ? getReplaceDeleteColumnIndex(parsed.headers) : -1
+  const versionColumnIndex = mode === 'replaceData' ? getReplaceVersionColumnIndex(parsed.headers) : -1
+  if (mode === 'replaceData' && versionColumnIndex === -1) {
+    throw new Error(
+      `В файле замены данных не найдена служебная колонка "${REPLACE_ROW_VERSION_HEADER}". Скачайте свежий шаблон и повторите загрузку.`,
+    )
+  }
   const rowsById = new Map(rows.map((row) => [row.id, row]))
   const records: ReportImportRecord[] = []
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
+  const expectedRowVersions: WeldRowVersionTarget[] = []
   let skippedRows = parsed.skippedRows
 
   parsed.dataRows.forEach((row, index) => {
@@ -177,26 +187,49 @@ async function buildExistingRowsImportPreview({
       return
     }
 
+    const expectedRowVersion = mode === 'replaceData'
+      ? String(row[versionColumnIndex] ?? '').trim()
+      : ''
+
     if (mode === 'replaceData' && deleteColumnIndex !== -1 && isDeleteRequested(row[deleteColumnIndex])) {
+      if (!isExpectedRowVersionCurrent(expectedRowVersion, existingRow.rowVersion)) {
+        errors.push(buildStaleReplaceRowError(rowNumber, existingRow))
+        return
+      }
       const deletedRecord = { ...existingRow, id: existingRow.id, deleteRequested: true } as ReportImportRecord
       records.push(deletedRecord)
       validRecords.push(deletedRecord)
+      expectedRowVersions.push({ id: existingRow.id, version: expectedRowVersion })
       return
     }
 
     const updates: ReportImportRecord = { id: existingRow.id }
-    fieldsByColumn.forEach((field, columnIndex) => {
-      if (!field || isExistingRowsFieldLocked(mode, activeReport, field, existingRow)) return
-      const value = parseCell(field, row[columnIndex])
-      if (mode === 'massFill' && emptyToNull(value) === null) return
-      if (mode === 'replaceData' && normalizePreviewValue(value) === normalizePreviewValue(existingRow[field.key as keyof WeldRow])) return
-      ;(updates as Record<string, unknown>)[field.key] = value
-    })
+    try {
+      fieldsByColumn.forEach((field, columnIndex) => {
+        if (!field || isExistingRowsFieldLocked(mode, activeReport, field, existingRow)) return
+        const value = parseImportCell(field, row[columnIndex])
+        if (mode === 'massFill' && emptyToNull(value) === null) return
+        if (mode === 'replaceData' && normalizePreviewValue(value) === normalizePreviewValue(existingRow[field.key as keyof WeldRow])) return
+        ;(updates as Record<string, unknown>)[field.key] = value
+      })
+    } catch (error) {
+      errors.push({
+        rowNumber,
+        title: getRecordTitle(existingRow),
+        message: getImportErrorMessage(error),
+        id: existingRow.id,
+      })
+      return
+    }
 
     const changedKeys = Object.keys(updates).filter((key) => key !== 'id')
     const candidate = { ...existingRow, ...updates } as ReportImportRecord
     if (changedKeys.length === 0) {
       skippedRows += 1
+      return
+    }
+    if (mode === 'replaceData' && !isExpectedRowVersionCurrent(expectedRowVersion, existingRow.rowVersion)) {
+      errors.push(buildStaleReplaceRowError(rowNumber, existingRow))
       return
     }
 
@@ -225,6 +258,9 @@ async function buildExistingRowsImportPreview({
       })
       applyPreparedDerivedUpdates(preparedUpdates, prepared, existingRow, changedKeys)
       validRecords.push(preparedUpdates)
+      if (mode === 'replaceData') {
+        expectedRowVersions.push({ id: existingRow.id, version: expectedRowVersion })
+      }
     } catch (error) {
       const message = getImportErrorMessage(error)
       errors.push({
@@ -249,6 +285,20 @@ async function buildExistingRowsImportPreview({
     validRecords,
     errors,
     skippedRows,
+    ...(mode === 'replaceData' ? { expectedRowVersions } : {}),
+  }
+}
+
+function isExpectedRowVersionCurrent(expectedVersion: string, currentVersion: string | undefined) {
+  return Boolean(expectedVersion) && (!currentVersion || expectedVersion === currentVersion)
+}
+
+function buildStaleReplaceRowError(rowNumber: number, existingRow: WeldRow): ReportImportPreviewError {
+  return {
+    rowNumber,
+    title: getRecordTitle(existingRow),
+    message: 'Стык был изменен после скачивания Excel либо файл устарел. Скачайте свежий шаблон и повторите замену данных.',
+    id: existingRow.id,
   }
 }
 
@@ -427,6 +477,7 @@ function addQuotedFieldLabels(fieldKeys: Set<WeldFieldKey>, message: string) {
 }
 
 function addMentionedFieldLabels(fieldKeys: Set<WeldFieldKey>, normalizedMessage: string) {
+  if (normalizedMessage.includes('группу материалов')) fieldKeys.add('materialGroup')
   for (const [fieldKey, field] of FIELD_BY_KEY.entries()) {
     if (fieldKey === 'joint') continue
     const label = normalizeHeader(field.label).toLowerCase()
@@ -505,7 +556,7 @@ async function parseMassFillImportFile(file: File) {
 
 function mapMassFillHeadersToFields(headers: readonly string[]) {
   return headers.map((header) => {
-    if (header === MASS_FILL_ROW_ID_HEADER || header === REPLACE_DELETE_ROW_HEADER) return null
+    if (header === MASS_FILL_ROW_ID_HEADER || header === REPLACE_ROW_VERSION_HEADER || header === REPLACE_DELETE_ROW_HEADER) return null
     return FIELD_BY_LABEL.get(normalizeHeader(header)) ?? null
   })
 }
@@ -516,6 +567,10 @@ function getMassFillIdColumnIndex(headers: readonly string[]) {
 
 function getReplaceDeleteColumnIndex(headers: readonly string[]) {
   return headers.findIndex((header) => header === REPLACE_DELETE_ROW_HEADER)
+}
+
+function getReplaceVersionColumnIndex(headers: readonly string[]) {
+  return headers.findIndex((header) => header === REPLACE_ROW_VERSION_HEADER)
 }
 
 function parseMassFillRowId(value: unknown) {

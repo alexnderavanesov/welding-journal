@@ -2,7 +2,11 @@ import { createServerFn, createServerOnlyFn } from '@tanstack/react-start'
 import {
   projectSettingAffectsDerivedCalculations,
   projectSettingAffectsDispatcherIndex,
+  PROJECT_SETTING_KEYS,
+  PROJECT_SETTING_KEY_VALUES,
+  isProjectSettingKey,
 } from '@/lib/project-settings-remote'
+import { normalizeDispatcherBackgroundSettings } from '@/lib/dispatcher-background-settings'
 import {
   invalidateDerivedCalculationCache,
   markDispatcherTaskIndexDirty,
@@ -21,11 +25,22 @@ export type AppSettingsMap = Record<string, AppSettingValue>
 export type AppSettingPayload = {
   key: string
   value: AppSettingValue
+  expectedUpdatedAt?: string | null
+}
+
+export type AppSettingsSnapshot = {
+  values: AppSettingsMap
+  updatedAt: Record<string, string>
 }
 
 const assertSettingsSecurityScope = createServerOnlyFn(async () => {
   const { assertSecurityScope } = await import('@/server/security')
   await assertSecurityScope('settings')
+})
+
+const assertEntrySecurityScope = createServerOnlyFn(async () => {
+  const { assertSecurityScope } = await import('@/server/security')
+  await assertSecurityScope('entry')
 })
 
 function parseStoredSetting(value: string) {
@@ -44,23 +59,46 @@ function serializeSettingValue(value: AppSettingValue) {
   return JSON.stringify(value ?? null)
 }
 
-async function listAppSettingsFromDb() {
+async function listAppSettingsSnapshotFromDb(): Promise<AppSettingsSnapshot> {
+  const { inArray } = await import('drizzle-orm')
   const { requireDb } = await import('@/db')
   const { appSettings } = await import('@/db/schema')
-  const rows = await requireDb().select().from(appSettings)
-  return Object.fromEntries(rows.map((row) => [row.key, parseStoredSetting(row.value)])) as AppSettingsMap
+  const rows = await requireDb()
+    .select()
+    .from(appSettings)
+    .where(inArray(appSettings.key, PROJECT_SETTING_KEY_VALUES))
+  return {
+    values: Object.fromEntries(rows.map((row) => [row.key, parseStoredSetting(row.value)])),
+    updatedAt: Object.fromEntries(rows.map((row) => [row.key, row.updatedAt.toISOString()])),
+  }
 }
 
-async function saveAppSettingToDb({ key, value }: AppSettingPayload) {
+async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingPayload) {
   await assertSettingsSecurityScope()
-  const { sql } = await import('drizzle-orm')
+  const { eq, sql } = await import('drizzle-orm')
   const { requireDb } = await import('@/db')
   const { appSettings } = await import('@/db/schema')
   const normalizedKey = normalizeSettingKey(key)
   if (!normalizedKey) throw new Error('Setting key is required')
+  if (!isProjectSettingKey(normalizedKey)) {
+    throw new Error('Эта настройка изменяется только через специальный защищенный раздел.')
+  }
 
-  await requireDb().transaction(async (tx) => {
-    await tx
+  const savedRevision = await requireDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedKey}))`)
+    const [current] = await tx
+      .select({ updatedAt: appSettings.updatedAt })
+      .from(appSettings)
+      .where(eq(appSettings.key, normalizedKey))
+      .limit(1)
+      .for('update')
+    if (expectedUpdatedAt !== undefined) {
+      const currentRevision = current?.updatedAt.toISOString() ?? null
+      if (currentRevision !== expectedUpdatedAt) {
+        throw new Error('Настройка уже изменена другим пользователем. Свежие данные загружены; повторите изменение.')
+      }
+    }
+    const [saved] = await tx
       .insert(appSettings)
       .values({
         key: normalizedKey,
@@ -73,56 +111,36 @@ async function saveAppSettingToDb({ key, value }: AppSettingPayload) {
           updatedAt: sql`now()`,
         },
       })
+      .returning({ updatedAt: appSettings.updatedAt })
     if (projectSettingAffectsDispatcherIndex(normalizedKey)) {
       await markDispatcherTaskIndexDirty(tx)
     } else if (projectSettingAffectsDerivedCalculations(normalizedKey)) {
       await invalidateDerivedCalculationCache(tx)
     }
+    if (normalizedKey === PROJECT_SETTING_KEYS.dispatcherBackground) {
+      const { applyDispatcherBackgroundSetting } = await import('@/server/dispatcher-background-task-index')
+      await applyDispatcherBackgroundSetting(normalizeDispatcherBackgroundSettings(value).enabled, tx)
+    }
+    if (normalizedKey === PROJECT_SETTING_KEYS.dispatcher) {
+      const { normalizeDispatcherSettings } = await import('@/lib/dispatcher-settings')
+      const { pruneEnabledDispatcherBackgroundTasks } = await import('@/server/dispatcher-background-task-index')
+      await pruneEnabledDispatcherBackgroundTasks(normalizeDispatcherSettings(value), tx)
+    }
+    return saved?.updatedAt.toISOString() ?? null
   })
 
-  return { key: normalizedKey, value }
+  return {
+    key: normalizedKey,
+    value,
+    updatedAt: savedRevision,
+  }
 }
 
-async function saveAppSettingsToDb(settings: AppSettingsMap) {
-  await assertSettingsSecurityScope()
-  const entries = Object.entries(settings).filter(([key]) => normalizeSettingKey(key))
-  if (entries.length === 0) return listAppSettingsFromDb()
-
-  const { sql } = await import('drizzle-orm')
-  const { requireDb } = await import('@/db')
-  const { appSettings } = await import('@/db/schema')
-  await requireDb().transaction(async (tx) => {
-    for (const [key, value] of entries) {
-      const normalizedKey = normalizeSettingKey(key)
-      await tx
-        .insert(appSettings)
-        .values({
-          key: normalizedKey,
-          value: serializeSettingValue(value),
-        })
-        .onConflictDoUpdate({
-          target: appSettings.key,
-          set: {
-            value: serializeSettingValue(value),
-            updatedAt: sql`now()`,
-          },
-        })
-    }
-    if (entries.some(([key]) => projectSettingAffectsDispatcherIndex(normalizeSettingKey(key)))) {
-      await markDispatcherTaskIndexDirty(tx)
-    } else if (entries.some(([key]) => projectSettingAffectsDerivedCalculations(normalizeSettingKey(key)))) {
-      await invalidateDerivedCalculationCache(tx)
-    }
-  })
-  return listAppSettingsFromDb()
-}
-
-export const listAppSettings = createServerFn({ method: 'GET' }).handler(async () => listAppSettingsFromDb())
+export const listAppSettingsSnapshot = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertEntrySecurityScope()
+  return listAppSettingsSnapshotFromDb()
+})
 
 export const saveAppSetting = createServerFn({ method: 'POST' })
   .validator((data: AppSettingPayload) => data)
   .handler(async ({ data }) => saveAppSettingToDb(data))
-
-export const saveAppSettings = createServerFn({ method: 'POST' })
-  .validator((data: { settings: AppSettingsMap }) => data)
-  .handler(async ({ data }) => saveAppSettingsToDb(data.settings))

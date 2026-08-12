@@ -2,18 +2,22 @@ import { parseJointChainName } from '@/lib/joint-chain'
 import { makeExactColumnFilterValue } from '@/lib/report-ui-state'
 import type { RepeatedJointTask } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
-import { isHiddenReportFilterKey } from '@/lib/report-hidden-filters'
+import { buildJointChainFilter, isHiddenReportFilterKey } from '@/lib/report-hidden-filters'
 
 export {
   PERCENTAGE_LINE_STAMP_FILTER_KEY,
   ROW_ID_LIST_FILTER_KEY,
+  JOINT_CHAIN_FILTER_KEY,
+  buildJointChainFilter,
   buildPercentageLineStampFilters,
   buildRowIdListFilters,
   isHiddenReportFilterKey,
   parsePercentageLineStampFilter,
   parseRowIdListFilter,
+  parseJointChainFilter,
   type PercentageLineStampFilter,
   type RowIdListFilter,
+  type JointChainFilter,
 } from '@/lib/report-hidden-filters'
 
 function trimRowText(value: unknown) {
@@ -26,6 +30,7 @@ export function buildJointChainFilters(row: WeldInput, baseJoint: string) {
     subtitleCode: trimRowText(row.subtitleCode),
     line: trimRowText(row.line),
     joint: baseJoint,
+    ...buildJointChainFilter(baseJoint),
   }
 }
 

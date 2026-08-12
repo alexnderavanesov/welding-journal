@@ -42,7 +42,7 @@ describe('getLnkChronologyIssues', () => {
       expect.objectContaining({
         kind: 'request-after-conclusion',
         methodCode: 'РК',
-        reason: 'проверить даты заявки ЛНК',
+        reason: 'проверить даты ЛНК',
       }),
       expect.objectContaining({
         kind: 'vik-missing-before-other',
@@ -100,9 +100,26 @@ describe('getLnkChronologyIssues', () => {
       expect.objectContaining({
         kind: 'request-date-missing',
         methodCode: 'ВИК',
-        reason: 'проверить даты заявки ЛНК',
+        reason: 'проверить даты ЛНК',
       }),
     )
+  })
+
+  it('shows every independent LNK chronology problem in dispatcher diagnostics', () => {
+    const issues = getDispatcherLnkChronologyIssues([
+      {
+        joint: 'F2',
+        weldDate: '2026-07-10',
+        vikRequest: 'Заявка-ВИК',
+        vikResult: 'годен',
+        vikConclusionDate: '2026-07-03',
+      },
+    ] as WeldInput[])
+
+    expect(issues.map((issue) => issue.kind)).toEqual([
+      'request-date-missing',
+      'weld-after-conclusion',
+    ])
   })
 
   it('blocks other NDT dates before the VIK date', () => {

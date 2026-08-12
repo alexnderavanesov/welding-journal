@@ -4,6 +4,13 @@ import { requireDb } from '@/db'
 import { dispatcherAcceptedWarnings, type DispatcherAcceptedWarning } from '@/db/schema'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { assertSecurityScope } from '@/server/security-functions'
+import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
+import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
+import {
+  canAcceptDispatcherTask,
+  getDispatcherTaskAcceptanceContext,
+  getDispatcherTaskAcceptanceTitle,
+} from '@/lib/dispatcher-task-acceptance'
 
 export type DispatcherAcceptedWarningPayload = {
   key: string
@@ -16,10 +23,6 @@ export type DispatcherAcceptedWarningPayload = {
 
 type AcceptDispatcherWarningInput = {
   key: string
-  kind: string
-  code?: string
-  title?: string
-  context?: string
 }
 
 const toPayload = (row: DispatcherAcceptedWarning): DispatcherAcceptedWarningPayload => ({
@@ -36,13 +39,18 @@ export const acceptDispatcherWarning = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     await assertSecurityScope('edit')
     const key = String(data.key ?? '').trim()
-    const kind = String(data.kind ?? '').trim()
-    const code = String(data.code ?? '').trim()
-    const title = String(data.title ?? '').trim()
-    const context = String(data.context ?? '').trim()
-
     if (!key) throw new Error('Не передан ключ предупреждения')
-    if (!kind) throw new Error('Не передан тип предупреждения')
+    const snapshot = await getDispatcherTaskIndexSnapshot()
+    const task = [...snapshot.repeatedJointTasks, ...snapshot.welderStampExpiryTasks]
+      .find((candidate) => candidate.key === key)
+    if (!task) throw new Error('Эта задача уже исправлена или изменилась. Обновите диспетчер.')
+    if (!canAcceptDispatcherTask(task)) {
+      throw new Error('Для этой задачи нельзя создать принятое исключение.')
+    }
+    const kind = task.kind
+    const code = getDispatcherTaskCode(task)
+    const title = getDispatcherTaskAcceptanceTitle(task)
+    const context = getDispatcherTaskAcceptanceContext(task)
 
     const db = requireDb()
     return db.transaction(async (tx) => {
@@ -65,6 +73,7 @@ export const acceptDispatcherWarning = createServerFn({ method: 'POST' })
   })
 
 export const listDispatcherAcceptedWarnings = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertSecurityScope('entry')
   const rows = await requireDb()
     .select()
     .from(dispatcherAcceptedWarnings)

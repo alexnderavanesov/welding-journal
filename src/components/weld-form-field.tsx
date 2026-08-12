@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
+import { memo, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldFormConnectionTypeField, WeldFormMaterialGroupField } from '@/components/weld-form-connection-type-field'
@@ -29,6 +29,7 @@ import {
 type WeldFormFieldProps = {
   field: WeldField & { key: WeldFieldKey }
   draft: WeldInput
+  suggestionDraft?: WeldInput
   suggestionRows?: readonly WeldInput[]
   stampSelectOptions?: StampSelectOptions
   systemWdiEnabled?: boolean
@@ -38,9 +39,10 @@ type WeldFormFieldProps = {
   controlPickerLayout?: 'grid' | 'row'
 }
 
-export function WeldFormField({
+function WeldFormFieldComponent({
   field,
   draft,
+  suggestionDraft = draft,
   suggestionRows = [],
   stampSelectOptions,
   systemWdiEnabled = false,
@@ -211,6 +213,7 @@ export function WeldFormField({
         <FreeTextField
           field={field}
           draft={draft}
+          suggestionDraft={suggestionDraft}
           suggestionRows={suggestionRows}
           disabled={systemWdiEnabled && field.key === 'wdi'}
           fieldRefs={fieldRefs}
@@ -221,6 +224,8 @@ export function WeldFormField({
   )
 }
 
+export const WeldFormField = memo(WeldFormFieldComponent, areWeldFormFieldPropsEqual)
+
 function getTextDraftValue(value: WeldInput[WeldFieldKey]) {
   return typeof value === 'string' ? value : null
 }
@@ -228,6 +233,7 @@ function getTextDraftValue(value: WeldInput[WeldFieldKey]) {
 function FreeTextField({
   field,
   draft,
+  suggestionDraft,
   suggestionRows,
   disabled,
   fieldRefs,
@@ -235,6 +241,7 @@ function FreeTextField({
 }: {
   field: WeldField & { key: WeldFieldKey }
   draft: WeldInput
+  suggestionDraft: WeldInput
   suggestionRows: readonly WeldInput[]
   disabled?: boolean
   fieldRefs: MutableRefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
@@ -243,17 +250,18 @@ function FreeTextField({
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const value = String(draft[field.key] ?? '')
+  const canShowSuggestions = !disabled && (field.kind === 'text' || field.kind === 'number')
   const suggestions = useMemo(
     () =>
-      field.kind === 'text' || field.kind === 'number'
+      open && canShowSuggestions
         ? getWeldFormSuggestions({
             fieldKey: field.key,
-            value,
-            draft,
+            value: suggestionDraft[field.key],
+            draft: suggestionDraft,
             rows: suggestionRows,
           })
         : [],
-    [draft, field.key, field.kind, suggestionRows, value],
+    [canShowSuggestions, field.key, open, suggestionDraft, suggestionRows],
   )
   const visibleSuggestions = open ? suggestions : []
 
@@ -315,7 +323,7 @@ function FreeTextField({
         disabled={disabled}
         title={disabled && field.key === 'wdi' ? 'WDI считается автоматически по выбранному режиму в настройках.' : undefined}
         onFocus={() => {
-          if (!disabled && suggestions.length > 0) setOpen(true)
+          if (canShowSuggestions) setOpen(true)
         }}
         onBlur={() => {
           window.setTimeout(() => setOpen(false), 120)
@@ -465,4 +473,48 @@ function getControlAvailabilityValue(value: unknown): ControlAvailabilityValue {
 
 function getFormFieldLabel(field: WeldField & { key: WeldFieldKey }) {
   return field.label
+}
+
+const suggestionContextFieldKeys: WeldFieldKey[] = [
+  'projectTitle',
+  'subtitleCode',
+  'line',
+  'groupName',
+  'category',
+  'isometry',
+  'spool',
+  'element1',
+  'element2',
+  'material1',
+  'material2',
+]
+
+function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldFormFieldProps) {
+  if (
+    previous.field !== next.field ||
+    previous.suggestionRows !== next.suggestionRows ||
+    previous.systemWdiEnabled !== next.systemWdiEnabled ||
+    previous.fieldRefs !== next.fieldRefs ||
+    previous.setDraft !== next.setDraft ||
+    previous.hideLabel !== next.hideLabel ||
+    previous.controlPickerLayout !== next.controlPickerLayout ||
+    previous.stampSelectOptions?.[previous.field.key] !== next.stampSelectOptions?.[next.field.key] ||
+    !Object.is(previous.draft[previous.field.key], next.draft[next.field.key])
+  ) {
+    return false
+  }
+
+  if (previous.field.key === 'finalStatus') {
+    return calculateFinalStatus(previous.draft) === calculateFinalStatus(next.draft)
+  }
+
+  if (previous.field.kind === 'text' || previous.field.kind === 'number') {
+    const previousSuggestionDraft = previous.suggestionDraft ?? previous.draft
+    const nextSuggestionDraft = next.suggestionDraft ?? next.draft
+    return suggestionContextFieldKeys.every((fieldKey) =>
+      Object.is(previousSuggestionDraft[fieldKey], nextSuggestionDraft[fieldKey]),
+    )
+  }
+
+  return true
 }

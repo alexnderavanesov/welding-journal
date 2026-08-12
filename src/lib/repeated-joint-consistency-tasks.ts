@@ -5,6 +5,12 @@ import {
   LNK_VIK_REQUIRED_REASON,
 } from '@/lib/lnk-chronology-checks'
 import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
+import {
+  CONTROL_HISTORY_REASON,
+  JOINT_CORE_DATA_REASON,
+  LNK_RESULT_COMPLETENESS_REASON,
+  PSTO_RESULT_COMPLETENESS_REASON,
+} from '@/lib/dispatcher-check-reasons'
 import { getJointStatusLabel } from '@/lib/lnk-status'
 import { formatDisplayDate } from '@/lib/date-format'
 import { getWeldDateOrderValue } from '@/lib/report-date-rules'
@@ -14,7 +20,12 @@ import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import { createJointChainCheckTask, isIncompleteWeldStampGroupReason } from '@/lib/repeated-joint-check-tasks'
 import { compareJointChainRows, getRepeatedJointBranchKey, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import { getExpectedRepeatedJointName } from '@/lib/repeated-joint-task-helpers'
-import { getConfiguredJointChainSuffix, getSystemIndexSummaryText } from '@/lib/system-index-settings'
+import {
+  getConfiguredJointChainSuffix,
+  getSystemIndexSummaryText,
+  loadSystemIndexSettings,
+  type SystemIndexSettings,
+} from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 
@@ -31,18 +42,19 @@ const COIL_CHAIN_INTEGRITY_REASON = 'проверить целостность �
 export function buildJointChainConsistencyCheckTasks(
   rows: WeldRow[],
   { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }: JointChainConsistencyTaskDeps,
+  systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
 ): RepeatedJointCheckTask[] {
   const groups = new Map<string, WeldRow[]>()
   const chainGroups = new Map<string, WeldRow[]>()
   for (const row of rows) {
-    const key = getRepeatedJointBranchKey(row)
+    const key = getRepeatedJointBranchKey(row, systemIndexSettings)
     if (key) {
       const group = groups.get(key) ?? []
       group.push(row)
       groups.set(key, group)
     }
 
-    const chainKey = getJointChainConsistencyKey(row)
+    const chainKey = getJointChainConsistencyKey(row, systemIndexSettings)
     if (chainKey) {
       const chainGroup = chainGroups.get(chainKey) ?? []
       chainGroup.push(row)
@@ -51,17 +63,18 @@ export function buildJointChainConsistencyCheckTasks(
   }
 
   const tasks = [
-    ...buildMissingRepeatedJointSourceCheckTasks(rows),
+    ...buildMissingRepeatedJointSourceCheckTasks(rows, systemIndexSettings),
     ...[...groups.entries()].flatMap(([key, group]) => {
-      const sortedGroup = [...group].sort(compareJointChainRows)
-      const weldDateOrderIssue = findWeldDateOrderIssue(sortedGroup)
+      const sortedGroup = [...group].sort((left, right) => compareJointChainRows(left, right, systemIndexSettings))
+      const weldDateOrderIssue = findWeldDateOrderIssue(sortedGroup, systemIndexSettings)
       const checkTasks: RepeatedJointCheckTask[] = weldDateOrderIssue
         ? [
             createJointChainCheckTask(
               weldDateOrderIssue.row,
               `${key}:weld-date-order:${weldDateOrderIssue.row.id}`,
               'проверить даты сварки',
-              `Дата стыка ${String(weldDateOrderIssue.previous.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.previous.weldDate) || '-'}) позже даты следующего системного шага ${String(weldDateOrderIssue.row.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.row.weldDate) || '-'}). Проверь последовательность дат сварки в части ${getSystemIndexSummaryText()}.`,
+              `Дата стыка ${String(weldDateOrderIssue.previous.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.previous.weldDate) || '-'}) позже даты следующего системного шага ${String(weldDateOrderIssue.row.joint ?? '').trim() || '-'} (${formatDisplayDate(weldDateOrderIssue.row.weldDate) || '-'}). Проверь последовательность дат сварки в части ${getSystemIndexSummaryText(systemIndexSettings)}.`,
+              systemIndexSettings,
             ),
           ]
         : []
@@ -75,6 +88,7 @@ export function buildJointChainConsistencyCheckTasks(
             key,
             'годный стык неофициальный',
             `Стык ${joint} сейчас годен, но отмечен как неофициальный. Итогом цепочки должен быть годный официальный стык, поэтому нужно проверить официальность и финал цепочки.`,
+            systemIndexSettings,
           ),
         ]
       }
@@ -93,11 +107,22 @@ export function buildJointChainConsistencyCheckTasks(
         officialGoodCount > 1
           ? `В цепочке найдено ${officialGoodCount} годных официальных стыка. Нужно определить, какой из них является актуальным финалом, а какие строки лишние или требуют смены статуса.`
           : `Стык ${String(firstOfficialGood.joint ?? '').trim() || '-'} уже годен с датой сварки ${formatDisplayDate(firstOfficialGood.weldDate) || '-'}, но после него найден стык ${String(rowAfterOfficialGood?.joint ?? '').trim() || '-'} с более поздней датой ${formatDisplayDate(rowAfterOfficialGood?.weldDate) || '-'}. Проверь, действительно ли цепочка должна продолжаться после годного стыка.`
-      return [...checkTasks, createJointChainCheckTask(row, key, reason, details)]
+      return [...checkTasks, createJointChainCheckTask(row, key, reason, details, systemIndexSettings)]
     }),
   ]
-  tasks.push(...buildCoilIntegrityCheckTasks(rows, chainGroups, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }))
-  tasks.push(...buildObsoleteChildBranchCheckTasks(rows, chainGroups, groups, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }))
+  tasks.push(...buildCoilIntegrityCheckTasks(
+    rows,
+    chainGroups,
+    { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows },
+    systemIndexSettings,
+  ))
+  tasks.push(...buildObsoleteChildBranchCheckTasks(
+    rows,
+    chainGroups,
+    groups,
+    { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows },
+    systemIndexSettings,
+  ))
   return dedupeRepeatedJointCheckTasks(tasks)
 }
 
@@ -107,6 +132,11 @@ export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
     task.reason !== COIL_CHAIN_INTEGRITY_REASON &&
     task.reason !== 'проверить клеймо' &&
     !isLnkChronologyReason(task.reason) &&
+    task.reason !== PSTO_REQUEST_DATE_ORDER_REASON &&
+    task.reason !== JOINT_CORE_DATA_REASON &&
+    task.reason !== LNK_RESULT_COMPLETENESS_REASON &&
+    task.reason !== PSTO_RESULT_COMPLETENESS_REASON &&
+    task.reason !== CONTROL_HISTORY_REASON &&
     !isIncompleteWeldStampGroupReason(task.reason)
   )
 }
@@ -115,12 +145,13 @@ function buildCoilIntegrityCheckTasks(
   rows: WeldRow[],
   chainGroups: Map<string, WeldRow[]>,
   deps: JointChainConsistencyTaskDeps,
+  systemIndexSettings: SystemIndexSettings,
 ) {
   const tasks: RepeatedJointCheckTask[] = []
   for (const [chainKey, chainRows] of chainGroups) {
     const coilGroups = new Map<string, WeldRow[]>()
     for (const row of chainRows) {
-      const coilBaseJoint = getCoilBaseJoint(String(row.joint ?? ''))
+      const coilBaseJoint = getCoilBaseJoint(String(row.joint ?? ''), systemIndexSettings)
       if (!coilBaseJoint) continue
       const group = coilGroups.get(coilBaseJoint) ?? []
       group.push(row)
@@ -129,11 +160,12 @@ function buildCoilIntegrityCheckTasks(
     if (coilGroups.size === 0) continue
 
     const details: string[] = []
-    const sourceRow = [...coilGroups.values()].flat().sort(compareJointChainRows)[0]
+    const sourceRow = [...coilGroups.values()].flat()
+      .sort((left, right) => compareJointChainRows(left, right, systemIndexSettings))[0]
     if (!sourceRow) continue
 
     for (const [coilBaseJoint, coilRows] of coilGroups) {
-      const expectedCoilJoints = getCoilJointNames(coilBaseJoint)
+      const expectedCoilJoints = getCoilJointNames(coilBaseJoint, systemIndexSettings)
       const missingCoilJoints = expectedCoilJoints.filter((joint) => !hasMatchingRepeatedJoint(rows, sourceRow, joint))
       if (missingCoilJoints.length > 0) {
         const existingText = coilRows.map((row) => String(row.joint ?? '').trim()).filter(Boolean).join(', ') || '-'
@@ -144,8 +176,14 @@ function buildCoilIntegrityCheckTasks(
     }
 
     if (!hasValidOfficialCoilTrigger(rows, chainRows, deps)) {
-      const coilText = [...coilGroups.keys()].map((coilBaseJoint) => getCoilJointNames(coilBaseJoint).join('/')).join(', ')
-      const expectedTriggerJoint = getExpectedCoilTriggerJoint(chainRows, deps.getPrimaryRejectedLnkResult)
+      const coilText = [...coilGroups.keys()]
+        .map((coilBaseJoint) => getCoilJointNames(coilBaseJoint, systemIndexSettings).join('/'))
+        .join(', ')
+      const expectedTriggerJoint = getExpectedCoilTriggerJoint(
+        chainRows,
+        deps.getPrimaryRejectedLnkResult,
+        systemIndexSettings,
+      )
       details.push(
         `В цепочке уже есть стык катушки ${coilText}, но диспетчер не нашел официальный негодный стык, который по правилам должен породить катушку.${expectedTriggerJoint ? ` Перед катушкой ожидается следующий повторный стык ${expectedTriggerJoint} и его негодный результат контроля.` : ' Сначала должен существовать следующий повторный стык и его негодный результат контроля.'} До этого катушка считается преждевременной.`,
       )
@@ -158,6 +196,7 @@ function buildCoilIntegrityCheckTasks(
         `${chainKey}:coil-integrity`,
         COIL_CHAIN_INTEGRITY_REASON,
         details.join(' '),
+        systemIndexSettings,
       ),
     )
   }
@@ -169,18 +208,21 @@ function buildObsoleteChildBranchCheckTasks(
   chainGroups: Map<string, WeldRow[]>,
   branchGroups: Map<string, WeldRow[]>,
   { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }: JointChainConsistencyTaskDeps,
+  systemIndexSettings: SystemIndexSettings,
 ) {
   const tasks: RepeatedJointCheckTask[] = []
   for (const [chainKey, chainRows] of chainGroups) {
-    const branchKeys = [...new Set(chainRows.map((row) => getRepeatedJointBranchKey(row)).filter(Boolean) as string[])]
+    const branchKeys = [...new Set(
+      chainRows.map((row) => getRepeatedJointBranchKey(row, systemIndexSettings)).filter(Boolean) as string[],
+    )]
     const unofficialRejectedRowWithObsoleteCoil = chainRows.find((row) => {
       if (!isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
       if (hasValidOfficialCoilTrigger(rows, chainRows, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows })) return false
-      const rowBranchKey = getRepeatedJointBranchKey(row)
+      const rowBranchKey = getRepeatedJointBranchKey(row, systemIndexSettings)
       return branchKeys.some((branchKey) => {
         if (branchKey === rowBranchKey) return false
         const branchJoint = branchKey.split(':').at(-1) ?? ''
-        return hasJointChainSegment(branchJoint, 'Y')
+        return hasJointChainSegment(branchJoint, 'Y', systemIndexSettings)
       })
     })
     if (unofficialRejectedRowWithObsoleteCoil) {
@@ -189,7 +231,8 @@ function buildObsoleteChildBranchCheckTasks(
           unofficialRejectedRowWithObsoleteCoil,
           `${chainKey}:unofficial-rejected-with-coil`,
           UNOFFICIAL_REJECTED_WITH_COIL_REASON,
-          `Стык ${String(unofficialRejectedRowWithObsoleteCoil.joint ?? '').trim() || '-'} отмечен как неофициальный, но в этой же цепочке уже есть ветка катушки ${getConfiguredJointChainSuffix('Y')}. После смены официальности катушка может быть лишней или требовать другой логики, поэтому нужно проверить цепочку целиком.`,
+          `Стык ${String(unofficialRejectedRowWithObsoleteCoil.joint ?? '').trim() || '-'} отмечен как неофициальный, но в этой же цепочке уже есть ветка катушки ${getConfiguredJointChainSuffix('Y', systemIndexSettings)}. После смены официальности катушка может быть лишней или требовать другой логики, поэтому нужно проверить цепочку целиком.`,
+          systemIndexSettings,
         ),
       )
       continue
@@ -202,11 +245,13 @@ function buildObsoleteChildBranchCheckTasks(
 
     for (const completedBranchKey of completedBranchKeys) {
       const completedBranchJoint = completedBranchKey.split(':').at(-1) ?? ''
-      const completedBranchHasCoil = hasJointChainSegment(completedBranchJoint, 'Y')
+      const completedBranchHasCoil = hasJointChainSegment(completedBranchJoint, 'Y', systemIndexSettings)
       const obsoleteChildKey = branchKeys.find((branchKey) => {
         if (branchKey === completedBranchKey) return false
         const branchJoint = branchKey.split(':').at(-1) ?? ''
-        return completedBranchHasCoil ? branchJoint.startsWith(`${completedBranchJoint}${getConfiguredJointChainSuffix('Y')}`) : hasJointChainSegment(branchJoint, 'Y')
+        return completedBranchHasCoil
+          ? branchJoint.startsWith(`${completedBranchJoint}${getConfiguredJointChainSuffix('Y', systemIndexSettings)}`)
+          : hasJointChainSegment(branchJoint, 'Y', systemIndexSettings)
       })
       if (!obsoleteChildKey) continue
 
@@ -220,6 +265,7 @@ function buildObsoleteChildBranchCheckTasks(
           `${chainKey}:${completedBranchKey}:child`,
           'есть лишняя ветка после годного',
           `Ветка ${String(childRow?.joint ?? '').trim() || '-'} выглядит лишней, потому что в цепочке уже есть годный официальный стык ${String(sourceRow?.joint ?? '').trim() || '-'}${sourceRow?.weldDate ? ` с датой сварки ${formatDisplayDate(sourceRow.weldDate)}` : ''}. Проверь, нужно ли оставлять эту ветку.`,
+          systemIndexSettings,
         ),
       )
       break
@@ -228,16 +274,19 @@ function buildObsoleteChildBranchCheckTasks(
   return tasks
 }
 
-function buildMissingRepeatedJointSourceCheckTasks(rows: WeldRow[]) {
+function buildMissingRepeatedJointSourceCheckTasks(
+  rows: WeldRow[],
+  systemIndexSettings: SystemIndexSettings,
+) {
   const tasks: RepeatedJointCheckTask[] = []
   for (const row of rows) {
     const joint = String(row.joint ?? '').trim()
     if (!joint) continue
 
-    const parsed = parseRepeatedJointName(joint)
+    const parsed = parseRepeatedJointName(joint, systemIndexSettings)
     if (parsed.segments.length === 0) continue
 
-    const sourceCandidates = getStrictRepeatedJointSourceCandidates(parsed)
+    const sourceCandidates = getStrictRepeatedJointSourceCandidates(parsed, systemIndexSettings)
     if (sourceCandidates.length === 0) continue
 
     const hasSource = sourceCandidates.some((sourceJoint) => hasMatchingRepeatedJoint(rows, row, sourceJoint))
@@ -247,16 +296,20 @@ function buildMissingRepeatedJointSourceCheckTasks(rows: WeldRow[]) {
     tasks.push(
       createJointChainCheckTask(
         row,
-        `${getJointChainConsistencyKey(row) ?? row.id}:missing-source:${row.id}:${sourceCandidates.join('|')}`,
+        `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:missing-source:${row.id}:${sourceCandidates.join('|')}`,
         'проверить целостность цепочки',
         `Стык ${joint} находится в цепочке, но предыдущий или исходный стык ${expectedSourceText} не найден в журнале. Проверь, не был ли удален базовый или промежуточный стык цепочки.`,
+        systemIndexSettings,
       ),
     )
   }
   return tasks
 }
 
-function getStrictRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseRepeatedJointName>) {
+function getStrictRepeatedJointSourceCandidates(
+  parsed: ReturnType<typeof parseRepeatedJointName>,
+  systemIndexSettings: SystemIndexSettings,
+) {
   const candidates: string[] = []
   const lastIndex = parsed.segments.length - 1
 
@@ -264,13 +317,13 @@ function getStrictRepeatedJointSourceCandidates(parsed: ReturnType<typeof parseR
     const segments = parsed.segments.map((currentSegment) => ({ ...currentSegment }))
     if (segment.index > 1) {
       segments[index] = { ...segment, index: segment.index - 1 }
-      candidates.push(formatRepeatedJointName(parsed.base, segments))
+      candidates.push(formatRepeatedJointName(parsed.base, segments, systemIndexSettings))
       return
     }
 
     if (index === lastIndex) {
       segments.splice(index, 1)
-      candidates.push(formatRepeatedJointName(parsed.base, segments))
+      candidates.push(formatRepeatedJointName(parsed.base, segments, systemIndexSettings))
     }
   })
 
@@ -298,13 +351,13 @@ function isJointChainRowWeldedAfter(row: WeldInput, referenceRow: WeldInput) {
   return Boolean(rowDate && referenceDate && rowDate > referenceDate)
 }
 
-function findWeldDateOrderIssue(rows: WeldRow[]) {
+function findWeldDateOrderIssue(rows: WeldRow[], systemIndexSettings: SystemIndexSettings) {
   let previousDatedRow: WeldRow | null = null
   let previousChainStepKey: string | null = null
   for (const row of rows) {
     const rowDate = getWeldDateOrderValue(row.weldDate)
     if (!rowDate) continue
-    const chainStepKey = getJointChainStepKey(row)
+    const chainStepKey = getJointChainStepKey(row, systemIndexSettings)
     if (chainStepKey === previousChainStepKey) continue
     if (previousDatedRow) {
       const previousDate = getWeldDateOrderValue(previousDatedRow.weldDate)
@@ -318,29 +371,33 @@ function findWeldDateOrderIssue(rows: WeldRow[]) {
   return null
 }
 
-function getJointChainStepKey(row: WeldInput) {
-  const parsed = parseJointChainName(String(row.joint ?? ''))
+function getJointChainStepKey(row: WeldInput, systemIndexSettings: SystemIndexSettings) {
+  const parsed = parseJointChainName(String(row.joint ?? ''), systemIndexSettings)
   return `${normalizeJointChainPart(parsed.base)}:${parsed.segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
 }
 
-function getCoilBaseJoint(joint: string) {
-  const parsed = parseJointChainName(joint)
+function getCoilBaseJoint(joint: string, systemIndexSettings: SystemIndexSettings) {
+  const parsed = parseJointChainName(joint, systemIndexSettings)
   const firstCoilIndex = parsed.segments.findIndex((segment) => segment.suffix === 'Y')
   if (firstCoilIndex < 0) return null
   const baseSegments = parsed.segments.slice(0, firstCoilIndex)
-  return formatRepeatedJointName(parsed.base, baseSegments)
+  return formatRepeatedJointName(parsed.base, baseSegments, systemIndexSettings)
 }
 
-function getExpectedCoilTriggerJoint(chainRows: WeldRow[], getPrimaryRejectedLnkResult: RejectionResolver) {
+function getExpectedCoilTriggerJoint(
+  chainRows: WeldRow[],
+  getPrimaryRejectedLnkResult: RejectionResolver,
+  systemIndexSettings: SystemIndexSettings,
+) {
   const rejectedRows = chainRows
     .filter((row) => !isUnofficialJoint(row) && getPrimaryRejectedLnkResult(row))
-    .sort(compareJointChainRows)
+    .sort((left, right) => compareJointChainRows(left, right, systemIndexSettings))
   const lastRejectedRow = rejectedRows.at(-1)
   if (!lastRejectedRow) return ''
   const rejection = getPrimaryRejectedLnkResult(lastRejectedRow)
   const sourceJoint = String(lastRejectedRow.joint ?? '').trim()
   if (!isRepeatedJointRejection(rejection) || !sourceJoint) return ''
-  return getExpectedRepeatedJointName(lastRejectedRow, sourceJoint, rejection.result)
+  return getExpectedRepeatedJointName(lastRejectedRow, sourceJoint, rejection.result, systemIndexSettings)
 }
 
 function isRepeatedJointRejection(value: unknown): value is { result: 'ремонт' | 'вырез' } {
@@ -359,19 +416,28 @@ function hasValidOfficialCoilTrigger(rows: WeldRow[], chainRows: WeldRow[], { ge
   })
 }
 
-function hasJointChainSegment(joint: string, suffix: string) {
+function hasJointChainSegment(
+  joint: string,
+  suffix: string,
+  systemIndexSettings: SystemIndexSettings,
+) {
   const normalizedSuffix = suffix.toUpperCase()
-  return parseJointChainName(joint).segments.some((segment) => segment.suffix === normalizedSuffix)
+  return parseJointChainName(joint, systemIndexSettings).segments.some((segment) => segment.suffix === normalizedSuffix)
 }
 
-export function hasCompletedParentBranch(rows: WeldRow[], row: WeldInput, sourceJoint: string) {
-  if (!hasJointChainSegment(sourceJoint, 'Y')) return false
-  const chainIdentity = getJointChainIdentity({ ...row, joint: sourceJoint })
-  const branchIdentity = getRepeatedJointIdentity(row, parseRepeatedJointName(sourceJoint).base)
+export function hasCompletedParentBranch(
+  rows: WeldRow[],
+  row: WeldInput,
+  sourceJoint: string,
+  systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
+  if (!hasJointChainSegment(sourceJoint, 'Y', systemIndexSettings)) return false
+  const chainIdentity = getJointChainIdentity({ ...row, joint: sourceJoint }, systemIndexSettings)
+  const branchIdentity = getRepeatedJointIdentity(row, parseRepeatedJointName(sourceJoint, systemIndexSettings).base)
   if (!chainIdentity || !branchIdentity) return false
   return rows.some((candidate) => {
     if (isUnofficialJoint(candidate) || getJointStatusLabel(candidate) !== 'годен') return false
-    const candidateChainIdentity = getJointChainIdentity(candidate)
+    const candidateChainIdentity = getJointChainIdentity(candidate, systemIndexSettings)
     if (
       !candidateChainIdentity ||
       candidateChainIdentity.project !== chainIdentity.project ||
@@ -381,12 +447,12 @@ export function hasCompletedParentBranch(rows: WeldRow[], row: WeldInput, source
     ) {
       return false
     }
-    const candidateBranchJoint = parseRepeatedJointName(String(candidate.joint ?? '')).base
+    const candidateBranchJoint = parseRepeatedJointName(String(candidate.joint ?? ''), systemIndexSettings).base
     const candidateBranchIdentity = getRepeatedJointIdentity(candidate, candidateBranchJoint)
     return Boolean(
       candidateBranchIdentity &&
         candidateBranchIdentity.joint !== branchIdentity.joint &&
-        !hasJointChainSegment(candidateBranchJoint, 'Y'),
+        !hasJointChainSegment(candidateBranchJoint, 'Y', systemIndexSettings),
     )
   })
 }
@@ -399,6 +465,10 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
       isLnkChronologyReason(task.reason) ||
       task.reason === PSTO_REQUEST_DATE_ORDER_REASON ||
       task.reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON ||
+      task.reason === JOINT_CORE_DATA_REASON ||
+      task.reason === LNK_RESULT_COMPLETENESS_REASON ||
+      task.reason === PSTO_RESULT_COMPLETENESS_REASON ||
+      task.reason === CONTROL_HISTORY_REASON ||
       isIncompleteWeldStampGroupReason(task.reason)
         ? task.key
         : `${task.baseJoint}:${task.reason ?? ''}`

@@ -1,12 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listAppSettings, saveAppSetting, type AppSettingValue } from '@/server/app-settings'
+import { listAppSettingsSnapshot, saveAppSetting, type AppSettingValue } from '@/server/app-settings'
 import { applyRemoteDataListSettings } from '@/lib/data-list-settings'
+import { applyRemoteDispatcherBackgroundSettings } from '@/lib/dispatcher-background-settings'
 import {
   applyRemoteDispatcherReminderSettings,
   applyRemoteDispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import { applyRemoteOtherSettings } from '@/lib/other-settings'
+import { createKeyedTaskQueue } from '@/lib/keyed-task-queue'
 import {
   PROJECT_SETTING_KEYS,
   PROJECT_SETTING_REMOTE_PERSIST_EVENT,
@@ -19,6 +21,7 @@ import { applyRemoteRequestConclusionSettings } from '@/lib/request-conclusion-s
 import { applyRemoteSaveCheckSettings } from '@/lib/save-check-settings'
 import { applyRemoteSystemIndexSettings } from '@/lib/system-index-settings'
 import {
+  DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   STATISTICS_SERVER_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
@@ -43,6 +46,10 @@ const PROJECT_SETTING_SYNC_ENTRIES: ProjectSettingSyncEntry[] = [
     applyRemote: applyRemoteDispatcherSettings,
   },
   {
+    key: PROJECT_SETTING_KEYS.dispatcherBackground,
+    applyRemote: applyRemoteDispatcherBackgroundSettings,
+  },
+  {
     key: PROJECT_SETTING_KEYS.dispatcherReminders,
     applyRemote: applyRemoteDispatcherReminderSettings,
   },
@@ -62,17 +69,21 @@ const PROJECT_SETTING_SYNC_ENTRIES: ProjectSettingSyncEntry[] = [
 
 export function useProjectSettingsSync() {
   const queryClient = useQueryClient()
+  const revisionsRef = useRef<Record<string, string>>({})
+  const saveQueueRef = useRef(createKeyedTaskQueue<ProjectSettingKey>())
   const settingsQuery = useQuery({
     queryKey: ['app-settings'],
-    queryFn: async () => listAppSettings(),
+    queryFn: async () => listAppSettingsSnapshot(),
     enabled: shouldSyncProjectSettingsRemote(),
     staleTime: 30_000,
     retry: 1,
   })
 
   useEffect(() => {
-    const settings = settingsQuery.data
-    if (!settings) return
+    const snapshot = settingsQuery.data
+    if (!snapshot) return
+    const settings = snapshot.values
+    revisionsRef.current = snapshot.updatedAt
 
     for (const entry of PROJECT_SETTING_SYNC_ENTRIES) {
       if (Object.prototype.hasOwnProperty.call(settings, entry.key)) {
@@ -87,8 +98,16 @@ export function useProjectSettingsSync() {
     const persistRemoteSetting = (event: Event) => {
       const { key, value, resolve, reject } = (event as CustomEvent<ProjectSettingRemotePersistDetail>).detail ?? {}
       if (!key) return
-      void saveAppSetting({ data: { key, value: value as AppSettingValue } })
-        .then(async () => {
+      void saveQueueRef.current.enqueue(key, async () => {
+        try {
+          const saved = await saveAppSetting({
+            data: {
+              key,
+              value: value as AppSettingValue,
+              expectedUpdatedAt: revisionsRef.current[key] ?? null,
+            },
+          })
+          if (saved.updatedAt) revisionsRef.current[key] = saved.updatedAt
           if (key === PROJECT_SETTING_KEYS.systemIndex) {
             await queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
           }
@@ -98,12 +117,20 @@ export function useProjectSettingsSync() {
               queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
             ])
           }
+          if (key === PROJECT_SETTING_KEYS.dispatcherBackground) {
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY }),
+              queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+              queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+            ])
+          }
           resolve?.()
-        })
-        .catch((error) => {
+        } catch (error) {
           console.warn('Не удалось сохранить настройку проекта в БД', key, error)
+          await queryClient.invalidateQueries({ queryKey: ['app-settings'] })
           reject?.(error)
-        })
+        }
+      })
     }
 
     window.addEventListener(PROJECT_SETTING_REMOTE_PERSIST_EVENT, persistRemoteSetting)

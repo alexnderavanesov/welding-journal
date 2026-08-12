@@ -30,6 +30,7 @@ type WeldFormSectionsProps = {
   fieldsByGroup: WeldFormFieldGroup[]
   collapsedSections: ReadonlySet<string>
   draft: WeldInput
+  calculationDraft?: WeldInput
   suggestionRows?: readonly WeldInput[]
   stampSelectOptions?: StampSelectOptions
   stampCompatibilityReason?: string | null
@@ -45,6 +46,7 @@ export function WeldFormSections({
   fieldsByGroup,
   collapsedSections,
   draft,
+  calculationDraft = draft,
   suggestionRows = [],
   stampSelectOptions,
   stampCompatibilityReason,
@@ -141,6 +143,7 @@ export function WeldFormSections({
                 <WeldFormField
                   field={field}
                   draft={draft}
+                  suggestionDraft={calculationDraft}
                   suggestionRows={suggestionRows}
                   stampSelectOptions={stampSelectOptions}
                   systemWdiEnabled={systemWdiEnabled}
@@ -171,6 +174,7 @@ export function WeldFormSections({
                       key={field.key}
                       field={field}
                       draft={draft}
+                      suggestionDraft={calculationDraft}
                       suggestionRows={suggestionRows}
                       stampSelectOptions={stampSelectOptions}
                       systemWdiEnabled={systemWdiEnabled}
@@ -201,6 +205,7 @@ export function WeldFormSections({
                       key={field.key}
                       field={field}
                       draft={draft}
+                      suggestionDraft={calculationDraft}
                       suggestionRows={suggestionRows}
                       stampSelectOptions={stampSelectOptions}
                       systemWdiEnabled={systemWdiEnabled}
@@ -225,16 +230,16 @@ export function WeldFormSections({
                 onToggle={() => onToggleSection(section)}
                 actions={
                   section === 'Проект' ? (
-                    <LineAutofillButton draft={draft} suggestionRows={suggestionRows} setDraft={setDraft} />
+                    <LineAutofillButton draft={calculationDraft} suggestionRows={suggestionRows} setDraft={setDraft} />
                   ) : section === 'Клейма' ? (
-                    <StampAutofillButton draft={draft} setDraft={setDraft} />
+                    <StampAutofillButton draft={calculationDraft} setDraft={setDraft} />
                   ) : undefined
                 }
               />
               {collapsedSections.has(section) ? null : (
                 <>
                   {section === 'Клейма' ? (
-                    <OfficialStampDiagnostics draft={draft} stampSelectOptions={stampSelectOptions} stampCompatibilityReason={stampCompatibilityReason} />
+                    <OfficialStampDiagnostics draft={calculationDraft} stampSelectOptions={stampSelectOptions} stampCompatibilityReason={stampCompatibilityReason} />
                   ) : null}
                   <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
                     {fields.map((field) => (
@@ -242,6 +247,7 @@ export function WeldFormSections({
                         key={field.key}
                         field={field}
                         draft={draft}
+                        suggestionDraft={calculationDraft}
                         suggestionRows={suggestionRows}
                         stampSelectOptions={stampSelectOptions}
                         systemWdiEnabled={systemWdiEnabled}
@@ -478,7 +484,10 @@ function StampAutofillButton({
 
   function handleAutofill() {
     if (isDisabled) return
-    setDraft((current) => ({ ...current, ...state.values }))
+    setDraft((current) => {
+      const currentState = getWeldStampAutofillState(current)
+      return currentState.disabledReason ? current : { ...current, ...currentState.values }
+    })
   }
 
   return (
@@ -516,7 +525,10 @@ function LineAutofillButton({
 
   function handleAutofill() {
     if (isDisabled) return
-    setDraft((current) => ({ ...current, ...state.values }))
+    setDraft((current) => {
+      const currentState = getWeldLineAutofillState(current, suggestionRows)
+      return currentState.disabledReason ? current : { ...current, ...currentState.values }
+    })
   }
 
   return (

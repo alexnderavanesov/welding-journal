@@ -26,6 +26,7 @@ vi.mock('@/lib/weld-save-utils', () => ({
 
 vi.mock('@/server/welds', () => ({
   deleteWeldJoint: vi.fn(),
+  deleteWeldJoints: vi.fn(),
 }))
 
 describe('useWeldRowMutations', () => {

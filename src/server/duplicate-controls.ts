@@ -27,6 +27,7 @@ const methodSet = new Set<string>(DUPLICATE_CONTROL_METHODS)
 const resultSet = new Set<string>(DUPLICATE_CONTROL_RESULTS)
 
 export const listDuplicateControls = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertSecurityScope('entry')
   const db = requireDb()
   const rows = await db.select().from(duplicateControls).orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
   return rows.map(toPayload)
@@ -45,6 +46,7 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
           .set({ ...insertData, updatedAt: new Date() })
           .where(eq(duplicateControls.id, data.id))
           .returning()
+        if (!updated) throw new Error(`Дубль-контроль ${data.id} не найден`)
         await markDispatcherTaskIndexDirty(tx)
         return toPayload(updated)
       }
@@ -52,6 +54,37 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
       const [created] = await tx.insert(duplicateControls).values(insertData).returning()
       await markDispatcherTaskIndexDirty(tx)
       return toPayload(created)
+    })
+  })
+
+export const saveDuplicateControls = createServerFn({ method: 'POST' })
+  .validator((data: { records: DuplicateControlPayload[] }) => ({
+    records: Array.isArray(data?.records) ? data.records : [],
+  }))
+  .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
+    if (data.records.length === 0) return []
+    const prepared = data.records.map((record) => ({ record, insertData: toDbInsert(record) }))
+    const db = requireDb()
+    return db.transaction(async (tx) => {
+      const saved: DuplicateControlRecord[] = []
+      for (const { record, insertData } of prepared) {
+        if (record.id) {
+          const [updated] = await tx
+            .update(duplicateControls)
+            .set({ ...insertData, updatedAt: new Date() })
+            .where(eq(duplicateControls.id, record.id))
+            .returning()
+          if (!updated) throw new Error(`Дубль-контроль ${record.id} не найден`)
+          saved.push(toPayload(updated))
+          continue
+        }
+
+        const [created] = await tx.insert(duplicateControls).values(insertData).returning()
+        saved.push(toPayload(created))
+      }
+      await markDispatcherTaskIndexDirty(tx)
+      return saved
     })
   })
 
@@ -68,7 +101,9 @@ export const deleteDuplicateControl = createServerFn({ method: 'POST' })
   })
 
 function toDbInsert(record: DuplicateControlPayload): NewDuplicateControl {
-  if (!Number.isFinite(record.weldJointId)) throw new Error('Не выбран стык для дубль-контроля')
+  if (!Number.isInteger(record.weldJointId) || record.weldJointId <= 0) {
+    throw new Error('Не выбран стык для дубль-контроля')
+  }
   if (!methodSet.has(record.method)) throw new Error('Выберите метод дубль-контроля')
   if (!resultSet.has(record.result)) throw new Error('Выберите результат дубль-контроля')
 
@@ -102,5 +137,7 @@ function textOrNull(value: unknown) {
 function dateOrNull(value: unknown) {
   const text = String(value ?? '').trim()
   if (!text) return null
-  return parseDateLikeToIso(text) ?? text
+  const iso = parseDateLikeToIso(text)
+  if (!iso) throw new Error(`Некорректная дата дубль-контроля: ${text}`)
+  return iso
 }

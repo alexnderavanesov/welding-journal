@@ -3,19 +3,20 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
-import { omitHiddenReportFilters } from '@/lib/report-navigation'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
 import { getTableLabel, headerCellClass } from '@/lib/weld-table-utils'
-import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
+import { DATE_TIME_WELD_FIELD_KEYS, FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { getStickyWeldTableFieldStyle, isStickyWeldTableField } from '@/lib/weld-table-sticky-columns'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
+import { buildWeldColumnFilterOptionsRequestFilters } from '@/lib/dispatcher-task-row-codes'
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
   getWeldColumnFilterRowText,
   parseWeldColumnChoiceFilter,
+  sortWeldDateTimeFilterOptions,
 } from '@/lib/weld-table-filtering'
 import { listWeldColumnFilterOptions, type WeldReportKind } from '@/server/welds'
 import type { WeldColumnFilterOption } from '@/server/welds'
@@ -128,6 +129,11 @@ function WeldColumnFilterControl({
   const filterSummary = getColumnFilterSummary(filterValue, choiceFilter)
   const activeFilterCount = getColumnFilterCount(filterValue, choiceFilter)
   const isDateField = FIELD_BY_KEY.get(fieldKey)?.kind === 'date'
+  const isDateTimeField = DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)
+  const filterOptionRequestFilters = useMemo(
+    () => buildWeldColumnFilterOptionsRequestFilters(columnFilters, fieldKey),
+    [columnFilters, fieldKey],
+  )
   const localOptions = useMemo(
     () => {
       if (!isOpen) return []
@@ -139,14 +145,14 @@ function WeldColumnFilterControl({
     [columnFilters, fieldKey, isOpen, manualFilterOptions, manualFilterOptionsReport, optionSearch, rows],
   )
   const filterOptionsQuery = useQuery({
-    queryKey: ['weld-column-filter-options', manualFilterOptionsReport, fieldKey, columnFilters],
+    queryKey: ['weld-column-filter-options', manualFilterOptionsReport, fieldKey, filterOptionRequestFilters],
     enabled: Boolean(isOpen && manualFilterOptionsReport && !manualFilterOptions),
     queryFn: async () =>
       listWeldColumnFilterOptions({
         data: {
           report: manualFilterOptionsReport,
           fieldKey,
-          columnFilters,
+          columnFilters: filterOptionRequestFilters,
         },
       }),
     staleTime: 15_000,
@@ -165,13 +171,14 @@ function WeldColumnFilterControl({
       ),
     [manualFilterOptions, optionSearch],
   )
-  const options = manualFilterOptions ? providedOptions : manualFilterOptionsReport ? serverOptions : localOptions
+  const sourceOptions = manualFilterOptions ? providedOptions : manualFilterOptionsReport ? serverOptions : localOptions
+  const options = isDateTimeField ? sortWeldDateTimeFilterOptions(sourceOptions) : sourceOptions
   const isOptionsLoading = Boolean(manualFilterOptionsReport && !manualFilterOptions && filterOptionsQuery.isLoading)
   const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
 
   const setFilterValue = (value: string) => {
     pendingOptionListScrollTopRef.current = optionListRef.current?.scrollTop ?? optionListScrollTopRef.current
-    const nextFilters = { ...omitHiddenReportFilters(columnFilters) }
+    const nextFilters = { ...columnFilters }
     if (value) nextFilters[fieldKey] = value
     else delete nextFilters[fieldKey]
     onColumnFiltersChange(nextFilters)
@@ -480,7 +487,7 @@ function ensureFilterMenuEscapeListener() {
 }
 
 function getColumnFilterOptions(rows: WeldRow[], fieldKey: WeldFieldKey, columnFilters: Record<string, string>): ColumnFilterOption[] {
-  const filtersWithoutCurrent = { ...omitHiddenReportFilters(columnFilters) }
+  const filtersWithoutCurrent = { ...columnFilters }
   delete filtersWithoutCurrent[fieldKey]
   const sourceRows = filterWeldRowsByColumns(rows, filtersWithoutCurrent)
   const counts = new Map<string, number>()
@@ -506,7 +513,7 @@ function getDateFilterGroups(options: ColumnFilterOption[]) {
   const dateOptions = options
     .map((option) => ({ option, iso: parseDateLikeToIso(option.value) }))
     .filter((item): item is { option: ColumnFilterOption; iso: string } => Boolean(item.iso))
-    .sort((left, right) => left.iso.localeCompare(right.iso))
+    .sort((left, right) => right.iso.localeCompare(left.iso))
 
   const yearGroups = new Map<string, Map<string, ColumnFilterOption[]>>()
   for (const item of dateOptions) {

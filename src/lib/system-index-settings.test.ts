@@ -15,6 +15,7 @@ const customSettings: SystemIndexSettings = {
   repair: 'C',
   cutout: 'D',
   coil: 'E',
+  allowLeadingLetterIndex: true,
 }
 
 describe('system index settings', () => {
@@ -43,6 +44,17 @@ describe('system index settings', () => {
 
     expect(getConfiguredBaseJointType('A10')).toBe('s')
     expect(getConfiguredBaseJointType('B10')).toBe('f')
+  })
+
+  it('keeps a designer index inside the base chain name', () => {
+    expect(parseJointChainName('FB01R1')).toEqual({
+      base: 'FB01',
+      segments: [{ suffix: 'R', index: 1 }],
+    })
+    expect(parseJointChainName('FB01AR1')).toEqual({
+      base: 'FB01A',
+      segments: [{ suffix: 'R', index: 1 }],
+    })
   })
 
   it('rejects duplicate configured letters', () => {

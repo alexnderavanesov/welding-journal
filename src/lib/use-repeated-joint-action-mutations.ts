@@ -1,11 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { deleteWeldJoint, getWeldJointById } from '@/server/welds'
 import {
-  buildRenamedRepeatedJointRow,
   buildRepeatedJointRows,
 } from '@/lib/weld-journal-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
-import { createWeldRowsOrThrow, updateWeldRowOrThrow } from '@/lib/weld-save-utils'
+import { createWeldRowsOrThrow, updateSystemWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type {
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
@@ -63,10 +62,7 @@ export function useRepeatedJointActionMutations({
 
   const renameRepeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointRenameTask) => {
-      const sourceRow = await getWeldJointById({ data: { id: task.row.id } })
-      if (!sourceRow) throw new Error('Стык для переименования не найден')
-      const updatedRecord = buildRenamedRepeatedJointRow({ ...task, row: sourceRow as WeldRow })
-      return updateWeldRowOrThrow(updatedRecord)
+      return updateSystemWeldRowOrThrow(task)
     },
     onSuccess: async (saved, task) => {
       highlightChangedRows(saved ? [saved] : [task.row], ['joint'])

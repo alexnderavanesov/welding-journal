@@ -14,6 +14,8 @@ import type { WeldDraft } from '@/lib/dispatcher-types'
 import type { PageScrollPosition } from '@/lib/page-scroll-position'
 import { useOtherSettings } from '@/lib/other-settings'
 import { formatSaveCheckBlockReason, useSaveCheckSettings } from '@/lib/save-check-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import {
   formHiddenFieldKeys,
@@ -57,11 +59,14 @@ export function WeldForm({
   const [draft, setDraft] = useState<WeldInput>(value)
   const otherSettings = useOtherSettings()
   const saveCheckSettings = useSaveCheckSettings()
+  const systemIndexSettings = useSystemIndexSettings()
   const systemWdiEnabled = isSystemWdiMode(otherSettings)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
   const [activeTab, setActiveTab] = useState<WeldFormTab>(() => getWeldFormTabForField(focusField))
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
+  const validationDraft = useDebouncedValue(draft, 120)
+  const [immediateSaveBlockReason, setImmediateSaveBlockReason] = useState<string | null>(null)
   const fieldsByGroup = useMemo(
     () =>
       VISIBLE_FIELD_SECTIONS.map((group) => ({
@@ -70,25 +75,60 @@ export function WeldForm({
       })).filter((group) => group.fields.length > 0),
     [],
   )
-  const resolvedStampSelectOptions = typeof stampSelectOptions === 'function' ? stampSelectOptions(draft) : stampSelectOptions
-  const preparedDraft = draft
-  const saveBlockReason =
-    getExternalSaveBlockReason?.(preparedDraft) ??
-    getWeldStampSaveBlockReason(preparedDraft, resolvedStampSelectOptions) ??
-    (saveCheckSettings.requiredRootStampWithWeldDate ? formatRequiredRootStampMessage(getRequiredRootStampMessage(preparedDraft)) : null) ??
-    getWeldFormSaveBlockReason(draft, value, saveCheckSettings)
-  const autoClearHint = saveBlockReason ? null : getWeldFormAutoClearHint(draft, value)
-  const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(draft, value)
-  const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(draft, value)
+  const resolvedStampSelectOptions = useMemo(
+    () => resolveStampSelectOptions(stampSelectOptions, validationDraft),
+    [stampSelectOptions, validationDraft],
+  )
+  const externalSaveBlockReason = useMemo(
+    () => getExternalSaveBlockReason?.(validationDraft) ?? null,
+    [getExternalSaveBlockReason, validationDraft],
+  )
+  const deferredSaveBlockReason = useMemo(
+    () =>
+      getWeldSaveBlockReason({
+        draft: validationDraft,
+        initialValue: value,
+        stampSelectOptions: resolvedStampSelectOptions,
+        externalSaveBlockReason,
+        saveCheckSettings,
+        systemIndexSettings,
+      }),
+    [externalSaveBlockReason, resolvedStampSelectOptions, saveCheckSettings, systemIndexSettings, validationDraft, value],
+  )
+  const saveBlockReason = immediateSaveBlockReason ?? deferredSaveBlockReason
+  const autoClearHint = saveBlockReason ? null : getWeldFormAutoClearHint(validationDraft, value)
+  const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(validationDraft, value)
+  const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(validationDraft, value)
   const saveHint = [autoClearHint, cancellationResultHint, reactivationResultHint].filter(Boolean).join('; ') || null
   const handleSave = () => {
-    if (!busy && !saveBlockReason) onSave(withCalculatedFinalStatus(preparedDraft))
+    if (busy) return
+
+    const currentStampSelectOptions = resolveStampSelectOptions(stampSelectOptions, draft)
+    const currentExternalSaveBlockReason = getExternalSaveBlockReason?.(draft) ?? null
+    const currentSaveBlockReason = getWeldSaveBlockReason({
+      draft,
+      initialValue: value,
+      stampSelectOptions: currentStampSelectOptions,
+      externalSaveBlockReason: currentExternalSaveBlockReason,
+      saveCheckSettings,
+      systemIndexSettings,
+    })
+    if (currentSaveBlockReason) {
+      setImmediateSaveBlockReason(currentSaveBlockReason)
+      return
+    }
+
+    onSave(withCalculatedFinalStatus(draft))
   }
+  const handleSaveRef = useRef(handleSave)
+  const onCancelRef = useRef(onCancel)
+  handleSaveRef.current = handleSave
+  onCancelRef.current = onCancel
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        onCancel()
+        onCancelRef.current()
         return
       }
 
@@ -100,13 +140,17 @@ export function WeldForm({
       const isSaveShortcut = event.key === 'Enter' || isAltSave
       if (!isTextArea && isSaveShortcut) {
         event.preventDefault()
-        handleSave()
+        handleSaveRef.current()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [busy, draft, onCancel, onSave, saveBlockReason])
+  }, [])
+
+  useEffect(() => {
+    if (immediateSaveBlockReason) setImmediateSaveBlockReason(null)
+  }, [draft])
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0 })
@@ -178,9 +222,10 @@ export function WeldForm({
           fieldsByGroup={fieldsByGroup}
           collapsedSections={collapsedSections}
           draft={draft}
+          calculationDraft={validationDraft}
           suggestionRows={suggestionRows}
           stampSelectOptions={resolvedStampSelectOptions}
-          stampCompatibilityReason={getExternalSaveBlockReason?.(preparedDraft) ?? null}
+          stampCompatibilityReason={externalSaveBlockReason}
           systemWdiEnabled={systemWdiEnabled}
           fieldRefs={fieldRefs}
           onToggleSection={toggleSection}
@@ -203,6 +248,38 @@ export function WeldForm({
 
 function formatRequiredRootStampMessage(message: string | null) {
   return message ? formatSaveCheckBlockReason('requiredRootStampWithWeldDate', message) : null
+}
+
+function resolveStampSelectOptions(
+  stampSelectOptions: WeldFormProps['stampSelectOptions'],
+  draft: WeldInput,
+) {
+  return typeof stampSelectOptions === 'function' ? stampSelectOptions(draft) : stampSelectOptions
+}
+
+function getWeldSaveBlockReason({
+  draft,
+  initialValue,
+  stampSelectOptions,
+  externalSaveBlockReason,
+  saveCheckSettings,
+  systemIndexSettings,
+}: {
+  draft: WeldInput
+  initialValue: WeldDraft
+  stampSelectOptions?: StampSelectOptions
+  externalSaveBlockReason?: string | null
+  saveCheckSettings: ReturnType<typeof useSaveCheckSettings>
+  systemIndexSettings: ReturnType<typeof useSystemIndexSettings>
+}) {
+  return (
+    externalSaveBlockReason ??
+    getWeldStampSaveBlockReason(draft, stampSelectOptions) ??
+    (saveCheckSettings.requiredRootStampWithWeldDate
+      ? formatRequiredRootStampMessage(getRequiredRootStampMessage(draft))
+      : null) ??
+    getWeldFormSaveBlockReason(draft, initialValue, saveCheckSettings, { systemIndexSettings })
+  )
 }
 
 function getWeldFormTabForField(fieldKey?: WeldFieldKey): WeldFormTab {

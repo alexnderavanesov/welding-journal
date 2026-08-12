@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, count, eq, inArray, max, min, notExists, sql } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, max, min, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { appSettings, generatedDocuments, generatedDocumentWeldJoints, weldJoints } from '@/db/schema'
@@ -53,20 +53,8 @@ type GeneratedDocumentsTransaction = Parameters<
 >[0]
 
 export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertSecurityScope('entry')
   const db = requireDb()
-  await db
-    .delete(generatedDocuments)
-    .where(
-      and(
-        inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
-        notExists(
-          db
-            .select({ value: sql`1` })
-            .from(generatedDocumentWeldJoints)
-            .where(eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id)),
-        ),
-      ),
-    )
   const records = await db
     .select({
       document: generatedDocuments,
@@ -120,6 +108,7 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).ha
 export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })
   .validator((data: { id: number }) => ({ id: requirePositiveId(data?.id, 'документа') }))
   .handler(async ({ data }): Promise<RemoteGeneratedDocument | null> => {
+    await assertSecurityScope('entry')
     const db = requireDb()
     const [record] = await db
       .select()
@@ -153,6 +142,7 @@ export const saveRemoteGeneratedDocuments = createServerFn({ method: 'POST' })
 export const getRemoteGeneratedDocumentSequence = createServerFn({ method: 'GET' })
   .validator((data: { type: GeneratedDocumentType }) => ({ type: requireGeneratedDocumentType(data?.type) }))
   .handler(async ({ data }) => {
+    await assertSecurityScope('entry')
     const db = requireDb()
     return {
       type: data.type,
@@ -303,6 +293,7 @@ async function saveGeneratedDocumentInTransaction(
 export const getRemoteGeneratedDocumentRows = createServerFn({ method: 'GET' })
   .validator((data: { id: number }) => ({ id: requirePositiveId(data?.id, 'документа') }))
   .handler(async ({ data }): Promise<WeldRow[]> => {
+    await assertSecurityScope('entry')
     const db = requireDb()
     const rows = await db
       .select({ weld: weldJoints })

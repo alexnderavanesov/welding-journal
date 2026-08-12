@@ -10,9 +10,10 @@ import {
 import { buildExportWorkbook } from './weld-export-builders'
 import { buildExportXlsxBytes } from './weld-export-xlsx-xml'
 import { recordsToVisibleExportMatrix } from './weld-export-utils'
-import { emptyToNull, excelSerialDateToIso, parseBoolean, parseDate } from './weld-import-parsers'
+import { emptyToNull, excelSerialDateToIso, parseBoolean, parseDate, parseImportCell } from './weld-import-parsers'
 import { parseWorkbook } from './weld-import-readers'
 import { parseWorksheetRows } from './weld-import-rows'
+import { DEFAULT_SYSTEM_INDEX_SETTINGS } from './system-index-settings'
 
 const label = (key: string) => {
   const field = FIELD_BY_KEY.get(key as never)
@@ -25,12 +26,30 @@ describe('weld import/export', () => {
     expect(validateManualJointName('S13')).toBeNull()
     expect(validateManualJointName('F5A')).toBeNull()
     expect(validateManualJointName('S44B')).toBeNull()
-    expect(validateManualJointName('S44R')).toContain('зарезервированы')
+    expect(validateManualJointName('S44R')).toContain('системной части')
     expect(validateManualJointName('F1AY1')).toContain('зарезервированы')
     expect(validateManualJointName('S44BW2R1')).toContain('зарезервированы')
     expect(validateManualJointName('13')).toContain('начинаться')
     expect(hasReservedJointSystemPart('S13R1')).toBe(true)
     expect(hasReservedJointSystemPart('S13A')).toBe(false)
+  })
+
+  it('allows one Latin designer index only when the project setting is enabled', () => {
+    const settingsWithLeadingLetterIndex = {
+      ...DEFAULT_SYSTEM_INDEX_SETTINGS,
+      allowLeadingLetterIndex: true,
+    }
+
+    expect(validateManualJointName('FB01')).toContain('отключен')
+    expect(validateManualJointName('SB43', settingsWithLeadingLetterIndex)).toBeNull()
+    expect(validateManualJointName('FБ01', settingsWithLeadingLetterIndex)).toContain('начинаться')
+    expect(validateManualJointName('FBC01', settingsWithLeadingLetterIndex)).toContain('начинаться')
+
+    const emptyNameError = validateManualJointName('', settingsWithLeadingLetterIndex)
+    expect(emptyNameError).toContain('допускается одна латинская буква')
+    expect(emptyNameError).toContain('S13')
+    expect(emptyNameError).toContain('FB05')
+    expect(emptyNameError).not.toContain('и порядкового номера')
   })
 
   it('parses system joint chains with R W Y suffixes and manual infixes', () => {
@@ -128,6 +147,12 @@ describe('weld import/export', () => {
 
     expect(parseBoolean(yesValue)).toBe(true)
     expect(parseBoolean('-')).toBeNull()
+  })
+
+  it('rejects unknown booleans, numbers and dates during import', () => {
+    expect(() => parseImportCell(FIELD_BY_KEY.get('hasVik')!, 'возможно')).toThrow('не распознано')
+    expect(() => parseImportCell(FIELD_BY_KEY.get('d1')!, 'пятьдесят')).toThrow('не распознано')
+    expect(() => parseImportCell(FIELD_BY_KEY.get('weldDate')!, '31.02.2026')).toThrow('не распознано')
   })
 
   it('keeps cancelled marks as a non-active control flag', () => {

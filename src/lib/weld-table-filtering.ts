@@ -8,6 +8,9 @@ import {
 import {
   PERCENTAGE_LINE_STAMP_FILTER_KEY,
   ROW_ID_LIST_FILTER_KEY,
+  JOINT_CHAIN_FILTER_KEY,
+  matchesJointChainFilter,
+  parseJointChainFilter,
   parsePercentageLineStampFilter,
   parseRowIdListFilter,
 } from '@/lib/report-hidden-filters'
@@ -18,6 +21,26 @@ import {
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 
 export { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
+
+export function sortWeldDateTimeFilterOptions<T extends { value: string; label: string }>(
+  options: readonly T[],
+) {
+  return [...options].sort((left, right) => {
+    if (left.value === '') return -1
+    if (right.value === '') return 1
+
+    const leftTimestamp = Date.parse(left.value)
+    const rightTimestamp = Date.parse(right.value)
+    if (Number.isFinite(leftTimestamp) && Number.isFinite(rightTimestamp)) {
+      return rightTimestamp - leftTimestamp
+    }
+
+    return right.label.localeCompare(left.label, 'ru', {
+      numeric: true,
+      sensitivity: 'base',
+    })
+  })
+}
 
 export function hasColumnFilters(columnFilters: Record<string, string>) {
   return Object.values(columnFilters).some((value) => value.trim())
@@ -45,6 +68,11 @@ function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): W
       const filter = parseRowIdListFilter(value)
       const rowIds = new Set(filter?.rowIds ?? [])
       return [(row: WeldRow) => (filter?.mode === 'exclude' ? !rowIds.has(row.id) : rowIds.has(row.id))]
+    }
+
+    if (key === JOINT_CHAIN_FILTER_KEY) {
+      const filter = parseJointChainFilter(value)
+      return [(row: WeldRow) => matchesJointChainFilter(row.joint, filter)]
     }
 
     if (key === DISPATCHER_TASKS_FIELD_KEY) {

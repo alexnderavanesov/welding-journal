@@ -4,6 +4,12 @@ import type { StatisticsUnit } from '@/lib/statistics-summary'
 
 export type WeldingDynamicsUnit = 'day' | 'week' | 'month' | 'quarter' | 'year'
 
+export type WeldingDynamicsMaterialGroup = {
+  key: string
+  label: string
+  value: number
+}
+
 export type WeldingDynamicsBucket = {
   key: string
   label: string
@@ -12,6 +18,7 @@ export type WeldingDynamicsBucket = {
   weldedJoints: number
   wdi: number
   welderCount: number
+  materialGroups: WeldingDynamicsMaterialGroup[]
 }
 
 export type WeldingDynamicsSummary = {
@@ -23,6 +30,7 @@ export type WeldingDynamicsSummary = {
   totalWelders: number
   peakValue: number
   peakWelders: number
+  materialGroups: WeldingDynamicsMaterialGroup[]
 }
 
 const FACTUAL_STAMP_KEYS = [
@@ -35,6 +43,9 @@ const FACTUAL_STAMP_KEYS = [
 ] as const satisfies readonly (keyof WeldRow)[]
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
+export const WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY = '__missing_material_group__'
+export const WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY = '__other_material_groups__'
+const MAX_SEPARATE_MATERIAL_GROUPS = 6
 
 export function buildWeldingDynamics(
   rows: readonly WeldRow[],
@@ -63,6 +74,8 @@ export function buildWeldingDynamics(
 
   const weldersByBucket = new Map<string, Set<string>>()
   const allWelders = new Set<string>()
+  const materialGroupsByBucket = new Map<string, Map<string, number>>()
+  const materialGroupTotals = new Map<string, number>()
 
   for (const { row, date } of datedRows) {
     if (date < startIso || date > endIso) continue
@@ -74,6 +87,13 @@ export function buildWeldingDynamics(
     bucket.wdi += getWdiValue(row)
     bucket.value = unit === 'wdi' ? bucket.wdi : bucket.weldedJoints
 
+    const materialGroupKey = getMaterialGroupKey(row.materialGroup)
+    const materialGroupValue = unit === 'wdi' ? getWdiValue(row) : 1
+    const bucketMaterialGroups = materialGroupsByBucket.get(bucketKey) ?? new Map<string, number>()
+    bucketMaterialGroups.set(materialGroupKey, (bucketMaterialGroups.get(materialGroupKey) ?? 0) + materialGroupValue)
+    materialGroupsByBucket.set(bucketKey, bucketMaterialGroups)
+    materialGroupTotals.set(materialGroupKey, (materialGroupTotals.get(materialGroupKey) ?? 0) + materialGroupValue)
+
     const bucketWelders = weldersByBucket.get(bucketKey) ?? new Set<string>()
     for (const stamp of getFactualStamps(row)) {
       bucketWelders.add(stamp)
@@ -84,6 +104,13 @@ export function buildWeldingDynamics(
   }
 
   const buckets = Array.from(bucketMap.values())
+  const materialGroupLayout = buildMaterialGroupLayout(materialGroupTotals)
+  for (const bucket of buckets) {
+    bucket.materialGroups = buildBucketMaterialGroups(
+      materialGroupsByBucket.get(bucket.key) ?? new Map<string, number>(),
+      materialGroupLayout,
+    )
+  }
   return {
     bucketUnit,
     bucketUnitLabel,
@@ -93,6 +120,7 @@ export function buildWeldingDynamics(
     totalWelders: allWelders.size,
     peakValue: Math.max(0, ...buckets.map((bucket) => bucket.value)),
     peakWelders: Math.max(0, ...buckets.map((bucket) => bucket.welderCount)),
+    materialGroups: materialGroupLayout.groups,
   }
 }
 
@@ -115,6 +143,7 @@ function createEmptyDynamics(bucketUnit: WeldingDynamicsUnit): WeldingDynamicsSu
     totalWelders: 0,
     peakValue: 0,
     peakWelders: 0,
+    materialGroups: [],
   }
 }
 
@@ -174,7 +203,59 @@ function createBucket(key: string, label: string, shortLabel: string): WeldingDy
     weldedJoints: 0,
     wdi: 0,
     welderCount: 0,
+    materialGroups: [],
   }
+}
+
+type MaterialGroupLayout = {
+  groups: WeldingDynamicsMaterialGroup[]
+  retainedKeys: Set<string>
+  collapsedKeys: Set<string>
+}
+
+function buildMaterialGroupLayout(totals: Map<string, number>): MaterialGroupLayout {
+  const entries = Array.from(totals.entries())
+    .filter(([, value]) => value > 0)
+    .map(([key, value]) => ({ key, label: getMaterialGroupLabel(key), value }))
+  const missing = entries.find((entry) => entry.key === WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY)
+  const named = entries
+    .filter((entry) => entry.key !== WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY)
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'ru', { numeric: true }))
+  const totalValue = named.reduce((total, entry) => total + entry.value, 0)
+  const significant = named.filter((entry) => totalValue <= 0 || entry.value / totalValue >= 0.03)
+  const retained = named.length <= MAX_SEPARATE_MATERIAL_GROUPS
+    ? named
+    : (significant.length > 0 ? significant : named).slice(0, MAX_SEPARATE_MATERIAL_GROUPS)
+  const retainedKeys = new Set(retained.map((entry) => entry.key))
+  const collapsed = named.filter((entry) => !retainedKeys.has(entry.key))
+  const collapsedKeys = new Set(collapsed.map((entry) => entry.key))
+  const collapsedValue = collapsed.reduce((total, entry) => total + entry.value, 0)
+  const groups: WeldingDynamicsMaterialGroup[] = [
+    ...retained,
+    ...(collapsedValue > 0 ? [{ key: WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY, label: 'Прочие', value: collapsedValue }] : []),
+    ...(missing ? [missing] : []),
+  ]
+  return { groups, retainedKeys, collapsedKeys }
+}
+
+function buildBucketMaterialGroups(
+  values: Map<string, number>,
+  layout: MaterialGroupLayout,
+): WeldingDynamicsMaterialGroup[] {
+  return layout.groups.flatMap((group) => {
+    const value = group.key === WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY
+      ? Array.from(layout.collapsedKeys).reduce((total, key) => total + (values.get(key) ?? 0), 0)
+      : values.get(group.key) ?? 0
+    return value > 0 ? [{ ...group, value }] : []
+  })
+}
+
+function getMaterialGroupKey(value: unknown) {
+  return String(value ?? '').trim() || WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY
+}
+
+function getMaterialGroupLabel(key: string) {
+  return key === WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY ? 'Не указано' : key
 }
 
 function getBucketKey(date: string, from: string, unit: WeldingDynamicsUnit) {

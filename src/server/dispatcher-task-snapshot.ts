@@ -4,6 +4,7 @@ import type {
   WelderStampExpiryTask,
 } from '@/lib/dispatcher-types'
 import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
+import { assertSecurityScope } from '@/server/security-functions'
 
 export type DispatcherTaskSnapshotRequest = Record<string, never>
 
@@ -18,6 +19,7 @@ export type DispatcherTaskSnapshotResult = {
 export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
   .validator((data: DispatcherTaskSnapshotRequest | undefined) => data ?? {})
   .handler(async (): Promise<DispatcherTaskSnapshotResult> => {
+    await assertSecurityScope('entry')
     const snapshot = await getDispatcherTaskIndexSnapshot()
 
     return {

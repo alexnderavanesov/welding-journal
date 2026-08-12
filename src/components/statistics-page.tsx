@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  ClipboardList,
   Download,
   FlaskConical,
   Gauge,
@@ -40,7 +41,12 @@ import {
   type WelderStatisticsRow,
   type WelderStatisticsSummary,
 } from '@/lib/welder-statistics-summary'
-import type { WeldingDynamicsSummary } from '@/lib/welding-dynamics'
+import {
+  WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY,
+  WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY,
+  type WeldingDynamicsMaterialGroup,
+  type WeldingDynamicsSummary,
+} from '@/lib/welding-dynamics'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import { openPrintableReport, type PrintableReport } from '@/lib/printable-report'
 import { isAdditionalControlValue, isCancelledControlValue, isEnabledControlValue } from '@/lib/report-value-utils'
@@ -63,6 +69,9 @@ type StatisticsTab = 'general' | 'lnk' | 'welders' | 'lineSummary' | 'percentage
 
 const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
   code: '',
+  requiredRequests: 0,
+  createdRequests: 0,
+  requestCoveragePercent: 0,
   requests: 0,
   closed: 0,
   totalClosed: 0,
@@ -77,6 +86,9 @@ const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
 
 const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   periodRows: [],
+  backlogTotal: 0,
+  backlogWaitingWeld: 0,
+  backlogWaitingRepair: 0,
   totalRows: 0,
   welded: 0,
   weldedShare: 0,
@@ -88,10 +100,16 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   waitingRepair: 0,
   completedRepairs: 0,
   qualityPercent: 0,
+  lnkRequiredRequests: 0,
+  lnkCreatedRequests: 0,
+  lnkRequestCoveragePercent: 0,
   lnkRequests: 0,
   lnkClosed: 0,
   lnkTotalClosed: 0,
   lnkClosurePercent: 0,
+  pstoRequiredRequests: 0,
+  pstoCreatedRequests: 0,
+  pstoRequestCoveragePercent: 0,
   pstoRequests: 0,
   pstoClosed: 0,
   pstoTotalClosed: 0,
@@ -109,6 +127,7 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   totalWelders: 0,
   peakValue: 0,
   peakWelders: 0,
+  materialGroups: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
@@ -593,7 +612,7 @@ export function StatisticsPage({
 
           <Panel
             title="Состояние стыков"
-            subtitle={`В срезе ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; сварено всего ${formatStatisticValue(summary.welded, unit)}, из них ремонтов ${formatStatisticValue(summary.completedRepairs, unit)}.`}
+            subtitle={`За выбранный период: ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; сварено ${formatStatisticValue(summary.welded, unit)}, из них ремонтов ${formatStatisticValue(summary.completedRepairs, unit)}.`}
           >
             <SegmentedProgress
               unit={unit}
@@ -614,6 +633,8 @@ export function StatisticsPage({
               <StatusLine label="Ожидает сварку" value={summary.waitingWeld} unit={unit} />
             </div>
           </Panel>
+
+          <CurrentBacklogPanel summary={summary} unit={unit} />
         </>
       ) : activeTab === 'lnk' ? (
         <LnkPstoStatisticsPanel
@@ -709,11 +730,38 @@ function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSumma
   const maxWelders = Math.max(1, summary.peakWelders)
   const chartMinWidth = Math.max(720, summary.buckets.length * 58)
   const bucketText = getWeldingDynamicsBucketText(summary.bucketUnitLabel)
+  const materialGroups = summary.materialGroups ?? []
+  const materialGroupSignature = materialGroups.map((group) => group.key).join('\u0000')
+  const [hiddenMaterialGroupKeys, setHiddenMaterialGroupKeys] = useState<Set<string>>(() => new Set())
+  const visibleMaterialGroupKeys = useMemo(
+    () => new Set(materialGroups.map((group) => group.key).filter((key) => !hiddenMaterialGroupKeys.has(key))),
+    [hiddenMaterialGroupKeys, materialGroupSignature],
+  )
+  const materialGroupColors = useMemo(
+    () => new Map(materialGroups.map((group, index) => [group.key, getWeldingDynamicsMaterialGroupColor(group, index)])),
+    [materialGroupSignature],
+  )
+
+  useEffect(() => {
+    setHiddenMaterialGroupKeys(new Set())
+  }, [materialGroupSignature])
+
+  const toggleMaterialGroup = (key: string) => {
+    setHiddenMaterialGroupKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        next.delete(key)
+        return next
+      }
+      next.add(key)
+      return next
+    })
+  }
 
   return (
     <Panel
       title="Динамика сварки"
-      subtitle={`Интервал: ${bucketText}. Столбики показывают ${unitLabel}, точки - количество сварщиков по фактическим клеймам.`}
+      subtitle={`Интервал: ${bucketText}. Цветные сегменты столбиков показывают группы материалов в ${unitLabel}, точки - количество сварщиков по фактическим клеймам.`}
     >
       {summary.buckets.length > 0 ? (
         <div className="space-y-4">
@@ -724,11 +772,41 @@ function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSumma
           </div>
 
           <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-            <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-5 rounded-sm bg-sky-500" />
-                {unitLabel}
-              </span>
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span className="mr-1 font-medium text-slate-600">{unitLabel} по группам:</span>
+              {materialGroups.map((group) => {
+                const visible = visibleMaterialGroupKeys.has(group.key)
+                return (
+                  <button
+                    key={group.key}
+                    type="button"
+                    aria-pressed={visible}
+                    className={cn(
+                      'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 font-medium transition',
+                      visible
+                        ? 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-slate-300'
+                        : 'border-slate-200 bg-slate-100 text-slate-400 hover:bg-white',
+                    )}
+                    title={`${visible ? 'Скрыть' : 'Показать'} группу ${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`}
+                    onClick={() => toggleMaterialGroup(group.key)}
+                  >
+                    <span
+                      className={cn('h-2.5 w-2.5 rounded-sm', visible ? '' : 'opacity-30')}
+                      style={{ backgroundColor: materialGroupColors.get(group.key) }}
+                    />
+                    {group.label}
+                  </button>
+                )
+              })}
+              {hiddenMaterialGroupKeys.size > 0 ? (
+                <button
+                  type="button"
+                  className="h-7 rounded-md px-2 font-medium text-sky-700 hover:bg-sky-50"
+                  onClick={() => setHiddenMaterialGroupKeys(new Set())}
+                >
+                  Показать все
+                </button>
+              ) : null}
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full border border-indigo-200 bg-indigo-600" />
                 сварщики по фактическим клеймам
@@ -742,7 +820,14 @@ function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSumma
                 {summary.buckets.map((bucket) => {
                   const valuePercent = bucket.value > 0 ? Math.max(6, (bucket.value / maxValue) * 100) : 0
                   const welderPercent = bucket.welderCount > 0 ? Math.max(8, (bucket.welderCount / maxWelders) * 100) : 0
-                  const title = `${bucket.label}: ${formatStatisticValue(bucket.value, unit)} ${unitLabel}; сварщиков ${bucket.welderCount}`
+                  const materialGroupLines = bucket.materialGroups.map((group) =>
+                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}${visibleMaterialGroupKeys.has(group.key) ? '' : ' (скрыто)'}`,
+                  )
+                  const title = [
+                    `${bucket.label}: ${formatStatisticValue(bucket.value, unit)} ${unitLabel}; сварщиков ${bucket.welderCount}`,
+                    ...materialGroupLines,
+                  ].join('\n')
+                  const visibleGroups = bucket.materialGroups.filter((group) => visibleMaterialGroupKeys.has(group.key))
 
                   return (
                     <div key={bucket.key} className="flex min-w-0 flex-col items-center gap-2" title={title}>
@@ -750,9 +835,24 @@ function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSumma
                         <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-slate-100" />
                         <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-slate-100" />
                         <div
-                          className="absolute bottom-0 left-1/2 w-7 -translate-x-1/2 rounded-t-md bg-sky-500/80 shadow-sm"
+                          className="absolute bottom-0 left-1/2 flex w-7 -translate-x-1/2 flex-col-reverse overflow-hidden rounded-t-md bg-slate-100 shadow-sm ring-1 ring-inset ring-slate-200"
                           style={{ height: `${valuePercent}%` }}
-                        />
+                        >
+                          {visibleGroups.length > 0
+                            ? visibleGroups.map((group) => (
+                                <span
+                                  key={group.key}
+                                  className="block w-full shrink-0 border-t border-white/50 first:border-t-0"
+                                  style={{
+                                    backgroundColor: materialGroupColors.get(group.key),
+                                    height: `${bucket.value > 0 ? (group.value / bucket.value) * 100 : 0}%`,
+                                  }}
+                                />
+                              ))
+                            : bucket.value > 0 && materialGroups.length === 0
+                              ? <span className="block h-full w-full bg-sky-500/80" />
+                              : null}
+                        </div>
                         {bucket.welderCount > 0 ? (
                           <span
                             className="absolute left-1/2 z-10 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white bg-indigo-600 shadow"
@@ -779,6 +879,21 @@ function WeldingDynamicsPanel({ summary, unit }: { summary: WeldingDynamicsSumma
       )}
     </Panel>
   )
+}
+
+const WELDING_DYNAMICS_MATERIAL_GROUP_COLORS = [
+  '#0ea5e9',
+  '#10b981',
+  '#f59e0b',
+  '#8b5cf6',
+  '#f43f5e',
+  '#06b6d4',
+] as const
+
+function getWeldingDynamicsMaterialGroupColor(group: WeldingDynamicsMaterialGroup, index: number) {
+  if (group.key === WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY) return '#94a3b8'
+  if (group.key === WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY) return '#a855f7'
+  return WELDING_DYNAMICS_MATERIAL_GROUP_COLORS[index % WELDING_DYNAMICS_MATERIAL_GROUP_COLORS.length]
 }
 
 function SegmentedProgress({
@@ -819,6 +934,21 @@ function StatusLine({ label, value, unit }: { label: string; value: number; unit
       <div className="text-xs text-slate-500">{label}</div>
       <div className="font-semibold text-slate-800">{formatStatisticValue(value, unit)}</div>
     </div>
+  )
+}
+
+function CurrentBacklogPanel({ summary, unit }: { summary: StatisticsSummary; unit: StatisticsUnit }) {
+  return (
+    <Panel
+      title="Текущий остаток"
+      subtitle="Актуальные незаваренные стыки показаны отдельно и не прибавляются к показателям выбранного периода."
+    >
+      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+        <StatusLine label="Всего в остатке" value={summary.backlogTotal} unit={unit} />
+        <StatusLine label="Ожидает сварку" value={summary.backlogWaitingWeld} unit={unit} />
+        <StatusLine label="Ожидает ремонт" value={summary.backlogWaitingRepair} unit={unit} />
+      </div>
+    </Panel>
   )
 }
 
@@ -903,7 +1033,7 @@ function LnkPstoStatisticsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           compact
           icon={Gauge}
@@ -914,8 +1044,26 @@ function LnkPstoStatisticsPanel({
         />
         <MetricCard
           compact
+          wrapDetail
+          icon={ClipboardList}
+          label="Заявки ЛНК"
+          value={formatPercent(summary.lnkRequestCoveragePercent)}
+          detail={`${summary.lnkCreatedRequests} из ${summary.lnkRequiredRequests} требуемых контролей`}
+          accent="blue"
+        />
+        <MetricCard
+          compact
+          wrapDetail
+          icon={FlaskConical}
+          label="Заявки ПСТО"
+          value={formatPercent(summary.pstoRequestCoveragePercent)}
+          detail={`${summary.pstoCreatedRequests} из ${summary.pstoRequiredRequests} требуемых обработок`}
+          accent="indigo"
+        />
+        <MetricCard
+          compact
           icon={ClipboardCheck}
-          label="ЛНК закрыто"
+          label="Заключения ЛНК"
           value={formatPercent(summary.lnkClosurePercent)}
           detail={`${formatStatisticValue(summary.lnkClosed, unit)} из ${formatStatisticValue(summary.lnkRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.lnkTotalClosed, unit)}`}
           accent="indigo"
@@ -923,7 +1071,7 @@ function LnkPstoStatisticsPanel({
         <MetricCard
           compact
           icon={TimerReset}
-          label="ПСТО закрыто"
+          label="Заключения ПСТО"
           value={formatPercent(summary.pstoClosurePercent)}
           detail={`${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.pstoTotalClosed, unit)}`}
           accent="amber"
@@ -956,7 +1104,7 @@ function LnkPstoStatisticsPanel({
 
           <Panel
             title="Состояние стыков"
-            subtitle={`В срезе ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; ${unofficialDetail}.`}
+            subtitle={`За выбранный период: ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; ${unofficialDetail}.`}
           >
             <SegmentedProgress
               unit={unit}
@@ -977,6 +1125,8 @@ function LnkPstoStatisticsPanel({
               <StatusLine label="Неофициальные" value={unofficialCount} unit="joints" />
             </div>
           </Panel>
+
+          <CurrentBacklogPanel summary={summary} unit={unit} />
 
           <Panel
             title="ПСТО"
@@ -1072,12 +1222,25 @@ function MethodProgress({ method, unit }: { method: StatisticsMethodSummary; uni
         {method.code}
       </div>
       <div>
-        <div className="mb-1 flex justify-between text-xs text-slate-500">
-          <span>Закрыто по заявкам {formatPercent(method.closurePercent)}</span>
-          <span>заявок {formatStatisticValue(method.requests, unit)} · закрыто {formatStatisticValue(method.closed, unit)}</span>
-        </div>
-        <div className="h-2 rounded-full bg-white">
-          <div className="h-2 rounded-full bg-sky-500" style={{ width: `${method.closurePercent}%` }} />
+        <div className="space-y-2">
+          <div>
+            <div className="mb-1 flex flex-wrap justify-between gap-x-3 text-xs text-slate-500">
+              <span>Заявлено — {formatPercent(method.requestCoveragePercent)}</span>
+              <span>требуется {method.requiredRequests} · заявлено {method.createdRequests}</span>
+            </div>
+            <div className="h-2 rounded-full bg-white">
+              <div className="h-2 rounded-full bg-sky-400/80" style={{ width: `${method.requestCoveragePercent}%` }} />
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 flex flex-wrap justify-between gap-x-3 text-xs text-slate-500">
+              <span>Закрыто по заявкам — {formatPercent(method.closurePercent)}</span>
+              <span>заявок {formatStatisticValue(method.requests, unit)} · закрыто {formatStatisticValue(method.closed, unit)}</span>
+            </div>
+            <div className="h-2 rounded-full bg-white">
+              <div className="h-2 rounded-full bg-emerald-400/80" style={{ width: `${method.closurePercent}%` }} />
+            </div>
+          </div>
         </div>
         <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-500">
           <span>Всего результатов: {formatStatisticValue(method.totalClosed, unit)}</span>
@@ -2264,39 +2427,41 @@ function PercentageLineGroup({
             расчет отдельно по каждому официальному клейму
           </div>
         </div>
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-          <PercentageLineSummaryPill
-            label="Стыков"
-            value={line.rowCount}
-            title="Количество сваренных официальных стыков на этой процентной линии. Неофициальные, неактуальные по ИЗМу и строки без даты сварки не учитываются."
-          />
-          <PercentageLineSummaryPill
-            label="Клейм"
-            value={line.stamps.length}
-            title="Количество официальных клейм, которые участвовали в сварке этой процентной линии."
-          />
-          <PercentageLineSummaryPill
-            label="Требуется"
-            value={totals.required}
-            title="Сколько стыков нужно закрыть РК/УЗК: базовый процент плюс добор после первичных негодных результатов РК/УЗК, включая дубль РК/УЗК."
-          />
-          <PercentageLineSummaryPill
-            label="Закрыто"
-            value={totals.covered}
-            title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК или уже известный негодный результат по любому контролю."
-          />
-          <PercentageLineSummaryPill
-            label="Осталось"
-            value={totals.missing}
-            tone={totals.missing > 0 ? 'amber' : 'slate'}
-            title="Сколько расчетных стыков еще нужно закрыть РК/УЗК."
-          />
-          <PercentageLineSummaryPill
-            label="Лишнее"
-            value={totals.excess}
-            tone={totals.excess > 0 ? 'rose' : 'slate'}
-            title="Обычные назначения «да» сверх расчетной потребности. «Дополнительный» сюда не попадает."
-          />
+        <div className="min-w-0 overflow-x-auto pb-0.5 lg:ml-auto lg:flex-[0_1_780px]">
+          <div className="grid min-w-[720px] grid-cols-6 gap-2">
+            <PercentageLineSummaryPill
+              label="Стыков"
+              value={line.rowCount}
+              title="Количество сваренных официальных стыков на этой процентной линии. Неофициальные, неактуальные по ИЗМу и строки без даты сварки не учитываются."
+            />
+            <PercentageLineSummaryPill
+              label="Клейм"
+              value={line.stamps.length}
+              title="Количество официальных клейм, которые участвовали в сварке этой процентной линии."
+            />
+            <PercentageLineSummaryPill
+              label="Требуется"
+              value={totals.required}
+              title="Сколько стыков нужно закрыть РК/УЗК: базовый процент плюс добор после первичных негодных результатов РК/УЗК, включая дубль РК/УЗК."
+            />
+            <PercentageLineSummaryPill
+              label="Закрыто"
+              value={totals.covered}
+              title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК или уже известный негодный результат по любому контролю."
+            />
+            <PercentageLineSummaryPill
+              label="Осталось"
+              value={totals.missing}
+              tone={totals.missing > 0 ? 'amber' : 'slate'}
+              title="Сколько расчетных стыков еще нужно закрыть РК/УЗК."
+            />
+            <PercentageLineSummaryPill
+              label="Лишнее"
+              value={totals.excess}
+              tone={totals.excess > 0 ? 'rose' : 'slate'}
+              title="Обычные назначения «да» сверх расчетной потребности. «Дополнительный» сюда не попадает."
+            />
+          </div>
         </div>
       </div>
 
@@ -2359,7 +2524,7 @@ function PercentageLineSummaryPill({
   return (
     <div
       className={cn(
-        'min-w-[112px] rounded-md border bg-white px-3 py-2 shadow-sm',
+        'min-w-0 rounded-md border bg-white px-2.5 py-2 shadow-sm',
         tone === 'amber'
           ? 'border-amber-200 text-amber-800'
           : tone === 'rose'
@@ -3181,7 +3346,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
       charts: [
         {
           title: 'Динамика сварки',
-          subtitle: `Объем по периодам, ${unitLabel}; в подписи указано число сварщиков по фактическим клеймам.`,
+          subtitle: `Объем по периодам, ${unitLabel}; в подписи указано число сварщиков по фактическим клеймам. Распределение по группам приведено ниже.`,
           valueLabel: unitLabel,
           items: dynamics.buckets.map((bucket) => ({
             label: bucket.shortLabel,
@@ -3191,6 +3356,17 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         },
       ],
       tables: [
+        ...(dynamics.materialGroups.length > 0
+          ? [{
+              title: 'Группы материалов за период',
+              columns: ['Группа материалов', unitLabel, 'Доля'],
+              rows: dynamics.materialGroups.map((group) => [
+                group.label,
+                formatStatisticValue(group.value, unit),
+                formatPercent(dynamics.totalValue > 0 ? (group.value / dynamics.totalValue) * 100 : 0),
+              ]),
+            }]
+          : []),
         {
           title: 'Состояние стыков',
           columns: ['Состояние', unitLabel, 'Доля'],
@@ -3199,6 +3375,15 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
             formatStatisticValue(value, unit),
             formatPercent(summary.totalRows > 0 ? (value / summary.totalRows) * 100 : 0),
           ]),
+        },
+        {
+          title: 'Текущий остаток вне выбранного периода',
+          columns: ['Состояние', unitLabel],
+          rows: [
+            ['Всего в остатке', formatStatisticValue(summary.backlogTotal, unit)],
+            ['Ожидает сварку', formatStatisticValue(summary.backlogWaitingWeld, unit)],
+            ['Ожидает ремонт', formatStatisticValue(summary.backlogWaitingRepair, unit)],
+          ],
         },
       ],
     }
@@ -3218,13 +3403,25 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
           tone: 'green',
         },
         {
-          label: 'ЛНК закрыто',
+          label: 'Заявки ЛНК',
+          value: formatPercent(summary.lnkRequestCoveragePercent),
+          detail: `${summary.lnkCreatedRequests} из ${summary.lnkRequiredRequests} требуемых контролей`,
+          tone: 'blue',
+        },
+        {
+          label: 'Заявки ПСТО',
+          value: formatPercent(summary.pstoRequestCoveragePercent),
+          detail: `${summary.pstoCreatedRequests} из ${summary.pstoRequiredRequests} требуемых обработок`,
+          tone: 'blue',
+        },
+        {
+          label: 'Заключения ЛНК',
           value: formatPercent(summary.lnkClosurePercent),
           detail: `${formatStatisticValue(summary.lnkClosed, unit)} из ${formatStatisticValue(summary.lnkRequests, unit)} заявок`,
           tone: 'blue',
         },
         {
-          label: 'ПСТО закрыто',
+          label: 'Заключения ПСТО',
           value: formatPercent(summary.pstoClosurePercent),
           detail: `${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок`,
           tone: 'amber',
@@ -3250,9 +3447,12 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
       tables: [
         {
           title: 'Лаборатория по видам контроля',
-          columns: ['Вид', 'Заявок', 'Закрыто', 'Всего результатов', 'Без заявки', 'Ожидает НК', 'Годен', 'Не годен', 'Закрытие'],
+          columns: ['Вид', 'Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Всего результатов', 'Без заявки', 'Ожидает НК', 'Годен', 'Не годен', 'Закрытие'],
           rows: methods.map((method) => [
             method.code,
+            String(method.requiredRequests),
+            String(method.createdRequests),
+            formatPercent(method.requestCoveragePercent),
             formatStatisticValue(method.requests, unit),
             formatStatisticValue(method.closed, unit),
             formatStatisticValue(method.totalClosed, unit),
@@ -3262,6 +3462,15 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
             method.code === 'ПСТО' ? '—' : formatStatisticValue(method.rejected, unit),
             formatPercent(method.closurePercent),
           ]),
+        },
+        {
+          title: 'Текущий остаток вне выбранного периода',
+          columns: ['Состояние', unitLabel],
+          rows: [
+            ['Всего в остатке', formatStatisticValue(summary.backlogTotal, unit)],
+            ['Ожидает сварку', formatStatisticValue(summary.backlogWaitingWeld, unit)],
+            ['Ожидает ремонт', formatStatisticValue(summary.backlogWaitingRepair, unit)],
+          ],
         },
       ],
     }

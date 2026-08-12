@@ -486,28 +486,11 @@ for (const [label, field] of FIELD_BY_LABEL.entries()) {
 
 export async function parseDocumentTemplateFile(file: File): Promise<TemplateUploadInfo & { fileData: ArrayBuffer }> {
   const extension = getFileExtension(file.name)
-  if (!['xlsx', 'xls', 'docx'].includes(extension)) {
-    throw new Error('Поддерживаются только шаблоны .xlsx, .xls и .docx.')
+  if (!['xlsx', 'xls'].includes(extension)) {
+    throw new Error('Поддерживаются только шаблоны Excel в форматах .xlsx и .xls.')
   }
 
   const fileData = await file.arrayBuffer()
-
-  if (extension === 'docx') {
-    return {
-      fileName: file.name,
-      fileType: extension,
-      fileSize: file.size,
-      uploadedAt: formatBusinessDateTime(new Date()),
-      sheetNames: [],
-      fields: [],
-      markerCount: 0,
-      locations: [],
-      warnings: [
-        'Word-шаблон принят, но разбор маркеров .docx подключим отдельным шагом через Word/XML-парсер. Для Excel маркеры уже распознаются автоматически.',
-      ],
-      fileData,
-    }
-  }
 
   const XLSX = await loadXlsx()
   const workbook = XLSX.read(fileData, { type: 'array' })
@@ -2583,8 +2566,11 @@ function preserveTemplateWorkbookXml(
     }
 
     return XLSX.CFB.write(generatedCfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
-  } catch {
-    return generatedData
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : ''
+    throw new Error(
+      `Не удалось сохранить исходное оформление Excel-шаблона${detail}. Документ не сформирован, чтобы не выдать файл с потерянными границами, объединениями или изображениями.`,
+    )
   }
 }
 

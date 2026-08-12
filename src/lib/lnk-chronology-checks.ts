@@ -12,7 +12,7 @@ import {
 
 type LnkChronologyRow = WeldInput & { id?: number }
 
-export const LNK_REQUEST_DATE_ORDER_REASON = 'проверить даты заявки ЛНК'
+export const LNK_REQUEST_DATE_ORDER_REASON = 'проверить даты ЛНК'
 export const LNK_VIK_DATE_ORDER_REASON = 'проверить порядок ВИК и НК'
 export const LNK_VIK_REQUIRED_REASON = 'дозаполнить ВИК перед другим НК'
 
@@ -27,6 +27,7 @@ export function isLnkChronologyCheckReason(reason?: string) {
 export type LnkChronologyIssueKind =
   | 'request-date-missing'
   | 'weld-after-request'
+  | 'weld-after-conclusion'
   | 'request-after-conclusion'
   | 'vik-missing-before-other'
   | 'vik-after-other'
@@ -40,6 +41,7 @@ export type LnkChronologyIssue = {
 }
 
 type LnkChronologyOptions = {
+  includeConclusionBeforeWeldIssue?: boolean
   includeMissingRequestDateIssue?: boolean
 }
 
@@ -99,6 +101,7 @@ export function getDispatcherLnkChronologyIssues(rows: LnkChronologyRow[]) {
     lnkResultVikDateBeforeOther: true,
     lnkResultVikRequiredBeforeOther: true,
   }, {
+    includeConclusionBeforeWeldIssue: true,
     includeMissingRequestDateIssue: true,
   })
 }
@@ -128,7 +131,6 @@ function getRowRequestDateOrderIssues(
         row,
         message: `Стык ${joint}: у ${method.code} есть заключение, но нет даты заявки ЛНК.`,
       })
-      continue
     }
 
     if (requestDate && weldDate && requestDate < weldDate) {
@@ -138,6 +140,22 @@ function getRowRequestDateOrderIssues(
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заявки ${method.code} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
+      })
+    }
+
+    if (
+      options.includeConclusionBeforeWeldIssue &&
+      hasConclusion &&
+      conclusionDate &&
+      weldDate &&
+      conclusionDate < weldDate
+    ) {
+      issues.push({
+        kind: 'weld-after-conclusion',
+        methodCode: method.code,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата заключения ${method.code} ${formatDisplayDate(conclusionDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
       })
     }
 

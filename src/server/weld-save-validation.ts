@@ -20,6 +20,7 @@ import {
   type OtherSettings,
 } from '@/lib/other-settings'
 import { getRequiredRootStampMessage } from '@/lib/weld-import-export'
+import { validateJointNameStructure } from '@/lib/joint-name'
 import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import {
@@ -37,6 +38,11 @@ import type {
 } from '@/lib/welder-stamp-types'
 import { applySystemWdi, getSystemWdiValidationError, isSystemWdiMode } from '@/lib/wdi'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import {
+  DEFAULT_SYSTEM_INDEX_SETTINGS,
+  normalizeSystemIndexSettings,
+  type SystemIndexSettings,
+} from '@/lib/system-index-settings'
 
 type Db = ReturnType<typeof requireDb>
 type ValidationDb = Pick<Db, 'select'>
@@ -45,6 +51,7 @@ export type ServerWeldValidationContext = {
   saveCheckSettings: SaveCheckSettings
   dataListSettings: DataListSettings
   otherSettings: OtherSettings
+  systemIndexSettings: SystemIndexSettings
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
 }
@@ -66,47 +73,6 @@ const OFFICIAL_VALIDATION_FIELDS = new Set<WeldFieldKey>([
   'stamp2O',
 ])
 
-const FORM_VALIDATION_FIELDS = new Set<WeldFieldKey>([
-  ...OFFICIAL_VALIDATION_FIELDS,
-  'joint',
-  'pstoRequired',
-  'hasVik',
-  'hasRk',
-  'hasPvk',
-  'hasUzk',
-  'hasTvmt',
-  'hasRfa',
-  'hasStls',
-  'hasMkk',
-  'vikRequestDate',
-  'rkRequestDate',
-  'pvkRequestDate',
-  'uzkRequestDate',
-  'tvmtRequestDate',
-  'rfaRequestDate',
-  'stlsRequestDate',
-  'mkkRequestDate',
-  'pstoRequestDate',
-  'vikConclusionDate',
-  'rkConclusionDate',
-  'pvkConclusionDate',
-  'uzkConclusionDate',
-  'tvmtConclusionDate',
-  'rfaConclusionDate',
-  'stlsConclusionDate',
-  'mkkConclusionDate',
-  'pstoDate',
-  'vikResult',
-  'rkResult',
-  'pvkResult',
-  'uzkResult',
-  'tvmtResult',
-  'rfaResult',
-  'stlsResult',
-  'mkkResult',
-  'pstoResult',
-])
-
 export async function loadServerWeldValidationContext(db: ValidationDb): Promise<ServerWeldValidationContext> {
   const [settingRows, stampRows, suspensionRows] = await Promise.all([
     db
@@ -116,6 +82,7 @@ export async function loadServerWeldValidationContext(db: ValidationDb): Promise
         PROJECT_SETTING_KEYS.saveCheck,
         PROJECT_SETTING_KEYS.dataList,
         PROJECT_SETTING_KEYS.other,
+        PROJECT_SETTING_KEYS.systemIndex,
       ])),
     db.select().from(welderStamps),
     db.select().from(welderStampSuspensions),
@@ -131,6 +98,9 @@ export async function loadServerWeldValidationContext(db: ValidationDb): Promise
     otherSettings: settingsByKey.has(PROJECT_SETTING_KEYS.other)
       ? normalizeOtherSettings(settingsByKey.get(PROJECT_SETTING_KEYS.other))
       : DEFAULT_OTHER_SETTINGS,
+    systemIndexSettings: settingsByKey.has(PROJECT_SETTING_KEYS.systemIndex)
+      ? normalizeSystemIndexSettings(settingsByKey.get(PROJECT_SETTING_KEYS.systemIndex))
+      : DEFAULT_SYSTEM_INDEX_SETTINGS,
     welderStamps: stampRows.map(toWelderStampRecord),
     welderStampSuspensions: suspensionRows.map((row) => ({
       id: row.id,
@@ -181,16 +151,30 @@ export async function loadPreviousWeldRows(db: ValidationDb, records: WeldInput[
   return new Map(rows.map((row) => [row.id, row]))
 }
 
+export function mergeWeldRecordsWithPrevious(
+  records: WeldInput[],
+  previousRows: ReadonlyMap<number, WeldJoint>,
+) {
+  return records.map((record) => {
+    const previous = record.id ? previousRows.get(Number(record.id)) : undefined
+    return previous
+      ? ({ ...previous, ...record, id: previous.id } as WeldInput)
+      : record
+  })
+}
+
 export function validateServerWeldRecords({
   records,
   previousRows,
   context,
   importMode = false,
+  allowSystemJointNames = false,
 }: {
   records: WeldInput[]
   previousRows: ReadonlyMap<number, WeldJoint>
   context: ServerWeldValidationContext
   importMode?: boolean
+  allowSystemJointNames?: boolean
 }) {
   records.forEach((record, index) => {
     const previous = record.id ? previousRows.get(Number(record.id)) : undefined
@@ -199,20 +183,29 @@ export function validateServerWeldRecords({
       ? `Импорт остановлен: строка ${index + 2}, стык "${String(record.joint ?? '').trim() || 'пусто'}". `
       : 'Сохранение невозможно: '
 
-    if (isNew || hasAnyChangedField(record, previous, FORM_VALIDATION_FIELDS)) {
-      if (context.saveCheckSettings.requiredRootStampWithWeldDate) {
-        const rootReason = getRequiredRootStampMessage(record)
-        if (rootReason) {
-          throw new Error(`${prefix}${formatSaveCheckBlockReason('requiredRootStampWithWeldDate', rootReason)}`)
-        }
-      }
-      const formReason = getWeldFormSaveBlockReason(
-        record,
-        (previous ?? {}) as WeldInput,
-        context.saveCheckSettings,
-      )
-      if (formReason) throw new Error(`${prefix}${formReason}`)
+    if (context.saveCheckSettings.manualJointName) {
+      const structureReason = validateJointNameStructure(record.joint, context.systemIndexSettings)
+      if (structureReason) throw new Error(`${prefix}${formatSaveCheckBlockReason('manualJointName', structureReason)}`)
     }
+
+    if (importMode) validateRequiredImportIdentity(record, prefix)
+
+    if (context.saveCheckSettings.requiredRootStampWithWeldDate) {
+      const rootReason = getRequiredRootStampMessage(record)
+      if (rootReason) {
+        throw new Error(`${prefix}${formatSaveCheckBlockReason('requiredRootStampWithWeldDate', rootReason)}`)
+      }
+    }
+    const formReason = getWeldFormSaveBlockReason(
+      record,
+      (previous ?? {}) as WeldInput,
+      context.saveCheckSettings,
+      {
+        allowSystemJointName: allowSystemJointNames,
+        systemIndexSettings: context.systemIndexSettings,
+      },
+    )
+    if (formReason) throw new Error(`${prefix}${formReason}`)
 
     if (isNew || hasAnyChangedField(record, previous, OFFICIAL_VALIDATION_FIELDS)) {
       const stampReason = getOfficialStampCompatibilitySaveBlockReason(record, context.welderStamps, {
@@ -228,6 +221,22 @@ export function validateServerWeldRecords({
     validateConfiguredListValue(record, previous, context.dataListSettings, 'connectionType', 'Тип соединения', 'connectionTypes', prefix)
     validateConfiguredListValue(record, previous, context.dataListSettings, 'materialGroup', 'Группа материалов', 'materialGroups', prefix)
   })
+}
+
+const REQUIRED_IMPORT_IDENTITY_FIELDS: Array<[WeldFieldKey, string]> = [
+  ['projectTitle', 'Проект'],
+  ['subtitleCode', 'Шифр'],
+  ['line', 'Линия'],
+  ['joint', 'Стык'],
+]
+
+function validateRequiredImportIdentity(record: WeldInput, prefix: string) {
+  const missing = REQUIRED_IMPORT_IDENTITY_FIELDS
+    .filter(([fieldKey]) => !String(record[fieldKey] ?? '').trim())
+    .map(([, label]) => label)
+  if (missing.length > 0) {
+    throw new Error(`${prefix}обязательные поля не могут быть пустыми: ${missing.join(', ')}.`)
+  }
 }
 
 function validateConfiguredListValue(

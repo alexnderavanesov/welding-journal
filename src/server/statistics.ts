@@ -22,6 +22,7 @@ import { prepareReportRows } from '@/lib/use-report-rows'
 import { toWelderStampPayload } from '@/server/welder-stamps'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
+import { assertSecurityScope } from '@/server/security-functions'
 
 const STATISTICS_ROW_SELECT = {
   id: weldJoints.id,
@@ -109,8 +110,9 @@ const STATISTICS_ROW_SELECT = {
 export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .validator((data: StatisticsServerRequest) => normalizeStatisticsServerRequest(data))
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
+    await assertSecurityScope('entry')
     return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v1', data),
+      buildDerivedCalculationCacheKey('statistics:v3', data),
       () => computeStatisticsServerResult(data),
     )
   })
@@ -134,9 +136,7 @@ async function computeStatisticsServerResult(
     data.tab === 'welders'
       ? db.select().from(welderStamps).orderBy(asc(welderStamps.id))
       : Promise.resolve([]),
-    data.tab === 'percentageLines'
-      ? Promise.resolve([])
-      : db.select().from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex)),
+    db.select().from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex)),
   ])
   const sourceIds = sourceRows.map((row) => row.id)
   const duplicateRows = sourceIds.length > 0

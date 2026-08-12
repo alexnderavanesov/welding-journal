@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildExactJointFilters } from '@/lib/report-navigation'
+import { buildExactJointFilters, buildJointChainFilters } from '@/lib/report-navigation'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -29,5 +29,19 @@ describe('report navigation', () => {
 
     expect(filterWeldRowsByColumns([row], { joint: '=f7' })).toEqual([row])
     expect(filterWeldRowsByColumns([row], { joint: '=F7' })).toEqual([row])
+  })
+
+  it('shows only the exact requested chain and not similarly named bases', () => {
+    const rows = [
+      makeRow({ id: 1, joint: 'F01' }),
+      makeRow({ id: 2, joint: 'F01R1' }),
+      makeRow({ id: 3, joint: 'F01A' }),
+      makeRow({ id: 4, joint: 'F01AR1' }),
+      makeRow({ id: 5, joint: 'FB01' }),
+      makeRow({ id: 6, joint: 'FB01R1' }),
+    ]
+
+    expect(filterWeldRowsByColumns(rows, buildJointChainFilters(rows[0], 'F01')).map((row) => row.id)).toEqual([1, 2])
+    expect(filterWeldRowsByColumns(rows, buildJointChainFilters(rows[4], 'FB01')).map((row) => row.id)).toEqual([5, 6])
   })
 })

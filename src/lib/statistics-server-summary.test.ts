@@ -91,6 +91,64 @@ describe('buildStatisticsServerResult', () => {
     expect(result.percentageLineSummary[0].rows).toEqual([])
     expect(result.percentageLineSummary[0].stamps[0].officialJointCount).toBe(5_101)
   })
+
+  it('uses configured chain suffixes in every statistics tab', () => {
+    const systemIndexSettings = {
+      ...DEFAULT_SYSTEM_INDEX_SETTINGS,
+      shopJoint: 'A',
+      fieldJoint: 'B',
+      repair: 'C',
+      cutout: 'D',
+      coil: 'E',
+    }
+    const rows = [
+      makeRow(1, { joint: 'B1', weldDate: '2026-07-14' }),
+      makeRow(2, { joint: 'B1C1', weldDate: '2026-07-15' }),
+    ]
+
+    const result = buildStatisticsServerResult({
+      rows,
+      welderStamps: [],
+      systemIndexSettings,
+      request: {
+        tab: 'general',
+        from: '2026-07-01',
+        to: '2026-07-31',
+        unit: 'joints',
+      },
+    })
+
+    expect(result.summary.completedRepairs).toBe(1)
+    expect(result.generalProgressSummary.total).toBe(1)
+  })
+
+  it('does not count a configured repeated joint as a primary percentage-line rejection', () => {
+    const systemIndexSettings = {
+      ...DEFAULT_SYSTEM_INDEX_SETTINGS,
+      shopJoint: 'A',
+      fieldJoint: 'B',
+      repair: 'C',
+      cutout: 'D',
+      coil: 'E',
+    }
+    const rows = [
+      makeRow(1, {
+        joint: 'B1C1',
+        weldControlPercent: '10',
+        stamp1K: 'ABC1',
+        rkResult: 'ремонт',
+      }),
+    ]
+
+    const result = buildStatisticsServerResult({
+      rows,
+      welderStamps: [],
+      systemIndexSettings,
+      request: { tab: 'percentageLines', unit: 'joints' },
+    })
+
+    expect(result.percentageLineSummary[0].stamps[0].rejectedPrimaryControls).toBe(0)
+  })
 })
 
 function makeRow(id: number, overrides: Partial<WeldRow> = {}): WeldRow {

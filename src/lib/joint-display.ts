@@ -1,4 +1,5 @@
 import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
+import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export function parseJointDiameterValue(value: unknown) {
@@ -33,10 +34,13 @@ export function isUnofficialJoint(row: WeldInput) {
   return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
 }
 
-export function getJointChainIdentity(row: WeldInput) {
+export function getJointChainIdentity(
+  row: WeldInput,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   const joint = String(row.joint ?? '').trim()
   if (!joint) return null
-  const parsed = parseJointChainName(joint)
+  const parsed = parseJointChainName(joint, settings)
   return {
     project: normalizeJointChainPart(row.projectTitle),
     subtitle: normalizeJointChainPart(row.subtitleCode),
@@ -45,10 +49,13 @@ export function getJointChainIdentity(row: WeldInput) {
   }
 }
 
-export function getJointChainSubtitle(row: WeldInput) {
+export function getJointChainSubtitle(
+  row: WeldInput,
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   const project = String(row.projectTitle ?? '').trim() || '-'
   const subtitle = String(row.subtitleCode ?? '').trim() || '-'
   const line = String(row.line ?? '').trim() || '-'
-  const base = parseJointChainName(String(row.joint ?? '')).base || '-'
+  const base = parseJointChainName(String(row.joint ?? ''), settings).base || '-'
   return `${project} · ${subtitle} · ${line} · базовый стык ${base}`
 }

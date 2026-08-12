@@ -10,6 +10,7 @@ import {
   compactWeldRowsForTransport,
   mergeDuplicateControlsIntoRows,
   normalizeWeldPageRequest,
+  normalizeWeldImportScopeRequest,
   normalizeWeldPageSize,
   normalizeWeldSnapshotPageRequest,
   normalizeDocumentGenerationDataRequest,
@@ -22,6 +23,11 @@ import {
   buildPercentageLineStampFilters,
   buildRowIdListFilters,
 } from '@/lib/report-hidden-filters'
+import {
+  buildDispatcherTaskServerFilters,
+  DISPATCHER_TASK_FILTER_KEY,
+} from '@/lib/dispatcher-task-row-codes'
+import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
 
 describe('weld server pagination helpers', () => {
   it('keeps supported page sizes and falls back to 100 for unknown values', () => {
@@ -92,12 +98,14 @@ describe('weld server pagination helpers', () => {
       buildWeldDataUsageSummaryFromRows(
         [
           {
+            joint: 'FB01',
             weldingMethod: 'РАД+РД+РАД',
             connectionType: 'С17',
             materialGroup: 'М01',
             testTypes: 'ГИ, ПИ, ГИ',
           },
           {
+            joint: 'F01',
             weldingMethod: 'РД',
             connectionType: 'С17',
             materialGroup: 'М05',
@@ -108,6 +116,7 @@ describe('weld server pagination helpers', () => {
       ),
     ).toEqual({
       rowsCount: 25,
+      leadingLetterIndexedRowsCount: 1,
       weldingTypes: [
         ['РАД', 1],
         ['РД', 2],
@@ -167,6 +176,21 @@ describe('weld server pagination helpers', () => {
     expect(normalized.columnFilters[ROW_ID_LIST_FILTER_KEY]).toBe(rowIdFilters[ROW_ID_LIST_FILTER_KEY])
     expect(normalized.columnFilters[PERCENTAGE_LINE_STAMP_FILTER_KEY]).toBe(stampFilters[PERCENTAGE_LINE_STAMP_FILTER_KEY])
     expect(normalized.columnFilters.joint).toBeUndefined()
+  })
+
+  it('keeps the virtual dispatcher filter in the server import scope', () => {
+    const filters = buildDispatcherTaskServerFilters({
+      dispatcherTasks: buildWeldColumnValueFilter(['ДЗ-31']),
+      projectTitle: ' Риформинг ',
+      joint: '   ',
+    })
+
+    expect(normalizeWeldImportScopeRequest({ columnFilters: filters })).toEqual({
+      columnFilters: {
+        [DISPATCHER_TASK_FILTER_KEY]: filters[DISPATCHER_TASK_FILTER_KEY],
+        projectTitle: 'Риформинг',
+      },
+    })
   })
 
   it('uses source pagination only for filters that can be applied before building LNK/PSTO rows', () => {

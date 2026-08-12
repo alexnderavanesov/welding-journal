@@ -1,6 +1,7 @@
 export const PROJECT_SETTING_KEYS = {
   dataList: 'data-list',
   dispatcher: 'dispatcher',
+  dispatcherBackground: 'dispatcher-background',
   dispatcherReminders: 'dispatcher-reminders',
   other: 'other',
   requestConclusion: 'request-conclusion',
@@ -10,10 +11,18 @@ export const PROJECT_SETTING_KEYS = {
 
 export type ProjectSettingKey = (typeof PROJECT_SETTING_KEYS)[keyof typeof PROJECT_SETTING_KEYS]
 
+export const PROJECT_SETTING_KEY_VALUES = Object.values(PROJECT_SETTING_KEYS)
+
+export function isProjectSettingKey(value: unknown): value is ProjectSettingKey {
+  return PROJECT_SETTING_KEY_VALUES.includes(value as ProjectSettingKey)
+}
+
 export function projectSettingAffectsDispatcherIndex(key: unknown) {
   return key === PROJECT_SETTING_KEYS.dataList ||
     key === PROJECT_SETTING_KEYS.dispatcher ||
-    key === PROJECT_SETTING_KEYS.dispatcherReminders
+    key === PROJECT_SETTING_KEYS.dispatcherReminders ||
+    key === PROJECT_SETTING_KEYS.saveCheck ||
+    key === PROJECT_SETTING_KEYS.systemIndex
 }
 
 export function projectSettingAffectsDerivedCalculations(key: unknown) {

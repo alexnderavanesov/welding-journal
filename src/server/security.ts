@@ -1,5 +1,5 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
-import { getCookie, setCookie } from '@tanstack/react-start/server'
+import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
+import { getCookie, getRequestIP, setCookie } from '@tanstack/react-start/server'
 import { eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -13,6 +13,11 @@ import type {
 const SECURITY_SETTING_KEY = 'security'
 const SESSION_TTL_SECONDS = 10 * 60
 const SERVER_PASSWORD_PLACEHOLDER = '__server__'
+const AUTH_WINDOW_MS = 5 * 60 * 1_000
+const AUTH_LOCK_MS = 5 * 60 * 1_000
+const AUTH_MAX_FAILURES = 8
+const AUTH_MAX_TRACKED_CLIENTS = 2_000
+const authAttempts = new Map<string, { failures: number; windowStartedAt: number; lockedUntil: number }>()
 const SECURITY_SCOPES: SecurityScope[] = [
   'entry',
   'settings',
@@ -49,9 +54,13 @@ export async function authenticateSecurityScopeOnServer(data: {
   const settings = await loadStoredSecuritySettings()
   const scopeSettings = settings.scopes[validatedData.scope]
   if (!scopeSettings?.enabled) return { ok: true, enabled: false }
-  if (!verifyPassword(validatedData.password, scopeSettings)) {
+  const attemptKey = getAuthenticationAttemptKey(validatedData.scope)
+  assertAuthenticationAttemptAllowed(attemptKey)
+  if (!await verifyPassword(validatedData.password, scopeSettings)) {
+    registerAuthenticationFailure(attemptKey)
     throw new Error('Пароль не подходит')
   }
+  authAttempts.delete(attemptKey)
   const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS
   setCookie(
     getSecurityCookieName(validatedData.scope),
@@ -84,10 +93,10 @@ export async function saveRemoteSecuritySettingsOnServer(data: SecuritySettings)
     }
     const enabled = Boolean(password) && getScopeEnabled(data, scope)
     if (!password) continue
-    if (currentScope && verifyPassword(password, currentScope)) {
+    if (currentScope && await verifyPassword(password, currentScope)) {
       next.scopes[scope] = { ...currentScope, enabled }
     } else {
-      next.scopes[scope] = createStoredScope(password, enabled)
+      next.scopes[scope] = await createStoredScope(password, enabled)
     }
   }
 
@@ -107,6 +116,11 @@ export async function assertSecurityScope(
   storedSettings?: StoredSecuritySettings,
 ) {
   const settings = storedSettings ?? await loadStoredSecuritySettings()
+  if (scope !== 'entry') assertStoredSecurityScope('entry', settings)
+  assertStoredSecurityScope(scope, settings)
+}
+
+function assertStoredSecurityScope(scope: SecurityScope, settings: StoredSecuritySettings) {
   const scopeSettings = settings.scopes[scope]
   if (!scopeSettings?.enabled) return
   const token = getCookie(getSecurityCookieName(scope))
@@ -131,24 +145,84 @@ async function loadStoredSecuritySettings(): Promise<StoredSecuritySettings> {
   }
 }
 
-function createStoredScope(password: string, enabled: boolean): StoredSecurityScope {
+async function createStoredScope(password: string, enabled: boolean): Promise<StoredSecurityScope> {
   const salt = randomBytes(16).toString('base64url')
   return {
     enabled,
     salt,
-    passwordHash: hashPassword(password, salt),
+    passwordHash: await hashPassword(password, salt),
     version: randomBytes(12).toString('base64url'),
   }
 }
 
 function hashPassword(password: string, salt: string) {
-  return scryptSync(password, salt, 32).toString('base64url')
+  return new Promise<string>((resolve, reject) => {
+    scrypt(password, salt, 32, (error, derivedKey) => {
+      if (error) reject(error)
+      else resolve(derivedKey.toString('base64url'))
+    })
+  })
 }
 
-function verifyPassword(password: string, settings: StoredSecurityScope) {
+async function verifyPassword(password: string, settings: StoredSecurityScope) {
   const expected = Buffer.from(settings.passwordHash, 'base64url')
-  const actual = Buffer.from(hashPassword(password, settings.salt), 'base64url')
+  const actual = Buffer.from(await hashPassword(password, settings.salt), 'base64url')
   return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
+function getAuthenticationAttemptKey(scope: SecurityScope) {
+  let requestIp = 'unknown'
+  try {
+    requestIp = getRequestIP({ xForwardedFor: true }) ?? 'unknown'
+  } catch {
+    // Server-side tests may call the helper outside a request context.
+  }
+  return `${requestIp}:${scope}`
+}
+
+function assertAuthenticationAttemptAllowed(key: string) {
+  const now = Date.now()
+  pruneAuthenticationAttempts(now)
+  const attempt = authAttempts.get(key)
+  if (!attempt) return
+  if (attempt.lockedUntil > now) {
+    throw new Error('Слишком много неверных попыток. Повторите через несколько минут.')
+  }
+  if (now - attempt.windowStartedAt >= AUTH_WINDOW_MS) authAttempts.delete(key)
+}
+
+function registerAuthenticationFailure(key: string) {
+  const now = Date.now()
+  pruneAuthenticationAttempts(now)
+  const current = authAttempts.get(key)
+  const attempt = !current || now - current.windowStartedAt >= AUTH_WINDOW_MS
+    ? { failures: 0, windowStartedAt: now, lockedUntil: 0 }
+    : current
+  attempt.failures += 1
+  if (attempt.failures >= AUTH_MAX_FAILURES) attempt.lockedUntil = now + AUTH_LOCK_MS
+  authAttempts.set(key, attempt)
+  trimAuthenticationAttempts()
+}
+
+function pruneAuthenticationAttempts(now: number) {
+  for (const [key, attempt] of authAttempts) {
+    if (attempt.lockedUntil > now) continue
+    if (now - attempt.windowStartedAt >= AUTH_WINDOW_MS) authAttempts.delete(key)
+  }
+}
+
+function trimAuthenticationAttempts() {
+  while (authAttempts.size > AUTH_MAX_TRACKED_CLIENTS) {
+    let oldestKey: string | undefined
+    let oldestStartedAt = Number.POSITIVE_INFINITY
+    for (const [key, attempt] of authAttempts) {
+      if (attempt.windowStartedAt >= oldestStartedAt) continue
+      oldestKey = key
+      oldestStartedAt = attempt.windowStartedAt
+    }
+    if (!oldestKey) return
+    authAttempts.delete(oldestKey)
+  }
 }
 
 function createSessionToken(scope: SecurityScope, expiresAt: number, settings: StoredSecurityScope) {

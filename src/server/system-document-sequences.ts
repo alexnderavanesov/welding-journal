@@ -65,6 +65,7 @@ const SYSTEM_DOCUMENT_SEQUENCE_SELECT = {
 }
 
 export const getSystemDocumentSequences = createServerFn({ method: 'GET' }).handler(async () => {
+  await assertSecurityScope('entry')
   const db = requireDb()
   const stored = await readStoredSequenceNumbers(db)
   const needsInitialValues = SYSTEM_DOCUMENT_TEMPLATE_PROFILES.some(
@@ -84,6 +85,7 @@ export const getSystemDocumentSequence = createServerFn({ method: 'GET' })
     type: requireSystemDocumentTemplateId(data?.type),
   }))
   .handler(async ({ data }) => {
+    await assertSecurityScope('entry')
     const db = requireDb()
     return {
       type: data.type,

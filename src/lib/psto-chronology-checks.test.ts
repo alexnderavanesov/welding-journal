@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getPstoChronologyIssues } from '@/lib/psto-chronology-checks'
+import { getDispatcherPstoChronologyIssues, getPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('psto chronology checks', () => {
@@ -39,5 +39,23 @@ describe('psto chronology checks', () => {
         pstoResultRequestDateOrder: false,
       }),
     ).toEqual([])
+  })
+
+  it('shows every independent PSTO chronology problem in dispatcher diagnostics', () => {
+    const issues = getDispatcherPstoChronologyIssues([
+      {
+        id: 1,
+        joint: 'F1',
+        weldDate: '2026-07-10',
+        pstoRequest: 'ПСТО-001',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-05',
+      },
+    ])
+
+    expect(issues.map((issue) => issue.kind)).toEqual([
+      'request-date-missing',
+      'weld-after-result',
+    ])
   })
 })

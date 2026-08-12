@@ -17,6 +17,9 @@ export type SaveCheckSettingId =
   | 'officialThickness'
   | 'officialDls'
   | 'requiredRootStampWithWeldDate'
+  | 'requiredMaterialGroupWithWeldDate'
+  | 'requiredConnectionTypeWithWeldDate'
+  | 'requiredWeldingMethodWithWeldDate'
   | 'dateFormat'
   | 'weldDateNotFuture'
   | 'lnkResultControlDateRequired'
@@ -63,6 +66,9 @@ export const SAVE_CHECK_SETTING_CODES: Record<SaveCheckSettingId, string> = {
   officialThickness: 'ЗВ-08',
   officialDls: 'ЗВ-09',
   requiredRootStampWithWeldDate: 'ЗВ-10',
+  requiredMaterialGroupWithWeldDate: 'ЗВ-29',
+  requiredConnectionTypeWithWeldDate: 'ЗВ-30',
+  requiredWeldingMethodWithWeldDate: 'ЗВ-31',
   dateFormat: 'ЗВ-11',
   weldDateNotFuture: 'ЗВ-12',
   lnkResultControlDateRequired: 'ЗВ-13',
@@ -150,6 +156,24 @@ const FORM_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
     example: 'Дата сварки стоит, а Корень_1 пустой: система попросит указать корневое клеймо.',
   },
   {
+    id: 'requiredMaterialGroupWithWeldDate',
+    label: 'Группа материалов при дате сварки',
+    description: 'Если указана дата сварки, должна быть заполнена группа материалов.',
+    example: 'Дата сварки стоит, а группа материалов пустая: система попросит выбрать группу материалов.',
+  },
+  {
+    id: 'requiredConnectionTypeWithWeldDate',
+    label: 'Тип соединения при дате сварки',
+    description: 'Если указана дата сварки, должен быть заполнен тип соединения.',
+    example: 'Дата сварки стоит, а тип соединения пустой: система попросит выбрать тип соединения.',
+  },
+  {
+    id: 'requiredWeldingMethodWithWeldDate',
+    label: 'Способ сварки при дате сварки',
+    description: 'Если указана дата сварки, должен быть заполнен способ сварки.',
+    example: 'Дата сварки стоит, а способ сварки пустой: система попросит выбрать способ сварки.',
+  },
+  {
     id: 'dateFormat',
     label: 'Формат дат',
     description: 'Все даты в форме должны быть реальными датами в понятном формате.',
@@ -209,8 +233,8 @@ const LNK_RESULT_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   {
     id: 'lnkResultRepairRules',
     label: 'Правила ремонта',
-    description: 'Не дает выбрать или оставить результат “ремонт”, если по стыку ремонт недоступен.',
-    example: 'Для диаметра до 89 мм ремонт недоступен: в результате ЛНК нужно выбрать другой статус, а в карточке стыка нельзя сохранить D1/D2, которые делают уже внесенный ремонт недопустимым.',
+    description: 'Не дает выбрать или оставить результат “ремонт”, если по стыку ремонт недоступен. Существующее нарушение показывается сразу при открытии карточки стыка.',
+    example: 'Для диаметра до 89 мм ремонт недоступен: нужно выбрать другой результат ЛНК или исправить D1/D2 до сохранения любых изменений карточки.',
   },
 ]
 
@@ -251,8 +275,8 @@ const DANGEROUS_FORM_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   {
     id: 'manualJointName',
     label: 'Имя обычного стыка',
-    description: 'Проверяет имя стыка, которое пользователь вводит вручную: оно должно начинаться с базовой буквы стыка и не должно выглядеть как системный ремонт, вырез, катушка, официальный или неофициальный повтор.',
-    example: 'Обычный новый стык можно назвать S13 или F5A. А имя вроде F1R1, F1W1 или F1Y1 лучше создавать через диспетчер/цепочку, потому что R/W/Y имеют системный смысл.',
+    description: 'Проверяет имя стыка при создании, импорте и следующем сохранении старой записи: оно должно начинаться с настроенной базовой буквы и не должно вручную имитировать системный ремонт, вырез или катушку.',
+    example: 'S13 и F5A допустимы. FB01 и SB43 допустимы, когда включен буквенный индекс перед номером. F1R1, F1W1 и F1Y1 создает только система через диспетчер/цепочку.',
   },
   {
     id: 'controlHistoryProtection',
@@ -280,7 +304,7 @@ export const SAVE_CHECK_SETTING_GROUPS: SaveCheckSettingGroup[] = [
     id: 'weld-form',
     title: 'Неопасные проверки формы стыка',
     description:
-      'Это рабочие проверки ввода: даты и корневое клеймо при заполненной сварке. Они не меняют цепочки, заявки, результаты и системную логику.',
+      'Это рабочие проверки ввода: даты, корневое клеймо и группа материалов при заполненной сварке. Они не меняют цепочки, заявки, результаты и системную логику.',
     items: FORM_SAVE_CHECK_ITEMS,
   },
   {
@@ -319,6 +343,9 @@ export const DEFAULT_SAVE_CHECK_SETTINGS: SaveCheckSettings = {
   officialThickness: true,
   officialDls: false,
   requiredRootStampWithWeldDate: true,
+  requiredMaterialGroupWithWeldDate: true,
+  requiredConnectionTypeWithWeldDate: true,
+  requiredWeldingMethodWithWeldDate: true,
   dateFormat: true,
   weldDateNotFuture: true,
   lnkResultControlDateRequired: true,

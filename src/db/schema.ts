@@ -289,6 +289,36 @@ export const dispatcherRowTasks = pgTable(
 
 export type DispatcherRowTask = typeof dispatcherRowTasks.$inferSelect
 
+export const dispatcherBackgroundTaskIndexState = pgTable('dispatcher_background_task_index_state', {
+  id: integer('id').primaryKey(),
+  status: text('status').default('idle').notNull(),
+  computedSourceRevision: integer('computed_source_revision').default(-1).notNull(),
+  computedAt: timestamp('computed_at', { withTimezone: true }),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type DispatcherBackgroundTaskIndexState = typeof dispatcherBackgroundTaskIndexState.$inferSelect
+
+export const dispatcherBackgroundRowTasks = pgTable(
+  'dispatcher_background_row_tasks',
+  {
+    weldJointId: integer('weld_joint_id')
+      .notNull()
+      .references(() => weldJoints.id, { onDelete: 'cascade' }),
+    taskKey: text('task_key').notNull(),
+    code: text('code').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.weldJointId, table.taskKey] }),
+    index('dispatcher_background_row_tasks_code_idx').on(table.code),
+    index('dispatcher_background_row_tasks_task_key_idx').on(table.taskKey),
+  ],
+)
+
+export type DispatcherBackgroundRowTask = typeof dispatcherBackgroundRowTasks.$inferSelect
+
 export const derivedCalculationState = pgTable('derived_calculation_state', {
   id: integer('id').primaryKey(),
   sourceRevision: integer('source_revision').default(0).notNull(),

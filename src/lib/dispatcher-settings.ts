@@ -7,6 +7,12 @@ import {
   LNK_VIK_REQUIRED_REASON,
 } from '@/lib/lnk-chronology-checks'
 import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
+import {
+  CONTROL_HISTORY_REASON,
+  JOINT_CORE_DATA_REASON,
+  LNK_RESULT_COMPLETENESS_REASON,
+  PSTO_RESULT_COMPLETENESS_REASON,
+} from '@/lib/dispatcher-check-reasons'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
 
 export const DISPATCHER_SETTINGS_EVENT = 'dispatcher-settings-change'
@@ -32,7 +38,6 @@ export type DispatcherSettingId =
   | 'chain-consistency'
   | 'chain-duplicate'
   | 'chain-date-order'
-  | 'check-control-before-weld'
   | 'check-repair-diameter'
   | 'check-welder-stamp'
   | 'check-incomplete-stamps'
@@ -47,6 +52,10 @@ export type DispatcherSettingId =
   | 'line-psto-presence'
   | 'welder-stamp-expiry'
   | 'welder-dls-expiry'
+  | 'check-joint-core-data'
+  | 'check-lnk-result-completeness'
+  | 'check-psto-result-completeness'
+  | 'check-control-history'
 
 export type DispatcherSettings = Record<DispatcherSettingId, boolean>
 
@@ -88,7 +97,6 @@ export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
   'chain-consistency': 'ДЗ-13',
   'chain-duplicate': 'ДЗ-14',
   'chain-date-order': 'ДЗ-15',
-  'check-control-before-weld': 'ДЗ-16',
   'check-repair-diameter': 'ДЗ-17',
   'check-welder-stamp': 'ДЗ-18',
   'check-incomplete-stamps': 'ДЗ-19',
@@ -103,6 +111,10 @@ export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
   'welder-stamp-expiry': 'ДЗ-28',
   'welder-dls-expiry': 'ДЗ-29',
   'line-psto-presence': 'ДЗ-30',
+  'check-joint-core-data': 'ДЗ-31',
+  'check-lnk-result-completeness': 'ДЗ-32',
+  'check-psto-result-completeness': 'ДЗ-33',
+  'check-control-history': 'ДЗ-34',
 }
 
 export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, string> = {
@@ -121,7 +133,6 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'chain-consistency': 'Проверить целостность цепочки',
   'chain-duplicate': 'Возможный дубль',
   'chain-date-order': 'Проверить даты сварки',
-  'check-control-before-weld': 'Проверить дату сварки и контроля',
   'check-repair-diameter': 'Проверить ремонт по диаметру',
   'check-welder-stamp': 'Проверить клеймо',
   'check-incomplete-stamps': 'Дозаполнить клейма/дату сварки',
@@ -136,6 +147,10 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'line-psto-presence': 'Проверить ПСТО по линии',
   'welder-stamp-expiry': 'Срок НАКС заканчивается',
   'welder-dls-expiry': 'Срок ДЛС заканчивается',
+  'check-joint-core-data': 'Проверить основные данные стыка',
+  'check-lnk-result-completeness': 'Дозаполнить результат ЛНК',
+  'check-psto-result-completeness': 'Дозаполнить результат ПСТО',
+  'check-control-history': 'Проверить историю контроля',
 }
 
 export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
@@ -234,11 +249,6 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
     description: 'Проверки дат, клейм, совместимости и заполненности обязательных полей.',
     items: [
       {
-        id: 'check-control-before-weld',
-        label: 'Дата контроля раньше сварки',
-        description: 'Показывать задачи, когда дата ЛНК/ПСТО раньше даты сварки.',
-      },
-      {
         id: 'check-repair-diameter',
         label: 'Ремонт запрещен диаметром',
         description: 'Показывать задачи, когда ремонт указан на малом диаметре.',
@@ -255,8 +265,8 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
       },
       {
         id: 'check-lnk-request-date-order',
-        label: 'Проверить даты заявки ЛНК',
-        description: 'Показывать задачи, когда нарушен порядок дат сварка -> заявка ЛНК -> заключение.',
+        label: 'Проверить даты ЛНК',
+        description: 'Показывать задачи, когда контроль выполнен раньше сварки или нарушен порядок сварка -> заявка ЛНК -> заключение.',
       },
       {
         id: 'check-lnk-vik-date-order',
@@ -271,7 +281,27 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
       {
         id: 'check-psto-request-date-order',
         label: 'Проверить даты ПСТО',
-        description: 'Показывать задачи, когда нарушен порядок дат сварка -> заявка ПСТО -> результат ПСТО.',
+        description: 'Показывать задачи, когда ПСТО выполнено раньше сварки или нарушен порядок сварка -> заявка ПСТО -> результат ПСТО.',
+      },
+      {
+        id: 'check-joint-core-data',
+        label: 'Проверить основные данные стыка',
+        description: 'Показывать задачи по будущей дате сварки, пустым группе материалов, типу соединения или способу сварки при заполненной сварке и некорректной структуре номера стыка.',
+      },
+      {
+        id: 'check-lnk-result-completeness',
+        label: 'Дозаполнить результат ЛНК',
+        description: 'Показывать одну задачу на стык, если у итогового результата ЛНК нет даты контроля или заключения.',
+      },
+      {
+        id: 'check-psto-result-completeness',
+        label: 'Дозаполнить результат ПСТО',
+        description: 'Показывать одну задачу на стык, если у итогового результата ПСТО нет даты или диаграммы.',
+      },
+      {
+        id: 'check-control-history',
+        label: 'Проверить историю контроля',
+        description: 'Показывать задачи, если назначение контроля выключено, но по стыку сохранен результат или заключение.',
       },
     ],
   },
@@ -387,10 +417,6 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     meaning: 'Проверяет, что даты сварки в цепочке идут последовательно от исходного стыка к последующим системным шагам.',
     example: 'Повторный стык сварен 05.07, а исходный указан 07.07. Диспетчер покажет задачу проверить порядок дат.',
   },
-  'check-control-before-weld': {
-    meaning: 'Находит контроль ЛНК или ПСТО, дата которого раньше даты сварки стыка.',
-    example: 'Стык сварен 10.07, а заключение РК датировано 09.07. Нужно исправить дату сварки или дату контроля.',
-  },
   'check-repair-diameter': {
     meaning: 'Показывает задачу, если результат "ремонт" указан для малого диаметра, где ремонт запрещен.',
     example: 'Для D57 по РК выбран "ремонт". По правилу малого диаметра должен быть вырез, поэтому диспетчер попросит проверить результат.',
@@ -404,8 +430,8 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     example: 'Дата сварки заполнена, но клейма пустые, или в группе клейма_1 заполнен только корень без заполнения и облицовки.',
   },
   'check-lnk-request-date-order': {
-    meaning: 'Проверяет календарную логику ЛНК: сначала сварка, затем заявка, затем заключение/контроль.',
-    example: 'Заявка РК от 08.07, а заключение РК от 05.07. Диспетчер покажет задачу проверить даты заявки и заключения.',
+    meaning: 'Проверяет всю календарную логику ЛНК: контроль не раньше сварки, затем заявка и заключение в правильном порядке.',
+    example: 'Стык сварен 10.07, а РК выполнен 09.07, либо заключение датировано раньше заявки. Диспетчер покажет ДЗ-20 с точной причиной.',
   },
   'check-lnk-vik-date-order': {
     meaning: 'Следит, чтобы ВИК был оформлен не позже других видов ЛНК.',
@@ -416,8 +442,24 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     example: 'РК заполнен как "годен", а ВИК по стыку еще ожидает НК. Диспетчер покажет задачу дозаполнить ВИК.',
   },
   'check-psto-request-date-order': {
-    meaning: 'Проверяет календарную логику ПСТО: сначала сварка, затем заявка ПСТО, затем результат ПСТО.',
-    example: 'Заявка ПСТО от 08.07, а результат ПСТО от 05.07. Диспетчер покажет задачу проверить даты заявки и результата.',
+    meaning: 'Проверяет всю календарную логику ПСТО: результат не раньше сварки, затем заявка и результат в правильном порядке.',
+    example: 'ПСТО выполнено раньше сварки либо результат датирован раньше заявки. Диспетчер покажет ДЗ-23 с точной причиной.',
+  },
+  'check-joint-core-data': {
+    meaning: 'Находит уже сохраненные стыки с будущей датой сварки, пустыми группой материалов, типом соединения или способом сварки при заполненной сварке либо номером, который не соответствует структуре системных индексов.',
+    example: 'Дата сварки заполнена, но группа материалов, тип соединения или способ сварки не указаны; либо номер стыка не начинается с настроенного индекса S/F. ДЗ-31 объединит причины в одной задаче.',
+  },
+  'check-lnk-result-completeness': {
+    meaning: 'Проверяет, что у каждого итогового результата ЛНК заполнены дата контроля и заключение.',
+    example: 'По РК сохранен результат «годен», но заключение пустое. ДЗ-32 перечислит метод и недостающие поля.',
+  },
+  'check-psto-result-completeness': {
+    meaning: 'Проверяет, что у итогового результата ПСТО заполнены дата и диаграмма термообработки.',
+    example: 'ПСТО отмечено как проведенное, но диаграмма не указана. ДЗ-33 попросит дозаполнить результат.',
+  },
+  'check-control-history': {
+    meaning: 'Находит сохраненный результат или заключение при выключенном назначении соответствующего контроля.',
+    example: 'Назначение РК очищено, но заключение РК осталось. ДЗ-34 попросит вернуть назначение, выбрать «отменен» или удалить результат через отчет.',
   },
   'line-percent': {
     meaning: 'Проверяет, что у всех стыков одной линии одинаковое значение процента контроля.',
@@ -580,10 +622,6 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_CHAIN,
     ACTION_DESCRIPTION,
   ],
-  'check-control-before-weld': [
-    ACTION_CHAIN,
-    ACTION_DESCRIPTION,
-  ],
   'check-repair-diameter': [
     ACTION_CHAIN,
     ACTION_DESCRIPTION,
@@ -609,6 +647,22 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_DESCRIPTION,
   ],
   'check-psto-request-date-order': [
+    ACTION_CHAIN,
+    ACTION_DESCRIPTION,
+  ],
+  'check-joint-core-data': [
+    ACTION_CHAIN,
+    ACTION_DESCRIPTION,
+  ],
+  'check-lnk-result-completeness': [
+    ACTION_CHAIN,
+    ACTION_DESCRIPTION,
+  ],
+  'check-psto-result-completeness': [
+    ACTION_CHAIN,
+    ACTION_DESCRIPTION,
+  ],
+  'check-control-history': [
     ACTION_CHAIN,
     ACTION_DESCRIPTION,
   ],
@@ -810,7 +864,6 @@ function getPercentageLineSettingId(task: Extract<DispatcherTask, { kind: 'perce
 }
 
 function getCheckTaskSettingId(reason?: string): DispatcherSettingId {
-  if (reason === 'проверить дату сварки и контроля') return 'check-control-before-weld'
   if (reason === 'проверить даты сварки') return 'chain-date-order'
   if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON) return 'check-repair-diameter'
   if (reason === 'проверить клеймо') return 'check-welder-stamp'
@@ -819,6 +872,10 @@ function getCheckTaskSettingId(reason?: string): DispatcherSettingId {
   if (reason === LNK_VIK_DATE_ORDER_REASON) return 'check-lnk-vik-date-order'
   if (reason === LNK_VIK_REQUIRED_REASON) return 'check-lnk-vik-required'
   if (reason === PSTO_REQUEST_DATE_ORDER_REASON) return 'check-psto-request-date-order'
+  if (reason === JOINT_CORE_DATA_REASON) return 'check-joint-core-data'
+  if (reason === LNK_RESULT_COMPLETENESS_REASON) return 'check-lnk-result-completeness'
+  if (reason === PSTO_RESULT_COMPLETENESS_REASON) return 'check-psto-result-completeness'
+  if (reason === CONTROL_HISTORY_REASON) return 'check-control-history'
   if (reason === 'повторный стык уже заварен' || reason === 'повторный стык содержит данные') return 'repeated-obsolete-check'
   if (reason === UNOFFICIAL_REJECTED_WITH_COIL_REASON) return 'chain-consistency'
   return 'chain-consistency'
