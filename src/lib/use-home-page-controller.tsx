@@ -19,7 +19,7 @@ import {
 } from '@/lib/dispatcher-task-row-codes'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
-import { useReportRows } from '@/lib/use-report-rows'
+import { prepareReportRows, useReportRows } from '@/lib/use-report-rows'
 import { useWeldPageQuery } from '@/lib/use-weld-page-query'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
@@ -69,7 +69,11 @@ import { createReportWeldEditorProps } from '@/lib/report-weld-editor-props'
 import { createReportFieldEditorProps } from '@/lib/report-field-editor-props'
 import { createReportPstoDialogsProps } from '@/lib/report-psto-dialog-props'
 import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
-import { useWeldsQuery } from '@/lib/use-welds-query'
+import {
+  useWeldFinalStatusContextQuery,
+  useWeldReportContextQuery,
+  useWeldsQuery,
+} from '@/lib/use-welds-query'
 import { useDuplicateControls } from '@/lib/use-duplicate-controls'
 import type { ContextActionMenuItem } from '@/components/context-action-menu'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
@@ -337,10 +341,7 @@ export function useHomePageController() {
     editWelderStampSuspensionRecord,
     deleteWelderStampSuspensionRecord,
   } = useWelderStampRegistryState({ setMessage })
-  const isReportModalOpen =
-    isImportDialogOpen ||
-    Boolean(rkExposureEditing) ||
-    getReportModalOpenState({
+  const isReportDataModalOpen = getReportModalOpenState({
       isPstoRequestModalOpen,
       isPstoRequestManagerOpen,
       isPstoResultModalOpen,
@@ -353,6 +354,19 @@ export function useHomePageController() {
       isLnkOfficialityModalOpen,
       isDuplicateControlModalOpen,
     })
+  const isPstoDataModalOpen =
+    isPstoRequestModalOpen ||
+    isPstoRequestManagerOpen ||
+    isPstoResultModalOpen ||
+    isPstoResultManagerOpen
+  const isLnkDataModalOpen =
+    isLnkRequestModalOpen ||
+    isLnkRequestManagerOpen ||
+    isLnkResultModalOpen ||
+    isLnkResultPreviewOpen ||
+    isLnkResultManagerOpen ||
+    isLnkOfficialityModalOpen
+  const isReportModalOpen = isImportDialogOpen || Boolean(rkExposureEditing) || isReportDataModalOpen
 
   useEscapeToClearReportFilters({
     activeReport,
@@ -410,27 +424,85 @@ export function useHomePageController() {
     defaultPstoConclusionNaming,
   })
 
+  const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
   const shouldLoadFullWeldRows =
-    Boolean(editing) ||
-    Boolean(heatTreatmentFieldEditing) ||
-    Boolean(rkExposureEditing) ||
     Boolean(documentGenerationRequest) ||
-    isReportModalOpen ||
+    isDuplicateControlModalOpen ||
     isWeldingJournalGenerateMenuOpen ||
-    isWeldingJournalShowMenuOpen ||
-    isLnkShowMenuOpen ||
-    isPstoShowMenuOpen
+    isWeldingJournalShowMenuOpen
   const weldsQuery = useWeldsQuery({ enabled: shouldLoadFullWeldRows })
+  const shouldLoadLnkContext =
+    !shouldLoadFullWeldRows &&
+    (isLnkDataModalOpen || isLnkShowMenuOpen || heatTreatmentFieldEditing?.report === 'lnk')
+  const shouldLoadPstoContext =
+    !shouldLoadFullWeldRows &&
+    (isPstoDataModalOpen || isPstoShowMenuOpen || Boolean(heatTreatmentFieldEditing && heatTreatmentFieldEditing.report !== 'lnk'))
+  const lnkContextQuery = useWeldReportContextQuery({
+    enabled: shouldLoadLnkContext,
+    report: 'lnk',
+  })
+  const pstoContextQuery = useWeldReportContextQuery({
+    enabled: shouldLoadPstoContext,
+    report: 'heatTreatment',
+  })
+  const finalStatusContextQuery = useWeldFinalStatusContextQuery({
+    enabled: isServerPagedTab && !shouldLoadFullWeldRows,
+  })
+  const remoteFinalStatusContext = useMemo(
+    () => ({
+      rejectedUnofficialSameNameRepairKeys: new Set(finalStatusContextQuery.data ?? []),
+    }),
+    [finalStatusContextQuery.data],
+  )
+  const isRemoteFinalStatusContextReady =
+    finalStatusContextQuery.data !== undefined && !finalStatusContextQuery.isFetching
   const {
     duplicateControls,
+    refetchDuplicateControls,
     saveDuplicateControlMutation,
     deleteDuplicateControlMutation,
   } = useDuplicateControls({
-    enabled: shouldLoadFullWeldRows || isDuplicateControlModalOpen,
+    enabled: shouldLoadFullWeldRows,
   })
 
-  const rows = useReportRows(weldsQuery.data, duplicateControls, undefined, undefined, otherSettings)
-  const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
+  const reportContextSourceRows = useMemo(() => {
+    if (shouldLoadFullWeldRows) return weldsQuery.data
+    const rowsById = new Map<number, WeldRow>()
+    const contextRows = [
+      ...(shouldLoadLnkContext ? lnkContextQuery.data ?? [] : []),
+      ...(shouldLoadPstoContext ? pstoContextQuery.data ?? [] : []),
+    ]
+    for (const row of contextRows) {
+      rowsById.set(Number(row.id), row)
+    }
+    return [...rowsById.values()]
+  }, [
+    lnkContextQuery.data,
+    pstoContextQuery.data,
+    shouldLoadFullWeldRows,
+    shouldLoadLnkContext,
+    shouldLoadPstoContext,
+    weldsQuery.data,
+  ])
+  const rows = useReportRows(
+    reportContextSourceRows,
+    shouldLoadFullWeldRows ? duplicateControls : [],
+    undefined,
+    shouldLoadFullWeldRows ? undefined : remoteFinalStatusContext,
+    otherSettings,
+  )
+  const isLnkRowsContextReady = shouldLoadFullWeldRows
+    ? weldsQuery.data !== undefined && !weldsQuery.isFetching
+    : shouldLoadLnkContext &&
+      lnkContextQuery.data !== undefined &&
+      !lnkContextQuery.isFetching &&
+      isRemoteFinalStatusContextReady
+  const isPstoRowsContextReady = shouldLoadFullWeldRows
+    ? weldsQuery.data !== undefined && !weldsQuery.isFetching
+    : shouldLoadPstoContext &&
+      pstoContextQuery.data !== undefined &&
+      !pstoContextQuery.isFetching &&
+      isRemoteFinalStatusContextReady
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
     enabled: isServerPagedTab || activeReport === 'welderStamps',
@@ -660,6 +732,7 @@ export function useHomePageController() {
     saveMutation,
   } = useWeldJournalMutations({
     rows,
+    editingRecord: editing?.record as WeldRow | undefined,
     welderStamps,
     welderStampSuspensions,
     weldFormStampSelectOptions,
@@ -676,6 +749,19 @@ export function useHomePageController() {
   } = useRepeatedJointTaskActions({
     activeReport,
     rows,
+    loadRows: async () => {
+      const [weldResult, controlsResult] = await Promise.all([
+        weldsQuery.refetch(),
+        refetchDuplicateControls(),
+      ])
+      return prepareReportRows(
+        weldResult.data,
+        controlsResult.data ?? [],
+        undefined,
+        undefined,
+        otherSettings,
+      )
+    },
     welderStamps,
     welderStampSuspensions,
     repeatedJointMutation,
@@ -918,8 +1004,8 @@ export function useHomePageController() {
   const basePagedReportRows = useReportRows(
     weldPageQuery.rows,
     duplicateControls,
-    rows.length > 0 ? rows : undefined,
-    rows.length > 0 ? fullFinalStatusContext : undefined,
+    shouldLoadFullWeldRows ? rows : undefined,
+    shouldLoadFullWeldRows ? fullFinalStatusContext : remoteFinalStatusContext,
     otherSettings,
   )
   const pagedReportRows = basePagedReportRows
@@ -936,11 +1022,22 @@ export function useHomePageController() {
   useEffect(() => {
     const refreshDocumentAssignments = () => {
       if (shouldLoadFullWeldRows) void weldsQuery.refetch()
+      if (lnkContextQuery.isEnabled) void lnkContextQuery.refetch()
+      if (pstoContextQuery.isEnabled) void pstoContextQuery.refetch()
       if (isServerPagedTab) void weldPageQuery.refetch()
     }
     window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
     return () => window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
-  }, [isServerPagedTab, shouldLoadFullWeldRows, weldPageQuery.refetch, weldsQuery.refetch])
+  }, [
+    isServerPagedTab,
+    lnkContextQuery.isEnabled,
+    lnkContextQuery.refetch,
+    pstoContextQuery.isEnabled,
+    pstoContextQuery.refetch,
+    shouldLoadFullWeldRows,
+    weldPageQuery.refetch,
+    weldsQuery.refetch,
+  ])
   const activeReportManualPagination = useMemo(
     () =>
       isServerPagedTab
@@ -1024,6 +1121,8 @@ export function useHomePageController() {
     activeReport,
     activeTitle,
     heatTreatmentRows,
+    isLnkRowsContextReady,
+    isPstoRowsContextReady,
     lnkRows,
     setIsLnkShowMenuOpen,
     setIsPstoShowMenuOpen,
@@ -1036,8 +1135,12 @@ export function useHomePageController() {
     availableLnkRequestRows,
     availablePstoRequestRows,
     heatTreatmentRows,
+    isLnkRowsContextReady,
+    isLnkRequestModalOpen,
     isLnkResultManagerOpen,
     isLnkResultModalOpen,
+    isPstoRowsContextReady,
+    isPstoRequestModalOpen,
     isPstoResultManagerOpen,
     isPstoResultModalOpen,
     lnkRequestOptions,
@@ -1396,7 +1499,7 @@ export function useHomePageController() {
     )
     highlightChangedRows(savedRows, [fieldKey])
     setMessage(`Назначен ${method} по процентной линии: ${savedRows.length}.`)
-    await invalidateWeldJoints(queryClient)
+    await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
   }
 
   const cancelPercentageLineMissingControls = async (rowIds: number[]) => {
@@ -1416,7 +1519,7 @@ export function useHomePageController() {
     )
     highlightChangedRows(savedRows, ['hasRk', 'hasUzk'])
     setMessage(`Недобор закрыт отменой РК/УЗК: ${savedRows.length}.`)
-    await invalidateWeldJoints(queryClient)
+    await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
   }
 
   const filterLineInCurrentReport = (row: WeldRow) => {
@@ -2124,7 +2227,7 @@ export function useHomePageController() {
     onAddPstoResult: openAddPstoResultModal,
     pstoResultDisabled:
       pstoResultMutation.isPending ||
-      (shouldLoadFullWeldRows && !weldsQuery.isLoading && pstoResultRequestOptions.length === 0),
+      (isPstoRowsContextReady && pstoResultRequestOptions.length === 0),
     isPstoShowMenuOpen,
     onTogglePstoShowMenu: () => setIsPstoShowMenuOpen((current) => !current),
     onOpenPstoCurrentReport: openPstoCurrentReport,
@@ -2135,7 +2238,7 @@ export function useHomePageController() {
     onAddLnkResult: openAddLnkResultModal,
     lnkResultDisabled:
       lnkResultMutation.isPending ||
-      (shouldLoadFullWeldRows && !weldsQuery.isLoading && lnkResultRequestOptions.length === 0),
+      (isLnkRowsContextReady && lnkResultRequestOptions.length === 0),
     onOpenLnkOfficiality: openLnkOfficialityModal,
     lnkOfficialityPending: lnkOfficialityMutation.isPending,
     onOpenDuplicateControl: openDuplicateControlModal,
@@ -2281,6 +2384,8 @@ export function useHomePageController() {
     lnkRows: activeReport === 'lnk' ? filteredVisibleRows : lnkRows,
     lnkRowCount: activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
     availableLnkRequestRows: activeReport === 'lnk' ? filteredAvailableLnkRequestRowsForSummary : availableLnkRequestRows,
+    availableLnkRequestRowCount:
+      activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.availableRequestCount : undefined,
     welderStamps,
     filteredWelderStamps,
     errorMessage: (isServerPagedTab ? weldPageQuery.error : weldsQuery.error)
@@ -2317,7 +2422,7 @@ export function useHomePageController() {
   const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
   const reportWeldEditorProps = createReportWeldEditorProps({
     editing,
-    rows,
+    suggestionRows: rows.length > 0 ? rows : undefined,
     stampSelectOptions: (draft) => getWeldFormStampSelectOptions(draft, allowedArchivedOfficialStampsForEditing),
     getExternalSaveBlockReason: (draft) =>
       getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
@@ -2334,7 +2439,13 @@ export function useHomePageController() {
   const reportFieldEditorProps = createReportFieldEditorProps({
     editing: heatTreatmentFieldEditing,
     requestOptions: lnkRequestOptions,
-    isSaving: heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending,
+    isSaving:
+      heatTreatmentFieldMutation.isPending ||
+      lnkFieldMutation.isPending ||
+      Boolean(
+        heatTreatmentFieldEditing &&
+          (heatTreatmentFieldEditing.report === 'lnk' ? !isLnkRowsContextReady : !isPstoRowsContextReady),
+      ),
     onChange: (value) => setHeatTreatmentFieldEditing((current) => (current ? { ...current, value } : current)),
     onClose: () => setHeatTreatmentFieldEditing(null),
     onSave: () => runProtectedEdit('сохранение поля отчета', saveEditedHeatTreatmentField),
@@ -2627,7 +2738,7 @@ export function useHomePageController() {
     reportSummaryBarProps,
     reportTaskPanelsProps,
     documentGenerationRequest,
-    documentGenerationContextLoading: Boolean(documentGenerationRequest) && weldsQuery.isLoading,
+    documentGenerationContextLoading: Boolean(documentGenerationRequest) && weldsQuery.isFetching,
     statisticsRows: rows,
     welderStamps,
     welderStampsRegistryProps,

@@ -46,7 +46,7 @@ describe('existing rows report import preview', () => {
   it.each([
     ['mass fill', buildReportMassFillPreview],
     ['replace data', buildReportReplaceDataPreview],
-  ])('rejects more than 2000 non-empty rows during %s preview', async (_, buildPreview) => {
+  ])('rejects more than 500 non-empty rows during %s preview', async (_, buildPreview) => {
     const dataRows = Array.from(
       { length: WELD_IMPORT_MAX_ROWS + 1 },
       (_, index) => [index + 1, `S${index + 1}`],
@@ -60,10 +60,10 @@ describe('existing rows report import preview', () => {
       weldFormStampSelectOptions: {},
       welderStamps: [],
       welderStampSuspensions: [],
-    })).rejects.toThrow('не более 2000 строк')
+    })).rejects.toThrow('не более 500 строк')
   })
 
-  it('rejects more than 2000 new weld rows before validating their contents', async () => {
+  it('rejects more than 500 new weld rows before validating their contents', async () => {
     const fields = getReportImportTemplateFields('weldingJournal')
     const file = buildWorkbookFile(
       fields.map((field) => field.label),
@@ -78,7 +78,7 @@ describe('existing rows report import preview', () => {
       weldFormStampSelectOptions: {},
       welderStamps: [],
       welderStampSuspensions: [],
-    })).rejects.toThrow('не более 2000 строк')
+    })).rejects.toThrow('не более 500 строк')
   })
 
   it('checks ZВ-30 for a new imported row after all Excel values are assembled', async () => {

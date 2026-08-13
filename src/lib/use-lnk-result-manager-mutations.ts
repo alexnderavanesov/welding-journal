@@ -41,7 +41,7 @@ export function useLnkResultManagerMutations({
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [], getLnkResultHighlightFields(variables.methodKey))
       setMessage(variables.result ? 'Результат ЛНК изменен' : 'Результат ЛНК удален')
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -67,7 +67,7 @@ export function useLnkResultManagerMutations({
       )
       setManagedLnkResultChangeHint(null)
       setMessage(`Результат ЛНК изменен для стыков: ${savedRows.length}`)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -94,7 +94,7 @@ export function useLnkResultManagerMutations({
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, getLnkConclusionHighlightFields(variables.methodKey))
       setMessage(`Заключение переименовано для позиций: ${savedRows.length}`)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)

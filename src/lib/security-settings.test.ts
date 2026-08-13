@@ -6,12 +6,24 @@ import {
   isSecurityScopeEnabled,
   hasMigratableLocalSecurityPasswords,
   normalizeSecuritySettings,
+  serializeLocalSecurityConfiguration,
   verifySecurityPassword,
   toLocalSecuritySettings,
 } from '@/lib/security-settings'
 import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 
 describe('security settings', () => {
+  it('keeps the remote-settings request dependency stable for equal settings objects', () => {
+    const settings = normalizeSecuritySettings({
+      entryPassword: 'entry',
+      requirePasswordOnEntry: true,
+    })
+
+    expect(serializeLocalSecurityConfiguration({ ...settings })).toBe(
+      serializeLocalSecurityConfiguration(settings),
+    )
+  })
+
   it('keeps the existing import password scope for every import action', () => {
     const settings = normalizeSecuritySettings({
       importReplacePassword: 'import',

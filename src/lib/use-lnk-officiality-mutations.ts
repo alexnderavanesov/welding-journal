@@ -41,7 +41,7 @@ export function useLnkOfficialityMutations({
       )
       setLnkOfficialityDraft(createDefaultLnkOfficialityDraft())
       setIsLnkOfficialityModalOpen(false)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)

@@ -28,10 +28,10 @@ export function useWeldImportMutation({
         data: { records: preparedRecords.map((record) => compactWeldWritePayload(record)) },
       })
     },
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       highlightChangedRows(result.rows)
       setMessage(`Добавлено записей: ${result.inserted}`)
-      await invalidateWeldJoints(queryClient)
+      invalidateWeldJoints(queryClient)
     },
     onError: (error) => {
       setMessage((error as Error).message)

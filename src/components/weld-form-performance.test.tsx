@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { WeldForm } from '@/components/weld-form'
@@ -16,7 +18,7 @@ describe('weld form input performance', () => {
 
     if (!field) throw new Error('Responsible field is missing')
 
-    render(
+    renderWithQueryClient(
       <WeldFormField
         field={field as typeof field & { key: WeldFieldKey }}
         draft={{ responsible: '' }}
@@ -39,7 +41,7 @@ describe('weld form input performance', () => {
     window.scrollTo = vi.fn()
     HTMLElement.prototype.scrollTo = vi.fn()
 
-    render(
+    renderWithQueryClient(
       <WeldForm
         value={{ id: 1, joint: 'S1', responsible: 'исходное' }}
         getExternalSaveBlockReason={(draft) => (draft.responsible === 'запрещено' ? 'Проверка последнего значения' : null)}
@@ -55,3 +57,12 @@ describe('weld form input performance', () => {
     expect(screen.getByText('Проверка последнего значения')).toBeInTheDocument()
   })
 })
+
+function renderWithQueryClient(children: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  })
+  return render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>)
+}

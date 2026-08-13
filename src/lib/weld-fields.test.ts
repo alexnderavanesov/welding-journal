@@ -443,6 +443,13 @@ describe('weld field order', () => {
     ])
   })
 
+  it('keeps the system-managed request section out of the weld form', () => {
+    const requests = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Заявки')
+
+    expect(requests?.fields.length).toBeGreaterThan(0)
+    expect(requests?.fields.every((field) => formHiddenFieldKeys.has(field.key))).toBe(true)
+  })
+
   it('shows heat treatment result before the generated diagram', () => {
     const results = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Результат')
     const labels = results?.fields.map((field) => field.label) ?? []

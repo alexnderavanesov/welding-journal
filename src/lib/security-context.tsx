@@ -29,13 +29,20 @@ type SecurityContextValue = {
   requestPassword: SecurityPasswordRequest
   settings: SecuritySettings
   settingsResolved: boolean
+  settingsLoadError: string | null
+  retrySettingsLoad: () => void
 }
 
 const SecurityPasswordContext = createContext<SecurityContextValue | null>(null)
 
 export function SecurityProvider({ children }: { children: ReactNode }) {
   const [pendingRequest, setPendingRequest] = useState<PendingSecurityPasswordRequest | null>(null)
-  const { settings, resolved: settingsResolved } = useEffectiveSecuritySettingsState()
+  const {
+    settings,
+    resolved: settingsResolved,
+    loadError: settingsLoadError,
+    retry: retrySettingsLoad,
+  } = useEffectiveSecuritySettingsState()
 
   const requestPassword = useCallback<SecurityPasswordRequest>(
     (options) =>
@@ -53,8 +60,8 @@ export function SecurityProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const contextValue = useMemo(
-    () => ({ requestPassword, settings, settingsResolved }),
-    [requestPassword, settings, settingsResolved],
+    () => ({ requestPassword, settings, settingsResolved, settingsLoadError, retrySettingsLoad }),
+    [requestPassword, retrySettingsLoad, settings, settingsLoadError, settingsResolved],
   )
 
   return (
@@ -126,7 +133,26 @@ export function SiteSecurityGate({ children }: { children: ReactNode }) {
   const context = useContext(SecurityPasswordContext)
   const [unlocked, setUnlocked] = useState(false)
   if (!context) throw new Error('SiteSecurityGate must be used inside SecurityProvider')
-  const { settings, settingsResolved } = context
+  const { settings, settingsResolved, settingsLoadError, retrySettingsLoad } = context
+
+  if (settingsLoadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-6 shadow-xl shadow-slate-200/60">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-700">
+              <LockKeyhole className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-slate-950">Доступ временно недоступен</h1>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{settingsLoadError}</p>
+            </div>
+          </div>
+          <Button className="mt-5 w-full" onClick={retrySettingsLoad}>Повторить проверку</Button>
+        </div>
+      </div>
+    )
+  }
 
   if (!settingsResolved) {
     return (

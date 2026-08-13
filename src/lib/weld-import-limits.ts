@@ -1,4 +1,4 @@
-export const WELD_IMPORT_MAX_ROWS = 2000
+export const WELD_IMPORT_MAX_ROWS = 500
 
 // A weld row contains many columns. Keeping inserts small prevents PostgreSQL's
 // bind-parameter limit from being reached while the surrounding transaction

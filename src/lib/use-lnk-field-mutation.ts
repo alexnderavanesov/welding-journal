@@ -32,7 +32,7 @@ export function useLnkFieldMutation({
       highlightChangedRows(saved ? [saved] : [], [variables.fieldKey, 'lnkCreatedAt', 'finalStatus'])
       setMessage('Поле ЛНК обновлено')
       setHeatTreatmentFieldEditing(null)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

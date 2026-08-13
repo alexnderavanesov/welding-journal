@@ -164,7 +164,7 @@ import {
   DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   invalidateWeldJoints,
-  WELD_JOINTS_QUERY_KEY,
+  WELD_DATA_USAGE_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import {
@@ -211,7 +211,7 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('templates')
   const needsWeldDataUsage = activeTab === 'data' || activeTab === 'indexes'
   const weldDataUsageQuery = useQuery({
-    queryKey: [...WELD_JOINTS_QUERY_KEY, 'settings-data-usage'],
+    queryKey: WELD_DATA_USAGE_QUERY_KEY,
     queryFn: () => getWeldDataUsageSummary(),
     enabled: needsWeldDataUsage,
     staleTime: 15_000,
@@ -3297,7 +3297,8 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
   const backgroundStatusQuery = useQuery({
     queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
     queryFn: () => getDispatcherBackgroundStatus(),
-    refetchInterval: (query) => query.state.data?.status === 'running' ? 5_000 : false,
+    enabled: backgroundSettings.enabled,
+    staleTime: 60_000,
   })
   const refreshBackgroundMutation = useMutation({
     mutationFn: () => refreshDispatcherBackgroundNow(),
@@ -3454,7 +3455,8 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
         </div>
         {backgroundStatusQuery.data?.status === 'failed' ? (
           <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-            Последнее обновление не завершилось. Старые рассчитанные коды сохранены; повторите обновление позже.
+            {backgroundStatusQuery.data.lastError || 'Последнее обновление не завершилось.'} Старые рассчитанные коды сохранены;
+            повторите обновление позже.
           </div>
         ) : null}
         {refreshBackgroundMutation.isError ? (

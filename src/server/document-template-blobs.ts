@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { cp } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 
 export type DocumentTemplateBlobStore = {
   delete: (key: string) => Promise<void>
@@ -13,6 +16,28 @@ export type DocumentTemplateBlobStore = {
 export function createDocumentTemplateBlobKey(templateId: string, fileType: string) {
   const extension = fileType.toLowerCase().replace(/[^a-z0-9]/g, '') || 'xlsx'
   return `${templateId}/${Date.now()}-${randomUUID()}.${extension}`
+}
+
+export function resolveLocalDocumentTemplateBlobDirectory(homeDirectory = homedir()) {
+  return resolve(homeDirectory, '.welding-journal', 'blobs-serve')
+}
+
+export async function migrateLegacyLocalDocumentTemplateBlobs(
+  legacyDirectory: string,
+  targetDirectory: string,
+) {
+  if (resolve(legacyDirectory) === resolve(targetDirectory)) return
+
+  try {
+    await cp(legacyDirectory, targetDirectory, {
+      recursive: true,
+      force: false,
+      errorOnExist: false,
+    })
+  } catch {
+    // Legacy local files are best-effort only. A protected or missing source must
+    // not prevent the new local store from starting.
+  }
 }
 
 export async function deleteDocumentTemplateBlobVersions(

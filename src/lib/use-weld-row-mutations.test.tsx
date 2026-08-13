@@ -34,17 +34,13 @@ describe('useWeldRowMutations', () => {
     vi.clearAllMocks()
   })
 
-  it('closes the editor only after the report data has finished refreshing', async () => {
-    let finishInvalidation: (() => void) | undefined
-    const invalidation = new Promise<void>((resolve) => {
-      finishInvalidation = resolve
-    })
+  it('closes the editor without waiting for background report refreshes', async () => {
     const savedRow = { id: 17, line: 'LIN-1', joint: 'S1' }
     const setEditing = vi.fn()
 
     mocks.prepareWeldSaveValue.mockReturnValue(savedRow)
     mocks.updateWeldRowOrThrow.mockResolvedValue(savedRow)
-    mocks.invalidateWeldJoints.mockReturnValue(invalidation)
+    mocks.invalidateWeldJoints.mockReturnValue(undefined)
 
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -77,9 +73,6 @@ describe('useWeldRowMutations', () => {
     })
 
     await waitFor(() => expect(mocks.invalidateWeldJoints).toHaveBeenCalledOnce())
-    expect(setEditing).not.toHaveBeenCalled()
-
-    finishInvalidation?.()
     await act(async () => {
       await savePromise
     })

@@ -20,6 +20,7 @@ type MutationLike<TValue> = {
 type UseRepeatedJointTaskActionsOptions = {
   activeReport: ActiveReport
   rows: WeldRow[]
+  loadRows?: () => Promise<WeldRow[]>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
   repeatedJointMutation: MutationLike<RepeatedJointCreateTask | RepeatedJointCoilTask>
@@ -31,6 +32,7 @@ type UseRepeatedJointTaskActionsOptions = {
 export function useRepeatedJointTaskActions({
   activeReport,
   rows,
+  loadRows,
   welderStamps,
   welderStampSuspensions,
   repeatedJointMutation,
@@ -40,13 +42,25 @@ export function useRepeatedJointTaskActions({
 }: UseRepeatedJointTaskActionsOptions) {
   const confirmAction = useConfirmAction()
 
-  function createRepeatedJoint(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
+  async function getCurrentRows() {
+    if (rows.length > 0) return rows
+    try {
+      return (await loadRows?.()) ?? []
+    } catch {
+      setMessage('Не удалось обновить данные журнала для проверки задачи. Повторите действие.')
+      return null
+    }
+  }
+
+  async function createRepeatedJoint(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
     if (activeReport === 'lnk') {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Создание стыков доступно из сварочного журнала.')
       return
     }
 
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions).find(
+    const currentRows = await getCurrentRows()
+    if (!currentRows) return
+    const currentTask = buildRepeatedJointTasks(currentRows, welderStamps, welderStampSuspensions).find(
       (candidate): candidate is RepeatedJointCreateTask | RepeatedJointCoilTask =>
         (candidate.kind === 'create' || candidate.kind === 'coil') && candidate.key === task.key,
     )
@@ -64,7 +78,9 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions).find(
+    const currentRows = await getCurrentRows()
+    if (!currentRows) return
+    const currentTask = buildRepeatedJointTasks(currentRows, welderStamps, welderStampSuspensions).find(
       (candidate): candidate is RepeatedJointDeleteTask => candidate.kind === 'delete' && candidate.key === task.key,
     )
     if (!currentTask) {
@@ -92,7 +108,9 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const currentTask = buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions).find(
+    const currentRows = await getCurrentRows()
+    if (!currentRows) return
+    const currentTask = buildRepeatedJointTasks(currentRows, welderStamps, welderStampSuspensions).find(
       (candidate): candidate is RepeatedJointRenameTask => candidate.kind === 'rename' && candidate.key === task.key,
     )
     if (!currentTask) {

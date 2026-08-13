@@ -24,6 +24,8 @@ type UseReportOutputActionsParams = {
   activeReport: ActiveReport
   activeTitle: string
   heatTreatmentRows: ReportRow[]
+  isLnkRowsContextReady: boolean
+  isPstoRowsContextReady: boolean
   lnkRows: ReportRow[]
   setIsLnkShowMenuOpen: (value: boolean) => void
   setIsPstoShowMenuOpen: (value: boolean) => void
@@ -37,6 +39,8 @@ export function useReportOutputActions({
   activeReport,
   activeTitle,
   heatTreatmentRows,
+  isLnkRowsContextReady,
+  isPstoRowsContextReady,
   lnkRows,
   setIsLnkShowMenuOpen,
   setIsPstoShowMenuOpen,
@@ -46,7 +50,14 @@ export function useReportOutputActions({
   visibleRows,
 }: UseReportOutputActionsParams) {
   return useMemo(() => {
+    function requireContextReady(ready: boolean, reportLabel: string) {
+      if (ready) return true
+      setMessage(`Данные отчета ${reportLabel} еще загружаются. Повторите действие через несколько секунд.`)
+      return false
+    }
+
     async function openLnkCurrentReport() {
+      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
       const result = await openCurrentReportWindow(
         visibleRows,
@@ -58,24 +69,28 @@ export function useReportOutputActions({
     }
 
     async function openLnkWaitingNkReport() {
+      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
       const result = await openLnkWaitingNkReportWindow(lnkRows)
       if (!result.ok) setMessage(result.message)
     }
 
     async function openLnkToRequestReport() {
+      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
       const result = await openLnkToRequestReportWindow(lnkRows)
       if (!result.ok) setMessage(result.message)
     }
 
     async function openLnkConclusionsReport() {
+      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
       const result = await openLnkConclusionsReportWindow(lnkRows)
       if (!result.ok) setMessage(result.message)
     }
 
     async function openPstoCurrentReport() {
+      if (!requireContextReady(isPstoRowsContextReady, 'ПСТО')) return
       setIsPstoShowMenuOpen(false)
       const result = await openCurrentReportWindow(
         visibleRows,
@@ -87,12 +102,14 @@ export function useReportOutputActions({
     }
 
     async function openPstoWaitingRequestReport() {
+      if (!requireContextReady(isPstoRowsContextReady, 'ПСТО')) return
       setIsPstoShowMenuOpen(false)
       const result = await openPstoWaitingRequestReportWindow(heatTreatmentRows)
       if (!result.ok) setMessage(result.message)
     }
 
     async function openPstoResultsReport() {
+      if (!requireContextReady(isPstoRowsContextReady, 'ПСТО')) return
       setIsPstoShowMenuOpen(false)
       const result = await openPstoResultsReportWindow(heatTreatmentRows)
       if (!result.ok) setMessage(result.message)
@@ -163,6 +180,8 @@ export function useReportOutputActions({
     activeReport,
     activeTitle,
     heatTreatmentRows,
+    isLnkRowsContextReady,
+    isPstoRowsContextReady,
     lnkRows,
     setIsLnkShowMenuOpen,
     setIsPstoShowMenuOpen,

@@ -64,7 +64,7 @@ export function usePstoRequestCreateMutation({
       setPstoRequestSearch('')
       setPstoRequestDate('')
       setIsPstoRequestModalOpen(false)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: _result })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {

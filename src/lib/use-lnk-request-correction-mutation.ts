@@ -53,7 +53,7 @@ export function useLnkRequestCorrectionMutation({
       } else {
         setMessage(variables.requestName ? 'Заявка ЛНК заменена' : 'Заявка ЛНК удалена')
       }
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

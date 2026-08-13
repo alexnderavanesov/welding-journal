@@ -31,6 +31,7 @@ export function useDuplicateControls({ enabled = true }: { enabled?: boolean } =
 
   return {
     duplicateControls: duplicateControlsQuery.data ?? [],
+    refetchDuplicateControls: duplicateControlsQuery.refetch,
     saveDuplicateControlMutation,
     deleteDuplicateControlMutation,
   }

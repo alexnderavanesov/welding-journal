@@ -30,6 +30,8 @@ export type ManagedLnkResultEntry = {
 
 export type LnkReportModalSyncEffectsOptions = {
   availableLnkRequestRows: WeldRow[]
+  isLnkRowsContextReady: boolean
+  isLnkRequestModalOpen: boolean
   isLnkResultManagerOpen: boolean
   isLnkResultModalOpen: boolean
   lnkRequestOptions: string[]
@@ -46,6 +48,8 @@ export type LnkReportModalSyncEffectsOptions = {
 
 export function useLnkReportModalSyncEffects({
   availableLnkRequestRows,
+  isLnkRowsContextReady,
+  isLnkRequestModalOpen,
   isLnkResultManagerOpen,
   isLnkResultModalOpen,
   lnkRequestOptions,
@@ -60,35 +64,38 @@ export function useLnkReportModalSyncEffects({
   setSelectedLnkIds,
 }: LnkReportModalSyncEffectsOptions) {
   useEffect(() => {
-    if (!isLnkResultManagerOpen) return
+    if (!isLnkResultManagerOpen || !isLnkRowsContextReady) return
     setManagedLnkConclusionDrafts(
       Object.fromEntries(
         managedLnkResultEntries.map(({ row, method, changeKey }) => [changeKey, String(row[method.conclusionKey] ?? '').trim()]),
       ),
     )
-  }, [isLnkResultManagerOpen, managedLnkResultEntries, setManagedLnkConclusionDrafts])
+  }, [isLnkResultManagerOpen, isLnkRowsContextReady, managedLnkResultEntries, setManagedLnkConclusionDrafts])
 
   useEffect(() => {
-    if (!isLnkResultManagerOpen) return
+    if (!isLnkResultManagerOpen || !isLnkRowsContextReady) return
     if (managedLnkResultMethodKey && !managedLnkResultMethods.some((method) => method.requestKey === managedLnkResultMethodKey)) {
       setManagedLnkResultMethodKey('')
     }
   }, [
     isLnkResultManagerOpen,
+    isLnkRowsContextReady,
     managedLnkResultMethodKey,
     managedLnkResultMethods,
     setManagedLnkResultMethodKey,
   ])
 
   useEffect(() => {
+    if (!isLnkRequestModalOpen || !isLnkRowsContextReady) return
     setSelectedLnkIds((current) => {
       const ids = new Set(availableLnkRequestRows.map((row) => row.id))
       const next = new Set([...current].filter((id) => ids.has(id)))
       return next.size === current.size ? current : next
     })
-  }, [availableLnkRequestRows, setSelectedLnkIds])
+  }, [availableLnkRequestRows, isLnkRequestModalOpen, isLnkRowsContextReady, setSelectedLnkIds])
 
   useEffect(() => {
+    if (!isLnkRowsContextReady) return
     setLnkResultDraft((current) => {
       if (!isLnkResultModalOpen) return current
       const selectedRows = lnkRows.filter((row) => current.rowIds.has(row.id))
@@ -126,5 +133,5 @@ export function useLnkReportModalSyncEffects({
         rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),
       }
     })
-  }, [isLnkResultModalOpen, lnkRequestOptions, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
+  }, [isLnkResultModalOpen, isLnkRowsContextReady, lnkRequestOptions, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
 }

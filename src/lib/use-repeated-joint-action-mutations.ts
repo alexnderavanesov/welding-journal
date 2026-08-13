@@ -37,7 +37,7 @@ export function useRepeatedJointActionMutations({
           ? `Созданы стыки катушки ${task.targetJoints.join(', ')} для ${task.sourceJoint}`
           : `Создан повторный стык ${task.targetJoint} для ${task.sourceJoint}`,
       )
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: createdRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -53,7 +53,7 @@ export function useRepeatedJointActionMutations({
     onSuccess: async (_result, task) => {
       dismissRepeatedJointTask(task)
       setMessage(`Удален лишний повторный стык ${task.targetJoint}`)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { deleteIds: [task.row.id] })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -68,7 +68,7 @@ export function useRepeatedJointActionMutations({
       highlightChangedRows(saved ? [saved] : [task.row], ['joint'])
       dismissRepeatedJointTask(task)
       setMessage(`Стык ${task.currentJoint} переименован в ${task.targetJoint}`)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: saved ? [saved] : [] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

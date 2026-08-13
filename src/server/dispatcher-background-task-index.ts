@@ -1,4 +1,4 @@
-import { countDistinct, eq, inArray, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   appSettings,
@@ -47,29 +47,60 @@ export type DispatcherBackgroundRefreshResult = DispatcherBackgroundTaskIndexSta
   refreshed: boolean
 }
 
+type DispatcherBackgroundStatusRow = {
+  computedAt: Date | string | null
+  lastError: string | null
+  rowCount: number | string
+  settingValue: string | null
+  startedAt: Date | string | null
+  status: string
+}
+
 export async function getDispatcherBackgroundTaskIndexStatus(): Promise<DispatcherBackgroundTaskIndexStatus> {
   const db = requireDb()
-  await db
-    .insert(dispatcherBackgroundTaskIndexState)
-    .values({ id: DISPATCHER_BACKGROUND_INDEX_STATE_ID })
-    .onConflictDoNothing()
-  const [[state], [{ rowCount }], setting] = await Promise.all([
-    db
-      .select()
-      .from(dispatcherBackgroundTaskIndexState)
-      .where(eq(dispatcherBackgroundTaskIndexState.id, DISPATCHER_BACKGROUND_INDEX_STATE_ID))
-      .limit(1),
-    db.select({ rowCount: countDistinct(dispatcherBackgroundRowTasks.weldJointId) }).from(dispatcherBackgroundRowTasks),
-    listBackgroundSetting(),
-  ])
+  const result = await db.execute<DispatcherBackgroundStatusRow>(sql`
+    with "ensure_background_state" as (
+      insert into ${dispatcherBackgroundTaskIndexState} ("id")
+      values (${DISPATCHER_BACKGROUND_INDEX_STATE_ID})
+      on conflict ("id") do nothing
+      returning "status", "computed_at", "started_at", "last_error"
+    ),
+    "background_state" as (
+      select "status", "computed_at", "started_at", "last_error"
+      from "ensure_background_state"
+      union all
+      select "status", "computed_at", "started_at", "last_error"
+      from ${dispatcherBackgroundTaskIndexState}
+      where "id" = ${DISPATCHER_BACKGROUND_INDEX_STATE_ID}
+        and not exists (select 1 from "ensure_background_state")
+    )
+    select
+      "state"."status" as "status",
+      "state"."computed_at" as "computedAt",
+      "state"."started_at" as "startedAt",
+      "state"."last_error" as "lastError",
+      (
+        select count(distinct "tasks"."weld_joint_id")::int
+        from ${dispatcherBackgroundRowTasks} as "tasks"
+      ) as "rowCount",
+      (
+        select "settings"."value"
+        from ${appSettings} as "settings"
+        where "settings"."key" = ${PROJECT_SETTING_KEYS.dispatcherBackground}
+        limit 1
+      ) as "settingValue"
+    from "background_state" as "state"
+  `)
+  const state = result.rows[0]
+  const setting = parseSettingValue(state?.settingValue ?? undefined)
   const enabled = normalizeDispatcherBackgroundSettings(setting).enabled
   return {
     enabled,
     status: enabled ? normalizeStatus(state?.status) : 'disabled',
-    computedAt: state?.computedAt?.toISOString() ?? null,
-    startedAt: state?.startedAt?.toISOString() ?? null,
+    computedAt: toIsoString(state?.computedAt),
+    startedAt: toIsoString(state?.startedAt),
     lastError: state?.lastError ?? null,
-    rowCount: Number(rowCount) || 0,
+    rowCount: Number(state?.rowCount) || 0,
   }
 }
 
@@ -257,4 +288,10 @@ function parseSettingValue(value: string | undefined) {
 
 function normalizeStatus(value: unknown): DispatcherBackgroundTaskIndexStatus['status'] {
   return value === 'running' || value === 'failed' || value === 'disabled' ? value : 'idle'
+}
+
+function toIsoString(value: Date | string | null | undefined) {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }

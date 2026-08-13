@@ -33,9 +33,18 @@ import { hasWeldDate, isYesText, normalizeControlAvailabilityValue } from '@/lib
 import {
   FIELD_BY_KEY,
   WELD_FIELDS,
+  buildFinalStatusRowsContext,
+  isVirtualWeldField,
   type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
+import {
+  canSuggestWeldFormField,
+  getWeldFormSuggestionQueryFieldKeys,
+  getWeldFormSuggestions,
+  type WeldFormSuggestion,
+} from '@/lib/weld-form-suggestions'
+import { getWeldLineAutofillState, LINE_AUTOFILL_FIELD_KEYS, type WeldLineAutofillState } from '@/lib/weld-line-autofill'
 import { normalizeWeldInput } from '@/lib/weld-import-export'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
@@ -145,6 +154,7 @@ export type WeldPageRequest = WeldFilters & {
 }
 
 export type WeldReportKind = 'weldingJournal' | 'lnk' | 'heatTreatment'
+export type WeldReportContextKind = Exclude<WeldReportKind, 'weldingJournal'>
 
 export type WeldImportSecurityAction = 'newRecords' | 'massFill' | 'replaceData'
 
@@ -156,6 +166,7 @@ export type WeldPageResult = {
   rows: WeldRow[]
   total: number
   acceptedWdiTotal?: number
+  availableRequestCount?: number
   page: number
   pageSize: WeldPageSize
   hasMore: boolean
@@ -179,6 +190,15 @@ export type WeldColumnFilterOption = {
 
 export type WeldColumnFilterOptionsRequest = WeldPageRequest & {
   fieldKey: WeldFieldKey
+}
+
+export type WeldFormSuggestionsRequest = {
+  fieldKey: WeldFieldKey
+  draft: WeldInput
+}
+
+export type WeldLineAutofillRequest = {
+  draft: WeldInput
 }
 
 export type WeldJointChainResult = {
@@ -331,6 +351,27 @@ const WELDING_JOURNAL_ORDER_BY = [
 const WELD_TABLE_COLUMNS = getTableColumns(weldJoints)
 const { updatedAt: OMITTED_UPDATED_AT_COLUMN, ...WELD_TABLE_SELECT } = WELD_TABLE_COLUMNS
 void OMITTED_UPDATED_AT_COLUMN
+const WELD_BATCH_PROFILE_TIMESTAMP_KEYS = [
+  'weldingUpdatedAt',
+  'pstoCreatedAt',
+  'pstoUpdatedAt',
+  'lnkCreatedAt',
+  'lnkUpdatedAt',
+  'updatedAt',
+] as const satisfies readonly (keyof NewWeldJoint)[]
+const WELD_BATCH_UPDATE_FIELD_KEYS = [
+  ...WELD_FIELDS
+    .filter((field) => !isVirtualWeldField(field) && !SYSTEM_FIELD_KEYS.has(field.key))
+    .map((field) => field.key),
+  ...WELD_BATCH_PROFILE_TIMESTAMP_KEYS,
+] as readonly (keyof NewWeldJoint)[]
+const WELD_BATCH_UPDATE_COLUMNS = WELD_BATCH_UPDATE_FIELD_KEYS.map((fieldKey) => [
+  fieldKey,
+  WELD_TABLE_COLUMNS[fieldKey],
+] as const)
+const WELD_BATCH_UPDATE_SET = Object.fromEntries(
+  WELD_BATCH_UPDATE_COLUMNS.map(([fieldKey, column]) => [fieldKey, sql.raw(`excluded."${column.name}"`)]),
+) as Partial<Record<keyof NewWeldJoint, SQL>>
 const WELD_IMPORT_SCOPE_SELECT = {
   ...WELD_TABLE_SELECT,
   rowVersion: sql<string>`xmin::text`.as('row_version'),
@@ -513,6 +554,123 @@ export const listWeldJointSnapshotPage = createServerFn({ method: 'GET' })
     }
   })
 
+export const listWeldReportContextRows = createServerFn({ method: 'GET' })
+  .validator((data: { report: WeldReportContextKind }) => ({
+    report: data?.report === 'heatTreatment' ? 'heatTreatment' : 'lnk',
+  } as const))
+  .handler(async ({ data }): Promise<WeldRow[]> => {
+    await assertSecurityScope('entry')
+    const rows = await requireDb()
+      .select()
+      .from(weldJoints)
+      .where(buildReportKindWhere(data.report))
+      .orderBy(...getReportOrderBy(data.report))
+    const reportRows = applyCurrentSystemWdi(
+      buildServerReportRows(rows, data.report),
+      await loadServerOtherSettings(),
+    )
+    return compactWeldRowsForTransport(await attachDuplicateControlsToPage(reportRows))
+  })
+
+export const listWeldFinalStatusContextKeys = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<string[]> => {
+    await assertSecurityScope('entry')
+    const rows = await requireDb()
+      .select({
+        id: weldJoints.id,
+        projectTitle: weldJoints.projectTitle,
+        subtitleCode: weldJoints.subtitleCode,
+        line: weldJoints.line,
+        joint: weldJoints.joint,
+        status: weldJoints.status,
+        vikResult: weldJoints.vikResult,
+        rkResult: weldJoints.rkResult,
+        uzkResult: weldJoints.uzkResult,
+        pvkResult: weldJoints.pvkResult,
+        tvmtResult: weldJoints.tvmtResult,
+        rfaResult: weldJoints.rfaResult,
+        stlsResult: weldJoints.stlsResult,
+        mkkResult: weldJoints.mkkResult,
+        rejectedDuplicateMethod: sql<string | null>`(
+          select ${duplicateControls.method}
+          from ${duplicateControls}
+          where ${duplicateControls.weldJointId} = ${weldJoints.id}
+            and ${duplicateControls.result} in ('ремонт', 'вырез')
+          order by ${duplicateControls.id}
+          limit 1
+        )`,
+      })
+      .from(weldJoints)
+      .where(buildColumnTextEqualsWhere(weldJoints.status, 'неофициальный'))
+    const context = buildFinalStatusRowsContext(
+      rows.map(({ rejectedDuplicateMethod, ...row }) => rejectedDuplicateMethod
+        ? {
+            ...row,
+            duplicateControls: [{
+              id: 0,
+              weldJointId: row.id,
+              method: rejectedDuplicateMethod,
+              result: 'ремонт',
+              controlDate: '',
+              conclusion: '',
+              conclusionDate: '',
+            }],
+          }
+        : row) as WeldRow[],
+    )
+    return [...context.rejectedUnofficialSameNameRepairKeys]
+  })
+
+export const listWeldFormSuggestions = createServerFn({ method: 'POST' })
+  .validator((data: WeldFormSuggestionsRequest) => ({
+    fieldKey: data?.fieldKey,
+    draft: data?.draft ?? {},
+  }))
+  .handler(async ({ data }): Promise<WeldFormSuggestion[]> => {
+    await assertSecurityScope('entry')
+    if (!FIELD_BY_KEY.has(data.fieldKey) || !canSuggestWeldFormField(data.fieldKey)) return []
+    const selectedColumns = Object.fromEntries(
+      getWeldFormSuggestionQueryFieldKeys(data.fieldKey)
+        .map((fieldKey) => [fieldKey, getWeldColumn(fieldKey)] as const)
+        .filter((entry): entry is [WeldFieldKey, NonNullable<ReturnType<typeof getWeldColumn>>] => Boolean(entry[1])),
+    )
+    const rows = await requireDb()
+      .select(selectedColumns)
+      .from(weldJoints)
+      .orderBy(desc(weldJoints.createdAt))
+    return getWeldFormSuggestions({
+      fieldKey: data.fieldKey,
+      value: data.draft[data.fieldKey],
+      draft: data.draft,
+      rows: rows as WeldInput[],
+    })
+  })
+
+export const getWeldLineAutofill = createServerFn({ method: 'POST' })
+  .validator((data: WeldLineAutofillRequest) => ({ draft: data?.draft ?? {} }))
+  .handler(async ({ data }): Promise<WeldLineAutofillState> => {
+    await assertSecurityScope('entry')
+    const line = String(data.draft.line ?? '').trim()
+    if (!line) return getWeldLineAutofillState(data.draft, [])
+    const selectedFieldKeys = [
+      'id',
+      'line',
+      'projectTitle',
+      'subtitleCode',
+      ...LINE_AUTOFILL_FIELD_KEYS,
+    ] as const
+    const selectedColumns = Object.fromEntries(
+      [...new Set(selectedFieldKeys)]
+        .map((fieldKey) => [fieldKey, getWeldColumn(fieldKey)] as const)
+        .filter((entry): entry is [WeldFieldKey, NonNullable<ReturnType<typeof getWeldColumn>>] => Boolean(entry[1])),
+    )
+    const rows = await requireDb()
+      .select(selectedColumns)
+      .from(weldJoints)
+      .where(normalizedTextEquals(weldJoints.line, line))
+    return getWeldLineAutofillState(data.draft, rows as WeldInput[])
+  })
+
 export const listWeldJointChain = createServerFn({ method: 'GET' })
   .validator((data: { id: number }) => data)
   .handler(async ({ data }): Promise<WeldJointChainResult> => {
@@ -590,7 +748,7 @@ export const listWeldingJournalImportScope = createServerFn({ method: 'GET' })
   .validator((data: WeldImportScopeRequest | undefined) => normalizeWeldImportScopeRequest(data))
   .handler(async ({ data }): Promise<WeldImportScopeResult> => {
     await assertSecurityScope('entry')
-    await ensureDispatcherTaskIndexFresh()
+    if (hasDispatcherTaskServerFilter(data.columnFilters)) await ensureDispatcherTaskIndexFresh()
     const db = requireDb()
     const otherSettings = await loadServerOtherSettings()
     const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
@@ -768,11 +926,18 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
         .where(where)
         .orderBy(...getReportOrderBy(report))
       const countQuery = db.select({ total: count() }).from(weldJoints).where(where)
+      const availableRequestCountQuery = data.page === 1 && report === 'lnk'
+        ? countAvailableLnkRequestRows(where)
+        : Promise.resolve(undefined)
       const rowsQuery =
         data.pageSize === WELD_PAGE_ALL_SIZE
           ? query
           : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
-      const [[{ total }], rows] = await Promise.all([countQuery, rowsQuery])
+      const [[{ total }], availableRequestCount, rows] = await Promise.all([
+        countQuery,
+        availableRequestCountQuery,
+        rowsQuery,
+      ])
       const reportRows = applyCurrentSystemWdi(buildServerReportRows(rows, report), otherSettings)
       const rowsWithDuplicateControls = compactWeldRowsForTransport(
         await attachDispatcherTaskCodesToPage(
@@ -785,6 +950,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       return {
         rows: rowsWithDuplicateControls,
         total,
+        availableRequestCount,
         page: data.page,
         pageSize: data.pageSize,
         hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
@@ -793,6 +959,9 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
 
     const filteredIds = await listDerivedReportRowIds(report, data, where)
     const total = filteredIds.length
+    const availableRequestCount = data.page === 1 && report === 'lnk'
+      ? await countAvailableLnkRequestRowsByIds(filteredIds)
+      : undefined
     const pageIds =
       data.pageSize === WELD_PAGE_ALL_SIZE
         ? filteredIds
@@ -807,6 +976,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     return {
       rows,
       total,
+      availableRequestCount,
       page: data.page,
       pageSize: data.pageSize,
       hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
@@ -903,6 +1073,60 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
   }
 }
 
+async function countAvailableLnkRequestRows(where: SQL) {
+  const [{ total }] = await requireDb()
+    .select({ total: count() })
+    .from(weldJoints)
+    .where(and(where, buildAvailableLnkRequestWhere()))
+  return Number(total) || 0
+}
+
+async function countAvailableLnkRequestRowsByIds(ids: number[]) {
+  let total = 0
+  for (const idChunk of splitNumberBatches(ids, 1000)) {
+    const [row] = await requireDb()
+      .select({ total: count() })
+      .from(weldJoints)
+      .where(and(inArray(weldJoints.id, idChunk), buildAvailableLnkRequestWhere()))
+    total += Number(row?.total) || 0
+  }
+  return total
+}
+
+function buildAvailableLnkRequestWhere() {
+  const hasAvailableMethod = or(
+    ...LNK_METHODS.map((method) => {
+      const enabledColumn = getWeldColumn(method.enabledKey)
+      const requestColumn = getWeldColumn(method.requestKey)
+      if (!enabledColumn || !requestColumn) return sql`false`
+      return and(
+        buildEnabledControlValueWhere(enabledColumn),
+        sql`btrim(coalesce(${requestColumn}::text, '')) = ''`,
+      ) ?? sql`false`
+    }),
+  ) ?? sql`false`
+  const hasNoRejectedResult = and(
+    ...LNK_METHODS.map((method) => {
+      const resultColumn = getWeldColumn(method.resultKey)
+      return resultColumn
+        ? sql`lower(btrim(coalesce(${resultColumn}::text, ''))) not in ('ремонт', 'вырез')`
+        : sql`true`
+    }),
+  ) ?? sql`true`
+  const hasNoRejectedDuplicate = notExists(
+    requireDb()
+      .select({ value: sql`1` })
+      .from(duplicateControls)
+      .where(
+        and(
+          eq(duplicateControls.weldJointId, weldJoints.id),
+          inArray(duplicateControls.result, ['ремонт', 'вырез']),
+        ),
+      ),
+  )
+  return and(hasAvailableMethod, hasNoRejectedResult, hasNoRejectedDuplicate) ?? sql`false`
+}
+
 type DuplicateControlCarrier = {
   id: number
   duplicateControls?: DuplicateControlRecord[]
@@ -951,17 +1175,17 @@ async function attachDispatcherTaskCodesToPage<Row extends { id: number }>(
   if (rows.length === 0) return rows
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
-  const db = requireDb()
-  const [activeTaskRows, backgroundTaskRows] = await Promise.all([
-    db
-      .select({ rowId: dispatcherRowTasks.weldJointId, code: dispatcherRowTasks.code })
-      .from(dispatcherRowTasks)
-      .where(inArray(dispatcherRowTasks.weldJointId, ids)),
-    db
-      .select({ rowId: dispatcherBackgroundRowTasks.weldJointId, code: dispatcherBackgroundRowTasks.code })
-      .from(dispatcherBackgroundRowTasks)
-      .where(inArray(dispatcherBackgroundRowTasks.weldJointId, ids)),
-  ])
+  const result = await requireDb().execute<DispatcherTaskCodeRow & { source: 'active' | 'background' }>(sql`
+    select ${dispatcherRowTasks.weldJointId} as "rowId", ${dispatcherRowTasks.code} as "code", 'active' as "source"
+    from ${dispatcherRowTasks}
+    where ${inArray(dispatcherRowTasks.weldJointId, ids)}
+    union all
+    select ${dispatcherBackgroundRowTasks.weldJointId} as "rowId", ${dispatcherBackgroundRowTasks.code} as "code", 'background' as "source"
+    from ${dispatcherBackgroundRowTasks}
+    where ${inArray(dispatcherBackgroundRowTasks.weldJointId, ids)}
+  `)
+  const activeTaskRows = result.rows.filter((row) => row.source === 'active')
+  const backgroundTaskRows = result.rows.filter((row) => row.source === 'background')
   return mergeDispatcherTaskCodesIntoRows(rows, activeTaskRows, backgroundTaskRows)
 }
 
@@ -1311,17 +1535,7 @@ async function updateWeldJointRows(data: WeldBatchUpdateData, importMode = false
         context: validationContext,
         importMode,
       })
-      const updated = []
-      for (const record of records) {
-        const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(record.id!), new Date())
-        const [row] = await tx
-          .update(weldJoints)
-          .set({ ...toDbInsert(record), ...timestampUpdates, updatedAt: new Date() })
-          .where(eq(weldJoints.id, record.id!))
-          .returning()
-        if (!row) throw new Error(`Запись ${record.id} не найдена`)
-        updated.push(row)
-      }
+      const updated = await updateWeldJointsInBatches(tx, records, previousRows)
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, previousRows) })
       return updated
@@ -1405,17 +1619,7 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
         })
       }
 
-      const updated = []
-      for (const record of records) {
-        const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(record.id!), new Date())
-        const [row] = await tx
-          .update(weldJoints)
-          .set({ ...toDbInsert(record), ...timestampUpdates, updatedAt: new Date() })
-          .where(eq(weldJoints.id, record.id!))
-          .returning()
-        if (!row) throw new Error(`Запись ${record.id} не найдена`)
-        updated.push(row)
-      }
+      const updated = await updateWeldJointsInBatches(tx, records, previousRows)
 
       if (data.deleteIds.length > 0) {
         await tx.delete(weldJoints).where(inArray(weldJoints.id, data.deleteIds))
@@ -1765,10 +1969,77 @@ async function insertWeldJointsInBatches(
   return inserted
 }
 
+export async function updateWeldJointsInBatches(
+  tx: SystemDocumentSequenceTransaction,
+  records: readonly WeldInput[],
+  previousRows: ReadonlyMap<number, WeldJoint>,
+) {
+  if (records.length === 0) return []
+  const now = new Date()
+  const payloads = records.map((record) => buildWeldBatchUpdatePayload(record, previousRows, now))
+  const ids = records.map((record) => Number(record.id))
+  const lockedRows = await tx
+    .select({ id: weldJoints.id })
+    .from(weldJoints)
+    .where(inArray(weldJoints.id, ids))
+    .for('update')
+  if (lockedRows.length !== ids.length) {
+    throw new Error('Одна или несколько обновляемых записей больше не существуют.')
+  }
+  const updatedRows: WeldJoint[] = []
+
+  for (const batch of splitWeldImportInsertBatches(payloads)) {
+    const rows = await tx
+      .insert(weldJoints)
+      .values(batch)
+      .onConflictDoUpdate({ target: weldJoints.id, set: WELD_BATCH_UPDATE_SET })
+      .returning()
+    if (rows.length !== batch.length) {
+      throw new Error('Одна или несколько обновляемых записей больше не существуют.')
+    }
+    updatedRows.push(...rows)
+  }
+
+  const updatedRowsById = new Map(updatedRows.map((row) => [row.id, row]))
+  return ids.map((id) => {
+    const row = updatedRowsById.get(id)
+    if (!row) throw new Error(`Запись ${id} не найдена`)
+    return row
+  })
+}
+
+function buildWeldBatchUpdatePayload(
+  record: WeldInput,
+  previousRows: ReadonlyMap<number, WeldJoint>,
+  now: Date,
+) {
+  const id = Number(record.id)
+  const previous = previousRows.get(id)
+  if (!previous) throw new Error(`Запись ${id} не найдена`)
+  const timestampUpdates = getProfileTimestampUpdates(record, previous, now)
+  const values: Record<string, unknown> = {
+    id,
+    ...toDbInsert(record),
+    weldingUpdatedAt: timestampUpdates.weldingUpdatedAt ?? previous.weldingUpdatedAt,
+    pstoCreatedAt: timestampUpdates.pstoCreatedAt ?? previous.pstoCreatedAt,
+    pstoUpdatedAt: timestampUpdates.pstoUpdatedAt ?? previous.pstoUpdatedAt,
+    lnkCreatedAt: timestampUpdates.lnkCreatedAt ?? previous.lnkCreatedAt,
+    lnkUpdatedAt: timestampUpdates.lnkUpdatedAt ?? previous.lnkUpdatedAt,
+    updatedAt: now,
+  }
+
+  return Object.fromEntries([
+    ['id', id],
+    ...WELD_BATCH_UPDATE_COLUMNS.map(([fieldKey]) => [fieldKey, values[fieldKey] ?? null]),
+  ]) as NewWeldJoint
+}
+
 async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColumnFilterOptionsRequest>) {
   if (!FIELD_BY_KEY.has(data.fieldKey)) return []
-  await ensureDispatcherTaskIndexFresh()
   const columnFilters = getColumnFilterOptionFilters(data.columnFilters, data.fieldKey)
+  if (shouldEnsureDispatcherTaskIndexForColumnFilter(data.fieldKey, columnFilters)) {
+    await ensureDispatcherTaskIndexFresh()
+  }
   const currentWdiSettings = data.fieldKey === 'wdi' ? await loadServerOtherSettings() : null
   const useCurrentSystemWdi = Boolean(currentWdiSettings && isSystemWdiMode(currentWdiSettings))
   if (data.fieldKey === DISPATCHER_TASKS_FIELD_KEY) {
@@ -2392,6 +2663,16 @@ function buildControlReportValueWhere(column: SQLWrapper) {
   )
 }
 
+function buildEnabledControlValueWhere(column: SQLWrapper) {
+  return (
+    or(
+      buildColumnTextEqualsWhere(column, 'да'),
+      buildColumnTextEqualsWhere(column, 'дополнительный'),
+      buildColumnTextEqualsWhere(column, LEGACY_CONTROL_REPLACEMENT_VALUE),
+    ) ?? sql`false`
+  )
+}
+
 function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, string>) {
   for (const [key, value] of Object.entries(columnFilters)) {
     const query = value.trim()
@@ -2565,6 +2846,17 @@ function getColumnFilterOptionFilters(columnFilters: Record<string, string>, fie
   const filters = { ...columnFilters }
   delete filters[fieldKey]
   return filters
+}
+
+export function shouldEnsureDispatcherTaskIndexForColumnFilter(
+  fieldKey: WeldFieldKey,
+  columnFilters: Record<string, string>,
+) {
+  return fieldKey === DISPATCHER_TASKS_FIELD_KEY || hasDispatcherTaskServerFilter(columnFilters)
+}
+
+function hasDispatcherTaskServerFilter(columnFilters: Record<string, string>) {
+  return Boolean(parseDispatcherTaskServerFilter(columnFilters[DISPATCHER_TASK_FILTER_KEY]))
 }
 
 export function canPaginateReportSource(columnFilters: Record<string, string>) {

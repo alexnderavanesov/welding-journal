@@ -27,6 +27,7 @@ import {
   STATISTICS_SERVER_QUERY_KEY,
   WELD_JOINTS_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
+  WELD_REPORT_CONTEXT_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 
 type ProjectSettingSyncEntry = {
@@ -115,6 +116,7 @@ export function useProjectSettingsSync() {
               queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
               queryClient.invalidateQueries({ queryKey: WELD_JOINTS_QUERY_KEY }),
               queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+              queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY }),
             ])
           }
           if (projectSettingAffectsDispatcherIndex(key)) {

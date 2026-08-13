@@ -95,7 +95,11 @@ import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document
 import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
 } from '@/lib/system-document-sequence-storage'
-import { invalidateWeldJoints, WELD_JOINTS_QUERY_KEY } from '@/lib/weld-query-utils'
+import {
+  GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
+  invalidateWeldJoints,
+  WELD_JOINTS_QUERY_KEY,
+} from '@/lib/weld-query-utils'
 import { getDocumentGenerationData } from '@/server/welds'
 
 type DocumentsPageProps = {
@@ -223,7 +227,6 @@ export function DocumentsPage({
   const [templateDocumentPreview, setTemplateDocumentPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
   const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null)
   const [isTemplatePreviewLoading, setIsTemplatePreviewLoading] = useState(false)
-  const [generatedDocuments, setGeneratedDocuments] = useState<StoredGeneratedDocument[]>([])
   const [systemDocuments, setSystemDocuments] = useState<SystemDocumentSummary[]>([])
   const [systemDocumentsError, setSystemDocumentsError] = useState<string | null>(null)
   const [isSystemDocumentsLoading, setIsSystemDocumentsLoading] = useState(false)
@@ -241,6 +244,13 @@ export function DocumentsPage({
   const activeGeneratedDocumentType: GeneratedDocumentType = isGeneratedDocumentType(activeDocumentType)
     ? activeDocumentType
     : 'weldingJournal'
+  const generatedDocumentsQuery = useQuery({
+    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, activeGeneratedDocumentType],
+    queryFn: () => loadGeneratedDocuments(activeGeneratedDocumentType),
+    enabled: !isSystemDocument,
+    staleTime: 30_000,
+  })
+  const generatedDocuments = generatedDocumentsQuery.data ?? []
   const activeDocumentProfile =
     DOCUMENT_TYPE_OPTIONS.find((option) => option.type === activeGeneratedDocumentType) ?? DOCUMENT_TYPE_OPTIONS[0]
   const activeDocumentOptions = useMemo(
@@ -369,27 +379,15 @@ export function DocumentsPage({
   }, [activeDocumentType, isSystemDocument])
 
   useEffect(() => {
-    let isMounted = true
-    const syncGeneratedDocuments = () => {
-      loadGeneratedDocuments()
-        .then((documents) => {
-          if (isMounted) setGeneratedDocuments(documents)
-        })
-        .catch(() => {
-          if (isMounted) setGeneratedDocuments([])
-        })
-    }
     const handleGeneratedDocumentChange = () => {
-      syncGeneratedDocuments()
+      void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
       void queryClient.invalidateQueries({
         queryKey: [...WELD_JOINTS_QUERY_KEY, 'document-generation'],
       })
     }
 
-    syncGeneratedDocuments()
     window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, handleGeneratedDocumentChange)
     return () => {
-      isMounted = false
       window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, handleGeneratedDocumentChange)
     }
   }, [queryClient])
@@ -1011,6 +1009,15 @@ export function DocumentsPage({
             documents={generatedDocuments.filter((documentRecord) => documentRecord.type === activeGeneratedDocumentType)}
             documentLabel={activeDocumentProfile.label}
             documentFieldLabel={activeDocumentProfile.label}
+            isLoading={generatedDocumentsQuery.isLoading}
+            error={
+              generatedDocumentsQuery.error instanceof Error
+                ? generatedDocumentsQuery.error.message
+                : generatedDocumentsQuery.error
+                  ? 'Не удалось загрузить историю документов.'
+                  : null
+            }
+            onRetry={() => void generatedDocumentsQuery.refetch()}
             onOpenRows={async (documentRecord) => {
               const documentRows = await loadGeneratedDocumentRows(documentRecord.id)
               if (documentRows.length === 0) throw new Error('В документе больше нет стыков.')
@@ -1048,12 +1055,18 @@ function GeneratedDocumentsPanel({
   documents,
   documentLabel,
   documentFieldLabel,
+  isLoading,
+  error,
+  onRetry,
   createDocumentBlob,
   onOpenRows,
 }: {
   documents: StoredGeneratedDocument[]
   documentLabel: string
   documentFieldLabel: string
+  isLoading: boolean
+  error: string | null
+  onRetry: () => void
   createDocumentBlob: (documentRecord: StoredGeneratedDocument) => Promise<Blob>
   onOpenRows: (documentRecord: StoredGeneratedDocument) => Promise<void>
 }) {
@@ -1155,13 +1168,28 @@ function GeneratedDocumentsPanel({
         ) : null}
       </div>
 
+      {error ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+          <span>Не удалось загрузить историю документов: {error}</span>
+          <button
+            type="button"
+            className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+            onClick={onRetry}
+          >
+            Повторить
+          </button>
+        </div>
+      ) : null}
+
       {openRowsError ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
           {openRowsError}
         </div>
       ) : null}
 
-      {documents.length > 0 ? (
+      {isLoading ? (
+        <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
+      ) : documents.length > 0 ? (
         <div className="min-w-0">
           <div className="grid grid-cols-[minmax(0,1fr)_76px_140px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#60778a] md:grid-cols-[minmax(220px,1.6fr)_70px_minmax(145px,0.8fr)_66px_130px_140px] 2xl:grid-cols-[minmax(220px,1.3fr)_54px_minmax(90px,0.65fr)_minmax(80px,0.55fr)_minmax(100px,0.7fr)_minmax(135px,0.8fr)_58px_125px_140px] 2xl:gap-2">
             <span>Документ</span>
@@ -1303,9 +1331,9 @@ function GeneratedDocumentsPanel({
             <span>Нажмите название или кнопку открытия, чтобы сформировать актуальную версию.</span>
           </div>
         </div>
-      ) : (
+      ) : !error ? (
         <div className="px-4 py-8 text-center text-sm text-slate-500">Пока нет сохраненных документов.</div>
-      )}
+      ) : null}
       <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </section>
   )

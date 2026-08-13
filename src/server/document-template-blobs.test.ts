@@ -1,6 +1,6 @@
 import { getStore } from '@netlify/blobs'
 import { BlobsServer } from '@netlify/blobs/server'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -8,10 +8,39 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createDocumentTemplateBlobKey,
   deleteDocumentTemplateBlobVersions,
+  migrateLegacyLocalDocumentTemplateBlobs,
+  resolveLocalDocumentTemplateBlobDirectory,
   type DocumentTemplateBlobStore,
 } from '@/server/document-template-blobs'
 
 describe('document template blob cleanup', () => {
+  it('keeps local blobs outside a protected project directory', () => {
+    expect(resolveLocalDocumentTemplateBlobDirectory('/Users/test')).toBe(
+      '/Users/test/.welding-journal/blobs-serve',
+    )
+  })
+
+  it('copies legacy local blobs without replacing files already migrated', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'document-template-blob-migration-'))
+    const legacyDirectory = join(directory, 'legacy')
+    const targetDirectory = join(directory, 'target')
+    const legacyFile = join(legacyDirectory, 'entries', 'template.xlsx')
+    const targetFile = join(targetDirectory, 'entries', 'template.xlsx')
+
+    try {
+      await mkdir(join(legacyDirectory, 'entries'), { recursive: true })
+      await writeFile(legacyFile, 'legacy')
+      await migrateLegacyLocalDocumentTemplateBlobs(legacyDirectory, targetDirectory)
+      expect(await readFile(targetFile, 'utf8')).toBe('legacy')
+
+      await writeFile(targetFile, 'current')
+      await migrateLegacyLocalDocumentTemplateBlobs(legacyDirectory, targetDirectory)
+      expect(await readFile(targetFile, 'utf8')).toBe('current')
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('uses an internal ASCII key instead of the original localized file name', () => {
     const key = createDocumentTemplateBlobKey('checklist', 'XLSX')
 

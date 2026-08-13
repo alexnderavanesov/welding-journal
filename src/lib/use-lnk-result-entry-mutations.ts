@@ -72,7 +72,7 @@ export function useLnkResultEntryMutations({
       )
       setIsLnkResultModalOpen(false)
       setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {
@@ -94,7 +94,7 @@ export function useLnkResultEntryMutations({
       setSelectedLnkIds(new Set())
       setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
       setMessage(savedRows.length > 0 ? `Очищены результаты и заключения ЛНК: ${savedRows.length} строк` : 'В ЛНК нечего очищать')
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)

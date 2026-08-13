@@ -16,6 +16,7 @@ import {
   normalizeWeldPageSize,
   normalizeWeldSnapshotPageRequest,
   normalizeDocumentGenerationDataRequest,
+  shouldEnsureDispatcherTaskIndexForColumnFilter,
 } from './welds'
 import type { WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -136,6 +137,14 @@ describe('weld server pagination helpers', () => {
     })
 
     expect(normalizeWeldPageRequest({ page: 2.9, pageSize: WELD_PAGE_ALL_SIZE }).page).toBe(2)
+  })
+
+  it('checks the dispatcher index only for dispatcher-backed column options', () => {
+    expect(shouldEnsureDispatcherTaskIndexForColumnFilter('dispatcherTasks', {})).toBe(true)
+    expect(shouldEnsureDispatcherTaskIndexForColumnFilter('line', {
+      [DISPATCHER_TASK_FILTER_KEY]: JSON.stringify({ mode: 'codes', codes: ['DZ-1'] }),
+    })).toBe(true)
+    expect(shouldEnsureDispatcherTaskIndexForColumnFilter('line', {})).toBe(false)
   })
 
   it('normalizes full-snapshot batches without allowing oversized responses', () => {

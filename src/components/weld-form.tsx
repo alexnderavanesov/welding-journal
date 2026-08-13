@@ -49,7 +49,7 @@ export function WeldForm({
   value,
   focusField,
   returnPageScrollPosition,
-  suggestionRows = [],
+  suggestionRows,
   stampSelectOptions,
   getExternalSaveBlockReason,
   onSave,

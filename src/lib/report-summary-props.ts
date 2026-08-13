@@ -18,6 +18,7 @@ type CreateReportSummaryBarPropsOptions = {
   lnkRows: WeldRow[]
   lnkRowCount?: number
   availableLnkRequestRows: WeldRow[]
+  availableLnkRequestRowCount?: number
   welderStamps: WelderStampRecord[]
   filteredWelderStamps: WelderStampRecord[]
   errorMessage?: string | null
@@ -40,6 +41,7 @@ export function createReportSummaryBarProps({
   lnkRows,
   lnkRowCount,
   availableLnkRequestRows,
+  availableLnkRequestRowCount,
   welderStamps,
   filteredWelderStamps,
   errorMessage,
@@ -57,7 +59,7 @@ export function createReportSummaryBarProps({
     heatTreatmentRowCount: heatTreatmentRowCount ?? heatTreatmentRows.length,
     selectedHeatTreatmentRowCount: selectedHeatTreatmentRows.length,
     lnkRowCount: lnkRowCount ?? lnkRows.length,
-    availableLnkRequestRowCount: availableLnkRequestRows.length,
+    availableLnkRequestRowCount: availableLnkRequestRowCount ?? availableLnkRequestRows.length,
     activeWelderStampCount: welderStamps.filter((record) => !record.archived).length,
     archivedWelderStampCount: welderStamps.filter((record) => record.archived).length,
     filteredWelderStampCount: filteredWelderStamps.length,

@@ -58,6 +58,7 @@ import type { DispatcherDirtyScope } from '@/server/dispatcher-task-index-dirty'
 
 const INSERT_CHUNK_SIZE = 1_000
 type DispatcherIndexTransaction = Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0]
+let pendingDispatcherTaskIndexRefresh: Promise<typeof dispatcherTaskIndexState.$inferSelect> | null = null
 
 export type DispatcherTaskIndexSnapshot = {
   duplicateKeys: string[]
@@ -99,17 +100,19 @@ export async function getDispatcherTaskIndexSnapshot(): Promise<DispatcherTaskIn
 export { markDispatcherTaskIndexDirty }
 
 export async function ensureDispatcherTaskIndexFresh() {
-  const db = requireDb()
-  await db
-    .insert(dispatcherTaskIndexState)
-    .values({ id: DISPATCHER_INDEX_STATE_ID })
-    .onConflictDoNothing()
+  if (pendingDispatcherTaskIndexRefresh) return pendingDispatcherTaskIndexRefresh
+  const pending = ensureDispatcherTaskIndexFreshOnce()
+  pendingDispatcherTaskIndexRefresh = pending
+  try {
+    return await pending
+  } finally {
+    if (pendingDispatcherTaskIndexRefresh === pending) pendingDispatcherTaskIndexRefresh = null
+  }
+}
 
-  let [state] = await db
-    .select()
-    .from(dispatcherTaskIndexState)
-    .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID))
-    .limit(1)
+async function ensureDispatcherTaskIndexFreshOnce() {
+  const db = requireDb()
+  let state = await ensureAndReadDispatcherTaskIndexState()
 
   if (isDispatcherTaskIndexFresh(state)) return state
 
@@ -137,6 +140,50 @@ export async function ensureDispatcherTaskIndexFresh() {
   })
 
   return state
+}
+
+async function ensureAndReadDispatcherTaskIndexState() {
+  const result = await requireDb().execute<typeof dispatcherTaskIndexState.$inferSelect>(sql`
+    with "inserted_state" as (
+      insert into ${dispatcherTaskIndexState} ("id")
+      values (${DISPATCHER_INDEX_STATE_ID})
+      on conflict ("id") do nothing
+      returning *
+    ),
+    "current_state" as (
+      select * from "inserted_state"
+      union all
+      select * from ${dispatcherTaskIndexState}
+      where "id" = ${DISPATCHER_INDEX_STATE_ID}
+        and not exists (select 1 from "inserted_state")
+    )
+    select
+      "id",
+      "source_revision" as "sourceRevision",
+      "computed_revision" as "computedRevision",
+      "repeated_tasks" as "repeatedTasks",
+      "welder_stamp_expiry_tasks" as "welderStampExpiryTasks",
+      "duplicate_keys" as "duplicateKeys",
+      "dirty_scopes" as "dirtyScopes",
+      "full_rebuild" as "fullRebuild",
+      "computed_at" as "computedAt",
+      "updated_at" as "updatedAt"
+    from "current_state"
+    limit 1
+  `)
+  const state = result.rows[0]
+  if (!state) throw new Error('Не удалось получить состояние расчета диспетчера.')
+  return {
+    ...state,
+    computedAt: toDateOrNull(state.computedAt),
+    updatedAt: toDateOrNull(state.updatedAt) ?? new Date(0),
+  }
+}
+
+function toDateOrNull(value: Date | string | null | undefined) {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isFinite(date.getTime()) ? date : null
 }
 
 async function rebuildFullDispatcherTaskIndex(

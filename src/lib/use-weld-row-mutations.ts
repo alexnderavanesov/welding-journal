@@ -8,6 +8,7 @@ import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation
 
 export function useWeldRowMutations({
   rows,
+  editingRecord,
   welderStamps,
   welderStampSuspensions,
   editingFocusField,
@@ -19,7 +20,8 @@ export function useWeldRowMutations({
 
   const saveMutation = useMutation({
     mutationFn: async (value: WeldDraft) => {
-      const preparedValue = prepareWeldSaveValue({ value, rows, welderStamps, welderStampSuspensions })
+      const validationRows = rows.length > 0 ? rows : editingRecord ? [editingRecord] : []
+      const preparedValue = prepareWeldSaveValue({ value, rows: validationRows, welderStamps, welderStampSuspensions })
       return preparedValue.id
         ? updateWeldRowOrThrow(preparedValue as WeldRow)
         : createWeldRowOrThrow(preparedValue)
@@ -27,11 +29,8 @@ export function useWeldRowMutations({
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [variables], variables.id && editingFocusField ? [editingFocusField] : [])
       setMessage('Запись сохранена')
-      try {
-        await invalidateWeldJoints(queryClient)
-      } finally {
-        setEditing(null)
-      }
+      invalidateWeldJoints(queryClient, { upsertRows: [saved as WeldRow] })
+      setEditing(null)
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -44,9 +43,9 @@ export function useWeldRowMutations({
       if (!result) throw new Error('Запись не найдена')
       return result
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, id) => {
       setMessage('Запись удалена')
-      await invalidateWeldJoints(queryClient)
+      invalidateWeldJoints(queryClient, { deleteIds: [id] })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -55,8 +54,8 @@ export function useWeldRowMutations({
 
   const deleteManyMutation = useMutation({
     mutationFn: async (ids: number[]) => deleteWeldJoints({ data: { ids } }),
-    onSuccess: async () => {
-      await invalidateWeldJoints(queryClient)
+    onSuccess: async (_result, ids) => {
+      invalidateWeldJoints(queryClient, { deleteIds: ids })
     },
     onError: (error) => {
       setMessage((error as Error).message)

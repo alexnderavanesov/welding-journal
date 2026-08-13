@@ -35,7 +35,7 @@ export function usePstoRequestCorrectionMutation({
       } else {
         setMessage('Позиция заявки ПСТО удалена')
       }
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

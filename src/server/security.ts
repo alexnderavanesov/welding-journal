@@ -18,6 +18,7 @@ const AUTH_LOCK_MS = 5 * 60 * 1_000
 const AUTH_MAX_FAILURES = 8
 const AUTH_MAX_TRACKED_CLIENTS = 2_000
 const authAttempts = new Map<string, { failures: number; windowStartedAt: number; lockedUntil: number }>()
+let pendingStoredSecuritySettings: Promise<StoredSecuritySettings> | null = null
 const SECURITY_SCOPES: SecurityScope[] = [
   'entry',
   'settings',
@@ -130,6 +131,17 @@ function assertStoredSecurityScope(scope: SecurityScope, settings: StoredSecurit
 }
 
 async function loadStoredSecuritySettings(): Promise<StoredSecuritySettings> {
+  if (pendingStoredSecuritySettings) return pendingStoredSecuritySettings
+  const pending = readStoredSecuritySettings()
+  pendingStoredSecuritySettings = pending
+  try {
+    return await pending
+  } finally {
+    if (pendingStoredSecuritySettings === pending) pendingStoredSecuritySettings = null
+  }
+}
+
+async function readStoredSecuritySettings(): Promise<StoredSecuritySettings> {
   const db = requireDb()
   const [row] = await db
     .select({ value: appSettings.value })

@@ -88,7 +88,7 @@ export function usePstoRequestManagerMutation({
         setManagedPstoRequestNameDraft('')
         setIsPstoRequestManagerOpen(false)
       }
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)

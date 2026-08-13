@@ -1,5 +1,5 @@
 import { createServerOnlyFn } from '@tanstack/react-start'
-import { and, eq, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   derivedCalculationCache,
@@ -15,12 +15,13 @@ export const getOrComputeDerivedCalculation = createServerOnlyFn(
     cacheKey: string,
     compute: () => Promise<T>,
   ): Promise<T> {
-    const sourceRevision = await getSourceRevision()
+    const cacheSnapshot = await readCacheSnapshot(cacheKey)
+    const sourceRevision = cacheSnapshot.sourceRevision
     const inFlightKey = `${sourceRevision}:${cacheKey}`
     const existing = inFlightCalculations.get(inFlightKey)
     if (existing) return existing as Promise<T>
 
-    const calculation = readOrCompute(cacheKey, sourceRevision, compute)
+    const calculation = readOrCompute(cacheKey, sourceRevision, cacheSnapshot.payload, compute)
     inFlightCalculations.set(inFlightKey, calculation)
     try {
       return await calculation
@@ -35,23 +36,13 @@ export const getOrComputeDerivedCalculation = createServerOnlyFn(
 async function readOrCompute<T>(
   cacheKey: string,
   sourceRevision: number,
+  cachedPayload: string | null,
   compute: () => Promise<T>,
 ): Promise<T> {
   const db = requireDb()
-  const cached = await db
-    .select({ payload: derivedCalculationCache.payload })
-    .from(derivedCalculationCache)
-    .where(
-      and(
-        eq(derivedCalculationCache.cacheKey, cacheKey),
-        eq(derivedCalculationCache.sourceRevision, sourceRevision),
-      ),
-    )
-    .limit(1)
-
-  if (cached[0]) {
+  if (cachedPayload !== null) {
     try {
-      return JSON.parse(cached[0].payload) as T
+      return JSON.parse(cachedPayload) as T
     } catch {
       await db
         .delete(derivedCalculationCache)
@@ -91,20 +82,38 @@ async function readOrCompute<T>(
   return result
 }
 
+async function readCacheSnapshot(cacheKey: string) {
+  const result = await requireDb().execute<{ sourceRevision: number | string; payload: string | null }>(sql`
+    with "ensure_state" as (
+      insert into ${derivedCalculationState} ("id", "source_revision", "updated_at")
+      values (${DERIVED_CALCULATION_STATE_ID}, 0, now())
+      on conflict ("id") do nothing
+      returning "source_revision"
+    ),
+    "current_state" as (
+      select "source_revision" from "ensure_state"
+      union all
+      select ${derivedCalculationState.sourceRevision}
+      from ${derivedCalculationState}
+      where ${derivedCalculationState.id} = ${DERIVED_CALCULATION_STATE_ID}
+        and not exists (select 1 from "ensure_state")
+    )
+    select
+      "current_state"."source_revision" as "sourceRevision",
+      ${derivedCalculationCache.payload} as "payload"
+    from "current_state"
+    left join ${derivedCalculationCache}
+      on ${derivedCalculationCache.cacheKey} = ${cacheKey}
+      and ${derivedCalculationCache.sourceRevision} = "current_state"."source_revision"
+    limit 1
+  `)
+  const row = result.rows[0]
+  return {
+    sourceRevision: Number(row?.sourceRevision) || 0,
+    payload: typeof row?.payload === 'string' ? row.payload : null,
+  }
+}
+
 async function getSourceRevision() {
-  const db = requireDb()
-  await db
-    .insert(derivedCalculationState)
-    .values({
-      id: DERIVED_CALCULATION_STATE_ID,
-      sourceRevision: 0,
-      updatedAt: new Date(),
-    })
-    .onConflictDoNothing()
-  const rows = await db
-    .select({ sourceRevision: derivedCalculationState.sourceRevision })
-    .from(derivedCalculationState)
-    .where(eq(derivedCalculationState.id, DERIVED_CALCULATION_STATE_ID))
-    .limit(1)
-  return rows[0]?.sourceRevision ?? 0
+  return (await readCacheSnapshot('')).sourceRevision
 }

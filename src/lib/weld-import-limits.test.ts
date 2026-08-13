@@ -8,10 +8,10 @@ import {
 } from './weld-import-limits'
 
 describe('weld import limits', () => {
-  it('accepts up to 2000 rows and rejects the next row with a clear message', () => {
+  it('accepts up to 500 rows and rejects the next row with a clear message', () => {
     expect(() => assertWeldImportRowLimit(WELD_IMPORT_MAX_ROWS)).not.toThrow()
     expect(() => assertWeldImportRowLimit(WELD_IMPORT_MAX_ROWS + 1)).toThrow(
-      'В одном файле можно обработать не более 2000 строк. Найдено: 2001.',
+      'В одном файле можно обработать не более 500 строк. Найдено: 501.',
     )
   })
 
@@ -19,7 +19,7 @@ describe('weld import limits', () => {
     const records = Array.from({ length: WELD_IMPORT_MAX_ROWS }, (_, index) => index + 1)
     const batches = splitWeldImportInsertBatches(records)
 
-    expect(batches).toHaveLength(20)
+    expect(batches).toHaveLength(5)
     expect(batches.every((batch) => batch.length === 100)).toBe(true)
     expect(batches.flat()).toEqual(records)
   })

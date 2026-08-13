@@ -55,10 +55,14 @@ type GeneratedDocumentsTransaction = Parameters<
   Parameters<ReturnType<typeof requireDb>['transaction']>[0]
 >[0]
 
-export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).handler(async () => {
-  await assertSecurityScope('entry')
-  const db = requireDb()
-  const records = await db
+export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' })
+  .validator((data: { type: GeneratedDocumentType }) => ({
+    type: isGeneratedDocumentType(data?.type) ? data.type : 'weldingJournal',
+  }))
+  .handler(async ({ data }) => {
+    await assertSecurityScope('entry')
+    const db = requireDb()
+    const records = await db
     .select({
       document: generatedDocuments,
       assignmentCount: count(generatedDocumentWeldJoints.weldJointId),
@@ -89,24 +93,24 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' }).ha
     .from(generatedDocuments)
     .leftJoin(generatedDocumentWeldJoints, eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id))
     .leftJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
-    .where(inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]))
+    .where(eq(generatedDocuments.type, data.type))
     .groupBy(generatedDocuments.id)
     .orderBy(sql`${generatedDocuments.updatedAt} desc`)
 
-  const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, records.map(({ document }) => document.id))
-  return records.map(({ document, assignmentCount, periodFrom, periodTo, projects, subtitleCodes, lines }) =>
-    toRemoteGeneratedDocument({
-      ...document,
-      rowCount: Number(assignmentCount),
-      periodFrom,
-      periodTo,
-      wdiTotal: currentWdiTotals.get(document.id) ?? 0,
-      projects,
-      subtitleCodes,
-      lines,
-    }),
-  )
-})
+    const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, records.map(({ document }) => document.id))
+    return records.map(({ document, assignmentCount, periodFrom, periodTo, projects, subtitleCodes, lines }) =>
+      toRemoteGeneratedDocument({
+        ...document,
+        rowCount: Number(assignmentCount),
+        periodFrom,
+        periodTo,
+        wdiTotal: currentWdiTotals.get(document.id) ?? 0,
+        projects,
+        subtitleCodes,
+        lines,
+      }),
+    )
+  })
 
 export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })
   .validator((data: { id: number }) => ({ id: requirePositiveId(data?.id, 'документа') }))

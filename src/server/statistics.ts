@@ -8,6 +8,7 @@ import {
   weldJoints,
 } from '@/db/schema'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   buildStatisticsServerResult,
@@ -25,37 +26,20 @@ import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache
 import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
 import { assertSecurityScope } from '@/server/security-functions'
 
-const STATISTICS_ROW_SELECT = {
+const STATISTICS_STATUS_ROW_SELECT = {
   id: weldJoints.id,
   weldDate: weldJoints.weldDate,
   projectTitle: weldJoints.projectTitle,
   subtitleCode: weldJoints.subtitleCode,
   line: weldJoints.line,
-  groupName: weldJoints.groupName,
-  category: weldJoints.category,
-  weldControlPercent: weldJoints.weldControlPercent,
   joint: weldJoints.joint,
   status: weldJoints.status,
-  revisionActuality: weldJoints.revisionActuality,
   wdi: weldJoints.wdi,
-  materialGroup: weldJoints.materialGroup,
   connectionType: weldJoints.connectionType,
   d1: weldJoints.d1,
   d2: weldJoints.d2,
   t1: weldJoints.t1,
   t2: weldJoints.t2,
-  stamp1K: weldJoints.stamp1K,
-  stamp1Z: weldJoints.stamp1Z,
-  stamp1O: weldJoints.stamp1O,
-  stamp2K: weldJoints.stamp2K,
-  stamp2Z: weldJoints.stamp2Z,
-  stamp2O: weldJoints.stamp2O,
-  stamp1KFact: weldJoints.stamp1KFact,
-  stamp1ZFact: weldJoints.stamp1ZFact,
-  stamp1OFact: weldJoints.stamp1OFact,
-  stamp2KFact: weldJoints.stamp2KFact,
-  stamp2ZFact: weldJoints.stamp2ZFact,
-  stamp2OFact: weldJoints.stamp2OFact,
   hasVik: weldJoints.hasVik,
   hasRk: weldJoints.hasRk,
   hasPvk: weldJoints.hasPvk,
@@ -79,7 +63,6 @@ const STATISTICS_ROW_SELECT = {
   stlsRequest: weldJoints.stlsRequest,
   stlsRequestDate: weldJoints.stlsRequestDate,
   mkkRequest: weldJoints.mkkRequest,
-  mkkRequestDate: weldJoints.mkkRequestDate,
   vikResult: weldJoints.vikResult,
   rkResult: weldJoints.rkResult,
   pvkResult: weldJoints.pvkResult,
@@ -88,6 +71,22 @@ const STATISTICS_ROW_SELECT = {
   rfaResult: weldJoints.rfaResult,
   stlsResult: weldJoints.stlsResult,
   mkkResult: weldJoints.mkkResult,
+}
+
+const STATISTICS_GENERAL_ROW_SELECT = {
+  ...STATISTICS_STATUS_ROW_SELECT,
+  groupName: weldJoints.groupName,
+  category: weldJoints.category,
+  weldControlPercent: weldJoints.weldControlPercent,
+  revisionActuality: weldJoints.revisionActuality,
+  materialGroup: weldJoints.materialGroup,
+  stamp1KFact: weldJoints.stamp1KFact,
+  stamp1ZFact: weldJoints.stamp1ZFact,
+  stamp1OFact: weldJoints.stamp1OFact,
+  stamp2KFact: weldJoints.stamp2KFact,
+  stamp2ZFact: weldJoints.stamp2ZFact,
+  stamp2OFact: weldJoints.stamp2OFact,
+  mkkRequestDate: weldJoints.mkkRequestDate,
   vikConclusion: weldJoints.vikConclusion,
   vikConclusionDate: weldJoints.vikConclusionDate,
   rkConclusion: weldJoints.rkConclusion,
@@ -113,6 +112,37 @@ const STATISTICS_ROW_SELECT = {
   lnkCreatedAt: weldJoints.lnkCreatedAt,
 }
 
+const STATISTICS_WELDER_ROW_SELECT = {
+  ...STATISTICS_STATUS_ROW_SELECT,
+  materialGroup: weldJoints.materialGroup,
+  stamp1KFact: weldJoints.stamp1KFact,
+  stamp1ZFact: weldJoints.stamp1ZFact,
+  stamp1OFact: weldJoints.stamp1OFact,
+  stamp2KFact: weldJoints.stamp2KFact,
+  stamp2ZFact: weldJoints.stamp2ZFact,
+  stamp2OFact: weldJoints.stamp2OFact,
+}
+
+const STATISTICS_LINE_ROW_SELECT = {
+  ...STATISTICS_STATUS_ROW_SELECT,
+  groupName: weldJoints.groupName,
+  category: weldJoints.category,
+  weldControlPercent: weldJoints.weldControlPercent,
+  revisionActuality: weldJoints.revisionActuality,
+}
+
+const STATISTICS_PERCENTAGE_LINE_ROW_SELECT = {
+  ...STATISTICS_STATUS_ROW_SELECT,
+  weldControlPercent: weldJoints.weldControlPercent,
+  revisionActuality: weldJoints.revisionActuality,
+  stamp1K: weldJoints.stamp1K,
+  stamp1Z: weldJoints.stamp1Z,
+  stamp1O: weldJoints.stamp1O,
+  stamp2K: weldJoints.stamp2K,
+  stamp2Z: weldJoints.stamp2Z,
+  stamp2O: weldJoints.stamp2O,
+}
+
 export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .validator((data: StatisticsServerRequest) => normalizeStatisticsServerRequest(data))
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
@@ -131,12 +161,27 @@ async function computeStatisticsServerResult(
   const projectWhere = data.projectFilter
     ? sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`
     : undefined
-  const [sourceRows, projectRows, subtitleRows, stampRows, settingsRows] = await Promise.all([
+  const rowSelect = getStatisticsRowSelect(data.tab)
+  const [sourceRows, duplicateRows, projectRows, subtitleRows, stampRows, settingsRows] = await Promise.all([
     db
-      .select(STATISTICS_ROW_SELECT)
+      .select(rowSelect)
       .from(weldJoints)
       .where(scopeWhere)
       .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)),
+    db
+      .select({
+        id: duplicateControls.id,
+        weldJointId: duplicateControls.weldJointId,
+        method: duplicateControls.method,
+        result: duplicateControls.result,
+        controlDate: duplicateControls.controlDate,
+        conclusion: duplicateControls.conclusion,
+        conclusionDate: duplicateControls.conclusionDate,
+      })
+      .from(duplicateControls)
+      .innerJoin(weldJoints, eq(weldJoints.id, duplicateControls.weldJointId))
+      .where(scopeWhere)
+      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)),
     db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints),
     db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere),
     data.tab === 'welders'
@@ -147,27 +192,11 @@ async function computeStatisticsServerResult(
       .from(appSettings)
       .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other])),
   ])
-  const sourceIds = sourceRows.map((row) => row.id)
-  const duplicateRows = sourceIds.length > 0
-    ? (
-        await Promise.all(
-          Array.from({ length: Math.ceil(sourceIds.length / 1000) }, (_, index) =>
-            sourceIds.slice(index * 1000, (index + 1) * 1000),
-          ).map((ids) =>
-            db
-              .select()
-              .from(duplicateControls)
-              .where(inArray(duplicateControls.weldJointId, ids))
-              .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)),
-          ),
-        )
-      ).flat()
-    : []
   const otherSettings = normalizeOtherSettings(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.other) ?? DEFAULT_OTHER_SETTINGS,
   )
   const rows = prepareReportRows(
-    sourceRows,
+    sourceRows as WeldRow[],
     duplicateRows.map(toDuplicateControlRecord),
     undefined,
     undefined,
@@ -188,6 +217,13 @@ async function computeStatisticsServerResult(
     projectOptions: toFilterOptions(projectRows.map((row) => row.value)),
     subtitleOptions: toFilterOptions(subtitleRows.map((row) => row.value)),
   }
+}
+
+function getStatisticsRowSelect(tab: StatisticsServerRequest['tab']) {
+  if (tab === 'welders') return STATISTICS_WELDER_ROW_SELECT
+  if (tab === 'lineSummary') return STATISTICS_LINE_ROW_SELECT
+  if (tab === 'percentageLines') return STATISTICS_PERCENTAGE_LINE_ROW_SELECT
+  return STATISTICS_GENERAL_ROW_SELECT
 }
 
 export function normalizeStatisticsServerRequest(data: StatisticsServerRequest): StatisticsServerRequest {
@@ -255,7 +291,12 @@ function toFilterOptions(values: unknown[]) {
   )
 }
 
-function toDuplicateControlRecord(row: typeof duplicateControls.$inferSelect): DuplicateControlRecord {
+function toDuplicateControlRecord(
+  row: Pick<
+    typeof duplicateControls.$inferSelect,
+    'id' | 'weldJointId' | 'method' | 'result' | 'controlDate' | 'conclusion' | 'conclusionDate'
+  >,
+): DuplicateControlRecord {
   return {
     id: row.id,
     weldJointId: row.weldJointId,

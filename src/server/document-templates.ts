@@ -15,6 +15,8 @@ import type {
 import {
   createDocumentTemplateBlobKey,
   deleteDocumentTemplateBlobVersions,
+  migrateLegacyLocalDocumentTemplateBlobs,
+  resolveLocalDocumentTemplateBlobDirectory,
 } from '@/server/document-template-blobs'
 import { assertSecurityScope } from '@/server/security-functions'
 
@@ -250,8 +252,11 @@ async function getLocalTemplateStore() {
 
 async function startLocalTemplateStore() {
   const { BlobsServer } = await import('@netlify/blobs/server')
+  const legacyDirectory = resolve(process.cwd(), '.netlify/blobs-serve')
+  const directory = resolveLocalDocumentTemplateBlobDirectory()
+  await migrateLegacyLocalDocumentTemplateBlobs(legacyDirectory, directory)
   const server = new BlobsServer({
-    directory: resolve(process.cwd(), '.netlify/blobs-serve'),
+    directory,
     token: LOCAL_BLOB_TOKEN,
   })
   const { address } = await server.start()

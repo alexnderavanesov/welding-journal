@@ -31,7 +31,7 @@ export function useRkExposureMutation({
       highlightChangedRows(saved ? [saved] : [], ['rkExposureScheme', 'lnkDefectDescription'])
       setEditing(null)
       setMessage('Снимки и описание дефектов РК обновлены')
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => setMessage((error as Error).message),
   })

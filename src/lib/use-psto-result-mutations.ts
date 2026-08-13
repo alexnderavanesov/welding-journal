@@ -68,7 +68,7 @@ export function usePstoResultMutations({
       setMessage(`Результат ПСТО внесен для стыков: ${savedRows.length}`)
       setIsPstoResultModalOpen(false)
       setPstoResultDraft(createDefaultPstoResultDraft(defaultPstoConclusionNaming))
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {
@@ -94,7 +94,7 @@ export function usePstoResultMutations({
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [], [...PSTO_RESULT_HIGHLIGHT_FIELDS])
       setMessage(variables.action === 'deleteResult' ? 'Результат ПСТО удален' : 'Диаграмма ПСТО переименована')
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -121,7 +121,7 @@ export function usePstoResultMutations({
       highlightChangedRows(saved ? [saved] : [], getPstoFieldHighlightFields(variables.fieldKey))
       setMessage(`${variables.fieldKey === 'pstoDate' ? 'Дата ПСТО' : 'Поле ПСТО'} обновлено`)
       setHeatTreatmentFieldEditing(null)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

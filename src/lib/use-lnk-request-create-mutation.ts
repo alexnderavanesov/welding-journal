@@ -71,7 +71,7 @@ export function useLnkRequestCreateMutation({
       setLnkRequestDraft(createDefaultLnkRequestDraft())
       setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
-      await invalidateWeldJoints(queryClient)
+      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {

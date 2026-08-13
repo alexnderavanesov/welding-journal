@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   getRemoteSecuritySettings,
   saveRemoteSecuritySettings,
@@ -66,10 +66,15 @@ export function useEffectiveSecuritySettingsState() {
   const localSettings = useSecuritySettings()
   const [remoteSettings, setRemoteSettings] = useState<SecurityPublicSettings | null>(null)
   const [resolved, setResolved] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const localSecurityConfiguration = serializeLocalSecurityConfiguration(localSettings)
+  const retry = useCallback(() => setLoadAttempt((current) => current + 1), [])
 
   useEffect(() => {
     let active = true
     setResolved(false)
+    setLoadError(null)
     void getRemoteSecuritySettings()
       .then(async (settings) => {
         const hasLocalProtection = hasMigratableLocalSecurityPasswords(localSettings)
@@ -83,17 +88,25 @@ export function useEffectiveSecuritySettingsState() {
         }
       })
       .catch(() => {
-        if (active) setResolved(true)
+        if (active) {
+          setLoadError('Не удалось проверить доступ к системе. Проверьте соединение с базой данных и повторите попытку.')
+        }
       })
     return () => {
       active = false
     }
-  }, [localSettings])
+  }, [loadAttempt, localSecurityConfiguration])
 
   return {
     settings: remoteSettings ? applyRemoteSecurityFlags(localSettings, remoteSettings) : localSettings,
     resolved,
+    loadError,
+    retry,
   }
+}
+
+export function serializeLocalSecurityConfiguration(settings: SecuritySettings) {
+  return JSON.stringify(normalizeSecuritySettings(settings))
 }
 
 export function loadSecuritySettings(): SecuritySettings {

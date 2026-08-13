@@ -1296,7 +1296,7 @@ function LnkPstoStatisticsPanel({
 }) {
   const unofficialDetail =
     unit === 'wdi'
-      ? `Неофициальные стыки: ${unofficialCount} шт. · ${formatStatisticValue(unofficialValue, unit)} WDI`
+      ? `Неофициальные стыки: ${unofficialCount} шт. · ${formatStatisticValue(unofficialValue, unit)} WDI.`
       : `Неофициальные стыки: ${unofficialCount} шт.`
 
   return (
@@ -1372,7 +1372,7 @@ function LnkPstoStatisticsPanel({
 
           <Panel
             title="Состояние стыков"
-            subtitle={`За выбранный период: ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; ${unofficialDetail}.`}
+            subtitle={`За выбранный период: ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; ${unofficialDetail}`}
           >
             <SegmentedProgress
               unit={unit}

@@ -1,4 +1,5 @@
 import { WELDING_MATERIAL_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-field-definitions'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 export const yesEmptyFieldKeys = new Set([
   'pstoRequired',
@@ -66,15 +67,9 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'status',
   'createdAt',
   'weldingUpdatedAt',
-  'vikRequest',
-  'rkRequest',
-  'uzkRequest',
-  'pvkRequest',
+  ...LNK_METHODS.flatMap((method) => [method.requestKey, method.requestDateKey]),
   'pstoRequest',
-  'tvmtRequest',
-  'rfaRequest',
-  'stlsRequest',
-  'mkkRequest',
+  'pstoRequestDate',
   'pstoDate',
   'heatTreatmentDiagram',
   'vikResult',

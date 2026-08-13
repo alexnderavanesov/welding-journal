@@ -1,6 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
 import { ALL_PAGE_SIZE } from '@/lib/use-pagination'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { WELD_JOINT_PAGES_QUERY_KEY } from '@/lib/weld-query-utils'
 import {
   WELD_PAGE_ALL_SIZE,
@@ -44,19 +45,21 @@ function fetchReportPage(report: WeldReportKind, data: WeldPageRequest) {
 export function useWeldPageQuery({ enabled, report = 'weldingJournal', columnFilters }: UseWeldPageQueryOptions) {
   const [pageSize, setPageSize] = useState<number>(100)
   const normalizedColumnFilters = useMemo(() => normalizeColumnFiltersForQuery(columnFilters), [columnFilters])
+  const queryColumnFilters = useDebouncedValue(normalizedColumnFilters, 180)
   const serverPageSize = toServerPageSize(pageSize)
 
   const query = useInfiniteQuery({
-    queryKey: [...WELD_JOINT_PAGES_QUERY_KEY, report, normalizedColumnFilters, serverPageSize],
+    queryKey: [...WELD_JOINT_PAGES_QUERY_KEY, report, queryColumnFilters, serverPageSize],
     enabled,
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       fetchReportPage(report, {
         page: Number(pageParam) || 1,
         pageSize: serverPageSize,
-        columnFilters: normalizedColumnFilters,
+        columnFilters: queryColumnFilters,
       }),
-    staleTime: 15_000,
+    staleTime: 60_000,
+    gcTime: 15 * 60_000,
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore || lastPage.pageSize === WELD_PAGE_ALL_SIZE) return undefined
       return lastPage.page + 1
@@ -66,6 +69,7 @@ export function useWeldPageQuery({ enabled, report = 'weldingJournal', columnFil
   const rows = useMemo(() => query.data?.pages.flatMap((page) => page.rows) ?? [], [query.data])
   const totalCount = query.data?.pages[0]?.total ?? 0
   const acceptedWdiTotal = query.data?.pages[0]?.acceptedWdiTotal ?? 0
+  const availableRequestCount = query.data?.pages[0]?.availableRequestCount
   const hasMore = Boolean(query.hasNextPage)
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = query
   const loadMore = useCallback(() => {
@@ -77,6 +81,7 @@ export function useWeldPageQuery({ enabled, report = 'weldingJournal', columnFil
     rows,
     totalCount,
     acceptedWdiTotal,
+    availableRequestCount,
     firstItemNumber: totalCount === 0 ? 0 : 1,
     lastItemNumber: rows.length,
     pageSize,

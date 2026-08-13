@@ -1,11 +1,19 @@
+import { useQuery } from '@tanstack/react-query'
 import { memo, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldFormConnectionTypeField, WeldFormMaterialGroupField } from '@/components/weld-form-connection-type-field'
 import { WeldFormTestTypesField, WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { cn } from '@/lib/utils'
-import { getWeldFormSuggestions, type WeldFormSuggestion } from '@/lib/weld-form-suggestions'
+import { WELD_FORM_SUGGESTIONS_QUERY_KEY } from '@/lib/weld-query-utils'
+import {
+  getWeldFormSuggestionQueryFieldKeys,
+  getWeldFormSuggestions,
+  type WeldFormSuggestion,
+} from '@/lib/weld-form-suggestions'
+import { listWeldFormSuggestions } from '@/server/welds'
 import {
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
@@ -43,7 +51,7 @@ function WeldFormFieldComponent({
   field,
   draft,
   suggestionDraft = draft,
-  suggestionRows = [],
+  suggestionRows,
   stampSelectOptions,
   systemWdiEnabled = false,
   fieldRefs,
@@ -242,7 +250,7 @@ function FreeTextField({
   field: WeldField & { key: WeldFieldKey }
   draft: WeldInput
   suggestionDraft: WeldInput
-  suggestionRows: readonly WeldInput[]
+  suggestionRows?: readonly WeldInput[]
   disabled?: boolean
   fieldRefs: MutableRefObject<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>
   setDraft: Dispatch<SetStateAction<WeldInput>>
@@ -251,18 +259,38 @@ function FreeTextField({
   const [activeIndex, setActiveIndex] = useState(0)
   const value = String(draft[field.key] ?? '')
   const canShowSuggestions = !disabled && (field.kind === 'text' || field.kind === 'number')
-  const suggestions = useMemo(
+  const hasLocalSuggestionRows = suggestionRows !== undefined
+  const localSuggestions = useMemo(
     () =>
-      open && canShowSuggestions
+      open && canShowSuggestions && hasLocalSuggestionRows
         ? getWeldFormSuggestions({
             fieldKey: field.key,
             value: suggestionDraft[field.key],
             draft: suggestionDraft,
-            rows: suggestionRows,
+            rows: suggestionRows ?? [],
           })
         : [],
-    [canShowSuggestions, field.key, open, suggestionDraft, suggestionRows],
+    [canShowSuggestions, field.key, hasLocalSuggestionRows, open, suggestionDraft, suggestionRows],
   )
+  const suggestionQueryDraft = useMemo(
+    () => Object.fromEntries(
+      getWeldFormSuggestionQueryFieldKeys(field.key).map((fieldKey) => [fieldKey, suggestionDraft[fieldKey]]),
+    ) as WeldInput,
+    [field.key, suggestionDraft],
+  )
+  const debouncedSuggestionQueryDraft = useDebouncedValue(suggestionQueryDraft, 180)
+  const remoteSuggestionsQuery = useQuery({
+    queryKey: [...WELD_FORM_SUGGESTIONS_QUERY_KEY, field.key, debouncedSuggestionQueryDraft],
+    queryFn: () => listWeldFormSuggestions({ data: { fieldKey: field.key, draft: debouncedSuggestionQueryDraft } }),
+    enabled: open && canShowSuggestions && !hasLocalSuggestionRows,
+    staleTime: 60_000,
+  })
+  const remoteSuggestionsAreCurrent = debouncedSuggestionQueryDraft === suggestionQueryDraft
+  const suggestions = hasLocalSuggestionRows
+    ? localSuggestions
+    : remoteSuggestionsAreCurrent
+      ? (remoteSuggestionsQuery.data ?? [])
+      : []
   const visibleSuggestions = open ? suggestions : []
 
   function updateValue(nextValue: string | null) {

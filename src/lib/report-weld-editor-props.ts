@@ -6,7 +6,7 @@ type WeldFormProps = NonNullable<ReportWeldEditorProps['formProps']>
 
 type CreateReportWeldEditorPropsOptions = {
   editing: EditingState | null
-  rows: readonly WeldInput[]
+  suggestionRows?: readonly WeldInput[]
   stampSelectOptions: WeldFormProps['stampSelectOptions']
   getExternalSaveBlockReason: WeldFormProps['getExternalSaveBlockReason']
   isSaving: boolean
@@ -16,7 +16,7 @@ type CreateReportWeldEditorPropsOptions = {
 
 export function createReportWeldEditorProps({
   editing,
-  rows,
+  suggestionRows,
   stampSelectOptions,
   getExternalSaveBlockReason,
   isSaving,
@@ -30,7 +30,7 @@ export function createReportWeldEditorProps({
           value: editing.record,
           focusField: editing.focusField,
           returnPageScrollPosition: editing.returnPageScrollPosition,
-          suggestionRows: rows,
+          suggestionRows,
           stampSelectOptions,
           getExternalSaveBlockReason,
           busy: isSaving,

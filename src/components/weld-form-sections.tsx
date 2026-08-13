@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import { AlertTriangle, CheckCircle2, Info, UserRoundCheck, WandSparkles } from 'lucide-react'
 
@@ -5,8 +6,10 @@ import { Button } from '@/components/ui/button'
 import { WeldFormField } from '@/components/weld-form-field'
 import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-config'
-import { getWeldLineAutofillState } from '@/lib/weld-line-autofill'
+import { getWeldLineAutofillState, LINE_AUTOFILL_FIELD_KEYS } from '@/lib/weld-line-autofill'
 import { getWeldStampAutofillState } from '@/lib/weld-stamp-autofill'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
+import { WELD_LINE_AUTOFILL_QUERY_KEY } from '@/lib/weld-query-utils'
 import {
   getStampSelectValue,
   secondaryWeldFormSectionNames,
@@ -16,6 +19,7 @@ import {
 } from '@/lib/weld-form-utils'
 import { parseOfficialStampWeldingMethods, normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { getWeldLineAutofill } from '@/server/welds'
 
 export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'workClosure'
 
@@ -47,7 +51,7 @@ export function WeldFormSections({
   collapsedSections,
   draft,
   calculationDraft = draft,
-  suggestionRows = [],
+  suggestionRows,
   stampSelectOptions,
   stampCompatibilityReason,
   systemWdiEnabled = false,
@@ -512,21 +516,48 @@ function LineAutofillButton({
   setDraft,
 }: {
   draft: WeldInput
-  suggestionRows: readonly WeldInput[]
+  suggestionRows?: readonly WeldInput[]
   setDraft: Dispatch<SetStateAction<WeldInput>>
 }) {
-  const state = useMemo(() => getWeldLineAutofillState(draft, suggestionRows), [draft, suggestionRows])
-  const isDisabled = Boolean(state.disabledReason)
+  const hasLocalSuggestionRows = suggestionRows !== undefined
+  const localState = useMemo(
+    () => hasLocalSuggestionRows ? getWeldLineAutofillState(draft, suggestionRows ?? []) : null,
+    [draft, hasLocalSuggestionRows, suggestionRows],
+  )
+  const remoteDraft = useMemo(
+    () => Object.fromEntries(
+      [...new Set(['id', 'line', 'projectTitle', 'subtitleCode', ...LINE_AUTOFILL_FIELD_KEYS] as const)]
+        .map((fieldKey) => [fieldKey, draft[fieldKey]]),
+    ) as WeldInput,
+    [draft],
+  )
+  const debouncedRemoteDraft = useDebouncedValue(remoteDraft, 180)
+  const remoteStateQuery = useQuery({
+    queryKey: [...WELD_LINE_AUTOFILL_QUERY_KEY, debouncedRemoteDraft],
+    queryFn: () => getWeldLineAutofill({ data: { draft: debouncedRemoteDraft } }),
+    enabled: !hasLocalSuggestionRows && Boolean(String(draft.line ?? '').trim()),
+    staleTime: 60_000,
+  })
+  const remoteStateIsCurrent = debouncedRemoteDraft === remoteDraft
+  const remoteStatePending = !hasLocalSuggestionRows && (!remoteStateIsCurrent || remoteStateQuery.isFetching)
+  const state = localState ?? (remoteStateIsCurrent ? remoteStateQuery.data : undefined) ?? getWeldLineAutofillState(draft, [])
+  const isDisabled = remoteStatePending || Boolean(state.disabledReason)
   const helpText =
     'Заполняется по уже существующим стыкам этой линии: Проект, Шифр, группа трубопровода, категория трубопровода, Контроль швов (%) и назначения контроля.'
   const sourceText = state.sourceRowsCount > 0 ? `Источник: ${formatSourceRowsCount(state.sourceRowsCount)} линии ${state.line}.` : ''
   const resultText = state.changedFieldsCount > 0 ? `Будет заполнено полей: ${state.changedFieldsCount}.` : 'Данные по линии уже совпадают.'
-  const title = state.disabledReason ? `${state.disabledReason} ${helpText}` : `${helpText} ${sourceText} ${resultText}`
+  const title = remoteStatePending
+    ? `Проверяем данные по текущей линии. ${helpText}`
+    : state.disabledReason
+      ? `${state.disabledReason} ${helpText}`
+      : `${helpText} ${sourceText} ${resultText}`
 
   function handleAutofill() {
-    if (isDisabled) return
+    if (isDisabled || !hasLocalSuggestionRows && remoteStateQuery.data !== state) return
     setDraft((current) => {
-      const currentState = getWeldLineAutofillState(current, suggestionRows)
+      const currentState = hasLocalSuggestionRows
+        ? getWeldLineAutofillState(current, suggestionRows ?? [])
+        : state
       return currentState.disabledReason ? current : { ...current, ...currentState.values }
     })
   }

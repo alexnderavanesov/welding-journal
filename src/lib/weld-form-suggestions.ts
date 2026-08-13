@@ -35,6 +35,22 @@ const SHARED_SUGGESTION_FIELD_KEYS: Partial<Record<WeldFieldKey, WeldFieldKey[]>
 
 const DISABLED_SUGGESTION_FIELD_KEYS = new Set<WeldFieldKey>(['joint', 'wdi'])
 
+export function canSuggestWeldFormField(fieldKey: WeldFieldKey) {
+  return !DISABLED_SUGGESTION_FIELD_KEYS.has(fieldKey)
+}
+
+export function getWeldFormSuggestionQueryFieldKeys(fieldKey: WeldFieldKey) {
+  return [...new Set([
+    ...CONTEXT_FIELDS,
+    ...MATCH_CONTEXT_FIELDS.map(({ key }) => key),
+    ...(SHARED_SUGGESTION_FIELD_KEYS[fieldKey] ?? [fieldKey]),
+  ])]
+}
+
+export function getWeldFormSuggestionSourceFieldKeys(fieldKey: WeldFieldKey) {
+  return SHARED_SUGGESTION_FIELD_KEYS[fieldKey] ?? [fieldKey]
+}
+
 export function getWeldFormSuggestions({
   fieldKey,
   value,

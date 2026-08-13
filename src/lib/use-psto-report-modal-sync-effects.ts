@@ -21,6 +21,8 @@ type SetNumberSet = Dispatch<SetStateAction<Set<number>>>
 export type PstoReportModalSyncEffectsOptions = {
   availablePstoRequestRows: WeldRow[]
   heatTreatmentRows: WeldRow[]
+  isPstoRowsContextReady: boolean
+  isPstoRequestModalOpen: boolean
   isPstoResultManagerOpen: boolean
   isPstoResultModalOpen: boolean
   managedPstoResultRows: WeldRow[]
@@ -33,6 +35,8 @@ export type PstoReportModalSyncEffectsOptions = {
 export function usePstoReportModalSyncEffects({
   availablePstoRequestRows,
   heatTreatmentRows,
+  isPstoRowsContextReady,
+  isPstoRequestModalOpen,
   isPstoResultManagerOpen,
   isPstoResultModalOpen,
   managedPstoResultRows,
@@ -42,14 +46,16 @@ export function usePstoReportModalSyncEffects({
   setSelectedHeatTreatmentIds,
 }: PstoReportModalSyncEffectsOptions) {
   useEffect(() => {
+    if (!isPstoRequestModalOpen || !isPstoRowsContextReady) return
     setSelectedHeatTreatmentIds((current) => {
       const selectableIds = new Set(availablePstoRequestRows.map((row) => row.id))
       const next = new Set([...current].filter((id) => selectableIds.has(id)))
       return next.size === current.size ? current : next
     })
-  }, [availablePstoRequestRows, setSelectedHeatTreatmentIds])
+  }, [availablePstoRequestRows, isPstoRequestModalOpen, isPstoRowsContextReady, setSelectedHeatTreatmentIds])
 
   useEffect(() => {
+    if (!isPstoRowsContextReady) return
     setPstoResultDraft((current) => {
       if (!isPstoResultModalOpen) return current
       const selectedRows = heatTreatmentRows.filter((row) => current.rowIds.has(row.id))
@@ -81,12 +87,12 @@ export function usePstoReportModalSyncEffects({
       const rowIds = new Set([...current.rowIds].filter((id) => availableIds.has(id)))
       return { ...current, requestName, requestDate, rowIds }
     })
-  }, [heatTreatmentRows, isPstoResultModalOpen, pstoResultRequestOptions, setPstoResultDraft])
+  }, [heatTreatmentRows, isPstoResultModalOpen, isPstoRowsContextReady, pstoResultRequestOptions, setPstoResultDraft])
 
   useEffect(() => {
-    if (!isPstoResultManagerOpen) return
+    if (!isPstoResultManagerOpen || !isPstoRowsContextReady) return
     setManagedPstoDiagramDrafts(
       Object.fromEntries(managedPstoResultRows.map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()])),
     )
-  }, [isPstoResultManagerOpen, managedPstoResultRows, setManagedPstoDiagramDrafts])
+  }, [isPstoResultManagerOpen, isPstoRowsContextReady, managedPstoResultRows, setManagedPstoDiagramDrafts])
 }

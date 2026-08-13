@@ -29,8 +29,8 @@ export async function saveGeneratedDocuments(inputs: SaveGeneratedDocumentInput[
   return records
 }
 
-export async function loadGeneratedDocuments() {
-  return listRemoteGeneratedDocuments()
+export async function loadGeneratedDocuments(type: SaveGeneratedDocumentInput['type']) {
+  return listRemoteGeneratedDocuments({ data: { type } })
 }
 
 export async function loadGeneratedDocumentSequence(type: SaveGeneratedDocumentInput['type']) {

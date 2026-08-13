@@ -19,7 +19,7 @@ type LineSourceRowsResult = {
   filterLabels: string[]
 }
 
-const LINE_AUTOFILL_FIELD_KEYS = [
+export const LINE_AUTOFILL_FIELD_KEYS = [
   'projectTitle',
   'subtitleCode',
   'groupName',
