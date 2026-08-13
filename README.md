@@ -37,6 +37,8 @@ DATABASE_URL=postgres://welding:welding@localhost:5432/welding_tracker
 
 Production на Netlify использует переменную окружения `DATABASE_URL`, заданную в Netlify UI. Обычный запуск приложения и локальные миграции продолжают использовать только `DATABASE_URL`.
 
+Если production-база требует собственный корневой SSL-сертификат, добавьте в Netlify переменную `DATABASE_SSL_CA` со всем PEM-содержимым сертификата, включая строки `BEGIN CERTIFICATE` и `END CERTIFICATE`. Для Yandex Cloud используйте `https://storage.yandexcloud.net/cloud-certs/CA.pem`. Приложение включает проверку сертификата и при наличии `DATABASE_SSL_CA` само удаляет конфликтующие SSL-параметры из `DATABASE_URL`.
+
 Для миграции удаленной базы добавьте отдельную переменную в `.env.local` или `.env`:
 
 ```bash
