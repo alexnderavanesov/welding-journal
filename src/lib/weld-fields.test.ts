@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { EXCEL_FIELDS, VISIBLE_FIELDS, VISIBLE_FIELD_SECTIONS, calculateFinalStatus, getFinalStatusErrorReason } from './weld-fields'
+import {
+  EXCEL_FIELDS,
+  VISIBLE_FIELDS,
+  VISIBLE_FIELD_SECTIONS,
+  WELD_FIELDS,
+  calculateFinalStatus,
+  getFinalStatusErrorReason,
+} from './weld-fields'
 import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections, getFilteredWeldTableSections } from './weld-table-sections'
 import {
   HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
@@ -9,6 +16,7 @@ import {
 } from './report-config'
 import {
   formHiddenFieldKeys,
+  isWeldFormFieldHidden,
   secondaryWeldFormFieldKeys,
   weldingMaterialWeldFormFieldKeys,
 } from './weld-form-field-sets'
@@ -86,6 +94,16 @@ describe('weld field order', () => {
     expect(EXCEL_FIELDS.some((field) => field.key === 'jsrDocument')).toBe(false)
     expect(EXCEL_FIELDS.some((field) => field.key === 'checklistDocument')).toBe(false)
     expect(EXCEL_FIELDS.some((field) => field.key === 'zniDocument')).toBe(false)
+    expect(formHiddenFieldKeys.has('jsrDocument')).toBe(true)
+    expect(formHiddenFieldKeys.has('checklistDocument')).toBe(true)
+    expect(formHiddenFieldKeys.has('zniDocument')).toBe(true)
+  })
+
+  it('keeps every virtual system field out of the create and edit form', () => {
+    const virtualFields = WELD_FIELDS.filter((field) => 'virtual' in field && field.virtual === true)
+
+    expect(virtualFields.length).toBeGreaterThan(0)
+    expect(virtualFields.every((field) => isWeldFormFieldHidden({ key: field.key, virtual: true }))).toBe(true)
   })
 
   it('keeps virtual RK exposure state and its hidden metadata outside Excel imports', () => {

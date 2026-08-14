@@ -8,6 +8,40 @@ import { WeldFormField } from '@/components/weld-form-field'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 
 describe('weld form input performance', () => {
+  it.each([
+    ['create', {}],
+    ['edit', { id: 1, joint: 'S1' }],
+  ])('keeps system-managed fields out of the %s form', (_mode, value) => {
+    HTMLElement.prototype.scrollTo = vi.fn()
+
+    const { unmount } = renderWithQueryClient(
+      <WeldForm
+        value={value}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    for (const label of [
+      'Заявки',
+      'Результат',
+      'Заключения',
+      'Документы',
+      'Дата заявки ВИК',
+      'Итоговый статус',
+      'Задачи диспетчера',
+      'ЖСР',
+      'Чек-лист',
+      'ЗНИ',
+      'Внесен сварка',
+      'Обновлен сварка',
+    ]) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument()
+    }
+
+    unmount()
+  })
+
   it('does not scan suggestion rows until a suggestion field is opened', () => {
     const sourceRows = [{ responsible: 'Иванов', projectTitle: 'Проект' }] as WeldInput[]
     const iterate = vi.fn(() => sourceRows[Symbol.iterator]())

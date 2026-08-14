@@ -18,12 +18,12 @@ import { useSystemIndexSettings } from '@/lib/system-index-settings'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import {
-  formHiddenFieldKeys,
   getWeldFormAutoClearHint,
   getWeldFormCancellationResultHint,
   getWeldFormReactivationResultHint,
   getWeldFormSaveBlockReason,
   getWeldStampSaveBlockReason,
+  isWeldFormFieldHidden,
   secondaryWeldFormFieldKeys,
   weldingMaterialWeldFormFieldKeys,
   withCalculatedFinalStatus,
@@ -71,7 +71,7 @@ export function WeldForm({
     () =>
       VISIBLE_FIELD_SECTIONS.map((group) => ({
         ...group,
-        fields: group.fields.filter((field) => !formHiddenFieldKeys.has(field.key)),
+        fields: group.fields.filter((field) => !isWeldFormFieldHidden(field)),
       })).filter((group) => group.fields.length > 0),
     [],
   )

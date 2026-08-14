@@ -98,6 +98,7 @@ import {
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import {
+  DISPATCHER_BACKGROUND_REFRESH_ENABLED,
   saveDispatcherBackgroundSettings,
   useDispatcherBackgroundSettings,
 } from '@/lib/dispatcher-background-settings'
@@ -3297,7 +3298,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
   const backgroundStatusQuery = useQuery({
     queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
     queryFn: () => getDispatcherBackgroundStatus(),
-    enabled: backgroundSettings.enabled,
+    enabled: DISPATCHER_BACKGROUND_REFRESH_ENABLED && backgroundSettings.enabled,
     staleTime: 60_000,
   })
   const refreshBackgroundMutation = useMutation({
@@ -3417,18 +3418,22 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
 
       <section className="rounded-md border border-sky-200 bg-sky-50/60 p-4 shadow-sm shadow-slate-200/40">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <label className="flex min-w-0 cursor-pointer items-start gap-3">
+          <label className={`flex min-w-0 items-start gap-3 ${DISPATCHER_BACKGROUND_REFRESH_ENABLED ? 'cursor-pointer' : 'cursor-default'}`}>
             <input
               type="checkbox"
               checked={backgroundSettings.enabled}
               onChange={(event) => updateBackgroundSetting(event.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600"
+              disabled={!DISPATCHER_BACKGROUND_REFRESH_ENABLED}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
             />
             <span>
               <span className="block text-sm font-semibold text-slate-900">Показывать коды выключенных проверок в отчетах</span>
               <span className="mt-1 block max-w-4xl text-xs leading-5 text-slate-600">
-                Выключенные проверки не появятся в диспетчере, счетчике и подсветке строк. Их коды будут доступны только в системном поле
-                «Задачи диспетчера», чтобы находить и постепенно исправлять такие стыки через фильтр.
+                {DISPATCHER_BACKGROUND_REFRESH_ENABLED
+                  ? 'Выключенные проверки не появятся в диспетчере, счетчике и подсветке строк. Их коды будут доступны только в системном поле «Задачи диспетчера», чтобы находить и постепенно исправлять такие стыки через фильтр.'
+                  : backgroundSettings.enabled
+                    ? 'Настройка сохранена включенной, но новые фоновые коды временно не рассчитываются. Ранее рассчитанные коды могут оставаться в системном поле «Задачи диспетчера».'
+                    : 'Настройка сохранена выключенной. Фоновые коды выключенных проверок не рассчитываются и не показываются в отчетах.'}
               </span>
             </span>
           </label>
@@ -3436,22 +3441,35 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
             type="button"
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={refreshBackgroundTasks}
-            disabled={!backgroundSettings.enabled || refreshBackgroundMutation.isPending || backgroundStatusQuery.data?.status === 'running'}
+            disabled={
+              !DISPATCHER_BACKGROUND_REFRESH_ENABLED ||
+              !backgroundSettings.enabled ||
+              refreshBackgroundMutation.isPending ||
+              backgroundStatusQuery.data?.status === 'running'
+            }
           >
             <RefreshCw className={`h-4 w-4 ${refreshBackgroundMutation.isPending ? 'animate-spin' : ''}`} />
             Обновить сейчас
           </button>
         </div>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-sky-100 pt-3 text-xs text-slate-600">
-          <span>Автоматически: ежедневно в 03:00 МСК</span>
-          <span>
-            Последнее обновление: {backgroundStatusQuery.data?.computedAt
-              ? formatSettingsTimestamp(backgroundStatusQuery.data.computedAt)
-              : 'еще не выполнялось'}
-          </span>
-          {backgroundSettings.enabled && backgroundStatusQuery.data ? (
-            <span>Стыков с фоновыми кодами: {backgroundStatusQuery.data.rowCount}</span>
-          ) : null}
+          {DISPATCHER_BACKGROUND_REFRESH_ENABLED ? (
+            <>
+              <span>Автоматически: ежедневно в 03:00 МСК</span>
+              <span>
+                Последнее обновление: {backgroundStatusQuery.data?.computedAt
+                  ? formatSettingsTimestamp(backgroundStatusQuery.data.computedAt)
+                  : 'еще не выполнялось'}
+              </span>
+              {backgroundSettings.enabled && backgroundStatusQuery.data ? (
+                <span>Стыков с фоновыми кодами: {backgroundStatusQuery.data.rowCount}</span>
+              ) : null}
+            </>
+          ) : (
+            <span className="font-semibold text-amber-700">
+              Фоновое обновление временно приостановлено. Обычный диспетчер продолжает работать.
+            </span>
+          )}
         </div>
         {backgroundStatusQuery.data?.status === 'failed' ? (
           <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">

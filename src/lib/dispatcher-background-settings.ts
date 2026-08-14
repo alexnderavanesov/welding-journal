@@ -9,6 +9,7 @@ import {
 import { getBusinessDateIso } from '@/lib/business-date'
 
 export const DISPATCHER_BACKGROUND_SETTINGS_EVENT = 'dispatcher-background-settings-change'
+export const DISPATCHER_BACKGROUND_REFRESH_ENABLED = false
 
 const STORAGE_KEY = 'welding-dispatcher-background-settings'
 

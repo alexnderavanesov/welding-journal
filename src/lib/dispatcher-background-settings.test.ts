@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildDisabledDispatcherSettings,
+  DISPATCHER_BACKGROUND_REFRESH_ENABLED,
   getEnabledDispatcherTaskCodes,
   shouldRefreshDispatcherBackgroundIndex,
 } from '@/lib/dispatcher-background-settings'
 import { DEFAULT_DISPATCHER_SETTINGS } from '@/lib/dispatcher-settings'
 
 describe('dispatcher background settings', () => {
+  it('keeps Netlify background refresh paused', () => {
+    expect(DISPATCHER_BACKGROUND_REFRESH_ENABLED).toBe(false)
+  })
+
   it('calculates only disabled row checks and never turns reminders into row tasks', () => {
     const current = {
       ...DEFAULT_DISPATCHER_SETTINGS,

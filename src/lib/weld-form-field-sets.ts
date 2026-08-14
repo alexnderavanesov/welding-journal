@@ -1,4 +1,8 @@
-import { WELDING_MATERIAL_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-field-definitions'
+import {
+  WELDING_MATERIAL_FIELD_KEYS,
+  type WeldField,
+  type WeldFieldKey,
+} from '@/lib/weld-field-definitions'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 export const yesEmptyFieldKeys = new Set([
@@ -64,6 +68,9 @@ export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
 export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'id',
   'dispatcherTasks',
+  'jsrDocument',
+  'checklistDocument',
+  'zniDocument',
   'status',
   'createdAt',
   'weldingUpdatedAt',
@@ -108,3 +115,7 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'rkExposureConfirmedDiameter',
   'lnkNote',
 ])
+
+export function isWeldFormFieldHidden(field: Pick<WeldField, 'key' | 'virtual'>) {
+  return field.virtual === true || formHiddenFieldKeys.has(field.key as WeldFieldKey)
+}
