@@ -42,11 +42,14 @@ DATABASE_URL=postgres://welding:welding@localhost:5432/welding_tracker
 
 Настройки приложения:
 
+- install command: оставьте пустой — он задан в `nixpacks.toml`;
 - build command: `pnpm build`;
 - start command: `pnpm start`;
 - exposed port: `3000`;
 - health check path: `/`;
 - один экземпляр приложения.
+
+`nixpacks.toml` фиксирует совместимую версию Corepack, потому что версия из стандартного Node-провайдера Nixpacks не запускает используемый проектом pnpm 11.
 
 Добавьте переменные окружения:
 
