@@ -1,5 +1,9 @@
 # Agent Rules
 
+## Git commits
+
+- Never create a commit unless the user explicitly asks for one. Leave changes uncommitted for the user to review and commit.
+
 ## User guide
 
 - Any new feature, rule change, renamed field, import behavior change, document-template behavior change, dispatcher logic change, or settings change must be accompanied by an update to the in-app user guide.

@@ -1,7 +1,7 @@
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import react from '@vitejs/plugin-react'
+import { nitro } from 'nitro/vite'
 import { defineConfig } from 'vite'
-import netlify from '@netlify/vite-plugin-tanstack-start'
 
 export default defineConfig({
   resolve: {
@@ -22,5 +22,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [tanstackStart(), react(), netlify()],
+  plugins: [tanstackStart(), nitro(), react()],
 })

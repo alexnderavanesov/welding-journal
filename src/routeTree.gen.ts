@@ -10,33 +10,44 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiMaintenanceDispatcherRefreshRouteImport } from './routes/api/maintenance/dispatcher-refresh'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMaintenanceDispatcherRefreshRoute =
+  ApiMaintenanceDispatcherRefreshRouteImport.update({
+    id: '/api/maintenance/dispatcher-refresh',
+    path: '/api/maintenance/dispatcher-refresh',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/maintenance/dispatcher-refresh'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/maintenance/dispatcher-refresh'
+  id: '__root__' | '/' | '/api/maintenance/dispatcher-refresh'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiMaintenanceDispatcherRefreshRoute: typeof ApiMaintenanceDispatcherRefreshRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +59,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/maintenance/dispatcher-refresh': {
+      id: '/api/maintenance/dispatcher-refresh'
+      path: '/api/maintenance/dispatcher-refresh'
+      fullPath: '/api/maintenance/dispatcher-refresh'
+      preLoaderRoute: typeof ApiMaintenanceDispatcherRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiMaintenanceDispatcherRefreshRoute: ApiMaintenanceDispatcherRefreshRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
