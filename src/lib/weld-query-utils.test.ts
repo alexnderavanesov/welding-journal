@@ -74,8 +74,13 @@ describe('weld query cache updates', () => {
         page: 1,
         pageSize: 100,
         hasMore: false,
+      }, {
+        rows: [{ id: 4, joint: 'S4' }] as WeldRow[],
+        page: 2,
+        pageSize: 100,
+        hasMore: false,
       }],
-      pageParams: [1],
+      pageParams: [1, 2],
     })
 
     invalidateWeldJoints(queryClient, {
@@ -86,6 +91,7 @@ describe('weld query cache updates', () => {
     const page = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)?.pages[0]
     expect(page?.rows.map((row) => [row.id, row.joint])).toEqual([[1, 'S1R1']])
     expect(page?.total).toBe(1)
+    expect(queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)?.pages[1].total).toBeUndefined()
   })
 
   it('marks an unpatched snapshot stale without starting an active refetch', async () => {

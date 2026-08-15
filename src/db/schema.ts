@@ -230,19 +230,25 @@ export const welderStampSuspensions = pgTable('welder_stamp_suspensions', {
 export type WelderStampSuspension = typeof welderStampSuspensions.$inferSelect
 export type NewWelderStampSuspension = typeof welderStampSuspensions.$inferInsert
 
-export const duplicateControls = pgTable('duplicate_controls', {
-  id: serial('id').primaryKey(),
-  weldJointId: integer('weld_joint_id')
-    .notNull()
-    .references(() => weldJoints.id, { onDelete: 'cascade' }),
-  method: text('method').notNull(),
-  result: text('result').notNull(),
-  controlDate: date('control_date'),
-  conclusion: text('conclusion'),
-  conclusionDate: date('conclusion_date'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+export const duplicateControls = pgTable(
+  'duplicate_controls',
+  {
+    id: serial('id').primaryKey(),
+    weldJointId: integer('weld_joint_id')
+      .notNull()
+      .references(() => weldJoints.id, { onDelete: 'cascade' }),
+    method: text('method').notNull(),
+    result: text('result').notNull(),
+    controlDate: date('control_date'),
+    conclusion: text('conclusion'),
+    conclusionDate: date('conclusion_date'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('duplicate_controls_weld_joint_id_id_idx').on(table.weldJointId, table.id),
+  ],
+)
 
 export type DuplicateControl = typeof duplicateControls.$inferSelect
 export type NewDuplicateControl = typeof duplicateControls.$inferInsert

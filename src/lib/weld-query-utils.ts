@@ -73,7 +73,13 @@ export function updateLoadedWeldPages(queryClient: QueryClient, change: WeldCach
         })
         return rows === page.rows
           ? page
-          : { ...page, rows, total: Math.max(0, page.total - removedCount) }
+          : {
+              ...page,
+              rows,
+              ...(page.total === undefined
+                ? {}
+                : { total: Math.max(0, page.total - removedCount) }),
+            }
       })
       return changed ? { ...current, pages } : current
     },

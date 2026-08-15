@@ -10,6 +10,7 @@ import {
   compactWeldRowsForTransport,
   getWeldImportSecurityScope,
   getProfileTimestampUpdates,
+  getReportContextSelect,
   mergeDuplicateControlsIntoRows,
   normalizeWeldPageRequest,
   normalizeWeldImportScopeRequest,
@@ -157,6 +158,24 @@ describe('weld server pagination helpers', () => {
       afterId: 0,
       batchSize: 1000,
     })
+  })
+
+  it('keeps report-context dependencies while excluding unrelated wide fields', () => {
+    expect(Object.keys(getReportContextSelect('lnk'))).toEqual(expect.arrayContaining([
+      'pstoResult',
+      'rkExposureConfirmedDiameter',
+      'rkBoq',
+    ]))
+    expect(getReportContextSelect('lnk')).not.toHaveProperty('materialCertificateNumber1')
+    expect(getReportContextSelect('lnk')).not.toHaveProperty('testTypes')
+
+    expect(Object.keys(getReportContextSelect('heatTreatment'))).toEqual(expect.arrayContaining([
+      'pstoBoq',
+      'rkResult',
+      'rkConclusion',
+    ]))
+    expect(getReportContextSelect('heatTreatment')).not.toHaveProperty('rkBoq')
+    expect(getReportContextSelect('heatTreatment')).not.toHaveProperty('weldingElectrodesCertificateNumber')
   })
 
   it('normalizes document generation scope without duplicate or empty values', () => {
