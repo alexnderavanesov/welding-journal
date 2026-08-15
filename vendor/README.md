@@ -22,5 +22,5 @@ of the SheetJS CDN. Verify both the version and checksum before replacing it.
 
 The upstream project has not published a fixed package yet. Keep this build only
 until an official release containing fixes for GHSA-w3rx-r6r6-pgpr and
-GHSA-5p2g-fcmc-qvqq is available. The application does not call this package
-directly; Netlify tooling brings it in transitively.
+GHSA-5p2g-fcmc-qvqq is available. Regression tests import this package directly
+to verify that malformed image metadata is rejected safely.

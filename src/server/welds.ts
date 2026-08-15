@@ -26,7 +26,15 @@ import {
   restoreActivePstoCancelledResult,
   withPendingPstoResultStatus,
 } from '@/lib/psto-field-updates'
-import { LNK_GENERATED_FIELD_KEYS, LNK_METHODS, LNK_REPORT_FIELD_KEYS } from '@/lib/report-config'
+import {
+  HEAT_TREATMENT_EDITABLE_FIELD_KEYS,
+  HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+  LNK_GENERATED_FIELD_KEYS,
+  LNK_HIDDEN_FIELD_KEYS,
+  LNK_METHODS,
+  LNK_REPORT_FIELD_KEYS,
+  PSTO_SECTION_FIELD_KEYS,
+} from '@/lib/report-config'
 import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
 import { hasHeatTreatmentReportState, hasLnkReportEntry, withPendingLnkResults } from '@/lib/report-control-state'
 import { hasWeldDate, isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
@@ -164,7 +172,7 @@ export function getWeldImportSecurityScope(_action: WeldImportSecurityAction) {
 
 export type WeldPageResult = {
   rows: WeldRow[]
-  total: number
+  total?: number
   acceptedWdiTotal?: number
   availableRequestCount?: number
   page: number
@@ -281,6 +289,8 @@ const controlColumns = {
   СТЛС: weldJoints.hasStls,
   МКК: weldJoints.hasMkk,
 } as const
+const ENABLED_CONTROL_REPORT_VALUES = ['да', 'Да', 'дополнительный', LEGACY_CONTROL_REPLACEMENT_VALUE] as const
+const CONTROL_REPORT_VALUES = [...ENABLED_CONTROL_REPORT_VALUES, 'отменен'] as const
 const SYSTEM_FIELD_KEYS = new Set([
   'id',
   'dispatcherTasks',
@@ -351,6 +361,22 @@ const WELDING_JOURNAL_ORDER_BY = [
 const WELD_TABLE_COLUMNS = getTableColumns(weldJoints)
 const { updatedAt: OMITTED_UPDATED_AT_COLUMN, ...WELD_TABLE_SELECT } = WELD_TABLE_COLUMNS
 void OMITTED_UPDATED_AT_COLUMN
+const LNK_REPORT_CONTEXT_REQUIRED_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...LNK_REPORT_FIELD_KEYS,
+  ...PSTO_SECTION_FIELD_KEYS,
+  'rkExposureConfirmedDiameter',
+])
+const HEAT_TREATMENT_CONTEXT_REQUIRED_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...HEAT_TREATMENT_EDITABLE_FIELD_KEYS,
+  ...LNK_METHODS.flatMap((method) => [
+    method.enabledKey,
+    method.requestKey,
+    method.requestDateKey,
+    method.resultKey,
+    method.conclusionDateKey,
+    method.conclusionKey,
+  ]),
+])
 const WELD_BATCH_PROFILE_TIMESTAMP_KEYS = [
   'weldingUpdatedAt',
   'pstoCreatedAt',
@@ -561,12 +587,12 @@ export const listWeldReportContextRows = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<WeldRow[]> => {
     await assertSecurityScope('entry')
     const rows = await requireDb()
-      .select()
+      .select(getReportContextSelect(data.report))
       .from(weldJoints)
       .where(buildReportKindWhere(data.report))
       .orderBy(...getReportOrderBy(data.report))
     const reportRows = applyCurrentSystemWdi(
-      buildServerReportRows(rows, data.report),
+      buildServerReportRows(rows as unknown as WeldJoint[], data.report),
       await loadServerOtherSettings(),
     )
     return compactWeldRowsForTransport(await attachDuplicateControlsToPage(reportRows))
@@ -601,7 +627,7 @@ export const listWeldFinalStatusContextKeys = createServerFn({ method: 'GET' })
         )`,
       })
       .from(weldJoints)
-      .where(buildColumnTextEqualsWhere(weldJoints.status, 'неофициальный'))
+      .where(eq(weldJoints.status, 'неофициальный'))
     const context = buildFinalStatusRowsContext(
       rows.map(({ rejectedDuplicateMethod, ...row }) => rejectedDuplicateMethod
         ? {
@@ -910,9 +936,11 @@ function sortUsageAggregateRows(rows: UsageAggregateRow[]): Array<[string, numbe
 }
 
 async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>) {
-  await ensureDispatcherTaskIndexFresh()
   const db = requireDb()
-  const otherSettings = await loadServerOtherSettings()
+  const [, otherSettings] = await Promise.all([
+    ensureDispatcherTaskIndexFresh(),
+    loadServerOtherSettings(),
+  ])
   const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
   const sourceFilterData = hasCurrentSystemWdiFilter
     ? { ...data, columnFilters: getColumnFilterOptionFilters(data.columnFilters, 'wdi') }
@@ -925,35 +953,43 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
         .from(weldJoints)
         .where(where)
         .orderBy(...getReportOrderBy(report))
-      const countQuery = db.select({ total: count() }).from(weldJoints).where(where)
+      const shouldCount = data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
+      const countQuery = shouldCount
+        ? db.select({ total: count() }).from(weldJoints).where(where)
+        : Promise.resolve([])
       const availableRequestCountQuery = data.page === 1 && report === 'lnk'
         ? countAvailableLnkRequestRows(where)
         : Promise.resolve(undefined)
+      const fetchExtraRow = data.page > 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
       const rowsQuery =
         data.pageSize === WELD_PAGE_ALL_SIZE
           ? query
-          : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
-      const [[{ total }], availableRequestCount, rows] = await Promise.all([
+          : query.limit(data.pageSize + (fetchExtraRow ? 1 : 0)).offset((data.page - 1) * data.pageSize)
+      const [[countRow], availableRequestCount, fetchedRows] = await Promise.all([
         countQuery,
         availableRequestCountQuery,
         rowsQuery,
       ])
+      const rows = fetchExtraRow ? fetchedRows.slice(0, data.pageSize as number) : fetchedRows
+      const total = data.pageSize === WELD_PAGE_ALL_SIZE
+        ? rows.length
+        : countRow
+          ? Number(countRow.total) || 0
+          : undefined
       const reportRows = applyCurrentSystemWdi(buildServerReportRows(rows, report), otherSettings)
-      const rowsWithDuplicateControls = compactWeldRowsForTransport(
-        await attachDispatcherTaskCodesToPage(
-          await attachGeneratedDocumentFields(
-            await attachDuplicateControlsToPage(reportRows),
-          ),
-        ),
+      const rowsWithMetadata = compactWeldRowsForTransport(
+        await attachReportPageMetadata(reportRows),
       )
 
       return {
-        rows: rowsWithDuplicateControls,
-        total,
+        rows: rowsWithMetadata,
+        ...(total === undefined ? {} : { total }),
         availableRequestCount,
         page: data.page,
         pageSize: data.pageSize,
-        hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
+        hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && (
+          total === undefined ? fetchedRows.length > data.pageSize : data.page * data.pageSize < total
+        ),
       }
     }
 
@@ -966,12 +1002,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       data.pageSize === WELD_PAGE_ALL_SIZE
         ? filteredIds
         : filteredIds.slice((data.page - 1) * data.pageSize, data.page * data.pageSize)
-    const rows = applyCurrentSystemWdi(
-      await attachDispatcherTaskCodesToPage(
-        await getFullReportRowsByIds(pageIds, report),
-      ),
-      otherSettings,
-    )
+    const rows = applyCurrentSystemWdi(await getFullReportRowsByIds(pageIds, report), otherSettings)
 
     return {
       rows,
@@ -1004,11 +1035,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
       0,
     )
     const rows = compactWeldRowsForTransport(
-      await attachDispatcherTaskCodesToPage(
-        await attachGeneratedDocumentFields(
-          await attachDuplicateControlsToPage(pageRows),
-        ),
-      ),
+      await attachReportPageMetadata(pageRows),
     )
     return {
       rows,
@@ -1027,7 +1054,10 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     .where(where)
     .orderBy(...WELDING_JOURNAL_ORDER_BY)
 
-  const countQuery = db.select({ total: count() }).from(weldJoints).where(where)
+  const shouldCount = data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
+  const countQuery = shouldCount
+    ? db.select({ total: count() }).from(weldJoints).where(where)
+    : Promise.resolve([])
   const acceptedWdiRowsQuery = data.page === 1
     ? db
         .select({
@@ -1042,34 +1072,39 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
         .where(
           and(
             where,
-            sql`lower(trim(coalesce(${weldJoints.finalStatus}, ''))) = 'годен'`,
+            eq(weldJoints.finalStatus, 'годен'),
           ),
         )
     : Promise.resolve([])
+  const fetchExtraRow = data.page > 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
   const rowsQuery =
     data.pageSize === WELD_PAGE_ALL_SIZE
       ? query
-      : query.limit(data.pageSize).offset((data.page - 1) * data.pageSize)
-  const [[{ total }], acceptedWdiRows, rows] = await Promise.all([countQuery, acceptedWdiRowsQuery, rowsQuery])
+      : query.limit(data.pageSize + (fetchExtraRow ? 1 : 0)).offset((data.page - 1) * data.pageSize)
+  const [[countRow], acceptedWdiRows, fetchedRows] = await Promise.all([countQuery, acceptedWdiRowsQuery, rowsQuery])
+  const rows = fetchExtraRow ? fetchedRows.slice(0, data.pageSize as number) : fetchedRows
+  const total = data.pageSize === WELD_PAGE_ALL_SIZE
+    ? rows.length
+    : countRow
+      ? Number(countRow.total) || 0
+      : undefined
   const acceptedWdiTotal = acceptedWdiRows.reduce(
     (sum, row) => sum + (calculateWdi(row, otherSettings) ?? 0),
     0,
   )
-  const rowsWithDuplicateControls = compactWeldRowsForTransport(
-    await attachDispatcherTaskCodesToPage(
-      await attachGeneratedDocumentFields(
-        await attachDuplicateControlsToPage(applyCurrentSystemWdi(rows, otherSettings)),
-      ),
-    ),
+  const rowsWithMetadata = compactWeldRowsForTransport(
+    await attachReportPageMetadata(applyCurrentSystemWdi(rows, otherSettings)),
   )
 
   return {
-    rows: rowsWithDuplicateControls,
-    total,
+    rows: rowsWithMetadata,
+    ...(total === undefined ? {} : { total }),
     acceptedWdiTotal,
     page: data.page,
     pageSize: data.pageSize,
-    hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
+    hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && (
+      total === undefined ? fetchedRows.length > data.pageSize : data.page * data.pageSize < total
+    ),
   }
 }
 
@@ -1187,6 +1222,20 @@ async function attachDispatcherTaskCodesToPage<Row extends { id: number }>(
   const activeTaskRows = result.rows.filter((row) => row.source === 'active')
   const backgroundTaskRows = result.rows.filter((row) => row.source === 'background')
   return mergeDispatcherTaskCodesIntoRows(rows, activeTaskRows, backgroundTaskRows)
+}
+
+async function attachReportPageMetadata<Row extends DuplicateControlCarrier>(rows: Row[]) {
+  const [rowsWithDuplicateControls, rowsWithGeneratedDocuments, rowsWithDispatcherTasks] = await Promise.all([
+    attachDuplicateControlsToPage(rows),
+    attachGeneratedDocumentFields(rows),
+    attachDispatcherTaskCodesToPage(rows),
+  ])
+  return rows.map((row, index) => ({
+    ...row,
+    ...rowsWithDuplicateControls[index],
+    ...rowsWithGeneratedDocuments[index],
+    ...rowsWithDispatcherTasks[index],
+  }))
 }
 
 type DispatcherTaskCodeRow = { rowId: number; code: string }
@@ -1327,7 +1376,7 @@ async function getFullReportRowsByIds(ids: number[], report: Exclude<WeldReportK
       (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER),
   )
   return compactWeldRowsForTransport(
-    await attachGeneratedDocumentFields(await attachDuplicateControlsToPage(reportRows)),
+    await attachReportPageMetadata(reportRows),
   )
 }
 
@@ -2653,24 +2702,11 @@ function buildReportKindWhere(report: Exclude<WeldReportKind, 'weldingJournal'>)
 }
 
 function buildControlReportValueWhere(column: SQLWrapper) {
-  return (
-    or(
-      buildColumnTextEqualsWhere(column, 'да'),
-      buildColumnTextEqualsWhere(column, 'дополнительный'),
-      buildColumnTextEqualsWhere(column, LEGACY_CONTROL_REPLACEMENT_VALUE),
-      buildColumnTextEqualsWhere(column, 'отменен'),
-    ) ?? sql`false`
-  )
+  return inArray(column, CONTROL_REPORT_VALUES)
 }
 
 function buildEnabledControlValueWhere(column: SQLWrapper) {
-  return (
-    or(
-      buildColumnTextEqualsWhere(column, 'да'),
-      buildColumnTextEqualsWhere(column, 'дополнительный'),
-      buildColumnTextEqualsWhere(column, LEGACY_CONTROL_REPLACEMENT_VALUE),
-    ) ?? sql`false`
-  )
+  return inArray(column, ENABLED_CONTROL_REPORT_VALUES)
 }
 
 function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, string>) {
@@ -2723,6 +2759,17 @@ function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters: Recor
 
 function getWeldColumn(fieldKey: WeldFieldKey) {
   return WELD_TABLE_COLUMNS[fieldKey as keyof typeof WELD_TABLE_COLUMNS]
+}
+
+export function getReportContextSelect(report: WeldReportContextKind) {
+  const hiddenFieldKeys = report === 'lnk' ? LNK_HIDDEN_FIELD_KEYS : HEAT_TREATMENT_HIDDEN_FIELD_KEYS
+  const requiredFieldKeys = report === 'lnk'
+    ? LNK_REPORT_CONTEXT_REQUIRED_FIELD_KEYS
+    : HEAT_TREATMENT_CONTEXT_REQUIRED_FIELD_KEYS
+  return Object.fromEntries(
+    Object.entries(WELD_TABLE_SELECT).filter(([fieldKey]) =>
+      !hiddenFieldKeys.has(fieldKey as WeldFieldKey) || requiredFieldKeys.has(fieldKey as WeldFieldKey)),
+  ) as typeof WELD_TABLE_SELECT
 }
 
 function getWeldColumnFilterExpression(fieldKey: WeldFieldKey) {

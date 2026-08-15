@@ -5,6 +5,7 @@
 ## Стек
 
 - TanStack Start + TypeScript
+- Nitro Node server
 - TanStack Query
 - PostgreSQL 18 через Docker Compose
 - Drizzle ORM
@@ -25,7 +26,7 @@ pnpm dev
 
 Если Docker CLI недоступен, установите Docker Desktop и повторите `pnpm db:up`.
 
-## Локальная и production-база
+## Локальная база
 
 Локальная разработка должна работать только с локальной PostgreSQL из Docker:
 
@@ -35,23 +36,62 @@ DATABASE_URL=postgres://welding:welding@localhost:5432/welding_tracker
 
 Для локальных секретов используйте `.env.local` или `.env`. Эти файлы не коммитятся.
 
-Production на Netlify использует переменную окружения `DATABASE_URL`, заданную в Netlify UI. Обычный запуск приложения и локальные миграции продолжают использовать только `DATABASE_URL`.
+## Развертывание в Coolify
 
-Если production-база требует собственный корневой SSL-сертификат, добавьте в Netlify переменную `DATABASE_SSL_CA` со всем PEM-содержимым сертификата, включая строки `BEGIN CERTIFICATE` и `END CERTIFICATE`. Для Yandex Cloud используйте `https://storage.yandexcloud.net/cloud-certs/CA.pem`. Приложение включает проверку сертификата и при наличии `DATABASE_SSL_CA` само удаляет конфликтующие SSL-параметры из `DATABASE_URL`.
+Создайте приложение из Git-репозитория с build pack `Nixpacks`. `docker-compose.yml` нужен только для локальной PostgreSQL и не используется для production-развертывания приложения.
 
-Для миграции удаленной базы добавьте отдельную переменную в `.env.local` или `.env`:
+Настройки приложения:
+
+- install command: оставьте пустой — он задан в `nixpacks.toml`;
+- build command: `pnpm build`;
+- start command: оставьте пустой — он задан в `nixpacks.toml`;
+- exposed port: `3000`;
+- health check path: `/`;
+- один экземпляр приложения.
+
+`nixpacks.toml` фиксирует совместимую версию Corepack и запуск Node-сервера. Без явной команды запуска Nixpacks может ошибочно запустить проект как статический сайт через Caddy.
+
+Добавьте переменные окружения:
+
+```bash
+NODE_ENV=production
+HOST=0.0.0.0
+PORT=3000
+DATABASE_URL=postgres://user:password@postgres-host:5432/welding_tracker
+DATABASE_POOL_MAX=5
+DOCUMENT_TEMPLATE_STORAGE_PATH=/app/data/document-templates
+MAINTENANCE_TOKEN=replace-with-a-long-random-secret
+```
+
+Создайте persistent volume с destination path `/app/data`. В нем хранятся только исходные Excel-шаблоны документов; записи журнала и метаданные остаются в PostgreSQL. Volume и базу нужно включить в резервное копирование.
+
+Если production-база требует собственный корневой SSL-сертификат, добавьте `DATABASE_SSL_CA` со всем PEM-содержимым сертификата, включая строки `BEGIN CERTIFICATE` и `END CERTIFICATE`. Для Yandex Managed Service for PostgreSQL используйте `https://storage.yandexcloud.net/cloud-certs/CA.pem`. Приложение включает проверку сертификата и при наличии `DATABASE_SSL_CA` само удаляет конфликтующие SSL-параметры из `DATABASE_URL`.
+
+Для ежедневного расчета фоновых кодов диспетчера создайте в Coolify Scheduled Task. Если планировщик работает в UTC, расписание `0 0 * * *` соответствует 03:00 МСК. Команда:
+
+```bash
+pnpm maintenance:dispatcher
+```
+
+Эндпоинт принимает только `POST` с секретом `MAINTENANCE_TOKEN`. Если фоновая проверка выключена в настройках приложения, задача безопасно завершится без расчета.
+
+Перед переходом с Netlify или прежнего локального хранилища заранее скачайте каждый исходный Excel через `Настройки → Шаблоны документов → ⋯ → Скачать исходный шаблон`. После запуска Coolify замените соответствующие шаблоны этими файлами. Записи PostgreSQL не содержат сами Excel-файлы, поэтому одного переноса базы для шаблонов недостаточно.
+
+### Production-миграции
+
+Для миграции удаленной базы задайте отдельную переменную в локальном окружении администратора или временно в терминале Coolify:
 
 ```bash
 DATABASE_URL_REMOTE_FOR_MIGRATIONS=postgres://user:password@remote-host:5432/welding_tracker
 ```
 
-Затем запустите специальную команду:
+Перед открытием новой версии приложения запустите:
 
 ```bash
 pnpm db:remote-migration
 ```
 
-`db:remote-migration` не использует `DATABASE_URL` и завершится с ошибкой, если `DATABASE_URL_REMOTE_FOR_MIGRATIONS` не задана. Не коммитьте настоящую строку подключения удаленной базы.
+`db:remote-migration` не использует `DATABASE_URL` и завершится с ошибкой, если `DATABASE_URL_REMOTE_FOR_MIGRATIONS` не задана. Не добавляйте production-миграции в start command и не коммитьте настоящую строку подключения удаленной базы.
 
 ## Проверка перед публикацией
 
@@ -63,9 +103,4 @@ pnpm verify
 
 Она проверяет TypeScript, весь набор тестов, production-сборку и зависимости. Production-граф должен проходить аудит без исключений.
 
-В полном аудите временно разрешены два предупреждения, относящиеся только к инструментам разработки:
-
-- `GHSA-67mh-4wv8-2f99` — старый внутренний `esbuild` стабильного `drizzle-kit`; он используется CLI миграций и не входит в production-сборку приложения.
-- `GHSA-f88m-g3jw-g9cj` — `sharp` внутри последнего стабильного Netlify Vite plugin; он используется локальной эмуляцией Image CDN и не входит в production-зависимости приложения.
-
-Исключения нужно удалить после появления совместимых стабильных версий Drizzle Kit и Netlify plugin. Принудительная установка несовместимых версий этих внутренних пакетов запрещена.
+В полном аудите временно разрешено одно предупреждение `GHSA-67mh-4wv8-2f99`: оно относится к старому внутреннему `esbuild` стабильного `drizzle-kit`, который используется только CLI миграций и не входит в production-сборку приложения. Исключение нужно удалить после появления совместимой стабильной версии Drizzle Kit.

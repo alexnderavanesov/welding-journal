@@ -1,0 +1,1 @@
+CREATE INDEX "duplicate_controls_weld_joint_id_id_idx" ON "duplicate_controls" USING btree ("weld_joint_id","id");
