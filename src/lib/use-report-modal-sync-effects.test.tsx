@@ -1,10 +1,59 @@
+import { useState } from 'react'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { createDefaultLnkResultDraft, createDefaultPstoResultDraft } from '@/lib/report-draft-state'
 import { useLnkReportModalSyncEffects } from '@/lib/use-lnk-report-modal-sync-effects'
 import { usePstoReportModalSyncEffects } from '@/lib/use-psto-report-modal-sync-effects'
 
 describe('report modal context loading', () => {
+  it('does not loop when an open LNK result receives equivalent context arrays', () => {
+    const { result } = renderHook(() => {
+      const [draft, setDraft] = useState(() => createDefaultLnkResultDraft())
+      useLnkReportModalSyncEffects({
+        availableLnkRequestRows: [],
+        isLnkRowsContextReady: true,
+        isLnkRequestModalOpen: false,
+        isLnkResultManagerOpen: false,
+        isLnkResultModalOpen: true,
+        lnkResultRequestOptions: [],
+        lnkRows: [{ id: 7 }] as WeldRow[],
+        managedLnkResultEntries: [],
+        managedLnkResultMethodKey: '',
+        managedLnkResultMethods: [],
+        setLnkResultDraft: setDraft,
+        setManagedLnkConclusionDrafts: () => undefined,
+        setManagedLnkResultMethodKey: () => undefined,
+        setSelectedLnkIds: () => undefined,
+      })
+      return draft
+    })
+
+    expect(result.current.rowIds.size).toBe(0)
+  })
+
+  it('does not loop when an open PSTO result receives equivalent context arrays', () => {
+    const { result } = renderHook(() => {
+      const [draft, setDraft] = useState(() => createDefaultPstoResultDraft())
+      usePstoReportModalSyncEffects({
+        availablePstoRequestRows: [],
+        heatTreatmentRows: [{ id: 8 }] as WeldRow[],
+        isPstoRowsContextReady: true,
+        isPstoRequestModalOpen: false,
+        isPstoResultManagerOpen: false,
+        isPstoResultModalOpen: true,
+        managedPstoResultRows: [],
+        pstoResultRequestOptions: [],
+        setManagedPstoDiagramDrafts: () => undefined,
+        setPstoResultDraft: setDraft,
+        setSelectedHeatTreatmentIds: () => undefined,
+      })
+      return draft
+    })
+
+    expect(result.current.rowIds.size).toBe(0)
+  })
+
   it('keeps an LNK row selected until the fresh report context is ready', () => {
     const setSelectedLnkIds = vi.fn()
     const { rerender } = renderHook(
@@ -14,7 +63,6 @@ describe('report modal context loading', () => {
         isLnkRequestModalOpen: true,
         isLnkResultManagerOpen: false,
         isLnkResultModalOpen: false,
-        lnkRequestOptions: [],
         lnkResultRequestOptions: [],
         lnkRows: rows,
         managedLnkResultEntries: [],

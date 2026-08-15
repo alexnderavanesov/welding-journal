@@ -1082,6 +1082,50 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
   })
 
+  it('validates either thickness on the final merged row during mass fill', async () => {
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
+    const baseStamp = buildWelderStampRecord('E0SM')
+    const stamp = {
+      ...baseStamp,
+      naksPermits: baseStamp.naksPermits.map((permit) => ({
+        ...permit,
+        thicknessTo: '14',
+      })),
+    }
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'],
+      [[7, 'F1', '09Г2С']],
+    )
+    const preview = await buildReportMassFillPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        stamp1K: 'E0SM',
+        weldingMethod: 'РАД',
+        connectionType: 'С17',
+        materialGroup: 'M01',
+        d1: '57',
+        d2: '57',
+        t1: '14',
+        t2: '16',
+        weldDate: '2026-07-20',
+        material1: null,
+      } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [{ value: 'E0SM' }] },
+      welderStamps: [stamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
+  })
+
   it('respects disabled root-stamp check during import preview', async () => {
     saveDataListSettings({
       ...DEFAULT_DATA_LIST_SETTINGS,
@@ -1162,8 +1206,8 @@ describe('existing rows report import preview', () => {
       materialGroup: 'M01',
       d1: '11',
       d2: '11',
-      t1: '6',
-      t2: '10',
+      t1: '10',
+      t2: '12',
       weldDate: '20.07.2026',
       stamp1K: 'AAAA',
     })
@@ -1190,6 +1234,61 @@ describe('existing rows report import preview', () => {
     expect(blockedPreview.errors[0]?.message).toContain('ДЛС')
     expect(allowedPreview.errors).toEqual([])
     expect(allowedPreview.validRecords).toHaveLength(1)
+  })
+
+  it('allows import when NAKS and DLS cover either thickness of a non-angular joint', async () => {
+    saveDataListSettings({
+      ...DEFAULT_DATA_LIST_SETTINGS,
+      connectionTypes: ['С17'],
+      materialGroups: ['M01'],
+    })
+    saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: true })
+    const baseStamp = buildWelderStampRecord('E0SM')
+    const stamp = {
+      ...baseStamp,
+      naksPermits: baseStamp.naksPermits.map((permit) => ({
+        ...permit,
+        thicknessTo: '14',
+      })),
+      dlsPermits: [
+        {
+          id: 'dls-1',
+          number: 'ДЛС-1',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '1',
+          diameterTo: '1000',
+          thicknessFrom: '1',
+          thicknessTo: '14',
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          note: '',
+        },
+      ],
+    }
+    const file = buildWeldingJournalImportFile({
+      joint: 'S1',
+      weldingMethod: 'РАД',
+      connectionType: 'С17',
+      materialGroup: 'M01',
+      d1: '57',
+      d2: '57',
+      t1: '14',
+      t2: '16',
+      weldDate: '20.07.2026',
+      stamp1K: 'E0SM',
+    })
+
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file,
+      weldFormStampSelectOptions: { stamp1K: [{ value: 'E0SM' }] },
+      welderStamps: [stamp],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
   })
 
   it('combines several matching DLS ranges during import preview', async () => {
@@ -1255,7 +1354,7 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toHaveLength(1)
   })
 
-  it('reports only the unsupported thickness during import preview', async () => {
+  it('reports both alternative thicknesses when NAKS covers neither during import preview', async () => {
     saveDataListSettings({
       ...DEFAULT_DATA_LIST_SETTINGS,
       connectionTypes: ['С17'],
@@ -1277,7 +1376,7 @@ describe('existing rows report import preview', () => {
       d1: '530',
       d2: '38',
       t1: '14',
-      t2: '6',
+      t2: '10',
       weldDate: '26.07.2026',
       stamp1K: '9PC6',
     })
@@ -1291,11 +1390,10 @@ describe('existing rows report import preview', () => {
     })
 
     expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('толщину 14.')
-    expect(preview.errors[0]?.message).not.toContain('толщину 14, 6')
+    expect(preview.errors[0]?.message).toContain('ни на одну из толщин 14, 10')
   })
 
-  it('checks maximum diameter and thickness independently during import preview', async () => {
+  it('accepts either diameter and either thickness independently during import preview', async () => {
     saveDataListSettings({
       ...DEFAULT_DATA_LIST_SETTINGS,
       connectionTypes: ['С18'],

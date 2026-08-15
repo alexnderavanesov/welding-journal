@@ -11,6 +11,7 @@ import { getTableLabel, headerCellClass } from '@/lib/weld-table-utils'
 import { DATE_TIME_WELD_FIELD_KEYS, FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { getStickyWeldTableFieldStyle, isStickyWeldTableField } from '@/lib/weld-table-sticky-columns'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
+import { isModalDialogOpen } from '@/lib/modal-layer'
 import { buildWeldColumnFilterOptionsRequestFilters } from '@/lib/dispatcher-task-row-codes'
 import {
   buildWeldColumnValueFilter,
@@ -482,6 +483,7 @@ function ensureFilterMenuEscapeListener() {
   filterMenuEscapeListenerAttached = true
   window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return
+    if (isModalDialogOpen()) return
     if (isContextActionMenuOpen()) return
     const firstMenu = openFilterMenus[0]
     if (!firstMenu) return

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
+import type { ActiveReport } from '@/lib/home-state'
 import {
   useAutoCollapseNavOnHorizontalScroll,
   useEscapeToClearReportFilters,
@@ -132,7 +133,12 @@ import {
   type SystemDocumentNavigationRequest,
 } from '@/lib/system-document-types'
 
-export function useHomePageController() {
+type UseHomePageControllerOptions = {
+  activeReport?: ActiveReport
+  onActiveReportChange?: (report: ActiveReport) => void
+}
+
+export function useHomePageController(options: UseHomePageControllerOptions = {}) {
   const queryClient = useQueryClient()
   const saveCheckSettings = useSaveCheckSettings()
   const otherSettings = useOtherSettings()
@@ -157,7 +163,7 @@ export function useHomePageController() {
     setHeatTreatmentFilters,
     setLnkFilters,
     setNavCollapsed,
-  } = useReportFilterState()
+  } = useReportFilterState(options)
   const availableSystemDocumentTypes = useSystemDocumentTemplateAvailability({
     enabled: activeReport === 'lnk' || activeReport === 'heatTreatment',
   })
@@ -600,8 +606,6 @@ export function useHomePageController() {
   const {
     selectedHeatTreatmentRows,
     selectedLnkRows,
-    selectedLnkMethodKeys,
-    selectedLnkRequestTargetCount,
     nextPstoRequestName,
     nextLnkRequestName,
     pstoRequestOptions,
@@ -682,7 +686,6 @@ export function useHomePageController() {
     openCreateLnkRequestModal,
     openCreateLnkRequestModalForRow,
     toggleAllLnkRequestRows,
-    toggleLnkRequestMethod,
     toggleLnkRequestRow,
   } = useLnkRequestActions({
     draft: lnkRequestDraft,
@@ -690,9 +693,7 @@ export function useHomePageController() {
     lnkRows,
     naming: lnkRequestNaming,
     nextRequestName: nextLnkRequestName,
-    selectedMethodKeys: selectedLnkMethodKeys,
     selectedRows: selectedLnkRows,
-    selectedTargetCount: selectedLnkRequestTargetCount,
     mutation: lnkRequestMutation,
     setDraft: setLnkRequestDraft,
     setIsOpen: setIsLnkRequestModalOpen,
@@ -1143,7 +1144,6 @@ export function useHomePageController() {
     isPstoRequestModalOpen,
     isPstoResultManagerOpen,
     isPstoResultModalOpen,
-    lnkRequestOptions,
     lnkResultRequestOptions,
     lnkRows,
     managedLnkResultEntries,
@@ -2559,12 +2559,10 @@ export function useHomePageController() {
       nextRequestName: nextLnkRequestName,
       selectedRowsCount: selectedLnkRows.length,
       selectedRows: selectedLnkRows,
-      selectedTargetCount: selectedLnkRequestTargetCount,
       requestNaming: lnkRequestNaming,
       requestDate: lnkRequestDraft.requestDate,
       requestManagerOptions: lnkRequestManagerOptions,
-      selectedMethodKeys: selectedLnkMethodKeys,
-      selectedMethods: lnkRequestDraft.methods,
+      initialSelectedMethods: lnkRequestDraft.methods,
       requestSearch: lnkRequestSearch,
       message,
       lnkRowsCount: lnkRows.length,
@@ -2577,11 +2575,10 @@ export function useHomePageController() {
       onOpenRequestManager: openLnkRequestManager,
       onRequestNamingChange: setLnkRequestNaming,
       onRequestDateChange: (requestDate) => setLnkRequestDraft((current) => ({ ...current, requestDate })),
-      onToggleMethod: toggleLnkRequestMethod,
       onRequestSearchChange: setLnkRequestSearch,
       onToggleAllRows: toggleAllLnkRequestRows,
       onToggleRow: toggleLnkRequestRow,
-      onSubmit: () => runProtectedEdit('создание заявки ЛНК', handleCreateLnkRequest),
+      onSubmit: (methodKeys) => runProtectedEdit('создание заявки ЛНК', () => handleCreateLnkRequest(methodKeys)),
     },
     requestManagerOpen: isLnkRequestManagerOpen,
     requestManager: {
@@ -2729,6 +2726,7 @@ export function useHomePageController() {
   return {
     activeReport,
     activeTitle,
+    freezeReportBackground: isReportModalOpen || Boolean(documentGenerationRequest),
     navCollapsed,
     registerMinWidth,
     stickyLeft,

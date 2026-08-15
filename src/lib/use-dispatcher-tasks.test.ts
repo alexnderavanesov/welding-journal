@@ -432,17 +432,17 @@ describe('buildVisibleDispatcherTasks', () => {
     expect(tasks.repeatedJointTasks).toEqual([])
   })
 
-  it('does not create DZ-18 when maximum diameter and thickness are covered independently', () => {
+  it('does not create DZ-18 when Tmin is covered for equal angular diameters', () => {
     const stamp = stampRecordWithPermit('AAAA', 'M01')
     stamp.naksPermits = [
       {
-        id: 'naks-max-dt',
+        id: 'naks-angular-equal-diameter',
         weldType: 'РАД',
         materialGroups: 'M01',
-        diameterFrom: '100',
-        diameterTo: '150',
-        thicknessFrom: '10',
-        thicknessTo: '15',
+        diameterFrom: '20',
+        diameterTo: '30',
+        thicknessFrom: '2',
+        thicknessTo: '4',
         validFrom: '2026-01-01',
         validTo: '2026-12-31',
         note: '',
@@ -459,14 +459,59 @@ describe('buildVisibleDispatcherTasks', () => {
           row({
             id: 1,
             joint: 'F1A',
-            connectionType: 'С18',
+            connectionType: 'У17',
             materialGroup: 'M01',
             stamp1K: 'AAAA',
             weldingMethod: 'РАД',
-            d1: '99',
-            d2: '105',
-            t1: '10',
-            t2: '12',
+            d1: '25',
+            t1: '3',
+            d2: '25',
+            t2: '30',
+            weldDate: '20.07.2026',
+          }),
+        ],
+        welderStamps: [stamp],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toEqual([])
+  })
+
+  it('does not create DZ-18 when either diameter and either thickness are covered', () => {
+    const stamp = stampRecordWithPermit('AAAA', 'M01')
+    stamp.naksPermits = [
+      {
+        id: 'naks-either-dt',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '50',
+        diameterTo: '60',
+        thicknessFrom: '2',
+        thicknessTo: '14',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      },
+    ]
+
+    const tasks = buildTasks(
+      {
+        ...disabledSettings(),
+        'check-welder-stamp': true,
+      },
+      {
+        rows: [
+          row({
+            id: 1,
+            joint: 'F1A',
+            connectionType: 'С17',
+            materialGroup: 'M01',
+            stamp1K: 'AAAA',
+            weldingMethod: 'РАД',
+            d1: '57',
+            d2: '108',
+            t1: '14',
+            t2: '16',
             weldDate: '20.07.2026',
           }),
         ],

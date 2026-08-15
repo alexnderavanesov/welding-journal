@@ -85,14 +85,37 @@ export function usePstoReportModalSyncEffects({
           .map((row) => row.id),
       )
       const rowIds = new Set([...current.rowIds].filter((id) => availableIds.has(id)))
+      if (
+        requestName === current.requestName &&
+        requestDate === current.requestDate &&
+        areNumberSetsEqual(rowIds, current.rowIds)
+      ) {
+        return current
+      }
       return { ...current, requestName, requestDate, rowIds }
     })
   }, [heatTreatmentRows, isPstoResultModalOpen, isPstoRowsContextReady, pstoResultRequestOptions, setPstoResultDraft])
 
   useEffect(() => {
     if (!isPstoResultManagerOpen || !isPstoRowsContextReady) return
-    setManagedPstoDiagramDrafts(
-      Object.fromEntries(managedPstoResultRows.map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()])),
-    )
+    setManagedPstoDiagramDrafts((current) => {
+      const next = Object.fromEntries(
+        managedPstoResultRows.map((row) => [row.id, String(row.heatTreatmentDiagram ?? '').trim()]),
+      )
+      return areStringRecordsEqual(current, next) ? current : next
+    })
   }, [isPstoResultManagerOpen, isPstoRowsContextReady, managedPstoResultRows, setManagedPstoDiagramDrafts])
+}
+
+function areNumberSetsEqual(left: ReadonlySet<number>, right: ReadonlySet<number>) {
+  return left.size === right.size && [...left].every((value) => right.has(value))
+}
+
+function areStringRecordsEqual(
+  left: Readonly<Record<string | number, string>>,
+  right: Readonly<Record<string | number, string>>,
+) {
+  const leftEntries = Object.entries(left)
+  const rightKeys = Object.keys(right)
+  return leftEntries.length === rightKeys.length && leftEntries.every(([key, value]) => right[key] === value)
 }

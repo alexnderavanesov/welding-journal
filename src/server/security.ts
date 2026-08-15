@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import { getCookie, getRequestIP, setCookie } from '@tanstack/react-start/server'
 import { eq, sql } from 'drizzle-orm'
 
@@ -9,9 +9,13 @@ import type {
   SecurityScope,
   SecuritySettings,
 } from '@/lib/security-settings'
+import {
+  createSecuritySessionToken,
+  getSecuritySessionTtlSeconds,
+  readValidSecuritySession,
+} from '@/server/security-session'
 
 const SECURITY_SETTING_KEY = 'security'
-const SESSION_TTL_SECONDS = 10 * 60
 const SERVER_PASSWORD_PLACEHOLDER = '__server__'
 const AUTH_WINDOW_MS = 5 * 60 * 1_000
 const AUTH_LOCK_MS = 5 * 60 * 1_000
@@ -62,18 +66,7 @@ export async function authenticateSecurityScopeOnServer(data: {
     throw new Error('Пароль не подходит')
   }
   authAttempts.delete(attemptKey)
-  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS
-  setCookie(
-    getSecurityCookieName(validatedData.scope),
-    createSessionToken(validatedData.scope, expiresAt, scopeSettings),
-    {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: SESSION_TTL_SECONDS,
-    },
-  )
+  const expiresAt = setSecuritySessionCookie(validatedData.scope, scopeSettings)
   return { ok: true, enabled: true, expiresAt }
 }
 
@@ -125,9 +118,11 @@ function assertStoredSecurityScope(scope: SecurityScope, settings: StoredSecurit
   const scopeSettings = settings.scopes[scope]
   if (!scopeSettings?.enabled) return
   const token = getCookie(getSecurityCookieName(scope))
-  if (!token || !verifySessionToken(token, scope, scopeSettings)) {
+  const session = token ? readValidSecuritySession(token, scope, scopeSettings) : null
+  if (!session) {
     throw new Error('Требуется подтверждение паролем. Повторите действие и введите пароль.')
   }
+  if (session.shouldRefresh) setSecuritySessionCookie(scope, scopeSettings)
 }
 
 async function loadStoredSecuritySettings(): Promise<StoredSecuritySettings> {
@@ -237,28 +232,21 @@ function trimAuthenticationAttempts() {
   }
 }
 
-function createSessionToken(scope: SecurityScope, expiresAt: number, settings: StoredSecurityScope) {
-  const payload = `${scope}.${expiresAt}.${settings.version}`
-  return `${payload}.${signSessionPayload(payload, settings)}`
-}
-
-function verifySessionToken(token: string, scope: SecurityScope, settings: StoredSecurityScope) {
-  const parts = token.split('.')
-  if (parts.length !== 4) return false
-  const [tokenScope, rawExpiresAt, version, signature] = parts
-  if (tokenScope !== scope || version !== settings.version) return false
-  const expiresAt = Number(rawExpiresAt)
-  if (!Number.isSafeInteger(expiresAt) || expiresAt < Math.floor(Date.now() / 1000)) return false
-  const payload = `${tokenScope}.${rawExpiresAt}.${version}`
-  const expected = Buffer.from(signSessionPayload(payload, settings), 'base64url')
-  const actual = Buffer.from(signature, 'base64url')
-  return expected.length === actual.length && timingSafeEqual(expected, actual)
-}
-
-function signSessionPayload(payload: string, settings: StoredSecurityScope) {
-  return createHmac('sha256', `${settings.passwordHash}:${settings.version}`)
-    .update(payload)
-    .digest('base64url')
+function setSecuritySessionCookie(scope: SecurityScope, settings: StoredSecurityScope) {
+  const ttlSeconds = getSecuritySessionTtlSeconds(scope)
+  const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds
+  setCookie(
+    getSecurityCookieName(scope),
+    createSecuritySessionToken(scope, expiresAt, settings),
+    {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: ttlSeconds,
+    },
+  )
+  return expiresAt
 }
 
 function getSecurityCookieName(scope: SecurityScope) {

@@ -406,6 +406,149 @@ describe('validateServerWeldRecords', () => {
     ).not.toThrow()
   })
 
+  it('accepts either thickness and either diameter during server-side stamp validation', () => {
+    const customContext: ServerWeldValidationContext = {
+      ...context,
+      dataListSettings: {
+        ...DEFAULT_DATA_LIST_SETTINGS,
+        connectionTypes: ['С17'],
+        materialGroups: ['M01'],
+        weldingTypes: ['РАД'],
+      },
+      welderStamps: [{
+        id: 1,
+        naksStamp: 'E0SM',
+        welderName: 'Морозов Яков',
+        internalStamp: '',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '',
+        diameterTo: '',
+        thicknessFrom: '',
+        thicknessTo: '',
+        validFrom: '',
+        validTo: '',
+        naksPermits: [{
+          id: 'naks-either-dt',
+          weldType: 'РАД',
+          materialGroups: 'M01',
+          diameterFrom: '50',
+          diameterTo: '60',
+          thicknessFrom: '2',
+          thicknessTo: '14',
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          note: '',
+        }],
+        dlsPermits: [],
+        archived: false,
+        archivedAt: '',
+      }],
+    }
+    const record = {
+      joint: 'S1',
+      weldDate: '2026-07-15',
+      weldingMethod: 'РАД',
+      connectionType: 'С17',
+      materialGroup: 'M01',
+      d1: 57,
+      d2: 108,
+      t1: 14,
+      t2: 16,
+      stamp1K: 'E0SM',
+    } as WeldInput
+
+    expect(() =>
+      validateServerWeldRecords({
+        records: [record],
+        previousRows: new Map(),
+        context: customContext,
+      }),
+    ).not.toThrow()
+  })
+
+  it('validates only Tmin for equal angular diameters on the server', () => {
+    const welderStamp = {
+      id: 1,
+      naksStamp: 'E0SM',
+      welderName: 'Морозов Яков',
+      internalStamp: '',
+      weldType: 'РАД',
+      materialGroups: 'M01',
+      diameterFrom: '',
+      diameterTo: '',
+      thicknessFrom: '',
+      thicknessTo: '',
+      validFrom: '',
+      validTo: '',
+      naksPermits: [{
+        id: 'naks-angular-equal-diameter',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '20',
+        diameterTo: '30',
+        thicknessFrom: '2',
+        thicknessTo: '4',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      }],
+      dlsPermits: [],
+      archived: false,
+      archivedAt: '',
+    }
+    const customContext: ServerWeldValidationContext = {
+      ...context,
+      dataListSettings: {
+        ...DEFAULT_DATA_LIST_SETTINGS,
+        connectionTypes: ['У17'],
+        materialGroups: ['M01'],
+        weldingTypes: ['РАД'],
+      },
+      welderStamps: [welderStamp],
+    }
+    const record = {
+      joint: 'S2',
+      weldDate: '2026-07-15',
+      weldingMethod: 'РАД',
+      connectionType: 'У17',
+      materialGroup: 'M01',
+      d1: 25,
+      d2: 25,
+      t1: 3,
+      t2: 30,
+      stamp1K: 'E0SM',
+    } as WeldInput
+
+    expect(() =>
+      validateServerWeldRecords({
+        records: [record],
+        previousRows: new Map(),
+        context: customContext,
+      }),
+    ).not.toThrow()
+
+    const incompatibleContext = {
+      ...customContext,
+      welderStamps: [{
+        ...welderStamp,
+        naksPermits: welderStamp.naksPermits.map((permit) => ({
+          ...permit,
+          thicknessFrom: '20',
+          thicknessTo: '40',
+        })),
+      }],
+    }
+
+    expect(() =>
+      validateServerWeldRecords({
+        records: [record],
+        previousRows: new Map(),
+        context: incompatibleContext,
+      }),
+    ).toThrow('ЗВ-08')
+  })
+
   it('blocks a result-only change that introduces a forbidden small-diameter repair', () => {
     const previous = {
       id: 17,

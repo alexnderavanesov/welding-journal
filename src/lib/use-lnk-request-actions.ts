@@ -2,6 +2,7 @@ import type { UseLnkRequestActionsOptions } from '@/lib/lnk-report-action-types'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import { createDefaultLnkRequestDraft } from '@/lib/report-draft-state'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
+import { countLnkRequestTargets } from '@/lib/report-modal-rows'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -13,9 +14,7 @@ export function useLnkRequestActions({
   lnkRows,
   naming,
   nextRequestName,
-  selectedMethodKeys,
   selectedRows,
-  selectedTargetCount,
   mutation,
   defaultNaming,
   setDraft,
@@ -26,9 +25,8 @@ export function useLnkRequestActions({
   setSearch,
   setSelectedIds,
 }: UseLnkRequestActionsOptions) {
-  function handleCreateLnkRequest() {
+  function handleCreateLnkRequest(methodKeys: WeldFieldKey[]) {
     setMessage(null)
-    const methodKeys = selectedMethodKeys
     if (selectedRows.length === 0) {
       setMessage('Выберите один или несколько стыков для заявки ЛНК')
       return
@@ -37,7 +35,7 @@ export function useLnkRequestActions({
       setMessage('Выберите один или несколько видов контроля для заявки ЛНК')
       return
     }
-    if (selectedTargetCount === 0) {
+    if (countLnkRequestTargets(selectedRows, methodKeys) === 0) {
       setMessage('Нет доступных комбинаций стыков и видов контроля для заявки ЛНК')
       return
     }
@@ -93,18 +91,6 @@ export function useLnkRequestActions({
     setIsOpen(false)
   }
 
-  function toggleLnkRequestMethod(requestKey: WeldFieldKey) {
-    setDraft((current) => {
-      const methods = new Set(current.methods)
-      if (methods.has(requestKey)) {
-        methods.delete(requestKey)
-      } else {
-        methods.add(requestKey)
-      }
-      return { ...current, methods }
-    })
-  }
-
   function toggleLnkRequestRow(rowId: number) {
     setSelectedIds((current) => toggleNumberSetValue(current, rowId))
   }
@@ -119,7 +105,6 @@ export function useLnkRequestActions({
     openCreateLnkRequestModal,
     openCreateLnkRequestModalForRow,
     toggleAllLnkRequestRows,
-    toggleLnkRequestMethod,
     toggleLnkRequestRow,
   }
 }

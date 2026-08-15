@@ -23,6 +23,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
+import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import {
@@ -134,6 +135,7 @@ import {
   type SaveCheckSettingId,
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
+import { SAVE_CHECK_SETTING_HELP } from '@/lib/save-check-settings-help'
 import {
   getDispatcherSettingIdsForSaveCheck,
   getSaveCheckSettingIdsForDispatcher,
@@ -165,8 +167,8 @@ import {
   DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   invalidateWeldJoints,
+  invalidateWeldPageQueries,
   WELD_DATA_USAGE_QUERY_KEY,
-  WELD_JOINT_PAGES_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import {
   getDispatcherBackgroundStatus,
@@ -1891,7 +1893,9 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const [activeTemplateId, setActiveTemplateId] = useState<DocumentTemplateId>('weldingJournal')
   const [uploads, setUploads] = useState<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>({})
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [templateLoadError, setTemplateLoadError] = useState<string | null>(null)
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true)
+  const [templateLoadAttempt, setTemplateLoadAttempt] = useState(0)
   const [builderTemplate, setBuilderTemplate] = useState<StoredDocumentTemplate | null>(null)
   const [nextDocumentNumber, setNextDocumentNumber] = useState<number | null>(null)
   const [isResettingDocumentNumber, setIsResettingDocumentNumber] = useState(false)
@@ -1912,12 +1916,16 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
 
   useEffect(() => {
     let isMounted = true
+    setIsLoadingTemplates(true)
+    setTemplateLoadError(null)
     loadDocumentTemplates()
       .then((storedTemplates) => {
         if (isMounted) setUploads(storedTemplates)
       })
       .catch((error) => {
-        if (isMounted) setUploadError(error instanceof Error ? error.message : 'Не удалось загрузить сохраненные шаблоны.')
+        if (isMounted) {
+          setTemplateLoadError(error instanceof Error ? error.message : 'Не удалось загрузить сохраненные шаблоны.')
+        }
       })
       .finally(() => {
         if (isMounted) setIsLoadingTemplates(false)
@@ -1925,7 +1933,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [templateLoadAttempt])
 
   useEffect(() => {
     if (!isGeneratedDocumentType(activeTemplateId) && !isSystemDocumentTemplateId(activeTemplateId)) {
@@ -2192,6 +2200,11 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
         ) : null}
       </div>
 
+      <DocumentTemplateLoadBoundary
+        isLoading={isLoadingTemplates}
+        error={templateLoadError}
+        onRetry={() => setTemplateLoadAttempt((current) => current + 1)}
+      >
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
         <div className="rounded-md border border-slate-300 bg-white p-2 shadow-sm shadow-slate-200/60">
           {DOCUMENT_TEMPLATE_TYPES.map((templateType) => {
@@ -2420,7 +2433,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 <button
                   type="button"
                   onClick={() => void handleDocumentSequenceReset()}
-                  disabled={isResettingDocumentNumber}
+                  disabled={isResettingDocumentNumber || nextDocumentNumber === null}
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   <Hash className="h-4 w-4" />
@@ -2437,9 +2450,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
               />
             ) : null}
 
-            {isLoadingTemplates ? (
-              <div className="p-4 text-sm text-slate-500">Загружаю сохраненные шаблоны...</div>
-            ) : activeUpload ? (
+            {activeUpload ? (
               <TemplateUploadPreview upload={activeUpload} />
             ) : (
               <EmptyTemplateState />
@@ -2447,6 +2458,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           </div>
         </div>
       </div>
+      </DocumentTemplateLoadBoundary>
       {builderTemplate ? (
         <DocumentTemplateBuilder
           template={builderTemplate}
@@ -3307,7 +3319,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+        invalidateWeldPageQueries(queryClient),
       ])
     },
   })
@@ -3317,7 +3329,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+        invalidateWeldPageQueries(queryClient),
       ])
     },
   })
@@ -3367,7 +3379,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
     <div className="space-y-6">
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Bell className="h-5 w-5 text-slate-500" />
               <h3 className="text-base font-semibold text-slate-900">Диспетчер задач и напоминаний</h3>
@@ -3380,7 +3392,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
               Активно: {totalCount - disabledCount} из {totalCount}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2 sm:flex-nowrap">
             <button
               type="button"
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
@@ -3402,7 +3414,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="space-y-5">
         {DISPATCHER_SETTING_GROUPS.map((group) => (
           <DispatcherSettingsGroupCard
             key={group.id}
@@ -3604,6 +3616,7 @@ function DispatcherSettingsGroupCard({
 }) {
   const enabledCount = group.items.filter((item) => settings[item.id]).length
   const allEnabled = enabledCount === group.items.length
+  const [collapsed, setCollapsed] = useState(false)
   const [expandedItemIds, setExpandedItemIds] = useState<Set<DispatcherSettingId>>(() => new Set())
 
   const toggleDetails = (id: DispatcherSettingId) => {
@@ -3617,23 +3630,33 @@ function DispatcherSettingsGroupCard({
 
   return (
     <div className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        <div>
-          <h4 className="text-sm font-semibold text-slate-900">{group.title}</h4>
-          <p className="mt-1 text-xs leading-5 text-slate-500">{group.description}</p>
-          <div className="mt-1 text-xs font-semibold text-slate-500">
-            Включено: {enabledCount} из {group.items.length}
-          </div>
-        </div>
+      <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3 hover:bg-slate-50">
         <button
           type="button"
-          className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          className="flex min-w-0 flex-1 items-start justify-between gap-4 text-left"
+          onClick={() => setCollapsed((current) => !current)}
+          aria-expanded={!collapsed}
+        >
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-slate-900">{group.title}</span>
+              <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                {enabledCount}/{group.items.length}
+              </span>
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-slate-500">{group.description}</span>
+          </span>
+          <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition ${collapsed ? '' : 'rotate-180'}`} />
+        </button>
+        <button
+          type="button"
+          className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
           onClick={() => onGroupChange(!allEnabled)}
         >
-          {allEnabled ? 'Отключить группу' : 'Включить группу'}
+          {allEnabled ? 'Отключить все' : 'Включить все'}
         </button>
       </div>
-      <div className="divide-y divide-slate-100">
+      {!collapsed ? <div className="divide-y divide-slate-100">
         {group.items.map((item) => {
           const enabled = settings[item.id]
           const expanded = expandedItemIds.has(item.id)
@@ -3642,8 +3665,8 @@ function DispatcherSettingsGroupCard({
           const isReminder = isDispatcherReminderSettingId(item.id)
           const linkedSaveCheckIds = getSaveCheckSettingIdsForDispatcher(item.id)
           return (
-            <div key={item.id} className="px-4 py-3 hover:bg-slate-50">
-              <div className="flex items-start gap-3">
+            <div key={item.id} className={`px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                 <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
                   <input
                     type="checkbox"
@@ -3652,81 +3675,94 @@ function DispatcherSettingsGroupCard({
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-400'}`}>{item.label}</span>
-                      <span className="inline-flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-500'}`}>{item.label}</span>
+                      <span className="inline-flex shrink-0 items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">
                         {getDispatcherSettingCode(item.id)}
                       </span>
+                    </span>
+                    <span className={`mt-1 block text-sm leading-5 ${enabled ? 'text-slate-600' : 'text-slate-400'}`}>{item.description}</span>
+                    <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                      <span className={`inline-flex items-center gap-1.5 font-semibold ${enabled ? 'text-emerald-700' : 'text-slate-400'}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                        {enabled ? 'Включена' : 'Выключена'}
+                      </span>
                       {linkedSaveCheckIds.length > 0 ? (
-                        <span
-                          className="inline-flex shrink-0 items-center rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700"
-                          title="Связанные проверки при сохранении"
-                        >
-                          связанные ЗВ: {formatLinkedSaveCheckCodes(linkedSaveCheckIds)}
+                        <span className={enabled ? 'text-violet-700' : 'text-slate-400'}>
+                          Связанные проверки: {formatLinkedSaveCheckCodes(linkedSaveCheckIds)}
                         </span>
                       ) : null}
                     </span>
-                    <span className={`mt-1 block text-xs leading-5 ${enabled ? 'text-slate-500' : 'text-slate-400'}`}>{item.description}</span>
                   </span>
                 </label>
                 <button
                   type="button"
-                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  className="ml-7 inline-flex h-8 w-28 shrink-0 items-center justify-center gap-1 self-start rounded-md border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 sm:ml-0"
                   onClick={() => toggleDetails(item.id)}
                   aria-expanded={expanded}
+                  aria-controls={`dispatcher-setting-help-${item.id}`}
                 >
-                  Подробнее
+                  {expanded ? 'Свернуть' : 'Подробнее'}
                   <ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />
                 </button>
               </div>
               {isReminder ? (
-                <div className="mt-3 ml-7 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                  <span>Показывать за</span>
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 sm:ml-7">
+                  <span className="font-semibold text-slate-700">Срок напоминания</span>
+                  <span>за</span>
                   <DispatcherReminderDaysInput
                     id={item.id as DispatcherReminderSettingId}
                     value={reminderSettings[item.id as DispatcherReminderSettingId]}
                     onSave={onReminderDaysChange}
                   />
-                  <span>дней до окончания, минимум {MIN_DISPATCHER_REMINDER_DAYS}</span>
+                  <span>дней до окончания, минимум {MIN_DISPATCHER_REMINDER_DAYS} дней</span>
                 </div>
               ) : null}
               {expanded ? (
-                <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600">
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold text-slate-600">
-                      Код в настройках: {getDispatcherSettingCode(item.id)}
-                    </span>
-                    <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold text-slate-600">
-                      Тип задачи в диспетчере: {getDispatcherSettingTaskTypeLabel(item.id)}
-                    </span>
+                <dl
+                  id={`dispatcher-setting-help-${item.id}`}
+                  className="mt-4 rounded-r-md border-y border-l-2 border-sky-200 border-l-sky-400 bg-sky-50/70 px-4 py-3 text-sm leading-6 text-slate-600 sm:ml-7"
+                >
+                  <div className="grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                    <dt className="font-semibold text-slate-800">Тип задачи</dt>
+                    <dd>{getDispatcherSettingTaskTypeLabel(item.id)}</dd>
                   </div>
-                  <div>
-                    <span className="font-semibold text-slate-800">Смысл: </span>
-                    {help.meaning}
+                  <div className="mt-3 grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                    <dt className="font-semibold text-slate-800">Смысл</dt>
+                    <dd>{help.meaning}</dd>
                   </div>
-                  <div className="mt-1">
-                    <span className="font-semibold text-slate-800">Кейс: </span>
-                    {help.example}
+                  <div className="mt-3 grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                    <dt className="font-semibold text-slate-800">Кейс</dt>
+                    <dd>{help.example}</dd>
                   </div>
                   {actionHelp.length ? (
-                    <div className="mt-3 rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                      <div className="font-semibold text-slate-800">Кнопки в задаче:</div>
-                      <div className="mt-2 space-y-1.5">
+                    <div className="mt-3 grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                      <dt className="font-semibold text-slate-800">Действия</dt>
+                      <dd className="space-y-1">
                         {actionHelp.map((action) => (
                           <div key={action.label}>
                             <span className="font-semibold text-slate-700">{action.label}: </span>
                             {action.description}
                           </div>
                         ))}
-                      </div>
+                      </dd>
                     </div>
                   ) : null}
-                </div>
+                  <div className="mt-3 grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                    <dt className="font-semibold text-slate-800">Если выключить</dt>
+                    <dd>
+                      Этот тип задач перестанет показываться в диспетчере и счетчике. Данные журнала и принятые исключения не изменятся.
+                      {linkedSaveCheckIds.length > 0
+                        ? ` Связанные проверки ${formatLinkedSaveCheckCodes(linkedSaveCheckIds)} продолжат независимо блокировать некорректное сохранение, пока они включены.`
+                        : ''}
+                    </dd>
+                  </div>
+                </dl>
               ) : null}
             </div>
           )
         })}
-      </div>
+      </div> : null}
     </div>
   )
 }
@@ -3778,6 +3814,7 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
   const settings = useSaveCheckSettings()
   const confirmAction = useConfirmAction()
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set())
+  const [expandedItemIds, setExpandedItemIds] = useState<Set<SaveCheckSettingId>>(() => new Set())
   const enabledCount = Object.values(settings).filter(Boolean).length
   const totalCount = Object.values(settings).length
 
@@ -3845,24 +3882,34 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
     })
   }
 
+  function toggleDetails(id: SaveCheckSettingId) {
+    setExpandedItemIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-slate-500" />
               <h3 className="text-base font-semibold text-slate-900">Проверки при сохранении</h3>
             </div>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Эти правила работают в форме создания и редактирования стыка. Если включенная проверка не проходит, система не даст сохранить
-              стык. Диспетчер задач настраивается отдельно и только показывает подсказки по уже существующим данным.
+              Эти правила блокируют некорректное сохранение в форме стыка, результатах ЛНК/ПСТО и соответствующих массовых операциях. Импорт,
+              замена и массовое заполнение проверяют итоговую запись после объединения новых и сохраненных данных. Диспетчер настраивается
+              отдельно и независимо проверяет уже существующие строки.
             </p>
             <div className="mt-2 text-xs font-semibold text-slate-500">
               Включено: {enabledCount} из {totalCount}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2 sm:flex-nowrap">
             <button
               type="button"
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
@@ -3935,57 +3982,86 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
               </div>
             </div>
             {!collapsed ? (
-              <div className="space-y-3 p-4">
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {group.items.map((item) => {
-                    const enabled = settings[item.id]
-                    const linkedDispatcherIds = getDispatcherSettingIdsForSaveCheck(item.id)
-                    return (
-                      <label
-                        key={item.id}
-                        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 transition-colors ${
-                          enabled ? 'border-sky-200 bg-sky-50/70 hover:bg-sky-50' : 'border-slate-200 bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          onChange={(event) => {
-                            void updateSetting(item.id, event.currentTarget.checked)
-                          }}
-                          className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold text-slate-900">{item.label}</span>
-                            <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                              {getSaveCheckSettingCode(item.id)}
-                            </span>
-                            {linkedDispatcherIds.length > 0 ? (
-                              <span
-                                className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700"
-                                title="Связанные задачи диспетчера"
-                              >
-                                связанные ДЗ: {linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')}
+              <div className="divide-y divide-slate-100">
+                {group.items.map((item) => {
+                  const enabled = settings[item.id]
+                  const expanded = expandedItemIds.has(item.id)
+                  const help = SAVE_CHECK_SETTING_HELP[item.id]
+                  const linkedDispatcherIds = getDispatcherSettingIdsForSaveCheck(item.id)
+                  return (
+                    <div
+                      key={item.id}
+                      className={`px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                        <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            onChange={(event) => {
+                              void updateSetting(item.id, event.currentTarget.checked)
+                            }}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className={`text-sm font-semibold ${enabled ? 'text-slate-900' : 'text-slate-500'}`}>{item.label}</span>
+                              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                                {getSaveCheckSettingCode(item.id)}
                               </span>
-                            ) : null}
-                            <span
-                              className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
-                                enabled ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'
-                              }`}
-                            >
-                              {enabled ? 'блокирует сохранение' : 'не блокирует'}
+                            </span>
+                            <span className={`mt-1 block text-sm leading-5 ${enabled ? 'text-slate-600' : 'text-slate-400'}`}>{item.description}</span>
+                            <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                              <span className={`inline-flex items-center gap-1.5 font-semibold ${enabled ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                {enabled ? 'Включена' : 'Выключена'}
+                              </span>
+                              {linkedDispatcherIds.length > 0 ? (
+                                <span className={enabled ? 'text-violet-700' : 'text-slate-400'}>
+                                  Связанные задачи: {linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')}
+                                </span>
+                              ) : null}
                             </span>
                           </span>
-                          <span className="mt-1 block text-sm leading-5 text-slate-500">{item.description}</span>
-                          <span className="mt-2 block rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-500">
-                            {item.example}
-                          </span>
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
+                        </label>
+                        <button
+                          type="button"
+                          className="ml-7 inline-flex h-8 w-28 shrink-0 items-center justify-center gap-1 self-start rounded-md border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 sm:ml-0"
+                          onClick={() => toggleDetails(item.id)}
+                          aria-expanded={expanded}
+                          aria-controls={`save-check-help-${item.id}`}
+                        >
+                          {expanded ? 'Свернуть' : 'Подробнее'}
+                          <ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      </div>
+                      {expanded ? (
+                        <dl
+                          id={`save-check-help-${item.id}`}
+                          className="mt-4 rounded-r-md border-y border-l-2 border-sky-200 border-l-sky-400 bg-sky-50/70 px-4 py-3 text-sm leading-6 text-slate-600 sm:ml-7"
+                        >
+                          <div className="grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                            <dt className="font-semibold text-slate-800">Смысл</dt>
+                            <dd>{help.meaning}</dd>
+                          </div>
+                          <div className="mt-3 grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                            <dt className="font-semibold text-slate-800">Кейс</dt>
+                            <dd>{help.example}</dd>
+                          </div>
+                          <div className="mt-3 grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+                            <dt className="font-semibold text-slate-800">Если выключить</dt>
+                            <dd>
+                              Эта причина перестанет блокировать сохранение в тех операциях, где применяется ЗВ.
+                              {linkedDispatcherIds.length > 0
+                                ? ` Связанные задачи ${linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')} продолжат независимо проверять уже сохраненные данные, пока они включены в диспетчере.`
+                                : ' Автоматические системные расчеты и остальные включенные проверки продолжат работать.'}
+                            </dd>
+                          </div>
+                        </dl>
+                      ) : null}
+                    </div>
+                  )
+                })}
               </div>
             ) : null}
           </section>

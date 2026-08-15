@@ -354,7 +354,7 @@ describe('welder stamp select options', () => {
     ).toBeNull()
   })
 
-  it('reports only the joint diameter that is not covered by NAKS', () => {
+  it('allows a non-angular joint when NAKS covers either joint diameter', () => {
     const activeStamp = stampRecord('ABC1', false, 'РАД')
     const row = {
       [officialStampField]: 'ABC1',
@@ -364,13 +364,25 @@ describe('welder stamp select options', () => {
       weldDate: '15.07.2026',
     } as WeldInput
 
-    const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])
-
-    expect(blockReason).toContain('диаметр 1500.')
-    expect(blockReason).not.toContain('диаметр 1500, 57')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])).toBeNull()
   })
 
-  it('checks the greatest diameter and thickness for a non-angular connection', () => {
+  it('reports every alternative diameter when NAKS covers neither of them', () => {
+    const activeStamp = stampRecord('ABC1', false, 'РАД')
+    const row = {
+      [officialStampField]: 'ABC1',
+      weldingMethod: 'РАД',
+      d1: '1500',
+      d2: '1600',
+      weldDate: '15.07.2026',
+    } as WeldInput
+
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])).toContain(
+      'ни на один из диаметров 1500, 1600',
+    )
+  })
+
+  it('accepts a non-angular connection when one diameter and both thicknesses are covered', () => {
     const activeStamp = stampRecord('ABC1', false, 'РАД')
     activeStamp.naksPermits = activeStamp.naksPermits.map((permit) => ({
       ...permit,
@@ -394,7 +406,7 @@ describe('welder stamp select options', () => {
     expect(getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])).toBeNull()
   })
 
-  it('selects the greatest diameter and thickness independently for a non-angular connection', () => {
+  it('accepts different covered diameter and thickness alternatives for a non-angular connection', () => {
     const activeStamp = stampRecord('ABC1', false, 'РАД')
     activeStamp.naksPermits = activeStamp.naksPermits.map((permit) => ({
       ...permit,
@@ -489,6 +501,60 @@ describe('welder stamp select options', () => {
     expect(getOfficialStampCompatibilitySaveBlockReason(row, [rootStamp, fillStamp])).toBeNull()
   })
 
+  it('allows each team welder to cover either D and either T with own NAKS and DLS', () => {
+    const rootStamp = stampRecord('AAAA', false, 'РАД')
+    rootStamp.naksPermits = rootStamp.naksPermits.map((permit) => ({
+      ...permit,
+      materialGroups: 'M01',
+      diameterFrom: '50',
+      diameterTo: '60',
+      thicknessFrom: '2',
+      thicknessTo: '14',
+    }))
+    rootStamp.dlsPermits = rootStamp.naksPermits.map((permit) => ({
+      ...permit,
+      id: 'dls-root',
+      number: 'ДЛС-1',
+    }))
+
+    const fillStamp = stampRecord('BBBB', false, 'РД')
+    fillStamp.naksPermits = fillStamp.naksPermits.map((permit) => ({
+      ...permit,
+      materialGroups: 'M01',
+      diameterFrom: '100',
+      diameterTo: '120',
+      thicknessFrom: '16',
+      thicknessTo: '20',
+    }))
+    fillStamp.dlsPermits = fillStamp.naksPermits.map((permit) => ({
+      ...permit,
+      id: 'dls-fill',
+      number: 'ДЛС-2',
+    }))
+
+    const row = {
+      stamp1K: 'AAAA',
+      stamp1Z: 'BBBB',
+      weldingMethod: 'РАД+РД',
+      materialGroup: 'M01',
+      connectionType: 'С17',
+      d1: '57',
+      d2: '108',
+      t1: '14',
+      t2: '16',
+      weldDate: '15.07.2026',
+    } as WeldInput
+
+    expect(
+      getOfficialStampCompatibilitySaveBlockReason(row, [rootStamp, fillStamp], {
+        saveCheckSettings: {
+          ...DEFAULT_SAVE_CHECK_SETTINGS,
+          officialDls: true,
+        },
+      }),
+    ).toBeNull()
+  })
+
   it('keeps a single official welder strict for every selected welding method', () => {
     const rootStamp = stampRecord('AAAA', false, 'РАД')
     const row = {
@@ -531,7 +597,7 @@ describe('welder stamp select options', () => {
     expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp])).toBeNull()
     expect(
       getOfficialStampCompatibilitySaveBlockReason({ ...row, connectionType: 'С17' }, [stamp]),
-    ).toContain('диаметр 530.')
+    ).toBeNull()
   })
 
   it('does not detach the thickness from the smaller material of an angular connection', () => {
@@ -560,7 +626,7 @@ describe('welder stamp select options', () => {
     expect(blockReason).toContain('толщину 30')
   })
 
-  it('checks both thicknesses when angular connection diameters are equal', () => {
+  it('checks only Tmin when angular connection diameters are equal', () => {
     const stamp = stampRecord('AAAA', false, 'РАД')
     stamp.naksPermits = stamp.naksPermits.map((permit) => ({
       ...permit,
@@ -581,7 +647,61 @@ describe('welder stamp select options', () => {
       weldDate: '15.07.2026',
     } as WeldInput
 
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp])).toContain('толщину 30.')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp])).toBeNull()
+
+    stamp.naksPermits = stamp.naksPermits.map((permit) => ({
+      ...permit,
+      thicknessFrom: '20',
+      thicknessTo: '40',
+    }))
+
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp])).toContain('толщину 3.')
+  })
+
+  it('applies equal-angular-diameter Tmin to DLS checks', () => {
+    const stamp = stampRecord('AAAA', false, 'РАД')
+    stamp.dlsPermits = [
+      {
+        id: 'dls-angular-equal-diameter',
+        number: 'ДЛС-1',
+        weldType: 'РАД',
+        materialGroups: 'M01',
+        diameterFrom: '20',
+        diameterTo: '30',
+        thicknessFrom: '2',
+        thicknessTo: '4',
+        validFrom: '2026-01-01',
+        validTo: '2026-12-31',
+        note: '',
+      },
+    ]
+    const row = {
+      stamp1K: 'AAAA',
+      weldingMethod: 'РАД',
+      materialGroup: 'M01',
+      connectionType: 'У17',
+      d1: '25',
+      t1: '3',
+      d2: '25',
+      t2: '30',
+      weldDate: '15.07.2026',
+    } as WeldInput
+    const saveCheckSettings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      officialDls: true,
+    }
+
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp], { saveCheckSettings })).toBeNull()
+
+    stamp.dlsPermits = stamp.dlsPermits.map((permit) => ({
+      ...permit,
+      thicknessFrom: '20',
+      thicknessTo: '40',
+    }))
+
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp], { saveCheckSettings })).toContain(
+      'ДЛС на толщину 3',
+    )
   })
 
   it('applies the smaller angular material rule to DLS checks', () => {
@@ -607,9 +727,9 @@ describe('welder stamp select options', () => {
       materialGroup: 'M01',
       connectionType: 'У17',
       d1: '530',
-      t1: '30',
+      t1: '3',
       d2: '25',
-      t2: '3',
+      t2: '30',
       weldDate: '15.07.2026',
     } as WeldInput
     const saveCheckSettings = {
@@ -617,14 +737,16 @@ describe('welder stamp select options', () => {
       officialDls: true,
     }
 
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp], { saveCheckSettings })).toBeNull()
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp], { saveCheckSettings })).toContain(
+      'ДЛС на толщину 30',
+    )
     expect(
       getOfficialStampCompatibilitySaveBlockReason(
         { ...row, connectionType: 'С17' },
         [stamp],
         { saveCheckSettings },
       ),
-    ).toContain('ДЛС')
+    ).toBeNull()
   })
 
   it('checks a repeated official stamp as one welder', () => {
@@ -1127,7 +1249,7 @@ describe('welder stamp select options', () => {
     expect(blockReason).toContain('группу материалов M01')
   })
 
-  it('reports only the joint thickness that is not covered by NAKS', () => {
+  it('allows a non-angular joint when NAKS covers either joint thickness', () => {
     const activeStamp = {
       ...stampRecord('AAAA', false, 'РАД'),
       naksPermits: stampRecord('AAAA', false, 'РАД').naksPermits.map((permit) => ({ ...permit, thicknessFrom: '2', thicknessTo: '8' })),
@@ -1143,19 +1265,16 @@ describe('welder stamp select options', () => {
       weldDate: '15.07.2026',
     } as WeldInput
 
-    const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])
-
-    expect(blockReason).toContain('толщину 10.')
-    expect(blockReason).not.toContain('толщину 6, 10')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])).toBeNull()
   })
 
-  it('reports only the greatest joint thickness for a non-angular connection', () => {
+  it('reports every alternative thickness when NAKS covers neither of them', () => {
     const activeStamp = {
       ...stampRecord('AAAA', false, 'РАД'),
       naksPermits: stampRecord('AAAA', false, 'РАД').naksPermits.map((permit) => ({
         ...permit,
         thicknessFrom: '2',
-        thicknessTo: '8',
+        thicknessTo: '12',
       })),
     }
     const row = {
@@ -1165,14 +1284,13 @@ describe('welder stamp select options', () => {
       d1: '11',
       d2: '11',
       t1: '14',
-      t2: '10',
+      t2: '16',
       weldDate: '15.07.2026',
     } as WeldInput
 
     const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])
 
-    expect(blockReason).toContain('толщину 14.')
-    expect(blockReason).not.toContain('толщину 14, 10.')
+    expect(blockReason).toContain('ни на одну из толщин 14, 16')
   })
 
   it('allows disabling official thickness compatibility in save checks', () => {
@@ -1186,12 +1304,12 @@ describe('welder stamp select options', () => {
       materialGroup: 'M01',
       d1: '11',
       d2: '11',
-      t1: '6',
-      t2: '10',
+      t1: '10',
+      t2: '14',
       weldDate: '15.07.2026',
     } as WeldInput
 
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])).toContain('толщину')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])).toContain('толщин')
     expect(
       getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp], {
         saveCheckSettings: {
@@ -1233,16 +1351,15 @@ describe('welder stamp select options', () => {
       materialGroup: 'M01',
       d1: '11',
       d2: '11',
-      t1: '6',
-      t2: '10',
+      t1: '10',
+      t2: '12',
       weldDate: '15.07.2026',
     } as WeldInput
 
     const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp])
 
     expect(blockReason).toContain('ДЛС')
-    expect(blockReason).toContain('толщину 10.')
-    expect(blockReason).not.toContain('толщину 6, 10')
+    expect(blockReason).toContain('ни на одну из толщин 10, 12')
   })
 
   it('combines matching NAKS and DLS ranges of the same official stamp', () => {
@@ -1350,8 +1467,8 @@ describe('welder stamp select options', () => {
       materialGroup: 'M01',
       d1: '11',
       d2: '11',
-      t1: '6',
-      t2: '10',
+      t1: '10',
+      t2: '12',
       weldDate: '15.07.2026',
     } as WeldInput
 

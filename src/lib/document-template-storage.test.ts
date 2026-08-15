@@ -792,6 +792,78 @@ describe('document template storage', () => {
     ])
   })
 
+  it('converts legacy first-record group cells into unique group summaries', () => {
+    const normalized = normalizeDocumentTemplateConstructorConfig({
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      repeatMode: 'groups',
+      repeatGroupBy: 'line',
+      bindings: [
+        { cell: 'A2', mode: 'row', parts: [{ field: '__index' }] },
+        { cell: 'B2', mode: 'row', parts: [{ field: 'line' }] },
+      ],
+    })
+
+    expect(normalized.bindings).toEqual([
+      {
+        cell: 'A2',
+        mode: 'summary',
+        parts: [{ field: '__groupIndex', compareField: undefined }],
+        uniqueParts: undefined,
+        uniqueValues: true,
+        scope: 'group',
+        field: undefined,
+      },
+      {
+        cell: 'B2',
+        mode: 'summary',
+        parts: [{ field: 'line', compareField: undefined }],
+        uniqueParts: undefined,
+        uniqueValues: true,
+        scope: 'group',
+        field: undefined,
+      },
+    ])
+  })
+
+  it('numbers group blocks, lists distinct values, and keeps one group value numeric in Excel', async () => {
+    const template = createXlsxTemplate([['№', 'Линия', 'Стыки', 'WDI', 'T1']])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 1,
+      repeatMode: 'groups',
+      repeatGroupBy: 'line',
+      bindings: [
+        { cell: 'A1', mode: 'row', parts: [{ field: '__index' }] },
+        { cell: 'B1', mode: 'row', parts: [{ field: 'line' }] },
+        { cell: 'C1', mode: 'summary', scope: 'group', parts: [{ field: 'joint' }] },
+        { cell: 'D1', mode: 'summary', scope: 'group', parts: [{ field: 'wdi' }] },
+        { cell: 'E1', mode: 'summary', scope: 'group', parts: [{ field: 't1' }] },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { projectTitle: 'Проект 1', subtitleCode: '100', line: 'Линия А', joint: 'S1', wdi: 12, t1: 3 },
+      { projectTitle: 'Проект 1', subtitleCode: '100', line: 'Линия А', joint: 'S2', wdi: 14, t1: 3 },
+      { projectTitle: 'Проект 1', subtitleCode: '100', line: 'Линия Б', joint: 'S3', wdi: 7.5, t1: 2.5 },
+    ])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.A1?.v).toBe(1)
+    expect(worksheet.A2?.v).toBe(2)
+    expect(worksheet.B1?.v).toBe('Линия А')
+    expect(worksheet.C1?.v).toBe('S1, S2')
+    expect(worksheet.D1?.v).toBe('12, 14')
+    expect(worksheet.D1?.t).toBe('s')
+    expect(worksheet.D2?.v).toBe(7.5)
+    expect(worksheet.D2?.t).toBe('n')
+    expect(worksheet.E1?.v).toBe(3)
+    expect(worksheet.E1?.t).toBe('n')
+  })
+
   it('keeps the previous welding journal name for templates without a custom name rule', () => {
     expect(
       buildDocumentTemplateName({
@@ -1108,6 +1180,70 @@ describe('document template storage', () => {
       'A2:A3', 'B2:B3', 'C2:C3',
       'A4:A5', 'B4:B5', 'C4:C5',
     ]))
+  })
+
+  it('moves a document summary and template content below the repeated block', async () => {
+    const template = createXlsxTemplate(
+      [
+        ['Стыки', ''],
+        ['', ''],
+        ['', ''],
+        ['Подпись', 'Постоянный текст'],
+      ],
+      { merges: ['A3:B3'] },
+    )
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        { cell: 'A2', mode: 'row', field: 'joint' },
+        {
+          cell: 'A3',
+          mode: 'summary',
+          uniqueValues: true,
+          parts: [{ field: 'line' }],
+        },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      { joint: 'S1', line: 'LIN-1' },
+      { joint: 'S2', line: 'LIN-2' },
+    ])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array', cellStyles: true })
+    const worksheet = workbook.Sheets.Шаблон
+    const merges = (worksheet['!merges'] ?? []).map((merge) => XLSX.utils.encode_range(merge))
+
+    expect(worksheet.A2?.v).toBe('S1')
+    expect(worksheet.A3?.v).toBe('S2')
+    expect(worksheet.A4?.v).toBe('LIN-1, LIN-2')
+    expect(worksheet.A5?.v).toBe('Подпись')
+    expect(worksheet.B5?.v).toBe('Постоянный текст')
+    expect(merges).toContain('A4:B4')
+  })
+
+  it('rejects a merged document summary that crosses into the repeated block', async () => {
+    const template = createXlsxTemplate(
+      [
+        ['', ''],
+        ['', ''],
+      ],
+      { merges: ['A1:A2'] },
+    )
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        { cell: 'A1', mode: 'summary', parts: [{ field: 'line' }] },
+        { cell: 'B2', mode: 'row', field: 'joint' },
+      ],
+    }
+
+    await expect(
+      createWeldingJournalBlobFromTemplate(template, [{ joint: 'S1', line: 'LIN-1' }]),
+    ).rejects.toThrow('Сводное поле A1 должно находиться вне повторяемого блока строк.')
   })
 
   it('extends the anchor border across a merged summary cell when Excel omits styled child cells', async () => {

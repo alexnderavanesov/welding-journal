@@ -42,7 +42,9 @@ describe('weld query cache updates', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: WELD_COMPLETE_SNAPSHOT_QUERY_KEY }),
     )
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_JOINT_PAGES_QUERY_KEY })
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+    )
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: STATISTICS_SERVER_QUERY_KEY })

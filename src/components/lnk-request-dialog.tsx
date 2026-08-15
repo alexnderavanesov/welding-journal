@@ -15,7 +15,7 @@ import { getDateInputValidationReason } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
-import { isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
+import { countLnkRequestTargets, isEveryFilteredLnkRequestRowSelected } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { pinInitiallySelectedRows } from '@/lib/report-row-utils'
 import type { RequestNamingState } from '@/lib/request-naming-state'
@@ -28,12 +28,10 @@ export type LnkRequestDialogProps = {
   nextRequestName: string
   selectedRowsCount: number
   selectedRows: WeldRow[]
-  selectedTargetCount: number
   requestNaming: RequestNamingState
   requestDate: string
   requestManagerOptions: RequestDocumentIdentity[]
-  selectedMethodKeys: readonly WeldFieldKey[]
-  selectedMethods: ReadonlySet<WeldFieldKey>
+  initialSelectedMethods: ReadonlySet<WeldFieldKey>
   requestSearch: string
   message?: string | null
   lnkRowsCount: number
@@ -46,23 +44,20 @@ export type LnkRequestDialogProps = {
   onOpenRequestManager: (requestName?: string, requestDate?: string) => void
   onRequestNamingChange: (value: RequestNamingState) => void
   onRequestDateChange: (value: string) => void
-  onToggleMethod: (methodKey: WeldFieldKey) => void
   onRequestSearchChange: (value: string) => void
   onToggleAllRows: () => void
   onToggleRow: (rowId: number) => void
-  onSubmit: () => void
+  onSubmit: (methodKeys: WeldFieldKey[]) => void
 }
 
 export function LnkRequestDialog({
   nextRequestName,
   selectedRowsCount,
   selectedRows,
-  selectedTargetCount,
   requestNaming,
   requestDate,
   requestManagerOptions,
-  selectedMethodKeys,
-  selectedMethods,
+  initialSelectedMethods,
   requestSearch,
   message,
   lnkRowsCount,
@@ -75,13 +70,18 @@ export function LnkRequestDialog({
   onOpenRequestManager,
   onRequestNamingChange,
   onRequestDateChange,
-  onToggleMethod,
   onRequestSearchChange,
   onToggleAllRows,
   onToggleRow,
   onSubmit,
 }: LnkRequestDialogProps) {
+  const [selectedMethods, setSelectedMethods] = useState(() => new Set(initialSelectedMethods))
   const [initiallySelectedIds] = useState(() => new Set(selectedIds))
+  const selectedMethodKeys = useMemo(() => [...selectedMethods], [selectedMethods])
+  const selectedTargetCount = useMemo(
+    () => countLnkRequestTargets(selectedRows, selectedMethodKeys),
+    [selectedMethodKeys, selectedRows],
+  )
   const hasSearch = requestSearch.trim().length > 0
   const orderedAvailableRows = useMemo(
     () => pinInitiallySelectedRows(filteredAvailableRows, selectedIds, initiallySelectedIds),
@@ -214,7 +214,14 @@ export function LnkRequestDialog({
           <LnkRequestMethods
             selectedMethodKeys={selectedMethodKeys}
             selectedMethods={selectedMethods}
-            onToggleMethod={onToggleMethod}
+            onToggleMethod={(methodKey) => {
+              setSelectedMethods((current) => {
+                const next = new Set(current)
+                if (next.has(methodKey)) next.delete(methodKey)
+                else next.add(methodKey)
+                return next
+              })
+            }}
           />
 
           <RequestRowsPanel
@@ -302,7 +309,7 @@ export function LnkRequestDialog({
         isCreateDisabled={Boolean(createDisabledReason)}
         disabledReason={feedbackMessage}
         onClose={onClose}
-        onSubmit={onSubmit}
+        onSubmit={() => onSubmit(selectedMethodKeys)}
       />
     </LargeDialogShell>
   )

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
@@ -11,7 +12,7 @@ type LnkRequestRowProps = {
   onToggleRow: (rowId: number) => void
 }
 
-export function LnkRequestRow({ row, selected, selectedMethods, onToggleRow }: LnkRequestRowProps) {
+function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow }: LnkRequestRowProps) {
   const availableMethods = getAvailableLnkRequestMethods(row)
   const existingMethods = getLnkRowRequestMethods(row, '')
   const disabled = availableMethods.length === 0
@@ -73,4 +74,14 @@ export function LnkRequestRow({ row, selected, selectedMethods, onToggleRow }: L
       </span>
     </label>
   )
+}
+
+export const LnkRequestRow = memo(LnkRequestRowComponent, (previous, next) => {
+  if (previous.row !== next.row || previous.selected !== next.selected) return false
+  if (!next.selected) return true
+  return areSetsEqual(previous.selectedMethods, next.selectedMethods)
+})
+
+function areSetsEqual(left: ReadonlySet<WeldFieldKey>, right: ReadonlySet<WeldFieldKey>) {
+  return left.size === right.size && [...left].every((value) => right.has(value))
 }

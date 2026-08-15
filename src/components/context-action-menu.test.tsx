@@ -1,9 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 
 describe('ContextActionMenu', () => {
+  afterEach(() => {
+    document.querySelectorAll('[data-modal-dialog="true"]').forEach((node) => node.remove())
+  })
+
   it('opens a document submenu without starting its first action', () => {
     const onClose = vi.fn()
     const onGenerate = vi.fn()
@@ -39,5 +43,27 @@ describe('ContextActionMenu', () => {
 
     expect(onGenerate).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves Escape for an open modal instead of closing the background menu', () => {
+    const onClose = vi.fn()
+    const modal = document.createElement('div')
+    modal.dataset.modalDialog = 'true'
+    document.body.append(modal)
+
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 20,
+          y: 20,
+          items: [{ id: 'edit', label: 'Редактировать', onSelect: vi.fn() }],
+        }}
+        onClose={onClose}
+      />,
+    )
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

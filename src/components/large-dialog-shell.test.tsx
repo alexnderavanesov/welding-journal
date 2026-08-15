@@ -84,6 +84,18 @@ describe('LargeDialogShell', () => {
       behavior: 'auto',
     })
   })
+
+  it('marks the panel as the active modal layer', () => {
+    render(
+      <LargeDialogShell>
+        <div>Диалог</div>
+      </LargeDialogShell>,
+    )
+
+    const dialog = document.querySelector('[data-modal-dialog="true"]')
+    expect(dialog).toHaveAttribute('role', 'dialog')
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+  })
 })
 
 function runNextFrame(frames: Map<number, FrameRequestCallback>) {

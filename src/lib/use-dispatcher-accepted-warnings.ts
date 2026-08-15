@@ -3,7 +3,7 @@ import { acceptDispatcherWarning } from '@/server/dispatcher-warnings'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
 import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
-  WELD_JOINT_PAGES_QUERY_KEY,
+  invalidateWeldPageQueries,
 } from '@/lib/weld-query-utils'
 
 type UseDispatcherAcceptedWarningsInput = {
@@ -21,7 +21,7 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+        invalidateWeldPageQueries(queryClient),
       ])
     },
     onError: (error) => {

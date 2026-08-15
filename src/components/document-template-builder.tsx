@@ -17,10 +17,11 @@ import {
 
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import {
+  convertDocumentTemplateBindingToGroupSummary,
+  convertDocumentTemplateBindingToJointRow,
   createDefaultDocumentTemplateNameConfig,
   readDocumentTemplateWorkbookPreview,
   normalizeDocumentTemplateConstructorConfig,
-  type DocumentTemplateBindingMode,
   type DocumentTemplateCellBinding,
   type DocumentTemplateCellPart,
   type DocumentTemplateConstructorConfig,
@@ -43,6 +44,7 @@ type DocumentTemplateBuilderProps = {
 
 const SPECIAL_FIELDS: Array<{ key: DocumentTemplateFieldKey; label: string; group: string }> = [
   { key: '__index', label: '№ п/п', group: 'Системные поля' },
+  { key: '__groupIndex', label: '№ группы/блока', group: 'Системные поля' },
   { key: '__rkExposureCoordinate', label: 'Снимок/координаты РК', group: 'РК по снимкам' },
   { key: '__rkExposureDescription', label: 'Описание по снимку РК', group: 'РК по снимкам' },
   ...STAMP_NAME_TEMPLATE_FIELDS.map((field) => ({
@@ -71,7 +73,10 @@ type TemplateFieldOption = {
 }
 
 const BASE_FIELD_OPTIONS: TemplateFieldOption[] = [
-  ...SPECIAL_FIELDS.map((field) => ({ ...field, kind: field.key === '__index' ? 'number' as const : 'text' as const })),
+  ...SPECIAL_FIELDS.map((field) => ({
+    ...field,
+    kind: field.key === '__index' || field.key === '__groupIndex' ? 'number' as const : 'text' as const,
+  })),
   ...WELD_FIELDS.filter(
     (field) => !isVirtualWeldField(field) || isGeneratedDocumentFieldKey(field.key),
   ).map((field) => ({
@@ -263,18 +268,9 @@ export function applyDocumentTemplateRepeatTarget(
         return binding.mode === 'summary' ? { ...binding, scope: undefined } : binding
       }
       if (repeatMode === 'rows') {
-        return {
-          ...binding,
-          mode: 'row',
-          uniqueParts: binding.uniqueParts ?? binding.uniqueValues,
-          uniqueValues: undefined,
-          scope: undefined,
-        }
+        return convertDocumentTemplateBindingToJointRow(binding)
       }
-      return {
-        ...binding,
-        scope: binding.mode === 'summary' ? 'group' : undefined,
-      }
+      return convertDocumentTemplateBindingToGroupSummary(binding)
     }),
   }
 }
@@ -304,10 +300,11 @@ export function validateDocumentTemplateBuilderConfig(
     draft.repeatRow &&
     draft.bindings.some((binding) => {
       if (binding.mode === 'row' || binding.scope === 'group') return false
-      return getPreviewCellRowRange(preview, binding.cell).end >= draft.repeatRow!
+      const range = getPreviewCellRowRange(preview, binding.cell)
+      return range.end >= draft.repeatRow! && range.start <= repeatRowEnd!
     })
   ) {
-    return 'Сводные ячейки должны находиться выше повторяемого блока строк.'
+    return 'Сводные ячейки должны находиться вне повторяемого блока строк.'
   }
   if (draft.repeatRow && repeatRowEnd && repeatRowEnd < draft.repeatRow) {
     return 'Конец повторяемого блока не может находиться выше его начала.'
@@ -394,9 +391,10 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     [draft.bindings],
   )
   const fieldGroups = useMemo(() => {
-    const fieldOptions = isSystemTemplate
+    const fieldOptions = (isSystemTemplate
       ? [...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
       : BASE_FIELD_OPTIONS
+    ).filter((field) => field.key !== '__groupIndex' || draft.repeatMode === 'groups')
     const groups = new Map<string, TemplateFieldOption[]>()
     for (const field of fieldOptions) {
       const values = groups.get(field.group) ?? []
@@ -404,7 +402,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       groups.set(field.group, values)
     }
     return Array.from(groups.entries())
-  }, [isSystemTemplate])
+  }, [draft.repeatMode, isSystemTemplate])
   const repeatTarget = getDocumentTemplateRepeatTarget(draft)
   const selectedCellInsideRepeatBlock = selectedCell
     ? isCellInRepeatBlock(draft, preview, selectedCell)
@@ -414,47 +412,35 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     preview,
     selectedCell,
   )
-  const selectedModeOptions = useMemo(() => {
+  const selectedModeInfo = useMemo(() => {
     if (!draft.repeatRow) {
       if (selectedBinding?.mode === 'summary') {
-        return [{
-          value: 'summary' as const,
-          label: 'Сводка документа',
-          description: 'В одну ячейку собираются значения из всех стыков документа.',
-        }]
+        return {
+          label: 'Сводка по всему документу',
+          description: 'Ячейка собирает значения из всех выбранных стыков и заполняется один раз.',
+        }
       }
-      return [{
-        value: 'row' as const,
-        label: 'Данные стыка',
+      return {
+        label: 'Данные отдельного стыка',
         description: 'Строки-пример будут автоматически выбраны по размеру этой ячейки.',
-      }]
+      }
     }
     if (selectedCellInsideRepeatBlock) {
       if (draft.repeatMode === 'groups') {
-        return [
-          {
-            value: 'row' as const,
-            label: 'Одно значение группы',
-            description: 'Например, название линии: система возьмет его из первого стыка текущей группы.',
-          },
-          {
-            value: 'summary' as const,
-            label: 'Список значений группы',
-            description: 'Например, все стыки или Чек-листы только текущей линии.',
-          },
-        ]
+        return {
+          label: 'Данные текущей группы',
+          description: 'Система собирает значения всех стыков текущего проекта, шифра или линии. Одинаковые значения можно оставить один раз.',
+        }
       }
-      return [{
-        value: 'row' as const,
-        label: 'Данные стыка',
+      return {
+        label: 'Данные отдельного стыка',
         description: 'Ячейка заполняется отдельно для каждого выбранного стыка.',
-      }]
+      }
     }
-    return [{
-      value: 'summary' as const,
-      label: 'Сводка документа',
-      description: 'В одну ячейку собираются значения из всех стыков документа.',
-    }]
+    return {
+      label: 'Сводка по всему документу',
+      description: 'Ячейка собирает значения из всех выбранных стыков и заполняется один раз.',
+    }
   }, [draft.repeatMode, draft.repeatRow, selectedBinding?.mode, selectedCellInsideRepeatBlock])
 
   const setRepeatRow = (row: number) => {
@@ -528,7 +514,8 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       const startsRepeatBlock = !current.repeatRow
       const insideRepeatBlock =
         startsRepeatBlock || isCellInRepeatBlock(current, preview, selectedCell)
-      const defaultMode: DocumentTemplateBindingMode = insideRepeatBlock ? 'row' : 'summary'
+      const usesCurrentGroup = current.repeatMode === 'groups' && insideRepeatBlock
+      const defaultMode = usesCurrentGroup ? 'summary' : insideRepeatBlock ? 'row' : 'summary'
       const nextBinding: DocumentTemplateCellBinding = {
         cell: selectedCell,
         mode: existing?.mode ?? defaultMode,
@@ -537,12 +524,11 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
         ...existing,
         ...patch,
       }
-      if (
-        current.repeatMode === 'groups' &&
-        insideRepeatBlock &&
-        nextBinding.mode === 'summary'
-      ) {
+      if (usesCurrentGroup) {
+        nextBinding.mode = 'summary'
         nextBinding.scope = 'group'
+        nextBinding.uniqueParts = undefined
+        nextBinding.uniqueValues ??= true
       } else if (nextBinding.mode === 'summary') {
         nextBinding.scope = undefined
       }
@@ -561,26 +547,6 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       parts,
       field: undefined,
     })
-  }
-
-  const changeSelectedBindingMode = (mode: DocumentTemplateBindingMode) => {
-    if (!selectedBinding) return
-    if (mode === 'row' || mode === 'summary') {
-      const parts = getBindingParts(selectedBinding)
-      const useCurrentGroup =
-        mode === 'summary' &&
-        draft.repeatMode === 'groups' &&
-        isCellInRepeatBlock(draft, preview, selectedCell)
-      updateSelectedBinding({
-        mode,
-        parts,
-        field: undefined,
-        uniqueParts: mode === 'row' ? selectedBinding.uniqueParts : undefined,
-        uniqueValues: mode === 'summary' ? selectedBinding.uniqueValues ?? true : undefined,
-        scope: useCurrentGroup ? 'group' : undefined,
-      })
-      return
-    }
   }
 
   const removeSelectedBinding = () => {
@@ -844,23 +810,10 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
             </div>
           ) : selectedBinding ? (
             <div className="mt-4 space-y-4">
-              <label className="block">
-                <span className="text-xs font-semibold uppercase text-slate-500">Как заполнять</span>
-                <select
-                  value={selectedBinding.mode}
-                  onChange={(event) => changeSelectedBindingMode(event.target.value as DocumentTemplateBindingMode)}
-                  className="mt-1 w-full rounded-md border-slate-300 text-sm"
-                >
-                  {selectedModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs leading-5 text-slate-500">
-                  {selectedModeOptions.find((option) => option.value === selectedBinding.mode)?.description}
-                </span>
-              </label>
+              <div className="border-l-2 border-sky-200 pl-3">
+                <div className="text-sm font-semibold text-slate-800">{selectedModeInfo.label}</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{selectedModeInfo.description}</p>
+              </div>
 
               {selectedBinding.mode === 'row' || selectedBinding.mode === 'summary' ? (
                 <CellPartsEditor
@@ -871,6 +824,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                       : selectedBinding.uniqueValues !== false
                   }
                   mode={selectedBinding.mode}
+                  scope={selectedBinding.scope}
                   fieldGroups={fieldGroups}
                   onChange={updateSelectedParts}
                   onDeduplicateChange={(checked) =>
@@ -1253,6 +1207,7 @@ function CellPartsEditor({
   parts,
   deduplicateValues,
   mode,
+  scope,
   fieldGroups,
   onChange,
   onDeduplicateChange,
@@ -1260,6 +1215,7 @@ function CellPartsEditor({
   parts: DocumentTemplateCellPart[]
   deduplicateValues: boolean
   mode: 'row' | 'summary'
+  scope?: DocumentTemplateCellBinding['scope']
   fieldGroups: Array<[string, TemplateFieldOption[]]>
   onChange: (parts: DocumentTemplateCellPart[]) => void
   onDeduplicateChange: (checked: boolean) => void
@@ -1302,7 +1258,9 @@ function CellPartsEditor({
         <div className="text-xs font-semibold uppercase text-slate-500">Содержимое ячейки</div>
         <p className="mt-1 text-xs leading-5 text-slate-500">
           {mode === 'summary'
-            ? 'Для каждой части система соберет уникальные значения поля по всем выбранным стыкам. Текст до и после выводится только при наличии значений.'
+            ? scope === 'group'
+              ? 'Для каждой части система соберет значения только по стыкам текущей группы. Текст до и после выводится только при наличии значений.'
+              : 'Для каждой части система соберет значения по всем выбранным стыкам документа. Текст до и после выводится только при наличии значений.'
             : 'Части собираются сверху вниз. Текст до и после поля выводится только когда само поле заполнено.'}
         </p>
       </div>
@@ -1504,7 +1462,9 @@ function CellPartsEditor({
         description={
           mode === 'row'
             ? 'Если одно клеймо или ФИО встречается в нескольких частях этой строки, оно будет записано один раз.'
-            : 'Повторяющиеся значения каждого выбранного поля будут записаны в сводку только один раз.'
+            : scope === 'group'
+              ? 'Одинаковые значения стыков текущей группы будут записаны в ячейку только один раз.'
+              : 'Повторяющиеся значения каждого выбранного поля будут записаны в сводку только один раз.'
         }
       />
 

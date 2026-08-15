@@ -28,7 +28,7 @@ import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord
 import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   STATISTICS_SERVER_QUERY_KEY,
-  WELD_JOINT_PAGES_QUERY_KEY,
+  invalidateWeldPageQueries,
 } from '@/lib/weld-query-utils'
 
 type WelderStampRegistryStateInput = {
@@ -86,7 +86,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
       applyRegistrySnapshot(snapshot)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+        invalidateWeldPageQueries(queryClient),
         queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
       ])
     },
@@ -100,7 +100,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
       applyRegistrySnapshot(snapshot)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
+        invalidateWeldPageQueries(queryClient),
       ])
     },
     onError: restoreCurrentRegistrySnapshot,

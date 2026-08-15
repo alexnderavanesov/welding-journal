@@ -83,12 +83,16 @@ export function useLnkResultDerivedState({
     [lnkResultDraft, lnkRows, selectedLnkResultRequestRows],
   )
 
-  const lnkResultMethodRows = getLnkResultMethodRows({
-    lnkRows,
-    selectedRequestRows: selectedLnkResultRequestRows,
-    selectedRows: lnkResultSelectedRows,
-    draft: lnkResultDraft,
-  })
+  const lnkResultMethodRows = useMemo(
+    () =>
+      getLnkResultMethodRows({
+        lnkRows,
+        selectedRequestRows: selectedLnkResultRequestRows,
+        selectedRows: lnkResultSelectedRows,
+        draft: lnkResultDraft,
+      }),
+    [lnkResultDraft.requestName, lnkResultDraft.rowIds.size, lnkResultSelectedRows, lnkRows, selectedLnkResultRequestRows],
+  )
 
   const selectedLnkResultMethods = useMemo(
     () => getSelectedLnkResultMethods(lnkResultMethodRows),

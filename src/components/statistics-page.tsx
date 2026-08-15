@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { DialogHeader } from '@/components/dialog-header'
 import { Input } from '@/components/ui/input'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { isModalDialogOpen } from '@/lib/modal-layer'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { formatDisplayDate } from '@/lib/date-format'
 import { formatJointDiameterLabel } from '@/lib/joint-display'
@@ -844,6 +845,7 @@ function WeldingDynamicsPanel({
   useWindowEscapeKey(
     Boolean(selectedBucket),
     (event) => {
+      if (isModalDialogOpen()) return
       event.preventDefault()
       event.stopPropagation()
       event.stopImmediatePropagation()

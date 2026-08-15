@@ -10,12 +10,71 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppDocumentsRouteImport } from './routes/_app.documents'
+import { Route as AppJournalRouteImport } from './routes/_app.journal'
+import { Route as AppLnkRouteImport } from './routes/_app.lnk'
+import { Route as AppPercentageLinesRouteImport } from './routes/_app.percentage-lines'
+import { Route as AppPstoRouteImport } from './routes/_app.psto'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppStatisticsRouteImport } from './routes/_app.statistics'
+import { Route as AppUserGuideRouteImport } from './routes/_app.user-guide'
+import { Route as AppWelderStampsRouteImport } from './routes/_app.welder-stamps'
 import { Route as ApiMaintenanceDispatcherRefreshRouteImport } from './routes/api/maintenance/dispatcher-refresh'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppDocumentsRoute = AppDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppJournalRoute = AppJournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLnkRoute = AppLnkRouteImport.update({
+  id: '/lnk',
+  path: '/lnk',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPercentageLinesRoute = AppPercentageLinesRouteImport.update({
+  id: '/percentage-lines',
+  path: '/percentage-lines',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPstoRoute = AppPstoRouteImport.update({
+  id: '/psto',
+  path: '/psto',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppStatisticsRoute = AppStatisticsRouteImport.update({
+  id: '/statistics',
+  path: '/statistics',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppUserGuideRoute = AppUserGuideRouteImport.update({
+  id: '/user-guide',
+  path: '/user-guide',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWelderStampsRoute = AppWelderStampsRouteImport.update({
+  id: '/welder-stamps',
+  path: '/welder-stamps',
+  getParentRoute: () => AppRoute,
 } as any)
 const ApiMaintenanceDispatcherRefreshRoute =
   ApiMaintenanceDispatcherRefreshRouteImport.update({
@@ -26,27 +85,91 @@ const ApiMaintenanceDispatcherRefreshRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/documents': typeof AppDocumentsRoute
+  '/journal': typeof AppJournalRoute
+  '/lnk': typeof AppLnkRoute
+  '/percentage-lines': typeof AppPercentageLinesRoute
+  '/psto': typeof AppPstoRoute
+  '/settings': typeof AppSettingsRoute
+  '/statistics': typeof AppStatisticsRoute
+  '/user-guide': typeof AppUserGuideRoute
+  '/welder-stamps': typeof AppWelderStampsRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/documents': typeof AppDocumentsRoute
+  '/journal': typeof AppJournalRoute
+  '/lnk': typeof AppLnkRoute
+  '/percentage-lines': typeof AppPercentageLinesRoute
+  '/psto': typeof AppPstoRoute
+  '/settings': typeof AppSettingsRoute
+  '/statistics': typeof AppStatisticsRoute
+  '/user-guide': typeof AppUserGuideRoute
+  '/welder-stamps': typeof AppWelderStampsRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/_app/documents': typeof AppDocumentsRoute
+  '/_app/journal': typeof AppJournalRoute
+  '/_app/lnk': typeof AppLnkRoute
+  '/_app/percentage-lines': typeof AppPercentageLinesRoute
+  '/_app/psto': typeof AppPstoRoute
+  '/_app/settings': typeof AppSettingsRoute
+  '/_app/statistics': typeof AppStatisticsRoute
+  '/_app/user-guide': typeof AppUserGuideRoute
+  '/_app/welder-stamps': typeof AppWelderStampsRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/maintenance/dispatcher-refresh'
+  fullPaths:
+    | '/'
+    | '/documents'
+    | '/journal'
+    | '/lnk'
+    | '/percentage-lines'
+    | '/psto'
+    | '/settings'
+    | '/statistics'
+    | '/user-guide'
+    | '/welder-stamps'
+    | '/api/maintenance/dispatcher-refresh'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/maintenance/dispatcher-refresh'
-  id: '__root__' | '/' | '/api/maintenance/dispatcher-refresh'
+  to:
+    | '/'
+    | '/documents'
+    | '/journal'
+    | '/lnk'
+    | '/percentage-lines'
+    | '/psto'
+    | '/settings'
+    | '/statistics'
+    | '/user-guide'
+    | '/welder-stamps'
+    | '/api/maintenance/dispatcher-refresh'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/_app/documents'
+    | '/_app/journal'
+    | '/_app/lnk'
+    | '/_app/percentage-lines'
+    | '/_app/psto'
+    | '/_app/settings'
+    | '/_app/statistics'
+    | '/_app/user-guide'
+    | '/_app/welder-stamps'
+    | '/api/maintenance/dispatcher-refresh'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   ApiMaintenanceDispatcherRefreshRoute: typeof ApiMaintenanceDispatcherRefreshRoute
 }
 
@@ -59,6 +182,76 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/documents': {
+      id: '/_app/documents'
+      path: '/documents'
+      fullPath: '/documents'
+      preLoaderRoute: typeof AppDocumentsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/journal': {
+      id: '/_app/journal'
+      path: '/journal'
+      fullPath: '/journal'
+      preLoaderRoute: typeof AppJournalRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/lnk': {
+      id: '/_app/lnk'
+      path: '/lnk'
+      fullPath: '/lnk'
+      preLoaderRoute: typeof AppLnkRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/percentage-lines': {
+      id: '/_app/percentage-lines'
+      path: '/percentage-lines'
+      fullPath: '/percentage-lines'
+      preLoaderRoute: typeof AppPercentageLinesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/psto': {
+      id: '/_app/psto'
+      path: '/psto'
+      fullPath: '/psto'
+      preLoaderRoute: typeof AppPstoRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/statistics': {
+      id: '/_app/statistics'
+      path: '/statistics'
+      fullPath: '/statistics'
+      preLoaderRoute: typeof AppStatisticsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/user-guide': {
+      id: '/_app/user-guide'
+      path: '/user-guide'
+      fullPath: '/user-guide'
+      preLoaderRoute: typeof AppUserGuideRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/welder-stamps': {
+      id: '/_app/welder-stamps'
+      path: '/welder-stamps'
+      fullPath: '/welder-stamps'
+      preLoaderRoute: typeof AppWelderStampsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/maintenance/dispatcher-refresh': {
       id: '/api/maintenance/dispatcher-refresh'
       path: '/api/maintenance/dispatcher-refresh'
@@ -69,8 +262,35 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppRouteChildren {
+  AppDocumentsRoute: typeof AppDocumentsRoute
+  AppJournalRoute: typeof AppJournalRoute
+  AppLnkRoute: typeof AppLnkRoute
+  AppPercentageLinesRoute: typeof AppPercentageLinesRoute
+  AppPstoRoute: typeof AppPstoRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppStatisticsRoute: typeof AppStatisticsRoute
+  AppUserGuideRoute: typeof AppUserGuideRoute
+  AppWelderStampsRoute: typeof AppWelderStampsRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppDocumentsRoute: AppDocumentsRoute,
+  AppJournalRoute: AppJournalRoute,
+  AppLnkRoute: AppLnkRoute,
+  AppPercentageLinesRoute: AppPercentageLinesRoute,
+  AppPstoRoute: AppPstoRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppStatisticsRoute: AppStatisticsRoute,
+  AppUserGuideRoute: AppUserGuideRoute,
+  AppWelderStampsRoute: AppWelderStampsRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   ApiMaintenanceDispatcherRefreshRoute: ApiMaintenanceDispatcherRefreshRoute,
 }
 export const routeTree = rootRouteImport

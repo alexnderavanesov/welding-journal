@@ -106,6 +106,7 @@ export type DocumentTemplateOptions = {
 export type DocumentTemplateFieldKey =
   | keyof WeldInput
   | '__index'
+  | '__groupIndex'
   | '__welderName'
   | `__welderName:${TemplateStampNameFieldKey}`
   | '__systemDocumentTitle'
@@ -210,10 +211,25 @@ export function normalizeDocumentTemplateConstructorConfig(
     config.repeatMode === 'groups' && config.repeatGroupBy === 'joint'
   const repeatMode =
     config.repeatMode === 'groups' && !collapsedJointGrouping ? 'groups' : 'rows'
-  const usesCurrentGroup = (binding: DocumentTemplateCellBinding) => {
-    if (repeatMode !== 'groups' || binding.mode !== 'summary' || !repeatRow || !repeatRowEnd) return false
+  const isInsideRepeatBlock = (binding: DocumentTemplateCellBinding) => {
+    if (!repeatRow || !repeatRowEnd) return false
     const bindingRow = decodeCellReference(binding.cell)?.row ?? 0
     return bindingRow >= repeatRow && bindingRow <= repeatRowEnd
+  }
+  const normalizeBindingForRepeatMode = (binding: DocumentTemplateCellBinding) => {
+    const insideRepeatBlock = isInsideRepeatBlock(binding)
+    if (repeatMode === 'groups' && insideRepeatBlock) {
+      return convertDocumentTemplateBindingToGroupSummary(binding)
+    }
+    if (
+      collapsedJointGrouping &&
+      insideRepeatBlock &&
+      binding.mode === 'summary' &&
+      binding.scope === 'group'
+    ) {
+      return convertDocumentTemplateBindingToJointRow(binding)
+    }
+    return { ...binding, scope: undefined }
   }
   return {
     ...config,
@@ -234,33 +250,10 @@ export function normalizeDocumentTemplateConstructorConfig(
       const { sourceCell: _legacySourceCell, ...bindingWithoutSource } = legacyBinding
       if (legacyBinding.mode === 'count' || legacyBinding.mode === 'sum') return []
       if (legacyBinding.mode !== 'list' && legacyBinding.mode !== 'uniqueList') {
-        let normalizedBinding = bindingWithoutSource as DocumentTemplateCellBinding
-        if (
-          collapsedJointGrouping &&
-          normalizedBinding.mode === 'summary' &&
-          normalizedBinding.scope === 'group' &&
-          repeatRow &&
-          repeatRowEnd
-        ) {
-          const bindingRow = decodeCellReference(normalizedBinding.cell)?.row ?? 0
-          if (bindingRow >= repeatRow && bindingRow <= repeatRowEnd) {
-            normalizedBinding = {
-              ...normalizedBinding,
-              mode: 'row',
-              uniqueParts: normalizedBinding.uniqueParts ?? normalizedBinding.uniqueValues,
-              uniqueValues: undefined,
-              scope: undefined,
-            }
-          }
-        }
-        const groupBinding = usesCurrentGroup(normalizedBinding)
-        return [{
-          ...normalizedBinding,
-          scope: groupBinding ? 'group' : undefined,
-        }]
+        return [normalizeBindingForRepeatMode(bindingWithoutSource as DocumentTemplateCellBinding)]
       }
 
-      return [{
+      const normalizedBinding: DocumentTemplateCellBinding = {
         ...bindingWithoutSource,
         mode: 'summary',
         field: undefined,
@@ -271,8 +264,47 @@ export function normalizeDocumentTemplateConstructorConfig(
             : [],
         uniqueValues: legacyBinding.mode === 'uniqueList' ? true : legacyBinding.uniqueValues ?? false,
         scope: undefined,
-      }]
+      }
+      return [normalizeBindingForRepeatMode(normalizedBinding)]
     }),
+  }
+}
+
+export function convertDocumentTemplateBindingToGroupSummary(
+  binding: DocumentTemplateCellBinding,
+): DocumentTemplateCellBinding {
+  const parts = getConstructorBindingParts(binding).map((part) => ({
+    ...part,
+    field: part.field === '__index' ? '__groupIndex' as const : part.field,
+    compareField: part.compareField === '__index' ? '__groupIndex' as const : part.compareField,
+  }))
+  return {
+    ...binding,
+    mode: 'summary',
+    field: undefined,
+    parts,
+    uniqueParts: undefined,
+    uniqueValues: binding.mode === 'summary' ? binding.uniqueValues ?? true : true,
+    scope: 'group',
+  }
+}
+
+export function convertDocumentTemplateBindingToJointRow(
+  binding: DocumentTemplateCellBinding,
+): DocumentTemplateCellBinding {
+  const parts = getConstructorBindingParts(binding).map((part) => ({
+    ...part,
+    field: part.field === '__groupIndex' ? '__index' as const : part.field,
+    compareField: part.compareField === '__groupIndex' ? '__index' as const : part.compareField,
+  }))
+  return {
+    ...binding,
+    mode: 'row',
+    field: undefined,
+    parts,
+    uniqueParts: binding.uniqueParts ?? binding.uniqueValues,
+    uniqueValues: undefined,
+    scope: undefined,
   }
 }
 
@@ -442,6 +474,7 @@ type TemplateMarkerCell = {
 
 type TemplateSystemField =
   | '__index'
+  | '__groupIndex'
   | '__welderName'
   | `__welderName:${TemplateStampNameFieldKey}`
   | '__systemDocumentTitle'
@@ -460,6 +493,9 @@ const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | TemplateSystemF
   [normalizeTemplateFieldName('№ п/п'), '__index'],
   [normalizeTemplateFieldName('N'), '__index'],
   [normalizeTemplateFieldName('Номер'), '__index'],
+  [normalizeTemplateFieldName('№ группы'), '__groupIndex'],
+  [normalizeTemplateFieldName('№ блока'), '__groupIndex'],
+  [normalizeTemplateFieldName('№ группы/блока'), '__groupIndex'],
   [normalizeTemplateFieldName('ФИО сварщика'), '__welderName'],
   [normalizeTemplateFieldName('Наименование системного документа'), '__systemDocumentTitle'],
   [normalizeTemplateFieldName('Дата системного документа'), '__systemDocumentDate'],
@@ -1784,8 +1820,11 @@ async function createWeldingJournalBlobFromConstructor(
       }
     }
     for (const binding of aggregateBindings) {
-      if (XLSX.utils.decode_cell(binding.cell).r >= repeatRowStartIndex) {
-        throw new Error(`Сводное поле ${binding.cell} должно находиться выше повторяемого блока строк.`)
+      const bindingRange = getWorksheetCellRowRange(worksheet, binding.cell)
+      const intersectsRepeatBlock =
+        bindingRange.end >= repeatRowStartIndex && bindingRange.start <= repeatRowEndIndex
+      if (intersectsRepeatBlock) {
+        throw new Error(`Сводное поле ${binding.cell} должно находиться вне повторяемого блока строк.`)
       }
     }
   }
@@ -1852,7 +1891,7 @@ async function createWeldingJournalBlobFromConstructor(
                 unit.rkExposureLine,
               )
             : binding.mode === 'summary'
-              ? getConstructorAggregateValue(binding, unit.records, context)
+              ? getConstructorAggregateValue(binding, unit.records, context, unit.recordIndex)
               : applyConstructorEmptyValue('', binding)
         writeConstructorCell(worksheet, targetAddress, value)
       }
@@ -2041,25 +2080,50 @@ function getConstructorAggregateValue(
   binding: DocumentTemplateCellBinding,
   records: WeldInput[],
   context: WeldingJournalTemplateContext,
+  groupIndex?: number,
 ) {
   const separator = getConstructorListSeparator(binding)
-  const value = getConstructorBindingParts(binding)
+  const parts = getConstructorBindingParts(binding)
+  let singleNumericValue: number | undefined
+  const value = parts
     .map((part) => {
       const values = records
-        .map((record, recordIndex) => getConstructorPartValue(part, record, recordIndex, context))
-        .map((partValue) => String(partValue ?? '').trim())
-        .filter(Boolean)
+        .map((record, recordIndex) => {
+          const rawValue = getConstructorPartValue(
+            part,
+            record,
+            recordIndex,
+            context,
+            undefined,
+            groupIndex,
+          )
+          return { rawValue, text: String(rawValue ?? '').trim() }
+        })
+        .filter((entry) => Boolean(entry.text))
       const outputValues =
         binding.uniqueValues === false
           ? values
           : Array.from(
-              new Map(values.map((partValue) => [partValue.toLocaleLowerCase('ru'), partValue])).values(),
+              new Map(values.map((entry) => [entry.text.toLocaleLowerCase('ru'), entry])).values(),
             )
       if (!outputValues.length) return ''
-      return `${part.prefix ?? ''}${outputValues.join(separator)}${part.suffix ?? ''}${part.lineBreakAfter ? '\n' : ''}`
+      if (
+        parts.length === 1 &&
+        outputValues.length === 1 &&
+        typeof outputValues[0].rawValue === 'number' &&
+        !part.prefix &&
+        !part.suffix &&
+        !part.lineBreakAfter
+      ) {
+        singleNumericValue = outputValues[0].rawValue
+      }
+      return `${part.prefix ?? ''}${outputValues.map((entry) => entry.text).join(separator)}${part.suffix ?? ''}${part.lineBreakAfter ? '\n' : ''}`
     })
     .join('')
     .replace(/\n+$/, '')
+  if (singleNumericValue !== undefined) {
+    return applyConstructorEmptyValue(singleNumericValue, binding)
+  }
   return applyConstructorEmptyValue(value, binding)
 }
 
@@ -2086,8 +2150,16 @@ function getConstructorPartValue(
   recordIndex: number,
   context: WeldingJournalTemplateContext,
   rkExposureLine?: RkExposureLine,
+  groupIndex?: number,
 ) {
-  const primaryValue = getTemplateFieldValueByKey(part.field, record, recordIndex, context, rkExposureLine)
+  const primaryValue = getTemplateFieldValueByKey(
+    part.field,
+    record,
+    recordIndex,
+    context,
+    rkExposureLine,
+    groupIndex,
+  )
   const hasNumericFormula = Boolean(part.numericOperation || part.multiplier?.trim())
   if (!hasNumericFormula) return primaryValue
 
@@ -2095,7 +2167,14 @@ function getConstructorPartValue(
   if (part.numericOperation) {
     const compareValue = part.compareField
       ? parseConstructorNumericValue(
-          getTemplateFieldValueByKey(part.compareField, record, recordIndex, context, rkExposureLine),
+          getTemplateFieldValueByKey(
+            part.compareField,
+            record,
+            recordIndex,
+            context,
+            rkExposureLine,
+            groupIndex,
+          ),
         )
       : undefined
     const values = [result, compareValue].filter((value): value is number => value !== undefined)
@@ -2235,8 +2314,10 @@ function getTemplateFieldValueByKey(
   recordIndex: number,
   context: WeldingJournalTemplateContext,
   rkExposureLine?: RkExposureLine,
+  groupIndex?: number,
 ) {
   if (mappedKey === '__index') return recordIndex + 1
+  if (mappedKey === '__groupIndex') return (groupIndex ?? recordIndex) + 1
   if (mappedKey === '__welderName') return getWelderNamesForOfficialStamps(record, context.welderStamps ?? [])
   if (mappedKey === '__systemDocumentTitle') return context.systemDocument?.title ?? ''
   if (mappedKey === '__systemDocumentDate') return formatExportDate(context.systemDocument?.date)
@@ -2393,6 +2474,21 @@ function assertRepeatBlockMergesAreContained(
   throw new Error(
     `Объединение ${XLSX.utils.encode_range(crossingMerge)} пересекает границу повторяемого блока. Включите объединение целиком в блок строк.`,
   )
+}
+
+function getWorksheetCellRowRange(worksheet: XLSXTypes.WorkSheet, address: string) {
+  const cell = XLSX.utils.decode_cell(address)
+  const containingMerge = (worksheet['!merges'] ?? []).find(
+    (merge) =>
+      cell.r >= merge.s.r &&
+      cell.r <= merge.e.r &&
+      cell.c >= merge.s.c &&
+      cell.c <= merge.e.c,
+  )
+  return {
+    start: containingMerge?.s.r ?? cell.r,
+    end: containingMerge?.e.r ?? cell.r,
+  }
 }
 
 function snapshotWorksheetRowBlock(

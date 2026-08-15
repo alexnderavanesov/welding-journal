@@ -35,6 +35,7 @@ export function ConfirmActionDialog({
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopPropagation()
+        event.stopImmediatePropagation()
         onClose()
       }
     }

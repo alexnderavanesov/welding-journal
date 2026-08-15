@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import { memo, type ComponentProps } from 'react'
 import { ReportDialogs } from '@/components/report-dialogs'
 import { ReportHeaderActions, type ReportHeaderActionsProps } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
@@ -8,10 +8,12 @@ import { ReportTaskPanels, type ReportTaskPanelsProps } from '@/components/repor
 import { ReportWorkspace } from '@/components/report-workspace'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { useFrozenValue } from '@/lib/use-frozen-value'
 
 type HomePageViewProps = {
   activeReport: ComponentProps<typeof ReportWorkspace>['activeReport']
   activeTitle: string
+  freezeReportBackground: boolean
   navCollapsed: boolean
   registerMinWidth: number
   stickyLeft: number
@@ -47,6 +49,7 @@ type HomePageViewProps = {
 export function HomePageView({
   activeReport,
   activeTitle,
+  freezeReportBackground,
   navCollapsed,
   registerMinWidth,
   stickyLeft,
@@ -78,6 +81,102 @@ export function HomePageView({
   reportImportDialogProps,
   reportRkExposureDialogProps,
 }: HomePageViewProps) {
+  const reportBackgroundProps = useFrozenValue<ReportBackgroundProps>({
+    activeReport,
+    activeTitle,
+    registerMinWidth,
+    stickyLeft,
+    reportHeaderActionsProps,
+    reportSummaryBarProps,
+    reportTaskPanelsProps,
+    welderStamps,
+    welderStampsRegistryProps,
+    weldTableProps,
+    onAssignPercentageLineMissingControls,
+    onCancelPercentageLineMissingControls,
+    onOpenPercentageLineStampRows,
+    onOpenWeldRowIds,
+    onOpenDocumentRows,
+    systemDocumentNavigationRequest,
+    onSystemDocumentNavigationRequestHandled,
+  }, freezeReportBackground)
+
+  return (
+    <ReportWorkspace
+      activeReport={activeReport}
+      navCollapsed={navCollapsed}
+      registerMinWidth={registerMinWidth}
+      onNavCollapsedChange={onNavCollapsedChange}
+      onReportChange={onReportChange}
+    >
+      <MemoizedReportBackground {...reportBackgroundProps} />
+
+      <ReportDialogs
+        chainDialogProps={reportChainDialogProps}
+        weldEditorProps={reportWeldEditorProps}
+        pstoDialogsProps={reportPstoDialogsProps}
+        lnkDialogsProps={reportLnkDialogsProps}
+        fieldEditorProps={reportFieldEditorProps}
+        importDialogProps={reportImportDialogProps}
+        rkExposureDialogProps={reportRkExposureDialogProps}
+        generationDialogProps={
+          documentGenerationRequest
+            ? {
+                request: documentGenerationRequest,
+                contextRows: statisticsRows,
+                contextLoading: documentGenerationContextLoading,
+                onClose: () => onDocumentGenerationRequestHandled(documentGenerationRequest.id),
+                onGenerated: onDocumentGenerated,
+              }
+            : null
+        }
+      />
+    </ReportWorkspace>
+  )
+}
+
+type ReportBackgroundProps = Pick<
+  HomePageViewProps,
+  | 'activeReport'
+  | 'activeTitle'
+  | 'registerMinWidth'
+  | 'stickyLeft'
+  | 'reportHeaderActionsProps'
+  | 'reportSummaryBarProps'
+  | 'reportTaskPanelsProps'
+  | 'welderStamps'
+  | 'welderStampsRegistryProps'
+  | 'weldTableProps'
+  | 'onAssignPercentageLineMissingControls'
+  | 'onCancelPercentageLineMissingControls'
+  | 'onOpenPercentageLineStampRows'
+  | 'onOpenWeldRowIds'
+  | 'onOpenDocumentRows'
+  | 'systemDocumentNavigationRequest'
+  | 'onSystemDocumentNavigationRequestHandled'
+>
+
+const MemoizedReportBackground = memo(ReportBackground)
+
+function ReportBackground({
+  activeReport,
+  activeTitle,
+  registerMinWidth,
+  stickyLeft,
+  reportHeaderActionsProps,
+  reportSummaryBarProps,
+  reportTaskPanelsProps,
+  welderStamps,
+  welderStampsRegistryProps,
+  weldTableProps,
+  onAssignPercentageLineMissingControls,
+  onCancelPercentageLineMissingControls,
+  onOpenPercentageLineStampRows,
+  onOpenWeldRowIds,
+  onOpenDocumentRows,
+  systemDocumentNavigationRequest,
+  onSystemDocumentNavigationRequestHandled,
+}: ReportBackgroundProps) {
   const isFluidReport =
     activeReport === 'statistics' ||
     activeReport === 'percentageLines' ||
@@ -94,13 +193,7 @@ export function HomePageView({
   const pageMinWidth = isFluidReport ? 0 : registerMinWidth
 
   return (
-    <ReportWorkspace
-      activeReport={activeReport}
-      navCollapsed={navCollapsed}
-      registerMinWidth={registerMinWidth}
-      onNavCollapsedChange={onNavCollapsedChange}
-      onReportChange={onReportChange}
-    >
+    <>
       <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={pageMinWidth}>
         {activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
           <ReportHeaderActions {...reportHeaderActionsProps} />
@@ -124,27 +217,6 @@ export function HomePageView({
         systemDocumentNavigationRequest={systemDocumentNavigationRequest}
         onSystemDocumentNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
       />
-
-      <ReportDialogs
-        chainDialogProps={reportChainDialogProps}
-        weldEditorProps={reportWeldEditorProps}
-        pstoDialogsProps={reportPstoDialogsProps}
-        lnkDialogsProps={reportLnkDialogsProps}
-        fieldEditorProps={reportFieldEditorProps}
-        importDialogProps={reportImportDialogProps}
-        rkExposureDialogProps={reportRkExposureDialogProps}
-        generationDialogProps={
-          documentGenerationRequest
-            ? {
-                request: documentGenerationRequest,
-                contextRows: statisticsRows,
-                contextLoading: documentGenerationContextLoading,
-                onClose: () => onDocumentGenerationRequestHandled(documentGenerationRequest.id),
-                onGenerated: onDocumentGenerated,
-              }
-            : null
-        }
-      />
-    </ReportWorkspace>
+    </>
   )
 }

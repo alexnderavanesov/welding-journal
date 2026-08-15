@@ -77,6 +77,36 @@ describe('document template builder repeat block', () => {
     expect(shouldShowDocumentTemplateRepeatControls(config, preview, 'B10')).toBe(false)
   })
 
+  it('allows a document summary below the repeat block', () => {
+    const config = {
+      ...createConfig(),
+      repeatRow: 18,
+      repeatRowEnd: 19,
+      bindings: [
+        ...createConfig().bindings,
+        { cell: 'B20', mode: 'summary' as const, parts: [{ field: 'projectTitle' as const }] },
+      ],
+    }
+
+    expect(validateDocumentTemplateBuilderConfig(config, preview)).toBeNull()
+  })
+
+  it('rejects a document summary that intersects the repeat block', () => {
+    const config = {
+      ...createConfig(),
+      repeatRow: 18,
+      repeatRowEnd: 19,
+      bindings: [
+        ...createConfig().bindings,
+        { cell: 'B19', mode: 'summary' as const, parts: [{ field: 'projectTitle' as const }] },
+      ],
+    }
+
+    expect(validateDocumentTemplateBuilderConfig(config, preview)).toBe(
+      'Сводные ячейки должны находиться вне повторяемого блока строк.',
+    )
+  })
+
   it('names a row cell that is outside the selected repeat block', () => {
     const config = {
       ...createConfig(),
@@ -141,6 +171,12 @@ describe('document template builder repeat block', () => {
 
     expect(grouped.repeatGroupBy).toBe('line')
     expect(getDocumentTemplateRepeatTarget(grouped)).toBe('line')
+    expect(grouped.bindings.find((binding) => binding.cell === 'A18')).toMatchObject({
+      mode: 'summary',
+      scope: 'group',
+      uniqueValues: true,
+      parts: [{ field: 'line' }],
+    })
     expect(grouped.bindings.find((binding) => binding.cell === 'B18')).toMatchObject({
       mode: 'summary',
       scope: 'group',
@@ -181,6 +217,31 @@ describe('document template builder repeat block', () => {
     expect(perJoint.bindings.find((binding) => binding.cell === 'B18')).toMatchObject({
       mode: 'row',
       scope: undefined,
+    })
+  })
+
+  it('uses a dedicated group index and restores the ordinary index for per-joint rows', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      version: 1,
+      sheetName: 'Чек-лист',
+      repeatRow: 18,
+      repeatRowEnd: 19,
+      repeatMode: 'rows',
+      bindings: [{ cell: 'A18', mode: 'row', parts: [{ field: '__index' }] }],
+    }
+
+    const grouped = applyDocumentTemplateRepeatTarget(config, preview, 'line')
+    expect(grouped.bindings[0]).toMatchObject({
+      mode: 'summary',
+      scope: 'group',
+      parts: [{ field: '__groupIndex' }],
+    })
+
+    const perJoint = applyDocumentTemplateRepeatTarget(grouped, preview, 'joint')
+    expect(perJoint.bindings[0]).toMatchObject({
+      mode: 'row',
+      scope: undefined,
+      parts: [{ field: '__index' }],
     })
   })
 

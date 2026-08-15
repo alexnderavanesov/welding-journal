@@ -2,9 +2,13 @@ import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { sortWeldSnapshotRows } from '@/lib/weld-snapshot'
 import type { WeldPageResult } from '@/server/welds'
+import {
+  invalidateWeldPageQueries,
+  WELD_JOINT_PAGES_QUERY_KEY,
+} from '@/lib/weld-page-refresh'
 
 export const WELD_JOINTS_QUERY_KEY = ['weld-joints'] as const
-export const WELD_JOINT_PAGES_QUERY_KEY = ['weld-joint-pages'] as const
+export { invalidateWeldPageQueries, WELD_JOINT_PAGES_QUERY_KEY }
 export const WELD_REPORT_CONTEXT_QUERY_KEY = ['weld-report-context'] as const
 export const DISPATCHER_TASK_SNAPSHOT_QUERY_KEY = ['dispatcher-task-snapshot'] as const
 export const DISPATCHER_BACKGROUND_STATUS_QUERY_KEY = ['dispatcher-background-status'] as const
@@ -41,7 +45,7 @@ export function invalidateWeldJoints(queryClient: QueryClient, change?: WeldCach
   void queryClient.invalidateQueries({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_LINE_AUTOFILL_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
-  void queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY })
+  void invalidateWeldPageQueries(queryClient)
   void queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })

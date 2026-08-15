@@ -1,5 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import type { ActiveReport } from '@/lib/home-state'
+import { isModalDialogOpen } from '@/lib/modal-layer'
 import { getActiveColumnFilters, getActiveReportFilterSetter } from '@/lib/report-ui-state'
 import { ROW_ID_LIST_FILTER_KEY } from '@/lib/report-navigation'
 
@@ -45,7 +46,14 @@ export function useEscapeToClearReportFilters({
 }: EscapeToClearReportFiltersInput) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || editingOpen || isReportModalOpen || chainOpen) return
+      if (
+        event.key !== 'Escape' ||
+        event.defaultPrevented ||
+        editingOpen ||
+        isReportModalOpen ||
+        chainOpen ||
+        isModalDialogOpen()
+      ) return
 
       const activeSelection = getActiveReportSelection(activeReport, {
         selectedWeldingJournalIds,

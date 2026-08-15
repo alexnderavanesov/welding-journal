@@ -15,8 +15,7 @@ import {
   arePermitThicknessesCompatible,
   formatOfficialStampDiameterList,
   getLatestWelderStampArchiveDate,
-  getOfficialStampJointDiameters,
-  getOfficialStampJointThicknesses,
+  getOfficialStampJointDimensionRequirements,
   getUnsupportedPermitDiameters,
   getUnsupportedPermitThicknesses,
   getWelderStampArchiveCompatibility,
@@ -25,6 +24,7 @@ import {
   normalizeStampSelectValue,
   parseOfficialStampMaterialGroup,
   parseOfficialStampWeldingMethods,
+  type OfficialStampJointDimensionRequirements,
 } from '@/lib/welder-stamp-compatibility-utils'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import {
@@ -175,11 +175,16 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
 
   const methods = parseOfficialStampWeldingMethods(draft.weldingMethod)
   const materialGroup = parseOfficialStampMaterialGroup(draft.materialGroup)
-  const diameters = getOfficialStampJointDiameters(draft)
-  const thicknesses = getOfficialStampJointThicknesses(draft)
+  const dimensions = getOfficialStampJointDimensionRequirements(draft)
   const weldDateValue = getWeldDateOrderValue(draft.weldDate)
   const requireDls = saveCheckSettings.officialDls
-  if (methods.length === 0 && diameters.length === 0 && thicknesses.length === 0 && !materialGroup && !requireDls) return null
+  if (
+    methods.length === 0 &&
+    dimensions.diameters.length === 0 &&
+    dimensions.thicknesses.length === 0 &&
+    !materialGroup &&
+    !requireDls
+  ) return null
 
   if (!saveCheckSettings.officialWeldingMethod || methods.length === 0) {
     const permits = getNaksPermitCandidates(
@@ -191,7 +196,7 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
     if (saveCheckSettings.officialMaterialGroup && materialGroup && permits.length === 0) {
       return getNaksArchiveAwareReason(stampRecords, saveCheckSettings.officialNaksDate ? weldDateValue : 0, `не подходит по группе материалов ${materialGroup}`)
     }
-    const rangeReason = getPermitRangeBlockReason(permits, diameters, thicknesses, saveCheckSettings)
+    const rangeReason = getPermitRangeBlockReason(permits, dimensions, saveCheckSettings)
     if (rangeReason) return rangeReason
     if (requireDls) {
       const dlsReason = getDlsSelectBlockReason(
@@ -199,8 +204,7 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
         '',
         saveCheckSettings.officialMaterialGroup ? materialGroup : '',
         weldDateValue,
-        saveCheckSettings.officialDiameter ? diameters : [],
-        saveCheckSettings.officialThickness ? thicknesses : [],
+        getCheckedOfficialStampDimensions(dimensions, saveCheckSettings),
       )
       if (dlsReason) return dlsReason
     }
@@ -211,7 +215,14 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
     const checkedMaterialGroup = saveCheckSettings.officialMaterialGroup ? materialGroup : ''
     const checkedWeldDateValue = saveCheckSettings.officialNaksDate ? weldDateValue : 0
     const archivedDateReason = !weldDateValue
-      ? getCombinedMethodArchivedDateReason(stampRecords, methods, checkedMaterialGroup, diameters, thicknesses, requireDls, saveCheckSettings)
+      ? getCombinedMethodArchivedDateReason(
+          stampRecords,
+          methods,
+          checkedMaterialGroup,
+          dimensions,
+          requireDls,
+          saveCheckSettings,
+        )
       : null
     if (archivedDateReason) return archivedDateReason
 
@@ -219,7 +230,15 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
       methods.filter((method) => getNaksPermitCandidates(stampRecords, method, checkedMaterialGroup, checkedWeldDateValue).length > 0),
     )
     const dlsMethods = requireDls
-      ? new Set(methods.filter((method) => getDlsPermitCandidates(stampRecords, method, checkedMaterialGroup, weldDateValue, [], []).length > 0))
+      ? new Set(methods.filter((method) => (
+          getDlsPermitCandidates(
+            stampRecords,
+            method,
+            checkedMaterialGroup,
+            weldDateValue,
+            emptyOfficialStampDimensions(),
+          ).length > 0
+        )))
       : new Set(methods)
     const compatibleMethods = methods.filter((method) => naksMethods.has(method) && dlsMethods.has(method))
 
@@ -230,7 +249,7 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
         checkedMaterialGroup,
         checkedWeldDateValue,
       )
-      const rangeReason = getPermitRangeBlockReason(combinedNaksPermits, diameters, thicknesses, saveCheckSettings)
+      const rangeReason = getPermitRangeBlockReason(combinedNaksPermits, dimensions, saveCheckSettings)
       if (rangeReason) return rangeReason
 
       if (requireDls) {
@@ -239,8 +258,7 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
           methods,
           checkedMaterialGroup,
           weldDateValue,
-          saveCheckSettings.officialDiameter ? diameters : [],
-          saveCheckSettings.officialThickness ? thicknesses : [],
+          getCheckedOfficialStampDimensions(dimensions, saveCheckSettings),
         )
         if (dlsReason) return dlsReason
       }
@@ -263,7 +281,11 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
     if (saveCheckSettings.officialMaterialGroup && materialGroup && materialGroupPermits.length === 0) {
       return getNaksArchiveAwareReason(stampRecords, saveCheckSettings.officialNaksDate ? weldDateValue : 0, `не подходит по группе материалов ${materialGroup}`)
     }
-    const rangeReason = getPermitRangeBlockReason(saveCheckSettings.officialMaterialGroup ? materialGroupPermits : methodPermits, diameters, thicknesses, saveCheckSettings)
+    const rangeReason = getPermitRangeBlockReason(
+      saveCheckSettings.officialMaterialGroup ? materialGroupPermits : methodPermits,
+      dimensions,
+      saveCheckSettings,
+    )
     if (rangeReason) return rangeReason
     if (requireDls) {
       const dlsReason = getDlsSelectBlockReason(
@@ -271,8 +293,7 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
         saveCheckSettings.officialWeldingMethod ? method : '',
         saveCheckSettings.officialMaterialGroup ? materialGroup : '',
         weldDateValue,
-        saveCheckSettings.officialDiameter ? diameters : [],
-        saveCheckSettings.officialThickness ? thicknesses : [],
+        getCheckedOfficialStampDimensions(dimensions, saveCheckSettings),
       )
       if (dlsReason) return dlsReason
     }
@@ -285,22 +306,25 @@ function getCombinedMethodArchivedDateReason(
   records: WelderStampRecord[],
   methods: string[],
   materialGroup: string,
-  diameters: number[],
-  thicknesses: number[],
+  dimensions: OfficialStampJointDimensionRequirements,
   requireDls: boolean,
   saveCheckSettings: SaveCheckSettings,
 ) {
   for (const method of methods) {
     const activeNaksCandidates = getNaksPermitCandidates(records, method, materialGroup, 0)
-    const activeNaksFits = activeNaksCandidates.length > 0 && !getPermitRangeBlockReason(activeNaksCandidates, diameters, thicknesses, saveCheckSettings)
-    if (!activeNaksFits && hasArchivedNaksCandidate(records, method, materialGroup, diameters, thicknesses, saveCheckSettings)) {
+    const activeNaksFits = activeNaksCandidates.length > 0 &&
+      !getPermitRangeBlockReason(activeNaksCandidates, dimensions, saveCheckSettings)
+    if (!activeNaksFits && hasArchivedNaksCandidate(records, method, materialGroup, dimensions, saveCheckSettings)) {
       return softReason('есть архивный НАКС: укажите дату сварки')
     }
 
-    const dlsDiameters = saveCheckSettings.officialDiameter ? diameters : []
-    const dlsThicknesses = saveCheckSettings.officialThickness ? thicknesses : []
-    if (requireDls && activeNaksFits && getDlsPermitCandidates(records, method, materialGroup, 0, dlsDiameters, dlsThicknesses).length === 0) {
-      if (hasArchivedDlsCandidate(records, method, materialGroup, dlsDiameters, dlsThicknesses)) {
+    const dlsDimensions = getCheckedOfficialStampDimensions(dimensions, saveCheckSettings)
+    if (
+      requireDls &&
+      activeNaksFits &&
+      getDlsPermitCandidates(records, method, materialGroup, 0, dlsDimensions).length === 0
+    ) {
+      if (hasArchivedDlsCandidate(records, method, materialGroup, dlsDimensions)) {
         return softReason('есть архивный ДЛС: укажите дату сварки')
       }
     }
@@ -314,8 +338,7 @@ function getDlsSelectBlockReason(
   method: string,
   materialGroup: string,
   weldDateValue: number,
-  diameters: number[],
-  thicknesses: number[],
+  dimensions: OfficialStampJointDimensionRequirements,
 ) {
   const allDlsPermits = records.flatMap((record) => getAllWelderStampDlsPermits(record))
   if (allDlsPermits.length === 0) return hardReason(method ? `нет ДЛС на способ сварки ${method}` : 'нет ДЛС')
@@ -337,14 +360,22 @@ function getDlsSelectBlockReason(
     : materialGroupPermits
   if (weldDateValue && datePermits.length === 0) return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, 'нет ДЛС на дату сварки')
 
-  const unsupportedDiameters = getUnsupportedPermitDiameters(diameters, datePermits)
+  const unsupportedDiameters = getUnsupportedJointDiameters(dimensions, datePermits)
   if (unsupportedDiameters.length > 0) {
-    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на диаметр ${formatOfficialStampDiameterList(unsupportedDiameters)}`)
+    return getDlsArchiveAwareReason(
+      allDlsPermits,
+      weldDateValue,
+      `нет ДЛС ${formatPermitDimensionMismatch('diameter', unsupportedDiameters, dimensions.diameterCoverage)}`,
+    )
   }
 
-  const unsupportedThicknesses = getUnsupportedPermitThicknesses(thicknesses, datePermits)
+  const unsupportedThicknesses = getUnsupportedJointThicknesses(dimensions, datePermits)
   if (unsupportedThicknesses.length > 0) {
-    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на толщину ${formatOfficialStampDiameterList(unsupportedThicknesses)}`)
+    return getDlsArchiveAwareReason(
+      allDlsPermits,
+      weldDateValue,
+      `нет ДЛС ${formatPermitDimensionMismatch('thickness', unsupportedThicknesses, dimensions.thicknessCoverage)}`,
+    )
   }
 
   return null
@@ -355,8 +386,7 @@ function getCombinedDlsSelectBlockReason(
   methods: string[],
   materialGroup: string,
   weldDateValue: number,
-  diameters: number[],
-  thicknesses: number[],
+  dimensions: OfficialStampJointDimensionRequirements,
 ) {
   const allDlsPermits = records.flatMap((record) => getAllWelderStampDlsPermits(record))
   if (allDlsPermits.length === 0) return hardReason(`нет ДЛС на способы сварки ${methods.join('+')}`)
@@ -367,13 +397,21 @@ function getCombinedDlsSelectBlockReason(
     .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
     .filter((permit) => !weldDateValue || isPermitDateCompatible(weldDateValue, permit))
 
-  const unsupportedDiameters = getUnsupportedPermitDiameters(diameters, permits)
+  const unsupportedDiameters = getUnsupportedJointDiameters(dimensions, permits)
   if (unsupportedDiameters.length > 0) {
-    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на диаметр ${formatOfficialStampDiameterList(unsupportedDiameters)}`)
+    return getDlsArchiveAwareReason(
+      allDlsPermits,
+      weldDateValue,
+      `нет ДЛС ${formatPermitDimensionMismatch('diameter', unsupportedDiameters, dimensions.diameterCoverage)}`,
+    )
   }
-  const unsupportedThicknesses = getUnsupportedPermitThicknesses(thicknesses, permits)
+  const unsupportedThicknesses = getUnsupportedJointThicknesses(dimensions, permits)
   if (unsupportedThicknesses.length > 0) {
-    return getDlsArchiveAwareReason(allDlsPermits, weldDateValue, `нет ДЛС на толщину ${formatOfficialStampDiameterList(unsupportedThicknesses)}`)
+    return getDlsArchiveAwareReason(
+      allDlsPermits,
+      weldDateValue,
+      `нет ДЛС ${formatPermitDimensionMismatch('thickness', unsupportedThicknesses, dimensions.thicknessCoverage)}`,
+    )
   }
 
   return null
@@ -405,30 +443,31 @@ function getDlsPermitCandidates(
   method: string,
   materialGroup: string,
   weldDateValue: number,
-  diameters: number[],
-  thicknesses: number[],
+  dimensions: OfficialStampJointDimensionRequirements,
 ) {
   const permits = records
     .flatMap((record) => getWelderStampDlsPermitsForWeldDate(record, weldDateValue))
     .filter((permit) => !method || splitPermitValues(permit.weldType).includes(method))
     .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
     .filter((permit) => !weldDateValue || isPermitDateCompatible(weldDateValue, permit))
-  return arePermitDiametersCompatible(diameters, permits) && arePermitThicknessesCompatible(thicknesses, permits) ? permits : []
+  return areJointDiametersCompatible(dimensions, permits) &&
+    areJointThicknessesCompatible(dimensions, permits)
+    ? permits
+    : []
 }
 
 function getPermitRangeBlockReason(
   permits: Array<WelderStampNaksPermit | WelderStampDlsPermit>,
-  diameters: number[],
-  thicknesses: number[],
+  dimensions: OfficialStampJointDimensionRequirements,
   saveCheckSettings: SaveCheckSettings,
 ) {
-  const unsupportedDiameters = getUnsupportedPermitDiameters(diameters, permits)
+  const unsupportedDiameters = getUnsupportedJointDiameters(dimensions, permits)
   if (saveCheckSettings.officialDiameter && unsupportedDiameters.length > 0) {
-    return softReason(`не подходит по диаметру ${formatOfficialStampDiameterList(unsupportedDiameters)}`)
+    return softReason(formatSelectDimensionMismatch('diameter', unsupportedDiameters, dimensions.diameterCoverage))
   }
-  const unsupportedThicknesses = getUnsupportedPermitThicknesses(thicknesses, permits)
+  const unsupportedThicknesses = getUnsupportedJointThicknesses(dimensions, permits)
   if (saveCheckSettings.officialThickness && unsupportedThicknesses.length > 0) {
-    return softReason(`не подходит по толщине ${formatOfficialStampDiameterList(unsupportedThicknesses)}`)
+    return softReason(formatSelectDimensionMismatch('thickness', unsupportedThicknesses, dimensions.thicknessCoverage))
   }
   return null
 }
@@ -447,8 +486,7 @@ function hasArchivedNaksCandidate(
   records: WelderStampRecord[],
   method: string,
   materialGroup: string,
-  diameters: number[],
-  thicknesses: number[],
+  dimensions: OfficialStampJointDimensionRequirements,
   saveCheckSettings: SaveCheckSettings,
 ) {
   const permits = records
@@ -458,8 +496,8 @@ function hasArchivedNaksCandidate(
     .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
   return (
     permits.length > 0 &&
-    (!saveCheckSettings.officialDiameter || arePermitDiametersCompatible(diameters, permits)) &&
-    (!saveCheckSettings.officialThickness || arePermitThicknessesCompatible(thicknesses, permits))
+    (!saveCheckSettings.officialDiameter || areJointDiametersCompatible(dimensions, permits)) &&
+    (!saveCheckSettings.officialThickness || areJointThicknessesCompatible(dimensions, permits))
   )
 }
 
@@ -467,15 +505,113 @@ function hasArchivedDlsCandidate(
   records: WelderStampRecord[],
   method: string,
   materialGroup: string,
-  diameters: number[],
-  thicknesses: number[],
+  dimensions: OfficialStampJointDimensionRequirements,
 ) {
   const permits = records
     .flatMap((record) => getAllWelderStampDlsPermits(record))
     .filter((permit) => permit.archived)
     .filter((permit) => !method || splitPermitValues(permit.weldType).includes(method))
     .filter((permit) => !materialGroup || splitPermitValues(permit.materialGroups).includes(materialGroup))
-  return permits.length > 0 && arePermitDiametersCompatible(diameters, permits) && arePermitThicknessesCompatible(thicknesses, permits)
+  return permits.length > 0 &&
+    areJointDiametersCompatible(dimensions, permits) &&
+    areJointThicknessesCompatible(dimensions, permits)
+}
+
+function getUnsupportedJointDiameters(
+  dimensions: OfficialStampJointDimensionRequirements,
+  permits: Array<WelderStampNaksPermit | WelderStampDlsPermit>,
+) {
+  return getUnsupportedPermitDiameters(
+    dimensions.diameters,
+    permits,
+    dimensions.diameterCoverage,
+  )
+}
+
+function getUnsupportedJointThicknesses(
+  dimensions: OfficialStampJointDimensionRequirements,
+  permits: Array<WelderStampNaksPermit | WelderStampDlsPermit>,
+) {
+  return getUnsupportedPermitThicknesses(
+    dimensions.thicknesses,
+    permits,
+    dimensions.thicknessCoverage,
+  )
+}
+
+function areJointDiametersCompatible(
+  dimensions: OfficialStampJointDimensionRequirements,
+  permits: Array<WelderStampNaksPermit | WelderStampDlsPermit>,
+) {
+  return arePermitDiametersCompatible(
+    dimensions.diameters,
+    permits,
+    dimensions.diameterCoverage,
+  )
+}
+
+function areJointThicknessesCompatible(
+  dimensions: OfficialStampJointDimensionRequirements,
+  permits: Array<WelderStampNaksPermit | WelderStampDlsPermit>,
+) {
+  return arePermitThicknessesCompatible(
+    dimensions.thicknesses,
+    permits,
+    dimensions.thicknessCoverage,
+  )
+}
+
+function getCheckedOfficialStampDimensions(
+  dimensions: OfficialStampJointDimensionRequirements,
+  saveCheckSettings: SaveCheckSettings,
+): OfficialStampJointDimensionRequirements {
+  return {
+    ...dimensions,
+    diameters: saveCheckSettings.officialDiameter ? dimensions.diameters : [],
+    thicknesses: saveCheckSettings.officialThickness ? dimensions.thicknesses : [],
+  }
+}
+
+function emptyOfficialStampDimensions(): OfficialStampJointDimensionRequirements {
+  return {
+    diameters: [],
+    thicknesses: [],
+    diameterCoverage: 'all',
+    thicknessCoverage: 'all',
+  }
+}
+
+function formatPermitDimensionMismatch(
+  kind: 'diameter' | 'thickness',
+  values: number[],
+  coverage: OfficialStampJointDimensionRequirements['diameterCoverage'],
+) {
+  const formatted = formatOfficialStampDiameterList(values)
+  if (coverage === 'any' && values.length > 1) {
+    return kind === 'diameter'
+      ? `ни на один из диаметров ${formatted}`
+      : `ни на одну из толщин ${formatted}`
+  }
+  if (values.length > 1) {
+    return kind === 'diameter' ? `на диаметры ${formatted}` : `на толщины ${formatted}`
+  }
+  return kind === 'diameter' ? `на диаметр ${formatted}` : `на толщину ${formatted}`
+}
+
+function formatSelectDimensionMismatch(
+  kind: 'diameter' | 'thickness',
+  values: number[],
+  coverage: OfficialStampJointDimensionRequirements['diameterCoverage'],
+) {
+  const formatted = formatOfficialStampDiameterList(values)
+  if (coverage === 'any' && values.length > 1) {
+    return kind === 'diameter'
+      ? `не подходит ни по одному из диаметров ${formatted}`
+      : `не подходит ни по одной из толщин ${formatted}`
+  }
+  return kind === 'diameter'
+    ? `не подходит по диаметру ${formatted}`
+    : `не подходит по толщине ${formatted}`
 }
 
 function getDlsArchiveAwareReason(allPermits: WelderStampDlsPermit[], weldDateValue: number, fallbackReason: string) {

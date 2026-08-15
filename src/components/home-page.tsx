@@ -2,18 +2,24 @@ import { HomePageView } from '@/components/home-page-view'
 import { useHomePageController } from '@/lib/use-home-page-controller'
 import { useProjectSettingsSync } from '@/lib/use-project-settings-sync'
 import { SiteSecurityGate } from '@/lib/security-context'
+import type { ActiveReport } from '@/lib/home-state'
 
-export function HomePage() {
+type HomePageProps = {
+  activeReport?: ActiveReport
+  onActiveReportChange?: (report: ActiveReport) => void
+}
+
+export function HomePage(props: HomePageProps) {
   return (
     <SiteSecurityGate>
-      <UnlockedHomePage />
+      <UnlockedHomePage {...props} />
     </SiteSecurityGate>
   )
 }
 
-function UnlockedHomePage() {
+function UnlockedHomePage(props: HomePageProps) {
   useProjectSettingsSync()
-  const props = useHomePageController()
+  const viewProps = useHomePageController(props)
 
-  return <HomePageView {...props} />
+  return <HomePageView {...viewProps} />
 }

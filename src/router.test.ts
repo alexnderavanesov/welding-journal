@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { shouldRefetchQueryOnWindowFocus, shouldRetryQuery } from '@/router'
+import { shouldRefreshWeldPageOnActivation } from '@/lib/query-refresh-policy'
 
 describe('query refresh policy', () => {
   it('does not refetch fresh data after a short window switch', () => {
@@ -21,5 +22,12 @@ describe('query refresh policy', () => {
     expect(shouldRetryQuery(0)).toBe(true)
     expect(shouldRetryQuery(1)).toBe(false)
     expect(shouldRetryQuery(2)).toBe(false)
+  })
+
+  it('refreshes a paged report on activation when it is old or explicitly marked', () => {
+    const now = Date.parse('2026-08-13T12:00:00.000Z')
+    expect(shouldRefreshWeldPageOnActivation(now - 30_000, false, now)).toBe(false)
+    expect(shouldRefreshWeldPageOnActivation(now - 61_000, false, now)).toBe(true)
+    expect(shouldRefreshWeldPageOnActivation(now - 1_000, true, now)).toBe(true)
   })
 })

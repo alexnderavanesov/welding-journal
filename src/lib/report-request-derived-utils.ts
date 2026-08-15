@@ -1,6 +1,5 @@
-import type { LnkRequestDraftState, LnkResultDraftState, PstoResultDraftState } from '@/lib/report-draft-state'
+import type { LnkResultDraftState, PstoResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS } from '@/lib/report-config'
 import {
@@ -11,9 +10,6 @@ import {
   formatPstoRequestName,
 } from '@/lib/report-naming'
 import {
-  countLnkRequestTargets,
-} from '@/lib/report-modal-rows'
-import {
   getLnkRequestDocumentIdentities,
   getPstoRequestDocumentIdentities,
   isSameRequestDocument,
@@ -22,14 +18,6 @@ import {
 
 export function getSelectedRowsByIds(rows: WeldRow[], ids: Set<number>) {
   return rows.filter((row) => ids.has(row.id))
-}
-
-export function getSelectedLnkMethodKeys(lnkRequestDraft: LnkRequestDraftState) {
-  return [...lnkRequestDraft.methods]
-}
-
-export function getSelectedLnkRequestTargetCount(selectedLnkRows: WeldRow[], selectedLnkMethodKeys: WeldFieldKey[]) {
-  return countLnkRequestTargets(selectedLnkRows, selectedLnkMethodKeys)
 }
 
 export function getNextPstoRequestName(heatTreatmentRows: WeldRow[], settings: RequestConclusionSettings, requestDate?: string, documentNumber?: number) {

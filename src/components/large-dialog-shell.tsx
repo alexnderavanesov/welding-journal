@@ -83,6 +83,9 @@ export function LargeDialogShell({
   return (
     <div className={cn('fixed inset-0 flex items-center justify-center overflow-hidden overscroll-contain px-4 backdrop-blur-[1px]', overlayClassName)}>
       <div
+        data-modal-dialog="true"
+        role="dialog"
+        aria-modal="true"
         className={cn(
           'flex w-full flex-col overscroll-contain border border-slate-200 bg-white shadow-2xl',
           maxHeightClassName,

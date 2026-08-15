@@ -1,10 +1,11 @@
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { memo, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Check, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { PaginationBar } from '@/components/pagination-bar'
 import { Button } from '@/components/ui/button'
 import { ResultBadge } from '@/lib/weld-table-badges'
 import { getDuplicateControls } from '@/lib/duplicate-control-utils'
@@ -18,6 +19,7 @@ import {
   type DuplicateControlResult,
 } from '@/lib/duplicate-control-types'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { usePagination } from '@/lib/use-pagination'
 import { calculateFinalStatus, formatFinalStatusDisplay } from '@/lib/weld-status'
 
 export type DuplicateControlDialogProps = {
@@ -63,6 +65,12 @@ export function DuplicateControlDialog({
     () => getUniqueDuplicateControls([...controls, ...allRows.flatMap((row) => getDuplicateControls(row))]),
     [allRows, controls],
   )
+  const paginationResetKeys = useMemo(() => [draft.search, filteredRows], [draft.search, filteredRows])
+  const rowsPagination = usePagination({
+    items: filteredRows,
+    defaultPageSize: 100,
+    resetKeys: paginationResetKeys,
+  })
   const handleEditControl = (control: DuplicateControlRecord) => {
     setShowExistingControls(false)
     setShowSelectedPreview(false)
@@ -212,59 +220,26 @@ export function DuplicateControlDialog({
               <DialogEmptyState minHeightClassName="min-h-60">По фильтру ничего не найдено.</DialogEmptyState>
             ) : (
               <div className="divide-y divide-slate-100">
-                {filteredRows.map((row) => {
-                  const rowControls = getDuplicateControls(row)
-                  const finalStatus = calculateFinalStatus(row)
-                  const finalStatusDisplay = formatFinalStatusDisplay(row, finalStatus)
-                  const isUnofficial = isUnofficialJoint(row)
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      onClick={() => !isEditing && onToggleRow(row.id)}
-                      disabled={isEditing && !draft.rowIds.has(row.id)}
-                      className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition ${
-                        draft.rowIds.has(row.id) ? 'bg-sky-50' : 'bg-white hover:bg-slate-50'
-                      } ${isEditing && !draft.rowIds.has(row.id) ? 'cursor-not-allowed opacity-50' : ''}`}
-                    >
-                      <span className="min-w-0">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{String(row.joint ?? '-')}</span>
-                          <span
-                            className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
-                              isUnofficial
-                                ? 'border-slate-300 bg-slate-100 text-slate-700'
-                                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                            }`}
-                          >
-                            {isUnofficial ? 'неофициальный' : 'официальный'}
-                          </span>
-                          <ResultBadge value={finalStatusDisplay} />
-                        </span>
-                        <span className="block text-xs text-slate-500">
-                          {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} ·{' '}
-                          {String(row.line ?? '-')} · D: {String(row.d1 ?? '-') || '-'} · WDI: {String(row.wdi ?? '-') || '-'} · дата сварки:{' '}
-                          {String(row.weldDate ?? '-') || '-'}
-                        </span>
-                        {rowControls.length > 0 ? (
-                          <span className="mt-2 flex flex-wrap gap-1">
-                            {rowControls.map((control) => (
-                              <span
-                                key={control.id}
-                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-600"
-                              >
-                                <span className="font-semibold">{control.method}</span>
-                                <span className="text-slate-400">дубль</span>
-                                <ResultBadge value={control.result} />
-                              </span>
-                            ))}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="shrink-0 text-xs text-slate-500">{draft.rowIds.has(row.id) ? 'выбран' : ''}</span>
-                    </button>
-                  )
-                })}
+                {rowsPagination.pageItems.map((row) => (
+                  <DuplicateControlRow
+                    key={row.id}
+                    row={row}
+                    selected={draft.rowIds.has(row.id)}
+                    disabled={isEditing && !draft.rowIds.has(row.id)}
+                    onToggleRow={onToggleRow}
+                  />
+                ))}
+                <div className="p-3">
+                  <PaginationBar
+                    totalCount={rowsPagination.totalCount}
+                    firstItemNumber={rowsPagination.firstItemNumber}
+                    lastItemNumber={rowsPagination.lastItemNumber}
+                    pageSize={rowsPagination.pageSize}
+                    hasMore={rowsPagination.hasMore}
+                    onLoadMore={rowsPagination.loadMore}
+                    onPageSizeChange={rowsPagination.setPageSize}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -321,6 +296,76 @@ export function DuplicateControlDialog({
   )
 }
 
+type DuplicateControlRowProps = {
+  row: WeldRow
+  selected: boolean
+  disabled: boolean
+  onToggleRow: (rowId: number) => void
+}
+
+const DuplicateControlRow = memo(function DuplicateControlRow({
+  row,
+  selected,
+  disabled,
+  onToggleRow,
+}: DuplicateControlRowProps) {
+  const rowControls = getDuplicateControls(row)
+  const finalStatus = calculateFinalStatus(row)
+  const finalStatusDisplay = formatFinalStatusDisplay(row, finalStatus)
+  const isUnofficial = isUnofficialJoint(row)
+
+  return (
+    <button
+      type="button"
+      onClick={() => !disabled && onToggleRow(row.id)}
+      disabled={disabled}
+      className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition ${
+        selected ? 'bg-sky-50' : 'bg-white hover:bg-slate-50'
+      } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+    >
+      <span className="min-w-0">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-slate-900">{String(row.joint ?? '-')}</span>
+          <span
+            className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
+              isUnofficial
+                ? 'border-slate-300 bg-slate-100 text-slate-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {isUnofficial ? 'неофициальный' : 'официальный'}
+          </span>
+          <ResultBadge value={finalStatusDisplay} />
+        </span>
+        <span className="block text-xs text-slate-500">
+          {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} · {String(row.line ?? '-')} · D:{' '}
+          {String(row.d1 ?? '-') || '-'} · WDI: {String(row.wdi ?? '-') || '-'} · дата сварки:{' '}
+          {String(row.weldDate ?? '-') || '-'}
+        </span>
+        {rowControls.length > 0 ? (
+          <span className="mt-2 flex flex-wrap gap-1">
+            {rowControls.map((control) => (
+              <span
+                key={control.id}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-600"
+              >
+                <span className="font-semibold">{control.method}</span>
+                <span className="text-slate-400">дубль</span>
+                <ResultBadge value={control.result} />
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </span>
+      <span className="shrink-0 text-xs text-slate-500">{selected ? 'выбран' : ''}</span>
+    </button>
+  )
+}, (previous, next) => (
+  previous.row === next.row &&
+  previous.selected === next.selected &&
+  previous.disabled === next.disabled
+))
+
 function getUniqueDuplicateControls(controls: DuplicateControlRecord[]) {
   const seenIds = new Set<number>()
   return controls.filter((control) => {
@@ -341,6 +386,7 @@ function DuplicateControlPreviewDialog({
 }) {
   const methods = Array.from(draft.methods)
   const resultLabel = draft.result || 'результат не выбран'
+  const rowsPagination = usePagination({ items: rows, defaultPageSize: 100, resetKeys: [rows] })
 
   return (
     <LargeDialogShell
@@ -359,7 +405,7 @@ function DuplicateControlPreviewDialog({
           <DialogEmptyState minHeightClassName="min-h-40">Нет выбранных стыков.</DialogEmptyState>
         ) : (
           <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
-            {rows.map((row) => {
+            {rowsPagination.pageItems.map((row) => {
               const finalStatus = calculateFinalStatus(row)
               const finalStatusDisplay = formatFinalStatusDisplay(row, finalStatus)
               const isUnofficial = isUnofficialJoint(row)
@@ -404,6 +450,17 @@ function DuplicateControlPreviewDialog({
                 </div>
               )
             })}
+            <div className="p-3">
+              <PaginationBar
+                totalCount={rowsPagination.totalCount}
+                firstItemNumber={rowsPagination.firstItemNumber}
+                lastItemNumber={rowsPagination.lastItemNumber}
+                pageSize={rowsPagination.pageSize}
+                hasMore={rowsPagination.hasMore}
+                onLoadMore={rowsPagination.loadMore}
+                onPageSizeChange={rowsPagination.setPageSize}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -425,41 +482,62 @@ function DuplicateControlList({
   onEdit: (control: DuplicateControlRecord) => void
   rowsById: Map<number, WeldRow>
 }) {
+  const controlsPagination = usePagination({ items: controls, defaultPageSize: 100, resetKeys: [controls] })
+
   return (
     <div className={`overflow-y-auto rounded-md border border-slate-200 ${fill ? 'h-full' : 'max-h-36'}`}>
       {controls.length === 0 ? (
         <div className="px-3 py-3 text-sm text-slate-500">Пока нет дубль-контроля.</div>
       ) : (
-        controls.map((control) => {
-          const row = rowsById.get(control.weldJointId)
-          return (
-            <div key={control.id} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0">
-              <div className="min-w-0 text-sm">
-                <span className="mr-2 font-semibold text-slate-900">{String(row?.joint ?? `#${control.weldJointId}`)}</span>
-                <span className="font-medium text-slate-900">{control.method}</span> <ResultBadge value={control.result} />{' '}
-                <span className="text-slate-500">
-                  дата: {control.controlDate || '-'} · заключение: {control.conclusion || '-'}
-                </span>
+        <>
+          {controlsPagination.pageItems.map((control) => {
+            const row = rowsById.get(control.weldJointId)
+            return (
+              <div
+                key={control.id}
+                className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0"
+              >
+                <div className="min-w-0 text-sm">
+                  <span className="mr-2 font-semibold text-slate-900">
+                    {String(row?.joint ?? `#${control.weldJointId}`)}
+                  </span>
+                  <span className="font-medium text-slate-900">{control.method}</span>{' '}
+                  <ResultBadge value={control.result} />{' '}
+                  <span className="text-slate-500">
+                    дата: {control.controlDate || '-'} · заключение: {control.conclusion || '-'}
+                  </span>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => onEdit(control)}>
+                    <Pencil className="mr-1 h-3.5 w-3.5" />
+                    Изменить
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                    onClick={() => onDelete(control)}
+                  >
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                    Удалить
+                  </Button>
+                </div>
               </div>
-              <div className="flex shrink-0 gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => onEdit(control)}>
-                  <Pencil className="mr-1 h-3.5 w-3.5" />
-                  Изменить
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-rose-200 text-rose-700 hover:bg-rose-50"
-                  onClick={() => onDelete(control)}
-                >
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                  Удалить
-                </Button>
-              </div>
-            </div>
-          )
-        })
+            )
+          })}
+          <div className="p-3">
+            <PaginationBar
+              totalCount={controlsPagination.totalCount}
+              firstItemNumber={controlsPagination.firstItemNumber}
+              lastItemNumber={controlsPagination.lastItemNumber}
+              pageSize={controlsPagination.pageSize}
+              hasMore={controlsPagination.hasMore}
+              onLoadMore={controlsPagination.loadMore}
+              onPageSizeChange={controlsPagination.setPageSize}
+            />
+          </div>
+        </>
       )}
     </div>
   )

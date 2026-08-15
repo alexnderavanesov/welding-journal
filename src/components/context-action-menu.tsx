@@ -2,6 +2,7 @@ import { useEffect, useState, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronRight } from 'lucide-react'
 import { setContextActionMenuOpen } from '@/lib/context-action-menu-state'
+import { isModalDialogOpen } from '@/lib/modal-layer'
 
 export type ContextActionMenuItem =
   | {
@@ -49,6 +50,7 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      if (isModalDialogOpen()) return
       event.preventDefault()
       event.stopPropagation()
       event.stopImmediatePropagation()

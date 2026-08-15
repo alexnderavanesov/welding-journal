@@ -34,7 +34,6 @@ export type LnkReportModalSyncEffectsOptions = {
   isLnkRequestModalOpen: boolean
   isLnkResultManagerOpen: boolean
   isLnkResultModalOpen: boolean
-  lnkRequestOptions: string[]
   lnkResultRequestOptions: RequestDocumentIdentity[]
   lnkRows: WeldRow[]
   managedLnkResultEntries: ManagedLnkResultEntry[]
@@ -52,7 +51,6 @@ export function useLnkReportModalSyncEffects({
   isLnkRequestModalOpen,
   isLnkResultManagerOpen,
   isLnkResultModalOpen,
-  lnkRequestOptions,
   lnkResultRequestOptions,
   lnkRows,
   managedLnkResultEntries,
@@ -65,11 +63,12 @@ export function useLnkReportModalSyncEffects({
 }: LnkReportModalSyncEffectsOptions) {
   useEffect(() => {
     if (!isLnkResultManagerOpen || !isLnkRowsContextReady) return
-    setManagedLnkConclusionDrafts(
-      Object.fromEntries(
+    setManagedLnkConclusionDrafts((current) => {
+      const next = Object.fromEntries(
         managedLnkResultEntries.map(({ row, method, changeKey }) => [changeKey, String(row[method.conclusionKey] ?? '').trim()]),
-      ),
-    )
+      )
+      return areStringRecordsEqual(current, next) ? current : next
+    })
   }, [isLnkResultManagerOpen, isLnkRowsContextReady, managedLnkResultEntries, setManagedLnkConclusionDrafts])
 
   useEffect(() => {
@@ -115,23 +114,47 @@ export function useLnkReportModalSyncEffects({
       const methodRows = current.rowIds.size > 0 ? [...selectedRows, ...requestRows] : requestName ? requestRows : lnkRows
       const methods = getLnkInputMethodsForRows(methodRows, '')
       const methodKey = !current.methodKey || methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
+      const rowsById = new Map(lnkRows.map((row) => [row.id, row]))
       const rowIds = new Set(
         [...current.rowIds].filter((id) => {
-          const row = lnkRows.find((candidate) => candidate.id === id)
+          const row = rowsById.get(id)
           return row
             ? !methodKey ||
                 canSelectLnkResultRow(row, requestName, methodKey, requestDate)
             : false
         }),
       )
+      const rowResults = filterLnkResultDraftRowResults(current.rowResults, rowIds)
+      if (
+        requestName === current.requestName &&
+        requestDate === current.requestDate &&
+        methodKey === current.methodKey &&
+        areNumberSetsEqual(rowIds, current.rowIds) &&
+        areStringRecordsEqual(rowResults, current.rowResults)
+      ) {
+        return current
+      }
       return {
         ...current,
         requestName,
         requestDate,
         methodKey,
         rowIds,
-        rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),
+        rowResults,
       }
     })
-  }, [isLnkResultModalOpen, isLnkRowsContextReady, lnkRequestOptions, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
+  }, [isLnkResultModalOpen, isLnkRowsContextReady, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
+}
+
+function areNumberSetsEqual(left: ReadonlySet<number>, right: ReadonlySet<number>) {
+  return left.size === right.size && [...left].every((value) => right.has(value))
+}
+
+function areStringRecordsEqual(
+  left: Readonly<Record<string | number, string>>,
+  right: Readonly<Record<string | number, string>>,
+) {
+  const leftEntries = Object.entries(left)
+  const rightKeys = Object.keys(right)
+  return leftEntries.length === rightKeys.length && leftEntries.every(([key, value]) => right[key] === value)
 }

@@ -21,9 +21,7 @@ export type UseLnkRequestActionsOptions = {
   lnkRows: WeldRow[]
   naming: RequestNamingState
   nextRequestName: string
-  selectedMethodKeys: WeldFieldKey[]
   selectedRows: WeldRow[]
-  selectedTargetCount: number
   mutation: LnkRequestMutation
   defaultNaming: RequestNamingState
   setDraft: Dispatch<SetStateAction<LnkRequestDraftState>>

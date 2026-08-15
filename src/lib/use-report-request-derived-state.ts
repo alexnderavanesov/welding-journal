@@ -16,8 +16,6 @@ import {
   getPstoRequestOptions,
   getPstoResultRequestOptions,
   getPstoResultSelectedRows,
-  getSelectedLnkMethodKeys,
-  getSelectedLnkRequestTargetCount,
   getSelectedLnkResultRequestRows,
   getSelectedPstoResultRequestRows,
   getSelectedRowsByIds,
@@ -92,11 +90,6 @@ export function useReportRequestDerivedState({
   const selectedLnkRows = useMemo(
     () => (enableLnkRequestState ? getSelectedRowsByIds(availableLnkRequestRows, selectedLnkIds) : []),
     [availableLnkRequestRows, enableLnkRequestState, selectedLnkIds],
-  )
-  const selectedLnkMethodKeys = useMemo(() => getSelectedLnkMethodKeys(lnkRequestDraft), [lnkRequestDraft.methods])
-  const selectedLnkRequestTargetCount = useMemo(
-    () => (enableLnkRequestState ? getSelectedLnkRequestTargetCount(selectedLnkRows, selectedLnkMethodKeys) : 0),
-    [enableLnkRequestState, selectedLnkMethodKeys, selectedLnkRows],
   )
   const pstoResultSelectedRows = useMemo(
     () => (enablePstoResultState ? getPstoResultSelectedRows(heatTreatmentRows, pstoResultDraft) : []),
@@ -209,8 +202,6 @@ export function useReportRequestDerivedState({
   return {
     selectedHeatTreatmentRows,
     selectedLnkRows,
-    selectedLnkMethodKeys,
-    selectedLnkRequestTargetCount,
     nextPstoRequestName,
     nextLnkRequestName,
     pstoRequestOptions,

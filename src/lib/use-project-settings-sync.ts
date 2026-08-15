@@ -26,7 +26,7 @@ import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   STATISTICS_SERVER_QUERY_KEY,
   WELD_JOINTS_QUERY_KEY,
-  WELD_JOINT_PAGES_QUERY_KEY,
+  invalidateWeldPageQueries,
   WELD_REPORT_CONTEXT_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 
@@ -111,27 +111,31 @@ export function useProjectSettingsSync() {
             },
           })
           if (saved.updatedAt) revisionsRef.current[key] = saved.updatedAt
-          if (projectSettingAffectsDerivedCalculations(key)) {
-            await Promise.all([
+          const affectsDerivedCalculations = projectSettingAffectsDerivedCalculations(key)
+          const affectsDispatcherIndex = projectSettingAffectsDispatcherIndex(key)
+          const affectsDispatcherBackground = key === PROJECT_SETTING_KEYS.dispatcherBackground
+          const invalidations: Promise<unknown>[] = []
+          if (affectsDerivedCalculations) {
+            invalidations.push(
               queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
               queryClient.invalidateQueries({ queryKey: WELD_JOINTS_QUERY_KEY }),
-              queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
               queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY }),
-            ])
+            )
           }
-          if (projectSettingAffectsDispatcherIndex(key)) {
-            await Promise.all([
+          if (affectsDispatcherIndex || affectsDispatcherBackground) {
+            invalidations.push(
               queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-              queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
-            ])
+            )
           }
-          if (key === PROJECT_SETTING_KEYS.dispatcherBackground) {
-            await Promise.all([
+          if (affectsDispatcherBackground) {
+            invalidations.push(
               queryClient.invalidateQueries({ queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY }),
-              queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-              queryClient.invalidateQueries({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
-            ])
+            )
           }
+          if (affectsDerivedCalculations || affectsDispatcherIndex || affectsDispatcherBackground) {
+            invalidations.push(invalidateWeldPageQueries(queryClient))
+          }
+          await Promise.all(invalidations)
           resolve?.()
         } catch (error) {
           console.warn('Не удалось сохранить настройку проекта в БД', key, error)
