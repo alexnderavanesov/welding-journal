@@ -10,6 +10,7 @@ if (!databaseUrl) {
   throw new Error('DATABASE_URL_REMOTE_FOR_MIGRATIONS is not configured')
 }
 
+
 const connectionConfig = getDatabaseConnectionConfig(databaseUrl, process.env.DATABASE_SSL_CA)
 const parsedUrl = new URL(connectionConfig.connectionString)
 const dbCredentials = connectionConfig.ssl
