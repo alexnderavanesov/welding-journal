@@ -22,6 +22,17 @@ import {
   withLnkFinalStatus,
 } from '@/lib/lnk-field-updates'
 import {
+  buildLnkRequestManagerRows,
+  buildLnkRequestPositionRemovalRow,
+} from '@/lib/lnk-request-mutation-updates'
+import {
+  buildLnkRequestExtensionRows,
+  getLnkRequestExtensionDisabledReason,
+  normalizeLnkRequestExtensionRequest,
+  type LnkRequestExtensionRequest,
+} from '@/lib/lnk-request-extension'
+import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import {
   clearCancelledPstoRequestWithoutResult,
   restoreActivePstoCancelledResult,
   withPendingPstoResultStatus,
@@ -36,8 +47,16 @@ import {
   PSTO_SECTION_FIELD_KEYS,
 } from '@/lib/report-config'
 import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
+import {
+  CONTROL_BASIS_SUMMARY_FIELD_KEY,
+  LNK_CONTROL_BASIS_FIELD_KEYS,
+  PSTO_CONTROL_BASIS_FIELD_KEYS,
+  withControlBasisSummary,
+} from '@/lib/control-assignment-basis'
 import { hasHeatTreatmentReportState, hasLnkReportEntry, withPendingLnkResults } from '@/lib/report-control-state'
 import { hasWeldDate, isYesText, normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
+import { normalizeDateLikeForStorage } from '@/lib/date-format'
+import { isSameRequestDocument } from '@/lib/request-document-identity'
 import {
   FIELD_BY_KEY,
   WELD_FIELDS,
@@ -298,6 +317,7 @@ const SYSTEM_FIELD_KEYS = new Set([
   'checklistDocument',
   'zniDocument',
   'rkExposureScheme',
+  CONTROL_BASIS_SUMMARY_FIELD_KEY,
   'createdAt',
   'weldingUpdatedAt',
   'pstoCreatedAt',
@@ -307,6 +327,7 @@ const SYSTEM_FIELD_KEYS = new Set([
   'updatedAt',
 ])
 const LNK_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...LNK_CONTROL_BASIS_FIELD_KEYS,
   ...LNK_METHODS.flatMap((method) => [
     method.enabledKey,
     method.requestKey,
@@ -323,6 +344,7 @@ const LNK_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 const PSTO_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
+  ...PSTO_CONTROL_BASIS_FIELD_KEYS,
   'pstoRequest',
   'pstoRequestDate',
   'pstoDate',
@@ -337,8 +359,10 @@ const NON_WELDING_LNK_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_METHODS.map((method) => method.enabledKey),
 ])
 for (const method of LNK_METHODS) NON_WELDING_LNK_FIELD_KEYS.delete(method.enabledKey)
+for (const fieldKey of LNK_CONTROL_BASIS_FIELD_KEYS) NON_WELDING_LNK_FIELD_KEYS.delete(fieldKey)
 const NON_WELDING_PSTO_FIELD_KEYS = new Set(PSTO_PROFILE_FIELD_KEYS)
 NON_WELDING_PSTO_FIELD_KEYS.delete('pstoRequired')
+for (const fieldKey of PSTO_CONTROL_BASIS_FIELD_KEYS) NON_WELDING_PSTO_FIELD_KEYS.delete(fieldKey)
 const WELDING_PROFILE_FIELD_KEYS = WELD_FIELDS
   .map((field) => field.key)
   .filter((fieldKey): fieldKey is WeldFieldKey =>
@@ -361,6 +385,9 @@ const WELDING_JOURNAL_ORDER_BY = [
 const WELD_TABLE_COLUMNS = getTableColumns(weldJoints)
 const { updatedAt: OMITTED_UPDATED_AT_COLUMN, ...WELD_TABLE_SELECT } = WELD_TABLE_COLUMNS
 void OMITTED_UPDATED_AT_COLUMN
+const LNK_REQUEST_DATE_DERIVED_FILTER_SELECT = Object.fromEntries(
+  LNK_METHODS.map((method) => [method.requestDateKey, WELD_TABLE_COLUMNS[method.requestDateKey]]),
+)
 const LNK_REPORT_CONTEXT_REQUIRED_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_REPORT_FIELD_KEYS,
   ...PSTO_SECTION_FIELD_KEYS,
@@ -443,6 +470,7 @@ const REPORT_DERIVED_FILTER_SELECT = {
   rfaRequest: weldJoints.rfaRequest,
   stlsRequest: weldJoints.stlsRequest,
   mkkRequest: weldJoints.mkkRequest,
+  ...LNK_REQUEST_DATE_DERIVED_FILTER_SELECT,
   vikResult: weldJoints.vikResult,
   rkResult: weldJoints.rkResult,
   pvkResult: weldJoints.pvkResult,
@@ -451,6 +479,15 @@ const REPORT_DERIVED_FILTER_SELECT = {
   rfaResult: weldJoints.rfaResult,
   stlsResult: weldJoints.stlsResult,
   mkkResult: weldJoints.mkkResult,
+  vikControlBasis: weldJoints.vikControlBasis,
+  rkControlBasis: weldJoints.rkControlBasis,
+  uzkControlBasis: weldJoints.uzkControlBasis,
+  pvkControlBasis: weldJoints.pvkControlBasis,
+  tvmtControlBasis: weldJoints.tvmtControlBasis,
+  rfaControlBasis: weldJoints.rfaControlBasis,
+  stlsControlBasis: weldJoints.stlsControlBasis,
+  mkkControlBasis: weldJoints.mkkControlBasis,
+  pstoControlBasis: weldJoints.pstoControlBasis,
   vikConclusionDate: weldJoints.vikConclusionDate,
   rkConclusionDate: weldJoints.rkConclusionDate,
   pvkConclusionDate: weldJoints.pvkConclusionDate,
@@ -469,6 +506,9 @@ const REPORT_DERIVED_FILTER_SELECT = {
   mkkConclusion: weldJoints.mkkConclusion,
   lnkDefectDescription: weldJoints.lnkDefectDescription,
   rkExposureConfirmedDiameter: weldJoints.rkExposureConfirmedDiameter,
+}
+export function getDerivedReportFilterSelectedFieldKeys(): Set<WeldFieldKey> {
+  return new Set(Object.keys(REPORT_DERIVED_FILTER_SELECT) as WeldFieldKey[])
 }
 const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'id',
@@ -942,9 +982,15 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     loadServerOtherSettings(),
   ])
   const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
-  const sourceFilterData = hasCurrentSystemWdiFilter
-    ? { ...data, columnFilters: getColumnFilterOptionFilters(data.columnFilters, 'wdi') }
-    : data
+  const hasControlBasisSummaryFilter = Boolean(data.columnFilters[CONTROL_BASIS_SUMMARY_FIELD_KEY]?.trim())
+  let sourceColumnFilters = data.columnFilters
+  if (hasCurrentSystemWdiFilter) sourceColumnFilters = getColumnFilterOptionFilters(sourceColumnFilters, 'wdi')
+  if (hasControlBasisSummaryFilter) {
+    sourceColumnFilters = getColumnFilterOptionFilters(sourceColumnFilters, CONTROL_BASIS_SUMMARY_FIELD_KEY)
+  }
+  const sourceFilterData = sourceColumnFilters === data.columnFilters
+    ? data
+    : { ...data, columnFilters: sourceColumnFilters }
   if (report !== 'weldingJournal') {
     const where = and(buildReportKindWhere(report), buildReportSourceWhere(sourceFilterData)) ?? sql`true`
     if (canPaginateReportSource(data.columnFilters) && !hasCurrentSystemWdiFilter) {
@@ -1014,16 +1060,16 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     }
   }
 
-  if (hasCurrentSystemWdiFilter) {
-    const currentRows = applyCurrentSystemWdi(
+  if (hasCurrentSystemWdiFilter || hasControlBasisSummaryFilter) {
+    const currentRows = buildServerReportRows(applyCurrentSystemWdi(
       await db
         .select(WELD_TABLE_SELECT)
         .from(weldJoints)
         .where(buildWhere(sourceFilterData))
         .orderBy(...WELDING_JOURNAL_ORDER_BY),
       otherSettings,
-    )
-    const filteredRows = filterWeldRowsByColumns(currentRows, { wdi: data.columnFilters.wdi })
+    ), 'weldingJournal')
+    const filteredRows = filterWeldRowsByColumns(currentRows, data.columnFilters)
     const total = filteredRows.length
     const pageRows = data.pageSize === WELD_PAGE_ALL_SIZE
       ? filteredRows
@@ -1093,7 +1139,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     0,
   )
   const rowsWithMetadata = compactWeldRowsForTransport(
-    await attachReportPageMetadata(applyCurrentSystemWdi(rows, otherSettings)),
+    await attachReportPageMetadata(buildServerReportRows(applyCurrentSystemWdi(rows, otherSettings), 'weldingJournal')),
   )
 
   return {
@@ -1300,11 +1346,13 @@ export function buildWeldReportPageFromRows(
   }
 }
 
-function buildServerReportRows(sourceRows: WeldJoint[], report: WeldReportKind) {
-  if (report === 'weldingJournal') return sourceRows
+function buildServerReportRows<Row extends WeldInput & { id: number }>(sourceRows: Row[], report: WeldReportKind): WeldRow[] {
+  if (report === 'weldingJournal') return sourceRows.map((row) => withControlBasisSummary(row, 'all')) as WeldRow[]
   const weldedRows = sourceRows.filter(hasWeldDate) as WeldRow[]
-  if (report === 'heatTreatment') return buildHeatTreatmentReportRows(weldedRows) as WeldJoint[]
-  return buildLnkReportRows(weldedRows) as WeldJoint[]
+  if (report === 'heatTreatment') {
+    return buildHeatTreatmentReportRows(weldedRows).map((row) => withControlBasisSummary(row, 'psto'))
+  }
+  return buildLnkReportRows(weldedRows).map((row) => withControlBasisSummary(row, 'lnk'))
 }
 
 async function attachRkExposureSchemeFilterValuesIfNeeded<Row extends WeldRow>(
@@ -1597,6 +1645,155 @@ export const updateWeldJoints = createServerFn({ method: 'POST' })
     await assertSecurityScope('edit')
     return updateWeldJointRows(data)
   })
+
+export const extendLnkRequest = createServerFn({ method: 'POST' })
+  .validator((data: LnkRequestExtensionRequest) => normalizeLnkRequestExtensionRequest(data))
+  .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
+    const db = requireDb()
+
+    return db.transaction(async (tx) => {
+      const targetIds = [...new Set(data.targets.map((target) => target.rowId))]
+      const lockedRows = await tx
+        .select()
+        .from(weldJoints)
+        .where(or(
+          inArray(weldJoints.id, targetIds),
+          buildLnkRequestIdentityWhere(data.requestName, data.requestDate),
+        ))
+        .for('update')
+
+      const requestDisabledReason = getLnkRequestExtensionDisabledReason(lockedRows, {
+        name: data.requestName,
+        date: data.requestDate,
+      })
+      if (requestDisabledReason) throw new Error(requestDisabledReason)
+
+      const targetIdSet = new Set(targetIds)
+      const targetRows = lockedRows.filter((row) => targetIdSet.has(row.id))
+      if (targetRows.length !== targetIds.length) {
+        throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет ЛНК.')
+      }
+
+      let records = buildLnkRequestExtensionRows({
+        rows: targetRows,
+        targets: data.targets,
+        requestName: data.requestName,
+        requestDate: data.requestDate,
+      })
+      const previousRows = new Map(targetRows.map((row) => [row.id, row]))
+      const validationContext = await loadServerWeldValidationContext(tx)
+      records = mergeWeldRecordsWithPrevious(records, previousRows)
+      prepareServerWeldRecords({ records, previousRows, context: validationContext })
+      validateServerWeldRecords({ records, previousRows, context: validationContext })
+
+      const updated = await updateWeldJointsInBatches(tx, records, previousRows)
+      await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes(records, previousRows),
+      })
+      return updated
+    })
+  })
+
+export const clearLnkRequestPosition = createServerFn({ method: 'POST' })
+  .validator((data: {
+    rowId: number
+    methodKey: WeldFieldKey
+    requestName: string
+    requestDate: string
+  }) => ({
+    rowId: Number(data?.rowId),
+    methodKey: String(data?.methodKey ?? '') as WeldFieldKey,
+    requestName: String(data?.requestName ?? '').trim(),
+    requestDate: normalizeDateLikeForStorage(data?.requestDate) ?? String(data?.requestDate ?? '').trim(),
+  }))
+  .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
+    if (!Number.isInteger(data.rowId) || data.rowId <= 0 || !data.requestName) {
+      throw new Error('Некорректная позиция заявки ЛНК.')
+    }
+    const method = getLnkMethodByRequestKey(data.methodKey)
+    if (!method) throw new Error('Выберите вид контроля')
+
+    const db = requireDb()
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(weldJoints)
+        .where(eq(weldJoints.id, data.rowId))
+        .limit(1)
+        .for('update')
+      if (!row) throw new Error('Стык больше не существует. Обновите отчет ЛНК.')
+      if (!isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+        name: data.requestName,
+        date: data.requestDate,
+      })) {
+        throw new Error('Позиция заявки уже изменилась. Обновите отчет ЛНК и повторите действие.')
+      }
+
+      const record = buildLnkRequestPositionRemovalRow(row as WeldRow, method.requestKey)
+      const previousRows = new Map([[row.id, row]])
+      const validationContext = await loadServerWeldValidationContext(tx)
+      prepareServerWeldRecords({ records: [record], previousRows, context: validationContext })
+      validateServerWeldRecords({ records: [record], previousRows, context: validationContext })
+      const [updated] = await updateWeldJointsInBatches(tx, [record], previousRows)
+      await syncSystemDocumentsForWeldChangesInTransaction(tx, [updated], previousRows)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes([record], previousRows),
+      })
+      return updated
+    })
+  })
+
+export const deleteLnkRequestDocument = createServerFn({ method: 'POST' })
+  .validator((data: { requestName: string; requestDate: string }) => ({
+    requestName: String(data?.requestName ?? '').trim(),
+    requestDate: normalizeDateLikeForStorage(data?.requestDate) ?? String(data?.requestDate ?? '').trim(),
+  }))
+  .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
+    if (!data.requestName) throw new Error('Выберите заявку ЛНК')
+    const db = requireDb()
+
+    return db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(weldJoints)
+        .where(buildLnkRequestIdentityWhere(data.requestName, data.requestDate))
+        .for('update')
+      if (rows.length === 0) throw new Error('Заявка ЛНК не найдена')
+
+      const records = buildLnkRequestManagerRows({
+        records: rows as WeldRow[],
+        requestName: data.requestName,
+        requestDate: data.requestDate,
+        nextRequestName: '',
+        action: 'delete',
+      })
+      const previousRows = new Map(rows.map((row) => [row.id, row]))
+      const validationContext = await loadServerWeldValidationContext(tx)
+      prepareServerWeldRecords({ records, previousRows, context: validationContext })
+      validateServerWeldRecords({ records, previousRows, context: validationContext })
+      const updated = await updateWeldJointsInBatches(tx, records, previousRows)
+      await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes(records, previousRows),
+      })
+      return updated
+    })
+  })
+
+function buildLnkRequestIdentityWhere(requestName: string, requestDate: string) {
+  return or(
+    ...LNK_METHODS.map((method) => and(
+      sql`trim(coalesce(${weldJoints[method.requestKey]}, '')) = ${requestName}`,
+      requestDate
+        ? eq(weldJoints[method.requestDateKey], requestDate)
+        : isNull(weldJoints[method.requestDateKey]),
+    )),
+  ) ?? sql`false`
+}
 
 export const massFillWeldJoints = createServerFn({ method: 'POST' })
   .validator((data: { records: WeldPayload[] }) => data)
@@ -2125,6 +2322,17 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
         )
         return buildWeldColumnFilterOptionsFromRows(reportRows, data.fieldKey)
       },
+    )
+  }
+
+  if (data.fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) {
+    const rows = await requireDb()
+      .select(WELD_TABLE_SELECT)
+      .from(weldJoints)
+      .where(buildWhere({ ...data, columnFilters }))
+    return buildWeldColumnFilterOptionsFromRows(
+      buildServerReportRows(rows, 'weldingJournal'),
+      data.fieldKey,
     )
   }
 

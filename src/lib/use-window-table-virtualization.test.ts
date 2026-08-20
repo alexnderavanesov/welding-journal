@@ -59,9 +59,9 @@ describe('window table virtualization', () => {
       virtualItems: [],
     })
 
-    expect(state.visibleRows).toHaveLength(24)
-    expect(state.rowIndexes).toEqual(Array.from({ length: 24 }, (_, index) => index))
-    expect(state.bottomSpacerHeight).toBe(23_800)
+    expect(state.visibleRows).toHaveLength(16)
+    expect(state.rowIndexes).toEqual(Array.from({ length: 16 }, (_, index) => index))
+    expect(state.bottomSpacerHeight).toBe(24_200)
     expect(state.virtualized).toBe(true)
   })
 

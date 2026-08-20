@@ -45,7 +45,7 @@ export function invalidateWeldJoints(queryClient: QueryClient, change?: WeldCach
   void queryClient.invalidateQueries({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_LINE_AUTOFILL_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
-  void invalidateWeldPageQueries(queryClient)
+  void invalidateWeldPageQueries(queryClient, { deferActiveRefresh: Boolean(change) })
   void queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
@@ -67,15 +67,20 @@ export function updateLoadedWeldPages(queryClient: QueryClient, change: WeldCach
       const removedCount = [...deleteIds].filter((id) => loadedIds.has(id)).length
       let changed = removedCount > 0
       const pages = current.pages.map((page) => {
+        let pageChanged = false
         const rows = page.rows.flatMap((row) => {
           const id = Number(row.id)
-          if (deleteIds.has(id)) return []
+          if (deleteIds.has(id)) {
+            pageChanged = true
+            return []
+          }
           const patch = upsertRows.get(id)
           if (!patch) return [row]
           changed = true
+          pageChanged = true
           return [{ ...row, ...patch, id } as WeldRow]
         })
-        return rows === page.rows
+        return !pageChanged
           ? page
           : {
               ...page,

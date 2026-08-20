@@ -46,14 +46,17 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
   return (
     <div
       key={task.key}
-      className={`flex w-fit max-w-full flex-col gap-1 rounded-md border px-2 py-1.5 ${
-        nested ? 'border-slate-200 bg-white' : 'border-amber-200 bg-white/95'
-      }`}
+      className={nested ? 'w-full bg-white' : 'w-full rounded-md border border-slate-200 bg-white'}
     >
-      <div className="flex max-w-full items-center gap-1.5">
-        <div className="flex min-w-0 items-center gap-1.5 text-sm">
+      <div className="mx-auto grid min-h-11 w-full max-w-[1400px] grid-cols-[minmax(0,1fr)_auto] items-stretch">
+        <button
+          type="button"
+          onClick={() => handlers.onShowTask(task)}
+          className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 py-2 text-left text-sm hover:bg-sky-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300"
+          title="Показать связанный стык или цепочку"
+        >
           <RepeatedJointTaskContent task={task} nested={nested} />
-        </div>
+        </button>
         <RepeatedJointTaskActions task={task} {...handlers} />
       </div>
       {isExpanded ? (

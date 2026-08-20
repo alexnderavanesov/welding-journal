@@ -12,6 +12,7 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
+import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 
 export function useLnkResultActions({
   filteredRows,
@@ -49,6 +50,29 @@ export function useLnkResultActions({
       ...createDefaultLnkResultDraft(defaultConclusionNaming),
       requestName: request?.name ?? '',
       requestDate: request?.date ?? '',
+      rowIds: new Set([row.id]),
+      search: String(row.joint ?? row.line ?? ''),
+    })
+    setShouldPinPreviewedRows(false)
+    setIsModalOpen(true)
+  }
+
+  function openAddLnkResultModalForMethod(row: WeldRow, methodKey: WeldFieldKey) {
+    const method = getLnkMethodByRequestKey(methodKey)
+    const requestName = method ? String(row[method.requestKey] ?? '').trim() : ''
+    const requestDate = method ? String(row[method.requestDateKey] ?? '').trim() : ''
+    if (!method || !requestName) {
+      setMessage('Сначала создайте заявку ЛНК для этого вида контроля')
+      return
+    }
+
+    setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
+    setRequestSearch(requestName)
+    setDraft({
+      ...createDefaultLnkResultDraft(defaultConclusionNaming),
+      requestName,
+      requestDate,
+      methodKey: method.requestKey,
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
     })
@@ -123,6 +147,7 @@ export function useLnkResultActions({
     changeLnkResultRequest,
     closeAddLnkResultModal,
     openAddLnkResultModal,
+    openAddLnkResultModalForMethod,
     openAddLnkResultModalForRow,
     toggleAllLnkResultRows,
     toggleLnkResultRow,

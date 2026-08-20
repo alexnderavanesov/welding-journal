@@ -24,6 +24,7 @@ import type { LnkRequestDraftState, LnkResultDraftState, PstoResultDraftState } 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { getLnkRequestExtensionOptions } from '@/lib/lnk-request-extension'
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
@@ -139,6 +140,10 @@ export function useReportRequestDerivedState({
     () => (enableLnkRequestState ? getLnkRequestManagerOptions(lnkRows) : []),
     [enableLnkRequestState, lnkRows],
   )
+  const lnkRequestExtensionOptions = useMemo(
+    () => (enableLnkRequestState ? getLnkRequestExtensionOptions(lnkRows) : []),
+    [enableLnkRequestState, lnkRows],
+  )
   const lnkResultRequestOptions = useMemo(() => (enableLnkResultState ? getLnkResultRequestOptions(lnkRows) : []), [
     enableLnkResultState,
     lnkRows,
@@ -210,6 +215,7 @@ export function useReportRequestDerivedState({
     pstoResultRequestOptions,
     lnkRequestOptions,
     lnkRequestManagerOptions,
+    lnkRequestExtensionOptions,
     lnkResultRequestOptions,
     managedLnkRequestRows,
     managedLnkRequestMethods,

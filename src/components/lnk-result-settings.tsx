@@ -117,6 +117,7 @@ export function LnkResultSettings({
           label="Наименование заключения"
           placeholder="Введите наименование заключения"
           disabled={!hasNonEmptyRows}
+          bufferCustomNameInput
           onChange={onConclusionNamingChange}
         />
       </ResultSettingsCard>
@@ -124,7 +125,7 @@ export function LnkResultSettings({
       <DialogHelpNote>
         Результат заменит статус «ожидает НК» в выбранном виде контроля. Наименование заключения попадет в
         соответствующий столбец раздела «Заключения». Уже внесенные результаты изменяются только через
-        «Редактировать результаты».
+        «Все результаты».
       </DialogHelpNote>
     </section>
   )

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
 import {
   Activity,
+  ArrowUpRight,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
@@ -9,7 +10,9 @@ import {
   FlaskConical,
   Gauge,
   LineChart,
-  Percent,
+  Minus,
+  Plus,
+  Search,
   Settings2,
   TimerReset,
   UserRound,
@@ -27,14 +30,18 @@ import { formatJointDiameterLabel } from '@/lib/joint-display'
 import {
   formatPercent,
   formatStatisticValue,
+  getCurrentStatisticsWeek,
   getDefaultStatisticsPeriod,
+  type StatisticsControlDynamicsScale,
+  type StatisticsControlDynamicsScaleSetting,
   type StatisticsMethodSummary,
-  type StatisticsPeriodMode,
+  type StatisticsStateRowIds,
   type StatisticsSummary,
   type StatisticsUnit,
 } from '@/lib/statistics-summary'
 import type { LineSummary, LineSummaryRow } from '@/lib/line-summary'
 import {
+  isPercentageControlMethodAvailableForRow,
   type PercentageControlMethod,
   type PercentageLineSummary,
   type PercentageLineStampSummary,
@@ -46,9 +53,16 @@ import {
 } from '@/lib/welder-statistics-summary'
 import {
   WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY,
+  WELDING_DYNAMICS_MISSING_PROJECT_GROUP_KEY,
   WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY,
+  WELDING_DYNAMICS_OTHER_PROJECT_GROUP_KEY,
+  formatWeldingDynamicsBucketHeaderLabel,
+  getStableWeldingDynamicsColorIndex,
+  type WeldingDynamicsBucket,
   type WeldingDynamicsJointType,
   type WeldingDynamicsMaterialGroup,
+  type WeldingDynamicsProjectGroup,
+  type WeldingDynamicsScaleSetting,
   type WeldingDynamicsSummary,
 } from '@/lib/welding-dynamics'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
@@ -68,14 +82,21 @@ type StatisticsPageProps = {
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
+  onOpenReportRowIds?: (
+    rowIds: number[],
+    targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment',
+    message?: string,
+  ) => void
 }
 
-type StatisticsTab = 'general' | 'lnk' | 'welders' | 'lineSummary' | 'percentageLines'
+type StatisticsTargetReport = 'weldingJournal' | 'lnk' | 'heatTreatment'
+type StatisticsRowsOpenHandler = (rowIds: number[], message?: string) => void
+
+type StatisticsTab = 'general' | 'lnk' | 'psto' | 'welders' | 'lineSummary' | 'percentageLines'
 
 type StatisticsTimeSettings = {
   period: ReturnType<typeof getDefaultStatisticsPeriod>
   allPeriod: boolean
-  periodMode: StatisticsPeriodMode
 }
 
 const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
@@ -93,6 +114,18 @@ const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
   good: 0,
   rejected: 0,
   closurePercent: 0,
+  rowIds: {
+    requiredRequests: [],
+    createdRequests: [],
+    requests: [],
+    closed: [],
+    totalClosed: [],
+    closedWithoutRequest: [],
+    waitingRequest: [],
+    waitingControl: [],
+    good: [],
+    rejected: [],
+  },
 }
 
 const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
@@ -105,6 +138,8 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   weldedShare: 0,
   good: 0,
   rejected: 0,
+  duplicateGood: 0,
+  duplicateRejected: 0,
   waitingWeld: 0,
   waitingRequest: 0,
   waitingControl: 0,
@@ -127,6 +162,22 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   pstoClosurePercent: 0,
   methods: [],
   pstoMethod: { ...EMPTY_METHOD_SUMMARY, code: 'ПСТО' },
+  controlDynamicsScale: 'day',
+  controlDynamics: [],
+}
+
+const EMPTY_STATISTICS_STATE_ROW_IDS: StatisticsStateRowIds = {
+  good: [],
+  rejected: [],
+  duplicateGood: [],
+  duplicateRejected: [],
+  waitingWeld: [],
+  waitingRequest: [],
+  waitingControl: [],
+  waitingRepair: [],
+  backlog: [],
+  backlogWaitingWeld: [],
+  backlogWaitingRepair: [],
 }
 
 const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
@@ -142,8 +193,10 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   peakValue: 0,
   peakWelders: 0,
   materialGroups: [],
+  projectGroups: [],
   jointTypes: [],
   materialJointTypes: [],
+  projectJointTypes: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
@@ -184,19 +237,20 @@ const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
 
 function createDefaultStatisticsTimeSettings(): Record<StatisticsTab, StatisticsTimeSettings> {
   const currentPeriod = getDefaultStatisticsPeriod()
+  const currentWeek = getCurrentStatisticsWeek()
   const currentPeriodSettings = (): StatisticsTimeSettings => ({
     period: { ...currentPeriod },
     allPeriod: false,
-    periodMode: 'events',
+  })
+  const currentWeekSettings = (): StatisticsTimeSettings => ({
+    period: { ...currentWeek },
+    allPeriod: false,
   })
 
   return {
     general: currentPeriodSettings(),
-    lnk: {
-      period: { from: '', to: '' },
-      allPeriod: true,
-      periodMode: 'events',
-    },
+    lnk: currentWeekSettings(),
+    psto: currentWeekSettings(),
     welders: currentPeriodSettings(),
     lineSummary: currentPeriodSettings(),
     percentageLines: currentPeriodSettings(),
@@ -208,6 +262,7 @@ export function StatisticsPage({
   onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
+  onOpenReportRowIds,
   onOpenWeldRowIds,
 }: StatisticsPageProps) {
   const [selectedTab, setSelectedTab] = useState<StatisticsTab>(fixedTab ?? 'general')
@@ -216,20 +271,39 @@ export function StatisticsPage({
   const [timeSettingsByTab, setTimeSettingsByTab] = useState<Record<StatisticsTab, StatisticsTimeSettings>>(
     createDefaultStatisticsTimeSettings,
   )
-  const { period, allPeriod, periodMode } = timeSettingsByTab[activeTab]
+  const { period, allPeriod } = timeSettingsByTab[activeTab]
+  const currentWeek = getCurrentStatisticsWeek()
+  const isCurrentWeek =
+    !allPeriod && period.from === currentWeek.from && period.to === currentWeek.to
   const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('wdi')
   const [lnkUnit, setLnkUnit] = useState<StatisticsUnit>('joints')
+  const [pstoUnit, setPstoUnit] = useState<StatisticsUnit>('joints')
   const [weldersUnit, setWeldersUnit] = useState<StatisticsUnit>('joints')
   const [lineSummaryUnit, setLineSummaryUnit] = useState<StatisticsUnit>('joints')
   const [generalJointFilter, setGeneralJointFilter] = useState<WelderStatisticsJointFilter>('all')
+  const [weldingDynamicsScaleSetting, setWeldingDynamicsScaleSetting] = useState<WeldingDynamicsScaleSetting>('auto')
   const [welderJointFilter, setWelderJointFilter] = useState<WelderStatisticsJointFilter>('all')
   const [projectFilter, setProjectFilter] = useState('')
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
   const [percentageLineSearch, setPercentageLineSearch] = useState('')
-  const showPeriodMode = activeTab === 'lnk'
+  const [controlDynamicsScaleByTab, setControlDynamicsScaleByTab] = useState<{
+    lnk: StatisticsControlDynamicsScaleSetting
+    psto: StatisticsControlDynamicsScaleSetting
+  }>({ lnk: 'auto', psto: 'auto' })
+  const controlDynamicsScaleSetting = activeTab === 'lnk' || activeTab === 'psto'
+    ? controlDynamicsScaleByTab[activeTab]
+    : 'auto'
+  const openLnkRows = onOpenReportRowIds
+    ? (rowIds: number[], message?: string) => onOpenReportRowIds(rowIds, 'lnk', message)
+    : undefined
+  const openHeatTreatmentRows = onOpenReportRowIds
+    ? (rowIds: number[], message?: string) => onOpenReportRowIds(rowIds, 'heatTreatment', message)
+    : undefined
   const unit =
     activeTab === 'lnk'
       ? lnkUnit
+      : activeTab === 'psto'
+        ? pstoUnit
       : activeTab === 'welders'
         ? weldersUnit
         : activeTab === 'lineSummary'
@@ -238,6 +312,8 @@ export function StatisticsPage({
   const setUnit =
     activeTab === 'lnk'
       ? setLnkUnit
+      : activeTab === 'psto'
+        ? setPstoUnit
       : activeTab === 'welders'
         ? setWeldersUnit
         : activeTab === 'lineSummary'
@@ -262,7 +338,8 @@ export function StatisticsPage({
     to: periodTo,
     unit,
     jointFilter,
-    periodMode,
+    controlDynamicsScale: controlDynamicsScaleSetting,
+    weldingDynamicsScale: activeTab === 'general' ? weldingDynamicsScaleSetting : 'auto',
   })
   const projectOptions = statisticsQuery.data?.projectOptions ?? []
   const subtitleOptions = statisticsQuery.data?.subtitleOptions ?? []
@@ -272,6 +349,7 @@ export function StatisticsPage({
   const lineSummary = statisticsQuery.data?.lineSummary ?? EMPTY_LINE_SUMMARY
   const percentageLineSummary = statisticsQuery.data?.percentageLineSummary ?? EMPTY_PERCENTAGE_LINE_SUMMARY
   const generalProgressSummary = statisticsQuery.data?.generalProgressSummary ?? EMPTY_LINE_SUMMARY
+  const generalStateRowIds = statisticsQuery.data?.generalStateRowIds ?? EMPTY_STATISTICS_STATE_ROW_IDS
   const orderedMethods = useMemo(() => {
     const methodsByCode = new Map([...summary.methods, summary.pstoMethod].map((method) => [method.code, method]))
     return ['ВИК', 'РК', 'УЗК', 'ПВК', 'ПСТО', 'ТВМТ', 'РФА', 'СТЛС', 'МКК']
@@ -280,16 +358,19 @@ export function StatisticsPage({
   }, [summary.methods, summary.pstoMethod])
   const lnkMethods = useMemo(() => orderedMethods.filter((method) => method.code !== 'ПСТО'), [orderedMethods])
   const unofficialCount = statisticsQuery.data?.unofficialCount ?? 0
+  const unofficialRowIds = statisticsQuery.data?.unofficialRowIds ?? []
   const unofficialValue = statisticsQuery.data?.unofficialValue ?? 0
   const lnkWaitingRequests = summary.methods.reduce((total, method) => total + method.waitingRequest, 0)
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
   const scopeLabel = getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
-  const periodModeDescription =
+  const periodDescription =
     activeTab === 'general'
       ? 'Стыки отбираются по дате сварки, а их годность и состояние показываются на текущий момент.'
-      : periodMode === 'events'
-        ? 'Заявки считаются по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки.'
-        : 'Все блоки показывают текущее состояние стыков, сваренных в выбранный период.'
+      : activeTab === 'lnk'
+        ? 'Заявки считаются по дате создания, заключения ЛНК — по дате заключения; потребность и состояния без заявки — по дате сварки.'
+        : activeTab === 'psto'
+          ? 'Заявки считаются по дате создания, заключения ПСТО — по дате проведения; потребность и состояния без заявки — по дате сварки.'
+          : 'Стыки отбираются по дате сварки.'
   const printableReport = useMemo(
     () =>
       buildStatisticsPrintableReport({
@@ -300,7 +381,7 @@ export function StatisticsPage({
         lnkMethods,
         percentageLines: filterPercentageLineSummaries(percentageLineSummary, percentageLineSearch),
         periodLabel: allPeriod || !periodFrom || !periodTo ? 'За весь период' : `${formatDisplayDate(periodFrom)} - ${formatDisplayDate(periodTo)}`,
-        periodModeDescription,
+        periodDescription,
         scopeLabel,
         summary,
         unofficialCount,
@@ -317,7 +398,7 @@ export function StatisticsPage({
       percentageLineSearch,
       percentageLineSummary,
       periodFrom,
-      periodModeDescription,
+      periodDescription,
       periodTo,
       scopeLabel,
       summary,
@@ -330,9 +411,9 @@ export function StatisticsPage({
   )
   return (
     <section className="w-full max-w-full min-w-0 space-y-4 pb-8">
-      <div className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+      <div className="sticky top-0 z-30 rounded-md border border-slate-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
             {!fixedTab ? (
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -349,7 +430,15 @@ export function StatisticsPage({
                   variant={activeTab === 'lnk' ? 'default' : 'outline'}
                   onClick={() => setSelectedTab('lnk')}
                 >
-                  ЛНК и ПСТО
+                  ЛНК
+                </Button>
+                <Button
+                  className="h-9 rounded-md"
+                  size="sm"
+                  variant={activeTab === 'psto' ? 'default' : 'outline'}
+                  onClick={() => setSelectedTab('psto')}
+                >
+                  ПСТО
                 </Button>
                 <Button
                   className="h-9 rounded-md"
@@ -369,31 +458,33 @@ export function StatisticsPage({
                 </Button>
               </div>
             ) : null}
-            <p className="mt-3 text-sm text-slate-500">
+            <p className={cn('truncate text-xs text-slate-500', fixedTab ? 'mt-0' : 'mt-2')} title={activeTab === 'general' ? `${periodDescription} ${scopeLabel}` : undefined}>
               {activeTab === 'lnk'
-                ? 'Сводка по заявкам, заключениям, результатам ЛНК и ПСТО за выбранный период.'
+                ? 'Заявки, заключения, результаты и очереди лабораторного неразрушающего контроля.'
+                : activeTab === 'psto'
+                  ? 'Заявки, проведение и текущая очередь послесварочной термообработки.'
                 : activeTab === 'general'
-                  ? 'Общий прогресс сварки, динамика и текущее состояние стыков за выбранный период.'
+                  ? `${allPeriod || !periodFrom || !periodTo ? 'За весь период' : `${formatDisplayDate(periodFrom)} - ${formatDisplayDate(periodTo)}`} · ${scopeLabel} · ${getJointFilterLabel(generalJointFilter)} · ${generalUnit === 'wdi' ? 'WDI' : 'стыки'}`
                 : activeTab === 'welders'
                   ? 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'
                   : activeTab === 'lineSummary'
                     ? 'Сводка по линиям с учетом актуальных стыков и текущего остатка.'
-                    : 'Контроль процентных линий по официальным клеймам и РК/УЗК.'}
+                    : 'Контроль процентных линий по официальным клеймам; для У-стыков учитывается ПВК.'}
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            {activeTab !== 'general' ? <p className="mt-1 text-xs text-slate-500">
               {activeTab === 'lnk'
-                ? 'ЛНК и ПСТО разделены по группам: виды НК отдельно, ПСТО отдельно. Неофициальные стыки показаны отдельным счетчиком.'
-                : activeTab === 'general'
-                  ? periodModeDescription
+                ? 'Каждый вид НК показан отдельно; значения и диаграмма открывают соответствующие строки отчета ЛНК.'
+                : activeTab === 'psto'
+                  ? 'Показатели и диаграмма открывают соответствующие строки отчета ПСТО. Неофициальные стыки вынесены отдельно.'
                 : activeTab === 'welders'
                   ? 'Статистика сварщиков считается по дате сварки стыка; распределение идет только по фактическим клеймам.'
                   : activeTab === 'lineSummary'
                     ? 'Неактуальные по изменению строки и исторические стыки цепочки до годного результата не включаются.'
                     : 'Процентная линия определяется как линия с единым % контроля меньше 100; расчет идет отдельно по каждому официальному клейму.'}
-            </p>
+            </p> : null}
           </div>
 
-          <div className="flex flex-1 flex-wrap justify-end gap-2">
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
             <Button
               type="button"
               variant="outline"
@@ -419,7 +510,7 @@ export function StatisticsPage({
         </div>
 
         {settingsOpen ? (
-          <div className="mt-4 rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
             <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 pb-3">
               {activeTab !== 'lineSummary' && activeTab !== 'percentageLines' ? (
                 <div className="grid gap-1 text-xs font-medium text-slate-600">
@@ -452,6 +543,22 @@ export function StatisticsPage({
                       }}
                       className="h-8 w-[128px] border-slate-200 text-sm"
                     />
+                    {activeTab === 'lnk' || activeTab === 'psto' ? (
+                      <button
+                        type="button"
+                        className={segmentButtonClass(isCurrentWeek)}
+                        onClick={() => {
+                          const week = getCurrentStatisticsWeek()
+                          updateActiveTimeSettings((current) => ({
+                            ...current,
+                            allPeriod: false,
+                            period: week,
+                          }))
+                        }}
+                      >
+                        Текущая неделя
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className={segmentButtonClass(allPeriod)}
@@ -503,33 +610,6 @@ export function StatisticsPage({
                         {label}
                       </button>
                     ))}
-                  </div>
-                </div>
-              ) : null}
-              {showPeriodMode ? (
-                <div className="grid gap-1 text-xs font-medium text-slate-600">
-                  Расчет периода
-                  <div className="inline-flex rounded-md border border-slate-200 bg-white/80 p-1">
-                    <button
-                      type="button"
-                      className={segmentButtonClass(periodMode === 'events')}
-                      onClick={() =>
-                        updateActiveTimeSettings((current) => ({ ...current, periodMode: 'events' }))
-                      }
-                      title="Заявки по дате создания, ЛНК по дате контроля, ПСТО по дате ПСТО, сварка по дате сварки"
-                    >
-                      События
-                    </button>
-                    <button
-                      type="button"
-                      className={segmentButtonClass(periodMode === 'welded-joints')}
-                      onClick={() =>
-                        updateActiveTimeSettings((current) => ({ ...current, periodMode: 'welded-joints' }))
-                      }
-                      title="Что происходит со стыками, сваренными в выбранный период"
-                    >
-                      Стыки периода
-                    </button>
                   </div>
                 </div>
               ) : null}
@@ -623,48 +703,7 @@ export function StatisticsPage({
 
       {activeTab === 'general' ? (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <MetricCard
-              compact
-              icon={ClipboardCheck}
-              label="Выполнено"
-              value={formatPercent(generalProgressSummary.total > 0 ? (generalProgressSummary.completed / generalProgressSummary.total) * 100 : 0)}
-              detail={`${formatStatisticValue(generalProgressSummary.completed, unit)} из ${formatStatisticValue(generalProgressSummary.total, unit)}`}
-              accent="green"
-            />
-            <MetricCard
-              compact
-              icon={Gauge}
-              label="Годность"
-              value={formatPercent(summary.qualityPercent)}
-              detail={`${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`}
-              accent="green"
-            />
-            <MetricCard
-              compact
-              icon={TimerReset}
-              label={`В смену, ${unit === 'wdi' ? 'WDI' : 'стыков'}`}
-              value={formatAverageStatisticValue(weldingDynamics.periodDays > 0 ? weldingDynamics.totalValue / weldingDynamics.periodDays : 0)}
-              detail={`${formatStatisticValue(weldingDynamics.totalValue, unit)} за ${weldingDynamics.periodDays} дн.`}
-              accent="amber"
-            />
-            <MetricCard
-              compact
-              icon={Users}
-              label="Количество сварщиков"
-              value={formatStatisticValue(weldingDynamics.totalWelders, 'joints')}
-              detail="Уникальные фактические клейма за период"
-              accent="indigo"
-            />
-            <MetricCard
-              compact
-              wrapLabel
-              icon={UserRound}
-              label={getAveragePerWelderShiftLabel(unit)}
-              value={formatValuePerWelderShift(weldingDynamics.averageValuePerWelderShift, weldingDynamics.welderShiftCount)}
-              detail={`Среднее число сварщиков в смену: ${formatAverageStatisticValue(weldingDynamics.averageWeldersPerShift)}`}
-              accent="slate"
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               compact
               icon={Activity}
@@ -673,49 +712,119 @@ export function StatisticsPage({
               detail={`${formatPercent(summary.weldedShare)} от общего количества`}
               accent="blue"
             />
+            <MetricCard
+              compact
+              icon={TimerReset}
+              label={`Среднее в смену, ${unit === 'wdi' ? 'WDI' : 'стыков'}`}
+              value={formatAverageStatisticValue(weldingDynamics.periodDays > 0 ? weldingDynamics.totalValue / weldingDynamics.periodDays : 0)}
+              detail={`${formatStatisticValue(weldingDynamics.totalValue, unit)} за ${weldingDynamics.periodDays} дн.`}
+              accent="amber"
+            />
+            <MetricCard
+              compact
+              icon={Users}
+              label="Сварщиков по факту"
+              value={formatStatisticValue(weldingDynamics.totalWelders, 'joints')}
+              detail={`В среднем в смену: ${formatAverageStatisticValue(weldingDynamics.averageWeldersPerShift)}`}
+              accent="indigo"
+            />
+            <MetricCard
+              compact
+              wrapDetail
+              wrapLabel
+              icon={UserRound}
+              label={getAveragePerWelderShiftLabel(unit)}
+              value={formatValuePerWelderShift(weldingDynamics.averageValuePerWelderShift, weldingDynamics.welderShiftCount)}
+              detail="Средняя фактическая выработка одного сварщика"
+              accent="slate"
+            />
           </div>
 
-          <WeldingDynamicsPanel jointFilter={generalJointFilter} summary={weldingDynamics} unit={unit} />
-
-          <Panel
-            title="Состояние стыков"
-            subtitle={`За выбранный период: ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; сварено ${formatStatisticValue(summary.welded, unit)}, из них ремонтов ${formatStatisticValue(summary.completedRepairs, unit)}.`}
-          >
-            <SegmentedProgress
-              unit={unit}
-              items={[
-                { label: 'Годен', value: summary.good, className: 'bg-emerald-500' },
-                { label: 'Не годен', value: summary.rejected, className: 'bg-rose-500' },
-                { label: 'Ожидает НК', value: summary.waitingControl, className: 'bg-amber-400' },
-                { label: 'Ожидает заявку', value: summary.waitingRequest, className: 'bg-sky-400' },
-                { label: 'Ожидает ремонт', value: summary.waitingRepair, className: 'bg-orange-400' },
-              ]}
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            <ProgressMetricCard
+              label="Выполнение сварки"
+              value={generalProgressSummary.total > 0
+                ? formatPercent((generalProgressSummary.completed / generalProgressSummary.total) * 100)
+                : '—'}
+              detail={generalProgressSummary.total > 0
+                ? `${formatStatisticValue(generalProgressSummary.completed, unit)} выполнено из ${formatStatisticValue(generalProgressSummary.total, unit)}`
+                : 'Нет стыков для расчета прогресса'}
+              percent={generalProgressSummary.total > 0
+                ? (generalProgressSummary.completed / generalProgressSummary.total) * 100
+                : null}
+              tone="sky"
             />
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
-              <StatusLine label="Годен" value={summary.good} unit={unit} />
-              <StatusLine label="Не годен" value={summary.rejected} unit={unit} />
-              <StatusLine label="Ожидает заявку" value={summary.waitingRequest} unit={unit} />
-              <StatusLine label="Ожидает НК" value={summary.waitingControl} unit={unit} />
-              <StatusLine label="Ожидает ремонт" value={summary.waitingRepair} unit={unit} />
-              <StatusLine label="Ожидает сварку" value={summary.waitingWeld} unit={unit} />
-            </div>
-          </Panel>
+            <ProgressMetricCard
+              label="Годность сварки"
+              value={summary.good + summary.rejected > 0 ? formatPercent(summary.qualityPercent) : '—'}
+              detail={summary.good + summary.rejected > 0
+                ? `${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`
+                : 'Нет результатов для расчета годности'}
+              percent={summary.good + summary.rejected > 0 ? summary.qualityPercent : null}
+              tone="emerald"
+            />
+          </div>
 
-          <CurrentBacklogPanel summary={summary} unit={unit} />
+          <WeldingDynamicsPanel
+            jointFilter={generalJointFilter}
+            scaleSetting={weldingDynamicsScaleSetting}
+            summary={weldingDynamics}
+            unit={unit}
+            onScaleChange={setWeldingDynamicsScaleSetting}
+          />
+
+          <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+            <Panel
+              title="Состояние стыков"
+              subtitle={`За выбранный период: ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; сварено ${formatStatisticValue(summary.welded, unit)}, из них ремонтов ${formatStatisticValue(summary.completedRepairs, unit)}.`}
+            >
+              <SegmentedProgress
+                unit={unit}
+                items={[
+                  { label: 'Годен', value: summary.good, className: 'bg-emerald-500' },
+                  { label: 'Не годен', value: summary.rejected, className: 'bg-rose-500' },
+                  { label: 'Ожидает НК', value: summary.waitingControl, className: 'bg-amber-400' },
+                  { label: 'Ожидает заявку', value: summary.waitingRequest, className: 'bg-sky-400' },
+                  { label: 'Ожидает ремонт', value: summary.waitingRepair, className: 'bg-orange-400' },
+                ]}
+              />
+              <div className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
+                <StatusLine label="Годен" value={summary.good} unit={unit} rowIds={generalStateRowIds.good} onOpenRows={onOpenWeldRowIds} />
+                <StatusLine label="Не годен" value={summary.rejected} unit={unit} rowIds={generalStateRowIds.rejected} onOpenRows={onOpenWeldRowIds} />
+                <StatusLine label="Ожидает заявку" value={summary.waitingRequest} unit={unit} rowIds={generalStateRowIds.waitingRequest} onOpenRows={onOpenWeldRowIds} />
+                <StatusLine label="Ожидает НК" value={summary.waitingControl} unit={unit} rowIds={generalStateRowIds.waitingControl} onOpenRows={onOpenWeldRowIds} />
+                <StatusLine label="Ожидает ремонт" value={summary.waitingRepair} unit={unit} rowIds={generalStateRowIds.waitingRepair} onOpenRows={onOpenWeldRowIds} />
+                <StatusLine label="Ожидает сварку" value={summary.waitingWeld} unit={unit} rowIds={generalStateRowIds.waitingWeld} onOpenRows={onOpenWeldRowIds} />
+              </div>
+            </Panel>
+
+            <CurrentBacklogPanel summary={summary} stateRowIds={generalStateRowIds} unit={unit} onOpenRows={onOpenWeldRowIds} />
+          </div>
         </>
-      ) : activeTab === 'lnk' ? (
-        <LnkPstoStatisticsPanel
+      ) : activeTab === 'lnk' || activeTab === 'psto' ? (
+        <ControlStatisticsPanel
+          control={activeTab}
+          controlDynamicsScale={summary.controlDynamicsScale}
+          controlDynamicsScaleSetting={controlDynamicsScaleSetting}
+          onControlDynamicsScaleChange={(scale) => {
+            setControlDynamicsScaleByTab((current) => ({ ...current, [activeTab]: scale }))
+          }}
+          periodFrom={periodFrom}
+          periodTo={periodTo}
+          stateRowIds={generalStateRowIds}
           lnkMethods={lnkMethods}
           lnkWaitingRequests={lnkWaitingRequests}
           summary={summary}
           unofficialCount={unofficialCount}
-          unofficialValue={unofficialValue}
+          unofficialRowIds={unofficialRowIds}
+          onOpenControlRows={activeTab === 'lnk' ? openLnkRows : openHeatTreatmentRows}
+          onOpenStateRows={onOpenWeldRowIds}
           unit={unit}
-          unitLabel={unitLabel}
         />
       ) : activeTab === 'welders' ? (
         <WeldersStatisticsPanel
           jointFilter={welderJointFilter}
+          onOpenRows={onOpenWeldRowIds}
           summary={welderSummary}
           unit={unit}
         />
@@ -730,7 +839,7 @@ export function StatisticsPage({
           onSearchChange={setPercentageLineSearch}
         />
       ) : (
-        <LineSummaryPanel summary={lineSummary} unit={lineSummaryUnit} />
+        <LineSummaryPanel onOpenRows={onOpenWeldRowIds} summary={lineSummary} unit={lineSummaryUnit} />
       )}
     </section>
   )
@@ -745,9 +854,11 @@ type MetricCardProps = {
   value: string
   detail: string
   accent: 'blue' | 'green' | 'indigo' | 'amber' | 'slate'
+  onClick?: () => void
+  actionTitle?: string
 }
 
-function MetricCard({ compact = false, wrapDetail = false, wrapLabel = false, icon: Icon, label, value, detail, accent }: MetricCardProps) {
+function MetricCard({ compact = false, wrapDetail = false, wrapLabel = false, icon: Icon, label, value, detail, accent, onClick, actionTitle }: MetricCardProps) {
   const accentClass = {
     blue: 'bg-sky-50 text-sky-700 border-sky-100',
     green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
@@ -756,14 +867,14 @@ function MetricCard({ compact = false, wrapDetail = false, wrapLabel = false, ic
     slate: 'bg-slate-50 text-slate-700 border-slate-100',
   }[accent]
 
-  return (
-    <div className={cn('rounded-md border border-slate-200 bg-white', compact ? 'p-3' : 'p-4')}>
+  const content = (
+    <>
       <div className={cn('flex items-center', compact ? 'gap-2.5' : 'gap-3')}>
         <span className={cn('flex items-center justify-center rounded-md border', compact ? 'h-9 w-9' : 'h-10 w-10', accentClass)}>
           <Icon className={cn(compact ? 'h-4 w-4' : 'h-5 w-5')} />
         </span>
         <div className="min-w-0">
-          <div className={cn('text-sm text-slate-500', wrapLabel ? 'leading-snug' : 'truncate')} title={label}>{label}</div>
+          <div className={cn('flex items-center gap-1.5 text-sm text-slate-500', wrapLabel ? 'leading-snug' : 'truncate')} title={label}>{label}{onClick ? <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-sky-600" /> : null}</div>
           <div className={cn('font-semibold tracking-tight text-slate-900', compact ? 'text-xl' : 'text-2xl')}>{value}</div>
         </div>
       </div>
@@ -773,19 +884,71 @@ function MetricCard({ compact = false, wrapDetail = false, wrapLabel = false, ic
       >
         {detail}
       </div>
+    </>
+  )
+  const className = cn('rounded-md border border-slate-200 bg-white text-left', compact ? 'p-3' : 'p-4')
+  return onClick ? (
+    <button type="button" className={cn(className, 'w-full transition-colors hover:border-sky-200 hover:bg-sky-50/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300')} title={actionTitle} onClick={onClick}>{content}</button>
+  ) : <div className={className}>{content}</div>
+}
+
+function ProgressMetricCard({
+  detail,
+  label,
+  percent,
+  tone,
+  value,
+}: {
+  detail: string
+  label: string
+  percent: number | null
+  tone: 'emerald' | 'sky'
+  value: string
+}) {
+  const toneClasses = tone === 'emerald'
+    ? { bar: 'bg-emerald-500', value: 'text-emerald-700' }
+    : { bar: 'bg-sky-500', value: 'text-sky-700' }
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-4 py-3.5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-slate-600">{label}</div>
+          <div className="mt-0.5 truncate text-sm text-slate-500" title={detail}>{detail}</div>
+        </div>
+        <div className={cn('shrink-0 text-2xl font-semibold tabular-nums', toneClasses.value)}>{value}</div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+        {percent !== null ? (
+          <div
+            className={cn('h-full rounded-full transition-[width] duration-300', toneClasses.bar)}
+            style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+          />
+        ) : null}
+      </div>
     </div>
   )
 }
 
-function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+function Panel({
+  title,
+  subtitle,
+  headerAction,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  headerAction?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4">
       <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-slate-900">{title}</h2>
           {subtitle ? <p className="text-sm text-slate-500">{subtitle}</p> : null}
         </div>
-        <LineChart className="mt-0.5 h-5 w-5 shrink-0 text-slate-300" />
+        {headerAction ?? <LineChart className="mt-0.5 h-5 w-5 shrink-0 text-slate-300" />}
       </div>
       {children}
     </section>
@@ -794,10 +957,14 @@ function Panel({ title, subtitle, children }: { title: string; subtitle?: string
 
 function WeldingDynamicsPanel({
   jointFilter,
+  onScaleChange,
+  scaleSetting,
   summary,
   unit,
 }: {
   jointFilter: WelderStatisticsJointFilter
+  onScaleChange: (scale: WeldingDynamicsScaleSetting) => void
+  scaleSetting: WeldingDynamicsScaleSetting
   summary: WeldingDynamicsSummary
   unit: StatisticsUnit
 }) {
@@ -807,15 +974,21 @@ function WeldingDynamicsPanel({
   const chartMinWidth = Math.max(720, summary.buckets.length * 112)
   const bucketText = getWeldingDynamicsBucketText(summary.bucketUnitLabel)
   const materialGroups = summary.materialGroups ?? []
+  const projectGroups = summary.projectGroups ?? []
   const jointTypes = summary.jointTypes ?? []
-  const [colorMode, setColorMode] = useState<'joint-types' | 'materials'>('joint-types')
+  const [colorMode, setColorMode] = useState<'joint-types' | 'materials' | 'projects'>('joint-types')
   const [selectedBucketKey, setSelectedBucketKey] = useState<string | null>(null)
+  const [hoveredBucketKey, setHoveredBucketKey] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(true)
+  const activeColorMode = jointFilter === 'all' ? colorMode : 'materials'
   const showJointTypeColors = jointFilter === 'all' && colorMode === 'joint-types'
-  const materialGroupSignature = materialGroups.map((group) => group.key).join('\u0000')
   const materialGroupColors = useMemo(
-    () => new Map(materialGroups.map((group, index) => [group.key, getWeldingDynamicsMaterialGroupColor(group, index)])),
-    [materialGroupSignature],
+    () => new Map(materialGroups.map((group) => [group.key, getWeldingDynamicsMaterialGroupColor(group)])),
+    [materialGroups],
+  )
+  const projectGroupColors = useMemo(
+    () => new Map(projectGroups.map((group) => [group.key, getWeldingDynamicsProjectGroupColor(group)])),
+    [projectGroups],
   )
 
   useEffect(() => {
@@ -840,7 +1013,18 @@ function WeldingDynamicsPanel({
       ? selectedBucket.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0
       : jointType.value,
   }))
-  const detailMaterialJointTypes = selectedBucket?.materialJointTypes ?? summary.materialJointTypes ?? []
+  const detailDimensionJointTypes = activeColorMode === 'projects'
+    ? selectedBucket?.projectJointTypes ?? summary.projectJointTypes ?? []
+    : selectedBucket?.materialJointTypes ?? summary.materialJointTypes ?? []
+  const detailDimensionLabel = activeColorMode === 'projects' ? 'Проект' : 'Группа материала'
+  const detailDimensionColors = activeColorMode === 'projects' ? projectGroupColors : materialGroupColors
+  const tooltipBucket = summary.buckets.find((bucket) => bucket.key === hoveredBucketKey) ?? null
+  const welderLinePoints = getWeldingDynamicsLinePoints(
+    summary.buckets.map((bucket) => bucket.welderCount),
+    maxWelders,
+    WELDING_DYNAMICS_WELDER_PLOT_PERCENT,
+    0.5,
+  )
 
   useWindowEscapeKey(
     Boolean(selectedBucket),
@@ -869,14 +1053,26 @@ function WeldingDynamicsPanel({
   return (
     <Panel
       title="Динамика сварки"
-      subtitle={`Интервал: ${bucketText}. Число над столбиком показывает общий объем в ${unitLabel}, точки - количество сварщиков.`}
+      subtitle={`Интервал: ${bucketText}. Число над столбиком показывает общий объем в ${unitLabel}, графитовая линия и точки - количество сварщиков.`}
     >
       {summary.buckets.length > 0 ? (
         <div>
           <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-            {jointFilter === 'all' ? (
-              <div className="mb-2.5 flex justify-end">
-                <div className="inline-flex shrink-0 rounded-md border border-slate-200 bg-white p-0.5" aria-label="Расцветка диаграммы">
+            <div className="mb-2.5 flex min-h-9 flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-0 w-5 border-t border-dashed border-slate-600" />
+                  Сварщики
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <DynamicsScaleControl
+                  scale={summary.bucketUnit}
+                  scaleSetting={scaleSetting}
+                  onScaleChange={onScaleChange}
+                />
+                {jointFilter === 'all' ? (
+                  <div className="inline-flex shrink-0 rounded-md border border-slate-200 bg-white p-0.5" aria-label="Расцветка диаграммы">
                   <button
                     type="button"
                     className={cn(
@@ -902,15 +1098,64 @@ function WeldingDynamicsPanel({
                   >
                     Материал
                   </button>
-                </div>
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded px-2 py-1 text-xs font-medium transition-colors sm:rounded-md sm:px-3 sm:py-1.5 sm:text-sm',
+                      colorMode === 'projects'
+                        ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                    )}
+                    onClick={() => setColorMode('projects')}
+                  >
+                    Проект
+                  </button>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+            </div>
+            <div className="relative">
+              {tooltipBucket ? (
+                <WeldingDynamicsTooltip
+                  bucket={tooltipBucket}
+                  unit={unit}
+                />
+              ) : null}
             <div className="overflow-x-auto pb-3">
               <div
-                className="grid items-end gap-2 pt-1"
+                className="relative grid items-end gap-2 pt-1"
                 style={{ gridTemplateColumns: `repeat(${summary.buckets.length}, minmax(44px, 1fr))`, minWidth: chartMinWidth }}
               >
+                <svg
+                  className="pointer-events-none absolute inset-x-0 top-9 z-20 h-[calc(16rem-2.25rem)] w-full overflow-visible"
+                  style={{ transform: 'translateX(20px)' }}
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  {welderLinePoints ? (
+                    <polyline
+                      points={welderLinePoints}
+                      fill="none"
+                      stroke="#334155"
+                      strokeDasharray="3 4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity="0.7"
+                      strokeWidth="1"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ) : null}
+                </svg>
+                {summary.peakWelders > 0 ? (
+                  <div className="pointer-events-none absolute right-1 top-10 z-20 flex h-[calc(16rem-3rem)] flex-col justify-between rounded bg-white/85 px-1 py-0.5 text-[10px] font-medium tabular-nums text-slate-400 shadow-sm ring-1 ring-slate-100">
+                    <span>{maxWelders}</span>
+                    <span>{Math.round(maxWelders / 2)}</span>
+                    <span>0 св.</span>
+                  </div>
+                ) : null}
                 {summary.buckets.map((bucket) => {
+                  const bucketHeaderLabel = formatWeldingDynamicsBucketHeaderLabel(bucket, summary.bucketUnit)
                   const valuePercent =
                     bucket.value > 0
                       ? Math.max(6, (bucket.value / maxValue) * WELDING_DYNAMICS_VALUE_PLOT_PERCENT)
@@ -924,10 +1169,15 @@ function WeldingDynamicsPanel({
                   )
                   const bucketJointTypes = bucket.jointTypes ?? []
                   const bucketMaterialJointTypes = bucket.materialJointTypes ?? []
+                  const bucketProjectJointTypes = bucket.projectJointTypes ?? []
                   const jointTypeLines = bucketJointTypes.map((jointType) =>
                     `${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`,
                   )
                   const materialJointTypeLines = bucketMaterialJointTypes.flatMap((group) => [
+                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`,
+                    ...group.jointTypes.map((jointType) => `  ${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`),
+                  ])
+                  const projectJointTypeLines = bucketProjectJointTypes.flatMap((group) => [
                     `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`,
                     ...group.jointTypes.map((jointType) => `  ${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`),
                   ])
@@ -937,6 +1187,8 @@ function WeldingDynamicsPanel({
                     ...jointTypeLines,
                     'Группы материалов:',
                     ...(materialJointTypeLines.length > 0 ? materialJointTypeLines : materialGroupLines),
+                    'Проекты:',
+                    ...projectJointTypeLines,
                   ].join('\n')
                   const segments = showJointTypeColors
                     ? bucketJointTypes.map((jointType) => ({
@@ -944,11 +1196,17 @@ function WeldingDynamicsPanel({
                         value: jointType.value,
                         color: getWeldingDynamicsJointTypeColor(jointType),
                       }))
-                    : bucket.materialGroups.map((group) => ({
-                        key: group.key,
-                        value: group.value,
-                        color: materialGroupColors.get(group.key),
-                      }))
+                    : activeColorMode === 'projects'
+                      ? bucket.projectGroups.map((group) => ({
+                          key: group.key,
+                          value: group.value,
+                          color: projectGroupColors.get(group.key),
+                        }))
+                      : bucket.materialGroups.map((group) => ({
+                          key: group.key,
+                          value: group.value,
+                          color: materialGroupColors.get(group.key),
+                        }))
 
                   return (
                     <div
@@ -961,7 +1219,10 @@ function WeldingDynamicsPanel({
                         "relative flex min-w-0 cursor-pointer flex-col items-center gap-2 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300",
                         selectedBucketKey === bucket.key && "bg-sky-50/40 after:pointer-events-none after:absolute after:inset-0 after:z-30 after:rounded-md after:border-2 after:border-sky-400 after:content-['']",
                       )}
-                      title={title}
+                      onMouseEnter={() => setHoveredBucketKey(bucket.key)}
+                      onMouseLeave={() => setHoveredBucketKey((current) => current === bucket.key ? null : current)}
+                      onFocus={() => setHoveredBucketKey(bucket.key)}
+                      onBlur={() => setHoveredBucketKey((current) => current === bucket.key ? null : current)}
                       onClick={() => selectBucket(bucket.key)}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter' && event.key !== ' ') return
@@ -969,71 +1230,74 @@ function WeldingDynamicsPanel({
                         selectBucket(bucket.key)
                       }}
                     >
-                      <div className="relative h-60 w-full rounded-md border border-slate-200 bg-white">
-                        <div
-                          className="absolute inset-x-0 border-t border-dashed border-slate-100"
-                          style={{ bottom: `${WELDING_DYNAMICS_VALUE_PLOT_PERCENT / 3}%` }}
-                        />
-                        <div
-                          className="absolute inset-x-0 border-t border-dashed border-slate-100"
-                          style={{ bottom: `${(WELDING_DYNAMICS_VALUE_PLOT_PERCENT * 2) / 3}%` }}
-                        />
-                        <div
-                          className="absolute bottom-0 left-1/2 flex w-10 -translate-x-1/2 flex-col-reverse overflow-hidden rounded-t-md bg-slate-100 shadow-sm ring-1 ring-inset ring-slate-200"
-                          style={{ height: `${valuePercent}%` }}
-                        >
-                          {segments.length > 0
-                            ? segments.map((segment) => (
-                                <span
-                                  key={segment.key}
-                                  className="block w-full shrink-0 border-t border-white/50 first:border-t-0"
-                                  style={{
-                                    backgroundColor: segment.color,
-                                    height: `${bucket.value > 0 ? (segment.value / bucket.value) * 100 : 0}%`,
-                                  }}
-                                />
-                              ))
-                            : bucket.value > 0 && materialGroups.length === 0
-                              ? <span className="block h-full w-full bg-sky-500/80" />
-                              : null}
+                      <div className="flex h-64 w-full flex-col overflow-hidden rounded-md border border-slate-200 bg-white">
+                        <div className="flex h-8 shrink-0 items-center justify-center border-b border-slate-100 bg-slate-50/80 px-1.5 text-center text-xs font-semibold tabular-nums text-slate-700">
+                          {bucketHeaderLabel}
                         </div>
-                        {bucket.value > 0 ? (
-                          <span
-                            className="absolute left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-white/90 px-1.5 text-[11px] font-bold leading-5 text-slate-800 shadow-sm"
-                            style={{ bottom: `calc(${valuePercent}% + 3px)` }}
-                          >
-                            {formatStatisticValue(bucket.value, unit)}
-                          </span>
-                        ) : null}
-                        {bucket.welderCount > 0 ? (
-                          <span
-                            className="absolute z-10 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-white bg-slate-800 shadow ring-1 ring-slate-300"
-                            title={`${bucket.welderCount} сварщиков`}
-                            style={{
-                              bottom: `calc(${welderPercent}% - 6px)`,
-                              left: 'calc(50% + 20px)',
-                            }}
+                        <div className="relative min-h-0 flex-1 overflow-hidden">
+                          <div
+                            className="absolute inset-x-0 border-t border-dashed border-slate-100"
+                            style={{ bottom: `${WELDING_DYNAMICS_VALUE_PLOT_PERCENT / 3}%` }}
                           />
-                        ) : null}
-                      </div>
-                      <div className="flex h-[88px] w-full flex-col overflow-hidden rounded-md border border-slate-200 bg-white text-left shadow-sm">
-                        <div className="flex h-8 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-2 text-xs font-semibold text-slate-700">
-                          <span className="shrink-0">{bucket.shortLabel}</span>
-                          <span className="shrink-0 text-slate-500">{bucket.welderCount} св.</span>
+                          <div
+                            className="absolute inset-x-0 border-t border-dashed border-slate-100"
+                            style={{ bottom: `${(WELDING_DYNAMICS_VALUE_PLOT_PERCENT * 2) / 3}%` }}
+                          />
+                          <div
+                            className="absolute bottom-0 left-1/2 flex w-10 -translate-x-1/2 flex-col-reverse overflow-hidden rounded-t-md bg-slate-100 shadow-sm ring-1 ring-inset ring-slate-200"
+                            style={{ height: `${valuePercent}%` }}
+                          >
+                            {segments.length > 0
+                              ? segments.map((segment) => (
+                                  <span
+                                    key={segment.key}
+                                    className="block w-full shrink-0 border-t border-white/60 first:border-t-0"
+                                    style={{
+                                      backgroundColor: segment.color,
+                                      height: `${bucket.value > 0 ? (segment.value / bucket.value) * 100 : 0}%`,
+                                    }}
+                                  />
+                                ))
+                              : bucket.value > 0
+                                ? <span className="block h-full w-full bg-sky-400/70" />
+                                : null}
+                          </div>
+                          {bucket.value > 0 ? (
+                            <span
+                              className="absolute left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-white/90 px-1.5 text-[11px] font-bold leading-5 text-slate-800 shadow-sm"
+                              style={{ bottom: `calc(${valuePercent}% + 3px)` }}
+                            >
+                              {formatStatisticValue(bucket.value, unit)}
+                            </span>
+                          ) : null}
+                          {bucket.welderCount > 0 ? (
+                            <span
+                              className="absolute z-30 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-white bg-slate-800 shadow ring-1 ring-slate-300"
+                              title={`${bucket.welderCount} сварщиков`}
+                              style={{
+                                bottom: `calc(${welderPercent}% - 6px)`,
+                                left: 'clamp(12px, calc(50% + 20px), calc(100% - 12px))',
+                              }}
+                            />
+                          ) : null}
                         </div>
-                        <div className="flex min-h-0 flex-1 flex-col justify-center px-2 py-1.5 tabular-nums">
-                          <div className="truncate text-sm font-bold text-sky-700">
-                            {formatStatisticValue(bucket.value, unit)} <span className="text-[11px] font-semibold text-slate-500">{unit === 'wdi' ? 'WDI' : 'ст.'}</span>
-                          </div>
-                          <div className="mt-0.5 truncate text-xs font-semibold text-slate-700" title={`${bucket.welderCount} сварщиков; ${formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} ${unitLabel} на сварщика в смену`}>
-                            {bucket.welderShiftCount > 0 ? `${formatAverageStatisticValue(bucket.valuePerWelderShift)} ${unit === 'wdi' ? 'WDI' : 'ст.'}/св.` : '— на сварщика'}
-                          </div>
+                      </div>
+                      <div className="flex h-[72px] w-full flex-col justify-center gap-0.5 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-2 text-left tabular-nums shadow-sm">
+                        <div className="truncate text-sm font-bold leading-4 text-sky-700">
+                          {formatStatisticValue(bucket.value, unit)} <span className="text-[11px] font-semibold text-slate-500">{unit === 'wdi' ? 'WDI' : 'ст.'}</span>
+                        </div>
+                        <div className="truncate text-xs font-medium leading-4 text-slate-500">{bucket.welderCount} св.</div>
+                        <div className="truncate text-xs font-semibold leading-4 text-slate-700" title={`${bucket.welderCount} сварщиков; ${formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} ${unitLabel} на сварщика в смену`}>
+                          {bucket.welderShiftCount > 0
+                            ? `${formatAverageStatisticValue(bucket.valuePerWelderShift)} ${unit === 'wdi' ? 'WDI' : 'ст.'}/св.`
+                            : `— ${unit === 'wdi' ? 'WDI' : 'ст.'}/св.`}
                         </div>
                       </div>
                     </div>
                   )
                 })}
               </div>
+            </div>
             </div>
             {detailsOpen ? (
               <div className="relative mt-3 overflow-hidden rounded-md border border-slate-200 bg-white">
@@ -1058,7 +1322,7 @@ function WeldingDynamicsPanel({
                     </colgroup>
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50/80">
-                        <th className="h-[62px] px-3 py-2.5 text-left align-middle font-semibold text-slate-700">{detailLabel}</th>
+                        <th className="sticky left-0 z-20 h-[62px] bg-slate-50 px-3 py-2.5 text-left align-middle font-semibold text-slate-700 shadow-[1px_0_0_0_#e2e8f0]">{detailLabel}</th>
                         {detailJointTypes.map((jointType) => (
                           <th key={jointType.key} className="h-[62px] px-3 py-2.5 text-right align-middle font-normal tabular-nums">
                             <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
@@ -1068,7 +1332,7 @@ function WeldingDynamicsPanel({
                             <span className="mt-0.5 block font-semibold text-slate-800">{formatStatisticValue(jointType.value, unit)}</span>
                           </th>
                         ))}
-                        <th className="h-[62px] px-3 py-2.5 text-right align-middle font-normal tabular-nums">
+                        <th className="h-[62px] bg-slate-100/70 px-3 py-2.5 text-right align-middle font-normal tabular-nums">
                           <span className="block text-slate-500">Всего</span>
                           <span className="mt-0.5 block font-semibold text-slate-800">{formatStatisticValue(detailValue, unit)} {unitLabel}</span>
                         </th>
@@ -1084,22 +1348,22 @@ function WeldingDynamicsPanel({
                         </th>
                       </tr>
                       <tr className="border-b border-slate-200 bg-white text-slate-500">
-                        <th className="px-3 py-2.5 text-left font-medium">Группа материала</th>
+                        <th className="sticky left-0 z-20 bg-white px-3 py-2.5 text-left font-medium shadow-[1px_0_0_0_#e2e8f0]">{detailDimensionLabel}</th>
                         {jointTypes.map((jointType) => (
                           <th key={jointType.key} className="px-3 py-2.5 text-right font-medium">{jointType.code}</th>
                         ))}
-                        <th className="px-3 py-2.5 text-right font-medium">Всего</th>
+                        <th className="bg-slate-50 px-3 py-2.5 text-right font-semibold text-slate-700">Всего</th>
                         <th className="px-3 py-2.5 text-right font-medium">Сварщики</th>
                         <th className="px-3 py-2.5 text-right font-medium">На сварщика в смену</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {detailMaterialJointTypes.map((group) => (
+                      {detailDimensionJointTypes.map((group) => (
                         <tr key={group.key} className="border-b border-slate-100 last:border-b-0 even:bg-slate-50/40">
-                          <td className="px-3 py-3 font-medium text-slate-800">
+                          <td className="sticky left-0 z-10 bg-white px-3 py-3 font-medium text-slate-800 shadow-[1px_0_0_0_#f1f5f9] even:bg-slate-50">
                             <span className="inline-flex items-center gap-2">
                               {!showJointTypeColors ? (
-                                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: materialGroupColors.get(group.key) }} />
+                                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: detailDimensionColors.get(group.key) }} />
                               ) : null}
                               {group.label}
                             </span>
@@ -1109,7 +1373,7 @@ function WeldingDynamicsPanel({
                               {formatStatisticValue(group.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0, unit)}
                             </td>
                           ))}
-                          <td className="px-3 py-3 text-right font-medium tabular-nums">{formatStatisticValue(group.value, unit)}</td>
+                          <td className="bg-slate-50/80 px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{formatStatisticValue(group.value, unit)}</td>
                           <td className="px-3 py-3 text-right font-medium tabular-nums">{group.welderCount}</td>
                           <td className="px-3 py-3 text-right font-medium tabular-nums">
                             {formatValuePerWelderShift(group.valuePerWelderShift, group.welderShiftCount)} {group.welderShiftCount > 0 ? unitLabel : ''}
@@ -1132,39 +1396,148 @@ function WeldingDynamicsPanel({
   )
 }
 
+function WeldingDynamicsTooltip({
+  bucket,
+  unit,
+}: {
+  bucket: WeldingDynamicsBucket
+  unit: StatisticsUnit
+}) {
+  const unitLabel = unit === 'wdi' ? 'WDI' : 'стыков'
+
+  return (
+    <div className="pointer-events-none absolute right-4 top-2 z-50 w-[min(320px,calc(100%-2rem))] rounded-md border border-slate-200 bg-white/95 p-3 text-xs text-slate-600 shadow-lg backdrop-blur-sm">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">
+        <div className="font-semibold text-slate-900">{bucket.label}</div>
+        <div className="font-semibold tabular-nums text-sky-700">
+          {formatStatisticValue(bucket.value, unit)} {unitLabel}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 py-2">
+        <span>Сварщики</span>
+        <span className="text-right font-medium tabular-nums text-slate-800">{bucket.welderCount}</span>
+        <span>На сварщика</span>
+        <span className="text-right font-medium tabular-nums text-slate-800">
+          {formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} {unitLabel}
+        </span>
+      </div>
+      <div className="space-y-2 border-t border-slate-100 pt-2">
+        <WeldingDynamicsTooltipSection label="Типы стыков" items={bucket.jointTypes} unit={unit} />
+        <WeldingDynamicsTooltipSection label="Материалы" items={bucket.materialGroups} unit={unit} />
+        <WeldingDynamicsTooltipSection label="Проекты" items={bucket.projectGroups} unit={unit} />
+      </div>
+    </div>
+  )
+}
+
+function WeldingDynamicsTooltipSection({
+  items,
+  label,
+  unit,
+}: {
+  items: Array<{ key: string; label: string; value: number }>
+  label: string
+  unit: StatisticsUnit
+}) {
+  const visibleItems = items.filter((item) => item.value > 0)
+  const displayedItems = visibleItems.slice(0, 3)
+  const hiddenCount = visibleItems.length - displayedItems.length
+
+  return (
+    <div>
+      <div className="mb-0.5 font-medium text-slate-500">{label}</div>
+      {displayedItems.length > 0 ? (
+        <div className="space-y-0.5">
+          {displayedItems.map((item) => (
+            <div key={item.key} className="flex items-center justify-between gap-3">
+              <span className="truncate">{item.label}</span>
+              <span className="shrink-0 font-medium tabular-nums text-slate-800">
+                {formatStatisticValue(item.value, unit)}
+              </span>
+            </div>
+          ))}
+          {hiddenCount > 0 ? <div className="text-slate-400">ещё {hiddenCount}</div> : null}
+        </div>
+      ) : (
+        <div className="text-slate-400">Нет данных</div>
+      )}
+    </div>
+  )
+}
+
+function getWeldingDynamicsLinePoints(
+  values: number[],
+  maxValue: number,
+  plotPercent: number,
+  xOffset: number,
+) {
+  const visiblePoints = values
+    .map((value, index) => ({ value, index }))
+    .filter(({ value }) => value > 0)
+  if (visiblePoints.length < 2) return ''
+  return visiblePoints
+    .map(({ value, index }) => {
+      const x = ((index + xOffset) / values.length) * 100
+      const y = 100 - (value / Math.max(1, maxValue)) * plotPercent
+      return `${x.toFixed(3)},${y.toFixed(3)}`
+    })
+    .join(' ')
+}
+
 const WELDING_DYNAMICS_MATERIAL_GROUP_COLORS = [
-  '#0ea5e9',
-  '#10b981',
-  '#f59e0b',
-  '#8b5cf6',
-  '#f43f5e',
-  '#06b6d4',
+  '#69b9dd',
+  '#66c2a0',
+  '#e6b85c',
+  '#a78bd4',
+  '#e68b9b',
+  '#61bbc1',
+] as const
+
+const WELDING_DYNAMICS_PROJECT_GROUP_COLORS = [
+  '#7ba6d8',
+  '#75b89b',
+  '#d0a968',
+  '#9b91c9',
+  '#d58e9b',
+  '#70b6bc',
 ] as const
 
 const WELDING_DYNAMICS_VALUE_PLOT_PERCENT = 78
 const WELDING_DYNAMICS_WELDER_PLOT_PERCENT = 72
 
 const WELDING_DYNAMICS_JOINT_TYPE_COLORS = {
-  s: '#f59e0b',
-  unknown: '#94a3b8',
-  f: '#2563eb',
+  s: '#f0bd62',
+  unknown: '#a7b3c2',
+  f: '#6f9ee8',
 } as const
 
 function getWeldingDynamicsJointTypeColor(jointType: WeldingDynamicsJointType) {
   return WELDING_DYNAMICS_JOINT_TYPE_COLORS[jointType.key]
 }
 
-function getWeldingDynamicsMaterialGroupColor(group: WeldingDynamicsMaterialGroup, index: number) {
-  if (group.key === WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY) return '#94a3b8'
-  if (group.key === WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY) return '#a855f7'
-  return WELDING_DYNAMICS_MATERIAL_GROUP_COLORS[index % WELDING_DYNAMICS_MATERIAL_GROUP_COLORS.length]
+function getWeldingDynamicsMaterialGroupColor(group: WeldingDynamicsMaterialGroup) {
+  if (group.key === WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY) return '#a7b3c2'
+  if (group.key === WELDING_DYNAMICS_OTHER_MATERIAL_GROUP_KEY) return '#b58ad0'
+  return WELDING_DYNAMICS_MATERIAL_GROUP_COLORS[
+    getStableWeldingDynamicsColorIndex(group.key, WELDING_DYNAMICS_MATERIAL_GROUP_COLORS.length)
+  ]
+}
+
+function getWeldingDynamicsProjectGroupColor(group: WeldingDynamicsProjectGroup) {
+  if (group.key === WELDING_DYNAMICS_MISSING_PROJECT_GROUP_KEY) return '#a7b3c2'
+  if (group.key === WELDING_DYNAMICS_OTHER_PROJECT_GROUP_KEY) return '#b58ad0'
+  return WELDING_DYNAMICS_PROJECT_GROUP_COLORS[
+    getStableWeldingDynamicsColorIndex(group.key, WELDING_DYNAMICS_PROJECT_GROUP_COLORS.length)
+  ]
 }
 
 function SegmentedProgress({
   items,
+  onOpenRows,
   unit,
 }: {
-  items: Array<{ label: string; value: number; className: string }>
+  items: Array<{ label: string; value: number; className: string; rowIds?: number[] }>
+  onOpenRows?: (rowIds: number[], message?: string) => void
   unit: StatisticsUnit
 }) {
   const total = items.reduce((sum, item) => sum + item.value, 0)
@@ -1181,356 +1554,767 @@ function SegmentedProgress({
         ))}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        {items.map((item) => (
-          <span key={item.label} className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600">
+        {items.map((item) => {
+          const content = <>
             <span className={cn('h-2 w-2 rounded-full', item.className)} />
             {item.label}: <span className="font-medium text-slate-800">{formatStatisticValue(item.value, unit)}</span>
-          </span>
-        ))}
+            {item.rowIds && item.rowIds.length > 0 ? <ArrowUpRight className="h-3 w-3 text-sky-600" /> : null}
+          </>
+          return onOpenRows && item.rowIds && item.rowIds.length > 0 ? (
+            <button
+              key={item.label}
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-colors hover:border-sky-200 hover:bg-sky-50"
+              title={`Открыть стыки: ${item.label.toLowerCase()}`}
+              onClick={() => onOpenRows(item.rowIds ?? [], `Показаны стыки статистики «${item.label}»: ${item.rowIds?.length ?? 0}.`)}
+            >
+              {content}
+            </button>
+          ) : (
+            <span key={item.label} className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600">
+              {content}
+            </span>
+          )
+        })}
       </div>
     </>
   )
 }
 
-function StatusLine({ label, value, unit }: { label: string; value: number | string; unit: StatisticsUnit | 'average' }) {
-  return (
-    <div className="rounded border border-slate-100 bg-slate-50 px-3 py-2">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="font-semibold text-slate-800">
-        {typeof value === 'string'
-          ? value
-          : unit === 'average'
-            ? formatAverageStatisticValue(value)
-            : formatStatisticValue(value, unit)}
+function StatusLine({
+  compact = false,
+  label,
+  onOpenRows,
+  rowIds,
+  unit,
+  value,
+}: {
+  compact?: boolean
+  label: string
+  onOpenRows?: (rowIds: number[], message?: string) => void
+  rowIds?: number[]
+  unit: StatisticsUnit | 'average'
+  value: number | string
+}) {
+  const canOpen = Boolean(onOpenRows && rowIds && rowIds.length > 0)
+  const content = (
+    <>
+      <div className={cn(compact ? 'text-[13px] leading-4' : 'text-xs', 'text-slate-500')}>{label}</div>
+      <div className="mt-0.5 flex items-center justify-between gap-2">
+        <span className={cn('font-semibold tabular-nums text-slate-800', compact && 'text-base')}>
+          {typeof value === 'string'
+            ? value
+            : unit === 'average'
+              ? formatAverageStatisticValue(value)
+              : formatStatisticValue(value, unit)}
+        </span>
+        {canOpen ? <ArrowUpRight className="h-3.5 w-3.5 text-sky-600" /> : null}
       </div>
-    </div>
+    </>
+  )
+
+  if (!canOpen) {
+    return <div className={cn('rounded border border-slate-100 bg-slate-50', compact ? 'px-2.5 py-1.5' : 'px-3 py-2')}>{content}</div>
+  }
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'rounded border border-slate-200 bg-slate-50 text-left transition-colors hover:border-sky-200 hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300',
+        compact ? 'px-2.5 py-1.5' : 'px-3 py-2',
+      )}
+      title={`Открыть стыки: ${label.toLowerCase()}`}
+      onClick={() => onOpenRows?.(rowIds ?? [], `Показаны стыки статистики «${label}»: ${rowIds?.length ?? 0}.`)}
+    >
+      {content}
+    </button>
   )
 }
 
-function CurrentBacklogPanel({ summary, unit }: { summary: StatisticsSummary; unit: StatisticsUnit }) {
+function CurrentBacklogPanel({
+  onOpenRows,
+  stateRowIds,
+  summary,
+  unit,
+}: {
+  onOpenRows?: (rowIds: number[], message?: string) => void
+  stateRowIds?: StatisticsStateRowIds
+  summary: StatisticsSummary
+  unit: StatisticsUnit
+}) {
   return (
     <Panel
       title="Текущий остаток"
       subtitle="Актуальные незаваренные стыки показаны отдельно и не прибавляются к показателям выбранного периода."
     >
-      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-        <StatusLine label="Всего в остатке" value={summary.backlogTotal} unit={unit} />
-        <StatusLine label="Ожидает сварку" value={summary.backlogWaitingWeld} unit={unit} />
-        <StatusLine label="Ожидает ремонт" value={summary.backlogWaitingRepair} unit={unit} />
+      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3 xl:grid-cols-1">
+        <StatusLine label="Всего в остатке" value={summary.backlogTotal} unit={unit} rowIds={stateRowIds?.backlog} onOpenRows={onOpenRows} />
+        <StatusLine label="Ожидает сварку" value={summary.backlogWaitingWeld} unit={unit} rowIds={stateRowIds?.backlogWaitingWeld} onOpenRows={onOpenRows} />
+        <StatusLine label="Ожидает ремонт" value={summary.backlogWaitingRepair} unit={unit} rowIds={stateRowIds?.backlogWaitingRepair} onOpenRows={onOpenRows} />
       </div>
     </Panel>
   )
 }
 
-function MethodQueueCard({
-  description,
-  getValue,
-  methods,
-  title,
-  tone,
-  unit,
-}: {
-  description: string
-  getValue: (method: StatisticsMethodSummary) => number
-  methods: StatisticsMethodSummary[]
-  title: string
-  tone: 'amber' | 'sky'
-  unit: StatisticsUnit
-}) {
-  const total = methods.reduce((sum, method) => sum + getValue(method), 0)
-  const activeClass =
-    tone === 'amber'
-      ? 'border-amber-200 bg-amber-50 text-amber-900'
-      : 'border-sky-200 bg-sky-50 text-sky-900'
-  const totalClass =
-    tone === 'amber'
-      ? 'border-amber-200 bg-amber-100 text-amber-900'
-      : 'border-sky-200 bg-sky-100 text-sky-900'
-
-  return (
-    <div className="rounded-md border border-slate-200 bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-semibold text-slate-800">{title}</div>
-          <div className="mt-1 text-xs leading-5 text-slate-500">{description}</div>
-        </div>
-        <span className={cn('shrink-0 rounded border px-2 py-1 text-xs font-semibold', totalClass)}>
-          {formatStatisticValue(total, unit)}
-        </span>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {methods.map((method) => {
-          const value = getValue(method)
-          return (
-            <div
-              key={method.code}
-              className={cn(
-                'flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs',
-                value > 0 ? activeClass : 'border-slate-100 bg-slate-50 text-slate-400',
-              )}
-            >
-              <span className="font-semibold">{method.code}</span>
-              <span className="font-medium">{formatStatisticValue(value, unit)}</span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function LnkPstoStatisticsPanel({
+function ControlStatisticsPanel({
+  control,
+  controlDynamicsScale,
+  controlDynamicsScaleSetting,
   lnkMethods,
   lnkWaitingRequests,
+  onControlDynamicsScaleChange,
+  onOpenControlRows,
+  onOpenStateRows,
+  periodFrom,
+  periodTo,
+  stateRowIds,
   summary,
   unofficialCount,
-  unofficialValue,
+  unofficialRowIds,
   unit,
-  unitLabel,
 }: {
+  control: 'lnk' | 'psto'
+  controlDynamicsScale: StatisticsControlDynamicsScale
+  controlDynamicsScaleSetting: StatisticsControlDynamicsScaleSetting
   lnkMethods: StatisticsMethodSummary[]
   lnkWaitingRequests: number
+  onControlDynamicsScaleChange: (scale: StatisticsControlDynamicsScaleSetting) => void
+  onOpenControlRows?: StatisticsRowsOpenHandler
+  onOpenStateRows?: StatisticsRowsOpenHandler
+  periodFrom: string
+  periodTo: string
+  stateRowIds: StatisticsStateRowIds
   summary: StatisticsSummary
   unofficialCount: number
-  unofficialValue: number
+  unofficialRowIds: number[]
   unit: StatisticsUnit
-  unitLabel: string
 }) {
-  const unofficialDetail =
-    unit === 'wdi'
-      ? `Неофициальные стыки: ${unofficialCount} шт. · ${formatStatisticValue(unofficialValue, unit)} WDI.`
-      : `Неофициальные стыки: ${unofficialCount} шт.`
+  const isLnk = control === 'lnk'
+  const lnkWaitingControl = lnkMethods.reduce((total, method) => total + method.waitingControl, 0)
+  const lnkGood = lnkMethods.reduce((total, method) => total + method.good, 0)
+  const lnkRejected = lnkMethods.reduce((total, method) => total + method.rejected, 0)
+  const lnkRequiredRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.requiredRequests))
+  const lnkCreatedRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.createdRequests))
+  const lnkRequestRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.requests))
+  const lnkClosedRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.closed))
+  const lnkWaitingRequestRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.waitingRequest))
+  const lnkWaitingControlRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.waitingControl))
+  const lnkGoodRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.good))
+  const lnkRejectedRowIds = mergeStatisticRowIds(lnkMethods.map((method) => method.rowIds.rejected))
+  const jointStateStatuses: ControlJointStateStatus[] = [
+    { label: 'Годен', value: summary.good, unit, rowIds: stateRowIds.good },
+    { label: 'Не годен', value: summary.rejected, unit, rowIds: stateRowIds.rejected },
+    { label: 'Ожидает заявку', value: summary.waitingRequest, unit, rowIds: stateRowIds.waitingRequest },
+    { label: 'Ожидает НК', value: summary.waitingControl, unit, rowIds: stateRowIds.waitingControl },
+    { label: 'Ожидает ремонт', value: summary.waitingRepair, unit, rowIds: stateRowIds.waitingRepair },
+    { label: 'Неофициальные', value: unofficialCount, unit: 'joints', rowIds: unofficialRowIds },
+    { label: 'Годен по дублю', value: summary.duplicateGood, unit, rowIds: stateRowIds.duplicateGood },
+    { label: 'Не годен по дублю', value: summary.duplicateRejected, unit, rowIds: stateRowIds.duplicateRejected },
+  ]
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard
-          compact
-          icon={Gauge}
-          label="Годность"
-          value={formatPercent(summary.qualityPercent)}
-          detail={`${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`}
-          accent="green"
+      {isLnk ? (
+        <ControlWorkflowCard
+          control="lnk"
+          title="ЛНК"
+          subtitle="Виды неразрушающего контроля"
+          coverage={{
+            percent: summary.lnkRequestCoveragePercent,
+            completed: summary.lnkCreatedRequests,
+            total: summary.lnkRequiredRequests,
+            completedRowIds: lnkCreatedRowIds,
+            totalRowIds: lnkRequiredRowIds,
+          }}
+          closure={{
+            percent: summary.lnkClosurePercent,
+            completed: summary.lnkClosed,
+            total: summary.lnkRequests,
+            completedRowIds: lnkClosedRowIds,
+            totalRowIds: lnkRequestRowIds,
+          }}
+          statuses={[
+            { label: 'Без заявки', value: lnkWaitingRequests, rowIds: lnkWaitingRequestRowIds, tone: 'amber' },
+            { label: 'Ожидает заключение', value: lnkWaitingControl, rowIds: lnkWaitingControlRowIds, tone: 'sky' },
+            { label: 'Годные', value: lnkGood, rowIds: lnkGoodRowIds, tone: 'green' },
+            { label: 'Не годен', value: lnkRejected, rowIds: lnkRejectedRowIds, tone: 'rose' },
+          ]}
+          jointStateTotal={summary.totalRows}
+          jointStateStatuses={jointStateStatuses}
+          onOpenRows={onOpenControlRows}
+          onOpenStateRows={onOpenStateRows}
+          unit={unit}
         />
-        <MetricCard
-          compact
-          wrapDetail
-          icon={ClipboardList}
-          label="Заявки ЛНК"
-          value={formatPercent(summary.lnkRequestCoveragePercent)}
-          detail={`${summary.lnkCreatedRequests} из ${summary.lnkRequiredRequests} требуемых контролей`}
-          accent="blue"
+      ) : (
+        <ControlWorkflowCard
+          control="psto"
+          title="ПСТО"
+          subtitle="Послесварочная термообработка"
+          coverage={{
+            percent: summary.pstoRequestCoveragePercent,
+            completed: summary.pstoCreatedRequests,
+            total: summary.pstoRequiredRequests,
+            completedRowIds: summary.pstoMethod.rowIds.createdRequests,
+            totalRowIds: summary.pstoMethod.rowIds.requiredRequests,
+          }}
+          closure={{
+            percent: summary.pstoClosurePercent,
+            completed: summary.pstoClosed,
+            total: summary.pstoRequests,
+            completedRowIds: summary.pstoMethod.rowIds.closed,
+            totalRowIds: summary.pstoMethod.rowIds.requests,
+          }}
+          statuses={[
+            { label: 'Без заявки', value: summary.pstoMethod.waitingRequest, rowIds: summary.pstoMethod.rowIds.waitingRequest, tone: 'amber' },
+            { label: 'Ожидает ПСТО', value: summary.pstoMethod.waitingControl, rowIds: summary.pstoMethod.rowIds.waitingControl, tone: 'sky' },
+            { label: 'Проведено', value: summary.pstoMethod.good, rowIds: summary.pstoMethod.rowIds.good, tone: 'green' },
+          ]}
+          jointStateTotal={summary.totalRows}
+          jointStateStatuses={jointStateStatuses}
+          onOpenRows={onOpenControlRows}
+          onOpenStateRows={onOpenStateRows}
+          unit={unit}
         />
-        <MetricCard
-          compact
-          wrapDetail
-          icon={FlaskConical}
-          label="Заявки ПСТО"
-          value={formatPercent(summary.pstoRequestCoveragePercent)}
-          detail={`${summary.pstoCreatedRequests} из ${summary.pstoRequiredRequests} требуемых обработок`}
-          accent="indigo"
-        />
-        <MetricCard
-          compact
-          icon={ClipboardCheck}
-          label="Заключения ЛНК"
-          value={formatPercent(summary.lnkClosurePercent)}
-          detail={`${formatStatisticValue(summary.lnkClosed, unit)} из ${formatStatisticValue(summary.lnkRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.lnkTotalClosed, unit)}`}
-          accent="indigo"
-        />
-        <MetricCard
-          compact
-          icon={TimerReset}
-          label="Заключения ПСТО"
-          value={formatPercent(summary.pstoClosurePercent)}
-          detail={`${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок · всего результатов ${formatStatisticValue(summary.pstoTotalClosed, unit)}`}
-          accent="amber"
-        />
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[0.95fr_1.45fr]">
-        <div className="space-y-4">
-          <Panel
-            title="Заявки и результаты"
-            subtitle="Сколько заявок уже закрыто заключениями и сколько позиций еще ожидает заявку."
-          >
-            <ProgressRow
-              label="ЛНК"
-              closed={summary.lnkClosed}
-              total={summary.lnkRequests}
-              totalClosed={summary.lnkTotalClosed}
-              waitingRequest={lnkWaitingRequests}
-              unit={unit}
-            />
-            <ProgressRow
-              label="ПСТО"
-              closed={summary.pstoClosed}
-              total={summary.pstoRequests}
-              totalClosed={summary.pstoTotalClosed}
-              waitingRequest={summary.pstoMethod.waitingRequest}
-              unit={unit}
-            />
-          </Panel>
+      <ControlDynamicsPanel
+        buckets={summary.controlDynamics}
+        control={control}
+        scale={controlDynamicsScale}
+        scaleSetting={controlDynamicsScaleSetting}
+        onScaleChange={onControlDynamicsScaleChange}
+        onOpenRows={onOpenControlRows}
+        periodFrom={periodFrom}
+        periodTo={periodTo}
+        unit={unit}
+      />
 
-          <Panel
-            title="Состояние стыков"
-            subtitle={`За выбранный период: ${formatStatisticValue(summary.totalRows, unit)} ${unitLabel}; ${unofficialDetail}`}
-          >
-            <SegmentedProgress
-              unit={unit}
-              items={[
-                { label: 'Годен', value: summary.good, className: 'bg-emerald-500' },
-                { label: 'Не годен', value: summary.rejected, className: 'bg-rose-500' },
-                { label: 'Ожидает НК', value: summary.waitingControl, className: 'bg-amber-400' },
-                { label: 'Ожидает заявку', value: summary.waitingRequest, className: 'bg-sky-400' },
-                { label: 'Ожидает ремонт', value: summary.waitingRepair, className: 'bg-orange-400' },
-              ]}
-            />
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              <StatusLine label="Годен" value={summary.good} unit={unit} />
-              <StatusLine label="Не годен" value={summary.rejected} unit={unit} />
-              <StatusLine label="Ожидает заявку" value={summary.waitingRequest} unit={unit} />
-              <StatusLine label="Ожидает НК" value={summary.waitingControl} unit={unit} />
-              <StatusLine label="Ожидает ремонт" value={summary.waitingRepair} unit={unit} />
-              <StatusLine label="Неофициальные" value={unofficialCount} unit="joints" />
+      {isLnk ? (
+        <Panel
+          title="ЛНК по видам контроля"
+          subtitle="Все этапы по каждому виду НК. Нажмите на значение, чтобы открыть соответствующие стыки в отчете ЛНК."
+        >
+          <div className="overflow-hidden rounded-md border border-slate-200">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1090px] table-fixed border-collapse text-sm">
+                <colgroup>
+                  <col className="w-[100px]" />
+                  <col className="w-[210px]" />
+                  <col className="w-[135px]" />
+                  <col className="w-[200px]" />
+                  <col className="w-[185px]" />
+                  <col className="w-[125px]" />
+                  <col className="w-[135px]" />
+                </colgroup>
+                <thead className="bg-slate-100 text-slate-600">
+                  <tr>
+                    <th className="whitespace-nowrap px-3 py-3 text-left font-semibold">Вид НК</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Потребность / заявлено</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Без заявки</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Заявок / закрыто</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Ожидает заключение</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Годен</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Не годен</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lnkMethods.map((method) => (
+                    <tr key={method.code} className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
+                      <td className="px-3 py-3 font-semibold text-slate-900">{method.code}</td>
+                      <td className="px-3 py-3"><MethodCoverageCell method={method} onOpenRows={onOpenControlRows} /></td>
+                      <MethodValueCell label={`${method.code}: без заявки`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.waitingRequest} tone="amber" unit={unit} value={method.waitingRequest} />
+                      <td className="px-3 py-3"><MethodClosureCell method={method} onOpenRows={onOpenControlRows} unit={unit} /></td>
+                      <MethodValueCell label={`${method.code}: ожидает заключение`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.waitingControl} tone="sky" unit={unit} value={method.waitingControl} />
+                      <MethodValueCell label={`${method.code}: годен`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.good} tone="green" unit={unit} value={method.good} />
+                      <MethodValueCell label={`${method.code}: не годен`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.rejected} tone="rose" unit={unit} value={method.rejected} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </Panel>
+          </div>
+        </Panel>
+      ) : (
+        <section className="rounded-md border border-slate-200 bg-white px-4 py-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 className="text-sm font-semibold text-slate-800">Дополнительно по ПСТО</h2>
+            <p className="text-xs text-slate-500">Показатели открывают соответствующие строки отчета</p>
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+            <StatusLine compact label="Всего заключений" value={summary.pstoMethod.totalClosed} unit={unit} rowIds={summary.pstoMethod.rowIds.totalClosed} onOpenRows={onOpenControlRows} />
+            <StatusLine compact label="Заключения без заявки" value={summary.pstoMethod.closedWithoutRequest} unit={unit} rowIds={summary.pstoMethod.rowIds.closedWithoutRequest} onOpenRows={onOpenControlRows} />
+          </div>
+        </section>
+      )}
 
-          <CurrentBacklogPanel summary={summary} unit={unit} />
-
-          <Panel
-            title="ПСТО"
-          >
-            <MethodProgress method={summary.pstoMethod} unit={unit} />
-          </Panel>
-        </div>
-
-        <div className="space-y-4">
-          <Panel
-            title="Очереди ЛНК по видам НК"
-            subtitle="Быстрый список, где нужно создать заявку и где заявка уже есть, но заключение еще не внесено."
-          >
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              <MethodQueueCard
-                title="Без заявки, но контроль нужен"
-                description="В журнале по виду НК стоит “да” или “дополнительный”, а заявки еще нет."
-                getValue={(method) => method.waitingRequest}
-                methods={lnkMethods}
-                tone="amber"
-                unit={unit}
-              />
-              <MethodQueueCard
-                title="Есть заявка, нет заключения"
-                description="Заявка уже создана, но результат/заключение по виду НК еще не внесены."
-                getValue={(method) => method.waitingControl}
-                methods={lnkMethods}
-                tone="sky"
-                unit={unit}
-              />
-            </div>
-          </Panel>
-
-          <Panel
-            title="ЛНК по видам контроля"
-            subtitle="По каждому виду НК видно: сколько заявок подано за период, сколько закрыто, сколько еще ожидает результат."
-          >
-            <div className="space-y-2">
-              {lnkMethods.map((method) => (
-                <MethodProgress key={method.code} method={method} unit={unit} />
-              ))}
-            </div>
-          </Panel>
-        </div>
-      </div>
     </div>
   )
 }
 
-function ProgressRow({
-  label,
-  closed,
-  total,
-  totalClosed,
-  waitingRequest,
+type ControlWorkflowStatus = {
+  label: string
+  value: number
+  rowIds: number[]
+  tone: 'amber' | 'sky' | 'rose' | 'green'
+}
+
+type ControlJointStateStatus = {
+  label: string
+  value: number
+  rowIds: number[]
+  unit: StatisticsUnit
+}
+
+function ControlDynamicsPanel({
+  buckets,
+  control,
+  onOpenRows,
+  onScaleChange,
+  periodFrom,
+  periodTo,
+  scale,
+  scaleSetting,
   unit,
 }: {
-  label: string
-  closed: number
-  total: number
-  totalClosed: number
-  waitingRequest: number
+  buckets: StatisticsSummary['controlDynamics']
+  control: 'lnk' | 'psto'
+  onOpenRows?: StatisticsRowsOpenHandler
+  onScaleChange: (scale: StatisticsControlDynamicsScaleSetting) => void
+  periodFrom: string
+  periodTo: string
+  scale: StatisticsControlDynamicsScale
+  scaleSetting: StatisticsControlDynamicsScaleSetting
   unit: StatisticsUnit
 }) {
-  const percent = total > 0 ? (closed / total) * 100 : 0
+  const visibleBuckets = getVisibleControlDynamicsBuckets(buckets, control, periodFrom, periodTo, scale)
+  const maxValue = Math.max(
+    1,
+    ...visibleBuckets.flatMap((bucket) =>
+      control === 'lnk'
+        ? [bucket.lnkRequests, bucket.lnkClosed]
+        : [bucket.pstoRequests, bucket.pstoClosed],
+    ),
+  )
+  const minWidth = Math.max(640, visibleBuckets.length * 88)
+  const isLnk = control === 'lnk'
   return (
-    <div className="mb-3 last:mb-0">
-      <div className="mb-1 flex justify-between text-sm">
-        <span className="font-medium text-slate-700">{label}</span>
-        <span className="text-slate-500">
-          заявок: {formatStatisticValue(total, unit)}, в т.ч. закрыто: {formatStatisticValue(closed, unit)} · ожидает:{' '}
-          {formatStatisticValue(waitingRequest, unit)}
-        </span>
+    <Panel
+      title={`Динамика заявок и заключений ${isLnk ? 'ЛНК' : 'ПСТО'}`}
+      subtitle="Масштаб подбирается по длине периода. Нажмите на столбик, чтобы открыть строки выбранного интервала."
+      headerAction={(
+        <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-slate-500">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-400" />Заявки</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" />Заключения</span>
+          </div>
+          <DynamicsScaleControl
+            scale={scale}
+            scaleSetting={scaleSetting}
+            onScaleChange={onScaleChange}
+          />
+        </div>
+      )}
+    >
+      {visibleBuckets.length > 0 ? (
+        <div className="overflow-x-auto pb-1">
+          <div className="grid gap-x-2 gap-y-2" style={{ gridTemplateColumns: `repeat(${visibleBuckets.length}, minmax(80px, 1fr))`, minWidth }}>
+            {visibleBuckets.map((bucket) => <div key={bucket.date} className="text-center text-xs font-semibold tabular-nums text-slate-500">{formatControlDynamicsBucketLabel(bucket, scale)}</div>)}
+            {visibleBuckets.map((bucket) => (
+              <ControlDynamicsCell
+                key={`${control}-${bucket.date}`}
+                closed={isLnk ? bucket.lnkClosed : bucket.pstoClosed}
+                closedRowIds={isLnk ? bucket.lnkClosedRowIds : bucket.pstoClosedRowIds}
+                dateLabel={formatControlDynamicsBucketLabel(bucket, scale)}
+                maxValue={maxValue}
+                onOpenRows={onOpenRows}
+                requests={isLnk ? bucket.lnkRequests : bucket.pstoRequests}
+                requestRowIds={isLnk ? bucket.lnkRequestRowIds : bucket.pstoRequestRowIds}
+                unit={unit}
+              />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-[200px] items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+          В выбранном периоде нет датированных заявок и заключений {isLnk ? 'ЛНК' : 'ПСТО'}.
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function getVisibleControlDynamicsBuckets(
+  buckets: StatisticsSummary['controlDynamics'],
+  control: 'lnk' | 'psto',
+  periodFrom: string,
+  periodTo: string,
+  scale: StatisticsControlDynamicsScale,
+) {
+  const relevantBuckets = buckets.filter((bucket) =>
+    control === 'lnk'
+      ? bucket.lnkRequests > 0 || bucket.lnkClosed > 0
+      : bucket.pstoRequests > 0 || bucket.pstoClosed > 0,
+  )
+  const weekDates = scale === 'day' ? getSevenDayIsoRange(periodFrom, periodTo) : []
+  if (weekDates.length === 0) return relevantBuckets
+  const bucketsByDate = new Map(relevantBuckets.map((bucket) => [bucket.date, bucket]))
+  return weekDates.map((date) => bucketsByDate.get(date) ?? {
+    date,
+    dateTo: date,
+    lnkRequests: 0,
+    lnkClosed: 0,
+    pstoRequests: 0,
+    pstoClosed: 0,
+    lnkRequestRowIds: [],
+    lnkClosedRowIds: [],
+    pstoRequestRowIds: [],
+    pstoClosedRowIds: [],
+  })
+}
+
+function getSevenDayIsoRange(from: string, to: string) {
+  const start = Date.parse(`${from}T00:00:00Z`)
+  const end = Date.parse(`${to}T00:00:00Z`)
+  const dayMs = 24 * 60 * 60 * 1000
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start !== 6 * dayMs) return []
+  return Array.from({ length: 7 }, (_, index) => new Date(start + index * dayMs).toISOString().slice(0, 10))
+}
+
+const CONTROL_DYNAMICS_SCALE_ORDER: StatisticsControlDynamicsScale[] = ['day', 'week', 'month', 'quarter', 'year']
+const CONTROL_DYNAMICS_SCALE_LABELS: Record<StatisticsControlDynamicsScale, string> = {
+  day: 'День',
+  week: 'Неделя',
+  month: 'Месяц',
+  quarter: 'Квартал',
+  year: 'Год',
+}
+
+function DynamicsScaleControl({
+  onScaleChange,
+  scale,
+  scaleSetting,
+}: {
+  onScaleChange: (scale: StatisticsControlDynamicsScaleSetting) => void
+  scale: StatisticsControlDynamicsScale
+  scaleSetting: StatisticsControlDynamicsScaleSetting
+}) {
+  const scaleIndex = CONTROL_DYNAMICS_SCALE_ORDER.indexOf(scale)
+  const coarserScale = CONTROL_DYNAMICS_SCALE_ORDER[scaleIndex + 1]
+  const finerScale = CONTROL_DYNAMICS_SCALE_ORDER[scaleIndex - 1]
+  return (
+    <div className="inline-flex h-8 items-center overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm" aria-label="Масштаб диаграммы">
+      <button
+        type="button"
+        className="flex h-8 w-8 items-center justify-center border-r border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+        disabled={!coarserScale}
+        title="Укрупнить масштаб"
+        aria-label="Укрупнить масштаб"
+        onClick={() => coarserScale && onScaleChange(coarserScale)}
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="h-8 min-w-[112px] px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+        title="Вернуть автоматический масштаб"
+        onClick={() => onScaleChange('auto')}
+      >
+        {CONTROL_DYNAMICS_SCALE_LABELS[scale]}{scaleSetting === 'auto' ? ' · авто' : ''}
+      </button>
+      <button
+        type="button"
+        className="flex h-8 w-8 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+        disabled={!finerScale}
+        title="Детализировать масштаб"
+        aria-label="Детализировать масштаб"
+        onClick={() => finerScale && onScaleChange(finerScale)}
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function formatControlDynamicsBucketLabel(
+  bucket: StatisticsSummary['controlDynamics'][number],
+  scale: StatisticsControlDynamicsScale,
+) {
+  if (scale === 'day') return formatDisplayDate(bucket.date).slice(0, 5)
+  if (scale === 'week') return `${formatDisplayDate(bucket.date).slice(0, 5)}–${formatDisplayDate(bucket.dateTo).slice(0, 5)}`
+  const date = new Date(`${bucket.date}T00:00:00Z`)
+  if (scale === 'month') {
+    const label = new Intl.DateTimeFormat('ru-RU', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date)
+    return label.replace('.', '')
+  }
+  if (scale === 'quarter') return `${Math.floor(date.getUTCMonth() / 3) + 1} кв. ${date.getUTCFullYear()}`
+  return String(date.getUTCFullYear())
+}
+
+function ControlDynamicsCell({
+  closed,
+  closedRowIds,
+  dateLabel,
+  maxValue,
+  onOpenRows,
+  requests,
+  requestRowIds,
+  unit,
+}: {
+  closed: number
+  closedRowIds: number[]
+  dateLabel: string
+  maxValue: number
+  onOpenRows?: StatisticsRowsOpenHandler
+  requests: number
+  requestRowIds: number[]
+  unit: StatisticsUnit
+}) {
+  const open = (rowIds: number[], label: string) => onOpenRows?.(rowIds, `${label} за ${dateLabel}: ${rowIds.length} стыков.`)
+  return (
+    <div className="grid min-h-[200px] grid-rows-[1fr_auto] rounded-md border border-slate-100 bg-slate-50/60 px-2 pb-2 pt-3">
+      <div className="flex h-40 items-end justify-center gap-2">
+        <ControlDynamicsBar color="bg-sky-400" label="Заявки" onClick={() => open(requestRowIds, 'Заявки')} rowIds={requestRowIds} value={requests} maxValue={maxValue} unit={unit} />
+        <ControlDynamicsBar color="bg-emerald-400" label="Заключения" onClick={() => open(closedRowIds, 'Заключения')} rowIds={closedRowIds} value={closed} maxValue={maxValue} unit={unit} />
       </div>
-      <div className="h-2 rounded-full bg-slate-100">
-        <div className="h-2 rounded-full bg-slate-800" style={{ width: `${Math.min(100, percent)}%` }} />
+      <div className="mt-1 text-center text-[10px] tabular-nums text-slate-500">{formatStatisticValue(requests, unit)} / {formatStatisticValue(closed, unit)}</div>
+    </div>
+  )
+}
+
+function ControlDynamicsBar({ color, label, maxValue, onClick, rowIds, unit, value }: { color: string; label: string; maxValue: number; onClick: () => void; rowIds: number[]; unit: StatisticsUnit; value: number }) {
+  const height = value > 0 ? Math.max(8, (value / maxValue) * 152) : 2
+  const bar = <span className={cn('block w-4 rounded-t-sm transition-opacity', value > 0 ? color : 'bg-slate-200')} style={{ height }} />
+  return rowIds.length > 0 ? (
+    <button type="button" className="flex h-40 items-end hover:opacity-75" title={`${label}: ${formatStatisticValue(value, unit)}`} onClick={onClick}>{bar}</button>
+  ) : <span className="flex h-40 items-end" title={`${label}: ${formatStatisticValue(value, unit)}`}>{bar}</span>
+}
+
+function ControlWorkflowCard({
+  closure,
+  control,
+  coverage,
+  jointStateStatuses,
+  jointStateTotal,
+  onOpenRows,
+  onOpenStateRows,
+  statuses,
+  subtitle,
+  title,
+  unit,
+}: {
+  closure: { percent: number; completed: number; total: number; completedRowIds: number[]; totalRowIds: number[] }
+  control: 'lnk' | 'psto'
+  coverage: { percent: number; completed: number; total: number; completedRowIds: number[]; totalRowIds: number[] }
+  jointStateStatuses: ControlJointStateStatus[]
+  jointStateTotal: number
+  onOpenRows?: StatisticsRowsOpenHandler
+  onOpenStateRows?: (rowIds: number[], message?: string) => void
+  statuses: ControlWorkflowStatus[]
+  subtitle: string
+  title: string
+  unit: StatisticsUnit
+}) {
+  const WorkflowIcon = control === 'psto' ? TimerReset : FlaskConical
+  const openRows = onOpenRows
+    ? (rowIds: number[], label: string) =>
+        onOpenRows(rowIds, `Показаны стыки статистики «${title}: ${label}»: ${rowIds.length}.`)
+    : undefined
+
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              'flex h-8 w-8 items-center justify-center rounded-md border',
+              control === 'psto'
+                ? 'border-amber-100 bg-amber-50 text-amber-700'
+                : 'border-sky-100 bg-sky-50 text-sky-700',
+            )}>
+              <WorkflowIcon className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+              <p className="text-xs text-slate-500">{subtitle}</p>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="mt-1 text-xs text-slate-500">
-        Всего результатов: {formatStatisticValue(totalClosed, unit)}
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <WorkflowProgress
+          completed={coverage.completed}
+          completedLabel="Заявлено"
+          completedRowIds={coverage.completedRowIds}
+          label="Покрытие потребности"
+          onOpenRows={openRows}
+          percent={coverage.percent}
+          tone="sky"
+          total={coverage.total}
+          totalLabel="Требуется"
+          totalRowIds={coverage.totalRowIds}
+          unit="positions"
+        />
+        <WorkflowProgress
+          completed={closure.completed}
+          completedLabel="Закрыто"
+          completedRowIds={closure.completedRowIds}
+          label="Закрытие заявок"
+          onOpenRows={openRows}
+          percent={closure.percent}
+          tone="emerald"
+          total={closure.total}
+          totalLabel="Заявок"
+          totalRowIds={closure.totalRowIds}
+          unit={unit}
+        />
+      </div>
+      <div className={cn(
+        'mt-3 grid grid-cols-1 gap-2 border-t border-slate-100 pt-3',
+        statuses.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3',
+      )}>
+        {statuses.map((status) => (
+          <WorkflowStatusButton
+            key={status.label}
+            {...status}
+            onOpen={openRows ? () => openRows(status.rowIds, status.label) : undefined}
+            unit={unit}
+          />
+        ))}
+      </div>
+      <div className="mt-3 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h3 className="text-sm font-semibold text-slate-800">Состояние стыков по дате сварки</h3>
+          <p className="text-xs text-slate-500">
+            За выбранный период: {formatStatisticValue(jointStateTotal, unit)} {unit === 'wdi' ? 'WDI' : 'стыков'}
+          </p>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:grid-cols-8">
+          {jointStateStatuses.map((status) => (
+            <StatusLine
+              key={status.label}
+              compact
+              label={status.label}
+              onOpenRows={onOpenStateRows}
+              rowIds={status.rowIds}
+              unit={status.unit}
+              value={status.value}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function WorkflowProgress({
+  completed,
+  completedLabel,
+  completedRowIds,
+  label,
+  onOpenRows,
+  percent,
+  tone,
+  total,
+  totalLabel,
+  totalRowIds,
+  unit,
+}: {
+  completed: number
+  completedLabel: string
+  completedRowIds: number[]
+  label: string
+  onOpenRows?: (rowIds: number[], label: string) => void
+  percent: number
+  tone: 'sky' | 'emerald'
+  total: number
+  totalLabel: string
+  totalRowIds: number[]
+  unit: StatisticsUnit | 'positions'
+}) {
+  const barClass = tone === 'emerald' ? 'bg-emerald-500' : 'bg-sky-500'
+  const valueClass = tone === 'emerald' ? 'text-emerald-700' : 'text-sky-700'
+  const formatValue = (value: number) => unit === 'positions' ? String(Math.round(value)) : formatStatisticValue(value, unit)
+  return (
+    <div className="rounded-md border border-slate-100 bg-slate-50/70 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-[15px] font-semibold text-slate-700">{label}</div>
+        <div className={cn('text-2xl font-semibold tabular-nums leading-none', valueClass)}>{formatPercent(percent)}</div>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-100">
+        <div className={cn('h-full rounded-full', barClass)} style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
+      </div>
+      <div className="mt-2.5 flex items-center justify-between gap-3 text-sm text-slate-500">
+        <WorkflowInlineLink label={totalLabel} onClick={onOpenRows ? () => onOpenRows(totalRowIds, totalLabel) : undefined} rowIds={totalRowIds} value={formatValue(total)} />
+        <WorkflowInlineLink label={completedLabel} onClick={onOpenRows ? () => onOpenRows(completedRowIds, completedLabel) : undefined} rowIds={completedRowIds} value={formatValue(completed)} />
       </div>
     </div>
   )
 }
 
-function MethodProgress({ method, unit }: { method: StatisticsMethodSummary; unit: StatisticsUnit }) {
-  const isPsto = method.code === 'ПСТО'
-  const positiveLabel = isPsto ? 'проведено' : 'годен'
-  const waitingControlLabel = isPsto ? 'ожидает ПСТО' : 'ожидает НК'
+function WorkflowInlineLink({ label, onClick, rowIds, value }: { label: string; onClick?: () => void; rowIds: number[]; value: string }) {
+  if (!onClick || rowIds.length === 0) return <span>{label}: <strong className="text-slate-700">{value}</strong></span>
   return (
-    <div className="grid grid-cols-1 items-center gap-3 rounded-md border border-slate-100 bg-slate-50 px-3 py-2 xl:grid-cols-[72px_1fr_170px]">
-      <div className="inline-flex w-fit items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-700">
-        <FlaskConical className="h-3.5 w-3.5 text-slate-400" />
-        {method.code}
+    <button type="button" className="inline-flex items-center gap-1 hover:text-sky-700" onClick={onClick}>
+      {label}: <strong className="text-slate-700">{value}</strong><ArrowUpRight className="h-3 w-3" />
+    </button>
+  )
+}
+
+function WorkflowStatusButton({ label, onOpen, rowIds, tone, unit, value }: ControlWorkflowStatus & { onOpen?: () => void; unit: StatisticsUnit }) {
+  const toneClass = {
+    amber: 'border-amber-100 bg-amber-50/65 text-amber-800',
+    sky: 'border-sky-100 bg-sky-50/65 text-sky-800',
+    rose: 'border-rose-100 bg-rose-50/65 text-rose-800',
+    green: 'border-emerald-100 bg-emerald-50/65 text-emerald-800',
+  }[tone]
+  const content = <><span className="min-w-0 font-medium leading-5">{label}</span><strong className="text-base tabular-nums">{formatStatisticValue(value, unit)}</strong>{rowIds.length > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : null}</>
+  return onOpen && rowIds.length > 0 ? (
+    <button type="button" className={cn('grid min-h-12 grid-cols-[1fr_auto_auto] items-center gap-2 rounded-md border px-3 py-2.5 text-left text-sm transition-colors hover:brightness-95', toneClass)} onClick={onOpen}>{content}</button>
+  ) : (
+    <div className={cn('grid min-h-12 grid-cols-[1fr_auto] items-center gap-2 rounded-md border px-3 py-2.5 text-sm', toneClass)}>{content}</div>
+  )
+}
+
+function MethodCoverageCell({ method, onOpenRows }: { method: StatisticsMethodSummary; onOpenRows?: StatisticsRowsOpenHandler }) {
+  return (
+    <div className="ml-auto w-44">
+      <div className="flex items-center justify-end gap-2 text-xs">
+        <MethodInlineLink label="требуется" onOpenRows={onOpenRows} rowIds={method.rowIds.requiredRequests} value={String(method.requiredRequests)} />
+        <span className="text-slate-300">/</span>
+        <MethodInlineLink label="заявлено" onOpenRows={onOpenRows} rowIds={method.rowIds.createdRequests} value={String(method.createdRequests)} />
       </div>
-      <div>
-        <div className="space-y-2">
-          <div>
-            <div className="mb-1 flex flex-wrap justify-between gap-x-3 text-xs text-slate-500">
-              <span>Заявлено — {formatPercent(method.requestCoveragePercent)}</span>
-              <span>требуется {method.requiredRequests} · заявлено {method.createdRequests}</span>
-            </div>
-            <div className="h-2 rounded-full bg-white">
-              <div className="h-2 rounded-full bg-sky-400/80" style={{ width: `${method.requestCoveragePercent}%` }} />
-            </div>
-          </div>
-          <div>
-            <div className="mb-1 flex flex-wrap justify-between gap-x-3 text-xs text-slate-500">
-              <span>Закрыто по заявкам — {formatPercent(method.closurePercent)}</span>
-              <span>заявок {formatStatisticValue(method.requests, unit)} · закрыто {formatStatisticValue(method.closed, unit)}</span>
-            </div>
-            <div className="h-2 rounded-full bg-white">
-              <div className="h-2 rounded-full bg-emerald-400/80" style={{ width: `${method.closurePercent}%` }} />
-            </div>
-          </div>
-        </div>
-        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-500">
-          <span>Всего результатов: {formatStatisticValue(method.totalClosed, unit)}</span>
-          {method.waitingControl > 0 ? (
-            <span>{waitingControlLabel}: {formatStatisticValue(method.waitingControl, unit)}</span>
-          ) : null}
-          {method.waitingRequest > 0 ? (
-            <span>ожидает заявку: {formatStatisticValue(method.waitingRequest, unit)}</span>
-          ) : null}
-        </div>
-      </div>
-      <div className="text-left text-xs text-slate-500 xl:text-right">
-        <div>{positiveLabel}: <span className="font-medium text-emerald-700">{formatStatisticValue(method.good, unit)}</span></div>
-        {!isPsto ? (
-          <div>не годен: <span className="font-medium text-rose-700">{formatStatisticValue(method.rejected, unit)}</span></div>
-        ) : null}
-        <div>заявок: <span className="font-medium text-slate-700">{formatStatisticValue(method.requests, unit)}</span></div>
-      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-400" style={{ width: `${method.requestCoveragePercent}%` }} /></div>
     </div>
   )
+}
+
+function MethodClosureCell({ method, onOpenRows, unit }: { method: StatisticsMethodSummary; onOpenRows?: StatisticsRowsOpenHandler; unit: StatisticsUnit }) {
+  return (
+    <div className="ml-auto w-44">
+      <div className="flex items-center justify-end gap-2 text-xs">
+        <MethodInlineLink label="заявок" onOpenRows={onOpenRows} rowIds={method.rowIds.requests} value={formatStatisticValue(method.requests, unit)} />
+        <span className="text-slate-300">/</span>
+        <MethodInlineLink label="закрыто" onOpenRows={onOpenRows} rowIds={method.rowIds.closed} value={formatStatisticValue(method.closed, unit)} />
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${method.closurePercent}%` }} /></div>
+    </div>
+  )
+}
+
+function MethodInlineLink({ label, onOpenRows, rowIds, value }: { label: string; onOpenRows?: StatisticsRowsOpenHandler; rowIds: number[]; value: string }) {
+  if (!onOpenRows || rowIds.length === 0) return <span title={label}>{value}</span>
+  return <button type="button" className="font-medium text-slate-700 hover:text-sky-700" title={`${label}: открыть в ЛНК`} onClick={() => onOpenRows(rowIds, `Показаны стыки статистики «${label}»: ${rowIds.length}.`)}>{value}</button>
+}
+
+function MethodValueCell({ label, onOpenRows, rowIds, tone, unit, value }: { label: string; onOpenRows?: StatisticsRowsOpenHandler; rowIds: number[]; tone: 'amber' | 'sky' | 'green' | 'rose'; unit: StatisticsUnit; value: number }) {
+  const toneClass = { amber: 'text-amber-700', sky: 'text-sky-700', green: 'text-emerald-700', rose: 'text-rose-700' }[tone]
+  const content = <span className={cn('inline-flex items-center justify-end gap-1.5 font-semibold tabular-nums', toneClass)}>{formatStatisticValue(value, unit)}{rowIds.length > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : null}</span>
+  return <td className="px-3 py-3 text-right">{onOpenRows && rowIds.length > 0 ? <button type="button" title={`Открыть: ${label}`} onClick={() => onOpenRows(rowIds, `Показаны стыки статистики «${label}»: ${rowIds.length}.`)}>{content}</button> : content}</td>
+}
+
+function mergeStatisticRowIds(groups: number[][]) {
+  return Array.from(new Set(groups.flat())).sort((left, right) => left - right)
 }
 
 const WELDER_GROUP_BREAKDOWN_TOOLTIP =
@@ -1538,21 +2322,51 @@ const WELDER_GROUP_BREAKDOWN_TOOLTIP =
 
 function WeldersStatisticsPanel({
   jointFilter,
+  onOpenRows,
   summary,
   unit,
 }: {
   jointFilter: WelderStatisticsJointFilter
+  onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   summary: WelderStatisticsSummary
   unit: StatisticsUnit
 }) {
   const controlled = summary.good + summary.rejected
   const [stampSearch, setStampSearch] = useState('')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'rejected' | 'waitingRequest' | 'waitingControl'>('all')
+  const [sortMode, setSortMode] = useState<'total' | 'average' | 'defect' | 'stamp'>('total')
   const [expandedStamps, setExpandedStamps] = useState<Set<string>>(() => new Set())
+  const welderShiftCount = summary.rows.reduce((total, row) => total + row.daily.length, 0)
+  const averagePerWelderShift = welderShiftCount > 0 ? summary.total / welderShiftCount : 0
+  const allRowIds = mergeStatisticRowIds(summary.rows.map((row) => row.rowIds))
+  const controlledRowIds = mergeStatisticRowIds(summary.rows.flatMap((row) => [row.goodRowIds, row.rejectedRowIds]))
+  const rejectedRowIds = mergeStatisticRowIds(summary.rows.map((row) => row.rejectedRowIds))
   const filteredRows = useMemo(() => {
     const query = stampSearch.trim().toLowerCase()
-    if (!query) return summary.rows
-    return summary.rows.filter((row) => row.stamp.toLowerCase().includes(query) || row.welderName.toLowerCase().includes(query))
-  }, [stampSearch, summary.rows])
+    return summary.rows
+      .filter(
+        (row) =>
+          !query ||
+          row.searchStamps.some((stamp) => stamp.toLowerCase().includes(query)) ||
+          row.welderName.toLowerCase().includes(query),
+      )
+      .filter((row) => {
+        if (quickFilter === 'rejected') return row.rejected > 0
+        if (quickFilter === 'waitingRequest') return row.waitingRequest > 0
+        if (quickFilter === 'waitingControl') return row.waitingControl > 0
+        return true
+      })
+      .sort((left, right) => {
+        if (sortMode === 'stamp') return left.stamp.localeCompare(right.stamp, 'ru', { numeric: true })
+        if (sortMode === 'defect') return right.defectPercent - left.defectPercent || right.rejected - left.rejected || right.total - left.total
+        if (sortMode === 'average') {
+          const leftAverage = left.daily.length > 0 ? left.total / left.daily.length : 0
+          const rightAverage = right.daily.length > 0 ? right.total / right.daily.length : 0
+          return rightAverage - leftAverage || right.total - left.total
+        }
+        return right.total - left.total || left.stamp.localeCompare(right.stamp, 'ru', { numeric: true })
+      })
+  }, [quickFilter, sortMode, stampSearch, summary.rows])
   const toggleExpandedStamp = (stamp: string) => {
     setExpandedStamps((current) => {
       const next = new Set(current)
@@ -1564,69 +2378,114 @@ function WeldersStatisticsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
           icon={Users}
           label="Сварщиков в срезе"
           value={String(summary.totalWelders)}
-          detail={`Всего работ: ${formatStatisticValue(summary.total, unit)} ${unit === 'joints' ? 'стыков' : 'WDI'}`}
+          detail="Уникальные фактические клейма"
           accent="blue"
         />
         <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
           icon={Activity}
-          label="Годные стыки"
-          value={formatStatisticValue(summary.good, unit)}
-          detail={`Ожидает заявку: ${formatStatisticValue(summary.waitingRequest, unit)} · ожидает НК: ${formatStatisticValue(summary.waitingControl, unit)}`}
-          accent="green"
+          label="Объем работ"
+          value={formatStatisticValue(summary.total, unit)}
+          detail={unit === 'joints' ? 'Расчетный вклад в стыках' : 'Расчетный вклад в WDI'}
+          accent="blue"
+          actionTitle="Открыть стыки сварщиков в журнале"
+          onClick={onOpenRows && allRowIds.length > 0 ? () => onOpenRows(allRowIds, `Показаны стыки сварщиков: ${allRowIds.length}.`) : undefined}
         />
         <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
+          icon={UserRound}
+          label={`Среднее на сварщика в смену, ${unit === 'joints' ? 'стыков' : 'WDI'}`}
+          value={formatAverageStatisticValue(averagePerWelderShift)}
+          detail={`${welderShiftCount} выходов сварщиков`}
+          accent="slate"
+        />
+        <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
+          icon={ClipboardCheck}
+          label="Проконтролировано"
+          value={formatStatisticValue(controlled, unit)}
+          detail={`${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`}
+          accent="green"
+          actionTitle="Открыть проконтролированные стыки"
+          onClick={onOpenRows && controlledRowIds.length > 0 ? () => onOpenRows(controlledRowIds, `Показаны проконтролированные стыки сварщиков: ${controlledRowIds.length}.`) : undefined}
+        />
+        <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
           icon={Gauge}
           label="% брака"
           value={formatPercent(summary.defectPercent)}
           detail={`${formatStatisticValue(summary.rejected, unit)} не годен из ${formatStatisticValue(controlled, unit)} проконтролированных`}
           accent="amber"
-        />
-        <MetricCard
-          icon={ClipboardCheck}
-          label="Проконтролировано"
-          value={formatStatisticValue(controlled, unit)}
-          detail="Годные + негодные стыки по фактическим клеймам"
-          accent="indigo"
+          actionTitle="Открыть негодные стыки"
+          onClick={onOpenRows && rejectedRowIds.length > 0 ? () => onOpenRows(rejectedRowIds, `Показаны негодные стыки сварщиков: ${rejectedRowIds.length}.`) : undefined}
         />
       </div>
+
+      <div className="rounded-md border border-slate-200 bg-white p-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="relative min-w-[260px] flex-1">
+            <span className="sr-only">Поиск клейма или ФИО</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input value={stampSearch} onChange={(event) => setStampSearch(event.target.value)} placeholder="Клеймо НАКС, внутреннее или ФИО" className="h-10 rounded-md border-slate-200 bg-white pl-9 text-sm" />
+            {stampSearch.trim() ? <button type="button" className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Очистить поиск" onClick={() => setStampSearch('')}><X className="h-4 w-4" /></button> : null}
+          </label>
+          <WelderToolbarSegments
+            label="Показать"
+            options={[
+              ['all', 'Все'],
+              ['rejected', 'Есть брак'],
+              ['waitingRequest', 'Без заявки'],
+              ['waitingControl', 'Ожидает НК'],
+            ]}
+            value={quickFilter}
+            onChange={(value) => setQuickFilter(value as typeof quickFilter)}
+          />
+          <WelderToolbarSegments
+            label="Сортировка"
+            options={[
+              ['total', 'Объем'],
+              ['average', 'В смену'],
+              ['defect', '% брака'],
+              ['stamp', 'Клеймо'],
+            ]}
+            value={sortMode}
+            onChange={(value) => setSortMode(value as typeof sortMode)}
+          />
+        </div>
+      </div>
+
+      <WelderRankingPanel onOpenRows={onOpenRows} rows={filteredRows} sortMode={sortMode} unit={unit} />
 
       <Panel
         title="Отчет по сварщикам"
         subtitle="Считаются только фактические клейма. Если у внутреннего клейма есть связанное клеймо НАКС, в отчете показывается НАКС."
       >
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <label className="grid w-full max-w-sm gap-1 text-xs font-medium text-slate-600">
-            Поиск клейма или ФИО
-            <Input
-              value={stampSearch}
-              onChange={(event) => setStampSearch(event.target.value)}
-              placeholder="Клеймо НАКС, внутреннее или ФИО"
-              className="h-9 rounded-md border-slate-200 bg-white text-sm"
-            />
-          </label>
-          {stampSearch.trim() ? (
-            <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => setStampSearch('')}>
-              Очистить поиск
-            </Button>
-          ) : null}
-        </div>
         {summary.rows.length > 0 ? (
           <div className="overflow-hidden rounded-md border border-slate-200">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
                 <colgroup>
-                  {Array.from({ length: 7 }).map((_, index) => (
-                    <col key={index} className="w-[14.285%]" />
-                  ))}
+                  <col className="w-[19%]" /><col className="w-[13.5%]" /><col className="w-[13.5%]" /><col className="w-[14%]" /><col className="w-[13.5%]" /><col className="w-[13.5%]" /><col className="w-[13%]" />
                 </colgroup>
-                <thead className="bg-slate-100 text-slate-700">
+                <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700">
                   <tr>
-                    <WelderHeaderCell>Клеймо</WelderHeaderCell>
+                    <WelderHeaderCell className="sticky left-0 z-30 bg-slate-100">Клеймо</WelderHeaderCell>
                     <WelderHeaderCell align="right">Всего</WelderHeaderCell>
                     <WelderHeaderCell align="right">Годен</WelderHeaderCell>
                     <WelderHeaderCell align="right">Ожидает заявку</WelderHeaderCell>
@@ -1641,6 +2500,7 @@ function WeldersStatisticsPanel({
                       key={row.stamp}
                       expanded={expandedStamps.has(row.stamp)}
                       jointFilter={jointFilter}
+                      onOpenRows={onOpenRows}
                       onToggle={() => toggleExpandedStamp(row.stamp)}
                       row={row}
                       unit={unit}
@@ -1650,7 +2510,7 @@ function WeldersStatisticsPanel({
               </table>
               {filteredRows.length === 0 ? (
                 <div className="border-t border-slate-100 bg-slate-50 p-5 text-sm text-slate-500">
-                  По этому клейму или ФИО ничего не найдено.
+                  По текущему поиску и фильтрам ничего не найдено.
                 </div>
               ) : null}
             </div>
@@ -1665,23 +2525,80 @@ function WeldersStatisticsPanel({
   )
 }
 
+function WelderToolbarSegments({ label, onChange, options, value }: { label: string; onChange: (value: string) => void; options: Array<[string, string]>; value: string }) {
+  return (
+    <div>
+      <div className="mb-1 text-[11px] font-medium text-slate-500">{label}</div>
+      <div className="inline-flex flex-wrap rounded-md border border-slate-200 bg-slate-50 p-0.5">
+        {options.map(([optionValue, optionLabel]) => (
+          <button key={optionValue} type="button" className={cn('rounded px-2.5 py-1.5 text-xs font-medium transition-colors', value === optionValue ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800')} onClick={() => onChange(optionValue)}>{optionLabel}</button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WelderRankingPanel({ onOpenRows, rows, sortMode, unit }: { onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']; rows: WelderStatisticsRow[]; sortMode: 'total' | 'average' | 'defect' | 'stamp'; unit: StatisticsUnit }) {
+  const visibleRows = rows.slice(0, 12)
+  const rankingMode = sortMode === 'average' || sortMode === 'defect' ? sortMode : 'total'
+  const maxValue = Math.max(1, ...visibleRows.map((row) => getWelderRankingValue(row, rankingMode)))
+  const metricLabel = rankingMode === 'defect' ? '% брака' : rankingMode === 'average' ? `${unit === 'joints' ? 'стыков' : 'WDI'} в смену` : unit === 'joints' ? 'стыков' : 'WDI'
+  return (
+    <Panel
+      title="Сравнение сварщиков"
+      subtitle={`Первые ${visibleRows.length} по текущей сортировке. Процент брака всегда показан вместе с количеством проконтролированных работ.`}
+      headerAction={<span className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">{metricLabel}</span>}
+    >
+      {visibleRows.length > 0 ? (
+        <div className="space-y-2">
+          {visibleRows.map((row, index) => {
+            const value = getWelderRankingValue(row, rankingMode)
+            const controlled = row.good + row.rejected
+            const rowIds = rankingMode === 'defect' ? row.rejectedRowIds : row.rowIds
+            const content = (
+              <>
+                <span className="w-6 shrink-0 text-center text-xs font-medium tabular-nums text-slate-400">{index + 1}</span>
+                <span className="w-28 shrink-0 truncate text-sm font-semibold text-slate-800" title={`${row.stamp}${row.welderName ? ` · ${row.welderName}` : ''}`}>{row.stamp}</span>
+                <span className="relative h-7 min-w-0 flex-1 overflow-hidden rounded bg-slate-100">
+                  <span className={cn('absolute inset-y-0 left-0 rounded', rankingMode === 'defect' ? 'bg-rose-200' : rankingMode === 'average' ? 'bg-indigo-200' : 'bg-sky-200')} style={{ width: `${value > 0 ? Math.max(2, (value / maxValue) * 100) : 0}%` }} />
+                  <span className="relative flex h-full items-center justify-end px-2 text-xs font-semibold tabular-nums text-slate-800">{rankingMode === 'defect' ? formatPercent(value) : formatAverageStatisticValue(value)}</span>
+                </span>
+                <span className="hidden w-32 shrink-0 text-right text-xs text-slate-500 sm:block">{rankingMode === 'defect' ? `из ${formatStatisticValue(controlled, unit)}` : `${formatPercent(row.defectPercent)} брака`}</span>
+                {rowIds.length > 0 ? <ArrowUpRight className="h-4 w-4 shrink-0 text-sky-600" /> : null}
+              </>
+            )
+            return onOpenRows && rowIds.length > 0 ? (
+              <button key={row.stamp} type="button" className="flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:border-sky-100 hover:bg-sky-50/55" title={`Открыть стыки сварщика ${row.stamp}`} onClick={() => onOpenRows(rowIds, `Показаны стыки сварщика ${row.stamp}: ${rowIds.length}.`)}>{content}</button>
+            ) : <div key={row.stamp} className="flex items-center gap-2 px-2 py-1.5">{content}</div>
+          })}
+        </div>
+      ) : <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Нет сварщиков по текущему поиску и фильтрам.</div>}
+    </Panel>
+  )
+}
+
+function getWelderRankingValue(row: WelderStatisticsRow, mode: 'total' | 'average' | 'defect') {
+  if (mode === 'defect') return row.defectPercent
+  if (mode === 'average') return row.daily.length > 0 ? row.total / row.daily.length : 0
+  return row.total
+}
+
 function WelderStatisticsTableRow({
   expanded,
   jointFilter,
+  onOpenRows,
   onToggle,
   row,
   unit,
 }: {
   expanded: boolean
   jointFilter: WelderStatisticsJointFilter
+  onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   onToggle: () => void
   row: WelderStatisticsRow
   unit: StatisticsUnit
 }) {
   const controlled = row.good + row.rejected
-  const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
-  const activeDays = row.daily.length
-  const averagePerActiveDay = activeDays > 0 ? row.total / activeDays : 0
   const expandedCellClass = expanded ? 'border-t-2 border-sky-200 bg-sky-50/60' : ''
   return (
     <>
@@ -1692,7 +2609,7 @@ function WelderStatisticsTableRow({
         )}
         onClick={onToggle}
       >
-        <td className={cn('px-4 py-3', expandedCellClass, expanded ? 'border-l-2' : '')}>
+        <td className={cn('sticky left-0 z-10 px-4 py-3', expanded ? 'border-l-2 bg-sky-50' : 'bg-inherit', expandedCellClass)}>
           <div className="flex items-center gap-2">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm">
               {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -1701,82 +2618,13 @@ function WelderStatisticsTableRow({
               <div className="font-semibold text-slate-900">{row.stamp}</div>
               {row.welderName ? <div className="mt-1 text-xs font-medium leading-4 text-slate-500">{row.welderName}</div> : null}
             </div>
+            {onOpenRows && row.rowIds.length > 0 ? (
+              <button type="button" className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded text-sky-600 hover:bg-sky-100" title={`Открыть стыки сварщика ${row.stamp}`} onClick={(event) => { event.stopPropagation(); onOpenRows(row.rowIds, `Показаны стыки сварщика ${row.stamp}: ${row.rowIds.length}.`) }}><ArrowUpRight className="h-4 w-4" /></button>
+            ) : null}
           </div>
         </td>
-        {expanded ? (
-          <td colSpan={6} className={cn(expandedCellClass, 'border-r-2 px-2 py-2')}>
-            <div className="grid grid-cols-[repeat(7,minmax(112px,1fr))] gap-2">
-              <WelderSummaryCard
-                label={`В смену, ${unitLabel}`}
-                value={formatStatisticValue(averagePerActiveDay, unit)}
-                detail={activeDays > 0 ? `${activeDays} дн. работы` : 'нет дней работы'}
-              />
-              <WelderSummaryCard
-                label="Всего"
-                value={formatStatisticValue(row.total, unit)}
-                f={row.fTotal}
-                groupMetric="total"
-                groups={row.materialGroups}
-                s={row.sTotal}
-                jointFilter={jointFilter}
-                unit={unit}
-              />
-              <WelderSummaryCard
-                accent="green"
-                label="Годен"
-                value={formatStatisticValue(row.good, unit)}
-                f={row.fGood}
-                groupMetric="good"
-                groups={row.materialGroups}
-                s={row.sGood}
-                jointFilter={jointFilter}
-                unit={unit}
-              />
-              <WelderSummaryCard
-                accent="blue"
-                label="Ожидает заявку"
-                value={formatStatisticValue(row.waitingRequest, unit)}
-                f={row.fWaitingRequest}
-                groupMetric="waitingRequest"
-                groups={row.materialGroups}
-                s={row.sWaitingRequest}
-                jointFilter={jointFilter}
-                unit={unit}
-              />
-              <WelderSummaryCard
-                accent="indigo"
-                label="Ожидает НК"
-                value={formatStatisticValue(row.waitingControl, unit)}
-                f={row.fWaitingControl}
-                groupMetric="waitingControl"
-                groups={row.materialGroups}
-                s={row.sWaitingControl}
-                jointFilter={jointFilter}
-                unit={unit}
-              />
-              <WelderSummaryCard
-                accent="rose"
-                label="Не годен"
-                value={formatStatisticValue(row.rejected, unit)}
-                f={row.fRejected}
-                groupMetric="rejected"
-                groups={row.materialGroups}
-                s={row.sRejected}
-                jointFilter={jointFilter}
-                unit={unit}
-              />
-              <WelderSummaryCard
-                align="center"
-                label="% брака"
-                value={formatPercent(row.defectPercent)}
-                detail={`из ${formatStatisticValue(controlled, unit)}`}
-                style={getDefectCardStyle(row.defectPercent)}
-              />
-            </div>
-          </td>
-        ) : (
-          <>
-            <WelderBodyCell>
+        <>
+            <WelderBodyCell className={expandedCellClass}>
               <WelderValueWithSplit
                 f={row.fTotal}
                 jointFilter={jointFilter}
@@ -1785,7 +2633,7 @@ function WelderStatisticsTableRow({
                 unit={unit}
               />
             </WelderBodyCell>
-            <WelderBodyCell className="text-emerald-700">
+            <WelderBodyCell className={cn(expandedCellClass, 'text-emerald-700')}>
               <WelderValueWithSplit
                 f={row.fGood}
                 jointFilter={jointFilter}
@@ -1794,7 +2642,7 @@ function WelderStatisticsTableRow({
                 unit={unit}
               />
             </WelderBodyCell>
-            <WelderBodyCell>
+            <WelderBodyCell className={expandedCellClass}>
               <WelderValueWithSplit
                 f={row.fWaitingRequest}
                 jointFilter={jointFilter}
@@ -1803,7 +2651,7 @@ function WelderStatisticsTableRow({
                 unit={unit}
               />
             </WelderBodyCell>
-            <WelderBodyCell>
+            <WelderBodyCell className={expandedCellClass}>
               <WelderValueWithSplit
                 f={row.fWaitingControl}
                 jointFilter={jointFilter}
@@ -1812,7 +2660,7 @@ function WelderStatisticsTableRow({
                 unit={unit}
               />
             </WelderBodyCell>
-            <WelderBodyCell className="text-rose-700">
+            <WelderBodyCell className={cn(expandedCellClass, 'text-rose-700')}>
               <WelderValueWithSplit
                 f={row.fRejected}
                 jointFilter={jointFilter}
@@ -1821,19 +2669,18 @@ function WelderStatisticsTableRow({
                 unit={unit}
               />
             </WelderBodyCell>
-            <WelderBodyCell>
+            <WelderBodyCell className={cn(expandedCellClass, expanded ? 'border-r-2' : '')}>
               <div className="flex items-center justify-end gap-2">
                 <span>{formatPercent(row.defectPercent)}</span>
                 <span className="text-xs font-normal text-slate-400">из {formatStatisticValue(controlled, unit)}</span>
               </div>
             </WelderBodyCell>
           </>
-        )}
       </tr>
       {expanded ? (
         <tr className="bg-sky-50/60">
           <td colSpan={7} className="border-x-2 border-b-2 border-sky-200 p-2.5">
-            <WelderStatisticsDetails row={row} unit={unit} />
+            <WelderStatisticsDetails jointFilter={jointFilter} onOpenRows={onOpenRows} row={row} unit={unit} />
           </td>
         </tr>
       ) : null}
@@ -1841,48 +2688,54 @@ function WelderStatisticsTableRow({
   )
 }
 
-function WelderStatisticsDetails({ row, unit }: { row: WelderStatisticsRow; unit: StatisticsUnit }) {
+function WelderStatisticsDetails({ jointFilter, onOpenRows, row, unit }: { jointFilter: WelderStatisticsJointFilter; onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']; row: WelderStatisticsRow; unit: StatisticsUnit }) {
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
   const unitDescription = unit === 'joints' ? 'в стыках' : 'в дюймах (WDI)'
   const maxDaily = Math.max(1, ...row.daily.map((bucket) => bucket.total))
+  const activeDays = row.daily.length
+  const averagePerActiveDay = activeDays > 0 ? row.total / activeDays : 0
+  const controlled = row.good + row.rejected
 
   return (
-    <div className="rounded-lg border-2 border-sky-200 bg-white shadow-sm">
-      <div className="border-b border-sky-100 bg-sky-50/35 p-3">
-        <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">Динамика по дням</div>
-              <div className="text-xs text-slate-500">По фактическому клейму {row.stamp}, {unitDescription}.</div>
-            </div>
-            <span className="rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800">
-              {formatStatisticValue(row.total, unit)} {unitLabel}
-            </span>
+    <div className="rounded-md border border-sky-200 bg-white shadow-sm">
+      <div className="grid gap-3 border-b border-slate-100 p-3 xl:grid-cols-[0.72fr_1.28fr]">
+        <section>
+          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Выработка</div>
+          <div className="grid grid-cols-2 gap-2">
+            <WelderSummaryCard label={`В смену, ${unitLabel}`} value={formatStatisticValue(averagePerActiveDay, unit)} detail={activeDays > 0 ? `${activeDays} дн. работы` : 'нет дней работы'} />
+            <WelderSummaryCard label="Всего" value={formatStatisticValue(row.total, unit)} f={row.fTotal} groupMetric="total" groups={row.materialGroups} s={row.sTotal} jointFilter={jointFilter} unit={unit} />
           </div>
-          {row.daily.length > 0 ? (
-            <div className="overflow-x-auto pb-1">
-              <div className="flex min-w-max items-end gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-3 py-3">
-                {row.daily.map((bucket) => {
-                  const height = Math.max(12, (bucket.total / maxDaily) * 92)
-                  const title = `${formatDisplayDate(bucket.date)}: ${formatStatisticValue(bucket.total, unit)} ${unitLabel}; стыков ${bucket.joints}`
-                  return (
-                    <div key={bucket.date} className="grid w-12 justify-items-center gap-1" title={title}>
-                      <div className="flex h-24 w-8 items-end rounded-md border border-sky-100 bg-white px-1">
-                        <div className="w-full rounded-t bg-sky-400 shadow-sm" style={{ height }} />
-                      </div>
-                      <div className="text-[11px] font-semibold leading-3 text-slate-700">{formatDisplayDate(bucket.date).slice(0, 5)}</div>
-                      <div className="text-[11px] leading-3 text-sky-700">{formatStatisticValue(bucket.total, unit)}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-              По дням нет данных для выбранного периода.
-            </div>
-          )}
+        </section>
+        <section>
+          <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Качество и очередь</div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+            <WelderSummaryCard accent="green" label="Годен" value={formatStatisticValue(row.good, unit)} f={row.fGood} groupMetric="good" groups={row.materialGroups} s={row.sGood} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard accent="blue" label="Без заявки" value={formatStatisticValue(row.waitingRequest, unit)} f={row.fWaitingRequest} groupMetric="waitingRequest" groups={row.materialGroups} s={row.sWaitingRequest} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard accent="indigo" label="Ожидает НК" value={formatStatisticValue(row.waitingControl, unit)} f={row.fWaitingControl} groupMetric="waitingControl" groups={row.materialGroups} s={row.sWaitingControl} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard accent="rose" label="Не годен" value={formatStatisticValue(row.rejected, unit)} f={row.fRejected} groupMetric="rejected" groups={row.materialGroups} s={row.sRejected} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard align="center" label="% брака" value={formatPercent(row.defectPercent)} detail={`из ${formatStatisticValue(controlled, unit)}`} style={getDefectCardStyle(row.defectPercent)} />
+          </div>
+        </section>
+      </div>
+      <div className="bg-sky-50/25 p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div><div className="text-sm font-semibold text-slate-900">Динамика по дням</div><div className="text-xs text-slate-500">Фактическое клеймо {row.stamp}, {unitDescription}. Нажмите на день, чтобы открыть стыки.</div></div>
+          <span className="rounded-md border border-sky-100 bg-white px-2 py-1 text-xs font-medium text-sky-800">{formatStatisticValue(row.total, unit)} {unitLabel}</span>
         </div>
+        {row.daily.length > 0 ? (
+          <div className="overflow-x-auto pb-1">
+            <div className="flex min-w-max items-end gap-2 rounded-md border border-slate-100 bg-white/80 px-3 py-3">
+              {row.daily.map((bucket) => {
+                const height = Math.max(12, (bucket.total / maxDaily) * 92)
+                const title = `${formatDisplayDate(bucket.date)}: ${formatStatisticValue(bucket.total, unit)} ${unitLabel}; стыков ${bucket.joints}`
+                const content = <><div className="flex h-24 w-8 items-end rounded-md border border-sky-100 bg-white px-1"><div className="w-full rounded-t bg-sky-300 shadow-sm" style={{ height }} /></div><div className="text-[11px] font-semibold leading-3 text-slate-700">{formatDisplayDate(bucket.date).slice(0, 5)}</div><div className="text-[11px] leading-3 text-sky-700">{formatStatisticValue(bucket.total, unit)}</div></>
+                return onOpenRows && bucket.rowIds.length > 0 ? (
+                  <button type="button" key={bucket.date} className="grid w-12 justify-items-center gap-1 rounded py-1 hover:bg-sky-50" title={`${title}. Открыть стыки`} onClick={() => onOpenRows(bucket.rowIds, `Показаны стыки сварщика ${row.stamp} за ${formatDisplayDate(bucket.date)}: ${bucket.rowIds.length}.`)}>{content}</button>
+                ) : <div key={bucket.date} className="grid w-12 justify-items-center gap-1" title={title}>{content}</div>
+              })}
+            </div>
+          </div>
+        ) : <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">По дням нет данных для выбранного периода.</div>}
       </div>
     </div>
   )
@@ -2017,8 +2870,8 @@ function WelderValueWithSplit({
   )
 }
 
-function WelderHeaderCell({ children, align = 'left' }: { children: ReactNode; align?: 'left' | 'right' }) {
-  return <th className={cn('px-4 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left')}>{children}</th>
+function WelderHeaderCell({ children, align = 'left', className }: { children: ReactNode; align?: 'left' | 'right'; className?: string }) {
+  return <th className={cn('px-4 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left', className)}>{children}</th>
 }
 
 function WelderBodyCell({ children, className }: { children: ReactNode; className?: string }) {
@@ -2062,51 +2915,12 @@ function PercentageLinesPanel({
     () => (detailDialog ? detailDialog.rowIds.map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)) : []),
     [detailDialog, rowsById],
   )
-  const flatRows = useMemo(
-    () =>
-      summary.flatMap((line) =>
-        line.stamps.map((stamp) => ({
-          line,
-          stamp,
-        })),
-      ),
-    [summary],
-  )
   const filteredSummary = useMemo(() => filterPercentageLineSummaries(summary, search), [search, summary])
   const allVisibleLinesCollapsed =
     filteredSummary.length > 0 && filteredSummary.every((line) => collapsedLineKeys.has(line.lineKey))
-  const totals = useMemo(
-    () =>
-      flatRows.reduce(
-        (result, { stamp }) => ({
-          stamps: result.stamps + 1,
-          required: result.required + stamp.requiredControls,
-          assigned: result.assigned + stamp.assignedControls,
-          additionalAssigned: result.additionalAssigned + stamp.additionalAssignedControls,
-          cancelledAssigned: result.cancelledAssigned + stamp.cancelledAssignedControls,
-          covered: result.covered + stamp.coveredControls,
-          rejectedCovered: result.rejectedCovered + stamp.rejectedCoveredControls,
-          completed: result.completed + stamp.completedControls,
-          missing: result.missing + stamp.missingControls,
-          excess: result.excess + stamp.excessControls,
-          fullControl: result.fullControl + (stamp.fullControlRequired ? 1 : 0),
-        }),
-        {
-          stamps: 0,
-          required: 0,
-          assigned: 0,
-          additionalAssigned: 0,
-          cancelledAssigned: 0,
-          covered: 0,
-          rejectedCovered: 0,
-          completed: 0,
-          missing: 0,
-          excess: 0,
-          fullControl: 0,
-        },
-      ),
-    [flatRows],
-  )
+  const totals = useMemo(() => getPercentageLineReportTotals(filteredSummary), [filteredSummary])
+  const closedControls = Math.max(0, totals.required - totals.missing)
+  const completionPercent = getPercentageControlCompletionPercent(totals.required, totals.missing)
   const toggleLine = (lineKey: string) => {
     setCollapsedLineKeys((current) => {
       const next = new Set(current)
@@ -2143,77 +2957,129 @@ function PercentageLinesPanel({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={Percent}
-          label="Процентных линий"
-          value={String(summary.length)}
-          detail={`${totals.stamps} клейм в расчете`}
-          accent="blue"
-        />
-        <MetricCard
-          icon={ClipboardCheck}
-          label="Требуется контроля"
-          value={String(totals.required)}
-          detail={`Всего назначено ${totals.assigned}${formatAssignedBreakdown(totals.additionalAssigned, totals.cancelledAssigned)} · закрыто расчетом ${totals.covered}${totals.rejectedCovered > 0 ? ` · недоступно из-за брака ${totals.rejectedCovered}` : ''}`}
-          accent="green"
-          wrapDetail
-        />
-        <MetricCard
-          icon={TimerReset}
-          label="Осталось закрыть"
-          value={String(totals.missing)}
-          detail="РК/УЗК еще нужно закрыть по расчету"
-          accent="amber"
-        />
-        <MetricCard
-          icon={Gauge}
-          label="100% по клейму"
-          value={String(totals.fullControl)}
-          detail={totals.excess > 0 ? `Лишнее “да”: ${totals.excess}` : 'Без лишних “да”'}
-          accent={totals.fullControl > 0 ? 'amber' : 'slate'}
-        />
-      </div>
+      <div className="rounded-md border border-slate-200 bg-white px-4 py-3.5">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">Сводка процентных линий</div>
+            <div className="mt-0.5 text-xs text-slate-500">
+              Итог по выбранному срезу{search.trim() ? ' и текущему поиску' : ''}
+            </div>
+          </div>
+          {search.trim() ? (
+            <span className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800">
+              Показано {filteredSummary.length} из {summary.length} линий
+            </span>
+          ) : null}
+        </div>
 
-      <Panel
-        title="Процентные линии"
-        subtitle="Расчет идет по официальным клеймам на линиях с единым процентом контроля меньше 100. РК и УЗК считаются взаимозаменяемыми."
-      >
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <label className="grid w-full max-w-sm gap-1 text-xs font-medium text-slate-600">
-            Поиск по линии или клейму
+        <div className="mt-3 flex flex-wrap items-stretch gap-2 border-t border-slate-100 pt-3">
+          <label className="relative min-w-[240px] flex-[1.35_1_240px]">
+            <span className="sr-only">Поиск по линии или клейму</span>
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Линия, проект, шифр или клеймо"
-              className="h-9 rounded-md border-slate-200 bg-white text-sm"
-            />
-          </label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 rounded-md border-sky-100 bg-sky-50/70 text-sky-800 hover:border-sky-200 hover:bg-sky-100"
-              onClick={toggleVisibleLines}
-              disabled={filteredSummary.length === 0}
-              title={allVisibleLinesCollapsed ? 'Развернуть все видимые процентные линии' : 'Свернуть все видимые процентные линии'}
-            >
-              {allVisibleLinesCollapsed ? (
-                <ChevronDown className="mr-1.5 h-4 w-4" />
-              ) : (
-                <ChevronRight className="mr-1.5 h-4 w-4" />
+              className={cn(
+                'h-12 rounded-md border-slate-200 bg-white pl-10 text-sm shadow-sm',
+                search.trim() && 'pr-10',
               )}
-              {allVisibleLinesCollapsed ? 'Развернуть все' : 'Свернуть все'}
-            </Button>
+            />
             {search.trim() ? (
-              <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => onSearchChange('')}>
-                Очистить поиск
-              </Button>
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                onClick={() => onSearchChange('')}
+                title="Очистить поиск"
+              >
+                <X className="h-4 w-4" />
+              </button>
             ) : null}
-          </div>
-        </div>
+          </label>
 
-        {flatRows.length > 0 ? (
+          <PercentageLineSummaryBadge
+            label="Линий"
+            value={filteredSummary.length}
+            title="Линий = количество процентных линий в выбранном срезе и текущем поиске. Учитываются линии с единым процентом контроля меньше 100%."
+          />
+          <PercentageLineSummaryBadge
+            label="Стыков"
+            value={totals.joints}
+            title="Стыков = сумма сваренных официальных стыков на показанных процентных линиях. Неактуальные по ИЗМу строки, неофициальные стыки и строки без даты сварки не учитываются."
+          />
+          <PercentageLineSummaryBadge
+            label="Клейм"
+            value={totals.stamps}
+            title="Клейм = сумма расчетных групп официальных клейм на показанных линиях. Одно и то же клеймо на разных линиях учитывается отдельно."
+          />
+
+          <div
+            className="flex h-12 min-w-[280px] flex-[2_1_280px] flex-col justify-center rounded-md border border-slate-200 bg-white px-3.5 shadow-sm"
+            title="Закрыто = требуется − осталось. Процент выполнения = закрыто ÷ требуется × 100%. Закрытием считается допустимое назначение, выполненный результат или осознанная отмена РК+УЗК; на У-стыке допустим ПВК. Назначения сверх расчета показаны отдельно."
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <div className="text-sm text-slate-600">
+                <span className="font-semibold text-emerald-700">Закрыто {closedControls}</span>
+                <span className="mx-1.5 text-slate-300">/</span>
+                требуется <span className="font-semibold text-slate-900">{totals.required}</span>
+              </div>
+              <span className="text-sm font-semibold text-slate-700">{completionPercent}%</span>
+            </div>
+            <PercentageLineProgressBar percent={completionPercent} compact />
+          </div>
+
+          <PercentageLineSummaryBadge
+            label="Осталось"
+            value={totals.missing}
+            tone={totals.missing > 0 ? 'amber' : 'slate'}
+            title="Осталось = требуется − закрыто расчетом. На обычном стыке закрывают РК/УЗК, на У-стыке также ПВК; учитываются результат и осознанная отмена РК+УЗК."
+          />
+          <PercentageLineSummaryBadge
+            label="Лишнее"
+            value={totals.excess}
+            tone={totals.excess > 0 ? 'rose' : 'slate'}
+            title="Лишнее = фактически назначено «да» − допустимое количество «да» по фактическим клеймам. Расчет выполняется отдельно по каждому официальному клейму; статус «дополнительный» сюда не входит."
+          />
+          <PercentageLineSummaryBadge
+            label="Потенциальное сокращение"
+            value={totals.potentialReduction}
+            tone="sky"
+            className="min-w-[170px] flex-[1.45_1_170px]"
+            title="Потенциальное сокращение = фактически требуется − теоретически требуется при минимальном количестве клейм. На каждой линии остается одно базовое клеймо плюс дополнительные клейма с принятым ДЗ-01; добор после брака и 100% контроль сохраняются. Назначенные «да» на этот показатель не влияют."
+          />
+          {totals.fullControl > 0 ? (
+            <PercentageLineSummaryBadge
+              label="100% по клейму"
+              value={totals.fullControl}
+              tone="amber"
+              title="100% по клейму = количество клейм с четырьмя и более первичными негодными процентными контролями. На У-стыках сюда входит и ПВК. Для каждого такого клейма требуется контроль всех доступных стыков."
+            />
+          ) : null}
+        </div>
+      </div>
+
+      <Panel
+        title="Процентные линии"
+        subtitle="Расчет идет по официальным клеймам на линиях с единым процентом меньше 100. Обычный стык закрывают РК/УЗК, стык типа «У…» — РК/УЗК/ПВК."
+        headerAction={
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 rounded-md border-sky-100 bg-sky-50/70 text-sky-800 hover:border-sky-200 hover:bg-sky-100"
+            onClick={toggleVisibleLines}
+            disabled={filteredSummary.length === 0}
+            title={allVisibleLinesCollapsed ? 'Развернуть все видимые процентные линии' : 'Свернуть все видимые процентные линии'}
+          >
+            {allVisibleLinesCollapsed ? (
+              <ChevronDown className="mr-1.5 h-4 w-4" />
+            ) : (
+              <ChevronRight className="mr-1.5 h-4 w-4" />
+            )}
+            {allVisibleLinesCollapsed ? 'Развернуть все' : 'Свернуть все'}
+          </Button>
+        }
+      >
+        {summary.length > 0 ? (
           <div className="space-y-3">
             {filteredSummary.map((line) => (
               <PercentageLineGroup
@@ -2371,7 +3237,9 @@ function PercentageLineAssignMissingDialog({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set())
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const activeRows = action === 'отмена' ? cancellationRows : assignmentRows
+  const activeRows = action === 'отмена'
+    ? cancellationRows
+    : assignmentRows.filter((row) => isPercentageControlMethodAvailableForRow(action, row))
   const selectedRows = activeRows.filter((row) => selectedIds.has(row.id))
   const isSelectionFull = selectedIds.size >= selectableCount
   const actionTitle = action === 'отмена' ? 'закрытия недобора отменой РК/УЗК' : `назначения ${action} по процентной линии`
@@ -2380,7 +3248,9 @@ function PercentageLineAssignMissingDialog({
       ? 'border-amber-200 bg-amber-50 text-amber-900'
       : action === 'РК'
         ? 'border-sky-100 bg-sky-50 text-sky-900'
-        : 'border-indigo-100 bg-indigo-50 text-indigo-900'
+        : action === 'УЗК'
+          ? 'border-indigo-100 bg-indigo-50 text-indigo-900'
+          : 'border-cyan-100 bg-cyan-50 text-cyan-900'
   const actionHint =
     action === 'отмена' ? (
       <>
@@ -2390,8 +3260,9 @@ function PercentageLineAssignMissingDialog({
       </>
     ) : (
       <>
-        Выберите актуальные официальные стыки без РК/УЗК, без закрытия расчетом и без негодного результата. Система
-        проставит <span className="font-semibold">{action}</span> как назначенный контроль по процентной линии.
+        Выберите актуальные официальные стыки без закрытия расчетом и без негодного результата. Система проставит{' '}
+        <span className="font-semibold">{action}</span> как назначенный контроль по процентной линии.
+        {action === 'ПВК' ? ' ПВК доступен в этом действии только для стыков типа «У…».' : ''}
       </>
     )
 
@@ -2439,7 +3310,7 @@ function PercentageLineAssignMissingDialog({
         await onSave(Array.from(selectedIds), action)
       }
     } catch (error) {
-      setSaveError((error as Error).message || 'Не удалось сохранить назначение РК/УЗК')
+      setSaveError((error as Error).message || 'Не удалось сохранить назначение контроля')
     } finally {
       setIsSaving(false)
     }
@@ -2448,7 +3319,7 @@ function PercentageLineAssignMissingDialog({
   return (
     <LargeDialogShell maxWidthClassName="max-w-[760px]" maxHeightClassName="max-h-[86vh]" overlayClassName="z-[85] bg-slate-950/25">
       <DialogHeader
-        title="Назначить РК/УЗК"
+        title="Назначить контроль"
         subtitle={`${detail.subtitle} · нужно закрыть: ${detail.missingControls}`}
         onClose={onClose}
         actions={
@@ -2465,7 +3336,7 @@ function PercentageLineAssignMissingDialog({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Действие</span>
-          {(['РК', 'УЗК', 'отмена'] as PercentageLineMissingControlAction[]).map((option) => (
+          {(['РК', 'УЗК', 'ПВК', 'отмена'] as PercentageLineMissingControlAction[]).map((option) => (
             <button
               key={option}
               type="button"
@@ -2476,7 +3347,11 @@ function PercentageLineAssignMissingDialog({
                   : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50',
               )}
               onClick={() => setAction(option)}
-              disabled={isSaving}
+              disabled={
+                isSaving ||
+                (option === 'ПВК' && !assignmentRows.some((row) => isPercentageControlMethodAvailableForRow('ПВК', row)))
+              }
+              title={option === 'ПВК' ? 'ПВК можно назначить только на стык типа «У…»' : undefined}
             >
               {option === 'отмена' ? 'Отмена' : option}
             </button>
@@ -2484,6 +3359,7 @@ function PercentageLineAssignMissingDialog({
         </div>
         <div className="text-xs text-slate-500">
           Выберите стыки вручную. Можно выбрать не больше {detail.missingControls}.
+          {action === 'ПВК' ? ` Показаны только У-стыки: ${activeRows.length}.` : ''}
         </div>
         {saveError ? (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</div>
@@ -2566,7 +3442,8 @@ function PercentageLineJointDetailRow({
         {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
       </div>
       <div className="mt-1 text-xs text-slate-500">
-        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {formatJointDiameterLabel(row)} · Дата сварки:{' '}
+        Спул: {String(row.spool ?? '').trim() || '-'} · Тип: {String(row.connectionType ?? '').trim() || '-'} · Диаметр:{' '}
+        {formatJointDiameterLabel(row)} · Дата сварки:{' '}
         {formatDisplayDate(row.weldDate) || '-'}
       </div>
       {badges.length > 0 ? (
@@ -2596,7 +3473,8 @@ function PercentageLineJointSummary({ row }: { row: WeldRow }) {
         {String(row.projectTitle ?? '').trim() || '-'} · {String(row.subtitleCode ?? '').trim() || '-'} · {String(row.line ?? '').trim() || '-'}
       </div>
       <div className="mt-1 text-xs text-slate-500">
-        Спул: {String(row.spool ?? '').trim() || '-'} · Диаметр: {formatJointDiameterLabel(row)} · Дата сварки:{' '}
+        Спул: {String(row.spool ?? '').trim() || '-'} · Тип: {String(row.connectionType ?? '').trim() || '-'} · Диаметр:{' '}
+        {formatJointDiameterLabel(row)} · Дата сварки:{' '}
         {formatDisplayDate(row.weldDate) || '-'}
       </div>
       {badges.length > 0 ? (
@@ -2656,12 +3534,14 @@ function PercentageLineGroup({
   const lineHint =
     `${line.line}: ${line.percent}% контроля считается отдельно по каждому официальному клейму. ` +
     `Расчет по проценту: max(1, округление вверх от количества официальных стыков клейма * ${line.percent}%). ` +
-    `Если первичный стык не годен по РК/УЗК, включая дубль РК/УЗК: ${line.percent === 1 ? '+1 стык к РК/УЗК' : '+2 стыка к РК/УЗК'}. ` +
-    'После 4-го первичного негодного результата РК/УЗК требуется 100% РК/УЗК по этому клейму.'
+    `Если первичный стык не годен по процентному контролю, включая дубль: ${line.percent === 1 ? '+1 стык к контролю' : '+2 стыка к контролю'}. На У-стыке учитывается и ПВК. ` +
+    'После 4-го первичного негодного результата требуется 100% контроль по этому клейму.'
   const allAcceptedAndClosed =
     totals.missing === 0 &&
     line.stamps.length > 0 &&
     line.stamps.every((stamp) => stamp.rejectedJoints === 0 && stamp.waitingRequestJoints === 0 && stamp.waitingControlJoints === 0)
+  const closedControls = Math.max(0, totals.required - totals.missing)
+  const completionPercent = getPercentageControlCompletionPercent(totals.required, totals.missing)
 
   return (
     <div
@@ -2687,7 +3567,7 @@ function PercentageLineGroup({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-base font-semibold text-slate-900">{line.line}</span>
             <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">
-              {line.percent}% РК/УЗК
+              {line.percent}% контроля
             </span>
           </div>
           <div className="mt-1 text-sm text-slate-600">
@@ -2698,34 +3578,29 @@ function PercentageLineGroup({
           </div>
         </div>
         <div className="min-w-0 overflow-x-auto pb-0.5 lg:ml-auto lg:flex-[0_1_780px]">
-          <div className="grid min-w-[720px] grid-cols-6 gap-2">
-            <PercentageLineSummaryPill
+          <div className="grid min-w-[740px] grid-cols-[0.85fr_0.75fr_1.9fr_0.75fr_0.75fr] gap-2">
+            <PercentageLineMetricPill
               label="Стыков"
               value={line.rowCount}
               title="Количество сваренных официальных стыков на этой процентной линии. Неофициальные, неактуальные по ИЗМу и строки без даты сварки не учитываются."
             />
-            <PercentageLineSummaryPill
+            <PercentageLineMetricPill
               label="Клейм"
               value={line.stamps.length}
-              title="Количество официальных клейм, которые участвовали в сварке этой процентной линии."
+              title="Количество официальных клейм, участвующих в расчете этой процентной линии."
             />
-            <PercentageLineSummaryPill
-              label="Требуется"
-              value={totals.required}
-              title="Сколько стыков нужно закрыть РК/УЗК: базовый процент плюс добор после первичных негодных результатов РК/УЗК, включая дубль РК/УЗК."
+            <PercentageLineProgressPill
+              closed={closedControls}
+              percent={completionPercent}
+              required={totals.required}
             />
-            <PercentageLineSummaryPill
-              label="Закрыто"
-              value={totals.covered}
-              title="Стыки, которые закрывают обязательный расчет РК/УЗК: обычное «да», выполненный результат РК/УЗК, осознанная отмена РК+УЗК или уже известный негодный результат по любому контролю."
-            />
-            <PercentageLineSummaryPill
+            <PercentageLineMetricPill
               label="Осталось"
               value={totals.missing}
               tone={totals.missing > 0 ? 'amber' : 'slate'}
-              title="Сколько расчетных стыков еще нужно закрыть РК/УЗК."
+              title="Сколько расчетных стыков еще нужно закрыть допустимым контролем."
             />
-            <PercentageLineSummaryPill
+            <PercentageLineMetricPill
               label="Лишнее"
               value={totals.excess}
               tone={totals.excess > 0 ? 'rose' : 'slate'}
@@ -2748,13 +3623,13 @@ function PercentageLineGroup({
             <PercentageLineGridHeader align="right">Состояние</PercentageLineGridHeader>
             <PercentageLineGridHeader
               align="right"
-              title="Сколько РК/УЗК нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных результатов РК/УЗК, включая дубль РК/УЗК. После 4-го такого результата требуется 100% РК/УЗК."
+              title="Сколько стыков нужно закрыть по этому клейму: расчет по проценту + добор после первичных негодных расчетных контролей. На У-стыках учитывается ПВК. После 4-го такого результата требуется 100% контроль."
             >
               Расчет
             </PercentageLineGridHeader>
             <PercentageLineGridHeader
               align="right"
-              title="Всего назначено = все стыки, где РК/УЗК назначены как «да» или «дополнительный», а также стыки с осознанной отменой РК+УЗК. Обычное «да» участвует в проверке лишнего контроля. «Дополнительный» считается назначенным, но не закрывает обязательный расчет и добор."
+              title="Всего назначено = все стыки с допустимым для них расчетным контролем «да» или «дополнительный», а также стыки с осознанной отменой РК+УЗК. Для У-стыка допустим ПВК. Обычное «да» участвует в проверке лишнего контроля. «Дополнительный» не закрывает обязательный расчет и добор."
             >
               Назначение
             </PercentageLineGridHeader>
@@ -2780,7 +3655,34 @@ function PercentageLineGroup({
   )
 }
 
-function PercentageLineSummaryPill({
+function PercentageLineProgressPill({
+  closed,
+  percent,
+  required,
+}: {
+  closed: number
+  percent: number
+  required: number
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm"
+      title="Закрыто по расчету: допустимое «да», выполненный результат, осознанная отмена РК+УЗК или уже известный негодный результат. На У-стыке допустим ПВК. Лишние назначения показываются отдельно."
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 whitespace-nowrap text-xs text-slate-500">
+          <span className="font-semibold text-emerald-700">Закрыто {closed}</span>
+          <span className="mx-1 text-slate-300">/</span>
+          требуется <span className="font-semibold text-slate-800">{required}</span>
+        </div>
+        <span className="shrink-0 text-xs font-semibold text-slate-700">{percent}%</span>
+      </div>
+      <PercentageLineProgressBar percent={percent} compact />
+    </div>
+  )
+}
+
+function PercentageLineMetricPill({
   label,
   value,
   title,
@@ -2794,11 +3696,11 @@ function PercentageLineSummaryPill({
   return (
     <div
       className={cn(
-        'min-w-0 rounded-md border bg-white px-2.5 py-2 shadow-sm',
+        'min-w-0 rounded-md border bg-white px-3 py-2 shadow-sm',
         tone === 'amber'
-          ? 'border-amber-200 text-amber-800'
+          ? 'border-amber-200 bg-amber-50/50 text-amber-800'
           : tone === 'rose'
-            ? 'border-rose-200 text-rose-800'
+            ? 'border-rose-200 bg-rose-50/50 text-rose-800'
             : 'border-slate-200 text-slate-700',
       )}
       title={title}
@@ -2807,6 +3709,57 @@ function PercentageLineSummaryPill({
       <div className="mt-1 text-lg font-semibold leading-none text-slate-900">{value}</div>
     </div>
   )
+}
+
+function PercentageLineSummaryBadge({
+  className,
+  label,
+  title,
+  tone = 'slate',
+  value,
+}: {
+  className?: string
+  label: string
+  title: string
+  tone?: 'slate' | 'amber' | 'rose' | 'sky'
+  value: number
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex h-12 min-w-[96px] flex-[1_1_96px] items-center justify-between gap-2.5 rounded-md border px-3.5 text-sm font-medium shadow-sm',
+        tone === 'amber'
+          ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : tone === 'rose'
+            ? 'border-rose-200 bg-rose-50 text-rose-800'
+            : tone === 'sky'
+              ? 'border-sky-200 bg-sky-50 text-sky-800'
+              : 'border-slate-200 bg-slate-50 text-slate-600',
+        className,
+      )}
+      title={title}
+    >
+      {label}
+      <strong className="text-base font-semibold text-slate-900">{value}</strong>
+    </span>
+  )
+}
+
+function PercentageLineProgressBar({ percent, compact = false }: { percent: number; compact?: boolean }) {
+  return (
+    <div className={cn('overflow-hidden rounded-full bg-slate-100', compact ? 'mt-2 h-1.5' : 'mt-2 h-2')}>
+      <div
+        className={cn('h-full rounded-full transition-[width]', percent >= 100 ? 'bg-emerald-500' : 'bg-sky-500')}
+        style={{ width: `${percent}%` }}
+      />
+    </div>
+  )
+}
+
+function getPercentageControlCompletionPercent(required: number, missing: number) {
+  if (required <= 0) return 0
+  const closed = Math.max(0, required - missing)
+  return Math.min(100, Math.round((closed / required) * 100))
 }
 
 function PercentageLineTableRow({
@@ -2854,7 +3807,7 @@ function PercentageLineTableRow({
           )}
           {stamp.fullControlRequired ? (
             <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
-              100% РК/УЗК
+              100% контроль
             </span>
           ) : null}
         </div>
@@ -2871,7 +3824,7 @@ function PercentageLineTableRow({
           <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-rose-700">
             <span className="block">не годен: {stamp.rejectedJoints}</span>
             {stamp.rejectedJoints > 0 ? (
-              <span className="block text-[10px] leading-4 text-rose-600">в т.ч. РК/УЗК: {stamp.rejectedPrimaryControls}</span>
+              <span className="block text-[10px] leading-4 text-rose-600">в т.ч. расчетных: {stamp.rejectedPrimaryControls}</span>
             ) : null}
           </span>
         </div>
@@ -2879,7 +3832,7 @@ function PercentageLineTableRow({
       <PercentageLineGridCell label="Расчет">
         <PercentageLineCellStack
           main={`требуется ${stamp.requiredControls}`}
-          title="Расчетная потребность РК/УЗК"
+          title="Расчетная потребность контроля"
           details={[
             stamp.availableRequiredControls < stamp.calculatedRequiredControls
               ? `расчетно: ${stamp.calculatedRequiredControls}`
@@ -2901,7 +3854,7 @@ function PercentageLineTableRow({
             stamp.additionalAssignedControls > 0
               ? {
                   text: `дополнительно: ${stamp.additionalAssignedControls}`,
-                  detail: createDetail('Дополнительный РК/УЗК', stamp.additionalAssignedRowIds),
+                  detail: createDetail('Дополнительный расчетный контроль', stamp.additionalAssignedRowIds),
                 }
               : '',
             stamp.cancelledAssignedControls > 0
@@ -2931,7 +3884,7 @@ function PercentageLineTableRow({
               : createDetail('Закрыто расчетом', stamp.coveredRowIds)
           }
           assignMissingDetail={{
-            ...createDetail('Назначить РК/УЗК', stamp.assignmentCandidateRowIds),
+            ...createDetail('Назначить расчетный контроль', stamp.assignmentCandidateRowIds),
             cancellationRowIds: stamp.missingCandidateRowIds,
             missingControls: stamp.missingControls,
           }}
@@ -3027,9 +3980,9 @@ function PercentageLineResultStack({
           type="button"
           className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100"
           onClick={() => onAssignMissing?.(assignMissingDetail)}
-          title="Назначить РК/УЗК или закрыть недобор отменой"
+          title="Назначить расчетный контроль или закрыть недобор отменой"
         >
-          Назначить РК/УЗК
+          Назначить контроль
         </button>
       ) : null}
       {excess > 0 ? (
@@ -3162,7 +4115,10 @@ function getPercentageLineJointBadges(row: WeldRow): PercentageLineJointBadge[] 
       badges.push({ text: `${code}: дополнительный`, tone: 'sky' })
     } else if (isCancelledControlValue(availability)) {
       badges.push({ text: `${code}: отменен`, tone: 'slate' })
-    } else if ((code === 'РК' || code === 'УЗК') && isEnabledControlValue(availability)) {
+    } else if (
+      (code === 'РК' || code === 'УЗК' || (code === 'ПВК' && isPercentageControlMethodAvailableForRow('ПВК', row))) &&
+      isEnabledControlValue(availability)
+    ) {
       badges.push({ text: `${code}: да`, tone: 'blue' })
     }
 
@@ -3211,28 +4167,20 @@ function getPercentageStatusHint(stamp: PercentageLineStampSummary) {
     `Ожидает заявку: ${stamp.waitingRequestJoints}`,
     `Ожидает результат НК: ${stamp.waitingControlJoints}`,
     `Не годен всего: ${stamp.rejectedJoints}`,
-    `В том числе по РК/УЗК: ${stamp.rejectedPrimaryControls}. Эти стыки влияют на добор контроля процентной линии`,
+    `В том числе по расчетному контролю: ${stamp.rejectedPrimaryControls}. На У-стыках сюда входит ПВК. Эти стыки влияют на добор контроля процентной линии`,
   ].join('. ')
 }
 
 function getAssignedControlsHint(stamp: PercentageLineStampSummary) {
   return [
-    `${getJointListHint('Всего назначено', stamp.assignedJointNames)}. Это общее число назначений: РК/УЗК и осознанные отмены РК+УЗК`,
+    `${getJointListHint('Всего назначено', stamp.assignedJointNames)}. Это общее число допустимых назначений: РК/УЗК, для У-стыков также ПВК, и осознанные отмены РК+УЗК`,
     stamp.additionalAssignedControls > 0 ? getJointListHint('В т.ч. дополнительно', stamp.additionalAssignedJointNames) : '',
     stamp.cancelledAssignedControls > 0 ? getJointListHint('В т.ч. отменено РК и УЗК', stamp.cancelledAssignedJointNames) : '',
     stamp.cancelledAssignedControls > 0
-      ? 'Отмена РК+УЗК закрывает одно расчетное место РК/УЗК и не считается лишним контролем'
+      ? 'Отмена РК+УЗК закрывает одно расчетное место и не считается лишним контролем'
       : '',
-    stamp.additionalAssignedControls > 0 ? 'Дополнительный РК/УЗК не закрывает обязательный расчет и добор' : '',
+    stamp.additionalAssignedControls > 0 ? 'Статус «дополнительный» не закрывает обязательный расчет и добор' : '',
   ].filter(Boolean).join('. ')
-}
-
-function formatAssignedBreakdown(additional: number, cancelled: number) {
-  const parts = [
-    additional > 0 ? `дополнительно: ${additional}` : '',
-    cancelled > 0 ? `отменено: ${cancelled}` : '',
-  ].filter(Boolean)
-  return parts.length > 0 ? ` (${parts.join(' · ')})` : ''
 }
 
 function getJointListHint(title: string, joints: string[]) {
@@ -3240,25 +4188,47 @@ function getJointListHint(title: string, joints: string[]) {
 }
 
 function LineSummaryPanel({
+  onOpenRows,
   summary,
   unit,
 }: {
+  onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   summary: LineSummary
   unit: StatisticsUnit
 }) {
   const [lineSearch, setLineSearch] = useState('')
   const [showLineDetails, setShowLineDetails] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'remaining' | 'completed'>('all')
+  const [sortMode, setSortMode] = useState<'remaining' | 'progress' | 'line'>('remaining')
   const unitColumnLabel = unit === 'wdi' ? 'WDI' : 'стыков'
+  const completedLines = summary.rows.filter((row) => row.remaining <= 0)
+  const remainingLines = summary.rows.filter((row) => row.remaining > 0)
+  const completedLineRowIds = mergeStatisticRowIds(completedLines.map((row) => row.rowIds))
+  const remainingRowIds = mergeStatisticRowIds(remainingLines.map((row) => row.remainingRowIds))
+  const completedRowIds = mergeStatisticRowIds(summary.rows.map((row) => row.completedRowIds))
   const filteredRows = useMemo(() => {
     const query = lineSearch.trim().toLowerCase()
-    if (!query) return summary.rows
-    return summary.rows.filter((row) => row.line.toLowerCase().includes(query))
-  }, [lineSearch, summary.rows])
+    return summary.rows
+      .filter((row) => !query || [row.line, row.projectTitle, row.subtitleCode].some((value) => value.toLowerCase().includes(query)))
+      .filter((row) => statusFilter === 'all' || (statusFilter === 'remaining' ? row.remaining > 0 : row.remaining <= 0))
+      .sort((left, right) => {
+        if (sortMode === 'line') return left.line.localeCompare(right.line, 'ru', { numeric: true })
+        if (sortMode === 'progress') {
+          const leftProgress = left.total > 0 ? left.completed / left.total : 0
+          const rightProgress = right.total > 0 ? right.completed / right.total : 0
+          return leftProgress - rightProgress || right.remaining - left.remaining
+        }
+        return right.remaining - left.remaining || right.total - left.total || left.line.localeCompare(right.line, 'ru', { numeric: true })
+      })
+  }, [lineSearch, sortMode, statusFilter, summary.rows])
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
           icon={Gauge}
           label="Линий всего"
           value={String(summary.rows.length)}
@@ -3266,88 +4236,100 @@ function LineSummaryPanel({
           accent="slate"
         />
         <MetricCard
-          icon={LineChart}
-          label="Всего по линиям"
-          value={formatStatisticValue(summary.total, unit)}
-          detail={`Выполнено ${formatStatisticValue(summary.completed, unit)} · остаток ${formatStatisticValue(summary.remaining, unit)}`}
-          accent="blue"
+          compact
+          wrapDetail
+          wrapLabel
+          icon={ClipboardCheck}
+          label="Закрыто полностью"
+          value={String(completedLines.length)}
+          detail="Линии без текущего остатка"
+          accent="green"
+          actionTitle="Открыть стыки закрытых линий"
+          onClick={onOpenRows && completedLineRowIds.length > 0 ? () => onOpenRows(completedLineRowIds, `Показаны стыки полностью закрытых линий: ${completedLineRowIds.length}.`) : undefined}
         />
         <MetricCard
-          icon={ClipboardCheck}
+          compact
+          wrapDetail
+          wrapLabel
+          icon={TimerReset}
+          label="Линий с остатком"
+          value={String(remainingLines.length)}
+          detail="Требуют завершения сварки"
+          accent="amber"
+          actionTitle="Открыть незаваренные стыки этих линий"
+          onClick={onOpenRows && remainingRowIds.length > 0 ? () => onOpenRows(remainingRowIds, `Показан текущий остаток по линиям: ${remainingRowIds.length}.`) : undefined}
+        />
+        <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
+          icon={TimerReset}
+          label="Общий остаток"
+          value={formatStatisticValue(summary.remaining, unit)}
+          detail={`Из общего объема ${formatStatisticValue(summary.total, unit)}`}
+          accent="amber"
+          actionTitle="Открыть текущий остаток"
+          onClick={onOpenRows && remainingRowIds.length > 0 ? () => onOpenRows(remainingRowIds, `Показан текущий остаток по линиям: ${remainingRowIds.length}.`) : undefined}
+        />
+        <MetricCard
+          compact
+          wrapDetail
+          wrapLabel
+          icon={LineChart}
           label="Выполнено"
           value={formatPercent(summary.total > 0 ? (summary.completed / summary.total) * 100 : 0)}
           detail={`${formatStatisticValue(summary.completed, unit)} из ${formatStatisticValue(summary.total, unit)}`}
-          accent="green"
-        />
-        <MetricCard
-          icon={TimerReset}
-          label="Остаток"
-          value={formatStatisticValue(summary.remaining, unit)}
-          detail="Стыки без даты сварки в актуальном срезе"
-          accent="amber"
+          accent="blue"
+          actionTitle="Открыть выполненные стыки"
+          onClick={onOpenRows && completedRowIds.length > 0 ? () => onOpenRows(completedRowIds, `Показаны выполненные стыки по линиям: ${completedRowIds.length}.`) : undefined}
         />
       </div>
+
+      <LineRemainderRankingPanel onOpenRows={onOpenRows} rows={filteredRows} unit={unit} />
 
       <Panel
         title="Полинейная сводка"
         subtitle="Список линий по проекту/шифру. История цепочки до годного результата и строки «не актуален» по изм. не учитываются."
       >
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <label className="grid w-full max-w-sm gap-1 text-xs font-medium text-slate-600">
-            Поиск по линии
-            <Input
-              value={lineSearch}
-              onChange={(event) => setLineSearch(event.target.value)}
-              placeholder="Например: 330-FL-02-016"
-              className="h-9 rounded-md border-slate-200 bg-white text-sm"
-            />
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          <label className="relative min-w-[260px] flex-1">
+            <span className="sr-only">Поиск по линии, проекту или шифру</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} placeholder="Линия, проект или шифр" className="h-10 rounded-md border-slate-200 bg-white pl-9 text-sm" />
+            {lineSearch.trim() ? <button type="button" className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Очистить поиск" onClick={() => setLineSearch('')}><X className="h-4 w-4" /></button> : null}
           </label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 rounded-md border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              onClick={() => setShowLineDetails((current) => !current)}
-            >
-              {showLineDetails ? 'Скрыть параметры линии' : 'Показать параметры линии'}
-            </Button>
-            {lineSearch.trim() ? (
-              <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={() => setLineSearch('')}>
-                Очистить поиск
-              </Button>
-            ) : null}
-          </div>
+          <WelderToolbarSegments label="Показать" options={[["all", "Все"], ["remaining", "С остатком"], ["completed", "Закрытые"]]} value={statusFilter} onChange={(value) => setStatusFilter(value as typeof statusFilter)} />
+          <WelderToolbarSegments label="Сортировка" options={[["remaining", "По остатку"], ["progress", "По готовности"], ["line", "По линии"]]} value={sortMode} onChange={(value) => setSortMode(value as typeof sortMode)} />
+          <Button variant="outline" size="sm" className="h-10 gap-2 rounded-md border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title={showLineDetails ? 'Скрыть параметры линии' : 'Показать параметры линии'} onClick={() => setShowLineDetails((current) => !current)}><Settings2 className="h-4 w-4" />Параметры</Button>
         </div>
 
         {summary.rows.length > 0 ? (
           <div className="overflow-hidden rounded-md border border-slate-200">
             <div className="overflow-x-auto">
-              <table className={cn('w-full table-fixed border-collapse text-sm', showLineDetails ? 'min-w-[1160px]' : 'min-w-[860px]')}>
+              <table className={cn('w-full table-fixed border-collapse text-sm', showLineDetails ? 'min-w-[1120px]' : 'min-w-[820px]')}>
                 <colgroup>
                   {showLineDetails ? (
                     <>
-                      <col className="w-[11%]" />
                       <col className="w-[12%]" />
-                      <col className="w-[14%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[16%]" />
                       <col className="w-[8%]" />
                       <col className="w-[8%]" />
                       <col className="w-[9%]" />
-                      <col className="w-[13%]" />
-                      <col className="w-[13%]" />
-                      <col className="w-[12%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[14%]" />
                     </>
                   ) : (
                     <>
-                      <col className="w-[15%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[21%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[16%]" />
+                      <col className="w-[17%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[25%]" />
+                      <col className="w-[24%]" />
                       <col className="w-[16%]" />
                     </>
                   )}
                 </colgroup>
-                <thead className="bg-slate-100 text-slate-700">
+                <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700">
                   <tr>
                     <LineHeaderCell>Проект</LineHeaderCell>
                     <LineHeaderCell>Шифр</LineHeaderCell>
@@ -3359,16 +4341,15 @@ function LineSummaryPanel({
                         <LineHeaderCell align="right">Контроль швов, (%)</LineHeaderCell>
                       </>
                     ) : null}
-                    <LineHeaderCell align="right">Всего {unitColumnLabel}</LineHeaderCell>
-                    <LineHeaderCell align="right">Выполнено {unitColumnLabel}</LineHeaderCell>
+                    <LineHeaderCell align="right">Выполнение, {unitColumnLabel}</LineHeaderCell>
                     <LineHeaderCell align="right">Остаток {unitColumnLabel}</LineHeaderCell>
                   </tr>
                 </thead>
-                <LineSummaryTableBody rows={filteredRows} showLineDetails={showLineDetails} unit={unit} />
+                <LineSummaryTableBody onOpenRows={onOpenRows} rows={filteredRows} showLineDetails={showLineDetails} unit={unit} />
               </table>
               {filteredRows.length === 0 ? (
                 <div className="border-t border-slate-100 bg-slate-50 p-5 text-sm text-slate-500">
-                  По этой линии ничего не найдено.
+                  По текущему поиску и фильтрам ничего не найдено.
                 </div>
               ) : null}
             </div>
@@ -3383,11 +4364,36 @@ function LineSummaryPanel({
   )
 }
 
+function LineRemainderRankingPanel({ onOpenRows, rows, unit }: { onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']; rows: LineSummaryRow[]; unit: StatisticsUnit }) {
+  const visibleRows = [...rows].filter((row) => row.remaining > 0).sort((left, right) => right.remaining - left.remaining || right.total - left.total).slice(0, 10)
+  const maxTotal = Math.max(1, ...visibleRows.map((row) => row.total))
+  return (
+    <Panel
+      title="Линии с наибольшим остатком"
+      subtitle="Первые 10 линий по незавершенному объему. Длина полосы показывает масштаб линии, янтарная часть - текущий остаток."
+      headerAction={<div className="flex items-center gap-3 text-xs text-slate-500"><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-200" />Выполнено</span><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-300" />Остаток</span></div>}
+    >
+      {visibleRows.length > 0 ? (
+        <div className="space-y-2">
+          {visibleRows.map((row, index) => {
+            const completedPercent = row.total > 0 ? (row.completed / row.total) * 100 : 0
+            const remainingPercent = row.total > 0 ? (row.remaining / row.total) * 100 : 0
+            const content = <><span className="w-6 shrink-0 text-center text-xs font-medium tabular-nums text-slate-400">{index + 1}</span><span className="w-48 shrink-0 truncate text-sm font-semibold text-slate-800" title={`${row.projectTitle} · ${row.subtitleCode} · ${row.line}`}>{row.line}</span><span className="h-7 min-w-0 flex-1 rounded bg-slate-100"><span className="flex h-full overflow-hidden rounded" style={{ width: `${Math.max(3, (row.total / maxTotal) * 100)}%` }}><span className="h-full bg-sky-200" style={{ width: `${completedPercent}%` }} /><span className="h-full bg-amber-300" style={{ width: `${remainingPercent}%` }} /></span></span><span className="w-28 shrink-0 text-right text-xs tabular-nums text-slate-600">остаток <strong className="text-amber-800">{formatStatisticValue(row.remaining, unit)}</strong></span>{row.rowIds.length > 0 ? <ArrowUpRight className="h-4 w-4 shrink-0 text-sky-600" /> : null}</>
+            return onOpenRows && row.rowIds.length > 0 ? <button key={row.key} type="button" className="flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:border-sky-100 hover:bg-sky-50/50" title={`Открыть стыки линии ${row.line}`} onClick={() => onOpenRows(row.rowIds, `Показаны стыки линии ${row.line}: ${row.rowIds.length}.`)}>{content}</button> : <div key={row.key} className="flex items-center gap-2 px-2 py-1.5">{content}</div>
+          })}
+        </div>
+      ) : <div className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 p-5 text-sm text-emerald-800">По текущему срезу и фильтрам линий с остатком нет.</div>}
+    </Panel>
+  )
+}
+
 function LineSummaryTableBody({
+  onOpenRows,
   rows,
   showLineDetails,
   unit,
 }: {
+  onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   rows: LineSummaryRow[]
   showLineDetails: boolean
   unit: StatisticsUnit
@@ -3403,7 +4409,7 @@ function LineSummaryTableBody({
     rows,
     estimateRowHeight: 76,
   })
-  const columnCount = showLineDetails ? 9 : 6
+  const columnCount = showLineDetails ? 8 : 5
 
   return (
     <tbody ref={bodyRef}>
@@ -3414,6 +4420,7 @@ function LineSummaryTableBody({
           row={row}
           rowIndex={rowIndexes[visibleIndex] ?? visibleIndex}
           measureRow={measureRow}
+          onOpenRows={onOpenRows}
           showLineDetails={showLineDetails}
           unit={unit}
         />
@@ -3439,12 +4446,14 @@ function LineSummaryVirtualSpacer({
 }
 
 function LineSummaryTableRow({
+  onOpenRows,
   row,
   rowIndex,
   measureRow,
   showLineDetails,
   unit,
 }: {
+  onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   row: LineSummaryRow
   rowIndex: number
   measureRow?: RefCallback<HTMLTableRowElement>
@@ -3462,7 +4471,9 @@ function LineSummaryTableRow({
     >
       <LineBodyCell align="left">{row.projectTitle}</LineBodyCell>
       <LineBodyCell align="left">{row.subtitleCode}</LineBodyCell>
-      <LineBodyCell align="left" className="font-semibold text-slate-900">{row.line}</LineBodyCell>
+      <LineBodyCell align="left" className="font-semibold text-slate-900">
+        <div className="flex items-center gap-2"><span className="min-w-0 flex-1 break-words">{row.line}</span>{onOpenRows && row.rowIds.length > 0 ? <button type="button" className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-sky-600 hover:bg-sky-50" title={`Открыть стыки линии ${row.line}`} onClick={() => onOpenRows(row.rowIds, `Показаны стыки линии ${row.line}: ${row.rowIds.length}.`)}><ArrowUpRight className="h-4 w-4" /></button> : null}</div>
+      </LineBodyCell>
       {showLineDetails ? (
         <>
           <LineBodyCell align="left">{row.groupName}</LineBodyCell>
@@ -3471,10 +4482,7 @@ function LineSummaryTableRow({
         </>
       ) : null}
       <LineBodyCell>
-        <LineValueWithSplit total={row.total} f={row.totalF} s={row.totalS} unit={unit} />
-      </LineBodyCell>
-      <LineBodyCell>
-        <LineValueWithSplit total={row.completed} f={row.completedF} s={row.completedS} unit={unit} />
+        <LineCompletionCell row={row} unit={unit} />
       </LineBodyCell>
       <LineBodyCell>
         <LineValueWithSplit total={row.remaining} f={row.remainingF} s={row.remainingS} unit={unit} />
@@ -3491,6 +4499,17 @@ function LineValueWithSplit({ total, f, s, unit }: { total: number; f: number; s
         <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F: {formatStatisticValue(f, unit)}</span>
         <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S: {formatStatisticValue(s, unit)}</span>
       </span>
+    </div>
+  )
+}
+
+function LineCompletionCell({ row, unit }: { row: LineSummaryRow; unit: StatisticsUnit }) {
+  const percent = row.total > 0 ? (row.completed / row.total) * 100 : 0
+  return (
+    <div className="ml-auto w-full max-w-[240px]">
+      <div className="flex items-center justify-end gap-2 text-xs tabular-nums text-slate-500"><strong className="text-slate-800">{formatStatisticValue(row.completed, unit)} / {formatStatisticValue(row.total, unit)}</strong><span>{formatPercent(percent)}</span></div>
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} /></div>
+      <div className="mt-1 flex justify-end gap-1 text-[10px] text-slate-500"><span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F {formatStatisticValue(row.completedF, unit)}/{formatStatisticValue(row.totalF, unit)}</span><span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S {formatStatisticValue(row.completedS, unit)}/{formatStatisticValue(row.totalS, unit)}</span></div>
     </div>
   )
 }
@@ -3535,7 +4554,7 @@ type StatisticsPrintableReportInput = {
   lnkMethods: StatisticsMethodSummary[]
   percentageLines: PercentageLineSummary[]
   periodLabel: string
-  periodModeDescription: string
+  periodDescription: string
   scopeLabel: string
   summary: StatisticsSummary
   unofficialCount: number
@@ -3553,7 +4572,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
     lnkMethods,
     percentageLines,
     periodLabel,
-    periodModeDescription,
+    periodDescription,
     scopeLabel,
     summary,
     unofficialCount,
@@ -3573,6 +4592,8 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
     const statusRows: Array<[string, number]> = [
       ['Годен', summary.good],
       ['Не годен', summary.rejected],
+      ['Годен по дублю', summary.duplicateGood],
+      ['Не годен по дубю', summary.duplicateRejected],
       ['Ожидает заявку', summary.waitingRequest],
       ['Ожидает НК', summary.waitingControl],
       ['Ожидает ремонт', summary.waitingRepair],
@@ -3580,7 +4601,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
     ]
     return {
       title: 'Статистика сварки',
-      subtitle: periodModeDescription,
+      subtitle: periodDescription,
       meta: [...baseMeta, { label: 'Тип стыка', value: getJointFilterLabel(jointFilter) }],
       metrics: [
         {
@@ -3591,8 +4612,10 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         },
         {
           label: 'Годность',
-          value: formatPercent(summary.qualityPercent),
-          detail: `${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`,
+          value: summary.good + summary.rejected > 0 ? formatPercent(summary.qualityPercent) : '—',
+          detail: summary.good + summary.rejected > 0
+            ? `${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`
+            : 'Нет результатов для расчета годности',
           tone: 'green',
         },
         {
@@ -3668,28 +4691,15 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
   }
 
   if (activeTab === 'lnk') {
-    const methods = [...lnkMethods, summary.pstoMethod]
     return {
-      title: 'Статистика ЛНК и ПСТО',
-      subtitle: 'Заявки, заключения, результаты и текущие очереди по видам контроля.',
-      meta: [...baseMeta, { label: 'Режим периода', value: periodModeDescription }],
+      title: 'Статистика ЛНК',
+      subtitle: 'Заявки, заключения, результаты и текущие очереди по видам неразрушающего контроля.',
+      meta: [...baseMeta, { label: 'Расчет', value: periodDescription }],
       metrics: [
-        {
-          label: 'Годность',
-          value: formatPercent(summary.qualityPercent),
-          detail: `${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`,
-          tone: 'green',
-        },
         {
           label: 'Заявки ЛНК',
           value: formatPercent(summary.lnkRequestCoveragePercent),
           detail: `${summary.lnkCreatedRequests} из ${summary.lnkRequiredRequests} требуемых контролей`,
-          tone: 'blue',
-        },
-        {
-          label: 'Заявки ПСТО',
-          value: formatPercent(summary.pstoRequestCoveragePercent),
-          detail: `${summary.pstoCreatedRequests} из ${summary.pstoRequiredRequests} требуемых обработок`,
           tone: 'blue',
         },
         {
@@ -3698,12 +4708,9 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
           detail: `${formatStatisticValue(summary.lnkClosed, unit)} из ${formatStatisticValue(summary.lnkRequests, unit)} заявок`,
           tone: 'blue',
         },
-        {
-          label: 'Заключения ПСТО',
-          value: formatPercent(summary.pstoClosurePercent),
-          detail: `${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок`,
-          tone: 'amber',
-        },
+        { label: 'Без заявки', value: formatStatisticValue(lnkMethods.reduce((total, method) => total + method.waitingRequest, 0), unit), detail: 'Требуемые позиции без заявки', tone: 'amber' },
+        { label: 'Ожидает заключение', value: formatStatisticValue(lnkMethods.reduce((total, method) => total + method.waitingControl, 0), unit), detail: 'Заявки без результата', tone: 'blue' },
+        { label: 'Не годен', value: formatStatisticValue(lnkMethods.reduce((total, method) => total + method.rejected, 0), unit), detail: 'Ремонт или вырез', tone: 'amber' },
         {
           label: 'Неофициальные стыки',
           value: String(unofficialCount),
@@ -3715,7 +4722,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Закрытие заявок по видам контроля',
           valueLabel: unitLabel,
-          items: methods.map((method) => ({
+          items: lnkMethods.map((method) => ({
             label: method.code,
             value: method.closed,
             detail: `из ${formatStatisticValue(method.requests, unit)}`,
@@ -3726,7 +4733,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Лаборатория по видам контроля',
           columns: ['Вид', 'Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Всего результатов', 'Без заявки', 'Ожидает НК', 'Годен', 'Не годен', 'Закрытие'],
-          rows: methods.map((method) => [
+          rows: lnkMethods.map((method) => [
             method.code,
             String(method.requiredRequests),
             String(method.createdRequests),
@@ -3737,17 +4744,84 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
             formatStatisticValue(method.waitingRequest, unit),
             formatStatisticValue(method.waitingControl, unit),
             formatStatisticValue(method.good, unit),
-            method.code === 'ПСТО' ? '—' : formatStatisticValue(method.rejected, unit),
+            formatStatisticValue(method.rejected, unit),
             formatPercent(method.closurePercent),
           ]),
         },
         {
-          title: 'Текущий остаток вне выбранного периода',
+          title: 'Состояние стыков за период',
           columns: ['Состояние', unitLabel],
           rows: [
-            ['Всего в остатке', formatStatisticValue(summary.backlogTotal, unit)],
-            ['Ожидает сварку', formatStatisticValue(summary.backlogWaitingWeld, unit)],
-            ['Ожидает ремонт', formatStatisticValue(summary.backlogWaitingRepair, unit)],
+            ['Годен', formatStatisticValue(summary.good, unit)],
+            ['Не годен', formatStatisticValue(summary.rejected, unit)],
+            ['Годен по дублю', formatStatisticValue(summary.duplicateGood, unit)],
+            ['Не годен по дублю', formatStatisticValue(summary.duplicateRejected, unit)],
+            ['Ожидает заявку', formatStatisticValue(summary.waitingRequest, unit)],
+            ['Ожидает НК', formatStatisticValue(summary.waitingControl, unit)],
+            ['Ожидает ремонт', formatStatisticValue(summary.waitingRepair, unit)],
+          ],
+        },
+      ],
+    }
+  }
+
+  if (activeTab === 'psto') {
+    const method = summary.pstoMethod
+    return {
+      title: 'Статистика ПСТО',
+      subtitle: 'Заявки, проведение и текущая очередь послесварочной термообработки.',
+      meta: [...baseMeta, { label: 'Расчет', value: periodDescription }],
+      metrics: [
+        {
+          label: 'Заявки ПСТО',
+          value: formatPercent(summary.pstoRequestCoveragePercent),
+          detail: `${summary.pstoCreatedRequests} из ${summary.pstoRequiredRequests} требуемых обработок`,
+          tone: 'blue',
+        },
+        {
+          label: 'Заключения ПСТО',
+          value: formatPercent(summary.pstoClosurePercent),
+          detail: `${formatStatisticValue(summary.pstoClosed, unit)} из ${formatStatisticValue(summary.pstoRequests, unit)} заявок`,
+          tone: 'green',
+        },
+        { label: 'Без заявки', value: formatStatisticValue(method.waitingRequest, unit), detail: 'Требуемые позиции без заявки', tone: 'amber' },
+        { label: 'Ожидает ПСТО', value: formatStatisticValue(method.waitingControl, unit), detail: 'Заявки без проведения', tone: 'blue' },
+        { label: 'Проведено', value: formatStatisticValue(method.good, unit), detail: 'Заключения за выбранный период', tone: 'green' },
+        {
+          label: 'Неофициальные стыки',
+          value: String(unofficialCount),
+          detail: `${formatStatisticValue(unofficialValue, unit)} в выбранной единице`,
+          tone: 'slate',
+        },
+      ],
+      tables: [
+        {
+          title: 'ПСТО по этапам',
+          columns: ['Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Всего заключений', 'Без заявки', 'Ожидает ПСТО', 'Проведено', 'Закрытие'],
+          rows: [[
+            String(method.requiredRequests),
+            String(method.createdRequests),
+            formatPercent(method.requestCoveragePercent),
+            formatStatisticValue(method.requests, unit),
+            formatStatisticValue(method.closed, unit),
+            formatStatisticValue(method.totalClosed, unit),
+            formatStatisticValue(method.waitingRequest, unit),
+            formatStatisticValue(method.waitingControl, unit),
+            formatStatisticValue(method.good, unit),
+            formatPercent(method.closurePercent),
+          ]],
+        },
+        {
+          title: 'Состояние стыков за период',
+          columns: ['Состояние', unitLabel],
+          rows: [
+            ['Годен', formatStatisticValue(summary.good, unit)],
+            ['Не годен', formatStatisticValue(summary.rejected, unit)],
+            ['Годен по дублю', formatStatisticValue(summary.duplicateGood, unit)],
+            ['Не годен по дублю', formatStatisticValue(summary.duplicateRejected, unit)],
+            ['Ожидает заявку', formatStatisticValue(summary.waitingRequest, unit)],
+            ['Ожидает НК', formatStatisticValue(summary.waitingControl, unit)],
+            ['Ожидает ремонт', formatStatisticValue(summary.waitingRepair, unit)],
           ],
         },
       ],
@@ -3885,19 +4959,19 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
   })
   return {
     title: 'Отчет по процентным линиям',
-    subtitle: 'Расчет РК/УЗК по официальным клеймам на линиях с единым процентом контроля меньше 100.',
+    subtitle: 'Расчет по официальным клеймам на линиях с единым процентом меньше 100. Для У-стыков учитывается ПВК.',
     meta: baseMeta,
     metrics: [
       { label: 'Процентных линий', value: String(percentageLines.length), detail: `${percentageTotals.joints} сваренных стыков`, tone: 'blue' },
       { label: 'Клейм', value: String(percentageTotals.stamps), detail: 'Участвуют в расчете', tone: 'slate' },
-      { label: 'Требуется контроля', value: String(percentageTotals.required), detail: 'РК/УЗК по расчету', tone: 'green' },
+      { label: 'Требуется контроля', value: String(percentageTotals.required), detail: 'По расчету процентных линий', tone: 'green' },
       { label: 'Осталось закрыть', value: String(percentageTotals.missing), detail: `Закрыто ${percentageTotals.covered}`, tone: 'amber' },
       { label: 'Лишнее “да”', value: String(percentageTotals.excess), detail: `100% по клейму: ${percentageTotals.fullControl}`, tone: 'rose' },
     ],
     charts: [
       {
         title: 'Требуется контроля по линиям',
-        subtitle: `Первые ${Math.min(24, percentageLineRows.length)} линии по требуемому количеству РК/УЗК.`,
+        subtitle: `Первые ${Math.min(24, percentageLineRows.length)} линии по требуемому количеству контроля.`,
         valueLabel: 'контролей',
         items: percentageLineRows.slice(0, 24).map((row) => ({
           label: row.line.line,
@@ -3967,6 +5041,7 @@ function getPercentageLineReportTotals(lines: PercentageLineSummary[]) {
     (totals, line) => {
       totals.joints += line.rowCount
       totals.stamps += line.stamps.length
+      totals.potentialReduction += line.potentialControlReduction
       const stampTotals = getPercentageLineStampTotals(line.stamps)
       totals.required += stampTotals.required
       totals.assigned += stampTotals.assigned
@@ -3976,7 +5051,17 @@ function getPercentageLineReportTotals(lines: PercentageLineSummary[]) {
       totals.fullControl += stampTotals.fullControl
       return totals
     },
-    { joints: 0, stamps: 0, required: 0, assigned: 0, covered: 0, missing: 0, excess: 0, fullControl: 0 },
+    {
+      joints: 0,
+      stamps: 0,
+      required: 0,
+      assigned: 0,
+      covered: 0,
+      missing: 0,
+      excess: 0,
+      potentialReduction: 0,
+      fullControl: 0,
+    },
   )
 }
 

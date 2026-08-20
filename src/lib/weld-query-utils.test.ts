@@ -69,7 +69,7 @@ describe('weld query cache updates', () => {
   it('patches only rows that are already loaded in paged reports', () => {
     const queryClient = createQueryClient()
     const queryKey = [...WELD_JOINT_PAGES_QUERY_KEY, 'weldingJournal', {}, 100]
-    queryClient.setQueryData<InfiniteData<WeldPageResult>>(queryKey, {
+    const cachedData: InfiniteData<WeldPageResult> = {
       pages: [{
         rows: [{ id: 1, joint: 'S1' }, { id: 2, joint: 'S2' }] as WeldRow[],
         total: 2,
@@ -83,17 +83,23 @@ describe('weld query cache updates', () => {
         hasMore: false,
       }],
       pageParams: [1, 2],
-    })
+    }
+    const unchangedPage = cachedData.pages[1]
+    const unchangedRows = unchangedPage.rows
+    queryClient.setQueryData<InfiniteData<WeldPageResult>>(queryKey, cachedData)
 
     invalidateWeldJoints(queryClient, {
       upsertRows: [{ id: 1, joint: 'S1R1' }, { id: 3, joint: 'S3' }],
       deleteIds: [2],
     })
 
-    const page = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)?.pages[0]
+    const result = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)
+    const page = result?.pages[0]
     expect(page?.rows.map((row) => [row.id, row.joint])).toEqual([[1, 'S1R1']])
     expect(page?.total).toBe(1)
-    expect(queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)?.pages[1].total).toBeUndefined()
+    expect(result?.pages[1]).toBe(unchangedPage)
+    expect(result?.pages[1].rows).toBe(unchangedRows)
+    expect(result?.pages[1].total).toBeUndefined()
   })
 
   it('marks an unpatched snapshot stale without starting an active refetch', async () => {

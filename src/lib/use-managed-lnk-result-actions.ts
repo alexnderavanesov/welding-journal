@@ -6,9 +6,11 @@ import {
   getManagedLnkResultChangeHint,
 } from '@/lib/managed-lnk-result-utils'
 import type { RowWithId, UseManagedLnkResultActionsOptions } from '@/lib/managed-lnk-result-action-types'
+import { getLnkResultNavigationEntries } from '@/lib/lnk-result-navigation'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export function useManagedLnkResultActions({
+  isLnkRowsContextReady,
   lnkRows,
   selectedLnkResultRowIds,
   managedLnkConclusionDrafts,
@@ -18,10 +20,12 @@ export function useManagedLnkResultActions({
   lnkResultReplacementMutation,
   lnkConclusionCorrectionMutation,
   setMessage,
+  setIsLnkResultModalOpen,
   setIsLnkResultManagerOpen,
   setManagedLnkResultMethodKey,
   setManagedLnkConclusionDrafts,
   setManagedLnkResultOrderIds,
+  setManagedLnkResultTargetKey,
   setManagedLnkResultChangeHint,
   setManagedLnkPendingResultChanges,
 }: UseManagedLnkResultActionsOptions) {
@@ -34,21 +38,35 @@ export function useManagedLnkResultActions({
 
   function closeLnkResultManager() {
     setIsLnkResultManagerOpen(false)
+    setManagedLnkConclusionDrafts({})
     setManagedLnkResultOrderIds(null)
+    setManagedLnkResultTargetKey('')
     setManagedLnkResultChangeHint(null)
     setManagedLnkPendingResultChanges({})
   }
 
-  function openLnkResultManager() {
-    const selectedRows = lnkRows.filter((row) => selectedLnkResultRowIds.has(row.id))
-    if (selectedRows.length === 0) {
+  function openLnkResultManager(options: {
+    rowIds?: number[] | null
+    methodKey?: WeldFieldKey | ''
+    targetKey?: string
+  } = {}) {
+    const rowIds = options.rowIds === undefined ? [...selectedLnkResultRowIds] : options.rowIds
+    const selectedIds = rowIds === null ? null : new Set(rowIds)
+    const selectedRows = selectedIds === null ? lnkRows : lnkRows.filter((row) => selectedIds.has(row.id))
+    if (
+      isLnkRowsContextReady &&
+      (selectedRows.length === 0 || !selectedRows.some((row) => getLnkResultNavigationEntries(row).length > 0))
+    ) {
       setMessage('Выберите один или несколько стыков для редактирования результатов')
       return
     }
-    setManagedLnkResultMethodKey('')
-    setManagedLnkResultOrderIds(selectedRows.map((row) => row.id))
+    setManagedLnkResultMethodKey(options.methodKey ?? '')
+    setManagedLnkConclusionDrafts({})
+    setManagedLnkResultOrderIds(rowIds)
+    setManagedLnkResultTargetKey(options.targetKey ?? '')
     setManagedLnkPendingResultChanges({})
     setManagedLnkResultChangeHint(null)
+    setIsLnkResultModalOpen(false)
     setIsLnkResultManagerOpen(true)
   }
 

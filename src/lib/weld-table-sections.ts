@@ -3,6 +3,7 @@ import { VISIBLE_FIELD_SECTIONS, type WeldField, type WeldFieldKey } from '@/lib
 
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
+  'controlBasisSummary',
   'pstoRequest',
   'pstoDate',
   'pstoResult',

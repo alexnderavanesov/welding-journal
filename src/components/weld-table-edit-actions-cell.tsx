@@ -2,6 +2,7 @@ import { Edit2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { memo } from 'react'
 
 type WeldTableEditActionsCellProps = {
   row: WeldRow
@@ -9,7 +10,7 @@ type WeldTableEditActionsCellProps = {
   onDelete?: (id: number) => void
 }
 
-export function WeldTableEditActionsCell({ row, onEdit, onDelete }: WeldTableEditActionsCellProps) {
+export const WeldTableEditActionsCell = memo(function WeldTableEditActionsCell({ row, onEdit, onDelete }: WeldTableEditActionsCellProps) {
   return (
     <td className="border-b border-r-2 border-b-[#edf2f7] border-r-[#d7e4ee] px-3 py-2 text-right">
       <div className="flex justify-end gap-1">
@@ -38,4 +39,4 @@ export function WeldTableEditActionsCell({ row, onEdit, onDelete }: WeldTableEdi
       </div>
     </td>
   )
-}
+})

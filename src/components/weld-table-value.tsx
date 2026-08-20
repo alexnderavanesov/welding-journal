@@ -10,8 +10,9 @@ import {
   isYesText,
 } from '@/lib/weld-table-badges'
 import { DATE_TIME_WELD_FIELD_KEYS, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
+import { memo } from 'react'
 
-export function WeldTableValue({
+export const WeldTableValue = memo(function WeldTableValue({
   field,
   value,
   isResultField,
@@ -50,4 +51,4 @@ export function WeldTableValue({
       )}
     </span>
   )
-}
+})

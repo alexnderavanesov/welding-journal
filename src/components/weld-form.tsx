@@ -17,6 +17,7 @@ import { formatSaveCheckBlockReason, useSaveCheckSettings } from '@/lib/save-che
 import { useSystemIndexSettings } from '@/lib/system-index-settings'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
+import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
 import {
   getWeldFormAutoClearHint,
   getWeldFormCancellationResultHint,
@@ -74,6 +75,12 @@ export function WeldForm({
         fields: group.fields.filter((field) => !isWeldFormFieldHidden(field)),
       })).filter((group) => group.fields.length > 0),
     [],
+  )
+  const isEditing = Boolean(value.id)
+  const fieldStatusLabel = isEditing ? 'Изменено' : 'Заполнено'
+  const fieldStatusKeys = useMemo(
+    () => getWeldFormFieldStatusKeys(draft, value, fieldsByGroup, isEditing),
+    [draft, fieldsByGroup, isEditing, value],
   )
   const resolvedStampSelectOptions = useMemo(
     () => resolveStampSelectOptions(stampSelectOptions, validationDraft),
@@ -215,7 +222,7 @@ export function WeldForm({
       panelClassName="bg-slate-50"
       returnPageScrollPosition={returnPageScrollPosition}
     >
-      <WeldFormHeader draft={draft} isEditing={Boolean(value.id)} onCancel={onCancel} />
+      <WeldFormHeader draft={draft} isEditing={isEditing} onCancel={onCancel} />
 
       <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <WeldFormSections
@@ -232,6 +239,8 @@ export function WeldForm({
           setDraft={setDraft}
           activeTab={activeTab}
           onActiveTabChange={setActiveTab}
+          fieldStatusKeys={fieldStatusKeys}
+          fieldStatusLabel={fieldStatusLabel}
         />
       </div>
 
@@ -239,11 +248,45 @@ export function WeldForm({
         busy={busy}
         autoClearHint={saveHint}
         saveBlockReason={saveBlockReason}
+        fieldStatusCount={fieldStatusKeys.size}
+        fieldStatusLabel={fieldStatusLabel}
         onCancel={onCancel}
         onSave={handleSave}
       />
     </LargeDialogShell>
   )
+}
+
+export function getWeldFormFieldStatusKeys(
+  draft: WeldInput,
+  initialValue: WeldDraft,
+  fieldsByGroup: Array<{ fields: Array<{ key: WeldFieldKey }> }>,
+  isEditing: boolean,
+) {
+  const keys = new Set<WeldFieldKey>()
+  for (const group of fieldsByGroup) {
+    for (const field of group.fields) {
+      const currentValue = draft[field.key]
+      if (isEditing ? !areWeldFormValuesEqual(currentValue, initialValue[field.key]) : hasWeldFormValue(currentValue)) {
+        keys.add(field.key)
+      }
+    }
+  }
+  return keys
+}
+
+function areWeldFormValuesEqual(left: unknown, right: unknown) {
+  if (Object.is(left, right)) return true
+  if ((left === null || left === undefined || left === '') && (right === null || right === undefined || right === '')) return true
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((value, index) => Object.is(value, right[index]))
+  }
+  return false
+}
+
+function hasWeldFormValue(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0
+  return value !== null && value !== undefined && String(value).trim() !== ''
 }
 
 function formatRequiredRootStampMessage(message: string | null) {
@@ -282,9 +325,9 @@ function getWeldSaveBlockReason({
   )
 }
 
-function getWeldFormTabForField(fieldKey?: WeldFieldKey): WeldFormTab {
+export function getWeldFormTabForField(fieldKey?: WeldFieldKey): WeldFormTab {
   if (!fieldKey) return 'joint'
-  if (yesEmptyFieldKeys.has(fieldKey)) return 'control'
+  if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY || yesEmptyFieldKeys.has(fieldKey)) return 'control'
   if (weldingMaterialWeldFormFieldKeys.has(fieldKey)) return 'weldingMaterials'
   if (secondaryWeldFormFieldKeys.has(fieldKey)) return 'workClosure'
   return 'joint'

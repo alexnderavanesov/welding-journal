@@ -65,7 +65,10 @@ export function useLnkReportModalSyncEffects({
     if (!isLnkResultManagerOpen || !isLnkRowsContextReady) return
     setManagedLnkConclusionDrafts((current) => {
       const next = Object.fromEntries(
-        managedLnkResultEntries.map(({ row, method, changeKey }) => [changeKey, String(row[method.conclusionKey] ?? '').trim()]),
+        managedLnkResultEntries.map(({ row, method, changeKey }) => [
+          changeKey,
+          current[changeKey] ?? String(row[method.conclusionKey] ?? '').trim(),
+        ]),
       )
       return areStringRecordsEqual(current, next) ? current : next
     })

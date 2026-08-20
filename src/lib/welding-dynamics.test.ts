@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
-import { buildWeldingDynamics } from '@/lib/welding-dynamics'
+import {
+  buildWeldingDynamics,
+  formatWeldingDynamicsBucketHeaderLabel,
+  getStableWeldingDynamicsColorIndex,
+} from '@/lib/welding-dynamics'
 
 describe('buildWeldingDynamics', () => {
+  it('keeps dimension colors stable when the surrounding group order changes', () => {
+    const original = getStableWeldingDynamicsColorIndex('Проект Альфа', 6)
+    expect(getStableWeldingDynamicsColorIndex('Проект Альфа', 6)).toBe(original)
+    expect(getStableWeldingDynamicsColorIndex('  ПРОЕКТ АЛЬФА  ', 6)).toBe(original)
+    expect(getStableWeldingDynamicsColorIndex('Проект Альфа', 0)).toBe(0)
+  })
+
+  it('formats compact day and week headings for chart columns', () => {
+    const daily = buildWeldingDynamics([], '2026-08-11', '2026-08-11', 'wdi')
+    const weekly = buildWeldingDynamics([], '2026-08-01', '2026-09-30', 'wdi')
+
+    expect(formatWeldingDynamicsBucketHeaderLabel(daily.buckets[0]!, daily.bucketUnit)).toBe('11.08 Вт')
+    expect(formatWeldingDynamicsBucketHeaderLabel(weekly.buckets[0]!, weekly.bucketUnit)).toBe('01.08–07.08')
+  })
+
   it('groups a short period by days and counts factual welders', () => {
     const rows = [
       row({ id: 1, weldDate: '2026-07-01', wdi: '1,5', stamp1KFact: 'F1', stamp1ZFact: 'F1', stamp1OFact: 'F2', stamp1K: 'OFF1' }),
@@ -88,6 +107,35 @@ describe('buildWeldingDynamics', () => {
     expect(summary.buckets[0]?.materialGroups.map((group) => [group.label, group.value])).toEqual([
       ['М01', 1],
       ['Не указано', 1],
+    ])
+  })
+
+  it('groups dynamics by project with the same F/S and welder metrics', () => {
+    const rows = [
+      row({ id: 1, joint: 'F1', weldDate: '2026-07-01', projectTitle: 'Проект А', wdi: '2', stamp1KFact: 'W1' }),
+      row({ id: 2, joint: 'S2', weldDate: '2026-07-01', projectTitle: 'Проект А', wdi: '1', stamp1KFact: 'W2' }),
+      row({ id: 3, joint: 'F3', weldDate: '2026-07-01', projectTitle: 'Проект Б', wdi: '3', stamp1KFact: 'W1' }),
+      row({ id: 4, joint: 'S4', weldDate: '2026-07-01', projectTitle: '', wdi: '1', stamp1KFact: 'W3' }),
+    ]
+
+    const summary = buildWeldingDynamics(rows, '2026-07-01', '2026-07-01', 'wdi')
+
+    expect(summary.projectGroups).toEqual([
+      { key: 'Проект А', label: 'Проект А', value: 3 },
+      { key: 'Проект Б', label: 'Проект Б', value: 3 },
+      { key: '__missing_project_group__', label: 'Не указан', value: 1 },
+    ])
+    expect(summary.buckets[0]?.projectGroups).toEqual(summary.projectGroups)
+    expect(summary.projectJointTypes.map((group) => ({
+      label: group.label,
+      jointTypes: group.jointTypes.map((jointType) => [jointType.key, jointType.value]),
+      welderCount: group.welderCount,
+      welderShiftCount: group.welderShiftCount,
+      valuePerWelderShift: group.valuePerWelderShift,
+    }))).toEqual([
+      { label: 'Проект А', jointTypes: [['s', 1], ['f', 2]], welderCount: 2, welderShiftCount: 2, valuePerWelderShift: 1.5 },
+      { label: 'Проект Б', jointTypes: [['f', 3]], welderCount: 1, welderShiftCount: 1, valuePerWelderShift: 3 },
+      { label: 'Не указан', jointTypes: [['s', 1]], welderCount: 1, welderShiftCount: 1, valuePerWelderShift: 1 },
     ])
   })
 
@@ -267,6 +315,38 @@ describe('buildWeldingDynamics', () => {
     expect(summary.bucketUnit).toBe('month')
     expect(summary.buckets).toHaveLength(12)
   })
+
+  it('uses a manually selected scale without changing period totals', () => {
+    const rows = [
+      row({ id: 1, weldDate: '2026-07-01', wdi: '2', stamp1KFact: 'F1' }),
+      row({ id: 2, weldDate: '2026-07-10', wdi: '3', stamp1KFact: 'F2' }),
+    ]
+
+    const daily = buildWeldingDynamics(
+      rows,
+      '2026-07-01',
+      '2026-07-31',
+      'wdi',
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+      'day',
+    )
+    const monthly = buildWeldingDynamics(
+      rows,
+      '2026-07-01',
+      '2026-07-31',
+      'wdi',
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+      'month',
+    )
+
+    expect(daily.bucketUnit).toBe('day')
+    expect(daily.buckets).toHaveLength(31)
+    expect(monthly.bucketUnit).toBe('month')
+    expect(monthly.buckets).toHaveLength(1)
+    expect(monthly.buckets[0]).toMatchObject({ value: 5, weldedJoints: 2, welderCount: 2 })
+    expect(monthly.totalValue).toBe(daily.totalValue)
+    expect(monthly.welderShiftCount).toBe(daily.welderShiftCount)
+  })
 })
 
 function row(values: Partial<WeldRow>): WeldRow {
@@ -275,6 +355,7 @@ function row(values: Partial<WeldRow>): WeldRow {
     joint: values.joint ?? '',
     weldDate: values.weldDate ?? '',
     wdi: values.wdi ?? '',
+    projectTitle: values.projectTitle ?? '',
     materialGroup: values.materialGroup ?? '',
     stamp1K: values.stamp1K ?? '',
     stamp1Z: values.stamp1Z ?? '',

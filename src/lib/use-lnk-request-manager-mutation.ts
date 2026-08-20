@@ -12,6 +12,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
+import { deleteLnkRequestDocument } from '@/server/welds'
 
 export function useLnkRequestManagerMutation({
   lnkRows,
@@ -64,6 +65,13 @@ export function useLnkRequestManagerMutation({
         }
       }
 
+      if (action === 'delete') {
+        const savedRows = await deleteLnkRequestDocument({
+          data: { requestName: currentName, requestDate },
+        })
+        return savedRows as unknown as WeldRow[]
+      }
+
       const updatedRecords = buildLnkRequestManagerRows({
         records: lnkRows,
         requestName: currentName,
@@ -71,9 +79,7 @@ export function useLnkRequestManagerMutation({
         nextRequestName: renamedName,
         action,
       })
-
       if (updatedRecords.length === 0) throw new Error('Заявка ЛНК не найдена')
-
       const savedRows = await updateWeldRowsOrThrow(updatedRecords)
       return savedRows as unknown as WeldRow[]
     },

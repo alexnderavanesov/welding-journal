@@ -20,6 +20,7 @@ import {
   secondaryWeldFormFieldKeys,
   weldingMaterialWeldFormFieldKeys,
 } from './weld-form-field-sets'
+import { CONTROL_BASIS_FIELD_KEYS } from './control-assignment-basis'
 
 describe('weld field order', () => {
   it('keeps table columns in the order defined by the section Excel file', () => {
@@ -104,6 +105,24 @@ describe('weld field order', () => {
 
     expect(virtualFields.length).toBeGreaterThan(0)
     expect(virtualFields.every((field) => isWeldFormFieldHidden({ key: field.key, virtual: true }))).toBe(true)
+  })
+
+  it('shows one read-only control basis summary while keeping physical basis fields out of table layouts', () => {
+    const visibleKeys = new Set(VISIBLE_FIELDS.map((field) => field.key))
+
+    expect(visibleKeys.has('controlBasisSummary')).toBe(true)
+    expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('controlBasisSummary')).toBe(true)
+    for (const fieldKey of CONTROL_BASIS_FIELD_KEYS) {
+      expect(visibleKeys.has(fieldKey)).toBe(false)
+      expect(formHiddenFieldKeys.has(fieldKey)).toBe(true)
+      expect(EXCEL_FIELDS.some((field) => field.key === fieldKey)).toBe(true)
+    }
+
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+    expect(pstoSections.find((group) => group.section === 'ПСТО')?.fields.some((field) => field.key === 'controlBasisSummary')).toBe(true)
   })
 
   it('keeps virtual RK exposure state and its hidden metadata outside Excel imports', () => {

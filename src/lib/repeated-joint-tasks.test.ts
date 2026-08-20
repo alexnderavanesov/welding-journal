@@ -529,7 +529,7 @@ describe('buildRepeatedJointTasks', () => {
           kind: 'percentage-line-control',
           issue: 'missing',
           stamp: 'ABC1',
-          title: 'Назначить 100% РК/УЗК по клейму',
+          title: 'Назначить 100% контроль по клейму',
         }),
       ]),
     )

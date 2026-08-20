@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { buildPercentageLineSummaries } from '@/lib/percentage-line-summary'
+import {
+  buildPercentageLineSummaries,
+  getPercentageLineNewWelderWarningKey,
+  isPercentageControlMethodAvailableForRow,
+} from '@/lib/percentage-line-summary'
 
 describe('buildPercentageLineSummaries', () => {
   it('calculates base required controls per official stamp with minimum one and rounding up', () => {
@@ -253,6 +257,90 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.excessControls).toBe(0)
   })
 
+  it('uses PVK as one percentage-control slot only for a U-joint', () => {
+    const uJointStamp = getOnlyStamp([
+      makeRow(1, { connectionType: 'У17', hasPvk: 'да', pvkResult: 'годен' }),
+      makeRow(2),
+    ])
+
+    expect(uJointStamp.assignedControls).toBe(1)
+    expect(uJointStamp.coveredControls).toBe(1)
+    expect(uJointStamp.completedControls).toBe(1)
+    expect(uJointStamp.missingControls).toBe(0)
+
+    const ordinaryStamp = getOnlyStamp([
+      makeRow(1, { connectionType: 'С', hasPvk: 'да', pvkResult: 'годен' }),
+      makeRow(2),
+    ])
+
+    expect(ordinaryStamp.assignedControls).toBe(0)
+    expect(ordinaryStamp.coveredControls).toBe(0)
+    expect(ordinaryStamp.missingControls).toBe(1)
+    expect(ordinaryStamp.assignmentCandidateRowIds).toEqual([1, 2])
+  })
+
+  it('counts several accepted methods on one U-joint as one slot', () => {
+    const stamp = getOnlyStamp([
+      makeRow(1, { connectionType: 'У', hasRk: 'да', hasUzk: 'да', hasPvk: 'да' }),
+      makeRow(2),
+    ])
+
+    expect(stamp.assignedControls).toBe(1)
+    expect(stamp.normalAssignedControls).toBe(1)
+    expect(stamp.coveredControls).toBe(1)
+    expect(stamp.excessControls).toBe(0)
+  })
+
+  it('keeps additional PVK on a U-joint outside required coverage and excess', () => {
+    const stamp = getOnlyStamp([
+      makeRow(1, { connectionType: 'У', hasPvk: 'дополнительный' }),
+      makeRow(2),
+    ])
+
+    expect(stamp.assignedControls).toBe(1)
+    expect(stamp.additionalAssignedControls).toBe(1)
+    expect(stamp.coveredControls).toBe(0)
+    expect(stamp.missingControls).toBe(1)
+    expect(stamp.excessControls).toBe(0)
+  })
+
+  it('uses rejected primary and duplicate PVK on U-joints for add-on and full control', () => {
+    const addOnStamp = getOnlyStamp([
+      makeRow(1, { connectionType: 'У', hasPvk: 'да', pvkResult: 'вырез' }),
+      makeRow(2),
+      makeRow(3),
+      makeRow(4),
+      makeRow(5),
+    ])
+
+    expect(addOnStamp.rejectedPrimaryControls).toBe(1)
+    expect(addOnStamp.additionalRequiredControls).toBe(2)
+    expect(addOnStamp.requiredControls).toBe(3)
+
+    const fullControlStamp = getOnlyStamp(
+      Array.from({ length: 6 }, (_, index) =>
+        makeRow(index + 1, {
+          connectionType: 'У',
+          hasPvk: index < 4 ? 'да' : '',
+          duplicateControls:
+            index < 4
+              ? [{ id: index + 1, weldJointId: index + 1, method: 'ПВК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' }]
+              : [],
+        }),
+      ),
+    )
+
+    expect(fullControlStamp.rejectedPrimaryControls).toBe(4)
+    expect(fullControlStamp.fullControlRequired).toBe(true)
+    expect(fullControlStamp.requiredControls).toBe(6)
+  })
+
+  it('allows assigning PVK only to U-joints', () => {
+    expect(isPercentageControlMethodAvailableForRow('ПВК', makeRow(1, { connectionType: 'У' }))).toBe(true)
+    expect(isPercentageControlMethodAvailableForRow('ПВК', makeRow(2, { connectionType: 'С' }))).toBe(false)
+    expect(isPercentageControlMethodAvailableForRow('РК', makeRow(2, { connectionType: 'С' }))).toBe(true)
+  })
+
   it('subtracts cancelled controls from the allowed normal assignments', () => {
     const rows = [
       ...Array.from({ length: 6 }, (_, index) => makeRow(index + 1, { joint: `S${index + 1}`, weldControlPercent: '25', hasRk: 'да' })),
@@ -330,6 +418,78 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.additionalAssignedControls).toBe(1)
     expect(stamp.additionalAssignedJointNames).toEqual(['S2'])
     expect(stamp.excessControls).toBe(0)
+  })
+
+  it('calculates potential control reduction as one base stamp plus accepted new-welder stamps', () => {
+    const rows = [
+      ...Array.from({ length: 30 }, (_, index) =>
+        makeRow(index + 1, {
+          joint: `S${index + 1}`,
+          stamp1K: 'AAA1',
+          hasRk: index < 4 ? 'да' : '',
+        }),
+      ),
+      ...Array.from({ length: 3 }, (_, index) =>
+        makeRow(index + 31, {
+          joint: `S${index + 31}`,
+          stamp1K: 'BBB2',
+          hasRk: index < 2 ? 'да' : '',
+        }),
+      ),
+      ...Array.from({ length: 2 }, (_, index) =>
+        makeRow(index + 34, {
+          joint: `S${index + 34}`,
+          stamp1K: 'CCC3',
+          hasRk: index === 0 ? 'да' : '',
+        }),
+      ),
+    ]
+
+    const initial = buildPercentageLineSummaries(rows, undefined, new Set())[0]
+    expect(initial.stamps.reduce((total, stamp) => total + stamp.excessControls, 0)).toBe(2)
+    expect(initial.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0)).toBe(5)
+    expect(initial.potentialControlReduction).toBe(1)
+
+    const acceptedStamp = initial.stamps.find((stamp) => stamp.stamp === 'BBB2')
+    expect(acceptedStamp).toBeDefined()
+    const acceptedWarnings = new Set([
+      getPercentageLineNewWelderWarningKey(acceptedStamp?.key ?? ''),
+    ])
+    const withAcceptedStamp = buildPercentageLineSummaries(rows, undefined, acceptedWarnings)[0]
+
+    expect(withAcceptedStamp.potentialControlReduction).toBe(0)
+  })
+
+  it('reports a 6 minus 4 reduction when two unaccepted stamps are added to a 35-joint line', () => {
+    const rows = Array.from({ length: 35 }, (_, index) =>
+      makeRow(index + 1, {
+        joint: `S${index + 1}`,
+        stamp1K: 'ABC1',
+        stamp1Z: index === 0 ? 'AAAA' : index === 1 ? 'BBBB' : '',
+      }),
+    )
+
+    const summary = buildPercentageLineSummaries(rows, undefined, new Set())[0]
+
+    expect(summary.stamps).toHaveLength(3)
+    expect(summary.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0)).toBe(6)
+    expect(summary.potentialControlReduction).toBe(2)
+  })
+
+  it('keeps full-control requirements in the potential control reduction calculation', () => {
+    const rows = Array.from({ length: 8 }, (_, index) =>
+      makeRow(index + 1, {
+        joint: `S${index + 1}`,
+        weldControlPercent: '1',
+        stamp1K: index < 4 ? 'AAA1' : 'BBB2',
+        hasRk: 'да',
+        rkResult: index < 4 ? 'вырез' : '',
+      }),
+    )
+
+    const summary = buildPercentageLineSummaries(rows, undefined, new Set())[0]
+
+    expect(summary.potentialControlReduction).toBe(0)
   })
 
   it('sorts percentage lines by required controls, project, subtitle and line', () => {

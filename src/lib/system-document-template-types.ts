@@ -86,6 +86,9 @@ const LNK_CONCLUSION_TEMPLATE_IDS = new Set<string>(
 const LNK_CONCLUSION_METHOD_BY_FIELD = new Map<WeldFieldKey, string>(
   LNK_METHODS.map((method) => [method.conclusionKey, method.code]),
 )
+const LNK_REQUEST_FIELDS = new Set<WeldFieldKey>(
+  LNK_METHODS.map((method) => method.requestKey),
+)
 
 export function isSystemDocumentTemplateId(
   value: unknown,
@@ -135,7 +138,7 @@ export function getSystemDocumentTemplateIdForField(
   if (methodCode) {
     return getLnkConclusionTemplateProfile(methodCode).id
   }
-  if (LNK_METHODS.some((method) => method.requestKey === fieldKey)) return 'lnkRequest'
+  if (LNK_REQUEST_FIELDS.has(fieldKey)) return 'lnkRequest'
   if (fieldKey === 'pstoRequest') return 'pstoRequest'
   if (fieldKey === 'heatTreatmentDiagram') return 'pstoConclusion'
   return null

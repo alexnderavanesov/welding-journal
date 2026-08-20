@@ -13,7 +13,8 @@ import {
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 
 export type StatisticsUnit = 'joints' | 'wdi'
-export type StatisticsPeriodMode = 'events' | 'welded-joints'
+export type StatisticsControlDynamicsScale = 'day' | 'week' | 'month' | 'quarter' | 'year'
+export type StatisticsControlDynamicsScaleSetting = StatisticsControlDynamicsScale | 'auto'
 
 export type StatisticsMethodSummary = {
   code: string
@@ -30,6 +31,20 @@ export type StatisticsMethodSummary = {
   good: number
   rejected: number
   closurePercent: number
+  rowIds: StatisticsMethodRowIds
+}
+
+export type StatisticsMethodRowIds = {
+  requiredRequests: number[]
+  createdRequests: number[]
+  requests: number[]
+  closed: number[]
+  totalClosed: number[]
+  closedWithoutRequest: number[]
+  waitingRequest: number[]
+  waitingControl: number[]
+  good: number[]
+  rejected: number[]
 }
 
 export type StatisticsSummary = {
@@ -42,6 +57,8 @@ export type StatisticsSummary = {
   weldedShare: number
   good: number
   rejected: number
+  duplicateGood: number
+  duplicateRejected: number
   waitingWeld: number
   waitingRequest: number
   waitingControl: number
@@ -64,6 +81,35 @@ export type StatisticsSummary = {
   pstoClosurePercent: number
   methods: StatisticsMethodSummary[]
   pstoMethod: StatisticsMethodSummary
+  controlDynamicsScale: StatisticsControlDynamicsScale
+  controlDynamics: StatisticsControlDynamicsBucket[]
+}
+
+export type StatisticsControlDynamicsBucket = {
+  date: string
+  dateTo: string
+  lnkRequests: number
+  lnkClosed: number
+  pstoRequests: number
+  pstoClosed: number
+  lnkRequestRowIds: number[]
+  lnkClosedRowIds: number[]
+  pstoRequestRowIds: number[]
+  pstoClosedRowIds: number[]
+}
+
+export type StatisticsStateRowIds = {
+  good: number[]
+  rejected: number[]
+  duplicateGood: number[]
+  duplicateRejected: number[]
+  waitingWeld: number[]
+  waitingRequest: number[]
+  waitingControl: number[]
+  waitingRepair: number[]
+  backlog: number[]
+  backlogWaitingWeld: number[]
+  backlogWaitingRepair: number[]
 }
 
 export function getDefaultStatisticsPeriod(today = new Date()) {
@@ -74,13 +120,25 @@ export function getDefaultStatisticsPeriod(today = new Date()) {
   }
 }
 
+export function getCurrentStatisticsWeek(today = new Date()) {
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const daysFromMonday = (start.getDay() + 6) % 7
+  start.setDate(start.getDate() - daysFromMonday)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return {
+    from: formatDateInputValue(start),
+    to: formatDateInputValue(end),
+  }
+}
+
 export function buildStatisticsSummary(
   rows: WeldRow[],
   from: string,
   to: string,
   unit: StatisticsUnit,
-  mode: StatisticsPeriodMode = 'events',
   systemIndexSettings?: SystemIndexSettings,
+  controlDynamicsScaleSetting: StatisticsControlDynamicsScaleSetting = 'day',
 ): StatisticsSummary {
   const finalStatusContext = buildFinalStatusRowsContext(rows)
   const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to))
@@ -101,9 +159,11 @@ export function buildStatisticsSummary(
   )
   const good = sumRowsByStatus(weightedStatusRows, statuses, unit, 'годен')
   const rejected = sumRowsByStatus(weightedStatusRows, statuses, unit, 'не годен')
+  const duplicateGood = sumRows(weightedStatusRows.filter(hasGoodDuplicateControl), unit)
+  const duplicateRejected = sumRows(weightedStatusRows.filter(hasRejectedDuplicateControl), unit)
   const waitingWeld = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает сварку')
   const waitingRequest = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает заявку')
-  const waitingControl = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает нк')
+  const waitingControl = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает НК')
   const waitingRepair = sumRowsByStatus(weightedStatusRows, statuses, unit, 'ожидает ремонт')
   const completedRepairs = sumRows(
     weightedRows.filter((row) => isCompletedRepeatedJoint(row, systemIndexSettings)),
@@ -114,12 +174,14 @@ export function buildStatisticsSummary(
     const requiredRequestRows = periodRows.filter((row) => isStatisticsLnkActive(row, method))
     const createdRequestRows = requiredRequestRows.filter((row) => hasStatisticsLnkRequest(row, method))
     const activeRows = weightedRows.filter((row) => isStatisticsLnkActive(row, method))
-    const requestSourceRows =
-      mode === 'events'
-        ? getWeightedRows(rows.filter((row) => isLnkRequestInRange(row, method, from, to)), unit)
-        : weightedRows
-    const closedSourceRows =
-      mode === 'events' ? getWeightedRows(rows.filter((row) => isDateInRange(row[method.conclusionDateKey], from, to)), unit) : weightedRows
+    const requestSourceRows = getWeightedRows(
+      rows.filter((row) => isLnkRequestInRange(row, method, from, to)),
+      unit,
+    )
+    const closedSourceRows = getWeightedRows(
+      rows.filter((row) => isDateInRange(row[method.conclusionDateKey], from, to)),
+      unit,
+    )
     const requestRows = requestSourceRows.filter((row) => hasStatisticsLnkRequest(row, method))
     const closedRows = closedSourceRows.filter((row) => hasLnkClosedData(row, method))
     const closedRequestRows = requestRows.filter((row) => hasLnkClosedData(row, method))
@@ -150,13 +212,23 @@ export function buildStatisticsSummary(
       good: sumRows(goodRows, unit),
       rejected: sumRows(rejectedRows, unit),
       closurePercent: getPercent(closed, requests),
+      rowIds: {
+        requiredRequests: getRowIds(requiredRequestRows),
+        createdRequests: getRowIds(createdRequestRows),
+        requests: getRowIds(requestRows),
+        closed: getRowIds(closedRequestRows),
+        totalClosed: getRowIds(closedRows),
+        closedWithoutRequest: getRowIds(closedWithoutRequestRows),
+        waitingRequest: getRowIds(waitingRequestRows),
+        waitingControl: getRowIds(waitingControlRows),
+        good: getRowIds(goodRows),
+        rejected: getRowIds(rejectedRows),
+      },
     }
   })
 
-  const pstoRequestSourceRows =
-    mode === 'events' ? getWeightedRows(rows.filter((row) => isPstoRequestInRange(row, from, to)), unit) : weightedRows
-  const pstoClosedSourceRows =
-    mode === 'events' ? getWeightedRows(rows.filter((row) => isDateInRange(row.pstoDate, from, to)), unit) : weightedRows
+  const pstoRequestSourceRows = getWeightedRows(rows.filter((row) => isPstoRequestInRange(row, from, to)), unit)
+  const pstoClosedSourceRows = getWeightedRows(rows.filter((row) => isDateInRange(row.pstoDate, from, to)), unit)
   const pstoRequestRows = pstoRequestSourceRows.filter(hasStatisticsPstoRequest)
   const pstoRequiredRequestRows = periodRows.filter(isStatisticsPstoActive)
   const pstoCreatedRequestRows = pstoRequiredRequestRows.filter(hasStatisticsPstoRequest)
@@ -170,6 +242,7 @@ export function buildStatisticsSummary(
   const pstoClosedByRequest = sumRows(pstoClosedRequestRows, unit)
   const pstoClosedWithoutRequest = sumRows(pstoClosedRows.filter((row) => !hasStatisticsPstoRequest(row)), unit)
   const pstoWaitingControl = sumRows(pstoWaitingControlRows, unit)
+  const pstoGoodRows = pstoClosedRows.filter((row) => String(row.pstoResult ?? '').trim().toLowerCase().includes('проведено'))
   const pstoMethod = {
     code: 'ПСТО',
     requiredRequests: pstoRequiredRequestRows.length,
@@ -182,9 +255,21 @@ export function buildStatisticsSummary(
     pending: pstoWaitingControl,
     waitingRequest: sumRows(pstoWaitingRequestRows, unit),
     waitingControl: pstoWaitingControl,
-    good: sumRows(pstoClosedRows.filter((row) => String(row.pstoResult ?? '').trim().toLowerCase().includes('проведено')), unit),
+    good: sumRows(pstoGoodRows, unit),
     rejected: 0,
     closurePercent: getPercent(pstoClosedByRequest, pstoRequests),
+    rowIds: {
+      requiredRequests: getRowIds(pstoRequiredRequestRows),
+      createdRequests: getRowIds(pstoCreatedRequestRows),
+      requests: getRowIds(pstoRequestRows),
+      closed: getRowIds(pstoClosedRequestRows),
+      totalClosed: getRowIds(pstoClosedRows),
+      closedWithoutRequest: getRowIds(pstoClosedRows.filter((row) => !hasStatisticsPstoRequest(row))),
+      waitingRequest: getRowIds(pstoWaitingRequestRows),
+      waitingControl: getRowIds(pstoWaitingControlRows),
+      good: getRowIds(pstoGoodRows),
+      rejected: [],
+    },
   }
 
   const lnkRequests = methods.reduce((total, method) => total + method.requests, 0)
@@ -192,6 +277,13 @@ export function buildStatisticsSummary(
   const lnkCreatedRequests = methods.reduce((total, method) => total + method.createdRequests, 0)
   const lnkClosed = methods.reduce((total, method) => total + method.closed, 0)
   const lnkTotalClosed = methods.reduce((total, method) => total + method.totalClosed, 0)
+  const { buckets: controlDynamics, scale: controlDynamicsScale } = buildControlDynamics(
+    rows,
+    from,
+    to,
+    unit,
+    controlDynamicsScaleSetting,
+  )
 
   return {
     periodRows,
@@ -203,6 +295,8 @@ export function buildStatisticsSummary(
     weldedShare: getPercent(welded, totalRows),
     good,
     rejected,
+    duplicateGood,
+    duplicateRejected,
     waitingWeld,
     waitingRequest,
     waitingControl,
@@ -225,7 +319,69 @@ export function buildStatisticsSummary(
     pstoClosurePercent: getPercent(pstoClosedByRequest, pstoRequests),
     methods,
     pstoMethod,
+    controlDynamicsScale,
+    controlDynamics,
   }
+}
+
+function getRowIds(rows: readonly WeldRow[]) {
+  return Array.from(new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))).sort((left, right) => left - right)
+}
+
+export function buildStatisticsStateRowIds(
+  rows: WeldRow[],
+  from: string,
+  to: string,
+  unit: StatisticsUnit,
+): StatisticsStateRowIds {
+  const finalStatusContext = buildFinalStatusRowsContext(rows)
+  const periodRows = getWeightedRows(rows.filter((row) => isDateInRange(row.weldDate, from, to)), unit)
+  const pendingWithoutWeldRows = getWeightedRows(
+    rows.filter((row) => {
+      if (hasText(row.weldDate)) return false
+      const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
+      return status === 'ожидает сварку' || status === 'ожидает ремонт'
+    }),
+    unit,
+  )
+  const result: StatisticsStateRowIds = {
+    good: [],
+    rejected: [],
+    duplicateGood: [],
+    duplicateRejected: [],
+    waitingWeld: [],
+    waitingRequest: [],
+    waitingControl: [],
+    waitingRepair: [],
+    backlog: [],
+    backlogWaitingWeld: [],
+    backlogWaitingRepair: [],
+  }
+
+  for (const row of periodRows) {
+    const id = getStatisticsRowId(row)
+    if (id === null) continue
+    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
+    if (status === 'годен') result.good.push(id)
+    else if (status === 'не годен') result.rejected.push(id)
+    else if (status === 'ожидает сварку') result.waitingWeld.push(id)
+    else if (status === 'ожидает заявку') result.waitingRequest.push(id)
+    else if (status === 'ожидает НК') result.waitingControl.push(id)
+    else if (status === 'ожидает ремонт') result.waitingRepair.push(id)
+    if (hasGoodDuplicateControl(row)) result.duplicateGood.push(id)
+    if (hasRejectedDuplicateControl(row)) result.duplicateRejected.push(id)
+  }
+
+  for (const row of pendingWithoutWeldRows) {
+    const id = getStatisticsRowId(row)
+    if (id === null) continue
+    result.backlog.push(id)
+    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
+    if (status === 'ожидает сварку') result.backlogWaitingWeld.push(id)
+    if (status === 'ожидает ремонт') result.backlogWaitingRepair.push(id)
+  }
+
+  return result
 }
 
 export function formatStatisticValue(value: number, unit: StatisticsUnit) {
@@ -295,8 +451,11 @@ function isStatisticsLnkNoNeed(row: WeldRow, method: (typeof LNK_METHODS)[number
 
 function isLnkRequestInRange(row: WeldRow, method: (typeof LNK_METHODS)[number], from: string, to: string) {
   if (!hasStatisticsLnkRequest(row, method)) return false
-  const requestDate = parseDateForStatistics(row[method.requestDateKey]) ?? parseDateFromText(row[method.requestKey]) ?? parseDateForStatistics(row.lnkCreatedAt)
-  return isIsoDateInRange(requestDate, from, to)
+  return isIsoDateInRange(getLnkRequestDate(row, method), from, to)
+}
+
+function getLnkRequestDate(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
+  return parseDateForStatistics(row[method.requestDateKey]) ?? parseDateFromText(row[method.requestKey]) ?? parseDateForStatistics(row.lnkCreatedAt)
 }
 
 function hasPstoClosedData(row: WeldRow) {
@@ -321,15 +480,193 @@ function isStatisticsPstoNoNeed(row: WeldRow) {
 
 function isPstoRequestInRange(row: WeldRow, from: string, to: string) {
   if (!hasStatisticsPstoRequest(row)) return false
-  const requestDate =
-    parseDateForStatistics(row.pstoRequestDate) ?? parseDateFromText(row.pstoRequest) ?? parseDateForStatistics(row.pstoCreatedAt)
-  return isIsoDateInRange(requestDate, from, to)
+  return isIsoDateInRange(getPstoRequestDate(row), from, to)
+}
+
+function getPstoRequestDate(row: WeldRow) {
+  return parseDateForStatistics(row.pstoRequestDate) ?? parseDateFromText(row.pstoRequest) ?? parseDateForStatistics(row.pstoCreatedAt)
+}
+
+type StatisticsControlDynamicsDraft = Omit<
+  StatisticsControlDynamicsBucket,
+  'lnkRequestRowIds' | 'lnkClosedRowIds' | 'pstoRequestRowIds' | 'pstoClosedRowIds'
+> & {
+  lnkRequestRowIds: Set<number>
+  lnkClosedRowIds: Set<number>
+  pstoRequestRowIds: Set<number>
+  pstoClosedRowIds: Set<number>
+}
+
+function buildControlDynamics(
+  rows: WeldRow[],
+  from: string,
+  to: string,
+  unit: StatisticsUnit,
+  scaleSetting: StatisticsControlDynamicsScaleSetting,
+) {
+  const dailyBuckets = new Map<string, StatisticsControlDynamicsDraft>()
+  const add = (
+    date: string | null,
+    metric: 'lnkRequests' | 'lnkClosed' | 'pstoRequests' | 'pstoClosed',
+    rowIdsKey: 'lnkRequestRowIds' | 'lnkClosedRowIds' | 'pstoRequestRowIds' | 'pstoClosedRowIds',
+    row: WeldRow,
+  ) => {
+    if (!date || !isIsoDateInRange(date, from, to)) return
+    const value = getRowWeight(row, unit)
+    if (value <= 0) return
+    const bucket = dailyBuckets.get(date) ?? {
+      date,
+      dateTo: date,
+      lnkRequests: 0,
+      lnkClosed: 0,
+      pstoRequests: 0,
+      pstoClosed: 0,
+      lnkRequestRowIds: new Set<number>(),
+      lnkClosedRowIds: new Set<number>(),
+      pstoRequestRowIds: new Set<number>(),
+      pstoClosedRowIds: new Set<number>(),
+    }
+    bucket[metric] += value
+    bucket[rowIdsKey].add(row.id)
+    dailyBuckets.set(date, bucket)
+  }
+
+  for (const row of rows) {
+    for (const method of LNK_METHODS) {
+      if (hasStatisticsLnkRequest(row, method)) {
+        add(getLnkRequestDate(row, method), 'lnkRequests', 'lnkRequestRowIds', row)
+      }
+      if (hasLnkClosedData(row, method)) {
+        add(parseDateForStatistics(row[method.conclusionDateKey]), 'lnkClosed', 'lnkClosedRowIds', row)
+      }
+    }
+    if (hasStatisticsPstoRequest(row)) {
+      add(getPstoRequestDate(row), 'pstoRequests', 'pstoRequestRowIds', row)
+    }
+    if (hasPstoClosedData(row)) {
+      add(parseDateForStatistics(row.pstoDate), 'pstoClosed', 'pstoClosedRowIds', row)
+    }
+  }
+
+  const daily = Array.from(dailyBuckets.values()).sort((left, right) => left.date.localeCompare(right.date))
+  const scale = scaleSetting === 'auto'
+    ? resolveAutomaticControlDynamicsScale(daily, from, to)
+    : scaleSetting
+  const groupedBuckets = new Map<string, StatisticsControlDynamicsDraft>()
+
+  for (const dailyBucket of daily) {
+    const range = getControlDynamicsBucketRange(dailyBucket.date, scale)
+    const bucket = groupedBuckets.get(range.from) ?? {
+      date: range.from,
+      dateTo: range.to,
+      lnkRequests: 0,
+      lnkClosed: 0,
+      pstoRequests: 0,
+      pstoClosed: 0,
+      lnkRequestRowIds: new Set<number>(),
+      lnkClosedRowIds: new Set<number>(),
+      pstoRequestRowIds: new Set<number>(),
+      pstoClosedRowIds: new Set<number>(),
+    }
+    bucket.lnkRequests += dailyBucket.lnkRequests
+    bucket.lnkClosed += dailyBucket.lnkClosed
+    bucket.pstoRequests += dailyBucket.pstoRequests
+    bucket.pstoClosed += dailyBucket.pstoClosed
+    addIds(bucket.lnkRequestRowIds, dailyBucket.lnkRequestRowIds)
+    addIds(bucket.lnkClosedRowIds, dailyBucket.lnkClosedRowIds)
+    addIds(bucket.pstoRequestRowIds, dailyBucket.pstoRequestRowIds)
+    addIds(bucket.pstoClosedRowIds, dailyBucket.pstoClosedRowIds)
+    groupedBuckets.set(range.from, bucket)
+  }
+
+  return {
+    scale,
+    buckets: Array.from(groupedBuckets.values())
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((bucket) => ({
+        ...bucket,
+        lnkRequestRowIds: toSortedIds(bucket.lnkRequestRowIds),
+        lnkClosedRowIds: toSortedIds(bucket.lnkClosedRowIds),
+        pstoRequestRowIds: toSortedIds(bucket.pstoRequestRowIds),
+        pstoClosedRowIds: toSortedIds(bucket.pstoClosedRowIds),
+      })),
+  }
+}
+
+function resolveAutomaticControlDynamicsScale(
+  buckets: readonly StatisticsControlDynamicsDraft[],
+  from: string,
+  to: string,
+): StatisticsControlDynamicsScale {
+  const firstDate = parseIsoDateUtc(from) ?? parseIsoDateUtc(buckets[0]?.date)
+  const lastDate = parseIsoDateUtc(to) ?? parseIsoDateUtc(buckets[buckets.length - 1]?.date)
+  if (!firstDate || !lastDate || lastDate < firstDate) return 'day'
+  const days = Math.floor((lastDate.getTime() - firstDate.getTime()) / 86_400_000) + 1
+  if (days <= 31) return 'day'
+  if (days <= 210) return 'week'
+  if (days <= 1_095) return 'month'
+  if (days <= 3_650) return 'quarter'
+  return 'year'
+}
+
+function getControlDynamicsBucketRange(date: string, scale: StatisticsControlDynamicsScale) {
+  const value = parseIsoDateUtc(date) ?? new Date(0)
+  const start = new Date(value)
+  const end = new Date(value)
+  if (scale === 'week') {
+    const daysFromMonday = (start.getUTCDay() + 6) % 7
+    start.setUTCDate(start.getUTCDate() - daysFromMonday)
+    end.setTime(start.getTime())
+    end.setUTCDate(start.getUTCDate() + 6)
+  } else if (scale === 'month') {
+    start.setUTCDate(1)
+    end.setUTCMonth(start.getUTCMonth() + 1, 0)
+  } else if (scale === 'quarter') {
+    const quarterStartMonth = Math.floor(start.getUTCMonth() / 3) * 3
+    start.setUTCMonth(quarterStartMonth, 1)
+    end.setUTCFullYear(start.getUTCFullYear(), quarterStartMonth + 3, 0)
+  } else if (scale === 'year') {
+    start.setUTCMonth(0, 1)
+    end.setUTCMonth(11, 31)
+  }
+  return { from: formatIsoDateUtc(start), to: formatIsoDateUtc(end) }
+}
+
+function parseIsoDateUtc(value: string | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const date = new Date(`${value}T00:00:00Z`)
+  return Number.isFinite(date.getTime()) ? date : null
+}
+
+function formatIsoDateUtc(value: Date) {
+  return value.toISOString().slice(0, 10)
+}
+
+function addIds(target: Set<number>, source: ReadonlySet<number>) {
+  for (const id of source) target.add(id)
+}
+
+function toSortedIds(rowIds: ReadonlySet<number>) {
+  return Array.from(rowIds).sort((left, right) => left - right)
 }
 
 function getRowWeight(row: WeldRow, unit: StatisticsUnit) {
   if (unit === 'joints') return 1
   const value = Number(String(row.wdi ?? '').replace(',', '.'))
   return Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function getStatisticsRowId(row: WeldRow) {
+  const id = Number(row.id)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+function hasGoodDuplicateControl(row: WeldRow) {
+  return (row.duplicateControls ?? []).some((control) => control.result === 'годен')
+}
+
+function hasRejectedDuplicateControl(row: WeldRow) {
+  return (row.duplicateControls ?? []).some((control) => control.result === 'ремонт' || control.result === 'вырез')
 }
 
 function isCompletedRepeatedJoint(row: WeldRow, systemIndexSettings?: SystemIndexSettings) {

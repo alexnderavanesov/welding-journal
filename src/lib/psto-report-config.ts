@@ -33,6 +33,7 @@ export const PSTO_RESULTS_FIELDS = [
 
 export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
+  'controlBasisSummary',
   'pstoRequest',
   'pstoRequestDate',
   'pstoDate',

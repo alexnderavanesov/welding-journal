@@ -10,6 +10,7 @@ import {
 } from '@/lib/report-config'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
+import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
 
 type FieldMutationVariables = {
   record: WeldRow
@@ -55,6 +56,11 @@ export function useReportEditActions({
     focusField?: WeldFieldKey,
     returnPageScrollPosition?: PageScrollPosition,
   ) {
+    if (focusField === CONTROL_BASIS_SUMMARY_FIELD_KEY) {
+      setEditing({ record, focusField, returnPageScrollPosition })
+      return
+    }
+
     if (activeReport === 'heatTreatment') {
       if (focusField && HEAT_TREATMENT_EDITABLE_FIELD_KEYS.has(focusField)) {
         const field = FIELD_BY_KEY.get(focusField)

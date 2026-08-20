@@ -71,6 +71,7 @@ describe('buildWelderStatisticsSummary', () => {
     expect(summary.rows[0]).toMatchObject({
       stamp: 'ABC1',
       welderName: 'Иванов И.И.',
+      searchStamps: ['1111', 'ABC1'],
       total: 1,
       waitingControl: 1,
     })
@@ -186,9 +187,16 @@ describe('buildWelderStatisticsSummary', () => {
     const row = summary.rows.find((item) => item.stamp === 'ABC1')
 
     expect(row?.daily).toEqual([
-      { date: '2026-07-01', total: 1, joints: 1 },
-      { date: '2026-07-02', total: 1, joints: 1 },
+      { date: '2026-07-01', total: 1, joints: 1, rowIds: [1] },
+      { date: '2026-07-02', total: 1, joints: 1, rowIds: [2] },
     ])
+    expect(row).toMatchObject({
+      rowIds: [1, 2],
+      goodRowIds: [1],
+      rejectedRowIds: [2],
+      waitingRequestRowIds: [],
+      waitingControlRowIds: [],
+    })
     expect(row?.materialGroups).toEqual([
       { key: 'M01', total: 1, good: 1, waitingRequest: 0, waitingControl: 0, rejected: 0 },
       { key: 'M05', total: 1, good: 0, waitingRequest: 0, waitingControl: 0, rejected: 1 },

@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 
 type WeldTableRow = WeldRow
 
@@ -17,25 +18,35 @@ export function useWeldTableSelection({
   onSelectedRowIdsChange,
   isRowSelectable,
 }: UseWeldTableSelectionParams) {
-  const selectableVisibleRows = filteredRows.filter((row) => !selectable || isRowSelectable(row))
-  const selectedVisibleRows = selectableVisibleRows.filter((row) => selectedRowIds.has(row.id))
+  const selectedRowIdsRef = useRef(selectedRowIds)
+  useLayoutEffect(() => {
+    selectedRowIdsRef.current = selectedRowIds
+  }, [selectedRowIds])
+  const selectableVisibleRows = useMemo(
+    () => filteredRows.filter((row) => !selectable || isRowSelectable(row)),
+    [filteredRows, isRowSelectable, selectable],
+  )
+  const selectedVisibleRows = useMemo(
+    () => selectableVisibleRows.filter((row) => selectedRowIds.has(row.id)),
+    [selectableVisibleRows, selectedRowIds],
+  )
   const allVisibleRowsSelected = selectableVisibleRows.length > 0 && selectedVisibleRows.length === selectableVisibleRows.length
   const someVisibleRowsSelected = selectedVisibleRows.length > 0 && !allVisibleRowsSelected
 
-  function setRowSelected(row: WeldTableRow, selected: boolean) {
+  const setRowSelected = useCallback((row: WeldTableRow, selected: boolean) => {
     if (!isRowSelectable(row)) return
 
-    const next = new Set(selectedRowIds)
+    const next = new Set(selectedRowIdsRef.current)
     if (selected) {
       next.add(row.id)
     } else {
       next.delete(row.id)
     }
     onSelectedRowIdsChange?.(next)
-  }
+  }, [isRowSelectable, onSelectedRowIdsChange])
 
-  function setVisibleRowsSelected(selected: boolean) {
-    const next = new Set(selectedRowIds)
+  const setVisibleRowsSelected = useCallback((selected: boolean) => {
+    const next = new Set(selectedRowIdsRef.current)
     for (const row of selectableVisibleRows) {
       if (selected) {
         next.add(row.id)
@@ -44,7 +55,7 @@ export function useWeldTableSelection({
       }
     }
     onSelectedRowIdsChange?.(next)
-  }
+  }, [onSelectedRowIdsChange, selectableVisibleRows])
 
   return {
     selectableVisibleRows,

@@ -32,6 +32,55 @@ describe('report modal context loading', () => {
     expect(result.current.rowIds.size).toBe(0)
   })
 
+  it('does not overwrite an edited LNK conclusion draft when report rows rerender', () => {
+    const row = {
+      id: 7,
+      vikConclusion: 'Заключение-001',
+    } as WeldRow
+    const method = {
+      requestKey: 'vikRequest' as const,
+      conclusionKey: 'vikConclusion' as const,
+    }
+    const { result, rerender } = renderHook(
+      ({ entries }) => {
+        const [drafts, setDrafts] = useState<Record<string, string>>({})
+        useLnkReportModalSyncEffects({
+          availableLnkRequestRows: [],
+          isLnkRowsContextReady: true,
+          isLnkRequestModalOpen: false,
+          isLnkResultManagerOpen: true,
+          isLnkResultModalOpen: false,
+          lnkResultRequestOptions: [],
+          lnkRows: [row],
+          managedLnkResultEntries: entries,
+          managedLnkResultMethodKey: '',
+          managedLnkResultMethods: [],
+          setLnkResultDraft: vi.fn(),
+          setManagedLnkConclusionDrafts: setDrafts,
+          setManagedLnkResultMethodKey: vi.fn(),
+          setSelectedLnkIds: vi.fn(),
+        })
+        return { drafts, setDrafts }
+      },
+      {
+        initialProps: {
+          entries: [{ row, method, changeKey: '7:vikRequest' }],
+        },
+      },
+    )
+
+    expect(result.current.drafts).toEqual({ '7:vikRequest': 'Заключение-001' })
+
+    act(() => {
+      result.current.setDrafts({ '7:vikRequest': 'Заключение заказчика №77' })
+    })
+    act(() => {
+      rerender({ entries: [{ row: { ...row }, method: { ...method }, changeKey: '7:vikRequest' }] })
+    })
+
+    expect(result.current.drafts).toEqual({ '7:vikRequest': 'Заключение заказчика №77' })
+  })
+
   it('does not loop when an open PSTO result receives equivalent context arrays', () => {
     const { result } = renderHook(() => {
       const [draft, setDraft] = useState(() => createDefaultPstoResultDraft())

@@ -10,6 +10,7 @@ import {
   compactWeldRowsForTransport,
   getWeldImportSecurityScope,
   getProfileTimestampUpdates,
+  getDerivedReportFilterSelectedFieldKeys,
   getReportContextSelect,
   mergeDuplicateControlsIntoRows,
   normalizeWeldPageRequest,
@@ -32,6 +33,7 @@ import {
   DISPATCHER_TASK_FILTER_KEY,
 } from '@/lib/dispatcher-task-row-codes'
 import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 describe('weld server pagination helpers', () => {
   it('uses the same dedicated password scope for every import mode', () => {
@@ -57,6 +59,14 @@ describe('weld server pagination helpers', () => {
       lnkUpdatedAt: now,
     })
     expect(getProfileTimestampUpdates({ ...previous, pstoNote: 'Исправлено' }, previous, now)).toEqual({
+      pstoUpdatedAt: now,
+    })
+    expect(getProfileTimestampUpdates({ ...previous, rkControlBasis: 'ТР №1' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
+      lnkUpdatedAt: now,
+    })
+    expect(getProfileTimestampUpdates({ ...previous, pstoControlBasis: 'Письмо №2' }, previous, now)).toEqual({
+      weldingUpdatedAt: now,
       pstoUpdatedAt: now,
     })
   })
@@ -346,6 +356,47 @@ describe('weld server pagination helpers', () => {
     expect(page.rows.map((candidate) => candidate.joint)).toEqual(['S1', 'S2'])
   })
 
+  it('builds contextual control basis summaries for each report', () => {
+    const sourceRows = [
+      row({
+        id: 1,
+        joint: 'S1',
+        hasRk: 'да',
+        pstoRequired: 'да',
+        rkControlBasis: 'ТР №1',
+        pstoControlBasis: 'Письмо №2',
+      }),
+    ]
+
+    const journal = buildWeldReportPageFromRows(sourceRows, normalizeWeldPageRequest({ columnFilters: {} }), 'weldingJournal')
+    const lnk = buildWeldReportPageFromRows(sourceRows, normalizeWeldPageRequest({ columnFilters: {} }), 'lnk')
+    const psto = buildWeldReportPageFromRows(sourceRows, normalizeWeldPageRequest({ columnFilters: {} }), 'heatTreatment')
+
+    expect(journal.rows[0].controlBasisSummary).toBe('РК: ТР №1; ПСТО: Письмо №2')
+    expect(lnk.rows[0].controlBasisSummary).toBe('РК: ТР №1')
+    expect(psto.rows[0].controlBasisSummary).toBe('ПСТО: Письмо №2')
+  })
+
+  it('filters control basis summaries within the current report scope', () => {
+    const sourceRows = [
+      row({ id: 1, joint: 'S1', weldDate: '2026-08-19', hasRk: 'да', rkControlBasis: 'ТР №1' }),
+      row({ id: 2, joint: 'S2', weldDate: '2026-08-19', hasRk: 'да', pstoRequired: 'да', pstoControlBasis: 'Письмо №2' }),
+    ]
+    const request = normalizeWeldPageRequest({
+      page: 1,
+      pageSize: 100,
+      columnFilters: { controlBasisSummary: 'Письмо №2' },
+    })
+
+    const journal = buildWeldReportPageFromRows(sourceRows, request, 'weldingJournal')
+    const lnk = buildWeldReportPageFromRows(sourceRows, request, 'lnk')
+    const psto = buildWeldReportPageFromRows(sourceRows, request, 'heatTreatment')
+
+    expect(journal.rows.map((candidate) => candidate.joint)).toEqual(['S2'])
+    expect(lnk.rows).toEqual([])
+    expect(psto.rows.map((candidate) => candidate.joint)).toEqual(['S2'])
+  })
+
   it('builds PSTO report pages from all matching PSTO rows', () => {
     const page = buildWeldReportPageFromRows(
       [
@@ -381,6 +432,19 @@ describe('weld server pagination helpers', () => {
       { value: 'LIN-1', label: 'LIN-1', count: 2 },
       { value: 'LIN-2', label: 'LIN-2', count: 1 },
     ])
+  })
+
+  it('loads every report date needed to build LNK and PSTO date-filter options', () => {
+    const selectedFieldKeys = getDerivedReportFilterSelectedFieldKeys()
+
+    for (const method of LNK_METHODS) {
+      expect(selectedFieldKeys.has(method.requestDateKey)).toBe(true)
+      expect(selectedFieldKeys.has(method.conclusionDateKey)).toBe(true)
+    }
+    expect(selectedFieldKeys.has('pstoRequestDate')).toBe(true)
+    expect(selectedFieldKeys.has('pstoDate')).toBe(true)
+    expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)
+    expect(selectedFieldKeys.has('pstoControlBasis')).toBe(true)
   })
 
   it('builds filters from saved RK descriptions and calculated exposure schemes', () => {

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { FileText } from 'lucide-react'
 import { memo, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -8,6 +9,7 @@ import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { cn } from '@/lib/utils'
 import { WELD_FORM_SUGGESTIONS_QUERY_KEY } from '@/lib/weld-query-utils'
+import { getControlBasisFieldByAssignmentKey } from '@/lib/control-assignment-basis'
 import {
   getWeldFormSuggestionQueryFieldKeys,
   getWeldFormSuggestions,
@@ -180,6 +182,7 @@ function WeldFormFieldComponent({
       ) : yesEmptyFieldKeys.has(field.key) ? (
         <ControlAvailabilityPicker
           value={getControlAvailabilityValue(draft[field.key])}
+          basisValue={getControlBasisValue(draft, field.key)}
           layout={controlPickerLayout}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
@@ -199,6 +202,14 @@ function WeldFormFieldComponent({
                         : null,
             }))
           }
+          onBasisChange={(value) => {
+            const basisField = getControlBasisFieldByAssignmentKey(field.key)
+            if (!basisField) return
+            setDraft((current) => ({
+              ...current,
+              [basisField.basisKey]: value || null,
+            }))
+          }}
         />
       ) : field.kind === 'boolean' ? (
         <Select
@@ -413,14 +424,18 @@ type ControlAvailabilityOption = {
 
 function ControlAvailabilityPicker({
   value,
+  basisValue,
   layout,
   inputRef,
   onChange,
+  onBasisChange,
 }: {
   value: ControlAvailabilityValue
+  basisValue: string
   layout: 'grid' | 'row'
   inputRef: (element: HTMLButtonElement | null) => void
   onChange: (value: ControlAvailabilityValue) => void
+  onBasisChange: (value: string) => void
 }) {
   const options = getControlAvailabilityOptions()
 
@@ -458,6 +473,27 @@ function ControlAvailabilityPicker({
             </button>
           )
         })}
+        <label
+          className={cn(
+            'flex min-h-[58px] flex-col rounded-md border border-slate-200 bg-white px-3 py-2 text-left transition',
+            'focus-within:border-sky-300 focus-within:bg-sky-50/40 focus-within:ring-2 focus-within:ring-sky-100',
+            layout === 'grid' ? 'sm:col-span-2 xl:col-span-2' : '',
+          )}
+        >
+          <span className="flex items-center gap-1.5 text-[12px] font-semibold leading-tight text-slate-700">
+            <FileText className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+            Основание / документ
+          </span>
+          <textarea
+            value={basisValue}
+            rows={2}
+            placeholder="Техрешение, пересогласование или другое основание"
+            aria-label="Основание или документ для назначения контроля"
+            onChange={(event) => onBasisChange(event.target.value)}
+            className="mt-1 min-h-0 w-full flex-1 resize-none appearance-none border-0 bg-transparent p-0 text-[13px] leading-5 text-slate-800 shadow-none outline-none ring-0 placeholder:text-slate-400 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none"
+            style={{ outline: 'none', boxShadow: 'none' }}
+          />
+        </label>
       </div>
     </div>
   )
@@ -499,6 +535,11 @@ function getControlAvailabilityValue(value: unknown): ControlAvailabilityValue {
   return ''
 }
 
+function getControlBasisValue(draft: WeldInput, assignmentKey: WeldFieldKey) {
+  const basisField = getControlBasisFieldByAssignmentKey(assignmentKey)
+  return basisField ? String(draft[basisField.basisKey] ?? '') : ''
+}
+
 function getFormFieldLabel(field: WeldField & { key: WeldFieldKey }) {
   return field.label
 }
@@ -518,6 +559,7 @@ const suggestionContextFieldKeys: WeldFieldKey[] = [
 ]
 
 function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldFormFieldProps) {
+  const controlBasisField = getControlBasisFieldByAssignmentKey(previous.field.key)
   if (
     previous.field !== next.field ||
     previous.suggestionRows !== next.suggestionRows ||
@@ -527,7 +569,11 @@ function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldForm
     previous.hideLabel !== next.hideLabel ||
     previous.controlPickerLayout !== next.controlPickerLayout ||
     previous.stampSelectOptions?.[previous.field.key] !== next.stampSelectOptions?.[next.field.key] ||
-    !Object.is(previous.draft[previous.field.key], next.draft[next.field.key])
+    !Object.is(previous.draft[previous.field.key], next.draft[next.field.key]) ||
+    Boolean(
+      controlBasisField &&
+      !Object.is(previous.draft[controlBasisField.basisKey], next.draft[controlBasisField.basisKey]),
+    )
   ) {
     return false
   }

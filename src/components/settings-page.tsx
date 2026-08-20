@@ -168,6 +168,7 @@ import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   invalidateWeldJoints,
   invalidateWeldPageQueries,
+  STATISTICS_SERVER_QUERY_KEY,
   WELD_DATA_USAGE_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import {
@@ -3329,6 +3330,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
         invalidateWeldPageQueries(queryClient),
       ])
     },

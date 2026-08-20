@@ -53,6 +53,21 @@
   }
 }
 
+@layer components {
+  .weld-table-row.weld-table-row--hoverable:hover {
+    background-color: #cfeeff;
+  }
+
+  .weld-table-row.weld-table-row--hoverable:hover > td {
+    background-color: transparent;
+    box-shadow: none;
+  }
+
+  .weld-table-row.weld-table-row--hoverable:hover > td.sticky {
+    background-color: #cfeeff;
+  }
+}
+
 @media print {
   @page {
     size: A4 landscape;

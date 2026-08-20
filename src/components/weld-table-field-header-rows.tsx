@@ -22,6 +22,7 @@ import {
 } from '@/lib/weld-table-filtering'
 import { listWeldColumnFilterOptions, type WeldReportKind } from '@/server/welds'
 import type { WeldColumnFilterOption } from '@/server/welds'
+import { buildWeldTableRenderColumns } from '@/lib/weld-table-horizontal-window'
 
 const openFilterMenus: Array<{ id: number; close: () => void }> = []
 let filterMenuId = 0
@@ -45,6 +46,7 @@ type WeldTableFieldHeaderRowsProps = {
   manualFilterOptionsReport?: WeldReportKind
   manualFilterOptions?: Record<string, WeldColumnFilterOption[]>
   onColumnFiltersChange: (filters: Record<string, string>) => void
+  visibleFieldKeys?: ReadonlySet<WeldFieldKey>
 }
 
 export function WeldTableFieldHeaderRows({
@@ -59,21 +61,27 @@ export function WeldTableFieldHeaderRows({
   manualFilterOptionsReport,
   manualFilterOptions,
   onColumnFiltersChange,
+  visibleFieldKeys,
 }: WeldTableFieldHeaderRowsProps) {
-  const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
+  const renderColumns = useMemo(
+    () => buildWeldTableRenderColumns({ sections, extraColumns, visibleFieldKeys }),
+    [extraColumns, sections, visibleFieldKeys],
+  )
 
   return (
     <tr>
-      {sections.flatMap((section) => [
-        ...extraColumns
-          .filter((column) => column.insertBeforeSection === section.section)
-          .map((column) => <ExtraFieldHeader key={column.key} column={column} />),
-        ...section.fields.map((field, fieldIndex) => {
-          const isStickyField = stickyIdentityColumns && isStickyWeldTableField(field.key)
-          const isSectionEnd = fieldIndex === section.fields.length - 1
+      {renderColumns.map((renderColumn) => {
+        if (renderColumn.kind === 'spacer') {
+          return <HorizontalHeaderSpacer key={renderColumn.key} colSpan={renderColumn.colSpan} />
+        }
+        if (renderColumn.kind === 'extra') {
+          return <ExtraFieldHeader key={renderColumn.key} column={renderColumn.column} />
+        }
+        const { field, isSectionEnd } = renderColumn
+        const isStickyField = stickyIdentityColumns && isStickyWeldTableField(field.key)
           return (
             <th
-              key={field.key}
+              key={renderColumn.key}
               className={`${headerCellClass(field.key, !canEditField(field.key as WeldFieldKey), isSectionEnd)} ${
                 isStickyField ? 'sticky z-30' : ''
               }`}
@@ -91,12 +99,19 @@ export function WeldTableFieldHeaderRows({
               />
             </th>
           )
-        }),
-      ])}
-      {trailingExtraColumns.map((column) => (
-        <ExtraFieldHeader key={column.key} column={column} />
-      ))}
+      })}
     </tr>
+  )
+}
+
+function HorizontalHeaderSpacer({ colSpan }: { colSpan: number }) {
+  return (
+    <th
+      aria-hidden="true"
+      data-horizontal-spacer="true"
+      colSpan={colSpan}
+      className="border-b border-r border-b-[#d3e3ee] border-r-[#edf2f7] bg-[#f7fbfe] p-0"
+    />
   )
 }
 
@@ -635,9 +650,4 @@ function ExtraFieldHeader({ column }: { column: WeldTableExtraColumn }) {
       {column.label}
     </th>
   )
-}
-
-function getTrailingExtraColumns(columns: WeldTableExtraColumn[], sections: WeldTableDisplaySection[]) {
-  const sectionNames = new Set(sections.map((section) => section.section))
-  return columns.filter((column) => !column.insertBeforeSection || !sectionNames.has(column.insertBeforeSection))
 }

@@ -74,7 +74,7 @@ export function getReportSummaryText({
     return 'Общая сводка по сварке и контролю'
   }
   if (activeReport === 'percentageLines') {
-    return 'Расчет РК/УЗК по процентным линиям'
+    return 'Расчет контроля по процентным линиям'
   }
   if (activeReport === 'documents') {
     return 'Формирование документов по данным системы'

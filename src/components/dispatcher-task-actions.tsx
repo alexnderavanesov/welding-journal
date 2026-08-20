@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   dispatcherActionButtonClass,
@@ -58,16 +59,24 @@ export function RepeatedJointTaskActions({
 
   if (task.kind === 'welder-stamp-expiry') {
     return (
-      <div className="flex shrink-0 items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50/80">
-        <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherActionButtonClass}>
-          {isExpanded ? 'Свернуть' : 'Подробнее'}
+      <div className="flex shrink-0 items-center bg-white px-2 py-1.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => onToggleDetails(task)}
+          className={dispatcherStandaloneActionButtonClass}
+          aria-label={isExpanded ? 'Свернуть описание' : 'Показать описание'}
+          title={isExpanded ? 'Свернуть описание' : 'Показать описание'}
+        >
+          <Info className="h-4 w-4" />
         </Button>
       </div>
     )
   }
 
   return (
-    <div className="flex shrink-0 items-center overflow-visible rounded-md border border-slate-200 bg-slate-50/80">
+    <div className="flex shrink-0 items-center gap-1.5 bg-white px-2 py-1.5">
       {(task.kind === 'create' || task.kind === 'coil') && canRunDispatcherMutation ? (
         <>
           <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
@@ -174,8 +183,16 @@ export function RepeatedJointTaskActions({
           Цепочка
         </Button>
       )}
-      <Button type="button" variant="ghost" size="sm" onClick={() => onToggleDetails(task)} className={dispatcherActionButtonClass}>
-        {isExpanded ? 'Свернуть' : 'Описание'}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={() => onToggleDetails(task)}
+        className={dispatcherActionButtonClass}
+        aria-label={isExpanded ? 'Свернуть описание' : 'Показать описание'}
+        title={isExpanded ? 'Свернуть описание' : 'Показать описание'}
+      >
+        <Info className="h-4 w-4" />
       </Button>
     </div>
   )

@@ -20,11 +20,18 @@ export type ContextActionMenuItem =
       type: 'separator'
       id: string
     }
+  | {
+      type: 'label'
+      id: string
+      label: string
+    }
 
 export type ContextActionMenuState = {
   x: number
   y: number
   anchorRowId?: number
+  heading?: string
+  description?: string
   items: ContextActionMenuItem[]
 } | null
 
@@ -72,7 +79,7 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
 
   const menuWidth = 240
   const viewportPadding = 8
-  const menuHeight = estimateMenuHeight(menu.items)
+  const menuHeight = estimateMenuHeight(menu.items) + (menu.heading ? 52 : 0)
   const maxMenuHeight = Math.max(160, window.innerHeight - viewportPadding * 2)
   const menuLeft = Math.min(menu.x, window.innerWidth - menuWidth - viewportPadding)
   const submenuOpensLeft = menuLeft + menuWidth * 2 + 4 > window.innerWidth - viewportPadding
@@ -95,9 +102,22 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
         }}
         onMouseDown={(event) => event.stopPropagation()}
       >
+        {menu.heading ? (
+          <div className="border-b border-slate-100 px-3 pb-2 pt-1">
+            <div className="truncate text-sm font-semibold text-slate-900">{menu.heading}</div>
+            {menu.description ? <div className="mt-0.5 truncate text-xs text-slate-500">{menu.description}</div> : null}
+          </div>
+        ) : null}
         {menu.items.map((item) => {
           if (item.type === 'separator') {
             return <div key={item.id} className="my-1 border-t border-slate-100" />
+          }
+          if (item.type === 'label') {
+            return (
+              <div key={item.id} className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase text-slate-400">
+                {item.label}
+              </div>
+            )
           }
 
           const Icon = item.icon
@@ -143,6 +163,13 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
                 >
                   {item.children?.map((child) => {
                     if (child.type === 'separator') return <div key={child.id} className="my-1 border-t border-slate-100" />
+                    if (child.type === 'label') {
+                      return (
+                        <div key={child.id} className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase text-slate-400">
+                          {child.label}
+                        </div>
+                      )
+                    }
                     const ChildIcon = child.icon
                     return (
                       <button
@@ -178,5 +205,9 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
 }
 
 function estimateMenuHeight(items: ContextActionMenuItem[]) {
-  return items.reduce((height, item) => height + (item.type === 'separator' ? 9 : 36), 12)
+  return items.reduce((height, item) => {
+    if (item.type === 'separator') return height + 9
+    if (item.type === 'label') return height + 28
+    return height + 36
+  }, 12)
 }

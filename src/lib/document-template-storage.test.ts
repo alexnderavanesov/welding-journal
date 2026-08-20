@@ -395,6 +395,35 @@ describe('document template storage', () => {
     expect(worksheet.D4?.v).toBe('н/п')
   })
 
+  it('fills separate and aggregated control basis fields in constructor templates', async () => {
+    const template = createXlsxTemplate([
+      ['Стык', 'РК', 'Все основания'],
+      ['', '', ''],
+    ])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        { cell: 'A2', mode: 'row', field: 'joint' },
+        { cell: 'B2', mode: 'row', field: 'rkControlBasis' },
+        { cell: 'C2', mode: 'row', field: 'controlBasisSummary' },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [{
+      joint: 'S1',
+      vikControlBasis: 'ТР №444',
+      rkControlBasis: 'Пересогласование №13',
+      pstoControlBasis: 'Письмо №8',
+    }])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.B2?.v).toBe('Пересогласование №13')
+    expect(worksheet.C2?.v).toBe('ВИК: ТР №444; РК: Пересогласование №13; ПСТО: Письмо №8')
+  })
+
   it('expands RK exposures into rows and vertically merges the other joint fields', async () => {
     const template = createXlsxTemplate(
       [
@@ -1180,6 +1209,51 @@ describe('document template storage', () => {
       'A2:A3', 'B2:B3', 'C2:C3',
       'A4:A5', 'B4:B5', 'C4:C5',
     ]))
+  })
+
+  it('keeps full material names 1 and 2 separate in merged cells of a repeated block', async () => {
+    const template = createXlsxTemplate([
+      ['Чек-лист', '', '', '', '', ''],
+      ['', '', '', '', '', ''],
+      ['', '', '', '', '', ''],
+      ['Подпись', '', '', '', '', ''],
+    ], {
+      merges: ['D2:F2', 'D3:F3'],
+    })
+    const sourceWorkbook = XLSX.read(template.fileData, { type: 'array', cellStyles: true })
+    sourceWorkbook.Sheets.Шаблон.A1 = { t: 'n', f: '1+1', v: 2 }
+    sourceWorkbook.Sheets.Шаблон.D3 = { t: 's', f: 'D2', v: '' }
+    template.fileData = XLSX.write(sourceWorkbook, {
+      bookType: 'xlsx',
+      type: 'array',
+      cellStyles: true,
+    }) as ArrayBuffer
+    template.fileSize = template.fileData.byteLength
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      repeatRowEnd: 3,
+      bindings: [
+        { cell: 'D2', mode: 'row', parts: [{ field: 'materialFullName1' }] },
+        { cell: 'D3', mode: 'row', parts: [{ field: 'materialFullName2' }] },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [
+      {
+        joint: 'S12',
+        materialFullName1: 'Труба 57',
+        materialFullName2: 'Отвод 57',
+      },
+    ])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(worksheet.D2?.v).toBe('Труба 57')
+    expect(worksheet.D3?.v).toBe('Отвод 57')
+    expect(worksheet.D3?.f).toBeUndefined()
+    expect(worksheet.A1?.f).toBe('1+1')
   })
 
   it('moves a document summary and template content below the repeated block', async () => {

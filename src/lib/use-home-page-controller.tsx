@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
@@ -81,6 +81,18 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
+import {
+  formatLnkRequestNavigationLabel,
+  getLnkRequestIdentityForField,
+  getLnkRequestNavigationEntries,
+} from '@/lib/lnk-request-navigation'
+import {
+  getLnkResultMethodForField,
+  getLnkResultNavigationEntries,
+  getLnkResultNavigationEntry,
+  getLnkResultNavigationEntryForField,
+  getPendingLnkResultMethods,
+} from '@/lib/lnk-result-navigation'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import { buildHeatTreatmentReportRows, buildLnkReportRows, sumAcceptedWdi } from '@/lib/report-row-utils'
@@ -112,7 +124,10 @@ import {
   buildRowIdListFilters,
   type PercentageLineStampFilter,
 } from '@/lib/report-navigation'
-import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
+import {
+  isPercentageControlMethodAvailableForRow,
+  type PercentageControlMethod,
+} from '@/lib/percentage-line-summary'
 import {
   createEmptyDuplicateControlDraft,
   type DuplicateControlDraft,
@@ -126,6 +141,7 @@ import {
 import { getWeldJointById, listWeldJointRowsByIds } from '@/server/welds'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
+import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
 import { useRkExposureMutation } from '@/lib/use-rk-exposure-mutation'
 import {
   getSystemDocumentReferenceForField,
@@ -209,6 +225,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     managedLnkRequestDate,
     managedLnkRequestNameDraft,
     lnkRequestSearch,
+    lnkRequestComposerMode,
+    lnkRequestTargetKey,
     setLnkRequestDraft,
     setLnkRequestNaming,
     setIsLnkRequestModalOpen,
@@ -217,6 +235,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setManagedLnkRequestDate,
     setManagedLnkRequestNameDraft,
     setLnkRequestSearch,
+    setLnkRequestComposerMode,
+    setLnkRequestTargetKey,
   } = useLnkRequestModalState()
   const {
     pstoRequestNaming,
@@ -258,6 +278,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     managedLnkResultMethodKey,
     managedLnkConclusionDrafts,
     managedLnkResultOrderIds,
+    managedLnkResultTargetKey,
     managedLnkResultChangeHint,
     managedLnkPendingResultChanges,
     preservedLnkOrderIds,
@@ -272,6 +293,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setManagedLnkResultMethodKey,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
+    setManagedLnkResultTargetKey,
     setManagedLnkResultChangeHint,
     setManagedLnkPendingResultChanges,
     setPreservedLnkOrderIds,
@@ -614,6 +636,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     pstoResultRequestOptions,
     lnkRequestOptions,
     lnkRequestManagerOptions,
+    lnkRequestExtensionOptions,
     lnkResultRequestOptions,
     managedLnkRequestRows,
     managedLnkRequestMethods,
@@ -647,6 +670,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const {
     lnkRequestMutation,
+    lnkRequestExtensionMutation,
     lnkRequestCorrectionMutation,
     lnkRequestManagerMutation,
     lnkResultMutation,
@@ -683,8 +707,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const {
     closeCreateLnkRequestModal,
     handleCreateLnkRequest,
+    handleExtendLnkRequest,
     openCreateLnkRequestModal,
     openCreateLnkRequestModalForRow,
+    openExtendLnkRequestModal,
+    openExtendLnkRequestModalForRows,
     toggleAllLnkRequestRows,
     toggleLnkRequestRow,
   } = useLnkRequestActions({
@@ -695,6 +722,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     nextRequestName: nextLnkRequestName,
     selectedRows: selectedLnkRows,
     mutation: lnkRequestMutation,
+    extensionMutation: lnkRequestExtensionMutation,
     setDraft: setLnkRequestDraft,
     setIsOpen: setIsLnkRequestModalOpen,
     setMessage,
@@ -702,6 +730,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setPreservedOrderIds: setPreservedLnkOrderIds,
     setSearch: setLnkRequestSearch,
     setSelectedIds: setSelectedLnkIds,
+    setComposerMode: setLnkRequestComposerMode,
+    setTargetRequestKey: setLnkRequestTargetKey,
     defaultNaming: defaultLnkRequestNaming,
   })
   const {
@@ -723,6 +753,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setManagedLnkRequestDate,
     setManagedLnkRequestNameDraft,
   })
+  const openLnkRequestRegistry = (requestName?: string, requestDate?: string) => {
+    if (lnkRequestMutation.isPending || lnkRequestExtensionMutation.isPending) return
+    setIsLnkRequestModalOpen(false)
+    openLnkRequestManager(requestName, requestDate)
+  }
+  const openCreateLnkRequestFromRegistry = () => {
+    if (lnkRequestManagerMutation.isPending || lnkRequestCorrectionMutation.isPending) return
+    setIsLnkRequestManagerOpen(false)
+    openCreateLnkRequestModal()
+  }
   const {
     deleteManyMutation,
     deleteMutation,
@@ -864,6 +904,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     changeLnkResultRequest,
     closeAddLnkResultModal,
     openAddLnkResultModal,
+    openAddLnkResultModalForMethod,
     openAddLnkResultModalForRow,
     toggleAllLnkResultRows,
     toggleLnkResultRow,
@@ -901,6 +942,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     managedLnkResultEntries,
     managedLnkPendingResultRows,
   } = useManagedLnkResultDerivedState({
+    isOpen: isLnkResultManagerOpen,
     lnkRows,
     managedLnkResultOrderIds,
     managedLnkResultMethodKey,
@@ -917,6 +959,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     resetManagedLnkResultChanges,
     saveManagedLnkResultChanges,
   } = useManagedLnkResultActions({
+    isLnkRowsContextReady,
     lnkRows,
     selectedLnkResultRowIds: lnkResultDraft.rowIds,
     managedLnkConclusionDrafts,
@@ -926,13 +969,36 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     lnkResultReplacementMutation,
     lnkConclusionCorrectionMutation,
     setMessage,
+    setIsLnkResultModalOpen,
     setIsLnkResultManagerOpen,
     setManagedLnkResultMethodKey,
     setManagedLnkConclusionDrafts,
     setManagedLnkResultOrderIds,
+    setManagedLnkResultTargetKey,
     setManagedLnkResultChangeHint,
     setManagedLnkPendingResultChanges,
   })
+
+  const openAllLnkResultRegistry = () => openLnkResultManager({ rowIds: null })
+  const openSelectedLnkResultRegistry = () => openLnkResultManager({ rowIds: [...selectedLnkIds] })
+  const openLnkResultRegistryForRows = (selectedRows: WeldRow[]) =>
+    openLnkResultManager({ rowIds: selectedRows.map((selectedRow) => selectedRow.id) })
+  const openExactLnkResult = (row: WeldRow, methodKey: WeldFieldKey) => {
+    const entry = getLnkResultNavigationEntry(row, methodKey)
+    if (!entry) {
+      setMessage('Не удалось определить внесенный результат ЛНК')
+      return
+    }
+    openLnkResultManager({
+      rowIds: [row.id],
+      methodKey,
+      targetKey: entry.changeKey,
+    })
+  }
+  const openAddLnkResultFromRegistry = () => {
+    closeLnkResultManager()
+    openAddLnkResultModal()
+  }
   const {
     filteredLnkOfficialityRows,
     selectedLnkOfficialityRows,
@@ -1260,14 +1326,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsDuplicateControlModalOpen(true)
   }
 
-  const openDuplicateControlModalForRow = (row: WeldRow) => {
+  const openDuplicateControlModalForRow = useCallback((row: WeldRow) => {
     setDuplicateControlDraft({
       ...createEmptyDuplicateControlDraft(),
       rowIds: new Set([row.id]),
       search: String(row.joint ?? ''),
     })
     setIsDuplicateControlModalOpen(true)
-  }
+  }, [setDuplicateControlDraft])
 
   const closeDuplicateControlModal = () => {
     setIsDuplicateControlModalOpen(false)
@@ -1435,13 +1501,24 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setMessage(`Показаны стыки клейма ${filter.stamp} на линии ${filter.line}.`)
   }
 
-  const openWeldRowIds = (rowIds: number[], messageText?: string) => {
-    setActiveReport('weldingJournal')
+  const openReportRowIds = (
+    rowIds: number[],
+    targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment',
+    messageText?: string,
+  ) => {
+    const uniqueRowIds = Array.from(new Set(rowIds.map(Number))).filter(Number.isFinite)
+    if (uniqueRowIds.length === 0) return
+    setActiveReport(targetReport)
     setChainRecord(null)
     setEditing(null)
-    setColumnFilters(buildRowIdListFilters(rowIds))
-    setMessage(messageText || `Показано стыков: ${rowIds.length}.`)
+    if (targetReport === 'lnk') setLnkFilters(buildRowIdListFilters(uniqueRowIds))
+    else if (targetReport === 'heatTreatment') setHeatTreatmentFilters(buildRowIdListFilters(uniqueRowIds))
+    else setColumnFilters(buildRowIdListFilters(uniqueRowIds))
+    setMessage(messageText || `Показано стыков: ${uniqueRowIds.length}.`)
   }
+
+  const openWeldRowIds = (rowIds: number[], messageText?: string) =>
+    openReportRowIds(rowIds, 'weldingJournal', messageText)
 
   const openGeneratedDocumentRows = (
     rowIds: number[],
@@ -1485,17 +1562,24 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const assignPercentageLineMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
     const targetRows = await listWeldJointRowsByIds({ data: { ids: rowIds } })
     if (targetRows.length === 0) {
-      setMessage('Стыки для назначения РК/УЗК не найдены')
+      setMessage('Стыки для назначения контроля не найдены')
       return
     }
 
-    const fieldKey = method === 'УЗК' ? 'hasUzk' : 'hasRk'
+    if (targetRows.length !== new Set(rowIds).size) {
+      throw new Error('Часть выбранных стыков уже недоступна. Обновите расчет и повторите действие.')
+    }
+    if (targetRows.some((row) => !isPercentageControlMethodAvailableForRow(method, row))) {
+      throw new Error('ПВК по расчету процентной линии можно назначить только на стык типа «У…».')
+    }
+
+    const fieldKey = method === 'УЗК' ? 'hasUzk' : method === 'ПВК' ? 'hasPvk' : 'hasRk'
     const savedRows = await updateWeldRowsOrThrow(
       targetRows.map((row) => ({
         ...row,
         [fieldKey]: 'да',
       })),
-      'Не удалось назначить РК/УЗК по процентной линии',
+      'Не удалось назначить контроль по процентной линии',
     )
     highlightChangedRows(savedRows, [fieldKey])
     setMessage(`Назначен ${method} по процентной линии: ${savedRows.length}.`)
@@ -1593,19 +1677,29 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openAddLnkResultModalForRow,
   })
 
-  const openLnkRequestContextForRow = (row: WeldRow) => {
+  const openLnkRequestContextForRow = (row: WeldRow, fieldKey?: WeldFieldKey) => {
+    const exactRequest = getLnkRequestIdentityForField(row, fieldKey)
+    if (exactRequest) {
+      openLnkRequestRegistry(exactRequest.name, exactRequest.date)
+      return
+    }
+
     if (canCreateLnkRequest(row)) {
       openCreateLnkRequestModalForRow(row)
       return
     }
 
-    const request = getLnkRequestDocumentIdentities([row])[0]
-    if (request) {
-      openLnkRequestManager(request.name, request.date)
+    const requests = getLnkRequestNavigationEntries([row])
+    if (requests.length === 1) {
+      openLnkRequestRegistry(requests[0].name, requests[0].date)
       return
     }
 
-    setMessage('Для этого стыка нет заявок ЛНК')
+    setMessage(
+      requests.length > 1
+        ? 'У стыка несколько заявок ЛНК. Выберите нужный вид контроля в подменю.'
+        : 'Для этого стыка нет заявок ЛНК',
+    )
   }
 
   const openPstoRequestContextForRow = (row: WeldRow) => {
@@ -1713,9 +1807,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         ? setSelectedHeatTreatmentIds
         : setSelectedWeldingJournalIds
 
-  const openLnkRequestContextForRows = (selectedRows: WeldRow[]) => {
+  const openLnkRequestContextForRows = (selectedRows: WeldRow[], fieldKey?: WeldFieldKey) => {
     if (selectedRows.length <= 1) {
-      openLnkRequestContextForRow(selectedRows[0])
+      openLnkRequestContextForRow(selectedRows[0], fieldKey)
       return
     }
 
@@ -1729,6 +1823,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       setLnkRequestDraft({ ...createDefaultLnkRequestDraft(), methods: methodKeys })
       setLnkRequestNaming(defaultLnkRequestNaming)
       setLnkRequestSearch('')
+      setLnkRequestComposerMode('create')
+      setLnkRequestTargetKey('')
       setIsLnkRequestModalOpen(true)
       return
     }
@@ -1736,7 +1832,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (creatableRows.length === 0) {
       const commonRequests = getCommonLnkRequests(selectedRows)
       if (commonRequests.length === 1) {
-        openLnkRequestManager(commonRequests[0].name, commonRequests[0].date)
+        openLnkRequestRegistry(commonRequests[0].name, commonRequests[0].date)
         return
       }
     }
@@ -1848,7 +1944,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   const getLnkRequestGroupDisabledReason = (selectedRows: WeldRow[]) => {
-    if (selectedRows.length <= 1) return undefined
+    if (selectedRows.length === 0) return 'Выберите хотя бы один стык'
+    if (selectedRows.length === 1) {
+      return canCreateLnkRequest(selectedRows[0])
+        ? undefined
+        : 'Все назначенные виды НК этого стыка уже находятся в заявках'
+    }
     const creatableCount = selectedRows.filter(canCreateLnkRequest).length
     if (creatableCount > 0 && creatableCount < selectedRows.length) {
       return 'Часть стыков требует создания заявки, а часть уже находится в заявке'
@@ -1894,6 +1995,25 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const getEmptyReportReason = (count: number, reportLabel: string) =>
       isGroupAction && count === 0 ? `Среди выбранных стыков нет строк в отчете ${reportLabel}` : undefined
     const lnkRequestDisabledReason = activeReport === 'lnk' ? getLnkRequestGroupDisabledReason(contextRows) : undefined
+    const exactLnkRequest =
+      activeReport === 'lnk' && !isGroupAction
+        ? getLnkRequestIdentityForField(row, fieldKey)
+        : null
+    const rowLnkRequests = activeReport === 'lnk'
+      ? getLnkRequestNavigationEntries(contextRows)
+      : []
+    const exactLnkResultMethod = activeReport === 'lnk' && !isGroupAction
+      ? getLnkResultMethodForField(fieldKey)
+      : undefined
+    const exactLnkResult = activeReport === 'lnk' && !isGroupAction
+      ? getLnkResultNavigationEntryForField(row, fieldKey)
+      : null
+    const rowLnkResults = activeReport === 'lnk' && !isGroupAction
+      ? getLnkResultNavigationEntries(row)
+      : []
+    const pendingLnkResultMethods = activeReport === 'lnk' && !isGroupAction
+      ? getPendingLnkResultMethods(row)
+      : []
     const pstoRequestDisabledReason = activeReport === 'heatTreatment' ? getPstoRequestGroupDisabledReason(contextRows) : undefined
     const lnkResultDisabledReason =
       activeReport === 'lnk' && contextRows.some((selectedRow) => getLnkRowRequestNames(selectedRow).length === 0)
@@ -1920,6 +2040,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
     if (systemDocumentReference) {
       items.push(
+        { type: 'label', id: 'document-navigation-label', label: 'Документ' },
         {
           id: 'open-in-documents',
           label: 'Открыть в документах',
@@ -1948,6 +2069,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
     if (activeSelectedRowIds.has(row.id)) {
       items.push(
+        { type: 'label', id: 'selection-actions-label', label: 'Выбранные строки' },
         {
           id: 'filter-selected',
           label: `Фильтр выбранных${labelSuffix}`,
@@ -1985,6 +2107,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }
 
     items.push(
+      { type: 'label', id: 'navigation-label', label: 'Переходы' },
       {
         id: 'open-chain',
         label: 'Открыть цепочку',
@@ -2001,7 +2124,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         title: sameLine ? undefined : 'Выбранные стыки относятся к разным линиям',
         onSelect: () => filterRowsLineInCurrentReport(contextRows),
       },
-      { type: 'separator', id: 'navigation-separator' },
     )
 
     if (activeReport === 'weldingJournal') {
@@ -2023,6 +2145,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           onSelect: () => openRowsInReport(contextRows, 'heatTreatment'),
         },
         { type: 'separator', id: 'edit-separator' },
+        { type: 'label', id: 'edit-actions-label', label: 'Работа со стыком' },
         {
           id: 'edit-row',
           label: 'Редактировать стык',
@@ -2031,6 +2154,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           title: isGroupAction ? 'Редактирование открывается только для одного стыка' : undefined,
           onSelect: () => handleProtectedEditRecord(row),
         },
+        { type: 'separator', id: 'danger-actions-separator' },
+        { type: 'label', id: 'danger-actions-label', label: 'Опасные действия' },
         {
           id: 'delete-row',
           label: isGroupAction ? `Удалить выбранные (${contextRows.length})` : 'Удалить стык',
@@ -2068,23 +2193,139 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     )
 
     if (activeReport === 'lnk') {
+      const lnkRequestMenuItem: ContextActionMenuItem = exactLnkRequest
+        ? {
+            id: 'lnk-request-exact',
+            label: `Открыть заявку ${exactLnkRequest.methodCodes.join('/')}`,
+            icon: FilePlus2,
+            onSelect: () => openLnkRequestRegistry(exactLnkRequest.name, exactLnkRequest.date),
+          }
+        : {
+            id: 'lnk-request',
+            label: 'Заявка ЛНК',
+            icon: FilePlus2,
+            onSelect: () => openLnkRequestContextForRows(contextRows, fieldKey),
+            children: [
+              {
+                id: 'lnk-request-create',
+                label: isGroupAction ? 'Создать из выбранных' : 'Создать новую',
+                icon: FilePlus2,
+                disabled: Boolean(lnkRequestDisabledReason),
+                title: lnkRequestDisabledReason,
+                onSelect: () => openLnkRequestContextForRows(contextRows, fieldKey),
+              },
+              {
+                id: 'lnk-request-extend',
+                label: isGroupAction ? 'Добавить выбранные в существующую' : 'Добавить позицию в существующую',
+                icon: ListFilter,
+                disabled: Boolean(lnkRequestDisabledReason) || lnkRequestExtensionOptions.length === 0,
+                title:
+                  lnkRequestDisabledReason ??
+                  (lnkRequestExtensionOptions.length === 0 ? 'Созданных заявок ЛНК пока нет' : undefined),
+                onSelect: () => openExtendLnkRequestModalForRows(contextRows),
+              },
+              { type: 'separator', id: 'lnk-request-existing-separator' },
+              ...(
+                isGroupAction && rowLnkRequests.length !== 1
+                  ? []
+                  : rowLnkRequests.map((request) => ({
+                      id: `lnk-request-open-${request.key}`,
+                      label: formatLnkRequestNavigationLabel(request),
+                      icon: ExternalLink,
+                      onSelect: () => openLnkRequestRegistry(request.name, request.date),
+                    }) satisfies ContextActionMenuItem)
+              ),
+              {
+                id: 'lnk-request-registry',
+                label: 'Все заявки ЛНК',
+                icon: ListFilter,
+                onSelect: () => openLnkRequestRegistry(),
+              },
+            ],
+          }
+      const lnkResultMenuItem: ContextActionMenuItem = exactLnkResult
+        ? {
+            id: 'lnk-result-exact',
+            label: `Открыть результат ${exactLnkResult.methodCode}`,
+            icon: ClipboardCheck,
+            onSelect: () => openExactLnkResult(row, exactLnkResult.methodKey),
+          }
+        : exactLnkResultMethod && pendingLnkResultMethods.some((method) => method.requestKey === exactLnkResultMethod.requestKey)
+          ? {
+              id: 'lnk-result-pending-exact',
+              label: `Внести результат ${exactLnkResultMethod.code}`,
+              icon: ClipboardCheck,
+              onSelect: () => openAddLnkResultModalForMethod(row, exactLnkResultMethod.requestKey),
+            }
+          : {
+              id: 'lnk-result',
+              label: 'Результат ЛНК',
+              icon: ClipboardCheck,
+              onSelect: () => undefined,
+              children: isGroupAction
+                ? [
+                    {
+                      id: 'lnk-result-add-selected',
+                      label: `Внести результаты выбранных (${contextRows.length})`,
+                      icon: ClipboardCheck,
+                      disabled: Boolean(lnkResultDisabledReason),
+                      title: lnkResultDisabledReason,
+                      onSelect: () => openLnkResultModalForRows(contextRows),
+                    },
+                    {
+                      id: 'lnk-result-edit-selected',
+                      label: `Редактировать результаты выбранных (${contextRows.length})`,
+                      icon: Pencil,
+                      disabled: !contextRows.some((selectedRow) => getLnkResultNavigationEntries(selectedRow).length > 0),
+                      title: contextRows.some((selectedRow) => getLnkResultNavigationEntries(selectedRow).length > 0)
+                        ? undefined
+                        : 'У выбранных стыков нет внесенных результатов',
+                      onSelect: () => openLnkResultRegistryForRows(contextRows),
+                    },
+                    { type: 'separator', id: 'lnk-result-selected-separator' },
+                    {
+                      id: 'lnk-result-registry',
+                      label: 'Все результаты ЛНК',
+                      icon: ListFilter,
+                      onSelect: openAllLnkResultRegistry,
+                    },
+                  ]
+                : [
+                    ...pendingLnkResultMethods.map((method) => ({
+                      id: `lnk-result-add-${method.requestKey}`,
+                      label: `Внести ${method.code}`,
+                      icon: ClipboardCheck,
+                      onSelect: () => openAddLnkResultModalForMethod(row, method.requestKey),
+                    }) satisfies ContextActionMenuItem),
+                    ...(pendingLnkResultMethods.length > 0 && rowLnkResults.length > 0
+                      ? [{ type: 'separator', id: 'lnk-result-state-separator' } as ContextActionMenuItem]
+                      : []),
+                    ...rowLnkResults.map((entry) => ({
+                      id: `lnk-result-open-${entry.changeKey}`,
+                      label: `Редактировать ${entry.methodCode} · ${entry.result}`,
+                      icon: Pencil,
+                      onSelect: () => openExactLnkResult(row, entry.methodKey),
+                    }) satisfies ContextActionMenuItem),
+                    { type: 'separator', id: 'lnk-result-registry-separator' },
+                    {
+                      id: 'lnk-result-row-registry',
+                      label: 'Все результаты стыка',
+                      icon: ListFilter,
+                      disabled: rowLnkResults.length === 0,
+                      title: rowLnkResults.length === 0 ? 'У стыка нет внесенных результатов' : undefined,
+                      onSelect: () => openLnkResultRegistryForRows([row]),
+                    },
+                    {
+                      id: 'lnk-result-registry',
+                      label: 'Все результаты ЛНК',
+                      icon: ListFilter,
+                      onSelect: openAllLnkResultRegistry,
+                    },
+                  ],
+            }
       items.push(
-        {
-          id: 'lnk-request',
-          label: 'Заявка ЛНК',
-          icon: FilePlus2,
-          disabled: Boolean(lnkRequestDisabledReason),
-          title: lnkRequestDisabledReason,
-          onSelect: () => openLnkRequestContextForRows(contextRows),
-        },
-        {
-          id: 'lnk-result',
-          label: 'Результат ЛНК',
-          icon: ClipboardCheck,
-          disabled: Boolean(lnkResultDisabledReason),
-          title: lnkResultDisabledReason,
-          onSelect: () => openLnkResultModalForRows(contextRows),
-        },
+        lnkRequestMenuItem,
+        lnkResultMenuItem,
         {
           id: 'lnk-officiality',
           label: 'Официальность',
@@ -2125,6 +2366,24 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     return items
   }
 
+  const openReportDocument = (row: WeldRow, fieldKey: WeldFieldKey) => {
+    const previewWindow = openDocumentPreviewWindow()
+    if (!previewWindow) return
+    if (isGeneratedDocumentFieldKey(fieldKey)) {
+      void import('@/lib/welding-journal-document')
+        .then(({ openGeneratedDocumentForRow }) =>
+          openGeneratedDocumentForRow(row, fieldKey, welderStamps, previewWindow),
+        )
+        .catch((reason) => writeDocumentPreviewImportError(previewWindow, reason))
+      return
+    }
+    void import('@/lib/system-document-storage')
+      .then(({ openSystemDocumentForRow }) =>
+        openSystemDocumentForRow(row, fieldKey, welderStamps, previewWindow),
+      )
+      .catch((reason) => writeDocumentPreviewImportError(previewWindow, reason))
+  }
+
   const weldTableProps = createWeldTableProps({
     activeReport,
     rows: isServerPagedTab ? pagedReportRows : (visibleRows as WeldRow[]),
@@ -2146,22 +2405,27 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenChain: (row) => setChainRecord(row),
     onFilterLine: filterLineInCurrentReport,
     onOpenLinkedReport: openLinkedReportRow,
-    onOpenDocument: (row, fieldKey) => {
-      const previewWindow = openDocumentPreviewWindow()
-      if (!previewWindow) return
-      if (isGeneratedDocumentFieldKey(fieldKey)) {
-        void import('@/lib/welding-journal-document')
-          .then(({ openGeneratedDocumentForRow }) =>
-            openGeneratedDocumentForRow(row, fieldKey, welderStamps, previewWindow),
-          )
-          .catch((reason) => writeDocumentPreviewImportError(previewWindow, reason))
+    onOpenDocument: openReportDocument,
+    onOpenLnkRequest: (row, fieldKey) => {
+      const request = getLnkRequestIdentityForField(row, fieldKey)
+      if (!request) {
+        setMessage('Не удалось определить заявку ЛНК для выбранной ячейки')
         return
       }
-      void import('@/lib/system-document-storage')
-        .then(({ openSystemDocumentForRow }) =>
-          openSystemDocumentForRow(row, fieldKey, welderStamps, previewWindow),
-        )
-        .catch((reason) => writeDocumentPreviewImportError(previewWindow, reason))
+      openLnkRequestRegistry(request.name, request.date)
+    },
+    onOpenLnkResult: (row, fieldKey) => {
+      const result = getLnkResultNavigationEntryForField(row, fieldKey)
+      if (result) {
+        openExactLnkResult(row, result.methodKey)
+        return
+      }
+      const method = getLnkResultMethodForField(fieldKey)
+      if (method) {
+        openAddLnkResultModalForMethod(row, method.requestKey)
+        return
+      }
+      setMessage('Не удалось определить результат ЛНК для выбранной ячейки')
     },
     availableSystemDocumentTypes,
     onOpenDuplicateControl: openDuplicateControlModalForRow,
@@ -2234,11 +2498,20 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenPstoWaitingRequestReport: openPstoWaitingRequestReport,
     onOpenPstoResultsReport: openPstoResultsReport,
     onCreateLnkRequest: openCreateLnkRequestModal,
+    onExtendLnkRequest: () => openExtendLnkRequestModal(),
+    onOpenLnkRequestRegistry: () => openLnkRequestRegistry(),
     lnkRequestPending: lnkRequestMutation.isPending,
     onAddLnkResult: openAddLnkResultModal,
     lnkResultDisabled:
       lnkResultMutation.isPending ||
       (isLnkRowsContextReady && lnkResultRequestOptions.length === 0),
+    onEditSelectedLnkResults: openSelectedLnkResultRegistry,
+    editSelectedLnkResultsDisabled:
+      selectedLnkIds.size === 0 ||
+      !tableActionRows.some((row) => selectedLnkIds.has(row.id) && getLnkResultNavigationEntries(row).length > 0),
+    onOpenLnkResultRegistry: openAllLnkResultRegistry,
+    lnkResultRegistryDisabled:
+      isLnkRowsContextReady && !lnkRows.some((row) => getLnkResultNavigationEntries(row).length > 0),
     onOpenLnkOfficiality: openLnkOfficialityModal,
     lnkOfficialityPending: lnkOfficialityMutation.isPending,
     onOpenDuplicateControl: openDuplicateControlModal,
@@ -2317,12 +2590,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   function getPercentageLineAcceptDescription(task: PercentageLineControlTask) {
     if (task.issue === 'excess') {
-      return 'Диспетчер скроет текущее предупреждение о лишнем РК/УЗК для этой процентной линии и клейма. Используй это только если дополнительный контроль действительно нужен и его не нужно исправлять.'
+      return 'Диспетчер скроет текущее предупреждение о лишнем расчетном контроле для этой процентной линии и клейма. Используй это только если дополнительный контроль действительно нужен и его не нужно исправлять.'
     }
     if (task.issue === 'new-welder') {
       return 'Диспетчер скроет текущее предупреждение о новом сварщике на процентной линии. Используй это только если клеймо указано верно и увеличение объема контроля принято осознанно.'
     }
-    return 'Диспетчер скроет текущее предупреждение о негодном первичном стыке процентной линии. Используй это только если стык должен остаться официальным, а увеличение объема РК/УЗК принято осознанно.'
+    return 'Диспетчер скроет текущее предупреждение о негодном первичном стыке процентной линии. Используй это только если стык должен остаться официальным, а увеличение объема контроля принято осознанно.'
   }
 
   async function editPercentageLineTaskStamp(task: PercentageLineControlTask) {
@@ -2561,7 +2834,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       selectedRows: selectedLnkRows,
       requestNaming: lnkRequestNaming,
       requestDate: lnkRequestDraft.requestDate,
-      requestManagerOptions: lnkRequestManagerOptions,
+      requestExtensionOptions: lnkRequestExtensionOptions,
+      initialMode: lnkRequestComposerMode,
+      initialRequestKey: lnkRequestTargetKey,
       initialSelectedMethods: lnkRequestDraft.methods,
       requestSearch: lnkRequestSearch,
       message,
@@ -2569,29 +2844,60 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       filteredRows: filteredLnkRequestRows,
       filteredAvailableRows: filteredAvailableLnkRequestRows,
       selectedIds: selectedLnkIds,
-      isPending: lnkRequestMutation.isPending,
+      isPending: lnkRequestMutation.isPending || lnkRequestExtensionMutation.isPending,
       saveCheckSettings,
       onClose: closeCreateLnkRequestModal,
-      onOpenRequestManager: openLnkRequestManager,
+      onOpenRequestRegistry: () => openLnkRequestRegistry(),
       onRequestNamingChange: setLnkRequestNaming,
       onRequestDateChange: (requestDate) => setLnkRequestDraft((current) => ({ ...current, requestDate })),
       onRequestSearchChange: setLnkRequestSearch,
       onToggleAllRows: toggleAllLnkRequestRows,
       onToggleRow: toggleLnkRequestRow,
       onSubmit: (methodKeys) => runProtectedEdit('создание заявки ЛНК', () => handleCreateLnkRequest(methodKeys)),
+      onExtendRequest: (methodKeys, request) =>
+        runProtectedEdit('добавление позиций в заявку ЛНК', () => handleExtendLnkRequest(methodKeys, request)),
     },
     requestManagerOpen: isLnkRequestManagerOpen,
     requestManager: {
       requestName: managedLnkRequestName,
       requestDate: managedLnkRequestDate,
-      requestOptions: lnkRequestManagerOptions,
+      requestOptions: lnkRequestExtensionOptions,
       requestRows: managedLnkRequestRows,
       requestMethods: managedLnkRequestMethods,
       requestNameDraft: managedLnkRequestNameDraft,
       isManagerPending: lnkRequestManagerMutation.isPending,
       isCorrectionPending: lnkRequestCorrectionMutation.isPending,
+      canOpenDocument: availableSystemDocumentTypes.has('lnkRequest'),
       onClose: closeLnkRequestManager,
       onChangeRequest: changeManagedLnkRequest,
+      onCreateRequest: openCreateLnkRequestFromRegistry,
+      onAddPositions: (request) => {
+        setIsLnkRequestManagerOpen(false)
+        openExtendLnkRequestModal(request)
+      },
+      onOpenRows: () => {
+        setIsLnkRequestManagerOpen(false)
+        openGeneratedDocumentRows(
+          managedLnkRequestRows.map((row) => row.id),
+          managedLnkRequestName,
+          'lnk',
+        )
+      },
+      onOpenDocument: () => {
+        const method = managedLnkRequestMethods.find((candidate) =>
+          managedLnkRequestRows.some((row) =>
+            String(row[candidate.requestKey] ?? '').trim() === managedLnkRequestName &&
+            String(row[candidate.requestDateKey] ?? '').trim() === managedLnkRequestDate,
+          ),
+        )
+        const row = method
+          ? managedLnkRequestRows.find((candidate) =>
+              String(candidate[method.requestKey] ?? '').trim() === managedLnkRequestName &&
+              String(candidate[method.requestDateKey] ?? '').trim() === managedLnkRequestDate,
+            )
+          : undefined
+        if (row && method) openReportDocument(row, method.requestKey)
+      },
       onRequestNameDraftChange: setManagedLnkRequestNameDraft,
       onRenameRequest: () => runProtectedEdit('переименование заявки ЛНК', renameManagedLnkRequest),
       onClearPosition: (row, methodKey) =>
@@ -2604,7 +2910,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       methods: managedLnkResultMethods,
       entries: managedLnkResultEntries,
       pendingEntries: managedLnkPendingResultRows,
+      isContextReady: isLnkRowsContextReady,
       methodKey: managedLnkResultMethodKey,
+      initialEntryKey: managedLnkResultTargetKey,
       conclusionDrafts: managedLnkConclusionDrafts,
       pendingResultChanges: managedLnkPendingResultChanges,
       changeHint: managedLnkResultChangeHint,
@@ -2612,6 +2920,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isResultReplacementPending: lnkResultReplacementMutation.isPending,
       isConclusionCorrectionPending: lnkConclusionCorrectionMutation.isPending,
       onClose: closeLnkResultManager,
+      onOpenAddResult: openAddLnkResultFromRegistry,
+      onOpenRows: (row) => {
+        closeLnkResultManager()
+        filterSelectedRowsInCurrentReport([row])
+      },
+      onOpenDocument: openReportDocument,
+      canOpenDocument: (fieldKey) => {
+        const templateId = getSystemDocumentTemplateIdForField(fieldKey)
+        return Boolean(templateId && availableSystemDocumentTypes.has(templateId))
+      },
       onMethodChange: changeManagedLnkResultMethod,
       onConclusionDraftChange: changeManagedLnkConclusionDraft,
       onRenameConclusion: (row, methodKey) =>
@@ -2669,7 +2987,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       contextReady: lnkResultContextReady,
       canBulkToggleRows: canBulkToggleLnkResultRows,
       onClose: closeAddLnkResultModal,
-      onOpenManager: openLnkResultManager,
+      onOpenManager: openAllLnkResultRegistry,
       onMethodChange: changeLnkResultMethod,
       onControlDateChange: (controlDate) => setLnkResultDraft((current) => ({ ...current, controlDate })),
       onDefaultResultChange: (result) => {
@@ -2744,6 +3062,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onAssignPercentageLineMissingControls: assignPercentageLineMissingControls,
     onCancelPercentageLineMissingControls: cancelPercentageLineMissingControls,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
+    onOpenReportRowIds: openReportRowIds,
     onOpenWeldRowIds: openWeldRowIds,
     onDocumentGenerationRequestHandled: handleDocumentGenerationRequest,
     onDocumentGenerated: setMessage,

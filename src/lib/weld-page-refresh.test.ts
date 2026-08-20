@@ -1,4 +1,4 @@
-import { type InfiniteData, QueryClient } from '@tanstack/react-query'
+import { type InfiniteData, QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldPageRequest, WeldPageResult, WeldReportKind } from '@/server/welds'
@@ -165,6 +165,28 @@ describe('consolidated weld page refresh', () => {
       force: true,
     })
     expect(isWeldPageRefreshRequired(queryClient, queryKey)).toBe(false)
+  })
+
+  it('defers an active refresh while keeping the report marked for reconciliation', async () => {
+    vi.useFakeTimers()
+    const queryClient = createQueryClient()
+    const queryKey = createQueryKey()
+    queryClient.setQueryData(queryKey, createInfiniteData(1, 2))
+    const observer = new QueryObserver(queryClient, {
+      queryKey,
+      queryFn: async () => createInfiniteData(1, 2),
+      staleTime: Number.POSITIVE_INFINITY,
+    })
+    const unsubscribe = observer.subscribe(() => undefined)
+
+    await invalidateWeldPageQueries(queryClient, { deferActiveRefresh: true })
+
+    expect(isWeldPageRefreshRequired(queryClient, queryKey)).toBe(true)
+    expect(observer.getCurrentResult().isFetching).toBe(false)
+
+    unsubscribe()
+    vi.clearAllTimers()
+    vi.useRealTimers()
   })
 })
 

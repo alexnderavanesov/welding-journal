@@ -30,9 +30,15 @@ export type ReportHeaderActionsProps = {
   onOpenPstoWaitingRequestReport: () => void
   onOpenPstoResultsReport: () => void
   onCreateLnkRequest: () => void
+  onExtendLnkRequest: () => void
+  onOpenLnkRequestRegistry: () => void
   lnkRequestPending: boolean
   onAddLnkResult: () => void
   lnkResultDisabled: boolean
+  onEditSelectedLnkResults: () => void
+  editSelectedLnkResultsDisabled: boolean
+  onOpenLnkResultRegistry: () => void
+  lnkResultRegistryDisabled: boolean
   onOpenLnkOfficiality: () => void
   lnkOfficialityPending: boolean
   onOpenDuplicateControl: () => void
@@ -74,9 +80,15 @@ export function ReportHeaderActions({
   onOpenPstoWaitingRequestReport,
   onOpenPstoResultsReport,
   onCreateLnkRequest,
+  onExtendLnkRequest,
+  onOpenLnkRequestRegistry,
   lnkRequestPending,
   onAddLnkResult,
   lnkResultDisabled,
+  onEditSelectedLnkResults,
+  editSelectedLnkResultsDisabled,
+  onOpenLnkResultRegistry,
+  lnkResultRegistryDisabled,
   onOpenLnkOfficiality,
   lnkOfficialityPending,
   onOpenDuplicateControl,
@@ -106,9 +118,15 @@ export function ReportHeaderActions({
       {activeReport === 'lnk' ? (
         <LnkHeaderActions
           onCreateRequest={onCreateLnkRequest}
+          onExtendRequest={onExtendLnkRequest}
+          onOpenRequestRegistry={onOpenLnkRequestRegistry}
           requestPending={lnkRequestPending}
           onAddResult={onAddLnkResult}
           resultDisabled={lnkResultDisabled}
+          onEditSelectedResults={onEditSelectedLnkResults}
+          editSelectedResultsDisabled={editSelectedLnkResultsDisabled}
+          onOpenResultRegistry={onOpenLnkResultRegistry}
+          resultRegistryDisabled={lnkResultRegistryDisabled}
           onOpenOfficiality={onOpenLnkOfficiality}
           officialityPending={lnkOfficialityPending}
           onOpenDuplicateControl={onOpenDuplicateControl}

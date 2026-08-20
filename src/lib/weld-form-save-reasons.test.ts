@@ -117,7 +117,9 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'ожидает НК' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
-    expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe('ВИК: заявка на стык будет удалена')
+    expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe(
+      'ВИК: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «Заявка-001». Другие виды НК и остальные стыки заявки не изменятся',
+    )
   })
 
   it('blocks clearing LNK availability when method result history exists', () => {
@@ -165,7 +167,9 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasVik: 'отменен', vikRequest: 'Заявка-001', vikResult: 'ожидает НК' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
-    expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe('ВИК: заявка на стык будет удалена')
+    expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe(
+      'ВИК: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «Заявка-001». Другие виды НК и остальные стыки заявки не изменятся',
+    )
   })
 
   it('allows clearing PSTO availability when only request and date exist', () => {
@@ -548,7 +552,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да', pstoRequired: 'да' } as WeldDraft)).toBe(
-      'ВИК: заявка на стык будет удалена; ПСТО: заявка и даты на стык будут удалены',
+      'ВИК: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «Заявка-001». Другие виды НК и остальные стыки заявки не изменятся; ПСТО: заявка и даты на стык будут удалены',
     )
   })
 

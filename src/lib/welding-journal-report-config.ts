@@ -7,6 +7,7 @@ import {
   type WeldFieldKey,
 } from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_METHODS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
+import { CONTROL_BASIS_FIELD_KEYS } from './control-assignment-basis'
 
 export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'weldDate',
@@ -109,6 +110,7 @@ export const WELDING_JOURNAL_BLOCKED_FIELD_KEYS = new Set<WeldFieldKey>([
   'weldingUpdatedAt',
   'finalStatus',
   'rkExposureScheme',
+  'controlBasisSummary',
   'rkExposureConfirmedDiameter',
 ])
 
@@ -281,4 +283,6 @@ export const WELDING_JOURNAL_CANCELLED_ACCEPTED_FIELDS = getFieldsByKeys([
   ...WELDING_JOURNAL_COMPLETION_FIELD_KEYS,
 ])
 
-export const WELDING_JOURNAL_SYSTEM_FIELDS = [...WELD_FIELDS]
+export const WELDING_JOURNAL_SYSTEM_FIELDS = WELD_FIELDS.filter(
+  (field) => !CONTROL_BASIS_FIELD_KEYS.includes(field.key as (typeof CONTROL_BASIS_FIELD_KEYS)[number]),
+)

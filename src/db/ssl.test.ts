@@ -20,4 +20,12 @@ describe('database SSL configuration', () => {
     const connectionString = 'postgres://localhost/app?sslmode=require'
     expect(getDatabaseConnectionConfig(connectionString, undefined)).toEqual({ connectionString })
   })
+
+  it.each([
+    'postgres://user:password@localhost:5432/app',
+    'postgres://user:password@127.0.0.1:5432/app',
+    'postgres://user:password@[::1]:5432/app',
+  ])('does not apply a remote CA to a local database at %s', (connectionString) => {
+    expect(getDatabaseConnectionConfig(connectionString, 'remote-ca')).toEqual({ connectionString })
+  })
 })

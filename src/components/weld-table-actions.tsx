@@ -2,8 +2,9 @@ import { ClipboardCheck, FilePlus2 } from 'lucide-react'
 
 import type { ReportRowActions } from '@/lib/report-row-actions'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { memo } from 'react'
 
-export function WeldTableRowActions({
+export const WeldTableRowActions = memo(function WeldTableRowActions({
   row,
   rowActions,
 }: {
@@ -50,4 +51,4 @@ export function WeldTableRowActions({
       </div>
     </td>
   )
-}
+})

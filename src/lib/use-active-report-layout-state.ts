@@ -1,8 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { WeldFilters } from '@/server/welds'
 import type { ActiveReport } from '@/lib/home-state'
-import { getWeldTableWidth } from '@/lib/weld-column-widths'
-import { VISIBLE_FIELDS } from '@/lib/weld-fields'
 import {
   getActiveColumnFilters,
   getActiveReportFilterSetter,
@@ -33,7 +31,7 @@ export function useActiveReportLayoutState({
 }: UseActiveReportLayoutStateParams) {
   const activeColumnFilters = getActiveColumnFilters(activeReport, columnFilters, heatTreatmentFilters, lnkFilters)
   const activeFiltersSetter = getActiveReportFilterSetter(activeReport, setColumnFilters, setHeatTreatmentFilters, setLnkFilters)
-  const registerMinWidth = getReportRegisterMinWidth(activeReport, getWeldTableWidth(VISIBLE_FIELDS))
+  const registerMinWidth = getReportRegisterMinWidth(activeReport, 0)
   const stickyLeft = navCollapsed ? 80 : 288
   const activeTitle = getActiveReportTitle(activeReport)
 

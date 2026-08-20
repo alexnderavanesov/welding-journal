@@ -23,7 +23,7 @@ export function getManagedLnkResultRows({
       managedLnkResultOrderIds,
     )
   }
-  return []
+  return lnkRows
 }
 
 export function getManagedLnkResultMethods(managedLnkResultRows: WeldRow[]) {

@@ -34,7 +34,7 @@ export function PaginationBar({
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) onLoadMore()
       },
-      { root: null, rootMargin: '320px 0px' },
+      { root: null, rootMargin: '1200px 0px' },
     )
     observer.observe(sentinel)
     return () => observer.disconnect()

@@ -3,6 +3,11 @@ import type { LnkOfficialityDraftState, LnkRequestDraftState, LnkResultDraftStat
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type {
+  LnkRequestExtensionOption,
+  LnkRequestExtensionTarget,
+} from '@/lib/lnk-request-extension'
+import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
 
 export type LnkRequestMutation = {
   isPending: boolean
@@ -15,6 +20,15 @@ export type LnkRequestMutation = {
   }) => void
 }
 
+export type LnkRequestExtensionMutation = {
+  isPending: boolean
+  mutate: (value: {
+    requestName: string
+    requestDate: string
+    targets: LnkRequestExtensionTarget[]
+  }) => void
+}
+
 export type UseLnkRequestActionsOptions = {
   draft: LnkRequestDraftState
   filteredRows: WeldRow[]
@@ -23,6 +37,7 @@ export type UseLnkRequestActionsOptions = {
   nextRequestName: string
   selectedRows: WeldRow[]
   mutation: LnkRequestMutation
+  extensionMutation: LnkRequestExtensionMutation
   defaultNaming: RequestNamingState
   setDraft: Dispatch<SetStateAction<LnkRequestDraftState>>
   setIsOpen: (value: boolean) => void
@@ -31,6 +46,8 @@ export type UseLnkRequestActionsOptions = {
   setPreservedOrderIds: Dispatch<SetStateAction<number[] | null>>
   setSearch: (value: string) => void
   setSelectedIds: Dispatch<SetStateAction<Set<number>>>
+  setComposerMode: (value: LnkRequestComposerMode) => void
+  setTargetRequestKey: (value: string) => void
 }
 
 export type LnkResultMutation = {

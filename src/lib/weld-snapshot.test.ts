@@ -26,7 +26,7 @@ describe('full weld snapshot', () => {
     expect(requestedCursors).toEqual([0, 1_000, 2_000, 3_000, 4_000, 5_000])
     expect(buildLnkReportRows(result)).toHaveLength(5_501)
     expect(buildHeatTreatmentReportRows(result)).toHaveLength(5_501)
-    expect(buildStatisticsSummary(result, '', '', 'joints', 'welded-joints').totalRows).toBe(5_501)
+    expect(buildStatisticsSummary(result, '', '', 'joints').totalRows).toBe(5_501)
   })
 
   it('rejects a non-advancing cursor instead of looping forever', async () => {

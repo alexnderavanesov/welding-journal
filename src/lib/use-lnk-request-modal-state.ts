@@ -5,6 +5,8 @@ import {
   type RequestNamingState,
 } from '@/lib/request-naming-state'
 
+export type LnkRequestComposerMode = 'create' | 'extend'
+
 export function useLnkRequestModalState() {
   const [lnkRequestDraft, setLnkRequestDraft] = useState<LnkRequestDraftState>(() => createDefaultLnkRequestDraft())
   const [lnkRequestNaming, setLnkRequestNaming] = useState<RequestNamingState>(defaultRequestNamingState)
@@ -14,6 +16,8 @@ export function useLnkRequestModalState() {
   const [managedLnkRequestDate, setManagedLnkRequestDate] = useState('')
   const [managedLnkRequestNameDraft, setManagedLnkRequestNameDraft] = useState('')
   const [lnkRequestSearch, setLnkRequestSearch] = useState('')
+  const [lnkRequestComposerMode, setLnkRequestComposerMode] = useState<LnkRequestComposerMode>('create')
+  const [lnkRequestTargetKey, setLnkRequestTargetKey] = useState('')
 
   return {
     lnkRequestDraft,
@@ -24,6 +28,8 @@ export function useLnkRequestModalState() {
     managedLnkRequestDate,
     managedLnkRequestNameDraft,
     lnkRequestSearch,
+    lnkRequestComposerMode,
+    lnkRequestTargetKey,
     setLnkRequestDraft,
     setLnkRequestNaming,
     setIsLnkRequestModalOpen,
@@ -32,5 +38,7 @@ export function useLnkRequestModalState() {
     setManagedLnkRequestDate,
     setManagedLnkRequestNameDraft,
     setLnkRequestSearch,
+    setLnkRequestComposerMode,
+    setLnkRequestTargetKey,
   }
 }

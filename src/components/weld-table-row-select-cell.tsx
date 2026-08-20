@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react'
-import type { CSSProperties } from 'react'
+import { memo, type CSSProperties } from 'react'
 
 type StickyCoverStyle = CSSProperties & {
   '--weld-sticky-cover-left'?: string
@@ -16,7 +16,7 @@ type WeldTableRowSelectCellProps = {
   onChange: (selected: boolean) => void
 }
 
-export function WeldTableRowSelectCell({
+export const WeldTableRowSelectCell = memo(function WeldTableRowSelectCell({
   selectable,
   label,
   checked,
@@ -55,7 +55,7 @@ export function WeldTableRowSelectCell({
       ) : null}
     </td>
   )
-}
+})
 
 function getStickyCoverClassName(zIndexClassName: string) {
   return `sticky ${zIndexClassName} before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-[var(--weld-sticky-cover-left)] before:bg-inherit before:content-['']`

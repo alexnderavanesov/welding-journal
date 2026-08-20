@@ -10,8 +10,9 @@ import {
 import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
+import { isAngularConnectionType } from '@/lib/connection-type'
 
-export type PercentageControlMethod = 'РК' | 'УЗК'
+export type PercentageControlMethod = 'РК' | 'УЗК' | 'ПВК'
 
 export type PercentageLineStampSummary = {
   key: string
@@ -70,6 +71,7 @@ export type PercentageLineSummary = {
   subtitleCode: string
   line: string
   percent: number
+  potentialControlReduction: number
   rowCount: number
   rows: WeldRow[]
   stamps: PercentageLineStampSummary[]
@@ -94,23 +96,48 @@ const PERCENTAGE_CONTROL_METHODS = [
   { code: 'УЗК' as const, enabledKey: 'hasUzk' as const, resultKey: 'uzkResult' as const },
 ]
 
+const ANGULAR_PERCENTAGE_CONTROL_METHODS = [
+  ...PERCENTAGE_CONTROL_METHODS,
+  { code: 'ПВК' as const, enabledKey: 'hasPvk' as const, resultKey: 'pvkResult' as const },
+]
+
+export const PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX = 'percentage-line-control:new-welder:'
+
+export function getPercentageLineNewWelderWarningKey(summaryKey: string) {
+  return `${PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX}${summaryKey}`
+}
+
 export function buildPercentageLineSummaries(
   rows: WeldRow[],
   systemIndexSettings?: SystemIndexSettings,
+  acceptedDispatcherWarningKeys?: ReadonlySet<string>,
 ): PercentageLineSummary[] {
   const lineGroups = getPercentageLineGroups(rows)
 
   return lineGroups
-    .map((group) => ({
-      lineKey: group.key,
-      projectTitle: group.projectTitle,
-      subtitleCode: group.subtitleCode,
-      line: group.line,
-      percent: group.percent,
-      rowCount: group.rows.length,
-      rows: group.rows,
-      stamps: buildStampSummaries(group, systemIndexSettings),
-    }))
+    .map((group) => {
+      const entries = buildStampEntries(group)
+      const stamps = buildStampSummaries(group, entries, systemIndexSettings)
+      return {
+        lineKey: group.key,
+        projectTitle: group.projectTitle,
+        subtitleCode: group.subtitleCode,
+        line: group.line,
+        percent: group.percent,
+        potentialControlReduction: acceptedDispatcherWarningKeys
+          ? getPotentialControlReduction(
+              group,
+              entries,
+              stamps,
+              acceptedDispatcherWarningKeys,
+              systemIndexSettings,
+            )
+          : 0,
+        rowCount: group.rows.length,
+        rows: group.rows,
+        stamps,
+      }
+    })
     .filter((summary) => summary.stamps.length > 0)
     .sort(
       (left, right) =>
@@ -164,7 +191,7 @@ function getPercentageLineGroups(rows: WeldRow[]) {
   })
 }
 
-function buildStampSummaries(group: LineGroup, systemIndexSettings?: SystemIndexSettings) {
+function buildStampEntries(group: LineGroup) {
   const stampRows = new Map<string, StampAccumulator>()
 
   for (const row of group.rows) {
@@ -176,6 +203,14 @@ function buildStampSummaries(group: LineGroup, systemIndexSettings?: SystemIndex
   }
 
   return Array.from(stampRows.values())
+}
+
+function buildStampSummaries(
+  group: LineGroup,
+  entries: StampAccumulator[],
+  systemIndexSettings?: SystemIndexSettings,
+) {
+  return entries
     .map((entry) => buildStampSummary(group, entry, systemIndexSettings))
     .sort(
       (left, right) =>
@@ -183,6 +218,42 @@ function buildStampSummaries(group: LineGroup, systemIndexSettings?: SystemIndex
         right.excessControls - left.excessControls ||
         left.stamp.localeCompare(right.stamp, 'ru', { numeric: true }),
     )
+}
+
+function getPotentialControlReduction(
+  group: LineGroup,
+  entries: StampAccumulator[],
+  actualStampSummaries: PercentageLineStampSummary[],
+  acceptedDispatcherWarningKeys: ReadonlySet<string>,
+  systemIndexSettings?: SystemIndexSettings,
+) {
+  const actualRequiredControls = actualStampSummaries.reduce(
+    (total, summary) => total + summary.requiredControls,
+    0,
+  )
+  const actualSummariesByKey = new Map(actualStampSummaries.map((summary) => [summary.key, summary]))
+  const baseRows = new Map<number, WeldRow>()
+  let theoreticalRequiredControls = 0
+
+  for (const entry of entries) {
+    const summaryKey = `${group.key}|${normalizeText(entry.stamp)}`
+    const warningKey = getPercentageLineNewWelderWarningKey(summaryKey)
+    if (acceptedDispatcherWarningKeys.has(warningKey)) {
+      theoreticalRequiredControls += actualSummariesByKey.get(summaryKey)?.requiredControls ?? 0
+      continue
+    }
+    for (const row of entry.rows) baseRows.set(row.id, row)
+  }
+
+  if (baseRows.size > 0) {
+    theoreticalRequiredControls += buildStampSummary(
+      group,
+      { stamp: '__base__', rows: [...baseRows.values()] },
+      systemIndexSettings,
+    ).requiredControls
+  }
+
+  return Math.max(0, actualRequiredControls - theoreticalRequiredControls)
 }
 
 function buildStampSummary(
@@ -325,20 +396,20 @@ function getOfficialStamps(row: WeldRow) {
 
 function hasAssignedPercentageControl(row: WeldRow) {
   return (
-    PERCENTAGE_CONTROL_METHODS.some(({ enabledKey }) => isEnabledControlValue(row[enabledKey])) ||
+    getPercentageControlMethods(row).some(({ enabledKey }) => isEnabledControlValue(row[enabledKey])) ||
     hasBothPercentageControlsCancelled(row)
   )
 }
 
 function hasNormalAssignedPercentageControl(row: WeldRow) {
-  return PERCENTAGE_CONTROL_METHODS.some(({ enabledKey }) => {
+  return getPercentageControlMethods(row).some(({ enabledKey }) => {
     const value = row[enabledKey]
     return isEnabledControlValue(value) && !isAdditionalControlValue(value)
   })
 }
 
 function hasAdditionalAssignedPercentageControl(row: WeldRow) {
-  return PERCENTAGE_CONTROL_METHODS.some(({ enabledKey }) => isAdditionalControlValue(row[enabledKey]))
+  return getPercentageControlMethods(row).some(({ enabledKey }) => isAdditionalControlValue(row[enabledKey]))
 }
 
 function hasIntentionalRequiredPercentageControlCoverage(row: WeldRow) {
@@ -349,7 +420,7 @@ function hasIntentionalRequiredPercentageControlCoverage(row: WeldRow) {
 }
 
 function hasDirectPercentageControlCoverage(row: WeldRow) {
-  return PERCENTAGE_CONTROL_METHODS.some(({ enabledKey, resultKey }) => {
+  return getPercentageControlMethods(row).some(({ enabledKey, resultKey }) => {
     const controlValue = row[enabledKey]
     if (isAdditionalControlValue(controlValue)) return false
     return isEnabledControlValue(controlValue) || hasCompletedResult(row[resultKey])
@@ -369,7 +440,7 @@ function isPercentageControlRequiredAvailable(row: WeldRow) {
 }
 
 function hasCompletedPercentageControl(row: WeldRow) {
-  return PERCENTAGE_CONTROL_METHODS.some(({ resultKey }) => hasCompletedResult(row[resultKey])) || hasRejectedAnyControlResult(row)
+  return getPercentageControlMethods(row).some(({ resultKey }) => hasCompletedResult(row[resultKey])) || hasRejectedAnyControlResult(row)
 }
 
 function hasBothPercentageControlsCancelled(row: WeldRow) {
@@ -394,13 +465,25 @@ function hasRejectedAnyControlResult(row: WeldRow) {
 }
 
 function hasRejectedPercentageControlResult(row: WeldRow) {
-  const hasRejectedRkOrUzkResult = PERCENTAGE_CONTROL_METHODS.some(({ resultKey }) => {
+  const applicableMethods = getPercentageControlMethods(row)
+  const hasRejectedApplicableResult = applicableMethods.some(({ resultKey }) => {
     const result = normalizeResultStatus(row[resultKey])
     return result === 'ремонт' || result === 'вырез'
   })
-  if (hasRejectedRkOrUzkResult) return true
+  if (hasRejectedApplicableResult) return true
 
-  return getRejectedDuplicateControls(row).some((control) => control.method === 'РК' || control.method === 'УЗК')
+  const applicableCodes = new Set(applicableMethods.map(({ code }) => code))
+  return getRejectedDuplicateControls(row).some((control) => applicableCodes.has(control.method as PercentageControlMethod))
+}
+
+function getPercentageControlMethods(row: WeldRow) {
+  return isAngularConnectionType(row.connectionType)
+    ? ANGULAR_PERCENTAGE_CONTROL_METHODS
+    : PERCENTAGE_CONTROL_METHODS
+}
+
+export function isPercentageControlMethodAvailableForRow(method: PercentageControlMethod, row: WeldRow) {
+  return method !== 'ПВК' || isAngularConnectionType(row.connectionType)
 }
 
 function hasCompletedResult(value: unknown) {

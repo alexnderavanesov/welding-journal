@@ -1,8 +1,9 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, like, sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   appSettings,
+  dispatcherAcceptedWarnings,
   duplicateControls,
   welderStamps,
   weldJoints,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/system-index-settings'
 import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings } from '@/lib/other-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
+import { PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX } from '@/lib/percentage-line-summary'
 import { toWelderStampPayload } from '@/server/welder-stamps'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
@@ -148,7 +150,7 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
     await assertSecurityScope('entry')
     return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v7', data),
+      buildDerivedCalculationCacheKey('statistics:v17', data),
       () => computeStatisticsServerResult(data),
     )
   })
@@ -162,7 +164,7 @@ async function computeStatisticsServerResult(
     ? sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`
     : undefined
   const rowSelect = getStatisticsRowSelect(data.tab)
-  const [sourceRows, duplicateRows, projectRows, subtitleRows, stampRows, settingsRows] = await Promise.all([
+  const [sourceRows, duplicateRows, projectRows, subtitleRows, stampRows, settingsRows, acceptedWarningRows] = await Promise.all([
     db
       .select(rowSelect)
       .from(weldJoints)
@@ -191,6 +193,12 @@ async function computeStatisticsServerResult(
       .select()
       .from(appSettings)
       .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other])),
+    data.tab === 'percentageLines'
+      ? db
+          .select({ key: dispatcherAcceptedWarnings.key })
+          .from(dispatcherAcceptedWarnings)
+          .where(like(dispatcherAcceptedWarnings.key, `${PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX}%`))
+      : Promise.resolve([]),
   ])
   const otherSettings = normalizeOtherSettings(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.other) ?? DEFAULT_OTHER_SETTINGS,
@@ -210,6 +218,7 @@ async function computeStatisticsServerResult(
     rows,
     welderStamps: stampRows.map(toWelderStampPayload),
     systemIndexSettings,
+    acceptedDispatcherWarningKeys: new Set(acceptedWarningRows.map((row) => row.key)),
     request: data,
   })
   return {
@@ -229,6 +238,7 @@ function getStatisticsRowSelect(tab: StatisticsServerRequest['tab']) {
 export function normalizeStatisticsServerRequest(data: StatisticsServerRequest): StatisticsServerRequest {
   const tab =
     data?.tab === 'lnk' ||
+    data?.tab === 'psto' ||
     data?.tab === 'welders' ||
     data?.tab === 'lineSummary' ||
     data?.tab === 'percentageLines'
@@ -249,7 +259,22 @@ export function normalizeStatisticsServerRequest(data: StatisticsServerRequest):
     to: String(data?.to ?? '').trim(),
     unit: data?.unit === 'wdi' ? 'wdi' : 'joints',
     jointFilter: data?.jointFilter === 'f' || data?.jointFilter === 's' ? data.jointFilter : 'all',
-    periodMode: data?.periodMode === 'welded-joints' ? 'welded-joints' : 'events',
+    controlDynamicsScale:
+      data?.controlDynamicsScale === 'day' ||
+      data?.controlDynamicsScale === 'week' ||
+      data?.controlDynamicsScale === 'month' ||
+      data?.controlDynamicsScale === 'quarter' ||
+      data?.controlDynamicsScale === 'year'
+        ? data.controlDynamicsScale
+        : 'auto',
+    weldingDynamicsScale:
+      data?.weldingDynamicsScale === 'day' ||
+      data?.weldingDynamicsScale === 'week' ||
+      data?.weldingDynamicsScale === 'month' ||
+      data?.weldingDynamicsScale === 'quarter' ||
+      data?.weldingDynamicsScale === 'year'
+        ? data.weldingDynamicsScale
+        : 'auto',
   }
 }
 

@@ -21,6 +21,10 @@ type RefreshOptions = {
   retryWhenCacheChanges?: boolean
 }
 
+type InvalidateWeldPageOptions = {
+  deferActiveRefresh?: boolean
+}
+
 type RefreshState = {
   generation: number
   sourceData: InfiniteData<WeldPageResult> | undefined
@@ -29,6 +33,7 @@ type RefreshState = {
 
 const refreshStates = new WeakMap<QueryClient, Map<string, RefreshState>>()
 const refreshRequiredKeys = new WeakMap<QueryClient, Set<string>>()
+const scheduledActiveRefreshes = new WeakMap<QueryClient, ReturnType<typeof setTimeout>>()
 
 export async function refreshLoadedWeldPageQuery(
   queryClient: QueryClient,
@@ -81,12 +86,19 @@ export async function refreshActiveLoadedWeldPages(queryClient: QueryClient): Pr
   )
 }
 
-export async function invalidateWeldPageQueries(queryClient: QueryClient): Promise<void> {
+export async function invalidateWeldPageQueries(
+  queryClient: QueryClient,
+  options: InvalidateWeldPageOptions = {},
+): Promise<void> {
   const queries = queryClient.getQueryCache().findAll({
     queryKey: WELD_JOINT_PAGES_QUERY_KEY,
   })
   const requiredKeys = getRefreshRequiredKeys(queryClient)
   queries.forEach((query) => requiredKeys.add(getQueryStateKey(query.queryKey)))
+  if (options.deferActiveRefresh) {
+    if (queries.some((query) => query.isActive())) scheduleActiveWeldPageRefresh(queryClient)
+    return
+  }
   await refreshActiveLoadedWeldPages(queryClient)
 }
 
@@ -254,6 +266,16 @@ function getRefreshRequiredKeys(queryClient: QueryClient) {
 
 function getQueryStateKey(queryKey: QueryKey) {
   return JSON.stringify(queryKey)
+}
+
+function scheduleActiveWeldPageRefresh(queryClient: QueryClient) {
+  const scheduled = scheduledActiveRefreshes.get(queryClient)
+  if (scheduled) clearTimeout(scheduled)
+  const timeout = setTimeout(() => {
+    scheduledActiveRefreshes.delete(queryClient)
+    void refreshActiveLoadedWeldPages(queryClient)
+  }, 500)
+  scheduledActiveRefreshes.set(queryClient, timeout)
 }
 
 function fetchReportPage(report: WeldReportKind, data: WeldPageRequest) {

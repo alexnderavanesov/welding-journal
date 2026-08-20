@@ -92,6 +92,12 @@ describe('weld import/export', () => {
     expect(() => parseWorksheetRows([oldHeaders])).toThrow('Не найдены обязательные колонки')
   })
 
+  it('accepts files created before control basis columns were added', () => {
+    const legacyHeaders = FULL_EXCEL_HEADERS.filter((header) => !header.startsWith('Основание '))
+
+    expect(parseWorksheetRows([legacyHeaders]).missingHeaders).toEqual([])
+  })
+
   it('converts placeholder dashes to null', () => {
     expect(emptyToNull('-')).toBeNull()
     expect(emptyToNull('   ')).toBeNull()

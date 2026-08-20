@@ -1,5 +1,6 @@
 import type { LineConsistencyTask, WeldRow } from '@/lib/dispatcher-types'
 import { isControlAdditionalValue } from '@/lib/control-availability-values'
+import { isAngularConnectionType } from '@/lib/connection-type'
 
 type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence' | 'pstoPresence'>
 
@@ -30,6 +31,13 @@ const CONTROL_PRESENCE_FIELDS: ControlPresenceField[] = [
   { key: 'hasStls', label: 'СТЛС' },
   { key: 'hasMkk', label: 'МКК' },
 ]
+
+const ANGULAR_ALTERNATIVE_CONTROL_FIELDS = CONTROL_PRESENCE_FIELDS.filter(
+  ({ key }) => key === 'hasRk' || key === 'hasUzk' || key === 'hasPvk',
+)
+const EXACT_CONTROL_PRESENCE_FIELDS = CONTROL_PRESENCE_FIELDS.filter(
+  ({ key }) => key !== 'hasRk' && key !== 'hasUzk' && key !== 'hasPvk',
+)
 
 export function buildLineConsistencyTasks(rows: WeldRow[]): LineConsistencyTask[] {
   const lineGroups = new Map<string, WeldRow[]>()
@@ -129,7 +137,7 @@ function buildControlPresenceTasksForLine(groupRows: WeldRow[], representativeRo
       fieldLabel: 'Назначение контроля',
       title: 'Проверить назначение контроля линии',
       values,
-      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются разные наборы «да» в назначении контроля: ${valuesText}. Для одной линии со 100% контролем набор назначенных видов контроля должен совпадать. Нажмите «Показать», чтобы отфильтровать все стыки этой линии и исправить некорректные строки.`,
+      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются несогласованные назначения контроля: ${valuesText}. На обычных стыках 100% линии набор «да» должен совпадать. Для стыка типа «У…» РК, УЗК и ПВК взаимозаменяемы: достаточно хотя бы одного из этих назначений. Остальные виды контроля сравниваются как раньше. Нажмите «Показать», чтобы отфильтровать все стыки этой линии и исправить некорректные строки.`,
     })
   }
 
@@ -183,7 +191,29 @@ function getDistinctLineValues(rows: WeldRow[], key: LineMetadataFieldKey) {
 }
 
 function getControlPresenceConflictValues(rows: WeldRow[]) {
-  const hasConflict = CONTROL_PRESENCE_FIELDS.some((field) => {
+  const ordinaryRows = rows.filter((row) => !isAngularConnectionType(row.connectionType))
+  const hasConflict =
+    hasControlFieldConflict(rows, EXACT_CONTROL_PRESENCE_FIELDS) ||
+    hasControlFieldConflict(ordinaryRows, ANGULAR_ALTERNATIVE_CONTROL_FIELDS) ||
+    hasAngularAlternativeGroupConflict(rows)
+
+  if (!hasConflict) return []
+
+  const values = new Map<string, string>()
+  for (const row of rows) {
+    const labels = CONTROL_PRESENCE_FIELDS
+      .filter((field) => isRequiredControlPresence(row[field.key]))
+      .map((field) => field.label)
+    const isAngular = isAngularConnectionType(row.connectionType)
+    const displayValue = `${labels.length ? labels.join(', ') : 'нет отмеченных видов контроля'}${isAngular ? ' (У-стык)' : ''}`
+    const normalizedValue = `${labels.join('|') || 'none'}:${isAngular ? 'angular' : 'ordinary'}`
+    if (!values.has(normalizedValue)) values.set(normalizedValue, displayValue)
+  }
+  return [...values.values()]
+}
+
+function hasControlFieldConflict(rows: WeldRow[], fields: ControlPresenceField[]) {
+  return fields.some((field) => {
     let hasYes = false
     let hasNo = false
     for (const row of rows) {
@@ -197,19 +227,21 @@ function getControlPresenceConflictValues(rows: WeldRow[]) {
     }
     return false
   })
+}
 
-  if (!hasConflict) return []
-
-  const values = new Map<string, string>()
+function hasAngularAlternativeGroupConflict(rows: WeldRow[]) {
+  let hasYes = false
+  let hasNo = false
   for (const row of rows) {
-    const labels = CONTROL_PRESENCE_FIELDS
-      .filter((field) => isRequiredControlPresence(row[field.key]))
-      .map((field) => field.label)
-    const displayValue = labels.length ? labels.join(', ') : 'нет отмеченных видов контроля'
-    const normalizedValue = labels.join('|') || 'none'
-    if (!values.has(normalizedValue)) values.set(normalizedValue, displayValue)
+    const values = ANGULAR_ALTERNATIVE_CONTROL_FIELDS.map((field) => row[field.key])
+    if (values.some(isRequiredControlPresence)) {
+      hasYes = true
+    } else if (!values.some(isNeutralPresenceValue)) {
+      hasNo = true
+    }
+    if (hasYes && hasNo) return true
   }
-  return [...values.values()]
+  return false
 }
 
 function isRequiredControlPresence(value: unknown) {

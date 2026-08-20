@@ -82,6 +82,57 @@ describe('line consistency tasks', () => {
     expect(tasks).toHaveLength(0)
   })
 
+  it('accepts RK, UZK or PVK as alternatives for U-joints on a 100 percent line', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, weldControlPercent: '100', hasVik: 'да', hasRk: 'да' }),
+      row({ id: 2, connectionType: 'У', weldControlPercent: '100', hasVik: 'да', hasUzk: 'да' }),
+      row({ id: 3, connectionType: '  угловой', weldControlPercent: '100', hasVik: 'да', hasPvk: 'да' }),
+    ])
+
+    expect(tasks).toHaveLength(0)
+  })
+
+  it('accepts one alternative on a U-joint when ordinary joints require both RK and UZK', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, weldControlPercent: '100', hasVik: 'да', hasRk: 'да', hasUzk: 'да' }),
+      row({ id: 2, connectionType: 'У17', weldControlPercent: '100', hasVik: 'да', hasPvk: 'да' }),
+    ])
+
+    expect(tasks).toHaveLength(0)
+  })
+
+  it('still reports different RK and UZK assignments between ordinary joints', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, weldControlPercent: '100', hasRk: 'да' }),
+      row({ id: 2, weldControlPercent: '100', hasUzk: 'да' }),
+      row({ id: 3, connectionType: 'У', weldControlPercent: '100', hasPvk: 'да' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({ fieldKey: 'controlPresence' })
+  })
+
+  it('reports a U-joint without RK, UZK or PVK when the line requires the alternative group', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, weldControlPercent: '100', hasRk: 'да' }),
+      row({ id: 2, connectionType: 'У', weldControlPercent: '100' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({ fieldKey: 'controlPresence' })
+    expect(tasks[0]?.values).toContain('нет отмеченных видов контроля (У-стык)')
+  })
+
+  it('still compares non-alternative controls exactly for U-joints', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, weldControlPercent: '100', hasVik: 'да', hasRk: 'да' }),
+      row({ id: 2, connectionType: 'У', weldControlPercent: '100', hasPvk: 'да' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({ fieldKey: 'controlPresence' })
+  })
+
   it('does not compare control presence between different control percents', () => {
     const tasks = buildLineConsistencyTasks([
       row({ id: 1, line: '330-FG-05-001', weldControlPercent: '100', hasVik: 'да', hasRk: 'да' }),

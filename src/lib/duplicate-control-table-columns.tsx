@@ -4,6 +4,11 @@ import type { ActiveReport } from '@/lib/home-state'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 
 const DUPLICATE_CONTROL_COLUMN_WIDTH = 260
+const NO_DUPLICATE_CONTROL_COLUMNS: WeldTableExtraColumn[] = []
+const duplicateControlColumnsByHandler = new WeakMap<
+  (row: WeldRow) => void,
+  WeldTableExtraColumn[]
+>()
 
 export function getDuplicateControlTableColumns({
   activeReport,
@@ -12,9 +17,11 @@ export function getDuplicateControlTableColumns({
   activeReport: ActiveReport
   onOpenDuplicateControl?: (row: WeldRow) => void
 }): WeldTableExtraColumn[] {
-  if (!onOpenDuplicateControl || activeReport !== 'lnk') return []
+  if (!onOpenDuplicateControl || activeReport !== 'lnk') return NO_DUPLICATE_CONTROL_COLUMNS
 
-  return [
+  const cached = duplicateControlColumnsByHandler.get(onOpenDuplicateControl)
+  if (cached) return cached
+  const columns = [
     {
       key: 'duplicateControl',
       section: 'Дубль контроль',
@@ -23,5 +30,7 @@ export function getDuplicateControlTableColumns({
       insertBeforeSection: 'Прочее',
       renderCell: (row) => <DuplicateControlTableCell row={row} onOpen={onOpenDuplicateControl} />,
     },
-  ]
+  ] satisfies WeldTableExtraColumn[]
+  duplicateControlColumnsByHandler.set(onOpenDuplicateControl, columns)
+  return columns
 }

@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 import { Input } from '@/components/ui/input'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 
@@ -7,6 +9,7 @@ export function RequestNamingControls({
   label,
   placeholder = 'Введите наименование заявки',
   disabled = false,
+  bufferCustomNameInput = false,
   onChange,
 }: {
   naming: RequestNamingState
@@ -14,8 +17,21 @@ export function RequestNamingControls({
   label: string
   placeholder?: string
   disabled?: boolean
+  bufferCustomNameInput?: boolean
   onChange: (value: RequestNamingState) => void
 }) {
+  const [customNameDraft, setCustomNameDraft] = useState(naming.customName)
+
+  useEffect(() => {
+    setCustomNameDraft(naming.customName)
+  }, [naming.customName])
+
+  const visibleCustomName = bufferCustomNameInput ? customNameDraft : naming.customName
+  const commitCustomName = () => {
+    if (!bufferCustomNameInput || customNameDraft === naming.customName) return
+    onChange({ ...naming, customName: customNameDraft })
+  }
+
   return (
     <div className="space-y-3">
       <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
@@ -23,7 +39,7 @@ export function RequestNamingControls({
           <button
             key={mode}
             type="button"
-            onClick={() => onChange({ ...naming, mode })}
+            onClick={() => onChange({ ...naming, mode, customName: visibleCustomName })}
             disabled={disabled}
             className={`h-8 rounded px-3 text-sm font-medium transition-colors ${
               naming.mode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
@@ -42,8 +58,18 @@ export function RequestNamingControls({
           <>
             <Input
               autoFocus
-              value={naming.customName}
-              onChange={(event) => onChange({ ...naming, customName: event.target.value })}
+              value={visibleCustomName}
+              onChange={(event) => {
+                if (bufferCustomNameInput) {
+                  setCustomNameDraft(event.target.value)
+                  return
+                }
+                onChange({ ...naming, customName: event.target.value })
+              }}
+              onBlur={commitCustomName}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitCustomName()
+              }}
               placeholder={placeholder}
               disabled={disabled}
             />

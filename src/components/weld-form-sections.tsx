@@ -22,6 +22,7 @@ import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from 
 import { getWeldLineAutofill } from '@/server/welds'
 
 export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'workClosure'
+const EMPTY_FIELD_STATUS_KEYS = new Set<WeldFieldKey>()
 
 type WeldFormEditableField = WeldField & { key: WeldFieldKey }
 
@@ -44,6 +45,8 @@ type WeldFormSectionsProps = {
   setDraft: Dispatch<SetStateAction<WeldInput>>
   activeTab: WeldFormTab
   onActiveTabChange: (tab: WeldFormTab) => void
+  fieldStatusKeys?: ReadonlySet<WeldFieldKey>
+  fieldStatusLabel?: string
 }
 
 export function WeldFormSections({
@@ -60,6 +63,8 @@ export function WeldFormSections({
   setDraft,
   activeTab,
   onActiveTabChange,
+  fieldStatusKeys = EMPTY_FIELD_STATUS_KEYS,
+  fieldStatusLabel = 'Изменено',
 }: WeldFormSectionsProps) {
   const controlAvailabilityFields = fieldsByGroup.flatMap(({ fields }) => fields.filter((field) => yesEmptyFieldKeys.has(field.key)))
   const workClosureFieldsByGroup = fieldsByGroup
@@ -87,6 +92,11 @@ export function WeldFormSections({
       fields: group.fields.filter((field) => !yesEmptyFieldKeys.has(field.key)),
     }))
     .filter((group) => group.fields.length > 0)
+  const jointStatusCount = countGroupFieldStatuses(regularFieldsByGroup, fieldStatusKeys)
+  const controlStatusCount = countFieldStatuses(controlAvailabilityFields, fieldStatusKeys)
+  const weldingMaterialStatusCount = countGroupFieldStatuses(weldingMaterialFieldsByGroup, fieldStatusKeys)
+  const workClosureStatusCount = countGroupFieldStatuses(workClosureFieldsByGroup, fieldStatusKeys)
+  const shortStatusLabel = fieldStatusLabel === 'Заполнено' ? 'зап.' : 'изм.'
 
   return (
     <div className="space-y-5">
@@ -97,39 +107,39 @@ export function WeldFormSections({
       ) : null}
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 pb-3 backdrop-blur">
         <div className="inline-flex rounded-md border border-slate-200 bg-white p-1 shadow-sm shadow-slate-200/50">
-          <button
-            type="button"
+          <WeldFormTabButton
+            active={activeTab === 'joint'}
+            label="Стык"
+            statusCount={jointStatusCount}
+            statusLabel={shortStatusLabel}
             onClick={() => onActiveTabChange('joint')}
-            className={activeTab === 'joint' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
-          >
-            Стык
-          </button>
+          />
           {controlAvailabilityFields.length > 0 ? (
-            <button
-              type="button"
+            <WeldFormTabButton
+              active={activeTab === 'control'}
+              label="Назначение контроля"
+              statusCount={controlStatusCount}
+              statusLabel={shortStatusLabel}
               onClick={() => onActiveTabChange('control')}
-              className={activeTab === 'control' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
-            >
-              Назначение контроля
-            </button>
+            />
           ) : null}
           {weldingMaterialFieldsByGroup.length > 0 ? (
-            <button
-              type="button"
+            <WeldFormTabButton
+              active={activeTab === 'weldingMaterials'}
+              label="Сварочный материал и ТК"
+              statusCount={weldingMaterialStatusCount}
+              statusLabel={shortStatusLabel}
               onClick={() => onActiveTabChange('weldingMaterials')}
-              className={activeTab === 'weldingMaterials' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
-            >
-              Сварочный материал и ТК
-            </button>
+            />
           ) : null}
           {workClosureFieldsByGroup.length > 0 ? (
-            <button
-              type="button"
+            <WeldFormTabButton
+              active={activeTab === 'workClosure'}
+              label="Испытания и закрытие"
+              statusCount={workClosureStatusCount}
+              statusLabel={shortStatusLabel}
               onClick={() => onActiveTabChange('workClosure')}
-              className={activeTab === 'workClosure' ? 'rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white' : 'rounded px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50'}
-            >
-              Испытания и закрытие
-            </button>
+            />
           ) : null}
         </div>
       </div>
@@ -137,7 +147,14 @@ export function WeldFormSections({
       {activeTab === 'control' && controlAvailabilityFields.length > 0 ? (
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/50">
           <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3">
-            <div className="text-sm font-semibold text-slate-900">Назначение контроля</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold text-slate-900">Назначение контроля</div>
+              {controlStatusCount > 0 ? (
+                <span className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                  {fieldStatusLabel}: {controlStatusCount}
+                </span>
+              ) : null}
+            </div>
             <div className="mt-1 text-sm text-slate-500">Выберите состояние для каждого вида контроля. Правила замены РК/УЗК применяются сразу.</div>
           </div>
           <div className="divide-y-2 divide-slate-200">
@@ -170,6 +187,8 @@ export function WeldFormSections({
                 fieldsCount={fields.length}
                 collapsed={collapsedSections.has(section)}
                 onToggle={() => onToggleSection(section)}
+                statusCount={countFieldStatuses(fields, fieldStatusKeys)}
+                statusLabel={fieldStatusLabel}
               />
               {collapsedSections.has(section) ? null : (
                 <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
@@ -201,6 +220,8 @@ export function WeldFormSections({
                 fieldsCount={fields.length}
                 collapsed={collapsedSections.has(section)}
                 onToggle={() => onToggleSection(section)}
+                statusCount={countFieldStatuses(fields, fieldStatusKeys)}
+                statusLabel={fieldStatusLabel}
               />
               {collapsedSections.has(section) ? null : (
                 <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
@@ -232,6 +253,8 @@ export function WeldFormSections({
                 fieldsCount={fields.length}
                 collapsed={collapsedSections.has(section)}
                 onToggle={() => onToggleSection(section)}
+                statusCount={countFieldStatuses(fields, fieldStatusKeys)}
+                statusLabel={fieldStatusLabel}
                 actions={
                   section === 'Проект' ? (
                     <LineAutofillButton draft={calculationDraft} suggestionRows={suggestionRows} setDraft={setDraft} />
@@ -268,6 +291,50 @@ export function WeldFormSections({
       ) : null}
     </div>
   )
+}
+
+function WeldFormTabButton({
+  active,
+  label,
+  statusCount,
+  statusLabel,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  statusCount: number
+  statusLabel: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-h-9 items-center gap-2 rounded px-4 py-2 text-sm font-semibold transition-colors ${
+        active ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'
+      }`}
+    >
+      <span>{label}</span>
+      {statusCount > 0 ? (
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] leading-none ${
+            active ? 'bg-white/15 text-white' : 'bg-sky-50 text-sky-700'
+          }`}
+          title={`${statusLabel}: ${statusCount}`}
+        >
+          {statusLabel} {statusCount}
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+function countFieldStatuses(fields: WeldFormEditableField[], fieldStatusKeys: ReadonlySet<WeldFieldKey>) {
+  return fields.reduce((count, field) => count + (fieldStatusKeys.has(field.key) ? 1 : 0), 0)
+}
+
+function countGroupFieldStatuses(groups: WeldFormFieldGroup[], fieldStatusKeys: ReadonlySet<WeldFieldKey>) {
+  return groups.reduce((count, group) => count + countFieldStatuses(group.fields, fieldStatusKeys), 0)
 }
 
 type StampDiagnosticStatus = 'ok' | 'warning' | 'error'

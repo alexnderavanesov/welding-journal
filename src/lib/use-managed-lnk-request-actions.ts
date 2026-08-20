@@ -2,7 +2,11 @@ import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { RowWithId, UseManagedLnkRequestActionsOptions } from '@/lib/managed-lnk-request-action-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { findRequestDocumentIdentity, type RequestDocumentIdentity } from '@/lib/request-document-identity'
+import {
+  createRequestDocumentIdentity,
+  findRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 export function useManagedLnkRequestActions({
   lnkRequestManagerOptions,
@@ -23,10 +27,11 @@ export function useManagedLnkRequestActions({
   }
 
   function openLnkRequestManager(requestNameOverride?: string, requestDateOverride?: string) {
-    const request = findRequestDocumentIdentity(
+    const exactOverride = createRequestDocumentIdentity(requestNameOverride, requestDateOverride)
+    const request = exactOverride ?? findRequestDocumentIdentity(
       lnkRequestManagerOptions,
-      requestNameOverride || managedLnkRequestName,
-      requestDateOverride || managedLnkRequestDate,
+      managedLnkRequestName,
+      managedLnkRequestDate,
     )
     setManagedLnkRequestName(request?.name ?? '')
     setManagedLnkRequestDate(request?.date ?? '')
@@ -59,8 +64,8 @@ export function useManagedLnkRequestActions({
     const confirmed = await confirmAction({
       title: 'Удалить заявку ЛНК',
       itemName: requestName,
-      description: 'Будут очищены связанные заявки, результаты, даты и заключения ЛНК для этой заявки.',
-      warning: 'Это действие нельзя отменить.',
+      description: 'Все ожидающие позиции будут исключены из заявки. Назначения видов НК сохранятся.',
+      warning: 'Если хотя бы по одной позиции уже есть результат или заключение, удаление будет заблокировано.',
     })
     if (!confirmed) return
     lnkRequestManagerMutation.mutate({
@@ -75,10 +80,10 @@ export function useManagedLnkRequestActions({
     if (!method) return
     const requestName = String(row[method.requestKey] ?? '').trim()
     const confirmed = await confirmAction({
-      title: 'Очистить позицию заявки ЛНК',
+      title: 'Исключить позицию из заявки ЛНК',
       itemName: `${method.code} · ${String(row.joint ?? '-')} · ${requestName}`,
-      description: 'Будут очищены заявка, результат, дата и заключение только для этой позиции.',
-      warning: 'Остальные позиции заявки не изменятся.',
+      description: `Из заявки будет исключен только ${method.code} этого стыка. Назначение контроля сохранится.`,
+      warning: 'Другие виды НК и остальные стыки заявки не изменятся. Выполненный контроль исключить нельзя.',
     })
     if (!confirmed) return
     clearLnkRequestFromRow(row, methodKey)

@@ -11,6 +11,7 @@ export type MutationLike<TVariables> = {
 }
 
 export type UseManagedLnkResultActionsOptions = {
+  isLnkRowsContextReady: boolean
   lnkRows: WeldRow[]
   selectedLnkResultRowIds: Set<number>
   managedLnkConclusionDrafts: Record<string, string>
@@ -26,10 +27,12 @@ export type UseManagedLnkResultActionsOptions = {
     conclusionName: string
   }>
   setMessage: (value: string | null) => void
+  setIsLnkResultModalOpen: (value: boolean) => void
   setIsLnkResultManagerOpen: (value: boolean) => void
   setManagedLnkResultMethodKey: Dispatch<SetStateAction<WeldFieldKey | ''>>
   setManagedLnkConclusionDrafts: Dispatch<SetStateAction<Record<string, string>>>
   setManagedLnkResultOrderIds: Dispatch<SetStateAction<number[] | null>>
+  setManagedLnkResultTargetKey: Dispatch<SetStateAction<string>>
   setManagedLnkResultChangeHint: Dispatch<SetStateAction<ManagedLnkResultChangeHintState>>
   setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string>>>
 }

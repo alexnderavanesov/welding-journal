@@ -3,6 +3,7 @@ import { formatBusinessDateTime } from '@/lib/business-date'
 import { DOCUMENT_TEMPLATE_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, isVirtualWeldField, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
+import { CONTROL_BASIS_SUMMARY_FIELD_KEY, formatControlBasisSummary } from '@/lib/control-assignment-basis'
 import { formatExportDate, formatExportNumber } from '@/lib/weld-export-utils'
 import {
   STAMP_NAME_TEMPLATE_FIELDS,
@@ -511,12 +512,12 @@ for (const field of STAMP_NAME_TEMPLATE_FIELDS) {
 }
 
 for (const field of WELD_FIELDS) {
-  if (isVirtualWeldField(field)) continue
+  if (isVirtualWeldField(field) && field.key !== CONTROL_BASIS_SUMMARY_FIELD_KEY) continue
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(field.label), field.key as keyof WeldInput)
 }
 
 for (const [label, field] of FIELD_BY_LABEL.entries()) {
-  if (isVirtualWeldField(field)) continue
+  if (isVirtualWeldField(field) && field.key !== CONTROL_BASIS_SUMMARY_FIELD_KEY) continue
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(label), field.key as keyof WeldInput)
 }
 
@@ -1931,13 +1932,19 @@ async function createWeldingJournalBlobFromConstructor(
 
 function writeConstructorCell(worksheet: XLSXTypes.WorkSheet, address: string, value: string | number) {
   const originalCell = worksheet[address]
-  worksheet[address] = {
+  const nextCell: XLSXTypes.CellObject = {
     ...originalCell,
     t: typeof value === 'number' ? 'n' : 's',
     v: value,
     w: undefined,
     s: cloneCellStyle(originalCell?.s),
   }
+  delete nextCell.f
+  delete nextCell.F
+  delete nextCell.D
+  delete nextCell.r
+  delete nextCell.h
+  worksheet[address] = nextCell
 }
 
 function mergeRepeatedRkExposureJointCells({
@@ -2340,6 +2347,7 @@ function getTemplateFieldValueByKey(
       .map((line) => line.description)
       .join('\n')
   }
+  if (mappedKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) return formatControlBasisSummary(record, 'all')
   if (isTemplateStampWelderNameField(mappedKey)) {
     return getWelderNameForTemplateStamp(
       record,

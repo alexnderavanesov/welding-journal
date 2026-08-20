@@ -31,6 +31,7 @@ type HomePageViewProps = {
   onAssignPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onAssignPercentageLineMissingControls']
   onCancelPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onCancelPercentageLineMissingControls']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
+  onOpenReportRowIds: ComponentProps<typeof ReportMainContent>['onOpenReportRowIds']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
   onDocumentGenerationRequestHandled: (requestId: number) => void
   onDocumentGenerated: (message: string) => void
@@ -67,6 +68,7 @@ export function HomePageView({
   onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
+  onOpenReportRowIds,
   onOpenWeldRowIds,
   onDocumentGenerationRequestHandled,
   onDocumentGenerated,
@@ -95,6 +97,7 @@ export function HomePageView({
     onAssignPercentageLineMissingControls,
     onCancelPercentageLineMissingControls,
     onOpenPercentageLineStampRows,
+    onOpenReportRowIds,
     onOpenWeldRowIds,
     onOpenDocumentRows,
     systemDocumentNavigationRequest,
@@ -150,6 +153,7 @@ type ReportBackgroundProps = Pick<
   | 'onAssignPercentageLineMissingControls'
   | 'onCancelPercentageLineMissingControls'
   | 'onOpenPercentageLineStampRows'
+  | 'onOpenReportRowIds'
   | 'onOpenWeldRowIds'
   | 'onOpenDocumentRows'
   | 'systemDocumentNavigationRequest'
@@ -172,6 +176,7 @@ function ReportBackground({
   onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
+  onOpenReportRowIds,
   onOpenWeldRowIds,
   onOpenDocumentRows,
   systemDocumentNavigationRequest,
@@ -212,6 +217,7 @@ function ReportBackground({
         onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
         onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
+        onOpenReportRowIds={onOpenReportRowIds}
         onOpenWeldRowIds={onOpenWeldRowIds}
         onOpenDocumentRows={onOpenDocumentRows}
         systemDocumentNavigationRequest={systemDocumentNavigationRequest}

@@ -49,6 +49,8 @@ type CreateWeldTablePropsOptions = {
   onFilterLine: NonNullable<WeldTableProps['onFilterLine']>
   onOpenLinkedReport: NonNullable<WeldTableProps['onOpenLinkedReport']>
   onOpenDocument?: WeldTableProps['onOpenDocument']
+  onOpenLnkRequest?: WeldTableProps['onOpenLnkRequest']
+  onOpenLnkResult?: WeldTableProps['onOpenLnkResult']
   availableSystemDocumentTypes?: WeldTableProps['availableSystemDocumentTypes']
   onOpenDuplicateControl: (row: WeldRow) => void
   rowActionHandlers: ReportRowActionHandlers
@@ -81,6 +83,8 @@ export function createWeldTableProps({
   onFilterLine,
   onOpenLinkedReport,
   onOpenDocument,
+  onOpenLnkRequest,
+  onOpenLnkResult,
   availableSystemDocumentTypes,
   onOpenDuplicateControl,
   rowActionHandlers,
@@ -128,6 +132,11 @@ export function createWeldTableProps({
       activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
         ? onOpenDocument
         : undefined,
+    onOpenLnkRequest:
+      activeReport === 'lnk' || activeReport === 'weldingJournal'
+        ? onOpenLnkRequest
+        : undefined,
+    onOpenLnkResult: activeReport === 'lnk' ? onOpenLnkResult : undefined,
     availableSystemDocumentTypes:
       activeReport === 'lnk'
         ? intersectSystemDocumentTypes(availableSystemDocumentTypes, LNK_SYSTEM_DOCUMENT_TYPES)

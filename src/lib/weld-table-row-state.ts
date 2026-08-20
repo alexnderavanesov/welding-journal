@@ -1,4 +1,5 @@
 export function getWeldTableRowClassName({
+  rowIndex,
   readOnly,
   isHighlighted,
   isSelected,
@@ -6,6 +7,7 @@ export function getWeldTableRowClassName({
   hasDispatcherTask,
   isContextMenuAnchor,
 }: {
+  rowIndex: number
   readOnly: boolean
   isHighlighted: boolean
   isSelected: boolean
@@ -13,20 +15,20 @@ export function getWeldTableRowClassName({
   hasDispatcherTask: boolean
   isContextMenuAnchor?: boolean
 }) {
-  const baseClass = `group ${readOnly ? '' : 'cursor-pointer'} transition-colors duration-[25ms] ease-out motion-reduce:transition-none`
+  const baseClass = `weld-table-row h-[52px] ${readOnly ? '' : 'cursor-pointer'} transition-none`
   if (isHighlighted) {
-    return `${baseClass} bg-emerald-100/90 shadow-[inset_4px_0_0_rgb(16,185,129)] hover:bg-emerald-100`
+    return `${baseClass} bg-emerald-100/90 shadow-[inset_4px_0_0_rgb(16,185,129)]`
   }
   if (isSelected) {
-    return `${baseClass} bg-[#dff3ff] shadow-[inset_4px_0_0_rgb(14,165,233)] hover:bg-[#dff3ff]`
+    return `${baseClass} bg-[#dff3ff] shadow-[inset_4px_0_0_rgb(14,165,233)]`
   }
   if (isDuplicate || hasDispatcherTask) {
-    return `${baseClass} bg-amber-100/90 shadow-[inset_4px_0_0_rgb(245,158,11)] hover:bg-amber-100`
+    return `${baseClass} bg-amber-100/90 shadow-[inset_4px_0_0_rgb(245,158,11)]`
   }
   if (isContextMenuAnchor) {
     return `${baseClass} bg-[#cfeeff]`
   }
-  return `${baseClass} odd:bg-white even:bg-[#f8fafc] hover:bg-[#cfeeff]`
+  return `${baseClass} weld-table-row--hoverable ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-[#f8fafc]'}`
 }
 
 export function getWeldTableStickyCellBackgroundClassName({
@@ -44,11 +46,11 @@ export function getWeldTableStickyCellBackgroundClassName({
   hasDispatcherTask: boolean
   isContextMenuAnchor?: boolean
 }) {
-  if (isHighlighted) return 'bg-emerald-100 group-hover:bg-emerald-100'
-  if (isSelected) return 'bg-[#dff3ff] group-hover:bg-[#dff3ff]'
-  if (isDuplicate || hasDispatcherTask) return 'bg-amber-100 group-hover:bg-amber-100'
-  if (isContextMenuAnchor) return 'bg-[#cfeeff] group-hover:bg-[#cfeeff]'
-  return rowIndex % 2 === 0 ? 'bg-white group-hover:bg-[#cfeeff]' : 'bg-[#f8fafc] group-hover:bg-[#cfeeff]'
+  if (isHighlighted) return 'bg-emerald-100'
+  if (isSelected) return 'bg-[#dff3ff]'
+  if (isDuplicate || hasDispatcherTask) return 'bg-amber-100'
+  if (isContextMenuAnchor) return 'bg-[#cfeeff]'
+  return rowIndex % 2 === 0 ? 'bg-white' : 'bg-[#f8fafc]'
 }
 
 export function getWeldTableRowTitle({

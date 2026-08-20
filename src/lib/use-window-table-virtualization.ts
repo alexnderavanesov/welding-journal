@@ -3,8 +3,8 @@ import { useLayoutEffect, useRef, useState } from 'react'
 
 const DEFAULT_THRESHOLD = 80
 const DEFAULT_ROW_HEIGHT = 52
-const DEFAULT_OVERSCAN = 12
-const INITIAL_RENDER_COUNT = 24
+const DEFAULT_OVERSCAN = 6
+const INITIAL_RENDER_COUNT = 16
 
 type RowWithKey = {
   id?: number

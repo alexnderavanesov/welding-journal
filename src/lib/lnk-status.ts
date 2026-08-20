@@ -24,17 +24,25 @@ import { getRkExposureSchemeState } from '@/lib/rk-exposure'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 import { getDuplicateControls, getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
+import { CONTROL_BASIS_SUMMARY_FIELD_KEY, formatControlBasisSummary } from '@/lib/control-assignment-basis'
 
 export type LnkMethod = (typeof LNK_METHODS)[number]
 
+const LNK_METHOD_BY_REQUEST_KEY = new Map<WeldFieldKey, LnkMethod>(
+  LNK_METHODS.map((method) => [method.requestKey, method]),
+)
+const LNK_METHOD_BY_RESULT_KEY = new Map<WeldFieldKey, LnkMethod>(
+  LNK_METHODS.map((method) => [method.resultKey, method]),
+)
+
 export function getLnkMethodByRequestKey(fieldKey: WeldFieldKey | '') {
   if (!fieldKey) return undefined
-  return LNK_METHODS.find((method) => method.requestKey === fieldKey)
+  return LNK_METHOD_BY_REQUEST_KEY.get(fieldKey)
 }
 
 export function getLnkMethodByResultKey(fieldKey: WeldFieldKey | '') {
   if (!fieldKey) return undefined
-  return LNK_METHODS.find((method) => method.resultKey === fieldKey)
+  return LNK_METHOD_BY_RESULT_KEY.get(fieldKey)
 }
 
 export function isFinalLnkResultValue(value: unknown) {
@@ -101,6 +109,7 @@ export function getLnkRequestMethodBadgeClass(row: WeldInput, method: (typeof LN
 }
 
 export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) return formatControlBasisSummary(row, 'lnk')
   if (fieldKey === 'rkExposureScheme') {
     return getRkExposureSchemeState(row, loadOtherSettings().rkExposureTable).label
   }
@@ -112,6 +121,7 @@ export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
 }
 
 export function getWeldingJournalDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) return formatControlBasisSummary(row, 'all')
   const method = getLnkMethodByResultKey(fieldKey)
   if (method) return getLnkDisplayValue(row, fieldKey)
   if (fieldKey === 'pstoResult') return getPstoDisplayValue(row, fieldKey)
@@ -119,6 +129,7 @@ export function getWeldingJournalDisplayValue(row: WeldInput, fieldKey: WeldFiel
 }
 
 export function getPstoDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) return formatControlBasisSummary(row, 'psto')
   if (fieldKey === 'pstoResult' && isPstoNoNeed(row)) return 'нет потребности'
   return row[fieldKey]
 }

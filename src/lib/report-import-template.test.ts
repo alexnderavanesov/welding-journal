@@ -16,6 +16,7 @@ import {
   stripIgnoredImportFields,
 } from './report-import-template'
 import { FIELD_BY_KEY } from './weld-fields'
+import { CONTROL_BASIS_FIELD_KEYS, CONTROL_BASIS_SUMMARY_FIELD_KEY } from './control-assignment-basis'
 
 const WORK_CODE_AND_ACCEPTANCE_KEYS = [
   'testContour',
@@ -81,6 +82,23 @@ describe('welding journal import template', () => {
     for (const fieldKey of WELDING_MATERIAL_KEYS) {
       expect(getReportImportTemplateFields('weldingJournal').some((field) => field.key === fieldKey)).toBe(true)
       expect(getReportImportCellKind('weldingJournal', fieldKey)).toBe('free')
+    }
+  })
+
+  it('exposes separate control basis fields as free Excel inputs and omits the virtual summary', () => {
+    const templateFields = getReportImportTemplateFields('weldingJournal')
+
+    for (const fieldKey of CONTROL_BASIS_FIELD_KEYS) {
+      expect(templateFields.some((field) => field.key === fieldKey)).toBe(true)
+      expect(getReportImportCellKind('weldingJournal', fieldKey)).toBe('free')
+    }
+    expect(templateFields.some((field) => field.key === CONTROL_BASIS_SUMMARY_FIELD_KEY)).toBe(false)
+
+    const payload = new TextDecoder().decode(buildImportTemplateXlsxBytes('weldingJournal'))
+    for (const label of ['Основание ВИК', 'Основание РК', 'Основание ПСТО']) {
+      const column = findTemplateHeaderColumn(payload, label)
+      expect(column).toBeTruthy()
+      expect(payload).toContain(`<c r="${column}2" s="0"/>`)
     }
   })
 

@@ -24,6 +24,11 @@ type ReportMainContentProps = {
   onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
+  onOpenReportRowIds?: (
+    rowIds: number[],
+    targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment',
+    message?: string,
+  ) => void
   onOpenDocumentRows?: (
     rowIds: number[],
     documentTitle: string,
@@ -41,6 +46,7 @@ export function ReportMainContent({
   onAssignPercentageLineMissingControls,
   onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
+  onOpenReportRowIds,
   onOpenWeldRowIds,
   onOpenDocumentRows,
   systemDocumentNavigationRequest,
@@ -55,6 +61,7 @@ export function ReportMainContent({
           onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
           onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
+          onOpenReportRowIds={onOpenReportRowIds}
           onOpenWeldRowIds={onOpenWeldRowIds}
         />
       </Suspense>

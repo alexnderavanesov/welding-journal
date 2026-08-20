@@ -35,6 +35,7 @@ import { isGeneratedDocumentFieldKey } from '@/lib/generated-document-types'
 import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { WELD_FIELDS, isVirtualWeldField, type WeldInput } from '@/lib/weld-fields'
 import { STAMP_NAME_TEMPLATE_FIELDS } from '@/lib/welder-stamp-names'
+import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
 
 type DocumentTemplateBuilderProps = {
   template: StoredDocumentTemplate
@@ -78,7 +79,10 @@ const BASE_FIELD_OPTIONS: TemplateFieldOption[] = [
     kind: field.key === '__index' || field.key === '__groupIndex' ? 'number' as const : 'text' as const,
   })),
   ...WELD_FIELDS.filter(
-    (field) => !isVirtualWeldField(field) || isGeneratedDocumentFieldKey(field.key),
+    (field) =>
+      !isVirtualWeldField(field) ||
+      isGeneratedDocumentFieldKey(field.key) ||
+      field.key === CONTROL_BASIS_SUMMARY_FIELD_KEY,
   ).map((field) => ({
     key: field.key as DocumentTemplateFieldKey,
     label: field.label,

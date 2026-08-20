@@ -18,6 +18,7 @@ describe('buildLineSummary', () => {
     expect(summary.rows[0].total).toBe(1)
     expect(summary.rows[0].completed).toBe(1)
     expect(summary.rows[0].remaining).toBe(0)
+    expect(summary.rows[0]).toMatchObject({ rowIds: [4], completedRowIds: [4], remainingRowIds: [] })
   })
 
   it('counts only one good joint per chain even when a coil branch has several good joints', () => {
@@ -50,6 +51,7 @@ describe('buildLineSummary', () => {
     expect(summary.rows[0].completed).toBe(0)
     expect(summary.rows[0].remaining).toBe(1)
     expect(summary.rows[0].totalF).toBe(1)
+    expect(summary.rows[0]).toMatchObject({ rowIds: [2], completedRowIds: [], remainingRowIds: [2] })
   })
 
   it('ignores rows marked as not actual by revision', () => {

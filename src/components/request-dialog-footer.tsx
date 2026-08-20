@@ -6,6 +6,7 @@ type RequestDialogFooterProps = {
   isPending: boolean
   isCreateDisabled: boolean
   disabledReason?: string | null
+  submitLabel?: string
   onClose: () => void
   onSubmit: () => void
 }
@@ -14,6 +15,7 @@ export function RequestDialogFooter({
   isPending,
   isCreateDisabled,
   disabledReason,
+  submitLabel = 'Создать заявку',
   onClose,
   onSubmit,
 }: RequestDialogFooterProps) {
@@ -32,7 +34,7 @@ export function RequestDialogFooter({
         </Button>
         <Button onClick={onSubmit} disabled={isPending || isCreateDisabled} title={disabledReason ?? undefined}>
           <Check className="mr-2 h-4 w-4" />
-          Создать заявку
+          {submitLabel}
         </Button>
       </div>
     </div>

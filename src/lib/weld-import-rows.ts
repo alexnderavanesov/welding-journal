@@ -1,5 +1,5 @@
 import {
-  FULL_EXCEL_HEADERS,
+  REQUIRED_EXCEL_HEADERS,
   type WeldInput,
   calculateFinalStatus,
 } from './weld-fields'
@@ -15,7 +15,7 @@ export type ImportResult = {
 
 export function parseWorksheetRows(
   rows: unknown[][],
-  requiredHeaders: readonly string[] = FULL_EXCEL_HEADERS,
+  requiredHeaders: readonly string[] = REQUIRED_EXCEL_HEADERS,
 ): ImportResult {
   const [rawHeaders = [], ...dataRows] = rows
   const headers = normalizeImportHeaders(rawHeaders)

@@ -4,6 +4,7 @@ import type { DispatcherTask } from '@/lib/dispatcher-types'
 import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   invalidateWeldPageQueries,
+  STATISTICS_SERVER_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 
 type UseDispatcherAcceptedWarningsInput = {
@@ -21,6 +22,7 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
         invalidateWeldPageQueries(queryClient),
       ])
     },

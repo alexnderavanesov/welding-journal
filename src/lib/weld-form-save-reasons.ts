@@ -196,7 +196,10 @@ export function getWeldFormAutoClearHint(draft: WeldInput, initialValue: WeldDra
     if (!hasText(draft[method.requestKey])) continue
     if (hasRealLnkReportHistory(draft, method)) continue
 
-    hints.push(`${method.code}: заявка на стык будет удалена`)
+    const requestName = String(draft[method.requestKey] ?? '').trim()
+    hints.push(
+      `${method.code}: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «${requestName}». Другие виды НК и остальные стыки заявки не изменятся`,
+    )
   }
 
   if (

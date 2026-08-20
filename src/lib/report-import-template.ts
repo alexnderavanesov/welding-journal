@@ -21,6 +21,10 @@ import { isSystemWdiMode } from '@/lib/wdi'
 import { formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
+import {
+  CONTROL_BASIS_FIELD_KEYS,
+  CONTROL_BASIS_SUMMARY_FIELD_KEY,
+} from '@/lib/control-assignment-basis'
 
 export type ImportTemplateCellKind = 'free' | 'checked' | 'ignored'
 export type ReportImportMode = 'newRecords' | 'massFill' | 'replaceData'
@@ -130,13 +134,19 @@ const PREVIEW_FIELD_KEYS = [
 ] as const
 
 const REPORT_SPECIFIC_NOTE_FIELD_KEYS = new Set<WeldFieldKey>(['pstoNote', 'lnkNote'])
+const CONTROL_BASIS_IMPORT_FIELDS = CONTROL_BASIS_FIELD_KEYS.map((fieldKey) => {
+  const field = FIELD_BY_KEY.get(fieldKey)
+  if (!field) throw new Error(`Unknown control basis import field: ${fieldKey}`)
+  return field as WeldField
+})
 
 export function getReportImportTemplateFields(_activeReport: ImportableReport) {
-  return VISIBLE_FIELDS.filter(
-    (field) =>
-      field.key !== 'id' &&
-      !isVirtualWeldField(field),
-  )
+  return VISIBLE_FIELDS.flatMap((field) => {
+    if (field.key === CONTROL_BASIS_SUMMARY_FIELD_KEY) {
+      return CONTROL_BASIS_IMPORT_FIELDS
+    }
+    return field.key !== 'id' && !isVirtualWeldField(field) ? [field] : []
+  })
 }
 
 export function getReportImportPreviewFields(activeReport: ImportableReport) {

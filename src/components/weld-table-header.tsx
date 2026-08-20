@@ -34,6 +34,7 @@ type WeldTableHeaderProps = {
   manualFilterOptionsReport?: WeldReportKind
   manualFilterOptions?: Record<string, WeldColumnFilterOption[]>
   onColumnFiltersChange: (filters: Record<string, string>) => void
+  visibleFieldKeys?: ReadonlySet<WeldFieldKey>
 }
 
 export function WeldTableHeader({
@@ -63,6 +64,7 @@ export function WeldTableHeader({
   manualFilterOptionsReport,
   manualFilterOptions,
   onColumnFiltersChange,
+  visibleFieldKeys,
 }: WeldTableHeaderProps) {
   const selectStickyLeft = stickyLeft
   const hasControlColumn = selectable || hasChainAction
@@ -114,6 +116,7 @@ export function WeldTableHeader({
         manualFilterOptionsReport={manualFilterOptionsReport}
         manualFilterOptions={manualFilterOptions}
         onColumnFiltersChange={onColumnFiltersChange}
+        visibleFieldKeys={visibleFieldKeys}
       />
     </thead>
   )

@@ -1,5 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { useCallback } from 'react'
 
 type WeldTableRow = WeldRow
 
@@ -18,15 +19,15 @@ export function useWeldTableEditability({
   blockedFieldKeys,
   isCellEditable,
 }: UseWeldTableEditabilityParams) {
-  function canEditField(fieldKey: WeldFieldKey) {
+  const canEditField = useCallback((fieldKey: WeldFieldKey) => {
     if (!onEdit) return false
     if (!readOnly) return !blockedFieldKeys.has(fieldKey)
     return editableFieldKeys.has(fieldKey)
-  }
+  }, [blockedFieldKeys, editableFieldKeys, onEdit, readOnly])
 
-  function canEditCell(row: WeldTableRow, fieldKey: WeldFieldKey) {
+  const canEditCell = useCallback((row: WeldTableRow, fieldKey: WeldFieldKey) => {
     return canEditField(fieldKey) && isCellEditable(row, fieldKey)
-  }
+  }, [canEditField, isCellEditable])
 
   return { canEditField, canEditCell }
 }

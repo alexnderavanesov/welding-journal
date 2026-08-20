@@ -2,6 +2,7 @@ import { Trash2 } from 'lucide-react'
 
 import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getLnkRequestPositionRemovalBlockReason } from '@/lib/lnk-request-mutation-updates'
 import { LNK_METHODS } from '@/lib/report-config'
 
 type LnkRequestMethod = (typeof LNK_METHODS)[number]
@@ -25,19 +26,22 @@ export function LnkRequestManagerPosition({
         <ManagerRowJointHeading row={row} metaClassName="text-xs leading-5 text-slate-500" truncate />
       </div>
       <div className="flex flex-wrap justify-end gap-1.5">
-        {methods.map((method) => (
-          <button
-            key={method.requestKey}
-            type="button"
-            onClick={() => onClearPosition(row, method.requestKey)}
-            disabled={isCorrectionPending}
-            className="inline-flex items-center gap-1.5 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-            title={`Очистить ${method.code} только для этого стыка`}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {method.code}
-          </button>
-        ))}
+        {methods.map((method) => {
+          const blockReason = getLnkRequestPositionRemovalBlockReason(row, method.requestKey)
+          return (
+            <button
+              key={method.requestKey}
+              type="button"
+              onClick={() => onClearPosition(row, method.requestKey)}
+              disabled={isCorrectionPending || Boolean(blockReason)}
+              className="inline-flex items-center gap-1.5 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-100"
+              title={blockReason ?? `Исключить ${method.code} только для этого стыка`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {method.code}
+            </button>
+          )
+        })}
       </div>
     </div>
   )

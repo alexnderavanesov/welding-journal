@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { clearDisabledLnkRequests } from '@/lib/lnk-field-updates'
@@ -55,8 +55,47 @@ export function useReportRows(
   finalStatusSourceContext?: FinalStatusRowsContext,
   otherSettings?: ReportWdiSettings,
 ) {
+  const previousRowsRef = useRef<WeldRow[]>([])
   return useMemo(
-    () => prepareReportRows(sourceRows, duplicateControls, finalStatusSourceRows, finalStatusSourceContext, otherSettings),
+    () => {
+      const nextRows = prepareReportRows(
+        sourceRows,
+        duplicateControls,
+        finalStatusSourceRows,
+        finalStatusSourceContext,
+        otherSettings,
+      )
+      const sharedRows = reuseEquivalentWeldRows(previousRowsRef.current, nextRows)
+      previousRowsRef.current = sharedRows
+      return sharedRows
+    },
     [duplicateControls, finalStatusSourceContext, finalStatusSourceRows, otherSettings, sourceRows],
   )
+}
+
+export function reuseEquivalentWeldRows(previousRows: WeldRow[], nextRows: WeldRow[]) {
+  if (previousRows.length === 0 || nextRows.length === 0) return nextRows
+  const previousById = new Map(previousRows.map((row) => [Number(row.id), row]))
+  let reusedCount = 0
+  const sharedRows = nextRows.map((row) => {
+    const previous = previousById.get(Number(row.id))
+    if (!previous || !areWeldRowsShallowEqual(previous, row)) return row
+    reusedCount += 1
+    return previous
+  })
+  return reusedCount > 0 ? sharedRows : nextRows
+}
+
+function areWeldRowsShallowEqual(left: WeldRow, right: WeldRow) {
+  if (left === right) return true
+  const leftKeys = Object.keys(left) as Array<keyof WeldRow>
+  const rightKeys = Object.keys(right) as Array<keyof WeldRow>
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every((key) => areWeldRowValuesEqual(left[key], right[key]))
+}
+
+function areWeldRowValuesEqual(left: unknown, right: unknown) {
+  if (Object.is(left, right)) return true
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+  return left.every((value, index) => Object.is(value, right[index]))
 }

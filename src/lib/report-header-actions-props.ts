@@ -30,9 +30,15 @@ type CreateReportHeaderActionsPropsOptions = {
   onOpenPstoWaitingRequestReport: () => void
   onOpenPstoResultsReport: () => void
   onCreateLnkRequest: () => void
+  onExtendLnkRequest: () => void
+  onOpenLnkRequestRegistry: () => void
   lnkRequestPending: boolean
   onAddLnkResult: () => void
   lnkResultDisabled: boolean
+  onEditSelectedLnkResults: () => void
+  editSelectedLnkResultsDisabled: boolean
+  onOpenLnkResultRegistry: () => void
+  lnkResultRegistryDisabled: boolean
   onOpenLnkOfficiality: () => void
   lnkOfficialityPending: boolean
   onOpenDuplicateControl: () => void
@@ -74,9 +80,15 @@ export function createReportHeaderActionsProps({
   onOpenPstoWaitingRequestReport,
   onOpenPstoResultsReport,
   onCreateLnkRequest,
+  onExtendLnkRequest,
+  onOpenLnkRequestRegistry,
   lnkRequestPending,
   onAddLnkResult,
   lnkResultDisabled,
+  onEditSelectedLnkResults,
+  editSelectedLnkResultsDisabled,
+  onOpenLnkResultRegistry,
+  lnkResultRegistryDisabled,
   onOpenLnkOfficiality,
   lnkOfficialityPending,
   onOpenDuplicateControl,
@@ -117,9 +129,15 @@ export function createReportHeaderActionsProps({
     onOpenPstoWaitingRequestReport,
     onOpenPstoResultsReport,
     onCreateLnkRequest,
+    onExtendLnkRequest,
+    onOpenLnkRequestRegistry,
     lnkRequestPending,
     onAddLnkResult,
     lnkResultDisabled,
+    onEditSelectedLnkResults,
+    editSelectedLnkResultsDisabled,
+    onOpenLnkResultRegistry,
+    lnkResultRegistryDisabled,
     onOpenLnkOfficiality,
     lnkOfficialityPending,
     onOpenDuplicateControl,

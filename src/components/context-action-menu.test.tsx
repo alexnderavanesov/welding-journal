@@ -66,4 +66,28 @@ describe('ContextActionMenu', () => {
 
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('shows the row identity and non-interactive action group labels', () => {
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 20,
+          y: 20,
+          heading: 'Стык F18',
+          description: 'Линия 330-ATM-16-000',
+          items: [
+            { type: 'label', id: 'navigation', label: 'Переходы' },
+            { id: 'open-line', label: 'Открыть линию', onSelect: vi.fn() },
+          ],
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Стык F18')).toBeInTheDocument()
+    expect(screen.getByText('Линия 330-ATM-16-000')).toBeInTheDocument()
+    expect(screen.getByText('Переходы')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Переходы' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Открыть линию' })).toBeInTheDocument()
+  })
 })

@@ -3,9 +3,11 @@ import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import {
+  applyLnkFieldUpdate,
   withTouchedLnkFinalStatus,
   withTouchedLnkTimestamp,
 } from '@/lib/lnk-field-updates'
+import { hasCompletedLnkRequestPosition } from '@/lib/report-control-state'
 import {
   hasText,
   isEnabledControlValue,
@@ -82,23 +84,43 @@ export function buildLnkRequestCorrectionRow({
     throw new Error('Нельзя указать заявку ЛНК без назначения этого вида контроля')
   }
 
-  const proposedRecord = { ...record } as RowWithId
   if (requestName) {
+    const proposedRecord = { ...record } as RowWithId
     proposedRecord[method.requestKey] = requestName
     if (!hasText(proposedRecord[method.resultKey])) {
       proposedRecord[method.resultKey] = 'ожидает НК'
     }
-  } else {
-    proposedRecord[method.requestKey] = null
-    proposedRecord[method.requestDateKey] = null
-    proposedRecord[method.resultKey] = null
-    proposedRecord[method.conclusionDateKey] = null
-    proposedRecord[method.conclusionKey] = null
+    const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
+    assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)
+    return nextRecord
   }
 
-  const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
+  const nextRecord = buildLnkRequestPositionRemovalRow(record, methodKey)
   assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)
   return nextRecord
+}
+
+export function getLnkRequestPositionRemovalBlockReason(
+  record: RowWithId,
+  methodKey: WeldFieldKey,
+) {
+  const method = getLnkMethodByRequestKey(methodKey)
+  if (!method || !hasCompletedLnkRequestPosition(record, method)) return null
+  const joint = String(record.joint ?? '').trim() || `№${record.id}`
+  return `Нельзя исключить ${method.code} стыка ${joint} из заявки: по этой позиции уже внесен результат или заключение. Сначала удалите результат в отчете ЛНК.`
+}
+
+export function buildLnkRequestPositionRemovalRow(
+  record: RowWithId,
+  methodKey: WeldFieldKey,
+) {
+  const method = getLnkMethodByRequestKey(methodKey)
+  if (!method) throw new Error('Выберите вид контроля')
+  const blockReason = getLnkRequestPositionRemovalBlockReason(record, methodKey)
+  if (blockReason) throw new Error(blockReason)
+  return withTouchedLnkFinalStatus(
+    withTouchedLnkTimestamp(applyLnkFieldUpdate(record, method.requestKey, null)),
+  )
 }
 
 export function buildLnkRequestManagerRows({
@@ -114,9 +136,21 @@ export function buildLnkRequestManagerRows({
   nextRequestName: string
   action: LnkRequestManagerAction
 }) {
-  const saveCheckSettings = loadSaveCheckSettings()
+  if (action === 'delete') {
+    for (const record of records) {
+      for (const method of LNK_METHODS) {
+        if (!isSameRequestDocument(record[method.requestKey], record[method.requestDateKey], {
+          name: requestName,
+          date: requestDate,
+        })) continue
+        const blockReason = getLnkRequestPositionRemovalBlockReason(record, method.requestKey)
+        if (blockReason) throw new Error(blockReason)
+      }
+    }
+  }
+
   const proposedRecords = records.flatMap((record) => {
-    const nextRecord = { ...record } as RowWithId
+    let nextRecord = { ...record } as RowWithId
     let changed = false
     for (const method of LNK_METHODS) {
       if (
@@ -130,18 +164,14 @@ export function buildLnkRequestManagerRows({
       if (action === 'rename') {
         nextRecord[method.requestKey] = nextRequestName
       } else {
-        nextRecord[method.requestKey] = null
-        nextRecord[method.requestDateKey] = null
-        nextRecord[method.resultKey] = null
-        nextRecord[method.conclusionDateKey] = null
-        nextRecord[method.conclusionKey] = null
+        nextRecord = applyLnkFieldUpdate(nextRecord, method.requestKey, null)
       }
       changed = true
     }
     return changed ? [withTouchedLnkFinalStatus(nextRecord)] : []
   })
   if (action === 'rename') {
-    assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
+    assertNoLnkChronologyIssues(proposedRecords, loadSaveCheckSettings())
   }
   return proposedRecords
 }

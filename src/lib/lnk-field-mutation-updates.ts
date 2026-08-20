@@ -13,6 +13,7 @@ import {
   withTouchedLnkTimestamp,
 } from '@/lib/lnk-field-updates'
 import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
+import { buildLnkRequestPositionRemovalRow } from '@/lib/lnk-request-mutation-updates'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -36,6 +37,11 @@ export function buildLnkFieldRow({
   const requestMethod = getLnkMethodByRequestKey(fieldKey)
   if (requestMethod && value && !isEnabledControlValue(record[requestMethod.enabledKey])) {
     throw new Error('Нельзя указать заявку ЛНК без назначения этого вида контроля')
+  }
+  if (requestMethod && !hasText(value)) {
+    const proposedRecord = buildLnkRequestPositionRemovalRow(record, fieldKey)
+    assertNoLnkChronologyIssues([proposedRecord], loadSaveCheckSettings())
+    return proposedRecord
   }
   if (isLnkRequestField(fieldKey) && value && !lnkRequestOptions.includes(value)) {
     throw new Error('Можно выбрать только существующую заявку ЛНК или очистить поле')

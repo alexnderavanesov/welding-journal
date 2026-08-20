@@ -21,6 +21,9 @@ export type LineSummaryRow = {
   remaining: number
   remainingF: number
   remainingS: number
+  rowIds: number[]
+  completedRowIds: number[]
+  remainingRowIds: number[]
 }
 
 export type LineSummary = {
@@ -65,19 +68,25 @@ export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIn
         remaining: 0,
         remainingF: 0,
         remainingS: 0,
+        rowIds: [],
+        completedRowIds: [],
+        remainingRowIds: [],
       } satisfies LineSummaryRow)
 
     const jointType = getJointType(row, systemIndexSettings)
     const completed = hasText(row.weldDate)
+    summaryRow.rowIds.push(row.id)
     summaryRow.total += weight
     if (jointType === 'f') summaryRow.totalF += weight
     if (jointType === 's') summaryRow.totalS += weight
 
     if (completed) {
+      summaryRow.completedRowIds.push(row.id)
       summaryRow.completed += weight
       if (jointType === 'f') summaryRow.completedF += weight
       if (jointType === 's') summaryRow.completedS += weight
     } else {
+      summaryRow.remainingRowIds.push(row.id)
       summaryRow.remaining += weight
       if (jointType === 'f') summaryRow.remainingF += weight
       if (jointType === 's') summaryRow.remainingS += weight

@@ -8,7 +8,6 @@ import {
   hasWeldDate,
   getCancelledLnkResultDisplay,
   getCancelledPstoResultDisplay,
-  hasRealLnkResultValue,
   isCancelledControlValue,
   isEnabledControlValue,
   isPendingLnkResultValue,
@@ -84,7 +83,16 @@ export function isCancelledLnkControl(row: WeldInput, method: (typeof LNK_METHOD
 }
 
 export function hasLnkMethodReportHistory(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
-  return hasRealLnkResultValue(row[method.resultKey]) || hasText(row[method.conclusionDateKey]) || hasText(row[method.conclusionKey])
+  return hasCompletedLnkRequestPosition(row, method)
+}
+
+export function hasCompletedLnkRequestPosition(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
+  const result = String(row[method.resultKey] ?? '').trim()
+  return (
+    (hasText(result) && !isPendingLnkResultValue(result)) ||
+    hasText(row[method.conclusionDateKey]) ||
+    hasText(row[method.conclusionKey])
+  )
 }
 
 export function canCreateLnkRequest(row: WeldInput) {

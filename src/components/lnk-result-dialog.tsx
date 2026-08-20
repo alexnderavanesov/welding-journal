@@ -111,10 +111,10 @@ export function LnkResultDialog({
       panelShadowClassName="shadow-slate-950/10"
     >
       <ResultDialogHeader
-        title="Добавление результата ЛНК"
+        title="Внесение результатов ЛНК"
         requestName={draft.requestName}
         selectedCount={draft.rowIds.size}
-        managerDisabled={draft.rowIds.size === 0}
+        managerDisabled={false}
         onOpenManager={onOpenManager}
         onClose={onClose}
       />

@@ -3,6 +3,7 @@ import {
   type WeldField,
   type WeldFieldKey,
 } from '@/lib/weld-field-definitions'
+import { CONTROL_BASIS_FIELD_KEYS } from '@/lib/control-assignment-basis'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 export const yesEmptyFieldKeys = new Set([
@@ -71,6 +72,7 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'jsrDocument',
   'checklistDocument',
   'zniDocument',
+  ...CONTROL_BASIS_FIELD_KEYS,
   'status',
   'createdAt',
   'weldingUpdatedAt',

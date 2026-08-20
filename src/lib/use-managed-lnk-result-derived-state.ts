@@ -10,6 +10,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 type ManagedLnkResultDerivedStateParams = {
+  isOpen: boolean
   lnkRows: WeldRow[]
   managedLnkResultOrderIds: number[] | null
   managedLnkResultMethodKey: WeldFieldKey | ''
@@ -17,6 +18,7 @@ type ManagedLnkResultDerivedStateParams = {
 }
 
 export function useManagedLnkResultDerivedState({
+  isOpen,
   lnkRows,
   managedLnkResultOrderIds,
   managedLnkResultMethodKey,
@@ -25,10 +27,10 @@ export function useManagedLnkResultDerivedState({
   const managedLnkResultRows = useMemo(
     () =>
       getManagedLnkResultRows({
-        lnkRows,
+        lnkRows: isOpen ? lnkRows : [],
         managedLnkResultOrderIds,
       }),
-    [lnkRows, managedLnkResultOrderIds],
+    [isOpen, lnkRows, managedLnkResultOrderIds],
   )
 
   const managedLnkResultMethods = useMemo(

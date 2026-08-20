@@ -5,9 +5,11 @@ import { buildLineSummary, type LineSummary } from '@/lib/line-summary'
 import { buildPercentageLineSummaries, type PercentageLineSummary } from '@/lib/percentage-line-summary'
 import {
   buildStatisticsSummary,
-  type StatisticsPeriodMode,
+  buildStatisticsStateRowIds,
+  type StatisticsStateRowIds,
   type StatisticsSummary,
   type StatisticsUnit,
+  type StatisticsControlDynamicsScaleSetting,
 } from '@/lib/statistics-summary'
 import {
   getConfiguredBaseJointType,
@@ -19,9 +21,13 @@ import {
   type WelderStatisticsSummary,
 } from '@/lib/welder-statistics-summary'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
-import { buildWeldingDynamics, type WeldingDynamicsSummary } from '@/lib/welding-dynamics'
+import {
+  buildWeldingDynamics,
+  type WeldingDynamicsScaleSetting,
+  type WeldingDynamicsSummary,
+} from '@/lib/welding-dynamics'
 
-export type StatisticsTab = 'general' | 'lnk' | 'welders' | 'lineSummary' | 'percentageLines'
+export type StatisticsTab = 'general' | 'lnk' | 'psto' | 'welders' | 'lineSummary' | 'percentageLines'
 
 export type StatisticsFilterOption = {
   value: string
@@ -36,7 +42,8 @@ export type StatisticsServerRequest = {
   to?: string
   unit?: StatisticsUnit
   jointFilter?: WelderStatisticsJointFilter
-  periodMode?: StatisticsPeriodMode
+  controlDynamicsScale?: StatisticsControlDynamicsScaleSetting
+  weldingDynamicsScale?: WeldingDynamicsScaleSetting
 }
 
 export type StatisticsServerResult = {
@@ -48,7 +55,9 @@ export type StatisticsServerResult = {
   lineSummary: LineSummary
   percentageLineSummary: PercentageLineSummary[]
   generalProgressSummary: LineSummary
+  generalStateRowIds: StatisticsStateRowIds
   unofficialCount: number
+  unofficialRowIds: number[]
   unofficialValue: number
 }
 
@@ -62,6 +71,8 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   weldedShare: 0,
   good: 0,
   rejected: 0,
+  duplicateGood: 0,
+  duplicateRejected: 0,
   waitingWeld: 0,
   waitingRequest: 0,
   waitingControl: 0,
@@ -98,7 +109,21 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
     good: 0,
     rejected: 0,
     closurePercent: 0,
+    rowIds: {
+      requiredRequests: [],
+      createdRequests: [],
+      requests: [],
+      closed: [],
+      totalClosed: [],
+      closedWithoutRequest: [],
+      waitingRequest: [],
+      waitingControl: [],
+      good: [],
+      rejected: [],
+    },
   },
+  controlDynamicsScale: 'day',
+  controlDynamics: [],
 }
 
 const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
@@ -114,8 +139,10 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   peakValue: 0,
   peakWelders: 0,
   materialGroups: [],
+  projectGroups: [],
   jointTypes: [],
   materialJointTypes: [],
+  projectJointTypes: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
@@ -146,15 +173,31 @@ const EMPTY_LINE_SUMMARY: LineSummary = {
   remaining: 0,
 }
 
+const EMPTY_STATISTICS_STATE_ROW_IDS: StatisticsStateRowIds = {
+  good: [],
+  rejected: [],
+  duplicateGood: [],
+  duplicateRejected: [],
+  waitingWeld: [],
+  waitingRequest: [],
+  waitingControl: [],
+  waitingRepair: [],
+  backlog: [],
+  backlogWaitingWeld: [],
+  backlogWaitingRepair: [],
+}
+
 export function buildStatisticsServerResult({
   rows,
   welderStamps,
   systemIndexSettings,
+  acceptedDispatcherWarningKeys = new Set(),
   request,
 }: {
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
   systemIndexSettings: SystemIndexSettings
+  acceptedDispatcherWarningKeys?: ReadonlySet<string>
   request: StatisticsServerRequest
 }): StatisticsServerResult {
   const tab = request.tab
@@ -164,7 +207,6 @@ export function buildStatisticsServerResult({
   const to = String(request.to ?? '').trim()
   const unit = request.unit === 'wdi' ? 'wdi' : 'joints'
   const jointFilter = normalizeJointFilter(request.jointFilter)
-  const periodMode = request.periodMode === 'welded-joints' ? 'welded-joints' : 'events'
 
   const projectOptions = getUniqueSortedValues(rows.map((row) => row.projectTitle))
   const subtitleOptions = getUniqueSortedValues(
@@ -179,9 +221,16 @@ export function buildStatisticsServerResult({
     return projectMatches && subtitleMatches
   })
   const generalRows = scopedRows.filter((row) => matchesJointFilter(row, jointFilter, systemIndexSettings))
-  const isGeneralLikeTab = tab === 'general' || tab === 'lnk'
+  const isGeneralLikeTab = tab === 'general' || tab === 'lnk' || tab === 'psto'
   const calculatedSummary = isGeneralLikeTab
-    ? buildStatisticsSummary(generalRows, from, to, unit, periodMode, systemIndexSettings)
+    ? buildStatisticsSummary(
+        generalRows,
+        from,
+        to,
+        unit,
+        systemIndexSettings,
+        request.controlDynamicsScale ?? 'auto',
+      )
     : EMPTY_STATISTICS_SUMMARY
   const unofficialRows = isGeneralLikeTab ? calculatedSummary.periodRows.filter(isUnofficialJoint) : []
 
@@ -191,7 +240,14 @@ export function buildStatisticsServerResult({
     summary: isGeneralLikeTab ? { ...calculatedSummary, periodRows: [] } : EMPTY_STATISTICS_SUMMARY,
     weldingDynamics:
       tab === 'general'
-        ? buildWeldingDynamics(calculatedSummary.periodRows, from, to, unit, systemIndexSettings)
+        ? buildWeldingDynamics(
+            calculatedSummary.periodRows,
+            from,
+            to,
+            unit,
+            systemIndexSettings,
+            request.weldingDynamicsScale ?? 'auto',
+          )
         : EMPTY_WELDING_DYNAMICS,
     welderSummary:
       tab === 'welders'
@@ -211,13 +267,25 @@ export function buildStatisticsServerResult({
         : EMPTY_LINE_SUMMARY,
     percentageLineSummary:
       tab === 'percentageLines'
-        ? buildPercentageLineSummaries(scopedRows, systemIndexSettings).map((line) => ({ ...line, rows: [] }))
+        ? buildPercentageLineSummaries(
+            scopedRows,
+            systemIndexSettings,
+            acceptedDispatcherWarningKeys,
+          ).map((line) => ({ ...line, rows: [] }))
         : [],
     generalProgressSummary:
       tab === 'general'
         ? buildLineSummary(generalRows, unit, systemIndexSettings)
         : EMPTY_LINE_SUMMARY,
+    generalStateRowIds:
+      isGeneralLikeTab
+        ? buildStatisticsStateRowIds(generalRows, from, to, unit)
+        : EMPTY_STATISTICS_STATE_ROW_IDS,
     unofficialCount: unofficialRows.length,
+    unofficialRowIds: unofficialRows
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .sort((left, right) => left - right),
     unofficialValue: sumRows(unofficialRows, unit),
   }
 }

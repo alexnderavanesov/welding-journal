@@ -19,6 +19,7 @@ export type WelderStatisticsBucket = {
   date: string
   total: number
   joints: number
+  rowIds: number[]
 }
 
 export type WelderStatisticsGroupSummary = {
@@ -30,13 +31,14 @@ export type WelderStatisticsGroupSummary = {
   rejected: number
 }
 
-type WelderStatisticsBucketDraft = WelderStatisticsBucket & {
+type WelderStatisticsBucketDraft = Omit<WelderStatisticsBucket, 'rowIds'> & {
   rowIds: Set<number>
 }
 
 export type WelderStatisticsRow = {
   stamp: string
   welderName: string
+  searchStamps: string[]
   total: number
   good: number
   waitingRequest: number
@@ -53,11 +55,31 @@ export type WelderStatisticsRow = {
   sWaitingControl: number
   fRejected: number
   sRejected: number
+  rowIds: number[]
+  goodRowIds: number[]
+  waitingRequestRowIds: number[]
+  waitingControlRowIds: number[]
+  rejectedRowIds: number[]
   daily: WelderStatisticsBucket[]
   materialGroups: WelderStatisticsGroupSummary[]
 }
 
-type WelderStatisticsDraftRow = Omit<WelderStatisticsRow, 'daily' | 'materialGroups'> & {
+type WelderStatisticsDraftRow = Omit<
+  WelderStatisticsRow,
+  | 'searchStamps'
+  | 'rowIds'
+  | 'goodRowIds'
+  | 'waitingRequestRowIds'
+  | 'waitingControlRowIds'
+  | 'rejectedRowIds'
+  | 'daily'
+  | 'materialGroups'
+> & {
+  rowIdSet: Set<number>
+  goodRowIdSet: Set<number>
+  waitingRequestRowIdSet: Set<number>
+  waitingControlRowIdSet: Set<number>
+  rejectedRowIdSet: Set<number>
   dailyMap: Map<string, WelderStatisticsBucketDraft>
   materialGroupMap: Map<string, WelderStatisticsGroupSummary>
 }
@@ -105,6 +127,7 @@ export function buildWelderStatisticsSummary(
   systemIndexSettings?: SystemIndexSettings,
 ): WelderStatisticsSummary {
   const stampLabels = buildWelderStampLabelMap(welderStamps)
+  const searchStampsByLabel = buildWelderSearchStampMap(welderStamps, stampLabels)
   const welderNames = buildWelderNameMap(welderStamps)
   const periodRows = rows.filter(
     (row) => isDateInRange(row.weldDate, from, to) && matchesJointFilter(row, jointFilter, systemIndexSettings),
@@ -133,13 +156,28 @@ export function buildWelderStatisticsSummary(
   }
 
   const resultRows = Array.from(stats.values()).map((row) => {
-    const { dailyMap, materialGroupMap, ...base } = row
+    const {
+      dailyMap,
+      materialGroupMap,
+      rowIdSet,
+      goodRowIdSet,
+      waitingRequestRowIdSet,
+      waitingControlRowIdSet,
+      rejectedRowIdSet,
+      ...base
+    } = row
 
     return {
       ...base,
+      searchStamps: searchStampsByLabel.get(normalizeStamp(row.stamp)) ?? [row.stamp],
+      rowIds: toSortedRowIds(rowIdSet),
+      goodRowIds: toSortedRowIds(goodRowIdSet),
+      waitingRequestRowIds: toSortedRowIds(waitingRequestRowIdSet),
+      waitingControlRowIds: toSortedRowIds(waitingControlRowIdSet),
+      rejectedRowIds: toSortedRowIds(rejectedRowIdSet),
       defectPercent: getPercent(row.rejected, row.good + row.rejected),
       daily: Array.from(dailyMap.values())
-        .map(({ rowIds, ...bucket }) => ({ ...bucket, joints: rowIds.size }))
+        .map(({ rowIds, ...bucket }) => ({ ...bucket, joints: rowIds.size, rowIds: toSortedRowIds(rowIds) }))
         .sort((left, right) => left.date.localeCompare(right.date)),
       materialGroups: Array.from(materialGroupMap.values())
         .sort((left, right) => right.total - left.total || left.key.localeCompare(right.key, 'ru', { numeric: true })),
@@ -229,36 +267,50 @@ function addWelderStat(
       sWaitingControl: 0,
       fRejected: 0,
       sRejected: 0,
+      rowIdSet: new Set<number>(),
+      goodRowIdSet: new Set<number>(),
+      waitingRequestRowIdSet: new Set<number>(),
+      waitingControlRowIdSet: new Set<number>(),
+      rejectedRowIdSet: new Set<number>(),
       dailyMap: new Map<string, WelderStatisticsBucketDraft>(),
       materialGroupMap: new Map<string, WelderStatisticsGroupSummary>(),
     } satisfies WelderStatisticsDraftRow)
 
   if (!row.welderName && welderName) row.welderName = welderName
+  row.rowIdSet.add(sourceRow.id)
   row.total += value
   if (jointType === 'f') row.fTotal += value
   if (jointType === 's') row.sTotal += value
   if (status === 'годен') {
+    row.goodRowIdSet.add(sourceRow.id)
     row.good += value
     if (jointType === 'f') row.fGood += value
     if (jointType === 's') row.sGood += value
   }
   if (status === 'ожидает заявку') {
+    row.waitingRequestRowIdSet.add(sourceRow.id)
     row.waitingRequest += value
     if (jointType === 'f') row.fWaitingRequest += value
     if (jointType === 's') row.sWaitingRequest += value
   }
   if (status.toLowerCase() === 'ожидает нк') {
+    row.waitingControlRowIdSet.add(sourceRow.id)
     row.waitingControl += value
     if (jointType === 'f') row.fWaitingControl += value
     if (jointType === 's') row.sWaitingControl += value
   }
   if (status === 'не годен') {
+    row.rejectedRowIdSet.add(sourceRow.id)
     row.rejected += value
     if (jointType === 'f') row.fRejected += value
     if (jointType === 's') row.sRejected += value
   }
   addWelderDetail(row, sourceRow, value, status)
   stats.set(stamp, row)
+}
+
+function toSortedRowIds(rowIds: ReadonlySet<number>) {
+  return Array.from(rowIds).sort((left, right) => left - right)
 }
 
 function addWelderDetail(row: WelderStatisticsDraftRow, sourceRow: WeldRow, value: number, status: string) {
@@ -337,6 +389,28 @@ function buildWelderNameMap(records: WelderStampRecord[]) {
   }
 
   return map
+}
+
+function buildWelderSearchStampMap(records: WelderStampRecord[], labels: Map<string, string>) {
+  const aliases = new Map<string, Set<string>>()
+
+  for (const record of records) {
+    for (const rawStamp of [record.naksStamp, record.internalStamp]) {
+      const stamp = rawStamp.trim()
+      if (!stamp) continue
+      const label = getWelderStampLabel(stamp, labels)
+      const current = aliases.get(normalizeStamp(label)) ?? new Set<string>()
+      current.add(stamp)
+      aliases.set(normalizeStamp(label), current)
+    }
+  }
+
+  return new Map(
+    Array.from(aliases.entries()).map(([label, stamps]) => [
+      label,
+      Array.from(stamps).sort((left, right) => left.localeCompare(right, 'ru', { numeric: true })),
+    ]),
+  )
 }
 
 function getWelderStampLabel(rawStamp: string, labels: Map<string, string>) {
