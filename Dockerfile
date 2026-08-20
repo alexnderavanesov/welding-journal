@@ -14,7 +14,7 @@ RUN apt-get update \
 FROM node:22-bookworm-slim AS pnpm-base
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libatomic1 \
+  && apt-get install -y --no-install-recommends curl libatomic1 \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=pnpm-installer /opt/pnpm /opt/pnpm
