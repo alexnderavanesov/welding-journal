@@ -16,7 +16,7 @@ of the SheetJS CDN. Verify both the version and checksum before replacing it.
 - File: `image-size-2.0.3-security.0.tgz`
 - Based on: official `image-size@2.0.2` package
 - Local version: `2.0.3-security.0`
-- SHA-256: `23fbc38044858caada89b0c764d8a1852c343558fd907a6bfa3d4330f8c57780`
+- SHA-256: `24244fadfbc71a3130cbf7aa65962d787f04454f6bb1215049a4dbc59c12a20d`
 - Purpose: reject malformed HEIF, ICNS, and JXL entries whose zero or invalid
   sizes otherwise allow parser loops to stop making progress.
 

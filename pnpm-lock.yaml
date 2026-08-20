@@ -1,3 +1,104 @@
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    configDependencies: {}
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.0.0-rc.7
+        version: 12.0.0-rc.7
+
+packages:
+
+  '@pnpm/exe.darwin-arm64@12.0.0-rc.7':
+    resolution: {integrity: sha512-IVRQGs1GB5YcVivwGewvdHkdCBrTYoInSnvJMslYa/BDTXDxQ352gVwpw0x7JvyfEKLrYcPQERxLBkPrjj2abA==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@pnpm/exe.darwin-x64@12.0.0-rc.7':
+    resolution: {integrity: sha512-L1tyIoFaAyOFYKxIboJx3yaVhdzjW0kEtrgxqAIbYosCO97jdrd5uLDFhY7kh8UbdTNy5Je1mVj+6e7YOJmbzQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@pnpm/exe.linux-arm64-musl@12.0.0-rc.7':
+    resolution: {integrity: sha512-nDTlQXIwySKDkM9pkUazRs08xzdhZAdhBpd5afn/v/ECvcrSMPgGqDqDOY8xxchdv0BkX+OTjyEGZI3MYbSlSg==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/exe.linux-arm64@12.0.0-rc.7':
+    resolution: {integrity: sha512-bs2dlLs+gVjs7gmM4zrhHC20ca20EAjluvkpBIoQJe+rf6gXEKtaMo7WcbnpsQChCEv3GhM//hVoRnbRZhR/jw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-x64-musl@12.0.0-rc.7':
+    resolution: {integrity: sha512-fGdJQx0pXAbMYE36SiCHbHVvaOWyPKyBuVMlNTHU3XWfX94kiOx7pEzfAlODTYEFyk9vZABSLyyQZ2EvVSNKiA==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/exe.linux-x64@12.0.0-rc.7':
+    resolution: {integrity: sha512-NZ16HBgXA6CPL4qCm5fku/C5paHZSLT243bG/27hCGysAXkN+ZJy+rZZKx6SKGUzVimi+9t0owPUNZ6XLSkWzQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.win32-arm64@12.0.0-rc.7':
+    resolution: {integrity: sha512-JKrB3taWXcN1OtZq95X5Sfe/Dk2JYkwgd+qXNmjK/RHpiS+G1pE45L5u77KXVhQQ8MoctLthK1CMA5TbXX3bIg==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@pnpm/exe.win32-x64@12.0.0-rc.7':
+    resolution: {integrity: sha512-AVEC3/Q+opA1npNqM+yqirXvufRpftoLwWs9OlRE7Euhx76FGHGkB72fi2VyNiFBkfovcwOfwOPM0h1geVFYaw==}
+    cpu: [x64]
+    os: [win32]
+
+  pnpm@12.0.0-rc.7:
+    resolution: {integrity: sha512-HZZwaee7QL7qTi67X01s+qsJkRlZPNK/0mUW9MbhUaOH2bOiBfjWKSZNa9dks15b/bOPqc95jmJSAzU7xvuyVA==}
+    engines: {node: '>=18.*'}
+    hasBin: true
+
+snapshots:
+
+  '@pnpm/exe.darwin-arm64@12.0.0-rc.7':
+    optional: true
+
+  '@pnpm/exe.darwin-x64@12.0.0-rc.7':
+    optional: true
+
+  '@pnpm/exe.linux-arm64-musl@12.0.0-rc.7':
+    optional: true
+
+  '@pnpm/exe.linux-arm64@12.0.0-rc.7':
+    optional: true
+
+  '@pnpm/exe.linux-x64-musl@12.0.0-rc.7':
+    optional: true
+
+  '@pnpm/exe.linux-x64@12.0.0-rc.7':
+    optional: true
+
+  '@pnpm/exe.win32-arm64@12.0.0-rc.7':
+    optional: true
+
+  '@pnpm/exe.win32-x64@12.0.0-rc.7':
+    optional: true
+
+  pnpm@12.0.0-rc.7:
+    optionalDependencies:
+      '@pnpm/exe.darwin-arm64': 12.0.0-rc.7
+      '@pnpm/exe.darwin-x64': 12.0.0-rc.7
+      '@pnpm/exe.linux-arm64': 12.0.0-rc.7
+      '@pnpm/exe.linux-arm64-musl': 12.0.0-rc.7
+      '@pnpm/exe.linux-x64': 12.0.0-rc.7
+      '@pnpm/exe.linux-x64-musl': 12.0.0-rc.7
+      '@pnpm/exe.win32-arm64': 12.0.0-rc.7
+      '@pnpm/exe.win32-x64': 12.0.0-rc.7
+
+---
 lockfileVersion: '9.0'
 
 settings:
@@ -1169,11 +1270,6 @@ packages:
   babel-dead-code-elimination@1.0.12:
     resolution: {integrity: sha512-GERT7L2TiYcYDtYk1IpD+ASAYXjKbLTDPhBtYj7X1NuRMDTMtAx9kyBenub1Ev41lo91OHCKdmP+egTDmfQ7Ig==}
 
-  baseline-browser-mapping@2.10.36:
-    resolution: {integrity: sha512-lVq/Df7LXlO79MVaaUHztSwWiG9oXoWHlgvNS51v8Dpd4+G4/VIy6qYePTw31nAVls33nUtnfezYeLkYAak9dg==}
-    engines: {node: '>=6.0.0'}
-    hasBin: true
-
   baseline-browser-mapping@2.11.13:
     resolution: {integrity: sha512-k9HNuUVMlqVjQ9UHzfPjIqiDbWw7WqT1AoT7GL8VwvF3r0ZfArtgiSPAlmupyNquNgOJHTuH4CKYf8ttMTWBTQ==}
     engines: {node: '>=6.0.0'}
@@ -1190,11 +1286,6 @@ packages:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
 
-  browserslist@4.28.2:
-    resolution: {integrity: sha512-48xSriZYYg+8qXna9kwqjIVzuQxi+KYWp2+5nCYnYKPTr0LvD89Jqk2Or5ogxz0NUMfIjhh2lIUX/LyX9B4oIg==}
-    engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
-    hasBin: true
-
   browserslist@4.28.8:
     resolution: {integrity: sha512-V2NpofLblG64mfOtSgDhOJESZEGogzDMBv/q+W6oc4LXWP/q75eOXoOaaOu1EOadB9U4Bwx/e0yzbvwKH8zalA==}
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
@@ -1206,9 +1297,6 @@ packages:
   camelcase-css@2.0.1:
     resolution: {integrity: sha512-QOSvevhslijgYwRx6Rv7zKdMF8lbRmx+uQGx2+vDc+KI/eBnsy9kit5aj23AgGu3pa4t9AgwbnXWqS+iOY+2aA==}
     engines: {node: '>= 6'}
-
-  caniuse-lite@1.0.30001799:
-    resolution: {integrity: sha512-hG1bReV+OUU+MOqK4t/ZWI0tZOyz3rqS9XuhOUz1cIcbwBKjOyJEJuw9ER5JuNyqxNk8u/JUVbGibBOL1yrjFw==}
 
   caniuse-lite@1.0.30001809:
     resolution: {integrity: sha512-xxWVywk6a6Arlk+hymeycyn/VgqEfLDxupvhH/xiY5SJ/18kmi9o6MiO320DCUzypORHLtvh0I4i04tUhCNHNQ==}
@@ -1432,9 +1520,6 @@ packages:
       sqlite3:
         optional: true
 
-  electron-to-chromium@1.5.372:
-    resolution: {integrity: sha512-M3yhbAlilnwqC8D21t28UCDGHyitShTmmLRU/H+b74P6Ski16Nb9HONYEaVpMj/pwC7BEo5B95FpjODLCWbtfA==}
-
   electron-to-chromium@1.5.403:
     resolution: {integrity: sha512-MQsYmdaLzvaCX5j+ZZBr5Fm6uCCnPQcRtlvmvRlWqrXy+BH2O4ffXIAScF+JQznQWB9brWp4lSD9Z4yNmaf2BA==}
 
@@ -1587,7 +1672,7 @@ packages:
     resolution: {integrity: sha512-uDjmnPyp1q4Sgzf3w+J/Fc6UqcCEj0x4Wjp7OqK5dGhNeDgpyrAmnS6ey8QWrX3SWDon2DMKf9sBa5X9+CVyMA==}
 
   image-size@file:vendor/image-size-2.0.3-security.0.tgz:
-    resolution: {integrity: sha512-ZQDHM1lCdLiCW8/LAiBMPehJbJVIC27z6vMjzoB4HQoTObnsoYIZ/tZtuEIJdmweBeGXI4seVDTmFbpEFHw57Q==, tarball: file:vendor/image-size-2.0.3-security.0.tgz}
+    resolution: {integrity: sha512-oQ4qh/YhKeD/ZsR4HDz7VVOrZIQxNurtT3ZvslkJ6LcMYRiybpyVPyDYiDltS2xh0QYDT6xOpUYssmHbjNSI5g==, tarball: file:vendor/image-size-2.0.3-security.0.tgz}
     version: 2.0.3-security.0
     engines: {node: '>=16.x'}
     hasBin: true
@@ -1894,10 +1979,6 @@ packages:
         optional: true
       zephyr-agent:
         optional: true
-
-  node-releases@2.0.47:
-    resolution: {integrity: sha512-Uzmd6LXpouKo8EUK68IjH4+E01w/hXyV3R3g/geCJo+rXLNfh1xucB+LOzYEOQPSiUK3h/xZf0cQGcSsmyL2Og==}
-    engines: {node: '>=18'}
 
   node-releases@2.0.53:
     resolution: {integrity: sha512-D9UOmYG3UH1V+ENW56t5QXBwJw1YEY18ruVeus89Rw+SyIgjPkCO84bRzO3uNIYosJbNwiabWVn48o3uJLjxFQ==}
@@ -2359,12 +2440,6 @@ packages:
       uploadthing:
         optional: true
 
-  update-browserslist-db@1.2.3:
-    resolution: {integrity: sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w==}
-    hasBin: true
-    peerDependencies:
-      browserslist: '>= 4.21.0'
-
   update-browserslist-db@1.3.0:
     resolution: {integrity: sha512-x/M6q3w4Ybp91CNaS4S69UnliqR3BzRpOT6LWbksjth0S/+jhfaPJsWjt/TewpT8j9eLIojUf5jr29WextHroA==}
     hasBin: true
@@ -2599,7 +2674,7 @@ snapshots:
     dependencies:
       '@babel/compat-data': 7.29.7
       '@babel/helper-validator-option': 7.29.7
-      browserslist: 4.28.2
+      browserslist: 4.28.8
       lru-cache: 5.1.1
       semver: 6.3.1
 
@@ -3385,8 +3460,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  baseline-browser-mapping@2.10.36: {}
-
   baseline-browser-mapping@2.11.13: {}
 
   bidi-js@1.0.3:
@@ -3399,14 +3472,6 @@ snapshots:
     dependencies:
       fill-range: 7.1.1
 
-  browserslist@4.28.2:
-    dependencies:
-      baseline-browser-mapping: 2.10.36
-      caniuse-lite: 1.0.30001799
-      electron-to-chromium: 1.5.372
-      node-releases: 2.0.47
-      update-browserslist-db: 1.2.3(browserslist@4.28.2)
-
   browserslist@4.28.8:
     dependencies:
       baseline-browser-mapping: 2.11.13
@@ -3418,8 +3483,6 @@ snapshots:
   buffer-from@1.1.2: {}
 
   camelcase-css@2.0.1: {}
-
-  caniuse-lite@1.0.30001799: {}
 
   caniuse-lite@1.0.30001809: {}
 
@@ -3523,8 +3586,6 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.20.0
       pg: 8.21.0
-
-  electron-to-chromium@1.5.372: {}
 
   electron-to-chromium@1.5.403: {}
 
@@ -3969,8 +4030,6 @@ snapshots:
       - uploadthing
       - wrangler
 
-  node-releases@2.0.47: {}
-
   node-releases@2.0.53: {}
 
   normalize-path@3.0.0: {}
@@ -4327,12 +4386,6 @@ snapshots:
       db0: 0.3.4(@electric-sql/pglite@0.3.16)(drizzle-orm@0.45.2(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(pg@8.21.0))
       lru-cache: 11.5.2
       ofetch: 2.0.0-alpha.3
-
-  update-browserslist-db@1.2.3(browserslist@4.28.2):
-    dependencies:
-      browserslist: 4.28.2
-      escalade: 3.2.0
-      picocolors: 1.1.1
 
   update-browserslist-db@1.3.0(browserslist@4.28.8):
     dependencies:

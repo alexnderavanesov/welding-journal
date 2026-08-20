@@ -1,0 +1,17 @@
+.git
+node_modules
+.output
+.tanstack
+.netlify
+.env
+.env.*
+!.env.example
+data
+backups
+outputs
+.pnpm-store
+db_dump*.sql
+db_dump*.bak
+*.log
+*.tmp
+.DS_Store

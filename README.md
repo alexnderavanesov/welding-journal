@@ -15,7 +15,12 @@
 ## Запуск
 
 ```bash
-corepack enable
+curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=12.0.0-rc.7 sh -
+```
+
+Откройте новый терминал, затем выполните:
+
+```bash
 pnpm install
 pnpm db:up
 pnpm db:migrate
@@ -38,18 +43,16 @@ DATABASE_URL=postgres://welding:welding@localhost:5432/welding_tracker
 
 ## Развертывание в Coolify
 
-Создайте приложение из Git-репозитория с build pack `Nixpacks`. `docker-compose.yml` нужен только для локальной PostgreSQL и не используется для production-развертывания приложения.
+Создайте приложение из Git-репозитория с build pack `Dockerfile`. `docker-compose.yml` нужен только для локальной PostgreSQL и не используется для production-развертывания приложения.
 
 Настройки приложения:
 
-- install command: оставьте пустой — он задан в `nixpacks.toml`;
-- build command: `pnpm build`;
-- start command: оставьте пустой — он задан в `nixpacks.toml`;
+- Dockerfile location: `/Dockerfile`;
+- приложение не является статическим сайтом, publish directory оставьте пустым;
 - exposed port: `3000`;
-- health check path: `/`;
 - один экземпляр приложения.
 
-`nixpacks.toml` фиксирует совместимую версию Corepack и запуск Node-сервера. Без явной команды запуска Nixpacks может ошибочно запустить проект как статический сайт через Caddy.
+Dockerfile устанавливает pnpm 12 официальным standalone-скриптом, затем собирает TanStack Start и Nitro в отдельном build-этапе. Рабочий образ содержит Node.js, pnpm, `package.json` и готовую папку `.output`; HTTP health check на `/` уже задан в образе.
 
 Добавьте переменные окружения:
 
@@ -79,7 +82,7 @@ pnpm maintenance:dispatcher
 
 ### Production-миграции
 
-Для миграции удаленной базы задайте отдельную переменную в локальном окружении администратора или временно в терминале Coolify:
+Для миграции удаленной базы задайте отдельную переменную в локальном окружении администратора с установленными зависимостями проекта:
 
 ```bash
 DATABASE_URL_REMOTE_FOR_MIGRATIONS=postgres://user:password@remote-host:5432/welding_tracker
@@ -91,7 +94,7 @@ DATABASE_URL_REMOTE_FOR_MIGRATIONS=postgres://user:password@remote-host:5432/wel
 pnpm db:remote-migration
 ```
 
-`db:remote-migration` не использует `DATABASE_URL` и завершится с ошибкой, если `DATABASE_URL_REMOTE_FOR_MIGRATIONS` не задана. Не добавляйте production-миграции в start command и не коммитьте настоящую строку подключения удаленной базы.
+`db:remote-migration` не использует `DATABASE_URL` и завершится с ошибкой, если `DATABASE_URL_REMOTE_FOR_MIGRATIONS` не задана. Рабочий Docker-образ не содержит исходный код, зависимости проекта или Drizzle CLI, поэтому миграцию запускают из локальной копии репозитория, а не из терминала контейнера. Не добавляйте production-миграции в start command и не коммитьте настоящую строку подключения удаленной базы.
 
 ## Проверка перед публикацией
 
