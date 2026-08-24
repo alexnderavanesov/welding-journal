@@ -346,13 +346,16 @@ function getWeldTableCellLinkState({
   const systemDocumentTemplateId = systemDocumentType ? getSystemDocumentTemplateIdForField(fieldKey) : null
   const isLnkRequestCardLink =
     hasVisibleValue && canOpenLnkRequest && LNK_REQUEST_NAME_FIELD_KEYS.has(fieldKey)
-  const isLnkResultCardLink =
-    hasVisibleValue && canOpenLnkResult && Boolean(getLnkResultMethodForField(fieldKey))
   const isSystemDocumentLink =
     canOpenDocument &&
     Boolean(systemDocumentType) &&
     hasVisibleValue &&
     Boolean(systemDocumentTemplateId && availableSystemDocumentTypes.has(systemDocumentTemplateId))
+  const isLnkResultCardLink =
+    hasVisibleValue &&
+    canOpenLnkResult &&
+    Boolean(getLnkResultMethodForField(fieldKey)) &&
+    !(isSystemDocumentLink && systemDocumentType === 'lnkConclusion')
   const isDocumentLink =
     isJsrDocumentLink ||
     isChecklistDocumentLink ||

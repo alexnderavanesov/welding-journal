@@ -8,6 +8,11 @@ import { WelderStampsFiltersPanel } from '@/components/welder-stamps-filters-pan
 import { WelderStampsRecordsTable } from '@/components/welder-stamps-records-table'
 import { WelderStampSuspensionsPanel } from '@/components/welder-stamp-suspensions-panel'
 import { hasWelderStampRangeFilters } from '@/lib/welder-stamp-filters'
+import {
+  buildWelderStampRegistrySummary,
+  matchesWelderStampRegistryStatus,
+  type WelderStampRegistryStatus,
+} from '@/lib/welder-stamp-registry-summary'
 import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export type WelderStampsRegistryProps = {
@@ -38,6 +43,21 @@ export type WelderStampsRegistryProps = {
   onDeleteSuspension: (id: number) => void
 }
 
+const WELDER_STAMP_STATUS_OPTIONS: Array<{
+  id: WelderStampRegistryStatus
+  label: string
+  description: string
+  activeClassName: string
+}> = [
+  { id: 'all', label: 'Все клейма', description: 'Все записи справочника без дополнительного ограничения по состоянию.', activeClassName: 'border-sky-300 bg-sky-50 text-sky-900' },
+  { id: 'active', label: 'Действующие', description: 'Активные заполненные клейма без приостановки; до окончания допуска больше 30 дней.', activeClassName: 'border-emerald-300 bg-emerald-50 text-emerald-900' },
+  { id: 'soon', label: 'Скоро истекают', description: 'До ближайшего действующего допуска НАКС осталось не более 30 дней.', activeClassName: 'border-amber-300 bg-amber-50 text-amber-900' },
+  { id: 'expired', label: 'Истекли', description: 'Ближайший допуск НАКС уже истек.', activeClassName: 'border-rose-300 bg-rose-50 text-rose-900' },
+  { id: 'archived', label: 'В архиве', description: 'Клейма, перенесенные в архив.', activeClassName: 'border-slate-400 bg-slate-100 text-slate-900' },
+  { id: 'suspended', label: 'Приостановлены', description: 'Клейма с действующим периодом приостановки на текущую дату.', activeClassName: 'border-orange-300 bg-orange-50 text-orange-900' },
+  { id: 'incomplete', label: 'Нужно заполнить', description: 'Активные записи, которые не проходят текущую проверку заполнения справочника.', activeClassName: 'border-violet-300 bg-violet-50 text-violet-900' },
+]
+
 export function WelderStampsRegistry({
   records,
   allRecords,
@@ -67,9 +87,18 @@ export function WelderStampsRegistry({
 }: WelderStampsRegistryProps) {
   const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null)
+  const [statusFilter, setStatusFilter] = useState<WelderStampRegistryStatus>('all')
   const [editorFocusPermitId, setEditorFocusPermitId] = useState<string | null>(null)
   const hasRangeFilters = hasWelderStampRangeFilters(filters)
   const hasSearchOrRangeFilters = Boolean(search.trim()) || hasRangeFilters
+  const registrySummary = useMemo(
+    () => buildWelderStampRegistrySummary(records, { suspensions: suspensionRecords }),
+    [records, suspensionRecords],
+  )
+  const visibleRecords = useMemo(
+    () => records.filter((record) => matchesWelderStampRegistryStatus(record, statusFilter, { suspensions: suspensionRecords })),
+    [records, statusFilter, suspensionRecords],
+  )
   const suspensionStampOptions = useMemo(
     () =>
       Array.from(
@@ -97,8 +126,8 @@ export function WelderStampsRegistry({
   }, [isEditorOpen])
 
   useEffect(() => {
-    if (selectedRecordId !== null && !records.some((record) => record.id === selectedRecordId)) setSelectedRecordId(null)
-  }, [records, selectedRecordId])
+    if (selectedRecordId !== null && !visibleRecords.some((record) => record.id === selectedRecordId)) setSelectedRecordId(null)
+  }, [selectedRecordId, visibleRecords])
 
   function openCreateDialog() {
     onReset()
@@ -150,10 +179,33 @@ export function WelderStampsRegistry({
 
       <WelderStampsFiltersPanel search={search} filters={filters} onSearchChange={onSearchChange} onFiltersChange={onFiltersChange} />
 
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7" aria-label="Сводка по состоянию клейм">
+        {WELDER_STAMP_STATUS_OPTIONS.map((option) => {
+          const active = statusFilter === option.id
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setStatusFilter(option.id)}
+              title={option.description}
+              aria-pressed={active}
+              className={`flex min-h-14 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
+                active
+                  ? option.activeClassName
+                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
+              }`}
+            >
+              <span className="text-xs font-semibold leading-4">{option.label}</span>
+              <span className="text-lg font-semibold tabular-nums">{registrySummary[option.id]}</span>
+            </button>
+          )
+        })}
+      </div>
+
       <div className="min-w-0 overflow-hidden rounded-md border border-slate-200">
         <WelderStampsRecordsTable
-          records={records}
-          emptyMessage={hasSearchOrRangeFilters ? 'По фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
+          records={visibleRecords}
+          emptyMessage={hasSearchOrRangeFilters || statusFilter !== 'all' ? 'По выбранным фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
           editingId={editingId}
           selectedId={selectedRecordId}
           onSelect={(record) => setSelectedRecordId((current) => (current === record.id ? null : record.id))}

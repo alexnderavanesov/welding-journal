@@ -13,6 +13,7 @@ import {
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 
 export type StatisticsUnit = 'joints' | 'wdi'
+export type StatisticsPeriodPreset = 'all' | 'currentWeek' | 'currentMonth' | 'previousMonth' | 'custom'
 export type StatisticsControlDynamicsScale = 'day' | 'week' | 'month' | 'quarter' | 'year'
 export type StatisticsControlDynamicsScaleSetting = StatisticsControlDynamicsScale | 'auto'
 
@@ -129,6 +130,46 @@ export function getCurrentStatisticsWeek(today = new Date()) {
   return {
     from: formatDateInputValue(start),
     to: formatDateInputValue(end),
+  }
+}
+
+export function getStatisticsPeriodPresetSelection(
+  preset: StatisticsPeriodPreset,
+  currentPeriod: { from: string; to: string },
+  today = new Date(),
+) {
+  if (preset === 'all') {
+    return {
+      allPeriod: true,
+      period: { from: '', to: '' },
+    }
+  }
+  if (preset === 'currentWeek') {
+    return {
+      allPeriod: false,
+      period: getCurrentStatisticsWeek(today),
+    }
+  }
+  if (preset === 'currentMonth') {
+    return {
+      allPeriod: false,
+      period: getDefaultStatisticsPeriod(today),
+    }
+  }
+  if (preset === 'previousMonth') {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    const end = new Date(today.getFullYear(), today.getMonth(), 0)
+    return {
+      allPeriod: false,
+      period: {
+        from: formatDateInputValue(start),
+        to: formatDateInputValue(end),
+      },
+    }
+  }
+  return {
+    allPeriod: false,
+    period: { ...currentPeriod },
   }
 }
 

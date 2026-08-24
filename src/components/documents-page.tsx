@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -15,12 +16,14 @@ import {
   FilePenLine,
   FileSpreadsheet,
   FileText,
+  History,
   Maximize2,
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   Rows3,
   Search,
+  SlidersHorizontal,
   Trash2,
   X,
   ZoomIn,
@@ -152,6 +155,7 @@ const SYSTEM_DOCUMENT_TYPE_OPTIONS = SYSTEM_DOCUMENT_TYPES.map((type) => ({
 }))
 
 type DocumentsPageType = GeneratedDocumentType | SystemDocumentType
+type DocumentHistoryPeriodFilter = 'all' | 'currentMonth' | 'previousMonth'
 
 function toInputDate(date: Date) {
   const year = date.getFullYear()
@@ -190,6 +194,17 @@ function formatDate(value: unknown) {
   const parsed = parseDate(value)
   if (!parsed) return String(value ?? '').trim()
   return `${String(parsed.getDate()).padStart(2, '0')}.${String(parsed.getMonth() + 1).padStart(2, '0')}.${parsed.getFullYear()}`
+}
+
+function isDocumentDateInPeriod(value: unknown, filter: DocumentHistoryPeriodFilter) {
+  if (filter === 'all') return true
+  const parsed = parseDate(value)
+  if (!parsed) return false
+  const now = new Date()
+  const target = filter === 'currentMonth'
+    ? new Date(now.getFullYear(), now.getMonth(), 1)
+    : new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  return parsed.getFullYear() === target.getFullYear() && parsed.getMonth() === target.getMonth()
 }
 
 function getCellValue(row: WeldRow, key: string) {
@@ -842,7 +857,7 @@ export function DocumentsPage({
 
               <div className="grid grid-cols-2 gap-2">
                 <CompactMetricCard label="Стыков" value={journalRows.length} />
-                <CompactMetricCard label="WDI" value={wdiTotal} />
+                <CompactMetricCard label="WDI" value={formatWdi(wdiTotal)} />
               </div>
             </aside>
             ) : null}
@@ -1018,6 +1033,16 @@ export function DocumentsPage({
                   : null
             }
             onRetry={() => void generatedDocumentsQuery.refetch()}
+            onRepeat={(documentRecord) => {
+              setPeriodFrom(documentRecord.periodFrom || initialRange.from)
+              setPeriodTo(documentRecord.periodTo || initialRange.to)
+              setSelectedProjects(documentRecord.projects)
+              setSelectedSubtitles(documentRecord.subtitleCodes)
+              setSelectedLines(documentRecord.lines)
+              setManualFileName(documentRecord.title)
+              setActiveWorkspaceTab('generation')
+              setIsParametersCollapsed(false)
+            }}
             onOpenRows={async (documentRecord) => {
               const documentRows = await loadGeneratedDocumentRows(documentRecord.id)
               if (documentRows.length === 0) throw new Error('В документе больше нет стыков.')
@@ -1058,6 +1083,7 @@ function GeneratedDocumentsPanel({
   isLoading,
   error,
   onRetry,
+  onRepeat,
   createDocumentBlob,
   onOpenRows,
 }: {
@@ -1067,11 +1093,13 @@ function GeneratedDocumentsPanel({
   isLoading: boolean
   error: string | null
   onRetry: () => void
+  onRepeat: (documentRecord: StoredGeneratedDocument) => void
   createDocumentBlob: (documentRecord: StoredGeneratedDocument) => Promise<Blob>
   onOpenRows: (documentRecord: StoredGeneratedDocument) => Promise<void>
 }) {
   const { requireDeletePassword } = useSecurityGuard()
   const [searchQuery, setSearchQuery] = useState('')
+  const [periodFilter, setPeriodFilter] = useState<DocumentHistoryPeriodFilter>('all')
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [openingRowsDocumentId, setOpeningRowsDocumentId] = useState<number | null>(null)
   const [openRowsError, setOpenRowsError] = useState<string | null>(null)
@@ -1079,8 +1107,9 @@ function GeneratedDocumentsPanel({
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('ru-RU')
   const filteredDocuments = useMemo(
     () =>
-      normalizedSearchQuery
-        ? documents.filter((documentRecord) =>
+      documents.filter((documentRecord) => {
+        if (!isDocumentDateInPeriod(documentRecord.updatedAt, periodFilter)) return false
+        return !normalizedSearchQuery ||
             [
               documentRecord.title,
               documentRecord.fileName,
@@ -1094,10 +1123,9 @@ function GeneratedDocumentsPanel({
               ...documentRecord.lines,
             ]
               .filter(Boolean)
-              .some((value) => String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery)),
-          )
-        : documents,
-    [documentLabel, documents, normalizedSearchQuery],
+              .some((value) => String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery))
+      }),
+    [documentLabel, documents, normalizedSearchQuery, periodFilter],
   )
   const deleteDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
     if (!(await requireDeletePassword(`удаление документа «${documentRecord.title}»`))) return
@@ -1130,210 +1158,136 @@ function GeneratedDocumentsPanel({
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2 text-left">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-white text-[#17627d] shadow-sm">
-            <FileText className="h-5 w-5" />
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-white text-[#17627d]">
+            <History className="h-5 w-5" />
           </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-slate-900">История документов</h2>
-            <p className="text-xs text-slate-500">
-              {documents.length > 0 ? `${documents.length} ${formatDocumentCount(documents.length)}` : 'Сформированные документы появятся здесь.'}
-            </p>
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">История документов</h2>
+            <p className="text-xs text-slate-500">{documents.length} {formatDocumentCount(documents.length)} · Excel открывается только по команде</p>
           </div>
         </div>
-        {documents.length > 0 ? (
-          <label className="relative w-full sm:w-80">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
-              placeholder="Найти документ"
-              aria-label="Найти документ"
-              className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-9 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-            />
-            {searchQuery ? (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                title="Очистить поиск"
-                aria-label="Очистить поиск"
-                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </label>
+        {documents.length ? (
+          <div className="flex w-full flex-wrap gap-2 lg:w-auto">
+            <label className="relative min-w-60 flex-1 lg:w-72 lg:flex-none">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
+                placeholder="Название, проект, шифр или линия"
+                aria-label="Найти документ"
+                className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+            <DocumentHistoryPeriodSelect value={periodFilter} onChange={setPeriodFilter} />
+          </div>
         ) : null}
       </div>
 
       {error ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
           <span>Не удалось загрузить историю документов: {error}</span>
-          <button
-            type="button"
-            className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-            onClick={onRetry}
-          >
-            Повторить
-          </button>
+          <button type="button" className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold" onClick={onRetry}>Повторить</button>
         </div>
       ) : null}
-
-      {openRowsError ? (
-        <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-          {openRowsError}
-        </div>
-      ) : null}
+      {openRowsError ? <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{openRowsError}</div> : null}
 
       {isLoading ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
-      ) : documents.length > 0 ? (
+      ) : documents.length === 0 && !error ? (
+        <div className="px-4 py-10 text-center text-sm text-slate-500">Пока нет сохраненных документов.</div>
+      ) : filteredDocuments.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
+      ) : (
         <div className="min-w-0">
-          <div className="grid grid-cols-[minmax(0,1fr)_76px_140px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#60778a] md:grid-cols-[minmax(220px,1.6fr)_70px_minmax(145px,0.8fr)_66px_130px_140px] 2xl:grid-cols-[minmax(220px,1.3fr)_54px_minmax(90px,0.65fr)_minmax(80px,0.55fr)_minmax(100px,0.7fr)_minmax(135px,0.8fr)_58px_125px_140px] 2xl:gap-2">
+          <div className="grid grid-cols-[minmax(220px,1fr)_58px_180px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] md:grid-cols-[minmax(260px,1.5fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:grid-cols-[minmax(260px,1.35fr)_minmax(100px,0.65fr)_minmax(100px,0.65fr)_minmax(120px,0.75fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:gap-2">
             <span>Документ</span>
-            <span className="hidden md:block">Тип</span>
             <span className="hidden 2xl:block">Проект</span>
             <span className="hidden 2xl:block">Шифр</span>
             <span className="hidden 2xl:block">Линия</span>
             <span className="hidden md:block">Период</span>
             <span className="text-right">Стыков</span>
+            <span className="hidden text-right md:block">WDI</span>
             <span className="hidden md:block">Обновлен</span>
             <span className="text-right">Действия</span>
           </div>
-          {filteredDocuments.length > 0 ? (
-            <div className="divide-y divide-[#dce7ed]">
-              {filteredDocuments.map((documentRecord, documentIndex) => (
-                <div
-                  key={documentRecord.id}
-                  className={`grid min-w-0 grid-cols-[minmax(0,1fr)_76px_140px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] md:grid-cols-[minmax(220px,1.6fr)_70px_minmax(145px,0.8fr)_66px_130px_140px] 2xl:grid-cols-[minmax(220px,1.3fr)_54px_minmax(90px,0.65fr)_minmax(80px,0.55fr)_minmax(100px,0.7fr)_minmax(135px,0.8fr)_58px_125px_140px] 2xl:gap-2 ${
-                    documentIndex % 2 === 0 ? 'bg-white' : 'bg-[#f4f8fa]'
-                  }`}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    setContextMenu({
-                      x: event.clientX,
-                      y: event.clientY,
-                      items: [
-                        {
-                          id: 'show-document-rows',
-                          label: 'Показать стыки в журнале',
-                          icon: Rows3,
-                          onSelect: () => openDocumentRows(documentRecord),
-                        },
-                        { type: 'separator', id: 'open-separator' },
-                        {
-                          id: 'open-document',
-                          label: 'Открыть',
-                          icon: ExternalLink,
-                          onSelect: () => openDocumentRecord(documentRecord),
-                        },
-                        {
-                          id: 'download-document',
-                          label: 'Скачать',
-                          icon: Download,
-                          onSelect: () => downloadDocumentRecord(documentRecord),
-                        },
-                        { type: 'separator', id: 'delete-separator' },
-                        {
-                          id: 'delete-document',
-                          label: 'Удалить',
-                          icon: Trash2,
-                          danger: true,
-                          onSelect: () => deleteDocumentRecord(documentRecord),
-                        },
-                      ],
-                    })
-                  }}
+          <div className="divide-y divide-[#dce7ed]">
+            {filteredDocuments.map((documentRecord, documentIndex) => (
+              <div
+                key={documentRecord.id}
+                className={`grid min-w-0 grid-cols-[minmax(220px,1fr)_58px_180px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] md:grid-cols-[minmax(260px,1.5fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:grid-cols-[minmax(260px,1.35fr)_minmax(100px,0.65fr)_minmax(100px,0.65fr)_minmax(120px,0.75fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:gap-2 ${documentIndex % 2 === 0 ? 'bg-white' : 'bg-[#f4f8fa]'}`}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  setContextMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    items: [
+                      { id: 'show-document-rows', label: 'Показать стыки в журнале', icon: Rows3, onSelect: () => openDocumentRows(documentRecord) },
+                      { id: 'repeat-document', label: 'Повторить с параметрами', icon: SlidersHorizontal, onSelect: () => onRepeat(documentRecord) },
+                      { type: 'separator', id: 'open-separator' },
+                      { id: 'open-document', label: 'Открыть Excel', icon: ExternalLink, onSelect: () => openDocumentRecord(documentRecord) },
+                      { id: 'download-document', label: 'Скачать Excel', icon: Download, onSelect: () => downloadDocumentRecord(documentRecord) },
+                      { type: 'separator', id: 'delete-separator' },
+                      { id: 'delete-document', label: 'Удалить', icon: Trash2, danger: true, onSelect: () => deleteDocumentRecord(documentRecord) },
+                    ],
+                  })
+                }}
+              >
+                <button
+                  type="button"
+                  className="min-w-0 text-left"
+                  onClick={() => void openDocumentRecord(documentRecord)}
+                  title="Сформировать актуальную версию и открыть Excel"
                 >
-                  <button
-                    type="button"
-                    className="min-w-0 text-left"
-                    onClick={() => void openDocumentRecord(documentRecord)}
-                    title="Сформировать заново и открыть в новой вкладке"
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4 shrink-0 text-[#14779a]" />
-                      <span className="truncate text-sm font-semibold text-[#155f7a] hover:text-[#0b4258]">{documentRecord.title}</span>
-                      <ExternalLink className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" />
-                    </span>
-                    <span className="mt-0.5 block truncate pl-6 text-xs text-slate-500 md:hidden">
-                      {documentLabel} · {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)}
-                    </span>
-                    <span className="mt-0.5 hidden truncate pl-6 text-xs text-slate-500 md:block 2xl:hidden">
-                      {formatDocumentDimensions(documentRecord)}
-                    </span>
-                  </button>
-                  <span className="hidden text-xs font-semibold text-slate-600 md:block">{documentLabel}</span>
-                  <DocumentDimensionCell values={documentRecord.projects} />
-                  <DocumentDimensionCell values={documentRecord.subtitleCodes} />
-                  <DocumentDimensionCell values={documentRecord.lines} />
-                  <span className="hidden text-xs text-slate-600 md:block">
-                    {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)}
+                  <span className="flex min-w-0 items-center gap-2">
+                    <FileSpreadsheet className="h-4 w-4 shrink-0 text-[#14779a]" />
+                    <span className="truncate text-sm font-semibold text-[#155f7a] hover:text-[#0b4258]">{documentRecord.title}</span>
+                    <ExternalLink className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" />
                   </span>
-                  <span className="text-right text-sm font-semibold tabular-nums text-slate-800">{documentRecord.rowCount}</span>
-                  <span className="hidden text-xs leading-4 text-slate-500 md:block">
-                    {formatGeneratedDocumentDate(documentRecord.updatedAt)}
+                  <span className="mt-0.5 block truncate pl-6 text-xs text-slate-500 md:hidden">
+                    {documentLabel} · {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)} · {formatWdi(documentRecord.wdiTotal)} WDI
                   </span>
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      onClick={() => void openDocumentRows(documentRecord)}
-                      disabled={openingRowsDocumentId === documentRecord.id}
-                      title="Показать стыки документа в сварочном журнале"
-                      aria-label="Показать стыки документа в сварочном журнале"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-                    >
-                      <Rows3 className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void openDocumentRecord(documentRecord)}
-                      title="Сформировать заново и открыть"
-                      aria-label="Сформировать заново и открыть"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void downloadDocumentRecord(documentRecord)}
-                      title="Скачать Excel"
-                      aria-label="Скачать Excel"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteDocumentRecord(documentRecord)}
-                      title="Удалить документ"
-                      aria-label="Удалить документ"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                  <span className="mt-0.5 hidden truncate pl-6 text-xs text-slate-500 md:block 2xl:hidden" title={formatDocumentDimensions(documentRecord)}>
+                    {formatDocumentDimensions(documentRecord)}
+                  </span>
+                </button>
+                <DocumentDimensionCell values={documentRecord.projects} />
+                <DocumentDimensionCell values={documentRecord.subtitleCodes} />
+                <DocumentDimensionCell values={documentRecord.lines} />
+                <span className="hidden text-xs text-slate-600 md:block">
+                  {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)}
+                </span>
+                <span className="text-right text-sm font-semibold tabular-nums text-slate-800">{documentRecord.rowCount}</span>
+                <span className="hidden text-right text-sm font-semibold tabular-nums text-slate-700 md:block">{formatWdi(documentRecord.wdiTotal)}</span>
+                <span className="hidden text-xs leading-4 text-slate-500 md:block">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
+                <div className="flex items-center justify-end gap-1">
+                  <DocumentHistoryActionButton
+                    title="Показать стыки документа в сварочном журнале"
+                    tone="emerald"
+                    disabled={openingRowsDocumentId === documentRecord.id}
+                    onClick={() => void openDocumentRows(documentRecord)}
+                  ><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
+                  <DocumentHistoryActionButton title="Повторить с параметрами" tone="violet" onClick={() => onRepeat(documentRecord)}>
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </DocumentHistoryActionButton>
+                  <DocumentHistoryActionButton title="Открыть Excel" tone="sky" onClick={() => void openDocumentRecord(documentRecord)}>
+                    <ExternalLink className="h-4 w-4" />
+                  </DocumentHistoryActionButton>
+                  <DocumentHistoryActionButton title="Скачать Excel" onClick={() => void downloadDocumentRecord(documentRecord)}>
+                    <Download className="h-4 w-4" />
+                  </DocumentHistoryActionButton>
+                  <DocumentHistoryActionButton title="Удалить документ" tone="rose" onClick={() => void deleteDocumentRecord(documentRecord)}>
+                    <Trash2 className="h-4 w-4" />
+                  </DocumentHistoryActionButton>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="px-4 py-10 text-center">
-              <div className="text-sm font-medium text-slate-700">Документы не найдены</div>
-              <div className="mt-1 text-xs text-slate-500">Измените запрос или очистите строку поиска.</div>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2 text-xs text-slate-500">
-            <span>
-              Найдено: {filteredDocuments.length} из {documents.length}
-            </span>
-            <span>Нажмите название или кнопку открытия, чтобы сформировать актуальную версию.</span>
+              </div>
+            ))}
           </div>
         </div>
-      ) : !error ? (
-        <div className="px-4 py-8 text-center text-sm text-slate-500">Пока нет сохраненных документов.</div>
-      ) : null}
+      )}
+      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2 text-xs text-slate-500">Найдено: {filteredDocuments.length} из {documents.length}</div>
       <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </section>
   )
@@ -1365,6 +1319,7 @@ function SystemDocumentsPanel({
   const { requireEditPassword } = useSecurityGuard()
   const confirmAction = useConfirmAction()
   const [searchQuery, setSearchQuery] = useState('')
+  const [periodFilter, setPeriodFilter] = useState<DocumentHistoryPeriodFilter>('all')
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
@@ -1377,6 +1332,7 @@ function SystemDocumentsPanel({
   useEffect(() => {
     if (!navigationRequest) return
     setSearchQuery(navigationRequest.title)
+    setPeriodFilter('all')
     if (navigationRequest.type === 'lnkConclusion') {
       setLnkConclusionTemplateFilter(
         getLnkConclusionTemplateProfile(navigationRequest.methodCode).id,
@@ -1398,8 +1354,9 @@ function SystemDocumentsPanel({
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('ru-RU')
   const filteredDocuments = useMemo(
     () => {
-      const matchingDocuments = normalizedSearchQuery
-        ? documentsForSelectedForm.filter((documentRecord) =>
+      const matchingDocuments = documentsForSelectedForm.filter((documentRecord) => {
+        if (!isDocumentDateInPeriod(documentRecord.date, periodFilter)) return false
+        return !normalizedSearchQuery ||
             [
               documentRecord.title,
               documentRecord.label,
@@ -1408,11 +1365,8 @@ function SystemDocumentsPanel({
               ...documentRecord.projects,
               ...documentRecord.subtitleCodes,
               ...documentRecord.lines,
-            ].some((value) =>
-              String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery),
-            ),
-          )
-        : documentsForSelectedForm
+            ].some((value) => String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery))
+      })
       if (!navigationDocumentId) return matchingDocuments
       return [...matchingDocuments].sort((left, right) => {
         const leftMatch = left.id === navigationDocumentId ? 1 : 0
@@ -1420,9 +1374,8 @@ function SystemDocumentsPanel({
         return rightMatch - leftMatch
       })
     },
-    [documentsForSelectedForm, navigationDocumentId, normalizedSearchQuery],
+    [documentsForSelectedForm, navigationDocumentId, normalizedSearchQuery, periodFilter],
   )
-
   const hasTemplateForDocument = (documentRecord: SystemDocumentSummary) =>
     availableTemplateIds.has(getSystemDocumentTemplateId(documentRecord))
   const availableFormCount =
@@ -1481,49 +1434,46 @@ function SystemDocumentsPanel({
     setRenamingDocumentId(null)
   }
 
+  const openDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
+    openSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
+  )
+  const downloadDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
+    downloadSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
+  )
+
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2 text-left">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-white text-[#17627d] shadow-sm">
-            <FileText className="h-5 w-5" />
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-white text-[#17627d]">
+            <History className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-slate-900">История документов</h2>
+            <h2 className="text-base font-semibold text-slate-900">История документов</h2>
             <p className="text-xs text-slate-500">
-              {documents.length} {formatDocumentCount(documents.length)} · актуальные данные системы
+              {documents.length} {formatDocumentCount(documents.length)} · системные документы
               {documentType === 'lnkConclusion'
-                ? ` · форм загружено ${availableFormCount}/${LNK_CONCLUSION_TEMPLATE_PROFILES.length}`
-                : availableFormCount > 0
-                  ? ''
-                  : ` · шаблон «${documentLabel}» не загружен`}
+                ? ` · форм ${availableFormCount}/${LNK_CONCLUSION_TEMPLATE_PROFILES.length}`
+                : availableFormCount > 0 ? '' : ' · шаблон не загружен'}
             </p>
           </div>
         </div>
-        {documents.length > 0 ? (
-          <label className="relative w-full sm:w-80">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
-              placeholder="Найти документ"
-              aria-label="Найти документ"
-              className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-9 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-            />
-            {searchQuery ? (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                title="Очистить поиск"
-                aria-label="Очистить поиск"
-                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </label>
+        {documents.length ? (
+          <div className="flex w-full flex-wrap gap-2 lg:w-auto">
+            <label className="relative min-w-60 flex-1 lg:w-72 lg:flex-none">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
+                placeholder="Название, дата, проект или линия"
+                aria-label="Найти документ"
+                className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+            <DocumentHistoryPeriodSelect value={periodFilter} onChange={setPeriodFilter} />
+          </div>
         ) : null}
       </div>
 
@@ -1600,23 +1550,26 @@ function SystemDocumentsPanel({
             Они появятся автоматически после создания соответствующих заявок или заключений.
           </div>
         </div>
+      ) : filteredDocuments.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
       ) : (
         <div className="min-w-0">
-          <div className="grid grid-cols-[minmax(0,1fr)_70px_140px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#60778a] lg:grid-cols-[minmax(220px,1.5fr)_90px_minmax(120px,0.8fr)_minmax(110px,0.7fr)_70px_120px_140px]">
+          <div className="grid grid-cols-[minmax(220px,1fr)_58px_144px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] xl:grid-cols-[minmax(230px,1.35fr)_80px_minmax(130px,0.8fr)_58px_105px_144px] 2xl:grid-cols-[minmax(280px,1.5fr)_90px_minmax(170px,0.9fr)_minmax(130px,0.7fr)_58px_110px_144px]">
             <span>Документ</span>
-            <span className="hidden lg:block">Вид НК</span>
-            <span className="hidden lg:block">Проект / шифр</span>
-            <span className="hidden lg:block">Линия</span>
+            <span className="hidden xl:block">Вид НК</span>
+            <span className="hidden xl:block">Проект / шифр</span>
+            <span className="hidden 2xl:block">Линия</span>
             <span className="text-right">Стыков</span>
-            <span className="hidden lg:block">Дата</span>
+            <span className="hidden xl:block">Дата</span>
             <span className="text-right">Действия</span>
           </div>
-          {filteredDocuments.length > 0 ? (
-            <div className="divide-y divide-[#dce7ed]">
-              {filteredDocuments.map((documentRecord, documentIndex) => (
+          <div className="divide-y divide-[#dce7ed]">
+            {filteredDocuments.map((documentRecord, documentIndex) => {
+              const templateAvailable = hasTemplateForDocument(documentRecord)
+              return (
                 <div
                   key={documentRecord.id}
-                  className={`grid min-w-0 grid-cols-[minmax(0,1fr)_70px_140px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] lg:grid-cols-[minmax(220px,1.5fr)_90px_minmax(120px,0.8fr)_minmax(110px,0.7fr)_70px_120px_140px] ${
+                  className={`grid min-w-0 grid-cols-[minmax(220px,1fr)_58px_144px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] xl:grid-cols-[minmax(230px,1.35fr)_80px_minmax(130px,0.8fr)_58px_105px_144px] 2xl:grid-cols-[minmax(280px,1.5fr)_90px_minmax(170px,0.9fr)_minmax(130px,0.7fr)_58px_110px_144px] ${
                     documentRecord.id === navigationDocumentId
                       ? 'bg-sky-50 ring-1 ring-inset ring-sky-300'
                       : documentIndex % 2 === 0
@@ -1627,136 +1580,60 @@ function SystemDocumentsPanel({
                   <button
                     type="button"
                     className="min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={!hasTemplateForDocument(documentRecord)}
-                    onClick={() =>
-                      void runAction(() =>
-                        openSystemDocument({
-                          reference: documentRecord,
-                          summary: documentRecord,
-                          welderStamps,
-                        }),
-                      )
-                    }
-                    title={
-                      hasTemplateForDocument(documentRecord)
-                        ? 'Сформировать актуальную версию и открыть в новой вкладке'
-                        : 'Для этого вида НК шаблон еще не загружен'
-                    }
+                    disabled={!templateAvailable}
+                    onClick={() => void openDocumentRecord(documentRecord)}
+                    title={templateAvailable ? 'Сформировать актуальную версию и открыть Excel' : 'Для этого вида документа шаблон еще не загружен'}
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4 shrink-0 text-[#14779a]" />
-                      <span className="truncate text-sm font-semibold text-[#155f7a] hover:text-[#0b4258]">
-                        {documentRecord.title}
-                      </span>
-                      <ExternalLink className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" />
+                      <FileSpreadsheet className={`h-4 w-4 shrink-0 ${templateAvailable ? 'text-[#14779a]' : 'text-slate-300'}`} />
+                      <span className="truncate text-sm font-semibold text-[#155f7a] hover:text-[#0b4258]">{documentRecord.title}</span>
+                      {templateAvailable ? <ExternalLink className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" /> : null}
                     </span>
-                    <span className="mt-0.5 block truncate pl-6 text-xs text-slate-500 lg:hidden">
-                      {documentLabel}
-                      {documentRecord.methodCodes.length > 0
-                        ? ` · ${documentRecord.methodCodes.join(', ')}`
-                        : ''}
+                    <span className="mt-0.5 block truncate pl-6 text-xs text-slate-500 xl:hidden">
+                      {documentRecord.methodCodes.join(', ') || documentLabel} · {formatDate(documentRecord.date)}
                     </span>
                   </button>
-                  <span className="hidden text-xs font-semibold text-slate-600 lg:block">
+                  <span className="hidden truncate text-xs font-semibold text-slate-600 xl:block" title={documentRecord.methodCodes.join(', ')}>
                     {documentRecord.methodCodes.join(', ') || '-'}
                   </span>
-                  <span className="hidden min-w-0 text-xs leading-4 text-slate-600 lg:block">
-                    <span className="block truncate">{documentRecord.projects.join(', ') || '-'}</span>
-                    <span className="block truncate text-slate-400">{documentRecord.subtitleCodes.join(', ') || '-'}</span>
+                  <span className="hidden min-w-0 text-xs leading-4 text-slate-600 xl:block">
+                    <span className="block truncate" title={documentRecord.projects.join(', ')}>{documentRecord.projects.join(', ') || '-'}</span>
+                    <span className="block truncate text-slate-400" title={documentRecord.subtitleCodes.join(', ')}>{documentRecord.subtitleCodes.join(', ') || '-'}</span>
                   </span>
-                  <span className="hidden truncate text-xs text-slate-600 lg:block">
-                    {documentRecord.lines.join(', ') || '-'}
-                  </span>
-                  <span className="text-right text-sm font-semibold tabular-nums text-slate-800">
-                    {documentRecord.rowCount}
-                  </span>
-                  <span className="hidden text-xs text-slate-600 lg:block">
-                    {formatDate(documentRecord.date) || '-'}
-                  </span>
+                  <span className="hidden truncate text-xs text-slate-600 2xl:block" title={documentRecord.lines.join(', ')}>{documentRecord.lines.join(', ') || '-'}</span>
+                  <span className="text-right text-sm font-semibold tabular-nums text-slate-800">{documentRecord.rowCount}</span>
+                  <span className="hidden text-xs text-slate-600 xl:block">{formatDate(documentRecord.date) || '-'}</span>
                   <div className="flex items-center justify-end gap-1">
-                    <button
-                      type="button"
+                    <DocumentHistoryActionButton
+                      title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord.type) === 'lnk' ? 'ЛНК' : 'ПСТО'}`}
+                      tone="emerald"
                       onClick={() => void runAction(() => onOpenRows(documentRecord))}
-                      title={`Показать стыки документа в отчете ${
-                        getSystemDocumentTargetReport(documentRecord.type) === 'lnk' ? 'ЛНК' : 'ПСТО'
-                      }`}
-                      aria-label={`Показать стыки документа в отчете ${
-                        getSystemDocumentTargetReport(documentRecord.type) === 'lnk' ? 'ЛНК' : 'ПСТО'
-                      }`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                    >
-                      <Rows3 className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void renameDocumentRecord(documentRecord)}
-                      disabled={renamingDocumentId === documentRecord.id}
+                    ><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
+                    <DocumentHistoryActionButton
                       title="Переименовать по текущему системному правилу"
-                      aria-label="Переименовать документ по текущему системному правилу"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:cursor-wait disabled:opacity-50"
-                    >
-                      <FilePenLine className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!hasTemplateForDocument(documentRecord)}
-                      onClick={() =>
-                        void runAction(() =>
-                          openSystemDocument({
-                            reference: documentRecord,
-                            summary: documentRecord,
-                            welderStamps,
-                          }),
-                        )
-                      }
-                      title={
-                        hasTemplateForDocument(documentRecord)
-                          ? 'Сформировать актуальную версию и открыть'
-                          : 'Для этого вида НК шаблон еще не загружен'
-                      }
-                      aria-label="Открыть актуальный документ"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!hasTemplateForDocument(documentRecord)}
-                      onClick={() =>
-                        void runAction(() =>
-                          downloadSystemDocument({
-                            reference: documentRecord,
-                            summary: documentRecord,
-                            welderStamps,
-                          }),
-                        )
-                      }
-                      title={
-                        hasTemplateForDocument(documentRecord)
-                          ? 'Скачать актуальный Excel'
-                          : 'Для этого вида НК шаблон еще не загружен'
-                      }
-                      aria-label="Скачать актуальный документ"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
+                      tone="violet"
+                      disabled={renamingDocumentId === documentRecord.id}
+                      onClick={() => void renameDocumentRecord(documentRecord)}
+                    ><FilePenLine className="h-4 w-4" /></DocumentHistoryActionButton>
+                    <DocumentHistoryActionButton
+                      title={templateAvailable ? 'Открыть актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'}
+                      tone="sky"
+                      disabled={!templateAvailable}
+                      onClick={() => void openDocumentRecord(documentRecord)}
+                    ><ExternalLink className="h-4 w-4" /></DocumentHistoryActionButton>
+                    <DocumentHistoryActionButton
+                      title={templateAvailable ? 'Скачать актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'}
+                      disabled={!templateAvailable}
+                      onClick={() => void downloadDocumentRecord(documentRecord)}
+                    ><Download className="h-4 w-4" /></DocumentHistoryActionButton>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="px-4 py-10 text-center">
-              <div className="text-sm font-medium text-slate-700">Документы не найдены</div>
-              <div className="mt-1 text-xs text-slate-500">Измените запрос или очистите строку поиска.</div>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2 text-xs text-slate-500">
-            <span>Найдено: {filteredDocuments.length} из {documentsForSelectedForm.length}</span>
-            <span>Документ каждый раз формируется по текущему шаблону и актуальным данным.</span>
+              )
+            })}
           </div>
         </div>
       )}
+      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2 text-xs text-slate-500">Найдено: {filteredDocuments.length} из {documentsForSelectedForm.length}</div>
     </section>
   )
 }
@@ -1783,7 +1660,74 @@ function DocumentDimensionCell({ values }: { values: string[] }) {
   )
 }
 
-function formatDocumentDimensions(documentRecord: StoredGeneratedDocument) {
+function DocumentHistoryPeriodSelect({
+  value,
+  onChange,
+}: {
+  value: DocumentHistoryPeriodFilter
+  onChange: (value: DocumentHistoryPeriodFilter) => void
+}) {
+  return (
+    <label className="relative block shrink-0">
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as DocumentHistoryPeriodFilter)}
+        className="h-9 min-w-[168px] appearance-none rounded-md border border-[#cbdde6] bg-white pl-3 pr-9 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+        aria-label="Период истории документов"
+      >
+        <option value="all">За весь период</option>
+        <option value="currentMonth">Текущий месяц</option>
+        <option value="previousMonth">Прошлый месяц</option>
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+    </label>
+  )
+}
+
+function DocumentHistoryActionButton({
+  title,
+  tone = 'neutral',
+  disabled = false,
+  onClick,
+  children,
+}: {
+  title: string
+  tone?: 'neutral' | 'emerald' | 'sky' | 'violet' | 'rose'
+  disabled?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  const toneClass = {
+    neutral: 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    sky: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100',
+    violet: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100',
+    rose: 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700',
+  }[tone]
+
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300 ${toneClass}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function formatWdi(value: number | undefined) {
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)
+}
+
+function formatDocumentDimensions(documentRecord: {
+  projects: string[]
+  subtitleCodes: string[]
+  lines: string[]
+}) {
   return [
     documentRecord.projects.length > 0 ? `Проект: ${documentRecord.projects.join(', ')}` : '',
     documentRecord.subtitleCodes.length > 0 ? `Шифр: ${documentRecord.subtitleCodes.join(', ')}` : '',
@@ -2082,11 +2026,11 @@ function BasePreviewTable({ rows, totalRows }: { rows: WeldRow[]; totalRows: num
   )
 }
 
-function CompactMetricCard({ label, value }: { label: string; value: number }) {
+function CompactMetricCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+    <div className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-2">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-0.5 text-xl font-semibold leading-none text-slate-900">{value}</div>
+      <div className="mt-0.5 truncate text-xl font-semibold leading-none tabular-nums text-slate-900" title={String(value)}>{value}</div>
     </div>
   )
 }

@@ -205,7 +205,7 @@ function ReportBackground({
         ) : null}
       </ReportPageHeader>
 
-      {!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} minWidth={pageMinWidth} /> : null}
+      {!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
 
       {!isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
 

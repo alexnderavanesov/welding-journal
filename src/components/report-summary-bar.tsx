@@ -4,7 +4,6 @@ import { getReportSummaryText } from '@/lib/report-ui-state'
 export type ReportSummaryBarProps = {
   activeReport: ActiveReport
   left: number
-  minWidth: number
   isLoading: boolean
   weldingRowCount: number
   acceptedWdiTotalText: string
@@ -24,7 +23,6 @@ export type ReportSummaryBarProps = {
 export function ReportSummaryBar({
   activeReport,
   left,
-  minWidth,
   isLoading,
   weldingRowCount,
   acceptedWdiTotalText,
@@ -42,8 +40,8 @@ export function ReportSummaryBar({
 }: ReportSummaryBarProps) {
   const messageClassName =
     messageVariant === 'lnk-success'
-      ? 'rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800 shadow-sm'
-      : 'rounded-md border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-800 shadow-sm'
+      ? 'min-w-0 max-w-[60vw] truncate rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800 shadow-sm'
+      : 'min-w-0 max-w-[60vw] truncate rounded-md border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-800 shadow-sm'
   const summaryText = getReportSummaryText({
     activeReport,
     isLoading,
@@ -62,8 +60,8 @@ export function ReportSummaryBar({
 
   return (
     <div
-      className="sticky z-20 flex min-h-6 w-full items-center justify-between bg-white text-sm text-muted-foreground"
-      style={{ left, minWidth }}
+      className="sticky z-20 flex min-h-6 items-center justify-between gap-3 bg-white text-sm text-muted-foreground"
+      style={{ left, width: `calc(100vw - ${left + 24}px)` }}
     >
       <span className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1">
         <span>
@@ -76,7 +74,7 @@ export function ReportSummaryBar({
           </span>
         ) : null}
       </span>
-      {showRightMessage ? <span className={messageClassName}>{message}</span> : <span />}
+      {showRightMessage ? <span className={messageClassName} title={message}>{message}</span> : <span />}
     </div>
   )
 }

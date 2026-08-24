@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   FileText,
+  ListChecks,
   MousePointer2,
   Plus,
   RotateCcw,
@@ -170,6 +171,14 @@ function getBindingParts(binding: DocumentTemplateCellBinding | undefined): Docu
   return binding?.field ? [{ field: binding.field }] : []
 }
 
+function formatTemplateBindingSummary(binding: DocumentTemplateCellBinding) {
+  const labels = getBindingParts(binding).map((part) =>
+    [...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS].find((field) => field.key === part.field)?.label ?? part.field,
+  )
+  if (!labels.length) return 'Поле не выбрано'
+  return labels.join(' + ')
+}
+
 function getInitialDraft(template: StoredDocumentTemplate): DocumentTemplateConstructorConfig {
   const normalized = template.constructorConfig
     ? normalizeDocumentTemplateConstructorConfig(template.constructorConfig)
@@ -284,21 +293,35 @@ export function validateDocumentTemplateBuilderConfig(
   preview: DocumentTemplateWorkbookPreview | null,
   options: { requireNameConfig?: boolean } = {},
 ) {
-  if (!draft.sheetName) return 'Выберите лист шаблона.'
-  if (!draft.bindings.length) return 'Назначьте хотя бы одну ячейку.'
+  return getDocumentTemplateBuilderIssues(draft, preview, options)[0]?.message ?? null
+}
+
+export type DocumentTemplateBuilderIssue = {
+  message: string
+  cell?: string
+}
+
+export function getDocumentTemplateBuilderIssues(
+  draft: DocumentTemplateConstructorConfig,
+  preview: DocumentTemplateWorkbookPreview | null,
+  options: { requireNameConfig?: boolean } = {},
+) {
+  const issues: DocumentTemplateBuilderIssue[] = []
+  if (!draft.sheetName) issues.push({ message: 'Выберите лист шаблона.' })
+  if (!draft.bindings.length) issues.push({ message: 'Назначьте хотя бы одну ячейку.' })
   const rowBindings = draft.bindings.filter((binding) => binding.mode === 'row')
   const groupBindings = draft.bindings.filter(
     (binding) => binding.mode === 'summary' && binding.scope === 'group',
   )
   const repeatBindings = [...rowBindings, ...groupBindings]
   const repeatRowEnd = getRepeatRowEnd(draft)
-  if (repeatBindings.length && !draft.repeatRow) return 'Выберите повторяемый блок строк.'
+  if (repeatBindings.length && !draft.repeatRow) issues.push({ message: 'Выберите повторяемый блок строк.' })
   const outsideRowBindings = repeatBindings.filter(
     (binding) => !isCellInRepeatBlock(draft, preview, binding.cell),
   )
   if (outsideRowBindings.length) {
     const addresses = outsideRowBindings.map((binding) => binding.cell).join(', ')
-    return `Ячейки ${addresses} находятся вне повторяемого блока строк ${draft.repeatRow}–${repeatRowEnd}.`
+    issues.push({ message: `Ячейки ${addresses} находятся вне повторяемого блока строк ${draft.repeatRow}–${repeatRowEnd}.` })
   }
   if (
     draft.repeatRow &&
@@ -308,47 +331,49 @@ export function validateDocumentTemplateBuilderConfig(
       return range.end >= draft.repeatRow! && range.start <= repeatRowEnd!
     })
   ) {
-    return 'Сводные ячейки должны находиться вне повторяемого блока строк.'
-  }
-  if (draft.repeatRow && repeatRowEnd && repeatRowEnd < draft.repeatRow) {
-    return 'Конец повторяемого блока не может находиться выше его начала.'
+    issues.push({ message: 'Сводные ячейки должны находиться вне повторяемого блока строк.' })
   }
   if (draft.bindings.some((binding) => getBindingParts(binding).length === 0)) {
-    return 'Для каждой назначенной ячейки выберите поле.'
+    issues.push({ message: 'Для каждой назначенной ячейки выберите поле.' })
   }
   for (const binding of draft.bindings) {
     const parts = getBindingParts(binding)
     for (const [partIndex, part] of parts.entries()) {
       if ((part.numericOperation || part.multiplier?.trim()) && !isNumericTemplateField(part.field)) {
-        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: числовая формула доступна только для числового поля.`
+        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: числовая формула доступна только для числового поля.` })
       }
       if (part.numericOperation && !part.compareField) {
-        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: выберите второе числовое поле.`
+        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: выберите второе числовое поле.` })
       }
       if (part.compareField && !isNumericTemplateField(part.compareField)) {
-        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: второе поле формулы должно быть числовым.`
+        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: второе поле формулы должно быть числовым.` })
       }
       if (!isValidTemplateMultiplier(part.multiplier)) {
-        return `В ячейке ${binding.cell}, часть ${partIndex + 1}: укажите корректный коэффициент умножения.`
+        issues.push({ cell: binding.cell, message: `В ячейке ${binding.cell}, часть ${partIndex + 1}: укажите корректный коэффициент умножения.` })
       }
     }
   }
   if (draft.repeatMode === 'groups' && !draft.repeatGroupBy) {
-    return 'Выберите поле группировки повторяемого блока.'
+    issues.push({ message: 'Выберите поле группировки повторяемого блока.' })
   }
   if (draft.repeatMode !== 'groups' && groupBindings.length) {
-    return 'Данные текущей группы доступны только при повторении блока по группам.'
+    issues.push({ message: 'Данные текущей группы доступны только при повторении блока по группам.' })
   }
   if (options.requireNameConfig !== false) {
     const nameParts = draft.nameConfig?.parts ?? []
     if (!nameParts.some((part) => part.type === 'field' ? Boolean(part.field) : Boolean(part.text?.trim()))) {
-      return 'Добавьте хотя бы одно поле или текст для названия документа.'
+      issues.push({ message: 'Добавьте хотя бы одно поле или текст для названия документа.' })
     }
     if (nameParts.some((part) => part.type === 'field' && !part.field)) {
-      return 'Для каждой части названия типа «Поле» выберите поле системы.'
+      issues.push({ message: 'Для каждой части названия типа «Поле» выберите поле системы.' })
     }
   }
-  return null
+  return issues
+}
+
+export function getDocumentTemplateRepeatedRows(config: DocumentTemplateConstructorConfig, itemCount: number) {
+  if (!config.repeatRow || itemCount <= 0) return 0
+  return (getRepeatRowEnd(config)! - config.repeatRow + 1) * itemCount
 }
 
 export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentTemplateBuilderProps) {
@@ -390,6 +415,15 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   }, [draft])
 
   const selectedBinding = draft.bindings.find((binding) => binding.cell === selectedCell)
+  const builderIssues = useMemo(
+    () => getDocumentTemplateBuilderIssues(draft, preview, { requireNameConfig: !isSystemTemplate }),
+    [draft, isSystemTemplate, preview],
+  )
+  const selectedCellIssues = builderIssues.filter((issue) => issue.cell === selectedCell)
+  const sortedBindings = useMemo(
+    () => [...draft.bindings].sort((left, right) => left.cell.localeCompare(right.cell, 'en', { numeric: true })),
+    [draft.bindings],
+  )
   const bindingsByCell = useMemo(
     () => new Map(draft.bindings.map((binding) => [binding.cell, binding])),
     [draft.bindings],
@@ -640,7 +674,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       </div>
 
       {activeTab === 'content' ? (
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-h-0 overflow-auto bg-slate-100/70 p-4">
           <div className="mb-3 flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
             <label className="text-xs font-semibold uppercase text-slate-500">Лист</label>
@@ -744,11 +778,61 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
         </div>
 
         <aside className="min-h-0 overflow-auto border-l border-slate-200 bg-white p-4">
+          <section className="mb-4 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2.5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <ListChecks className="h-4 w-4 text-sky-700" />
+                Назначения и проверка
+              </div>
+              <div className="flex gap-1.5 text-[11px] font-semibold">
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">{draft.bindings.length}</span>
+                <span className={`rounded px-2 py-0.5 ${builderIssues.length ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {builderIssues.length ? `Ошибок: ${builderIssues.length}` : 'Готово'}
+                </span>
+              </div>
+            </div>
+            <div className="max-h-44 overflow-auto p-2">
+              {sortedBindings.length ? sortedBindings.map((binding) => (
+                <button
+                  key={binding.cell}
+                  type="button"
+                  onClick={() => setSelectedCell(binding.cell)}
+                  className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs last:mb-0 ${selectedCell === binding.cell ? 'bg-sky-100 text-sky-900' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
+                >
+                  <span className="w-10 shrink-0 font-mono font-semibold">{binding.cell}</span>
+                  <span className="min-w-0 flex-1 truncate">{formatTemplateBindingSummary(binding)}</span>
+                  {builderIssues.some((issue) => issue.cell === binding.cell) ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-600" /> : null}
+                </button>
+              )) : <div className="px-2 py-3 text-xs text-slate-500">Назначенных ячеек пока нет.</div>}
+            </div>
+            {builderIssues.length ? (
+              <div className="max-h-32 overflow-auto border-t border-rose-100 bg-rose-50/70 p-2">
+                {builderIssues.map((issue, index) => (
+                  <button
+                    key={`${issue.message}-${index}`}
+                    type="button"
+                    onClick={() => issue.cell && setSelectedCell(issue.cell)}
+                    disabled={!issue.cell}
+                    className="block w-full rounded px-2 py-1 text-left text-xs leading-4 text-rose-700 hover:bg-rose-100 disabled:cursor-default"
+                  >
+                    {issue.message}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+
           <div className="flex items-center gap-2">
             <MousePointer2 className="h-4 w-4 text-sky-700" />
             <div className="text-sm font-semibold text-slate-900">Выбранная ячейка</div>
             <span className="ml-auto rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700">{selectedCell || '—'}</span>
           </div>
+
+          {selectedCellIssues.length ? (
+            <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
+              {selectedCellIssues.map((issue) => <div key={issue.message}>{issue.message}</div>)}
+            </div>
+          ) : null}
 
           {showRepeatControls ? (
             <div className="mt-4 rounded-md border border-sky-200 bg-sky-50/70 p-3">
@@ -805,6 +889,18 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                   {REPEAT_TARGET_OPTIONS.find((option) => option.value === repeatTarget)?.description}
                 </span>
               </label>
+              <div className="mt-3 border-t border-sky-100 pt-3">
+                <div className="text-xs font-semibold text-slate-700">Размер повторяемой части</div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {[1, 5, 20].map((count) => (
+                    <div key={count} className="rounded-md border border-sky-100 bg-white px-2 py-1.5 text-center">
+                      <div className="text-[10px] text-slate-500">{count} {count === 1 ? 'объект' : 'объектов'}</div>
+                      <div className="mt-0.5 text-sm font-semibold text-sky-900">{getDocumentTemplateRepeatedRows(draft, count)} стр.</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] leading-4 text-slate-500">Показано число строк копируемого блока; строки Excel выше и ниже него сохраняются.</p>
+              </div>
             </div>
           ) : null}
 
@@ -813,7 +909,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
               Нажмите на нужную ячейку Excel.
             </div>
           ) : selectedBinding ? (
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 space-y-4 border-t border-slate-200 pt-4">
               <div className="border-l-2 border-sky-200 pl-3">
                 <div className="text-sm font-semibold text-slate-800">{selectedModeInfo.label}</div>
                 <p className="mt-1 text-xs leading-5 text-slate-500">{selectedModeInfo.description}</p>

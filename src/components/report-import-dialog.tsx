@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, FileDown, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
@@ -22,6 +22,7 @@ import {
   buildReportReplaceDataPreview,
   fixReportImportPreviewErrors,
   type ReportImportPreview,
+  type ReportImportPreviewError,
   type ReportImportRecord,
 } from '@/lib/report-import-preview'
 import { cn } from '@/lib/utils'
@@ -67,6 +68,8 @@ export function ReportImportDialog({
   const [preview, setPreview] = useState<ReportImportPreview | null>(null)
   const [previewRowLimit, setPreviewRowLimit] = useState<PreviewRowLimit>(50)
   const [errorsCollapsed, setErrorsCollapsed] = useState(false)
+  const [showOnlyErrorRows, setShowOnlyErrorRows] = useState(false)
+  const [activeErrorIndex, setActiveErrorIndex] = useState(-1)
   const [readError, setReadError] = useState<string | null>(null)
   const [isReading, setIsReading] = useState(false)
 
@@ -90,11 +93,19 @@ export function ReportImportDialog({
   const validCount = preview?.validRecords.length ?? 0
   const errorCount = preview?.errors.length ?? 0
   const deleteCount = preview?.validRecords.filter((record) => record.deleteRequested).length ?? 0
+  const errorRowCount = preview ? new Set(preview.errors.map((error) => error.id ? `id:${error.id}` : `row:${error.rowNumber}`)).size : 0
+  const errorGroups = preview ? groupImportPreviewErrors(preview.errors) : []
   const changedPreviewCellKeys = preview ? buildPreviewChangedCellKeys(preview) : new Map<string, Set<string>>()
   const errorPreviewCellKeys = preview ? buildPreviewErrorCellKeys(preview) : new Map<string, Set<string>>()
-  const visiblePreviewRecords = preview ? getVisiblePreviewRecords(preview.records, previewRowLimit) : []
+  const errorPreviewRowKeys = preview ? new Set(preview.errors.map(getPreviewErrorRowKey)) : new Set<string>()
+  const previewRecordsWithIndexes = preview
+    ? preview.records.map((record, index) => ({ record, index })).filter(({ record, index }) =>
+        !showOnlyErrorRows || errorPreviewRowKeys.has(getPreviewRowKey(record, index)),
+      )
+    : []
+  const visiblePreviewRecords = getVisiblePreviewRecords(previewRecordsWithIndexes, previewRowLimit)
   const stickyPreviewColumns = preview ? getStickyPreviewColumns(preview) : []
-  const isPreviewLimited = preview ? visiblePreviewRecords.length < preview.records.length : false
+  const isPreviewLimited = visiblePreviewRecords.length < previewRecordsWithIndexes.length
   const modeCopy = getImportModeCopy(mode, activeReport)
 
   const handleDownloadTemplate = () => {
@@ -127,6 +138,8 @@ export function ReportImportDialog({
     setPreview(null)
     setPreviewRowLimit(50)
     setErrorsCollapsed(false)
+    setShowOnlyErrorRows(false)
+    setActiveErrorIndex(-1)
     setReadError(null)
     setIsReading(false)
   }
@@ -171,6 +184,8 @@ export function ReportImportDialog({
       setPreview(nextPreview)
       setPreviewRowLimit(50)
       setErrorsCollapsed(false)
+      setShowOnlyErrorRows(false)
+      setActiveErrorIndex(-1)
     } catch (error) {
       setPreview(null)
       setReadError(error instanceof Error ? error.message : 'Не удалось прочитать файл импорта.')
@@ -207,6 +222,36 @@ export function ReportImportDialog({
       welderStamps,
       welderStampSuspensions,
     }))
+  }
+
+  const handleNextError = () => {
+    if (!preview?.errors.length) return
+    const nextIndex = (activeErrorIndex + 1) % preview.errors.length
+    setActiveErrorIndex(nextIndex)
+    window.requestAnimationFrame(() => {
+      document.getElementById(`import-error-${nextIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+
+  const handleExportErrors = async () => {
+    if (!preview?.errors.length) return
+    const XLSX = await import('xlsx')
+    const sheet = XLSX.utils.json_to_sheet(preview.errors.map((error) => ({
+      'Строка Excel': error.rowNumber,
+      ID: error.id ?? '',
+      'Группа ошибки': error.title,
+      'Описание': error.message,
+      'Поля': error.fieldKeys?.map((key) => preview.fields.find((field) => field.key === key)?.label ?? key).join(', ') ?? '',
+    })))
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Ошибки импорта')
+    const bytes = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Ошибки импорта - ${preview.fileName.replace(/\.[^.]+$/, '')}.xlsx`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -321,8 +366,8 @@ export function ReportImportDialog({
                 <div>
                   <div className="text-sm font-semibold">Предпросмотр</div>
                   <div className="text-xs text-muted-foreground">
-                    {preview.fileName} · найдено строк: {preview.records.length} · к импорту: {validCount}
-                    {deleteCount ? ` · к удалению: ${deleteCount}` : ''}
+                    {preview.fileName} · найдено: {preview.records.length} · {mode === 'newRecords' ? 'к добавлению' : 'к изменению'}: {validCount}
+                    {preview.skippedRows ? ` · пропущено: ${preview.skippedRows}` : ''}{deleteCount ? ` · к удалению: ${deleteCount}` : ''}
                     {isPreviewLimited ? ` · показано: ${visiblePreviewRecords.length}` : ''}
                   </div>
                   {changedPreviewCellKeys.size > 0 || errorPreviewCellKeys.size > 0 ? (
@@ -333,9 +378,18 @@ export function ReportImportDialog({
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  {errorRowCount ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowOnlyErrorRows((current) => !current)}
+                      className={`h-8 rounded-md border px-3 text-xs font-semibold ${showOnlyErrorRows ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      {showOnlyErrorRows ? 'Показаны только ошибки' : `Только строки с ошибками · ${errorRowCount}`}
+                    </button>
+                  ) : null}
                   <PreviewRowLimitControl
                     value={previewRowLimit}
-                    totalRows={preview.records.length}
+                    totalRows={previewRecordsWithIndexes.length}
                     visibleRows={visiblePreviewRecords.length}
                     onChange={setPreviewRowLimit}
                   />
@@ -377,10 +431,10 @@ export function ReportImportDialog({
                     </tr>
                   </thead>
                   <tbody>
-                    {visiblePreviewRecords.map((record, index) => {
+                    {visiblePreviewRecords.map(({ record, index }) => {
                       const previewRowKey = getPreviewRowKey(record, index)
                       return (
-                        <tr key={`${index}-${String(record.joint ?? '')}`} className="odd:bg-white even:bg-slate-50/70">
+                        <tr id={getPreviewRowDomId(record, index)} key={`${index}-${String(record.joint ?? '')}`} className="odd:bg-white even:bg-slate-50/70">
                           {stickyPreviewColumns.includes('id') ? (
                             <td
                               className={getPreviewCellClass({
@@ -441,6 +495,10 @@ export function ReportImportDialog({
                     <Button size="sm" variant="ghost" onClick={() => setErrorsCollapsed((value) => !value)}>
                       {errorsCollapsed ? 'Развернуть' : 'Свернуть'}
                     </Button>
+                    <Button size="sm" variant="outline" onClick={handleNextError}>Следующая ошибка</Button>
+                    <Button size="sm" variant="outline" onClick={() => void handleExportErrors()}>
+                      <FileDown className="mr-1.5 h-4 w-4" />Excel с ошибками
+                    </Button>
                     {mode === 'newRecords' ? (
                       <Button size="sm" variant="outline" onClick={handleFixPreviewErrors} disabled={isReading || isPending}>
                         Исправить ошибки
@@ -456,15 +514,30 @@ export function ReportImportDialog({
               {!errorsCollapsed ? (
                 <div className="max-h-[220px] overflow-auto p-3">
                   {preview.errors.length ? (
-                    <div className="grid gap-2 xl:grid-cols-2">
-                      {preview.errors.map((error) => (
-                        <div key={`${error.rowNumber}-${error.title}`} className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <div>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {errorGroups.map((group) => (
+                          <span key={group.title} className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
+                            {group.title}: {group.count}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="grid gap-2 xl:grid-cols-2">
+                      {preview.errors.map((error, errorIndex) => (
+                        <button
+                          id={`import-error-${errorIndex}`}
+                          type="button"
+                          key={`${error.rowNumber}-${error.title}-${errorIndex}`}
+                          onClick={() => document.getElementById(getPreviewErrorRowDomId(error))?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                          className={`rounded border px-3 py-2 text-left text-sm text-amber-900 ${activeErrorIndex === errorIndex ? 'border-amber-500 bg-amber-100 ring-2 ring-amber-200' : 'border-amber-200 bg-amber-50 hover:bg-amber-100'}`}
+                        >
                           <div className="font-semibold">
                             Строка {error.rowNumber}: {error.title}
                           </div>
                           <div className="mt-1 text-xs leading-relaxed">{error.message}</div>
-                        </div>
+                        </button>
                       ))}
+                      </div>
                     </div>
                   ) : (
                     <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
@@ -485,7 +558,7 @@ export function ReportImportDialog({
       <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
         <div className="text-sm text-muted-foreground">
           {preview
-            ? `Будет импортировано: ${validCount}. ${deleteCount ? `Удалений: ${deleteCount}. ` : ''}Ошибок: ${errorCount}.`
+            ? `${mode === 'newRecords' ? 'К добавлению' : 'К изменению'}: ${validCount}. Пропущено: ${preview.skippedRows}. ${deleteCount ? `К удалению: ${deleteCount}. ` : ''}Строк с ошибками: ${errorRowCount}. Сообщений: ${errorCount}.`
             : 'Импорт начнется только после предпросмотра.'}
         </div>
         <div className="flex items-center gap-2">
@@ -627,8 +700,14 @@ function formatPreviewValue(value: unknown) {
   return String(value)
 }
 
-function getVisiblePreviewRecords(records: ReportImportRecord[], rowLimit: PreviewRowLimit) {
+function getVisiblePreviewRecords<T>(records: T[], rowLimit: PreviewRowLimit) {
   return rowLimit === 'all' ? records : records.slice(0, rowLimit)
+}
+
+function groupImportPreviewErrors(errors: ReportImportPreviewError[]) {
+  const groups = new Map<string, number>()
+  errors.forEach((error) => groups.set(error.title, (groups.get(error.title) ?? 0) + 1))
+  return Array.from(groups, ([title, count]) => ({ title, count })).sort((left, right) => right.count - left.count || left.title.localeCompare(right.title, 'ru'))
 }
 
 const STICKY_PREVIEW_COLUMN_WIDTHS: Record<string, number> = {
@@ -727,12 +806,26 @@ function buildPreviewErrorCellKeys(preview: ReportImportPreview) {
   const result = new Map<string, Set<string>>()
   preview.errors.forEach((error) => {
     if (!error.fieldKeys?.length) return
-    const rowKey = error.id ? `id:${error.id}` : `row:${error.rowNumber}`
-    result.set(rowKey, new Set(error.fieldKeys))
+    const rowKey = getPreviewErrorRowKey(error)
+    const fieldKeys = result.get(rowKey) ?? new Set<string>()
+    error.fieldKeys.forEach((fieldKey) => fieldKeys.add(fieldKey))
+    result.set(rowKey, fieldKeys)
   })
   return result
 }
 
 function getPreviewRowKey(record: ReportImportRecord, index: number) {
   return record.id ? `id:${record.id}` : `row:${index + 2}`
+}
+
+function getPreviewErrorRowKey(error: ReportImportPreviewError) {
+  return error.id ? `id:${error.id}` : `row:${error.rowNumber}`
+}
+
+function getPreviewRowDomId(record: ReportImportRecord, index: number) {
+  return `import-preview-${getPreviewRowKey(record, index).replace(':', '-')}`
+}
+
+function getPreviewErrorRowDomId(error: ReportImportPreviewError) {
+  return `import-preview-${getPreviewErrorRowKey(error).replace(':', '-')}`
 }

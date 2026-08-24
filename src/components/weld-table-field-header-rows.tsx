@@ -69,7 +69,7 @@ export function WeldTableFieldHeaderRows({
   )
 
   return (
-    <tr>
+    <tr className="h-16">
       {renderColumns.map((renderColumn) => {
         if (renderColumn.kind === 'spacer') {
           return <HorizontalHeaderSpacer key={renderColumn.key} colSpan={renderColumn.colSpan} />
@@ -79,26 +79,26 @@ export function WeldTableFieldHeaderRows({
         }
         const { field, isSectionEnd } = renderColumn
         const isStickyField = stickyIdentityColumns && isStickyWeldTableField(field.key)
-          return (
-            <th
-              key={renderColumn.key}
-              className={`${headerCellClass(field.key, !canEditField(field.key as WeldFieldKey), isSectionEnd)} ${
-                isStickyField ? 'sticky z-30' : ''
-              }`}
-              style={isStickyField ? getStickyWeldTableFieldStyle(field.key, stickyLeft, stickyIdentityLeadingWidth) : undefined}
-            >
-              <WeldColumnFilterControl
-                fieldKey={field.key as WeldFieldKey}
-                label={getTableLabel(field.key, field.label)}
-                textLabel={field.label}
-                rows={rows}
-                columnFilters={columnFilters}
-                manualFilterOptionsReport={manualFilterOptionsReport}
-                manualFilterOptions={manualFilterOptions?.[field.key]}
-                onColumnFiltersChange={onColumnFiltersChange}
-              />
-            </th>
-          )
+        return (
+          <th
+            key={renderColumn.key}
+            className={`${headerCellClass(field.key, !canEditField(field.key as WeldFieldKey), isSectionEnd)} ${
+              isStickyField ? 'sticky z-30' : ''
+            }`}
+            style={isStickyField ? getStickyWeldTableFieldStyle(field.key, stickyLeft, stickyIdentityLeadingWidth) : undefined}
+          >
+            <WeldColumnFilterControl
+              fieldKey={field.key as WeldFieldKey}
+              label={getTableLabel(field.key, field.label)}
+              textLabel={field.label}
+              rows={rows}
+              columnFilters={columnFilters}
+              manualFilterOptionsReport={manualFilterOptionsReport}
+              manualFilterOptions={manualFilterOptions?.[field.key]}
+              onColumnFiltersChange={onColumnFiltersChange}
+            />
+          </th>
+        )
       })}
     </tr>
   )
@@ -260,13 +260,13 @@ function WeldColumnFilterControl({
           })
           setOptionSearch('')
         }}
-        className={`group/header-filter relative -mx-1 flex min-h-8 w-[calc(100%+0.5rem)] min-w-0 items-center justify-center rounded-md px-1 py-1 text-[13px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
+        className={`group/header-filter relative -mx-1 flex h-10 w-[calc(100%+0.5rem)] min-w-0 items-center justify-center overflow-hidden rounded-md px-1 py-1 text-[13px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
           hasActiveFilter || isOpen ? 'bg-white/45 text-slate-800' : 'text-slate-700 hover:bg-white/35'
         }`}
-        title={hasActiveFilter ? `Фильтр активен: ${filterSummary}` : 'Фильтр по значениям'}
+        title={hasActiveFilter ? `${textLabel}. Фильтр активен: ${filterSummary}` : `${textLabel}. Фильтр по значениям`}
         aria-label={`${textLabel}. Открыть фильтр`}
       >
-        <span className="min-w-0 whitespace-normal break-normal text-center leading-tight">{label}</span>
+        <span className="line-clamp-2 min-w-0 whitespace-normal break-normal text-center leading-tight">{label}</span>
         <span
           className={`absolute right-1 top-1/2 inline-flex h-6 min-w-6 -translate-y-1/2 items-center justify-center gap-1 rounded-md border border-[#9fc7de] bg-white/95 px-1.5 text-[11px] font-semibold text-sky-700 shadow-sm shadow-sky-100/70 transition-opacity ${
             hasActiveFilter || isOpen ? 'opacity-100' : 'opacity-0 group-hover/header-filter:opacity-100 group-focus-visible/header-filter:opacity-100'

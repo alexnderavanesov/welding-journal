@@ -31,7 +31,7 @@ type LnkResultManagerEntryProps = {
   isResultReplacementPending: boolean
   isConclusionCorrectionPending: boolean
   onConclusionDraftChange: (changeKey: string, value: string) => void
-  onRenameConclusion: (row: WeldRow, methodKey: WeldFieldKey) => void
+  onRenameConclusion: (row: WeldRow, methodKey: WeldFieldKey, conclusionName: string) => void
   onReplaceResult: (row: WeldRow, methodKey: WeldFieldKey, result: string) => void
   onClearResult: (row: WeldRow, methodKey: WeldFieldKey) => void
 }
@@ -86,7 +86,7 @@ export function LnkResultManagerEntry({
             customConclusionDraft !== conclusionName
           }
           onChange={(value) => onConclusionDraftChange(changeKey, value)}
-          onRename={() => onRenameConclusion(row, method.requestKey)}
+          onRename={(value) => onRenameConclusion(row, method.requestKey, value)}
         />
       </div>
       <LnkResultManagerActions

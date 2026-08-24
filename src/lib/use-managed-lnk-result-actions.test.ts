@@ -18,6 +18,38 @@ vi.mock('@/lib/managed-lnk-result-utils', () => ({
 }))
 
 describe('useManagedLnkResultActions', () => {
+  it('passes an explicitly confirmed conclusion name to the rename mutation', () => {
+    const row = { id: 7, vikConclusion: 'Заключение-17' } as WeldRow
+    const mutate = vi.fn()
+    const { result } = renderHook(() => useManagedLnkResultActions({
+      isLnkRowsContextReady: true,
+      lnkRows: [row],
+      selectedLnkResultRowIds: new Set(),
+      managedLnkPendingResultChanges: {},
+      managedLnkPendingResultRows: [],
+      lnkResultCorrectionMutation: { mutate: vi.fn() },
+      lnkResultReplacementMutation: { mutate: vi.fn() },
+      lnkConclusionCorrectionMutation: { mutate },
+      setMessage: vi.fn(),
+      setIsLnkResultModalOpen: vi.fn(),
+      setIsLnkResultManagerOpen: vi.fn(),
+      setManagedLnkResultMethodKey: vi.fn(),
+      setManagedLnkConclusionDrafts: vi.fn(),
+      setManagedLnkResultOrderIds: vi.fn(),
+      setManagedLnkResultTargetKey: vi.fn(),
+      setManagedLnkResultChangeHint: vi.fn(),
+      setManagedLnkPendingResultChanges: vi.fn(),
+    }))
+
+    act(() => result.current.renameManagedLnkConclusionForRow(row, 'vikRequest', 'Заключение-18'))
+
+    expect(mutate).toHaveBeenCalledWith({
+      records: [row],
+      methodKey: 'vikRequest',
+      conclusionName: 'Заключение-18',
+    })
+  })
+
   it('closes the result manager only after a successful save', () => {
     let finishSave: (() => void) | undefined
     const mutate = vi.fn((_variables, options?: { onSuccess?: () => void }) => {
@@ -35,7 +67,6 @@ describe('useManagedLnkResultActions', () => {
       isLnkRowsContextReady: true,
       lnkRows: [],
       selectedLnkResultRowIds: new Set(),
-      managedLnkConclusionDrafts: {},
       managedLnkPendingResultChanges: { '7:vikRequest': 'годен' },
       managedLnkPendingResultRows: [{} as never],
       lnkResultCorrectionMutation: { mutate: vi.fn() },
@@ -83,7 +114,6 @@ describe('useManagedLnkResultActions', () => {
       isLnkRowsContextReady: true,
       lnkRows: [row],
       selectedLnkResultRowIds: new Set(),
-      managedLnkConclusionDrafts: {},
       managedLnkPendingResultChanges: {},
       managedLnkPendingResultRows: [],
       lnkResultCorrectionMutation: { mutate: vi.fn() },
@@ -122,7 +152,6 @@ describe('useManagedLnkResultActions', () => {
       isLnkRowsContextReady: false,
       lnkRows: [],
       selectedLnkResultRowIds: new Set(),
-      managedLnkConclusionDrafts: {},
       managedLnkPendingResultChanges: {},
       managedLnkPendingResultRows: [],
       lnkResultCorrectionMutation: { mutate: vi.fn() },

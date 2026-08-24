@@ -7,7 +7,6 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 type CreateReportSummaryBarPropsOptions = {
   activeReport: ActiveReport
   left: number
-  minWidth: number
   isLoading: boolean
   weldingRows: WeldRow[]
   weldingRowCount?: number
@@ -30,7 +29,6 @@ type CreateReportSummaryBarPropsOptions = {
 export function createReportSummaryBarProps({
   activeReport,
   left,
-  minWidth,
   isLoading,
   weldingRows,
   weldingRowCount,
@@ -52,7 +50,6 @@ export function createReportSummaryBarProps({
   return {
     activeReport,
     left,
-    minWidth,
     isLoading,
     weldingRowCount: weldingRowCount ?? weldingRows.length,
     acceptedWdiTotalText: formatWdiTotal(acceptedWdiTotal),

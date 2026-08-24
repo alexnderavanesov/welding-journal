@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { DialogHeader } from '@/components/dialog-header'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -30,11 +31,12 @@ import { formatJointDiameterLabel } from '@/lib/joint-display'
 import {
   formatPercent,
   formatStatisticValue,
-  getCurrentStatisticsWeek,
   getDefaultStatisticsPeriod,
+  getStatisticsPeriodPresetSelection,
   type StatisticsControlDynamicsScale,
   type StatisticsControlDynamicsScaleSetting,
   type StatisticsMethodSummary,
+  type StatisticsPeriodPreset,
   type StatisticsStateRowIds,
   type StatisticsSummary,
   type StatisticsUnit,
@@ -97,6 +99,7 @@ type StatisticsTab = 'general' | 'lnk' | 'psto' | 'welders' | 'lineSummary' | 'p
 type StatisticsTimeSettings = {
   period: ReturnType<typeof getDefaultStatisticsPeriod>
   allPeriod: boolean
+  periodPreset: StatisticsPeriodPreset
 }
 
 const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
@@ -237,20 +240,21 @@ const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
 
 function createDefaultStatisticsTimeSettings(): Record<StatisticsTab, StatisticsTimeSettings> {
   const currentPeriod = getDefaultStatisticsPeriod()
-  const currentWeek = getCurrentStatisticsWeek()
   const currentPeriodSettings = (): StatisticsTimeSettings => ({
     period: { ...currentPeriod },
     allPeriod: false,
+    periodPreset: 'currentMonth',
   })
-  const currentWeekSettings = (): StatisticsTimeSettings => ({
-    period: { ...currentWeek },
-    allPeriod: false,
+  const allPeriodSettings = (): StatisticsTimeSettings => ({
+    period: { from: '', to: '' },
+    allPeriod: true,
+    periodPreset: 'all',
   })
 
   return {
     general: currentPeriodSettings(),
-    lnk: currentWeekSettings(),
-    psto: currentWeekSettings(),
+    lnk: allPeriodSettings(),
+    psto: allPeriodSettings(),
     welders: currentPeriodSettings(),
     lineSummary: currentPeriodSettings(),
     percentageLines: currentPeriodSettings(),
@@ -271,10 +275,7 @@ export function StatisticsPage({
   const [timeSettingsByTab, setTimeSettingsByTab] = useState<Record<StatisticsTab, StatisticsTimeSettings>>(
     createDefaultStatisticsTimeSettings,
   )
-  const { period, allPeriod } = timeSettingsByTab[activeTab]
-  const currentWeek = getCurrentStatisticsWeek()
-  const isCurrentWeek =
-    !allPeriod && period.from === currentWeek.from && period.to === currentWeek.to
+  const { period, allPeriod, periodPreset } = timeSettingsByTab[activeTab]
   const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('wdi')
   const [lnkUnit, setLnkUnit] = useState<StatisticsUnit>('joints')
   const [pstoUnit, setPstoUnit] = useState<StatisticsUnit>('joints')
@@ -371,6 +372,7 @@ export function StatisticsPage({
         : activeTab === 'psto'
           ? 'Заявки считаются по дате создания, заключения ПСТО — по дате проведения; потребность и состояния без заявки — по дате сварки.'
           : 'Стыки отбираются по дате сварки.'
+  const periodLabel = getStatisticsPeriodLabel(allPeriod, periodFrom, periodTo)
   const printableReport = useMemo(
     () =>
       buildStatisticsPrintableReport({
@@ -380,7 +382,7 @@ export function StatisticsPage({
         lineSummary,
         lnkMethods,
         percentageLines: filterPercentageLineSummaries(percentageLineSummary, percentageLineSearch),
-        periodLabel: allPeriod || !periodFrom || !periodTo ? 'За весь период' : `${formatDisplayDate(periodFrom)} - ${formatDisplayDate(periodTo)}`,
+        periodLabel,
         periodDescription,
         scopeLabel,
         summary,
@@ -399,6 +401,7 @@ export function StatisticsPage({
       percentageLineSummary,
       periodFrom,
       periodDescription,
+      periodLabel,
       periodTo,
       scopeLabel,
       summary,
@@ -411,7 +414,7 @@ export function StatisticsPage({
   )
   return (
     <section className="w-full max-w-full min-w-0 space-y-4 pb-8">
-      <div className="sticky top-0 z-30 rounded-md border border-slate-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur-sm">
+      <div className="sticky top-0 z-40 rounded-md border border-slate-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             {!fixedTab ? (
@@ -464,7 +467,7 @@ export function StatisticsPage({
                 : activeTab === 'psto'
                   ? 'Заявки, проведение и текущая очередь послесварочной термообработки.'
                 : activeTab === 'general'
-                  ? `${allPeriod || !periodFrom || !periodTo ? 'За весь период' : `${formatDisplayDate(periodFrom)} - ${formatDisplayDate(periodTo)}`} · ${scopeLabel} · ${getJointFilterLabel(generalJointFilter)} · ${generalUnit === 'wdi' ? 'WDI' : 'стыки'}`
+                  ? `${periodLabel} · ${scopeLabel} · ${getJointFilterLabel(generalJointFilter)} · ${generalUnit === 'wdi' ? 'WDI' : 'стыки'}`
                 : activeTab === 'welders'
                   ? 'Вклад сварщиков по фактическим клеймам за выбранный период сварки.'
                   : activeTab === 'lineSummary'
@@ -513,66 +516,63 @@ export function StatisticsPage({
           <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
             <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 pb-3">
               {activeTab !== 'lineSummary' && activeTab !== 'percentageLines' ? (
-                <div className="grid gap-1 text-xs font-medium text-slate-600">
-                  Период
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white/80 p-1">
-                    <Input
-                      aria-label="Период с"
-                      type="date"
-                      value={period.from}
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="grid gap-1 text-xs font-medium text-slate-600">
+                    Период
+                    <Select
+                      aria-label="Период отчета"
+                      value={periodPreset}
                       onChange={(event) => {
+                        const nextPreset = event.target.value as StatisticsPeriodPreset
                         updateActiveTimeSettings((current) => ({
                           ...current,
-                          allPeriod: false,
-                          period: { ...current.period, from: event.target.value },
+                          ...getStatisticsPeriodPresetSelection(nextPreset, current.period),
+                          periodPreset: nextPreset,
                         }))
                       }}
-                      className="h-8 w-[128px] border-slate-200 text-sm"
-                    />
-                    <span className="text-slate-400">-</span>
-                    <Input
-                      aria-label="Период по"
-                      type="date"
-                      value={period.to}
-                      onChange={(event) => {
-                        updateActiveTimeSettings((current) => ({
-                          ...current,
-                          allPeriod: false,
-                          period: { ...current.period, to: event.target.value },
-                        }))
-                      }}
-                      className="h-8 w-[128px] border-slate-200 text-sm"
-                    />
-                    {activeTab === 'lnk' || activeTab === 'psto' ? (
-                      <button
-                        type="button"
-                        className={segmentButtonClass(isCurrentWeek)}
-                        onClick={() => {
-                          const week = getCurrentStatisticsWeek()
+                      className="h-9 w-[210px] border-sky-200 bg-white py-1.5 text-sm font-medium text-sky-900"
+                    >
+                      <option value="all">За весь период</option>
+                      <option value="currentWeek">Текущая неделя</option>
+                      <option value="currentMonth">Текущий месяц</option>
+                      <option value="previousMonth">Прошлый месяц</option>
+                      <option value="custom">Свой период...</option>
+                    </Select>
+                  </label>
+                  {periodPreset === 'custom' ? (
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-white/80 p-1">
+                      <span className="pl-1 text-[11px] font-medium text-slate-500">С</span>
+                      <Input
+                        aria-label="Период с"
+                        type="date"
+                        value={period.from}
+                        onChange={(event) => {
                           updateActiveTimeSettings((current) => ({
                             ...current,
                             allPeriod: false,
-                            period: week,
+                            periodPreset: 'custom',
+                            period: { ...current.period, from: event.target.value },
                           }))
                         }}
-                      >
-                        Текущая неделя
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className={segmentButtonClass(allPeriod)}
-                      onClick={() => {
-                        updateActiveTimeSettings((current) => ({
-                          ...current,
-                          allPeriod: true,
-                          period: { from: '', to: '' },
-                        }))
-                      }}
-                    >
-                      За весь период
-                    </button>
-                  </div>
+                        className="h-8 w-[128px] border-slate-200 text-sm"
+                      />
+                      <span className="text-[11px] font-medium text-slate-500">По</span>
+                      <Input
+                        aria-label="Период по"
+                        type="date"
+                        value={period.to}
+                        onChange={(event) => {
+                          updateActiveTimeSettings((current) => ({
+                            ...current,
+                            allPeriod: false,
+                            periodPreset: 'custom',
+                            period: { ...current.period, to: event.target.value },
+                          }))
+                        }}
+                        className="h-8 w-[128px] border-slate-200 text-sm"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {activeTab !== 'percentageLines' ? (
@@ -1057,7 +1057,7 @@ function WeldingDynamicsPanel({
     >
       {summary.buckets.length > 0 ? (
         <div>
-          <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+          <div className="relative isolate rounded-md border border-slate-200 bg-slate-50/70 p-3">
             <div className="mb-2.5 flex min-h-9 flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                 <span className="inline-flex items-center gap-1.5">
@@ -5081,6 +5081,13 @@ function getPercentageLineStampTotals(stamps: PercentageLineStampSummary[]) {
 
 function getJointFilterLabel(filter: WelderStatisticsJointFilter) {
   return jointFilterOptions.find(([value]) => value === filter)?.[1] ?? 'Все'
+}
+
+function getStatisticsPeriodLabel(allPeriod: boolean, from: string, to: string) {
+  if (allPeriod || (!from && !to)) return 'За весь период'
+  if (from && to) return `${formatDisplayDate(from)} - ${formatDisplayDate(to)}`
+  if (from) return `С ${formatDisplayDate(from)}`
+  return `По ${formatDisplayDate(to)}`
 }
 
 function segmentButtonClass(active: boolean) {

@@ -105,7 +105,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     expect(onOpenDocument).not.toHaveBeenCalled()
   })
 
-  it('opens the exact result card before the conclusion document preview', () => {
+  it('opens the conclusion document in a new tab instead of the result card', () => {
     const onOpenLnkResult = vi.fn()
     const onOpenDocument = vi.fn()
     const row = {
@@ -153,7 +153,59 @@ describe('WeldTableBodyCell LNK request link', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'ВИК-17' }))
 
-    expect(onOpenLnkResult).toHaveBeenCalledWith(row, 'vikConclusion')
+    expect(onOpenDocument).toHaveBeenCalledWith(row, 'vikConclusion')
+    expect(onOpenLnkResult).not.toHaveBeenCalled()
+  })
+
+  it('keeps opening the exact result card from the result value', () => {
+    const onOpenLnkResult = vi.fn()
+    const onOpenDocument = vi.fn()
+    const row = {
+      id: 2,
+      vikRequest: 'Заявка-002',
+      vikResult: 'годен',
+      vikConclusion: 'ВИК-17',
+    } as WeldRow
+    const field = {
+      key: 'vikResult',
+      dbName: 'vik_result',
+      label: 'Результат ВИК',
+      kind: 'text',
+      group: 'Контроль',
+    } satisfies WeldField
+
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <WeldTableBodyCell
+              row={row}
+              field={field}
+              displayValue={row.vikResult}
+              isEditableCell={false}
+              isBlockedEditableCell={false}
+              isHighlightedRow={false}
+              isSelectedRow={false}
+              hasDispatcherTask={false}
+              isHighlightedCell={false}
+              isResultField
+              stickyLeft={0}
+              stickyIdentityLeadingWidth={0}
+              stickyIdentityColumns={false}
+              stickyBackgroundClassName="bg-white"
+              isSectionEnd={false}
+              onOpenDocument={onOpenDocument}
+              onOpenLnkResult={onOpenLnkResult}
+              availableSystemDocumentTypes={new Set(['lnkConclusionVik'])}
+            />
+          </tr>
+        </tbody>
+      </table>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'годен' }))
+
+    expect(onOpenLnkResult).toHaveBeenCalledWith(row, 'vikResult')
     expect(onOpenDocument).not.toHaveBeenCalled()
   })
 })

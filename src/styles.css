@@ -109,7 +109,7 @@
     margin-bottom: 8mm !important;
   }
 
-  .user-guide-page article > div:first-child {
+  .user-guide-page article > header {
     break-after: avoid;
     padding: 3mm 4mm !important;
   }

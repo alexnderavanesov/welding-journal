@@ -13,7 +13,6 @@ export function useManagedLnkResultActions({
   isLnkRowsContextReady,
   lnkRows,
   selectedLnkResultRowIds,
-  managedLnkConclusionDrafts,
   managedLnkPendingResultChanges,
   managedLnkPendingResultRows,
   lnkResultCorrectionMutation,
@@ -80,11 +79,15 @@ export function useManagedLnkResultActions({
     setManagedLnkConclusionDrafts((current) => ({ ...current, [changeKey]: value }))
   }
 
-  function renameManagedLnkConclusionForRow(row: RowWithId, methodKey: WeldFieldKey) {
+  function renameManagedLnkConclusionForRow(
+    row: RowWithId,
+    methodKey: WeldFieldKey,
+    conclusionName: string,
+  ) {
     lnkConclusionCorrectionMutation.mutate({
       records: [row],
       methodKey,
-      conclusionName: managedLnkConclusionDrafts[getManagedLnkResultChangeKey(row.id, methodKey)] ?? '',
+      conclusionName,
     })
   }
 

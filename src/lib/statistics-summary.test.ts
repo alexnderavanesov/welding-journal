@@ -1,13 +1,48 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { buildStatisticsStateRowIds, buildStatisticsSummary, getCurrentStatisticsWeek } from '@/lib/statistics-summary'
+import {
+  buildStatisticsStateRowIds,
+  buildStatisticsSummary,
+  getCurrentStatisticsWeek,
+  getStatisticsPeriodPresetSelection,
+} from '@/lib/statistics-summary'
 
 describe('getCurrentStatisticsWeek', () => {
   it('returns the local Monday through Sunday containing the selected day', () => {
     expect(getCurrentStatisticsWeek(new Date(2026, 7, 19, 12))).toEqual({
       from: '2026-08-17',
       to: '2026-08-23',
+    })
+  })
+})
+
+describe('getStatisticsPeriodPresetSelection', () => {
+  const today = new Date(2026, 7, 19, 12)
+
+  it('builds the standard calendar presets', () => {
+    expect(getStatisticsPeriodPresetSelection('all', { from: '2026-08-01', to: '2026-08-19' }, today)).toEqual({
+      allPeriod: true,
+      period: { from: '', to: '' },
+    })
+    expect(getStatisticsPeriodPresetSelection('currentWeek', { from: '', to: '' }, today)).toEqual({
+      allPeriod: false,
+      period: { from: '2026-08-17', to: '2026-08-23' },
+    })
+    expect(getStatisticsPeriodPresetSelection('currentMonth', { from: '', to: '' }, today)).toEqual({
+      allPeriod: false,
+      period: { from: '2026-08-01', to: '2026-08-19' },
+    })
+    expect(getStatisticsPeriodPresetSelection('previousMonth', { from: '', to: '' }, today)).toEqual({
+      allPeriod: false,
+      period: { from: '2026-07-01', to: '2026-07-31' },
+    })
+  })
+
+  it('keeps an open custom range unchanged', () => {
+    expect(getStatisticsPeriodPresetSelection('custom', { from: '2026-07-10', to: '' }, today)).toEqual({
+      allPeriod: false,
+      period: { from: '2026-07-10', to: '' },
     })
   })
 })

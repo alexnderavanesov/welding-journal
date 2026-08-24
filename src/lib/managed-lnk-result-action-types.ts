@@ -14,7 +14,6 @@ export type UseManagedLnkResultActionsOptions = {
   isLnkRowsContextReady: boolean
   lnkRows: WeldRow[]
   selectedLnkResultRowIds: Set<number>
-  managedLnkConclusionDrafts: Record<string, string>
   managedLnkPendingResultChanges: Record<string, string>
   managedLnkPendingResultRows: ManagedLnkPendingResultRow[]
   lnkResultCorrectionMutation: MutationLike<{ record: RowWithId; methodKey: WeldFieldKey; result: string | null }>

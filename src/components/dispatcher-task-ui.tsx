@@ -84,10 +84,16 @@ function getDispatcherTaskMetrics(task: DispatcherTask) {
 type DispatcherTaskGroupFrameProps = {
   group: RepeatedJointTaskGroup
   reminder?: boolean
+  hideTaskSummaries?: boolean
   children: ReactNode | (() => ReactNode)
 }
 
-export function DispatcherTaskGroupFrame({ group, reminder = false, children }: DispatcherTaskGroupFrameProps) {
+export function DispatcherTaskGroupFrame({
+  group,
+  reminder = false,
+  hideTaskSummaries = false,
+  children,
+}: DispatcherTaskGroupFrameProps) {
   const [isOpen, setIsOpen] = useState(false)
   const summaries = getDispatcherTaskGroupSummaries(group.tasks)
   const visibleSummaries = summaries.slice(0, 2)
@@ -105,31 +111,33 @@ export function DispatcherTaskGroupFrame({ group, reminder = false, children }: 
           <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
             {reminder ? formatReminderCount(group.tasks.length) : formatTaskCount(group.tasks.length)}
           </span>
-          <span
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
-            aria-label={`Краткое описание задач ${group.baseJoint}`}
-          >
-            {visibleSummaries.map((summary) => (
-              <span
-                key={summary.code}
-                className={`inline-flex min-w-0 items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs ${
-                  visibleSummaries.length === 1 ? 'max-w-[440px]' : 'max-w-[280px]'
-                }`}
-                title={`${summary.code} · ${summary.label}`}
-              >
-                <strong className="shrink-0 font-semibold text-violet-700">{summary.code}</strong>
-                <span className="truncate text-slate-600">· {summary.label}</span>
-              </span>
-            ))}
-            {hiddenSummaryCount > 0 ? (
-              <span
-                className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-500"
-                title={summaries.slice(visibleSummaries.length).map((summary) => `${summary.code} · ${summary.label}`).join('; ')}
-              >
-                +{hiddenSummaryCount}
-              </span>
-            ) : null}
-          </span>
+          {hideTaskSummaries ? <span className="min-w-0 flex-1" /> : (
+            <span
+              className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+              aria-label={`Краткое описание задач ${group.baseJoint}`}
+            >
+              {visibleSummaries.map((summary) => (
+                <span
+                  key={summary.code}
+                  className={`inline-flex min-w-0 items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs ${
+                    visibleSummaries.length === 1 ? 'max-w-[440px]' : 'max-w-[280px]'
+                  }`}
+                  title={`${summary.code} · ${summary.label}`}
+                >
+                  <strong className="shrink-0 font-semibold text-violet-700">{summary.code}</strong>
+                  <span className="truncate text-slate-600">· {summary.label}</span>
+                </span>
+              ))}
+              {hiddenSummaryCount > 0 ? (
+                <span
+                  className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-500"
+                  title={summaries.slice(visibleSummaries.length).map((summary) => `${summary.code} · ${summary.label}`).join('; ')}
+                >
+                  +{hiddenSummaryCount}
+                </span>
+              ) : null}
+            </span>
+          )}
           {metric ? (
             <span
               className="hidden max-w-[280px] shrink-0 items-center truncate rounded border border-sky-100 bg-sky-50/70 px-2 py-0.5 text-xs font-medium text-sky-800 md:inline-flex"

@@ -18,7 +18,6 @@ export function createPstoResultActionHandlers({
   rows,
   heatTreatmentRows,
   filteredPstoResultRows,
-  managedPstoDiagramDrafts,
   nextPstoDiagramName,
   pstoResultDraft,
   pstoResultSaveBlockReason,
@@ -75,11 +74,11 @@ export function createPstoResultActionHandlers({
     setIsPstoResultManagerOpen(true)
   }
 
-  function renameManagedPstoDiagram(row: RowWithId) {
+  function renameManagedPstoDiagram(row: RowWithId, diagramName: string) {
     pstoResultCorrectionMutation.mutate({
       record: row,
       action: 'renameDiagram',
-      diagramName: managedPstoDiagramDrafts[row.id] ?? '',
+      diagramName,
     })
   }
 

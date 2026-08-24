@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   applyDocumentTemplateRepeatTarget,
   getDocumentTemplateRepeatTarget,
+  getDocumentTemplateBuilderIssues,
+  getDocumentTemplateRepeatedRows,
   includeTemplateCellInRepeatBlock,
   shouldShowDocumentTemplateRepeatControls,
   validateDocumentTemplateBuilderConfig,
@@ -292,5 +294,21 @@ describe('document template builder repeat block', () => {
     expect(validateDocumentTemplateBuilderConfig(config, preview)).toBe(
       'В ячейке B18, часть 1: выберите второе числовое поле.',
     )
+    expect(getDocumentTemplateBuilderIssues(config, preview)).toEqual([
+      { cell: 'B18', message: 'В ячейке B18, часть 1: выберите второе числовое поле.' },
+      { cell: 'B18', message: 'В ячейке B18, часть 1: укажите корректный коэффициент умножения.' },
+    ])
+  })
+
+  it('calculates the repeated row footprint without changing the workbook rules', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      ...createConfig(),
+      repeatRow: 18,
+      repeatRowEnd: 19,
+    }
+
+    expect(getDocumentTemplateRepeatedRows(config, 1)).toBe(2)
+    expect(getDocumentTemplateRepeatedRows(config, 5)).toBe(10)
+    expect(getDocumentTemplateRepeatedRows(config, 20)).toBe(40)
   })
 })

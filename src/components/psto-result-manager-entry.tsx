@@ -20,7 +20,7 @@ export type PstoResultManagerEntryProps = {
   diagramDraft: string
   isPending: boolean
   onDiagramDraftChange: (rowId: number, value: string) => void
-  onRenameDiagram: (row: WeldRow) => void
+  onRenameDiagram: (row: WeldRow, diagramName: string) => void
   onDeleteResult: (row: WeldRow) => void
 }
 
@@ -61,7 +61,7 @@ export function PstoResultManagerEntry({
           disabled={isPending}
           canRename={!isPending && Boolean(customDiagramDraft) && customDiagramDraft !== diagramName}
           onChange={(value) => onDiagramDraftChange(row.id, value)}
-          onRename={() => onRenameDiagram(row)}
+          onRename={(value) => onRenameDiagram(row, value)}
         />
       </div>
       <div className="flex flex-col items-end justify-start gap-2">

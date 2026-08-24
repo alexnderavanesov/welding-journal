@@ -1,4 +1,4 @@
-import { type ChangeEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -17,10 +17,12 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
 import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
@@ -178,17 +180,65 @@ import {
 import { getAcceptedWarningContextParts } from '@/lib/dispatcher-accepted-warning-display'
 
 const SETTINGS_TABS = [
-  { id: 'templates', label: 'Шаблоны документов', icon: FileText },
-  { id: 'data', label: 'Данные', icon: Database },
-  { id: 'requests', label: 'Заявки и заключения', icon: Inbox },
-  { id: 'indexes', label: 'Системные индексы', icon: Hash },
-  { id: 'dispatcher', label: 'Диспетчер задач и напоминаний', icon: Bell },
-  { id: 'saveChecks', label: 'Проверки при сохранении', icon: ShieldCheck },
-  { id: 'other', label: 'Прочее', icon: SlidersHorizontal },
-  { id: 'security', label: 'Блокировка', icon: LockKeyhole },
+  {
+    id: 'templates',
+    label: 'Шаблоны документов',
+    icon: FileText,
+    searchKeywords: 'Excel конструктор ЖСР чек-лист ЗНИ заявка заключение загрузка шаблона',
+  },
+  {
+    id: 'data',
+    label: 'Данные',
+    icon: Database,
+    searchKeywords: 'способ сварки тип соединения группа материалов вид испытаний списки справочники',
+  },
+  {
+    id: 'requests',
+    label: 'Заявки и заключения',
+    icon: Inbox,
+    searchKeywords: 'название имя нумерация номер дата заявки заключения ЛНК ПСТО',
+  },
+  {
+    id: 'indexes',
+    label: 'Системные индексы',
+    icon: Hash,
+    searchKeywords: 'S F R W Y ремонт вырез катушка приставка буквенные индексы',
+  },
+  {
+    id: 'dispatcher',
+    label: 'Диспетчер задач и напоминаний',
+    icon: Bell,
+    searchKeywords: 'ДЗ задачи уведомления предупреждения фоновой пересчет принятые отклонения',
+  },
+  {
+    id: 'saveChecks',
+    label: 'Проверки при сохранении',
+    icon: ShieldCheck,
+    searchKeywords: 'ЗВ валидация блокировка сохранения допуски НАКС ДЛС диаметр толщина',
+  },
+  {
+    id: 'other',
+    label: 'Прочее',
+    icon: SlidersHorizontal,
+    searchKeywords: 'WDI ВДИ D T диаметр толщина таблица дюйм-диаметров экспозиция РК пересчет',
+  },
+  {
+    id: 'security',
+    label: 'Блокировка',
+    icon: LockKeyhole,
+    searchKeywords: 'пароль вход защита доступ импорт массовый ввод замена редактирование удаление документы',
+  },
 ] as const
 
 type SettingsTabId = (typeof SETTINGS_TABS)[number]['id']
+type SettingsSearchEntry = {
+  id: string
+  tabId: SettingsTabId
+  title: string
+  description: string
+  targetId: string
+  searchText: string
+}
 type ProtectedSettingsChange = (action: () => void | Promise<void>) => Promise<boolean>
 type PendingDocumentTemplateReplacement = {
   templateId: DocumentTemplateId
@@ -211,8 +261,45 @@ const EMPTY_WELD_DATA_USAGE: WeldDataUsageSummary = {
   testTypes: [],
 }
 
+function buildSettingsSearchEntries(): SettingsSearchEntry[] {
+  const sections: SettingsSearchEntry[] = SETTINGS_TABS.map((tab) => ({
+    id: `tab:${tab.id}`,
+    tabId: tab.id,
+    title: tab.label,
+    description: 'Открыть раздел настроек.',
+    targetId: `settings-panel-${tab.id}`,
+    searchText: `${tab.label} ${tab.searchKeywords}`,
+  }))
+  const dispatcher = DISPATCHER_SETTING_GROUPS.flatMap((group) => group.items.map((item) => ({
+    id: `dispatcher:${item.id}`,
+    tabId: 'dispatcher' as const,
+    title: `${getDispatcherSettingCode(item.id)} · ${item.label}`,
+    description: `${group.title}. ${item.description}`,
+    targetId: `dispatcher-setting-${item.id}`,
+    searchText: `${getDispatcherSettingCode(item.id)} ${item.label} ${item.description} ${group.title}`,
+  })))
+  const saveChecks = SAVE_CHECK_SETTING_GROUPS.flatMap((group) => group.items.map((item) => ({
+    id: `save-check:${item.id}`,
+    tabId: 'saveChecks' as const,
+    title: `${getSaveCheckSettingCode(item.id)} · ${item.label}`,
+    description: `${group.title}. ${item.description}`,
+    targetId: `save-check-setting-${item.id}`,
+    searchText: `${getSaveCheckSettingCode(item.id)} ${item.label} ${item.description} ${group.title}`,
+  })))
+  return [...sections, ...dispatcher, ...saveChecks]
+}
+
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTabId>('templates')
+  const [dirtyTabs, setDirtyTabs] = useState<Set<SettingsTabId>>(() => new Set())
+  const [pendingNavigation, setPendingNavigation] = useState<{ tabId: SettingsTabId; targetId?: string } | null>(null)
+  const [settingsSearch, setSettingsSearch] = useState('')
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null)
+  const settingsSearchEntries = useMemo(buildSettingsSearchEntries, [])
+  const normalizedSettingsSearch = settingsSearch.trim().toLocaleLowerCase('ru-RU')
+  const matchingSettingsEntries = normalizedSettingsSearch
+    ? settingsSearchEntries.filter((entry) => entry.searchText.toLocaleLowerCase('ru-RU').includes(normalizedSettingsSearch)).slice(0, 10)
+    : []
   const needsWeldDataUsage = activeTab === 'data' || activeTab === 'indexes'
   const weldDataUsageQuery = useQuery({
     queryKey: WELD_DATA_USAGE_QUERY_KEY,
@@ -231,10 +318,85 @@ export function SettingsPage() {
     [requireSettingsChangePassword],
   )
 
+  const updateTabDirty = useCallback((tabId: SettingsTabId, dirty: boolean) => {
+    setDirtyTabs((current) => {
+      const next = new Set(current)
+      if (dirty) next.add(tabId)
+      else next.delete(tabId)
+      return next
+    })
+  }, [])
+  const handleIndexesDirtyChange = useCallback((dirty: boolean) => updateTabDirty('indexes', dirty), [updateTabDirty])
+  const handleRequestsDirtyChange = useCallback((dirty: boolean) => updateTabDirty('requests', dirty), [updateTabDirty])
+  const handleOtherDirtyChange = useCallback((dirty: boolean) => updateTabDirty('other', dirty), [updateTabDirty])
+
+  const navigateToSettings = (tabId: SettingsTabId, targetId?: string) => {
+    if (tabId !== activeTab && dirtyTabs.has(activeTab)) {
+      setPendingNavigation({ tabId, targetId })
+      return
+    }
+    setActiveTab(tabId)
+    setPendingScrollTarget(targetId ?? null)
+    setSettingsSearch('')
+  }
+
+  useEffect(() => {
+    if (!pendingScrollTarget) return
+    const frameId = window.requestAnimationFrame(() => {
+      const target = document.getElementById(pendingScrollTarget)
+      target?.scrollIntoView({
+        behavior: 'smooth',
+        block: pendingScrollTarget.startsWith('settings-panel-') ? 'start' : 'center',
+      })
+      target?.animate?.(
+        [{ outline: '2px solid rgba(14, 165, 233, 0)' }, { outline: '2px solid rgba(14, 165, 233, 0.65)' }, { outline: '2px solid rgba(14, 165, 233, 0)' }],
+        { duration: 1400 },
+      )
+      setPendingScrollTarget(null)
+    })
+    return () => window.cancelAnimationFrame(frameId)
+  }, [activeTab, pendingScrollTarget])
+
+  useEffect(() => {
+    if (dirtyTabs.size === 0) return
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [dirtyTabs])
+
   return (
     <div className="space-y-5">
       <section className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
         <div className="bg-white px-5 py-4">
+          <div className="relative mb-3 max-w-2xl">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={settingsSearch}
+              onChange={(event) => setSettingsSearch(event.target.value)}
+              placeholder="Найти настройку, код ЗВ/ДЗ или описание"
+              className="h-10 w-full rounded-md border border-slate-200 bg-slate-50 pl-9 pr-9 text-sm text-slate-900 outline-none focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+              aria-label="Поиск по настройкам"
+            />
+            {settingsSearch ? (
+              <button type="button" onClick={() => setSettingsSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-200" aria-label="Очистить поиск">
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+            {normalizedSettingsSearch ? (
+              <div className="absolute left-0 right-0 top-11 z-40 max-h-80 overflow-auto rounded-md border border-slate-200 bg-white p-1 shadow-xl">
+                {matchingSettingsEntries.length ? matchingSettingsEntries.map((entry) => (
+                  <button key={entry.id} type="button" onClick={() => navigateToSettings(entry.tabId, entry.targetId)} className="block w-full rounded px-3 py-2 text-left hover:bg-sky-50">
+                    <span className="block text-sm font-semibold text-slate-900">{entry.title}</span>
+                    <span className="mt-0.5 line-clamp-2 block text-xs leading-5 text-slate-500">{entry.description}</span>
+                  </button>
+                )) : <div className="px-3 py-4 text-sm text-slate-500">Настройка не найдена.</div>}
+              </div>
+            ) : null}
+          </div>
           <div className="flex flex-wrap gap-2">
             {SETTINGS_TABS.map((tab) => {
               const Icon = tab.icon
@@ -243,7 +405,7 @@ export function SettingsPage() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => navigateToSettings(tab.id)}
                   className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                     isActive
                       ? 'border-slate-900 bg-slate-900 text-white'
@@ -252,13 +414,36 @@ export function SettingsPage() {
                 >
                   <Icon className="h-4 w-4" />
                   {tab.label}
+                  {dirtyTabs.has(tab.id) ? <span className="h-2 w-2 rounded-full bg-amber-400" title="Есть несохраненные изменения" /> : null}
                 </button>
               )
             })}
           </div>
         </div>
 
-        <div className="border-t border-slate-200 bg-slate-50 p-5">
+        {pendingNavigation ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-950">
+            <span>В разделе «{SETTINGS_TABS.find((tab) => tab.id === activeTab)?.label}» есть несохраненные изменения.</span>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setPendingNavigation(null)} className="rounded-md border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold">Остаться</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = pendingNavigation
+                  setPendingNavigation(null)
+                  setActiveTab(next.tabId)
+                  setPendingScrollTarget(next.targetId ?? null)
+                  setSettingsSearch('')
+                }}
+                className="rounded-md border border-amber-700 bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                Перейти без сохранения
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div id={`settings-panel-${activeTab}`} className="border-t border-slate-200 bg-slate-50 p-5">
           {activeTab === 'templates' ? (
             <DocumentTemplatesSettings runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'data' && weldDataUsageQuery.isPending ? (
@@ -268,7 +453,10 @@ export function SettingsPage() {
           ) : activeTab === 'data' ? (
             <DataSettingsPanel usage={weldDataUsage} runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'requests' ? (
-            <RequestConclusionSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
+            <RequestConclusionSettingsPanel
+              runProtectedSettingsChange={runProtectedSettingsChange}
+              onDirtyChange={handleRequestsDirtyChange}
+            />
           ) : activeTab === 'indexes' ? (
             weldDataUsageQuery.isPending ? (
               <SettingsDataLoading />
@@ -279,14 +467,21 @@ export function SettingsPage() {
                 rowsCount={weldDataUsage.rowsCount}
                 leadingLetterIndexedRowsCount={weldDataUsage.leadingLetterIndexedRowsCount}
                 runProtectedSettingsChange={runProtectedSettingsChange}
+                onDirtyChange={handleIndexesDirtyChange}
               />
             )
           ) : activeTab === 'dispatcher' ? (
-            <DispatcherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
+            <DispatcherSettingsPanel
+              runProtectedSettingsChange={runProtectedSettingsChange}
+              focusTargetId={pendingScrollTarget}
+            />
           ) : activeTab === 'saveChecks' ? (
-            <SaveChecksSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
+            <SaveChecksSettingsPanel
+              runProtectedSettingsChange={runProtectedSettingsChange}
+              focusTargetId={pendingScrollTarget}
+            />
           ) : activeTab === 'other' ? (
-            <OtherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
+            <OtherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} onDirtyChange={handleOtherDirtyChange} />
           ) : (
             <SecuritySettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           )}
@@ -723,7 +918,13 @@ function SecurityToggle({
   )
 }
 
-function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
+function OtherSettingsPanel({
+  runProtectedSettingsChange,
+  onDirtyChange,
+}: {
+  runProtectedSettingsChange: ProtectedSettingsChange
+  onDirtyChange: (dirty: boolean) => void
+}) {
   const settings = useOtherSettings()
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
@@ -744,6 +945,11 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
   })
   const draftWdiRulesKey = JSON.stringify(wdiRulesDraft)
   const wdiRulesDirty = savedWdiRulesKey !== draftWdiRulesKey
+
+  useEffect(() => {
+    onDirtyChange(wdiRulesDirty)
+    return () => onDirtyChange(false)
+  }, [onDirtyChange, wdiRulesDirty])
 
   useEffect(() => {
     setWdiRulesDraft(settings.wdiCalculationRules)
@@ -1023,7 +1229,7 @@ function OtherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettin
                   <div className="mt-1"><span className="font-semibold text-slate-800">Другие типы:</span> {formatWdiRuleSummary(wdiRulesDraft.other)}</div>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="sticky bottom-0 z-10 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
                   <div className={`text-sm ${wdiRulesMessage?.startsWith('Не удалось') ? 'text-rose-700' : 'text-slate-500'}`}>
                     {wdiRulesDirty ? 'Есть несохраненные изменения правила.' : wdiRulesMessage ?? 'Правило сохранено и используется системой.'}
                   </div>
@@ -1752,10 +1958,12 @@ function SystemIndexesSettingsPanel({
   rowsCount,
   leadingLetterIndexedRowsCount,
   runProtectedSettingsChange,
+  onDirtyChange,
 }: {
   rowsCount: number
   leadingLetterIndexedRowsCount: number
   runProtectedSettingsChange: ProtectedSettingsChange
+  onDirtyChange: (dirty: boolean) => void
 }) {
   const settings = useSystemIndexSettings()
   const [draft, setDraft] = useState<SystemIndexSettings>(settings)
@@ -1764,6 +1972,11 @@ function SystemIndexesSettingsPanel({
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(settings)
   const indexLettersChanged = SYSTEM_INDEX_ROWS.some((row) => draft[row.id] !== settings[row.id])
   const canSave = hasChanges && !validationError && (canEditIndexLetters || !indexLettersChanged)
+
+  useEffect(() => {
+    onDirtyChange(hasChanges)
+    return () => onDirtyChange(false)
+  }, [hasChanges, onDirtyChange])
 
   useEffect(() => {
     setDraft(settings)
@@ -1884,6 +2097,15 @@ function SystemIndexesSettingsPanel({
         <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {validationError}
+        </div>
+      ) : null}
+      {hasChanges ? (
+        <div className="sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50/95 px-4 py-3 shadow-lg backdrop-blur">
+          <span className="text-sm font-semibold text-amber-900">Есть несохраненные изменения системных индексов.</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setDraft(settings)} className="rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Отменить</button>
+            <button type="button" disabled={!canSave} onClick={saveDraft} className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:bg-slate-300">Сохранить настройки</button>
+          </div>
         </div>
       ) : null}
     </div>
@@ -2934,8 +3156,29 @@ function createRequestNamingPatternDraftParts(pattern: string): RequestNamingPat
   }))
 }
 
-function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
+function RequestConclusionSettingsPanel({
+  runProtectedSettingsChange,
+  onDirtyChange,
+}: {
+  runProtectedSettingsChange: ProtectedSettingsChange
+  onDirtyChange: (dirty: boolean) => void
+}) {
   const settings = useRequestConclusionSettings()
+  const [dirtyKinds, setDirtyKinds] = useState<Set<RequestConclusionNamingKind>>(() => new Set())
+
+  useEffect(() => {
+    onDirtyChange(dirtyKinds.size > 0)
+    return () => onDirtyChange(false)
+  }, [dirtyKinds, onDirtyChange])
+
+  const handleCardDirtyChange = useCallback((kind: RequestConclusionNamingKind, dirty: boolean) => {
+    setDirtyKinds((current) => {
+      const next = new Set(current)
+      if (dirty) next.add(kind)
+      else next.delete(kind)
+      return next
+    })
+  }, [])
 
   const updateSettings = (
     kind: RequestConclusionNamingKind,
@@ -2987,6 +3230,7 @@ function RequestConclusionSettingsPanel({ runProtectedSettingsChange }: { runPro
             settings={settings[card.id]}
             onModeChange={(defaultMode) => updateSettings(card.id, { defaultMode })}
             onPatternSave={(systemPattern) => updateSettings(card.id, { systemPattern })}
+            onDirtyChange={handleCardDirtyChange}
           />
         ))}
       </div>
@@ -3002,6 +3246,7 @@ function RequestNamingSettingsCard({
   settings,
   onModeChange,
   onPatternSave,
+  onDirtyChange,
 }: {
   kind: RequestConclusionNamingKind
   title: string
@@ -3010,6 +3255,7 @@ function RequestNamingSettingsCard({
   settings: RequestConclusionSettings[RequestConclusionNamingKind]
   onModeChange: (mode: RequestNamingState['mode']) => void
   onPatternSave: (pattern: string) => Promise<boolean>
+  onDirtyChange: (kind: RequestConclusionNamingKind, dirty: boolean) => void
 }) {
   const [isPatternExpanded, setIsPatternExpanded] = useState(false)
   const [parts, setParts] = useState<RequestNamingPatternDraftPart[]>(() =>
@@ -3027,6 +3273,11 @@ function RequestNamingSettingsCard({
   const hasPattern = patternDraft.trim().length > 0
   const hasNumberField = parts.some((part) => part.type === 'field' && part.field === 'number')
   const hasChanges = patternDraft !== settings.systemPattern
+
+  useEffect(() => {
+    onDirtyChange(kind, hasChanges)
+    return () => onDirtyChange(kind, false)
+  }, [hasChanges, kind, onDirtyChange])
   const preview = buildSystemNameFromPattern(
     hasPattern ? patternDraft : placeholder,
     {
@@ -3295,7 +3546,13 @@ function RequestNamingModeButton({
   )
 }
 
-function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
+function DispatcherSettingsPanel({
+  runProtectedSettingsChange,
+  focusTargetId,
+}: {
+  runProtectedSettingsChange: ProtectedSettingsChange
+  focusTargetId: string | null
+}) {
   const settings = useDispatcherSettings()
   const reminderSettings = useDispatcherReminderSettings()
   const backgroundSettings = useDispatcherBackgroundSettings()
@@ -3423,6 +3680,7 @@ function DispatcherSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
             group={group}
             settings={settings}
             reminderSettings={reminderSettings}
+            focusTargetId={focusTargetId}
             onItemChange={updateSetting}
             onGroupChange={(enabled) => updateGroup(group, enabled)}
             onReminderDaysChange={updateReminderDays}
@@ -3605,6 +3863,7 @@ function DispatcherSettingsGroupCard({
   group,
   settings,
   reminderSettings,
+  focusTargetId,
   onItemChange,
   onGroupChange,
   onReminderDaysChange,
@@ -3612,6 +3871,7 @@ function DispatcherSettingsGroupCard({
   group: DispatcherSettingGroup
   settings: DispatcherSettings
   reminderSettings: DispatcherReminderSettings
+  focusTargetId: string | null
   onItemChange: (id: DispatcherSettingId, enabled: boolean) => void
   onGroupChange: (enabled: boolean) => void
   onReminderDaysChange: (id: DispatcherReminderSettingId, value: number) => Promise<boolean>
@@ -3620,6 +3880,12 @@ function DispatcherSettingsGroupCard({
   const allEnabled = enabledCount === group.items.length
   const [collapsed, setCollapsed] = useState(false)
   const [expandedItemIds, setExpandedItemIds] = useState<Set<DispatcherSettingId>>(() => new Set())
+
+  useEffect(() => {
+    if (group.items.some((item) => focusTargetId === `dispatcher-setting-${item.id}`)) {
+      setCollapsed(false)
+    }
+  }, [focusTargetId, group.items])
 
   const toggleDetails = (id: DispatcherSettingId) => {
     setExpandedItemIds((current) => {
@@ -3667,7 +3933,7 @@ function DispatcherSettingsGroupCard({
           const isReminder = isDispatcherReminderSettingId(item.id)
           const linkedSaveCheckIds = getSaveCheckSettingIdsForDispatcher(item.id)
           return (
-            <div key={item.id} className={`px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}>
+            <div id={`dispatcher-setting-${item.id}`} key={item.id} className={`scroll-mt-24 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                 <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
                   <input
@@ -3812,13 +4078,32 @@ function DispatcherReminderDaysInput({
   )
 }
 
-function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
+function SaveChecksSettingsPanel({
+  runProtectedSettingsChange,
+  focusTargetId,
+}: {
+  runProtectedSettingsChange: ProtectedSettingsChange
+  focusTargetId: string | null
+}) {
   const settings = useSaveCheckSettings()
   const confirmAction = useConfirmAction()
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set())
   const [expandedItemIds, setExpandedItemIds] = useState<Set<SaveCheckSettingId>>(() => new Set())
   const enabledCount = Object.values(settings).filter(Boolean).length
   const totalCount = Object.values(settings).length
+
+  useEffect(() => {
+    const focusedGroup = SAVE_CHECK_SETTING_GROUPS.find((group) =>
+      group.items.some((item) => focusTargetId === `save-check-setting-${item.id}`),
+    )
+    if (!focusedGroup) return
+    setCollapsedGroupIds((current) => {
+      if (!current.has(focusedGroup.id)) return current
+      const next = new Set(current)
+      next.delete(focusedGroup.id)
+      return next
+    })
+  }, [focusTargetId])
 
   async function confirmDangerousSaveChecksChange(enabled: boolean) {
     return confirmAction({
@@ -3992,8 +4277,9 @@ function SaveChecksSettingsPanel({ runProtectedSettingsChange }: { runProtectedS
                   const linkedDispatcherIds = getDispatcherSettingIdsForSaveCheck(item.id)
                   return (
                     <div
+                      id={`save-check-setting-${item.id}`}
                       key={item.id}
-                      className={`px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}
+                      className={`scroll-mt-24 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                         <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">

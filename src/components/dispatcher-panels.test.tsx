@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DispatcherTaskPanel } from '@/components/dispatcher-panels'
 import { DispatcherTaskCard, type DispatcherTaskCardHandlers } from '@/components/dispatcher-task-card'
@@ -11,6 +11,10 @@ import type {
 } from '@/lib/dispatcher-types'
 
 describe('DispatcherTaskPanel', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
   it('keeps quick filters available while the task list is collapsed', () => {
     const { task, group } = createTaskGroup()
     const onShowTask = vi.fn()
@@ -64,6 +68,8 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'По объектам' }))
+
     const groupSummary = screen.getByLabelText('Краткое описание задач 330-ATM-16-000')
     expect(within(groupSummary).getByText('ДЗ-02')).toBeInTheDocument()
     expect(within(groupSummary).getByText(/Лишний контроль/)).toBeInTheDocument()
@@ -95,14 +101,150 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.getByText('Клеймо ABC1 · лишних 5')).toBeInTheDocument()
   })
 
-  it('uses the task text as the primary navigation action', () => {
+  it('groups repeated task codes and keeps their object rows available', () => {
+    const firstTask = createPercentageTask('excess', 'Проверить лишний контроль', 5)
+    const secondTask = {
+      ...createPercentageTask('excess', 'Проверить лишний контроль', 1),
+      key: 'percentage-line-control:excess:second',
+      line: '330-P52-06-000',
+      row: {
+        ...createPercentageTask('excess', 'Проверить лишний контроль', 1).row,
+        id: 27,
+        line: '330-P52-06-000',
+      },
+    }
+    const groups: RepeatedJointTaskGroup[] = [
+      {
+        key: 'line:330-ATM-16-000:ABC1',
+        baseJoint: '330-ATM-16-000 · ABC1',
+        tasks: [firstTask],
+      },
+      {
+        key: 'line:330-P52-06-000:ABC1',
+        baseJoint: '330-P52-06-000 · ABC1',
+        tasks: [secondTask],
+      },
+    ]
+
+    render(
+      <DispatcherTaskPanel
+        tasks={[firstTask, secondTask]}
+        groups={groups}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+        onDismissAll={vi.fn()}
+        columnFilters={{}}
+        onColumnFiltersChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'По ДЗ' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('ДЗ-02')).toBeInTheDocument()
+    expect(screen.getAllByText('2 задачи')).toHaveLength(2)
+    expect(screen.getByText('2 объекта')).toBeInTheDocument()
+    expect(screen.getByText('лишних 6')).toBeInTheDocument()
+    expect(screen.queryByText('330-ATM-16-000 · ABC1')).not.toBeInTheDocument()
+
+    const details = screen.getByText('ДЗ-02').closest('details')
+    expect(details).not.toBeNull()
+    if (details) {
+      details.open = true
+      fireEvent(details, new Event('toggle'))
+    }
+
+    expect(screen.getByText('330-ATM-16-000 · ABC1')).toBeInTheDocument()
+    expect(screen.getByText('330-P52-06-000 · ABC1')).toBeInTheDocument()
+  })
+
+  it('reveals a large code group in bounded batches', () => {
+    const groups = Array.from({ length: 81 }, (_, index) => {
+      const task = {
+        ...createPercentageTask('excess', 'Проверить лишний контроль', 1),
+        key: `percentage-line-control:excess:${index + 1}`,
+      }
+      return {
+        key: `object-${index + 1}`,
+        baseJoint: `Объект ${index + 1}`,
+        tasks: [task],
+      } satisfies RepeatedJointTaskGroup
+    })
+
+    render(
+      <DispatcherTaskPanel
+        tasks={groups.flatMap((group) => group.tasks)}
+        groups={groups}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+        onDismissAll={vi.fn()}
+        columnFilters={{}}
+        onColumnFiltersChange={vi.fn()}
+      />,
+    )
+
+    const details = screen.getByText('ДЗ-02').closest('details')
+    expect(details).not.toBeNull()
+    if (details) {
+      details.open = true
+      fireEvent(details, new Event('toggle'))
+    }
+
+    expect(screen.getByText('Объект 80')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано объектов: 80 из 81')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
+
+    expect(screen.getByText('Объект 81')).toBeInTheDocument()
+    expect(screen.queryByText('Показано объектов: 80 из 81')).not.toBeInTheDocument()
+  })
+
+  it('switches back to object grouping and remembers the choice', () => {
+    const { task, group } = createTaskGroup()
+    const view = render(
+      <DispatcherTaskPanel
+        tasks={[task]}
+        groups={[group]}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+        onDismissAll={vi.fn()}
+        columnFilters={{}}
+        onColumnFiltersChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'По объектам' }))
+    expect(window.localStorage.getItem('welding-dispatcher-grouping-mode')).toBe('objects')
+    view.unmount()
+
+    render(
+      <DispatcherTaskPanel
+        tasks={[task]}
+        groups={[group]}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+        onDismissAll={vi.fn()}
+        columnFilters={{}}
+        onColumnFiltersChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'По объектам' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('opens the task description from its text and keeps navigation on the separate action', () => {
     const { task } = createTaskGroup()
     const onShowTask = vi.fn()
+    const onToggleDetails = vi.fn()
+    const handlers = createHandlers(onShowTask)
 
-    render(<DispatcherTaskCard task={task} {...createHandlers(onShowTask)} />)
+    render(<DispatcherTaskCard task={task} {...handlers} onToggleDetails={onToggleDetails} />)
 
-    fireEvent.click(screen.getByTitle('Показать связанный стык или цепочку'))
+    fireEvent.click(screen.getByTitle('Открыть описание задачи'))
 
+    expect(onToggleDetails).toHaveBeenCalledWith(task)
+    expect(onShowTask).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
     expect(onShowTask).toHaveBeenCalledWith(task)
   })
 

@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { BellRing, ChevronDown, ChevronUp, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DispatcherTaskGroup, type DispatcherTaskCardHandlers } from '@/components/dispatcher-task-card'
+import {
+  DispatcherTaskCodeGroup,
+  DispatcherTaskGroup,
+  type DispatcherTaskCardHandlers,
+} from '@/components/dispatcher-task-card'
+import { buildDispatcherTaskCodeGroups } from '@/lib/dispatcher-code-groups'
 import type { DispatcherTask, RepeatedJointTask, RepeatedJointTaskGroup } from '@/lib/dispatcher-types'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
@@ -32,7 +37,9 @@ export function DispatcherTaskPanel({
   onColumnFiltersChange,
 }: DispatcherTaskPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
+  const [groupingMode, setGroupingMode] = useState<DispatcherGroupingMode>(readDispatcherGroupingMode)
   const { visibleGroups, visibleCount, hasMore, loadMore, loadMoreRef } = useIncrementalDispatcherGroups(groups)
+  const codeGroups = useMemo(() => buildDispatcherTaskCodeGroups(groups), [groups])
   const dispatcherFilterMode = getDispatcherTaskFilterMode(columnFilters[DISPATCHER_TASKS_FIELD_KEY])
 
   if (tasks.length === 0 && dispatcherFilterMode === 'all') return null
@@ -63,6 +70,7 @@ export function DispatcherTaskPanel({
               columnFilters={columnFilters}
               onColumnFiltersChange={onColumnFiltersChange}
             />
+            <DispatcherGroupingControl mode={groupingMode} onChange={setGroupingMode} />
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {tasks.length > 0 ? (
@@ -93,14 +101,18 @@ export function DispatcherTaskPanel({
             ) : null}
           </div>
         </div>
-        {isExpanded && visibleGroups.length > 0 ? (
+        {isExpanded && groups.length > 0 ? (
           <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
-            {visibleGroups.map((group) => (
-              <DispatcherTaskGroup key={group.key} group={group} {...handlers} />
-            ))}
+            {groupingMode === 'codes'
+              ? codeGroups.map((group) => (
+                  <DispatcherTaskCodeGroup key={group.code} group={group} {...handlers} />
+                ))
+              : visibleGroups.map((group) => (
+                  <DispatcherTaskGroup key={group.key} group={group} {...handlers} />
+                ))}
           </div>
         ) : null}
-        {isExpanded && hasMore ? (
+        {isExpanded && groupingMode === 'objects' && hasMore ? (
           <div ref={loadMoreRef} className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2">
             <span className="text-xs text-slate-500">
               Показано групп: {visibleCount} из {groups.length}
@@ -117,6 +129,46 @@ export function DispatcherTaskPanel({
           </div>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+type DispatcherGroupingMode = 'codes' | 'objects'
+
+const DISPATCHER_GROUPING_STORAGE_KEY = 'welding-dispatcher-grouping-mode'
+
+function readDispatcherGroupingMode(): DispatcherGroupingMode {
+  if (typeof window === 'undefined') return 'codes'
+  try {
+    return window.localStorage.getItem(DISPATCHER_GROUPING_STORAGE_KEY) === 'objects' ? 'objects' : 'codes'
+  } catch {
+    return 'codes'
+  }
+}
+
+function DispatcherGroupingControl({
+  mode,
+  onChange,
+}: {
+  mode: DispatcherGroupingMode
+  onChange: (mode: DispatcherGroupingMode) => void
+}) {
+  const setMode = (nextMode: DispatcherGroupingMode) => {
+    onChange(nextMode)
+    try {
+      window.localStorage.setItem(DISPATCHER_GROUPING_STORAGE_KEY, nextMode)
+    } catch {
+      // The view still works when browser storage is unavailable.
+    }
+  }
+
+  return (
+    <div
+      className="inline-flex h-7 items-center overflow-hidden rounded border border-slate-200 bg-white"
+      aria-label="Группировка задач диспетчера"
+    >
+      <DispatcherFilterButton label="По ДЗ" active={mode === 'codes'} onClick={() => setMode('codes')} />
+      <DispatcherFilterButton label="По объектам" active={mode === 'objects'} onClick={() => setMode('objects')} />
     </div>
   )
 }

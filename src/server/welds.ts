@@ -507,8 +507,16 @@ const REPORT_DERIVED_FILTER_SELECT = {
   lnkDefectDescription: weldJoints.lnkDefectDescription,
   rkExposureConfirmedDiameter: weldJoints.rkExposureConfirmedDiameter,
 }
-export function getDerivedReportFilterSelectedFieldKeys(): Set<WeldFieldKey> {
-  return new Set(Object.keys(REPORT_DERIVED_FILTER_SELECT) as WeldFieldKey[])
+function getReportDerivedFilterSelect(fieldKey?: WeldFieldKey) {
+  const fieldColumn = fieldKey ? getWeldColumn(fieldKey) : undefined
+  if (!fieldKey || !fieldColumn || Object.hasOwn(REPORT_DERIVED_FILTER_SELECT, fieldKey)) {
+    return REPORT_DERIVED_FILTER_SELECT
+  }
+  return { ...REPORT_DERIVED_FILTER_SELECT, [fieldKey]: fieldColumn }
+}
+
+export function getDerivedReportFilterSelectedFieldKeys(fieldKey?: WeldFieldKey): Set<WeldFieldKey> {
+  return new Set(Object.keys(getReportDerivedFilterSelect(fieldKey)) as WeldFieldKey[])
 }
 const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'id',
@@ -982,12 +990,11 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     loadServerOtherSettings(),
   ])
   const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
-  const hasControlBasisSummaryFilter = Boolean(data.columnFilters[CONTROL_BASIS_SUMMARY_FIELD_KEY]?.trim())
-  let sourceColumnFilters = data.columnFilters
-  if (hasCurrentSystemWdiFilter) sourceColumnFilters = getColumnFilterOptionFilters(sourceColumnFilters, 'wdi')
-  if (hasControlBasisSummaryFilter) {
-    sourceColumnFilters = getColumnFilterOptionFilters(sourceColumnFilters, CONTROL_BASIS_SUMMARY_FIELD_KEY)
-  }
+  const sourceColumnFilters = getWeldColumnFilterOptionSourceFilters(
+    data.columnFilters,
+    isSystemWdiMode(otherSettings),
+  )
+  const hasDerivedColumnFilters = Object.keys(sourceColumnFilters).length !== Object.keys(data.columnFilters).length
   const sourceFilterData = sourceColumnFilters === data.columnFilters
     ? data
     : { ...data, columnFilters: sourceColumnFilters }
@@ -1060,7 +1067,7 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
     }
   }
 
-  if (hasCurrentSystemWdiFilter || hasControlBasisSummaryFilter) {
+  if (hasDerivedColumnFilters) {
     const currentRows = buildServerReportRows(applyCurrentSystemWdi(
       await db
         .select(WELD_TABLE_SELECT)
@@ -1069,7 +1076,11 @@ async function listReportPage(report: WeldReportKind, data: ReturnType<typeof no
         .orderBy(...WELDING_JOURNAL_ORDER_BY),
       otherSettings,
     ), 'weldingJournal')
-    const filteredRows = filterWeldRowsByColumns(currentRows, data.columnFilters)
+    const rowsWithDerivedValues = await attachRkExposureSchemeFilterValuesIfNeeded(
+      currentRows,
+      data.columnFilters,
+    )
+    const filteredRows = filterWeldRowsByColumns(rowsWithDerivedValues, data.columnFilters)
     const total = filteredRows.length
     const pageRows = data.pageSize === WELD_PAGE_ALL_SIZE
       ? filteredRows
@@ -2286,33 +2297,45 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
   if (shouldEnsureDispatcherTaskIndexForColumnFilter(data.fieldKey, columnFilters)) {
     await ensureDispatcherTaskIndexFresh()
   }
-  const currentWdiSettings = data.fieldKey === 'wdi' ? await loadServerOtherSettings() : null
+  const currentWdiSettings = data.fieldKey === 'wdi' || Boolean(columnFilters.wdi?.trim())
+    ? await loadServerOtherSettings()
+    : null
   const useCurrentSystemWdi = Boolean(currentWdiSettings && isSystemWdiMode(currentWdiSettings))
-  if (data.fieldKey === DISPATCHER_TASKS_FIELD_KEY) {
-    return listDispatcherTaskColumnFilterOptions({ ...data, columnFilters })
-  }
+  const sourceColumnFilters = getWeldColumnFilterOptionSourceFilters(columnFilters, useCurrentSystemWdi)
+  const derivedColumnFilters = Object.fromEntries(
+    Object.entries(columnFilters).filter(([key]) => !Object.hasOwn(sourceColumnFilters, key)),
+  )
+  const hasDerivedColumnFilters = Object.keys(derivedColumnFilters).length > 0
   if (data.report !== 'weldingJournal') {
+    if (data.fieldKey === DISPATCHER_TASKS_FIELD_KEY && !hasDerivedColumnFilters) {
+      return listDispatcherTaskColumnFilterOptions({ ...data, columnFilters })
+    }
     const column = getWeldColumn(data.fieldKey)
     if (column && REPORT_SOURCE_COLUMN_FILTER_KEYS.has(data.fieldKey) && canPaginateReportSource(columnFilters) && !useCurrentSystemWdi) {
       return listSourceColumnFilterOptions(data.report, data.fieldKey, { ...data, columnFilters })
     }
 
-    const where = and(buildReportKindWhere(data.report), buildReportSourceWhere({ ...data, columnFilters })) ?? sql`true`
+    const where = and(
+      buildReportKindWhere(data.report),
+      buildReportSourceWhere({ ...data, columnFilters: sourceColumnFilters }),
+    ) ?? sql`true`
     return getOrComputeDerivedCalculation(
       buildDerivedReportCacheKey(
-        'report-column-options:v2',
+        'report-column-options:v3',
         data.report,
         { ...data, columnFilters },
         { fieldKey: data.fieldKey },
       ),
       async () => {
         const sourceRows = await requireDb()
-          .select(REPORT_DERIVED_FILTER_SELECT)
+          .select(getReportDerivedFilterSelect(data.fieldKey))
           .from(weldJoints)
           .where(where)
           .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
-        const sourceRowsWithControls = await attachDuplicateControlsToPage(sourceRows)
-        const derivedRows = buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], data.report)
+        const sourceRowsWithMetadata = data.fieldKey === DISPATCHER_TASKS_FIELD_KEY
+          ? await attachReportPageMetadata(sourceRows)
+          : await attachDuplicateControlsToPage(sourceRows)
+        const derivedRows = buildServerReportRows(sourceRowsWithMetadata as unknown as WeldJoint[], data.report)
         const currentRows = currentWdiSettings
           ? applyCurrentSystemWdi(derivedRows, currentWdiSettings)
           : derivedRows
@@ -2325,34 +2348,42 @@ async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColu
     )
   }
 
-  if (data.fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) {
-    const rows = await requireDb()
+  const generatedDocumentType = GENERATED_DOCUMENT_FIELD_TYPES[data.fieldKey as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
+  const isDerivedField =
+    data.fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY ||
+    data.fieldKey === 'rkExposureScheme' ||
+    (data.fieldKey === 'wdi' && useCurrentSystemWdi)
+  if (isDerivedField || hasDerivedColumnFilters) {
+    const sourceRows = await requireDb()
       .select(WELD_TABLE_SELECT)
       .from(weldJoints)
-      .where(buildWhere({ ...data, columnFilters }))
+      .where(buildWhere({ ...data, columnFilters: sourceColumnFilters }))
+    const currentRows = buildServerReportRows(
+      currentWdiSettings ? applyCurrentSystemWdi(sourceRows, currentWdiSettings) : sourceRows,
+      'weldingJournal',
+    )
+    const rowsWithExposureScheme = await attachRkExposureSchemeFilterValuesIfNeeded(
+      currentRows,
+      derivedColumnFilters,
+      data.fieldKey,
+    )
+    const rowsWithMetadata = generatedDocumentType || data.fieldKey === 'finalStatus' || data.fieldKey === DISPATCHER_TASKS_FIELD_KEY
+      ? await attachReportPageMetadata(rowsWithExposureScheme)
+      : rowsWithExposureScheme
     return buildWeldColumnFilterOptionsFromRows(
-      buildServerReportRows(rows, 'weldingJournal'),
+      filterWeldRowsByColumns(rowsWithMetadata, derivedColumnFilters),
       data.fieldKey,
     )
   }
 
-  const generatedDocumentType = GENERATED_DOCUMENT_FIELD_TYPES[data.fieldKey as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
+  if (data.fieldKey === DISPATCHER_TASKS_FIELD_KEY) {
+    return listDispatcherTaskColumnFilterOptions({ ...data, columnFilters })
+  }
   if (generatedDocumentType) {
     return listGeneratedDocumentColumnFilterOptions({ ...data, columnFilters }, generatedDocumentType)
   }
   if (data.fieldKey === 'finalStatus') {
     return listFinalStatusColumnFilterOptions({ ...data, columnFilters })
-  }
-
-  if (currentWdiSettings && useCurrentSystemWdi) {
-    const rows = await requireDb()
-      .select(WELD_TABLE_SELECT)
-      .from(weldJoints)
-      .where(buildWhere({ ...data, columnFilters }))
-    return buildWeldColumnFilterOptionsFromRows(
-      applyCurrentSystemWdi(rows, currentWdiSettings),
-      data.fieldKey,
-    )
   }
 
   const column = getWeldColumn(data.fieldKey)
@@ -3101,6 +3132,21 @@ function getColumnFilterOptionFilters(columnFilters: Record<string, string>, fie
   const filters = { ...columnFilters }
   delete filters[fieldKey]
   return filters
+}
+
+export function getWeldColumnFilterOptionSourceFilters(
+  columnFilters: Record<string, string>,
+  useCurrentSystemWdi: boolean,
+) {
+  const derivedFieldKeys = [CONTROL_BASIS_SUMMARY_FIELD_KEY, 'rkExposureScheme'] as const
+  const hasSystemWdiFilter = useCurrentSystemWdi && Boolean(columnFilters.wdi?.trim())
+  const hasOtherDerivedFilter = derivedFieldKeys.some((fieldKey) => Boolean(columnFilters[fieldKey]?.trim()))
+  if (!hasSystemWdiFilter && !hasOtherDerivedFilter) return columnFilters
+
+  const sourceFilters = { ...columnFilters }
+  if (hasSystemWdiFilter) delete sourceFilters.wdi
+  for (const fieldKey of derivedFieldKeys) delete sourceFilters[fieldKey]
+  return sourceFilters
 }
 
 export function shouldEnsureDispatcherTaskIndexForColumnFilter(

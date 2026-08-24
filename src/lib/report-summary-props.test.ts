@@ -7,7 +7,6 @@ describe('createReportSummaryBarProps', () => {
     const props = createReportSummaryBarProps({
       activeReport: 'lnk',
       left: 0,
-      minWidth: 0,
       isLoading: false,
       weldingRows: [],
       weldingRowCount: 123,

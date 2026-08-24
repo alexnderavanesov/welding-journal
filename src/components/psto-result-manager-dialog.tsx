@@ -14,7 +14,7 @@ export type PstoResultManagerDialogProps = {
   isPending: boolean
   onClose: () => void
   onDiagramDraftChange: (rowId: number, value: string) => void
-  onRenameDiagram: (row: WeldRow) => void
+  onRenameDiagram: (row: WeldRow, diagramName: string) => void
   onDeleteResult: (row: WeldRow) => void
 }
 

@@ -962,7 +962,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isLnkRowsContextReady,
     lnkRows,
     selectedLnkResultRowIds: lnkResultDraft.rowIds,
-    managedLnkConclusionDrafts,
     managedLnkPendingResultChanges,
     managedLnkPendingResultRows,
     lnkResultCorrectionMutation,
@@ -1253,7 +1252,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     heatTreatmentRows,
     filteredAvailablePstoRequestRows,
     filteredPstoResultRows,
-    managedPstoDiagramDrafts,
     managedPstoRequestName,
     managedPstoRequestDate,
     managedPstoRequestNameDraft,
@@ -2645,7 +2643,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const reportSummaryBarProps = createReportSummaryBarProps({
     activeReport,
     left: stickyLeft,
-    minWidth: registerMinWidth,
     isLoading: isServerPagedTab ? weldPageQuery.isLoading : weldsQuery.isLoading,
     weldingRows: activeReport === 'weldingJournal' ? filteredVisibleRows : rows,
     weldingRowCount: activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
@@ -2822,7 +2819,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       },
       onDiagramDraftChange: (rowId, value) =>
         setManagedPstoDiagramDrafts((current) => ({ ...current, [rowId]: value })),
-      onRenameDiagram: (row) => runProtectedEdit('переименование диаграммы ПСТО', () => renameManagedPstoDiagram(row)),
+      onRenameDiagram: (row, diagramName) =>
+        runProtectedEdit('переименование диаграммы ПСТО', () => renameManagedPstoDiagram(row, diagramName)),
       onDeleteResult: (row) => runProtectedDelete('удаление результата ПСТО', () => deleteManagedPstoResult(row)),
     },
   })
@@ -2932,8 +2930,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       },
       onMethodChange: changeManagedLnkResultMethod,
       onConclusionDraftChange: changeManagedLnkConclusionDraft,
-      onRenameConclusion: (row, methodKey) =>
-        runProtectedEdit('переименование заключения ЛНК', () => renameManagedLnkConclusionForRow(row, methodKey)),
+      onRenameConclusion: (row, methodKey, conclusionName) =>
+        runProtectedEdit(
+          'переименование заключения ЛНК',
+          () => renameManagedLnkConclusionForRow(row, methodKey, conclusionName),
+        ),
       onReplaceResult: (row, methodKey, result) =>
         runProtectedEdit('изменение результата ЛНК', () => replaceLnkResult(row, methodKey, result)),
       onClearResult: (row, methodKey) => runProtectedDelete('очистку результата ЛНК', () => clearLnkResult(row, methodKey)),

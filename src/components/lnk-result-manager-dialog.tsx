@@ -45,7 +45,7 @@ export type LnkResultManagerDialogProps = {
   canOpenDocument: (fieldKey: WeldFieldKey) => boolean
   onMethodChange: (methodKey: WeldFieldKey | '') => void
   onConclusionDraftChange: (changeKey: string, value: string) => void
-  onRenameConclusion: (row: WeldRow, methodKey: WeldFieldKey) => void
+  onRenameConclusion: (row: WeldRow, methodKey: WeldFieldKey, conclusionName: string) => void
   onReplaceResult: (row: WeldRow, methodKey: WeldFieldKey, result: string) => void
   onClearResult: (row: WeldRow, methodKey: WeldFieldKey) => void
   onResetPendingChanges: () => void
@@ -360,7 +360,7 @@ export function LnkResultManagerDialog({
                         formatCustomDocumentName(conclusionDrafts[selectedEntry.changeKey] ?? selectedConclusion) !== selectedConclusion
                       )}
                       onChange={(value) => onConclusionDraftChange(selectedEntry.changeKey, value)}
-                      onRename={() => onRenameConclusion(selectedRow, selectedMethod.requestKey)}
+                      onRename={(value) => onRenameConclusion(selectedRow, selectedMethod.requestKey, value)}
                     />
                     <LnkResultManagerActions
                       row={selectedRow}

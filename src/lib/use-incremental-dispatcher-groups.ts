@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { RepeatedJointTaskGroup } from '@/lib/dispatcher-types'
-
 export const DISPATCHER_GROUP_BATCH_SIZE = 80
 
 export function getNextDispatcherGroupCount(current: number, total: number) {
   return Math.min(total, current + DISPATCHER_GROUP_BATCH_SIZE)
 }
 
-export function useIncrementalDispatcherGroups(groups: RepeatedJointTaskGroup[]) {
+export function useIncrementalDispatcherGroups<T>(groups: T[]) {
   const [visibleCount, setVisibleCount] = useState(() => Math.min(groups.length, DISPATCHER_GROUP_BATCH_SIZE))
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
 

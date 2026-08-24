@@ -53,7 +53,6 @@ export type UsePstoReportActionsOptions = {
   heatTreatmentRows: RowWithId[]
   filteredAvailablePstoRequestRows: RowWithId[]
   filteredPstoResultRows: RowWithId[]
-  managedPstoDiagramDrafts: Record<number, string>
   managedPstoRequestName: string
   managedPstoRequestDate: string
   managedPstoRequestNameDraft: string

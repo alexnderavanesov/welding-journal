@@ -12,6 +12,7 @@ import {
   getProfileTimestampUpdates,
   getDerivedReportFilterSelectedFieldKeys,
   getReportContextSelect,
+  getWeldColumnFilterOptionSourceFilters,
   mergeDuplicateControlsIntoRows,
   normalizeWeldPageRequest,
   normalizeWeldImportScopeRequest,
@@ -434,6 +435,25 @@ describe('weld server pagination helpers', () => {
     ])
   })
 
+  it('does not apply a stored WDI value before recalculating filter option counts', () => {
+    const filters = {
+      connectionType: buildWeldColumnValueFilter(['C17']),
+      wdi: buildWeldColumnValueFilter(['1.2', '2.3']),
+      controlBasisSummary: buildWeldColumnValueFilter(['РК: ТР №1']),
+      rkExposureScheme: buildWeldColumnValueFilter(['по 2 экспозициям']),
+    }
+
+    expect(getWeldColumnFilterOptionSourceFilters(filters, true)).toEqual({
+      connectionType: filters.connectionType,
+    })
+    expect(getWeldColumnFilterOptionSourceFilters(filters, false)).toEqual({
+      connectionType: filters.connectionType,
+      wdi: filters.wdi,
+    })
+    const ordinaryFilters = { connectionType: filters.connectionType }
+    expect(getWeldColumnFilterOptionSourceFilters(ordinaryFilters, true)).toBe(ordinaryFilters)
+  })
+
   it('loads every report date needed to build LNK and PSTO date-filter options', () => {
     const selectedFieldKeys = getDerivedReportFilterSelectedFieldKeys()
 
@@ -445,6 +465,14 @@ describe('weld server pagination helpers', () => {
     expect(selectedFieldKeys.has('pstoDate')).toBe(true)
     expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)
     expect(selectedFieldKeys.has('pstoControlBasis')).toBe(true)
+  })
+
+  it('also loads an ordinary option field when another report filter requires derived rows', () => {
+    const selectedFieldKeys = getDerivedReportFilterSelectedFieldKeys('groupName')
+
+    expect(selectedFieldKeys.has('groupName')).toBe(true)
+    expect(selectedFieldKeys.has('wdi')).toBe(true)
+    expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)
   })
 
   it('builds filters from saved RK descriptions and calculated exposure schemes', () => {

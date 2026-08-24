@@ -57,6 +57,26 @@ describe('ReportImportDialog save result', () => {
     expect(screen.getByText('Предпросмотр')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('highlights all fields when one import row has several errors', async () => {
+    vi.mocked(buildReportImportPreview).mockResolvedValue({
+      ...preview,
+      fields: [FIELD_BY_KEY.get('line')!, FIELD_BY_KEY.get('joint')!],
+      records: [{ line: '330-P49-03-000', joint: 'F1' }],
+      validRecords: [],
+      errors: [
+        { rowNumber: 2, title: 'Линия', message: 'Ошибка линии', fieldKeys: ['line'] },
+        { rowNumber: 2, title: 'Стык', message: 'Ошибка стыка', fieldKeys: ['joint'] },
+      ],
+    })
+    const view = renderDialog({ onClose: vi.fn(), onImportRecords: vi.fn().mockResolvedValue(true) })
+
+    await uploadPreviewFile(view.container, 'import.xlsx · найдено: 1 · к добавлению: 0')
+
+    expect(screen.getByTitle('330-P49-03-000')).toHaveClass('bg-amber-50')
+    expect(screen.getByTitle('F1')).toHaveClass('bg-amber-50')
+    expect(screen.getByRole('button', { name: 'Только строки с ошибками · 1' })).toBeInTheDocument()
+  })
 })
 
 function renderDialog({
@@ -88,11 +108,11 @@ function renderDialog({
   )
 }
 
-async function uploadPreviewFile(container: HTMLElement) {
+async function uploadPreviewFile(container: HTMLElement, summary = 'import.xlsx · найдено: 1 · к добавлению: 1') {
   const input = container.querySelector<HTMLInputElement>('input[type="file"]')
   expect(input).not.toBeNull()
   fireEvent.change(input!, {
     target: { files: [new File(['test'], 'import.xlsx')] },
   })
-  expect(await screen.findByText('import.xlsx · найдено строк: 1 · к импорту: 1')).toBeInTheDocument()
+  expect(await screen.findByText(summary)).toBeInTheDocument()
 }
