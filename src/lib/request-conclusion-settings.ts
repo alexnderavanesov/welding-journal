@@ -5,12 +5,24 @@ import {
   PROJECT_SETTING_KEYS,
 } from '@/lib/project-settings-remote'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import {
+  DEFAULT_SYSTEM_DOCUMENT_SPLIT_SETTINGS,
+  normalizeSystemDocumentSplitSettings,
+  type SystemDocumentSplitSettings,
+} from '@/lib/system-document-splitting'
 
 export const REQUEST_CONCLUSION_SETTINGS_EVENT = 'request-conclusion-settings-change'
 
 const REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY = 'welding-request-conclusion-settings'
 
 export type RequestConclusionNamingKind = 'lnkRequest' | 'lnkConclusion' | 'pstoRequest' | 'pstoConclusion'
+
+export const REQUEST_CONCLUSION_NAMING_KINDS: RequestConclusionNamingKind[] = [
+  'lnkRequest',
+  'lnkConclusion',
+  'pstoRequest',
+  'pstoConclusion',
+]
 
 export type RequestConclusionNamingItemSettings = {
   defaultMode: RequestNamingState['mode']
@@ -45,7 +57,9 @@ export const REQUEST_NAMING_PATTERN_FIELDS: Array<{
   { id: 'line', label: 'Линия', token: 'Линия' },
 ]
 
-export type RequestConclusionSettings = Record<RequestConclusionNamingKind, RequestConclusionNamingItemSettings>
+export type RequestConclusionSettings = Record<RequestConclusionNamingKind, RequestConclusionNamingItemSettings> & {
+  splitModes: SystemDocumentSplitSettings
+}
 
 export const REQUEST_CONCLUSION_DEFAULT_SETTINGS: RequestConclusionSettings = {
   lnkRequest: {
@@ -54,7 +68,8 @@ export const REQUEST_CONCLUSION_DEFAULT_SETTINGS: RequestConclusionSettings = {
   },
   lnkConclusion: {
     defaultMode: 'system',
-    systemPattern: 'Заключение-{{Метод}}-{{Дата}}-{{№}}',
+    systemPattern: 'ЗНК-{{Метод}}-{{Дата}}-{{№}}',
+    systemPatternHistory: ['Заключение-{{Метод}}-{{Дата}}-{{№}}'],
   },
   pstoRequest: {
     defaultMode: 'system',
@@ -64,6 +79,7 @@ export const REQUEST_CONCLUSION_DEFAULT_SETTINGS: RequestConclusionSettings = {
     defaultMode: 'system',
     systemPattern: 'ПСТО-Д-{{ДатаКороткая}}-{{№}}',
   },
+  splitModes: DEFAULT_SYSTEM_DOCUMENT_SPLIT_SETTINGS,
 }
 
 export type NamingPatternContext = {
@@ -248,13 +264,16 @@ export function serializeRequestNamingPattern(parts: RequestNamingPatternPart[])
 }
 
 export function normalizeRequestConclusionSettings(value: unknown): RequestConclusionSettings {
-  const source = typeof value === 'object' && value ? (value as Partial<Record<RequestConclusionNamingKind, Partial<RequestConclusionNamingItemSettings>>>) : {}
+  const source = typeof value === 'object' && value
+    ? value as Partial<Record<RequestConclusionNamingKind, Partial<RequestConclusionNamingItemSettings>>> & { splitModes?: unknown }
+    : {}
 
   return {
     lnkRequest: normalizeSettingsItem(source.lnkRequest, REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkRequest),
     lnkConclusion: normalizeSettingsItem(source.lnkConclusion, REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion),
     pstoRequest: normalizeSettingsItem(source.pstoRequest, REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoRequest),
     pstoConclusion: normalizeSettingsItem(source.pstoConclusion, REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoConclusion),
+    splitModes: normalizeSystemDocumentSplitSettings(source.splitModes),
   }
 }
 
@@ -266,7 +285,10 @@ function normalizeSettingsItem(
   const systemPattern = String(value?.systemPattern ?? '').trim() || fallback.systemPattern
   const systemPatternHistory = Array.from(
     new Set(
-      (Array.isArray(value?.systemPatternHistory) ? value.systemPatternHistory : [])
+      [
+        ...(Array.isArray(value?.systemPatternHistory) ? value.systemPatternHistory : []),
+        ...(fallback.systemPatternHistory ?? []),
+      ]
         .map((pattern) => String(pattern ?? '').trim())
         .filter((pattern) => pattern && pattern !== systemPattern),
     ),
@@ -278,8 +300,8 @@ function rememberPreviousSystemPatterns(
   previous: RequestConclusionSettings,
   next: RequestConclusionSettings,
 ): RequestConclusionSettings {
-  return Object.fromEntries(
-    (Object.keys(next) as RequestConclusionNamingKind[]).map((kind) => {
+  const namingSettings = Object.fromEntries(
+    REQUEST_CONCLUSION_NAMING_KINDS.map((kind) => {
       const previousItem = previous[kind]
       const nextItem = next[kind]
       const history = Array.from(
@@ -296,7 +318,8 @@ function rememberPreviousSystemPatterns(
         .slice(0, 20)
       return [kind, { ...nextItem, systemPatternHistory: history }]
     }),
-  ) as RequestConclusionSettings
+  ) as Record<RequestConclusionNamingKind, RequestConclusionNamingItemSettings>
+  return { ...namingSettings, splitModes: next.splitModes }
 }
 
 function appendTextPart(parts: RequestNamingPatternPart[], value: string) {

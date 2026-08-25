@@ -19,6 +19,22 @@ describe('ReportSummaryBar', () => {
     expect(summary).toHaveStyle({ left: '288px', width: 'calc(100vw - 312px)' })
     expect(message).toHaveClass('truncate', 'max-w-[60vw]')
   })
+
+  it('keeps LNK success messages next to the report summary', () => {
+    render(
+      <ReportSummaryBar
+        {...createProps()}
+        message="Заключение переименовано для позиций: 1"
+        messageVariant="lnk-success"
+      />,
+    )
+
+    const message = screen.getByTitle('Заключение переименовано для позиций: 1')
+    const summaryGroup = message.parentElement
+
+    expect(summaryGroup).toHaveClass('flex-wrap')
+    expect(summaryGroup?.textContent).toContain('Стыков на ЛНК')
+  })
 })
 
 function createProps(): ReportSummaryBarProps {

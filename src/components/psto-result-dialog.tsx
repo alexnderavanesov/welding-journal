@@ -1,7 +1,7 @@
 import { useMemo, type Dispatch, type SetStateAction } from 'react'
 
+import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
-import { PaginationBar } from '@/components/pagination-bar'
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
 import { PstoResultSettings } from '@/components/psto-result-settings'
@@ -11,7 +11,10 @@ import { ResultDialogRowsPanel } from '@/components/result-dialog-rows-panel'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
-import { usePagination } from '@/lib/use-pagination'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { usePagePagination } from '@/lib/use-page-pagination'
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
@@ -21,6 +24,8 @@ export type PstoResultDialogProps = {
   draft: PstoResultDraftState
   requestSearch: string
   nextDiagramName: string
+  systemDocumentCreationPlan: SystemDocumentCreationPlan
+  saveCheckSettings: SaveCheckSettings
   filteredRows: WeldRow[]
   filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptions: RequestDocumentIdentity[]
@@ -42,6 +47,8 @@ export function PstoResultDialog({
   draft,
   requestSearch,
   nextDiagramName,
+  systemDocumentCreationPlan,
+  saveCheckSettings,
   filteredRows,
   filteredRequestOptions,
   availableRequestOptions,
@@ -58,13 +65,14 @@ export function PstoResultDialog({
   onClose,
   onSave,
 }: PstoResultDialogProps) {
+  const stableOnToggleRow = useStableEventCallback(onToggleRow)
   const paginationResetKeys = useMemo(
-    () => [draft.search, draft.requestName, draft.requestDate, requestSearch, filteredRows],
-    [draft.requestDate, draft.requestName, draft.search, filteredRows, requestSearch],
+    () => [draft.search, draft.requestName, draft.requestDate, requestSearch],
+    [draft.requestDate, draft.requestName, draft.search, requestSearch],
   )
-  const rowsPagination = usePagination({
+  const rowsPagination = usePagePagination({
     items: filteredRows,
-    defaultPageSize: 100,
+    defaultPageSize: 50,
     resetKeys: paginationResetKeys,
   })
   const selectedRequest = createRequestDocumentIdentity(draft.requestName, draft.requestDate)
@@ -86,7 +94,13 @@ export function PstoResultDialog({
       />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <PstoResultSettings draft={draft} nextDiagramName={nextDiagramName} onDraftChange={onDraftChange} />
+        <PstoResultSettings
+          draft={draft}
+          nextDiagramName={nextDiagramName}
+          creationPlan={systemDocumentCreationPlan}
+          saveCheckSettings={saveCheckSettings}
+          onDraftChange={onDraftChange}
+        />
 
         <ResultDialogRowsPanel
           title={draft.requestName ? 'Стыки в выбранной заявке' : 'Стыки для результата'}
@@ -129,21 +143,21 @@ export function PstoResultDialog({
                 row={row}
                 selected={draft.rowIds.has(row.id)}
                 disabled={!canSelectRow(row, draft.requestName, draft.requestDate)}
-                onToggle={onToggleRow}
+                onToggle={stableOnToggleRow}
               />
             ))}
           </div>
-          <div className="p-3">
-            <PaginationBar
-              totalCount={rowsPagination.totalCount}
-              firstItemNumber={rowsPagination.firstItemNumber}
-              lastItemNumber={rowsPagination.lastItemNumber}
-              pageSize={rowsPagination.pageSize}
-              hasMore={rowsPagination.hasMore}
-              onLoadMore={rowsPagination.loadMore}
-              onPageSizeChange={rowsPagination.setPageSize}
-            />
-          </div>
+          <DialogRowPagination
+            totalCount={rowsPagination.totalCount}
+            firstItemNumber={rowsPagination.firstItemNumber}
+            lastItemNumber={rowsPagination.lastItemNumber}
+            page={rowsPagination.page}
+            pageCount={rowsPagination.pageCount}
+            pageSize={rowsPagination.pageSize}
+            onPreviousPage={rowsPagination.goToPreviousPage}
+            onNextPage={rowsPagination.goToNextPage}
+            onPageSizeChange={rowsPagination.setPageSize}
+          />
         </ResultDialogRowsPanel>
       </div>
 

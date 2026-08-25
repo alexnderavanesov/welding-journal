@@ -48,6 +48,7 @@ type UseWeldTableModelOptions = {
   hiddenFieldKeys: ReadonlySet<WeldFieldKey>
   mergePstoSections: boolean
   rowActions?: ReportRowActions
+  collapsibleExtraSections?: ReadonlySet<string>
 }
 
 export function useWeldTableModel({
@@ -73,6 +74,7 @@ export function useWeldTableModel({
   hiddenFieldKeys,
   mergePstoSections,
   rowActions,
+  collapsibleExtraSections,
 }: UseWeldTableModelOptions) {
   const alwaysVisibleFieldKeys = useMemo(() => getAlwaysVisibleFieldKeys(mergePstoSections), [mergePstoSections])
   const availableSections = useMemo(
@@ -83,6 +85,7 @@ export function useWeldTableModel({
     storageKey,
     availableSections,
     alwaysVisibleFieldKeys,
+    collapsibleExtraSections,
   })
   const filteredSections = useMemo(
     () => getFilteredWeldTableSections({ availableSections, collapsedSections, alwaysVisibleFieldKeys }),

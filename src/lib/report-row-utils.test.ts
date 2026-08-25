@@ -5,6 +5,10 @@ import { pinInitiallySelectedRows } from '@/lib/report-row-utils'
 const rows = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
 
 describe('pinInitiallySelectedRows', () => {
+  it('preserves the source array when there are no rows to pin', () => {
+    expect(pinInitiallySelectedRows(rows, new Set(), new Set())).toBe(rows)
+  })
+
   it('places rows selected before opening the dialog first and preserves both groups order', () => {
     const result = pinInitiallySelectedRows(rows, new Set([2, 4]), new Set([2, 4]))
 

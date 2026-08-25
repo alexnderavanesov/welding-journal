@@ -4,7 +4,7 @@ import { ListFilter } from 'lucide-react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkRequestMethods } from '@/components/lnk-request-methods'
 import { LnkRequestRow } from '@/components/lnk-request-row'
-import { PaginationBar } from '@/components/pagination-bar'
+import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestNamingControls } from '@/components/request-naming-controls'
@@ -25,12 +25,16 @@ import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { pinInitiallySelectedRows } from '@/lib/report-row-utils'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
-import { usePagination } from '@/lib/use-pagination'
+import { usePagePagination } from '@/lib/use-page-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
+import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { SystemDocumentSplitPreview } from '@/components/system-document-split-preview'
 
 export type LnkRequestDialogProps = {
   nextRequestName: string
+  nextRequestNumber?: number
   selectedRowsCount: number
   selectedRows: WeldRow[]
   requestNaming: RequestNamingState
@@ -60,6 +64,7 @@ export type LnkRequestDialogProps = {
 
 export function LnkRequestDialog({
   nextRequestName,
+  nextRequestNumber,
   selectedRowsCount,
   selectedRows,
   requestNaming,
@@ -86,6 +91,7 @@ export function LnkRequestDialog({
   onSubmit,
   onExtendRequest,
 }: LnkRequestDialogProps) {
+  const requestConclusionSettings = useRequestConclusionSettings()
   const [submitMode, setSubmitMode] = useState<LnkRequestComposerMode>(initialMode)
   const [existingRequestKey, setExistingRequestKey] = useState(initialRequestKey)
   const [selectedMethods, setSelectedMethods] = useState(() => new Set(initialSelectedMethods))
@@ -121,36 +127,54 @@ export function LnkRequestDialog({
     [filteredAvailableRows, initiallySelectedIds, selectedIds],
   )
   const paginationResetKeys = useMemo(
-    () => [requestSearch, orderedAvailableRows],
-    [orderedAvailableRows, requestSearch],
+    () => [requestSearch, submitMode, existingRequestKey],
+    [existingRequestKey, requestSearch, submitMode],
   )
-  const rowsPagination = usePagination({
+  const rowsPagination = usePagePagination({
     items: orderedAvailableRows,
-    defaultPageSize: 100,
+    defaultPageSize: 50,
     resetKeys: paginationResetKeys,
   })
   const allFilteredRowsSelected = isEveryFilteredLnkRequestRowSelected(selectedIds, filteredAvailableRows)
   const requestName = submitMode === 'create' ? getRequestNameFromNaming(requestNaming, nextRequestName) : ''
+  const creationPlan = useMemo(() => {
+    const eligibleRowIds = new Set(buildLnkRequestDraftRows({
+      records: selectedRows,
+      methodKeys: selectedMethodKeys,
+      requestName: '__system-document-group-preview__',
+      requestDate,
+    }).map((row) => row.id))
+    return buildSystemDocumentCreationPlan({
+      type: 'lnkRequest',
+      date: requestDate,
+      rows: selectedRows.filter((row) => eligibleRowIds.has(row.id)),
+      naming: requestNaming,
+      settings: requestConclusionSettings,
+      nextNumber: nextRequestNumber,
+    })
+  }, [nextRequestNumber, requestConclusionSettings, requestDate, requestNaming, selectedMethodKeys, selectedRows])
+  const effectiveRequestName = creationPlan.groups[0]?.name ?? requestName
   const requestDateReason = submitMode === 'create' ? getDateInputValidationReason(requestDate, 'Дата заявки ЛНК') : null
   const chronologyReason = useMemo(() => {
-    if (selectedRows.length === 0 || selectedMethodKeys.length === 0 || !requestName || requestDateReason) return ''
+    if (selectedRows.length === 0 || selectedMethodKeys.length === 0 || !effectiveRequestName || requestDateReason) return ''
     const proposedRows = buildLnkRequestDraftRows({
       records: selectedRows,
       methodKeys: [...selectedMethodKeys],
-      requestName,
+      requestName: effectiveRequestName,
       requestDate,
     })
     const issue = getLnkChronologyIssues(proposedRows, saveCheckSettings)[0]
     return issue ? formatSaveCheckBlockReason('lnkResultRequestDateOrder', issue.message) : ''
-  }, [requestDate, requestDateReason, requestName, saveCheckSettings, selectedMethodKeys, selectedRows])
+  }, [effectiveRequestName, requestDate, requestDateReason, saveCheckSettings, selectedMethodKeys, selectedRows])
   const createDisabledReason = submitMode === 'create'
     ? getLnkRequestCreateDisabledReason({
         selectedRowsCount,
         selectedMethodKeysCount: selectedMethodKeys.length,
         selectedTargetCount,
-        requestName,
+        requestName: effectiveRequestName,
         requestDateReason,
         chronologyReason,
+        creationPlanError: creationPlan.error,
       })
     : getLnkRequestExtendDisabledReason({
         selectedRowsCount,
@@ -161,6 +185,9 @@ export function LnkRequestDialog({
       })
   const feedbackMessage = createDisabledReason ?? message
   const extensionIssueSummary = formatLnkRequestExtensionIssueSummary(extensionAnalysis.issues)
+  const headerDocumentLabel = creationPlan.groups.length > 1
+    ? `Будет создано заявок: ${creationPlan.groups.length}`
+    : effectiveRequestName || 'Новая заявка'
   return (
     <LargeDialogShell
       maxHeightClassName="h-[92vh]"
@@ -169,7 +196,7 @@ export function LnkRequestDialog({
     >
       <RequestDialogHeader
         title="Заявка ЛНК"
-        subtitle={`${submitMode === 'create' ? nextRequestName : selectedExistingRequest?.label ?? 'Выберите заявку'} · Стыков: ${selectedRowsCount} · Добавится позиций: ${selectedTargetCount}`}
+        subtitle={`${submitMode === 'create' ? headerDocumentLabel : selectedExistingRequest?.label ?? 'Выберите заявку'} · Стыков: ${selectedRowsCount} · Добавится позиций: ${selectedTargetCount}`}
         onClose={onClose}
       />
 
@@ -221,9 +248,19 @@ export function LnkRequestDialog({
               <RequestNamingControls
                 naming={requestNaming}
                 systemName={nextRequestName}
+                systemDocumentCount={creationPlan.groups.length}
                 label="Наименование заявки ЛНК"
                 onChange={onRequestNamingChange}
+                hideCustomNameInput={requestNaming.mode === 'custom' && creationPlan.groups.length > 1}
               />
+              <div className="mt-3">
+                <SystemDocumentSplitPreview
+                  plan={creationPlan}
+                  naming={requestNaming}
+                  disabled={isPending}
+                  onNamingChange={onRequestNamingChange}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -332,17 +369,17 @@ export function LnkRequestDialog({
                 />
               ))}
             </div>
-            <div className="p-3">
-              <PaginationBar
-                totalCount={rowsPagination.totalCount}
-                firstItemNumber={rowsPagination.firstItemNumber}
-                lastItemNumber={rowsPagination.lastItemNumber}
-                pageSize={rowsPagination.pageSize}
-                hasMore={rowsPagination.hasMore}
-                onLoadMore={rowsPagination.loadMore}
-                onPageSizeChange={rowsPagination.setPageSize}
-              />
-            </div>
+            <DialogRowPagination
+              totalCount={rowsPagination.totalCount}
+              firstItemNumber={rowsPagination.firstItemNumber}
+              lastItemNumber={rowsPagination.lastItemNumber}
+              page={rowsPagination.page}
+              pageCount={rowsPagination.pageCount}
+              pageSize={rowsPagination.pageSize}
+              onPreviousPage={rowsPagination.goToPreviousPage}
+              onNextPage={rowsPagination.goToNextPage}
+              onPageSizeChange={rowsPagination.setPageSize}
+            />
           </RequestRowsPanel>
       </div>
 
@@ -407,6 +444,7 @@ function getLnkRequestCreateDisabledReason({
   requestName,
   requestDateReason,
   chronologyReason,
+  creationPlanError,
 }: {
   selectedRowsCount: number
   selectedMethodKeysCount: number
@@ -414,6 +452,7 @@ function getLnkRequestCreateDisabledReason({
   requestName: string
   requestDateReason: string | null
   chronologyReason: string
+  creationPlanError: string
 }) {
   if (selectedRowsCount === 0) return 'Чтобы создать заявку ЛНК, выберите один или несколько стыков.'
   if (selectedMethodKeysCount === 0) return 'Чтобы создать заявку ЛНК, выберите один или несколько видов контроля.'
@@ -421,6 +460,7 @@ function getLnkRequestCreateDisabledReason({
     return 'По выбранным стыкам и видам контроля нет доступных позиций: заявка уже создана, контроль не назначен или стык больше не доступен для новой заявки.'
   }
   if (!requestName) return 'Укажите пользовательское наименование заявки ЛНК или переключитесь на системное имя.'
+  if (creationPlanError) return creationPlanError
   if (requestDateReason) return requestDateReason
   if (chronologyReason) return chronologyReason
   return null

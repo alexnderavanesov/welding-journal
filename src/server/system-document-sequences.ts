@@ -40,6 +40,11 @@ export type SystemDocumentSequenceUpdate = {
   provisionalName: string
 }
 
+export type ReservedSystemDocumentName = {
+  name: string
+  request: SystemDocumentSequenceUpdate
+}
+
 type Db = ReturnType<typeof requireDb>
 export type SystemDocumentSequenceTransaction = Parameters<Parameters<Db['transaction']>[0]>[0]
 
@@ -67,17 +72,10 @@ const SYSTEM_DOCUMENT_SEQUENCE_SELECT = {
 export const getSystemDocumentSequences = createServerFn({ method: 'GET' }).handler(async () => {
   await assertSecurityScope('entry')
   const db = requireDb()
-  const stored = await readStoredSequenceNumbers(db)
-  const needsInitialValues = SYSTEM_DOCUMENT_TEMPLATE_PROFILES.some(
-    (profile) => stored[profile.id] === null,
+  return readAndInitializeSystemDocumentSequenceNumbers(
+    db,
+    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => profile.id),
   )
-  const initial = needsInitialValues ? await readInitialSequenceNumbers(db) : null
-  return Object.fromEntries(
-    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => [
-      profile.id,
-      stored[profile.id] ?? initial?.[profile.id] ?? 1,
-    ]),
-  ) as Record<SystemDocumentTemplateId, number>
 })
 
 export const getSystemDocumentSequence = createServerFn({ method: 'GET' })
@@ -87,9 +85,10 @@ export const getSystemDocumentSequence = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     const db = requireDb()
+    const sequences = await readAndInitializeSystemDocumentSequenceNumbers(db, [data.type])
     return {
       type: data.type,
-      nextNumber: await readSystemDocumentNextNumber(db, data.type),
+      nextNumber: sequences[data.type],
     }
   })
 
@@ -147,6 +146,27 @@ export function normalizeSystemDocumentSequenceUpdate(
   }
 }
 
+export function applyReservedSystemDocumentNames<
+  Row extends Partial<Record<WeldFieldKey, unknown>>,
+>(
+  records: Row[],
+  reservations: ReservedSystemDocumentName[],
+) {
+  return records.map((record) => {
+    let nextRecord = record
+    for (const reservation of reservations) {
+      for (const fieldKey of reservation.request.fieldKeys) {
+        if (
+          String(record[fieldKey] ?? '').trim() !==
+          reservation.request.provisionalName
+        ) continue
+        nextRecord = { ...nextRecord, [fieldKey]: reservation.name }
+      }
+    }
+    return nextRecord
+  })
+}
+
 export function getInitialSystemDocumentSequenceNumbers(
   weldRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
@@ -198,8 +218,8 @@ export async function reserveSystemDocumentName(
   return { name, number, request }
 }
 
-async function readSystemDocumentNextNumber(
-  db: Pick<Db, 'select'>,
+export async function readSystemDocumentNextNumber(
+  db: Pick<SystemDocumentSequenceTransaction, 'select'>,
   sequenceId: SystemDocumentTemplateId,
 ) {
   const [setting] = await db
@@ -230,6 +250,36 @@ async function readStoredSequenceNumbers(db: Pick<Db, 'select'>) {
   ) as Record<SystemDocumentTemplateId, number | null>
 }
 
+async function readAndInitializeSystemDocumentSequenceNumbers<SequenceId extends SystemDocumentTemplateId>(
+  db: Db,
+  sequenceIds: readonly SequenceId[],
+): Promise<Record<SequenceId, number>> {
+  const requestedIds = Array.from(new Set(sequenceIds)).sort()
+  const stored = await readStoredSequenceNumbers(db)
+  const missingIds = requestedIds.filter((sequenceId) => stored[sequenceId] === null)
+  if (missingIds.length === 0) {
+    return Object.fromEntries(
+      requestedIds.map((sequenceId) => [sequenceId, stored[sequenceId] ?? 1]),
+    ) as Record<SequenceId, number>
+  }
+
+  return db.transaction(async (tx) => {
+    for (const sequenceId of missingIds) await lockSystemDocumentNumberCounter(tx, sequenceId)
+    const currentStored = await readStoredSequenceNumbers(tx)
+    const currentMissingIds = requestedIds.filter((sequenceId) => currentStored[sequenceId] === null)
+    const initial = currentMissingIds.length > 0 ? await readInitialSequenceNumbers(tx) : null
+    for (const sequenceId of currentMissingIds) {
+      await writeSystemDocumentNextNumber(tx, sequenceId, initial?.[sequenceId] ?? 1)
+    }
+    return Object.fromEntries(
+      requestedIds.map((sequenceId) => [
+        sequenceId,
+        currentStored[sequenceId] ?? initial?.[sequenceId] ?? 1,
+      ]),
+    ) as Record<SequenceId, number>
+  })
+}
+
 async function readInitialSequenceNumbers(db: Pick<Db, 'select'>) {
   const rows = await db.select(SYSTEM_DOCUMENT_SEQUENCE_SELECT).from(weldJoints)
   const settings = await readRequestConclusionSettings(db)
@@ -237,7 +287,9 @@ async function readInitialSequenceNumbers(db: Pick<Db, 'select'>) {
   return getInitialSystemDocumentSequenceNumbers(weldRows, settings)
 }
 
-async function readRequestConclusionSettings(db: Pick<Db, 'select'>): Promise<RequestConclusionSettings> {
+export async function readRequestConclusionSettings(
+  db: Pick<SystemDocumentSequenceTransaction, 'select'>,
+): Promise<RequestConclusionSettings> {
   const [setting] = await db
     .select({ value: appSettings.value })
     .from(appSettings)
@@ -251,7 +303,7 @@ async function readRequestConclusionSettings(db: Pick<Db, 'select'>): Promise<Re
   }
 }
 
-async function lockSystemDocumentNumberCounter(
+export async function lockSystemDocumentNumberCounter(
   tx: Pick<SystemDocumentSequenceTransaction, 'execute'>,
   sequenceId: SystemDocumentTemplateId,
 ) {

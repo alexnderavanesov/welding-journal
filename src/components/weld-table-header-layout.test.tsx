@@ -1,12 +1,28 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { WeldTable } from '@/components/weld-table'
+import { getWeldFilterMenuPosition } from '@/components/weld-table-field-header-rows'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { VISIBLE_FIELDS, type WeldFieldKey } from '@/lib/weld-fields'
 
 describe('WeldTable header layout', () => {
+  it('keeps a wide filter menu inside both viewport edges', () => {
+    expect(getWeldFilterMenuPosition({ anchorLeft: 8, anchorBottom: 120, viewportWidth: 1200 })).toEqual({
+      left: 16,
+      top: 116,
+    })
+    expect(getWeldFilterMenuPosition({ anchorLeft: 1100, anchorBottom: 120, viewportWidth: 1200 })).toEqual({
+      left: 800,
+      top: 116,
+    })
+    expect(getWeldFilterMenuPosition({ anchorLeft: 300, anchorBottom: 80, viewportWidth: 320 })).toEqual({
+      left: 16,
+      top: 76,
+    })
+  })
+
   it('keeps the field header row fixed and clamps long labels', () => {
     const hiddenFieldKeys = new Set(
       VISIBLE_FIELDS
@@ -34,5 +50,10 @@ describe('WeldTable header layout', () => {
     expect(filterButton).toHaveClass('h-10', 'overflow-hidden')
     expect(filterButton).toHaveAttribute('title', 'Линия. Фильтр по значениям')
     expect(label).toHaveClass('line-clamp-2')
+
+    fireEvent.click(filterButton)
+    const filterMenu = screen.getByText('Фильтр по значениям').closest('.fixed')
+    expect(filterMenu).toHaveClass('fixed')
+    expect(filterMenu?.parentElement).toBe(document.body)
   })
 })

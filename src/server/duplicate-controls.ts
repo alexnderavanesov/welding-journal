@@ -12,7 +12,7 @@ import {
 import { parseDateLikeToIso } from '@/lib/date-format'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { assertSecurityScope } from '@/server/security-functions'
-import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-documents'
+import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 
 export type DuplicateControlPayload = {
   id?: number

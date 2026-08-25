@@ -28,6 +28,7 @@ export function getDuplicateControlTableColumns({
       label: 'Результаты дубля',
       width: DUPLICATE_CONTROL_COLUMN_WIDTH,
       insertBeforeSection: 'Прочее',
+      collapsible: true,
       renderCell: (row) => <DuplicateControlTableCell row={row} onOpen={onOpenDuplicateControl} />,
     },
   ] satisfies WeldTableExtraColumn[]

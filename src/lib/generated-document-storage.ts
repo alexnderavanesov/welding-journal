@@ -3,14 +3,17 @@ import {
   getRemoteGeneratedDocument,
   getRemoteGeneratedDocumentSequence,
   getRemoteGeneratedDocumentRows,
+  listRemoteGeneratedDocumentHistory,
   listRemoteGeneratedDocuments,
   resetRemoteGeneratedDocumentSequence,
   saveRemoteGeneratedDocuments,
   type RemoteGeneratedDocument,
+  type RemoteGeneratedDocumentHistoryRequest,
   type SaveGeneratedDocumentInput,
 } from '@/server/generated-documents'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { serializeInlineScriptString } from '@/lib/inline-script-string'
+import { createZip } from '@/lib/weld-export-zip'
 
 export type StoredGeneratedDocument = RemoteGeneratedDocument
 
@@ -31,6 +34,10 @@ export async function saveGeneratedDocuments(inputs: SaveGeneratedDocumentInput[
 
 export async function loadGeneratedDocuments(type: SaveGeneratedDocumentInput['type']) {
   return listRemoteGeneratedDocuments({ data: { type } })
+}
+
+export async function loadGeneratedDocumentHistory(request: RemoteGeneratedDocumentHistoryRequest) {
+  return listRemoteGeneratedDocumentHistory({ data: request })
 }
 
 export async function loadGeneratedDocumentSequence(type: SaveGeneratedDocumentInput['type']) {
@@ -106,6 +113,30 @@ export async function downloadGeneratedDocument(
 ) {
   const blob = await createDocumentBlob()
   downloadBlob(blob, getGeneratedDocumentFileName(documentRecord))
+}
+
+export async function downloadGeneratedDocumentArchive(
+  documents: Array<{
+    record: GeneratedDocumentPreviewRecord
+    createDocumentBlob: () => Promise<Blob>
+  }>,
+  archiveFileName = 'documents.zip',
+) {
+  const usedNames = new Map<string, number>()
+  const files = []
+  for (const documentRecord of documents) {
+    const blob = await documentRecord.createDocumentBlob()
+    const fileName = getUniqueArchiveFileName(
+      getGeneratedDocumentFileName(documentRecord.record),
+      usedNames,
+    )
+    files.push({
+      path: fileName,
+      content: await blob.arrayBuffer(),
+    })
+  }
+  const zip = createZip(files)
+  downloadBlob(new Blob([zip], { type: 'application/zip' }), archiveFileName)
 }
 
 function notifyGeneratedDocumentStorageChanged() {
@@ -265,10 +296,33 @@ function buildGeneratedDocumentDownloadScript(documentRecord: MaterializedGenera
   </script>`
 }
 
-function getGeneratedDocumentFileName(documentRecord: GeneratedDocumentPreviewRecord) {
+export function getGeneratedDocumentFileName(documentRecord: GeneratedDocumentPreviewRecord) {
   const value = String(documentRecord.fileName || documentRecord.title || 'Сварочный журнал').trim()
   const baseName = value.replace(/\.xlsx$/i, '').trim() || 'Сварочный журнал'
   return `${baseName}.xlsx`
+}
+
+export function getUniqueArchiveFileName(fileName: string, usedNames: Map<string, number>) {
+  const normalized = fileName
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^\.+/, '')
+    .trim() || 'Документ.xlsx'
+  const extensionMatch = normalized.match(/(\.[^.]+)$/)
+  const extension = extensionMatch?.[1] ?? ''
+  const baseName = extension ? normalized.slice(0, -extension.length) : normalized
+  let candidate = normalized
+  let suffix = 2
+  while (usedNames.has(getArchiveFileNameIdentity(candidate))) {
+    candidate = `${baseName} (${suffix})${extension}`
+    suffix += 1
+  }
+  usedNames.set(getArchiveFileNameIdentity(candidate), 1)
+  return candidate
+}
+
+function getArchiveFileNameIdentity(value: string) {
+  return value.normalize('NFKC').toLocaleLowerCase('ru-RU')
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer) {

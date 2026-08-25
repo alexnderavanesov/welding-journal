@@ -1,9 +1,11 @@
 import { ChevronDown, ChevronRight, Columns3 } from 'lucide-react'
+import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldField } from '@/lib/weld-fields'
 import { canCollapseSection } from '@/lib/weld-table-section-state'
 
 type WeldTableSectionToolbarProps = {
   sections: Array<{ section: string; fields: WeldField[] }>
+  extraColumns: WeldTableExtraColumn[]
   collapsedSections: ReadonlySet<string>
   alwaysVisibleFieldKeys: ReadonlySet<string>
   tableMinWidth: number
@@ -13,12 +15,15 @@ type WeldTableSectionToolbarProps = {
 
 export function WeldTableSectionToolbar({
   sections,
+  extraColumns,
   collapsedSections,
   alwaysVisibleFieldKeys,
   tableMinWidth,
   stickyLeft,
   onToggleSection,
 }: WeldTableSectionToolbarProps) {
+  const controls = getSectionControls(sections, extraColumns)
+
   return (
     <div
       className="sticky z-20 flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50/95 px-2.5 py-1.5 shadow-sm shadow-slate-200/30 backdrop-blur"
@@ -28,12 +33,18 @@ export function WeldTableSectionToolbar({
         <Columns3 className="h-3.5 w-3.5 text-slate-400" />
         Разделы
       </span>
-      {sections.map((group) => {
-        const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
+      {controls.map((group) => {
+        const isExtra = group.kind === 'extra'
+        const canCollapse = isExtra
+          ? group.columns.some((column) => column.collapsible)
+          : canCollapseSection(group.fields, alwaysVisibleFieldKeys)
         const collapsed = canCollapse && collapsedSections.has(group.section)
+        const fieldCount = isExtra ? group.columns.length : group.fields.length
         const visibleCount = collapsed
-          ? group.fields.filter((field) => alwaysVisibleFieldKeys.has(field.key)).length
-          : group.fields.length
+          ? isExtra
+            ? 0
+            : group.fields.filter((field) => alwaysVisibleFieldKeys.has(field.key)).length
+          : fieldCount
 
         return (
           <button
@@ -53,13 +64,56 @@ export function WeldTableSectionToolbar({
             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             {getSectionTitle(group.section)}
             <span className={`rounded px-1 py-0.5 text-[10px] leading-none ${collapsed ? 'bg-slate-100 text-slate-400' : 'bg-sky-50 text-sky-700'}`}>
-              {visibleCount}/{group.fields.length}
+              {visibleCount}/{fieldCount}
             </span>
           </button>
         )
       })}
     </div>
   )
+}
+
+type SectionControl =
+  | { kind: 'fields'; section: string; fields: WeldField[] }
+  | { kind: 'extra'; section: string; columns: WeldTableExtraColumn[] }
+
+function getSectionControls(
+  sections: Array<{ section: string; fields: WeldField[] }>,
+  extraColumns: WeldTableExtraColumn[],
+): SectionControl[] {
+  const extraGroups = groupCollapsibleExtraColumns(extraColumns)
+  const sectionNames = new Set(sections.map((section) => section.section))
+  const controls: SectionControl[] = []
+
+  for (const section of sections) {
+    controls.push(
+      ...extraGroups.filter((group) => group.insertBeforeSection === section.section),
+      { kind: 'fields', ...section },
+    )
+  }
+  controls.push(
+    ...extraGroups.filter((group) => !group.insertBeforeSection || !sectionNames.has(group.insertBeforeSection)),
+  )
+  return controls
+}
+
+function groupCollapsibleExtraColumns(columns: WeldTableExtraColumn[]) {
+  const groups = new Map<string, Extract<SectionControl, { kind: 'extra' }> & { insertBeforeSection?: string }>()
+  for (const column of columns) {
+    if (!column.collapsible) continue
+    const group = groups.get(column.section)
+    if (group) {
+      group.columns.push(column)
+    } else {
+      groups.set(column.section, {
+        kind: 'extra',
+        section: column.section,
+        columns: [column],
+        insertBeforeSection: column.insertBeforeSection,
+      })
+    }
+  }
+  return [...groups.values()]
 }
 
 function getSectionTitle(section: string) {

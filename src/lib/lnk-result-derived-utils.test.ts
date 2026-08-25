@@ -10,6 +10,7 @@ import {
 } from '@/lib/lnk-result-derived-utils'
 import { LNK_CUSTOM_RESULT_VALUE } from '@/lib/report-config'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 
 const baseDraft: LnkResultDraftState = {
   requestName: 'Заявка-001',
@@ -113,6 +114,51 @@ describe('getLnkResultSaveBlockReason', () => {
           lnkResultConclusionRequired: false,
         },
         selectedRows: [baseRow],
+      }),
+    ).toBe('')
+  })
+
+  it('accepts filled names for every split conclusion group when the shared custom name is empty', () => {
+    const rows = [
+      baseRow,
+      { ...baseRow, id: 2, joint: 'S2' },
+    ] as WeldRow[]
+    const systemDocumentCreationPlan: SystemDocumentCreationPlan = {
+      type: 'lnkConclusion',
+      methodCode: 'РК',
+      mode: 'joint',
+      groups: rows.map((row) => ({
+        key: `joint:${row.id}`,
+        label: `Стык ${row.joint}`,
+        rowIds: [row.id],
+        rows: [row],
+        name: `вик${row.id}`,
+        useSystemName: false,
+        isMissingValueFallback: false,
+      })),
+      missingSummary: '',
+      error: '',
+    }
+
+    expect(
+      getLnkResultSaveBlockReason({
+        draft: {
+          ...baseDraft,
+          controlDate: '2026-07-04',
+          rowIds: new Set(rows.map((row) => row.id)),
+          conclusionNaming: {
+            mode: 'custom',
+            customName: '',
+            customGroupNames: {
+              'joint:1': 'вик1',
+              'joint:2': 'вик2',
+            },
+          },
+        },
+        isSaving: false,
+        nextConclusionName: '',
+        selectedRows: rows,
+        systemDocumentCreationPlan,
       }),
     ).toBe('')
   })
@@ -277,5 +323,30 @@ describe('getLnkResultSaveBlockReason', () => {
 
     expect(updated.lnkDefectDescription).toBe('1: участок 1а\n2: участок 2б')
     expect(updated.rkExposureConfirmedDiameter).toBe(95)
+  })
+
+  it('clears only the selected split conclusion result', () => {
+    const rows = [16, 17, 18].map((number) => ({
+      ...baseRow,
+      id: number,
+      joint: `F${number}`,
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-25',
+      vikConclusion: `ЗНК-ВИК-25.08.2026-${String(number).padStart(3, '0')}`,
+    })) as WeldRow[]
+
+    const updated17 = buildLnkResultCorrectionRow({
+      record: rows[1],
+      methodKey: 'vikRequest',
+      result: null,
+    })
+    const result = rows.map((sourceRow) => sourceRow.id === updated17.id ? updated17 : sourceRow)
+
+    expect(result.map((sourceRow) => sourceRow.vikConclusion)).toEqual([
+      'ЗНК-ВИК-25.08.2026-016',
+      null,
+      'ЗНК-ВИК-25.08.2026-018',
+    ])
+    expect(result.map((sourceRow) => sourceRow.vikResult)).toEqual(['годен', null, 'годен'])
   })
 })

@@ -4,6 +4,7 @@ import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-sta
 import { canCreatePstoRequest } from '@/lib/psto-status'
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
 import { findRequestDocumentIdentity, type RequestDocumentIdentity } from '@/lib/request-document-identity'
+import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 
 export function createPstoRequestActionHandlers({
   confirmAction,
@@ -12,6 +13,8 @@ export function createPstoRequestActionHandlers({
   managedPstoRequestDate,
   managedPstoRequestNameDraft,
   nextPstoRequestName,
+  nextPstoRequestNumber,
+  requestConclusionSettings,
   pstoRequestManagerOptions,
   pstoRequestDate,
   pstoRequestNaming,
@@ -37,9 +40,17 @@ export function createPstoRequestActionHandlers({
       return
     }
 
-    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
-    if (!requestName) {
-      setMessage('Укажите пользовательское наименование заявки ПСТО')
+    const creationPlan = buildSystemDocumentCreationPlan({
+      type: 'pstoRequest',
+      date: pstoRequestDate,
+      rows: selectedHeatTreatmentRows,
+      naming: pstoRequestNaming,
+      settings: requestConclusionSettings,
+      nextNumber: nextPstoRequestNumber,
+    })
+    const requestName = creationPlan.groups[0]?.name ?? getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
+    if (!requestName || creationPlan.error) {
+      setMessage(creationPlan.error || 'Укажите пользовательское наименование заявки ПСТО')
       return
     }
 
@@ -49,6 +60,7 @@ export function createPstoRequestActionHandlers({
       requestDate: pstoRequestDate,
       mode: 'create',
       useSystemName: pstoRequestNaming.mode === 'system',
+      documentGroups: creationPlan.groups,
     })
   }
 
@@ -136,9 +148,17 @@ export function createPstoRequestActionHandlers({
   }
 
   function submitCreatePstoRequest() {
-    const requestName = getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
-    if (!requestName) {
-      setMessage('Укажите пользовательское наименование заявки ПСТО')
+    const creationPlan = buildSystemDocumentCreationPlan({
+      type: 'pstoRequest',
+      date: pstoRequestDate,
+      rows: selectedHeatTreatmentRows,
+      naming: pstoRequestNaming,
+      settings: requestConclusionSettings,
+      nextNumber: nextPstoRequestNumber,
+    })
+    const requestName = creationPlan.groups[0]?.name ?? getRequestNameFromNaming(pstoRequestNaming, nextPstoRequestName)
+    if (!requestName || creationPlan.error) {
+      setMessage(creationPlan.error || 'Укажите пользовательское наименование заявки ПСТО')
       return
     }
     pstoRequestMutation.mutate({
@@ -147,6 +167,7 @@ export function createPstoRequestActionHandlers({
       requestDate: pstoRequestDate,
       mode: 'create',
       useSystemName: pstoRequestNaming.mode === 'system',
+      documentGroups: creationPlan.groups,
     })
   }
 

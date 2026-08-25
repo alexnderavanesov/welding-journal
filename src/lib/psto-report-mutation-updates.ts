@@ -10,7 +10,6 @@ import {
 } from '@/lib/psto-field-updates'
 import {
   withAutoHeatTreatmentDiagram,
-  withAutoHeatTreatmentDiagrams,
 } from '@/lib/psto-status'
 import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatDateBeforeWeldDateSaveReason, isDateBeforeWeldDate } from '@/lib/report-date-rules'
@@ -61,7 +60,7 @@ export function buildPstoResultRows({
   pstoDate,
   result,
   diagramName,
-  rows,
+  rows: _rows,
 }: {
   records: RowWithId[]
   pstoDate: string
@@ -83,17 +82,20 @@ export function buildPstoResultRows({
   const normalizedPstoDate = normalizeDateLikeForStorage(pstoDate)
 
   const pstoUpdatedAt = new Date().toISOString()
-  const proposedRowsById = new Map<number, RowWithId>()
-  for (const record of records) {
+  const proposedRows = records.map((record) => {
     if (saveCheckSettings.pstoResultDateAfterWeldDate && isDateBeforeWeldDate(normalizedPstoDate ?? pstoDate, record.weldDate)) {
       throw new Error(formatDateBeforeWeldDateSaveReason(record, normalizedPstoDate ?? pstoDate, 'Дата ПСТО'))
     }
-    proposedRowsById.set(record.id, applyPstoResult({ record, shouldClearResult: false, pstoDate: normalizedPstoDate ?? pstoDate, diagramName, pstoUpdatedAt }))
-  }
-  const recalculatedRows = withAutoHeatTreatmentDiagrams(rows.map((row) => proposedRowsById.get(row.id) ?? row))
-  const changedRows = recalculatedRows.filter((row) => proposedRowsById.has(row.id))
-  assertNoPstoChronologyIssues(changedRows, saveCheckSettings)
-  return changedRows
+    return applyPstoResult({
+      record,
+      shouldClearResult: false,
+      pstoDate: normalizedPstoDate ?? pstoDate,
+      diagramName,
+      pstoUpdatedAt,
+    })
+  })
+  assertNoPstoChronologyIssues(proposedRows, saveCheckSettings)
+  return proposedRows
 }
 
 export function buildPstoRequestManagerRows({

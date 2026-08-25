@@ -113,11 +113,12 @@ import {
   type DispatcherDirtyScope,
 } from '@/server/dispatcher-task-index-dirty'
 import {
+  applyReservedSystemDocumentNames,
   reserveSystemDocumentName,
   type SystemDocumentSequenceTransaction,
   type SystemDocumentSequenceUpdate,
 } from '@/server/system-document-sequences'
-import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-documents'
+import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { assertSecurityScope } from '@/server/security-functions'
 import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
@@ -1590,6 +1591,7 @@ export const createWeldJoints = createServerFn({ method: 'POST' })
 type WeldBatchUpdateData = {
   records: WeldPayload[]
   systemDocumentSequence?: SystemDocumentSequenceUpdate
+  systemDocumentSequences?: SystemDocumentSequenceUpdate[]
 }
 
 async function updateWeldJointRows(data: WeldBatchUpdateData, importMode = false) {
@@ -1599,27 +1601,26 @@ async function updateWeldJointRows(data: WeldBatchUpdateData, importMode = false
     const db = requireDb()
     return db.transaction(async (tx) => {
       let records = data.records
-      if (data.systemDocumentSequence) {
-        const hasProvisionalName = data.records.some((record) =>
-          data.systemDocumentSequence!.fieldKeys.some(
+      const systemDocumentSequences = [
+        ...(data.systemDocumentSequence ? [data.systemDocumentSequence] : []),
+        ...(data.systemDocumentSequences ?? []),
+      ]
+      const systemDocumentReservations = []
+      for (const systemDocumentSequence of systemDocumentSequences) {
+        const targetRecords = data.records.filter((record) =>
+          systemDocumentSequence.fieldKeys.some(
             (fieldKey) =>
               String(record[fieldKey] ?? '').trim() ===
-              String(data.systemDocumentSequence!.provisionalName ?? '').trim(),
+              String(systemDocumentSequence.provisionalName ?? '').trim(),
           ),
         )
-        if (!hasProvisionalName) {
+        if (targetRecords.length === 0) {
           throw new Error('Не найдены строки с предварительным именем системного документа.')
         }
-        const reserved = await reserveSystemDocumentName(tx, data.systemDocumentSequence, data.records)
-        records = data.records.map((record) => {
-          let nextRecord = record
-          for (const fieldKey of reserved.request.fieldKeys) {
-            if (String(record[fieldKey] ?? '').trim() !== reserved.request.provisionalName) continue
-            nextRecord = { ...nextRecord, [fieldKey]: reserved.name }
-          }
-          return nextRecord
-        })
+        const reserved = await reserveSystemDocumentName(tx, systemDocumentSequence, targetRecords)
+        systemDocumentReservations.push(reserved)
       }
+      records = applyReservedSystemDocumentNames(data.records, systemDocumentReservations)
       const previousRows = await loadPreviousWeldRows(tx, records)
       const validationContext = await loadServerWeldValidationContext(tx)
       if (importMode) {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 
+import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
-import { PaginationBar } from '@/components/pagination-bar'
 import { PstoRequestAside } from '@/components/psto-request-aside'
 import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
@@ -18,11 +18,16 @@ import { buildPstoRequestDraftRows } from '@/lib/psto-report-mutation-updates'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
-import { usePagination } from '@/lib/use-pagination'
+import { usePagePagination } from '@/lib/use-page-pagination'
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
+import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { SystemDocumentSplitPreview } from '@/components/system-document-split-preview'
 
 export type PstoRequestDialogProps = {
   nextRequestName: string
+  nextRequestNumber?: number
   selectedRows: WeldRow[]
   requestNaming: RequestNamingState
   requestDate: string
@@ -49,6 +54,7 @@ export type PstoRequestDialogProps = {
 
 export function PstoRequestDialog({
   nextRequestName,
+  nextRequestNumber,
   selectedRows,
   requestNaming,
   requestDate,
@@ -72,27 +78,42 @@ export function PstoRequestDialog({
   onToggleRow,
   onSubmit,
 }: PstoRequestDialogProps) {
-  const paginationResetKeys = useMemo(() => [requestSearch, filteredRows], [filteredRows, requestSearch])
-  const rowsPagination = usePagination({
+  const requestConclusionSettings = useRequestConclusionSettings()
+  const stableOnToggleRow = useStableEventCallback(onToggleRow)
+  const paginationResetKeys = useMemo(() => [requestSearch], [requestSearch])
+  const rowsPagination = usePagePagination({
     items: filteredRows,
-    defaultPageSize: 100,
+    defaultPageSize: 50,
     resetKeys: paginationResetKeys,
   })
   const requestName = getRequestNameFromNaming(requestNaming, nextRequestName)
+  const creationPlan = useMemo(() => buildSystemDocumentCreationPlan({
+    type: 'pstoRequest',
+    date: requestDate,
+    rows: selectedRows,
+    naming: requestNaming,
+    settings: requestConclusionSettings,
+    nextNumber: nextRequestNumber,
+  }), [nextRequestNumber, requestConclusionSettings, requestDate, requestNaming, selectedRows])
+  const effectiveRequestName = creationPlan.groups[0]?.name ?? requestName
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ПСТО')
   const chronologyReason = useMemo(() => {
-    if (selectedRows.length === 0 || !requestName || requestDateReason) return ''
-    const proposedRows = buildPstoRequestDraftRows({ records: selectedRows, requestName, requestDate })
+    if (selectedRows.length === 0 || !effectiveRequestName || requestDateReason) return ''
+    const proposedRows = buildPstoRequestDraftRows({ records: selectedRows, requestName: effectiveRequestName, requestDate })
     const issue = getPstoChronologyIssues(proposedRows, saveCheckSettings)[0]
     return issue ? formatSaveCheckBlockReason('pstoResultRequestDateOrder', issue.message) : ''
-  }, [requestDate, requestDateReason, requestName, saveCheckSettings, selectedRows])
+  }, [effectiveRequestName, requestDate, requestDateReason, saveCheckSettings, selectedRows])
   const createDisabledReason = getPstoRequestCreateDisabledReason({
     selectedRowsCount: selectedRows.length,
-    requestName,
+    requestName: effectiveRequestName,
     requestDateReason,
     chronologyReason,
+    creationPlanError: creationPlan.error,
   })
   const feedbackMessage = createDisabledReason ?? message
+  const headerDocumentLabel = creationPlan.groups.length > 1
+    ? `Будет создано заявок: ${creationPlan.groups.length}`
+    : effectiveRequestName || 'Новая заявка'
 
   return (
     <LargeDialogShell
@@ -103,7 +124,7 @@ export function PstoRequestDialog({
     >
       <RequestDialogHeader
         title="Создание заявки ПСТО"
-        subtitle={`${nextRequestName} · Стыков: ${selectedRows.length}`}
+        subtitle={`${headerDocumentLabel} · Стыков: ${selectedRows.length}`}
         onClose={onClose}
         actions={
           <RequestManagerButton disabled={requestManagerOptions.length === 0} onClick={onOpenRequestManager} />
@@ -128,9 +149,19 @@ export function PstoRequestDialog({
             <RequestNamingControls
               naming={requestNaming}
               systemName={nextRequestName}
+              systemDocumentCount={creationPlan.groups.length}
               label="Наименование заявки ПСТО"
               onChange={onRequestNamingChange}
+              hideCustomNameInput={requestNaming.mode === 'custom' && creationPlan.groups.length > 1}
             />
+            <div className="mt-3">
+              <SystemDocumentSplitPreview
+                plan={creationPlan}
+                naming={requestNaming}
+                disabled={isPending}
+                onNamingChange={onRequestNamingChange}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -160,20 +191,20 @@ export function PstoRequestDialog({
             {rowsPagination.pageItems.map((row) => {
               const disabled = !canCreateRequest(row)
               const selected = selectedIds.has(row.id)
-              return <PstoRequestRow key={row.id} row={row} selected={selected} disabled={disabled} onToggleRow={onToggleRow} />
+              return <PstoRequestRow key={row.id} row={row} selected={selected} disabled={disabled} onToggleRow={stableOnToggleRow} />
             })}
           </div>
-          <div className="p-3">
-            <PaginationBar
-              totalCount={rowsPagination.totalCount}
-              firstItemNumber={rowsPagination.firstItemNumber}
-              lastItemNumber={rowsPagination.lastItemNumber}
-              pageSize={rowsPagination.pageSize}
-              hasMore={rowsPagination.hasMore}
-              onLoadMore={rowsPagination.loadMore}
-              onPageSizeChange={rowsPagination.setPageSize}
-            />
-          </div>
+          <DialogRowPagination
+            totalCount={rowsPagination.totalCount}
+            firstItemNumber={rowsPagination.firstItemNumber}
+            lastItemNumber={rowsPagination.lastItemNumber}
+            page={rowsPagination.page}
+            pageCount={rowsPagination.pageCount}
+            pageSize={rowsPagination.pageSize}
+            onPreviousPage={rowsPagination.goToPreviousPage}
+            onNextPage={rowsPagination.goToNextPage}
+            onPageSizeChange={rowsPagination.setPageSize}
+          />
         </RequestRowsPanel>
       </div>
 
@@ -193,14 +224,17 @@ function getPstoRequestCreateDisabledReason({
   requestName,
   requestDateReason,
   chronologyReason,
+  creationPlanError,
 }: {
   selectedRowsCount: number
   requestName: string
   requestDateReason: string | null
   chronologyReason: string
+  creationPlanError: string
 }) {
   if (selectedRowsCount === 0) return 'Чтобы создать заявку ПСТО, выберите один или несколько стыков.'
   if (!requestName) return 'Укажите пользовательское наименование заявки ПСТО или переключитесь на системное имя.'
+  if (creationPlanError) return creationPlanError
   if (requestDateReason) return requestDateReason
   if (chronologyReason) return chronologyReason
   return null

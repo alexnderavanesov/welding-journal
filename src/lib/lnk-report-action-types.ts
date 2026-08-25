@@ -3,6 +3,8 @@ import type { LnkOfficialityDraftState, LnkRequestDraftState, LnkResultDraftStat
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 import type {
   LnkRequestExtensionOption,
   LnkRequestExtensionTarget,
@@ -17,6 +19,7 @@ export type LnkRequestMutation = {
     requestName: string
     requestDate: string
     useSystemName?: boolean
+    documentGroups?: SystemDocumentCreationGroup[]
   }) => void
 }
 
@@ -35,6 +38,8 @@ export type UseLnkRequestActionsOptions = {
   lnkRows: WeldRow[]
   naming: RequestNamingState
   nextRequestName: string
+  nextRequestNumber?: number
+  requestConclusionSettings: RequestConclusionSettings
   selectedRows: WeldRow[]
   mutation: LnkRequestMutation
   extensionMutation: LnkRequestExtensionMutation

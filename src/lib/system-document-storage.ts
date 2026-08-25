@@ -29,7 +29,9 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import {
   getSystemDocumentRows,
+  listSystemDocumentHistory,
   listSystemDocuments,
+  type RemoteSystemDocumentHistoryRequest,
 } from '@/server/system-documents'
 
 const SYSTEM_DOCUMENT_MIME_TYPE =
@@ -37,6 +39,10 @@ const SYSTEM_DOCUMENT_MIME_TYPE =
 
 export function loadSystemDocuments(type: SystemDocumentType) {
   return listSystemDocuments({ data: { type } })
+}
+
+export function loadSystemDocumentHistory(request: RemoteSystemDocumentHistoryRequest) {
+  return listSystemDocumentHistory({ data: request })
 }
 
 export function loadSystemDocumentRows(reference: SystemDocumentReference) {

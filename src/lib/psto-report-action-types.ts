@@ -5,6 +5,8 @@ import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
+import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 
 export type RowWithId = WeldRow
 
@@ -19,6 +21,7 @@ export type PstoRequestVariables = {
   requestDate: string
   mode?: 'create' | 'edit'
   useSystemName?: boolean
+  documentGroups?: SystemDocumentCreationGroup[]
 }
 
 export type PstoRequestManagerVariables = {
@@ -39,6 +42,7 @@ export type PstoResultVariables = {
   diagramName: string
   rows: RowWithId[]
   useSystemName?: boolean
+  documentGroups?: SystemDocumentCreationGroup[]
 }
 
 export type PstoResultCorrectionVariables = {
@@ -58,6 +62,9 @@ export type UsePstoReportActionsOptions = {
   managedPstoRequestNameDraft: string
   nextPstoDiagramName: string
   nextPstoRequestName: string
+  nextPstoRequestNumber?: number
+  nextPstoConclusionNumber?: number
+  requestConclusionSettings: RequestConclusionSettings
   pstoRequestManagerOptions: RequestDocumentIdentity[]
   pstoRequestDate: string
   pstoRequestNaming: RequestNamingState

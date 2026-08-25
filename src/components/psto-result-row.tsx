@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import { ResultRowJointHeading } from '@/components/result-row-joint-heading'
 import { PstoJointStatusBadge, PstoResultStatusBadge } from '@/components/psto-status-badges'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -10,7 +12,7 @@ type PstoResultRowProps = {
   onToggle: (rowId: number) => void
 }
 
-export function PstoResultRow({ row, selected, disabled, onToggle }: PstoResultRowProps) {
+function PstoResultRowComponent({ row, selected, disabled, onToggle }: PstoResultRowProps) {
   const requestName = String(row.pstoRequest ?? '').trim()
   const diagramName = String(row.heatTreatmentDiagram ?? '').trim()
 
@@ -64,3 +66,9 @@ export function PstoResultRow({ row, selected, disabled, onToggle }: PstoResultR
     </div>
   )
 }
+
+export const PstoResultRow = memo(PstoResultRowComponent, (previous, next) => (
+  previous.row === next.row &&
+  previous.selected === next.selected &&
+  previous.disabled === next.disabled
+))

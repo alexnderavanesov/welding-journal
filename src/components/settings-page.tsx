@@ -13,6 +13,7 @@ import {
   Hash,
   Inbox,
   LockKeyhole,
+  Layers3,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -28,6 +29,7 @@ import { DialogHeader } from '@/components/dialog-header'
 import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { SystemDocumentRebuildDialog } from '@/components/system-document-rebuild-dialog'
 import {
   RkExposureTableEditorDialog,
   WdiTableEditorDialog,
@@ -80,6 +82,11 @@ import {
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import {
+  SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS,
+  type SystemDocumentSplitMode,
+  type SystemDocumentSplitSettingId,
+} from '@/lib/system-document-splitting'
 import {
   DEFAULT_DISPATCHER_SETTINGS,
   DISPATCHER_SETTING_ACTION_HELP,
@@ -182,21 +189,21 @@ import { getAcceptedWarningContextParts } from '@/lib/dispatcher-accepted-warnin
 const SETTINGS_TABS = [
   {
     id: 'templates',
-    label: 'Шаблоны документов',
+    label: 'Документы',
     icon: FileText,
     searchKeywords: 'Excel конструктор ЖСР чек-лист ЗНИ заявка заключение загрузка шаблона',
+  },
+  {
+    id: 'requests',
+    label: 'Заявки и заключения',
+    icon: Inbox,
+    searchKeywords: 'название имя нумерация номер дата заявки заключения ЛНК ПСТО разделение проект шифр линия стык пересборка история',
   },
   {
     id: 'data',
     label: 'Данные',
     icon: Database,
     searchKeywords: 'способ сварки тип соединения группа материалов вид испытаний списки справочники',
-  },
-  {
-    id: 'requests',
-    label: 'Заявки и заключения',
-    icon: Inbox,
-    searchKeywords: 'название имя нумерация номер дата заявки заключения ЛНК ПСТО',
   },
   {
     id: 'indexes',
@@ -2408,7 +2415,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="flex items-center gap-2">
             <Upload className="h-5 w-5 text-slate-500" />
-            <h3 className="text-base font-semibold text-slate-900">Шаблоны документов</h3>
+            <h3 className="text-base font-semibold text-slate-900">Документы</h3>
           </div>
           <p className="text-sm leading-5 text-slate-600">
             Загрузите оформленный Excel и назначьте его ячейкам поля в конструкторе. Поддерживаются повторяемые строки и группы.
@@ -3113,35 +3120,85 @@ function formatStoredTemplateDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('ru-RU')
 }
 
-const REQUEST_NAMING_CARDS: Array<{
-  id: RequestConclusionNamingKind
+const REQUEST_NAMING_CARD_GROUPS: Array<{
+  id: string
   title: string
   description: string
-  placeholder: string
+  cards: Array<{
+    id: RequestConclusionNamingKind
+    title: string
+    description: string
+    placeholder: string
+  }>
 }> = [
   {
-    id: 'lnkRequest',
-    title: 'Заявки ЛНК',
-    description: 'Имя новой заявки ЛНК при создании из раздела ЛНК.',
-    placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkRequest.systemPattern,
+    id: 'lnk',
+    title: 'ЛНК',
+    description: 'Имена заявок на контроль и заключений лаборатории неразрушающего контроля.',
+    cards: [
+      {
+        id: 'lnkRequest',
+        title: 'Заявки ЛНК',
+        description: 'Имя новой заявки ЛНК при создании из раздела ЛНК.',
+        placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkRequest.systemPattern,
+      },
+      {
+        id: 'lnkConclusion',
+        title: 'Заключения ЛНК',
+        description: 'Имя заключения ЛНК при внесении результата контроля.',
+        placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion.systemPattern,
+      },
+    ],
   },
   {
-    id: 'lnkConclusion',
-    title: 'Заключения ЛНК',
-    description: 'Имя заключения ЛНК при внесении результата контроля.',
-    placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion.systemPattern,
+    id: 'psto',
+    title: 'ПСТО',
+    description: 'Имена заявок на термообработку и итоговых диаграмм или заключений.',
+    cards: [
+      {
+        id: 'pstoRequest',
+        title: 'Заявки ПСТО',
+        description: 'Имя новой заявки ПСТО при создании из раздела термообработки.',
+        placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoRequest.systemPattern,
+      },
+      {
+        id: 'pstoConclusion',
+        title: 'Заключения ПСТО',
+        description: 'Имя диаграммы/заключения ПСТО при внесении результата.',
+        placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoConclusion.systemPattern,
+      },
+    ],
+  },
+]
+
+const SYSTEM_DOCUMENT_SPLIT_SECTIONS: Array<{
+  title: string
+  description: string
+  items: Array<{
+    id: SystemDocumentSplitSettingId
+    title: string
+    description: string
+  }>
+}> = [
+  {
+    title: 'ЛНК',
+    description: 'Заявка на контроль и отдельные формы заключений по видам НК.',
+    items: [
+      { id: 'lnkRequest', title: 'Заявка ЛНК', description: 'Одна настройка для новой заявки независимо от выбранных видов контроля.' },
+      { id: 'lnkConclusionVik', title: 'Заключение ВИК', description: 'Применяется при внесении результата ВИК.' },
+      { id: 'lnkConclusionRk', title: 'Заключение РК', description: 'Применяется при внесении результата РК.' },
+      { id: 'lnkConclusionUzk', title: 'Заключение УЗК', description: 'Применяется при внесении результата УЗК.' },
+      { id: 'lnkConclusionPvk', title: 'Заключение ПВК', description: 'Применяется при внесении результата ПВК.' },
+      { id: 'lnkConclusionOther', title: 'Прочие заключения ЛНК', description: 'ТВМТ, РФА, СТЛС, МКК и остальные виды без отдельной формы.' },
+    ],
   },
   {
-    id: 'pstoRequest',
-    title: 'Заявки ПСТО',
-    description: 'Имя новой заявки ПСТО при создании из раздела термообработки.',
-    placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoRequest.systemPattern,
-  },
-  {
-    id: 'pstoConclusion',
-    title: 'Заключения ПСТО',
-    description: 'Имя диаграммы/заключения ПСТО при внесении результата.',
-    placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoConclusion.systemPattern,
+    title: 'ПСТО',
+    description: 'Заявки на термообработку и итоговые диаграммы/заключения.',
+    items: [
+      { id: 'pstoRequest', title: 'Заявка ПСТО', description: 'Применяется при создании новой заявки ПСТО.' },
+      { id: 'pstoConclusion', title: 'Заключение ПСТО', description: 'Применяется при внесении результата и диаграммы ПСТО.' },
+    ],
   },
 ]
 
@@ -3165,6 +3222,8 @@ function RequestConclusionSettingsPanel({
 }) {
   const settings = useRequestConclusionSettings()
   const [dirtyKinds, setDirtyKinds] = useState<Set<RequestConclusionNamingKind>>(() => new Set())
+  const [isSystemDocumentRebuildOpen, setIsSystemDocumentRebuildOpen] = useState(false)
+  const [systemDocumentRebuildMessage, setSystemDocumentRebuildMessage] = useState('')
 
   useEffect(() => {
     onDirtyChange(dirtyKinds.size > 0)
@@ -3195,6 +3254,17 @@ function RequestConclusionSettingsPanel({
 
   const resetSettings = () => runProtectedSettingsChange(() => saveRequestConclusionSettings(REQUEST_CONCLUSION_DEFAULT_SETTINGS))
 
+  const updateSplitMode = (
+    id: SystemDocumentSplitSettingId,
+    mode: SystemDocumentSplitMode,
+  ) => runProtectedSettingsChange(() => saveRequestConclusionSettings({
+    ...settings,
+    splitModes: {
+      ...settings.splitModes,
+      [id]: mode,
+    },
+  }))
+
   return (
     <div className="space-y-6">
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
@@ -3205,8 +3275,8 @@ function RequestConclusionSettingsPanel({
               <h3 className="text-base font-semibold text-slate-900">Заявки и заключения</h3>
             </div>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Настройте стартовый режим имени и шаблон системного наименования. Уже созданные заявки и заключения не переименовываются:
-              новое правило применяется только при создании следующих записей.
+              Настройте разделение, стартовый режим имени и шаблон системного наименования. Новые правила применяются
+              только к следующим документам; существующая история не изменяется автоматически.
             </p>
           </div>
           <button
@@ -3219,21 +3289,122 @@ function RequestConclusionSettingsPanel({
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        {REQUEST_NAMING_CARDS.map((card) => (
-          <RequestNamingSettingsCard
-            key={card.id}
-            kind={card.id}
-            title={card.title}
-            description={card.description}
-            placeholder={card.placeholder}
-            settings={settings[card.id]}
-            onModeChange={(defaultMode) => updateSettings(card.id, { defaultMode })}
-            onPatternSave={(systemPattern) => updateSettings(card.id, { systemPattern })}
-            onDirtyChange={handleCardDirtyChange}
-          />
+      <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+        <div className="flex items-start gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900">Разделение системных документов</h4>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              «По шифру» учитывает проект и шифр, а «По линии» — проект, шифр и линию. Стыки с неполными
+              данными показываются предупреждением и блокируют сохранение, пока необходимые поля не заполнены.
+            </p>
+          </div>
+        </div>
+
+        <div className="divide-y divide-slate-200">
+          {SYSTEM_DOCUMENT_SPLIT_SECTIONS.map((section) => (
+            <div key={section.title} className="px-4 py-4">
+              <div className="mb-3">
+                <h5 className="text-sm font-semibold text-slate-800">{section.title}</h5>
+                <p className="mt-0.5 text-xs text-slate-500">{section.description}</p>
+              </div>
+              <div className="divide-y divide-slate-100 border-y border-slate-100">
+                {section.items.map((item) => {
+                  const selectedOption = SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS.find(
+                    (option) => option.id === settings.splitModes[item.id],
+                  )
+                  return (
+                    <div key={item.id} className="grid gap-3 py-3 lg:grid-cols-[minmax(240px,1fr)_minmax(220px,320px)] lg:items-center">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-800">{item.title}</div>
+                        <div className="mt-0.5 text-xs leading-5 text-slate-500">{item.description}</div>
+                      </div>
+                      <label className="block min-w-0">
+                        <span className="sr-only">Разделение: {item.title}</span>
+                        <select
+                          value={settings.splitModes[item.id]}
+                          onChange={(event) => updateSplitMode(item.id, event.target.value as SystemDocumentSplitMode)}
+                          className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                        >
+                          {SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS.map((option) => (
+                            <option key={option.id} value={option.id}>{option.label}</option>
+                          ))}
+                        </select>
+                        <span className="mt-1 block text-xs leading-4 text-slate-400">{selectedOption?.description}</span>
+                      </label>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="text-sm font-semibold text-slate-800">Существующая история</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Сохранение правила не меняет старые документы. Предварительный просмотр покажет затрагиваемые
+              виды, документы, стыки, будущие группы и возможный пересчет системных имен.
+            </p>
+            {systemDocumentRebuildMessage ? (
+              <p className="mt-2 text-xs font-semibold text-emerald-700">{systemDocumentRebuildMessage}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSystemDocumentRebuildMessage('')
+              setIsSystemDocumentRebuildOpen(true)
+            }}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-900 hover:bg-amber-50"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Пересобрать системные документы по текущим правилам
+          </button>
+        </div>
+      </section>
+
+      <section aria-labelledby="request-naming-settings-title" className="space-y-6">
+        <div className="border-b border-slate-300 pb-3">
+          <h4 id="request-naming-settings-title" className="text-sm font-semibold text-slate-900">
+            Имена системных документов
+          </h4>
+          <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
+            Стартовый режим и правило системного имени настраиваются отдельно для заявок и заключений каждого процесса.
+          </p>
+        </div>
+
+        {REQUEST_NAMING_CARD_GROUPS.map((group) => (
+          <div key={group.id}>
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+              <h5 className="text-sm font-semibold text-slate-800">{group.title}</h5>
+              <p className="text-xs leading-5 text-slate-500 sm:text-right">{group.description}</p>
+            </div>
+            <div className="grid gap-5 xl:grid-cols-2">
+              {group.cards.map((card) => (
+                <RequestNamingSettingsCard
+                  key={card.id}
+                  kind={card.id}
+                  title={card.title}
+                  description={card.description}
+                  placeholder={card.placeholder}
+                  settings={settings[card.id]}
+                  onModeChange={(defaultMode) => updateSettings(card.id, { defaultMode })}
+                  onPatternSave={(systemPattern) => updateSettings(card.id, { systemPattern })}
+                  onDirtyChange={handleCardDirtyChange}
+                />
+              ))}
+            </div>
+          </div>
         ))}
-      </div>
+      </section>
+
+      <SystemDocumentRebuildDialog
+        open={isSystemDocumentRebuildOpen}
+        runProtectedSettingsChange={runProtectedSettingsChange}
+        onClose={() => setIsSystemDocumentRebuildOpen(false)}
+        onApplied={setSystemDocumentRebuildMessage}
+      />
     </div>
   )
 }

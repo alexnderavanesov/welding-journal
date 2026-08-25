@@ -4,6 +4,22 @@ import { describe, expect, it, vi } from 'vitest'
 import { RequestNamingControls } from '@/components/request-naming-controls'
 
 describe('RequestNamingControls', () => {
+  it('shows a document-series summary instead of one misleading system name', () => {
+    render(
+      <RequestNamingControls
+        naming={{ mode: 'system', customName: '' }}
+        systemName="Заключение-ВИК-25.08.2026-013"
+        systemDocumentCount={4}
+        label="Наименование заключения"
+        onChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Будет создано документов: 4')).toBeInTheDocument()
+    expect(screen.getByText(/Каждая группа получит отдельное системное имя/)).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Заключение-ВИК-25.08.2026-013')).not.toBeInTheDocument()
+  })
+
   it('keeps buffered custom-name typing local until the field is committed', () => {
     const onChange = vi.fn()
 

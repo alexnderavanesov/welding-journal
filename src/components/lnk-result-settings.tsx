@@ -20,8 +20,10 @@ import {
 import { LNK_CUSTOM_RESULT_VALUE, LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
-import { type SaveCheckSettings, useSaveCheckSettings } from '@/lib/save-check-settings'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { SystemDocumentSplitPreview } from '@/components/system-document-split-preview'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -30,6 +32,8 @@ type LnkResultSettingsProps = {
   selectedMethods: LnkResultMethod[]
   selectedRows: WeldRow[]
   nextConclusionName: string
+  creationPlan: SystemDocumentCreationPlan | null
+  saveCheckSettings: SaveCheckSettings
   onMethodChange: (methodKey: WeldFieldKey | '') => void
   onControlDateChange: (controlDate: string) => void
   onDefaultResultChange: (result: string) => void
@@ -41,17 +45,18 @@ export function LnkResultSettings({
   selectedMethods,
   selectedRows,
   nextConclusionName,
+  creationPlan,
+  saveCheckSettings,
   onMethodChange,
   onControlDateChange,
   onDefaultResultChange,
   onConclusionNamingChange,
 }: LnkResultSettingsProps) {
-  const saveCheckSettings = useSaveCheckSettings()
   const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
   const hasRepairForbiddenRows = saveCheckSettings.lnkResultRepairRules && selectedRows.some(isLnkRepairForbidden)
   const vikBeforeOtherHint = getVikBeforeOtherHint(selectedRows, draft, saveCheckSettings)
   const disabledCheckHint = vikBeforeOtherHint && !vikBeforeOtherHint.blocking ? vikBeforeOtherHint.message : ''
-
+  const selectedMethod = getLnkMethodByRequestKey(draft.methodKey)
   return (
     <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
       <ResultSettingsCard title="1. Метод и результат">
@@ -111,15 +116,36 @@ export function LnkResultSettings({
       </ResultSettingsCard>
 
       <ResultSettingsCard title="2. Заключение" muted={!hasNonEmptyRows}>
-        <RequestNamingControls
-          naming={draft.conclusionNaming}
-          systemName={nextConclusionName}
-          label="Наименование заключения"
-          placeholder="Введите наименование заключения"
-          disabled={!hasNonEmptyRows}
-          bufferCustomNameInput
-          onChange={onConclusionNamingChange}
-        />
+        {selectedMethod && creationPlan ? (
+          <>
+            <RequestNamingControls
+              naming={draft.conclusionNaming}
+              systemName={nextConclusionName}
+              systemDocumentCount={creationPlan.groups.length}
+              label="Наименование заключения"
+              placeholder="Введите наименование заключения"
+              disabled={!hasNonEmptyRows}
+              bufferCustomNameInput
+              hideCustomNameInput={draft.conclusionNaming.mode === 'custom' && creationPlan.groups.length > 1}
+              onChange={onConclusionNamingChange}
+            />
+            <div className="mt-3">
+              <SystemDocumentSplitPreview
+                plan={creationPlan}
+                naming={draft.conclusionNaming}
+                disabled={!hasNonEmptyRows}
+                onNamingChange={onConclusionNamingChange}
+              />
+            </div>
+          </>
+        ) : (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="text-sm font-semibold text-slate-700">Сначала выберите метод контроля</div>
+            <div className="mt-1 text-xs leading-5 text-slate-500">
+              После выбора появятся наименование заключения, правило разделения и количество документов для этого вида НК.
+            </div>
+          </div>
+        )}
       </ResultSettingsCard>
 
       <DialogHelpNote>

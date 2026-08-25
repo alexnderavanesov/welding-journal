@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  getLnkConclusionTemplateMethodCodes,
   getLnkConclusionTemplateProfile,
   getSystemDocumentTemplateId,
   getSystemDocumentTemplateIdForField,
@@ -31,6 +32,15 @@ describe('system document template routing', () => {
     expect(getLnkConclusionTemplateProfile('НОВЫЙ НК').id).toBe(
       'lnkConclusionOther',
     )
+  })
+
+  it('lists every current method shown by the fallback conclusion tab', () => {
+    expect(getLnkConclusionTemplateMethodCodes('lnkConclusionOther')).toEqual([
+      'ТВМТ',
+      'РФА',
+      'СТЛС',
+      'МКК',
+    ])
   })
 
   it('maps report fields to the exact template that makes the cell clickable', () => {

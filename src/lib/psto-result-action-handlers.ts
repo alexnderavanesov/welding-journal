@@ -12,6 +12,7 @@ import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
+import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 
 export function createPstoResultActionHandlers({
   confirmAction,
@@ -19,6 +20,8 @@ export function createPstoResultActionHandlers({
   heatTreatmentRows,
   filteredPstoResultRows,
   nextPstoDiagramName,
+  nextPstoConclusionNumber,
+  requestConclusionSettings,
   pstoResultDraft,
   pstoResultSaveBlockReason,
   selectedPstoResultRows,
@@ -140,7 +143,20 @@ export function createPstoResultActionHandlers({
       setMessage('Укажите дату ПСТО')
       return
     }
-    const diagramName = getRequestNameFromNaming(
+    const creationPlan = buildSystemDocumentCreationPlan({
+      type: 'pstoConclusion',
+      date: pstoResultDraft.pstoDate,
+      rows: selectedPstoResultRows,
+      naming: pstoResultDraft.diagramNaming,
+      settings: requestConclusionSettings,
+      nextNumber: nextPstoConclusionNumber,
+      allowAllNamesEmpty: !saveCheckSettings.pstoResultDiagramRequired,
+    })
+    if (creationPlan.error) {
+      setMessage(creationPlan.error)
+      return
+    }
+    const diagramName = creationPlan.groups[0]?.name ?? getRequestNameFromNaming(
       pstoResultDraft.diagramNaming,
       nextPstoDiagramName,
     )
@@ -156,6 +172,7 @@ export function createPstoResultActionHandlers({
       diagramName,
       rows,
       useSystemName: pstoResultDraft.diagramNaming.mode === 'system',
+      documentGroups: creationPlan.groups,
     })
   }
 

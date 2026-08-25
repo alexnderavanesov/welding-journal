@@ -56,7 +56,8 @@ export function ReportSummaryBar({
     filteredWelderStampCount,
   })
   const showLnkNotice = activeReport === 'lnk' && Boolean(lnkNotice)
-  const showRightMessage = message && !showLnkNotice
+  const showInlineMessage = message && messageVariant === 'lnk-success' && !showLnkNotice
+  const showRightMessage = message && !showLnkNotice && !showInlineMessage
 
   return (
     <div
@@ -73,6 +74,7 @@ export function ReportSummaryBar({
             {lnkNotice}
           </span>
         ) : null}
+        {showInlineMessage ? <span className={messageClassName} title={message}>{message}</span> : null}
       </span>
       {showRightMessage ? <span className={messageClassName} title={message}>{message}</span> : <span />}
     </div>

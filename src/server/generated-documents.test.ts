@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildRemoteDocumentHistoryResult,
+  normalizeDocumentHistoryLimit,
   normalizeSaveGeneratedDocumentBatch,
   type SaveGeneratedDocumentInput,
 } from '@/server/generated-documents'
+import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
 
 describe('generated document batch', () => {
   it('normalizes a disjoint series of documents of one type', () => {
@@ -47,6 +50,45 @@ describe('generated document batch', () => {
         weldJointIds: [7, 8],
       }),
     ])
+  })
+})
+
+describe('generated document history', () => {
+  const documents = [
+    { id: 1, title: 'Документ 1', projects: ['П1'], subtitles: ['Ш1'] },
+    { id: 2, title: 'Документ 2', projects: ['П2'], subtitles: ['Ш1'] },
+    { id: 3, title: 'Документ 3', projects: ['П1'], subtitles: ['Ш2'] },
+  ]
+  const getValues = (documentRecord: (typeof documents)[number], key: string) => {
+    if (key === 'title') return [documentRecord.title]
+    if (key === 'project') return documentRecord.projects
+    if (key === 'subtitle') return documentRecord.subtitles
+    return ['']
+  }
+
+  it('limits the returned page while keeping the filtered total and dependent options', () => {
+    const result = buildRemoteDocumentHistoryResult({
+      documents,
+      columnFilters: { project: buildWeldColumnValueFilter(['П1']) },
+      limit: 1,
+      getValues,
+      filterKeys: ['title', 'project', 'subtitle'],
+    })
+
+    expect(result.documents.map((documentRecord) => documentRecord.id)).toEqual([1])
+    expect(result.total).toBe(2)
+    expect(result.filterOptions.project).toEqual([
+      { value: 'П1', label: 'П1', count: 2 },
+      { value: 'П2', label: 'П2', count: 1 },
+    ])
+    expect(result.filterOptions.subtitle).toEqual([
+      { value: 'Ш1', label: 'Ш1', count: 1 },
+      { value: 'Ш2', label: 'Ш2', count: 1 },
+    ])
+  })
+
+  it('does not stop cumulative history loading at the former 5000-document boundary', () => {
+    expect(normalizeDocumentHistoryLimit(5_100)).toBe(5_100)
   })
 })
 

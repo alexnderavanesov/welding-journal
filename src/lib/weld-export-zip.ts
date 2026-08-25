@@ -1,4 +1,4 @@
-export function createZip(files: Array<{ path: string; content: string }>) {
+export function createZip(files: Array<{ path: string; content: string | ArrayBuffer | Uint8Array }>) {
   const encoder = new TextEncoder()
   const localParts: Uint8Array[] = []
   const centralParts: Uint8Array[] = []
@@ -6,13 +6,13 @@ export function createZip(files: Array<{ path: string; content: string }>) {
 
   for (const file of files) {
     const name = encoder.encode(file.path)
-    const content = encoder.encode(file.content)
+    const content = encodeZipContent(file.content)
     const crc = crc32(content)
     const localHeader = new Uint8Array(30 + name.length)
     const localView = new DataView(localHeader.buffer)
     localView.setUint32(0, 0x04034b50, true)
     localView.setUint16(4, 20, true)
-    localView.setUint16(6, 0, true)
+    localView.setUint16(6, 0x0800, true)
     localView.setUint16(8, 0, true)
     localView.setUint16(10, 0, true)
     localView.setUint16(12, 0, true)
@@ -28,7 +28,7 @@ export function createZip(files: Array<{ path: string; content: string }>) {
     centralView.setUint32(0, 0x02014b50, true)
     centralView.setUint16(4, 20, true)
     centralView.setUint16(6, 20, true)
-    centralView.setUint16(8, 0, true)
+    centralView.setUint16(8, 0x0800, true)
     centralView.setUint16(10, 0, true)
     centralView.setUint16(12, 0, true)
     centralView.setUint16(14, 0, true)
@@ -54,6 +54,12 @@ export function createZip(files: Array<{ path: string; content: string }>) {
   endView.setUint32(16, centralOffset, true)
 
   return concatBytes([...localParts, ...centralParts, end])
+}
+
+function encodeZipContent(content: string | ArrayBuffer | Uint8Array) {
+  if (typeof content === 'string') return new TextEncoder().encode(content)
+  if (content instanceof Uint8Array) return content
+  return new Uint8Array(content)
 }
 
 function concatBytes(parts: Uint8Array[]) {

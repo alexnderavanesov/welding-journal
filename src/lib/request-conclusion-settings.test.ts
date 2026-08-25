@@ -17,6 +17,29 @@ import { formatLnkRequestName } from '@/lib/report-request-naming'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('request and conclusion naming settings', () => {
+  it('uses ZNK in the default LNK conclusion name while recognizing the previous default', () => {
+    expect(REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion).toEqual({
+      defaultMode: 'system',
+      systemPattern: 'ЗНК-{{Метод}}-{{Дата}}-{{№}}',
+      systemPatternHistory: ['Заключение-{{Метод}}-{{Дата}}-{{№}}'],
+    })
+    expect(formatLnkConclusionName([], '2026-08-25', 'vikRequest', REQUEST_CONCLUSION_DEFAULT_SETTINGS, 1))
+      .toBe('ЗНК-ВИК-25.08.2026-001')
+  })
+
+  it('keeps the previous built-in conclusion pattern with a saved custom rule', () => {
+    const settings = normalizeRequestConclusionSettings({
+      lnkConclusion: {
+        defaultMode: 'system',
+        systemPattern: 'Акт-{{Метод}}-{{№}}',
+      },
+    })
+
+    expect(settings.lnkConclusion.systemPatternHistory).toContain(
+      'Заключение-{{Метод}}-{{Дата}}-{{№}}',
+    )
+  })
+
   it('numbers new system names by the current pattern without renaming old names', () => {
     const name = buildSystemNameFromPattern(
       'ЛНК-{{ДатаКороткая}}-{{№}}',
@@ -57,6 +80,10 @@ describe('request and conclusion naming settings', () => {
     ] as WeldRow[]
 
     expect(formatLnkConclusionName(rows, '2026-07-10', 'rkRequest', settings)).toBe('Закл-РК-10.07.26-002')
+  })
+
+  it('does not build an LNK conclusion name before a control method is selected', () => {
+    expect(formatLnkConclusionName([], '2026-08-25', '', REQUEST_CONCLUSION_DEFAULT_SETTINGS, 1)).toBe('')
   })
 
   it('extracts the same padded sequence number from a configured system name', () => {
@@ -134,6 +161,7 @@ describe('request and conclusion naming settings', () => {
     expect(settings.lnkRequest.systemPatternHistory).toEqual([
       'Заявка-{{Дата}}-{{№}}',
     ])
+    expect(settings.splitModes).toEqual(REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes)
   })
 
   it('remembers the previous formula when the system naming rule is saved', () => {

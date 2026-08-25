@@ -1,10 +1,43 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildPstoResultRows,
   buildPstoRequestManagerRows,
   buildPstoResultCorrectionRow,
 } from '@/lib/psto-report-mutation-updates'
 import type { RowWithId } from '@/lib/psto-report-mutation-types'
+import {
+  DEFAULT_SAVE_CHECK_SETTINGS,
+  saveSaveCheckSettings,
+} from '@/lib/save-check-settings'
+
+describe('buildPstoResultRows', () => {
+  it('keeps the diagram empty when its save check is disabled', () => {
+    saveSaveCheckSettings({
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      pstoResultDiagramRequired: false,
+    }, { syncRemote: false })
+    const rows = [{
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-08-20',
+      pstoRequest: 'ПСТО-25.08.26-001',
+      pstoRequestDate: '2026-08-21',
+    }] as RowWithId[]
+
+    const [updated] = buildPstoResultRows({
+      records: rows,
+      rows,
+      pstoDate: '2026-08-25',
+      result: 'проведено',
+      diagramName: '',
+    })
+
+    expect(updated.pstoResult).toBe('проведено')
+    expect(updated.pstoDate).toBe('2026-08-25')
+    expect(updated.heatTreatmentDiagram).toBe('')
+  })
+})
 
 describe('buildPstoResultCorrectionRow', () => {
   it('keeps the PSTO date separate when renaming a custom diagram', () => {

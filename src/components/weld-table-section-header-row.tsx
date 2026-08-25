@@ -36,7 +36,13 @@ export function WeldTableSectionHeaderRow({
         )
         return [
           ...insertedExtraSections.map((extraGroup) => (
-            <ExtraSectionHeader key={`extra-${extraGroup.section}`} section={extraGroup.section} colSpan={extraGroup.fields.length} />
+            <ExtraSectionHeader
+              key={`extra-${extraGroup.section}`}
+              section={extraGroup.section}
+              colSpan={extraGroup.fields.length}
+              collapsible={extraGroup.fields.some((column) => column.collapsible)}
+              onToggleSection={onToggleSection}
+            />
           )),
           <th
             key={group.section}
@@ -61,7 +67,13 @@ export function WeldTableSectionHeaderRow({
         ]
       })}
       {trailingExtraSections.map((group) => (
-        <ExtraSectionHeader key={`extra-${group.section}`} section={group.section} colSpan={group.fields.length} />
+        <ExtraSectionHeader
+          key={`extra-${group.section}`}
+          section={group.section}
+          colSpan={group.fields.length}
+          collapsible={group.fields.some((column) => column.collapsible)}
+          onToggleSection={onToggleSection}
+        />
       ))}
       {!readOnly ? (
         <th
@@ -75,13 +87,34 @@ export function WeldTableSectionHeaderRow({
   )
 }
 
-function ExtraSectionHeader({ section, colSpan }: { section: string; colSpan: number }) {
+function ExtraSectionHeader({
+  section,
+  colSpan,
+  collapsible,
+  onToggleSection,
+}: {
+  section: string
+  colSpan: number
+  collapsible: boolean
+  onToggleSection: (section: string) => void
+}) {
   return (
     <th
       colSpan={colSpan}
       className="border-b border-l border-r-2 border-t-2 border-b-[#e7f0f6] border-l-[#e7f0f6] border-r-[#d3e3ee] border-t-[#d3e3ee] bg-[#f6fbfe] px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)]"
     >
-      <span className="inline-flex items-center gap-1.5 rounded px-2 py-1">{getSectionTitle(section)}</span>
+      <button
+        type="button"
+        onClick={() => onToggleSection(section)}
+        disabled={!collapsible}
+        className={`inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors ${
+          collapsible ? 'hover:bg-white/65' : 'cursor-not-allowed'
+        }`}
+        title={collapsible ? 'Скрыть раздел' : 'Раздел всегда показан'}
+      >
+        <ChevronDown className="h-3.5 w-3.5" />
+        {getSectionTitle(section)}
+      </button>
     </th>
   )
 }

@@ -59,12 +59,14 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
   errorMessage = 'Не удалось сохранить часть записей',
   options: {
     systemDocumentSequence?: SystemDocumentSequenceUpdate
+    systemDocumentSequences?: SystemDocumentSequenceUpdate[]
   } = {},
 ) {
   const savedRows = await updateWeldJoints({
     data: {
       records: records.map((record) => normalizeDateFieldsForSave(record)),
       systemDocumentSequence: options.systemDocumentSequence,
+      systemDocumentSequences: options.systemDocumentSequences,
     },
   })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)

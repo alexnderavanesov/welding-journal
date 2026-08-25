@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import { PstoJointStatusBadge, PstoResultStatusBadge } from '@/components/psto-status-badges'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -9,7 +11,7 @@ type PstoRequestRowProps = {
   onToggleRow: (rowId: number) => void
 }
 
-export function PstoRequestRow({ row, selected, disabled, onToggleRow }: PstoRequestRowProps) {
+function PstoRequestRowComponent({ row, selected, disabled, onToggleRow }: PstoRequestRowProps) {
   return (
     <label
       className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] items-center gap-3 px-4 py-3 text-sm transition-colors ${
@@ -48,3 +50,9 @@ export function PstoRequestRow({ row, selected, disabled, onToggleRow }: PstoReq
     </label>
   )
 }
+
+export const PstoRequestRow = memo(PstoRequestRowComponent, (previous, next) => (
+  previous.row === next.row &&
+  previous.selected === next.selected &&
+  previous.disabled === next.disabled
+))

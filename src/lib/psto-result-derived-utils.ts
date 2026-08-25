@@ -10,6 +10,7 @@ import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { filterPstoResultRows } from '@/lib/report-row-utils'
 import { hasText } from '@/lib/report-value-utils'
 import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
+import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import {
   filterRequestDocumentIdentitiesBySearch,
   getPstoRequestDocumentIdentities,
@@ -34,17 +35,17 @@ export function getFilteredPstoResultRequestOptions(
 export function getPstoResultSearchRows({
   heatTreatmentRows,
   selectedRequestRows,
-  draft,
+  requestName,
 }: {
   heatTreatmentRows: WeldRow[]
   selectedRequestRows: WeldRow[]
-  draft: PstoResultDraftState
+  requestName: string
 }) {
-  return draft.requestName ? selectedRequestRows : heatTreatmentRows
+  return requestName ? selectedRequestRows : heatTreatmentRows
 }
 
-export function getFilteredPstoResultRows(rows: WeldRow[], draft: PstoResultDraftState) {
-  return filterPstoResultRows(rows, draft.search)
+export function getFilteredPstoResultRows(rows: WeldRow[], search: string) {
+  return filterPstoResultRows(rows, search)
 }
 
 export function getSelectedPstoResultRows(rows: WeldRow[], draft: PstoResultDraftState) {
@@ -61,12 +62,14 @@ export function getPstoResultSaveBlockReason({
   nextDiagramName,
   saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
+  systemDocumentCreationPlan,
 }: {
   draft: PstoResultDraftState
   isSaving: boolean
   nextDiagramName: string
   saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
+  systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
 }) {
   if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
   if (!draft.requestName) return 'Выберите заявку ПСТО.'
@@ -87,13 +90,19 @@ export function getPstoResultSaveBlockReason({
 
   if (
     saveCheckSettings.pstoResultDiagramRequired &&
+    !systemDocumentCreationPlan &&
     !getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)
   ) {
     return formatSaveCheckBlockReason('pstoResultDiagramRequired', 'Укажите наименование диаграммы термообработки.')
   }
+  if (systemDocumentCreationPlan?.error) {
+    return saveCheckSettings.pstoResultDiagramRequired
+      ? formatSaveCheckBlockReason('pstoResultDiagramRequired', systemDocumentCreationPlan.error)
+      : systemDocumentCreationPlan.error
+  }
 
   const chronologyIssue = findFirstPstoChronologySaveBlockReason(
-    buildProposedPstoResultRowsForChecks(selectedRows, draft, nextDiagramName),
+    buildProposedPstoResultRowsForChecks(selectedRows, draft, nextDiagramName, systemDocumentCreationPlan),
     saveCheckSettings,
   )
   if (chronologyIssue) return chronologyIssue
@@ -105,15 +114,19 @@ function buildProposedPstoResultRowsForChecks(
   selectedRows: WeldRow[],
   draft: PstoResultDraftState,
   nextDiagramName: string,
+  systemDocumentCreationPlan?: SystemDocumentCreationPlan | null,
 ) {
   const pstoDate = normalizeDateLikeForStorage(draft.pstoDate) ?? draft.pstoDate
-  const diagramName = getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)
-  return selectedRows.map((row) => ({
-    ...row,
-    pstoDate,
-    pstoResult: draft.result,
-    heatTreatmentDiagram: diagramName,
-  }))
+  return selectedRows.map((row) => {
+    const diagramName = systemDocumentCreationPlan?.groups.find((group) => group.rowIds.includes(row.id))?.name
+      ?? getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)
+    return {
+      ...row,
+      pstoDate,
+      pstoResult: draft.result,
+      heatTreatmentDiagram: diagramName,
+    }
+  })
 }
 
 export function getManagedPstoResultRows(rows: WeldRow[], selectedRowIds: Set<number>) {

@@ -1,6 +1,5 @@
 import {
   type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useEffect,
   useMemo,
@@ -9,6 +8,7 @@ import {
 } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Check,
   CheckCircle2,
   ChevronDown,
   Download,
@@ -16,9 +16,11 @@ import {
   FilePenLine,
   FileSpreadsheet,
   FileText,
-  History,
+  ListFilter,
   Maximize2,
   Minimize2,
+  Minus,
+  Archive,
   PanelLeftClose,
   PanelLeftOpen,
   Rows3,
@@ -30,6 +32,7 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
+import { PaginationBar } from '@/components/pagination-bar'
 import { Button } from '@/components/ui/button'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { useSecurityGuard } from '@/lib/security-context'
@@ -43,9 +46,10 @@ import {
 } from '@/lib/document-template-storage'
 import {
   deleteGeneratedDocument,
+  downloadGeneratedDocumentArchive,
   downloadGeneratedDocument,
+  loadGeneratedDocumentHistory,
   loadGeneratedDocumentRows,
-  loadGeneratedDocuments,
   openGeneratedDocument,
   type StoredGeneratedDocument,
 } from '@/lib/generated-document-storage'
@@ -71,15 +75,15 @@ import {
   saveWeldingJournalGenerationPlan,
 } from '@/lib/welding-journal-generation'
 import {
+  createCurrentSystemDocumentBlob,
   downloadSystemDocument,
+  loadSystemDocumentHistory,
   loadSystemDocumentRows,
-  loadSystemDocuments,
   openSystemDocument,
   renameSystemDocumentToCurrentName,
 } from '@/lib/system-document-storage'
 import {
   SYSTEM_DOCUMENT_TYPES,
-  getSystemDocumentId,
   getSystemDocumentProfile,
   getSystemDocumentTargetReport,
   isSystemDocumentType,
@@ -89,6 +93,7 @@ import {
 } from '@/lib/system-document-types'
 import {
   LNK_CONCLUSION_TEMPLATE_PROFILES,
+  getLnkConclusionTemplateMethodCodes,
   getLnkConclusionTemplateProfile,
   getSystemDocumentTemplateId,
   type LnkConclusionTemplateId,
@@ -104,6 +109,8 @@ import {
   WELD_JOINTS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import { getDocumentGenerationData } from '@/server/welds'
+import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
+import { ALL_PAGE_SIZE } from '@/lib/use-pagination'
 
 type DocumentsPageProps = {
   welderStamps: WelderStampRecord[]
@@ -122,6 +129,7 @@ const DOCUMENT_PREVIEW_MIN_SCALE = 0.45
 const DOCUMENT_PREVIEW_MAX_SCALE = 1.8
 const DOCUMENT_PREVIEW_SCALE_STEP = 0.15
 const DOCUMENT_PARAMETERS_COLLAPSED_STORAGE_KEY = 'welding-journal:documents:parameters-collapsed'
+const DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE = 100
 
 const DOCUMENT_TYPE_OPTIONS: Array<{
   type: GeneratedDocumentType
@@ -155,7 +163,44 @@ const SYSTEM_DOCUMENT_TYPE_OPTIONS = SYSTEM_DOCUMENT_TYPES.map((type) => ({
 }))
 
 type DocumentsPageType = GeneratedDocumentType | SystemDocumentType
-type DocumentHistoryPeriodFilter = 'all' | 'currentMonth' | 'previousMonth'
+type DocumentHistoryFilterKey =
+  | 'title'
+  | 'project'
+  | 'subtitle'
+  | 'line'
+  | 'period'
+  | 'updatedAt'
+  | 'method'
+  | 'date'
+  | 'rowCount'
+  | 'wdi'
+
+type DocumentHistoryColumnOption = {
+  value: string
+  label: string
+  count: number
+}
+
+const GENERATED_DOCUMENT_FILTERS: Array<{ key: DocumentHistoryFilterKey; label: string; className?: string }> = [
+  { key: 'title', label: 'Документ' },
+  { key: 'project', label: 'Проект', className: 'hidden min-[1800px]:flex' },
+  { key: 'subtitle', label: 'Шифр', className: 'hidden min-[1800px]:flex' },
+  { key: 'line', label: 'Линия', className: 'hidden min-[1800px]:flex' },
+  { key: 'period', label: 'Период', className: 'hidden min-[1440px]:flex' },
+  { key: 'rowCount', label: 'Стыков', className: 'justify-end' },
+  { key: 'wdi', label: 'WDI', className: 'hidden justify-end min-[1440px]:flex' },
+  { key: 'updatedAt', label: 'Обновлен', className: 'hidden min-[1440px]:flex' },
+]
+
+const SYSTEM_DOCUMENT_FILTERS: Array<{ key: DocumentHistoryFilterKey; label: string; className?: string }> = [
+  { key: 'title', label: 'Документ' },
+  { key: 'method', label: 'Вид НК', className: 'hidden xl:flex' },
+  { key: 'project', label: 'Проект', className: 'hidden min-[1800px]:flex' },
+  { key: 'subtitle', label: 'Шифр', className: 'hidden min-[1800px]:flex' },
+  { key: 'line', label: 'Линия', className: 'hidden min-[1800px]:flex' },
+  { key: 'rowCount', label: 'Стыков', className: 'justify-end' },
+  { key: 'date', label: 'Дата', className: 'hidden xl:flex' },
+]
 
 function toInputDate(date: Date) {
   const year = date.getFullYear()
@@ -196,17 +241,6 @@ function formatDate(value: unknown) {
   return `${String(parsed.getDate()).padStart(2, '0')}.${String(parsed.getMonth() + 1).padStart(2, '0')}.${parsed.getFullYear()}`
 }
 
-function isDocumentDateInPeriod(value: unknown, filter: DocumentHistoryPeriodFilter) {
-  if (filter === 'all') return true
-  const parsed = parseDate(value)
-  if (!parsed) return false
-  const now = new Date()
-  const target = filter === 'currentMonth'
-    ? new Date(now.getFullYear(), now.getMonth(), 1)
-    : new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  return parsed.getFullYear() === target.getFullYear() && parsed.getMonth() === target.getMonth()
-}
-
 function getCellValue(row: WeldRow, key: string) {
   const value = (row as Record<string, unknown>)[key]
   if (key.toLowerCase().includes('date')) return formatDate(value)
@@ -215,6 +249,46 @@ function getCellValue(row: WeldRow, key: string) {
 
 function getTextValue(value: unknown) {
   return String(value ?? '').trim()
+}
+
+function getDocumentHistoryFilterCount(value: string | undefined) {
+  const choiceFilter = parseWeldColumnChoiceFilter(value ?? '')
+  if (choiceFilter?.kind === 'values') return choiceFilter.values.length
+  return value?.trim() ? 1 : 0
+}
+
+function getDocumentHistoryFilterSummary(value: string | undefined) {
+  const filterValue = String(value ?? '').trim()
+  const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
+  if (choiceFilter?.kind === 'values') {
+    if (choiceFilter.values.length === 1) return choiceFilter.values[0] || '(пусто)'
+    return `${choiceFilter.values.length} выбрано`
+  }
+  return filterValue
+}
+
+function hasDocumentHistoryFilters(filters: Record<string, string>) {
+  return Object.values(filters).some((value) => value.trim())
+}
+
+function makeDocumentsArchiveFileName(documentLabel: string) {
+  const date = new Date().toISOString().slice(0, 10)
+  return `${sanitizeArchiveName(documentLabel)}-${date}.zip`
+}
+
+function sanitizeArchiveName(value: string) {
+  return value.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim() || 'Документы'
+}
+
+function getSystemDocumentNavigationIdentity(
+  documentRecord: Pick<SystemDocumentSummary, 'type' | 'title' | 'date' | 'methodCode'>,
+) {
+  return JSON.stringify([
+    documentRecord.type,
+    documentRecord.title.trim(),
+    documentRecord.date.trim().slice(0, 10),
+    documentRecord.methodCode?.trim() ?? '',
+  ])
 }
 
 export function DocumentsPage({
@@ -242,9 +316,6 @@ export function DocumentsPage({
   const [templateDocumentPreview, setTemplateDocumentPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
   const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null)
   const [isTemplatePreviewLoading, setIsTemplatePreviewLoading] = useState(false)
-  const [systemDocuments, setSystemDocuments] = useState<SystemDocumentSummary[]>([])
-  const [systemDocumentsError, setSystemDocumentsError] = useState<string | null>(null)
-  const [isSystemDocumentsLoading, setIsSystemDocumentsLoading] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'history' | 'generation'>('history')
   const [isParametersCollapsed, setIsParametersCollapsed] = useState(false)
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false)
@@ -259,13 +330,23 @@ export function DocumentsPage({
   const activeGeneratedDocumentType: GeneratedDocumentType = isGeneratedDocumentType(activeDocumentType)
     ? activeDocumentType
     : 'weldingJournal'
-  const generatedDocumentsQuery = useQuery({
-    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, activeGeneratedDocumentType],
-    queryFn: () => loadGeneratedDocuments(activeGeneratedDocumentType),
+  const generatedDocumentsTotalQuery = useQuery({
+    queryKey: [
+      ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
+      activeGeneratedDocumentType,
+      'paged',
+      DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
+      {},
+    ],
+    queryFn: () => loadGeneratedDocumentHistory({
+      type: activeGeneratedDocumentType,
+      limit: DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
+      columnFilters: {},
+    }),
     enabled: !isSystemDocument,
     staleTime: 30_000,
   })
-  const generatedDocuments = generatedDocumentsQuery.data ?? []
+  const generatedDocumentsTotal = generatedDocumentsTotalQuery.data?.total ?? 0
   const activeDocumentProfile =
     DOCUMENT_TYPE_OPTIONS.find((option) => option.type === activeGeneratedDocumentType) ?? DOCUMENT_TYPE_OPTIONS[0]
   const activeDocumentOptions = useMemo(
@@ -357,39 +438,6 @@ export function DocumentsPage({
     return () => {
       isMounted = false
       window.removeEventListener(DOCUMENT_TEMPLATE_STORAGE_EVENT, syncTemplate)
-    }
-  }, [activeDocumentType, isSystemDocument])
-
-  useEffect(() => {
-    let isMounted = true
-    if (!isSystemDocument) {
-      setSystemDocuments([])
-      setSystemDocumentsError(null)
-      setIsSystemDocumentsLoading(false)
-      return () => {
-        isMounted = false
-      }
-    }
-
-    setIsSystemDocumentsLoading(true)
-    setSystemDocumentsError(null)
-    loadSystemDocuments(activeDocumentType)
-      .then((documents) => {
-        if (isMounted) setSystemDocuments(documents)
-      })
-      .catch((error) => {
-        if (!isMounted) return
-        setSystemDocuments([])
-        setSystemDocumentsError(
-          error instanceof Error ? error.message : 'Не удалось загрузить системные документы.',
-        )
-      })
-      .finally(() => {
-        if (isMounted) setIsSystemDocumentsLoading(false)
-      })
-
-    return () => {
-      isMounted = false
     }
   }, [activeDocumentType, isSystemDocument])
 
@@ -645,7 +693,7 @@ export function DocumentsPage({
             <span className={`rounded px-1.5 py-0.5 text-[11px] ${
               activeWorkspaceTab === 'history' ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
             }`}>
-              {generatedDocuments.filter((documentRecord) => documentRecord.type === activeGeneratedDocumentType).length}
+              {generatedDocumentsTotal}
             </span>
           </button>
           <button
@@ -986,7 +1034,6 @@ export function DocumentsPage({
         isSystemDocument ? (
           <SystemDocumentsPanel
             key={activeDocumentType}
-            documents={systemDocuments}
             documentLabel={getSystemDocumentProfile(activeDocumentType).label}
             documentType={activeDocumentType}
             navigationRequest={
@@ -995,8 +1042,6 @@ export function DocumentsPage({
                 : null
             }
             availableTemplateIds={availableSystemDocumentTemplates}
-            isLoading={isSystemDocumentsLoading}
-            error={systemDocumentsError}
             welderStamps={welderStamps}
             onOpenRows={async (documentRecord) => {
               const documentRows = await loadSystemDocumentRows(documentRecord)
@@ -1009,10 +1054,11 @@ export function DocumentsPage({
             }}
             onRenamed={async () => {
               if (!isSystemDocumentType(activeDocumentType)) return
-              const nextDocuments = await loadSystemDocuments(activeDocumentType)
-              setSystemDocuments(nextDocuments)
               await Promise.all([
                 invalidateWeldJoints(queryClient),
+                queryClient.invalidateQueries({
+                  queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'system-document-history'],
+                }),
                 queryClient.invalidateQueries({
                   queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
                 }),
@@ -1021,18 +1067,10 @@ export function DocumentsPage({
           />
         ) : (
           <GeneratedDocumentsPanel
-            documents={generatedDocuments.filter((documentRecord) => documentRecord.type === activeGeneratedDocumentType)}
+            documentType={activeGeneratedDocumentType}
+            initialTotal={generatedDocumentsTotal}
             documentLabel={activeDocumentProfile.label}
             documentFieldLabel={activeDocumentProfile.label}
-            isLoading={generatedDocumentsQuery.isLoading}
-            error={
-              generatedDocumentsQuery.error instanceof Error
-                ? generatedDocumentsQuery.error.message
-                : generatedDocumentsQuery.error
-                  ? 'Не удалось загрузить историю документов.'
-                  : null
-            }
-            onRetry={() => void generatedDocumentsQuery.refetch()}
             onRepeat={(documentRecord) => {
               setPeriodFrom(documentRecord.periodFrom || initialRange.from)
               setPeriodTo(documentRecord.periodTo || initialRange.to)
@@ -1065,68 +1103,114 @@ export function DocumentsPage({
   )
 }
 
-function clearDocumentSearchOnEscape(
-  event: ReactKeyboardEvent<HTMLInputElement>,
-  clearSearch: () => void,
-) {
-  if (event.key !== 'Escape' || !event.currentTarget.value) return
-
-  event.preventDefault()
-  event.stopPropagation()
-  clearSearch()
-}
-
 function GeneratedDocumentsPanel({
-  documents,
+  documentType,
+  initialTotal,
   documentLabel,
   documentFieldLabel,
-  isLoading,
-  error,
-  onRetry,
   onRepeat,
   createDocumentBlob,
   onOpenRows,
 }: {
-  documents: StoredGeneratedDocument[]
+  documentType: GeneratedDocumentType
+  initialTotal: number
   documentLabel: string
   documentFieldLabel: string
-  isLoading: boolean
-  error: string | null
-  onRetry: () => void
   onRepeat: (documentRecord: StoredGeneratedDocument) => void
   createDocumentBlob: (documentRecord: StoredGeneratedDocument) => Promise<Blob>
   onOpenRows: (documentRecord: StoredGeneratedDocument) => Promise<void>
 }) {
   const { requireDeletePassword } = useSecurityGuard()
-  const [searchQuery, setSearchQuery] = useState('')
-  const [periodFilter, setPeriodFilter] = useState<DocumentHistoryPeriodFilter>('all')
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [pageSize, setPageSize] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
+  const [visibleLimit, setVisibleLimit] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(new Set())
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [openingRowsDocumentId, setOpeningRowsDocumentId] = useState<number | null>(null)
   const [openRowsError, setOpenRowsError] = useState<string | null>(null)
+  const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const confirmAction = useConfirmAction()
-  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('ru-RU')
-  const filteredDocuments = useMemo(
-    () =>
-      documents.filter((documentRecord) => {
-        if (!isDocumentDateInPeriod(documentRecord.updatedAt, periodFilter)) return false
-        return !normalizedSearchQuery ||
-            [
-              documentRecord.title,
-              documentRecord.fileName,
-              documentLabel,
-              documentRecord.periodFrom,
-              documentRecord.periodTo,
-              formatDate(documentRecord.periodFrom),
-              formatDate(documentRecord.periodTo),
-              ...documentRecord.projects,
-              ...documentRecord.subtitleCodes,
-              ...documentRecord.lines,
-            ]
-              .filter(Boolean)
-              .some((value) => String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery))
-      }),
-    [documentLabel, documents, normalizedSearchQuery, periodFilter],
+  const historyQuery = useQuery({
+    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, documentType, 'paged', visibleLimit, columnFilters],
+    queryFn: () => loadGeneratedDocumentHistory({
+      type: documentType,
+      limit: visibleLimit,
+      columnFilters,
+    }),
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  })
+  const documents = historyQuery.data?.documents ?? []
+  const totalDocuments = historyQuery.data?.total ?? initialTotal
+  const filterOptions = historyQuery.data?.filterOptions ?? {}
+  const hasMoreDocuments = documents.length < totalDocuments
+  const pageDocumentIds = useMemo(
+    () => new Set(documents.map((documentRecord) => documentRecord.id)),
+    [documents],
   )
+  const selectedDocuments = useMemo(
+    () => documents.filter((documentRecord) => selectedDocumentIds.has(documentRecord.id)),
+    [documents, selectedDocumentIds],
+  )
+  const selectedPageCount = documents.filter((documentRecord) =>
+    selectedDocumentIds.has(documentRecord.id),
+  ).length
+  const allPageSelected = documents.length > 0 && selectedPageCount === documents.length
+  const hasActiveFilters = hasDocumentHistoryFilters(columnFilters)
+  const historyError =
+    historyQuery.error instanceof Error
+      ? historyQuery.error.message
+      : historyQuery.error
+        ? 'Не удалось загрузить историю документов.'
+        : null
+
+  useEffect(() => {
+    setSelectedDocumentIds((current) => {
+      const availableIds = new Set(documents.map((documentRecord) => documentRecord.id))
+      const next = new Set([...current].filter((id) => availableIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [documents])
+
+  const changeColumnFilter = (key: DocumentHistoryFilterKey, value: string) => {
+    const nextFilters = { ...columnFilters }
+    if (value) nextFilters[key] = value
+    else delete nextFilters[key]
+    setColumnFilters(nextFilters)
+    setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+  }
+
+  const changePageSize = (nextPageSize: number) => {
+    setPageSize(nextPageSize)
+    setVisibleLimit(nextPageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : nextPageSize)
+  }
+
+  const loadMoreDocuments = () => {
+    const increment = pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize
+    setVisibleLimit((current) => Math.min(totalDocuments || current + increment, current + increment))
+  }
+
+  const toggleDocumentSelection = (documentId: number) => {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current)
+      if (next.has(documentId)) next.delete(documentId)
+      else next.add(documentId)
+      return next
+    })
+  }
+
+  const togglePageSelection = () => {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current)
+      if (allPageSelected) {
+        for (const id of pageDocumentIds) next.delete(id)
+      } else {
+        for (const id of pageDocumentIds) next.add(id)
+      }
+      return next
+    })
+  }
+
   const deleteDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
     if (!(await requireDeletePassword(`удаление документа «${documentRecord.title}»`))) return
     const confirmed = await confirmAction({
@@ -1154,76 +1238,118 @@ function GeneratedDocumentsPanel({
   const downloadDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
     await downloadGeneratedDocument(documentRecord, () => createDocumentBlob(documentRecord))
   }
+  const downloadSelectedArchive = async () => {
+    if (selectedDocuments.length === 0 || isDownloadingArchive) return
+    setIsDownloadingArchive(true)
+    setOpenRowsError(null)
+    try {
+      await downloadGeneratedDocumentArchive(
+        selectedDocuments.map((documentRecord) => ({
+          record: documentRecord,
+          createDocumentBlob: () => createDocumentBlob(documentRecord),
+        })),
+        makeDocumentsArchiveFileName(documentLabel),
+      )
+    } catch (error) {
+      setOpenRowsError(error instanceof Error ? error.message : 'Не удалось скачать архив документов.')
+    } finally {
+      setIsDownloadingArchive(false)
+    }
+  }
 
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-white text-[#17627d]">
-            <History className="h-5 w-5" />
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">История документов</h2>
-            <p className="text-xs text-slate-500">{documents.length} {formatDocumentCount(documents.length)} · Excel открывается только по команде</p>
-          </div>
+      {hasActiveFilters || selectedDocuments.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={() => {
+                setColumnFilters({})
+                setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+              }}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              <X className="h-3.5 w-3.5" />
+              Сбросить фильтры
+            </button>
+          ) : null}
+          {selectedDocuments.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 gap-2 text-xs"
+              disabled={isDownloadingArchive}
+              onClick={() => void downloadSelectedArchive()}
+            >
+              <Archive className="h-4 w-4" />
+              {isDownloadingArchive ? 'Готовим архив' : `Скачать архивом (${selectedDocuments.length})`}
+            </Button>
+          ) : null}
         </div>
-        {documents.length ? (
-          <div className="flex w-full flex-wrap gap-2 lg:w-auto">
-            <label className="relative min-w-60 flex-1 lg:w-72 lg:flex-none">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
-                placeholder="Название, проект, шифр или линия"
-                aria-label="Найти документ"
-                className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-              />
-            </label>
-            <DocumentHistoryPeriodSelect value={periodFilter} onChange={setPeriodFilter} />
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
-      {error ? (
+      {historyError ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-          <span>Не удалось загрузить историю документов: {error}</span>
-          <button type="button" className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold" onClick={onRetry}>Повторить</button>
+          <span>Не удалось загрузить историю документов: {historyError}</span>
+          <button type="button" className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold" onClick={() => void historyQuery.refetch()}>Повторить</button>
         </div>
       ) : null}
       {openRowsError ? <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{openRowsError}</div> : null}
 
-      {isLoading ? (
+      {historyQuery.isLoading ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
-      ) : documents.length === 0 && !error ? (
+      ) : totalDocuments === 0 && !historyError && !hasActiveFilters ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Пока нет сохраненных документов.</div>
-      ) : filteredDocuments.length === 0 ? (
+      ) : totalDocuments === 0 ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
       ) : (
         <div className="min-w-0">
-          <div className="grid grid-cols-[minmax(220px,1fr)_58px_180px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] md:grid-cols-[minmax(260px,1.5fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:grid-cols-[minmax(260px,1.35fr)_minmax(100px,0.65fr)_minmax(100px,0.65fr)_minmax(120px,0.75fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:gap-2">
-            <span>Документ</span>
-            <span className="hidden 2xl:block">Проект</span>
-            <span className="hidden 2xl:block">Шифр</span>
-            <span className="hidden 2xl:block">Линия</span>
-            <span className="hidden md:block">Период</span>
-            <span className="text-right">Стыков</span>
-            <span className="hidden text-right md:block">WDI</span>
-            <span className="hidden md:block">Обновлен</span>
+          <div className="grid grid-cols-[34px_minmax(240px,1fr)_76px_168px] items-center gap-x-4 gap-y-2 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] min-[1440px]:grid-cols-[34px_minmax(300px,1.5fr)_minmax(160px,0.75fr)_76px_76px_130px_168px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.52fr)_minmax(120px,0.5fr)_minmax(150px,0.58fr)_minmax(170px,0.7fr)_76px_76px_130px_168px]">
+            <DocumentHistorySelectAllButton
+              checked={allPageSelected}
+              partial={selectedPageCount > 0 && !allPageSelected}
+              disabled={documents.length === 0}
+              onClick={togglePageSelection}
+            />
+            {GENERATED_DOCUMENT_FILTERS.map((filter) => (
+              <DocumentHistoryColumnFilter
+                key={filter.key}
+                label={filter.label}
+                value={columnFilters[filter.key] ?? ''}
+                options={filterOptions[filter.key] ?? []}
+                className={filter.className}
+                alignRight={filter.className?.includes('justify-end')}
+                dateGrouped={filter.key === 'period' || filter.key === 'updatedAt'}
+                onChange={(value) => changeColumnFilter(filter.key, value)}
+              />
+            ))}
             <span className="text-right">Действия</span>
           </div>
           <div className="divide-y divide-[#dce7ed]">
-            {filteredDocuments.map((documentRecord, documentIndex) => (
+            {documents.map((documentRecord, documentIndex) => {
+              const isSelected = selectedDocumentIds.has(documentRecord.id)
+              return (
               <div
                 key={documentRecord.id}
-                className={`grid min-w-0 grid-cols-[minmax(220px,1fr)_58px_180px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] md:grid-cols-[minmax(260px,1.5fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:grid-cols-[minmax(260px,1.35fr)_minmax(100px,0.65fr)_minmax(100px,0.65fr)_minmax(120px,0.75fr)_minmax(150px,0.8fr)_58px_64px_125px_180px] 2xl:gap-2 ${documentIndex % 2 === 0 ? 'bg-white' : 'bg-[#f4f8fa]'}`}
+                className={`grid min-w-0 grid-cols-[34px_minmax(240px,1fr)_76px_168px] items-center gap-x-4 gap-y-2 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] min-[1440px]:grid-cols-[34px_minmax(300px,1.5fr)_minmax(160px,0.75fr)_76px_76px_130px_168px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.52fr)_minmax(120px,0.5fr)_minmax(150px,0.58fr)_minmax(170px,0.7fr)_76px_76px_130px_168px] ${
+                  isSelected
+                    ? 'bg-sky-50 ring-1 ring-inset ring-sky-200'
+                    : documentIndex % 2 === 0 ? 'bg-white' : 'bg-[#f4f8fa]'
+                }`}
                 onContextMenu={(event) => {
                   event.preventDefault()
+                  const bulkItems = selectedDocumentIds.has(documentRecord.id) && selectedDocuments.length > 1
+                    ? [
+                        { id: 'download-selected-archive', label: `Скачать выбранные архивом (${selectedDocuments.length})`, icon: Archive, onSelect: () => downloadSelectedArchive() },
+                        { type: 'separator' as const, id: 'bulk-separator' },
+                      ]
+                    : []
                   setContextMenu({
                     x: event.clientX,
                     y: event.clientY,
                     items: [
+                      ...bulkItems,
                       { id: 'show-document-rows', label: 'Показать стыки в журнале', icon: Rows3, onSelect: () => openDocumentRows(documentRecord) },
                       { id: 'repeat-document', label: 'Повторить с параметрами', icon: SlidersHorizontal, onSelect: () => onRepeat(documentRecord) },
                       { type: 'separator', id: 'open-separator' },
@@ -1235,33 +1361,43 @@ function GeneratedDocumentsPanel({
                   })
                 }}
               >
+                <DocumentHistoryRowCheckbox
+                  checked={isSelected}
+                  label={`Выбрать документ «${documentRecord.title}»`}
+                  onChange={() => toggleDocumentSelection(documentRecord.id)}
+                />
                 <button
                   type="button"
-                  className="min-w-0 text-left"
+                  className="group min-w-0 text-left"
                   onClick={() => void openDocumentRecord(documentRecord)}
                   title="Сформировать актуальную версию и открыть Excel"
                 >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <FileSpreadsheet className="h-4 w-4 shrink-0 text-[#14779a]" />
-                    <span className="truncate text-sm font-semibold text-[#155f7a] hover:text-[#0b4258]">{documentRecord.title}</span>
-                    <ExternalLink className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" />
-                  </span>
-                  <span className="mt-0.5 block truncate pl-6 text-xs text-slate-500 md:hidden">
-                    {documentLabel} · {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)} · {formatWdi(documentRecord.wdiTotal)} WDI
-                  </span>
-                  <span className="mt-0.5 hidden truncate pl-6 text-xs text-slate-500 md:block 2xl:hidden" title={formatDocumentDimensions(documentRecord)}>
-                    {formatDocumentDimensions(documentRecord)}
+                  <span className="flex min-w-0 items-start gap-2.5">
+                    <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-[#f4fafc] text-[#14779a] transition-colors group-hover:border-[#9fc4d2] group-hover:bg-[#e9f5f8]">
+                      <FileSpreadsheet className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words text-[13px] font-medium leading-5 text-slate-800 transition-colors group-hover:text-[#0b526c]">
+                        {documentRecord.title}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-4 text-slate-500 min-[1440px]:hidden">
+                        {documentLabel} · {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)} · {formatWdi(documentRecord.wdiTotal)} WDI
+                      </span>
+                      <span className="mt-0.5 hidden break-words text-xs leading-4 text-slate-500 min-[1440px]:block min-[1800px]:hidden" title={formatDocumentDimensions(documentRecord)}>
+                        {formatDocumentDimensions(documentRecord)}
+                      </span>
+                    </span>
                   </span>
                 </button>
                 <DocumentDimensionCell values={documentRecord.projects} />
                 <DocumentDimensionCell values={documentRecord.subtitleCodes} />
                 <DocumentDimensionCell values={documentRecord.lines} />
-                <span className="hidden text-xs text-slate-600 md:block">
+                <span className="hidden text-xs text-slate-600 min-[1440px]:block">
                   {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)}
                 </span>
                 <span className="text-right text-sm font-semibold tabular-nums text-slate-800">{documentRecord.rowCount}</span>
-                <span className="hidden text-right text-sm font-semibold tabular-nums text-slate-700 md:block">{formatWdi(documentRecord.wdiTotal)}</span>
-                <span className="hidden text-xs leading-4 text-slate-500 md:block">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
+                <span className="hidden text-right text-sm font-semibold tabular-nums text-slate-700 min-[1440px]:block">{formatWdi(documentRecord.wdiTotal)}</span>
+                <span className="hidden text-xs leading-4 text-slate-500 min-[1440px]:block">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
                 <div className="flex items-center justify-end gap-1">
                   <DocumentHistoryActionButton
                     title="Показать стыки документа в сварочном журнале"
@@ -1283,56 +1419,69 @@ function GeneratedDocumentsPanel({
                   </DocumentHistoryActionButton>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
-      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2 text-xs text-slate-500">Найдено: {filteredDocuments.length} из {documents.length}</div>
+      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2">
+        <PaginationBar
+          totalCount={totalDocuments}
+          firstItemNumber={documents.length === 0 ? 0 : 1}
+          lastItemNumber={documents.length}
+          pageSize={pageSize}
+          hasMore={hasMoreDocuments}
+          label="документов"
+          onLoadMore={loadMoreDocuments}
+          onPageSizeChange={changePageSize}
+        />
+        <div className="mt-2 text-xs text-slate-500">
+          Найдено: {totalDocuments} из {hasActiveFilters ? initialTotal : totalDocuments}
+          {selectedDocuments.length > 0 ? ` · выбрано: ${selectedDocuments.length}` : ''}
+        </div>
+      </div>
       <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </section>
   )
 }
 
 function SystemDocumentsPanel({
-  documents,
   documentLabel,
   documentType,
   navigationRequest,
   availableTemplateIds,
-  isLoading,
-  error,
   welderStamps,
   onOpenRows,
   onRenamed,
 }: {
-  documents: SystemDocumentSummary[]
   documentLabel: string
   documentType: SystemDocumentType
   navigationRequest: SystemDocumentNavigationRequest | null
   availableTemplateIds: ReadonlySet<SystemDocumentTemplateId>
-  isLoading: boolean
-  error: string | null
   welderStamps: WelderStampRecord[]
   onOpenRows: (documentRecord: SystemDocumentSummary) => Promise<void>
   onRenamed: () => Promise<void>
 }) {
   const { requireEditPassword } = useSecurityGuard()
   const confirmAction = useConfirmAction()
-  const [searchQuery, setSearchQuery] = useState('')
-  const [periodFilter, setPeriodFilter] = useState<DocumentHistoryPeriodFilter>('all')
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+  const [pageSize, setPageSize] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
+  const [visibleLimit, setVisibleLimit] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set())
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
+  const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
+  const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [lnkConclusionTemplateFilter, setLnkConclusionTemplateFilter] =
     useState<'all' | LnkConclusionTemplateId>('all')
-  const navigationDocumentId = navigationRequest
-    ? getSystemDocumentId(navigationRequest)
+  const navigationDocumentIdentity = navigationRequest
+    ? getSystemDocumentNavigationIdentity(navigationRequest)
     : null
 
   useEffect(() => {
     if (!navigationRequest) return
-    setSearchQuery(navigationRequest.title)
-    setPeriodFilter('all')
+    setColumnFilters({ title: buildWeldColumnValueFilter([navigationRequest.title]) })
     if (navigationRequest.type === 'lnkConclusion') {
       setLnkConclusionTemplateFilter(
         getLnkConclusionTemplateProfile(navigationRequest.methodCode).id,
@@ -1340,52 +1489,99 @@ function SystemDocumentsPanel({
     }
   }, [navigationRequest])
 
-  const documentsForSelectedForm = useMemo(
-    () =>
-      documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all'
-        ? documents.filter(
-            (documentRecord) =>
-              getLnkConclusionTemplateProfile(documentRecord.methodCode).id ===
-              lnkConclusionTemplateFilter,
-          )
-        : documents,
-    [documentType, documents, lnkConclusionTemplateFilter],
-  )
-  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('ru-RU')
-  const filteredDocuments = useMemo(
+  const effectiveColumnFilters = useMemo(
     () => {
-      const matchingDocuments = documentsForSelectedForm.filter((documentRecord) => {
-        if (!isDocumentDateInPeriod(documentRecord.date, periodFilter)) return false
-        return !normalizedSearchQuery ||
-            [
-              documentRecord.title,
-              documentRecord.label,
-              documentRecord.date,
-              ...documentRecord.methodCodes,
-              ...documentRecord.projects,
-              ...documentRecord.subtitleCodes,
-              ...documentRecord.lines,
-            ].some((value) => String(value).toLocaleLowerCase('ru-RU').includes(normalizedSearchQuery))
-      })
-      if (!navigationDocumentId) return matchingDocuments
-      return [...matchingDocuments].sort((left, right) => {
-        const leftMatch = left.id === navigationDocumentId ? 1 : 0
-        const rightMatch = right.id === navigationDocumentId ? 1 : 0
+      if (documentType !== 'lnkConclusion' || lnkConclusionTemplateFilter === 'all') return columnFilters
+      const profile = LNK_CONCLUSION_TEMPLATE_PROFILES.find((candidate) => candidate.id === lnkConclusionTemplateFilter)
+      if (!profile) return columnFilters
+      const methodCodes = getLnkConclusionTemplateMethodCodes(profile.id)
+      return {
+        ...columnFilters,
+        method: buildWeldColumnValueFilter(methodCodes),
+      }
+    },
+    [columnFilters, documentType, lnkConclusionTemplateFilter],
+  )
+  const historyQuery = useQuery({
+    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'system-document-history', documentType, visibleLimit, effectiveColumnFilters],
+    queryFn: () => loadSystemDocumentHistory({
+      type: documentType,
+      limit: visibleLimit,
+      columnFilters: effectiveColumnFilters,
+    }),
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  })
+  const documents = historyQuery.data?.documents ?? []
+  const totalDocuments = historyQuery.data?.total ?? 0
+  const filterOptions = historyQuery.data?.filterOptions ?? {}
+  const visibleDocuments = useMemo(
+    () => {
+      if (!navigationDocumentIdentity) return documents
+      return [...documents].sort((left, right) => {
+        const leftMatch = getSystemDocumentNavigationIdentity(left) === navigationDocumentIdentity ? 1 : 0
+        const rightMatch = getSystemDocumentNavigationIdentity(right) === navigationDocumentIdentity ? 1 : 0
         return rightMatch - leftMatch
       })
     },
-    [documentsForSelectedForm, navigationDocumentId, normalizedSearchQuery, periodFilter],
+    [documents, navigationDocumentIdentity],
   )
+  const hasMoreDocuments = documents.length < totalDocuments
+  const pageDocumentIds = useMemo(
+    () => new Set(visibleDocuments.map((documentRecord) => documentRecord.id)),
+    [visibleDocuments],
+  )
+  const selectedDocuments = useMemo(
+    () => visibleDocuments.filter((documentRecord) => selectedDocumentIds.has(documentRecord.id)),
+    [visibleDocuments, selectedDocumentIds],
+  )
+  const downloadableSelectedDocuments = selectedDocuments.filter((documentRecord) =>
+    availableTemplateIds.has(getSystemDocumentTemplateId(documentRecord)),
+  )
+  const selectedPageCount = visibleDocuments.filter((documentRecord) =>
+    selectedDocumentIds.has(documentRecord.id),
+  ).length
+  const allPageSelected = visibleDocuments.length > 0 && selectedPageCount === visibleDocuments.length
+  const hasActiveFilters = hasDocumentHistoryFilters(columnFilters)
+  const hasActiveHistoryScope = hasActiveFilters || (
+    documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all'
+  )
+  const showMethodColumn = documentType.startsWith('lnk')
+  const historyFilters = showMethodColumn
+    ? SYSTEM_DOCUMENT_FILTERS
+    : SYSTEM_DOCUMENT_FILTERS.filter((filter) => filter.key !== 'method')
+  const historyGridClassName = showMethodColumn
+    ? 'grid-cols-[34px_minmax(240px,1fr)_76px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_88px_76px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_88px_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_76px_128px_150px]'
+    : 'grid-cols-[34px_minmax(240px,1fr)_76px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_76px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_76px_128px_150px]'
+  const historyError =
+    historyQuery.error instanceof Error
+      ? historyQuery.error.message
+      : historyQuery.error
+        ? 'Не удалось загрузить системные документы.'
+        : null
   const hasTemplateForDocument = (documentRecord: SystemDocumentSummary) =>
     availableTemplateIds.has(getSystemDocumentTemplateId(documentRecord))
-  const availableFormCount =
-    documentType === 'lnkConclusion'
-      ? LNK_CONCLUSION_TEMPLATE_PROFILES.filter((profile) =>
-          availableTemplateIds.has(profile.id),
-        ).length
-      : availableTemplateIds.has(getSystemDocumentTemplateId({ type: documentType }))
-        ? 1
-        : 0
+
+  const changeColumnFilter = (key: DocumentHistoryFilterKey, value: string) => {
+    const nextFilters = { ...columnFilters }
+    if (value) nextFilters[key] = value
+    else delete nextFilters[key]
+    setColumnFilters(nextFilters)
+    if (documentType === 'lnkConclusion' && key === 'method') {
+      setLnkConclusionTemplateFilter('all')
+    }
+    setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+  }
+
+  const changePageSize = (nextPageSize: number) => {
+    setPageSize(nextPageSize)
+    setVisibleLimit(nextPageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : nextPageSize)
+  }
+
+  const loadMoreDocuments = () => {
+    const increment = pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize
+    setVisibleLimit((current) => Math.min(totalDocuments || current + increment, current + increment))
+  }
 
   const runAction = async (action: () => Promise<unknown> | void) => {
     setActionError(null)
@@ -1440,42 +1636,90 @@ function SystemDocumentsPanel({
   const downloadDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
     downloadSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
   )
+  const toggleDocumentSelection = (documentId: string) => {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current)
+      if (next.has(documentId)) next.delete(documentId)
+      else next.add(documentId)
+      return next
+    })
+  }
+  const togglePageSelection = () => {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current)
+      if (allPageSelected) {
+        for (const id of pageDocumentIds) next.delete(id)
+      } else {
+        for (const id of pageDocumentIds) next.add(id)
+      }
+      return next
+    })
+  }
+  const downloadSelectedArchive = async () => {
+    if (downloadableSelectedDocuments.length === 0 || isDownloadingArchive) return
+    setIsDownloadingArchive(true)
+    await runAction(async () => {
+      await downloadGeneratedDocumentArchive(
+        downloadableSelectedDocuments.map((documentRecord) => ({
+          record: {
+            title: documentRecord.title,
+            fileName: documentRecord.fileName,
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          createDocumentBlob: () =>
+            createCurrentSystemDocumentBlob({
+              reference: documentRecord,
+              summary: documentRecord,
+              welderStamps,
+            }),
+        })),
+        makeDocumentsArchiveFileName(documentLabel),
+      )
+    })
+    setIsDownloadingArchive(false)
+  }
+
+  useEffect(() => {
+    setSelectedDocumentIds((current) => {
+      const availableIds = new Set(visibleDocuments.map((documentRecord) => documentRecord.id))
+      const next = new Set([...current].filter((id) => availableIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [visibleDocuments])
 
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-white text-[#17627d]">
-            <History className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-slate-900">История документов</h2>
-            <p className="text-xs text-slate-500">
-              {documents.length} {formatDocumentCount(documents.length)} · системные документы
-              {documentType === 'lnkConclusion'
-                ? ` · форм ${availableFormCount}/${LNK_CONCLUSION_TEMPLATE_PROFILES.length}`
-                : availableFormCount > 0 ? '' : ' · шаблон не загружен'}
-            </p>
-          </div>
+      {hasActiveFilters || selectedDocuments.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={() => {
+                setColumnFilters({})
+                setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+              }}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              <X className="h-3.5 w-3.5" />
+              Сбросить фильтры
+            </button>
+          ) : null}
+          {selectedDocuments.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 gap-2 text-xs"
+              disabled={downloadableSelectedDocuments.length === 0 || isDownloadingArchive}
+              onClick={() => void downloadSelectedArchive()}
+            >
+              <Archive className="h-4 w-4" />
+              {isDownloadingArchive
+                ? 'Готовим архив'
+                : `Скачать архивом (${downloadableSelectedDocuments.length}/${selectedDocuments.length})`}
+            </Button>
+          ) : null}
         </div>
-        {documents.length ? (
-          <div className="flex w-full flex-wrap gap-2 lg:w-auto">
-            <label className="relative min-w-60 flex-1 lg:w-72 lg:flex-none">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => clearDocumentSearchOnEscape(event, () => setSearchQuery(''))}
-                placeholder="Название, дата, проект или линия"
-                aria-label="Найти документ"
-                className="h-9 w-full rounded-md border border-[#cbdde6] bg-white pl-9 pr-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-              />
-            </label>
-            <DocumentHistoryPeriodSelect value={periodFilter} onChange={setPeriodFilter} />
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       {documentType === 'lnkConclusion' ? (
         <div
@@ -1498,17 +1742,26 @@ function SystemDocumentsPanel({
           </button>
           {LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => {
             const isActive = lnkConclusionTemplateFilter === profile.id
-            const documentCount = documents.filter(
-              (documentRecord) =>
-                getLnkConclusionTemplateProfile(documentRecord.methodCode).id === profile.id,
-            ).length
+            const methodOptionCounts = new Map((filterOptions.method ?? []).map((option) => [option.value, option.count]))
+            const documentCount = getLnkConclusionTemplateMethodCodes(profile.id).reduce(
+              (sum, methodCode) => sum + (methodOptionCounts.get(methodCode) ?? 0),
+              0,
+            )
             return (
               <button
                 key={profile.id}
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setLnkConclusionTemplateFilter(profile.id)}
+                onClick={() => {
+                  setLnkConclusionTemplateFilter(profile.id)
+                  setColumnFilters((current) => {
+                    if (!current.method) return current
+                    const next = { ...current }
+                    delete next.method
+                    return next
+                  })
+                }}
                 className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition-colors ${
                   isActive
                     ? 'border-[#17627d] bg-[#17627d] text-white'
@@ -1521,18 +1774,15 @@ function SystemDocumentsPanel({
                 }`}>
                   {documentCount}
                 </span>
-                {availableTemplateIds.has(profile.id) ? (
-                  <CheckCircle2 className={`h-3.5 w-3.5 ${isActive ? 'text-emerald-200' : 'text-emerald-600'}`} />
-                ) : null}
               </button>
             )
           })}
         </div>
       ) : null}
 
-      {error || actionError ? (
+      {historyError || actionError ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-          {error ?? actionError}
+          {historyError ?? actionError}
         </div>
       ) : null}
       {actionNotice ? (
@@ -1541,66 +1791,122 @@ function SystemDocumentsPanel({
         </div>
       ) : null}
 
-      {isLoading ? (
+      {historyQuery.isLoading ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
-      ) : documents.length === 0 ? (
+      ) : totalDocuments === 0 && !hasActiveHistoryScope ? (
         <div className="px-4 py-10 text-center">
           <div className="text-sm font-medium text-slate-700">Документов пока нет</div>
           <div className="mt-1 text-xs text-slate-500">
             Они появятся автоматически после создания соответствующих заявок или заключений.
           </div>
         </div>
-      ) : filteredDocuments.length === 0 ? (
+      ) : totalDocuments === 0 ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
       ) : (
         <div className="min-w-0">
-          <div className="grid grid-cols-[minmax(220px,1fr)_58px_144px] items-center gap-3 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] xl:grid-cols-[minmax(230px,1.35fr)_80px_minmax(130px,0.8fr)_58px_105px_144px] 2xl:grid-cols-[minmax(280px,1.5fr)_90px_minmax(170px,0.9fr)_minmax(130px,0.7fr)_58px_110px_144px]">
-            <span>Документ</span>
-            <span className="hidden xl:block">Вид НК</span>
-            <span className="hidden xl:block">Проект / шифр</span>
-            <span className="hidden 2xl:block">Линия</span>
-            <span className="text-right">Стыков</span>
-            <span className="hidden xl:block">Дата</span>
+          <div className={`grid items-center gap-x-4 gap-y-2 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] ${historyGridClassName}`}>
+            <DocumentHistorySelectAllButton
+              checked={allPageSelected}
+              partial={selectedPageCount > 0 && !allPageSelected}
+              disabled={visibleDocuments.length === 0}
+              onClick={togglePageSelection}
+            />
+            {historyFilters.map((filter) => (
+              <DocumentHistoryColumnFilter
+                key={filter.key}
+                label={filter.label}
+                value={columnFilters[filter.key] ?? ''}
+                options={filterOptions[filter.key] ?? []}
+                className={filter.className}
+                alignRight={filter.className?.includes('justify-end')}
+                dateGrouped={filter.key === 'date'}
+                onChange={(value) => changeColumnFilter(filter.key, value)}
+              />
+            ))}
             <span className="text-right">Действия</span>
           </div>
           <div className="divide-y divide-[#dce7ed]">
-            {filteredDocuments.map((documentRecord, documentIndex) => {
+            {visibleDocuments.map((documentRecord, documentIndex) => {
               const templateAvailable = hasTemplateForDocument(documentRecord)
+              const isSelected = selectedDocumentIds.has(documentRecord.id)
               return (
                 <div
                   key={documentRecord.id}
-                  className={`grid min-w-0 grid-cols-[minmax(220px,1fr)_58px_144px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] xl:grid-cols-[minmax(230px,1.35fr)_80px_minmax(130px,0.8fr)_58px_105px_144px] 2xl:grid-cols-[minmax(280px,1.5fr)_90px_minmax(170px,0.9fr)_minmax(130px,0.7fr)_58px_110px_144px] ${
-                    documentRecord.id === navigationDocumentId
+                  className={`grid min-w-0 items-center gap-x-4 gap-y-2 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] ${historyGridClassName} ${
+                    getSystemDocumentNavigationIdentity(documentRecord) === navigationDocumentIdentity
                       ? 'bg-sky-50 ring-1 ring-inset ring-sky-300'
+                      : isSelected
+                        ? 'bg-sky-50 ring-1 ring-inset ring-sky-200'
                       : documentIndex % 2 === 0
                         ? 'bg-white'
                         : 'bg-[#f4f8fa]'
                   }`}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    const bulkItems = selectedDocumentIds.has(documentRecord.id) && selectedDocuments.length > 1
+                      ? [
+                          {
+                            id: 'download-selected-archive',
+                            label: `Скачать выбранные архивом (${downloadableSelectedDocuments.length}/${selectedDocuments.length})`,
+                            icon: Archive,
+                            disabled: downloadableSelectedDocuments.length === 0,
+                            onSelect: () => downloadSelectedArchive(),
+                          },
+                          { type: 'separator' as const, id: 'bulk-separator' },
+                        ]
+                      : []
+                    setContextMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      items: [
+                        ...bulkItems,
+                        { id: 'show-document-rows', label: 'Показать стыки в отчете', icon: Rows3, onSelect: () => runAction(() => onOpenRows(documentRecord)) },
+                        { id: 'rename-document', label: 'Переименовать по текущему правилу', icon: FilePenLine, disabled: renamingDocumentId === documentRecord.id, onSelect: () => renameDocumentRecord(documentRecord) },
+                        { type: 'separator', id: 'open-separator' },
+                        { id: 'open-document', label: 'Открыть Excel', icon: ExternalLink, disabled: !templateAvailable, onSelect: () => openDocumentRecord(documentRecord) },
+                        { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !templateAvailable, onSelect: () => downloadDocumentRecord(documentRecord) },
+                      ],
+                    })
+                  }}
                 >
+                  <DocumentHistoryRowCheckbox
+                    checked={isSelected}
+                    label={`Выбрать документ «${documentRecord.title}»`}
+                    onChange={() => toggleDocumentSelection(documentRecord.id)}
+                  />
                   <button
                     type="button"
-                    className="min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                    className="group min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={!templateAvailable}
                     onClick={() => void openDocumentRecord(documentRecord)}
                     title={templateAvailable ? 'Сформировать актуальную версию и открыть Excel' : 'Для этого вида документа шаблон еще не загружен'}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <FileSpreadsheet className={`h-4 w-4 shrink-0 ${templateAvailable ? 'text-[#14779a]' : 'text-slate-300'}`} />
-                      <span className="truncate text-sm font-semibold text-[#155f7a] hover:text-[#0b4258]">{documentRecord.title}</span>
-                      {templateAvailable ? <ExternalLink className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" /> : null}
-                    </span>
-                    <span className="mt-0.5 block truncate pl-6 text-xs text-slate-500 xl:hidden">
-                      {documentRecord.methodCodes.join(', ') || documentLabel} · {formatDate(documentRecord.date)}
+                    <span className="flex min-w-0 items-start gap-2.5">
+                      <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors ${
+                        templateAvailable
+                          ? 'border-[#c9dce5] bg-[#f4fafc] text-[#14779a] group-hover:border-[#9fc4d2] group-hover:bg-[#e9f5f8]'
+                          : 'border-slate-200 bg-slate-50 text-slate-300'
+                      }`}>
+                        <FileSpreadsheet className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-[13px] font-medium leading-5 text-slate-800 transition-colors group-hover:text-[#0b526c]">
+                          {documentRecord.title}
+                        </span>
+                        <span className="mt-0.5 block break-words text-xs leading-4 text-slate-500 xl:hidden">
+                          {documentRecord.methodCodes.join(', ') || documentLabel} · {formatDate(documentRecord.date)}
+                        </span>
+                      </span>
                     </span>
                   </button>
-                  <span className="hidden truncate text-xs font-semibold text-slate-600 xl:block" title={documentRecord.methodCodes.join(', ')}>
-                    {documentRecord.methodCodes.join(', ') || '-'}
-                  </span>
-                  <span className="hidden min-w-0 text-xs leading-4 text-slate-600 xl:block">
-                    <span className="block truncate" title={documentRecord.projects.join(', ')}>{documentRecord.projects.join(', ') || '-'}</span>
-                    <span className="block truncate text-slate-400" title={documentRecord.subtitleCodes.join(', ')}>{documentRecord.subtitleCodes.join(', ') || '-'}</span>
-                  </span>
-                  <span className="hidden truncate text-xs text-slate-600 2xl:block" title={documentRecord.lines.join(', ')}>{documentRecord.lines.join(', ') || '-'}</span>
+                  {showMethodColumn ? (
+                    <span className="hidden truncate text-xs font-semibold text-slate-600 xl:block" title={documentRecord.methodCodes.join(', ')}>
+                      {documentRecord.methodCodes.join(', ') || '-'}
+                    </span>
+                  ) : null}
+                  <DocumentDimensionCell values={documentRecord.projects} />
+                  <DocumentDimensionCell values={documentRecord.subtitleCodes} />
+                  <span className="hidden truncate text-xs text-slate-600 min-[1800px]:block" title={documentRecord.lines.join(', ')}>{documentRecord.lines.join(', ') || '-'}</span>
                   <span className="text-right text-sm font-semibold tabular-nums text-slate-800">{documentRecord.rowCount}</span>
                   <span className="hidden text-xs text-slate-600 xl:block">{formatDate(documentRecord.date) || '-'}</span>
                   <div className="flex items-center justify-end gap-1">
@@ -1633,7 +1939,23 @@ function SystemDocumentsPanel({
           </div>
         </div>
       )}
-      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2 text-xs text-slate-500">Найдено: {filteredDocuments.length} из {documentsForSelectedForm.length}</div>
+      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2">
+        <PaginationBar
+          totalCount={totalDocuments}
+          firstItemNumber={visibleDocuments.length === 0 ? 0 : 1}
+          lastItemNumber={visibleDocuments.length}
+          pageSize={pageSize}
+          hasMore={hasMoreDocuments}
+          label="документов"
+          onLoadMore={loadMoreDocuments}
+          onPageSizeChange={changePageSize}
+        />
+        <div className="mt-2 text-xs text-slate-500">
+          Найдено: {totalDocuments}
+          {selectedDocuments.length > 0 ? ` · выбрано: ${selectedDocuments.length}` : ''}
+        </div>
+      </div>
+      <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </section>
   )
 }
@@ -1654,34 +1976,435 @@ function formatGeneratedDocumentDate(value: string) {
 function DocumentDimensionCell({ values }: { values: string[] }) {
   const text = values.length > 0 ? values.join(', ') : '-'
   return (
-    <span className="hidden truncate text-xs text-slate-600 2xl:block" title={text}>
+    <span className="hidden truncate text-xs text-slate-600 min-[1800px]:block" title={text}>
       {text}
     </span>
   )
 }
 
-function DocumentHistoryPeriodSelect({
-  value,
-  onChange,
+function DocumentHistorySelectAllButton({
+  checked,
+  partial,
+  disabled,
+  onClick,
 }: {
-  value: DocumentHistoryPeriodFilter
-  onChange: (value: DocumentHistoryPeriodFilter) => void
+  checked: boolean
+  partial: boolean
+  disabled: boolean
+  onClick: () => void
 }) {
   return (
-    <label className="relative block shrink-0">
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value as DocumentHistoryPeriodFilter)}
-        className="h-9 min-w-[168px] appearance-none rounded-md border border-[#cbdde6] bg-white pl-3 pr-9 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-        aria-label="Период истории документов"
-      >
-        <option value="all">За весь период</option>
-        <option value="currentMonth">Текущий месяц</option>
-        <option value="previousMonth">Прошлый месяц</option>
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-    </label>
+    <button
+      type="button"
+      disabled={disabled}
+      title={checked ? 'Снять выбор с показанных документов' : 'Выбрать показанные документы'}
+      aria-label={checked ? 'Снять выбор с показанных документов' : 'Выбрать показанные документы'}
+      aria-pressed={checked}
+      onClick={onClick}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+        checked || partial
+          ? 'border-sky-300 bg-sky-100 text-sky-800'
+          : 'border-slate-300 bg-white text-transparent hover:border-sky-300 hover:bg-sky-50 hover:text-sky-500'
+      }`}
+    >
+      {partial ? <Minus className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+    </button>
   )
+}
+
+function DocumentHistoryRowCheckbox({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean
+  label: string
+  onChange: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border shadow-sm transition-colors ${
+        checked
+          ? 'border-sky-300 bg-sky-100 text-sky-800'
+          : 'border-slate-300 bg-white text-transparent hover:border-sky-300 hover:bg-sky-50 hover:text-sky-500'
+      }`}
+      aria-label={label}
+      aria-pressed={checked}
+      title={label}
+      onClick={onChange}
+    >
+      <Check className="h-4 w-4" />
+    </button>
+  )
+}
+
+function DocumentHistoryColumnFilter({
+  label,
+  value,
+  options,
+  className = '',
+  alignRight = false,
+  dateGrouped = false,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: DocumentHistoryColumnOption[]
+  className?: string
+  alignRight?: boolean
+  dateGrouped?: boolean
+  onChange: (value: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [optionSearch, setOptionSearch] = useState('')
+  const choiceFilter = parseWeldColumnChoiceFilter(value)
+  const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
+  const hasActiveFilter = Boolean(value.trim())
+  const normalizedSearch = optionSearch.trim().toLocaleLowerCase('ru-RU')
+  const visibleOptions = normalizedSearch
+    ? options.filter((option) => option.label.toLocaleLowerCase('ru-RU').includes(normalizedSearch))
+    : options
+
+  const toggleValue = (optionValue: string) => {
+    const selectedSet = new Set(selectedValues)
+    if (selectedSet.has(optionValue)) selectedSet.delete(optionValue)
+    else selectedSet.add(optionValue)
+    onChange(selectedSet.size > 0 ? buildWeldColumnValueFilter(Array.from(selectedSet)) : '')
+  }
+
+  useEffect(() => {
+    if (!isOpen) return
+    const close = () => setIsOpen(false)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      close()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen])
+
+  return (
+    <span className={`relative flex min-w-0 ${alignRight ? 'justify-end' : ''} ${className}`}>
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen((current) => !current)
+          setOptionSearch('')
+        }}
+        className={`inline-flex h-8 max-w-full items-center gap-1 rounded-md px-1.5 text-[11px] font-semibold uppercase transition ${
+          hasActiveFilter || isOpen
+            ? 'bg-white text-slate-900 shadow-sm'
+            : 'text-[#60778a] hover:bg-white/60 hover:text-slate-800'
+        }`}
+        title={hasActiveFilter ? `${label}: ${getDocumentHistoryFilterSummary(value)}` : `Фильтр: ${label}`}
+      >
+        <span className="min-w-0 truncate">{label}</span>
+        <span className={`inline-flex h-5 min-w-5 items-center justify-center gap-1 rounded border border-[#bdd4df] bg-white px-1 text-sky-700 ${
+          hasActiveFilter ? '' : 'text-slate-400'
+        }`}>
+          <ListFilter className="h-3.5 w-3.5" />
+          {hasActiveFilter ? <span>{getDocumentHistoryFilterCount(value)}</span> : null}
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div className={`absolute top-9 z-50 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white text-left normal-case shadow-xl shadow-slate-300/40 ${
+          alignRight ? 'right-0' : 'left-0'
+        }`}>
+          <div className="border-b border-slate-100 bg-slate-50 px-3 py-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">{label}</div>
+                <div className="mt-0.5 text-xs text-slate-500">
+                  {hasActiveFilter ? `Активно: ${getDocumentHistoryFilterSummary(value)}` : `Значений: ${options.length}`}
+                </div>
+              </div>
+              <button type="button" className="text-xs text-slate-500 hover:text-slate-900" onClick={() => setIsOpen(false)}>
+                Закрыть
+              </button>
+            </div>
+          </div>
+          <div className="p-3">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={optionSearch}
+                onChange={(event) => setOptionSearch(event.target.value)}
+                placeholder="Найти значение"
+                className="h-8 w-full rounded-md border border-slate-200 bg-white py-1 pl-8 pr-2 text-xs text-slate-900 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                onClick={() => onChange(buildWeldColumnValueFilter(options.map((option) => option.value)))}
+              >
+                Выбрать все
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                onClick={() => onChange('')}
+              >
+                Очистить
+              </button>
+            </div>
+          </div>
+          <div className="max-h-60 overflow-auto border-t border-slate-100">
+            {dateGrouped ? (
+              <DocumentDateFilterOptions
+                options={visibleOptions}
+                selectedValues={selectedValues}
+                onToggleValue={toggleValue}
+                onToggleValues={(values) => {
+                  const selectedSet = new Set(selectedValues)
+                  const hasEveryValue = values.every((optionValue) => selectedSet.has(optionValue))
+                  for (const optionValue of values) {
+                    if (hasEveryValue) selectedSet.delete(optionValue)
+                    else selectedSet.add(optionValue)
+                  }
+                  onChange(selectedSet.size > 0 ? buildWeldColumnValueFilter(Array.from(selectedSet)) : '')
+                }}
+              />
+            ) : visibleOptions.length > 0 ? (
+              visibleOptions.map((option) => {
+                const checked = selectedValues.includes(option.value)
+                return (
+                  <button
+                    key={option.value || '__empty__'}
+                    type="button"
+                    onClick={() => toggleValue(option.value)}
+                    className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs last:border-b-0 hover:bg-slate-50 ${
+                      checked ? 'bg-sky-50/80 text-slate-900' : 'text-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                        checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 bg-white'
+                      }`}
+                    >
+                      {checked ? <Check className="h-3 w-3" /> : null}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate" title={option.label}>{option.label}</span>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{option.count}</span>
+                  </button>
+                )
+              })
+            ) : (
+              <div className="px-3 py-6 text-center text-xs text-slate-500">Значений не найдено</div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </span>
+  )
+}
+
+function DocumentDateFilterOptions({
+  options,
+  selectedValues,
+  onToggleValue,
+  onToggleValues,
+}: {
+  options: DocumentHistoryColumnOption[]
+  selectedValues: string[]
+  onToggleValue: (value: string) => void
+  onToggleValues: (values: string[]) => void
+}) {
+  const groups = getDocumentDateFilterGroups(options)
+  if (groups.length === 0) {
+    return <div className="px-3 py-6 text-center text-xs text-slate-500">Дат не найдено</div>
+  }
+
+  return (
+    <div className="divide-y divide-slate-100">
+      {groups.map((group) =>
+        group.kind === 'empty' ? (
+          <DocumentFilterValueRow
+            key="empty"
+            label={group.label}
+            count={group.count}
+            checked={selectedValues.includes(group.value)}
+            onClick={() => onToggleValue(group.value)}
+          />
+        ) : (
+          <div key={group.year} className="py-1">
+            <button
+              type="button"
+              onClick={() => onToggleValues(group.values)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <DocumentGroupFilterCheck values={group.values} selectedValues={selectedValues} />
+              <span className="min-w-0 flex-1">{group.year}</span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{group.count}</span>
+            </button>
+            {group.months.map((month) => (
+              <div key={`${group.year}-${month.month}`} className="pb-1">
+                <button
+                  type="button"
+                  onClick={() => onToggleValues(month.values)}
+                  className="flex w-full items-center gap-2 px-6 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  <DocumentGroupFilterCheck values={month.values} selectedValues={selectedValues} />
+                  <span className="min-w-0 flex-1">{month.label}</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{month.count}</span>
+                </button>
+                {month.options.map((option) => (
+                  <DocumentFilterValueRow
+                    key={option.value || '__empty__'}
+                    label={option.label}
+                    count={option.count}
+                    checked={selectedValues.includes(option.value)}
+                    onClick={() => onToggleValue(option.value)}
+                    className="pl-9"
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        ),
+      )}
+    </div>
+  )
+}
+
+function DocumentGroupFilterCheck({
+  values,
+  selectedValues,
+}: {
+  values: string[]
+  selectedValues: string[]
+}) {
+  const selectedSet = new Set(selectedValues)
+  const checkedCount = values.filter((value) => selectedSet.has(value)).length
+  const checked = values.length > 0 && checkedCount === values.length
+  const partial = checkedCount > 0 && !checked
+  return (
+    <span
+      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+        checked ? 'border-sky-500 bg-sky-500 text-white' : partial ? 'border-sky-300 bg-sky-50 text-sky-500' : 'border-slate-300 bg-white text-transparent'
+      }`}
+    >
+      {checked ? <Check className="h-3 w-3" /> : partial ? <span className="h-0.5 w-2 rounded-full bg-current" /> : null}
+    </span>
+  )
+}
+
+function DocumentFilterValueRow({
+  label,
+  count,
+  checked,
+  onClick,
+  className = '',
+}: {
+  label: string
+  count: number
+  checked: boolean
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs last:border-b-0 hover:bg-slate-50 ${
+        checked ? 'bg-sky-50/80 text-slate-900' : 'text-slate-700'
+      } ${className}`}
+    >
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+          checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 bg-white'
+        }`}
+      >
+        {checked ? <Check className="h-3 w-3" /> : null}
+      </span>
+      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
+      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{count}</span>
+    </button>
+  )
+}
+
+function getDocumentDateFilterGroups(options: DocumentHistoryColumnOption[]) {
+  const emptyOptions = options.filter((option) => !parseDocumentFilterDateKey(option.value))
+  const dateOptions = options
+    .map((option) => ({ option, iso: parseDocumentFilterDateKey(option.value) }))
+    .filter((item): item is { option: DocumentHistoryColumnOption; iso: string } => Boolean(item.iso))
+    .sort((left, right) => right.iso.localeCompare(left.iso))
+
+  const yearGroups = new Map<string, Map<string, DocumentHistoryColumnOption[]>>()
+  for (const item of dateOptions) {
+    const [year, month] = item.iso.split('-')
+    if (!year || !month) continue
+    if (!yearGroups.has(year)) yearGroups.set(year, new Map())
+    const months = yearGroups.get(year)!
+    if (!months.has(month)) months.set(month, [])
+    months.get(month)!.push(item.option)
+  }
+
+  const groups: Array<
+    | { kind: 'empty'; value: string; label: string; count: number }
+    | {
+        kind: 'year'
+        year: string
+        count: number
+        values: string[]
+        months: Array<{
+          month: string
+          label: string
+          count: number
+          values: string[]
+          options: DocumentHistoryColumnOption[]
+        }>
+      }
+  > = []
+
+  if (emptyOptions.length > 0) {
+    groups.push({
+      kind: 'empty',
+      value: '',
+      label: '(пусто)',
+      count: emptyOptions.reduce((sum, option) => sum + option.count, 0),
+    })
+  }
+
+  for (const [year, months] of [...yearGroups.entries()].sort((left, right) => right[0].localeCompare(left[0]))) {
+    const monthGroups = [...months.entries()]
+      .sort((left, right) => right[0].localeCompare(left[0]))
+      .map(([month, monthOptions]) => ({
+        month,
+        label: formatDocumentFilterMonth(year, month),
+        count: monthOptions.reduce((sum, option) => sum + option.count, 0),
+        values: monthOptions.map((option) => option.value),
+        options: monthOptions,
+      }))
+    groups.push({
+      kind: 'year',
+      year,
+      count: monthGroups.reduce((sum, month) => sum + month.count, 0),
+      values: monthGroups.flatMap((month) => month.values),
+      months: monthGroups,
+    })
+  }
+
+  return groups
+}
+
+function parseDocumentFilterDateKey(value: string) {
+  const match = String(value ?? '').match(/(\d{2})\.(\d{2})\.(\d{4})/)
+  if (!match) return null
+  return `${match[3]}-${match[2]}-${match[1]}`
+}
+
+function formatDocumentFilterMonth(year: string, month: string) {
+  const parsed = new Date(Number(year), Number(month) - 1, 1)
+  return parsed.toLocaleDateString('ru-RU', {
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 function DocumentHistoryActionButton({
@@ -1735,15 +2458,6 @@ function formatDocumentDimensions(documentRecord: {
   ]
     .filter(Boolean)
     .join(' · ') || 'Проект, шифр и линия не указаны'
-}
-
-function formatDocumentCount(count: number) {
-  const lastTwo = count % 100
-  const last = count % 10
-  if (lastTwo >= 11 && lastTwo <= 14) return 'документов'
-  if (last === 1) return 'документ'
-  if (last >= 2 && last <= 4) return 'документа'
-  return 'документов'
 }
 
 function formatJointCount(count: number) {

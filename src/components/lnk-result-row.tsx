@@ -1,8 +1,9 @@
+import { memo } from 'react'
 import { LnkResultRowRequestBadges } from '@/components/lnk-result-row-request-badges'
 import { LnkResultRowResultPicker } from '@/components/lnk-result-row-result-picker'
 import { ResultRowJointHeading } from '@/components/result-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getEffectiveLnkResultDraftValueForRow } from '@/lib/lnk-result-draft'
+import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
   formatLnkResultSummaryItems,
   getLnkMethodByRequestKey,
@@ -13,23 +14,39 @@ import {
 } from '@/lib/report-modal-rows'
 import { getInactiveLnkRequestBadgeClass, getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
-import type { LnkResultDraftState } from '@/lib/report-draft-state'
-import { useSaveCheckSettings } from '@/lib/save-check-settings'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type LnkResultRowProps = {
   row: WeldRow
-  draft: LnkResultDraftState
+  requestName: string
+  requestDate: string
+  methodKey: WeldFieldKey | ''
+  selected: boolean
+  rowResult: string
+  saveCheckSettings: SaveCheckSettings
   onToggleRow: (rowId: number) => void
   onSetRowResult: (rowId: number, result: string) => void
 }
 
-export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkResultRowProps) {
-  const saveCheckSettings = useSaveCheckSettings()
-  const method = getLnkMethodByRequestKey(draft.methodKey)
-  const disabled = !canSelectLnkResultRow(row, draft.requestName, draft.methodKey, draft.requestDate)
-  const selected = draft.rowIds.has(row.id) && !disabled
+function LnkResultRowComponent({
+  row,
+  requestName,
+  requestDate,
+  methodKey,
+  selected: selectedById,
+  rowResult: draftRowResult,
+  saveCheckSettings,
+  onToggleRow,
+  onSetRowResult,
+}: LnkResultRowProps) {
+  const method = getLnkMethodByRequestKey(methodKey)
+  const disabled = !canSelectLnkResultRow(row, requestName, methodKey, requestDate)
+  const selected = selectedById && !disabled
   const rowRequestNames = getLnkRowRequestNames(row)
-  const rowResult = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
+  const rowResult = saveCheckSettings.lnkResultRepairRules && draftRowResult === 'ремонт' && isLnkRepairForbidden(row)
+    ? ''
+    : draftRowResult
   const hasSavedFinalResult = Boolean(
     method && LNK_RESULT_OPTIONS.includes(String(row[method.resultKey] ?? '').trim().toLowerCase() as never),
   )
@@ -74,25 +91,30 @@ export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkRes
           <span className="block truncate text-xs text-amber-700">
             {rowRequestNames.length === 0
               ? 'На этот стык еще нет заявки ЛНК.'
-              : !draft.methodKey
+              : !methodKey
                 ? 'Выберите метод контроля, чтобы отметить стык.'
                 : hasSavedFinalResult
                   ? 'Результат уже внесен. Используйте «Все результаты».'
-                  : draft.requestName
+                  : requestName
                     ? 'Для выбранных заявки и метода этот стык не подходит.'
                     : 'На выбранный метод по этому стыку нет заявки ЛНК.'}
           </span>
         ) : null}
         {selected ? (
-          <LnkResultRowResultPicker row={row} rowResult={rowResult} onSetRowResult={onSetRowResult} />
+          <LnkResultRowResultPicker
+            row={row}
+            rowResult={rowResult}
+            saveCheckSettings={saveCheckSettings}
+            onSetRowResult={onSetRowResult}
+          />
         ) : null}
       </span>
       <span className="flex flex-wrap content-start gap-1.5">
         <LnkResultRowRequestBadges
           row={row}
-          requestName={draft.requestName}
-          requestDate={draft.requestDate}
-          methodKey={draft.methodKey}
+          requestName={requestName}
+          requestDate={requestDate}
+          methodKey={methodKey}
           selected={selected}
           rowRequestNames={rowRequestNames}
         />
@@ -100,3 +122,16 @@ export function LnkResultRow({ row, draft, onToggleRow, onSetRowResult }: LnkRes
     </div>
   )
 }
+
+export const LnkResultRow = memo(LnkResultRowComponent, (previous, next) => {
+  if (
+    previous.row !== next.row ||
+    previous.requestName !== next.requestName ||
+    previous.requestDate !== next.requestDate ||
+    previous.methodKey !== next.methodKey ||
+    previous.selected !== next.selected ||
+    previous.saveCheckSettings !== next.saveCheckSettings
+  ) return false
+  if (next.selected && previous.rowResult !== next.rowResult) return false
+  return true
+})

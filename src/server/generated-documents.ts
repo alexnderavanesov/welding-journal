@@ -15,8 +15,14 @@ import {
 import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings, type OtherSettings } from '@/lib/other-settings'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import type { WeldInput } from '@/lib/weld-fields'
+import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 import { calculateWdi, isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
+import {
+  buildDocumentHistorySqlQuery,
+  normalizeSqlDocumentHistoryResult,
+} from '@/server/document-history-sql'
+import { buildCurrentWdiSqlExpression } from '@/server/current-wdi-sql'
 import { assertSecurityScope } from '@/server/security-functions'
 
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
@@ -37,6 +43,24 @@ export type RemoteGeneratedDocument = {
   projects: string[]
   subtitleCodes: string[]
   lines: string[]
+}
+
+export type RemoteDocumentHistoryFilterOption = {
+  value: string
+  label: string
+  count: number
+}
+
+export type RemoteGeneratedDocumentHistoryRequest = {
+  type: GeneratedDocumentType
+  limit?: number
+  columnFilters?: Record<string, string>
+}
+
+export type RemoteGeneratedDocumentHistoryResult = {
+  documents: RemoteGeneratedDocument[]
+  total: number
+  filterOptions: Record<string, RemoteDocumentHistoryFilterOption[]>
 }
 
 export type SaveGeneratedDocumentInput = {
@@ -61,8 +85,12 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' })
   }))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    const db = requireDb()
-    const records = await db
+    return loadRemoteGeneratedDocuments(data.type)
+  })
+
+async function loadRemoteGeneratedDocuments(type: GeneratedDocumentType) {
+  const db = requireDb()
+  const records = await db
     .select({
       document: generatedDocuments,
       assignmentCount: count(generatedDocumentWeldJoints.weldJointId),
@@ -93,24 +121,312 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' })
     .from(generatedDocuments)
     .leftJoin(generatedDocumentWeldJoints, eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id))
     .leftJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
-    .where(eq(generatedDocuments.type, data.type))
+    .where(eq(generatedDocuments.type, type))
     .groupBy(generatedDocuments.id)
     .orderBy(sql`${generatedDocuments.updatedAt} desc`)
 
-    const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, records.map(({ document }) => document.id))
-    return records.map(({ document, assignmentCount, periodFrom, periodTo, projects, subtitleCodes, lines }) =>
-      toRemoteGeneratedDocument({
-        ...document,
-        rowCount: Number(assignmentCount),
-        periodFrom,
-        periodTo,
-        wdiTotal: currentWdiTotals.get(document.id) ?? 0,
-        projects,
-        subtitleCodes,
-        lines,
-      }),
-    )
+  const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, records.map(({ document }) => document.id))
+  return records.map(({ document, assignmentCount, periodFrom, periodTo, projects, subtitleCodes, lines }) =>
+    toRemoteGeneratedDocument({
+      ...document,
+      rowCount: Number(assignmentCount),
+      periodFrom,
+      periodTo,
+      wdiTotal: currentWdiTotals.get(document.id) ?? 0,
+      projects,
+      subtitleCodes,
+      lines,
+    }),
+  )
+}
+
+export const listRemoteGeneratedDocumentHistory = createServerFn({ method: 'GET' })
+  .validator(normalizeGeneratedDocumentHistoryRequest)
+  .handler(async ({ data }): Promise<RemoteGeneratedDocumentHistoryResult> => {
+    await assertSecurityScope('entry')
+    return loadRemoteGeneratedDocumentHistory(data)
   })
+
+const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
+  'title',
+  'project',
+  'subtitle',
+  'line',
+  'period',
+  'rowCount',
+  'wdi',
+  'updatedAt',
+]
+
+async function loadRemoteGeneratedDocumentHistory(
+  data: ReturnType<typeof normalizeGeneratedDocumentHistoryRequest>,
+): Promise<RemoteGeneratedDocumentHistoryResult> {
+  const db = requireDb()
+  const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+  const currentWdi = buildCurrentWdiSqlExpression(otherSettings, {
+    connectionType: weldJoints.connectionType,
+    d1: weldJoints.d1,
+    d2: weldJoints.d2,
+    t1: weldJoints.t1,
+    t2: weldJoints.t2,
+    wdi: weldJoints.wdi,
+  })
+  const baseQuery = sql`
+    select
+      "document_aggregate".*,
+      array["document_aggregate"."title"]::text[] as "filter_title",
+      case
+        when cardinality("document_aggregate"."projects") = 0 then array['']::text[]
+        else "document_aggregate"."projects"
+      end as "filter_project",
+      case
+        when cardinality("document_aggregate"."subtitleCodes") = 0 then array['']::text[]
+        else "document_aggregate"."subtitleCodes"
+      end as "filter_subtitle",
+      case
+        when cardinality("document_aggregate"."lines") = 0 then array['']::text[]
+        else "document_aggregate"."lines"
+      end as "filter_line",
+      array[
+        case
+          when "document_aggregate"."periodFrom" is null and "document_aggregate"."periodTo" is null then ''
+          else concat(
+            coalesce(to_char("document_aggregate"."periodFrom", 'DD.MM.YYYY'), ''),
+            ' - ',
+            coalesce(to_char("document_aggregate"."periodTo", 'DD.MM.YYYY'), '')
+          )
+        end
+      ]::text[] as "filter_period",
+      array["document_aggregate"."rowCount"::text]::text[] as "filter_rowCount",
+      array[
+        replace(
+          rtrim(
+            rtrim(to_char("document_aggregate"."wdiTotal", 'FM999999999990.00'), '0'),
+            '.'
+          ),
+          '.',
+          ','
+        )
+      ]::text[] as "filter_wdi",
+      array[
+        to_char(
+          "document_aggregate"."updatedAt" at time zone 'Europe/Moscow',
+          'DD.MM.YYYY, HH24:MI'
+        )
+      ]::text[] as "filter_updatedAt"
+    from (
+      select
+        ${generatedDocuments.id} as "id",
+        ${generatedDocuments.type} as "type",
+        ${generatedDocuments.title} as "title",
+        ${generatedDocuments.fileName} as "fileName",
+        ${generatedDocuments.mimeType} as "mimeType",
+        min(${weldJoints.weldDate}) as "periodFrom",
+        max(${weldJoints.weldDate}) as "periodTo",
+        count(${generatedDocumentWeldJoints.weldJointId})::integer as "rowCount",
+        coalesce(sum(${currentWdi}), 0)::numeric as "wdiTotal",
+        ${generatedDocuments.documentNumber} as "documentNumber",
+        ${generatedDocuments.createdAt} as "createdAt",
+        ${generatedDocuments.updatedAt} as "updatedAt",
+        coalesce(
+          array_agg(distinct ${weldJoints.projectTitle} order by ${weldJoints.projectTitle})
+            filter (where nullif(btrim(${weldJoints.projectTitle}), '') is not null),
+          array[]::text[]
+        ) as "projects",
+        coalesce(
+          array_agg(distinct ${weldJoints.subtitleCode} order by ${weldJoints.subtitleCode})
+            filter (where nullif(btrim(${weldJoints.subtitleCode}), '') is not null),
+          array[]::text[]
+        ) as "subtitleCodes",
+        coalesce(
+          array_agg(distinct ${weldJoints.line} order by ${weldJoints.line})
+            filter (where nullif(btrim(${weldJoints.line}), '') is not null),
+          array[]::text[]
+        ) as "lines"
+      from ${generatedDocuments}
+      left join ${generatedDocumentWeldJoints}
+        on ${generatedDocumentWeldJoints.documentId} = ${generatedDocuments.id}
+      left join ${weldJoints}
+        on ${weldJoints.id} = ${generatedDocumentWeldJoints.weldJointId}
+      where ${generatedDocuments.type} = ${data.type}
+      group by ${generatedDocuments.id}
+    ) as "document_aggregate"
+  `
+  const result = await db.execute(buildDocumentHistorySqlQuery({
+    baseQuery,
+    columnFilters: data.columnFilters,
+    filterKeys: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
+    limit: data.limit,
+    orderBy: sql`"updatedAt" desc, "id" desc`,
+  }))
+  return normalizeSqlDocumentHistoryResult(
+    result.rows[0],
+    GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
+    toRemoteGeneratedDocumentHistoryRow,
+  )
+}
+
+export function normalizeGeneratedDocumentHistoryRequest(
+  data: RemoteGeneratedDocumentHistoryRequest | undefined,
+) {
+  return {
+    type: isGeneratedDocumentType(data?.type) ? data.type : 'weldingJournal',
+    limit: normalizeDocumentHistoryLimit(data?.limit),
+    columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
+  }
+}
+
+export function normalizeDocumentHistoryLimit(value: unknown) {
+  const numeric = Math.floor(Number(value))
+  if (!Number.isFinite(numeric)) return 100
+  return Math.max(1, numeric)
+}
+
+export function normalizeDocumentHistoryColumnFilters(value: unknown) {
+  if (!value || typeof value !== 'object') return {}
+  const normalized: Record<string, string> = {}
+  for (const [key, rawFilter] of Object.entries(value)) {
+    const filter = String(rawFilter ?? '').trim()
+    if (filter) normalized[key] = filter
+  }
+  return normalized
+}
+
+export function buildRemoteDocumentHistoryResult<TDocument>({
+  documents,
+  columnFilters,
+  limit,
+  getValues,
+  filterKeys,
+}: {
+  documents: TDocument[]
+  columnFilters: Record<string, string>
+  limit: number
+  getValues: (documentRecord: TDocument, key: string) => string[]
+  filterKeys: string[]
+}) {
+  const filteredDocuments = filterRemoteDocumentHistoryItems(documents, columnFilters, getValues)
+  return {
+    documents: filteredDocuments.slice(0, limit),
+    total: filteredDocuments.length,
+    filterOptions: Object.fromEntries(
+      filterKeys.map((key) => [
+        key,
+        getRemoteDocumentHistoryFilterOptions(documents, columnFilters, key, getValues),
+      ]),
+    ),
+  }
+}
+
+function filterRemoteDocumentHistoryItems<TDocument>(
+  documents: TDocument[],
+  columnFilters: Record<string, string>,
+  getValues: (documentRecord: TDocument, key: string) => string[],
+) {
+  return documents.filter((documentRecord) =>
+    Object.entries(columnFilters).every(([key, filterValue]) => {
+      const values = getValues(documentRecord, key)
+      const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
+      if (choiceFilter?.kind === 'values') {
+        const selectedValues = new Set(choiceFilter.values.map(normalizeDocumentHistoryFilterValue))
+        return values.some((value) => selectedValues.has(normalizeDocumentHistoryFilterValue(value)))
+      }
+      const normalizedQuery = filterValue.toLocaleLowerCase('ru-RU')
+      return values.some((value) => value.toLocaleLowerCase('ru-RU').includes(normalizedQuery))
+    }),
+  )
+}
+
+function getRemoteDocumentHistoryFilterOptions<TDocument>(
+  documents: TDocument[],
+  columnFilters: Record<string, string>,
+  key: string,
+  getValues: (documentRecord: TDocument, key: string) => string[],
+) {
+  const filtersWithoutCurrent = { ...columnFilters }
+  delete filtersWithoutCurrent[key]
+  const counts = new Map<string, number>()
+  for (const documentRecord of filterRemoteDocumentHistoryItems(documents, filtersWithoutCurrent, getValues)) {
+    for (const value of getValues(documentRecord, key)) {
+      const normalized = String(value ?? '').trim()
+      counts.set(normalized, (counts.get(normalized) ?? 0) + 1)
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({
+      value,
+      count,
+      label: value || '(пусто)',
+    }))
+    .sort(compareRemoteDocumentHistoryFilterOptions)
+}
+
+function compareRemoteDocumentHistoryFilterOptions(
+  left: RemoteDocumentHistoryFilterOption,
+  right: RemoteDocumentHistoryFilterOption,
+) {
+  if (left.value === '') return -1
+  if (right.value === '') return 1
+  const leftNumber = Number(left.value.replace(',', '.'))
+  const rightNumber = Number(right.value.replace(',', '.'))
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber
+  return left.label.localeCompare(right.label, 'ru', { numeric: true, sensitivity: 'base' })
+}
+
+function getGeneratedDocumentHistoryFilterValues(
+  documentRecord: RemoteGeneratedDocument,
+  key: string,
+) {
+  if (key === 'title') return [documentRecord.title]
+  if (key === 'project') return documentRecord.projects.length ? documentRecord.projects : ['']
+  if (key === 'subtitle') return documentRecord.subtitleCodes.length ? documentRecord.subtitleCodes : ['']
+  if (key === 'line') return documentRecord.lines.length ? documentRecord.lines : ['']
+  if (key === 'period') {
+    const periodFrom = formatDocumentHistoryDate(documentRecord.periodFrom)
+    const periodTo = formatDocumentHistoryDate(documentRecord.periodTo)
+    return [periodFrom || periodTo ? `${periodFrom} - ${periodTo}` : '']
+  }
+  if (key === 'updatedAt') return [formatDocumentHistoryDateTime(documentRecord.updatedAt)]
+  if (key === 'rowCount') return [String(documentRecord.rowCount)]
+  if (key === 'wdi') return [formatDocumentHistoryNumber(documentRecord.wdiTotal)]
+  return ['']
+}
+
+function normalizeDocumentHistoryFilterValue(value: string) {
+  return value.trim().toLocaleLowerCase('ru-RU')
+}
+
+function formatDocumentHistoryDate(value: unknown) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return parsed.toLocaleDateString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+function formatDocumentHistoryDateTime(value: unknown) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return parsed.toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatDocumentHistoryNumber(value: unknown) {
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)
+}
 
 export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })
   .validator((data: { id: number }) => ({ id: requirePositiveId(data?.id, 'документа') }))
@@ -436,6 +752,35 @@ function toRemoteGeneratedDocument(
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   }
+}
+
+function toRemoteGeneratedDocumentHistoryRow(
+  record: Record<string, unknown>,
+): RemoteGeneratedDocument {
+  const periodFrom = String(record.periodFrom ?? '').trim()
+  const periodTo = String(record.periodTo ?? '').trim()
+  const documentNumber = Number(record.documentNumber)
+  return {
+    id: Number(record.id),
+    type: isGeneratedDocumentType(record.type) ? record.type : 'weldingJournal',
+    title: String(record.title ?? ''),
+    fileName: String(record.fileName ?? ''),
+    mimeType: String(record.mimeType ?? ''),
+    ...(periodFrom ? { periodFrom } : {}),
+    ...(periodTo ? { periodTo } : {}),
+    rowCount: Math.max(0, Number(record.rowCount) || 0),
+    wdiTotal: Number(record.wdiTotal) || 0,
+    ...(Number.isInteger(documentNumber) && documentNumber > 0 ? { documentNumber } : {}),
+    projects: normalizeDocumentHistoryStringArray(record.projects),
+    subtitleCodes: normalizeDocumentHistoryStringArray(record.subtitleCodes),
+    lines: normalizeDocumentHistoryStringArray(record.lines),
+    createdAt: String(record.createdAt ?? ''),
+    updatedAt: String(record.updatedAt ?? ''),
+  }
+}
+
+function normalizeDocumentHistoryStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : []
 }
 
 type GeneratedDocumentNumberSequence = {

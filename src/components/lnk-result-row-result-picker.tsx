@@ -2,20 +2,21 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
-import { useSaveCheckSettings } from '@/lib/save-check-settings'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
 
 type LnkResultRowResultPickerProps = {
   row: WeldRow
   rowResult: string
+  saveCheckSettings: SaveCheckSettings
   onSetRowResult: (rowId: number, result: string) => void
 }
 
 export function LnkResultRowResultPicker({
   row,
   rowResult,
+  saveCheckSettings,
   onSetRowResult,
 }: LnkResultRowResultPickerProps) {
-  const saveCheckSettings = useSaveCheckSettings()
   return (
     <span className="mt-2 flex flex-wrap items-center gap-1.5">
       <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>

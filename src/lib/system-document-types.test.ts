@@ -92,6 +92,32 @@ describe('system document grouping', () => {
     expect(documents.map((document) => document.methodCode)).toEqual(['ВИК', 'РК'])
   })
 
+  it('removes only one split conclusion when its position is cleared', () => {
+    const rows = Array.from({ length: 9 }, (_, index) => index + 13).map((number) =>
+      row(number, {
+        vikConclusion: `ЗНК-ВИК-25.08.2026-${String(number).padStart(3, '0')}`,
+        vikConclusionDate: '2026-08-25',
+      }),
+    )
+    const rowsAfterDeleting17 = rows.map((sourceRow) =>
+      sourceRow.id === 17
+        ? { ...sourceRow, vikConclusion: null, vikConclusionDate: null }
+        : sourceRow,
+    )
+
+    expect(buildSystemDocumentSummaries(rowsAfterDeleting17, 'lnkConclusion').map((document) => document.title))
+      .toEqual([
+        'ЗНК-ВИК-25.08.2026-021',
+        'ЗНК-ВИК-25.08.2026-020',
+        'ЗНК-ВИК-25.08.2026-019',
+        'ЗНК-ВИК-25.08.2026-018',
+        'ЗНК-ВИК-25.08.2026-016',
+        'ЗНК-ВИК-25.08.2026-015',
+        'ЗНК-ВИК-25.08.2026-014',
+        'ЗНК-ВИК-25.08.2026-013',
+      ])
+  })
+
   it('builds PSTO request and conclusion references from report fields', () => {
     const source = row(1, {
       pstoRequest: 'Заявка-ПСТО-001',

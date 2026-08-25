@@ -122,6 +122,14 @@ export function getLnkConclusionTemplateProfile(
   )
 }
 
+export function getLnkConclusionTemplateMethodCodes(
+  templateId: LnkConclusionTemplateId,
+) {
+  return LNK_METHODS
+    .filter((method) => getLnkConclusionTemplateProfile(method.code).id === templateId)
+    .map((method) => method.code)
+}
+
 export function getSystemDocumentTemplateId(
   reference: Pick<SystemDocumentReference, 'type' | 'methodCode'>,
 ): SystemDocumentTemplateId {

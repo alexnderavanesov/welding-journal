@@ -11,6 +11,8 @@ import {
 } from '@/lib/lnk-request-extension'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
 
 export function useLnkRequestActions({
   draft,
@@ -18,6 +20,8 @@ export function useLnkRequestActions({
   lnkRows,
   naming,
   nextRequestName,
+  nextRequestNumber,
+  requestConclusionSettings,
   selectedRows,
   mutation,
   extensionMutation,
@@ -47,9 +51,23 @@ export function useLnkRequestActions({
       return
     }
 
-    const requestName = getRequestNameFromNaming(naming, nextRequestName)
-    if (!requestName) {
-      setMessage('Укажите пользовательское наименование заявки ЛНК')
+    const eligibleRowIds = new Set(buildLnkRequestDraftRows({
+      records: selectedRows,
+      methodKeys,
+      requestName: '__system-document-group-preview__',
+      requestDate: draft.requestDate,
+    }).map((row) => row.id))
+    const creationPlan = buildSystemDocumentCreationPlan({
+      type: 'lnkRequest',
+      date: draft.requestDate,
+      rows: selectedRows.filter((row) => eligibleRowIds.has(row.id)),
+      naming,
+      settings: requestConclusionSettings,
+      nextNumber: nextRequestNumber,
+    })
+    const requestName = creationPlan.groups[0]?.name ?? getRequestNameFromNaming(naming, nextRequestName)
+    if (!requestName || creationPlan.error) {
+      setMessage(creationPlan.error || 'Укажите пользовательское наименование заявки ЛНК')
       return
     }
     const requestDateReason = getDateInputValidationReason(draft.requestDate, 'Дата заявки ЛНК')
@@ -64,6 +82,7 @@ export function useLnkRequestActions({
       requestName,
       requestDate: draft.requestDate,
       useSystemName: naming.mode === 'system',
+      documentGroups: creationPlan.groups,
     })
   }
 

@@ -1,5 +1,6 @@
 import { Check, ListFilter } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
@@ -27,6 +28,27 @@ import { buildWeldTableRenderColumns } from '@/lib/weld-table-horizontal-window'
 const openFilterMenus: Array<{ id: number; close: () => void }> = []
 let filterMenuId = 0
 let filterMenuEscapeListenerAttached = false
+
+const WELD_FILTER_MENU_WIDTH = 384
+const WELD_FILTER_MENU_VIEWPORT_GUTTER = 16
+
+export function getWeldFilterMenuPosition({
+  anchorLeft,
+  anchorBottom,
+  viewportWidth,
+}: {
+  anchorLeft: number
+  anchorBottom: number
+  viewportWidth: number
+}) {
+  const availableWidth = Math.max(0, viewportWidth - WELD_FILTER_MENU_VIEWPORT_GUTTER * 2)
+  const menuWidth = Math.min(WELD_FILTER_MENU_WIDTH, availableWidth)
+  const maxLeft = Math.max(WELD_FILTER_MENU_VIEWPORT_GUTTER, viewportWidth - menuWidth - WELD_FILTER_MENU_VIEWPORT_GUTTER)
+  return {
+    left: Math.min(Math.max(anchorLeft, WELD_FILTER_MENU_VIEWPORT_GUTTER), maxLeft),
+    top: anchorBottom - 4,
+  }
+}
 
 type ColumnFilterOption = {
   value: string
@@ -136,7 +158,9 @@ function WeldColumnFilterControl({
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [optionSearch, setOptionSearch] = useState('')
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null)
   const menuIdRef = useRef<number | null>(null)
+  const anchorRef = useRef<HTMLButtonElement | null>(null)
   const optionListRef = useRef<HTMLDivElement | null>(null)
   const optionListScrollTopRef = useRef(0)
   const pendingOptionListScrollTopRef = useRef<number | null>(null)
@@ -231,6 +255,35 @@ function WeldColumnFilterControl({
     pendingOptionListScrollTopRef.current = null
   }, [filterValue, isOpen, isOptionsLoading, options])
 
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setMenuPosition(null)
+      return undefined
+    }
+
+    const updateMenuPosition = () => {
+      const anchor = anchorRef.current
+      if (!anchor) return
+      const rect = anchor.getBoundingClientRect()
+      const nextPosition = getWeldFilterMenuPosition({
+        anchorLeft: rect.left,
+        anchorBottom: rect.bottom,
+        viewportWidth: window.innerWidth,
+      })
+      setMenuPosition((current) =>
+        current?.left === nextPosition.left && current.top === nextPosition.top ? current : nextPosition,
+      )
+    }
+
+    updateMenuPosition()
+    window.addEventListener('resize', updateMenuPosition)
+    document.addEventListener('scroll', updateMenuPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition)
+      document.removeEventListener('scroll', updateMenuPosition, true)
+    }
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen) return undefined
     const id = ++filterMenuId
@@ -249,6 +302,7 @@ function WeldColumnFilterControl({
   return (
     <div className="relative min-w-0">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => {
           setIsOpen((current) => {
@@ -277,8 +331,11 @@ function WeldColumnFilterControl({
         </span>
       </button>
 
-      {isOpen ? (
-        <div className="absolute left-0 top-9 z-50 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl shadow-slate-300/40">
+      {isOpen ? createPortal(
+        <div
+          className="fixed z-[80] w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl shadow-slate-300/40"
+          style={menuPosition ?? { left: WELD_FILTER_MENU_VIEWPORT_GUTTER, top: 0, visibility: 'hidden' }}
+        >
           <div className="border-b border-slate-100 bg-slate-50/80 px-3 py-2.5">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -356,7 +413,8 @@ function WeldColumnFilterControl({
               <div className="px-3 py-6 text-center text-xs font-normal text-slate-500">Значений не найдено</div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   )

@@ -23,6 +23,7 @@ import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
+import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 
 export function getLnkResultMethodRequestOptions(
   lnkRows: WeldRow[],
@@ -44,19 +45,23 @@ export function getLnkResultMethodRequestOptions(
 export function getLnkResultSearchRows({
   lnkRows,
   selectedRequestRows,
-  draft,
+  requestName,
+  requestDate,
+  methodKey,
 }: {
   lnkRows: WeldRow[]
   selectedRequestRows: WeldRow[]
-  draft: LnkResultDraftState
+  requestName: string
+  requestDate: string
+  methodKey: LnkResultDraftState['methodKey']
 }) {
-  const baseRows = draft.requestName ? selectedRequestRows : lnkRows
-  const method = getLnkMethodByRequestKey(draft.methodKey)
+  const baseRows = requestName ? selectedRequestRows : lnkRows
+  const method = getLnkMethodByRequestKey(methodKey)
   if (!method) return baseRows
 
   return baseRows.filter(
     (row) =>
-      isLnkResultRowApplicable(row, draft.requestName, draft.methodKey, draft.requestDate) &&
+      isLnkResultRowApplicable(row, requestName, methodKey, requestDate) &&
       !isFinalLnkResultValue(row[method.resultKey]),
   )
 }
@@ -65,15 +70,15 @@ export function getLnkResultMethodRows({
   lnkRows,
   selectedRequestRows,
   selectedRows,
-  draft,
+  requestName,
 }: {
   lnkRows: WeldRow[]
   selectedRequestRows: WeldRow[]
   selectedRows: WeldRow[]
-  draft: LnkResultDraftState
+  requestName: string
 }) {
-  if (draft.rowIds.size > 0) return selectedRows
-  if (draft.requestName) return selectedRequestRows
+  if (selectedRows.length > 0) return selectedRows
+  if (requestName) return selectedRequestRows
   return lnkRows
 }
 
@@ -81,8 +86,12 @@ export function getSelectedLnkResultMethods(rows: WeldRow[]) {
   return getLnkInputMethodsForRows(rows, '')
 }
 
-export function getFilteredLnkResultRows(rows: WeldRow[], draft: LnkResultDraftState) {
-  return filterLnkResultRows(rows, draft.search, draft.methodKey)
+export function getFilteredLnkResultRows(
+  rows: WeldRow[],
+  search: string,
+  methodKey: LnkResultDraftState['methodKey'],
+) {
+  return filterLnkResultRows(rows, search, methodKey)
 }
 
 export function getVisibleLnkResultRows(
@@ -100,9 +109,14 @@ export function getVisibleLnkResultRows(
   })
 }
 
-export function getSelectableVisibleLnkResultRows(rows: WeldRow[], draft: LnkResultDraftState) {
+export function getSelectableVisibleLnkResultRows(
+  rows: WeldRow[],
+  requestName: string,
+  methodKey: LnkResultDraftState['methodKey'],
+  requestDate: string,
+) {
   return rows.filter((row) =>
-    canSelectLnkResultRow(row, draft.requestName, draft.methodKey, draft.requestDate),
+    canSelectLnkResultRow(row, requestName, methodKey, requestDate),
   )
 }
 
@@ -136,12 +150,14 @@ export function getLnkResultSaveBlockReason({
   nextConclusionName,
   saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
+  systemDocumentCreationPlan,
 }: {
   draft: LnkResultDraftState
   isSaving: boolean
   nextConclusionName: string
   saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
+  systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
 }) {
   if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
   if (!draft.methodKey) return 'Выберите метод контроля.'
@@ -164,9 +180,15 @@ export function getLnkResultSaveBlockReason({
   if (
     saveCheckSettings.lnkResultConclusionRequired &&
     hasNonEmptyRows &&
+    !systemDocumentCreationPlan &&
     !getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
   ) {
     return formatSaveCheckBlockReason('lnkResultConclusionRequired', 'Укажите наименование заключения.')
+  }
+  if (hasNonEmptyRows && systemDocumentCreationPlan?.error) {
+    return saveCheckSettings.lnkResultConclusionRequired
+      ? formatSaveCheckBlockReason('lnkResultConclusionRequired', systemDocumentCreationPlan.error)
+      : systemDocumentCreationPlan.error
   }
 
   const vikBeforeOtherIssue = findFirstLnkResultVikBeforeOtherDraftIssue(selectedRows, draft, saveCheckSettings)
@@ -174,7 +196,7 @@ export function getLnkResultSaveBlockReason({
 
   const chronologyIssue = hasNonEmptyRows
     ? findFirstLnkChronologySaveBlockReason(
-        buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName),
+        buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName, systemDocumentCreationPlan),
         saveCheckSettings,
       )
     : ''
@@ -204,14 +226,16 @@ function buildProposedLnkResultRowsForChecks(
   selectedRows: WeldRow[],
   draft: LnkResultDraftState,
   nextConclusionName: string,
+  systemDocumentCreationPlan?: SystemDocumentCreationPlan | null,
 ) {
   const method = getLnkMethodByRequestKey(draft.methodKey)
   if (!method) return selectedRows
   const normalizedControlDate = normalizeDateLikeForStorage(draft.controlDate)
-  const conclusionName = getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
   return selectedRows.map((row) => {
     const result = draft.rowResults[row.id] ?? draft.result
     if (!isFinalLnkResultValue(result)) return row
+    const conclusionName = systemDocumentCreationPlan?.groups.find((group) => group.rowIds.includes(row.id))?.name
+      ?? getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
     return {
       ...row,
       [method.resultKey]: result,

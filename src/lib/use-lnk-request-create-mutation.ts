@@ -8,6 +8,7 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
+import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 
 export function useLnkRequestCreateMutation({
   setMessage,
@@ -28,14 +29,32 @@ export function useLnkRequestCreateMutation({
       requestName,
       requestDate,
       useSystemName,
+      documentGroups,
     }: {
       records: RowWithId[]
       methodKeys: WeldFieldKey[]
       requestName: string
       requestDate: string
       useSystemName?: boolean
+      documentGroups?: SystemDocumentCreationGroup[]
     }) => {
-      const updatedRecords = buildLnkRequestRows({ records, methodKeys, requestName, requestDate })
+      const groups = documentGroups ?? [{
+        key: 'legacy',
+        label: 'Все выбранные позиции',
+        rowIds: records.map((record) => record.id),
+        rows: records as WeldRow[],
+        name: requestName,
+        useSystemName: Boolean(useSystemName),
+        isMissingValueFallback: false,
+      }]
+      const updatedRecords = groups.flatMap((group) =>
+        buildLnkRequestRows({
+          records: group.rows,
+          methodKeys,
+          requestName: group.name,
+          requestDate,
+        }),
+      )
 
       if (updatedRecords.length === 0) {
         throw new Error('Нет доступных стыков или видов контроля для новой заявки ЛНК')
@@ -44,16 +63,16 @@ export function useLnkRequestCreateMutation({
       const savedRows = await updateWeldRowsOrThrow(
         updatedRecords,
         'Не удалось сохранить часть записей',
-        useSystemName
-          ? {
-              systemDocumentSequence: {
+        {
+          systemDocumentSequences: groups
+            .filter((group) => group.useSystemName)
+            .map((group) => ({
                 type: 'lnkRequest',
                 date: requestDate,
                 fieldKeys: methodKeys,
-                provisionalName: requestName,
-              },
-            }
-          : {},
+                provisionalName: group.name,
+              })),
+        },
       )
       return savedRows as unknown as WeldRow[]
     },
@@ -66,7 +85,12 @@ export function useLnkRequestCreateMutation({
       const savedRequestName = variables.methodKeys
         .map((fieldKey) => String(savedRows[0]?.[fieldKey] ?? '').trim())
         .find(Boolean) ?? variables.requestName
-      setLnkNotice(formatRequestCreatedMessage(savedRequestName, savedRows.length))
+      const documentCount = variables.documentGroups?.length ?? 1
+      setLnkNotice(
+        documentCount > 1
+          ? `Создано заявок ЛНК: ${documentCount} · стыков: ${savedRows.length}`
+          : formatRequestCreatedMessage(savedRequestName, savedRows.length),
+      )
       setSelectedLnkIds(new Set())
       setLnkRequestDraft(createDefaultLnkRequestDraft())
       setLnkRequestNaming(defaultLnkRequestNaming)

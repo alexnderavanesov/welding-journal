@@ -3,16 +3,20 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import { canCollapseSection, readCollapsedSections, writeCollapsedSections } from '@/lib/weld-table-utils'
 
+const EMPTY_SECTION_SET = new Set<string>()
+
 type UseWeldTableCollapsedSectionsParams = {
   storageKey: string
   availableSections: WeldTableSection[]
   alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>
+  collapsibleExtraSections?: ReadonlySet<string>
 }
 
 export function useWeldTableCollapsedSections({
   storageKey,
   availableSections,
   alwaysVisibleFieldKeys,
+  collapsibleExtraSections = EMPTY_SECTION_SET,
 }: UseWeldTableCollapsedSectionsParams) {
   const [collapsedState, setCollapsedState] = useState(() => ({
     storageKey,
@@ -38,7 +42,10 @@ export function useWeldTableCollapsedSections({
           current.storageKey === storageKey && current.hydrated ? current.sections : readCollapsedSections(storageKey)
         const next = new Set(currentSections)
         const targetSection = availableSections.find((group) => group.section === section)
-        if (!targetSection || !canCollapseSection(targetSection.fields, alwaysVisibleFieldKeys)) {
+        const canCollapse = targetSection
+          ? canCollapseSection(targetSection.fields, alwaysVisibleFieldKeys)
+          : collapsibleExtraSections.has(section)
+        if (!canCollapse) {
           next.delete(section)
           return { storageKey, sections: next, hydrated: true }
         }
@@ -50,7 +57,7 @@ export function useWeldTableCollapsedSections({
         return { storageKey, sections: next, hydrated: true }
       })
     },
-    [alwaysVisibleFieldKeys, availableSections, storageKey],
+    [alwaysVisibleFieldKeys, availableSections, collapsibleExtraSections, storageKey],
   )
 
   return { collapsedSections, toggleSection }

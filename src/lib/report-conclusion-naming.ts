@@ -33,9 +33,11 @@ export function formatLnkConclusionName(
   settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
   documentNumber?: number,
 ) {
-  const date = controlDate ? new Date(`${controlDate}T00:00:00`) : new Date()
   const method = methodKey ? LNK_METHODS.find((item) => item.requestKey === methodKey) : null
-  const methodCode = method?.code ?? 'ЛНК'
+  if (!method) return ''
+
+  const date = controlDate ? new Date(`${controlDate}T00:00:00`) : new Date()
+  const methodCode = method.code
   const context = addRowsToNamingPatternContext({ date, methodCode }, rows)
 
   if (documentNumber) {

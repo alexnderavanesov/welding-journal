@@ -10,7 +10,11 @@ import { WeldTableHeader } from '@/components/weld-table-header'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
-import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
+import {
+  getCollapsibleExtraSectionNames,
+  getVisibleWeldTableExtraColumns,
+  type WeldTableExtraColumn,
+} from '@/lib/weld-table-extra-columns'
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { ROW_ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
@@ -203,6 +207,10 @@ export function WeldTable({
         : undefined,
     [manualPagination],
   )
+  const collapsibleExtraSections = useMemo(
+    () => getCollapsibleExtraSectionNames(extraColumns),
+    [extraColumns],
+  )
   const {
     alwaysVisibleFieldKeys,
     availableSections,
@@ -247,10 +255,15 @@ export function WeldTable({
     hiddenFieldKeys,
     mergePstoSections,
     rowActions: stableRowActions,
+    collapsibleExtraSections,
   })
-  const extraColumnsWidth = extraColumns.reduce((total, column) => total + column.width, 0)
+  const visibleExtraColumns = useMemo(
+    () => getVisibleWeldTableExtraColumns(extraColumns, collapsedSections),
+    [collapsedSections, extraColumns],
+  )
+  const extraColumnsWidth = visibleExtraColumns.reduce((total, column) => total + column.width, 0)
   const fullTableMinWidth = tableMinWidth + extraColumnsWidth
-  const fullTableColumnSpan = tableColumnSpan + extraColumns.length
+  const fullTableColumnSpan = tableColumnSpan + visibleExtraColumns.length
   const hasControlColumn = selectable || hasChainAction
   const stickyIdentityLeadingWidth = stickyIdentityColumns && hasControlColumn ? SELECT_COLUMN_WIDTH : 0
   const horizontalLeadingWidth =
@@ -262,7 +275,7 @@ export function WeldTable({
   } = useWindowTableHorizontalVirtualization({
     tableRef,
     sections: filteredSections,
-    extraColumns,
+    extraColumns: visibleExtraColumns,
     leadingWidth: horizontalLeadingWidth,
   })
   const stateRows = filterOptionRows ?? duplicateRows ?? actionRows ?? rows
@@ -414,6 +427,7 @@ export function WeldTable({
       ) : null}
       <WeldTableSectionToolbar
         sections={availableSections}
+        extraColumns={extraColumns}
         collapsedSections={collapsedSections}
         alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
         tableMinWidth={fullTableMinWidth}
@@ -435,7 +449,7 @@ export function WeldTable({
             selectable={selectable}
             hasRowActions={hasRowActions}
             hasChainAction={hasChainAction}
-            extraColumns={extraColumns}
+            extraColumns={visibleExtraColumns}
           />
           <WeldTableHeader
             selectable={selectable}
@@ -451,7 +465,7 @@ export function WeldTable({
             rowActionsHeaderLabel={rowActions?.headerLabel ?? 'Быстрые действия'}
             rowActionsScreenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
             filteredSections={filteredSections}
-            extraColumns={extraColumns}
+            extraColumns={visibleExtraColumns}
             alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
             readOnly={readOnly}
             rows={headerFilterRows}
@@ -482,7 +496,7 @@ export function WeldTable({
               hasChainAction={hasChainAction}
               hasRowActions={hasRowActions}
               rowActions={stableRowActions}
-              extraColumns={extraColumns}
+              extraColumns={visibleExtraColumns}
               duplicateKeys={tableDuplicateKeys}
               highlightedRowIds={highlightedRowIds}
               highlightedCellKeys={highlightedCellKeys}

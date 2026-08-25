@@ -6,18 +6,22 @@ import type { RequestNamingState } from '@/lib/request-naming-state'
 export function RequestNamingControls({
   naming,
   systemName,
+  systemDocumentCount = 1,
   label,
   placeholder = 'Введите наименование заявки',
   disabled = false,
   bufferCustomNameInput = false,
+  hideCustomNameInput = false,
   onChange,
 }: {
   naming: RequestNamingState
   systemName: string
+  systemDocumentCount?: number
   label: string
   placeholder?: string
   disabled?: boolean
   bufferCustomNameInput?: boolean
+  hideCustomNameInput?: boolean
   onChange: (value: RequestNamingState) => void
 }) {
   const [customNameDraft, setCustomNameDraft] = useState(naming.customName)
@@ -52,8 +56,21 @@ export function RequestNamingControls({
 
       <label className="block space-y-1.5 text-sm">
         <span className="text-[13px] font-medium leading-none text-slate-700">{label}</span>
-        {naming.mode === 'system' ? (
+        {naming.mode === 'system' && systemDocumentCount > 1 ? (
+          <span className="block rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <span className="block text-sm font-semibold text-slate-800">
+              Будет создано документов: {systemDocumentCount}
+            </span>
+            <span className="mt-1 block text-xs leading-4 text-slate-500">
+              Каждая группа получит отдельное системное имя и порядковый номер. Названия показаны в списке групп ниже.
+            </span>
+          </span>
+        ) : naming.mode === 'system' ? (
           <Input value={systemName} readOnly disabled={disabled} className="bg-slate-50 text-slate-600" />
+        ) : hideCustomNameInput ? (
+          <span className="block rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+            Названия задаются отдельно для каждой группы ниже.
+          </span>
         ) : (
           <>
             <Input

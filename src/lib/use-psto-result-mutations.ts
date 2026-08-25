@@ -19,6 +19,7 @@ import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-uti
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId, UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
+import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 
 export function usePstoResultMutations({
   setMessage,
@@ -38,6 +39,7 @@ export function usePstoResultMutations({
       diagramName,
       rows,
       useSystemName,
+      documentGroups,
     }: {
       records: RowWithId[]
       pstoDate: string
@@ -45,21 +47,39 @@ export function usePstoResultMutations({
       diagramName: string
       rows: RowWithId[]
       useSystemName?: boolean
+      documentGroups?: SystemDocumentCreationGroup[]
     }) => {
-      const updatedRecords = buildPstoResultRows({ records, pstoDate, result, diagramName, rows })
+      const groups = documentGroups ?? [{
+        key: 'legacy',
+        label: 'Все выбранные позиции',
+        rowIds: records.map((record) => record.id),
+        rows: records as WeldRow[],
+        name: diagramName,
+        useSystemName: Boolean(useSystemName),
+        isMissingValueFallback: false,
+      }]
+      const updatedRecords = groups.flatMap((group) =>
+        buildPstoResultRows({
+          records: group.rows,
+          pstoDate,
+          result,
+          diagramName: group.name,
+          rows,
+        }),
+      )
       const savedRows = await updateWeldRowsOrThrow(
         updatedRecords,
         'Не удалось сохранить часть записей',
-        useSystemName
-          ? {
-              systemDocumentSequence: {
+        {
+          systemDocumentSequences: groups
+            .filter((group) => group.useSystemName)
+            .map((group) => ({
                 type: 'pstoConclusion',
                 date: pstoDate,
                 fieldKeys: ['heatTreatmentDiagram'],
-                provisionalName: diagramName,
-              },
-            }
-          : {},
+                provisionalName: group.name,
+              })),
+        },
       )
       return savedRows as unknown as WeldRow[]
     },

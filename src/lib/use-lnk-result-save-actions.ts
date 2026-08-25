@@ -11,6 +11,9 @@ import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
+import { buildSystemDocumentCreationPlan, type SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
+import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 
 type LnkResultMutation = {
   mutate: (variables: {
@@ -20,6 +23,7 @@ type LnkResultMutation = {
     resultById: Record<number, string>
     conclusionName: string
     useSystemName?: boolean
+    documentGroups?: SystemDocumentCreationGroup[]
   }) => void
 }
 
@@ -33,6 +37,8 @@ type UseLnkResultSaveActionsOptions = {
   selectedRows: WeldRow[]
   saveBlockReason: string | null
   nextConclusionName: string
+  nextConclusionNumber?: number
+  requestConclusionSettings: RequestConclusionSettings
   resultMutation: LnkResultMutation
   clearGeneratedDataMutation: ClearLnkGeneratedDataMutation
   setDraft: Dispatch<SetStateAction<LnkResultDraftState>>
@@ -45,6 +51,8 @@ export function useLnkResultSaveActions({
   selectedRows,
   saveBlockReason,
   nextConclusionName,
+  nextConclusionNumber,
+  requestConclusionSettings,
   resultMutation,
   clearGeneratedDataMutation,
   setDraft,
@@ -92,10 +100,23 @@ export function useLnkResultSaveActions({
       setMessage('Укажите дату контроля')
       return
     }
-    const conclusionName =
-      !hasNonEmptyResult ? '' : getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
-    if (saveCheckSettings.lnkResultConclusionRequired && hasNonEmptyResult && !conclusionName) {
-      setMessage('Укажите наименование заключения')
+    const method = getLnkMethodByRequestKey(draft.methodKey)
+    const conclusionRows = selectedRows.filter((row) => resultById[row.id] !== LNK_EMPTY_RESULT_VALUE)
+    const creationPlan = buildSystemDocumentCreationPlan({
+      type: 'lnkConclusion',
+      methodCode: method?.code,
+      date: draft.controlDate,
+      rows: conclusionRows,
+      naming: draft.conclusionNaming,
+      settings: requestConclusionSettings,
+      nextNumber: nextConclusionNumber,
+      allowAllNamesEmpty: !saveCheckSettings.lnkResultConclusionRequired,
+    })
+    const conclusionName = !hasNonEmptyResult
+      ? ''
+      : creationPlan.groups[0]?.name ?? getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
+    if (hasNonEmptyResult && creationPlan.error) {
+      setMessage(creationPlan.error)
       return
     }
 
@@ -106,6 +127,7 @@ export function useLnkResultSaveActions({
       resultById,
       conclusionName,
       useSystemName: hasNonEmptyResult && draft.conclusionNaming.mode === 'system',
+      documentGroups: creationPlan.groups,
     })
   }
 

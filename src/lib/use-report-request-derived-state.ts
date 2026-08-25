@@ -97,8 +97,8 @@ export function useReportRequestDerivedState({
     [enablePstoResultState, heatTreatmentRows, pstoResultDraft],
   )
   const lnkResultSelectedRows = useMemo(
-    () => (enableLnkResultState ? getLnkResultSelectedRows(lnkRows, lnkResultDraft) : []),
-    [enableLnkResultState, lnkResultDraft, lnkRows],
+    () => (enableLnkResultState ? getLnkResultSelectedRows(lnkRows, lnkResultDraft.rowIds) : []),
+    [enableLnkResultState, lnkResultDraft.rowIds, lnkRows],
   )
   const nextPstoRequestName = useMemo(
     () => (enablePstoRequestState ? getNextPstoRequestName(selectedHeatTreatmentRows, requestConclusionSettings, pstoRequestDate, systemDocumentSequences?.pstoRequest) : ''),
@@ -188,8 +188,23 @@ export function useReportRequestDerivedState({
     ? systemDocumentSequences?.[lnkConclusionSequenceId]
     : undefined
   const nextLnkConclusionName = useMemo(
-    () => (enableLnkResultState ? getNextLnkConclusionName(lnkResultSelectedRows, lnkResultDraft, requestConclusionSettings, nextLnkConclusionNumber) : ''),
-    [enableLnkResultState, lnkResultDraft, lnkResultSelectedRows, nextLnkConclusionNumber, requestConclusionSettings],
+    () => (enableLnkResultState
+      ? getNextLnkConclusionName(
+          lnkResultSelectedRows,
+          lnkResultDraft.controlDate,
+          lnkResultDraft.methodKey,
+          requestConclusionSettings,
+          nextLnkConclusionNumber,
+        )
+      : ''),
+    [
+      enableLnkResultState,
+      lnkResultDraft.controlDate,
+      lnkResultDraft.methodKey,
+      lnkResultSelectedRows,
+      nextLnkConclusionNumber,
+      requestConclusionSettings,
+    ],
   )
   const nextPstoDiagramName = useMemo(
     () => (enablePstoResultState ? getNextPstoDiagramName(pstoResultSelectedRows, pstoResultDraft, requestConclusionSettings, systemDocumentSequences?.pstoConclusion) : ''),
@@ -200,8 +215,10 @@ export function useReportRequestDerivedState({
     [enablePstoResultState, heatTreatmentRows, pstoResultDraft],
   )
   const selectedLnkResultRequestRows = useMemo(
-    () => (enableLnkResultState ? getSelectedLnkResultRequestRows(lnkRows, lnkResultDraft) : []),
-    [enableLnkResultState, lnkResultDraft, lnkRows],
+    () => (enableLnkResultState
+      ? getSelectedLnkResultRequestRows(lnkRows, lnkResultDraft.requestName, lnkResultDraft.requestDate)
+      : []),
+    [enableLnkResultState, lnkResultDraft.requestDate, lnkResultDraft.requestName, lnkRows],
   )
 
   return {
@@ -209,6 +226,8 @@ export function useReportRequestDerivedState({
     selectedLnkRows,
     nextPstoRequestName,
     nextLnkRequestName,
+    nextPstoRequestNumber: systemDocumentSequences?.pstoRequest,
+    nextLnkRequestNumber: systemDocumentSequences?.lnkRequest,
     pstoRequestOptions,
     pstoRequestManagerOptions,
     managedPstoRequestRows,
@@ -221,6 +240,8 @@ export function useReportRequestDerivedState({
     managedLnkRequestMethods,
     nextLnkConclusionName,
     nextPstoDiagramName,
+    nextLnkConclusionNumber,
+    nextPstoConclusionNumber: systemDocumentSequences?.pstoConclusion,
     selectedPstoResultRequestRows,
     pstoResultSelectedRows,
     selectedLnkResultRequestRows,

@@ -116,4 +116,55 @@ describe('LnkRequestDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Добавить в заявку' }))
     expect(onExtendRequest).toHaveBeenCalledWith(['vikRequest'], request)
   })
+
+  it('renders large row sets by fixed pages and toggles a row on the next page', () => {
+    const rows = Array.from({ length: 51 }, (_, index) => ({
+      id: index + 1,
+      line: '330-TEST-001',
+      joint: `F${index + 1}`,
+      weldDate: '2026-08-10',
+      hasVik: 'да',
+    })) as WeldRow[]
+    const onToggleRow = vi.fn()
+
+    render(
+      <LnkRequestDialog
+        nextRequestName="Заявка-001"
+        selectedRowsCount={0}
+        selectedRows={[]}
+        requestNaming={defaultRequestNamingState}
+        requestDate="2026-08-14"
+        requestExtensionOptions={[]}
+        initialMode="create"
+        initialRequestKey=""
+        initialSelectedMethods={new Set()}
+        requestSearch="330"
+        lnkRowsCount={rows.length}
+        filteredRows={rows}
+        filteredAvailableRows={rows}
+        selectedIds={new Set()}
+        isPending={false}
+        saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        onClose={vi.fn()}
+        onOpenRequestRegistry={vi.fn()}
+        onRequestNamingChange={vi.fn()}
+        onRequestDateChange={vi.fn()}
+        onRequestSearchChange={vi.fn()}
+        onToggleAllRows={vi.fn()}
+        onToggleRow={onToggleRow}
+        onSubmit={vi.fn()}
+        onExtendRequest={vi.fn()}
+      />,
+    )
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(50)
+    expect(screen.getByText('1 из 2')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая страница стыков' }))
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1)
+    expect(screen.getByText('51-51')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(onToggleRow).toHaveBeenCalledWith(51)
+  })
 })

@@ -3,6 +3,7 @@ export type StoredSystemDocumentIdentity = {
   type: string
   title: string
   periodFrom: string | null
+  identityScope?: string
 }
 
 export type SystemDocumentIdentityTarget = {
@@ -10,6 +11,7 @@ export type SystemDocumentIdentityTarget = {
   title: string
   date: string
   rowIds: number[]
+  identityScope?: string
 }
 
 export function matchSystemDocumentIdentityIds({
@@ -31,6 +33,7 @@ export function matchSystemDocumentIdentityIds({
       (document) =>
         availableIds.has(document.id) &&
         document.type === target.type &&
+        hasMatchingIdentityScope(document, target) &&
         document.title === target.title &&
         (document.periodFrom ?? '') === target.date,
     )
@@ -44,7 +47,10 @@ export function matchSystemDocumentIdentityIds({
   targets.forEach((target, index) => {
     if (matchedIds.has(index)) return
     const candidates = documents.filter(
-      (document) => availableIds.has(document.id) && document.type === target.type,
+      (document) =>
+        availableIds.has(document.id) &&
+        document.type === target.type &&
+        hasMatchingIdentityScope(document, target),
     )
     const match = chooseByRowOverlap(candidates, assignedRowsByDocument, target.rowIds)
     if (!match) return
@@ -53,6 +59,13 @@ export function matchSystemDocumentIdentityIds({
   })
 
   return matchedIds
+}
+
+function hasMatchingIdentityScope(
+  document: StoredSystemDocumentIdentity,
+  target: SystemDocumentIdentityTarget,
+) {
+  return document.identityScope === undefined || document.identityScope === target.identityScope
 }
 
 function chooseByRowOverlap(

@@ -7,14 +7,25 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
+import { SystemDocumentSplitPreview } from '@/components/system-document-split-preview'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 
 type PstoResultSettingsProps = {
   draft: PstoResultDraftState
   nextDiagramName: string
+  creationPlan: SystemDocumentCreationPlan
+  saveCheckSettings: SaveCheckSettings
   onDraftChange: Dispatch<SetStateAction<PstoResultDraftState>>
 }
 
-export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: PstoResultSettingsProps) {
+export function PstoResultSettings({
+  draft,
+  nextDiagramName,
+  creationPlan,
+  saveCheckSettings,
+  onDraftChange,
+}: PstoResultSettingsProps) {
   return (
     <section className="min-h-0 space-y-3 overflow-y-auto pr-1">
       <ResultSettingsCard title="1. Результат ПСТО">
@@ -43,10 +54,19 @@ export function PstoResultSettings({ draft, nextDiagramName, onDraftChange }: Ps
         <RequestNamingControls
           naming={draft.diagramNaming}
           systemName={nextDiagramName}
+          systemDocumentCount={creationPlan.groups.length}
           label="Диаграмма термообработки"
           placeholder="Введите наименование диаграммы"
+          hideCustomNameInput={draft.diagramNaming.mode === 'custom' && creationPlan.groups.length > 1}
           onChange={(diagramNaming) => onDraftChange((current) => ({ ...current, diagramNaming }))}
         />
+        <div className="mt-3">
+          <SystemDocumentSplitPreview
+            plan={creationPlan}
+            naming={draft.diagramNaming}
+            onNamingChange={(diagramNaming) => onDraftChange((current) => ({ ...current, diagramNaming }))}
+          />
+        </div>
       </ResultSettingsCard>
 
       <DialogHelpNote>

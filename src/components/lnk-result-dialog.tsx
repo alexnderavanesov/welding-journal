@@ -1,19 +1,23 @@
 import { useMemo, useState } from 'react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
-import { PaginationBar } from '@/components/pagination-bar'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { ResultDialogRowsPanel } from '@/components/result-dialog-rows-panel'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getEffectiveLnkResultDraftValue } from '@/lib/lnk-result-draft'
 import { LNK_METHODS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { pinInitiallySelectedRows } from '@/lib/report-row-utils'
-import { usePagination } from '@/lib/use-pagination'
+import { usePagePagination } from '@/lib/use-page-pagination'
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import {
   createRequestDocumentIdentity,
@@ -31,6 +35,8 @@ export type LnkResultDialogProps = {
   filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptions: RequestDocumentIdentity[]
   nextConclusionName: string
+  systemDocumentCreationPlan: SystemDocumentCreationPlan | null
+  saveCheckSettings: SaveCheckSettings
   saveBlockReason: string | null
   isSaveDisabled: boolean
   contextReady: boolean
@@ -64,6 +70,8 @@ export function LnkResultDialog({
   filteredRequestOptions,
   availableRequestOptions,
   nextConclusionName,
+  systemDocumentCreationPlan,
+  saveCheckSettings,
   saveBlockReason,
   isSaveDisabled,
   contextReady,
@@ -88,17 +96,19 @@ export function LnkResultDialog({
   onSave,
 }: LnkResultDialogProps) {
   const [initiallySelectedIds] = useState(() => new Set(draft.rowIds))
+  const stableOnToggleRow = useStableEventCallback(onToggleRow)
+  const stableOnSetRowResult = useStableEventCallback(onSetRowResult)
   const orderedVisibleRows = useMemo(
     () => pinInitiallySelectedRows(visibleRows, draft.rowIds, initiallySelectedIds),
     [draft.rowIds, initiallySelectedIds, visibleRows],
   )
   const paginationResetKeys = useMemo(
-    () => [draft.search, draft.requestName, draft.requestDate, draft.methodKey, requestSearch, orderedVisibleRows],
-    [draft.methodKey, draft.requestDate, draft.requestName, draft.search, orderedVisibleRows, requestSearch],
+    () => [draft.search, draft.requestName, draft.requestDate, draft.methodKey, requestSearch],
+    [draft.methodKey, draft.requestDate, draft.requestName, draft.search, requestSearch],
   )
-  const rowsPagination = usePagination({
+  const rowsPagination = usePagePagination({
     items: orderedVisibleRows,
-    defaultPageSize: 100,
+    defaultPageSize: 50,
     resetKeys: paginationResetKeys,
   })
   const selectedRequest = createRequestDocumentIdentity(draft.requestName, draft.requestDate)
@@ -122,10 +132,12 @@ export function LnkResultDialog({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         <LnkResultSettings
           draft={draft}
-        selectedMethods={selectedMethods}
-        selectedRows={selectedRows}
-        nextConclusionName={nextConclusionName}
-        onMethodChange={onMethodChange}
+          selectedMethods={selectedMethods}
+          selectedRows={selectedRows}
+          nextConclusionName={nextConclusionName}
+          creationPlan={systemDocumentCreationPlan}
+          saveCheckSettings={saveCheckSettings}
+          onMethodChange={onMethodChange}
           onControlDateChange={onControlDateChange}
           onDefaultResultChange={onDefaultResultChange}
           onConclusionNamingChange={onConclusionNamingChange}
@@ -178,23 +190,28 @@ export function LnkResultDialog({
               <LnkResultRow
                 key={row.id}
                 row={row}
-                draft={draft}
-                onToggleRow={onToggleRow}
-                onSetRowResult={onSetRowResult}
+                requestName={draft.requestName}
+                requestDate={draft.requestDate}
+                methodKey={draft.methodKey}
+                selected={draft.rowIds.has(row.id)}
+                rowResult={getEffectiveLnkResultDraftValue(row.id, draft)}
+                saveCheckSettings={saveCheckSettings}
+                onToggleRow={stableOnToggleRow}
+                onSetRowResult={stableOnSetRowResult}
               />
             ))}
           </div>
-          <div className="p-3">
-            <PaginationBar
-              totalCount={rowsPagination.totalCount}
-              firstItemNumber={rowsPagination.firstItemNumber}
-              lastItemNumber={rowsPagination.lastItemNumber}
-              pageSize={rowsPagination.pageSize}
-              hasMore={rowsPagination.hasMore}
-              onLoadMore={rowsPagination.loadMore}
-              onPageSizeChange={rowsPagination.setPageSize}
-            />
-          </div>
+          <DialogRowPagination
+            totalCount={rowsPagination.totalCount}
+            firstItemNumber={rowsPagination.firstItemNumber}
+            lastItemNumber={rowsPagination.lastItemNumber}
+            page={rowsPagination.page}
+            pageCount={rowsPagination.pageCount}
+            pageSize={rowsPagination.pageSize}
+            onPreviousPage={rowsPagination.goToPreviousPage}
+            onNextPage={rowsPagination.goToNextPage}
+            onPageSizeChange={rowsPagination.setPageSize}
+          />
         </ResultDialogRowsPanel>
       </div>
 
