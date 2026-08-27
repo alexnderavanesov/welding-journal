@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { ResultFilters } from '@/components/result-filters'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
@@ -9,6 +11,8 @@ type PstoResultFiltersProps = {
   availableRequestOptionsCount: number
   filteredRowsCount: number
   selectedRowsCount: number
+  leading?: ReactNode
+  action?: ReactNode
   onSearchChange: (value: string) => void
   onRequestSearchChange: (value: string) => void
   onRequestChange: (request: RequestDocumentIdentity | null) => void
@@ -23,6 +27,8 @@ export function PstoResultFilters({
   availableRequestOptionsCount,
   filteredRowsCount,
   selectedRowsCount,
+  leading,
+  action,
   onSearchChange,
   onRequestSearchChange,
   onRequestChange,
@@ -37,6 +43,10 @@ export function PstoResultFilters({
       availableRequestOptionsCount={availableRequestOptionsCount}
       filteredRowsCount={filteredRowsCount}
       selectedRowsCount={selectedRowsCount}
+      leading={leading}
+      action={action}
+      searchClassName="h-9 min-w-0 flex-[1.1] bg-white"
+      compactToolbar
       showClearFilters={Boolean(search || requestSearch)}
       onSearchChange={onSearchChange}
       onRequestSearchChange={onRequestSearchChange}

@@ -108,6 +108,8 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
     waitingControl: 0,
     good: 0,
     rejected: 0,
+    goodFromClosedRequests: 0,
+    rejectedFromClosedRequests: 0,
     closurePercent: 0,
     rowIds: {
       requiredRequests: [],
@@ -143,6 +145,8 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   jointTypes: [],
   materialJointTypes: [],
   projectJointTypes: [],
+  projectMaterialHierarchy: [],
+  materialProjectHierarchy: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {

@@ -94,21 +94,6 @@ export function getFilteredLnkResultRows(
   return filterLnkResultRows(rows, search, methodKey)
 }
 
-export function getVisibleLnkResultRows(
-  rows: WeldRow[],
-  selectedRowIds: Set<number>,
-  shouldPinPreviewedRows: boolean,
-) {
-  if (!shouldPinPreviewedRows || selectedRowIds.size === 0) return rows
-
-  return [...rows].sort((left, right) => {
-    const leftSelected = selectedRowIds.has(left.id)
-    const rightSelected = selectedRowIds.has(right.id)
-    if (leftSelected === rightSelected) return 0
-    return leftSelected ? -1 : 1
-  })
-}
-
 export function getSelectableVisibleLnkResultRows(
   rows: WeldRow[],
   requestName: string,

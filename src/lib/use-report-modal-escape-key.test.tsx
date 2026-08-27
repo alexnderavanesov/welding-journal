@@ -2,13 +2,13 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
+import { setContextActionMenuOpen } from '@/lib/context-action-menu-state'
 
 type EscapeKeyOptions = Parameters<typeof useReportModalEscapeKey>[0]
 
 function createOptions(overrides: Partial<EscapeKeyOptions> = {}): EscapeKeyOptions {
   return {
     isReportModalOpen: true,
-    isLnkResultPreviewOpen: false,
     isPstoRequestManagerOpen: false,
     isPstoResultManagerOpen: false,
     isLnkRequestManagerOpen: false,
@@ -26,7 +26,6 @@ function createOptions(overrides: Partial<EscapeKeyOptions> = {}): EscapeKeyOpti
     canCloseLnkRequestManager: true,
     canCloseLnkResultManager: true,
     canCloseRkExposureModal: true,
-    onCloseLnkResultPreview: vi.fn(),
     onClosePstoRequestManager: vi.fn(),
     onClosePstoResultManager: vi.fn(),
     onCloseLnkRequestManager: vi.fn(),
@@ -51,6 +50,7 @@ function pressEscape() {
 
 describe('useReportModalEscapeKey', () => {
   afterEach(() => {
+    setContextActionMenuOpen(false)
     document.querySelectorAll('[data-confirm-action-dialog="true"]').forEach((node) => node.remove())
   })
 
@@ -85,6 +85,16 @@ describe('useReportModalEscapeKey', () => {
     const options = createOptions({ onCloseRkExposureModal })
 
     renderHook(() => useReportModalEscapeKey(options))
+    pressEscape()
+
+    expect(onCloseRkExposureModal).not.toHaveBeenCalled()
+  })
+
+  it('leaves the first Escape for a context menu opened above the editor', () => {
+    const onCloseRkExposureModal = vi.fn()
+    setContextActionMenuOpen(true)
+
+    renderHook(() => useReportModalEscapeKey(createOptions({ onCloseRkExposureModal })))
     pressEscape()
 
     expect(onCloseRkExposureModal).not.toHaveBeenCalled()

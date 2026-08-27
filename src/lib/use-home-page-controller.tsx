@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import type { ActiveReport } from '@/lib/home-state'
 import {
   useAutoCollapseNavOnHorizontalScroll,
@@ -26,6 +27,8 @@ import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
 import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
+import { hasPstoResultData } from '@/lib/psto-result-derived-utils'
+import { buildManagedPstoDiagramDrafts } from '@/lib/psto-report-action-utils'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
@@ -125,6 +128,11 @@ import {
   type PercentageLineStampFilter,
 } from '@/lib/report-navigation'
 import {
+  consumeJournalSelectionHandoff,
+  openJournalSelectionInNewTab,
+  removeJournalSelectionTokenFromCurrentUrl,
+} from '@/lib/journal-selection-handoff'
+import {
   isPercentageControlMethodAvailableForRow,
   type PercentageControlMethod,
 } from '@/lib/percentage-line-summary'
@@ -152,6 +160,7 @@ import {
 type UseHomePageControllerOptions = {
   activeReport?: ActiveReport
   onActiveReportChange?: (report: ActiveReport) => void
+  journalSelectionToken?: string
 }
 
 export function useHomePageController(options: UseHomePageControllerOptions = {}) {
@@ -159,6 +168,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const saveCheckSettings = useSaveCheckSettings()
   const otherSettings = useOtherSettings()
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [isPstoResultRegistryAll, setIsPstoResultRegistryAll] = useState(false)
   const [systemDocumentNavigationRequest, setSystemDocumentNavigationRequest] =
     useState<SystemDocumentNavigationRequest | null>(null)
   const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
@@ -216,6 +226,26 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setSelectedLnkIds,
     setSelectedWeldingJournalIds,
   } = useReportSelectionState()
+  const consumedJournalSelectionTokenRef = useRef('')
+  useEffect(() => {
+    const token = options.journalSelectionToken?.trim() ?? ''
+    if (activeReport !== 'weldingJournal' || !token || consumedJournalSelectionTokenRef.current === token) return
+    consumedJournalSelectionTokenRef.current = token
+    try {
+      const handoff = consumeJournalSelectionHandoff(window.localStorage, token)
+      removeJournalSelectionTokenFromCurrentUrl()
+      if (!handoff) {
+        setMessage('Не удалось открыть выбранные стыки: ссылка устарела или уже была использована.')
+        return
+      }
+      setColumnFilters(buildRowIdListFilters(handoff.rowIds))
+      setSelectedWeldingJournalIds(new Set(handoff.rowIds))
+      setMessage(`Показаны стыки из ${handoff.sourceLabel}: ${handoff.rowIds.length}.`)
+    } catch {
+      removeJournalSelectionTokenFromCurrentUrl()
+      setMessage('Браузер не разрешил передать выбранные стыки в новую вкладку.')
+    }
+  }, [activeReport, options.journalSelectionToken, setColumnFilters, setMessage, setSelectedWeldingJournalIds])
   const {
     lnkRequestDraft,
     lnkRequestNaming,
@@ -268,8 +298,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   } = usePstoModalState()
   const {
     isLnkResultModalOpen,
-    isLnkResultPreviewOpen,
-    shouldPinPreviewedLnkResultRows,
     lnkResultDraft,
     lnkResultRequestSearch,
     isLnkOfficialityModalOpen,
@@ -283,8 +311,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     managedLnkPendingResultChanges,
     preservedLnkOrderIds,
     setIsLnkResultModalOpen,
-    setIsLnkResultPreviewOpen,
-    setShouldPinPreviewedLnkResultRows,
     setLnkResultDraft,
     setLnkResultRequestSearch,
     setIsLnkOfficialityModalOpen,
@@ -377,7 +403,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isLnkRequestModalOpen,
       isLnkRequestManagerOpen,
       isLnkResultModalOpen,
-      isLnkResultPreviewOpen,
       isLnkResultManagerOpen,
       isLnkOfficialityModalOpen,
       isDuplicateControlModalOpen,
@@ -391,7 +416,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isLnkRequestModalOpen ||
     isLnkRequestManagerOpen ||
     isLnkResultModalOpen ||
-    isLnkResultPreviewOpen ||
     isLnkResultManagerOpen ||
     isLnkOfficialityModalOpen
   const isReportModalOpen = isImportDialogOpen || Boolean(rkExposureEditing) || isReportDataModalOpen
@@ -424,7 +448,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setRkExposureEditing,
     setIsLnkRequestModalOpen,
     setIsLnkResultModalOpen,
-    setIsLnkResultPreviewOpen,
     setIsPstoRequestManagerOpen,
     setIsPstoRequestModalOpen,
     setIsPstoResultManagerOpen,
@@ -444,7 +467,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setPstoResultRequestSearch,
     setSelectedHeatTreatmentIds,
     setSelectedLnkIds,
-    setShouldPinPreviewedLnkResultRows,
     setWelderStampSearch,
     defaultLnkRequestNaming,
     defaultLnkConclusionNaming,
@@ -591,7 +613,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeReport === 'lnk' ||
     isImportDialogOpen ||
     isLnkResultModalOpen ||
-    isLnkResultPreviewOpen ||
     isLnkResultManagerOpen ||
     isLnkOfficialityModalOpen ||
     isDuplicateControlModalOpen
@@ -867,6 +888,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const {
     pstoResultAvailableRequestOptions,
     filteredPstoResultRequestOptions,
+    pstoResultSearchRows,
     filteredPstoResultRows,
     selectedPstoResultRows,
     systemDocumentCreationPlan: pstoResultSystemDocumentCreationPlan,
@@ -888,6 +910,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const {
     lnkResultAvailableRequestOptions,
     filteredLnkResultRequestOptions,
+    lnkResultSearchRows,
     selectedLnkResultMethods,
     filteredLnkResultRows,
     lnkResultContextReady,
@@ -909,7 +932,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     nextLnkConclusionNumber,
     requestConclusionSettings,
     saveCheckSettings,
-    shouldPinPreviewedLnkResultRows,
     isLnkResultSaving: lnkResultMutation.isPending,
   })
   const {
@@ -919,6 +941,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openAddLnkResultModal,
     openAddLnkResultModalForMethod,
     openAddLnkResultModalForRow,
+    setLnkResultRows,
     toggleAllLnkResultRows,
     toggleLnkResultRow,
   } = useLnkResultActions({
@@ -928,16 +951,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     mutation: lnkResultMutation,
     setDraft: setLnkResultDraft,
     setIsModalOpen: setIsLnkResultModalOpen,
-    setIsPreviewOpen: setIsLnkResultPreviewOpen,
     setMessage,
     setPreservedOrderIds: setPreservedLnkOrderIds,
     setRequestSearch: setLnkResultRequestSearch,
-    setShouldPinPreviewedRows: setShouldPinPreviewedLnkResultRows,
     defaultConclusionNaming: defaultLnkConclusionNaming,
   })
   const {
     handleAddLnkResult,
     setLnkResultForRow,
+    setLnkResultForRows,
   } = useLnkResultSaveActions({
     lnkRows,
     draft: lnkResultDraft,
@@ -1255,8 +1277,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openCreatePstoRequestModalForRow,
     openPstoRequestManager,
     openPstoResultManager,
+    openPstoResultManagerForRows,
     renameManagedPstoDiagram,
     renameManagedPstoRequest,
+    setPstoResultRows,
     submitCreatePstoRequest,
     toggleAllPstoRequestRows,
     toggleAllPstoResultRows,
@@ -1629,9 +1653,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setMessage(`Показана линия ${String(row.line ?? '-')} в текущем отчете.`)
   }
 
+  const closePstoResultManager = () => {
+    setIsPstoResultRegistryAll(false)
+    setIsPstoResultManagerOpen(false)
+    setManagedPstoDiagramDrafts({})
+  }
+
   useReportModalEscapeKey({
     isReportModalOpen,
-    isLnkResultPreviewOpen,
     isPstoRequestManagerOpen,
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
@@ -1652,9 +1681,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       !lnkResultReplacementMutation.isPending &&
       !lnkConclusionCorrectionMutation.isPending,
     canCloseRkExposureModal: !rkExposureMutation.isPending,
-    onCloseLnkResultPreview: () => setIsLnkResultPreviewOpen(false),
     onClosePstoRequestManager: () => setIsPstoRequestManagerOpen(false),
-    onClosePstoResultManager: () => setIsPstoResultManagerOpen(false),
+    onClosePstoResultManager: closePstoResultManager,
     onCloseLnkRequestManager: () => setIsLnkRequestManagerOpen(false),
     onCloseLnkResultManager: closeLnkResultManager,
     onCloseRkExposureModal: () => setRkExposureEditing(null),
@@ -1903,7 +1931,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
       search: '',
     })
-    setShouldPinPreviewedLnkResultRows(false)
     setIsLnkResultModalOpen(true)
   }
 
@@ -2483,6 +2510,47 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onDeleteSuspension: (id) => runProtectedDelete('удаление отстранения', () => deleteWelderStampSuspensionRecord(id)),
   })
 
+  const selectedPstoHeaderRows = useMemo(
+    () => tableActionRows.filter((row) => selectedHeatTreatmentIds.has(row.id)),
+    [selectedHeatTreatmentIds, tableActionRows],
+  )
+  const selectedPstoHeaderRequestOptions = useMemo(
+    () => getPstoRequestDocumentIdentities(selectedPstoHeaderRows),
+    [selectedPstoHeaderRows],
+  )
+  const pstoResultRegistryRows = useMemo(
+    () => heatTreatmentRows.filter(hasPstoResultData),
+    [heatTreatmentRows],
+  )
+  useEffect(() => {
+    if (!isPstoRequestManagerOpen || managedPstoRequestName || pstoRequestManagerOptions.length === 0) return
+    const request = pstoRequestManagerOptions[0]
+    setManagedPstoRequestName(request.name)
+    setManagedPstoRequestDate(request.date)
+    setManagedPstoRequestNameDraft(request.name)
+  }, [
+    isPstoRequestManagerOpen,
+    managedPstoRequestName,
+    pstoRequestManagerOptions,
+    setManagedPstoRequestDate,
+    setManagedPstoRequestName,
+    setManagedPstoRequestNameDraft,
+  ])
+  useEffect(() => {
+    if (!isPstoResultManagerOpen || !isPstoResultRegistryAll || !isPstoRowsContextReady) return
+    setPstoResultDraft((current) => ({
+      ...current,
+      rowIds: new Set(pstoResultRegistryRows.map((row) => row.id)),
+    }))
+    setManagedPstoDiagramDrafts(buildManagedPstoDiagramDrafts(pstoResultRegistryRows))
+  }, [
+    isPstoResultManagerOpen,
+    isPstoResultRegistryAll,
+    isPstoRowsContextReady,
+    pstoResultRegistryRows,
+    setManagedPstoDiagramDrafts,
+    setPstoResultDraft,
+  ])
   const reportHeaderActionsProps = createReportHeaderActionsProps({
     activeReport,
     onOpenImportDialog: () => setIsImportDialogOpen(true),
@@ -2503,11 +2571,32 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenWeldingJournalCancelledAcceptedReport: openWeldingJournalCancelledAcceptedReport,
     onOpenWeldingJournalSystemReport: openWeldingJournalSystemReport,
     onCreatePstoRequest: openCreatePstoRequestModal,
+    onEditSelectedPstoRequest: () => {
+      const request = selectedPstoHeaderRequestOptions[0]
+      if (request) openPstoRequestManager(request.name, request.date)
+    },
+    editSelectedPstoRequestDisabled:
+      selectedPstoHeaderRows.length === 0 ||
+      selectedPstoHeaderRows.some((row) => !String(row.pstoRequest ?? '').trim()) ||
+      selectedPstoHeaderRequestOptions.length !== 1,
+    onOpenPstoRequestRegistry: () => openPstoRequestManager(),
     pstoRequestPending: pstoRequestMutation.isPending,
     onAddPstoResult: openAddPstoResultModal,
     pstoResultDisabled:
       pstoResultMutation.isPending ||
       (isPstoRowsContextReady && pstoResultRequestOptions.length === 0),
+    onEditSelectedPstoResults: () => {
+      setIsPstoResultRegistryAll(false)
+      openPstoResultManagerForRows(selectedPstoHeaderRows)
+    },
+    editSelectedPstoResultsDisabled: !selectedPstoHeaderRows.some(hasPstoResultData),
+    onOpenPstoResultRegistry: () => {
+      setIsPstoResultRegistryAll(true)
+      setPstoResultDraft((current) => ({ ...current, rowIds: new Set() }))
+      setManagedPstoDiagramDrafts({})
+      setIsPstoResultManagerOpen(true)
+    },
+    pstoResultRegistryDisabled: isPstoRowsContextReady && pstoResultRegistryRows.length === 0,
     isPstoShowMenuOpen,
     onTogglePstoShowMenu: () => setIsPstoShowMenuOpen((current) => !current),
     onOpenPstoCurrentReport: openPstoCurrentReport,
@@ -2757,6 +2846,39 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         },
       }
     : null
+  const confirmClearSelectedRows = async (
+    selectedCount: number,
+    contextLabel: string,
+    onConfirm: () => void,
+    warning?: string,
+  ) => {
+    if (selectedCount === 0) return
+    const confirmed = await confirmAction({
+      title: 'Снять весь выбор?',
+      itemName: `Выбрано стыков: ${selectedCount}`,
+      description: `Все галочки будут сняты в окне ${contextLabel}. Данные сварочного журнала не изменятся.`,
+      warning,
+      confirmLabel: 'Снять выбор',
+      tone: 'warning',
+    })
+    if (confirmed) onConfirm()
+  }
+
+  const openModalRowsInWeldingJournal = (dialogRows: readonly WeldRow[], sourceLabel: string) => {
+    const opened = openJournalSelectionInNewTab(
+      dialogRows.map((row) => row.id),
+      sourceLabel,
+    )
+    if (!opened) {
+      setMessage('Браузер заблокировал открытие сварочного журнала в новой вкладке.')
+    }
+  }
+  const copyManagerDocumentName = (documentName: string) => {
+    void copyTextToClipboard(documentName)
+      .then((copied) => setMessage(copied ? 'Название документа скопировано.' : 'Не удалось скопировать название документа.'))
+      .catch(() => setMessage('Не удалось скопировать название документа.'))
+  }
+
   const reportPstoDialogsProps = createReportPstoDialogsProps({
     requestModalOpen: isPstoRequestModalOpen,
     request: {
@@ -2770,6 +2892,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestManagerOptions: pstoRequestManagerOptions,
       heatTreatmentRowsCount: heatTreatmentRows.length,
       filteredRows: filteredPstoRequestRows,
+      requestRows: heatTreatmentRows,
       availableRowsCount: filteredAvailablePstoRequestRows.length,
       selectedIds: selectedHeatTreatmentIds,
       isPending: pstoRequestMutation.isPending,
@@ -2779,6 +2902,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onRequestNamingChange: setPstoRequestNaming,
       onRequestDateChange: setPstoRequestDate,
       onRequestSearchChange: setPstoRequestSearch,
+      onClearSelection: () => {
+        void confirmClearSelectedRows(
+          selectedHeatTreatmentIds.size,
+          'создания заявки ПСТО',
+          () => setSelectedHeatTreatmentIds(new Set()),
+        )
+      },
+      onSetSelectedRows: (rowIds) => setSelectedHeatTreatmentIds(new Set(rowIds)),
+      onOpenJournalRows: openModalRowsInWeldingJournal,
       onToggleAllRows: toggleAllPstoRequestRows,
       onToggleRow: togglePstoRequestRow,
       onSubmit: () => runProtectedEdit('создание заявки ПСТО', submitCreatePstoRequest),
@@ -2793,12 +2925,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestNameDraft: managedPstoRequestNameDraft,
       isManagerPending: pstoRequestManagerMutation.isPending,
       isCorrectionPending: pstoRequestCorrectionMutation.isPending,
+      canOpenDocument: availableSystemDocumentTypes.has('pstoRequest'),
       onClose: () => setIsPstoRequestManagerOpen(false),
       onChangeRequest: changeManagedPstoRequest,
       onRequestNameDraftChange: setManagedPstoRequestNameDraft,
       onRenameRequest: () => runProtectedEdit('переименование заявки ПСТО', renameManagedPstoRequest),
+      onOpenDocument: (row) => openReportDocument(row, 'pstoRequest'),
+      onOpenJournalRows: openModalRowsInWeldingJournal,
+      onCopyDocumentName: copyManagerDocumentName,
       onClearPosition: (row) => runProtectedDelete('очистку позиции заявки ПСТО', () => clearManagedPstoRequestPosition(row)),
-      onDeleteRequest: () => runProtectedDelete('удаление заявки ПСТО', deleteManagedPstoRequest),
+      onDeleteRequest: (request) => runProtectedDelete('удаление заявки ПСТО', () => deleteManagedPstoRequest(request)),
     },
     resultModalOpen: isPstoResultModalOpen,
     result: {
@@ -2808,9 +2944,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       systemDocumentCreationPlan: pstoResultSystemDocumentCreationPlan,
       saveCheckSettings,
       filteredRows: filteredPstoResultRows,
+      selectedRows: selectedPstoResultRows,
       filteredRequestOptions: filteredPstoResultRequestOptions,
       availableRequestOptions: pstoResultAvailableRequestOptions,
       saveBlockReason: pstoResultSaveBlockReason,
+      requestRows: pstoResultSearchRows,
       onDraftChange: setPstoResultDraft,
       onRequestSearchChange: setPstoResultRequestSearch,
       onRequestChange: changePstoResultRequest,
@@ -2823,9 +2961,21 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           search: '',
         }))
       },
+      onClearSelection: () => {
+        void confirmClearSelectedRows(
+          pstoResultDraft.rowIds.size,
+          'внесения результата ПСТО',
+          () => setPstoResultDraft((current) => ({ ...current, rowIds: new Set() })),
+        )
+      },
+      onSetSelectedRows: setPstoResultRows,
+      onOpenJournalRows: openModalRowsInWeldingJournal,
       onToggleAll: toggleAllPstoResultRows,
       onToggleRow: togglePstoResultRow,
-      onOpenManager: openPstoResultManager,
+      onOpenManager: () => {
+        setIsPstoResultRegistryAll(false)
+        openPstoResultManager()
+      },
       onClose: closeAddPstoResultModal,
       onSave: () => runProtectedEdit('сохранение результата ПСТО', handleAddPstoResult),
     },
@@ -2834,15 +2984,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       rows: managedPstoResultRows,
       diagramDrafts: managedPstoDiagramDrafts,
       isPending: pstoResultCorrectionMutation.isPending,
-      onClose: () => {
-        setIsPstoResultManagerOpen(false)
-        setManagedPstoDiagramDrafts({})
-      },
+      canOpenDocument: availableSystemDocumentTypes.has('pstoConclusion'),
+      onClose: closePstoResultManager,
       onDiagramDraftChange: (rowId, value) =>
         setManagedPstoDiagramDrafts((current) => ({ ...current, [rowId]: value })),
       onRenameDiagram: (row, diagramName) =>
         runProtectedEdit('переименование диаграммы ПСТО', () => renameManagedPstoDiagram(row, diagramName)),
       onDeleteResult: (row) => runProtectedDelete('удаление результата ПСТО', () => deleteManagedPstoResult(row)),
+      onOpenDocument: (row) => openReportDocument(row, 'heatTreatmentDiagram'),
+      onOpenJournalRows: openModalRowsInWeldingJournal,
+      onCopyDocumentName: copyManagerDocumentName,
     },
   })
   const reportLnkDialogsProps = createReportLnkDialogsProps({
@@ -2863,6 +3014,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       lnkRowsCount: lnkRows.length,
       filteredRows: filteredLnkRequestRows,
       filteredAvailableRows: filteredAvailableLnkRequestRows,
+      availableRows: availableLnkRequestRows,
       selectedIds: selectedLnkIds,
       isPending: lnkRequestMutation.isPending || lnkRequestExtensionMutation.isPending,
       saveCheckSettings,
@@ -2871,6 +3023,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onRequestNamingChange: setLnkRequestNaming,
       onRequestDateChange: (requestDate) => setLnkRequestDraft((current) => ({ ...current, requestDate })),
       onRequestSearchChange: setLnkRequestSearch,
+      onClearSelection: () => {
+        void confirmClearSelectedRows(
+          selectedLnkIds.size,
+          'создания заявки ЛНК',
+          () => setSelectedLnkIds(new Set()),
+        )
+      },
+      onSetSelectedRows: (rowIds) => setSelectedLnkIds(new Set(rowIds)),
+      onOpenJournalRows: openModalRowsInWeldingJournal,
       onToggleAllRows: toggleAllLnkRequestRows,
       onToggleRow: toggleLnkRequestRow,
       onSubmit: (methodKeys) => runProtectedEdit('создание заявки ЛНК', () => handleCreateLnkRequest(methodKeys)),
@@ -2882,6 +3043,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestName: managedLnkRequestName,
       requestDate: managedLnkRequestDate,
       requestOptions: lnkRequestExtensionOptions,
+      allRows: lnkRows,
       requestRows: managedLnkRequestRows,
       requestMethods: managedLnkRequestMethods,
       requestNameDraft: managedLnkRequestNameDraft,
@@ -2903,26 +3065,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           'lnk',
         )
       },
-      onOpenDocument: () => {
-        const method = managedLnkRequestMethods.find((candidate) =>
-          managedLnkRequestRows.some((row) =>
-            String(row[candidate.requestKey] ?? '').trim() === managedLnkRequestName &&
-            String(row[candidate.requestDateKey] ?? '').trim() === managedLnkRequestDate,
-          ),
-        )
-        const row = method
-          ? managedLnkRequestRows.find((candidate) =>
-              String(candidate[method.requestKey] ?? '').trim() === managedLnkRequestName &&
-              String(candidate[method.requestDateKey] ?? '').trim() === managedLnkRequestDate,
-            )
-          : undefined
-        if (row && method) openReportDocument(row, method.requestKey)
-      },
+      onOpenDocument: openReportDocument,
+      onOpenJournalRows: openModalRowsInWeldingJournal,
+      onCopyDocumentName: copyManagerDocumentName,
       onRequestNameDraftChange: setManagedLnkRequestNameDraft,
       onRenameRequest: () => runProtectedEdit('переименование заявки ЛНК', renameManagedLnkRequest),
       onClearPosition: (row, methodKey) =>
         runProtectedDelete('очистку позиции заявки ЛНК', () => clearManagedLnkRequestPosition(row, methodKey)),
-      onDeleteRequest: () => runProtectedDelete('удаление заявки ЛНК', deleteManagedLnkRequest),
+      onDeleteRequest: (request) => runProtectedDelete('удаление заявки ЛНК', () => deleteManagedLnkRequest(request)),
     },
     resultManagerOpen: isLnkResultManagerOpen,
     resultManager: {
@@ -2946,6 +3096,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         filterSelectedRowsInCurrentReport([row])
       },
       onOpenDocument: openReportDocument,
+      onOpenJournalRows: openModalRowsInWeldingJournal,
+      onCopyDocumentName: copyManagerDocumentName,
       canOpenDocument: (fieldKey) => {
         const templateId = getSystemDocumentTemplateIdForField(fieldKey)
         return Boolean(templateId && availableSystemDocumentTypes.has(templateId))
@@ -3000,11 +3152,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       draft: lnkResultDraft,
       requestSearch: lnkResultRequestSearch,
       selectedMethods: selectedLnkResultMethods,
+      requestRows: lnkResultSearchRows,
       selectedRows: selectedLnkResultRows,
       visibleRows: visibleLnkResultRows,
       filteredRequestOptions: filteredLnkResultRequestOptions,
       availableRequestOptions: lnkResultAvailableRequestOptions,
-      nextConclusionName: nextLnkConclusionName,
       systemDocumentCreationPlan: lnkResultSystemDocumentCreationPlan,
       saveCheckSettings,
       saveBlockReason: lnkResultSaveBlockReason,
@@ -3026,13 +3178,22 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onConclusionNamingChange: (conclusionNaming) =>
         setLnkResultDraft((current) => ({ ...current, conclusionNaming })),
       onClearSelection: () => {
-        setShouldPinPreviewedLnkResultRows(false)
-        setLnkResultDraft((current) => ({
-          ...current,
-          rowIds: new Set(),
-          rowResults: {},
-        }))
+        void confirmClearSelectedRows(
+          lnkResultDraft.rowIds.size,
+          'внесения результатов ЛНК',
+          () => {
+            setLnkResultDraft((current) => ({
+              ...current,
+              rowIds: new Set(),
+              rowResults: {},
+            }))
+          },
+          'Несохраненные индивидуальные результаты выбранных стыков также будут очищены.',
+        )
       },
+      onSetSelectedRows: setLnkResultRows,
+      onSetRowsResult: setLnkResultForRows,
+      onOpenJournalRows: openModalRowsInWeldingJournal,
       onToggleAllRows: toggleAllLnkResultRows,
       onSearchChange: (search) => setLnkResultDraft((current) => ({ ...current, search })),
       onRequestSearchChange: setLnkResultRequestSearch,
@@ -3040,7 +3201,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onClearRequestSearch: () => setLnkResultRequestSearch(''),
       onClearSearch: () => {
         setLnkResultRequestSearch('')
-        setShouldPinPreviewedLnkResultRows(false)
         setLnkResultDraft((current) => ({
           ...current,
           requestName: '',
@@ -3051,19 +3211,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       },
       onToggleRow: toggleLnkResultRow,
       onSetRowResult: setLnkResultForRow,
-      onOpenPreview: () => {
-        setShouldPinPreviewedLnkResultRows(true)
-        setIsLnkResultPreviewOpen(true)
-      },
       onSave: () => runProtectedEdit('сохранение результата ЛНК', handleAddLnkResult),
     },
     selectableResultRows: selectableVisibleLnkResultRows,
-    resultPreviewOpen: isLnkResultPreviewOpen,
-    resultPreview: {
-      rows: selectedLnkResultRows,
-      draft: lnkResultDraft,
-      onClose: () => setIsLnkResultPreviewOpen(false),
-    },
   })
 
   return {

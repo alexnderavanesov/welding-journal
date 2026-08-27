@@ -37,10 +37,11 @@ export type ContextActionMenuState = {
 
 type ContextActionMenuProps = {
   menu: ContextActionMenuState
+  closeOnEscapeWithModal?: boolean
   onClose: () => void
 }
 
-export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
+export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClose }: ContextActionMenuProps) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -57,7 +58,7 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (isModalDialogOpen()) return
+      if (isModalDialogOpen() && !closeOnEscapeWithModal) return
       event.preventDefault()
       event.stopPropagation()
       event.stopImmediatePropagation()
@@ -73,7 +74,7 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
       window.removeEventListener('resize', handleWindowChange)
       window.removeEventListener('scroll', handleWindowChange, true)
     }
-  }, [menu, onClose])
+  }, [closeOnEscapeWithModal, menu, onClose])
 
   if (!menu || typeof document === 'undefined') return null
 
@@ -154,7 +155,7 @@ export function ContextActionMenu({ menu, onClose }: ContextActionMenuProps) {
                 <div
                   role="menu"
                   className={`absolute top-0 z-[101] min-w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 transition-opacity ${
-                    submenuOpensLeft ? 'right-full mr-1' : 'left-full ml-1'
+                    submenuOpensLeft ? 'right-[calc(100%-1px)]' : 'left-[calc(100%-1px)]'
                   } ${
                     isSubmenuOpen
                       ? 'visible opacity-100'

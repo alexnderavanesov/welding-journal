@@ -3,7 +3,11 @@ import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
 import { canCreatePstoRequest } from '@/lib/psto-status'
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
-import { findRequestDocumentIdentity, type RequestDocumentIdentity } from '@/lib/request-document-identity'
+import {
+  createRequestDocumentIdentity,
+  findRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 
 export function createPstoRequestActionHandlers({
@@ -91,11 +95,13 @@ export function createPstoRequestActionHandlers({
   }
 
   function openPstoRequestManager(requestNameOverride?: string, requestDateOverride?: string) {
+    const requestName = requestNameOverride || managedPstoRequestName
+    const requestDate = requestDateOverride || managedPstoRequestDate
     const request = findRequestDocumentIdentity(
       pstoRequestManagerOptions,
-      requestNameOverride || managedPstoRequestName,
-      requestDateOverride || managedPstoRequestDate,
-    )
+      requestName,
+      requestDate,
+    ) ?? createRequestDocumentIdentity(requestName, requestDate)
     setManagedPstoRequestName(request?.name ?? '')
     setManagedPstoRequestDate(request?.date ?? '')
     setManagedPstoRequestNameDraft(request?.name ?? '')
@@ -117,8 +123,9 @@ export function createPstoRequestActionHandlers({
     })
   }
 
-  async function deleteManagedPstoRequest() {
-    const requestName = managedPstoRequestName.trim()
+  async function deleteManagedPstoRequest(requestOverride?: RequestDocumentIdentity) {
+    const requestName = (requestOverride?.name ?? managedPstoRequestName).trim()
+    const requestDate = requestOverride?.date ?? managedPstoRequestDate
     if (!requestName) return
     const confirmed = await confirmAction({
       title: 'Удалить заявку ПСТО',
@@ -130,7 +137,7 @@ export function createPstoRequestActionHandlers({
     pstoRequestManagerMutation.mutate({
       action: 'delete',
       requestName,
-      requestDate: managedPstoRequestDate,
+      requestDate,
     })
   }
 

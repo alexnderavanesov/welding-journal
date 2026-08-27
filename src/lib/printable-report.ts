@@ -23,6 +23,7 @@ export type PrintableReportTable = {
   subtitle?: string
   columns: string[]
   rows: Array<Array<string | number>>
+  rowKinds?: Array<'total' | 'group' | 'detail'>
 }
 
 export type PrintableReport = {
@@ -159,6 +160,9 @@ export function buildPrintableReportHtml(report: PrintableReport) {
     }
     th:last-child, td:last-child { border-right: 0; }
     tbody tr:nth-child(even) td { background: #f8fafc; }
+    tbody tr.table-row-total td { background: #e8eef4; color: #172033; font-weight: 750; }
+    tbody tr.table-row-group td { background: #eef7fb; color: #24364a; font-weight: 700; }
+    tbody tr.table-row-detail td:first-child { padding-left: 24px; color: #607188; }
     tr { break-inside: avoid; page-break-inside: avoid; }
     .empty { margin-top: 18px; padding: 30px; border: 1px dashed #cad6e1; border-radius: 6px; color: #718096; text-align: center; }
     @media (max-width: 900px) {
@@ -248,7 +252,11 @@ function renderChart(chart: PrintableReportChart) {
 function renderTable(table: PrintableReportTable) {
   const header = table.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')
   const rows = table.rows
-    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join('')}</tr>`)
+    .map((row, index) => {
+      const kind = table.rowKinds?.[index]
+      const rowClass = kind ? ` class="table-row-${kind}"` : ''
+      return `<tr${rowClass}>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join('')}</tr>`
+    })
     .join('')
   return `<section class="section">
     <h2 class="section-title">${escapeHtml(table.title)}</h2>

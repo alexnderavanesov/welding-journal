@@ -8,7 +8,6 @@ type ReportModalOpenStateParams = {
   isLnkRequestModalOpen: boolean
   isLnkRequestManagerOpen: boolean
   isLnkResultModalOpen: boolean
-  isLnkResultPreviewOpen: boolean
   isLnkResultManagerOpen: boolean
   isLnkOfficialityModalOpen: boolean
   isDuplicateControlModalOpen?: boolean
@@ -22,7 +21,6 @@ export function getReportModalOpenState({
   isLnkRequestModalOpen,
   isLnkRequestManagerOpen,
   isLnkResultModalOpen,
-  isLnkResultPreviewOpen,
   isLnkResultManagerOpen,
   isLnkOfficialityModalOpen,
   isDuplicateControlModalOpen = false,
@@ -35,7 +33,6 @@ export function getReportModalOpenState({
     isLnkRequestModalOpen,
     isLnkRequestManagerOpen,
     isLnkResultModalOpen,
-    isLnkResultPreviewOpen,
     isLnkResultManagerOpen,
     isLnkOfficialityModalOpen,
     isDuplicateControlModalOpen,

@@ -22,17 +22,14 @@ export function useLnkResultActions({
   defaultConclusionNaming,
   setDraft,
   setIsModalOpen,
-  setIsPreviewOpen,
   setMessage,
   setPreservedOrderIds,
   setRequestSearch,
-  setShouldPinPreviewedRows,
 }: UseLnkResultActionsOptions) {
   function openAddLnkResultModal() {
     setPreservedOrderIds(null)
     setRequestSearch('')
     setDraft(createDefaultLnkResultDraft(defaultConclusionNaming))
-    setShouldPinPreviewedRows(false)
     setIsModalOpen(true)
   }
 
@@ -53,7 +50,6 @@ export function useLnkResultActions({
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
     })
-    setShouldPinPreviewedRows(false)
     setIsModalOpen(true)
   }
 
@@ -76,15 +72,12 @@ export function useLnkResultActions({
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
     })
-    setShouldPinPreviewedRows(false)
     setIsModalOpen(true)
   }
 
   function closeAddLnkResultModal() {
     if (mutation.isPending) return
     setRequestSearch('')
-    setIsPreviewOpen(false)
-    setShouldPinPreviewedRows(false)
     setIsModalOpen(false)
   }
 
@@ -142,6 +135,21 @@ export function useLnkResultActions({
     })
   }
 
+  function setLnkResultRows(rowIds: number[]) {
+    setDraft((current) => {
+      const selectableRowIds = new Set(rowIds.filter((rowId) => {
+        const row = lnkRows.find((candidate) => candidate.id === rowId)
+        return Boolean(row && canSelectLnkResultRow(
+          row,
+          current.requestName,
+          current.methodKey,
+          current.requestDate,
+        ))
+      }))
+      return resolveLnkResultDraftAfterRowIdsChange(current, lnkRows, selectableRowIds)
+    })
+  }
+
   return {
     changeLnkResultMethod,
     changeLnkResultRequest,
@@ -149,6 +157,7 @@ export function useLnkResultActions({
     openAddLnkResultModal,
     openAddLnkResultModalForMethod,
     openAddLnkResultModalForRow,
+    setLnkResultRows,
     toggleAllLnkResultRows,
     toggleLnkResultRow,
   }

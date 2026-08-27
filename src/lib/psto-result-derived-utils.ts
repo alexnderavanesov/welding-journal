@@ -131,6 +131,12 @@ function buildProposedPstoResultRowsForChecks(
 
 export function getManagedPstoResultRows(rows: WeldRow[], selectedRowIds: Set<number>) {
   return rows.filter(
-    (row) => selectedRowIds.has(row.id) && (hasText(row.pstoResult) || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate)),
+    (row) => selectedRowIds.has(row.id) && hasPstoResultData(row),
   )
+}
+
+export function hasPstoResultData(row: WeldRow) {
+  const result = String(row.pstoResult ?? '').trim().toLowerCase()
+  const hasStoredResult = result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
+  return hasStoredResult || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate)
 }

@@ -31,7 +31,7 @@ export function filterLnkRequestRows(rows: WeldRow[], search: string) {
   if (!query) return sortedRows
 
   return sortedRows.filter((row) => {
-    const values = [row.line, row.spool, row.joint]
+    const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
     return values.some((value) => String(value ?? '').toLowerCase().includes(query))
   })
 }

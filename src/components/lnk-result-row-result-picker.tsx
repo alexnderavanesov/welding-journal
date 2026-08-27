@@ -8,6 +8,7 @@ type LnkResultRowResultPickerProps = {
   row: WeldRow
   rowResult: string
   saveCheckSettings: SaveCheckSettings
+  compact?: boolean
   onSetRowResult: (rowId: number, result: string) => void
 }
 
@@ -15,12 +16,14 @@ export function LnkResultRowResultPicker({
   row,
   rowResult,
   saveCheckSettings,
+  compact = false,
   onSetRowResult,
 }: LnkResultRowResultPickerProps) {
   return (
-    <span className="mt-2 flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 text-xs font-medium text-slate-500">Результат:</span>
-      {LNK_RESULT_OPTIONS.map((option) => {
+    <span className={compact ? 'flex min-w-0 flex-col gap-1' : 'mt-2 flex flex-wrap items-center gap-1.5'}>
+      <span className="text-[11px] font-medium text-slate-500">Результат</span>
+      <span className="flex items-center gap-1">
+        {LNK_RESULT_OPTIONS.map((option) => {
         const active = rowResult === option
         const disabledByRepairRule = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
         return (
@@ -47,6 +50,7 @@ export function LnkResultRowResultPicker({
           </button>
         )
       })}
+      </span>
     </span>
   )
 }

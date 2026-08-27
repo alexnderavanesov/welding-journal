@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ClipboardCheck, FileSpreadsheet, ListFilter, Plus, Search } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { CheckSquare2, ClipboardCheck, FileSpreadsheet, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 
+import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkResultManagerActions } from '@/components/lnk-result-manager-actions'
@@ -18,8 +19,14 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
+import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
+import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
+import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import { formatCustomDocumentName } from '@/lib/report-request-naming'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type ResultFilter = 'all' | 'годен' | 'ремонт' | 'вырез'
@@ -42,6 +49,8 @@ export type LnkResultManagerDialogProps = {
   onOpenAddResult: () => void
   onOpenRows: (row: WeldRow) => void
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onCopyDocumentName: (documentName: string) => void
   canOpenDocument: (fieldKey: WeldFieldKey) => boolean
   onMethodChange: (methodKey: WeldFieldKey | '') => void
   onConclusionDraftChange: (changeKey: string, value: string) => void
@@ -70,6 +79,8 @@ export function LnkResultManagerDialog({
   onOpenAddResult,
   onOpenRows,
   onOpenDocument,
+  onOpenJournalRows,
+  onCopyDocumentName,
   canOpenDocument,
   onMethodChange,
   onConclusionDraftChange,
@@ -79,11 +90,13 @@ export function LnkResultManagerDialog({
   onResetPendingChanges,
   onSaveChanges,
 }: LnkResultManagerDialogProps) {
+  const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
   const [selectedEntryKey, setSelectedEntryKey] = useState(
     () => initialEntryKey || entries[0]?.changeKey || '',
   )
+  const saveCheckSettings = useSaveCheckSettings()
   const filteredEntries = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('ru')
     return entries.filter(({ row, method }) => {
@@ -142,6 +155,76 @@ export function LnkResultManagerDialog({
   const selectedRequestDate = selectedEntry
     ? String(selectedEntry.row[selectedEntry.method.requestDateKey] ?? '').trim()
     : ''
+  const openResultContextMenu = (event: MouseEvent<HTMLElement>, entry: LnkResultManagerEntryData) => {
+    const point = getDialogMenuPoint(event)
+    const { row, method, changeKey } = entry
+    const currentResult = String(row[method.resultKey] ?? '').trim()
+    const pendingResult = pendingResultChanges[changeKey] ?? ''
+    const conclusionName = String(row[method.conclusionKey] ?? '').trim()
+    const conclusionDraft = formatCustomDocumentName(conclusionDrafts[changeKey] ?? conclusionName)
+    const removalBlockReason = getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
+    const actionPending = isResultCorrectionPending || isResultReplacementPending
+    const documentReason = !conclusionName
+      ? 'Заключение не указано'
+      : !canOpenDocument(method.conclusionKey)
+        ? 'Сначала загрузите шаблон этого заключения в настройках документов'
+        : null
+
+    setSelectedEntryKey(changeKey)
+    contextMenuRef.current?.open(buildManagerContextMenu({
+      ...point,
+      heading: `${String(row.line ?? '-').trim() || '-'} · ${String(row.joint ?? '-').trim() || '-'}`,
+      description: `${method.code} · ${pendingResult || currentResult}`,
+      documentName: conclusionName,
+      documentLabel: 'заключение',
+      rows: [row],
+      sourceLabel: `результат ${method.code} · стык ${String(row.joint ?? row.id)}`,
+      actions: [
+        {
+          id: 'replace-result',
+          label: 'Изменить результат',
+          icon: CheckSquare2,
+          disabled: actionPending,
+          onSelect: () => undefined,
+          children: LNK_RESULT_OPTIONS.map((option) => {
+            const repairReason = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
+              ? getLnkRepairForbiddenReason(row)
+              : null
+            return {
+              id: `replace-result-${option}`,
+              label: option,
+              disabled: actionPending || Boolean(repairReason),
+              title: repairReason ?? undefined,
+              onSelect: () => onReplaceResult(row, method.requestKey, option),
+            }
+          }),
+        },
+        {
+          id: 'rename-conclusion',
+          label: 'Переименовать заключение',
+          icon: Pencil,
+          disabled: isConclusionCorrectionPending || !conclusionDraft || conclusionDraft === conclusionName,
+          title: !conclusionDraft || conclusionDraft === conclusionName
+            ? 'Сначала введите новое название в карточке результата'
+            : undefined,
+          onSelect: () => onRenameConclusion(row, method.requestKey, conclusionDraft),
+        },
+      ],
+      dangerActions: [{
+        id: 'delete-result',
+        label: 'Удалить результат',
+        icon: Trash2,
+        danger: true,
+        disabled: !currentResult || actionPending || Boolean(removalBlockReason),
+        title: removalBlockReason || undefined,
+        onSelect: () => onClearResult(row, method.requestKey),
+      }],
+      openDocumentDisabledReason: documentReason,
+      onOpenDocument: () => onOpenDocument(row, method.conclusionKey),
+      onCopyDocumentName,
+      onOpenJournalRows,
+    }))
+  }
 
   return (
     <LargeDialogShell
@@ -150,7 +233,7 @@ export function LnkResultManagerDialog({
       overlayClassName="z-[60] bg-slate-950/30"
     >
       <DialogHeader
-        title="Результаты ЛНК"
+        title="Редактирование результатов ЛНК"
         subtitle="Найдите внесенный результат, проверьте связанные документы или выполните допустимое изменение."
         onClose={onClose}
       />
@@ -232,6 +315,7 @@ export function LnkResultManagerDialog({
                       key={changeKey}
                       type="button"
                       onClick={() => setSelectedEntryKey(changeKey)}
+                      onContextMenu={(event) => openResultContextMenu(event, entry)}
                       className={`w-full rounded-md border px-3 py-3 text-left transition ${
                         selected
                           ? 'border-sky-300 bg-white shadow-sm ring-1 ring-sky-100'
@@ -338,7 +422,13 @@ export function LnkResultManagerDialog({
                     Изменение результата сохраняет заключение. Удаление очищает результат, дату контроля и заключение с учетом действующей хронологии НК.
                   </p>
                 </div>
-                <div className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
+                <div
+                  className="rounded-md border border-slate-200 bg-slate-50/60 p-4"
+                  onContextMenu={(event) => {
+                    if (isNativeContextMenuTarget(event.target)) return
+                    openResultContextMenu(event, selectedEntry)
+                  }}
+                >
                   <LnkResultManagerSummary
                     row={selectedRow}
                     methodCode={selectedMethod.code}
@@ -386,6 +476,7 @@ export function LnkResultManagerDialog({
         onResetPendingChanges={onResetPendingChanges}
         onSaveChanges={onSaveChanges}
       />
+      <DialogContextMenuLayer ref={contextMenuRef} />
     </LargeDialogShell>
   )
 }

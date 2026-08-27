@@ -1,3 +1,7 @@
+import { useRef, type MouseEvent } from 'react'
+import { Pencil, Trash2 } from 'lucide-react'
+
+import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoRequestManagerPosition } from '@/components/psto-request-manager-position'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
@@ -10,7 +14,10 @@ import {
   RequestPositionPanel,
   RequestRenamePanel,
 } from '@/components/request-manager-panels'
+import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
+import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
 import { hasText } from '@/lib/report-value-utils'
 import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
@@ -27,12 +34,16 @@ export type PstoRequestManagerDialogProps = {
   requestNameDraft: string
   isManagerPending: boolean
   isCorrectionPending: boolean
+  canOpenDocument: boolean
   onClose: () => void
   onChangeRequest: (request: RequestDocumentIdentity) => void
   onRequestNameDraftChange: (requestName: string) => void
   onRenameRequest: () => void
+  onOpenDocument: (row: WeldRow) => void
+  onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onCopyDocumentName: (documentName: string) => void
   onClearPosition: (row: WeldRow) => void
-  onDeleteRequest: () => void
+  onDeleteRequest: (request?: RequestDocumentIdentity) => void
 }
 
 export function PstoRequestManagerDialog({
@@ -43,13 +54,18 @@ export function PstoRequestManagerDialog({
   requestNameDraft,
   isManagerPending,
   isCorrectionPending,
+  canOpenDocument,
   onClose,
   onChangeRequest,
   onRequestNameDraftChange,
   onRenameRequest,
+  onOpenDocument,
+  onOpenJournalRows,
+  onCopyDocumentName,
   onClearPosition,
   onDeleteRequest,
 }: PstoRequestManagerDialogProps) {
+  const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const resultCount = requestRows.filter((row) => hasText(row.pstoResult)).length
   const requestConclusionSettings = useRequestConclusionSettings()
   const isSystemRequest = isSystemDocumentNameForRows(
@@ -59,6 +75,57 @@ export function PstoRequestManagerDialog({
     requestConclusionSettings,
   )
   const selectedIdentity = createRequestDocumentIdentity(requestName, requestDate)
+  const canRename = Boolean(
+    requestName &&
+    !isSystemRequest &&
+    requestNameDraft.trim() &&
+    requestNameDraft.trim() !== requestName &&
+    !isManagerPending,
+  )
+  const openRequestContextMenu = (event: MouseEvent<HTMLElement>) => {
+    if (!selectedIdentity || isNativeContextMenuTarget(event.target)) return
+    const point = getDialogMenuPoint(event)
+    const row = requestRows[0]
+    const documentReason = !row
+      ? 'В заявке нет стыков'
+      : !canOpenDocument
+        ? 'Сначала загрузите шаблон заявки ПСТО в настройках документов'
+        : null
+
+    contextMenuRef.current?.open(buildManagerContextMenu({
+      ...point,
+      heading: requestName,
+      description: requestDate ? `${formatDisplayDate(requestDate)} · ${requestRows.length} ст.` : `${requestRows.length} ст.`,
+      documentName: requestName,
+      documentLabel: 'заявку',
+      rows: requestRows,
+      sourceLabel: `заявка ПСТО «${requestName}»`,
+      actions: [{
+        id: 'rename-request',
+        label: 'Переименовать заявку',
+        icon: Pencil,
+        disabled: !canRename,
+        title: isSystemRequest
+          ? 'Системную заявку переименовать нельзя'
+          : 'Сначала введите новое название в поле переименования',
+        onSelect: onRenameRequest,
+      }],
+      dangerActions: [{
+        id: 'delete-request',
+        label: 'Удалить заявку',
+        icon: Trash2,
+        danger: true,
+        disabled: isManagerPending,
+        onSelect: () => onDeleteRequest(selectedIdentity),
+      }],
+      openDocumentDisabledReason: documentReason,
+      onOpenDocument: () => {
+        if (row) onOpenDocument(row)
+      },
+      onCopyDocumentName,
+      onOpenJournalRows,
+    }))
+  }
 
   return (
     <LargeDialogShell maxWidthClassName="max-w-[920px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[60] bg-slate-950/30">
@@ -68,7 +135,10 @@ export function PstoRequestManagerDialog({
         onClose={onClose}
       />
 
-      <div className="min-h-0 space-y-4 overflow-auto px-5 py-4">
+      <div
+        className="min-h-0 space-y-4 overflow-auto px-5 py-4"
+        onContextMenu={openRequestContextMenu}
+      >
         <RequestManagerSelect
           label="Заявка ПСТО"
           value={selectedIdentity?.key ?? ''}
@@ -92,13 +162,7 @@ export function PstoRequestManagerDialog({
           value={requestNameDraft}
           placeholder="Новое наименование заявки"
           disabled={!requestName || isSystemRequest || isManagerPending}
-          canRename={Boolean(
-            requestName &&
-              !isSystemRequest &&
-              requestNameDraft.trim() &&
-              requestNameDraft.trim() !== requestName &&
-              !isManagerPending,
-          )}
+          canRename={canRename}
           onChange={onRequestNameDraftChange}
           onRename={onRenameRequest}
         >
@@ -127,9 +191,10 @@ export function PstoRequestManagerDialog({
         <RequestDeletePanel
           description="Будут очищены заявка, результат, дата и диаграмма ПСТО по всем стыкам, где используется выбранная заявка."
           disabled={!requestName || isManagerPending}
-          onDelete={onDeleteRequest}
+          onDelete={() => onDeleteRequest(selectedIdentity ?? undefined)}
         />
       </div>
+      <DialogContextMenuLayer ref={contextMenuRef} />
     </LargeDialogShell>
   )
 }

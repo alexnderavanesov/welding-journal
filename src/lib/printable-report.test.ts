@@ -7,7 +7,7 @@ describe('printable report', () => {
       title: 'Статистика <проекта>',
       metrics: [{ label: 'Сварено', value: '12', tone: 'green' }],
       charts: [{ title: 'Динамика', valueLabel: 'стыков', items: [{ label: '01.07', value: 4 }] }],
-      tables: [{ title: 'Линии', columns: ['Линия'], rows: [['A-1']] }],
+      tables: [{ title: 'Линии', columns: ['Линия'], rows: [['A-1']], rowKinds: ['group'] }],
     })
 
     expect(html).toContain('Печать / Сохранить PDF')
@@ -15,6 +15,7 @@ describe('printable report', () => {
     expect(html).toContain('Статистика &lt;проекта&gt;')
     expect(html).toContain('Динамика')
     expect(html).toContain('A-1')
+    expect(html).toContain('class="table-row-group"')
   })
 
   it('escapes report content instead of inserting executable markup', () => {

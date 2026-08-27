@@ -1,3 +1,7 @@
+import { useRef, type MouseEvent } from 'react'
+import { Pencil, Trash2 } from 'lucide-react'
+
+import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHelpNote } from '@/components/dialog-help-note'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
@@ -6,28 +10,84 @@ import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoResultManagerEntry } from '@/components/psto-result-manager-entry'
 import { Button } from '@/components/ui/button'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
+import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
+import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import { hasText } from '@/lib/report-value-utils'
 
 export type PstoResultManagerDialogProps = {
   rows: WeldRow[]
   diagramDrafts: Record<number, string>
   isPending: boolean
+  canOpenDocument: boolean
   onClose: () => void
   onDiagramDraftChange: (rowId: number, value: string) => void
   onRenameDiagram: (row: WeldRow, diagramName: string) => void
   onDeleteResult: (row: WeldRow) => void
+  onOpenDocument: (row: WeldRow) => void
+  onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onCopyDocumentName: (documentName: string) => void
 }
 
 export function PstoResultManagerDialog({
   rows,
   diagramDrafts,
   isPending,
+  canOpenDocument,
   onClose,
   onDiagramDraftChange,
   onRenameDiagram,
   onDeleteResult,
+  onOpenDocument,
+  onOpenJournalRows,
+  onCopyDocumentName,
 }: PstoResultManagerDialogProps) {
+  const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const resultCount = rows.filter((row) => hasText(row.pstoResult)).length
+  const openResultContextMenu = (event: MouseEvent<HTMLElement>, row: WeldRow) => {
+    if (isNativeContextMenuTarget(event.target)) return
+    const point = getDialogMenuPoint(event)
+    const diagramName = String(row.heatTreatmentDiagram ?? '').trim()
+    const diagramDraft = formatCustomDocumentName(diagramDrafts[row.id] ?? diagramName)
+    const hasResultData = hasText(row.pstoResult) || hasText(row.pstoDate) || hasText(row.heatTreatmentDiagram)
+    const documentReason = !diagramName
+      ? 'Диаграмма не указана'
+      : !canOpenDocument
+        ? 'Сначала загрузите шаблон диаграммы ПСТО в настройках документов'
+        : null
+
+    contextMenuRef.current?.open(buildManagerContextMenu({
+      ...point,
+      heading: `${String(row.line ?? '-').trim() || '-'} · ${String(row.joint ?? '-').trim() || '-'}`,
+      description: String(row.pstoResult ?? '').trim() || 'Результат не указан',
+      documentName: diagramName,
+      documentLabel: 'диаграмму',
+      rows: [row],
+      sourceLabel: `результат ПСТО · стык ${String(row.joint ?? row.id)}`,
+      actions: [{
+        id: 'rename-diagram',
+        label: 'Переименовать диаграмму',
+        icon: Pencil,
+        disabled: isPending || !diagramDraft || diagramDraft === diagramName,
+        title: !diagramDraft || diagramDraft === diagramName
+          ? 'Сначала введите новое название в строке результата'
+          : undefined,
+        onSelect: () => onRenameDiagram(row, diagramDraft),
+      }],
+      dangerActions: [{
+        id: 'delete-result',
+        label: 'Удалить результат',
+        icon: Trash2,
+        danger: true,
+        disabled: isPending || !hasResultData,
+        onSelect: () => onDeleteResult(row),
+      }],
+      openDocumentDisabledReason: documentReason,
+      onOpenDocument: () => onOpenDocument(row),
+      onCopyDocumentName,
+      onOpenJournalRows,
+    }))
+  }
 
   return (
     <LargeDialogShell maxWidthClassName="max-w-[1180px]">
@@ -63,6 +123,7 @@ export function PstoResultManagerDialog({
                   onDiagramDraftChange={onDiagramDraftChange}
                   onRenameDiagram={onRenameDiagram}
                   onDeleteResult={onDeleteResult}
+                  onOpenContextMenu={openResultContextMenu}
                 />
               ))}
             </div>
@@ -73,6 +134,7 @@ export function PstoResultManagerDialog({
           )}
         </section>
       </div>
+      <DialogContextMenuLayer ref={contextMenuRef} />
     </LargeDialogShell>
   )
 }

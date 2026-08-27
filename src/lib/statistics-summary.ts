@@ -31,6 +31,8 @@ export type StatisticsMethodSummary = {
   waitingControl: number
   good: number
   rejected: number
+  goodFromClosedRequests: number
+  rejectedFromClosedRequests: number
   closurePercent: number
   rowIds: StatisticsMethodRowIds
 }
@@ -238,6 +240,13 @@ export function buildStatisticsSummary(
       const result = normalizeResultStatus(row[method.resultKey])
       return result === 'ремонт' || result === 'вырез'
     })
+    const goodFromClosedRequestRows = closedRequestRows.filter(
+      (row) => normalizeResultStatus(row[method.resultKey]) === 'годен',
+    )
+    const rejectedFromClosedRequestRows = closedRequestRows.filter((row) => {
+      const result = normalizeResultStatus(row[method.resultKey])
+      return result === 'ремонт' || result === 'вырез'
+    })
     return {
       code: method.code,
       requiredRequests: requiredRequestRows.length,
@@ -252,6 +261,8 @@ export function buildStatisticsSummary(
       waitingControl,
       good: sumRows(goodRows, unit),
       rejected: sumRows(rejectedRows, unit),
+      goodFromClosedRequests: sumRows(goodFromClosedRequestRows, unit),
+      rejectedFromClosedRequests: sumRows(rejectedFromClosedRequestRows, unit),
       closurePercent: getPercent(closed, requests),
       rowIds: {
         requiredRequests: getRowIds(requiredRequestRows),
@@ -298,6 +309,8 @@ export function buildStatisticsSummary(
     waitingControl: pstoWaitingControl,
     good: sumRows(pstoGoodRows, unit),
     rejected: 0,
+    goodFromClosedRequests: sumRows(pstoClosedRequestRows, unit),
+    rejectedFromClosedRequests: 0,
     closurePercent: getPercent(pstoClosedByRequest, pstoRequests),
     rowIds: {
       requiredRequests: getRowIds(pstoRequiredRequestRows),
@@ -433,6 +446,11 @@ export function formatStatisticValue(value: number, unit: StatisticsUnit) {
 export function formatPercent(value: number) {
   if (!Number.isFinite(value)) return '0%'
   return `${Math.round(value)}%`
+}
+
+export function getStatisticRatioPercent(value: number, total: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return null
+  return Math.max(0, (value / total) * 100)
 }
 
 function isDateInRange(value: unknown, from: string, to: string) {

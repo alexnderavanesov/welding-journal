@@ -5,6 +5,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getPstoResultSaveBlockReason,
   getSelectedPstoResultRows,
+  hasPstoResultData,
 } from '@/lib/psto-result-derived-utils'
 import { createDefaultPstoResultDraft } from '@/lib/report-draft-state'
 import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
@@ -13,6 +14,14 @@ import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-se
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('PSTO result request identity', () => {
+  it('does not treat derived waiting statuses as stored PSTO results', () => {
+    expect(hasPstoResultData({ id: 1, pstoResult: 'ожидает заявку' } as WeldRow)).toBe(false)
+    expect(hasPstoResultData({ id: 2, pstoResult: 'ожидает' } as WeldRow)).toBe(false)
+    expect(hasPstoResultData({ id: 3, pstoResult: 'проведено' } as WeldRow)).toBe(true)
+    expect(hasPstoResultData({ id: 4, pstoResult: 'ожидает', pstoDate: '2026-08-27' } as WeldRow)).toBe(true)
+    expect(hasPstoResultData({ id: 5, heatTreatmentDiagram: 'ПСТО-Д-001' } as WeldRow)).toBe(true)
+  })
+
   it('selects only rows from the matching request date', () => {
     const rows = [
       {

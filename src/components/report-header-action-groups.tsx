@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, ListFilter, Plus, ShieldCheck, Upload } from 'lucide-react'
+import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, ListFilter, Pencil, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { ReportShowMenu } from '@/components/report-show-menu'
 import { Button } from '@/components/ui/button'
 
@@ -83,9 +83,16 @@ export function WeldingJournalHeaderActions({
 
 type HeatTreatmentHeaderActionsProps = {
   onCreateRequest: () => void
+  onEditSelectedRequest: () => void
+  editSelectedRequestDisabled: boolean
+  onOpenRequestRegistry: () => void
   requestPending: boolean
   onAddResult: () => void
   resultDisabled: boolean
+  onEditSelectedResults: () => void
+  editSelectedResultsDisabled: boolean
+  onOpenResultRegistry: () => void
+  resultRegistryDisabled: boolean
   isShowMenuOpen: boolean
   onToggleShowMenu: () => void
   onOpenCurrentReport: () => void
@@ -95,28 +102,131 @@ type HeatTreatmentHeaderActionsProps = {
 
 export function HeatTreatmentHeaderActions({
   onCreateRequest,
+  onEditSelectedRequest,
+  editSelectedRequestDisabled,
+  onOpenRequestRegistry,
   requestPending,
   onAddResult,
   resultDisabled,
+  onEditSelectedResults,
+  editSelectedResultsDisabled,
+  onOpenResultRegistry,
+  resultRegistryDisabled,
   isShowMenuOpen,
   onToggleShowMenu,
   onOpenCurrentReport,
   onOpenWaitingRequestReport,
   onOpenResultsReport,
 }: HeatTreatmentHeaderActionsProps) {
+  const [isRequestMenuOpen, setIsRequestMenuOpen] = useState(false)
+  const [isResultMenuOpen, setIsResultMenuOpen] = useState(false)
+  const runRequestAction = (action: () => void) => {
+    setIsRequestMenuOpen(false)
+    action()
+  }
+  const runResultAction = (action: () => void) => {
+    setIsResultMenuOpen(false)
+    action()
+  }
+  const toggleRequestMenu = () => {
+    setIsRequestMenuOpen((current) => !current)
+    setIsResultMenuOpen(false)
+    if (isShowMenuOpen) onToggleShowMenu()
+  }
+  const toggleResultMenu = () => {
+    setIsResultMenuOpen((current) => !current)
+    setIsRequestMenuOpen(false)
+    if (isShowMenuOpen) onToggleShowMenu()
+  }
+  const toggleShowMenu = () => {
+    setIsRequestMenuOpen(false)
+    setIsResultMenuOpen(false)
+    onToggleShowMenu()
+  }
+
   return (
     <>
-      <Button onClick={onCreateRequest} disabled={requestPending}>
-        <Plus className="mr-2 h-4 w-4" />
-        Заявка
-      </Button>
-      <Button onClick={onAddResult} disabled={resultDisabled}>
-        <ClipboardCheck className="mr-2 h-4 w-4" />
-        Результат
-      </Button>
+      <div className="relative">
+        <Button onClick={toggleRequestMenu} disabled={requestPending}>
+          <FilePlus2 className="mr-2 h-4 w-4" />
+          Заявка
+          <ChevronDown className="ml-2 h-4 w-4" />
+        </Button>
+        {isRequestMenuOpen ? (
+          <div className="absolute left-0 z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+            <button
+              type="button"
+              onClick={() => runRequestAction(onCreateRequest)}
+              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900"
+            >
+              <Plus className="h-4 w-4 text-sky-600" />
+              Новая заявка
+            </button>
+            <button
+              type="button"
+              onClick={() => runRequestAction(onEditSelectedRequest)}
+              disabled={editSelectedRequestDisabled}
+              title={editSelectedRequestDisabled ? 'Выберите в таблице стыки одной созданной заявки ПСТО' : undefined}
+              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Pencil className="h-4 w-4 text-sky-600" />
+              Редактировать выбранную
+            </button>
+            <div className="my-1 border-t border-slate-100" />
+            <button
+              type="button"
+              onClick={() => runRequestAction(onOpenRequestRegistry)}
+              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900"
+            >
+              <ListFilter className="h-4 w-4 text-slate-500" />
+              Все заявки ПСТО
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="relative">
+        <Button onClick={toggleResultMenu}>
+          <ClipboardCheck className="mr-2 h-4 w-4" />
+          Результат
+          <ChevronDown className="ml-2 h-4 w-4" />
+        </Button>
+        {isResultMenuOpen ? (
+          <div className="absolute left-0 z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+            <button
+              type="button"
+              onClick={() => runResultAction(onAddResult)}
+              disabled={resultDisabled}
+              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4 text-sky-600" />
+              Внести результаты
+            </button>
+            <button
+              type="button"
+              onClick={() => runResultAction(onEditSelectedResults)}
+              disabled={editSelectedResultsDisabled}
+              title={editSelectedResultsDisabled ? 'Выберите в таблице стыки с внесенными результатами ПСТО' : undefined}
+              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ClipboardCheck className="h-4 w-4 text-sky-600" />
+              Редактировать выбранные
+            </button>
+            <div className="my-1 border-t border-slate-100" />
+            <button
+              type="button"
+              onClick={() => runResultAction(onOpenResultRegistry)}
+              disabled={resultRegistryDisabled}
+              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ListFilter className="h-4 w-4 text-slate-500" />
+              Все результаты ПСТО
+            </button>
+          </div>
+        ) : null}
+      </div>
       <ReportShowMenu
         isOpen={isShowMenuOpen}
-        onToggle={onToggleShowMenu}
+        onToggle={toggleShowMenu}
         widthClassName="w-56"
         items={[
           { label: 'Текущая версия', onClick: onOpenCurrentReport },
@@ -183,11 +293,26 @@ export function LnkHeaderActions({
     setIsResultMenuOpen(false)
     action()
   }
+  const toggleRequestMenu = () => {
+    setIsRequestMenuOpen((current) => !current)
+    setIsResultMenuOpen(false)
+    if (isShowMenuOpen) onToggleShowMenu()
+  }
+  const toggleResultMenu = () => {
+    setIsResultMenuOpen((current) => !current)
+    setIsRequestMenuOpen(false)
+    if (isShowMenuOpen) onToggleShowMenu()
+  }
+  const toggleShowMenu = () => {
+    setIsRequestMenuOpen(false)
+    setIsResultMenuOpen(false)
+    onToggleShowMenu()
+  }
 
   return (
     <>
       <div className="relative">
-        <Button onClick={() => setIsRequestMenuOpen((current) => !current)} disabled={requestPending}>
+        <Button onClick={toggleRequestMenu} disabled={requestPending}>
           <FilePlus2 className="mr-2 h-4 w-4" />
           Заявка
           <ChevronDown className="ml-2 h-4 w-4" />
@@ -223,7 +348,7 @@ export function LnkHeaderActions({
         ) : null}
       </div>
       <div className="relative">
-        <Button onClick={() => setIsResultMenuOpen((current) => !current)}>
+        <Button onClick={toggleResultMenu}>
           <ClipboardCheck className="mr-2 h-4 w-4" />
           Результат
           <ChevronDown className="ml-2 h-4 w-4" />
@@ -272,7 +397,7 @@ export function LnkHeaderActions({
       </Button>
       <ReportShowMenu
         isOpen={isShowMenuOpen}
-        onToggle={onToggleShowMenu}
+        onToggle={toggleShowMenu}
         items={[
           { label: 'Текущая версия', onClick: onOpenCurrentReport },
           { label: 'Ожидание заявки', onClick: onOpenToRequestReport },

@@ -7,6 +7,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { getActiveReportFromPath, getAppReportPath } from '@/lib/app-report-routes'
+import { getJournalSelectionTokenFromUrl } from '@/lib/journal-selection-handoff'
 import {
   clearChunkReloadAttempt,
   isChunkLoadError,
@@ -24,6 +25,7 @@ export const Route = createFileRoute('/_app')({
 
 function AppRoute() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const href = useRouterState({ select: (state) => state.location.href })
   const navigate = useNavigate()
   const activeReport = getActiveReportFromPath(pathname)
   const changeActiveReport = useCallback((report: Parameters<typeof getAppReportPath>[0]) => {
@@ -41,6 +43,7 @@ function AppRoute() {
     <Suspense fallback={<AppRouteLoading />}>
       <HomePage
         activeReport={activeReport}
+        journalSelectionToken={activeReport === 'weldingJournal' ? getJournalSelectionTokenFromUrl(href) : undefined}
         onActiveReportChange={changeActiveReport}
       />
     </Suspense>

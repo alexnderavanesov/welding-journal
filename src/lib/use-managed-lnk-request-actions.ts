@@ -58,8 +58,9 @@ export function useManagedLnkRequestActions({
     })
   }
 
-  async function deleteManagedLnkRequest() {
-    const requestName = managedLnkRequestName.trim()
+  async function deleteManagedLnkRequest(requestOverride?: RequestDocumentIdentity) {
+    const requestName = (requestOverride?.name ?? managedLnkRequestName).trim()
+    const requestDate = requestOverride?.date ?? managedLnkRequestDate
     if (!requestName) return
     const confirmed = await confirmAction({
       title: 'Удалить заявку ЛНК',
@@ -71,7 +72,7 @@ export function useManagedLnkRequestActions({
     lnkRequestManagerMutation.mutate({
       action: 'delete',
       requestName,
-      requestDate: managedLnkRequestDate,
+      requestDate,
     })
   }
 

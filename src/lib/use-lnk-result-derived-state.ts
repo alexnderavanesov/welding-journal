@@ -9,7 +9,6 @@ import {
   getSelectableVisibleLnkResultRows,
   getSelectedLnkResultMethods,
   getSelectedLnkResultRows,
-  getVisibleLnkResultRows,
 } from '@/lib/lnk-result-derived-utils'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -36,7 +35,6 @@ type LnkResultDerivedStateParams = {
   nextLnkConclusionNumber?: number
   requestConclusionSettings: RequestConclusionSettings
   saveCheckSettings: SaveCheckSettings
-  shouldPinPreviewedLnkResultRows: boolean
   isLnkResultSaving: boolean
 }
 
@@ -51,7 +49,6 @@ export function useLnkResultDerivedState({
   nextLnkConclusionNumber,
   requestConclusionSettings,
   saveCheckSettings,
-  shouldPinPreviewedLnkResultRows,
   isLnkResultSaving,
 }: LnkResultDerivedStateParams) {
   const lnkResultMethodRequestOptions = useMemo(
@@ -124,10 +121,7 @@ export function useLnkResultDerivedState({
 
   const lnkResultContextReady = Boolean(lnkResultDraft.methodKey)
 
-  const visibleLnkResultRows = useMemo(
-    () => getVisibleLnkResultRows(filteredLnkResultRows, lnkResultDraft.rowIds, shouldPinPreviewedLnkResultRows),
-    [filteredLnkResultRows, lnkResultDraft.rowIds, shouldPinPreviewedLnkResultRows],
-  )
+  const visibleLnkResultRows = filteredLnkResultRows
 
   const selectableVisibleLnkResultRows = useMemo(
     () => getSelectableVisibleLnkResultRows(
@@ -152,7 +146,13 @@ export function useLnkResultDerivedState({
 
   const selectedLnkResultRows = useMemo(
     () => getSelectedLnkResultRows(lnkRows, lnkResultDraft),
-    [lnkResultDraft, lnkRows],
+    [
+      lnkResultDraft.methodKey,
+      lnkResultDraft.requestDate,
+      lnkResultDraft.requestName,
+      lnkResultDraft.rowIds,
+      lnkRows,
+    ],
   )
 
   const systemDocumentCreationPlan = useMemo(() => {
@@ -171,7 +171,17 @@ export function useLnkResultDerivedState({
       nextNumber: nextLnkConclusionNumber,
       allowAllNamesEmpty: !saveCheckSettings.lnkResultConclusionRequired,
     })
-  }, [lnkResultDraft, nextLnkConclusionNumber, requestConclusionSettings, saveCheckSettings, selectedLnkResultRows])
+  }, [
+    lnkResultDraft.conclusionNaming,
+    lnkResultDraft.controlDate,
+    lnkResultDraft.methodKey,
+    lnkResultDraft.result,
+    lnkResultDraft.rowResults,
+    nextLnkConclusionNumber,
+    requestConclusionSettings,
+    saveCheckSettings,
+    selectedLnkResultRows,
+  ])
 
   const lnkResultSaveBlockReason = useMemo(
     () =>
@@ -183,7 +193,18 @@ export function useLnkResultDerivedState({
         selectedRows: selectedLnkResultRows,
         systemDocumentCreationPlan,
       }),
-    [isLnkResultSaving, lnkResultDraft, nextLnkConclusionName, saveCheckSettings, selectedLnkResultRows, systemDocumentCreationPlan],
+    [
+      isLnkResultSaving,
+      lnkResultDraft.conclusionNaming,
+      lnkResultDraft.controlDate,
+      lnkResultDraft.methodKey,
+      lnkResultDraft.result,
+      lnkResultDraft.rowResults,
+      nextLnkConclusionName,
+      saveCheckSettings,
+      selectedLnkResultRows,
+      systemDocumentCreationPlan,
+    ],
   )
 
   const isLnkResultSaveDisabled = Boolean(lnkResultSaveBlockReason)
@@ -193,6 +214,7 @@ export function useLnkResultDerivedState({
     filteredLnkResultRequestOptions,
     selectedLnkResultMethods,
     filteredLnkResultRows,
+    lnkResultSearchRows,
     lnkResultContextReady,
     visibleLnkResultRows,
     selectableVisibleLnkResultRows,

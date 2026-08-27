@@ -1,5 +1,5 @@
-import { type ClipboardEvent, useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Plus, Save, Trash2 } from 'lucide-react'
+import { type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Plus, Save, Trash2, X } from 'lucide-react'
 
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -263,8 +263,23 @@ export function RkExposureTableEditorDialog({
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [testDiameter, setTestDiameter] = useState('')
+  const [pendingDiameter, setPendingDiameter] = useState<string | null>(null)
+  const [scrollTargetDiameterKey, setScrollTargetDiameterKey] = useState<string | null>(null)
+  const matrixViewportRef = useRef<HTMLDivElement>(null)
   const isDirty = JSON.stringify(grid) !== JSON.stringify(initialGrid)
-  const normalizedGrid = normalizeGridWidth(grid, 4)
+  const normalizedGrid = useMemo(() => normalizeGridWidth(grid, 4), [grid])
+  const diameterGroups = useMemo(() => buildRkExposureMatrix(normalizedGrid), [normalizedGrid])
+  const matrixOptionCount = diameterGroups.reduce((sum, group) => sum + group.options.length, 0)
+
+  useEffect(() => {
+    if (!scrollTargetDiameterKey) return
+    const viewport = matrixViewportRef.current
+    const target = Array.from(viewport?.querySelectorAll<HTMLElement>('[data-rk-diameter-key]') ?? [])
+      .find((element) => element.dataset.rkDiameterKey === scrollTargetDiameterKey)
+    if (!viewport || !target) return
+    viewport.scrollLeft = Math.max(0, target.offsetLeft - 144)
+    setScrollTargetDiameterKey(null)
+  }, [diameterGroups, scrollTargetDiameterKey])
 
   async function requestClose() {
     if (!isDirty) {
@@ -292,6 +307,20 @@ export function RkExposureTableEditorDialog({
     setError(null)
   }
 
+  function updateDefaultOption(group: RkExposureMatrixGroup, option: RkExposureMatrixOption, checked: boolean) {
+    setGrid((current) => {
+      const next = normalizeGridWidth(current, 4)
+      if (checked) {
+        group.options.forEach((groupOption) => {
+          next[groupOption.startRowIndex][2] = ''
+        })
+      }
+      next[option.startRowIndex][2] = checked ? '+' : ''
+      return next
+    })
+    setError(null)
+  }
+
   function pasteCells(event: ClipboardEvent<HTMLInputElement>, rowIndex: number, columnIndex: number) {
     const value = event.clipboardData.getData('text/plain')
     if (!value) return
@@ -300,17 +329,131 @@ export function RkExposureTableEditorDialog({
     setError(null)
   }
 
-  function addRow() {
-    setGrid((current) => [...normalizeGridWidth(current, 4), ['', '', '', '']])
+  function addDiameter() {
+    const diameter = pendingDiameter?.trim() ?? ''
+    if (!diameter) {
+      setError('Укажите новый диаметр.')
+      return
+    }
+    const numericDiameter = Number(diameter.replace(',', '.'))
+    if (!Number.isFinite(numericDiameter)) {
+      setError('Диаметр должен быть числом.')
+      return
+    }
+    const diameterKey = normalizeRkExposureDiameterKey(diameter)
+    setGrid((current) => {
+      const next = normalizeGridWidth(current, 4)
+      const hasValues = next.some((row) => row.some((cell) => cell.trim()))
+      if (!hasValues) return [[diameter, '', '', '']]
+
+      const groups = buildRkExposureMatrix(next)
+      const existingGroup = groups.find((group) => group.diameter.trim() && group.key === diameterKey)
+      if (existingGroup) {
+        const insertAt = existingGroup.rowIndexes.at(-1) ?? next.length - 1
+        next.splice(insertAt + 1, 0, [existingGroup.diameter, '', '', ''])
+        return next
+      }
+
+      const nextGroup = groups.find((group) => {
+        const groupDiameter = Number(group.diameter.replace(',', '.'))
+        return group.diameter.trim() && Number.isFinite(groupDiameter) && groupDiameter > numericDiameter
+      })
+      const insertAt = nextGroup?.rowIndexes[0] ?? next.length
+      next.splice(insertAt, 0, [diameter, '', '', ''])
+      return next
+    })
+    setPendingDiameter(null)
+    setError(null)
+    setScrollTargetDiameterKey(diameterKey)
   }
 
-  function moveRow(rowIndex: number, direction: -1 | 1) {
-    setGrid((current) => moveGridRow(current, rowIndex, direction))
+  function addOption(group: RkExposureMatrixGroup) {
+    if (!group.diameter.trim()) {
+      setError('Сначала укажите диаметр, затем добавьте для него вариант.')
+      return
+    }
+    setGrid((current) => {
+      const next = normalizeGridWidth(current, 4)
+      const insertAt = group.options.at(-1)?.rowIndexes.at(-1)
+      if (insertAt === undefined) return next
+      next.splice(insertAt + 1, 0, [group.diameter, '', '', ''])
+      return next
+    })
+    setError(null)
+    requestAnimationFrame(() => {
+      const viewport = matrixViewportRef.current
+      if (viewport) viewport.scrollLeft += 208
+    })
+  }
+
+  function addInterval(option: RkExposureMatrixOption) {
+    setGrid((current) => {
+      const next = normalizeGridWidth(current, 4)
+      const insertAt = option.rowIndexes.at(-1)
+      if (insertAt === undefined) return next
+      next.splice(insertAt + 1, 0, ['', '', '', ''])
+      return next
+    })
     setError(null)
   }
 
-  function removeRow(rowIndex: number) {
-    setGrid((current) => current.length <= 1 ? [['', '', '', '']] : current.filter((_, index) => index !== rowIndex))
+  function moveInterval(option: RkExposureMatrixOption, valueIndex: number, direction: -1 | 1) {
+    const targetIndex = valueIndex + direction
+    if (targetIndex < 0 || targetIndex >= option.rowIndexes.length) return
+    setGrid((current) => {
+      const next = normalizeGridWidth(current, 4)
+      const rowIndex = option.rowIndexes[valueIndex]
+      const targetRowIndex = option.rowIndexes[targetIndex]
+      ;[next[rowIndex][1], next[targetRowIndex][1]] = [next[targetRowIndex][1], next[rowIndex][1]]
+      return next
+    })
+    setError(null)
+  }
+
+  function removeInterval(option: RkExposureMatrixOption, valueIndex: number) {
+    const rowIndex = option.rowIndexes[valueIndex]
+    setGrid((current) => {
+      const next = normalizeGridWidth(current, 4)
+      if (option.rowIndexes.length === 1) {
+        next[rowIndex][1] = ''
+        return next
+      }
+      if (valueIndex === 0) {
+        const [, , isDefault, note] = next[rowIndex]
+        next.splice(rowIndex, 1)
+        next[rowIndex][0] = option.diameter
+        next[rowIndex][2] = isDefault
+        next[rowIndex][3] = note
+        return next
+      }
+      next.splice(rowIndex, 1)
+      return next
+    })
+    setError(null)
+  }
+
+  function moveOption(group: RkExposureMatrixGroup, optionIndex: number, direction: -1 | 1) {
+    const targetIndex = optionIndex + direction
+    if (targetIndex < 0 || targetIndex >= group.options.length) return
+    setGrid((current) => {
+      const groups = buildRkExposureMatrix(normalizeGridWidth(current, 4))
+      const currentGroup = groups.find((candidate) => candidate.options.some((option) => option.startRowIndex === group.options[optionIndex].startRowIndex))
+      if (!currentGroup) return normalizeGridWidth(current, 4)
+      const optionBlocks = currentGroup.options.map((option) => option.rowIndexes.map((rowIndex) => [...current[rowIndex]]))
+      ;[optionBlocks[optionIndex], optionBlocks[targetIndex]] = [optionBlocks[targetIndex], optionBlocks[optionIndex]]
+      return replaceRkExposureRows(current, currentGroup.rowIndexes, optionBlocks.flat())
+    })
+    setError(null)
+  }
+
+  function removeOption(group: RkExposureMatrixGroup, optionIndex: number) {
+    const option = group.options[optionIndex]
+    setGrid((current) => removeRkExposureRows(current, option.rowIndexes))
+    setError(null)
+  }
+
+  function removeGroup(group: RkExposureMatrixGroup) {
+    setGrid((current) => removeRkExposureRows(current, group.rowIndexes))
     setError(null)
   }
 
@@ -333,10 +476,10 @@ export function RkExposureTableEditorDialog({
   const testResult = getRkTestResult(grid, testDiameter)
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[92vh]" panelClassName="overflow-hidden">
+    <LargeDialogShell maxWidthClassName="max-w-[1800px]" maxHeightClassName="max-h-[92vh]" panelClassName="overflow-hidden">
       <DialogHeader
         title="Экспозиции по диаметрам"
-        subtitle="Повторите диаметр в первой строке каждого варианта. Следующие строки с пустым диаметром продолжают этот вариант. Данные из Excel можно вставить через Ctrl+V."
+        subtitle="Каждый диаметр образует группу столбцов, а каждый столбец — отдельный вариант экспозиции. Данные из Excel можно вставить через Ctrl+V, начиная с поля диаметра."
         onClose={() => void requestClose()}
       />
 
@@ -350,79 +493,139 @@ export function RkExposureTableEditorDialog({
             {testResult.text}
           </div>
           <div className="ml-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs text-slate-500">
-            <div className="font-semibold text-slate-700">{normalizedGrid.length} строк</div>
-            <div>диапазоны и варианты</div>
+            <div className="font-semibold text-slate-700">{diameterGroups.filter((group) => group.diameter.trim()).length} диаметров</div>
+            <div>{diameterGroups.filter((group) => group.diameter.trim()).reduce((sum, group) => sum + group.options.length, 0)} вариантов</div>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border border-slate-300 bg-white shadow-sm">
-          <table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0 text-sm">
+        <div ref={matrixViewportRef} className="min-h-0 flex-1 overflow-auto rounded-md border border-slate-300 bg-white shadow-sm">
+          <table
+            className="table-fixed border-separate border-spacing-0 text-sm"
+            style={{ width: 144 + Math.max(1, matrixOptionCount) * 208 }}
+          >
             <colgroup>
-              <col className="w-40" />
-              <col className="w-[28rem]" />
-              <col className="w-28" />
-              <col />
-              <col className="w-32" />
+              <col className="w-36" />
+              {diameterGroups.flatMap((group) => group.options).map((option) => <col key={option.startRowIndex} className="w-52" />)}
             </colgroup>
-            <thead className="sticky top-0 z-20 bg-slate-100 text-xs font-semibold uppercase text-slate-500">
+            <thead className="sticky top-0 z-20 bg-slate-100 text-xs font-semibold text-slate-600">
               <tr>
-                <th className="border-b border-r border-slate-300 px-2 py-2 text-left">Диаметр от</th>
-                <th className="border-b border-r border-slate-300 px-2 py-2 text-left">Снимок / координата</th>
-                <th className="border-b border-r border-slate-300 px-2 py-2 text-center">Основной</th>
-                <th className="border-b border-r border-slate-300 px-2 py-2 text-left">Примечание</th>
-                <th className="border-b border-slate-300 px-2 py-2 text-center">Порядок</th>
+                <th className="sticky left-0 z-30 h-12 border-b border-r border-slate-300 bg-slate-100 px-3 py-0 text-left uppercase">Диаметр от</th>
+                {diameterGroups.map((group, groupIndex) => (
+                  <th
+                    key={`${group.key}-${group.options[0]?.startRowIndex}`}
+                    colSpan={group.options.length}
+                    data-rk-diameter-key={group.key}
+                    className="border-b border-r-2 border-slate-300 bg-slate-100 p-0"
+                  >
+                    <div className="flex min-h-12 items-center gap-1 px-1.5 py-1.5">
+                      <input
+                        value={group.diameter}
+                        onPaste={(event) => pasteCells(event, group.options[0].startRowIndex, 0)}
+                        readOnly
+                        inputMode="decimal"
+                        aria-label={`Диаметр группы ${groupIndex + 1}`}
+                        title="Чтобы изменить диаметр, удалите эту группу и создайте новую"
+                        placeholder="Укажите диаметр"
+                        className="h-8 min-w-0 max-w-40 flex-1 cursor-default rounded border border-slate-300 bg-slate-50 px-2 text-center text-sm font-semibold text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                      />
+                      <button
+                        type="button"
+                        title="Добавить вариант для диаметра"
+                        aria-label={`Добавить вариант для диаметра ${group.diameter || groupIndex + 1}`}
+                        onClick={() => addOption(group)}
+                        disabled={!group.diameter.trim()}
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                      <CompactGridButton label="Удалить диаметр" tone="danger" onClick={() => removeGroup(group)}><Trash2 /></CompactGridButton>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                <th className="sticky left-0 z-30 h-12 border-b border-r border-slate-300 bg-slate-100 px-3 py-0 text-left uppercase">Варианты</th>
+                {diameterGroups.flatMap((group) => group.options.map((option, optionIndex) => (
+                  <th key={option.startRowIndex} className={`h-12 border-b border-slate-300 bg-slate-50 p-0 ${optionIndex === group.options.length - 1 ? 'border-r-2' : 'border-r'}`}>
+                    <div className="flex h-12 items-center justify-between gap-2 px-2">
+                      <span>Вариант {optionIndex + 1}</span>
+                      <div className="flex items-center">
+                        <CompactGridButton label="Переместить вариант влево" disabled={optionIndex === 0} onClick={() => moveOption(group, optionIndex, -1)}><ArrowLeft /></CompactGridButton>
+                        <CompactGridButton label="Переместить вариант вправо" disabled={optionIndex === group.options.length - 1} onClick={() => moveOption(group, optionIndex, 1)}><ArrowRight /></CompactGridButton>
+                        <CompactGridButton label="Удалить вариант" disabled={group.options.length === 1} tone="danger" onClick={() => removeOption(group, optionIndex)}><Trash2 /></CompactGridButton>
+                      </div>
+                    </div>
+                  </th>
+                )))}
               </tr>
             </thead>
-            <tbody>
-              {normalizedGrid.map((row, rowIndex) => {
-                const startsOption = Boolean(row[0]?.trim())
-                return (
-                  <tr key={rowIndex} className={startsOption ? 'bg-sky-50/40' : 'bg-white'}>
-                    {[0, 1].map((columnIndex) => (
-                      <td key={columnIndex} className="h-9 border-b border-r border-slate-200 p-0">
-                        <input
-                          value={row[columnIndex]}
-                          onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
-                          onPaste={(event) => pasteCells(event, rowIndex, columnIndex)}
-                          inputMode={columnIndex === 0 ? 'decimal' : undefined}
-                          aria-label={columnIndex === 0 ? `Диаметр строки ${rowIndex + 1}` : `Снимок строки ${rowIndex + 1}`}
-                          placeholder={columnIndex === 0 && !startsOption ? 'продолжение' : undefined}
-                          className={`h-9 w-full border-0 bg-transparent px-2 outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400 ${columnIndex === 0 ? 'font-semibold placeholder:font-normal placeholder:text-slate-300' : ''}`}
-                        />
-                      </td>
-                    ))}
-                    <td className="h-9 border-b border-r border-slate-200 p-0 text-center">
-                      <label className="inline-flex h-9 w-full items-center justify-center text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={row[2]?.trim() === '+'}
-                          onChange={(event) => updateCell(rowIndex, 2, event.target.checked ? '+' : '')}
-                          disabled={!startsOption}
-                          aria-label={`Основная схема строки ${rowIndex + 1}`}
-                          className="h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
-                        />
-                      </label>
-                    </td>
-                    <td className="h-9 border-b border-r border-slate-200 p-0">
+            <tbody className="text-slate-700">
+              <tr>
+                <MatrixRowHeading>По умолчанию</MatrixRowHeading>
+                {diameterGroups.flatMap((group) => group.options.map((option, optionIndex) => (
+                  <td key={option.startRowIndex} className={`h-12 border-b border-slate-200 bg-white p-0 text-center ${optionIndex === group.options.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r'}`}>
+                    <label className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 text-xs text-slate-500">
                       <input
-                        value={row[3]}
-                        onChange={(event) => updateCell(rowIndex, 3, event.target.value)}
-                        onPaste={(event) => pasteCells(event, rowIndex, 3)}
-                        disabled={!startsOption}
-                        aria-label={`Примечание строки ${rowIndex + 1}`}
-                        className="h-9 w-full border-0 bg-transparent px-2 outline-none focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400 disabled:bg-slate-50/60 disabled:text-slate-400"
+                        type="checkbox"
+                        checked={normalizedGrid[option.startRowIndex][2]?.trim() === '+'}
+                        onChange={(event) => updateDefaultOption(group, option, event.target.checked)}
+                        aria-label={`Вариант по умолчанию ${group.diameter || 'без диаметра'}:${optionIndex + 1}`}
+                        className="h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
                       />
-                    </td>
-                    <td className="h-9 border-b border-slate-200 p-0">
-                      <div className="flex h-9 items-center justify-center">
-                        <CompactGridButton label="Поднять строку" disabled={rowIndex === 0} onClick={() => moveRow(rowIndex, -1)}><ArrowUp /></CompactGridButton>
-                        <CompactGridButton label="Опустить строку" disabled={rowIndex === normalizedGrid.length - 1} onClick={() => moveRow(rowIndex, 1)}><ArrowDown /></CompactGridButton>
-                        <CompactGridButton label="Удалить строку" tone="danger" onClick={() => removeRow(rowIndex)}><Trash2 /></CompactGridButton>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+                      <span>{normalizedGrid[option.startRowIndex][2]?.trim() === '+' ? 'Основной' : 'Не выбран'}</span>
+                    </label>
+                  </td>
+                )))}
+              </tr>
+              <tr>
+                <MatrixRowHeading>Примечание</MatrixRowHeading>
+                {diameterGroups.flatMap((group) => group.options.map((option, optionIndex) => (
+                  <td key={option.startRowIndex} className={`h-12 border-b border-slate-200 bg-slate-50/40 p-1.5 ${optionIndex === group.options.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r'}`}>
+                    <input
+                      value={normalizedGrid[option.startRowIndex][3]}
+                      onChange={(event) => updateCell(option.startRowIndex, 3, event.target.value)}
+                      onPaste={(event) => pasteCells(event, option.startRowIndex, 3)}
+                      aria-label={`Примечание варианта ${group.diameter || 'без диаметра'}:${optionIndex + 1}`}
+                      placeholder="Необязательно"
+                      className="h-9 w-full rounded border border-slate-200 bg-white px-2 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                    />
+                  </td>
+                )))}
+              </tr>
+              <tr>
+                <MatrixRowHeading align="top">Интервалы</MatrixRowHeading>
+                {diameterGroups.flatMap((group) => group.options.map((option, optionIndex) => (
+                  <td key={option.startRowIndex} className={`align-top bg-white p-0 ${optionIndex === group.options.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r'}`}>
+                    <div className="divide-y divide-slate-100">
+                      {option.rowIndexes.map((rowIndex, valueIndex) => (
+                        <div key={rowIndex} className="flex h-10 items-center gap-1 px-1.5">
+                          <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-slate-400">{valueIndex + 1}</span>
+                          <input
+                            value={normalizedGrid[rowIndex][1]}
+                            onChange={(event) => updateCell(rowIndex, 1, event.target.value)}
+                            onPaste={(event) => pasteCells(event, rowIndex, 1)}
+                            aria-label={`Интервал варианта ${group.diameter || 'без диаметра'}:${optionIndex + 1}, строка ${valueIndex + 1}`}
+                            placeholder="Снимок / координата"
+                            className="h-8 min-w-0 flex-1 rounded border border-transparent bg-transparent px-2 outline-none hover:border-slate-200 focus:border-sky-400 focus:bg-sky-50 focus:ring-2 focus:ring-sky-100"
+                          />
+                          <div className="flex shrink-0 items-center">
+                            <CompactGridButton label="Поднять интервал" disabled={valueIndex === 0} onClick={() => moveInterval(option, valueIndex, -1)}><ArrowUp /></CompactGridButton>
+                            <CompactGridButton label="Опустить интервал" disabled={valueIndex === option.rowIndexes.length - 1} onClick={() => moveInterval(option, valueIndex, 1)}><ArrowDown /></CompactGridButton>
+                            <CompactGridButton label="Удалить интервал" tone="danger" onClick={() => removeInterval(option, valueIndex)}><Trash2 /></CompactGridButton>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addInterval(option)}
+                      className="flex h-9 w-full items-center justify-center gap-1 border-t border-slate-200 bg-slate-50 text-xs font-medium text-slate-500 hover:bg-sky-50 hover:text-sky-700"
+                    >
+                      <Plus className="h-3.5 w-3.5" />Добавить интервал
+                    </button>
+                  </td>
+                )))}
+              </tr>
             </tbody>
           </table>
         </div>
@@ -433,10 +636,106 @@ export function RkExposureTableEditorDialog({
         isSaving={isSaving}
         onCancel={() => void requestClose()}
         onSave={() => void save()}
-        startActions={<Button type="button" variant="outline" onClick={addRow}><Plus className="mr-2 h-4 w-4" />Добавить строку</Button>}
+        startActions={pendingDiameter === null ? (
+          <Button type="button" variant="outline" onClick={() => { setPendingDiameter(''); setError(null) }}><Plus className="mr-2 h-4 w-4" />Добавить диаметр</Button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              value={pendingDiameter}
+              onChange={(event) => setPendingDiameter(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') addDiameter() }}
+              inputMode="decimal"
+              autoFocus
+              aria-label="Новый диаметр"
+              placeholder="Диаметр от"
+              className="w-36"
+            />
+            <Button type="button" variant="outline" onClick={addDiameter}>Создать столбец</Button>
+            <button
+              type="button"
+              title="Отменить добавление диаметра"
+              aria-label="Отменить добавление диаметра"
+              onClick={() => setPendingDiameter(null)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       />
     </LargeDialogShell>
   )
+}
+
+function MatrixRowHeading({ children, align = 'middle' }: { children: React.ReactNode; align?: 'middle' | 'top' }) {
+  return (
+    <th className={`sticky left-0 z-10 h-12 border-b border-r border-slate-300 bg-slate-100 px-3 py-0 text-left text-xs font-semibold uppercase text-slate-600 ${align === 'top' ? 'align-top pt-3' : 'align-middle'}`}>
+      {children}
+    </th>
+  )
+}
+
+type RkExposureMatrixOption = {
+  diameter: string
+  startRowIndex: number
+  rowIndexes: number[]
+}
+
+type RkExposureMatrixGroup = {
+  diameter: string
+  key: string
+  options: RkExposureMatrixOption[]
+  rowIndexes: number[]
+}
+
+function buildRkExposureMatrix(source: EditableGrid): RkExposureMatrixGroup[] {
+  const options: RkExposureMatrixOption[] = []
+  source.forEach((row, rowIndex) => {
+    const diameter = row[0]?.trim() ?? ''
+    const current = options.at(-1)
+    if (!current || diameter) {
+      options.push({ diameter, startRowIndex: rowIndex, rowIndexes: [rowIndex] })
+      return
+    }
+    current.rowIndexes.push(rowIndex)
+  })
+
+  const groups: RkExposureMatrixGroup[] = []
+  options.forEach((option) => {
+    const key = normalizeRkExposureDiameterKey(option.diameter)
+    const current = groups.at(-1)
+    if (current?.key === key) {
+      current.options.push(option)
+      current.rowIndexes.push(...option.rowIndexes)
+      return
+    }
+    groups.push({
+      diameter: option.diameter,
+      key,
+      options: [option],
+      rowIndexes: [...option.rowIndexes],
+    })
+  })
+  return groups
+}
+
+function normalizeRkExposureDiameterKey(value: string) {
+  const parsed = Number(value.replace(',', '.'))
+  return value.trim() && Number.isFinite(parsed) ? `number:${parsed}` : `text:${value.trim()}`
+}
+
+function removeRkExposureRows(source: EditableGrid, rowIndexes: number[]) {
+  const indexes = new Set(rowIndexes)
+  const next = normalizeGridWidth(source, 4).filter((_, rowIndex) => !indexes.has(rowIndex))
+  return next.length > 0 ? next : [['', '', '', '']]
+}
+
+function replaceRkExposureRows(source: EditableGrid, rowIndexes: number[], replacement: EditableGrid) {
+  const firstRowIndex = Math.min(...rowIndexes)
+  const indexes = new Set(rowIndexes)
+  const next = normalizeGridWidth(source, 4).filter((_, rowIndex) => !indexes.has(rowIndex))
+  next.splice(firstRowIndex, 0, ...replacement.map((row) => normalizeGridWidth([row], 4)[0]))
+  return next
 }
 
 function DialogFooter({

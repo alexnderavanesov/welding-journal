@@ -21,9 +21,16 @@ type CreateReportHeaderActionsPropsOptions = {
   onOpenWeldingJournalCancelledAcceptedReport: () => void
   onOpenWeldingJournalSystemReport: () => void
   onCreatePstoRequest: () => void
+  onEditSelectedPstoRequest: () => void
+  editSelectedPstoRequestDisabled: boolean
+  onOpenPstoRequestRegistry: () => void
   pstoRequestPending: boolean
   onAddPstoResult: () => void
   pstoResultDisabled: boolean
+  onEditSelectedPstoResults: () => void
+  editSelectedPstoResultsDisabled: boolean
+  onOpenPstoResultRegistry: () => void
+  pstoResultRegistryDisabled: boolean
   isPstoShowMenuOpen: boolean
   onTogglePstoShowMenu: () => void
   onOpenPstoCurrentReport: () => void
@@ -71,9 +78,16 @@ export function createReportHeaderActionsProps({
   onOpenWeldingJournalCancelledAcceptedReport,
   onOpenWeldingJournalSystemReport,
   onCreatePstoRequest,
+  onEditSelectedPstoRequest,
+  editSelectedPstoRequestDisabled,
+  onOpenPstoRequestRegistry,
   pstoRequestPending,
   onAddPstoResult,
   pstoResultDisabled,
+  onEditSelectedPstoResults,
+  editSelectedPstoResultsDisabled,
+  onOpenPstoResultRegistry,
+  pstoResultRegistryDisabled,
   isPstoShowMenuOpen,
   onTogglePstoShowMenu,
   onOpenPstoCurrentReport,
@@ -120,9 +134,16 @@ export function createReportHeaderActionsProps({
     onOpenWeldingJournalCancelledAcceptedReport,
     onOpenWeldingJournalSystemReport,
     onCreatePstoRequest,
+    onEditSelectedPstoRequest,
+    editSelectedPstoRequestDisabled,
+    onOpenPstoRequestRegistry,
     pstoRequestPending,
     onAddPstoResult,
     pstoResultDisabled,
+    onEditSelectedPstoResults,
+    editSelectedPstoResultsDisabled,
+    onOpenPstoResultRegistry,
+    pstoResultRegistryDisabled,
     isPstoShowMenuOpen,
     onTogglePstoShowMenu,
     onOpenPstoCurrentReport,

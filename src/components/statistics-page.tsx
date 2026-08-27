@@ -32,6 +32,7 @@ import {
   formatPercent,
   formatStatisticValue,
   getDefaultStatisticsPeriod,
+  getStatisticRatioPercent,
   getStatisticsPeriodPresetSelection,
   type StatisticsControlDynamicsScale,
   type StatisticsControlDynamicsScaleSetting,
@@ -63,9 +64,11 @@ import {
   type WeldingDynamicsBucket,
   type WeldingDynamicsJointType,
   type WeldingDynamicsMaterialGroup,
+  type WeldingDynamicsMaterialJointTypeGroup,
   type WeldingDynamicsProjectGroup,
   type WeldingDynamicsScaleSetting,
   type WeldingDynamicsSummary,
+  type WeldingDynamicsTableGrouping,
 } from '@/lib/welding-dynamics'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import { openPrintableReport, type PrintableReport } from '@/lib/printable-report'
@@ -116,6 +119,8 @@ const EMPTY_METHOD_SUMMARY: StatisticsMethodSummary = {
   waitingControl: 0,
   good: 0,
   rejected: 0,
+  goodFromClosedRequests: 0,
+  rejectedFromClosedRequests: 0,
   closurePercent: 0,
   rowIds: {
     requiredRequests: [],
@@ -200,6 +205,8 @@ const EMPTY_WELDING_DYNAMICS: WeldingDynamicsSummary = {
   jointTypes: [],
   materialJointTypes: [],
   projectJointTypes: [],
+  projectMaterialHierarchy: [],
+  materialProjectHierarchy: [],
 }
 
 const EMPTY_WELDER_SUMMARY: WelderStatisticsSummary = {
@@ -283,6 +290,7 @@ export function StatisticsPage({
   const [lineSummaryUnit, setLineSummaryUnit] = useState<StatisticsUnit>('joints')
   const [generalJointFilter, setGeneralJointFilter] = useState<WelderStatisticsJointFilter>('all')
   const [weldingDynamicsScaleSetting, setWeldingDynamicsScaleSetting] = useState<WeldingDynamicsScaleSetting>('auto')
+  const [weldingDynamicsTableGrouping, setWeldingDynamicsTableGrouping] = useState<WeldingDynamicsTableGrouping>('projects')
   const [welderJointFilter, setWelderJointFilter] = useState<WelderStatisticsJointFilter>('all')
   const [projectFilter, setProjectFilter] = useState('')
   const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
@@ -378,6 +386,7 @@ export function StatisticsPage({
       buildStatisticsPrintableReport({
         activeTab,
         dynamics: weldingDynamics,
+        dynamicsTableGrouping: weldingDynamicsTableGrouping,
         jointFilter,
         lineSummary,
         lnkMethods,
@@ -410,6 +419,7 @@ export function StatisticsPage({
       unit,
       welderSummary,
       weldingDynamics,
+      weldingDynamicsTableGrouping,
     ],
   )
   return (
@@ -769,8 +779,10 @@ export function StatisticsPage({
             jointFilter={generalJointFilter}
             scaleSetting={weldingDynamicsScaleSetting}
             summary={weldingDynamics}
+            tableGrouping={weldingDynamicsTableGrouping}
             unit={unit}
             onScaleChange={setWeldingDynamicsScaleSetting}
+            onTableGroupingChange={setWeldingDynamicsTableGrouping}
           />
 
           <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
@@ -958,14 +970,18 @@ function Panel({
 function WeldingDynamicsPanel({
   jointFilter,
   onScaleChange,
+  onTableGroupingChange,
   scaleSetting,
   summary,
+  tableGrouping,
   unit,
 }: {
   jointFilter: WelderStatisticsJointFilter
   onScaleChange: (scale: WeldingDynamicsScaleSetting) => void
+  onTableGroupingChange: (grouping: WeldingDynamicsTableGrouping) => void
   scaleSetting: WeldingDynamicsScaleSetting
   summary: WeldingDynamicsSummary
+  tableGrouping: WeldingDynamicsTableGrouping
   unit: StatisticsUnit
 }) {
   const unitLabel = unit === 'wdi' ? 'WDI' : 'стыков'
@@ -978,8 +994,10 @@ function WeldingDynamicsPanel({
   const jointTypes = summary.jointTypes ?? []
   const [colorMode, setColorMode] = useState<'joint-types' | 'materials' | 'projects'>('joint-types')
   const [selectedBucketKey, setSelectedBucketKey] = useState<string | null>(null)
-  const [hoveredBucketKey, setHoveredBucketKey] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(true)
+  const [collapsedDetailGroups, setCollapsedDetailGroups] = useState<Record<WeldingDynamicsTableGrouping, Set<string>>>(
+    () => ({ projects: new Set(), materials: new Set() }),
+  )
   const activeColorMode = jointFilter === 'all' ? colorMode : 'materials'
   const showJointTypeColors = jointFilter === 'all' && colorMode === 'joint-types'
   const materialGroupColors = useMemo(
@@ -1006,19 +1024,20 @@ function WeldingDynamicsPanel({
   const detailWelderShiftCount = selectedBucket?.welderShiftCount ?? summary.welderShiftCount
   const detailValuePerWelder = selectedBucket?.valuePerWelderShift ?? summary.averageValuePerWelderShift
   const detailColumnCount = jointTypes.length + 4
-  const detailTableMinWidth = Math.max(960, detailColumnCount * 160)
+  const detailTableMinWidth = 270 + jointTypes.length * 115 + 115 + 100 + 155
   const detailJointTypes = jointTypes.map((jointType) => ({
     ...jointType,
     value: selectedBucket
       ? selectedBucket.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0
       : jointType.value,
   }))
-  const detailDimensionJointTypes = activeColorMode === 'projects'
-    ? selectedBucket?.projectJointTypes ?? summary.projectJointTypes ?? []
-    : selectedBucket?.materialJointTypes ?? summary.materialJointTypes ?? []
-  const detailDimensionLabel = activeColorMode === 'projects' ? 'Проект' : 'Группа материала'
-  const detailDimensionColors = activeColorMode === 'projects' ? projectGroupColors : materialGroupColors
-  const tooltipBucket = summary.buckets.find((bucket) => bucket.key === hoveredBucketKey) ?? null
+  const detailHierarchy = tableGrouping === 'projects'
+    ? selectedBucket?.projectMaterialHierarchy ?? summary.projectMaterialHierarchy ?? []
+    : selectedBucket?.materialProjectHierarchy ?? summary.materialProjectHierarchy ?? []
+  const detailDimensionLabel = tableGrouping === 'projects'
+    ? 'Проект / группа материалов'
+    : 'Группа материалов / проект'
+  const collapsedGroups = collapsedDetailGroups[tableGrouping]
   const welderLinePoints = getWeldingDynamicsLinePoints(
     summary.buckets.map((bucket) => bucket.welderCount),
     maxWelders,
@@ -1048,6 +1067,15 @@ function WeldingDynamicsPanel({
   const closeDetails = () => {
     setDetailsOpen(false)
     setSelectedBucketKey(null)
+  }
+
+  const toggleDetailGroup = (groupKey: string) => {
+    setCollapsedDetailGroups((current) => {
+      const nextGroups = new Set(current[tableGrouping])
+      if (nextGroups.has(groupKey)) nextGroups.delete(groupKey)
+      else nextGroups.add(groupKey)
+      return { ...current, [tableGrouping]: nextGroups }
+    })
   }
 
   return (
@@ -1115,12 +1143,6 @@ function WeldingDynamicsPanel({
               </div>
             </div>
             <div className="relative">
-              {tooltipBucket ? (
-                <WeldingDynamicsTooltip
-                  bucket={tooltipBucket}
-                  unit={unit}
-                />
-              ) : null}
             <div className="overflow-x-auto pb-3">
               <div
                 className="relative grid items-end gap-2 pt-1"
@@ -1164,32 +1186,8 @@ function WeldingDynamicsPanel({
                     bucket.welderCount > 0
                       ? Math.max(8, (bucket.welderCount / maxWelders) * WELDING_DYNAMICS_WELDER_PLOT_PERCENT)
                       : 0
-                  const materialGroupLines = bucket.materialGroups.map((group) =>
-                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`,
-                  )
                   const bucketJointTypes = bucket.jointTypes ?? []
-                  const bucketMaterialJointTypes = bucket.materialJointTypes ?? []
-                  const bucketProjectJointTypes = bucket.projectJointTypes ?? []
-                  const jointTypeLines = bucketJointTypes.map((jointType) =>
-                    `${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`,
-                  )
-                  const materialJointTypeLines = bucketMaterialJointTypes.flatMap((group) => [
-                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`,
-                    ...group.jointTypes.map((jointType) => `  ${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`),
-                  ])
-                  const projectJointTypeLines = bucketProjectJointTypes.flatMap((group) => [
-                    `${group.label}: ${formatStatisticValue(group.value, unit)} ${unitLabel}`,
-                    ...group.jointTypes.map((jointType) => `  ${jointType.label}: ${formatStatisticValue(jointType.value, unit)} ${unitLabel}`),
-                  ])
-                  const title = [
-                    `${bucket.label}: ${formatStatisticValue(bucket.value, unit)} ${unitLabel}; сварщиков ${bucket.welderCount}; на сварщика в смену ${formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} ${unitLabel}`,
-                    'Типы стыков:',
-                    ...jointTypeLines,
-                    'Группы материалов:',
-                    ...(materialJointTypeLines.length > 0 ? materialJointTypeLines : materialGroupLines),
-                    'Проекты:',
-                    ...projectJointTypeLines,
-                  ].join('\n')
+                  const title = `${bucket.label}: ${formatStatisticValue(bucket.value, unit)} ${unitLabel}; сварщиков ${bucket.welderCount}; на сварщика в смену ${formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} ${unitLabel}`
                   const segments = showJointTypeColors
                     ? bucketJointTypes.map((jointType) => ({
                         key: jointType.key,
@@ -1219,10 +1217,6 @@ function WeldingDynamicsPanel({
                         "relative flex min-w-0 cursor-pointer flex-col items-center gap-2 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300",
                         selectedBucketKey === bucket.key && "bg-sky-50/40 after:pointer-events-none after:absolute after:inset-0 after:z-30 after:rounded-md after:border-2 after:border-sky-400 after:content-['']",
                       )}
-                      onMouseEnter={() => setHoveredBucketKey(bucket.key)}
-                      onMouseLeave={() => setHoveredBucketKey((current) => current === bucket.key ? null : current)}
-                      onFocus={() => setHoveredBucketKey(bucket.key)}
-                      onBlur={() => setHoveredBucketKey((current) => current === bucket.key ? null : current)}
                       onClick={() => selectBucket(bucket.key)}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter' && event.key !== ' ') return
@@ -1300,86 +1294,138 @@ function WeldingDynamicsPanel({
             </div>
             </div>
             {detailsOpen ? (
-              <div className="relative mt-3 overflow-hidden rounded-md border border-slate-200 bg-white">
-                <button
-                  type="button"
-                  className="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  title="Закрыть подробности"
-                  aria-label="Закрыть подробности"
-                  onClick={closeDetails}
-                >
-                  <X className="h-4 w-4" />
-                </button>
+              <div className="mt-3 overflow-hidden rounded-md border border-slate-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-slate-500">Состав сварки</div>
+                    <div className="truncate text-sm font-semibold text-slate-800">{detailLabel}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="hidden text-xs font-medium text-slate-500 sm:inline">Группировка таблицы</span>
+                    <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5" aria-label="Группировка таблицы">
+                      <button
+                        type="button"
+                        className={cn(
+                          'rounded px-3 py-1.5 text-xs font-medium transition-colors',
+                          tableGrouping === 'projects'
+                            ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                        )}
+                        aria-pressed={tableGrouping === 'projects'}
+                        onClick={() => onTableGroupingChange('projects')}
+                      >
+                        Проект
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          'rounded px-3 py-1.5 text-xs font-medium transition-colors',
+                          tableGrouping === 'materials'
+                            ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                        )}
+                        aria-pressed={tableGrouping === 'materials'}
+                        onClick={() => onTableGroupingChange('materials')}
+                      >
+                        Материал
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      title="Закрыть подробности"
+                      aria-label="Закрыть подробности"
+                      onClick={closeDetails}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
                 <div className="overflow-x-auto">
                   <table
                     className="w-full table-fixed border-collapse text-sm leading-5 text-slate-700"
                     style={{ minWidth: detailTableMinWidth }}
                   >
                     <colgroup>
-                      {Array.from({ length: detailColumnCount }, (_, index) => (
-                        <col key={index} style={{ width: `${100 / detailColumnCount}%` }} />
-                      ))}
+                      <col style={{ width: 270 }} />
+                      {Array.from({ length: detailColumnCount - 4 }, (_, index) => <col key={index} style={{ width: 115 }} />)}
+                      <col style={{ width: 115 }} />
+                      <col style={{ width: 100 }} />
+                      <col style={{ width: 155 }} />
                     </colgroup>
                     <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/80">
-                        <th className="sticky left-0 z-20 h-[62px] bg-slate-50 px-3 py-2.5 text-left align-middle font-semibold text-slate-700 shadow-[1px_0_0_0_#e2e8f0]">{detailLabel}</th>
-                        {detailJointTypes.map((jointType) => (
-                          <th key={jointType.key} className="h-[62px] px-3 py-2.5 text-right align-middle font-normal tabular-nums">
-                            <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: getWeldingDynamicsJointTypeColor(jointType) }} />
-                              <span className="text-slate-500">{jointType.label}</span>
-                            </span>
-                            <span className="mt-0.5 block font-semibold text-slate-800">{formatStatisticValue(jointType.value, unit)}</span>
-                          </th>
-                        ))}
-                        <th className="h-[62px] bg-slate-100/70 px-3 py-2.5 text-right align-middle font-normal tabular-nums">
-                          <span className="block text-slate-500">Всего</span>
-                          <span className="mt-0.5 block font-semibold text-slate-800">{formatStatisticValue(detailValue, unit)} {unitLabel}</span>
-                        </th>
-                        <th className="h-[62px] px-3 py-2.5 text-right align-middle font-normal tabular-nums">
-                          <span className="block text-slate-500">Сварщики</span>
-                          <span className="mt-0.5 block font-semibold text-slate-800">{detailWelderCount}</span>
-                        </th>
-                        <th className="h-[62px] py-2.5 pl-3 pr-10 text-right align-middle font-normal tabular-nums">
-                          <span className="block whitespace-nowrap text-slate-500">На сварщика</span>
-                          <span className="mt-0.5 block font-semibold text-slate-800">
-                            {formatValuePerWelderShift(detailValuePerWelder, detailWelderShiftCount)} {unitLabel}
-                          </span>
-                        </th>
-                      </tr>
                       <tr className="border-b border-slate-200 bg-white text-slate-500">
                         <th className="sticky left-0 z-20 bg-white px-3 py-2.5 text-left font-medium shadow-[1px_0_0_0_#e2e8f0]">{detailDimensionLabel}</th>
-                        {jointTypes.map((jointType) => (
-                          <th key={jointType.key} className="px-3 py-2.5 text-right font-medium">{jointType.code}</th>
+                        {detailJointTypes.map((jointType) => (
+                          <th key={jointType.key} className="px-3 py-2.5 text-right font-medium">
+                            <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: getWeldingDynamicsJointTypeColor(jointType) }} />
+                              {jointType.label}
+                            </span>
+                          </th>
                         ))}
-                        <th className="bg-slate-50 px-3 py-2.5 text-right font-semibold text-slate-700">Всего</th>
+                        <th className="border-l border-slate-200 px-3 py-2.5 text-right font-medium text-slate-600">Всего</th>
                         <th className="px-3 py-2.5 text-right font-medium">Сварщики</th>
                         <th className="px-3 py-2.5 text-right font-medium">На сварщика в смену</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {detailDimensionJointTypes.map((group) => (
-                        <tr key={group.key} className="border-b border-slate-100 last:border-b-0 even:bg-slate-50/40">
-                          <td className="sticky left-0 z-10 bg-white px-3 py-3 font-medium text-slate-800 shadow-[1px_0_0_0_#f1f5f9] even:bg-slate-50">
-                            <span className="inline-flex items-center gap-2">
-                              {!showJointTypeColors ? (
-                                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: detailDimensionColors.get(group.key) }} />
-                              ) : null}
-                              {group.label}
-                            </span>
+                      <tr className="border-b-2 border-slate-300 bg-slate-50/80">
+                        <td className="sticky left-0 z-10 bg-slate-50 px-3 py-3 font-semibold text-slate-900 shadow-[1px_0_0_0_#dbe3eb]">Итого</td>
+                        {detailJointTypes.map((jointType) => (
+                          <td key={jointType.key} className="px-3 py-3 text-right font-medium tabular-nums text-slate-800">
+                            {formatStatisticValue(jointType.value, unit)}
                           </td>
-                          {jointTypes.map((jointType) => (
-                            <td key={jointType.key} className="px-3 py-3 text-right font-medium tabular-nums">
-                              {formatStatisticValue(group.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0, unit)}
+                        ))}
+                        <td className="border-l border-slate-200 px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{formatStatisticValue(detailValue, unit)}</td>
+                        <td className="px-3 py-3 text-right font-medium tabular-nums text-slate-800">{detailWelderCount}</td>
+                        <td className="px-3 py-3 text-right font-medium tabular-nums text-slate-800">
+                          {formatValuePerWelderShift(detailValuePerWelder, detailWelderShiftCount)} {detailWelderShiftCount > 0 ? unitLabel : ''}
+                        </td>
+                      </tr>
+                      {detailHierarchy.flatMap((group) => {
+                        const groupColor = tableGrouping === 'projects'
+                          ? getWeldingDynamicsProjectGroupColor(group)
+                          : getWeldingDynamicsMaterialGroupColor(group)
+                        const isCollapsed = collapsedGroups.has(group.key)
+                        return [
+                          <tr key={`group:${group.key}`} className="border-b border-slate-200 bg-slate-50/70 font-semibold text-slate-900">
+                            <td className="sticky left-0 z-10 bg-slate-50 px-2 py-2.5 font-bold text-slate-900 shadow-[1px_0_0_0_#e2e8f0]">
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                                aria-expanded={!isCollapsed}
+                                title={isCollapsed ? 'Развернуть группу' : 'Свернуть группу'}
+                                onClick={() => toggleDetailGroup(group.key)}
+                              >
+                                {isCollapsed ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />}
+                                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: groupColor }} />
+                                <span className="min-w-0 break-words">{group.label}</span>
+                              </button>
                             </td>
-                          ))}
-                          <td className="bg-slate-50/80 px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{formatStatisticValue(group.value, unit)}</td>
-                          <td className="px-3 py-3 text-right font-medium tabular-nums">{group.welderCount}</td>
-                          <td className="px-3 py-3 text-right font-medium tabular-nums">
-                            {formatValuePerWelderShift(group.valuePerWelderShift, group.welderShiftCount)} {group.welderShiftCount > 0 ? unitLabel : ''}
-                          </td>
-                        </tr>
-                      ))}
+                            <WeldingDynamicsDetailValueCells
+                              className="font-semibold text-slate-900"
+                              group={group}
+                              jointTypes={detailJointTypes}
+                              unit={unit}
+                              unitLabel={unitLabel}
+                            />
+                          </tr>,
+                          ...(!isCollapsed ? group.children.map((child) => (
+                            <tr key={`child:${group.key}:${child.key}`} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/70">
+                              <td className="sticky left-0 z-10 bg-white py-2.5 pl-11 pr-3 font-medium text-slate-600 shadow-[1px_0_0_0_#f1f5f9]">
+                                <span className="break-words">{child.label}</span>
+                              </td>
+                              <WeldingDynamicsDetailValueCells
+                                group={child}
+                                jointTypes={detailJointTypes}
+                                unit={unit}
+                                unitLabel={unitLabel}
+                              />
+                            </tr>
+                          )) : []),
+                        ]
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1396,73 +1442,33 @@ function WeldingDynamicsPanel({
   )
 }
 
-function WeldingDynamicsTooltip({
-  bucket,
+function WeldingDynamicsDetailValueCells({
+  className,
+  group,
+  jointTypes,
   unit,
+  unitLabel,
 }: {
-  bucket: WeldingDynamicsBucket
+  className?: string
+  group: WeldingDynamicsMaterialJointTypeGroup
+  jointTypes: WeldingDynamicsJointType[]
   unit: StatisticsUnit
+  unitLabel: string
 }) {
-  const unitLabel = unit === 'wdi' ? 'WDI' : 'стыков'
-
-  return (
-    <div className="pointer-events-none absolute right-4 top-2 z-50 w-[min(320px,calc(100%-2rem))] rounded-md border border-slate-200 bg-white/95 p-3 text-xs text-slate-600 shadow-lg backdrop-blur-sm">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">
-        <div className="font-semibold text-slate-900">{bucket.label}</div>
-        <div className="font-semibold tabular-nums text-sky-700">
-          {formatStatisticValue(bucket.value, unit)} {unitLabel}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 py-2">
-        <span>Сварщики</span>
-        <span className="text-right font-medium tabular-nums text-slate-800">{bucket.welderCount}</span>
-        <span>На сварщика</span>
-        <span className="text-right font-medium tabular-nums text-slate-800">
-          {formatValuePerWelderShift(bucket.valuePerWelderShift, bucket.welderShiftCount)} {unitLabel}
-        </span>
-      </div>
-      <div className="space-y-2 border-t border-slate-100 pt-2">
-        <WeldingDynamicsTooltipSection label="Типы стыков" items={bucket.jointTypes} unit={unit} />
-        <WeldingDynamicsTooltipSection label="Материалы" items={bucket.materialGroups} unit={unit} />
-        <WeldingDynamicsTooltipSection label="Проекты" items={bucket.projectGroups} unit={unit} />
-      </div>
-    </div>
-  )
-}
-
-function WeldingDynamicsTooltipSection({
-  items,
-  label,
-  unit,
-}: {
-  items: Array<{ key: string; label: string; value: number }>
-  label: string
-  unit: StatisticsUnit
-}) {
-  const visibleItems = items.filter((item) => item.value > 0)
-  const displayedItems = visibleItems.slice(0, 3)
-  const hiddenCount = visibleItems.length - displayedItems.length
-
-  return (
-    <div>
-      <div className="mb-0.5 font-medium text-slate-500">{label}</div>
-      {displayedItems.length > 0 ? (
-        <div className="space-y-0.5">
-          {displayedItems.map((item) => (
-            <div key={item.key} className="flex items-center justify-between gap-3">
-              <span className="truncate">{item.label}</span>
-              <span className="shrink-0 font-medium tabular-nums text-slate-800">
-                {formatStatisticValue(item.value, unit)}
-              </span>
-            </div>
-          ))}
-          {hiddenCount > 0 ? <div className="text-slate-400">ещё {hiddenCount}</div> : null}
-        </div>
-      ) : (
-        <div className="text-slate-400">Нет данных</div>
-      )}
-    </div>
-  )
+  return <>
+    {jointTypes.map((jointType) => (
+      <td key={jointType.key} className={cn('px-3 py-2.5 text-right font-medium tabular-nums', className)}>
+        {formatStatisticValue(group.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0, unit)}
+      </td>
+    ))}
+    <td className={cn('border-l border-slate-200 px-3 py-2.5 text-right font-medium tabular-nums text-slate-800', className)}>
+      {formatStatisticValue(group.value, unit)}
+    </td>
+    <td className={cn('px-3 py-2.5 text-right font-medium tabular-nums', className)}>{group.welderCount}</td>
+    <td className={cn('px-3 py-2.5 text-right font-medium tabular-nums', className)}>
+      {formatValuePerWelderShift(group.valuePerWelderShift, group.welderShiftCount)} {group.welderShiftCount > 0 ? unitLabel : ''}
+    </td>
+  </>
 }
 
 function getWeldingDynamicsLinePoints(
@@ -1797,22 +1803,22 @@ function ControlStatisticsPanel({
         >
           <div className="overflow-hidden rounded-md border border-slate-200">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1090px] table-fixed border-collapse text-sm">
+              <table className="w-full min-w-[920px] table-fixed border-collapse text-sm">
                 <colgroup>
+                  <col className="w-[75px]" />
+                  <col className="w-[180px]" />
+                  <col className="w-[115px]" />
+                  <col className="w-[170px]" />
+                  <col className="w-[150px]" />
                   <col className="w-[100px]" />
-                  <col className="w-[210px]" />
-                  <col className="w-[135px]" />
-                  <col className="w-[200px]" />
-                  <col className="w-[185px]" />
-                  <col className="w-[125px]" />
-                  <col className="w-[135px]" />
+                  <col className="w-[130px]" />
                 </colgroup>
                 <thead className="bg-slate-100 text-slate-600">
                   <tr>
                     <th className="whitespace-nowrap px-3 py-3 text-left font-semibold">Вид НК</th>
-                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Потребность / заявлено</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Заявлено / потребность</th>
                     <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Без заявки</th>
-                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Заявок / закрыто</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Закрыто / заявок</th>
                     <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Ожидает заключение</th>
                     <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Годен</th>
                     <th className="whitespace-nowrap px-3 py-3 text-right font-semibold">Не годен</th>
@@ -1823,11 +1829,22 @@ function ControlStatisticsPanel({
                     <tr key={method.code} className="border-t border-slate-100 odd:bg-white even:bg-slate-50/60">
                       <td className="px-3 py-3 font-semibold text-slate-900">{method.code}</td>
                       <td className="px-3 py-3"><MethodCoverageCell method={method} onOpenRows={onOpenControlRows} /></td>
-                      <MethodValueCell label={`${method.code}: без заявки`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.waitingRequest} tone="amber" unit={unit} value={method.waitingRequest} />
+                      <MethodValueCell
+                        label={`${method.code}: без заявки`}
+                        onOpenRows={onOpenControlRows}
+                        percentage={{
+                          value: getStatisticRatioPercent(method.rowIds.waitingRequest.length, method.requiredRequests),
+                          title: `${method.rowIds.waitingRequest.length} из ${method.requiredRequests} требуемых позиций`,
+                        }}
+                        rowIds={method.rowIds.waitingRequest}
+                        tone="amber"
+                        unit={unit}
+                        value={method.waitingRequest}
+                      />
                       <td className="px-3 py-3"><MethodClosureCell method={method} onOpenRows={onOpenControlRows} unit={unit} /></td>
-                      <MethodValueCell label={`${method.code}: ожидает заключение`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.waitingControl} tone="sky" unit={unit} value={method.waitingControl} />
-                      <MethodValueCell label={`${method.code}: годен`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.good} tone="green" unit={unit} value={method.good} />
-                      <MethodValueCell label={`${method.code}: не годен`} onOpenRows={onOpenControlRows} rowIds={method.rowIds.rejected} tone="rose" unit={unit} value={method.rejected} />
+                      <MethodValueCell label={`${method.code}: ожидает заключение`} onOpenRows={onOpenControlRows} percentage={buildMethodRequestedPercentage(method.waitingControl, method.requests, unit)} rowIds={method.rowIds.waitingControl} tone="sky" unit={unit} value={method.waitingControl} />
+                      <MethodValueCell label={`${method.code}: годен`} onOpenRows={onOpenControlRows} percentage={buildMethodClosedPercentage(method.goodFromClosedRequests, method.closed, unit)} rowIds={method.rowIds.good} tone="green" unit={unit} value={method.good} />
+                      <MethodValueCell label={`${method.code}: не годен`} onOpenRows={onOpenControlRows} percentage={buildMethodClosedPercentage(method.rejectedFromClosedRequests, method.closed, unit)} rowIds={method.rowIds.rejected} tone="rose" unit={unit} value={method.rejected} />
                     </tr>
                   ))}
                 </tbody>
@@ -2277,40 +2294,72 @@ function WorkflowStatusButton({ label, onOpen, rowIds, tone, unit, value }: Cont
 }
 
 function MethodCoverageCell({ method, onOpenRows }: { method: StatisticsMethodSummary; onOpenRows?: StatisticsRowsOpenHandler }) {
+  const percentage = method.requiredRequests > 0 ? formatPercent(method.requestCoveragePercent) : '—'
   return (
-    <div className="ml-auto w-44">
-      <div className="flex items-center justify-end gap-2 text-xs">
-        <MethodInlineLink label="требуется" onOpenRows={onOpenRows} rowIds={method.rowIds.requiredRequests} value={String(method.requiredRequests)} />
-        <span className="text-slate-300">/</span>
+    <div className="ml-auto grid w-44 grid-rows-[1.25rem_1rem] gap-1">
+      <div className="flex h-5 items-center justify-end gap-2 text-sm leading-5">
         <MethodInlineLink label="заявлено" onOpenRows={onOpenRows} rowIds={method.rowIds.createdRequests} value={String(method.createdRequests)} />
+        <span className="text-slate-300">/</span>
+        <MethodInlineLink label="требуется" onOpenRows={onOpenRows} rowIds={method.rowIds.requiredRequests} value={String(method.requiredRequests)} />
       </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-400" style={{ width: `${method.requestCoveragePercent}%` }} /></div>
+      <div className="flex h-4 items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-400" style={{ width: `${method.requestCoveragePercent}%` }} /></div>
+        <span className="h-4 w-9 text-right text-[11px] font-semibold leading-4 tabular-nums text-slate-500" title="Заявлено / потребность">{percentage}</span>
+      </div>
     </div>
   )
 }
 
 function MethodClosureCell({ method, onOpenRows, unit }: { method: StatisticsMethodSummary; onOpenRows?: StatisticsRowsOpenHandler; unit: StatisticsUnit }) {
+  const percentage = method.requests > 0 ? formatPercent(method.closurePercent) : '—'
   return (
-    <div className="ml-auto w-44">
-      <div className="flex items-center justify-end gap-2 text-xs">
-        <MethodInlineLink label="заявок" onOpenRows={onOpenRows} rowIds={method.rowIds.requests} value={formatStatisticValue(method.requests, unit)} />
-        <span className="text-slate-300">/</span>
+    <div className="ml-auto grid w-44 grid-rows-[1.25rem_1rem] gap-1">
+      <div className="flex h-5 items-center justify-end gap-2 text-sm leading-5">
         <MethodInlineLink label="закрыто" onOpenRows={onOpenRows} rowIds={method.rowIds.closed} value={formatStatisticValue(method.closed, unit)} />
+        <span className="text-slate-300">/</span>
+        <MethodInlineLink label="заявок" onOpenRows={onOpenRows} rowIds={method.rowIds.requests} value={formatStatisticValue(method.requests, unit)} />
       </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${method.closurePercent}%` }} /></div>
+      <div className="flex h-4 items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${method.closurePercent}%` }} /></div>
+        <span className="h-4 w-9 text-right text-[11px] font-semibold leading-4 tabular-nums text-slate-500" title="Закрыто / заявок">{percentage}</span>
+      </div>
     </div>
   )
 }
 
 function MethodInlineLink({ label, onOpenRows, rowIds, value }: { label: string; onOpenRows?: StatisticsRowsOpenHandler; rowIds: number[]; value: string }) {
   if (!onOpenRows || rowIds.length === 0) return <span title={label}>{value}</span>
-  return <button type="button" className="font-medium text-slate-700 hover:text-sky-700" title={`${label}: открыть в ЛНК`} onClick={() => onOpenRows(rowIds, `Показаны стыки статистики «${label}»: ${rowIds.length}.`)}>{value}</button>
+  return <button type="button" className="font-medium text-slate-700 underline-offset-2 hover:text-sky-700 hover:underline" title={`${label}: открыть в ЛНК`} onClick={() => onOpenRows(rowIds, `Показаны стыки статистики «${label}»: ${rowIds.length}.`)}>{value}</button>
 }
 
-function MethodValueCell({ label, onOpenRows, rowIds, tone, unit, value }: { label: string; onOpenRows?: StatisticsRowsOpenHandler; rowIds: number[]; tone: 'amber' | 'sky' | 'green' | 'rose'; unit: StatisticsUnit; value: number }) {
+function MethodValueCell({ label, onOpenRows, percentage, rowIds, tone, unit, value }: { label: string; onOpenRows?: StatisticsRowsOpenHandler; percentage: { value: number | null; title: string }; rowIds: number[]; tone: 'amber' | 'sky' | 'green' | 'rose'; unit: StatisticsUnit; value: number }) {
   const toneClass = { amber: 'text-amber-700', sky: 'text-sky-700', green: 'text-emerald-700', rose: 'text-rose-700' }[tone]
-  const content = <span className={cn('inline-flex items-center justify-end gap-1.5 font-semibold tabular-nums', toneClass)}>{formatStatisticValue(value, unit)}{rowIds.length > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : null}</span>
-  return <td className="px-3 py-3 text-right">{onOpenRows && rowIds.length > 0 ? <button type="button" title={`Открыть: ${label}`} onClick={() => onOpenRows(rowIds, `Показаны стыки статистики «${label}»: ${rowIds.length}.`)}>{content}</button> : content}</td>
+  const isClickable = Boolean(onOpenRows && rowIds.length > 0)
+  const content = (
+    <span className="inline-grid grid-rows-[1.25rem_1rem] justify-items-end gap-1">
+      <span className={cn('inline-flex h-5 items-center justify-end text-sm font-semibold leading-5 tabular-nums underline-offset-2', toneClass, isClickable && 'group-hover:underline')}>{formatStatisticValue(value, unit)}</span>
+      <span className="h-4 text-[11px] font-semibold leading-4 tabular-nums text-slate-500" title={percentage.title}>{formatOptionalPercent(percentage.value)}</span>
+    </span>
+  )
+  return <td className="px-3 py-3 text-right">{isClickable ? <button type="button" className="group" title={`Открыть: ${label}`} onClick={() => onOpenRows?.(rowIds, `Показаны стыки статистики «${label}»: ${rowIds.length}.`)}>{content}</button> : content}</td>
+}
+
+function buildMethodRequestedPercentage(value: number, requests: number, unit: StatisticsUnit) {
+  return {
+    value: getStatisticRatioPercent(value, requests),
+    title: `${formatStatisticValue(value, unit)} из ${formatStatisticValue(requests, unit)} заявленного объема`,
+  }
+}
+
+function buildMethodClosedPercentage(value: number, closed: number, unit: StatisticsUnit) {
+  return {
+    value: getStatisticRatioPercent(value, closed),
+    title: `${formatStatisticValue(value, unit)} из ${formatStatisticValue(closed, unit)} закрытых заявок`,
+  }
+}
+
+function formatOptionalPercent(value: number | null) {
+  return value === null ? '—' : formatPercent(value)
 }
 
 function mergeStatisticRowIds(groups: number[][]) {
@@ -4549,6 +4598,7 @@ function LineBodyCell({
 type StatisticsPrintableReportInput = {
   activeTab: StatisticsTab
   dynamics: WeldingDynamicsSummary
+  dynamicsTableGrouping: WeldingDynamicsTableGrouping
   jointFilter: WelderStatisticsJointFilter
   lineSummary: LineSummary
   lnkMethods: StatisticsMethodSummary[]
@@ -4567,6 +4617,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
   const {
     activeTab,
     dynamics,
+    dynamicsTableGrouping,
     jointFilter,
     lineSummary,
     lnkMethods,
@@ -4588,7 +4639,12 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
   ]
 
   if (activeTab === 'general') {
-    const jointTypeTable = buildWeldingDynamicsJointTypeTable(dynamics, jointFilter, unit)
+    const jointTypeTable = buildWeldingDynamicsJointTypeTable(
+      dynamics,
+      jointFilter,
+      unit,
+      dynamicsTableGrouping,
+    )
     const statusRows: Array<[string, number]> = [
       ['Годен', summary.good],
       ['Не годен', summary.rejected],
@@ -4646,7 +4702,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
       charts: [
         {
           title: 'Динамика сварки',
-          subtitle: `Общий объем по периодам, ${unitLabel}; в подписи указано число сварщиков по фактическим клеймам. Распределение по типам стыков и группам материалов приведено ниже.`,
+          subtitle: `Общий объем по периодам, ${unitLabel}; в подписи указано число сварщиков по фактическим клеймам. Иерархия проектов и групп материалов приведена ниже.`,
           valueLabel: unitLabel,
           items: dynamics.buckets.map((bucket) => ({
             label: bucket.shortLabel,
@@ -4732,19 +4788,19 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
       tables: [
         {
           title: 'Лаборатория по видам контроля',
-          columns: ['Вид', 'Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Всего результатов', 'Без заявки', 'Ожидает НК', 'Годен', 'Не годен', 'Закрытие'],
+          columns: ['Вид', 'Заявлено', 'Требуется', 'Заявлено, %', 'Закрыто', 'Заявок', 'Всего результатов', 'Без заявки', 'Ожидает заключение', 'Годен', 'Не годен', 'Закрытие'],
           rows: lnkMethods.map((method) => [
             method.code,
-            String(method.requiredRequests),
             String(method.createdRequests),
+            String(method.requiredRequests),
             formatPercent(method.requestCoveragePercent),
-            formatStatisticValue(method.requests, unit),
             formatStatisticValue(method.closed, unit),
+            formatStatisticValue(method.requests, unit),
             formatStatisticValue(method.totalClosed, unit),
-            formatStatisticValue(method.waitingRequest, unit),
-            formatStatisticValue(method.waitingControl, unit),
-            formatStatisticValue(method.good, unit),
-            formatStatisticValue(method.rejected, unit),
+            `${formatStatisticValue(method.waitingRequest, unit)} · ${formatOptionalPercent(getStatisticRatioPercent(method.rowIds.waitingRequest.length, method.requiredRequests))}`,
+            `${formatStatisticValue(method.waitingControl, unit)} · ${formatOptionalPercent(getStatisticRatioPercent(method.waitingControl, method.requests))}`,
+            `${formatStatisticValue(method.good, unit)} · ${formatOptionalPercent(getStatisticRatioPercent(method.goodFromClosedRequests, method.closed))}`,
+            `${formatStatisticValue(method.rejected, unit)} · ${formatOptionalPercent(getStatisticRatioPercent(method.rejectedFromClosedRequests, method.closed))}`,
             formatPercent(method.closurePercent),
           ]),
         },

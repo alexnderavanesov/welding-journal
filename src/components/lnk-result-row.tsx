@@ -1,7 +1,8 @@
-import { memo } from 'react'
+import { memo, type MouseEvent } from 'react'
+import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
 import { LnkResultRowRequestBadges } from '@/components/lnk-result-row-request-badges'
 import { LnkResultRowResultPicker } from '@/components/lnk-result-row-result-picker'
-import { ResultRowJointHeading } from '@/components/result-row-joint-heading'
+import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
@@ -27,6 +28,7 @@ type LnkResultRowProps = {
   saveCheckSettings: SaveCheckSettings
   onToggleRow: (rowId: number) => void
   onSetRowResult: (rowId: number, result: string) => void
+  onOpenContextMenu: (event: MouseEvent<HTMLElement>, row: WeldRow) => void
 }
 
 function LnkResultRowComponent({
@@ -39,6 +41,7 @@ function LnkResultRowComponent({
   saveCheckSettings,
   onToggleRow,
   onSetRowResult,
+  onOpenContextMenu,
 }: LnkResultRowProps) {
   const method = getLnkMethodByRequestKey(methodKey)
   const disabled = !canSelectLnkResultRow(row, requestName, methodKey, requestDate)
@@ -56,7 +59,8 @@ function LnkResultRowComponent({
       onClick={() => {
         if (!disabled) onToggleRow(row.id)
       }}
-      className={`grid grid-cols-[28px_minmax(220px,1fr)_minmax(180px,0.8fr)] gap-3 px-4 py-3 text-sm transition-colors ${
+      onContextMenu={(event) => onOpenContextMenu(event, row)}
+      className={`group/dialog-row grid min-h-[92px] grid-cols-[28px_minmax(360px,1.05fr)_minmax(320px,0.95fr)_220px_32px] items-center gap-3 px-3 py-2 text-sm transition-colors ${
         disabled
           ? 'cursor-not-allowed bg-slate-100 text-slate-400'
           : selected
@@ -66,15 +70,16 @@ function LnkResultRowComponent({
     >
       <input
         type="checkbox"
+        aria-label={`Выбрать стык ${String(row.line ?? '').trim()} ${String(row.joint ?? row.id).trim()}`.trim()}
         checked={selected}
         onClick={(event) => event.stopPropagation()}
         onChange={() => onToggleRow(row.id)}
         disabled={disabled}
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+        className="h-4 w-4 rounded border-slate-300 text-slate-900"
       />
       <span className="min-w-0">
-        <ResultRowJointHeading row={row} />
-        <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+        <RequestRowJointHeading row={row} stackMetadata />
+        <span className="mt-1 flex min-h-5 flex-wrap items-center gap-1 text-xs text-slate-600">
           {formatLnkResultSummaryItems(row).map((item) => (
             <span
               key={item.method}
@@ -87,29 +92,8 @@ function LnkResultRowComponent({
             </span>
           ))}
         </span>
-        {disabled ? (
-          <span className="block truncate text-xs text-amber-700">
-            {rowRequestNames.length === 0
-              ? 'На этот стык еще нет заявки ЛНК.'
-              : !methodKey
-                ? 'Выберите метод контроля, чтобы отметить стык.'
-                : hasSavedFinalResult
-                  ? 'Результат уже внесен. Используйте «Все результаты».'
-                  : requestName
-                    ? 'Для выбранных заявки и метода этот стык не подходит.'
-                    : 'На выбранный метод по этому стыку нет заявки ЛНК.'}
-          </span>
-        ) : null}
-        {selected ? (
-          <LnkResultRowResultPicker
-            row={row}
-            rowResult={rowResult}
-            saveCheckSettings={saveCheckSettings}
-            onSetRowResult={onSetRowResult}
-          />
-        ) : null}
       </span>
-      <span className="flex flex-wrap content-start gap-1.5">
+      <span className="flex min-w-0 flex-wrap content-center gap-1.5 py-0.5">
         <LnkResultRowRequestBadges
           row={row}
           requestName={requestName}
@@ -119,6 +103,35 @@ function LnkResultRowComponent({
           rowRequestNames={rowRequestNames}
         />
       </span>
+      <span className="min-w-0">
+        {selected ? (
+          <LnkResultRowResultPicker
+            row={row}
+            rowResult={rowResult}
+            saveCheckSettings={saveCheckSettings}
+            compact
+            onSetRowResult={onSetRowResult}
+          />
+        ) : disabled ? (
+          <span className="block text-xs leading-4 text-amber-700">
+            {rowRequestNames.length === 0
+              ? 'Нет заявки ЛНК.'
+              : !methodKey
+                ? 'Выберите метод контроля.'
+                : hasSavedFinalResult
+                  ? 'Результат уже внесен.'
+                  : requestName
+                    ? 'Не подходит для заявки.'
+                    : 'Нет заявки на этот метод.'}
+          </span>
+        ) : (
+          <span aria-hidden="true" className="block h-11" />
+        )}
+      </span>
+      <DialogRowMenuButton
+        label={`Действия: стык ${String(row.joint ?? row.line ?? row.id)}`}
+        onOpen={(event) => onOpenContextMenu(event, row)}
+      />
     </div>
   )
 }
@@ -130,7 +143,8 @@ export const LnkResultRow = memo(LnkResultRowComponent, (previous, next) => {
     previous.requestDate !== next.requestDate ||
     previous.methodKey !== next.methodKey ||
     previous.selected !== next.selected ||
-    previous.saveCheckSettings !== next.saveCheckSettings
+    previous.saveCheckSettings !== next.saveCheckSettings ||
+    previous.onOpenContextMenu !== next.onOpenContextMenu
   ) return false
   if (next.selected && previous.rowResult !== next.rowResult) return false
   return true

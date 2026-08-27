@@ -1,4 +1,5 @@
 import { Trash2 } from 'lucide-react'
+import type { MouseEvent } from 'react'
 
 import {
   JointFullMeta,
@@ -22,6 +23,7 @@ export type PstoResultManagerEntryProps = {
   onDiagramDraftChange: (rowId: number, value: string) => void
   onRenameDiagram: (row: WeldRow, diagramName: string) => void
   onDeleteResult: (row: WeldRow) => void
+  onOpenContextMenu: (event: MouseEvent<HTMLElement>, row: WeldRow) => void
 }
 
 export function PstoResultManagerEntry({
@@ -31,6 +33,7 @@ export function PstoResultManagerEntry({
   onDiagramDraftChange,
   onRenameDiagram,
   onDeleteResult,
+  onOpenContextMenu,
 }: PstoResultManagerEntryProps) {
   const requestName = String(row.pstoRequest ?? '').trim()
   const pstoDate = String(row.pstoDate ?? '').trim()
@@ -38,7 +41,10 @@ export function PstoResultManagerEntry({
   const customDiagramDraft = formatCustomDocumentName(diagramDraft)
 
   return (
-    <div className="grid grid-cols-[minmax(420px,1fr)_minmax(230px,0.45fr)] gap-4 px-4 py-3 text-sm">
+    <div
+      className="grid grid-cols-[minmax(420px,1fr)_minmax(230px,0.45fr)] gap-4 px-4 py-3 text-sm"
+      onContextMenu={(event) => onOpenContextMenu(event, row)}
+    >
       <div className="min-w-0">
         <JointTitleLine row={row} />
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">

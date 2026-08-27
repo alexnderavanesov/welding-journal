@@ -39,6 +39,7 @@ const rkRow = {
 function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialog>[0]> = {}) {
   const onOpenRows = vi.fn()
   const onOpenDocument = vi.fn()
+  const onOpenJournalRows = vi.fn()
   const entries = [
     { row: vikRow, method: vikMethod, changeKey: '1:vikRequest' },
     { row: rkRow, method: rkMethod, changeKey: '2:rkRequest' },
@@ -62,6 +63,8 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialo
       onOpenAddResult={vi.fn()}
       onOpenRows={onOpenRows}
       onOpenDocument={onOpenDocument}
+      onOpenJournalRows={onOpenJournalRows}
+      onCopyDocumentName={vi.fn()}
       canOpenDocument={() => true}
       onMethodChange={vi.fn()}
       onConclusionDraftChange={vi.fn()}
@@ -73,13 +76,14 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialo
       {...overrides}
     />,
   )
-  return { onOpenRows, onOpenDocument }
+  return { onOpenRows, onOpenDocument, onOpenJournalRows }
 }
 
 describe('LnkResultManagerDialog', () => {
   it('opens the exact result card requested by table navigation', () => {
     const actions = renderDialog()
 
+    expect(screen.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Линия-1 · F1' })).toBeInTheDocument()
     expect(screen.getAllByText('ВИК-17').length).toBeGreaterThan(0)
 
@@ -111,5 +115,28 @@ describe('LnkResultManagerDialog', () => {
     expect(screen.getByRole('heading', { name: 'Линия-2 · F2' })).toBeInTheDocument()
     expect(screen.queryByText('Выберите результат слева, чтобы открыть его карточку.')).not.toBeInTheDocument()
     expect(screen.getByRole('dialog')).toHaveClass('h-[92vh]')
+  })
+
+  it('opens the exact result in the welding journal from its context menu', () => {
+    const actions = renderDialog()
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Линия-1/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'В сварочном журнале, новая вкладка' }))
+
+    expect(actions.onOpenJournalRows).toHaveBeenCalledWith(
+      [vikRow],
+      'результат ВИК · стык F1',
+    )
+  })
+
+  it('stages a result change for the exact context-menu entry', () => {
+    const onReplaceResult = vi.fn()
+    renderDialog({ onReplaceResult })
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Линия-2/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить результат' }))
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('button', { name: 'вырез' }))
+
+    expect(onReplaceResult).toHaveBeenCalledWith(rkRow, 'rkRequest', 'вырез')
   })
 })

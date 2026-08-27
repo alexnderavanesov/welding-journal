@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
+import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 
 type ReportModalEscapeKeyOptions = {
   isReportModalOpen: boolean
-  isLnkResultPreviewOpen: boolean
   isPstoRequestManagerOpen: boolean
   isPstoResultManagerOpen: boolean
   isLnkRequestManagerOpen: boolean
@@ -20,7 +20,6 @@ type ReportModalEscapeKeyOptions = {
   canCloseLnkRequestManager: boolean
   canCloseLnkResultManager: boolean
   canCloseRkExposureModal: boolean
-  onCloseLnkResultPreview: () => void
   onClosePstoRequestManager: () => void
   onClosePstoResultManager: () => void
   onCloseLnkRequestManager: () => void
@@ -37,7 +36,6 @@ type ReportModalEscapeKeyOptions = {
 
 export function useReportModalEscapeKey({
   isReportModalOpen,
-  isLnkResultPreviewOpen,
   isPstoRequestManagerOpen,
   isPstoResultManagerOpen,
   isLnkRequestManagerOpen,
@@ -55,7 +53,6 @@ export function useReportModalEscapeKey({
   canCloseLnkRequestManager,
   canCloseLnkResultManager,
   canCloseRkExposureModal,
-  onCloseLnkResultPreview,
   onClosePstoRequestManager,
   onClosePstoResultManager,
   onCloseLnkRequestManager,
@@ -75,13 +72,10 @@ export function useReportModalEscapeKey({
     function handleReportModalKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
       if (document.querySelector('[data-confirm-action-dialog="true"]')) return
+      if (isContextActionMenuOpen()) return
       event.preventDefault()
       event.stopImmediatePropagation()
 
-      if (isLnkResultPreviewOpen) {
-        onCloseLnkResultPreview()
-        return
-      }
       if (isReportImportModalOpen) {
         onCloseReportImportModal()
         return
@@ -135,7 +129,6 @@ export function useReportModalEscapeKey({
     return () => window.removeEventListener('keydown', handleReportModalKeyDown, { capture: true })
   }, [
     isReportModalOpen,
-    isLnkResultPreviewOpen,
     isPstoRequestManagerOpen,
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
@@ -153,7 +146,6 @@ export function useReportModalEscapeKey({
     canCloseLnkRequestManager,
     canCloseLnkResultManager,
     canCloseRkExposureModal,
-    onCloseLnkResultPreview,
     onClosePstoRequestManager,
     onClosePstoResultManager,
     onCloseLnkRequestManager,

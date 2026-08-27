@@ -21,9 +21,16 @@ export type ReportHeaderActionsProps = {
   onOpenWeldingJournalCancelledAcceptedReport: () => void
   onOpenWeldingJournalSystemReport: () => void
   onCreatePstoRequest: () => void
+  onEditSelectedPstoRequest: () => void
+  editSelectedPstoRequestDisabled: boolean
+  onOpenPstoRequestRegistry: () => void
   pstoRequestPending: boolean
   onAddPstoResult: () => void
   pstoResultDisabled: boolean
+  onEditSelectedPstoResults: () => void
+  editSelectedPstoResultsDisabled: boolean
+  onOpenPstoResultRegistry: () => void
+  pstoResultRegistryDisabled: boolean
   isPstoShowMenuOpen: boolean
   onTogglePstoShowMenu: () => void
   onOpenPstoCurrentReport: () => void
@@ -71,9 +78,16 @@ export function ReportHeaderActions({
   onOpenWeldingJournalCancelledAcceptedReport,
   onOpenWeldingJournalSystemReport,
   onCreatePstoRequest,
+  onEditSelectedPstoRequest,
+  editSelectedPstoRequestDisabled,
+  onOpenPstoRequestRegistry,
   pstoRequestPending,
   onAddPstoResult,
   pstoResultDisabled,
+  onEditSelectedPstoResults,
+  editSelectedPstoResultsDisabled,
+  onOpenPstoResultRegistry,
+  pstoResultRegistryDisabled,
   isPstoShowMenuOpen,
   onTogglePstoShowMenu,
   onOpenPstoCurrentReport,
@@ -105,9 +119,16 @@ export function ReportHeaderActions({
       {activeReport === 'heatTreatment' ? (
         <HeatTreatmentHeaderActions
           onCreateRequest={onCreatePstoRequest}
+          onEditSelectedRequest={onEditSelectedPstoRequest}
+          editSelectedRequestDisabled={editSelectedPstoRequestDisabled}
+          onOpenRequestRegistry={onOpenPstoRequestRegistry}
           requestPending={pstoRequestPending}
           onAddResult={onAddPstoResult}
           resultDisabled={pstoResultDisabled}
+          onEditSelectedResults={onEditSelectedPstoResults}
+          editSelectedResultsDisabled={editSelectedPstoResultsDisabled}
+          onOpenResultRegistry={onOpenPstoResultRegistry}
+          resultRegistryDisabled={pstoResultRegistryDisabled}
           isShowMenuOpen={isPstoShowMenuOpen}
           onToggleShowMenu={onTogglePstoShowMenu}
           onOpenCurrentReport={onOpenPstoCurrentReport}

@@ -13,11 +13,13 @@ export function ResultRowJointHeading({ row }: ResultRowJointHeadingProps) {
   return (
     <>
       <JointTitleLine row={row} truncate />
-      <span className="block text-xs leading-5 text-slate-500">
-        <JointProjectSubtitleMeta row={row} />
-      </span>
-      <span className="block text-xs leading-5 text-slate-500">
-        <JointSpoolDateMeta row={row} />
+      <span className="mt-0.5 grid min-w-0 gap-0.5 text-xs leading-4 text-slate-500">
+        <span className="min-w-0 break-words">
+          <JointProjectSubtitleMeta row={row} />
+        </span>
+        <span className="min-w-0 break-words">
+          <JointSpoolDateMeta row={row} />
+        </span>
       </span>
     </>
   )

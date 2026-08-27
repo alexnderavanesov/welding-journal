@@ -5,22 +5,20 @@ export type ResultDialogFooterProps = {
   saveBlockReason: string | null
   isSaveDisabled: boolean
   saveBlockReasonVariant?: 'plain' | 'danger'
+  blockReasonActionLabel?: string
+  onBlockReasonAction?: () => void
   onClose: () => void
   onSave: () => void
-  preview?: {
-    label: string
-    disabled: boolean
-    onClick: () => void
-  }
 }
 
 export function ResultDialogFooter({
   saveBlockReason,
   isSaveDisabled,
   saveBlockReasonVariant = 'plain',
+  blockReasonActionLabel,
+  onBlockReasonAction,
   onClose,
   onSave,
-  preview,
 }: ResultDialogFooterProps) {
   const showDangerReason = Boolean(saveBlockReason && saveBlockReasonVariant === 'danger')
 
@@ -29,8 +27,17 @@ export function ResultDialogFooter({
       <div className="min-h-5 text-sm text-slate-500">
         {saveBlockReason ? (
           showDangerReason ? (
-            <span className="inline-block rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">
+            <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">
               <span className="font-semibold">Сохранение заблокировано:</span> {saveBlockReason}
+              {blockReasonActionLabel && onBlockReasonAction ? (
+                <button
+                  type="button"
+                  onClick={onBlockReasonAction}
+                  className="font-semibold text-rose-800 underline decoration-rose-300 underline-offset-2 hover:text-rose-950"
+                >
+                  {blockReasonActionLabel}
+                </button>
+              ) : null}
             </span>
           ) : (
             <span className="text-sm text-slate-500">{saveBlockReason}</span>
@@ -41,11 +48,6 @@ export function ResultDialogFooter({
         <Button variant="outline" onClick={onClose}>
           Отмена
         </Button>
-        {preview ? (
-          <Button variant="outline" onClick={preview.onClick} disabled={preview.disabled}>
-            {preview.label}
-          </Button>
-        ) : null}
         <span title={saveBlockReason || 'Можно сохранить результат'}>
           <Button
             onClick={onSave}

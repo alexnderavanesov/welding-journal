@@ -21,7 +21,6 @@ type ReportSwitchResetInput = {
   setRkExposureEditing: SetState<RkExposureEditingState | null>
   setIsLnkRequestModalOpen: SetState<boolean>
   setIsLnkResultModalOpen: SetState<boolean>
-  setIsLnkResultPreviewOpen: SetState<boolean>
   setIsPstoRequestManagerOpen: SetState<boolean>
   setIsPstoRequestModalOpen: SetState<boolean>
   setIsPstoResultManagerOpen: SetState<boolean>
@@ -41,7 +40,6 @@ type ReportSwitchResetInput = {
   setPstoResultRequestSearch: SetState<string>
   setSelectedHeatTreatmentIds: SetState<Set<number>>
   setSelectedLnkIds: SetState<Set<number>>
-  setShouldPinPreviewedLnkResultRows: SetState<boolean>
   setWelderStampSearch: SetState<string>
   defaultLnkRequestNaming: RequestNamingState
   defaultLnkConclusionNaming: RequestNamingState
@@ -57,7 +55,6 @@ export function useReportSwitchReset({
   setRkExposureEditing,
   setIsLnkRequestModalOpen,
   setIsLnkResultModalOpen,
-  setIsLnkResultPreviewOpen,
   setIsPstoRequestManagerOpen,
   setIsPstoRequestModalOpen,
   setIsPstoResultManagerOpen,
@@ -77,7 +74,6 @@ export function useReportSwitchReset({
   setPstoResultRequestSearch,
   setSelectedHeatTreatmentIds,
   setSelectedLnkIds,
-  setShouldPinPreviewedLnkResultRows,
   setWelderStampSearch,
   defaultLnkRequestNaming,
   defaultLnkConclusionNaming,
@@ -119,8 +115,6 @@ export function useReportSwitchReset({
       setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
       setIsLnkResultModalOpen(false)
-      setIsLnkResultPreviewOpen(false)
-      setShouldPinPreviewedLnkResultRows(false)
       setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
       setLnkRequestSearch('')
       setPreservedLnkOrderIds(null)

@@ -42,19 +42,19 @@ export function LnkResultRowRequestBadges({
         return (
           <span
             key={availableMethod.requestKey}
-            className={`inline-flex max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium ${
+            className={`inline-flex min-w-0 max-w-full flex-col gap-0.5 rounded border px-2 py-1 text-xs font-medium leading-4 ${
               isSelectedRowMethod
                 ? 'border-sky-200 bg-sky-50 text-sky-900'
                 : getLnkRequestMethodBadgeClass(row, availableMethod)
             }`}
           >
             <span
-              className={`flex max-w-full items-center gap-1.5 whitespace-normal break-words ${
+              className={`flex min-w-0 max-w-full items-start gap-1.5 whitespace-normal ${
                 isSelectedRowMethod ? 'text-sky-700' : 'text-slate-500'
               }`}
             >
               <span
-                className={`rounded px-1.5 py-0.5 text-[11px] font-bold leading-none ${
+                className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold leading-none ${
                   isSelectedRowMethod
                     ? 'bg-sky-100 text-sky-900'
                     : 'border border-slate-200 bg-slate-100 text-slate-700'
@@ -62,12 +62,12 @@ export function LnkResultRowRequestBadges({
               >
                 {availableMethod.code}
               </span>
-              <span className="min-w-0 overflow-visible break-all whitespace-normal [text-overflow:clip]">
+              <span className="min-w-0 break-words whitespace-normal">
                 {hasNoNeed ? 'нет потребности' : requestNameValue}
               </span>
             </span>
             {conclusionName && !hasNoNeed ? (
-              <span className="max-w-full overflow-visible break-all whitespace-normal [text-overflow:clip]">
+              <span className="min-w-0 max-w-full break-words whitespace-normal">
                 {conclusionName}
               </span>
             ) : null}

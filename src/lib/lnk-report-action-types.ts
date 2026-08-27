@@ -67,11 +67,9 @@ export type UseLnkResultActionsOptions = {
   defaultConclusionNaming: RequestNamingState
   setDraft: Dispatch<SetStateAction<LnkResultDraftState>>
   setIsModalOpen: (value: boolean) => void
-  setIsPreviewOpen: (value: boolean) => void
   setMessage: (value: string | null) => void
   setPreservedOrderIds: Dispatch<SetStateAction<number[] | null>>
   setRequestSearch: (value: string) => void
-  setShouldPinPreviewedRows: (value: boolean) => void
 }
 
 export type LnkOfficialityMutation = {

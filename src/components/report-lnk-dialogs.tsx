@@ -4,7 +4,6 @@ import { LnkRequestDialog, type LnkRequestDialogProps } from '@/components/lnk-r
 import { LnkRequestManagerDialog, type LnkRequestManagerDialogProps } from '@/components/lnk-request-manager-dialog'
 import { LnkResultDialog, type LnkResultDialogProps } from '@/components/lnk-result-dialog'
 import { LnkResultManagerDialog, type LnkResultManagerDialogProps } from '@/components/lnk-result-manager-dialog'
-import { LnkResultPreviewDialog, type LnkResultPreviewDialogProps } from '@/components/lnk-result-preview-dialog'
 
 export type ReportLnkDialogsProps = {
   requestDialogProps: LnkRequestDialogProps | null
@@ -13,7 +12,6 @@ export type ReportLnkDialogsProps = {
   officialityDialogProps: LnkOfficialityDialogProps | null
   duplicateControlDialogProps: DuplicateControlDialogProps | null
   resultDialogProps: LnkResultDialogProps | null
-  resultPreviewDialogProps: LnkResultPreviewDialogProps | null
 }
 
 export function ReportLnkDialogs({
@@ -23,7 +21,6 @@ export function ReportLnkDialogs({
   officialityDialogProps,
   duplicateControlDialogProps,
   resultDialogProps,
-  resultPreviewDialogProps,
 }: ReportLnkDialogsProps) {
   return (
     <>
@@ -33,7 +30,6 @@ export function ReportLnkDialogs({
       {officialityDialogProps ? <LnkOfficialityDialog {...officialityDialogProps} /> : null}
       {duplicateControlDialogProps ? <DuplicateControlDialog {...duplicateControlDialogProps} /> : null}
       {resultDialogProps ? <LnkResultDialog {...resultDialogProps} /> : null}
-      {resultPreviewDialogProps ? <LnkResultPreviewDialog {...resultPreviewDialogProps} /> : null}
     </>
   )
 }

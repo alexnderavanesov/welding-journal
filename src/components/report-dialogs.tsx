@@ -69,8 +69,7 @@ export function ReportDialogs({
       lnkDialogsProps.resultManagerDialogProps ||
       lnkDialogsProps.officialityDialogProps ||
       lnkDialogsProps.duplicateControlDialogProps ||
-      lnkDialogsProps.resultDialogProps ||
-      lnkDialogsProps.resultPreviewDialogProps ? (
+      lnkDialogsProps.resultDialogProps ? (
         <Suspense fallback={null}>
           <ReportLnkDialogs {...lnkDialogsProps} />
         </Suspense>

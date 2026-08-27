@@ -1259,33 +1259,19 @@ function GeneratedDocumentsPanel({
 
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      {hasActiveFilters || selectedDocuments.length > 0 ? (
+      {hasActiveFilters ? (
         <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
-          {hasActiveFilters ? (
-            <button
-              type="button"
-              onClick={() => {
-                setColumnFilters({})
-                setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
-              }}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              <X className="h-3.5 w-3.5" />
-              Сбросить фильтры
-            </button>
-          ) : null}
-          {selectedDocuments.length > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 gap-2 text-xs"
-              disabled={isDownloadingArchive}
-              onClick={() => void downloadSelectedArchive()}
-            >
-              <Archive className="h-4 w-4" />
-              {isDownloadingArchive ? 'Готовим архив' : `Скачать архивом (${selectedDocuments.length})`}
-            </Button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setColumnFilters({})
+              setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+            }}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <X className="h-3.5 w-3.5" />
+            Сбросить фильтры
+          </button>
         </div>
       ) : null}
 
@@ -1305,7 +1291,7 @@ function GeneratedDocumentsPanel({
         <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
       ) : (
         <div className="min-w-0">
-          <div className="grid grid-cols-[34px_minmax(240px,1fr)_76px_168px] items-center gap-x-4 gap-y-2 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] min-[1440px]:grid-cols-[34px_minmax(300px,1.5fr)_minmax(160px,0.75fr)_76px_76px_130px_168px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.52fr)_minmax(120px,0.5fr)_minmax(150px,0.58fr)_minmax(170px,0.7fr)_76px_76px_130px_168px]">
+          <div className="grid grid-cols-[34px_minmax(240px,1fr)_96px_168px] items-center gap-x-4 gap-y-2 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a] min-[1440px]:grid-cols-[34px_minmax(300px,1.5fr)_minmax(160px,0.75fr)_96px_76px_130px_168px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.52fr)_minmax(120px,0.5fr)_minmax(150px,0.58fr)_minmax(170px,0.7fr)_96px_76px_130px_168px]">
             <DocumentHistorySelectAllButton
               checked={allPageSelected}
               partial={selectedPageCount > 0 && !allPageSelected}
@@ -1324,7 +1310,20 @@ function GeneratedDocumentsPanel({
                 onChange={(value) => changeColumnFilter(filter.key, value)}
               />
             ))}
-            <span className="text-right">Действия</span>
+            <div className="flex justify-end">
+              {selectedDocuments.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-7 gap-1.5 px-2 text-[11px] normal-case"
+                  disabled={isDownloadingArchive}
+                  onClick={() => void downloadSelectedArchive()}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  {isDownloadingArchive ? 'Готовим' : `Архив (${selectedDocuments.length})`}
+                </Button>
+              ) : <span>Действия</span>}
+            </div>
           </div>
           <div className="divide-y divide-[#dce7ed]">
             {documents.map((documentRecord, documentIndex) => {
@@ -1332,7 +1331,7 @@ function GeneratedDocumentsPanel({
               return (
               <div
                 key={documentRecord.id}
-                className={`grid min-w-0 grid-cols-[34px_minmax(240px,1fr)_76px_168px] items-center gap-x-4 gap-y-2 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] min-[1440px]:grid-cols-[34px_minmax(300px,1.5fr)_minmax(160px,0.75fr)_76px_76px_130px_168px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.52fr)_minmax(120px,0.5fr)_minmax(150px,0.58fr)_minmax(170px,0.7fr)_76px_76px_130px_168px] ${
+                className={`grid min-w-0 grid-cols-[34px_minmax(240px,1fr)_96px_168px] items-center gap-x-4 gap-y-2 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] min-[1440px]:grid-cols-[34px_minmax(300px,1.5fr)_minmax(160px,0.75fr)_96px_76px_130px_168px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.52fr)_minmax(120px,0.5fr)_minmax(150px,0.58fr)_minmax(170px,0.7fr)_96px_76px_130px_168px] ${
                   isSelected
                     ? 'bg-sky-50 ring-1 ring-inset ring-sky-200'
                     : documentIndex % 2 === 0 ? 'bg-white' : 'bg-[#f4f8fa]'
@@ -1551,8 +1550,8 @@ function SystemDocumentsPanel({
     ? SYSTEM_DOCUMENT_FILTERS
     : SYSTEM_DOCUMENT_FILTERS.filter((filter) => filter.key !== 'method')
   const historyGridClassName = showMethodColumn
-    ? 'grid-cols-[34px_minmax(240px,1fr)_76px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_88px_76px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_88px_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_76px_128px_150px]'
-    : 'grid-cols-[34px_minmax(240px,1fr)_76px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_76px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_76px_128px_150px]'
+    ? 'grid-cols-[34px_minmax(240px,1fr)_96px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_88px_96px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_88px_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_96px_128px_150px]'
+    : 'grid-cols-[34px_minmax(240px,1fr)_96px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_96px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_96px_128px_150px]'
   const historyError =
     historyQuery.error instanceof Error
       ? historyQuery.error.message
@@ -1689,35 +1688,19 @@ function SystemDocumentsPanel({
 
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      {hasActiveFilters || selectedDocuments.length > 0 ? (
+      {hasActiveFilters ? (
         <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
-          {hasActiveFilters ? (
-            <button
-              type="button"
-              onClick={() => {
-                setColumnFilters({})
-                setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
-              }}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              <X className="h-3.5 w-3.5" />
-              Сбросить фильтры
-            </button>
-          ) : null}
-          {selectedDocuments.length > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 gap-2 text-xs"
-              disabled={downloadableSelectedDocuments.length === 0 || isDownloadingArchive}
-              onClick={() => void downloadSelectedArchive()}
-            >
-              <Archive className="h-4 w-4" />
-              {isDownloadingArchive
-                ? 'Готовим архив'
-                : `Скачать архивом (${downloadableSelectedDocuments.length}/${selectedDocuments.length})`}
-            </Button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setColumnFilters({})
+              setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+            }}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <X className="h-3.5 w-3.5" />
+            Сбросить фильтры
+          </button>
         </div>
       ) : null}
 
@@ -1823,7 +1806,22 @@ function SystemDocumentsPanel({
                 onChange={(value) => changeColumnFilter(filter.key, value)}
               />
             ))}
-            <span className="text-right">Действия</span>
+            <div className="flex justify-end">
+              {selectedDocuments.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-7 gap-1.5 px-2 text-[11px] normal-case"
+                  disabled={downloadableSelectedDocuments.length === 0 || isDownloadingArchive}
+                  onClick={() => void downloadSelectedArchive()}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  {isDownloadingArchive
+                    ? 'Готовим'
+                    : `Архив (${downloadableSelectedDocuments.length}/${selectedDocuments.length})`}
+                </Button>
+              ) : <span>Действия</span>}
+            </div>
           </div>
           <div className="divide-y divide-[#dce7ed]">
             {visibleDocuments.map((documentRecord, documentIndex) => {

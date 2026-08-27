@@ -1,19 +1,28 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 
+import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
+import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
+import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
-import { PstoRequestAside } from '@/components/psto-request-aside'
 import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestManagerButton } from '@/components/request-manager-button'
-import { RequestNamingControls } from '@/components/request-naming-controls'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
+import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
+import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getDateInputValidationReason } from '@/lib/date-format'
+import {
+  buildDialogRowContextMenu,
+  buildDocumentGroupContextMenu,
+  getDialogMenuPoint,
+} from '@/lib/dialog-context-menu-items'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getPstoChronologyIssues } from '@/lib/psto-chronology-checks'
+import { filterPstoRequestRows } from '@/lib/psto-modal-rows'
 import { buildPstoRequestDraftRows } from '@/lib/psto-report-mutation-updates'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
@@ -22,8 +31,7 @@ import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
-import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
-import { SystemDocumentSplitPreview } from '@/components/system-document-split-preview'
+import { buildSystemDocumentCreationPlan, type SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 
 export type PstoRequestDialogProps = {
   nextRequestName: string
@@ -36,6 +44,7 @@ export type PstoRequestDialogProps = {
   requestManagerOptions: RequestDocumentIdentity[]
   heatTreatmentRowsCount: number
   filteredRows: WeldRow[]
+  requestRows: WeldRow[]
   availableRowsCount: number
   selectedIds: ReadonlySet<number>
   areAllAvailableRowsSelected: boolean
@@ -47,8 +56,11 @@ export type PstoRequestDialogProps = {
   onRequestNamingChange: (value: RequestNamingState) => void
   onRequestDateChange: (value: string) => void
   onRequestSearchChange: (value: string) => void
+  onClearSelection: () => void
+  onSetSelectedRows: (rowIds: number[]) => void
   onToggleAllRows: () => void
   onToggleRow: (rowId: number) => void
+  onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onSubmit: () => void
 }
 
@@ -63,6 +75,7 @@ export function PstoRequestDialog({
   requestManagerOptions,
   heatTreatmentRowsCount,
   filteredRows,
+  requestRows,
   availableRowsCount,
   selectedIds,
   areAllAvailableRowsSelected,
@@ -74,18 +87,38 @@ export function PstoRequestDialog({
   onRequestNamingChange,
   onRequestDateChange,
   onRequestSearchChange,
+  onClearSelection,
+  onSetSelectedRows,
   onToggleAllRows,
   onToggleRow,
+  onOpenJournalRows,
   onSubmit,
 }: PstoRequestDialogProps) {
   const requestConclusionSettings = useRequestConclusionSettings()
+  const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
-  const paginationResetKeys = useMemo(() => [requestSearch], [requestSearch])
+  const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
+  const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
+  const [selectedRowsSearch, setSelectedRowsSearch] = useState('')
+  const filteredSelectedRows = useMemo(
+    () => filterPstoRequestRows(selectedRows, selectedRowsSearch),
+    [selectedRows, selectedRowsSearch],
+  )
+  useEffect(() => {
+    if (selectedRows.length === 0 && rowsViewMode === 'selected') setRowsViewMode('all')
+  }, [rowsViewMode, selectedRows.length])
+  const displayedRows = rowsViewMode === 'selected' ? filteredSelectedRows : filteredRows
+  const displayedSearch = rowsViewMode === 'selected' ? selectedRowsSearch : requestSearch
+  const paginationResetKeys = useMemo(
+    () => [displayedSearch, rowsViewMode],
+    [displayedSearch, rowsViewMode],
+  )
   const rowsPagination = usePagePagination({
-    items: filteredRows,
+    items: displayedRows,
     defaultPageSize: 50,
     resetKeys: paginationResetKeys,
   })
+  const rowsViewportResetKey = `${rowsPagination.page}:${rowsPagination.pageSize}:${displayedSearch}:${rowsViewMode}`
   const requestName = getRequestNameFromNaming(requestNaming, nextRequestName)
   const creationPlan = useMemo(() => buildSystemDocumentCreationPlan({
     type: 'pstoRequest',
@@ -111,19 +144,49 @@ export function PstoRequestDialog({
     creationPlanError: creationPlan.error,
   })
   const feedbackMessage = createDisabledReason ?? message
+  const selectableRequestRows = useMemo(
+    () => requestRows.filter(canCreateRequest),
+    [canCreateRequest, requestRows],
+  )
   const headerDocumentLabel = creationPlan.groups.length > 1
     ? `Будет создано заявок: ${creationPlan.groups.length}`
     : effectiveRequestName || 'Новая заявка'
+  const openRowContextMenu = useStableEventCallback((event: MouseEvent<HTMLElement>, row: WeldRow) => {
+    const point = getDialogMenuPoint(event)
+    contextMenuRef.current?.open(buildDialogRowContextMenu({
+      ...point,
+      row,
+      selectedRows,
+      selectedIds,
+      selectableRows: selectableRequestRows,
+      isRowSelectable: canCreateRequest,
+      sourceLabel: 'заявки ПСТО',
+      onSetSelectedRows,
+      onShowSelectedRows: () => setRowsViewMode('selected'),
+      onClearSelection,
+      onOpenJournalRows,
+    }))
+  })
+  const openGroupContextMenu = useStableEventCallback((event: MouseEvent<HTMLElement>, group: SystemDocumentCreationGroup) => {
+    const point = getDialogMenuPoint(event)
+    contextMenuRef.current?.open(buildDocumentGroupContextMenu({
+      ...point,
+      group,
+      allRows: selectedRows,
+      sourceLabel: 'заявки ПСТО',
+      onOpenJournalRows,
+    }))
+  })
 
   return (
     <LargeDialogShell
       maxWidthClassName="max-w-[1480px]"
-      maxHeightClassName="h-[94vh]"
-      overlayClassName="z-50 bg-slate-950/20"
+      maxHeightClassName="h-full"
+      overlayClassName="z-50 bg-slate-950/20 py-2"
       panelShadowClassName="shadow-slate-950/10"
     >
       <RequestDialogHeader
-        title="Создание заявки ПСТО"
+        title="Заявка ПСТО"
         subtitle={`${headerDocumentLabel} · Стыков: ${selectedRows.length}`}
         onClose={onClose}
         actions={
@@ -131,90 +194,131 @@ export function PstoRequestDialog({
         }
       />
 
-      <div className="border-b border-slate-100 px-5 py-4">
-        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <label className="block space-y-1.5 text-sm">
-            <span className="text-[13px] font-medium leading-none text-slate-700">Дата заявки</span>
-            <Input
-              type="date"
-              value={requestDate}
-              onChange={(event) => onRequestDateChange(event.target.value)}
-              className="h-10 bg-white"
-            />
-            <span className="block text-xs leading-4 text-slate-500">
-              Для системного имени заявка будет названа по этой дате.
-            </span>
-          </label>
-          <div className="min-w-0">
-            <RequestNamingControls
-              naming={requestNaming}
-              systemName={nextRequestName}
-              systemDocumentCount={creationPlan.groups.length}
-              label="Наименование заявки ПСТО"
-              onChange={onRequestNamingChange}
-              hideCustomNameInput={requestNaming.mode === 'custom' && creationPlan.groups.length > 1}
-            />
-            <div className="mt-3">
-              <SystemDocumentSplitPreview
-                plan={creationPlan}
-                naming={requestNaming}
-                disabled={isPending}
-                onNamingChange={onRequestNamingChange}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      <section className="shrink-0 border-b border-slate-100 bg-slate-50/40 px-5 py-2.5">
+        <label className="block w-[190px] space-y-1.5 text-sm">
+          <span className="text-[13px] font-medium leading-none text-slate-700">Дата заявки</span>
+          <Input
+            type="date"
+            value={requestDate}
+            onChange={(event) => onRequestDateChange(event.target.value)}
+            className="h-9 bg-white"
+          />
+        </label>
+      </section>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <PstoRequestAside />
+      <DocumentWorkspaceTabs
+        activeTab={workspaceTab}
+        ariaLabel="Разделы заявки ПСТО"
+        documentsLabel="Заявки и имена"
+        documentsCount={creationPlan.groups.length}
+        documentsHaveError={Boolean(creationPlan.error)}
+        onChange={setWorkspaceTab}
+      />
 
+      {workspaceTab === 'documents' ? (
+        <SystemDocumentNamesPanel
+          plan={creationPlan}
+          naming={requestNaming}
+          documentNameLabel="Наименование заявки"
+          documentNameAriaLabel="Название заявки"
+          documentNamePlaceholder="Название заявки"
+          emptyMessage="Выберите хотя бы один стык."
+          disabled={isPending}
+          onNamingChange={onRequestNamingChange}
+          onOpenGroupContextMenu={openGroupContextMenu}
+        />
+      ) : (
+      <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
         <RequestRowsPanel
           title="Стыки"
-          description="Галочка доступна только там, где заявка ПСТО еще не создана."
+          description=""
+          viewToggle={(
+            <SelectedRowsViewToggle
+              mode={rowsViewMode}
+              selectedCount={selectedRows.length}
+              onChange={setRowsViewMode}
+            />
+          )}
           action={
-            <Button variant="outline" size="sm" onClick={onToggleAllRows}>
-              {areAllAvailableRowsSelected ? 'Снять все' : 'Выбрать доступные'}
-            </Button>
+            rowsViewMode === 'selected' ? (
+              <Button variant="outline" size="sm" onClick={onClearSelection}>
+                Снять весь выбор
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={onToggleAllRows}>
+                {areAllAvailableRowsSelected ? 'Снять все' : 'Выбрать доступные'}
+              </Button>
+            )
           }
-          searchValue={requestSearch}
-          searchPlaceholder="Проект, шифр, линия, спул или стык"
-          filteredCount={filteredRows.length}
-          availableCount={availableRowsCount}
-          isEmpty={filteredRows.length === 0}
+          searchValue={displayedSearch}
+          searchPlaceholder={rowsViewMode === 'selected' ? 'Поиск среди выбранных стыков' : 'Проект, шифр, линия, спул или стык'}
+          filteredCount={displayedRows.length}
+          availableCount={rowsViewMode === 'selected' ? selectedRows.length : availableRowsCount}
+          statsLabel={rowsViewMode === 'selected'
+            ? <>Найдено: {filteredSelectedRows.length} · Выбрано: {selectedRows.length}</>
+            : undefined}
+          isEmpty={displayedRows.length === 0}
           emptyMessage={
-            heatTreatmentRowsCount === 0 ? 'Нет стыков для отчета Термообработка.' : 'По фильтру ничего не найдено.'
+            rowsViewMode === 'selected'
+              ? selectedRows.length === 0
+                ? 'Выбранных стыков пока нет.'
+                : 'Среди выбранных стыков ничего не найдено.'
+              : heatTreatmentRowsCount === 0
+                ? 'Нет стыков для отчета Термообработка.'
+                : 'По фильтру ничего не найдено.'
           }
-          onSearchChange={onRequestSearchChange}
+          onSearchChange={rowsViewMode === 'selected' ? setSelectedRowsSearch : onRequestSearchChange}
         >
-          <div className="divide-y divide-slate-100">
-            {rowsPagination.pageItems.map((row) => {
+          <DialogVirtualizedRows
+            key={rowsViewportResetKey}
+            items={rowsPagination.pageItems}
+            estimateRowHeight={72}
+            getItemKey={(row) => row.id}
+            renderItem={(row) => {
               const disabled = !canCreateRequest(row)
               const selected = selectedIds.has(row.id)
-              return <PstoRequestRow key={row.id} row={row} selected={selected} disabled={disabled} onToggleRow={stableOnToggleRow} />
-            })}
-          </div>
-          <DialogRowPagination
-            totalCount={rowsPagination.totalCount}
-            firstItemNumber={rowsPagination.firstItemNumber}
-            lastItemNumber={rowsPagination.lastItemNumber}
-            page={rowsPagination.page}
-            pageCount={rowsPagination.pageCount}
-            pageSize={rowsPagination.pageSize}
-            onPreviousPage={rowsPagination.goToPreviousPage}
-            onNextPage={rowsPagination.goToNextPage}
-            onPageSizeChange={rowsPagination.setPageSize}
+              return (
+                <PstoRequestRow
+                  row={row}
+                  selected={selected}
+                  disabled={disabled}
+                  onToggleRow={stableOnToggleRow}
+                  onOpenContextMenu={openRowContextMenu}
+                />
+              )
+            }}
+            footer={(
+              <DialogRowPagination
+                totalCount={rowsPagination.totalCount}
+                firstItemNumber={rowsPagination.firstItemNumber}
+                lastItemNumber={rowsPagination.lastItemNumber}
+                page={rowsPagination.page}
+                pageCount={rowsPagination.pageCount}
+                pageSize={rowsPagination.pageSize}
+                onPreviousPage={rowsPagination.goToPreviousPage}
+                onNextPage={rowsPagination.goToNextPage}
+                onPageSizeChange={rowsPagination.setPageSize}
+              />
+            )}
           />
         </RequestRowsPanel>
       </div>
+      )}
 
       <RequestDialogFooter
         isPending={isPending}
         isCreateDisabled={Boolean(createDisabledReason)}
         disabledReason={feedbackMessage}
+        disabledReasonActionLabel={creationPlan.error && workspaceTab !== 'documents'
+          ? 'Открыть заявки и имена'
+          : undefined}
+        onDisabledReasonAction={creationPlan.error && workspaceTab !== 'documents'
+          ? () => setWorkspaceTab('documents')
+          : undefined}
         onClose={onClose}
         onSubmit={onSubmit}
       />
+      <DialogContextMenuLayer ref={contextMenuRef} />
     </LargeDialogShell>
   )
 }

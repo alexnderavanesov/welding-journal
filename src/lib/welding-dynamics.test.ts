@@ -139,6 +139,107 @@ describe('buildWeldingDynamics', () => {
     ])
   })
 
+  it('builds complete project-material hierarchies without double-counting welders', () => {
+    const rows = [
+      row({ id: 1, joint: 'S1', weldDate: '2026-07-01', projectTitle: 'Проект А', materialGroup: 'М01', wdi: '2', stamp1KFact: 'W1' }),
+      row({ id: 2, joint: 'F2', weldDate: '2026-07-01', projectTitle: 'Проект А', materialGroup: 'М05', wdi: '3', stamp1KFact: 'W1' }),
+      row({ id: 3, joint: 'F3', weldDate: '2026-07-01', projectTitle: 'Проект А', materialGroup: 'М05', wdi: '1', stamp1KFact: 'W2' }),
+      row({ id: 4, joint: 'F4', weldDate: '2026-07-01', projectTitle: 'Проект Б', materialGroup: 'М01', wdi: '4', stamp1KFact: 'W1' }),
+      row({ id: 5, joint: 'S5', weldDate: '2026-07-01', projectTitle: 'Проект Б', materialGroup: '', wdi: '1', stamp1KFact: 'W3' }),
+      row({ id: 6, joint: 'F6', weldDate: '2026-07-01', projectTitle: '', materialGroup: 'М11', wdi: '2', stamp1KFact: 'W4' }),
+    ]
+
+    const summary = buildWeldingDynamics(rows, '2026-07-01', '2026-07-01', 'wdi')
+
+    expect(summary.projectMaterialHierarchy.map((group) => ({
+      label: group.label,
+      value: group.value,
+      welderCount: group.welderCount,
+      welderShiftCount: group.welderShiftCount,
+      children: group.children.map((child) => [child.label, child.value, child.welderCount]),
+    }))).toEqual([
+      {
+        label: 'Проект А',
+        value: 6,
+        welderCount: 2,
+        welderShiftCount: 2,
+        children: [['М05', 4, 2], ['М01', 2, 1]],
+      },
+      {
+        label: 'Проект Б',
+        value: 5,
+        welderCount: 2,
+        welderShiftCount: 2,
+        children: [['М01', 4, 1], ['Группа не указана', 1, 1]],
+      },
+      {
+        label: 'Проект не указан',
+        value: 2,
+        welderCount: 1,
+        welderShiftCount: 1,
+        children: [['М11', 2, 1]],
+      },
+    ])
+    expect(summary.materialProjectHierarchy[0]).toMatchObject({
+      label: 'М01',
+      value: 6,
+      welderCount: 1,
+      welderShiftCount: 1,
+    })
+    expect(summary.materialProjectHierarchy[0]?.children.map((child) => [child.label, child.value])).toEqual([
+      ['Проект Б', 4],
+      ['Проект А', 2],
+    ])
+    expect(summary.buckets[0]?.projectMaterialHierarchy).toEqual(summary.projectMaterialHierarchy)
+    expect(summary.buckets[0]?.materialProjectHierarchy).toEqual(summary.materialProjectHierarchy)
+  })
+
+  it('keeps zero-WDI hierarchy groups when they contain factual welder participation', () => {
+    const summary = buildWeldingDynamics(
+      [
+        row({
+          id: 1,
+          joint: 'F1',
+          weldDate: '2026-07-01',
+          projectTitle: '',
+          materialGroup: 'М01',
+          wdi: '',
+          stamp1KFact: 'W1',
+        }),
+        row({
+          id: 2,
+          joint: 'F2',
+          weldDate: '2026-07-01',
+          projectTitle: 'Проект Б',
+          materialGroup: 'М02',
+          wdi: '',
+        }),
+      ],
+      '2026-07-01',
+      '2026-07-01',
+      'wdi',
+    )
+
+    expect(summary.totalValue).toBe(0)
+    expect(summary.projectMaterialHierarchy.find((group) => group.label === 'Проект не указан')).toMatchObject({
+      label: 'Проект не указан',
+      value: 0,
+      welderCount: 1,
+      children: [{ label: 'М01', value: 0, welderCount: 1 }],
+    })
+    expect(summary.materialProjectHierarchy.find((group) => group.label === 'М01')).toMatchObject({
+      label: 'М01',
+      value: 0,
+      welderCount: 1,
+      children: [{ label: 'Проект не указан', value: 0, welderCount: 1 }],
+    })
+    expect(summary.projectMaterialHierarchy.find((group) => group.label === 'Проект Б')).toMatchObject({
+      value: 0,
+      welderCount: 0,
+      children: [{ label: 'М02', value: 0, welderCount: 0 }],
+    })
+  })
+
   it('splits every bucket by joint type and keeps S below F in chart order', () => {
     const rows = [
       row({ id: 1, joint: 'S1', weldDate: '2026-07-01', materialGroup: 'М01', wdi: '1.5' }),
@@ -280,6 +381,8 @@ describe('buildWeldingDynamics', () => {
       welderShiftCount: 1,
       valuePerWelderShift: 2,
     })
+    expect(summary.materialProjectHierarchy).toHaveLength(8)
+    expect(summary.materialProjectHierarchy.some((group) => group.label === 'Прочие')).toBe(false)
   })
 
   it('keeps the largest groups visible when every group is below the significance threshold', () => {

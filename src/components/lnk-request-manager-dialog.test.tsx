@@ -33,6 +33,8 @@ const fixedRequest: LnkRequestExtensionOption = {
 function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDialog>[0]> = {}) {
   const onAddPositions = vi.fn()
   const onChangeRequest = vi.fn()
+  const onOpenDocument = vi.fn()
+  const onOpenJournalRows = vi.fn()
   const row = {
     id: 1,
     joint: 'F1',
@@ -46,6 +48,7 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
       requestName={openRequest.name}
       requestDate={openRequest.date}
       requestOptions={[openRequest, fixedRequest]}
+      allRows={[row]}
       requestRows={[row]}
       requestMethods={[LNK_METHODS[0]]}
       requestNameDraft={openRequest.name}
@@ -57,7 +60,9 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
       onCreateRequest={vi.fn()}
       onAddPositions={onAddPositions}
       onOpenRows={vi.fn()}
-      onOpenDocument={vi.fn()}
+      onOpenDocument={onOpenDocument}
+      onOpenJournalRows={onOpenJournalRows}
+      onCopyDocumentName={vi.fn()}
       onRequestNameDraftChange={vi.fn()}
       onRenameRequest={vi.fn()}
       onClearPosition={vi.fn()}
@@ -66,7 +71,7 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
     />,
   )
 
-  return { onAddPositions, onChangeRequest }
+  return { onAddPositions, onChangeRequest, onOpenDocument, onOpenJournalRows }
 }
 
 describe('LnkRequestManagerDialog', () => {
@@ -144,6 +149,21 @@ describe('LnkRequestManagerDialog', () => {
     expect(onClearPosition).toHaveBeenCalledWith(
       expect.objectContaining({ id: 1 }),
       'vikRequest',
+    )
+  })
+
+  it('opens the selected request actions from its context menu', () => {
+    const { onOpenDocument, onOpenJournalRows } = renderDialog()
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Заявка-001/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть заявку' }))
+    expect(onOpenDocument).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), 'vikRequest')
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Заявка-001/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'В сварочном журнале, новая вкладка' }))
+    expect(onOpenJournalRows).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: 1 })],
+      'заявка ЛНК «Заявка-001»',
     )
   })
 })

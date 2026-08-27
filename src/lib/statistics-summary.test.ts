@@ -5,8 +5,21 @@ import {
   buildStatisticsStateRowIds,
   buildStatisticsSummary,
   getCurrentStatisticsWeek,
+  getStatisticRatioPercent,
   getStatisticsPeriodPresetSelection,
 } from '@/lib/statistics-summary'
+
+describe('getStatisticRatioPercent', () => {
+  it('calculates an exact ratio without hiding values above one hundred percent', () => {
+    expect(getStatisticRatioPercent(3, 4)).toBe(75)
+    expect(getStatisticRatioPercent(3, 2)).toBe(150)
+  })
+
+  it('returns no percentage when the denominator is empty or invalid', () => {
+    expect(getStatisticRatioPercent(0, 0)).toBeNull()
+    expect(getStatisticRatioPercent(1, Number.NaN)).toBeNull()
+  })
+})
 
 describe('getCurrentStatisticsWeek', () => {
   it('returns the local Monday through Sunday containing the selected day', () => {
@@ -48,6 +61,45 @@ describe('getStatisticsPeriodPresetSelection', () => {
 })
 
 describe('buildStatisticsSummary', () => {
+  it('keeps conclusions without requests out of good and rejected closed-request ratios', () => {
+    const rows = [
+      {
+        id: 1,
+        weldDate: '2026-07-01',
+        hasVik: 'да',
+        vikRequest: 'Заявка ВИК-001',
+        vikRequestDate: '2026-07-01',
+        vikResult: 'годен',
+        vikConclusionDate: '2026-07-02',
+      },
+      {
+        id: 2,
+        weldDate: '2026-07-01',
+        hasVik: 'да',
+        vikResult: 'годен',
+        vikConclusionDate: '2026-07-02',
+      },
+      {
+        id: 3,
+        weldDate: '2026-07-01',
+        hasVik: 'да',
+        vikResult: 'ремонт',
+        vikConclusionDate: '2026-07-02',
+      },
+    ] as WeldRow[]
+
+    const method = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'joints').methods[0]
+
+    expect(method).toMatchObject({
+      closed: 1,
+      totalClosed: 3,
+      good: 2,
+      rejected: 1,
+      goodFromClosedRequests: 1,
+      rejectedFromClosedRequests: 0,
+    })
+  })
+
   it('counts only real PSTO results as closed', () => {
     const rows = [
       { id: 1, weldDate: '2026-07-01', pstoRequest: 'ПСТО-001', pstoRequestDate: '2026-07-01', pstoDate: '2026-07-02', pstoResult: 'проведено' },

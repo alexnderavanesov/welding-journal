@@ -1,10 +1,12 @@
 import { createDefaultPstoResultDraft } from '@/lib/report-draft-state'
 import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
+import { hasPstoResultData } from '@/lib/psto-result-derived-utils'
 import {
   buildManagedPstoDiagramDrafts,
   resolvePstoResultDraftAfterBulkToggle,
   resolvePstoResultDraftAfterRequestChange,
+  resolvePstoResultDraftAfterRowIdsChange,
   resolvePstoResultDraftAfterRowToggle,
 } from '@/lib/psto-report-action-utils'
 import type { RowWithId, UsePstoReportActionsOptions } from '@/lib/psto-report-action-types'
@@ -69,10 +71,19 @@ export function createPstoResultActionHandlers({
 
   function openPstoResultManager() {
     const selectedRows = heatTreatmentRows.filter((row) => pstoResultDraft.rowIds.has(row.id))
+    openPstoResultManagerForRows(selectedRows)
+  }
+
+  function openPstoResultManagerForRows(rowsToManage: readonly RowWithId[]) {
+    const selectedRows = rowsToManage.filter(hasPstoResultData)
     if (selectedRows.length === 0) {
       setMessage('Выберите один или несколько стыков для редактирования результатов ПСТО')
       return
     }
+    setPstoResultDraft((current) => ({
+      ...current,
+      rowIds: new Set(selectedRows.map((row) => row.id)),
+    }))
     setManagedPstoDiagramDrafts(buildManagedPstoDiagramDrafts(selectedRows))
     setIsPstoResultManagerOpen(true)
   }
@@ -120,6 +131,16 @@ export function createPstoResultActionHandlers({
     setPstoResultDraft((current) =>
       resolvePstoResultDraftAfterBulkToggle(current, filteredPstoResultRows, heatTreatmentRows),
     )
+  }
+
+  function setPstoResultRows(rowIds: number[]) {
+    setPstoResultDraft((current) => {
+      const selectableRowIds = new Set(rowIds.filter((rowId) => {
+        const row = heatTreatmentRows.find((candidate) => candidate.id === rowId)
+        return Boolean(row && canSelectPstoResultRow(row, current.requestName, current.requestDate))
+      }))
+      return resolvePstoResultDraftAfterRowIdsChange(current, heatTreatmentRows, selectableRowIds)
+    })
   }
 
   function handleAddPstoResult() {
@@ -184,7 +205,9 @@ export function createPstoResultActionHandlers({
     openAddPstoResultModal,
     openAddPstoResultModalForRow,
     openPstoResultManager,
+    openPstoResultManagerForRows,
     renameManagedPstoDiagram,
+    setPstoResultRows,
     toggleAllPstoResultRows,
     togglePstoResultRow,
   }

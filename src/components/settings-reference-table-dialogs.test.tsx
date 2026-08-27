@@ -54,7 +54,7 @@ describe('settings reference table dialogs', () => {
       <RkExposureTableEditorDialog table={null} onClose={onClose} onSave={onSave} />,
     )
 
-    fireEvent.paste(screen.getByLabelText('Диаметр строки 1'), {
+    fireEvent.paste(screen.getByLabelText('Диаметр группы 1'), {
       clipboardData: { getData: () => '57\t1\t+\tэллипс\r\n\t2\t\t\r\n89\t0-100\t+\tкоординаты\r\n\t100-0\t\t\r\n' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить справочник' }))
@@ -97,13 +97,104 @@ describe('settings reference table dialogs', () => {
     expect(screen.getByLabelText('Толщина 2')).toBeInTheDocument()
   })
 
-  it('keeps row creation available in the RK exposure dialog footer', () => {
+  it('creates diameter columns and variants in the RK exposure matrix', () => {
     renderWithConfirmAction(
-      <RkExposureTableEditorDialog table={null} onClose={vi.fn()} onSave={vi.fn().mockResolvedValue(true)} />,
+      <RkExposureTableEditorDialog
+        table={{
+          fileName: 'Экспозиции по диаметрам',
+          uploadedAt: '2026-08-09T00:00:00.000Z',
+          entries: [{
+            diameter: 57,
+            options: [{ values: ['1'], isDefault: true, label: 'по 1 экспозиции', note: 'эллипс' }],
+          }],
+        }}
+        onClose={vi.fn()}
+        onSave={vi.fn().mockResolvedValue(true)}
+      />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Добавить строку' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить вариант для диаметра 57' }))
+    expect(screen.getByRole('columnheader', { name: 'Вариант 2' })).toBeInTheDocument()
 
-    expect(screen.getByLabelText('Диаметр строки 2')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить диаметр' }))
+    fireEvent.change(screen.getByLabelText('Новый диаметр'), { target: { value: '89' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Создать столбец' }))
+
+    expect(screen.getByLabelText('Диаметр группы 2')).toHaveValue('89')
+  })
+
+  it('edits matrix intervals without changing the saved RK exposure structure', async () => {
+    const onSave = vi.fn().mockResolvedValue(true)
+
+    renderWithConfirmAction(
+      <RkExposureTableEditorDialog
+        table={{
+          fileName: 'Экспозиции по диаметрам',
+          uploadedAt: '2026-08-09T00:00:00.000Z',
+          entries: [{
+            diameter: 18,
+            options: [
+              { values: ['1', '2'], isDefault: true, label: 'по 2 экспозициям', note: 'эллипс' },
+              { values: ['0-100', '100-0'], isDefault: false, label: 'по координатам', note: 'мерный пояс' },
+            ],
+          }],
+        }}
+        onClose={vi.fn()}
+        onSave={onSave}
+      />,
+    )
+
+    expect(screen.getByLabelText('Диаметр группы 1')).toHaveAttribute('readonly')
+    const firstDefault = screen.getByLabelText('Вариант по умолчанию 18:1')
+    const secondDefault = screen.getByLabelText('Вариант по умолчанию 18:2')
+    expect(firstDefault).toBeChecked()
+    fireEvent.click(secondDefault)
+    expect(firstDefault).not.toBeChecked()
+    expect(secondDefault).toBeChecked()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Добавить интервал' })[0])
+    fireEvent.change(screen.getByLabelText('Интервал варианта 18:1, строка 3'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить справочник' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      entries: [{
+        diameter: 18,
+        options: [
+          { values: ['1', '2', '3'], isDefault: false, note: 'эллипс' },
+          { values: ['0-100', '100-0'], isDefault: true, note: 'мерный пояс' },
+        ],
+      }],
+    })
+  })
+
+  it('inserts new RK diameters in order and adds duplicate diameters as variants', () => {
+    renderWithConfirmAction(
+      <RkExposureTableEditorDialog
+        table={{
+          fileName: 'Экспозиции по диаметрам',
+          uploadedAt: '2026-08-09T00:00:00.000Z',
+          entries: [
+            { diameter: 57, options: [{ values: ['1'], isDefault: true, label: 'по 1 экспозиции', note: '' }] },
+            { diameter: 89, options: [{ values: ['2'], isDefault: true, label: 'по 1 экспозиции', note: '' }] },
+          ],
+        }}
+        onClose={vi.fn()}
+        onSave={vi.fn().mockResolvedValue(true)}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить диаметр' }))
+    fireEvent.change(screen.getByLabelText('Новый диаметр'), { target: { value: '70' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Создать столбец' }))
+
+    expect(screen.getAllByLabelText(/^Диаметр группы/).map((input) => (input as HTMLInputElement).value)).toEqual(['57', '70', '89'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить диаметр' }))
+    fireEvent.change(screen.getByLabelText('Новый диаметр'), { target: { value: '57' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Создать столбец' }))
+
+    expect(screen.getAllByLabelText(/^Диаметр группы/)).toHaveLength(3)
+    expect(screen.getByLabelText('Интервал варианта 57:2, строка 1')).toBeInTheDocument()
   })
 })

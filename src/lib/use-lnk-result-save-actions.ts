@@ -62,16 +62,21 @@ export function useLnkResultSaveActions({
   const saveCheckSettings = useSaveCheckSettings()
 
   function setLnkResultForRow(rowId: number, result: string) {
+    setLnkResultForRows([rowId], result)
+  }
+
+  function setLnkResultForRows(rowIds: number[], result: string) {
     setDraft((current) => {
-      if (!current.rowIds.has(rowId)) return current
-      const row = lnkRows.find((candidate) => candidate.id === rowId)
-      if (saveCheckSettings.lnkResultRepairRules && row && result === 'ремонт' && isLnkRepairForbidden(row)) return current
+      const targetIds = new Set(rowIds.filter((rowId) => current.rowIds.has(rowId)))
+      if (targetIds.size === 0) return current
+      const targetRows = lnkRows.filter((candidate) => targetIds.has(candidate.id))
+      if (saveCheckSettings.lnkResultRepairRules && result === 'ремонт' && targetRows.some(isLnkRepairForbidden)) return current
       const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
       const rowResults: Record<number, string> = {}
       for (const id of current.rowIds) {
         rowResults[id] = current.rowResults[id] || baseline
       }
-      rowResults[rowId] = result
+      for (const rowId of targetIds) rowResults[rowId] = result
       return { ...current, result: LNK_CUSTOM_RESULT_VALUE, rowResults }
     })
   }
@@ -146,5 +151,6 @@ export function useLnkResultSaveActions({
     handleAddLnkResult,
     handleClearLnkGeneratedData,
     setLnkResultForRow,
+    setLnkResultForRows,
   }
 }

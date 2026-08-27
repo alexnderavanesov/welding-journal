@@ -117,6 +117,7 @@ export function usePstoResultDerivedState({
     pstoResultAvailableRequestOptions,
     filteredPstoResultRequestOptions,
     filteredPstoResultRows,
+    pstoResultSearchRows,
     selectedPstoResultRows,
     systemDocumentCreationPlan,
     pstoResultSaveBlockReason,

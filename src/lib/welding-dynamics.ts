@@ -37,6 +37,12 @@ export type WeldingDynamicsMaterialJointTypeGroup = WeldingDynamicsMaterialGroup
 
 export type WeldingDynamicsProjectJointTypeGroup = WeldingDynamicsMaterialJointTypeGroup
 
+export type WeldingDynamicsTableGrouping = 'projects' | 'materials'
+
+export type WeldingDynamicsHierarchyGroup = WeldingDynamicsMaterialJointTypeGroup & {
+  children: WeldingDynamicsMaterialJointTypeGroup[]
+}
+
 export type WeldingDynamicsBucket = {
   key: string
   label: string
@@ -52,6 +58,8 @@ export type WeldingDynamicsBucket = {
   jointTypes: WeldingDynamicsJointType[]
   materialJointTypes: WeldingDynamicsMaterialJointTypeGroup[]
   projectJointTypes: WeldingDynamicsProjectJointTypeGroup[]
+  projectMaterialHierarchy: WeldingDynamicsHierarchyGroup[]
+  materialProjectHierarchy: WeldingDynamicsHierarchyGroup[]
 }
 
 export type WeldingDynamicsSummary = {
@@ -71,6 +79,8 @@ export type WeldingDynamicsSummary = {
   jointTypes: WeldingDynamicsJointType[]
   materialJointTypes: WeldingDynamicsMaterialJointTypeGroup[]
   projectJointTypes: WeldingDynamicsProjectJointTypeGroup[]
+  projectMaterialHierarchy: WeldingDynamicsHierarchyGroup[]
+  materialProjectHierarchy: WeldingDynamicsHierarchyGroup[]
 }
 
 const FACTUAL_STAMP_KEYS = [
@@ -155,6 +165,10 @@ export function buildWeldingDynamics(
   const projectJointTypeTotals = new Map<string, Map<WeldingDynamicsJointTypeKey, number>>()
   const projectWeldersByBucket = new Map<string, GroupWelderParticipation>()
   const projectWelderTotals: GroupWelderParticipation = new Map()
+  const projectMaterialJointTypesByBucket = new Map<string, DimensionPairJointTypeValues>()
+  const projectMaterialJointTypeTotals: DimensionPairJointTypeValues = new Map()
+  const projectMaterialWeldersByBucket = new Map<string, DimensionPairWelderParticipation>()
+  const projectMaterialWelderTotals: DimensionPairWelderParticipation = new Map()
 
   for (const { row, date } of datedRows) {
     if (date < startIso || date > endIso) continue
@@ -194,6 +208,22 @@ export function buildWeldingDynamics(
     const bucketProjectJointTypes = projectJointTypesByBucket.get(bucketKey) ?? new Map<string, Map<WeldingDynamicsJointTypeKey, number>>()
     addGroupJointTypeValue(bucketProjectJointTypes, projectGroupKey, jointTypeKey, materialGroupValue)
     projectJointTypesByBucket.set(bucketKey, bucketProjectJointTypes)
+    addDimensionPairJointTypeValue(
+      projectMaterialJointTypeTotals,
+      projectGroupKey,
+      materialGroupKey,
+      jointTypeKey,
+      materialGroupValue,
+    )
+    const bucketProjectMaterialJointTypes = projectMaterialJointTypesByBucket.get(bucketKey) ?? new Map()
+    addDimensionPairJointTypeValue(
+      bucketProjectMaterialJointTypes,
+      projectGroupKey,
+      materialGroupKey,
+      jointTypeKey,
+      materialGroupValue,
+    )
+    projectMaterialJointTypesByBucket.set(bucketKey, bucketProjectMaterialJointTypes)
 
     const factualStamps = getFactualStamps(row)
     addGroupWelderParticipation(materialWelderTotals, materialGroupKey, date, factualStamps)
@@ -204,6 +234,22 @@ export function buildWeldingDynamics(
     const bucketProjectWelders = projectWeldersByBucket.get(bucketKey) ?? new Map()
     addGroupWelderParticipation(bucketProjectWelders, projectGroupKey, date, factualStamps)
     projectWeldersByBucket.set(bucketKey, bucketProjectWelders)
+    addDimensionPairWelderParticipation(
+      projectMaterialWelderTotals,
+      projectGroupKey,
+      materialGroupKey,
+      date,
+      factualStamps,
+    )
+    const bucketProjectMaterialWelders = projectMaterialWeldersByBucket.get(bucketKey) ?? new Map()
+    addDimensionPairWelderParticipation(
+      bucketProjectMaterialWelders,
+      projectGroupKey,
+      materialGroupKey,
+      date,
+      factualStamps,
+    )
+    projectMaterialWeldersByBucket.set(bucketKey, bucketProjectMaterialWelders)
 
     const bucketWelders = weldersByBucket.get(bucketKey) ?? new Set<string>()
     const dateWelders = weldersByDate.get(date) ?? new Set<string>()
@@ -250,6 +296,22 @@ export function buildWeldingDynamics(
       systemIndexSettings,
       projectWeldersByBucket.get(bucket.key) ?? new Map(),
     )
+    const bucketProjectMaterialValues = projectMaterialJointTypesByBucket.get(bucket.key) ?? new Map()
+    const bucketProjectMaterialWelders = projectMaterialWeldersByBucket.get(bucket.key) ?? new Map()
+    bucket.projectMaterialHierarchy = buildDimensionHierarchy(
+      bucketProjectMaterialValues,
+      projectWeldersByBucket.get(bucket.key) ?? new Map(),
+      bucketProjectMaterialWelders,
+      systemIndexSettings,
+      'projects',
+    )
+    bucket.materialProjectHierarchy = buildDimensionHierarchy(
+      transposeDimensionPairJointTypeValues(bucketProjectMaterialValues),
+      materialWeldersByBucket.get(bucket.key) ?? new Map(),
+      transposeDimensionPairWelderParticipation(bucketProjectMaterialWelders),
+      systemIndexSettings,
+      'materials',
+    )
   }
   const totalValue = buckets.reduce((total, bucket) => total + bucket.value, 0)
   const welderShiftCount = buckets.reduce((total, bucket) => total + bucket.welderShiftCount, 0)
@@ -279,6 +341,20 @@ export function buildWeldingDynamics(
       projectGroupLayout,
       systemIndexSettings,
       projectWelderTotals,
+    ),
+    projectMaterialHierarchy: buildDimensionHierarchy(
+      projectMaterialJointTypeTotals,
+      projectWelderTotals,
+      projectMaterialWelderTotals,
+      systemIndexSettings,
+      'projects',
+    ),
+    materialProjectHierarchy: buildDimensionHierarchy(
+      transposeDimensionPairJointTypeValues(projectMaterialJointTypeTotals),
+      materialWelderTotals,
+      transposeDimensionPairWelderParticipation(projectMaterialWelderTotals),
+      systemIndexSettings,
+      'materials',
     ),
   }
 }
@@ -310,6 +386,8 @@ function createEmptyDynamics(bucketUnit: WeldingDynamicsUnit): WeldingDynamicsSu
     jointTypes: [],
     materialJointTypes: [],
     projectJointTypes: [],
+    projectMaterialHierarchy: [],
+    materialProjectHierarchy: [],
   }
 }
 
@@ -376,6 +454,8 @@ function createBucket(key: string, label: string, shortLabel: string): WeldingDy
     jointTypes: [],
     materialJointTypes: [],
     projectJointTypes: [],
+    projectMaterialHierarchy: [],
+    materialProjectHierarchy: [],
   }
 }
 
@@ -475,6 +555,37 @@ function addGroupJointTypeValue(
   target.set(materialGroupKey, jointTypes)
 }
 
+type DimensionPairJointTypeValues = Map<
+  string,
+  Map<string, Map<WeldingDynamicsJointTypeKey, number>>
+>
+
+function addDimensionPairJointTypeValue(
+  target: DimensionPairJointTypeValues,
+  primaryKey: string,
+  secondaryKey: string,
+  jointTypeKey: WeldingDynamicsJointTypeKey,
+  value: number,
+) {
+  const secondaryGroups = target.get(primaryKey) ?? new Map()
+  const jointTypes = secondaryGroups.get(secondaryKey) ?? new Map<WeldingDynamicsJointTypeKey, number>()
+  jointTypes.set(jointTypeKey, (jointTypes.get(jointTypeKey) ?? 0) + value)
+  secondaryGroups.set(secondaryKey, jointTypes)
+  target.set(primaryKey, secondaryGroups)
+}
+
+function transposeDimensionPairJointTypeValues(values: DimensionPairJointTypeValues) {
+  const transposed: DimensionPairJointTypeValues = new Map()
+  for (const [primaryKey, secondaryGroups] of values) {
+    for (const [secondaryKey, jointTypes] of secondaryGroups) {
+      const transposedGroups = transposed.get(secondaryKey) ?? new Map()
+      transposedGroups.set(primaryKey, jointTypes)
+      transposed.set(secondaryKey, transposedGroups)
+    }
+  }
+  return transposed
+}
+
 function buildJointTypes(
   values: Map<WeldingDynamicsJointTypeKey, number>,
   systemIndexSettings: SystemIndexSettings,
@@ -562,7 +673,78 @@ function buildDimensionJointTypeGroups(
   })
 }
 
+function buildDimensionHierarchy(
+  values: DimensionPairJointTypeValues,
+  primaryWelderParticipation: GroupWelderParticipation,
+  pairWelderParticipation: DimensionPairWelderParticipation,
+  systemIndexSettings: SystemIndexSettings,
+  primaryDimension: WeldingDynamicsTableGrouping,
+): WeldingDynamicsHierarchyGroup[] {
+  const groups = Array.from(values, ([primaryKey, secondaryGroups]) => {
+    const children = Array.from(secondaryGroups, ([secondaryKey, jointTypeValues]) => {
+      const jointTypes = buildJointTypes(jointTypeValues, systemIndexSettings)
+      const value = jointTypes.reduce((total, jointType) => total + jointType.value, 0)
+      const participation = summarizeDateStampParticipation(
+        pairWelderParticipation.get(primaryKey)?.get(secondaryKey),
+      )
+      return {
+        key: secondaryKey,
+        label: getHierarchyDimensionLabel(secondaryKey, primaryDimension === 'projects' ? 'materials' : 'projects'),
+        value,
+        jointTypes,
+        welderCount: participation.welderCount,
+        welderShiftCount: participation.welderShiftCount,
+        valuePerWelderShift: divideOrZero(value, participation.welderShiftCount),
+      }
+    })
+
+    children.sort((a, b) => compareFullDimensionGroups(a, b, primaryDimension === 'projects' ? 'materials' : 'projects'))
+    const jointTypeValues = new Map<WeldingDynamicsJointTypeKey, number>()
+    for (const child of children) {
+      for (const jointType of child.jointTypes) {
+        jointTypeValues.set(jointType.key, (jointTypeValues.get(jointType.key) ?? 0) + jointType.value)
+      }
+    }
+    const jointTypes = buildJointTypes(jointTypeValues, systemIndexSettings)
+    const value = jointTypes.reduce((total, jointType) => total + jointType.value, 0)
+    const participation = summarizeGroupWelderParticipation(primaryWelderParticipation, [primaryKey])
+    return {
+      key: primaryKey,
+      label: getHierarchyDimensionLabel(primaryKey, primaryDimension),
+      value,
+      jointTypes,
+      welderCount: participation.welderCount,
+      welderShiftCount: participation.welderShiftCount,
+      valuePerWelderShift: divideOrZero(value, participation.welderShiftCount),
+      children,
+    }
+  })
+
+  return groups.sort((a, b) => compareFullDimensionGroups(a, b, primaryDimension))
+}
+
+function compareFullDimensionGroups(
+  first: WeldingDynamicsMaterialJointTypeGroup,
+  second: WeldingDynamicsMaterialJointTypeGroup,
+  dimension: WeldingDynamicsTableGrouping,
+) {
+  const missingKey = dimension === 'projects'
+    ? WELDING_DYNAMICS_MISSING_PROJECT_GROUP_KEY
+    : WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY
+  if (first.key === missingKey) return second.key === missingKey ? 0 : 1
+  if (second.key === missingKey) return -1
+  return second.value - first.value || first.label.localeCompare(second.label, 'ru', { numeric: true })
+}
+
+function getHierarchyDimensionLabel(key: string, dimension: WeldingDynamicsTableGrouping) {
+  if (dimension === 'projects') {
+    return key === WELDING_DYNAMICS_MISSING_PROJECT_GROUP_KEY ? 'Проект не указан' : key
+  }
+  return key === WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY ? 'Группа не указана' : key
+}
+
 type GroupWelderParticipation = Map<string, Map<string, Set<string>>>
+type DimensionPairWelderParticipation = Map<string, Map<string, Map<string, Set<string>>>>
 
 function addGroupWelderParticipation(
   target: GroupWelderParticipation,
@@ -576,6 +758,45 @@ function addGroupWelderParticipation(
   for (const stamp of stamps) dateStamps.add(stamp)
   dates.set(date, dateStamps)
   target.set(groupKey, dates)
+}
+
+function addDimensionPairWelderParticipation(
+  target: DimensionPairWelderParticipation,
+  primaryKey: string,
+  secondaryKey: string,
+  date: string,
+  stamps: ReadonlySet<string>,
+) {
+  if (stamps.size === 0) return
+  const secondaryGroups = target.get(primaryKey) ?? new Map()
+  const dates = secondaryGroups.get(secondaryKey) ?? new Map<string, Set<string>>()
+  const dateStamps = dates.get(date) ?? new Set<string>()
+  for (const stamp of stamps) dateStamps.add(stamp)
+  dates.set(date, dateStamps)
+  secondaryGroups.set(secondaryKey, dates)
+  target.set(primaryKey, secondaryGroups)
+}
+
+function transposeDimensionPairWelderParticipation(values: DimensionPairWelderParticipation) {
+  const transposed: DimensionPairWelderParticipation = new Map()
+  for (const [primaryKey, secondaryGroups] of values) {
+    for (const [secondaryKey, dates] of secondaryGroups) {
+      const transposedGroups = transposed.get(secondaryKey) ?? new Map()
+      transposedGroups.set(primaryKey, dates)
+      transposed.set(secondaryKey, transposedGroups)
+    }
+  }
+  return transposed
+}
+
+function summarizeDateStampParticipation(dates?: Map<string, Set<string>>) {
+  const allStamps = new Set<string>()
+  let welderShiftCount = 0
+  for (const stamps of dates?.values() ?? []) {
+    welderShiftCount += stamps.size
+    for (const stamp of stamps) allStamps.add(stamp)
+  }
+  return { welderCount: allStamps.size, welderShiftCount }
 }
 
 function summarizeGroupWelderParticipation(

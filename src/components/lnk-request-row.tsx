@@ -1,4 +1,5 @@
-import { memo } from 'react'
+import { memo, type MouseEvent } from 'react'
+import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
@@ -10,26 +11,33 @@ type LnkRequestRowProps = {
   selected: boolean
   selectedMethods: ReadonlySet<WeldFieldKey>
   onToggleRow: (rowId: number) => void
+  onOpenContextMenu: (event: MouseEvent<HTMLElement>, row: WeldRow) => void
 }
 
-function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow }: LnkRequestRowProps) {
+function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow, onOpenContextMenu }: LnkRequestRowProps) {
   const availableMethods = getAvailableLnkRequestMethods(row)
   const existingMethods = getLnkRowRequestMethods(row, '')
   const disabled = availableMethods.length === 0
 
   return (
-    <label
-      className={`grid grid-cols-[28px_minmax(180px,1fr)_minmax(220px,1.4fr)] items-center gap-3 px-4 py-3 text-sm transition-colors ${
+    <div
+      onClick={() => {
+        if (!disabled) onToggleRow(row.id)
+      }}
+      onContextMenu={(event) => onOpenContextMenu(event, row)}
+      className={`group/dialog-row grid grid-cols-[28px_minmax(0,1fr)_auto_32px] items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
         disabled
           ? 'cursor-not-allowed bg-slate-100 text-slate-400'
           : selected
-            ? 'cursor-pointer bg-emerald-50/80'
+            ? 'cursor-pointer bg-sky-50/70 shadow-[inset_3px_0_0_#38bdf8]'
             : 'cursor-pointer bg-white hover:bg-slate-50'
       }`}
     >
       <input
         type="checkbox"
+        aria-label={`Выбрать стык ${String(row.line ?? '').trim()} ${String(row.joint ?? row.id).trim()}`.trim()}
         checked={selected}
+        onClick={(event) => event.stopPropagation()}
         onChange={() => onToggleRow(row.id)}
         disabled={disabled}
         className="h-4 w-4 rounded border-slate-300 text-slate-900"
@@ -37,7 +45,7 @@ function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow }:
       <span className="min-w-0">
         <RequestRowJointHeading row={row} />
       </span>
-      <span className="flex flex-wrap gap-1.5">
+      <span className="flex max-w-[28rem] flex-wrap justify-end gap-1.5">
         {availableMethods.length > 0 ? (
           availableMethods.map((method) => {
             const isSelectedMethod = selected && selectedMethods.has(method.requestKey)
@@ -72,12 +80,20 @@ function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow }:
           </span>
         ))}
       </span>
-    </label>
+      <DialogRowMenuButton
+        label={`Действия: стык ${String(row.joint ?? row.line ?? row.id)}`}
+        onOpen={(event) => onOpenContextMenu(event, row)}
+      />
+    </div>
   )
 }
 
 export const LnkRequestRow = memo(LnkRequestRowComponent, (previous, next) => {
-  if (previous.row !== next.row || previous.selected !== next.selected) return false
+  if (
+    previous.row !== next.row ||
+    previous.selected !== next.selected ||
+    previous.onOpenContextMenu !== next.onOpenContextMenu
+  ) return false
   if (!next.selected) return true
   return areSetsEqual(previous.selectedMethods, next.selectedMethods)
 })

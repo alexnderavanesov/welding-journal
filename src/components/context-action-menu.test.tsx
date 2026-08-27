@@ -36,6 +36,8 @@ describe('ContextActionMenu', () => {
     fireEvent.click(generateButton)
 
     expect(generateButton).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('menu')).toHaveClass('left-[calc(100%-1px)]')
+    expect(screen.getByRole('menu')).not.toHaveClass('ml-1')
     expect(onGenerate).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
 
@@ -65,6 +67,29 @@ describe('ContextActionMenu', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
 
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('closes a modal-owned context menu with Escape', () => {
+    const onClose = vi.fn()
+    const modal = document.createElement('div')
+    modal.dataset.modalDialog = 'true'
+    document.body.append(modal)
+
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 20,
+          y: 20,
+          items: [{ id: 'edit', label: 'Редактировать', onSelect: vi.fn() }],
+        }}
+        closeOnEscapeWithModal
+        onClose={onClose}
+      />,
+    )
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('shows the row identity and non-interactive action group labels', () => {

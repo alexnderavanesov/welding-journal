@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { ResultFilters } from '@/components/result-filters'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
@@ -9,6 +11,8 @@ type LnkResultFiltersProps = {
   availableRequestOptionsCount: number
   filteredRowsCount: number
   selectedRowsCount: number
+  leading?: ReactNode
+  action?: ReactNode
   onSearchChange: (value: string) => void
   onRequestSearchChange: (value: string) => void
   onRequestChange: (request: RequestDocumentIdentity | null) => void
@@ -24,6 +28,8 @@ export function LnkResultFilters({
   availableRequestOptionsCount,
   filteredRowsCount,
   selectedRowsCount,
+  leading,
+  action,
   onSearchChange,
   onRequestSearchChange,
   onRequestChange,
@@ -39,7 +45,10 @@ export function LnkResultFilters({
       availableRequestOptionsCount={availableRequestOptionsCount}
       filteredRowsCount={filteredRowsCount}
       selectedRowsCount={selectedRowsCount}
-      searchClassName="h-9 min-w-56 flex-[0.85] bg-white"
+      leading={leading}
+      action={action}
+      searchClassName="h-9 min-w-0 flex-[1.1] bg-white"
+      compactToolbar
       showClearFilters={Boolean(search)}
       onSearchChange={onSearchChange}
       onRequestSearchChange={onRequestSearchChange}

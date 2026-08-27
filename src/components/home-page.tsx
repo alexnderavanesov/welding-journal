@@ -6,6 +6,7 @@ import type { ActiveReport } from '@/lib/home-state'
 
 type HomePageProps = {
   activeReport?: ActiveReport
+  journalSelectionToken?: string
   onActiveReportChange?: (report: ActiveReport) => void
 }
 
