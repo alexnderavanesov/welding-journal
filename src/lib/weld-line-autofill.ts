@@ -19,13 +19,19 @@ type LineSourceRowsResult = {
   filterLabels: string[]
 }
 
+const LINE_AUTOFILL_EXCLUDED_CONTROL_FIELD_KEYS = new Set([
+  'hasRfa',
+  'hasStls',
+  'hasMkk',
+])
+
 export const LINE_AUTOFILL_FIELD_KEYS = [
   'projectTitle',
   'subtitleCode',
   'groupName',
   'category',
   'weldControlPercent',
-  ...yesEmptyFieldKeys,
+  ...[...yesEmptyFieldKeys].filter((key) => !LINE_AUTOFILL_EXCLUDED_CONTROL_FIELD_KEYS.has(key)),
 ] as readonly WeldFieldKey[]
 
 export function getWeldLineAutofillState(draft: WeldLineInput, rows: readonly WeldLineInput[]): WeldLineAutofillState {
@@ -173,6 +179,7 @@ function normalizeAutofillValuesByControlPercent(values: Partial<WeldInput>, dra
 
   const normalizedValues = { ...values }
   for (const key of yesEmptyFieldKeys as Set<WeldFieldKey>) {
+    if (key === 'pstoRequired') continue
     delete normalizedValues[key]
   }
   normalizedValues.hasVik = 'да'

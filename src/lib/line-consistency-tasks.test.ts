@@ -82,6 +82,35 @@ describe('line consistency tasks', () => {
     expect(tasks).toHaveLength(0)
   })
 
+  it('ignores RFA, STLS and MKK differences on a 100 percent line', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({
+        id: 1,
+        weldControlPercent: '100',
+        hasVik: 'да',
+        hasTvmt: 'да',
+        hasRfa: 'да',
+        hasStls: 'да',
+        hasMkk: 'да',
+      }),
+      row({ id: 2, weldControlPercent: '100', hasVik: 'да', hasTvmt: 'да' }),
+    ])
+
+    expect(tasks).toHaveLength(0)
+  })
+
+  it('still compares TVMT assignments on a 100 percent line', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, weldControlPercent: '100', hasVik: 'да', hasTvmt: 'да' }),
+      row({ id: 2, weldControlPercent: '100', hasVik: 'да' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({ fieldKey: 'controlPresence' })
+    expect(tasks[0]?.values).toEqual(['ВИК, ТВМТ', 'ВИК'])
+    expect(tasks[0]?.details).toContain('РФА, СТЛС и МКК в проверку линии не входят')
+  })
+
   it('accepts RK, UZK or PVK as alternatives for U-joints on a 100 percent line', () => {
     const tasks = buildLineConsistencyTasks([
       row({ id: 1, weldControlPercent: '100', hasVik: 'да', hasRk: 'да' }),

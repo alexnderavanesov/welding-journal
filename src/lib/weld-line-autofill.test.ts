@@ -32,6 +32,38 @@ describe('getWeldLineAutofillState', () => {
     })
   })
 
+  it('does not copy RFA, STLS or MKK from a 100 percent line', () => {
+    const state = getWeldLineAutofillState(
+      { line: 'LIN-1', joint: 'S2' },
+      [
+        {
+          id: 1,
+          line: 'LIN-1',
+          weldControlPercent: '100',
+          hasVik: 'да',
+          hasTvmt: 'да',
+          hasRfa: 'да',
+          hasStls: 'да',
+          hasMkk: 'да',
+        },
+        {
+          id: 2,
+          line: 'LIN-1',
+          weldControlPercent: '100',
+          hasVik: 'да',
+          hasTvmt: 'да',
+        },
+      ],
+    )
+
+    expect(state.disabledReason).toBeNull()
+    expect(state.values.hasVik).toBe('да')
+    expect(state.values.hasTvmt).toBe('да')
+    expect(state.values.hasRfa).toBeUndefined()
+    expect(state.values.hasStls).toBeUndefined()
+    expect(state.values.hasMkk).toBeUndefined()
+  })
+
   it('blocks autofill when existing source rows have different line data', () => {
     const state = getWeldLineAutofillState(
       { line: 'LIN-1' },
@@ -70,6 +102,22 @@ describe('getWeldLineAutofillState', () => {
     expect(state.disabledReason).toBeNull()
     expect(state.values.weldControlPercent).toBe('25')
     expect(state.values.hasVik).toBe('да')
+    expect(state.values.hasRk).toBeUndefined()
+  })
+
+  it('still copies PSTO on percentage lines because it applies to the whole line', () => {
+    const state = getWeldLineAutofillState(
+      { line: 'LIN-1', subtitleCode: '400' },
+      [
+        { id: 1, line: 'LIN-1', subtitleCode: '400', weldControlPercent: '25', pstoRequired: 'да', hasRk: 'да' },
+        { id: 2, line: 'LIN-1', subtitleCode: '400', weldControlPercent: '25', pstoRequired: 'да' },
+      ],
+    )
+
+    expect(state.disabledReason).toBeNull()
+    expect(state.values.weldControlPercent).toBe('25')
+    expect(state.values.hasVik).toBe('да')
+    expect(state.values.pstoRequired).toBe('да')
     expect(state.values.hasRk).toBeUndefined()
   })
 
