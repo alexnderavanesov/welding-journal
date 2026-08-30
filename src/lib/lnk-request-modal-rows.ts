@@ -5,6 +5,7 @@ import { compareLnkRequestRows } from '@/lib/report-row-utils'
 import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
 
 export function getLnkRequestMethodsForRows(rows: WeldInput[], requestName: string) {
   const name = requestName.trim()
@@ -56,7 +57,10 @@ export function countLnkRequestTargets(rows: WeldInput[], methodKeys: WeldFieldK
       total +
       methodKeys.filter((requestKey) => {
         const method = getLnkMethodByRequestKey(requestKey)
-        return method && isEnabledControlValue(row[method.enabledKey]) && !hasText(row[method.requestKey])
+        return method &&
+          isEnabledControlValue(row[method.enabledKey]) &&
+          !hasText(row[method.requestKey]) &&
+          isPrimaryLnkStageReady(row, method.code)
       }).length
     )
   }, 0)

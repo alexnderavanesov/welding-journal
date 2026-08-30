@@ -21,8 +21,8 @@ import {
   groupWeldDateTimeFilterOptions,
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-table-filtering'
-import { listWeldColumnFilterOptions, type WeldReportKind } from '@/server/welds'
-import type { WeldColumnFilterOption } from '@/server/welds'
+import { listWeldColumnFilterOptions } from '@/server/weld-read-api'
+import type { WeldColumnFilterOption, WeldReportKind } from '@/server/weld-contracts'
 import { buildWeldTableRenderColumns } from '@/lib/weld-table-horizontal-window'
 
 const openFilterMenus: Array<{ id: number; close: () => void }> = []

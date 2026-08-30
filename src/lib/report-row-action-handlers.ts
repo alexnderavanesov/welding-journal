@@ -1,8 +1,12 @@
-import { canCreatePstoRequest } from '@/lib/psto-status'
-import { canCreateLnkRequest } from '@/lib/report-control-state'
-import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
+import {
+  canAddPstoWorkflowResult,
+  canCreatePstoWorkflowRequest,
+} from '@/lib/psto-status'
+import {
+  canAddLnkWorkflowResult,
+  canCreateLnkWorkflowRequest,
+} from '@/lib/lnk-workflow-routing'
 import type { ReportRow, ReportRowActionHandlers } from '@/lib/report-row-actions'
-import { hasText } from '@/lib/report-value-utils'
 
 type CreateReportRowActionHandlersOptions = {
   openCreatePstoRequestModalForRow: (row: ReportRow) => void
@@ -20,11 +24,11 @@ export function createReportRowActionHandlers({
   return {
     openCreatePstoRequestModalForRow,
     openAddPstoResultModalForRow,
-    canCreatePstoRequest,
-    canAddPstoResult: (row) => hasText(row.pstoRequest),
+    canCreatePstoRequest: canCreatePstoWorkflowRequest,
+    canAddPstoResult: canAddPstoWorkflowResult,
     openCreateLnkRequestModalForRow,
     openAddLnkResultModalForRow,
-    canCreateLnkRequest,
-    canAddLnkResult: (row) => getLnkRowRequestNames(row).length > 0,
+    canCreateLnkRequest: canCreateLnkWorkflowRequest,
+    canAddLnkResult: canAddLnkWorkflowResult,
   }
 }

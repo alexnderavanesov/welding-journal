@@ -13,6 +13,7 @@ import { useWeldTableEditability } from '@/lib/use-weld-table-editability'
 import { useWeldTableSelection } from '@/lib/use-weld-table-selection'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { WeldTableSection } from '@/lib/weld-table-sections'
 import { usePagination } from '@/lib/use-pagination'
 
 type RowWithId = WeldRow
@@ -49,6 +50,8 @@ type UseWeldTableModelOptions = {
   mergePstoSections: boolean
   rowActions?: ReportRowActions
   collapsibleExtraSections?: ReadonlySet<string>
+  defaultCollapsedSections?: ReadonlySet<string>
+  sectionLayout?: readonly WeldTableSection[]
 }
 
 export function useWeldTableModel({
@@ -75,17 +78,20 @@ export function useWeldTableModel({
   mergePstoSections,
   rowActions,
   collapsibleExtraSections,
+  defaultCollapsedSections,
+  sectionLayout,
 }: UseWeldTableModelOptions) {
   const alwaysVisibleFieldKeys = useMemo(() => getAlwaysVisibleFieldKeys(mergePstoSections), [mergePstoSections])
   const availableSections = useMemo(
-    () => getAvailableWeldTableSections({ hiddenFieldKeys, mergePstoSections }),
-    [hiddenFieldKeys, mergePstoSections],
+    () => getAvailableWeldTableSections({ hiddenFieldKeys, mergePstoSections, sectionLayout }),
+    [hiddenFieldKeys, mergePstoSections, sectionLayout],
   )
   const { collapsedSections, toggleSection } = useWeldTableCollapsedSections({
     storageKey,
     availableSections,
     alwaysVisibleFieldKeys,
     collapsibleExtraSections,
+    defaultCollapsedSections,
   })
   const filteredSections = useMemo(
     () => getFilteredWeldTableSections({ availableSections, collapsedSections, alwaysVisibleFieldKeys }),

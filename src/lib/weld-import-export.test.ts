@@ -135,6 +135,17 @@ describe('weld import/export', () => {
     expect(normalized.lnkDefectDescription).toBe('1: дно\n2: дно')
   })
 
+  it('preserves a failed TVMT result during unrelated weld normalization', () => {
+    const normalized = normalizeWeldInput({
+      joint: 'F10',
+      tvmtResult: 'не годен',
+      tvmtConclusion: 'Заключение ТВМТ-1',
+    })
+
+    expect(normalized.tvmtResult).toBe('не годен')
+    expect(normalized.tvmtConclusion).toBe('Заключение ТВМТ-1')
+  })
+
   it('keeps WDI as a numeric Excel value during export and import', () => {
     const [headers, row] = recordsToVisibleExportMatrix([{ joint: 'S13', wdi: '1,25' }])
     const wdiValue = row[headers.indexOf(label('wdi'))]
@@ -338,7 +349,7 @@ describe('weld import/export', () => {
   })
 
   it('round-trips an exported workbook through the import parser', async () => {
-    const workbook = buildExportWorkbook([
+    const workbook = await buildExportWorkbook([
       {
         joint: 'S13',
         line: '330-FL-02-004',
@@ -366,7 +377,7 @@ describe('weld import/export', () => {
   })
 
   it('keeps control percent, RK, and UZK in their exact columns during workbook round-trip', async () => {
-    const workbook = buildExportWorkbook([
+    const workbook = await buildExportWorkbook([
       {
         joint: 'F18',
         weldControlPercent: 25,
@@ -398,8 +409,8 @@ describe('weld import/export', () => {
     })
   })
 
-  it('exports selected fields with report sheet name, formatted dates, and read-only styling', () => {
-    const workbook = buildExportWorkbook([{ joint: 'S13', weldDate: '2025-03-20', finalStatus: 'годен' }], {
+  it('exports selected fields with report sheet name, formatted dates, and read-only styling', async () => {
+    const workbook = await buildExportWorkbook([{ joint: 'S13', weldDate: '2025-03-20', finalStatus: 'годен' }], {
       fields: [FIELD_BY_KEY.get('joint')!, FIELD_BY_KEY.get('weldDate')!, FIELD_BY_KEY.get('finalStatus')!],
       readOnlyFieldKeys: new Set(['finalStatus']),
       sheetName: 'Термообработка',
@@ -465,7 +476,7 @@ describe('weld import/export', () => {
       { id: 3, joint: 'OLD-1', line: 'old-line-1' },
       { id: 4, joint: 'OLD-2', line: 'old-line-2' },
     ]
-    const workbook = buildExportWorkbook([{ joint: 'NEW-1', line: 'new-line-1' }])
+    const workbook = await buildExportWorkbook([{ joint: 'NEW-1', line: 'new-line-1' }])
     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
     const imported = await parseWorkbook(buffer)
     const rows = appendImportedWelds(existing, imported.records)

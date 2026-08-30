@@ -20,6 +20,10 @@ import {
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import { memo } from 'react'
+import {
+  getPreHeatTreatmentReportField,
+  PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS,
+} from '@/lib/pre-heat-treatment-report-fields'
 
 const WELDING_JOURNAL_FIELD_TOOLTIP =
   'Данные сварочного журнала. Чтобы изменить значение, откройте карточку стыка в разделе «Сварочный журнал».'
@@ -33,10 +37,14 @@ const LNK_REQUEST_TOOLTIP =
   'Данные заявки ЛНК. Заполняются при создании или изменении заявки в разделе «ЛНК» и не редактируются напрямую в таблице.'
 const LNK_RESULT_TOOLTIP =
   'Данные результата или заключения ЛНК. Заполняются при добавлении или редактировании результата в разделе «ЛНК».'
+const PRE_HEAT_TREATMENT_LNK_TOOLTIP =
+  'Данные НК до ТО. Заполняются профильными действиями в разделе «ЛНК».'
 const PSTO_REQUEST_TOOLTIP =
   'Данные заявки ПСТО. Заполняются при создании или изменении заявки в разделе «ПСТО» и не редактируются напрямую в таблице.'
 const PSTO_RESULT_TOOLTIP =
   'Данные результата ПСТО. Заполняются при добавлении или редактировании результата в разделе «ПСТО».'
+const TVMT_WORKFLOW_TOOLTIP =
+  'Данные ТВМТ текущего цикла. Заявка и результат оформляются профильными действиями в разделе «Термообработка».'
 const RECORD_NUMBER_TOOLTIP =
   'Системное поле: номер записи присваивается автоматически и не редактируется пользователем.'
 const DISPATCHER_TASKS_TOOLTIP =
@@ -48,7 +56,7 @@ const CHECKLIST_DOCUMENT_TOOLTIP =
 const ZNI_DOCUMENT_TOOLTIP =
   'Системное поле: показывает ЗНИ, в который включен стык. Документы не изменяют данные, проверки, статусы или задачи диспетчера.'
 const CONTROL_BASIS_SUMMARY_TOOLTIP =
-  'Сводное поле формируется из оснований, указанных рядом с видами контроля в карточке стыка. В сварочном журнале показаны все основания, в ЛНК — только основания НК, в ПСТО — только основание ПСТО.'
+  'Сводное поле формируется из оснований, указанных рядом с видами контроля в карточке стыка. В сварочном журнале показаны все основания, в ЛНК — только основания НК.'
 const PROFILE_TIMESTAMP_TOOLTIPS: Partial<Record<WeldFieldKey, string>> = {
   createdAt: 'Дата и время первого внесения стыка в сварочный журнал. Устанавливается автоматически и не изменяется.',
   weldingUpdatedAt: 'Дата и время последнего изменения данных сварочного журнала. Устанавливается автоматически.',
@@ -66,6 +74,13 @@ const LNK_RESULT_FIELD_KEYS = new Set<WeldFieldKey>(
 )
 const PSTO_REQUEST_FIELD_KEYS = new Set<WeldFieldKey>(['pstoRequest', 'pstoRequestDate'])
 const PSTO_RESULT_FIELD_KEYS = new Set<WeldFieldKey>(['pstoDate', 'pstoResult', 'heatTreatmentDiagram'])
+const TVMT_WORKFLOW_FIELD_KEYS = new Set<WeldFieldKey>([
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
+])
 
 export function composeWeldTableCellTooltip(value: unknown, description: string) {
   const fullValue = String(value ?? '').trim()
@@ -82,10 +97,12 @@ export function getWeldTableReadOnlyFieldTooltip(fieldKey: WeldFieldKey) {
   if (fieldKey === 'wdi') return WDI_TOOLTIP
   if (fieldKey === 'status') return OFFICIALITY_STATUS_TOOLTIP
   if (fieldKey === 'finalStatus') return FINAL_STATUS_TOOLTIP
+  if (getPreHeatTreatmentReportField(fieldKey)) return PRE_HEAT_TREATMENT_LNK_TOOLTIP
   if (LNK_REQUEST_FIELD_KEYS.has(fieldKey)) return LNK_REQUEST_TOOLTIP
   if (LNK_RESULT_FIELD_KEYS.has(fieldKey)) return LNK_RESULT_TOOLTIP
   if (PSTO_REQUEST_FIELD_KEYS.has(fieldKey)) return PSTO_REQUEST_TOOLTIP
   if (PSTO_RESULT_FIELD_KEYS.has(fieldKey)) return PSTO_RESULT_TOOLTIP
+  if (TVMT_WORKFLOW_FIELD_KEYS.has(fieldKey)) return TVMT_WORKFLOW_TOOLTIP
   return PROFILE_TIMESTAMP_TOOLTIPS[fieldKey] ?? WELDING_JOURNAL_FIELD_TOOLTIP
 }
 
@@ -98,6 +115,7 @@ export function getWeldTableBodyCellTooltip({
   canOpenDocument,
   canOpenLnkRequest,
   canOpenLnkResult,
+  canOpenJoint = false,
   canOpenWeldEditor,
   availableSystemDocumentTypes,
 }: {
@@ -109,6 +127,7 @@ export function getWeldTableBodyCellTooltip({
   canOpenDocument: boolean
   canOpenLnkRequest: boolean
   canOpenLnkResult: boolean
+  canOpenJoint?: boolean
   canOpenWeldEditor: boolean
   availableSystemDocumentTypes: ReadonlySet<SystemDocumentTemplateId>
 }) {
@@ -119,7 +138,10 @@ export function getWeldTableBodyCellTooltip({
       : null
   if (finalStatusErrorReason) return finalStatusErrorReason
   if (isEditableCell) {
-    return fieldKey === 'lnkDefectDescription' || fieldKey === 'rkExposureScheme'
+    return fieldKey === 'lnkDefectDescription' ||
+      fieldKey === 'rkExposureScheme' ||
+      fieldKey === 'preRkExposureScheme' ||
+      fieldKey === 'preRkDefectDescription'
       ? String(displayValue ?? '') || undefined
       : undefined
   }
@@ -138,6 +160,9 @@ export function getWeldTableBodyCellTooltip({
   }
   if (linkState.isLnkResultCardLink) {
     return composeWeldTableCellTooltip(visibleValue, 'Открыть карточку этого результата ЛНК')
+  }
+  if (fieldKey === 'joint' && canOpenJoint) {
+    return composeWeldTableCellTooltip(visibleValue, 'Открыть историю ПСТО и ТВМТ этого стыка')
   }
   if (linkState.isDocumentLink) {
     return composeWeldTableCellTooltip(
@@ -182,6 +207,8 @@ type WeldTableBodyCellProps = {
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  onOpenJoint?: (row: WeldRow) => void
+  controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
 
@@ -205,12 +232,16 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   onOpenDocument,
   onOpenLnkRequest,
   onOpenLnkResult,
+  onOpenJoint,
+  controlBasisEditorEnabled = false,
   availableSystemDocumentTypes = new Set(),
 }: WeldTableBodyCellProps) {
   const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const fieldKey = field.key as WeldFieldKey
   const isStickyCell = stickyIdentityColumns && isStickyWeldTableField(field.key)
-  const isControlBasisEditorLink = fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY && Boolean(onEdit)
+  const isControlBasisEditorLink =
+    controlBasisEditorEnabled && fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY && Boolean(onEdit)
+  const isJointHistoryLink = fieldKey === 'joint' && Boolean(onOpenJoint)
   const {
     isDocumentLink,
     isLnkRequestCardLink,
@@ -225,7 +256,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
     availableSystemDocumentTypes,
   })
   const contentClass = `block h-[52px] w-full overflow-hidden border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
-    isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink
+    isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || isJointHistoryLink
       ? 'cursor-pointer font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900'
       : isEditableCell
         ? 'cursor-pointer'
@@ -260,12 +291,23 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
       }`}
       style={isStickyCell ? getStickyWeldTableFieldStyle(field.key, stickyLeft, stickyIdentityLeadingWidth) : undefined}
       onClick={(event) => {
-        if (isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || !isEditableCell) return
+        if (isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || isJointHistoryLink || !isEditableCell) return
         event.stopPropagation()
         onEdit?.(row, field.key as WeldFieldKey)
       }}
     >
-      {isLnkRequestCardLink ? (
+      {isJointHistoryLink ? (
+        <button
+          type="button"
+          className={contentClass}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenJoint?.(row)
+          }}
+        >
+          <WeldTableValue field={field} value={visibleValue} isResultField={isResultField} />
+        </button>
+      ) : isLnkRequestCardLink ? (
         <button
           type="button"
           className={contentClass}
@@ -342,10 +384,13 @@ function getWeldTableCellLinkState({
     fieldKey === 'checklistDocument' && Boolean(row.checklistDocumentId) && hasVisibleValue
   const isZniDocumentLink =
     fieldKey === 'zniDocument' && Boolean(row.zniDocumentId) && hasVisibleValue
+  const preHeatTreatmentField = getPreHeatTreatmentReportField(fieldKey)
   const systemDocumentType = hasVisibleValue ? getSystemDocumentTypeForField(fieldKey) : null
   const systemDocumentTemplateId = systemDocumentType ? getSystemDocumentTemplateIdForField(fieldKey) : null
   const isLnkRequestCardLink =
-    hasVisibleValue && canOpenLnkRequest && LNK_REQUEST_NAME_FIELD_KEYS.has(fieldKey)
+    hasVisibleValue && canOpenLnkRequest && (
+      LNK_REQUEST_NAME_FIELD_KEYS.has(fieldKey) || PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS.has(fieldKey)
+    )
   const isSystemDocumentLink =
     canOpenDocument &&
     Boolean(systemDocumentType) &&
@@ -354,7 +399,12 @@ function getWeldTableCellLinkState({
   const isLnkResultCardLink =
     hasVisibleValue &&
     canOpenLnkResult &&
-    Boolean(getLnkResultMethodForField(fieldKey)) &&
+    Boolean(
+      getLnkResultMethodForField(fieldKey) ||
+      (preHeatTreatmentField &&
+        preHeatTreatmentField.valueKey !== 'requestName' &&
+        preHeatTreatmentField.valueKey !== 'requestDate'),
+    ) &&
     !(isSystemDocumentLink && systemDocumentType === 'lnkConclusion')
   const isDocumentLink =
     isJsrDocumentLink ||

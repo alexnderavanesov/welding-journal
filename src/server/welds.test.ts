@@ -9,6 +9,7 @@ import {
   canPaginateReportSource,
   compactWeldRowsForTransport,
   getWeldImportSecurityScope,
+  getControlMethodFilterColumnKey,
   getProfileTimestampUpdates,
   getDerivedReportFilterSelectedFieldKeys,
   getReportContextSelect,
@@ -19,6 +20,8 @@ import {
   normalizeWeldPageSize,
   normalizeWeldSnapshotPageRequest,
   normalizeDocumentGenerationDataRequest,
+  prepareWeldInputForPersistence,
+  restrictWeldMutationRecord,
   shouldEnsureDispatcherTaskIndexForColumnFilter,
 } from './welds'
 import type { WeldJoint } from '@/db/schema'
@@ -37,6 +40,46 @@ import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 describe('weld server pagination helpers', () => {
+  it('keeps staged-control relations in the final-status persistence calculation', () => {
+    const normalized = prepareWeldInputForPersistence({
+      joint: 'F50',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'ВИК после ТО',
+      vikResult: 'годен',
+      pstoRequest: 'ПСТО-1',
+      pstoResult: 'проведено',
+      tvmtRequest: 'ТВМТ-1',
+      tvmtResult: null,
+      finalStatus: 'ожидает заявку',
+      preHeatTreatmentControls: [{
+        id: 100,
+        weldJointId: 50,
+        method: 'ВИК',
+        requestName: 'ВИК до ТО',
+        result: 'годен',
+      }],
+      pstoRepeatCycles: [{
+        id: 200,
+        weldJointId: 50,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoResult: 'проведено',
+        tvmtRequest: 'ТВМТ-2',
+        tvmtResult: 'годен',
+      }],
+    } as unknown as WeldRow)
+
+    expect(normalized.finalStatus).toBe('годен')
+  })
+
+  it('filters TVMT demand by the PSTO line assignment', () => {
+    expect(getControlMethodFilterColumnKey('ТВМТ')).toBe('pstoRequired')
+    expect(getControlMethodFilterColumnKey('РК')).toBe('hasRk')
+    expect(getControlMethodFilterColumnKey('ПСТО')).toBeNull()
+  })
+
   it('uses the same dedicated password scope for every import mode', () => {
     expect(getWeldImportSecurityScope('newRecords')).toBe('importReplace')
     expect(getWeldImportSecurityScope('massFill')).toBe('importReplace')
@@ -67,9 +110,54 @@ describe('weld server pagination helpers', () => {
       lnkUpdatedAt: now,
     })
     expect(getProfileTimestampUpdates({ ...previous, pstoControlBasis: 'Письмо №2' }, previous, now)).toEqual({
-      weldingUpdatedAt: now,
       pstoUpdatedAt: now,
     })
+  })
+
+  it('keeps stale fields from another workflow out of a scoped save', () => {
+    const staleClientRow = row({
+      responsible: 'Петров',
+      hasRk: 'да',
+      rkRequest: 'Заявка РК-2',
+      rkResult: 'годен',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО-1',
+      tvmtResult: null,
+    })
+
+    const lnkRecord = restrictWeldMutationRecord(staleClientRow, 'lnk')
+    expect(lnkRecord).toMatchObject({
+      id: staleClientRow.id,
+      rkRequest: 'Заявка РК-2',
+      rkResult: 'годен',
+    })
+    expect(lnkRecord).not.toHaveProperty('responsible')
+    expect(lnkRecord).not.toHaveProperty('hasRk')
+    expect(lnkRecord).not.toHaveProperty('pstoRequest')
+    expect(lnkRecord).not.toHaveProperty('tvmtResult')
+
+    const pstoRecord = restrictWeldMutationRecord(staleClientRow, 'psto')
+    expect(pstoRecord).toMatchObject({
+      id: staleClientRow.id,
+      pstoRequest: 'Заявка ПСТО-1',
+      tvmtResult: null,
+    })
+    expect(pstoRecord).not.toHaveProperty('pstoRequired')
+    expect(pstoRecord).not.toHaveProperty('rkRequest')
+
+    const weldingRecord = restrictWeldMutationRecord(staleClientRow, 'welding')
+    expect(weldingRecord).toMatchObject({
+      id: staleClientRow.id,
+      responsible: 'Петров',
+      hasRk: 'да',
+    })
+    expect(weldingRecord).not.toHaveProperty('rkRequest')
+    expect(weldingRecord).not.toHaveProperty('pstoRequest')
+
+    expect(prepareWeldInputForPersistence({
+      ...staleClientRow,
+      tvmtResult: 'не годен',
+    }).tvmtResult).toBe('не годен')
   })
 
   it('records profile entry separately from later updates', () => {
@@ -82,7 +170,6 @@ describe('weld server pagination helpers', () => {
       lnkUpdatedAt: now,
     })
     expect(getProfileTimestampUpdates({ ...previous, pstoRequired: 'да' }, previous, now)).toEqual({
-      weldingUpdatedAt: now,
       pstoCreatedAt: now,
       pstoUpdatedAt: now,
     })
@@ -93,7 +180,6 @@ describe('weld server pagination helpers', () => {
     const now = new Date('2026-08-12T12:00:00.000Z')
 
     expect(getProfileTimestampUpdates({ ...previous, pstoRequired: 'да' }, previous, now)).toEqual({
-      weldingUpdatedAt: now,
       pstoUpdatedAt: now,
     })
     expect(getProfileTimestampUpdates({ ...previous, pstoRequired: 'да', weldDate: '2026-08-12' }, previous, now)).toEqual({
@@ -373,29 +459,47 @@ describe('weld server pagination helpers', () => {
     const lnk = buildWeldReportPageFromRows(sourceRows, normalizeWeldPageRequest({ columnFilters: {} }), 'lnk')
     const psto = buildWeldReportPageFromRows(sourceRows, normalizeWeldPageRequest({ columnFilters: {} }), 'heatTreatment')
 
-    expect(journal.rows[0].controlBasisSummary).toBe('РК: ТР №1; ПСТО: Письмо №2')
+    expect(journal.rows[0].controlBasisSummary).toBe('РК: ТР №1')
     expect(lnk.rows[0].controlBasisSummary).toBe('РК: ТР №1')
-    expect(psto.rows[0].controlBasisSummary).toBe('ПСТО: Письмо №2')
+    expect(psto.rows[0].controlBasisSummary).toBe('')
+    expect(psto.rows[0].pstoControlBasis).toBeNull()
   })
 
-  it('filters control basis summaries within the current report scope', () => {
+  it('filters the combined basis summary from LNK assignments only', () => {
     const sourceRows = [
       row({ id: 1, joint: 'S1', weldDate: '2026-08-19', hasRk: 'да', rkControlBasis: 'ТР №1' }),
-      row({ id: 2, joint: 'S2', weldDate: '2026-08-19', hasRk: 'да', pstoRequired: 'да', pstoControlBasis: 'Письмо №2' }),
+      row({ id: 2, joint: 'S2', weldDate: '2026-08-19', hasRk: 'да', pstoRequired: 'отменен', pstoCancellationDate: '2026-08-20', pstoControlBasis: 'Письмо №2' }),
     ]
     const request = normalizeWeldPageRequest({
       page: 1,
       pageSize: 100,
-      columnFilters: { controlBasisSummary: 'Письмо №2' },
+      columnFilters: { controlBasisSummary: 'ТР №1' },
     })
 
     const journal = buildWeldReportPageFromRows(sourceRows, request, 'weldingJournal')
     const lnk = buildWeldReportPageFromRows(sourceRows, request, 'lnk')
     const psto = buildWeldReportPageFromRows(sourceRows, request, 'heatTreatment')
 
-    expect(journal.rows.map((candidate) => candidate.joint)).toEqual(['S2'])
-    expect(lnk.rows).toEqual([])
+    expect(journal.rows.map((candidate) => candidate.joint)).toEqual(['S1'])
+    expect(lnk.rows.map((candidate) => candidate.joint)).toEqual(['S1'])
+    expect(psto.rows).toEqual([])
+  })
+
+  it('filters the cancellation basis in its dedicated PSTO column', () => {
+    const sourceRows = [
+      row({ id: 1, joint: 'S1', weldDate: '2026-08-19', pstoRequired: 'да', pstoControlBasis: 'Старое основание' }),
+      row({ id: 2, joint: 'S2', weldDate: '2026-08-19', pstoRequired: 'отменен', pstoCancellationDate: '2026-08-20', pstoControlBasis: 'Письмо №2' }),
+    ]
+    const request = normalizeWeldPageRequest({
+      page: 1,
+      pageSize: 100,
+      columnFilters: { pstoControlBasis: 'Письмо №2' },
+    })
+
+    const psto = buildWeldReportPageFromRows(sourceRows, request, 'heatTreatment')
+
     expect(psto.rows.map((candidate) => candidate.joint)).toEqual(['S2'])
+    expect(psto.rows[0].pstoControlBasis).toBe('Письмо №2')
   })
 
   it('builds PSTO report pages from all matching PSTO rows', () => {
@@ -440,7 +544,9 @@ describe('weld server pagination helpers', () => {
       connectionType: buildWeldColumnValueFilter(['C17']),
       wdi: buildWeldColumnValueFilter(['1.2', '2.3']),
       controlBasisSummary: buildWeldColumnValueFilter(['РК: ТР №1']),
+      finalStatus: buildWeldColumnValueFilter(['годен']),
       rkExposureScheme: buildWeldColumnValueFilter(['по 2 экспозициям']),
+      preRkResult: buildWeldColumnValueFilter(['годен']),
     }
 
     expect(getWeldColumnFilterOptionSourceFilters(filters, true)).toEqual({
@@ -463,6 +569,7 @@ describe('weld server pagination helpers', () => {
     }
     expect(selectedFieldKeys.has('pstoRequestDate')).toBe(true)
     expect(selectedFieldKeys.has('pstoDate')).toBe(true)
+    expect(selectedFieldKeys.has('finalStatus')).toBe(true)
     expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)
     expect(selectedFieldKeys.has('pstoControlBasis')).toBe(true)
   })

@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joints" ADD COLUMN "psto_cancellation_date" date;

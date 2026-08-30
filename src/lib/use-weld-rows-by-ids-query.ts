@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { WELD_ROWS_BY_IDS_QUERY_KEY } from '@/lib/weld-query-utils'
-import { listWeldJointRowsByIds } from '@/server/welds'
+import { listWeldJointRowsByIds } from '@/server/weld-read-api'
 
 export function useWeldRowsByIdsQuery(ids: number[]) {
   const normalizedIds = Array.from(new Set(ids.map(Number).filter(Number.isFinite)))

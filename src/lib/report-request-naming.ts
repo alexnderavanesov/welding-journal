@@ -8,7 +8,7 @@ import {
   buildSystemNameWithNumber,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
-import { LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/lib/report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS, LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys } from '@/lib/report-config'
 import { compactSearchText, normalizeSearchText } from '@/lib/report-row-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 

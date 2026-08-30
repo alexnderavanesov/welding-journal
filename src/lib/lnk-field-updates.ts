@@ -1,11 +1,9 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { hasLnkMethodReportHistory } from '@/lib/report-control-state'
 import {
-  LNK_GENERATED_FIELD_KEYS,
   LNK_METHODS,
   LNK_REQUEST_FIELD_KEYS,
 } from '@/lib/report-config'
-import { isSameImportValue } from '@/lib/report-import'
 import {
   isPendingLnkResultValue,
   hasText,
@@ -46,18 +44,6 @@ export function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: We
     }
   }
   return nextRecord as T
-}
-
-export function clearLnkGeneratedData<T extends WeldInput>(row: T): T {
-  const nextRow = { ...row } as T & Record<string, unknown>
-  for (const fieldKey of LNK_GENERATED_FIELD_KEYS) {
-    ;(nextRow as Record<string, unknown>)[fieldKey] = null
-  }
-  return nextRow as T
-}
-
-export function hasLnkGeneratedDataChanged(left: WeldInput, right: WeldInput) {
-  return [...LNK_GENERATED_FIELD_KEYS].some((fieldKey) => !isSameImportValue(left[fieldKey], right[fieldKey]))
 }
 
 export function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {

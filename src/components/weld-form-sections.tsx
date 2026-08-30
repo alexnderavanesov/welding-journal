@@ -19,7 +19,7 @@ import {
 } from '@/lib/weld-form-utils'
 import { parseOfficialStampWeldingMethods, normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-import { getWeldLineAutofill } from '@/server/welds'
+import { getWeldLineAutofill } from '@/server/weld-line-operations'
 
 export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'workClosure'
 const EMPTY_FIELD_STATUS_KEYS = new Set<WeldFieldKey>()

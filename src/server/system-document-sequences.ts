@@ -2,9 +2,9 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, eq, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
-import { appSettings, weldJoints } from '@/db/schema'
+import { appSettings, generatedDocuments, weldJoints } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
@@ -334,7 +334,17 @@ async function systemDocumentNameExists(
 ) {
   const where = buildSystemDocumentNameWhere(request, name)
   const [row] = await db.select({ id: weldJoints.id }).from(weldJoints).where(where).limit(1)
-  return Boolean(row)
+  if (row) return true
+  const [indexedDocument] = await db
+    .select({ id: generatedDocuments.id })
+    .from(generatedDocuments)
+    .where(and(
+      eq(generatedDocuments.type, `system:${getSystemDocumentTemplateId(request)}`),
+      eq(generatedDocuments.title, name),
+      sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${request.date}`,
+    ))
+    .limit(1)
+  return Boolean(indexedDocument)
 }
 
 function buildSystemDocumentNameWhere(request: SystemDocumentSequenceUpdate, name: string): SQL {

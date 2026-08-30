@@ -64,9 +64,9 @@ export function applyPstoRequestManagerAction<T extends PstoRow>({
     ...record,
     pstoRequest: action === 'rename' ? nextRequestName : null,
     pstoRequestDate: action === 'rename' ? record.pstoRequestDate : null,
-    pstoDate: action === 'rename' ? record.pstoDate : null,
-    pstoResult: action === 'rename' ? record.pstoResult : null,
-    heatTreatmentDiagram: action === 'rename' ? record.heatTreatmentDiagram : null,
+    pstoResult: action === 'delete' && isPendingPstoResult(record.pstoResult)
+      ? null
+      : record.pstoResult,
     pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
     pstoUpdatedAt,
   }
@@ -77,9 +77,7 @@ export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoUpdat
     ...record,
     pstoRequest: null,
     pstoRequestDate: null,
-    pstoDate: null,
-    pstoResult: null,
-    heatTreatmentDiagram: null,
+    pstoResult: isPendingPstoResult(record.pstoResult) ? null : record.pstoResult,
     pstoCreatedAt: record.pstoCreatedAt ?? pstoUpdatedAt,
     pstoUpdatedAt,
   }
@@ -131,7 +129,7 @@ function getRestoredActivePstoResult(value: unknown) {
 }
 
 function hasPstoResultHistory(record: PstoRow) {
-  return isRealPstoResult(record.pstoResult) || ['heatTreatmentDiagram', 'pstoNote', 'pstoBoq', 'pstoKs3'].some((fieldKey) =>
+  return isRealPstoResult(record.pstoResult) || ['heatTreatmentDiagram', 'pstoNote'].some((fieldKey) =>
     hasText(record[fieldKey as keyof PstoRow]),
   )
 }

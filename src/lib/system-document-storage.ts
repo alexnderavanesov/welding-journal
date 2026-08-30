@@ -52,6 +52,9 @@ export function loadSystemDocumentRows(reference: SystemDocumentReference) {
 export async function renameSystemDocumentToCurrentName(
   reference: SystemDocumentReference | SystemDocumentSummary,
 ) {
+  if (reference.sourceKind) {
+    throw new Error('Переименование документа отдельного этапа выполняется в его профильном окне.')
+  }
   const rows = await loadSystemDocumentRows(reference)
   if (rows.length === 0) throw new Error('В документе больше нет стыков.')
 
@@ -98,9 +101,10 @@ export async function renameSystemDocumentToCurrentName(
   const savedRows = await updateWeldRowsOrThrow(
     renamePlan.records,
     'Не удалось переименовать часть позиций документа.',
-    usesExistingNumber
-      ? {}
-      : {
+    {
+      mutationScope: getSystemDocumentMutationScope(reference.type),
+      ...(!usesExistingNumber
+        ? {
           systemDocumentSequence: {
             type: reference.type,
             date: reference.date,
@@ -108,7 +112,9 @@ export async function renameSystemDocumentToCurrentName(
             fieldKeys: renamePlan.fieldKeys,
             provisionalName,
           },
-        },
+        }
+        : {}),
+    },
   )
   const nextName = findRenamedSystemDocumentName(
     savedRows as unknown as WeldRow[],
@@ -246,6 +252,12 @@ function sanitizeFileName(value: string) {
 
 function createSystemDocumentRenameMarker(type: SystemDocumentType) {
   return `__SYSTEM_DOCUMENT_RENAME_${type}_${Date.now()}_${Math.random().toString(36).slice(2)}__`
+}
+
+function getSystemDocumentMutationScope(type: SystemDocumentType) {
+  if (type === 'lnkRequest' || type === 'lnkConclusion') return 'lnk' as const
+  if (type === 'pstoRequest' || type === 'pstoConclusion') return 'psto' as const
+  return 'welding' as const
 }
 
 function findRenamedSystemDocumentName(

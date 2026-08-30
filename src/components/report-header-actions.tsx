@@ -21,6 +21,8 @@ export type ReportHeaderActionsProps = {
   onOpenWeldingJournalCancelledAcceptedReport: () => void
   onOpenWeldingJournalSystemReport: () => void
   onCreatePstoRequest: () => void
+  createPstoRequestDisabled: boolean
+  onOpenPstoLineProgram: () => void
   onEditSelectedPstoRequest: () => void
   editSelectedPstoRequestDisabled: boolean
   onOpenPstoRequestRegistry: () => void
@@ -31,11 +33,17 @@ export type ReportHeaderActionsProps = {
   editSelectedPstoResultsDisabled: boolean
   onOpenPstoResultRegistry: () => void
   pstoResultRegistryDisabled: boolean
+  onCreateTvmtRequest: () => void
+  createTvmtRequestDisabled: boolean
+  onAddTvmtResult: () => void
+  addTvmtResultDisabled: boolean
+  tvmtPending: boolean
   isPstoShowMenuOpen: boolean
   onTogglePstoShowMenu: () => void
   onOpenPstoCurrentReport: () => void
   onOpenPstoWaitingRequestReport: () => void
   onOpenPstoResultsReport: () => void
+  onPstoWorkflowMenuOpenChange: (open: boolean) => void
   onCreateLnkRequest: () => void
   onExtendLnkRequest: () => void
   onOpenLnkRequestRegistry: () => void
@@ -46,6 +54,8 @@ export type ReportHeaderActionsProps = {
   editSelectedLnkResultsDisabled: boolean
   onOpenLnkResultRegistry: () => void
   lnkResultRegistryDisabled: boolean
+  onOpenPreHeatTreatmentLnkResultRegistry: (mode?: 'request' | 'result') => void
+  preHeatTreatmentLnkResultRegistryDisabled: boolean
   onOpenLnkOfficiality: () => void
   lnkOfficialityPending: boolean
   onOpenDuplicateControl: () => void
@@ -56,6 +66,7 @@ export type ReportHeaderActionsProps = {
   onOpenLnkToRequestReport: () => void
   onOpenLnkWaitingNkReport: () => void
   onOpenLnkConclusionsReport: () => void
+  onLnkWorkflowMenuOpenChange: (open: boolean) => void
 }
 
 export function ReportHeaderActions({
@@ -78,6 +89,8 @@ export function ReportHeaderActions({
   onOpenWeldingJournalCancelledAcceptedReport,
   onOpenWeldingJournalSystemReport,
   onCreatePstoRequest,
+  createPstoRequestDisabled,
+  onOpenPstoLineProgram,
   onEditSelectedPstoRequest,
   editSelectedPstoRequestDisabled,
   onOpenPstoRequestRegistry,
@@ -88,11 +101,17 @@ export function ReportHeaderActions({
   editSelectedPstoResultsDisabled,
   onOpenPstoResultRegistry,
   pstoResultRegistryDisabled,
+  onCreateTvmtRequest,
+  createTvmtRequestDisabled,
+  onAddTvmtResult,
+  addTvmtResultDisabled,
+  tvmtPending,
   isPstoShowMenuOpen,
   onTogglePstoShowMenu,
   onOpenPstoCurrentReport,
   onOpenPstoWaitingRequestReport,
   onOpenPstoResultsReport,
+  onPstoWorkflowMenuOpenChange,
   onCreateLnkRequest,
   onExtendLnkRequest,
   onOpenLnkRequestRegistry,
@@ -103,6 +122,8 @@ export function ReportHeaderActions({
   editSelectedLnkResultsDisabled,
   onOpenLnkResultRegistry,
   lnkResultRegistryDisabled,
+  onOpenPreHeatTreatmentLnkResultRegistry,
+  preHeatTreatmentLnkResultRegistryDisabled,
   onOpenLnkOfficiality,
   lnkOfficialityPending,
   onOpenDuplicateControl,
@@ -113,12 +134,15 @@ export function ReportHeaderActions({
   onOpenLnkToRequestReport,
   onOpenLnkWaitingNkReport,
   onOpenLnkConclusionsReport,
+  onLnkWorkflowMenuOpenChange,
 }: ReportHeaderActionsProps) {
   return (
     <div className="flex flex-wrap gap-2 lg:pt-0.5">
       {activeReport === 'heatTreatment' ? (
         <HeatTreatmentHeaderActions
+          onOpenLineProgram={onOpenPstoLineProgram}
           onCreateRequest={onCreatePstoRequest}
+          createRequestDisabled={createPstoRequestDisabled}
           onEditSelectedRequest={onEditSelectedPstoRequest}
           editSelectedRequestDisabled={editSelectedPstoRequestDisabled}
           onOpenRequestRegistry={onOpenPstoRequestRegistry}
@@ -129,11 +153,17 @@ export function ReportHeaderActions({
           editSelectedResultsDisabled={editSelectedPstoResultsDisabled}
           onOpenResultRegistry={onOpenPstoResultRegistry}
           resultRegistryDisabled={pstoResultRegistryDisabled}
+          onCreateTvmtRequest={onCreateTvmtRequest}
+          createTvmtRequestDisabled={createTvmtRequestDisabled}
+          onAddTvmtResult={onAddTvmtResult}
+          addTvmtResultDisabled={addTvmtResultDisabled}
+          tvmtPending={tvmtPending}
           isShowMenuOpen={isPstoShowMenuOpen}
           onToggleShowMenu={onTogglePstoShowMenu}
           onOpenCurrentReport={onOpenPstoCurrentReport}
           onOpenWaitingRequestReport={onOpenPstoWaitingRequestReport}
           onOpenResultsReport={onOpenPstoResultsReport}
+          onWorkflowMenuOpenChange={onPstoWorkflowMenuOpenChange}
         />
       ) : null}
       {activeReport === 'lnk' ? (
@@ -148,6 +178,8 @@ export function ReportHeaderActions({
           editSelectedResultsDisabled={editSelectedLnkResultsDisabled}
           onOpenResultRegistry={onOpenLnkResultRegistry}
           resultRegistryDisabled={lnkResultRegistryDisabled}
+          onOpenPreHeatTreatmentResultRegistry={onOpenPreHeatTreatmentLnkResultRegistry}
+          preHeatTreatmentResultRegistryDisabled={preHeatTreatmentLnkResultRegistryDisabled}
           onOpenOfficiality={onOpenLnkOfficiality}
           officialityPending={lnkOfficialityPending}
           onOpenDuplicateControl={onOpenDuplicateControl}
@@ -158,6 +190,7 @@ export function ReportHeaderActions({
           onOpenToRequestReport={onOpenLnkToRequestReport}
           onOpenWaitingNkReport={onOpenLnkWaitingNkReport}
           onOpenConclusionsReport={onOpenLnkConclusionsReport}
+          onWorkflowMenuOpenChange={onLnkWorkflowMenuOpenChange}
         />
       ) : null}
       {activeReport === 'weldingJournal' ? (

@@ -34,7 +34,7 @@ describe('LnkResultManagerActions', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'удалить результат' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeDisabled()
     expect(screen.getByText(
       'Результат ВИК нельзя удалить, пока сохранены результаты следующих видов НК: РК, УЗК. Сначала удалите их результаты.',
     )).toBeInTheDocument()
@@ -55,7 +55,7 @@ describe('LnkResultManagerActions', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'удалить результат' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeEnabled()
     expect(screen.queryByText(/Результат ВИК нельзя удалить/)).not.toBeInTheDocument()
   })
 })

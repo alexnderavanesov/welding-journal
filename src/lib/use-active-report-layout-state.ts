@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import type { WeldFilters } from '@/server/welds'
+import type { WeldFilters } from '@/server/weld-contracts'
 import type { ActiveReport } from '@/lib/home-state'
 import {
   getActiveColumnFilters,

@@ -20,8 +20,9 @@ import {
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
-import { findFirstLnkChronologySaveBlockReason } from '@/lib/lnk-chronology-checks'
-import { findFirstPstoChronologySaveBlockReason } from '@/lib/psto-chronology-checks'
+import { findFirstNewLnkChronologySaveBlockReason } from '@/lib/lnk-chronology-checks'
+import { findFirstNewPstoChronologySaveBlockReason } from '@/lib/psto-chronology-checks'
+import { hasPstoExecutionHistory } from '@/lib/psto-cycle'
 import {
   getCancelledLnkResultDisplay,
   getCancelledPstoResultDisplay,
@@ -76,8 +77,8 @@ export function getWeldFormSaveBlockReason(
 
   if (shouldCheckDocumentChronologyForForm(draft, initialValue)) {
     const documentChronologyReason =
-      findFirstLnkChronologySaveBlockReason([draft], saveCheckSettings) ||
-      findFirstPstoChronologySaveBlockReason([draft], saveCheckSettings)
+      findFirstNewLnkChronologySaveBlockReason([draft], [initialValue], saveCheckSettings) ||
+      findFirstNewPstoChronologySaveBlockReason([draft], [initialValue], saveCheckSettings)
     if (documentChronologyReason) return documentChronologyReason
   }
 
@@ -117,12 +118,17 @@ function shouldCheckDocumentChronologyForForm(draft: WeldInput, initialValue: We
     'weldDate',
     'pstoRequestDate',
     'pstoDate',
+    'tvmtRequestDate',
+    'tvmtConclusionDate',
     ...LNK_METHODS.flatMap((method) => [method.requestDateKey, method.conclusionDateKey]),
   ]
   const chronologyValueFields: WeldFieldKey[] = [
     'pstoRequired',
     'pstoRequest',
     'pstoResult',
+    'tvmtRequest',
+    'tvmtResult',
+    'tvmtConclusion',
     ...LNK_METHODS.flatMap((method) => [
       method.enabledKey,
       method.requestKey,
@@ -171,7 +177,8 @@ export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): Con
 
   if (
     !isActiveControlAvailability(draft.pstoRequired) &&
-    hasRealPstoReportHistory(draft)
+    hasRealPstoReportHistory(draft) &&
+    !hasPstoExecutionHistory(draft)
   ) {
     issues.push({
       code: 'ПСТО',
@@ -298,7 +305,22 @@ function hasRealLnkReportHistory(row: WeldInput, method: (typeof LNK_METHODS)[nu
 }
 
 function hasRealPstoReportHistory(row: WeldInput) {
-  return isRealPstoResult(row.pstoResult) || hasAnyText(row, ['heatTreatmentDiagram', 'pstoNote', 'pstoBoq', 'pstoKs3'])
+  const repeatCycles = (row as WeldInput & { pstoRepeatCycles?: unknown[] }).pstoRepeatCycles ?? []
+  return (
+    isRealPstoResult(row.pstoResult) ||
+    hasAnyText(row, [
+      'heatTreatmentDiagram',
+      'pstoNote',
+      'pstoBoq',
+      'pstoKs3',
+      'tvmtRequest',
+      'tvmtRequestDate',
+      'tvmtResult',
+      'tvmtConclusionDate',
+      'tvmtConclusion',
+    ]) ||
+    repeatCycles.length > 0
+  )
 }
 
 function isRealPstoResult(value: unknown) {

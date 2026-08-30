@@ -31,7 +31,7 @@ import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import { WELD_IMPORT_MAX_ROWS } from '@/lib/weld-import-limits'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import { listWeldingJournalImportScope } from '@/server/welds'
+import { listWeldingJournalImportScope } from '@/server/weld-import-api'
 
 type PreviewRowLimit = 50 | 100 | 'all'
 
@@ -80,6 +80,7 @@ export function ReportImportDialog({
     staleTime: 0,
   })
   const rows = importScopeQuery.data?.rows ?? []
+  const fullyAssignedPstoLineKeys = importScopeQuery.data?.fullyAssignedPstoLineKeys ?? []
   const scopeTotal = importScopeQuery.data?.total ?? 0
   const scopeLimitExceeded = importScopeQuery.data?.limitExceeded === true
   const isScopeLoading = mode !== 'newRecords' && importScopeQuery.isFetching
@@ -161,6 +162,7 @@ export function ReportImportDialog({
               activeReport,
               file,
               rows,
+              fullyAssignedPstoLineKeys,
               weldFormStampSelectOptions,
               welderStamps,
               welderStampSuspensions,
@@ -170,6 +172,7 @@ export function ReportImportDialog({
               activeReport,
               file,
               rows,
+              fullyAssignedPstoLineKeys,
               weldFormStampSelectOptions,
               welderStamps,
               welderStampSuspensions,

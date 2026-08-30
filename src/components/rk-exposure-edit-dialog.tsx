@@ -18,6 +18,7 @@ import {
 } from '@/lib/rk-exposure'
 import { getJointTitle } from '@/lib/report-ui-state'
 import { useConfirmAction } from '@/lib/confirm-action-context'
+import { getPreHeatTreatmentControl } from '@/lib/lnk-control-stage'
 
 export type RkExposureEditDialogProps = {
   editing: RkExposureEditingState
@@ -29,11 +30,29 @@ export type RkExposureEditDialogProps = {
 export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkExposureEditDialogProps) {
   const settings = useOtherSettings()
   const confirmAction = useConfirmAction()
-  const [lines, setLines] = useState<RkExposureLine[]>(() => parseRkExposureDescription(editing.record.lnkDefectDescription))
+  const isBeforeHeatTreatment = editing.stage === 'beforeHeatTreatment'
+  const preRkControl = isBeforeHeatTreatment
+    ? getPreHeatTreatmentControl(editing.record, 'РК')
+    : null
+  const currentDescription = isBeforeHeatTreatment
+    ? preRkControl?.defectDescription
+    : editing.record.lnkDefectDescription
+  const currentResult = isBeforeHeatTreatment
+    ? preRkControl?.result
+    : editing.record.rkResult
+  const [lines, setLines] = useState<RkExposureLine[]>(() => parseRkExposureDescription(currentDescription))
   const [isConfirmingScheme, setIsConfirmingScheme] = useState(false)
   const diameter = getRkEffectiveDiameter(editing.record)
   const entry = getRkExposureDiameterEntry(settings.rkExposureTable, diameter)
-  const state = getRkExposureSchemeState(editing.record, settings.rkExposureTable)
+  const exposureRecord = isBeforeHeatTreatment
+    ? {
+        ...editing.record,
+        rkResult: currentResult,
+        lnkDefectDescription: currentDescription,
+        rkExposureConfirmedDiameter: preRkControl?.rkExposureConfirmedDiameter,
+      }
+    : editing.record
+  const state = getRkExposureSchemeState(exposureRecord, settings.rkExposureTable)
   const selectedOptionIndex = useMemo(() => {
     const coordinates = lines.map((line) => line.coordinate.trim())
     return entry?.options.findIndex((option) => areListsEqual(option.values, coordinates)) ?? -1
@@ -58,7 +77,7 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
       setIsConfirmingScheme(false)
       if (!confirmed) return
     }
-    setLines(buildRkExposureLines(option.values, editing.record.rkResult))
+    setLines(buildRkExposureLines(option.values, currentResult))
   }
 
   function updateLine(index: number, patch: Partial<RkExposureLine>) {
@@ -83,7 +102,9 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
     >
       <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Снимки и описание дефектов РК</h2>
+          <h2 className="text-lg font-semibold text-slate-900">
+            Снимки и описание дефектов РК{isBeforeHeatTreatment ? ' до ТО' : ''}
+          </h2>
           <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
             <span>{getJointTitle(editing.record)}</span>
             <OfficialityBadge row={editing.record} compact />
@@ -120,7 +141,7 @@ export function RkExposureEditDialog({ editing, isSaving, onClose, onSave }: RkE
           </label>
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
             <div className="text-xs font-semibold uppercase text-slate-400">Результат РК</div>
-            <div className="mt-1 font-semibold text-slate-800">{String(editing.record.rkResult ?? '—')}</div>
+            <div className="mt-1 font-semibold text-slate-800">{String(currentResult ?? '—')}</div>
           </div>
         </div>
 

@@ -159,10 +159,8 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
     const db = requireDb()
     return db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('welder_stamp_registry'))`)
-      const [currentStampRows, currentSuspensionRows] = await Promise.all([
-        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
-        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
-      ])
+      const currentStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
+      const currentSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       assertRegistryRevision(createRegistrySnapshot(currentStampRows, currentSuspensionRows).revision, data.expectedRevision)
 
       await tx.delete(welderStamps)
@@ -176,10 +174,8 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
         )
       }
       await markDispatcherTaskIndexDirty(tx)
-      const [savedStampRows, savedSuspensionRows] = await Promise.all([
-        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
-        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
-      ])
+      const savedStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
+      const savedSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       return createRegistrySnapshot(savedStampRows, savedSuspensionRows)
     })
   })
@@ -192,10 +188,8 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
     const db = requireDb()
     return db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('welder_stamp_registry'))`)
-      const [currentStampRows, currentSuspensionRows] = await Promise.all([
-        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
-        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
-      ])
+      const currentStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
+      const currentSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       assertRegistryRevision(createRegistrySnapshot(currentStampRows, currentSuspensionRows).revision, data.expectedRevision)
       assertWelderStampSuspensionsReferenceRegistry(preparedRecords, currentStampRows.map(toWelderStampPayload))
 
@@ -210,10 +204,8 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
         )
       }
       await markDispatcherTaskIndexDirty(tx)
-      const [savedStampRows, savedSuspensionRows] = await Promise.all([
-        tx.select().from(welderStamps).orderBy(asc(welderStamps.id)),
-        tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
-      ])
+      const savedStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
+      const savedSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       return createRegistrySnapshot(savedStampRows, savedSuspensionRows)
     })
   })

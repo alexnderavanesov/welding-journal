@@ -7,6 +7,8 @@ type LnkResultDialogProps = NonNullable<ReportLnkDialogsProps['resultDialogProps
 type LnkResultManagerDialogProps = NonNullable<ReportLnkDialogsProps['resultManagerDialogProps']>
 type LnkOfficialityDialogProps = NonNullable<ReportLnkDialogsProps['officialityDialogProps']>
 type DuplicateControlDialogProps = NonNullable<ReportLnkDialogsProps['duplicateControlDialogProps']>
+type PreHeatTreatmentWorkflowDialogProps = NonNullable<ReportLnkDialogsProps['preHeatTreatmentWorkflowDialogProps']>
+type PreHeatTreatmentResultManagerDialogProps = NonNullable<ReportLnkDialogsProps['preHeatTreatmentResultManagerDialogProps']>
 
 type CreateReportLnkDialogsPropsOptions = {
   requestModalOpen: boolean
@@ -27,6 +29,9 @@ type CreateReportLnkDialogsPropsOptions = {
   resultModalOpen: boolean
   result: Omit<LnkResultDialogProps, 'areAllFilteredRowsSelected'>
   selectableResultRows: LnkResultDialogProps['visibleRows']
+
+  preHeatTreatmentWorkflow: PreHeatTreatmentWorkflowDialogProps | null
+  preHeatTreatmentResultManager: PreHeatTreatmentResultManagerDialogProps | null
 }
 
 export function createReportLnkDialogsProps({
@@ -43,6 +48,8 @@ export function createReportLnkDialogsProps({
   resultModalOpen,
   result,
   selectableResultRows,
+  preHeatTreatmentWorkflow,
+  preHeatTreatmentResultManager,
 }: CreateReportLnkDialogsPropsOptions): ReportLnkDialogsProps {
   return {
     requestDialogProps: requestModalOpen ? request : null,
@@ -56,5 +63,7 @@ export function createReportLnkDialogsProps({
           areAllFilteredRowsSelected: isEveryFilteredLnkRequestRowSelected(result.draft.rowIds, selectableResultRows),
         }
       : null,
+    preHeatTreatmentWorkflowDialogProps: preHeatTreatmentWorkflow,
+    preHeatTreatmentResultManagerDialogProps: preHeatTreatmentResultManager,
   }
 }

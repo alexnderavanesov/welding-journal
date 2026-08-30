@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { importWeldJoints } from '@/server/welds'
+import { importWeldJoints } from '@/server/weld-import-api'
 import { prepareImportedWeldRecords } from '@/lib/weld-journal-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import type { WeldInput } from '@/lib/weld-fields'

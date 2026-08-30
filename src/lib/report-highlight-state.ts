@@ -1,4 +1,4 @@
-import { LNK_METHODS } from '@/lib/report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/report-config'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export function expandHighlightFieldKeys(fieldKeys: WeldFieldKey[]) {

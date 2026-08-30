@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldPageResult } from '@/server/welds'
+import type { WeldPageResult } from '@/server/weld-contracts'
 import {
   invalidateWeldPageQueries,
   WELD_JOINT_PAGES_QUERY_KEY,
@@ -16,7 +16,7 @@ const serverMocks = vi.hoisted(() => ({
   listHeatTreatmentReportPage: vi.fn(),
 }))
 
-vi.mock('@/server/welds', () => ({
+vi.mock('@/server/weld-read-api', () => ({
   WELD_PAGE_ALL_SIZE: 'all',
   WELD_PAGE_SIZE_OPTIONS: [100, 300, 500, 1000],
   ...serverMocks,

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildPstoRequestRows,
   buildPstoResultRows,
   buildPstoRequestManagerRows,
+  buildPstoRequestCorrectionRow,
   buildPstoResultCorrectionRow,
 } from '@/lib/psto-report-mutation-updates'
 import type { RowWithId } from '@/lib/psto-report-mutation-types'
@@ -36,6 +38,63 @@ describe('buildPstoResultRows', () => {
     expect(updated.pstoResult).toBe('проведено')
     expect(updated.pstoDate).toBe('2026-08-25')
     expect(updated.heatTreatmentDiagram).toBe('')
+  })
+
+  it('refuses primary PSTO while assigned pre-TO control is incomplete', () => {
+    const row = {
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-08-20',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      pstoRequest: 'ПСТО-25.08.26-001',
+      pstoRequestDate: '2026-08-21',
+      preHeatTreatmentControls: [],
+    } as RowWithId
+
+    expect(() => buildPstoResultRows({
+      records: [row],
+      rows: [row],
+      pstoDate: '2026-08-25',
+      result: 'проведено',
+      diagramName: 'Диаграмма-1',
+    })).toThrow('создайте заявки НК до ТО: ВИК')
+
+    expect(() => buildPstoRequestRows({
+      records: [{ ...row, pstoRequest: null, pstoRequestDate: null }],
+      requestName: 'ПСТО-25.08.26-002',
+      requestDate: '2026-08-22',
+    })).toThrow('создайте заявки НК до ТО: ВИК')
+  })
+
+  it('refuses a PSTO result dated before an existing pre-TO conclusion', () => {
+    const row = {
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-08-20',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      pstoRequest: 'ПСТО-25.08.26-001',
+      pstoRequestDate: '2026-08-24',
+      preHeatTreatmentControls: [{
+        id: 11,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-24',
+        result: 'годен',
+        conclusionDate: '2026-08-26',
+        conclusionName: 'Заключение ВИК до ТО',
+      }],
+    } as RowWithId
+
+    expect(() => buildPstoResultRows({
+      records: [row],
+      rows: [row],
+      pstoDate: '2026-08-25',
+      result: 'проведено',
+      diagramName: 'Диаграмма-1',
+    })).toThrow('позже даты ПСТО')
   })
 })
 
@@ -101,5 +160,57 @@ describe('buildPstoResultCorrectionRow', () => {
 
     expect(updated.pstoCreatedAt).toBe('2026-07-01T10:00:00.000Z')
     expect(updated.pstoUpdatedAt).toBeTruthy()
+  })
+
+  it('deletes a pending PSTO request without treating the waiting marker as a result', () => {
+    const row = {
+      id: 1,
+      joint: 'F1',
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-25.08.26-001',
+      pstoRequestDate: '2026-08-25',
+      pstoResult: 'ожидает',
+    } as RowWithId
+
+    const [updated] = buildPstoRequestManagerRows({
+      heatTreatmentRows: [row],
+      requestName: 'ПСТО-25.08.26-001',
+      requestDate: '2026-08-25',
+      nextRequestName: '',
+      action: 'delete',
+    })
+
+    expect(updated).toEqual(expect.objectContaining({
+      pstoRequest: null,
+      pstoRequestDate: null,
+      pstoResult: null,
+    }))
+  })
+
+  it('does not cascade request deletion into completed PSTO stages', () => {
+    const row = {
+      id: 1,
+      joint: 'F1',
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-25.08.26-001',
+      pstoRequestDate: '2026-08-25',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-26',
+      heatTreatmentDiagram: 'Диаграмма-001',
+    } as RowWithId
+
+    expect(() => buildPstoRequestManagerRows({
+      heatTreatmentRows: [row],
+      requestName: 'ПСТО-25.08.26-001',
+      requestDate: '2026-08-25',
+      nextRequestName: '',
+      action: 'delete',
+    })).toThrow('Сначала удалите последующий этап «Результат ПСТО»')
+    expect(() => buildPstoRequestCorrectionRow(row)).toThrow('Цепочка удаляется только с конца')
+    expect(row).toEqual(expect.objectContaining({
+      pstoRequest: 'ПСТО-25.08.26-001',
+      pstoResult: 'проведено',
+      heatTreatmentDiagram: 'Диаграмма-001',
+    }))
   })
 })

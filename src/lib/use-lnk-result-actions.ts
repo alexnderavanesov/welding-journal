@@ -24,11 +24,9 @@ export function useLnkResultActions({
   setIsModalOpen,
   setMessage,
   setPreservedOrderIds,
-  setRequestSearch,
 }: UseLnkResultActionsOptions) {
   function openAddLnkResultModal() {
     setPreservedOrderIds(null)
-    setRequestSearch('')
     setDraft(createDefaultLnkResultDraft(defaultConclusionNaming))
     setIsModalOpen(true)
   }
@@ -42,7 +40,6 @@ export function useLnkResultActions({
 
     const request = requests.length === 1 ? requests[0] : null
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
-    setRequestSearch(request?.name ?? '')
     setDraft({
       ...createDefaultLnkResultDraft(defaultConclusionNaming),
       requestName: request?.name ?? '',
@@ -63,7 +60,6 @@ export function useLnkResultActions({
     }
 
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
-    setRequestSearch(requestName)
     setDraft({
       ...createDefaultLnkResultDraft(defaultConclusionNaming),
       requestName,
@@ -77,7 +73,6 @@ export function useLnkResultActions({
 
   function closeAddLnkResultModal() {
     if (mutation.isPending) return
-    setRequestSearch('')
     setIsModalOpen(false)
   }
 

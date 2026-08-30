@@ -1,7 +1,7 @@
 import { type InfiniteData, QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldPageResult } from '@/server/welds'
+import type { WeldPageResult } from '@/server/weld-contracts'
 import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
@@ -100,6 +100,31 @@ describe('weld query cache updates', () => {
     expect(result?.pages[1]).toBe(unchangedPage)
     expect(result?.pages[1].rows).toBe(unchangedRows)
     expect(result?.pages[1].total).toBeUndefined()
+  })
+
+  it('patches loaded report contexts immediately after a workflow correction', () => {
+    const queryClient = createQueryClient()
+    const lnkContextKey = [...WELD_REPORT_CONTEXT_QUERY_KEY, 'lnk']
+    const pstoContextKey = [...WELD_REPORT_CONTEXT_QUERY_KEY, 'heatTreatment']
+    queryClient.setQueryData<WeldRow[]>(lnkContextKey, [
+      { id: 1, joint: 'F1', preHeatTreatmentControls: [{ id: 10, result: 'годен' }] },
+      { id: 2, joint: 'F2' },
+    ] as WeldRow[])
+    queryClient.setQueryData<WeldRow[]>(pstoContextKey, [{ id: 1, joint: 'F1' }] as WeldRow[])
+
+    invalidateWeldJoints(queryClient, {
+      upsertRows: [{ id: 1, preHeatTreatmentControls: [{ id: 10, result: null }] } as unknown as WeldRow],
+      deleteIds: [2],
+    })
+
+    expect(queryClient.getQueryData<WeldRow[]>(lnkContextKey)).toEqual([expect.objectContaining({
+      id: 1,
+      preHeatTreatmentControls: [{ id: 10, result: null }],
+    })])
+    expect(queryClient.getQueryData<WeldRow[]>(pstoContextKey)?.[0]).toEqual(expect.objectContaining({
+      id: 1,
+      preHeatTreatmentControls: [{ id: 10, result: null }],
+    }))
   })
 
   it('marks an unpatched snapshot stale without starting an active refetch', async () => {

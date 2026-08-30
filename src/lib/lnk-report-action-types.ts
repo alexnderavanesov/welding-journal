@@ -69,7 +69,6 @@ export type UseLnkResultActionsOptions = {
   setIsModalOpen: (value: boolean) => void
   setMessage: (value: string | null) => void
   setPreservedOrderIds: Dispatch<SetStateAction<number[] | null>>
-  setRequestSearch: (value: string) => void
 }
 
 export type LnkOfficialityMutation = {

@@ -1,7 +1,7 @@
 import { type InfiniteData, QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldPageRequest, WeldPageResult, WeldReportKind } from '@/server/welds'
+import type { WeldPageRequest, WeldPageResult, WeldReportKind } from '@/server/weld-contracts'
 import {
   invalidateWeldPageQueries,
   isWeldPageRefreshRequired,

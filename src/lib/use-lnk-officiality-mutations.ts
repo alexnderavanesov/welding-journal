@@ -28,7 +28,11 @@ export function useLnkOfficialityMutations({
 
       if (updatedRecords.length === 0) throw new Error('Выбранные стыки уже имеют такой статус')
 
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось изменить официальность результата ЛНК',
+        { mutationScope: 'lnk' },
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {

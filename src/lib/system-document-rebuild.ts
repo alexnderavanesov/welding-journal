@@ -119,7 +119,8 @@ export function buildSystemDocumentRebuildDocuments({
     usedNumbers.add(number)
     usedNumbersByTemplate.set(templateId, usedNumbers)
   }
-  const documents = [...sources]
+  const documents = sources
+    .filter(({ document }) => !document.sourceKind)
     .sort(compareSources)
     .map(({ document, rows }) => {
       const templateId = getSystemDocumentTemplateId(document)

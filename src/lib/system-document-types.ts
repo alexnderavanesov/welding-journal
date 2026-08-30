@@ -1,6 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getBusinessDateIso } from '@/lib/business-date'
-import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import {
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
   addRowsToNamingPatternContext,
@@ -10,6 +10,9 @@ import {
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { getPreHeatTreatmentControl } from '@/lib/lnk-control-stage'
+import { getPreHeatTreatmentReportField } from '@/lib/pre-heat-treatment-report-fields'
+import { getCurrentPstoCycle } from '@/lib/tvmt-cycle'
 
 export const SYSTEM_DOCUMENT_TYPES = [
   'lnkRequest',
@@ -20,6 +23,20 @@ export const SYSTEM_DOCUMENT_TYPES = [
 
 export type SystemDocumentType = (typeof SYSTEM_DOCUMENT_TYPES)[number]
 export type SystemDocumentTargetReport = 'lnk' | 'heatTreatment'
+export const SYSTEM_DOCUMENT_SOURCE_KINDS = [
+  'beforeHeatTreatment',
+  'pstoRepeat',
+  'pstoCycle',
+] as const
+export type SystemDocumentSourceKind = (typeof SYSTEM_DOCUMENT_SOURCE_KINDS)[number]
+
+export type SystemDocumentSourcePosition = {
+  kind: SystemDocumentSourceKind
+  weldJointId: number
+  relationId: number
+  methodCode?: string
+  sequence?: number
+}
 
 export type SystemDocumentReference = {
   documentId?: number
@@ -27,6 +44,8 @@ export type SystemDocumentReference = {
   title: string
   date: string
   methodCode?: string
+  sourceKind?: SystemDocumentSourceKind
+  cycleSequences?: number[]
 }
 
 export type SystemDocumentNavigationRequest = SystemDocumentReference & {
@@ -86,17 +105,35 @@ export function isSystemDocumentType(value: unknown): value is SystemDocumentTyp
   return SYSTEM_DOCUMENT_TYPES.includes(value as SystemDocumentType)
 }
 
+export function isSystemDocumentSourceKind(value: unknown): value is SystemDocumentSourceKind {
+  return SYSTEM_DOCUMENT_SOURCE_KINDS.includes(value as SystemDocumentSourceKind)
+}
+
 export function getSystemDocumentProfile(type: SystemDocumentType) {
   return SYSTEM_DOCUMENT_PROFILES[type]
 }
 
 export function getSystemDocumentTargetReport(
-  type: SystemDocumentType,
+  reference: SystemDocumentType | Pick<SystemDocumentSummary, 'type' | 'methodCode' | 'methodCodes'>,
 ): SystemDocumentTargetReport {
-  return type === 'lnkRequest' || type === 'lnkConclusion' ? 'lnk' : 'heatTreatment'
+  const type = typeof reference === 'string' ? reference : reference.type
+  if (type === 'pstoRequest' || type === 'pstoConclusion') return 'heatTreatment'
+  if (typeof reference !== 'string') {
+    const methods = new Set([
+      ...(reference.methodCode ? [reference.methodCode] : []),
+      ...reference.methodCodes,
+    ])
+    if (methods.size > 0 && [...methods].every((method) => method === 'ТВМТ')) {
+      return 'heatTreatment'
+    }
+  }
+  return 'lnk'
 }
 
 export function getSystemDocumentTypeForField(fieldKey: WeldFieldKey): SystemDocumentType | null {
+  const preField = getPreHeatTreatmentReportField(fieldKey)
+  if (preField?.valueKey === 'requestName') return 'lnkRequest'
+  if (preField?.valueKey === 'conclusionName') return 'lnkConclusion'
   if (LNK_REQUEST_METHOD_BY_FIELD.has(fieldKey)) return 'lnkRequest'
   if (LNK_CONCLUSION_METHOD_BY_FIELD.has(fieldKey)) return 'lnkConclusion'
   if (fieldKey === 'pstoRequest') return 'pstoRequest'
@@ -109,24 +146,92 @@ export function getSystemDocumentReferenceForField(
   fieldKey: WeldFieldKey,
 ): SystemDocumentReference | null {
   const documentId = row.systemDocumentIds?.[fieldKey]
+  const currentCycle = getCurrentPstoCycle(row)
+  if (currentCycle?.source === 'repeat') {
+    if (fieldKey === 'pstoRequest') {
+      return createReference({
+        type: 'pstoRequest',
+        title: currentCycle.pstoRequest,
+        date: currentCycle.pstoRequestDate,
+        sourceKind: 'pstoCycle',
+        cycleSequences: [currentCycle.sequence],
+      })
+    }
+    if (fieldKey === 'heatTreatmentDiagram') {
+      return createReference({
+        type: 'pstoConclusion',
+        title: currentCycle.heatTreatmentDiagram,
+        date: currentCycle.pstoDate,
+        sourceKind: 'pstoCycle',
+        cycleSequences: [currentCycle.sequence],
+      })
+    }
+    if (fieldKey === 'tvmtRequest') {
+      return createReference({
+        type: 'lnkRequest',
+        title: currentCycle.tvmtRequest,
+        date: currentCycle.tvmtRequestDate,
+        methodCode: 'ТВМТ',
+        sourceKind: 'pstoCycle',
+        cycleSequences: [currentCycle.sequence],
+      })
+    }
+    if (fieldKey === 'tvmtConclusion') {
+      return createReference({
+        type: 'lnkConclusion',
+        title: currentCycle.tvmtConclusion,
+        date: currentCycle.tvmtConclusionDate,
+        methodCode: 'ТВМТ',
+        sourceKind: 'pstoCycle',
+        cycleSequences: [currentCycle.sequence],
+      })
+    }
+  }
+  const preField = getPreHeatTreatmentReportField(fieldKey)
+  if (preField?.valueKey === 'requestName' || preField?.valueKey === 'conclusionName') {
+    const control = getPreHeatTreatmentControl(row, preField.methodCode)
+    return createReference({
+      documentId,
+      type: preField.valueKey === 'requestName' ? 'lnkRequest' : 'lnkConclusion',
+      title: preField.valueKey === 'requestName' ? control?.requestName : control?.conclusionName,
+      date: preField.valueKey === 'requestName' ? control?.requestDate : control?.conclusionDate,
+      ...(preField.valueKey === 'conclusionName' ? { methodCode: preField.methodCode } : {}),
+      sourceKind: 'beforeHeatTreatment',
+    })
+  }
   const requestMethod = LNK_REQUEST_METHOD_BY_FIELD.get(fieldKey)
   if (requestMethod) {
+    const isTvmt = requestMethod.code === 'ТВМТ'
     return createReference({
       documentId,
       type: 'lnkRequest',
       title: row[requestMethod.requestKey],
       date: row[requestMethod.requestDateKey],
+      ...(isTvmt
+        ? {
+            methodCode: 'ТВМТ',
+            sourceKind: 'pstoCycle',
+            cycleSequences: [currentCycle?.sequence ?? 1],
+          }
+        : {}),
     })
   }
 
   const conclusionMethod = LNK_CONCLUSION_METHOD_BY_FIELD.get(fieldKey)
   if (conclusionMethod) {
+    const isTvmt = conclusionMethod.code === 'ТВМТ'
     return createReference({
       documentId,
       type: 'lnkConclusion',
       title: row[conclusionMethod.conclusionKey],
       date: row[conclusionMethod.conclusionDateKey],
       methodCode: conclusionMethod.code,
+      ...(isTvmt
+        ? {
+            sourceKind: 'pstoCycle',
+            cycleSequences: [currentCycle?.sequence ?? 1],
+          }
+        : {}),
     })
   }
 
@@ -136,6 +241,8 @@ export function getSystemDocumentReferenceForField(
       type: 'pstoRequest',
       title: row.pstoRequest,
       date: row.pstoRequestDate,
+      sourceKind: 'pstoCycle',
+      cycleSequences: [1],
     })
   }
 
@@ -145,6 +252,8 @@ export function getSystemDocumentReferenceForField(
       type: 'pstoConclusion',
       title: row.heatTreatmentDiagram,
       date: row.pstoDate,
+      sourceKind: 'pstoCycle',
+      cycleSequences: [1],
     })
   }
 
@@ -375,6 +484,10 @@ export function getSystemDocumentId(reference: SystemDocumentReference) {
     reference.title,
     reference.date,
     reference.methodCode ?? '',
+    reference.sourceKind ?? '',
+    ...(reference.sourceKind === 'pstoCycle'
+      ? []
+      : reference.cycleSequences?.map((sequence) => `cycle-${sequence}`) ?? []),
   ])
 }
 
@@ -384,12 +497,16 @@ function createReference({
   title,
   date,
   methodCode,
+  sourceKind,
+  cycleSequences,
 }: {
   documentId?: number
   type: SystemDocumentType
   title: unknown
   date: unknown
   methodCode?: string
+  sourceKind?: SystemDocumentSourceKind
+  cycleSequences?: number[]
 }): SystemDocumentReference | null {
   const normalizedTitle = normalizeText(title)
   if (!normalizedTitle) return null
@@ -399,6 +516,8 @@ function createReference({
     title: normalizedTitle,
     date: normalizeDateValue(date),
     ...(methodCode ? { methodCode } : {}),
+    ...(sourceKind ? { sourceKind } : {}),
+    ...(cycleSequences?.length ? { cycleSequences: normalizeCycleSequences(cycleSequences) } : {}),
   }
 }
 
@@ -450,6 +569,8 @@ function finalizeSystemDocumentSummary(group: MutableSystemDocumentSummary): Sys
     title: group.title,
     date: group.date,
     ...(group.methodCode ? { methodCode: group.methodCode } : {}),
+    ...(group.sourceKind ? { sourceKind: group.sourceKind } : {}),
+    ...(group.cycleSequences?.length ? { cycleSequences: normalizeCycleSequences(group.cycleSequences) } : {}),
     id: getSystemDocumentId(group),
     documentId: group.documentId ?? 0,
     label: getSystemDocumentProfile(group.type).label,
@@ -465,6 +586,13 @@ function finalizeSystemDocumentSummary(group: MutableSystemDocumentSummary): Sys
     updatedAt: group.updatedAt,
     rowIds: Array.from(group.rowIds).sort((left, right) => left - right),
   }
+}
+
+function normalizeCycleSequences(values: readonly unknown[] | undefined) {
+  return [...new Set((values ?? [])
+    .map((value) => Math.floor(Number(value)))
+    .filter((value) => Number.isInteger(value) && value > 0))]
+    .sort((left, right) => left - right)
 }
 
 function addText(values: Set<string>, value: unknown) {

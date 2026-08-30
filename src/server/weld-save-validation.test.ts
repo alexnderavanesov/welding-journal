@@ -1,12 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { WeldJoint } from '@/db/schema'
 import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
+import { getPstoLineIdentityKey } from '@/lib/psto-line-assignment'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
+  getPrimaryPstoLifecycleDestructiveChangeReason,
+  getSystemWorkflowStageTransitionReason,
+  loadPreviousWeldRows,
   mergeWeldRecordsWithPrevious,
   prepareServerWeldRecords,
   validateServerWeldRecords,
@@ -20,9 +24,62 @@ const context: ServerWeldValidationContext = {
   systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
   welderStamps: [],
   welderStampSuspensions: [],
+  pstoLineAssignments: new Map(),
 }
 
 describe('validateServerWeldRecords', () => {
+  it('locks stored weld rows before merging a scoped workflow update', async () => {
+    const lockModes: string[] = []
+    const stored = { id: 5, joint: 'F5' } as WeldJoint
+    const select = vi.fn(() => {
+      const builder = {
+        from: () => builder,
+        where: () => builder,
+        orderBy: () => builder,
+        for: (mode: string) => {
+          lockModes.push(mode)
+          return Promise.resolve([stored])
+        },
+        then: (resolve: (value: unknown[]) => unknown, reject: (reason: unknown) => unknown) =>
+          Promise.resolve([]).then(resolve, reject),
+      }
+      return builder
+    })
+
+    const rows = await loadPreviousWeldRows(
+      { select } as never,
+      [{ id: stored.id }],
+    )
+
+    expect(lockModes).toEqual(['update'])
+    expect(rows.get(stored.id)).toEqual(expect.objectContaining({ id: stored.id, joint: 'F5' }))
+  })
+
+  it('blocks removing an assigned method while its pre-TO position still exists', () => {
+    const previous = {
+      id: 41,
+      joint: 'F41',
+      hasRk: 'да',
+      pstoRequired: 'да',
+      preHeatTreatmentControls: [{
+        id: 11,
+        weldJointId: 41,
+        method: 'РК',
+        requestName: 'Заявка РК до ТО',
+        result: 'ожидает НК',
+      }],
+    } as unknown as WeldJoint
+    const record = { ...previous, hasRk: null } as unknown as WeldInput
+
+    expect(getSystemWorkflowStageTransitionReason(record, previous, context))
+      .toContain('нельзя снять назначение')
+    expect(getSystemWorkflowStageTransitionReason(
+      { ...record, hasRk: 'отменен' },
+      previous,
+      context,
+    )).toBe('')
+  })
+
   it('blocks a saved weld date without a material group and allows disabling ZВ-29', () => {
     const record = {
       joint: 'F1',
@@ -289,6 +346,108 @@ describe('validateServerWeldRecords', () => {
     ])
   })
 
+  it('keeps system control relations from storage instead of accepting payload replacements', () => {
+    const duplicate = { id: 11, weldJointId: 5, method: 'РК', result: 'ремонт' }
+    const preControl = { id: 12, weldJointId: 5, method: 'ВИК', result: 'годен' }
+    const repeatCycle = { id: 13, weldJointId: 5, sequence: 2, pstoResult: 'проведено' }
+    const previous = {
+      id: 5,
+      joint: 'F5',
+      duplicateControls: [duplicate],
+      preHeatTreatmentControls: [preControl],
+      pstoRepeatCycles: [repeatCycle],
+    } as unknown as WeldJoint
+
+    const [merged] = mergeWeldRecordsWithPrevious(
+      [{
+        id: 5,
+        responsible: 'Иванов',
+        duplicateControls: [],
+        preHeatTreatmentControls: [],
+        pstoRepeatCycles: [],
+      } as WeldInput],
+      new Map([[5, previous]]),
+    ) as Array<WeldInput & {
+      duplicateControls: unknown[]
+      preHeatTreatmentControls: unknown[]
+      pstoRepeatCycles: unknown[]
+    }>
+
+    expect(merged.duplicateControls).toEqual([duplicate])
+    expect(merged.preHeatTreatmentControls).toEqual([preControl])
+    expect(merged.pstoRepeatCycles).toEqual([repeatCycle])
+  })
+
+  it('recalculates the final status from stored staged-control relations', () => {
+    const previous = {
+      id: 50,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-50',
+      joint: 'F50',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      hasRk: 'да',
+      hasPvk: 'да',
+      vikRequest: 'ВИК после ТО',
+      vikResult: 'годен',
+      rkRequest: 'РК после ТО',
+      rkResult: 'годен',
+      pvkRequest: 'ПВК после ТО',
+      pvkResult: 'годен',
+      pstoRequest: 'ПСТО-1',
+      pstoResult: 'проведено',
+      tvmtRequest: 'ТВМТ-1',
+      tvmtResult: null,
+      finalStatus: 'ожидает заявку',
+      preHeatTreatmentControls: ['ВИК', 'РК', 'ПВК'].map((method, index) => ({
+        id: 100 + index,
+        weldJointId: 50,
+        method,
+        requestName: `${method} до ТО`,
+        result: 'годен',
+      })),
+      pstoRepeatCycles: [{
+        id: 200,
+        weldJointId: 50,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoResult: 'проведено',
+        tvmtRequest: 'ТВМТ-2',
+        tvmtResult: 'годен',
+      }],
+    } as unknown as WeldJoint
+    const [record] = mergeWeldRecordsWithPrevious(
+      [{ id: previous.id, responsible: 'Иванов', finalStatus: 'ожидает заявку' }],
+      new Map([[previous.id, previous]]),
+    )
+    const lineKey = getPstoLineIdentityKey(previous)
+
+    prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        pstoLineAssignments: new Map([[lineKey, { rowCount: 1, assignedCount: 1 }]]),
+      },
+    })
+
+    expect(record.finalStatus).toBe('годен')
+  })
+
+  it('does not accept a client-provided final status', () => {
+    const record = {
+      joint: 'F51',
+      weldDate: '2026-08-01',
+      finalStatus: 'годен',
+    } as WeldInput
+
+    prepareServerWeldRecords({ records: [record], previousRows: new Map(), context })
+
+    expect(record.finalStatus).toBe('ожидает заявку')
+  })
+
   it('recalculates system WDI when only the connection type changes', () => {
     const previous = {
       id: 6,
@@ -316,6 +475,371 @@ describe('validateServerWeldRecords', () => {
     })
 
     expect(record.wdi).toBe(2.24)
+  })
+
+  it('inherits the target-line PSTO assignment without reusing an old cancellation basis', () => {
+    const record = {
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-1',
+      joint: 'F1',
+      pstoRequired: '',
+    } as WeldInput
+    const lineKey = getPstoLineIdentityKey(record)
+
+    prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map(),
+      context: {
+        ...context,
+        pstoLineAssignments: new Map([[lineKey, {
+          rowCount: 5,
+          assignedCount: 5,
+          basis: 'Проект',
+        }]]),
+      },
+    })
+
+    expect(record.pstoRequired).toBe('да')
+    expect(record.pstoControlBasis).toBeNull()
+  })
+
+  it('ignores a manual per-joint PSTO value on a line without PSTO', () => {
+    const record = {
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-2',
+      joint: 'F2',
+      pstoRequired: 'дополнительный',
+      pstoControlBasis: 'Ручное',
+    } as WeldInput
+
+    prepareServerWeldRecords({ records: [record], previousRows: new Map(), context })
+
+    expect(record.pstoRequired).toBeNull()
+    expect(record.pstoControlBasis).toBeNull()
+  })
+
+  it('preserves an old partial line during an unrelated edit but blocks adding another row to it', () => {
+    const previous = {
+      id: 30,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-3',
+      joint: 'F30',
+      pstoRequired: 'да',
+      pstoControlBasis: 'Старое',
+    } as WeldJoint
+    const lineKey = getPstoLineIdentityKey(previous)
+    const partialContext = {
+      ...context,
+      pstoLineAssignments: new Map([[lineKey, {
+        rowCount: 4,
+        assignedCount: 1,
+        basis: 'Старое',
+      }]]),
+    }
+    const existingRecord = { ...previous, responsible: 'Иванов' } as unknown as WeldInput
+
+    prepareServerWeldRecords({
+      records: [existingRecord],
+      previousRows: new Map([[previous.id, previous]]),
+      context: partialContext,
+    })
+    expect(existingRecord.pstoRequired).toBe('да')
+
+    expect(() => prepareServerWeldRecords({
+      records: [{ ...previous, id: undefined, joint: 'F31' } as WeldInput],
+      previousRows: new Map(),
+      context: partialContext,
+    })).toThrow('Программе ПСТО')
+  })
+
+  it('blocks a move to a line without PSTO when staged history exists', () => {
+    const previous = {
+      id: 31,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-4',
+      joint: 'F31',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО',
+    } as WeldJoint
+    const record = { ...previous, line: 'L-5' } as unknown as WeldInput
+
+    expect(() => prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('уже есть документы ПСТО/ТВМТ')
+  })
+
+  it('does not treat duplicate controls as staged PSTO history', () => {
+    const previous = {
+      id: 32,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-6',
+      joint: 'F32',
+      pstoRequired: 'да',
+      duplicateControls: [{ id: 1, method: 'РК', result: 'ремонт' }],
+    } as unknown as WeldJoint
+    const record = { ...previous, line: 'L-7' } as unknown as WeldInput
+
+    prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })
+
+    expect(record.pstoRequired).toBeNull()
+    expect((previous as unknown as { duplicateControls: unknown[] }).duplicateControls).toHaveLength(1)
+  })
+
+  it('protects the primary PSTO cycle after TVMT or a repeat cycle exists', () => {
+    const previous = {
+      id: 33,
+      joint: 'F33',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО-1',
+      pstoRequestDate: '2026-08-01',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-02',
+      heatTreatmentDiagram: 'Диаграмма-1',
+      tvmtRequest: 'Заявка ТВМТ-1',
+      tvmtResult: 'годен',
+      pstoRepeatCycles: [],
+    } as unknown as WeldJoint
+
+    expect(getPrimaryPstoLifecycleDestructiveChangeReason({
+      ...previous,
+      pstoResult: null,
+      pstoDate: null,
+    } as unknown as WeldInput, previous)).toContain('Нельзя удалить первичную')
+
+    expect(getPrimaryPstoLifecycleDestructiveChangeReason({
+      ...previous,
+      heatTreatmentDiagram: 'Диаграмма-2',
+    } as unknown as WeldInput, previous)).toBe('')
+
+    expect(() => validateServerWeldRecords({
+      records: [{
+        ...previous,
+        pstoRequest: null,
+        pstoResult: null,
+        pstoDate: null,
+      } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('последующие этапы')
+  })
+
+  it('does not let duplicate controls activate the primary PSTO cycle protection', () => {
+    const previous = {
+      id: 34,
+      joint: 'F34',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО-1',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-02',
+      duplicateControls: [{ id: 1, method: 'ТВМТ', result: 'годен' }],
+      pstoRepeatCycles: [],
+    } as unknown as WeldJoint
+
+    expect(getPrimaryPstoLifecycleDestructiveChangeReason({
+      ...previous,
+      pstoRequest: null,
+      pstoResult: null,
+      pstoDate: null,
+    } as unknown as WeldInput, previous)).toBe('')
+  })
+
+  it('blocks new primary PSTO data while the line assignment is partial', () => {
+    const previous = {
+      id: 35,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-8',
+      joint: 'F35',
+      pstoRequired: 'да',
+    } as WeldJoint
+    const lineKey = getPstoLineIdentityKey(previous)
+
+    const record = {
+      ...previous,
+      pstoRequest: 'ПСТО-001',
+      pstoRequestDate: '2026-08-20',
+    } as unknown as WeldInput
+    const partialLineContext = {
+      ...context,
+      pstoLineAssignments: new Map([[lineKey, {
+        rowCount: 3,
+        assignedCount: 1,
+        basis: '',
+      }]]),
+    }
+
+    expect(getSystemWorkflowStageTransitionReason(
+      record,
+      previous,
+      partialLineContext,
+    )).toContain('Программе ПСТО')
+    expect(() => validateServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: partialLineContext,
+    })).toThrow('Программе ПСТО')
+  })
+
+  it('blocks an imported move of an existing primary LNK set onto a PSTO line', () => {
+    const previous = {
+      id: 351,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-обычная',
+      joint: 'F351',
+      pstoRequired: null,
+      vikRequest: 'Заявка ВИК-001',
+      vikResult: 'годен',
+      vikConclusion: 'Заключение ВИК-001',
+      preHeatTreatmentControls: [],
+      pstoRepeatCycles: [],
+    } as unknown as WeldJoint
+    const record = { ...previous, line: 'L-ПСТО' } as unknown as WeldInput
+    const assignedTargetContext = {
+      ...context,
+      pstoLineAssignments: new Map([[getPstoLineIdentityKey(record), {
+        rowCount: 2,
+        assignedCount: 2,
+        cancelledCount: 0,
+      }]]),
+    }
+
+    expect(() => prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: assignedTargetContext,
+      importMode: true,
+    })).toThrow('перенести комплект в «До ТО» или удалить')
+  })
+
+  it('allows importing the same line move when the weld has only duplicate control data', () => {
+    const previous = {
+      id: 352,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-обычная',
+      joint: 'F352',
+      pstoRequired: null,
+      vikResult: 'ожидает заявку',
+      duplicateControls: [{ id: 1, method: 'ВИК', result: 'годен' }],
+      preHeatTreatmentControls: [],
+      pstoRepeatCycles: [],
+    } as unknown as WeldJoint
+    const record = { ...previous, line: 'L-ПСТО' } as unknown as WeldInput
+
+    expect(prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        pstoLineAssignments: new Map([[getPstoLineIdentityKey(record), {
+          rowCount: 2,
+          assignedCount: 2,
+          cancelledCount: 0,
+        }]]),
+      },
+      importMode: true,
+    })[0]?.pstoRequired).toBe('да')
+  })
+
+  it('blocks an imported move with PSTO history onto an officially cancelled line', () => {
+    const previous = {
+      id: 353,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-ПСТО',
+      joint: 'F353',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО-001',
+      pstoResult: 'проведено',
+      preHeatTreatmentControls: [],
+      pstoRepeatCycles: [],
+    } as unknown as WeldJoint
+    const record = { ...previous, line: 'L-отменена' } as unknown as WeldInput
+
+    expect(() => prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        pstoLineAssignments: new Map([[getPstoLineIdentityKey(record), {
+          rowCount: 2,
+          assignedCount: 0,
+          cancelledCount: 2,
+          cancellationDate: '2026-08-20',
+          cancellationBasis: 'ТР-1',
+        }]]),
+      },
+      importMode: true,
+    })).toThrow('перенос через карточку стыка')
+  })
+
+  it('blocks post-TO LNK until the PSTO and TVMT cycle is complete', () => {
+    const previous = {
+      id: 36,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-9',
+      joint: 'F36',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 20,
+        weldJointId: 36,
+        method: 'ВИК',
+        requestName: 'ВИК до ТО',
+        result: 'годен',
+      }],
+    } as unknown as WeldJoint
+    const lineKey = getPstoLineIdentityKey(previous)
+
+    expect(getSystemWorkflowStageTransitionReason({
+      ...previous,
+      vikRequest: 'ВИК после ТО',
+      vikRequestDate: '2026-08-20',
+    } as unknown as WeldInput, previous, {
+      pstoLineAssignments: new Map([[lineKey, {
+        rowCount: 2,
+        assignedCount: 2,
+        basis: '',
+      }]]),
+    })).toContain('после ТО недоступен')
+  })
+
+  it('does not let a duplicate TVMT result unlock the primary TVMT workflow', () => {
+    const previous = {
+      id: 37,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-10',
+      joint: 'F37',
+      pstoRequired: 'да',
+      duplicateControls: [{ id: 30, method: 'ТВМТ', result: 'годен' }],
+    } as unknown as WeldJoint
+    const lineKey = getPstoLineIdentityKey(previous)
+
+    expect(getSystemWorkflowStageTransitionReason({
+      ...previous,
+      tvmtRequest: 'ТВМТ-001',
+      tvmtRequestDate: '2026-08-20',
+    } as unknown as WeldInput, previous, {
+      pstoLineAssignments: new Map([[lineKey, {
+        rowCount: 1,
+        assignedCount: 1,
+        basis: '',
+      }]]),
+    })).toContain('ожидает заявку ПСТО')
   })
 
   it('checks VIK chronology when only another NDT result is changed', () => {

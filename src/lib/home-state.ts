@@ -20,6 +20,7 @@ export type HeatTreatmentFieldEditingState = {
 
 export type RkExposureEditingState = {
   record: WeldRow
+  stage?: 'primary' | 'beforeHeatTreatment'
   returnPageScrollPosition?: PageScrollPosition
 }
 

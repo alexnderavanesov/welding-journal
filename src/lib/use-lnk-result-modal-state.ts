@@ -18,7 +18,6 @@ export type ManagedLnkResultChangeHintState = {
 export function useLnkResultModalState() {
   const [isLnkResultModalOpen, setIsLnkResultModalOpen] = useState(false)
   const [lnkResultDraft, setLnkResultDraft] = useState<LnkResultDraftState>(() => createDefaultLnkResultDraft())
-  const [lnkResultRequestSearch, setLnkResultRequestSearch] = useState('')
   const [isLnkOfficialityModalOpen, setIsLnkOfficialityModalOpen] = useState(false)
   const [lnkOfficialityDraft, setLnkOfficialityDraft] = useState<LnkOfficialityDraftState>(() =>
     createDefaultLnkOfficialityDraft(),
@@ -35,7 +34,6 @@ export function useLnkResultModalState() {
   return {
     isLnkResultModalOpen,
     lnkResultDraft,
-    lnkResultRequestSearch,
     isLnkOfficialityModalOpen,
     lnkOfficialityDraft,
     isLnkResultManagerOpen,
@@ -48,7 +46,6 @@ export function useLnkResultModalState() {
     preservedLnkOrderIds,
     setIsLnkResultModalOpen,
     setLnkResultDraft,
-    setLnkResultRequestSearch,
     setIsLnkOfficialityModalOpen,
     setLnkOfficialityDraft,
     setIsLnkResultManagerOpen,

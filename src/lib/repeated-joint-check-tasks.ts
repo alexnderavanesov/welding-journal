@@ -22,6 +22,12 @@ import { getControlAvailabilityReportHistoryIssues } from '@/lib/weld-form-save-
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { DataListSettings } from '@/lib/data-list-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import {
+  getPreHeatTreatmentControls,
+  getRejectedPreHeatTreatmentControls,
+} from '@/lib/lnk-control-stage'
+import { buildPstoCycleTimeline, type PstoRepeatCycleRecord } from '@/lib/psto-cycle'
+import { normalizeTvmtResult } from '@/lib/tvmt-cycle'
 
 export function buildForbiddenRepairByDiameterCheckTasks(
   rows: WeldRow[],
@@ -34,17 +40,24 @@ export function buildForbiddenRepairByDiameterCheckTasks(
     const repairMethods = LNK_METHODS.filter(
       (method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт',
     )
-    if (repairMethods.length === 0) continue
+    const preHeatTreatmentRepairs = getRejectedPreHeatTreatmentControls(row)
+      .filter((control) => control.result === 'ремонт')
+    if (repairMethods.length === 0 && preHeatTreatmentRepairs.length === 0) continue
 
     const joint = String(row.joint ?? '').trim() || '-'
-    const methodCodes = repairMethods.map((method) => method.code).join(', ')
+    const methodCodes = [
+      ...repairMethods.map((method) => method.code),
+      ...preHeatTreatmentRepairs.map((control) => `${control.methodCode} до ТО`),
+    ].join(', ')
+    const repairResultKeys: string[] = [
+      ...repairMethods.map((method) => method.resultKey),
+      ...preHeatTreatmentRepairs.map((control) => `preHeatTreatment:${control.control.id}`),
+    ]
     const diameterText = formatJointDiameterLabel(row)
     tasks.push(
       createJointChainCheckTask(
         row,
-        `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:repair-diameter:${row.id}:${repairMethods
-          .map((method) => method.resultKey)
-          .join(',')}`,
+        `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:repair-diameter:${row.id}:${repairResultKeys.join(',')}`,
         REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
         `Стык ${joint}: результат ${methodCodes} - ремонт указан при минимальном диаметре ${diameterText} мм. Ремонт на стыке с диаметром меньше 89 мм недопустим; для такого диаметра выбирается только "вырез". Проверь D1/D2 или результат контроля.`,
         systemIndexSettings,
@@ -170,7 +183,7 @@ export function buildLnkResultCompletenessCheckTasks(
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
   return rows.flatMap((row) => {
-    const methodIssues = LNK_METHODS.flatMap((method) => {
+    const methodIssues: Array<{ code: string; missing: string[] }> = LNK_METHODS.flatMap((method) => {
       const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
       if (result !== 'годен' && result !== 'ремонт' && result !== 'вырез') return []
       const missing: string[] = []
@@ -178,6 +191,14 @@ export function buildLnkResultCompletenessCheckTasks(
       if (!hasText(row[method.conclusionKey])) missing.push('заключение')
       return missing.length > 0 ? [{ code: method.code, missing }] : []
     })
+    methodIssues.push(...getPreHeatTreatmentControls(row).flatMap((control) => {
+      const result = String(control.result ?? '').trim().toLowerCase()
+      if (result !== 'годен' && result !== 'ремонт' && result !== 'вырез') return []
+      const missing: string[] = []
+      if (!hasText(control.conclusionDate)) missing.push('дата контроля')
+      if (!hasText(control.conclusionName)) missing.push('заключение')
+      return missing.length > 0 ? [{ code: `${control.method} до ТО`, missing }] : []
+    }))
     if (methodIssues.length === 0) return []
 
     const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
@@ -198,18 +219,38 @@ export function buildPstoResultCompletenessCheckTasks(
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
   return rows.flatMap((row) => {
-    if (!hasRealPstoResult(row.pstoResult)) return []
-    const missing: string[] = []
-    if (!hasText(row.pstoDate)) missing.push('дата ПСТО')
-    if (!hasText(row.heatTreatmentDiagram)) missing.push('диаграмма термообработки')
-    if (missing.length === 0) return []
+    const cycles = buildPstoCycleTimeline(row, getPstoRepeatCycles(row))
+    const issues = cycles.flatMap((cycle) => {
+      const cycleLabel = cycle.sequence === 1 ? 'основной цикл' : `повторный цикл #${cycle.sequence}`
+      const result: Array<{ label: string; missing: string[] }> = []
+      if (hasRealPstoResult(cycle.pstoResult)) {
+        const missing: string[] = []
+        if (!hasText(cycle.pstoDate)) missing.push('дата ПСТО')
+        if (!hasText(cycle.heatTreatmentDiagram)) missing.push('диаграмма термообработки')
+        if (missing.length > 0) result.push({ label: `${cycleLabel} ПСТО`, missing })
+      }
+      if (normalizeTvmtResult(cycle.tvmtResult)) {
+        const missing: string[] = []
+        if (!hasText(cycle.tvmtConclusionDate)) missing.push('дата ТВМТ')
+        if (!hasText(cycle.tvmtConclusion)) missing.push('заключение ТВМТ')
+        if (missing.length > 0) result.push({ label: `${cycleLabel} ТВМТ`, missing })
+      }
+      return result
+    })
+    if (issues.length === 0) return []
 
     const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
+    const details = issues
+      .map((issue) => `${issue.label}: ${formatMissingRequiredFields(issue.missing)}`)
+      .join('; ')
+    const key = issues
+      .map((issue) => `${issue.label}:${issue.missing.join(',')}`)
+      .join('|')
     return [createJointChainCheckTask(
       row,
-      `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:psto-result-completeness:${row.id}:${missing.join('|')}`,
+      `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:psto-result-completeness:${row.id}:${key}`,
       PSTO_RESULT_COMPLETENESS_REASON,
-      `Стык ${joint}: сохранен итоговый результат ПСТО, но ${formatMissingRequiredFields(missing)}. Дозаполни результат в отчете ПСТО.`,
+      `Стык ${joint}: ${details}. Дозаполни результат в отчете ПСТО.`,
       systemIndexSettings,
     )]
   })
@@ -390,7 +431,11 @@ function groupIssuesByRowAndReason<T extends { kind: string; reason: string; mes
 
 function hasRealPstoResult(value: unknown) {
   const result = String(value ?? '').trim().toLowerCase()
-  return result === 'проведено' || result === 'да'
+  return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
+}
+
+function getPstoRepeatCycles(row: WeldRow) {
+  return ((row as WeldRow & { pstoRepeatCycles?: PstoRepeatCycleRecord[] }).pstoRepeatCycles ?? [])
 }
 
 function formatMissingRequiredFields(fields: string[]) {

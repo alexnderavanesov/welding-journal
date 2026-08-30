@@ -1,5 +1,9 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ActiveReport } from '@/lib/home-state'
+import {
+  getPstoWorkflowRequestBlockReason,
+  getPstoWorkflowResultBlockReason,
+} from '@/lib/psto-status'
 
 export type ReportRow = WeldRow
 
@@ -10,10 +14,10 @@ export type ReportRowActions = {
   canAddResult: (row: ReportRow) => boolean
   headerLabel?: string
   createTitle?: string
-  createDisabledTitle?: string
+  createDisabledTitle?: string | ((row: ReportRow) => string)
   createAriaLabel?: string
   resultTitle?: string
-  resultDisabledTitle?: string
+  resultDisabledTitle?: string | ((row: ReportRow) => string)
   resultAriaLabel?: string
 }
 
@@ -40,10 +44,10 @@ export function getReportRowActions(
       canAddResult: handlers.canAddPstoResult,
       headerLabel: 'Действия ПСТО',
       createTitle: 'Создать заявку ПСТО на этот стык',
-      createDisabledTitle: 'Заявка ПСТО по этому стыку уже создана',
+      createDisabledTitle: getPstoWorkflowRequestBlockReason,
       createAriaLabel: 'Создать заявку ПСТО на этот стык',
       resultTitle: 'Добавить результат ПСТО на этот стык',
-      resultDisabledTitle: 'Сначала создайте заявку ПСТО на этот стык',
+      resultDisabledTitle: getPstoWorkflowResultBlockReason,
       resultAriaLabel: 'Добавить результат ПСТО на этот стык',
     }
   }

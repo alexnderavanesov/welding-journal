@@ -64,6 +64,7 @@ export function useLnkRequestCreateMutation({
         updatedRecords,
         'Не удалось сохранить часть записей',
         {
+          mutationScope: 'lnk',
           systemDocumentSequences: groups
             .filter((group) => group.useSystemName)
             .map((group) => ({

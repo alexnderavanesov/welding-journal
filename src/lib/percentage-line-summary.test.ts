@@ -65,6 +65,35 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.requiredControls).toBe(1)
   })
 
+  it('uses rejected RK before heat treatment for percentage-line growth but ignores VIK before heat treatment', () => {
+    const rkRows = [
+      makeRow(1, {
+        joint: 'S1',
+        pstoRequired: 'да',
+        hasRk: 'да',
+        preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'вырез' }],
+      }),
+      ...Array.from({ length: 4 }, (_, index) => makeRow(index + 2, { joint: `S${index + 2}` })),
+    ]
+    const vikRows = rkRows.map((row, index) => index === 0
+      ? makeRow(1, {
+        joint: 'S1',
+        pstoRequired: 'да',
+        hasVik: 'да',
+        preHeatTreatmentControls: [{ id: 2, weldJointId: 1, method: 'ВИК', result: 'вырез' }],
+      })
+      : row)
+
+    expect(getOnlyStamp(rkRows)).toEqual(expect.objectContaining({
+      rejectedPrimaryControls: 1,
+      additionalRequiredControls: 2,
+    }))
+    expect(getOnlyStamp(vikRows)).toEqual(expect.objectContaining({
+      rejectedPrimaryControls: 0,
+      additionalRequiredControls: 0,
+    }))
+  })
+
   it('adds required RK/UZK controls after a rejected primary duplicate RK or UZK result', () => {
     const rows = [
       makeRow(1, {

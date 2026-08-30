@@ -1,5 +1,7 @@
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { Button } from '@/components/ui/button'
 import { WeldFormFooter } from '@/components/weld-form-footer'
 import { WeldFormHeader } from '@/components/weld-form-header'
 import { WeldFormSections, type WeldFormTab } from '@/components/weld-form-sections'
@@ -41,9 +43,20 @@ type WeldFormProps = {
   suggestionRows?: readonly WeldInput[]
   stampSelectOptions?: StampSelectOptions | ((value: WeldInput) => StampSelectOptions)
   getExternalSaveBlockReason?: (value: WeldInput) => string | null
+  onLineIdentityChange?: (identity: WeldFormLineIdentity) => void
+  preSaveDecision?: WeldFormPreSaveDecision | null
   onSave: (value: WeldInput) => void
   onCancel: () => void
   busy?: boolean
+}
+
+export type WeldFormLineIdentity = Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>
+
+export type WeldFormPreSaveDecision = {
+  status: 'required' | 'resolved' | 'error'
+  message: string
+  actionLabel: string
+  onAction: () => void
 }
 
 export function WeldForm({
@@ -53,6 +66,8 @@ export function WeldForm({
   suggestionRows,
   stampSelectOptions,
   getExternalSaveBlockReason,
+  onLineIdentityChange,
+  preSaveDecision,
   onSave,
   onCancel,
   busy,
@@ -67,6 +82,12 @@ export function WeldForm({
   const contentRef = useRef<HTMLDivElement | null>(null)
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
   const validationDraft = useDebouncedValue(draft, 120)
+  const lineIdentity = useMemo<WeldFormLineIdentity>(() => ({
+    projectTitle: draft.projectTitle,
+    subtitleCode: draft.subtitleCode,
+    line: draft.line,
+  }), [draft.line, draft.projectTitle, draft.subtitleCode])
+  const debouncedLineIdentity = useDebouncedValue(lineIdentity, 320)
   const [immediateSaveBlockReason, setImmediateSaveBlockReason] = useState<string | null>(null)
   const fieldsByGroup = useMemo(
     () =>
@@ -160,6 +181,10 @@ export function WeldForm({
   }, [draft])
 
   useEffect(() => {
+    onLineIdentityChange?.(debouncedLineIdentity)
+  }, [debouncedLineIdentity, onLineIdentityChange])
+
+  useEffect(() => {
     contentRef.current?.scrollTo({ top: 0 })
   }, [value.id, focusField])
 
@@ -243,6 +268,24 @@ export function WeldForm({
           fieldStatusLabel={fieldStatusLabel}
         />
       </div>
+
+      {preSaveDecision ? (
+        <div className={`flex items-center gap-3 border-t px-6 py-3 text-sm ${
+          preSaveDecision.status === 'resolved'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+            : preSaveDecision.status === 'error'
+              ? 'border-rose-200 bg-rose-50 text-rose-950'
+              : 'border-amber-200 bg-amber-50 text-amber-950'
+        }`}>
+          {preSaveDecision.status === 'resolved'
+            ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" />
+            : <AlertTriangle className={`h-4 w-4 shrink-0 ${preSaveDecision.status === 'error' ? 'text-rose-700' : 'text-amber-700'}`} />}
+          <span className="min-w-0 flex-1 leading-5">{preSaveDecision.message}</span>
+          <Button type="button" variant="outline" size="sm" onClick={preSaveDecision.onAction}>
+            {preSaveDecision.actionLabel}
+          </Button>
+        </div>
+      ) : null}
 
       <WeldFormFooter
         busy={busy}

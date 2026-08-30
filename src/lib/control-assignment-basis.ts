@@ -10,11 +10,9 @@ export const CONTROL_ASSIGNMENT_BASIS_FIELDS = [
   { code: 'РК', assignmentKey: 'hasRk', basisKey: 'rkControlBasis', scope: 'lnk' },
   { code: 'УЗК', assignmentKey: 'hasUzk', basisKey: 'uzkControlBasis', scope: 'lnk' },
   { code: 'ПВК', assignmentKey: 'hasPvk', basisKey: 'pvkControlBasis', scope: 'lnk' },
-  { code: 'ТВМТ', assignmentKey: 'hasTvmt', basisKey: 'tvmtControlBasis', scope: 'lnk' },
   { code: 'РФА', assignmentKey: 'hasRfa', basisKey: 'rfaControlBasis', scope: 'lnk' },
   { code: 'СТЛС', assignmentKey: 'hasStls', basisKey: 'stlsControlBasis', scope: 'lnk' },
   { code: 'МКК', assignmentKey: 'hasMkk', basisKey: 'mkkControlBasis', scope: 'lnk' },
-  { code: 'ПСТО', assignmentKey: 'pstoRequired', basisKey: 'pstoControlBasis', scope: 'psto' },
 ] as const satisfies readonly {
   code: string
   assignmentKey: WeldFieldKey
@@ -22,13 +20,15 @@ export const CONTROL_ASSIGNMENT_BASIS_FIELDS = [
   scope: Exclude<ControlBasisScope, 'all'>
 }[]
 
-export const CONTROL_BASIS_FIELD_KEYS = CONTROL_ASSIGNMENT_BASIS_FIELDS.map((field) => field.basisKey)
+export const CONTROL_BASIS_FIELD_KEYS = [
+  ...CONTROL_ASSIGNMENT_BASIS_FIELDS.map((field) => field.basisKey),
+  'pstoControlBasis',
+  'tvmtControlBasis',
+] as const satisfies readonly WeldFieldKey[]
 export const LNK_CONTROL_BASIS_FIELD_KEYS = CONTROL_ASSIGNMENT_BASIS_FIELDS
   .filter((field) => field.scope === 'lnk')
   .map((field) => field.basisKey)
-export const PSTO_CONTROL_BASIS_FIELD_KEYS = CONTROL_ASSIGNMENT_BASIS_FIELDS
-  .filter((field) => field.scope === 'psto')
-  .map((field) => field.basisKey)
+export const PSTO_CONTROL_BASIS_FIELD_KEYS = ['pstoControlBasis'] as const satisfies readonly WeldFieldKey[]
 
 const CONTROL_BASIS_BY_ASSIGNMENT_KEY: ReadonlyMap<WeldFieldKey, ControlAssignmentBasisField> = new Map(
   CONTROL_ASSIGNMENT_BASIS_FIELDS.map((field) => [field.assignmentKey, field]),

@@ -14,7 +14,7 @@ vi.mock('@/lib/report-import-preview', async (importOriginal) => {
   }
 })
 
-vi.mock('@/server/welds', () => ({
+vi.mock('@/server/weld-import-api', () => ({
   listWeldingJournalImportScope: vi.fn(),
 }))
 

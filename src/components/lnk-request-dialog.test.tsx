@@ -51,13 +51,16 @@ describe('LnkRequestDialog', () => {
       />,
     )
 
-    expect(screen.getByText('0/8')).toHaveClass('w-10', 'tabular-nums')
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
+    expect(screen.getByRole('heading', { name: 'Заявка ЛНК' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Все заявки' })).toBeInTheDocument()
+    expect(screen.getByText('0/7')).toHaveClass('w-10', 'tabular-nums')
     expect(screen.getByDisplayValue('2026-08-14').closest('[data-lnk-request-methods]')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Стыки' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: /Заявки и имена/ })).toHaveTextContent('0')
 
     fireEvent.click(screen.getByRole('button', { name: 'ВИК' }))
-    expect(screen.getByText('1/8')).toHaveClass('w-10', 'tabular-nums')
+    expect(screen.getByText('1/7')).toHaveClass('w-10', 'tabular-nums')
     expect(screen.getByText(/Добавится позиций: 1/)).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Заявки и имена/ })).toHaveTextContent('1')
 
@@ -78,6 +81,7 @@ describe('LnkRequestDialog', () => {
       hasVik: 'дополнительный',
     } as WeldRow
     const onExtendRequest = vi.fn()
+    const onStageChange = vi.fn()
     const request = {
       key: '["Заявка-001","2026-08-14"]',
       name: 'Заявка-001',
@@ -117,6 +121,7 @@ describe('LnkRequestDialog', () => {
         onClearSelection={vi.fn()}
         onSetSelectedRows={vi.fn()}
         onOpenJournalRows={vi.fn()}
+        onStageChange={onStageChange}
         onToggleAllRows={vi.fn()}
         onToggleRow={vi.fn()}
         onSubmit={vi.fn()}
@@ -125,6 +130,8 @@ describe('LnkRequestDialog', () => {
     )
 
     await waitFor(() => expect(screen.getByDisplayValue(/Заявка-001/)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'До ТО' }))
+    expect(onStageChange).toHaveBeenCalledWith('beforeHeatTreatment', [row.id], 'extend')
     fireEvent.click(screen.getByRole('button', { name: 'ВИК' }))
 
     expect(screen.getByText(/Сейчас:/)).toHaveTextContent('Сейчас: 3 стыков')
@@ -199,6 +206,7 @@ describe('LnkRequestDialog', () => {
     })
 
     await waitFor(() => expect(screen.getByText('1/3')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть список заявок' }))
     expect(screen.getByRole('option', { name: /Заявка-001/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /Заявка-777/ })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Заявка-002/ })).not.toBeInTheDocument()

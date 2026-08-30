@@ -6,8 +6,13 @@ import {
   type WeldField,
   type WeldFieldKey,
 } from './weld-field-definitions'
-import { LNK_CONCLUSION_FIELD_KEYS, LNK_METHODS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
+import {
+  ALL_LNK_FIELD_METHODS as LNK_METHODS,
+  LNK_CONCLUSION_FIELD_KEYS,
+  LNK_REPORT_FIELD_KEYS,
+} from './lnk-report-config'
 import { CONTROL_BASIS_FIELD_KEYS } from './control-assignment-basis'
+import { PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS } from '@/lib/pre-heat-treatment-report-fields'
 
 export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'weldDate',
@@ -115,6 +120,17 @@ export const WELDING_JOURNAL_BLOCKED_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS,
+  'pstoCycleSummary',
+  'pstoCancellationDate',
+  'pstoControlBasis',
+  'hasTvmt',
+  'tvmtControlBasis',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
   'pstoDate',
   'heatTreatmentDiagram',
   'pstoNote',
@@ -128,9 +144,12 @@ export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  'pstoCycleSummary',
   ...MATERIAL_ADDITIONAL_FIELD_KEYS,
   ...WELDING_MATERIAL_FIELD_KEYS,
   'pstoRequired',
+  'pstoCancellationDate',
+  'pstoControlBasis',
   'pstoRequest',
   'pstoRequestDate',
   'pstoDate',
@@ -141,6 +160,13 @@ export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoKs3',
   'pstoCreatedAt',
   'pstoUpdatedAt',
+  'hasTvmt',
+  'tvmtControlBasis',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
   'weldingJournalNote',
   'jsrDocument',
   'checklistDocument',

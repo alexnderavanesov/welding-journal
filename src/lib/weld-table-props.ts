@@ -18,6 +18,7 @@ import {
   LNK_CONCLUSION_TEMPLATE_PROFILES,
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
+import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 
 const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
   'lnkRequest',
@@ -25,6 +26,7 @@ const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
 ])
 const PSTO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>(['pstoRequest', 'pstoConclusion'])
 const NO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>()
+const LNK_DEFAULT_COLLAPSED_SECTIONS = new Set(['НК до ТО'])
 
 type CreateWeldTablePropsOptions = {
   activeReport: ActiveReport
@@ -51,6 +53,7 @@ type CreateWeldTablePropsOptions = {
   onOpenDocument?: WeldTableProps['onOpenDocument']
   onOpenLnkRequest?: WeldTableProps['onOpenLnkRequest']
   onOpenLnkResult?: WeldTableProps['onOpenLnkResult']
+  onOpenJoint?: WeldTableProps['onOpenJoint']
   availableSystemDocumentTypes?: WeldTableProps['availableSystemDocumentTypes']
   onOpenDuplicateControl: (row: WeldRow) => void
   rowActionHandlers: ReportRowActionHandlers
@@ -85,6 +88,7 @@ export function createWeldTableProps({
   onOpenDocument,
   onOpenLnkRequest,
   onOpenLnkResult,
+  onOpenJoint,
   availableSystemDocumentTypes,
   onOpenDuplicateControl,
   rowActionHandlers,
@@ -137,6 +141,8 @@ export function createWeldTableProps({
         ? onOpenLnkRequest
         : undefined,
     onOpenLnkResult: activeReport === 'lnk' ? onOpenLnkResult : undefined,
+    onOpenJoint: activeReport === 'heatTreatment' ? onOpenJoint : undefined,
+    controlBasisEditorEnabled: activeReport === 'weldingJournal',
     availableSystemDocumentTypes:
       activeReport === 'lnk'
         ? intersectSystemDocumentTypes(availableSystemDocumentTypes, LNK_SYSTEM_DOCUMENT_TYPES)
@@ -153,6 +159,8 @@ export function createWeldTableProps({
     storageKey: activeReport,
     hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
     mergePstoSections: shouldMergePstoSections(activeReport),
+    sectionLayout: activeReport === 'lnk' ? LNK_VISIBLE_FIELD_SECTIONS : undefined,
+    defaultCollapsedSections: activeReport === 'lnk' ? LNK_DEFAULT_COLLAPSED_SECTIONS : undefined,
     stickyIdentityColumns: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     onFilterLine,
   }

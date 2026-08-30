@@ -1,4 +1,5 @@
-import { boolean, date, index, integer, numeric, pgTable, primaryKey, serial, text, timestamp } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { boolean, check, date, index, integer, numeric, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 const numericNumber = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
 
@@ -14,6 +15,7 @@ export const weldJoints = pgTable(
     category: text('category'),
     pstoRequired: text('psto_required'),
     pstoControlBasis: text('psto_control_basis'),
+    pstoCancellationDate: date('psto_cancellation_date'),
     weldControlPercent: numericNumber('weld_control_percent'),
     isometry: text('isometry'),
     sheet: numericNumber('sheet'),
@@ -261,6 +263,68 @@ export const duplicateControls = pgTable(
 
 export type DuplicateControl = typeof duplicateControls.$inferSelect
 export type NewDuplicateControl = typeof duplicateControls.$inferInsert
+
+export const preHeatTreatmentControls = pgTable(
+  'pre_heat_treatment_controls',
+  {
+    id: serial('id').primaryKey(),
+    weldJointId: integer('weld_joint_id')
+      .notNull()
+      .references(() => weldJoints.id, { onDelete: 'cascade' }),
+    method: text('method').notNull(),
+    requestName: text('request_name'),
+    requestDate: date('request_date'),
+    result: text('result'),
+    conclusionDate: date('conclusion_date'),
+    conclusionName: text('conclusion_name'),
+    defectDescription: text('defect_description'),
+    rkExposureConfirmedDiameter: numericNumber('rk_exposure_confirmed_diameter'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('pre_heat_treatment_controls_weld_method_uidx').on(table.weldJointId, table.method),
+    index('pre_heat_treatment_controls_request_idx').on(table.method, table.requestDate, table.requestName),
+    index('pre_heat_treatment_controls_conclusion_idx').on(table.method, table.conclusionDate, table.conclusionName),
+    check('pre_heat_treatment_controls_method_check', sql`${table.method} in ('ВИК', 'РК', 'УЗК', 'ПВК')`),
+  ],
+)
+
+export type PreHeatTreatmentControl = typeof preHeatTreatmentControls.$inferSelect
+export type NewPreHeatTreatmentControl = typeof preHeatTreatmentControls.$inferInsert
+
+export const pstoRepeatCycles = pgTable(
+  'psto_repeat_cycles',
+  {
+    id: serial('id').primaryKey(),
+    weldJointId: integer('weld_joint_id')
+      .notNull()
+      .references(() => weldJoints.id, { onDelete: 'cascade' }),
+    sequence: integer('sequence').notNull(),
+    pstoRequest: text('psto_request'),
+    pstoRequestDate: date('psto_request_date'),
+    pstoDate: date('psto_date'),
+    heatTreatmentDiagram: text('heat_treatment_diagram'),
+    pstoResult: text('psto_result'),
+    pstoNote: text('psto_note'),
+    tvmtRequest: text('tvmt_request'),
+    tvmtRequestDate: date('tvmt_request_date'),
+    tvmtResult: text('tvmt_result'),
+    tvmtConclusionDate: date('tvmt_conclusion_date'),
+    tvmtConclusion: text('tvmt_conclusion'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('psto_repeat_cycles_weld_sequence_uidx').on(table.weldJointId, table.sequence),
+    index('psto_repeat_cycles_psto_request_idx').on(table.pstoRequestDate, table.pstoRequest),
+    index('psto_repeat_cycles_tvmt_request_idx').on(table.tvmtRequestDate, table.tvmtRequest),
+    check('psto_repeat_cycles_sequence_check', sql`${table.sequence} >= 2`),
+  ],
+)
+
+export type PstoRepeatCycle = typeof pstoRepeatCycles.$inferSelect
+export type NewPstoRepeatCycle = typeof pstoRepeatCycles.$inferInsert
 
 export const dispatcherAcceptedWarnings = pgTable('dispatcher_accepted_warnings', {
   key: text('key').primaryKey(),

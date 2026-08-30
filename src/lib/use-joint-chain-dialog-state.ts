@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { listWeldJointChain } from '@/server/welds'
+import { listWeldJointChain } from '@/server/weld-read-api'
 
 type UseJointChainDialogStateOptions = {
   chainRecord: WeldRow | null

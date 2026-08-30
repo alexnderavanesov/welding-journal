@@ -57,4 +57,26 @@ describe('manager context menu items', () => {
     expect(getAction(menu.items, 'copy-document-name').disabled).toBe(true)
     expect(getAction(menu.items, 'open-in-welding-journal').disabled).toBe(true)
   })
+
+  it('offers PSTO history only when the manager action points to one exact joint', () => {
+    const row = { id: 7, joint: 'F7' } as WeldRow
+    const onOpenPstoHistory = vi.fn()
+    const menu = buildManagerContextMenu({
+      x: 10,
+      y: 20,
+      heading: 'Результат',
+      documentName: 'ЗНК-007',
+      documentLabel: 'заключение',
+      rows: [row],
+      sourceLabel: 'результат ЛНК',
+      onOpenDocument: vi.fn(),
+      onCopyDocumentName: vi.fn(),
+      onOpenJournalRows: vi.fn(),
+      onOpenPstoHistory,
+    })
+
+    getAction(menu.items, 'open-psto-history').onSelect()
+
+    expect(onOpenPstoHistory).toHaveBeenCalledWith(row)
+  })
 })

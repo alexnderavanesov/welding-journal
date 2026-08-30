@@ -14,6 +14,7 @@ import {
   isPendingLnkResultValue,
 } from '@/lib/report-value-utils'
 import { hasCompletedLnkRequestPosition } from '@/lib/report-control-state'
+import { getPrimaryLnkStageBlockReason } from '@/lib/lnk-control-stage'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
 export type LnkRequestExtensionTarget = {
@@ -265,6 +266,8 @@ function getLnkRequestExtensionTargetReason(
   if (!isEnabledControlValue(row[method.enabledKey])) {
     return 'вид НК должен быть назначен как «да» или «дополнительный».'
   }
+  const stageBlockReason = getPrimaryLnkStageBlockReason(row, method.code)
+  if (stageBlockReason) return stageBlockReason
   if (hasRejectedLnkResult(row)) {
     return 'стык уже имеет негодный результат, поэтому новые позиции НК для него не создаются.'
   }

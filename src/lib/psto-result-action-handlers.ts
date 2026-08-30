@@ -2,6 +2,7 @@ import { createDefaultPstoResultDraft } from '@/lib/report-draft-state'
 import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { hasPstoResultData } from '@/lib/psto-result-derived-utils'
+import { hasPrimaryPstoCycle } from '@/lib/psto-cycle'
 import {
   buildManagedPstoDiagramDrafts,
   resolvePstoResultDraftAfterBulkToggle,
@@ -75,9 +76,9 @@ export function createPstoResultActionHandlers({
   }
 
   function openPstoResultManagerForRows(rowsToManage: readonly RowWithId[]) {
-    const selectedRows = rowsToManage.filter(hasPstoResultData)
+    const selectedRows = rowsToManage.filter((row) => hasPstoResultData(row) || hasPrimaryPstoCycle(row))
     if (selectedRows.length === 0) {
-      setMessage('Выберите один или несколько стыков для редактирования результатов ПСТО')
+      setMessage('Для выбранных стыков нет назначения или истории ПСТО')
       return
     }
     setPstoResultDraft((current) => ({

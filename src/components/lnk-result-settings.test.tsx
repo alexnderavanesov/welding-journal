@@ -20,16 +20,20 @@ describe('LnkResultSettings', () => {
         }}
         selectedMethods={[LNK_METHODS[0]]}
         selectedRows={selectedRows}
+        requestKey=""
+        requestOptions={[]}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
         onMethodChange={vi.fn()}
         onControlDateChange={vi.fn()}
         onDefaultResultChange={vi.fn()}
+        onRequestChange={vi.fn()}
       />,
     )
 
     expect(screen.getByText('Метод контроля')).toBeInTheDocument()
     expect(screen.getByText('Дата контроля')).toBeInTheDocument()
     expect(screen.getByText('Результат для всех выбранных')).toBeInTheDocument()
+    expect(screen.getByText('Заявка ЛНК')).toBeInTheDocument()
     expect(screen.queryByText('Заключение')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Системное' })).not.toBeInTheDocument()
   })
@@ -41,10 +45,13 @@ describe('LnkResultSettings', () => {
         draft={createDefaultLnkResultDraft()}
         selectedMethods={[LNK_METHODS[0]]}
         selectedRows={[]}
+        requestKey=""
+        requestOptions={[]}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
         onMethodChange={onMethodChange}
         onControlDateChange={vi.fn()}
         onDefaultResultChange={vi.fn()}
+        onRequestChange={vi.fn()}
       />,
     )
 

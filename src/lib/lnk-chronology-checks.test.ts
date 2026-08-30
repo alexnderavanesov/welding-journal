@@ -166,4 +166,56 @@ describe('getLnkChronologyIssues', () => {
 
     expect(issues).toEqual([])
   })
+
+  it('keeps pre-heat-treatment documents no later than the first PSTO', () => {
+    const issues = getLnkChronologyIssues([{
+      id: 1,
+      joint: 'F5',
+      weldDate: '2026-08-01',
+      pstoDate: '2026-08-10',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-11',
+        result: 'годен',
+        conclusionDate: '2026-08-12',
+      }],
+    } as WeldInput])
+
+    expect(issues.filter((issue) => issue.kind === 'pre-after-psto')).toHaveLength(2)
+  })
+
+  it('keeps post-heat-treatment documents after good TVMT', () => {
+    const issues = getLnkChronologyIssues([{
+      joint: 'F6',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-10',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-11',
+      hasVik: 'да',
+      vikRequest: 'Заявка ВИК после ТО',
+      vikRequestDate: '2026-08-10',
+    } as WeldInput])
+
+    expect(issues).toContainEqual(expect.objectContaining({
+      kind: 'post-before-tvmt',
+      methodCode: 'ВИК',
+    }))
+  })
+
+  it('does not treat duplicate controls as pre/post chronology records', () => {
+    const issues = getLnkChronologyIssues([{
+      joint: 'F7',
+      pstoRequired: 'да',
+      duplicateControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'годен', controlDate: '2026-01-01' }],
+    } as WeldInput])
+
+    expect(issues).toEqual([])
+  })
 })

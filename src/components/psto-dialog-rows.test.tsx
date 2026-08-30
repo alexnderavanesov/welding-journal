@@ -32,14 +32,32 @@ describe('PSTO dialog rows', () => {
     const row = { id: 1, joint: 'F1', pstoRequired: 'да' } as WeldRow
     const onOpenContextMenu = vi.fn()
     const { rerender } = render(
-      <PstoRequestRow row={row} selected={false} disabled={false} onToggleRow={vi.fn()} onOpenContextMenu={onOpenContextMenu} />,
+      <PstoRequestRow row={row} selected={false} disabled={false} disabledReason="" onToggleRow={vi.fn()} onOpenContextMenu={onOpenContextMenu} />,
     )
 
-    rerender(<PstoRequestRow row={row} selected={false} disabled={false} onToggleRow={vi.fn()} onOpenContextMenu={onOpenContextMenu} />)
+    rerender(<PstoRequestRow row={row} selected={false} disabled={false} disabledReason="" onToggleRow={vi.fn()} onOpenContextMenu={onOpenContextMenu} />)
     expect(renderRequestHeading).toHaveBeenCalledTimes(1)
 
-    rerender(<PstoRequestRow row={row} selected disabled={false} onToggleRow={vi.fn()} onOpenContextMenu={onOpenContextMenu} />)
+    rerender(<PstoRequestRow row={row} selected disabled={false} disabledReason="" onToggleRow={vi.fn()} onOpenContextMenu={onOpenContextMenu} />)
     expect(renderRequestHeading).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the actual reason when a PSTO request is not yet available', () => {
+    const row = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да' } as WeldRow
+
+    render(
+      <PstoRequestRow
+        row={row}
+        selected={false}
+        disabled
+        disabledReason="Сначала создайте заявки НК до ТО: ВИК."
+        onToggleRow={vi.fn()}
+        onOpenContextMenu={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Сначала создайте заявки НК до ТО: ВИК.')).toBeInTheDocument()
+    expect(screen.queryByText('Заявка уже создана')).not.toBeInTheDocument()
   })
 
   it('does not rerender an unchanged result row when the parent callback changes', () => {

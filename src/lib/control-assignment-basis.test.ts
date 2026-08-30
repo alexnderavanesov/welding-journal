@@ -16,10 +16,10 @@ describe('control assignment basis', () => {
 
   it('builds report-specific summaries and omits empty values', () => {
     expect(formatControlBasisSummary(row, 'all')).toBe(
-      'ВИК: ТР №444; РК: Пересогласование №13; ПСТО: Письмо №8',
+      'ВИК: ТР №444; РК: Пересогласование №13',
     )
     expect(formatControlBasisSummary(row, 'lnk')).toBe('ВИК: ТР №444; РК: Пересогласование №13')
-    expect(formatControlBasisSummary(row, 'psto')).toBe('ПСТО: Письмо №8')
+    expect(formatControlBasisSummary(row, 'psto')).toBe('')
   })
 
   it('does not depend on the current assignment state', () => {
@@ -30,7 +30,7 @@ describe('control assignment basis', () => {
   it('attaches a virtual summary without changing stored basis fields', () => {
     expect(withControlBasisSummary(row, 'psto')).toMatchObject({
       pstoControlBasis: 'Письмо №8',
-      controlBasisSummary: 'ПСТО: Письмо №8',
+      controlBasisSummary: '',
     })
   })
 })

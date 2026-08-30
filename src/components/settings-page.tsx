@@ -160,7 +160,7 @@ import {
 } from '@/lib/security-settings'
 import { useResolvedSecuritySettings, useSecurityGuard } from '@/lib/security-context'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import { getWeldDataUsageSummary, type WeldDataUsageSummary } from '@/server/welds'
+import { getWeldDataUsageSummary, type WeldDataUsageSummary } from '@/server/weld-read-api'
 import {
   previewWdiRecalculation,
   recalculateWdi,

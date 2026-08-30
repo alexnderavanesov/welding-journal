@@ -85,21 +85,30 @@ describe('welding journal import template', () => {
     }
   })
 
-  it('exposes separate control basis fields as free Excel inputs and omits the virtual summary', () => {
+  it('exposes LNK basis fields but keeps line-managed PSTO outside Excel', () => {
     const templateFields = getReportImportTemplateFields('weldingJournal')
+    const editableBasisKeys = CONTROL_BASIS_FIELD_KEYS.filter(
+      (fieldKey) => fieldKey !== 'pstoControlBasis' && fieldKey !== 'tvmtControlBasis',
+    )
 
-    for (const fieldKey of CONTROL_BASIS_FIELD_KEYS) {
+    for (const fieldKey of editableBasisKeys) {
       expect(templateFields.some((field) => field.key === fieldKey)).toBe(true)
       expect(getReportImportCellKind('weldingJournal', fieldKey)).toBe('free')
     }
+    expect(templateFields.some((field) => field.key === 'pstoRequired')).toBe(false)
+    expect(templateFields.some((field) => field.key === 'pstoControlBasis')).toBe(false)
+    expect(getReportImportCellKind('weldingJournal', 'pstoRequired')).toBe('ignored')
+    expect(getReportImportCellKind('weldingJournal', 'pstoControlBasis')).toBe('ignored')
     expect(templateFields.some((field) => field.key === CONTROL_BASIS_SUMMARY_FIELD_KEY)).toBe(false)
 
     const payload = new TextDecoder().decode(buildImportTemplateXlsxBytes('weldingJournal'))
-    for (const label of ['Основание ВИК', 'Основание РК', 'Основание ПСТО']) {
+    for (const label of ['Основание ВИК', 'Основание РК']) {
       const column = findTemplateHeaderColumn(payload, label)
       expect(column).toBeTruthy()
       expect(payload).toContain(`<c r="${column}2" s="0"/>`)
     }
+    expect(findTemplateHeaderColumn(payload, 'Назначение ПСТО')).toBeUndefined()
+    expect(findTemplateHeaderColumn(payload, 'Основание ПСТО')).toBeUndefined()
   })
 
   it('keeps report notes in their own reports and exposes grey note columns in journal imports', () => {

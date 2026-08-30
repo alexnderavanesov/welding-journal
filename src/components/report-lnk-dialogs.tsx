@@ -1,9 +1,21 @@
-import { DuplicateControlDialog, type DuplicateControlDialogProps } from '@/components/duplicate-control-dialog'
-import { LnkOfficialityDialog, type LnkOfficialityDialogProps } from '@/components/lnk-officiality-dialog'
-import { LnkRequestDialog, type LnkRequestDialogProps } from '@/components/lnk-request-dialog'
-import { LnkRequestManagerDialog, type LnkRequestManagerDialogProps } from '@/components/lnk-request-manager-dialog'
-import { LnkResultDialog, type LnkResultDialogProps } from '@/components/lnk-result-dialog'
-import { LnkResultManagerDialog, type LnkResultManagerDialogProps } from '@/components/lnk-result-manager-dialog'
+import { lazy, Suspense } from 'react'
+import type { DuplicateControlDialogProps } from '@/components/duplicate-control-dialog'
+import type { LnkOfficialityDialogProps } from '@/components/lnk-officiality-dialog'
+import type { LnkRequestDialogProps } from '@/components/lnk-request-dialog'
+import type { LnkRequestManagerDialogProps } from '@/components/lnk-request-manager-dialog'
+import type { LnkResultDialogProps } from '@/components/lnk-result-dialog'
+import type { LnkResultManagerDialogProps } from '@/components/lnk-result-manager-dialog'
+import type { PreHeatTreatmentLnkWorkflowDialogProps } from '@/components/pre-heat-treatment-lnk-workflow-dialog'
+import type { PreHeatTreatmentResultManagerDialogProps } from '@/components/pre-heat-treatment-result-manager-dialog'
+
+const DuplicateControlDialog = lazy(() => import('@/components/duplicate-control-dialog').then((module) => ({ default: module.DuplicateControlDialog })))
+const LnkOfficialityDialog = lazy(() => import('@/components/lnk-officiality-dialog').then((module) => ({ default: module.LnkOfficialityDialog })))
+const LnkRequestDialog = lazy(() => import('@/components/lnk-request-dialog').then((module) => ({ default: module.LnkRequestDialog })))
+const LnkRequestManagerDialog = lazy(() => import('@/components/lnk-request-manager-dialog').then((module) => ({ default: module.LnkRequestManagerDialog })))
+const LnkResultDialog = lazy(() => import('@/components/lnk-result-dialog').then((module) => ({ default: module.LnkResultDialog })))
+const LnkResultManagerDialog = lazy(() => import('@/components/lnk-result-manager-dialog').then((module) => ({ default: module.LnkResultManagerDialog })))
+const PreHeatTreatmentLnkWorkflowDialog = lazy(() => import('@/components/pre-heat-treatment-lnk-workflow-dialog').then((module) => ({ default: module.PreHeatTreatmentLnkWorkflowDialog })))
+const PreHeatTreatmentResultManagerDialog = lazy(() => import('@/components/pre-heat-treatment-result-manager-dialog').then((module) => ({ default: module.PreHeatTreatmentResultManagerDialog })))
 
 export type ReportLnkDialogsProps = {
   requestDialogProps: LnkRequestDialogProps | null
@@ -12,6 +24,8 @@ export type ReportLnkDialogsProps = {
   officialityDialogProps: LnkOfficialityDialogProps | null
   duplicateControlDialogProps: DuplicateControlDialogProps | null
   resultDialogProps: LnkResultDialogProps | null
+  preHeatTreatmentWorkflowDialogProps: PreHeatTreatmentLnkWorkflowDialogProps | null
+  preHeatTreatmentResultManagerDialogProps: PreHeatTreatmentResultManagerDialogProps | null
 }
 
 export function ReportLnkDialogs({
@@ -21,15 +35,23 @@ export function ReportLnkDialogs({
   officialityDialogProps,
   duplicateControlDialogProps,
   resultDialogProps,
+  preHeatTreatmentWorkflowDialogProps,
+  preHeatTreatmentResultManagerDialogProps,
 }: ReportLnkDialogsProps) {
   return (
-    <>
+    <Suspense fallback={null}>
       {requestDialogProps ? <LnkRequestDialog {...requestDialogProps} /> : null}
       {requestManagerDialogProps ? <LnkRequestManagerDialog {...requestManagerDialogProps} /> : null}
       {resultManagerDialogProps ? <LnkResultManagerDialog {...resultManagerDialogProps} /> : null}
       {officialityDialogProps ? <LnkOfficialityDialog {...officialityDialogProps} /> : null}
       {duplicateControlDialogProps ? <DuplicateControlDialog {...duplicateControlDialogProps} /> : null}
       {resultDialogProps ? <LnkResultDialog {...resultDialogProps} /> : null}
-    </>
+      {preHeatTreatmentWorkflowDialogProps ? (
+        <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentWorkflowDialogProps} />
+      ) : null}
+      {preHeatTreatmentResultManagerDialogProps ? (
+        <PreHeatTreatmentResultManagerDialog {...preHeatTreatmentResultManagerDialogProps} />
+      ) : null}
+    </Suspense>
   )
 }

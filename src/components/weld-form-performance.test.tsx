@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -153,6 +153,68 @@ describe('weld form input performance', () => {
 
     expect(onSave).not.toHaveBeenCalled()
     expect(screen.getByText('Проверка последнего значения')).toBeInTheDocument()
+  })
+
+  it('keeps a line-move decision inside the form until the user saves explicitly', () => {
+    const onSave = vi.fn()
+    const onCancel = vi.fn()
+    const onDecisionAction = vi.fn()
+    HTMLElement.prototype.scrollTo = vi.fn()
+
+    renderWithQueryClient(
+      <WeldForm
+        value={{ id: 1, joint: 'S1' }}
+        preSaveDecision={{
+          status: 'resolved',
+          message: 'Выбрано: основной комплект будет перенесен в «До ТО».',
+          actionLabel: 'Изменить',
+          onAction: onDecisionAction,
+        }}
+        onSave={onSave}
+        onCancel={onCancel}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
+    expect(onDecisionAction).toHaveBeenCalledTimes(1)
+    expect(onSave).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('reports a changed line identity before the form is saved', async () => {
+    const onLineIdentityChange = vi.fn()
+    HTMLElement.prototype.scrollTo = vi.fn()
+
+    renderWithQueryClient(
+      <WeldForm
+        value={{
+          id: 1,
+          projectTitle: 'Проект',
+          subtitleCode: '400',
+          line: 'L-1',
+          joint: 'S1',
+        }}
+        onLineIdentityChange={onLineIdentityChange}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => expect(onLineIdentityChange).toHaveBeenCalledWith({
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-1',
+    }))
+
+    fireEvent.change(screen.getByDisplayValue('L-1'), { target: { value: 'L-2' } })
+    await waitFor(() => expect(onLineIdentityChange).toHaveBeenCalledWith({
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-2',
+    }))
   })
 })
 

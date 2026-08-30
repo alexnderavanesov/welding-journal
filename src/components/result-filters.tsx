@@ -2,19 +2,17 @@ import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from
 import { X } from 'lucide-react'
 
 import { FilterStatText } from '@/components/filter-stat-text'
+import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 
 const SEARCH_COMMIT_DELAY_MS = 180
 
 export type ResultFiltersProps = {
   search: string
-  requestSearch: string
   requestKey: string
-  filteredRequestOptions: RequestDocumentIdentity[]
-  availableRequestOptionsCount: number
+  requestOptions: RequestDocumentIdentity[]
   filteredRowsCount: number
   selectedRowsCount: number
   leading?: ReactNode
@@ -23,18 +21,14 @@ export type ResultFiltersProps = {
   searchClassName?: string
   showClearFilters: boolean
   onSearchChange: (value: string) => void
-  onRequestSearchChange: (value: string) => void
   onRequestChange: (request: RequestDocumentIdentity | null) => void
-  onClearRequestSearch: () => void
   onClearFilters: () => void
 }
 
 export function ResultFilters({
   search,
-  requestSearch,
   requestKey,
-  filteredRequestOptions,
-  availableRequestOptionsCount,
+  requestOptions,
   filteredRowsCount,
   selectedRowsCount,
   leading,
@@ -43,9 +37,7 @@ export function ResultFilters({
   searchClassName = 'h-9 min-w-56 flex-[0.8] bg-white',
   showClearFilters,
   onSearchChange,
-  onRequestSearchChange,
   onRequestChange,
-  onClearRequestSearch,
   onClearFilters,
 }: ResultFiltersProps) {
   return (
@@ -59,58 +51,17 @@ export function ResultFilters({
         placeholder="Проект, шифр, линия, спул или стык"
         className={searchClassName}
       />
-      <BufferedFilterInput
-        value={requestSearch}
-        onValueChange={onRequestSearchChange}
-        placeholder="Поиск заявки"
-        className={compactToolbar ? 'h-9 min-w-0 flex-[0.55] bg-white' : 'h-9 min-w-44 flex-[0.45] bg-white'}
-      />
-      <Select
+      <RequestDocumentCombobox
+        ariaLabel="Заявка"
         value={requestKey}
-        onChange={(event) => {
-          const key = event.target.value
-          onRequestChange(filteredRequestOptions.find((option) => option.key === key) ?? null)
-        }}
-        className={compactToolbar ? 'h-9 min-w-40 flex-[0.5] bg-white' : 'h-9 min-w-48 flex-[0.5] bg-white'}
-      >
-        <option value="">Все заявки</option>
-        {filteredRequestOptions.map((option) => (
-          <option key={option.key} value={option.key}>
-            {option.label}
-          </option>
-        ))}
-      </Select>
-      {compactToolbar ? (
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClearRequestSearch}
-            className={`h-9 px-2 ${requestSearch ? '' : 'invisible'}`}
-            disabled={!requestSearch}
-            tabIndex={requestSearch ? 0 : -1}
-            aria-hidden={!requestSearch}
-            aria-label="Очистить поиск заявки"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </span>
-      ) : requestSearch ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={onClearRequestSearch}
-          className="h-9 px-2"
-          aria-label="Очистить поиск заявки"
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      ) : null}
+        options={requestOptions}
+        emptyOptionLabel="Все заявки"
+        className={compactToolbar ? 'min-w-72 flex-[1.05]' : 'min-w-72 flex-1'}
+        onChange={onRequestChange}
+      />
       <span className={`flex shrink-0 items-center gap-3 ${compactToolbar ? 'text-[11px]' : ''}`}>
         <FilterStatText>
-          Заявок: {filteredRequestOptions.length}/{availableRequestOptionsCount}
+          Заявок: {requestOptions.length}
         </FilterStatText>
         <FilterStatText>
           Найдено: {filteredRowsCount} · Выбрано: {selectedRowsCount}

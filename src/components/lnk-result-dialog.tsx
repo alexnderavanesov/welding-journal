@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
+import {
+  LNK_RESULT_ROW_GRID_CLASS,
+  LNK_WORKFLOW_DIALOG_HEIGHT_CLASS,
+  LNK_WORKFLOW_DIALOG_WIDTH_CLASS,
+} from '@/components/lnk-dialog-layout'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { LnkResultConclusionsPanel } from '@/components/lnk-result-conclusions-panel'
-import { LnkResultFilters } from '@/components/lnk-result-filters'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
+import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
-import { RequestRowsSearch } from '@/components/request-rows-search'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { Button } from '@/components/ui/button'
 import {
@@ -31,6 +36,7 @@ import { canSelectLnkResultRow, filterLnkResultRows } from '@/lib/report-modal-r
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { LnkControlStage } from '@/lib/lnk-control-stage'
 import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
@@ -39,12 +45,10 @@ import {
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 export type LnkResultDialogProps = {
   draft: LnkResultDraftState
-  requestSearch: string
   selectedMethods: LnkResultMethod[]
   selectedRows: WeldRow[]
   visibleRows: WeldRow[]
   requestRows: WeldRow[]
-  filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptions: RequestDocumentIdentity[]
   systemDocumentCreationPlan: SystemDocumentCreationPlan | null
   saveCheckSettings: SaveCheckSettings
@@ -63,25 +67,22 @@ export type LnkResultDialogProps = {
   onSetSelectedRows: (rowIds: number[]) => void
   onToggleAllRows: () => void
   onSearchChange: (search: string) => void
-  onRequestSearchChange: (search: string) => void
   onRequestChange: (request: RequestDocumentIdentity | null) => void
-  onClearRequestSearch: () => void
-  onClearSearch: () => void
   onToggleRow: (rowId: number) => void
   onSetRowResult: (rowId: number, result: string) => void
   onSetRowsResult: (rowIds: number[], result: string) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
+  onStageChange?: (stage: LnkControlStage, selectedRowIds: number[]) => void
   onSave: () => void
 }
 
 export function LnkResultDialog({
   draft,
-  requestSearch,
   selectedMethods,
   selectedRows,
   visibleRows,
   requestRows,
-  filteredRequestOptions,
   availableRequestOptions,
   systemDocumentCreationPlan,
   saveCheckSettings,
@@ -100,14 +101,13 @@ export function LnkResultDialog({
   onSetSelectedRows,
   onToggleAllRows,
   onSearchChange,
-  onRequestSearchChange,
   onRequestChange,
-  onClearRequestSearch,
-  onClearSearch,
   onToggleRow,
   onSetRowResult,
   onSetRowsResult,
   onOpenJournalRows,
+  onOpenPstoHistory,
+  onStageChange,
   onSave,
 }: LnkResultDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
@@ -136,15 +136,15 @@ export function LnkResultDialog({
   const displayedRows = rowsViewMode === 'selected' ? filteredSelectedRows : orderedVisibleRows
   const displayedSearch = rowsViewMode === 'selected' ? selectedRowsSearch : draft.search
   const paginationResetKeys = useMemo(
-    () => [displayedSearch, rowsViewMode, draft.requestName, draft.requestDate, draft.methodKey, requestSearch],
-    [displayedSearch, draft.methodKey, draft.requestDate, draft.requestName, requestSearch, rowsViewMode],
+    () => [displayedSearch, rowsViewMode, draft.requestName, draft.requestDate, draft.methodKey],
+    [displayedSearch, draft.methodKey, draft.requestDate, draft.requestName, rowsViewMode],
   )
   const rowsPagination = usePagePagination({
     items: displayedRows,
     defaultPageSize: 50,
     resetKeys: paginationResetKeys,
   })
-  const rowsViewportResetKey = `${rowsPagination.page}:${rowsPagination.pageSize}:${displayedSearch}:${rowsViewMode}:${draft.requestName}:${draft.requestDate}:${draft.methodKey}:${requestSearch}`
+  const rowsViewportResetKey = `${rowsPagination.page}:${rowsPagination.pageSize}:${displayedSearch}:${rowsViewMode}:${draft.requestName}:${draft.requestDate}:${draft.methodKey}`
   const selectedRequest = createRequestDocumentIdentity(draft.requestName, draft.requestDate)
   const canOpenConclusions = Boolean(draft.methodKey && systemDocumentCreationPlan)
   const conclusionCount = systemDocumentCreationPlan?.groups.length ?? 0
@@ -207,6 +207,7 @@ export function LnkResultDialog({
       onShowSelectedRows: () => setRowsViewMode('selected'),
       onClearSelection,
       onOpenJournalRows,
+      onOpenPstoHistory,
     }))
   })
   const openGroupContextMenu = useStableEventCallback((event: MouseEvent<HTMLElement>, group: SystemDocumentCreationGroup) => {
@@ -223,8 +224,8 @@ export function LnkResultDialog({
 
   return (
     <LargeDialogShell
-      maxWidthClassName="max-w-[1480px]"
-      maxHeightClassName="h-full"
+      maxWidthClassName={LNK_WORKFLOW_DIALOG_WIDTH_CLASS}
+      maxHeightClassName={LNK_WORKFLOW_DIALOG_HEIGHT_CLASS}
       overlayClassName="z-50 bg-slate-950/20 py-2"
       panelShadowClassName="shadow-slate-950/10"
     >
@@ -235,16 +236,25 @@ export function LnkResultDialog({
         managerDisabled={false}
         onOpenManager={onOpenManager}
         onClose={onClose}
+        stageControl={onStageChange ? (
+          <LnkControlStageSwitch
+            value="primary"
+            onChange={(stage) => onStageChange(stage, [...draft.rowIds])}
+          />
+        ) : undefined}
       />
 
       <LnkResultSettings
         draft={draft}
         selectedMethods={selectedMethods}
         selectedRows={selectedRows}
+        requestKey={selectedRequest?.key ?? ''}
+        requestOptions={availableRequestOptions}
         saveCheckSettings={saveCheckSettings}
         onMethodChange={onMethodChange}
         onControlDateChange={onControlDateChange}
         onDefaultResultChange={onDefaultResultChange}
+        onRequestChange={onRequestChange}
       />
 
       <DocumentWorkspaceTabs
@@ -266,92 +276,69 @@ export function LnkResultDialog({
           onOpenGroupContextMenu={openGroupContextMenu}
         />
       ) : (
-        <section className="flex min-h-0 flex-1 flex-col gap-2 px-5 py-3">
-          {rowsViewMode === 'selected' ? (
-              <RequestRowsSearch
-                value={selectedRowsSearch}
-                placeholder="Поиск среди выбранных стыков"
-                filteredCount={filteredSelectedRows.length}
-                availableCount={draft.rowIds.size}
-                statsLabel={<>Найдено: {filteredSelectedRows.length} · Выбрано: {draft.rowIds.size}</>}
-                viewToggle={selectedRowsViewToggle}
-                action={rowsAction}
-                onChange={setSelectedRowsSearch}
-              />
-            ) : (
-              <LnkResultFilters
-                search={draft.search}
-                requestSearch={requestSearch}
-                requestKey={selectedRequest?.key ?? ''}
-                filteredRequestOptions={filteredRequestOptions}
-                availableRequestOptionsCount={availableRequestOptions.length}
-                filteredRowsCount={visibleRows.length}
-                selectedRowsCount={draft.rowIds.size}
-                leading={selectedRowsViewToggle}
-                action={rowsAction}
-                onSearchChange={onSearchChange}
-                onRequestSearchChange={onRequestSearchChange}
-                onRequestChange={onRequestChange}
-                onClearRequestSearch={onClearRequestSearch}
-                onClearSearch={onClearSearch}
-              />
-            )}
-
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200 bg-white">
-            <div className="grid shrink-0 grid-cols-[28px_minmax(360px,1.05fr)_minmax(320px,0.95fr)_220px_32px] gap-3 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-500">
+        <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
+          <RequestRowsPanel
+            title="Стыки"
+            description=""
+            viewToggle={selectedRowsViewToggle}
+            action={rowsAction}
+            searchValue={displayedSearch}
+            searchPlaceholder={rowsViewMode === 'selected' ? 'Поиск среди выбранных стыков' : 'Проект, шифр, линия, спул или стык'}
+            filteredCount={rowsViewMode === 'selected' ? filteredSelectedRows.length : visibleRows.length}
+            availableCount={rowsViewMode === 'selected' ? draft.rowIds.size : selectableRequestRows.length}
+            statsLabel={rowsViewMode === 'selected' ? <>Найдено: {filteredSelectedRows.length} · Выбрано: {draft.rowIds.size}</> : undefined}
+            isEmpty={displayedRows.length === 0}
+            emptyMessage={rowsViewMode === 'selected'
+              ? draft.rowIds.size === 0
+                ? 'Выбранных стыков пока нет.'
+                : 'Среди выбранных стыков ничего не найдено.'
+              : draft.search
+                ? 'По фильтру ничего не найдено.'
+                : 'По выбранному методу нет стыков для добавления результата.'}
+            onSearchChange={rowsViewMode === 'selected' ? setSelectedRowsSearch : onSearchChange}
+          >
+            <div className={`grid shrink-0 ${LNK_RESULT_ROW_GRID_CLASS} gap-3 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-500`}>
               <span />
               <span>Стык</span>
               <span>Заявки и заключения</span>
               <span>Результат</span>
               <span />
             </div>
-            {displayedRows.length === 0 ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-sm text-slate-500">
-                {rowsViewMode === 'selected'
-                  ? draft.rowIds.size === 0
-                    ? 'Выбранных стыков пока нет.'
-                    : 'Среди выбранных стыков ничего не найдено.'
-                  : draft.search
-                    ? 'По фильтру ничего не найдено.'
-                    : 'По выбранному методу нет стыков для добавления результата.'}
-              </div>
-            ) : (
-              <DialogVirtualizedRows
-                key={rowsViewportResetKey}
-                items={rowsPagination.pageItems}
-                estimateRowHeight={92}
-                getItemKey={(row) => row.id}
-                renderItem={(row) => (
-                  <LnkResultRow
-                    row={row}
-                    requestName={draft.requestName}
-                    requestDate={draft.requestDate}
-                    methodKey={draft.methodKey}
-                    selected={draft.rowIds.has(row.id)}
-                    rowResult={getEffectiveLnkResultDraftValue(row.id, draft)}
-                    saveCheckSettings={saveCheckSettings}
-                    onToggleRow={stableOnToggleRow}
-                    onSetRowResult={stableOnSetRowResult}
-                    onOpenContextMenu={openRowContextMenu}
-                  />
-                )}
-                footer={(
-                  <DialogRowPagination
-                    totalCount={rowsPagination.totalCount}
-                    firstItemNumber={rowsPagination.firstItemNumber}
-                    lastItemNumber={rowsPagination.lastItemNumber}
-                    page={rowsPagination.page}
-                    pageCount={rowsPagination.pageCount}
-                    pageSize={rowsPagination.pageSize}
-                    onPreviousPage={rowsPagination.goToPreviousPage}
-                    onNextPage={rowsPagination.goToNextPage}
-                    onPageSizeChange={rowsPagination.setPageSize}
-                  />
-                )}
-              />
-            )}
-          </div>
-        </section>
+            <DialogVirtualizedRows
+              key={rowsViewportResetKey}
+              items={rowsPagination.pageItems}
+              estimateRowHeight={92}
+              getItemKey={(row) => row.id}
+              renderItem={(row) => (
+                <LnkResultRow
+                  row={row}
+                  requestName={draft.requestName}
+                  requestDate={draft.requestDate}
+                  methodKey={draft.methodKey}
+                  selected={draft.rowIds.has(row.id)}
+                  rowResult={getEffectiveLnkResultDraftValue(row.id, draft)}
+                  saveCheckSettings={saveCheckSettings}
+                  onToggleRow={stableOnToggleRow}
+                  onSetRowResult={stableOnSetRowResult}
+                  onOpenContextMenu={openRowContextMenu}
+                />
+              )}
+              footer={(
+                <DialogRowPagination
+                  totalCount={rowsPagination.totalCount}
+                  firstItemNumber={rowsPagination.firstItemNumber}
+                  lastItemNumber={rowsPagination.lastItemNumber}
+                  page={rowsPagination.page}
+                  pageCount={rowsPagination.pageCount}
+                  pageSize={rowsPagination.pageSize}
+                  onPreviousPage={rowsPagination.goToPreviousPage}
+                  onNextPage={rowsPagination.goToNextPage}
+                  onPageSizeChange={rowsPagination.setPageSize}
+                />
+              )}
+            />
+          </RequestRowsPanel>
+        </div>
       )}
 
       <ResultDialogFooter

@@ -1,7 +1,6 @@
 import {
   VISIBLE_FIELD_SECTIONS,
   VISIBLE_FIELDS,
-  type WeldField,
   type WeldFieldKey,
 } from '@/lib/weld-fields'
 import {
@@ -12,6 +11,7 @@ import {
   PSTO_SECTION_FIELD_KEYS as pstoSectionFieldKeys,
   WELDING_JOURNAL_BLOCKED_FIELD_KEYS as weldingJournalBlockedFieldKeys,
 } from '@/lib/report-config'
+import type { WeldTableSection } from '@/lib/weld-table-sections'
 
 export type ReportKind = 'weldingJournal' | 'heatTreatment' | 'lnk' | 'welderStamps'
 
@@ -19,10 +19,12 @@ export function getReportExportFields({
   storageKey,
   hiddenFieldKeys,
   mergePstoSections,
+  sectionLayout = VISIBLE_FIELD_SECTIONS,
 }: {
   storageKey: string
   hiddenFieldKeys: ReadonlySet<WeldFieldKey>
   mergePstoSections: boolean
+  sectionLayout?: readonly WeldTableSection[]
 }) {
   const collapsedSections = readCollapsedSections(storageKey)
   const reportAlwaysVisibleFieldKeys = new Set(alwaysVisibleFieldKeys)
@@ -31,7 +33,7 @@ export function getReportExportFields({
       reportAlwaysVisibleFieldKeys.add(fieldKey)
     }
   }
-  const availableSections = getReportExportSections(hiddenFieldKeys, mergePstoSections)
+  const availableSections = getReportExportSections(hiddenFieldKeys, mergePstoSections, sectionLayout)
 
   return availableSections.flatMap((group) => {
     const isCollapsed = collapsedSections.has(group.section) && canCollapseExportSection(group.fields, reportAlwaysVisibleFieldKeys)
@@ -39,8 +41,12 @@ export function getReportExportFields({
   })
 }
 
-export function getReportExportSections(hiddenFieldKeys: ReadonlySet<WeldFieldKey>, mergePstoSections: boolean) {
-  const sections = VISIBLE_FIELD_SECTIONS.map((group) => ({
+export function getReportExportSections(
+  hiddenFieldKeys: ReadonlySet<WeldFieldKey>,
+  mergePstoSections: boolean,
+  sectionLayout: readonly WeldTableSection[] = VISIBLE_FIELD_SECTIONS,
+) {
+  const sections = sectionLayout.map((group) => ({
     ...group,
     fields: group.fields.filter((field) => !hiddenFieldKeys.has(field.key)),
   })).filter((group) => group.fields.length > 0)
@@ -86,7 +92,10 @@ export function formatWdiTotal(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 
-function canCollapseExportSection(fields: readonly WeldField[], reportAlwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>) {
+function canCollapseExportSection(
+  fields: readonly WeldTableSection['fields'][number][],
+  reportAlwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>,
+) {
   return fields.some((field) => !reportAlwaysVisibleFieldKeys.has(field.key as WeldFieldKey))
 }
 

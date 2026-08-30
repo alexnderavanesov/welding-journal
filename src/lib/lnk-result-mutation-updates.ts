@@ -1,4 +1,4 @@
-export { buildClearLnkGeneratedRows, buildLnkFieldRow } from '@/lib/lnk-field-mutation-updates'
+export { buildLnkFieldRow } from '@/lib/lnk-field-mutation-updates'
 export { buildLnkOfficialityRows } from '@/lib/lnk-officiality-updates'
 export {
   buildLnkConclusionCorrectionRows,

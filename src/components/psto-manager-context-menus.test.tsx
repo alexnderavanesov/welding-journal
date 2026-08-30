@@ -69,10 +69,12 @@ describe('PSTO manager context menus', () => {
       />,
     )
 
-    fireEvent.contextMenu(screen.getByText('Линия-1 · F7'))
+    const resultCard = screen.getByRole('heading', { name: 'Результат ПСТО' }).closest('article')
+    expect(resultCard).not.toBeNull()
+    fireEvent.contextMenu(resultCard!)
     fireEvent.click(screen.getByRole('button', { name: 'В сварочном журнале, новая вкладка' }))
 
-    expect(onOpenJournalRows).toHaveBeenCalledWith([row], 'результат ПСТО · стык F7')
+    expect(onOpenJournalRows).toHaveBeenCalledWith([row], 'цикл ПСТО/ТВМТ · стык F7')
   })
 
   it('keeps the native context menu in a diagram name input', () => {
@@ -92,8 +94,39 @@ describe('PSTO manager context menus', () => {
       />,
     )
 
-    fireEvent.contextMenu(screen.getByPlaceholderText('Наименование диаграммы для этого стыка'))
+    fireEvent.contextMenu(screen.getByLabelText('Наименование диаграммы'))
 
     expect(screen.queryByRole('button', { name: 'Открыть диаграмму' })).not.toBeInTheDocument()
+  })
+
+  it('does not show the waiting marker as a completed PSTO result stage', () => {
+    render(
+      <PstoResultManagerDialog
+        rows={[{
+          ...row,
+          pstoResult: 'ожидает',
+          pstoDate: null,
+          heatTreatmentDiagram: null,
+          tvmtRequest: null,
+          tvmtRequestDate: null,
+          tvmtResult: null,
+          tvmtConclusionDate: null,
+          tvmtConclusion: null,
+        } as WeldRow]}
+        diagramDrafts={{}}
+        isPending={false}
+        canOpenDocument
+        onClose={vi.fn()}
+        onDiagramDraftChange={vi.fn()}
+        onRenameDiagram={vi.fn()}
+        onDeleteResult={vi.fn()}
+        onOpenDocument={vi.fn()}
+        onOpenJournalRows={vi.fn()}
+        onCopyDocumentName={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Заявка ПСТО' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Результат ПСТО' })).not.toBeInTheDocument()
   })
 })

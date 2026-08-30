@@ -5,7 +5,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import type { WeldColumnFilterOption, WeldReportKind } from '@/server/welds'
+import type { WeldColumnFilterOption, WeldReportKind } from '@/server/weld-contracts'
 
 type WeldTableHeaderProps = {
   selectable: boolean

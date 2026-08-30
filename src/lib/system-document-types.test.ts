@@ -36,6 +36,18 @@ describe('system document grouping', () => {
     expect(getSystemDocumentTargetReport(type)).toBe(report)
   })
 
+  it('opens TVMT documents in heat treatment while keeping other LNK documents in LNK', () => {
+    const [tvmtRequest] = buildSystemDocumentSummaries([
+      row(1, { tvmtRequest: 'ТВМТ-1', tvmtRequestDate: '2026-08-02' }),
+    ], 'lnkRequest')
+    const [vikRequest] = buildSystemDocumentSummaries([
+      row(1, { vikRequest: 'ВИК-1', vikRequestDate: '2026-08-02' }),
+    ], 'lnkRequest')
+
+    expect(getSystemDocumentTargetReport(tvmtRequest)).toBe('heatTreatment')
+    expect(getSystemDocumentTargetReport(vikRequest)).toBe('lnk')
+  })
+
   it('combines LNK request methods with the same name and date into one document', () => {
     const documents = buildSystemDocumentSummaries(
       [
@@ -130,11 +142,15 @@ describe('system document grouping', () => {
       type: 'pstoRequest',
       title: 'Заявка-ПСТО-001',
       date: '2026-08-02',
+      sourceKind: 'pstoCycle',
+      cycleSequences: [1],
     })
     expect(getSystemDocumentReferenceForField(source, 'heatTreatmentDiagram')).toEqual({
       type: 'pstoConclusion',
       title: 'Заключение-ПСТО-001',
       date: '2026-08-03',
+      sourceKind: 'pstoCycle',
+      cycleSequences: [1],
     })
   })
 
@@ -142,6 +158,8 @@ describe('system document grouping', () => {
     const source = row(1, {
       rkRequest: 'Заявка-РК-001',
       rkRequestDate: '2026-08-02',
+      tvmtRequest: 'Заявка-ТВМТ-001',
+      tvmtRequestDate: '2026-08-02',
       uzkConclusion: 'Заключение-УЗК-001',
       uzkConclusionDate: '2026-08-03',
     })
@@ -157,7 +175,101 @@ describe('system document grouping', () => {
       date: '2026-08-03',
       methodCode: 'УЗК',
     })
+    expect(getSystemDocumentReferenceForField(source, 'tvmtRequest')).toEqual({
+      type: 'lnkRequest',
+      title: 'Заявка-ТВМТ-001',
+      date: '2026-08-02',
+      methodCode: 'ТВМТ',
+      sourceKind: 'pstoCycle',
+      cycleSequences: [1],
+    })
     expect(getSystemDocumentReferenceForField(source, 'uzkConclusionDate')).toBeNull()
+  })
+
+  it('builds source-scoped references for pre-heat-treatment document fields', () => {
+    const source = row(1, {
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'РК',
+        requestName: 'Заявка РК до ТО',
+        requestDate: '2026-08-02',
+        result: 'годен',
+        conclusionDate: '2026-08-03',
+        conclusionName: 'ЗНК-РК до ТО',
+      }],
+    })
+
+    expect(getSystemDocumentReferenceForField(source, 'preRkRequest')).toEqual({
+      type: 'lnkRequest',
+      title: 'Заявка РК до ТО',
+      date: '2026-08-02',
+      sourceKind: 'beforeHeatTreatment',
+    })
+    expect(getSystemDocumentReferenceForField(source, 'preRkConclusion')).toEqual({
+      type: 'lnkConclusion',
+      title: 'ЗНК-РК до ТО',
+      date: '2026-08-03',
+      methodCode: 'РК',
+      sourceKind: 'beforeHeatTreatment',
+    })
+  })
+
+  it('builds source-scoped references from the current repeat PSTO and TVMT cycle', () => {
+    const source = row(1, {
+      pstoRequest: 'Заявка ПСТО основная',
+      pstoRequestDate: '2026-08-01',
+      heatTreatmentDiagram: 'Диаграмма основная',
+      pstoDate: '2026-08-02',
+      tvmtRequest: 'Заявка ТВМТ основная',
+      tvmtRequestDate: '2026-08-03',
+      tvmtConclusion: 'Заключение ТВМТ основное',
+      tvmtConclusionDate: '2026-08-04',
+      pstoRepeatCycles: [{
+        id: 21,
+        weldJointId: 1,
+        sequence: 2,
+        pstoRequest: 'Заявка ПСТО повтор 2',
+        pstoRequestDate: '2026-08-05',
+        heatTreatmentDiagram: 'Диаграмма повтор 2',
+        pstoDate: '2026-08-06',
+        tvmtRequest: 'Заявка ТВМТ повтор 2',
+        tvmtRequestDate: '2026-08-07',
+        tvmtConclusion: 'Заключение ТВМТ повтор 2',
+        tvmtConclusionDate: '2026-08-08',
+      }],
+    })
+
+    expect(getSystemDocumentReferenceForField(source, 'pstoRequest')).toEqual({
+      type: 'pstoRequest',
+      title: 'Заявка ПСТО повтор 2',
+      date: '2026-08-05',
+      sourceKind: 'pstoCycle',
+      cycleSequences: [2],
+    })
+    expect(getSystemDocumentReferenceForField(source, 'heatTreatmentDiagram')).toEqual({
+      type: 'pstoConclusion',
+      title: 'Диаграмма повтор 2',
+      date: '2026-08-06',
+      sourceKind: 'pstoCycle',
+      cycleSequences: [2],
+    })
+    expect(getSystemDocumentReferenceForField(source, 'tvmtRequest')).toEqual({
+      type: 'lnkRequest',
+      title: 'Заявка ТВМТ повтор 2',
+      date: '2026-08-07',
+      methodCode: 'ТВМТ',
+      sourceKind: 'pstoCycle',
+      cycleSequences: [2],
+    })
+    expect(getSystemDocumentReferenceForField(source, 'tvmtConclusion')).toEqual({
+      type: 'lnkConclusion',
+      title: 'Заключение ТВМТ повтор 2',
+      date: '2026-08-08',
+      methodCode: 'ТВМТ',
+      sourceKind: 'pstoCycle',
+      cycleSequences: [2],
+    })
   })
 
   it('reads a system document number using the current naming rule', () => {

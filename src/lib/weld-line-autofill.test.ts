@@ -32,7 +32,7 @@ describe('getWeldLineAutofillState', () => {
     })
   })
 
-  it('does not copy RFA, STLS or MKK from a 100 percent line', () => {
+  it('does not copy line-managed PSTO/TVMT or line-only LNK methods', () => {
     const state = getWeldLineAutofillState(
       { line: 'LIN-1', joint: 'S2' },
       [
@@ -58,7 +58,7 @@ describe('getWeldLineAutofillState', () => {
 
     expect(state.disabledReason).toBeNull()
     expect(state.values.hasVik).toBe('да')
-    expect(state.values.hasTvmt).toBe('да')
+    expect(state.values.hasTvmt).toBeUndefined()
     expect(state.values.hasRfa).toBeUndefined()
     expect(state.values.hasStls).toBeUndefined()
     expect(state.values.hasMkk).toBeUndefined()
@@ -105,7 +105,7 @@ describe('getWeldLineAutofillState', () => {
     expect(state.values.hasRk).toBeUndefined()
   })
 
-  it('still copies PSTO on percentage lines because it applies to the whole line', () => {
+  it('leaves PSTO assignment to the line program on percentage lines', () => {
     const state = getWeldLineAutofillState(
       { line: 'LIN-1', subtitleCode: '400' },
       [
@@ -117,7 +117,7 @@ describe('getWeldLineAutofillState', () => {
     expect(state.disabledReason).toBeNull()
     expect(state.values.weldControlPercent).toBe('25')
     expect(state.values.hasVik).toBe('да')
-    expect(state.values.pstoRequired).toBe('да')
+    expect(state.values.pstoRequired).toBeUndefined()
     expect(state.values.hasRk).toBeUndefined()
   })
 

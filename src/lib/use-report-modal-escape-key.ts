@@ -7,6 +7,11 @@ type ReportModalEscapeKeyOptions = {
   isPstoResultManagerOpen: boolean
   isLnkRequestManagerOpen: boolean
   isLnkResultManagerOpen: boolean
+  isPreHeatTreatmentWorkflowOpen?: boolean
+  isPreHeatTreatmentResultManagerOpen?: boolean
+  isTvmtWorkflowOpen?: boolean
+  isPstoRepeatWorkflowOpen?: boolean
+  isPstoLineProgramOpen?: boolean
   isRkExposureModalOpen: boolean
   isPstoResultModalOpen: boolean
   isPstoRequestModalOpen: boolean
@@ -19,11 +24,17 @@ type ReportModalEscapeKeyOptions = {
   canClosePstoResultManager: boolean
   canCloseLnkRequestManager: boolean
   canCloseLnkResultManager: boolean
+  canClosePreHeatTreatmentResultManager?: boolean
   canCloseRkExposureModal: boolean
   onClosePstoRequestManager: () => void
   onClosePstoResultManager: () => void
   onCloseLnkRequestManager: () => void
   onCloseLnkResultManager: () => void
+  onClosePreHeatTreatmentWorkflow?: () => void
+  onClosePreHeatTreatmentResultManager?: () => void
+  onCloseTvmtWorkflow?: () => void
+  onClosePstoRepeatWorkflow?: () => void
+  onClosePstoLineProgram?: () => void
   onCloseRkExposureModal: () => void
   onClosePstoResultModal: () => void
   onClosePstoRequestModal: () => void
@@ -40,6 +51,11 @@ export function useReportModalEscapeKey({
   isPstoResultManagerOpen,
   isLnkRequestManagerOpen,
   isLnkResultManagerOpen,
+  isPreHeatTreatmentWorkflowOpen = false,
+  isPreHeatTreatmentResultManagerOpen = false,
+  isTvmtWorkflowOpen = false,
+  isPstoRepeatWorkflowOpen = false,
+  isPstoLineProgramOpen = false,
   isRkExposureModalOpen,
   isPstoResultModalOpen,
   isPstoRequestModalOpen,
@@ -52,11 +68,17 @@ export function useReportModalEscapeKey({
   canClosePstoResultManager,
   canCloseLnkRequestManager,
   canCloseLnkResultManager,
+  canClosePreHeatTreatmentResultManager = true,
   canCloseRkExposureModal,
   onClosePstoRequestManager,
   onClosePstoResultManager,
   onCloseLnkRequestManager,
   onCloseLnkResultManager,
+  onClosePreHeatTreatmentWorkflow,
+  onClosePreHeatTreatmentResultManager,
+  onCloseTvmtWorkflow,
+  onClosePstoRepeatWorkflow,
+  onClosePstoLineProgram,
   onCloseRkExposureModal,
   onClosePstoResultModal,
   onClosePstoRequestModal,
@@ -80,6 +102,22 @@ export function useReportModalEscapeKey({
         onCloseReportImportModal()
         return
       }
+      if (isPstoLineProgramOpen) {
+        onClosePstoLineProgram?.()
+        return
+      }
+      if (isPreHeatTreatmentWorkflowOpen) {
+        onClosePreHeatTreatmentWorkflow?.()
+        return
+      }
+      if (isTvmtWorkflowOpen) {
+        onCloseTvmtWorkflow?.()
+        return
+      }
+      if (isPstoRepeatWorkflowOpen) {
+        onClosePstoRepeatWorkflow?.()
+        return
+      }
       if (isPstoRequestManagerOpen) {
         if (canClosePstoRequestManager) onClosePstoRequestManager()
         return
@@ -94,6 +132,10 @@ export function useReportModalEscapeKey({
       }
       if (isLnkResultManagerOpen) {
         if (canCloseLnkResultManager) onCloseLnkResultManager()
+        return
+      }
+      if (isPreHeatTreatmentResultManagerOpen) {
+        if (canClosePreHeatTreatmentResultManager) onClosePreHeatTreatmentResultManager?.()
         return
       }
       if (isRkExposureModalOpen) {
@@ -133,6 +175,11 @@ export function useReportModalEscapeKey({
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
     isLnkResultManagerOpen,
+    isPreHeatTreatmentWorkflowOpen,
+    isPreHeatTreatmentResultManagerOpen,
+    isTvmtWorkflowOpen,
+    isPstoRepeatWorkflowOpen,
+    isPstoLineProgramOpen,
     isRkExposureModalOpen,
     isPstoResultModalOpen,
     isPstoRequestModalOpen,
@@ -145,11 +192,17 @@ export function useReportModalEscapeKey({
     canClosePstoResultManager,
     canCloseLnkRequestManager,
     canCloseLnkResultManager,
+    canClosePreHeatTreatmentResultManager,
     canCloseRkExposureModal,
     onClosePstoRequestManager,
     onClosePstoResultManager,
     onCloseLnkRequestManager,
     onCloseLnkResultManager,
+    onClosePreHeatTreatmentWorkflow,
+    onClosePreHeatTreatmentResultManager,
+    onCloseTvmtWorkflow,
+    onClosePstoRepeatWorkflow,
+    onClosePstoLineProgram,
     onCloseRkExposureModal,
     onClosePstoResultModal,
     onClosePstoRequestModal,

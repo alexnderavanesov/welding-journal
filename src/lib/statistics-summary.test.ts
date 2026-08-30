@@ -117,6 +117,99 @@ describe('buildStatisticsSummary', () => {
     expect(summary.pstoClosurePercent).toBe(100)
   })
 
+  it('keeps TVMT only in PSTO statistics and derives its need from completed PSTO', () => {
+    const rows = [
+      {
+        id: 1,
+        weldDate: '2026-07-01',
+        pstoRequired: 'да',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-01',
+        preHeatTreatmentControls: [{
+          id: 10,
+          weldJointId: 1,
+          method: 'ВИК',
+          requestName: 'Заявка ВИК до ТО-001',
+          result: 'годен',
+        }],
+      },
+      {
+        id: 2,
+        weldDate: '2026-07-01',
+        pstoRequired: 'да',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-01',
+        tvmtRequest: 'Заявка ТВМТ-001',
+        tvmtRequestDate: '2026-07-02',
+        tvmtResult: 'годен',
+        tvmtConclusionDate: '2026-07-03',
+        tvmtConclusion: 'ЗНК-ТВМТ-001',
+      },
+      {
+        id: 3,
+        weldDate: '2026-07-01',
+        hasTvmt: 'да',
+      },
+    ] as WeldRow[]
+
+    const summary = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'joints')
+    const tvmt = summary.tvmtMethod
+
+    expect(summary.methods.some((method) => method.code === 'ТВМТ')).toBe(false)
+    expect(tvmt).toMatchObject({
+      requiredRequests: 2,
+      createdRequests: 1,
+      requests: 1,
+      closed: 1,
+      totalClosed: 1,
+      waitingRequest: 1,
+      waitingControl: 0,
+    })
+  })
+
+  it('excludes cancelled untreated rows but keeps completed cancelled PSTO in TVMT demand', () => {
+    const rows = [
+      {
+        id: 1,
+        weldDate: '2026-07-01',
+        pstoRequired: 'отменен',
+      },
+      {
+        id: 2,
+        weldDate: '2026-07-01',
+        pstoRequired: 'отменен',
+        pstoRequest: 'ПСТО-002',
+        pstoRequestDate: '2026-07-01',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-02',
+      },
+      {
+        id: 3,
+        weldDate: '2026-07-01',
+        pstoRequired: 'да',
+        pstoRequest: 'ПСТО-003',
+        pstoRequestDate: '2026-07-01',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-02',
+        tvmtRequest: 'ТВМТ-003',
+        tvmtRequestDate: '2026-07-03',
+        tvmtResult: 'не годен',
+        tvmtConclusionDate: '2026-07-04',
+      },
+    ] as WeldRow[]
+
+    const summary = buildStatisticsSummary(rows, '2026-07-01', '2026-07-31', 'joints')
+
+    expect(summary.tvmtMethod).toMatchObject({
+      requiredRequests: 2,
+      createdRequests: 1,
+      waitingRequest: 1,
+      rejected: 1,
+    })
+    expect(summary.tvmtMethod.rowIds.requiredRequests).toEqual([2, 3])
+    expect(summary.pstoMethod.rowIds.requiredRequests).toEqual([2, 3])
+  })
+
   it('does not count PSTO rows with no need in request and closure statistics', () => {
     const rows = [
       {
@@ -502,6 +595,7 @@ describe('buildStatisticsSummary', () => {
     expect(summary.lnkRequiredRequests).toBe(3)
     expect(summary.lnkCreatedRequests).toBe(1)
     expect(summary.lnkRequestCoveragePercent).toBeCloseTo(100 / 3)
+    expect(summary.tvmtMethod.requiredRequests).toBe(0)
     expect(summary.pstoRequiredRequests).toBe(2)
     expect(summary.pstoCreatedRequests).toBe(1)
     expect(summary.pstoRequestCoveragePercent).toBe(50)

@@ -12,6 +12,7 @@ type DialogRowPaginationProps = {
   onPreviousPage: () => void
   onNextPage: () => void
   onPageSizeChange: (pageSize: number) => void
+  itemLabel?: string
 }
 
 export function DialogRowPagination({
@@ -24,6 +25,7 @@ export function DialogRowPagination({
   onPreviousPage,
   onNextPage,
   onPageSizeChange,
+  itemLabel = 'стыков',
 }: DialogRowPaginationProps) {
   return (
     <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-600">
@@ -31,7 +33,7 @@ export function DialogRowPagination({
         <span className="font-medium text-slate-800">
           {firstItemNumber}-{lastItemNumber}
         </span>
-        <span>из {totalCount} стыков</span>
+        <span>из {totalCount} {itemLabel}</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -51,7 +53,7 @@ export function DialogRowPagination({
         <div className="flex h-8 items-center overflow-hidden rounded-md border border-slate-200 bg-white">
           <button
             type="button"
-            aria-label="Предыдущая страница стыков"
+            aria-label={`Предыдущая страница ${itemLabel}`}
             title="Предыдущая страница"
             disabled={page <= 1}
             onClick={onPreviousPage}
@@ -64,7 +66,7 @@ export function DialogRowPagination({
           </span>
           <button
             type="button"
-            aria-label="Следующая страница стыков"
+            aria-label={`Следующая страница ${itemLabel}`}
             title="Следующая страница"
             disabled={page >= pageCount}
             onClick={onNextPage}

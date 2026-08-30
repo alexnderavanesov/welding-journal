@@ -1,6 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { useConfirmAction } from '@/lib/confirm-action-context'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
   buildLnkResultDraftById,
@@ -27,10 +26,6 @@ type LnkResultMutation = {
   }) => void
 }
 
-type ClearLnkGeneratedDataMutation = {
-  mutate: (rows: WeldRow[]) => void
-}
-
 type UseLnkResultSaveActionsOptions = {
   lnkRows: WeldRow[]
   draft: LnkResultDraftState
@@ -40,7 +35,6 @@ type UseLnkResultSaveActionsOptions = {
   nextConclusionNumber?: number
   requestConclusionSettings: RequestConclusionSettings
   resultMutation: LnkResultMutation
-  clearGeneratedDataMutation: ClearLnkGeneratedDataMutation
   setDraft: Dispatch<SetStateAction<LnkResultDraftState>>
   setMessage: (value: string) => void
 }
@@ -54,11 +48,9 @@ export function useLnkResultSaveActions({
   nextConclusionNumber,
   requestConclusionSettings,
   resultMutation,
-  clearGeneratedDataMutation,
   setDraft,
   setMessage,
 }: UseLnkResultSaveActionsOptions) {
-  const confirmAction = useConfirmAction()
   const saveCheckSettings = useSaveCheckSettings()
 
   function setLnkResultForRow(rowId: number, result: string) {
@@ -136,20 +128,8 @@ export function useLnkResultSaveActions({
     })
   }
 
-  async function handleClearLnkGeneratedData() {
-    const confirmed = await confirmAction({
-      title: 'Очистить результаты ЛНК',
-      itemName: 'Результаты, даты и заключения ЛНК',
-      description: 'Заявки ЛНК, сами стыки и назначение контроля останутся.',
-      warning: 'Это действие нельзя отменить.',
-    })
-    if (!confirmed) return
-    clearGeneratedDataMutation.mutate(lnkRows)
-  }
-
   return {
     handleAddLnkResult,
-    handleClearLnkGeneratedData,
     setLnkResultForRow,
     setLnkResultForRows,
   }

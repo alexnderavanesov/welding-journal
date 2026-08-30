@@ -6,8 +6,6 @@ import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   applyLnkFieldUpdate,
   clearDisabledLnkRequests,
-  clearLnkGeneratedData,
-  hasLnkGeneratedDataChanged,
   isLnkRequestField,
   withLnkFinalStatus,
   withTouchedLnkTimestamp,
@@ -50,11 +48,4 @@ export function buildLnkFieldRow({
   const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
   assertNoLnkChronologyIssues([proposedRecord], loadSaveCheckSettings())
   return withLnkFinalStatus(proposedRecord)
-}
-
-export function buildClearLnkGeneratedRows(targetRows: WeldRow[]) {
-  return targetRows.flatMap((row) => {
-    const cleanedRow = clearLnkGeneratedData(row)
-    return hasLnkGeneratedDataChanged(row, cleanedRow) ? [withLnkFinalStatus(cleanedRow)] : []
-  })
 }

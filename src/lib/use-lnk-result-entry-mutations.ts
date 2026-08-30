@@ -1,12 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { clearLnkGeneratedWeldData } from '@/server/welds'
 import {
   LNK_EMPTY_RESULT_VALUE,
-  LNK_GENERATED_FIELD_KEYS as lnkGeneratedFieldKeys,
   LNK_METHODS,
 } from '@/lib/report-config'
 import { getLnkResultHighlightFields } from '@/lib/lnk-report-mutation-highlight-fields'
-import { buildClearLnkGeneratedRows, buildLnkResultRows } from '@/lib/lnk-report-mutation-updates'
+import { buildLnkResultRows } from '@/lib/lnk-report-mutation-updates'
 import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
@@ -19,7 +17,6 @@ export function useLnkResultEntryMutations({
   setMessage,
   setLnkNotice,
   highlightChangedRows,
-  setSelectedLnkIds,
   setIsLnkResultModalOpen,
   setLnkResultDraft,
   defaultLnkConclusionNaming,
@@ -78,6 +75,7 @@ export function useLnkResultEntryMutations({
         updatedRecords,
         'Не удалось сохранить часть записей',
         {
+          mutationScope: 'lnk',
           systemDocumentSequences: method
             ? groups.filter((group) => group.useSystemName).map((group) => ({
                 type: 'lnkConclusion',
@@ -109,29 +107,7 @@ export function useLnkResultEntryMutations({
     },
   })
 
-  const clearLnkGeneratedDataMutation = useMutation({
-    mutationFn: async (targetRows: WeldRow[]) => {
-      const updatedRows = buildClearLnkGeneratedRows(targetRows)
-      if (updatedRows.length === 0) return []
-
-      const savedRows = await clearLnkGeneratedWeldData()
-      if (!Array.isArray(savedRows)) throw new Error('Не удалось очистить данные ЛНК')
-      return savedRows as unknown as WeldRow[]
-    },
-    onSuccess: async (savedRows) => {
-      highlightChangedRows(savedRows, [...lnkGeneratedFieldKeys, 'finalStatus'])
-      setSelectedLnkIds(new Set())
-      setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
-      setMessage(savedRows.length > 0 ? `Очищены результаты и заключения ЛНК: ${savedRows.length} строк` : 'В ЛНК нечего очищать')
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
-    },
-    onError: (error) => {
-      setMessage((error as Error).message)
-    },
-  })
-
   return {
     lnkResultMutation,
-    clearLnkGeneratedDataMutation,
   }
 }

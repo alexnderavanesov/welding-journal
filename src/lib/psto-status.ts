@@ -1,12 +1,73 @@
 import { formatPstoDiagramDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getPstoResultValue } from '@/lib/report-import'
-import { hasText, isYesText } from '@/lib/report-value-utils'
+import { hasText, isCancelledControlValue, isYesText } from '@/lib/report-value-utils'
 import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldInput } from '@/lib/weld-fields'
+import { getPrimaryPstoStartBlockReason } from '@/lib/lnk-control-stage'
+import {
+  canCreateRepeatPstoCycle,
+  getCurrentPstoCycle,
+  getPstoTvmtWorkflowLabel,
+  getPstoTvmtWorkflowState,
+} from '@/lib/tvmt-cycle'
+
+export function getPstoRequestBlockReason(row: WeldInput) {
+  if (!isYesText(row.pstoRequired)) return 'ПСТО не назначена.'
+  const requestName = String(row.pstoRequest ?? '').trim()
+  if (requestName) return `Заявка ПСТО уже создана: ${requestName}.`
+  return getPrimaryPstoStartBlockReason(row)
+}
 
 export function canCreatePstoRequest(row: WeldInput) {
-  return isYesText(row.pstoRequired) && !hasText(row.pstoRequest)
+  return !getPstoRequestBlockReason(row)
+}
+
+export function getPstoWorkflowRequestBlockReason(row: WeldInput) {
+  if (canCreatePstoRequest(row) || canCreateRepeatPstoCycle(row)) return ''
+
+  const state = getPstoTvmtWorkflowState(row)
+  if (state === 'complete' && isCancelledControlValue(row.pstoRequired)) {
+    return 'ПСТО по линии отменена; новые циклы недоступны.'
+  }
+  if (state === 'waiting-psto-request') return getPstoRequestBlockReason(row)
+  if (state === 'not-required') {
+    return isCancelledControlValue(row.pstoRequired)
+      ? 'ПСТО по линии отменена.'
+      : 'ПСТО по линии не назначена.'
+  }
+
+  const cycle = getCurrentPstoCycle(row)
+  if (state === 'waiting-psto' && cycle?.pstoRequest) {
+    return `Заявка ПСТО для цикла ${cycle.sequence} уже создана: ${cycle.pstoRequest}.`
+  }
+  if (state === 'repeat-psto-required') return 'Повторный цикл ПСТО пока недоступен.'
+  return `Цикл ${cycle?.sequence ?? 1}: ${getPstoTvmtWorkflowLabel(state)}.`
+}
+
+export function canCreatePstoWorkflowRequest(row: WeldInput) {
+  return !getPstoWorkflowRequestBlockReason(row)
+}
+
+export function getPstoWorkflowResultBlockReason(row: WeldInput) {
+  const state = getPstoTvmtWorkflowState(row)
+  if (state === 'waiting-psto') return ''
+  if (state === 'waiting-psto-request') {
+    return getPstoRequestBlockReason(row) || 'Сначала создайте заявку ПСТО.'
+  }
+  if (state === 'not-required') {
+    return isCancelledControlValue(row.pstoRequired)
+      ? 'ПСТО по линии отменена.'
+      : 'ПСТО по линии не назначена.'
+  }
+
+  const cycle = getCurrentPstoCycle(row)
+  if (cycle?.pstoResult) return `Результат ПСТО для цикла ${cycle.sequence} уже внесен.`
+  return `Цикл ${cycle?.sequence ?? 1}: ${getPstoTvmtWorkflowLabel(state)}.`
+}
+
+export function canAddPstoWorkflowResult(row: WeldInput) {
+  return !getPstoWorkflowResultBlockReason(row)
 }
 
 export function buildPstoWaitingRequestRows(rows: WeldRow[]) {

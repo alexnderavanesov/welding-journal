@@ -33,13 +33,20 @@ import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
 import { getMissingWeldImportIdentityFields } from '@/lib/weld-import-identity'
 import { validateManualJointName } from '@/lib/joint-name'
 import { isSystemWdiMode } from '@/lib/wdi'
-import { LNK_METHODS } from '@/lib/report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/report-config'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
+import {
+  getPstoLineIdentityKey,
+  hasPstoLifecycleData,
+  normalizePstoLineIdentity,
+  requiresPrimaryStageResolutionForAssignedPstoLine,
+} from '@/lib/psto-line-assignment'
+import { isControlEnabledValue } from '@/lib/control-availability-values'
 
 export type ReportImportPreviewError = {
   rowNumber: number
@@ -78,6 +85,7 @@ type BuildReportImportPreviewOptions = {
 
 type BuildReportMassFillPreviewOptions = BuildReportImportPreviewOptions & {
   rows: WeldRow[]
+  fullyAssignedPstoLineKeys?: readonly string[]
 }
 
 export async function buildReportImportPreview({
@@ -113,6 +121,7 @@ export async function buildReportMassFillPreview({
   activeReport,
   file,
   rows,
+  fullyAssignedPstoLineKeys = [],
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -122,6 +131,7 @@ export async function buildReportMassFillPreview({
     activeReport,
     file,
     rows,
+    fullyAssignedPstoLineKeys,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
@@ -132,6 +142,7 @@ export async function buildReportReplaceDataPreview({
   activeReport,
   file,
   rows,
+  fullyAssignedPstoLineKeys = [],
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -141,6 +152,7 @@ export async function buildReportReplaceDataPreview({
     activeReport,
     file,
     rows,
+    fullyAssignedPstoLineKeys,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
@@ -152,6 +164,7 @@ async function buildExistingRowsImportPreview({
   activeReport,
   file,
   rows,
+  fullyAssignedPstoLineKeys = [],
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -259,6 +272,18 @@ async function buildExistingRowsImportPreview({
         fallbackFieldKeys: changedFieldKeys,
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
     }
+    const pstoLineMoveReason = getImportPstoLineMoveBlockReason(
+      candidate,
+      existingRow,
+      rows,
+      fullyAssignedPstoLineKeys,
+    )
+    if (pstoLineMoveReason) {
+      validationMessages.push(pstoLineMoveReason)
+      ;(['projectTitle', 'subtitleCode', 'line'] as const)
+        .filter((fieldKey) => changedFieldKeys.includes(fieldKey))
+        .forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+    }
     const missingIdentityFields = getMissingWeldImportIdentityFields(candidate)
     if (missingIdentityFields.length > 0) {
       validationMessages.push(
@@ -326,6 +351,31 @@ async function buildExistingRowsImportPreview({
     skippedRows,
     ...(mode === 'replaceData' ? { expectedRowVersions } : {}),
   }
+}
+
+function getImportPstoLineMoveBlockReason(
+  candidate: ReportImportRecord,
+  existingRow: WeldRow,
+  scopeRows: WeldRow[],
+  fullyAssignedPstoLineKeys: readonly string[],
+) {
+  const sourceKey = getPstoLineIdentityKey(existingRow)
+  const targetIdentity = normalizePstoLineIdentity(candidate)
+  const targetKey = getPstoLineIdentityKey(targetIdentity)
+  if (sourceKey === targetKey) return ''
+
+  const targetRows = scopeRows.filter((row) => getPstoLineIdentityKey(row) === targetKey)
+  const targetAssignedCount = targetRows.filter((row) => isControlEnabledValue(row.pstoRequired)).length
+  const targetAssigned = fullyAssignedPstoLineKeys.includes(targetKey) || (
+    targetRows.length > 0 && targetAssignedCount === targetRows.length
+  )
+  if (targetAssigned) {
+    return requiresPrimaryStageResolutionForAssignedPstoLine(existingRow)
+      ? 'Стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка и выберите: перенести комплект в «До ТО» или удалить.'
+      : ''
+  }
+  if (!hasPstoLifecycleData(existingRow)) return ''
+  return 'Стык переносится на линию без подтвержденного ПСТО, но у него уже есть документы ПСТО/ТВМТ, повторные циклы или НК до ТО. Выполните перенос через карточку стыка и выберите, какой комплект НК сохранить.'
 }
 
 function isExpectedRowVersionCurrent(expectedVersion: string, currentVersion: string | undefined) {

@@ -87,7 +87,8 @@ describe('LnkRequestManagerDialog', () => {
     const { onChangeRequest } = renderDialog()
     const dialog = screen.getByRole('dialog')
 
-    expect(dialog).toHaveClass('h-[92vh]')
+    expect(screen.getByRole('heading', { name: 'Редактирование заявок ЛНК' })).toBeInTheDocument()
+    expect(dialog).toHaveClass('max-w-[1320px]', 'h-[92vh]')
     expect(screen.getAllByText('Открыта').length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole('button', { name: 'Закрытые' }))

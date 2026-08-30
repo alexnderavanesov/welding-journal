@@ -6,6 +6,44 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldField } from '@/lib/weld-fields'
 
 describe('WeldTableBodyCell LNK request link', () => {
+  it('opens PSTO history from the joint cell when the report enables that transition', () => {
+    const onOpenJoint = vi.fn()
+    const row = { id: 8, joint: 'F8' } as WeldRow
+    const field = {
+      key: 'joint',
+      dbName: 'joint',
+      label: 'Стык',
+      kind: 'text',
+      group: 'Стык',
+    } satisfies WeldField
+
+    render(
+      <table><tbody><tr>
+        <WeldTableBodyCell
+          row={row}
+          field={field}
+          displayValue={row.joint}
+          isEditableCell={false}
+          isBlockedEditableCell={false}
+          isHighlightedRow={false}
+          isSelectedRow={false}
+          hasDispatcherTask={false}
+          isHighlightedCell={false}
+          isResultField={false}
+          stickyLeft={0}
+          stickyIdentityLeadingWidth={0}
+          stickyIdentityColumns={false}
+          stickyBackgroundClassName="bg-white"
+          isSectionEnd={false}
+          onOpenJoint={onOpenJoint}
+        />
+      </tr></tbody></table>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'F8' }))
+    expect(onOpenJoint).toHaveBeenCalledWith(row)
+  })
+
   it('opens the weld editor from the read-only control basis summary', () => {
     const onEdit = vi.fn()
     const row = {
@@ -43,6 +81,7 @@ describe('WeldTableBodyCell LNK request link', () => {
               stickyBackgroundClassName="bg-white"
               isSectionEnd={false}
               onEdit={onEdit}
+              controlBasisEditorEnabled
             />
           </tr>
         </tbody>

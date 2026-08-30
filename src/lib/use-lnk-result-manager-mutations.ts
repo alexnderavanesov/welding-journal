@@ -35,7 +35,11 @@ export function useLnkResultManagerMutations({
       result: string | null
     }) => {
       const updatedRecord = buildLnkResultCorrectionRow({ record, methodKey, result })
-      const saved = await updateWeldRowOrThrow(updatedRecord)
+      const saved = await updateWeldRowOrThrow(
+        updatedRecord,
+        'Не удалось изменить результат ЛНК',
+        { mutationScope: 'lnk' },
+      )
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
@@ -56,7 +60,11 @@ export function useLnkResultManagerMutations({
     }) => {
       const updatedRecords = buildLnkResultReplacementRows({ updates })
 
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось заменить результаты ЛНК',
+        { mutationScope: 'lnk' },
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -88,7 +96,11 @@ export function useLnkResultManagerMutations({
 
       if (updatedRecords.length === 0) throw new Error('Нет результатов для переименования заключения')
 
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось переименовать заключение ЛНК',
+        { mutationScope: 'lnk' },
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {

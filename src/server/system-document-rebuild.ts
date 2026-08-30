@@ -5,7 +5,7 @@ import { inArray } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import {
   getSystemDocumentRebuildDecisionError,
   buildSystemDocumentRebuildDocuments,
@@ -39,7 +39,7 @@ import {
   type SystemDocumentSequenceTransaction,
 } from '@/server/system-document-sequences'
 import { assertSecurityScope } from '@/server/security-functions'
-import { updateWeldJointsInBatches } from '@/server/welds'
+import { updateWeldJointsInBatches } from '@/server/weld-persistence'
 
 type RebuildPreviewRequest = {
   templateIds?: SystemDocumentTemplateId[]
@@ -144,12 +144,10 @@ async function loadRebuildSnapshot(
   tx: SystemDocumentSequenceTransaction,
 ): Promise<RebuildSnapshot> {
   const settings = await readRequestConclusionSettings(tx)
-  const documents = (
-    await Promise.all(
-      (['lnkRequest', 'lnkConclusion', 'pstoRequest', 'pstoConclusion'] as const)
-        .map((type) => loadIndexedSystemDocumentSummaries(tx, type)),
-    )
-  ).flat()
+  const documents: SystemDocumentSummary[] = []
+  for (const type of ['lnkRequest', 'lnkConclusion', 'pstoRequest', 'pstoConclusion'] as const) {
+    documents.push(...await loadIndexedSystemDocumentSummaries(tx, type))
+  }
   const rowIds = Array.from(new Set(documents.flatMap((document) => document.rowIds)))
   const rows = rowIds.length > 0
     ? await tx.select().from(weldJoints).where(inArray(weldJoints.id, rowIds))
@@ -159,12 +157,11 @@ async function loadRebuildSnapshot(
     document,
     rows: document.rowIds.map((id) => rowsById.get(id)).filter((row): row is WeldRow => Boolean(row)),
   }))
-  const nextNumbers = Object.fromEntries(
-    await Promise.all(SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map(async (profile) => [
-      profile.id,
-      await readSystemDocumentNextNumber(tx, profile.id),
-    ])),
-  ) as Record<SystemDocumentTemplateId, number>
+  const nextNumberEntries: Array<[SystemDocumentTemplateId, number]> = []
+  for (const profile of SYSTEM_DOCUMENT_TEMPLATE_PROFILES) {
+    nextNumberEntries.push([profile.id, await readSystemDocumentNextNumber(tx, profile.id)])
+  }
+  const nextNumbers = Object.fromEntries(nextNumberEntries) as Record<SystemDocumentTemplateId, number>
   const basePreview = buildSystemDocumentRebuildDocuments({ sources, settings, nextNumbers })
   const fingerprint = hashValue({
     splitModes: settings.splitModes,
@@ -444,7 +441,13 @@ function filterRebuildPreview(
 }
 
 function getDocumentIdentityKey(document: SystemDocumentSummary, title: string) {
-  return JSON.stringify([document.type, document.methodCode ?? '', document.date, title.trim().toLocaleLowerCase('ru-RU')])
+  return JSON.stringify([
+    document.type,
+    document.methodCode ?? '',
+    document.sourceKind ?? '',
+    document.date,
+    title.trim().toLocaleLowerCase('ru-RU'),
+  ])
 }
 
 function getDocumentRevisionValue(document: SystemDocumentSummary) {
@@ -452,6 +455,7 @@ function getDocumentRevisionValue(document: SystemDocumentSummary) {
     documentId: document.documentId,
     type: document.type,
     methodCode: document.methodCode ?? '',
+    sourceKind: document.sourceKind ?? '',
     title: document.title,
     date: document.date,
     updatedAt: document.updatedAt,

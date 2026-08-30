@@ -46,6 +46,32 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks[0].details).toContain('раньше даты сварки')
   })
 
+  it('reports a repeat PSTO cycle without a failed previous TVMT through DЗ-23', () => {
+    const tasks = buildPstoChronologyCheckTasks([
+      row({
+        pstoRequest: 'ПСТО-1',
+        pstoRequestDate: '2026-07-01',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-02',
+        tvmtRequest: 'ТВМТ-1',
+        tvmtRequestDate: '2026-07-03',
+        tvmtResult: 'годен',
+        tvmtConclusionDate: '2026-07-04',
+        pstoRepeatCycles: [{
+          id: 2,
+          weldJointId: 1,
+          sequence: 2,
+          pstoRequest: 'ПСТО-2',
+          pstoRequestDate: '2026-07-05',
+        }],
+      }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-23')
+    expect(tasks[0].details).toContain('без негодной ТВМТ предыдущего цикла')
+  })
+
   it('combines a future weld date, missing required weld fields and invalid joint structure in one DЗ-31 task', () => {
     const tasks = buildJointCoreDataCheckTasks([
       row({ joint: 'X1', weldDate: '2999-01-01', materialGroup: '', connectionType: '', weldingMethod: '' }),
@@ -105,12 +131,79 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks[0].details).toContain('дата ПСТО и диаграмма термообработки')
   })
 
+  it('keeps cancelled completed PSTO history covered by DЗ-33', () => {
+    const tasks = buildPstoResultCompletenessCheckTasks([
+      row({
+        pstoRequired: 'отменен',
+        pstoResult: 'проведено (отменен)',
+        pstoDate: '2026-07-02',
+        heatTreatmentDiagram: '',
+      }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-33')
+    expect(tasks[0].details).toContain('основной цикл ПСТО: не заполнено диаграмма термообработки')
+  })
+
+  it('checks PSTO and TVMT completeness in repeat cycles through the same DЗ-33 task', () => {
+    const tasks = buildPstoResultCompletenessCheckTasks([
+      row({
+        pstoRequired: 'да',
+        pstoRequest: 'ПСТО-1',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-02',
+        heatTreatmentDiagram: 'Диаграмма-1',
+        tvmtRequest: 'ТВМТ-1',
+        tvmtResult: 'не годен',
+        tvmtConclusionDate: '2026-07-03',
+        tvmtConclusion: 'ТВМТ-1',
+        pstoRepeatCycles: [{
+          id: 2,
+          weldJointId: 1,
+          sequence: 2,
+          pstoRequest: 'ПСТО-2',
+          pstoResult: 'проведено',
+          pstoDate: '',
+          heatTreatmentDiagram: '',
+          tvmtRequest: 'ТВМТ-2',
+          tvmtResult: 'годен',
+          tvmtConclusionDate: '',
+          tvmtConclusion: '',
+        }],
+      }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-33')
+    expect(tasks[0].details).toContain('повторный цикл #2 ПСТО')
+    expect(tasks[0].details).toContain('повторный цикл #2 ТВМТ')
+  })
+
+  it('does not include duplicate controls in PSTO cycle completeness', () => {
+    const tasks = buildPstoResultCompletenessCheckTasks([
+      row({
+        duplicateControls: [{
+          id: 10,
+          weldJointId: 1,
+          method: 'ТВМТ',
+          result: 'годен',
+          controlDate: '',
+          conclusion: '',
+          conclusionDate: '',
+        }],
+      }),
+    ])
+
+    expect(tasks).toEqual([])
+  })
+
   it('matches ZВ-27 exactly for DЗ-34 and ignores a request without a result history', () => {
     const tasks = buildControlHistoryCheckTasks([
       row({ id: 1, hasRk: '', rkResult: 'годен' }),
       row({ id: 2, joint: 'F2', hasRk: '', rkRequest: 'Заявка РК' }),
       row({ id: 3, joint: 'F3', hasRk: 'отменен', rkResult: 'годен' }),
-      row({ id: 4, joint: 'F4', pstoRequired: '', pstoResult: '', heatTreatmentDiagram: 'Диаграмма 1' }),
+      row({ id: 4, joint: 'F4', pstoRequired: '', pstoResult: '', pstoBoq: 'Учтено' }),
     ])
 
     expect(tasks).toHaveLength(2)

@@ -1,4 +1,4 @@
-import { CheckSquare2, ExternalLink, ListFilter, Rows3, X } from 'lucide-react'
+import { CheckSquare2, ExternalLink, History, ListFilter, Rows3, X } from 'lucide-react'
 import type { MouseEvent } from 'react'
 
 import type { ContextActionMenuItem, ContextActionMenuState } from '@/components/context-action-menu'
@@ -31,6 +31,7 @@ type BuildDialogRowContextMenuOptions = {
   onShowSelectedRows: () => void
   onClearSelection: () => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
 }
 
 export function buildDialogRowContextMenu({
@@ -48,6 +49,7 @@ export function buildDialogRowContextMenu({
   onShowSelectedRows,
   onClearSelection,
   onOpenJournalRows,
+  onOpenPstoHistory,
 }: BuildDialogRowContextMenuOptions): NonNullable<ContextActionMenuState> {
   const rowSelected = selectedIds.has(row.id)
   const contextRows = rowSelected && selectedRows.length > 1 ? selectedRows : [row]
@@ -138,6 +140,15 @@ export function buildDialogRowContextMenu({
   }
 
   items.push({ type: 'label', id: 'navigation-label', label: 'Переход' })
+  if (onOpenPstoHistory) {
+    items.push({
+      id: 'open-psto-history',
+      label: 'История ПСТО и ТВМТ',
+      title: 'Открыть полную последовательность ПСТО и ТВМТ для этого стыка',
+      icon: History,
+      onSelect: () => onOpenPstoHistory(row),
+    })
+  }
   items.push({
     id: 'open-in-welding-journal',
     label: contextRows.length > 1

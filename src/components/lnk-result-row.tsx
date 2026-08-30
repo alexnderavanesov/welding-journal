@@ -1,5 +1,6 @@
 import { memo, type MouseEvent } from 'react'
 import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
+import { LNK_RESULT_ROW_GRID_CLASS } from '@/components/lnk-dialog-layout'
 import { LnkResultRowRequestBadges } from '@/components/lnk-result-row-request-badges'
 import { LnkResultRowResultPicker } from '@/components/lnk-result-row-result-picker'
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
@@ -60,7 +61,7 @@ function LnkResultRowComponent({
         if (!disabled) onToggleRow(row.id)
       }}
       onContextMenu={(event) => onOpenContextMenu(event, row)}
-      className={`group/dialog-row grid min-h-[92px] grid-cols-[28px_minmax(360px,1.05fr)_minmax(320px,0.95fr)_220px_32px] items-center gap-3 px-3 py-2 text-sm transition-colors ${
+      className={`group/dialog-row grid min-h-[92px] ${LNK_RESULT_ROW_GRID_CLASS} items-center gap-3 px-3 py-2 text-sm transition-colors ${
         disabled
           ? 'cursor-not-allowed bg-slate-100 text-slate-400'
           : selected

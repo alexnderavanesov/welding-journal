@@ -7,6 +7,7 @@ import type { ReportImportDialogProps } from '@/components/report-import-dialog'
 import type { ReportWeldEditorProps } from '@/components/report-weld-editor'
 import type { WeldingJournalGenerationDialogProps } from '@/components/welding-journal-generation-dialog'
 import type { RkExposureEditDialogProps } from '@/components/rk-exposure-edit-dialog'
+import { hasOpenReportDialogProps } from '@/lib/report-modal-open-state'
 
 const ReportChainDialog = lazy(() => import('@/components/report-chain-dialog').then((module) => ({ default: module.ReportChainDialog })))
 const ReportWeldEditor = lazy(() => import('@/components/report-weld-editor').then((module) => ({ default: module.ReportWeldEditor })))
@@ -56,20 +57,12 @@ export function ReportDialogs({
           <ReportWeldEditor {...weldEditorProps} />
         </Suspense>
       ) : null}
-      {pstoDialogsProps.requestDialogProps ||
-      pstoDialogsProps.requestManagerDialogProps ||
-      pstoDialogsProps.resultDialogProps ||
-      pstoDialogsProps.resultManagerDialogProps ? (
+      {hasOpenReportDialogProps(pstoDialogsProps) ? (
         <Suspense fallback={null}>
           <ReportPstoDialogs {...pstoDialogsProps} />
         </Suspense>
       ) : null}
-      {lnkDialogsProps.requestDialogProps ||
-      lnkDialogsProps.requestManagerDialogProps ||
-      lnkDialogsProps.resultManagerDialogProps ||
-      lnkDialogsProps.officialityDialogProps ||
-      lnkDialogsProps.duplicateControlDialogProps ||
-      lnkDialogsProps.resultDialogProps ? (
+      {hasOpenReportDialogProps(lnkDialogsProps) ? (
         <Suspense fallback={null}>
           <ReportLnkDialogs {...lnkDialogsProps} />
         </Suspense>

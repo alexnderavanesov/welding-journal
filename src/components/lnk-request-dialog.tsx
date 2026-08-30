@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { ListFilter, Search, X } from 'lucide-react'
-
+import {
+  LNK_WORKFLOW_DIALOG_HEIGHT_CLASS,
+  LNK_WORKFLOW_DIALOG_WIDTH_CLASS,
+} from '@/components/lnk-dialog-layout'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { LnkExistingRequestSearch } from '@/components/lnk-existing-request-search'
 import { LnkRequestMethods } from '@/components/lnk-request-methods'
+import { LnkRequestModeToolbar } from '@/components/lnk-request-mode-toolbar'
+import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestRow } from '@/components/lnk-request-row'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
@@ -10,12 +15,12 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
+import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import {
   buildDialogRowContextMenu,
@@ -34,6 +39,7 @@ import {
   filterLnkRequestRows,
   isEveryFilteredLnkRequestRowSelected,
 } from '@/lib/report-modal-rows'
+import { LNK_METHODS } from '@/lib/report-config'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { pinInitiallySelectedRows } from '@/lib/report-row-utils'
 import type { RequestNamingState } from '@/lib/request-naming-state'
@@ -45,6 +51,7 @@ import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
 import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
+import type { LnkControlStage } from '@/lib/lnk-control-stage'
 
 export type LnkRequestDialogProps = {
   nextRequestName: string
@@ -76,6 +83,12 @@ export type LnkRequestDialogProps = {
   onToggleAllRows: () => void
   onToggleRow: (rowId: number) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
+  onStageChange?: (
+    stage: LnkControlStage,
+    selectedRowIds: number[],
+    submitMode: LnkRequestComposerMode,
+  ) => void
   onSubmit: (methodKeys: WeldFieldKey[]) => void
   onExtendRequest: (methodKeys: WeldFieldKey[], request: LnkRequestExtensionOption) => void
 }
@@ -110,6 +123,8 @@ export function LnkRequestDialog({
   onToggleAllRows,
   onToggleRow,
   onOpenJournalRows,
+  onOpenPstoHistory,
+  onStageChange,
   onSubmit,
   onExtendRequest,
 }: LnkRequestDialogProps) {
@@ -272,6 +287,7 @@ export function LnkRequestDialog({
       onShowSelectedRows: () => setRowsViewMode('selected'),
       onClearSelection,
       onOpenJournalRows,
+      onOpenPstoHistory,
     }))
   })
   const openGroupContextMenu = useStableEventCallback((event: MouseEvent<HTMLElement>, group: SystemDocumentCreationGroup) => {
@@ -286,8 +302,8 @@ export function LnkRequestDialog({
   })
   return (
     <LargeDialogShell
-      maxWidthClassName="max-w-[1480px]"
-      maxHeightClassName="h-full"
+      maxWidthClassName={LNK_WORKFLOW_DIALOG_WIDTH_CLASS}
+      maxHeightClassName={LNK_WORKFLOW_DIALOG_HEIGHT_CLASS}
       overlayClassName="z-50 bg-slate-950/20 py-2"
       panelShadowClassName="shadow-slate-950/10"
     >
@@ -295,39 +311,25 @@ export function LnkRequestDialog({
         title="Заявка ЛНК"
         subtitle={`${submitMode === 'create' ? headerDocumentLabel : selectedExistingRequest?.label ?? 'Выберите заявку'} · Стыков: ${selectedRowsCount} · Добавится позиций: ${selectedTargetCount}`}
         onClose={onClose}
+        actions={onStageChange ? (
+          <LnkControlStageSwitch
+            value="primary"
+            disabled={isPending}
+            onChange={(stage) => onStageChange(stage, [...selectedIds], submitMode)}
+          />
+        ) : undefined}
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-1.5">
-        <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Режим заявки ЛНК">
-          <button
-            type="button"
-            aria-pressed={submitMode === 'create'}
-            onClick={() => changeSubmitMode('create')}
-            className={`rounded px-4 py-1.5 text-sm font-medium transition ${
-              submitMode === 'create' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Новая заявка
-          </button>
-          <button
-            type="button"
-            aria-pressed={submitMode === 'extend'}
-            onClick={() => changeSubmitMode('extend')}
-            className={`rounded px-4 py-1.5 text-sm font-medium transition ${
-              submitMode === 'extend' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Добавить в существующую
-          </button>
-        </div>
-        <Button variant="outline" size="sm" onClick={onOpenRequestRegistry}>
-          <ListFilter className="mr-2 h-4 w-4" />
-          Все заявки
-        </Button>
-      </div>
+      <LnkRequestModeToolbar
+        mode={submitMode}
+        disabled={isPending}
+        onModeChange={changeSubmitMode}
+        onOpenRegistry={onOpenRequestRegistry}
+      />
 
       {submitMode === 'create' ? (
         <LnkRequestMethods
+          methods={LNK_METHODS}
           selectedMethodKeys={selectedMethodKeys}
           selectedMethods={selectedMethods}
           requestDate={requestDate}
@@ -350,7 +352,7 @@ export function LnkRequestDialog({
       {submitMode === 'extend' ? (
         <div className="border-b border-slate-100 px-5 py-3">
           <div className="grid gap-3 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-end">
-            <BufferedRequestOptionSearch
+            <LnkExistingRequestSearch
               value={existingRequestSearch}
               resultCount={filteredRequestExtensionOptions.length}
               totalCount={requestExtensionOptions.length}
@@ -358,17 +360,12 @@ export function LnkRequestDialog({
             />
             <label className="block space-y-1.5 text-sm">
               <span className="text-[13px] font-medium leading-none text-slate-700">Существующая заявка</span>
-              <Select className="h-9" value={existingRequestKey} onChange={(event) => setExistingRequestKey(event.target.value)}>
-                <option value="">Выберите заявку</option>
-                {visibleRequestExtensionOptions.map((request) => (
-                  <option key={request.key} value={request.key}>
-                    {request.label} · {request.positionCount} поз.{request.disabledReason ? ' · закрыта' : ''}
-                  </option>
-                ))}
-                {filteredRequestExtensionOptions.length === 0 && existingRequestSearch ? (
-                  <option value="__no_matches__" disabled>Поиск не дал результатов</option>
-                ) : null}
-              </Select>
+              <RequestDocumentCombobox
+                ariaLabel="Существующая заявка"
+                value={existingRequestKey}
+                options={visibleRequestExtensionOptions}
+                onChange={(request) => setExistingRequestKey(request?.key ?? '')}
+              />
             </label>
           </div>
 
@@ -407,6 +404,7 @@ export function LnkRequestDialog({
 
       {submitMode === 'extend' ? (
         <LnkRequestMethods
+          methods={LNK_METHODS}
           selectedMethodKeys={selectedMethodKeys}
           selectedMethods={selectedMethods}
           onToggleMethod={toggleMethod}
@@ -566,77 +564,6 @@ function formatLnkRequestExtensionIssueSummary(
     .join(' ')
   const remainingReasonCount = Math.max(0, reasonCounts.size - 2)
   return `Не войдут ${issues.length} позиций: ${details}${remainingReasonCount ? ` Еще причин: ${remainingReasonCount}.` : ''}`
-}
-
-function BufferedRequestOptionSearch({
-  value,
-  resultCount,
-  totalCount,
-  onCommit,
-}: {
-  value: string
-  resultCount: number
-  totalCount: number
-  onCommit: (value: string) => void
-}) {
-  const [draft, setDraft] = useState(value)
-  const onCommitRef = useRef(onCommit)
-  const lastEmittedValueRef = useRef(value)
-
-  useEffect(() => {
-    onCommitRef.current = onCommit
-  }, [onCommit])
-
-  useEffect(() => {
-    if (value === lastEmittedValueRef.current) return
-    lastEmittedValueRef.current = value
-    setDraft(value)
-  }, [value])
-
-  useEffect(() => {
-    if (draft === value || draft === lastEmittedValueRef.current) return
-    const timeoutId = window.setTimeout(() => {
-      if (draft === lastEmittedValueRef.current) return
-      lastEmittedValueRef.current = draft
-      onCommitRef.current(draft)
-    }, 180)
-    return () => window.clearTimeout(timeoutId)
-  }, [draft, value])
-
-  const clear = () => {
-    lastEmittedValueRef.current = ''
-    setDraft('')
-    onCommitRef.current('')
-  }
-
-  return (
-    <label className="block space-y-1.5 text-sm">
-      <span className="flex items-center justify-between gap-2 text-[13px] font-medium leading-none text-slate-700">
-        <span>Поиск заявки</span>
-        <span className="text-[11px] font-normal tabular-nums text-slate-400">{resultCount}/{totalCount}</span>
-      </span>
-      <span className="relative block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <Input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Название, дата, проект или стык"
-          className="h-9 pl-9 pr-9"
-        />
-        {draft ? (
-          <button
-            type="button"
-            onClick={clear}
-            title="Очистить поиск заявки"
-            aria-label="Очистить поиск заявки"
-            className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        ) : null}
-      </span>
-    </label>
-  )
 }
 
 function getLnkRequestCreateDisabledReason({

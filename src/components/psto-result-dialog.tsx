@@ -54,6 +54,7 @@ export type PstoResultDialogProps = {
   onToggleAll: () => void
   onToggleRow: (rowId: number) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
   onOpenManager: () => void
   onClose: () => void
   onSave: () => void
@@ -80,6 +81,7 @@ export function PstoResultDialog({
   onToggleAll,
   onToggleRow,
   onOpenJournalRows,
+  onOpenPstoHistory,
   onOpenManager,
   onClose,
   onSave,
@@ -117,18 +119,18 @@ export function PstoResultDialog({
       onChange={setRowsViewMode}
     />
   )
+  const selectableRequestRows = useMemo(
+    () => requestRows.filter((row) => canSelectRow(row, draft.requestName, draft.requestDate)),
+    [canSelectRow, draft.requestDate, draft.requestName, requestRows],
+  )
   const rowsAction = rowsViewMode === 'selected' ? (
     <Button variant="outline" size="sm" onClick={onClearSelection}>
       Снять весь выбор
     </Button>
   ) : (
-    <Button variant="outline" size="sm" onClick={onToggleAll} disabled={filteredRows.length === 0}>
+    <Button variant="outline" size="sm" onClick={onToggleAll} disabled={selectableRequestRows.length === 0}>
       {allFilteredSelectableRowsSelected ? 'Снять все' : 'Выбрать все доступные'}
     </Button>
-  )
-  const selectableRequestRows = useMemo(
-    () => requestRows.filter((row) => canSelectRow(row, draft.requestName, draft.requestDate)),
-    [canSelectRow, draft.requestDate, draft.requestName, requestRows],
   )
   const openRowContextMenu = useStableEventCallback((event: MouseEvent<HTMLElement>, row: WeldRow) => {
     const point = getDialogMenuPoint(event)
@@ -147,6 +149,7 @@ export function PstoResultDialog({
       onShowSelectedRows: () => setRowsViewMode('selected'),
       onClearSelection,
       onOpenJournalRows,
+      onOpenPstoHistory,
     }))
   })
   const openGroupContextMenu = useStableEventCallback((event: MouseEvent<HTMLElement>, group: SystemDocumentCreationGroup) => {
@@ -214,16 +217,13 @@ export function PstoResultDialog({
           ) : (
             <PstoResultFilters
               search={draft.search}
-              requestSearch={requestSearch}
               requestKey={selectedRequest?.key ?? ''}
-              filteredRequestOptions={filteredRequestOptions}
-              availableRequestOptionsCount={availableRequestOptions.length}
+              requestOptions={availableRequestOptions}
               filteredRowsCount={filteredRows.length}
               selectedRowsCount={draft.rowIds.size}
               leading={selectedRowsViewToggle}
               action={rowsAction}
               onSearchChange={(search) => onDraftChange((current) => ({ ...current, search }))}
-              onRequestSearchChange={onRequestSearchChange}
               onRequestChange={onRequestChange}
               onClearFilters={onClearFilters}
             />

@@ -6,7 +6,7 @@ import type { LnkRequestExtensionTarget } from '@/lib/lnk-request-extension'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
-import { extendLnkRequest } from '@/server/welds'
+import { extendLnkRequest } from '@/server/weld-mutations-api'
 
 export function useLnkRequestExtensionMutation({
   setMessage,

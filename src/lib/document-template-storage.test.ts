@@ -421,7 +421,7 @@ describe('document template storage', () => {
     const worksheet = workbook.Sheets.Шаблон
 
     expect(worksheet.B2?.v).toBe('Пересогласование №13')
-    expect(worksheet.C2?.v).toBe('ВИК: ТР №444; РК: Пересогласование №13; ПСТО: Письмо №8')
+    expect(worksheet.C2?.v).toBe('ВИК: ТР №444; РК: Пересогласование №13')
   })
 
   it('expands RK exposures into rows and vertically merges the other joint fields', async () => {

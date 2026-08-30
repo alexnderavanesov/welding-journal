@@ -6,6 +6,7 @@ import { buildLnkConclusionCorrectionRows, buildLnkResultCorrectionRow } from '@
 import { buildLnkResultRows } from '@/lib/lnk-result-create-updates'
 import {
   getLnkResultSaveBlockReason,
+  getSelectedLnkResultMethods,
   getSelectedLnkResultRows,
 } from '@/lib/lnk-result-derived-utils'
 import { LNK_CUSTOM_RESULT_VALUE } from '@/lib/report-config'
@@ -53,6 +54,18 @@ const rkExposureTable = {
 }
 
 describe('getLnkResultSaveBlockReason', () => {
+  it('does not expose a result method when every requested control is complete', () => {
+    const completeRow = {
+      ...baseRow,
+      rkResult: 'годен',
+      rkConclusionDate: '2026-07-04',
+      rkConclusion: 'Заключение-001',
+    } as WeldRow
+
+    expect(getSelectedLnkResultMethods([completeRow])).toEqual([])
+    expect(getSelectedLnkResultMethods([baseRow]).map((method) => method.code)).toEqual(['РК'])
+  })
+
   it('selects only rows from the matching LNK request date', () => {
     const rows = [
       baseRow,
@@ -348,5 +361,48 @@ describe('getLnkResultSaveBlockReason', () => {
       'ЗНК-ВИК-25.08.2026-018',
     ])
     expect(result.map((sourceRow) => sourceRow.vikResult)).toEqual(['годен', null, 'годен'])
+  })
+
+  it('allows correcting a result while an older post-TO chronology issue is being repaired', () => {
+    const row = {
+      ...baseRow,
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-001',
+      pstoRequestDate: '2026-07-04',
+      pstoResult: 'ожидает',
+      vikRequest: 'Заявка ВИК после ТО',
+      vikRequestDate: '2026-07-05',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-07-05',
+      vikConclusion: 'ЗНК-ВИК-001',
+    } as WeldRow
+
+    const updated = buildLnkResultCorrectionRow({
+      record: row,
+      methodKey: 'vikRequest',
+      result: null,
+    })
+
+    expect(updated).toEqual(expect.objectContaining({
+      vikRequest: 'Заявка ВИК после ТО',
+      vikResult: null,
+      vikConclusionDate: null,
+      vikConclusion: null,
+    }))
+  })
+
+  it('still blocks a correction that creates a new VIK ordering violation', () => {
+    const row = {
+      ...baseRow,
+      rkResult: 'годен',
+      rkConclusionDate: '2026-07-04',
+      rkConclusion: 'ЗНК-РК-001',
+    } as WeldRow
+
+    expect(() => buildLnkResultCorrectionRow({
+      record: row,
+      methodKey: 'vikRequest',
+      result: null,
+    })).toThrow('нельзя сохранять результат РК, пока нет результата ВИК')
   })
 })

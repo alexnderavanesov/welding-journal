@@ -2,6 +2,11 @@ import type { WeldFieldKey, WeldInput } from './weld-field-definitions'
 import { normalizeJointChainPart, parseJointChainName } from './joint-chain'
 import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { getPstoTvmtPendingFinalStatus, getPstoTvmtWorkflowState } from '@/lib/tvmt-cycle'
+import {
+  getPreHeatTreatmentPendingFinalStatus,
+  getRejectedPreHeatTreatmentControls,
+} from '@/lib/lnk-control-stage'
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК', 'ожидает заявку'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
@@ -16,6 +21,10 @@ export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
   'stlsResult',
   'pstoResult',
   'mkkResult',
+  'preVikResult',
+  'preRkResult',
+  'preUzkResult',
+  'prePvkResult',
   'finalStatus',
 ])
 
@@ -24,7 +33,6 @@ export const CONTROL_RESULT_PAIRS = [
   { code: 'РК', enabledKey: 'hasRk', resultKey: 'rkResult' },
   { code: 'УЗК', enabledKey: 'hasUzk', resultKey: 'uzkResult' },
   { code: 'ПВК', enabledKey: 'hasPvk', resultKey: 'pvkResult' },
-  { code: 'ТВМТ', enabledKey: 'hasTvmt', resultKey: 'tvmtResult' },
   { code: 'РФА', enabledKey: 'hasRfa', resultKey: 'rfaResult' },
   { code: 'СТЛС', enabledKey: 'hasStls', resultKey: 'stlsResult' },
   { code: 'МКК', enabledKey: 'hasMkk', resultKey: 'mkkResult' },
@@ -35,7 +43,6 @@ const CONTROL_STATE_PAIRS = [
   { enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult' },
   { enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult' },
   { enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult' },
-  { enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', resultKey: 'tvmtResult' },
   { enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult' },
   { enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult' },
   { enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult' },
@@ -86,6 +93,15 @@ export function calculateFinalStatus(record: WeldInput) {
     }
   }
 
+  const preHeatTreatmentStatus = getPreHeatTreatmentPendingFinalStatus(record)
+  if (preHeatTreatmentStatus) return preHeatTreatmentStatus
+
+  const pstoTvmtWorkflowState = getPstoTvmtWorkflowState(record)
+  const pstoTvmtPendingStatus = getPstoTvmtPendingFinalStatus(pstoTvmtWorkflowState)
+  if (pstoTvmtPendingStatus) return pstoTvmtPendingStatus
+
+  if (pstoTvmtWorkflowState !== 'not-required') hasActiveControl = true
+
   if (!hasActiveControl) return 'ожидает заявку'
   if (hasOnlyGoodResults) return 'годен'
   if (hasPendingResult) return 'ожидает НК'
@@ -133,6 +149,7 @@ export function normalizeFinalStatus(value: unknown) {
 
 export function hasRejectedControlResult(record: WeldInput) {
   if (hasRejectedDuplicateControl(record)) return true
+  if (getRejectedPreHeatTreatmentControls(record).length > 0) return true
   return CONTROL_RESULT_PAIRS.some(({ resultKey }) => {
     const result = normalizeResultStatus(record[resultKey])
     return result === 'ремонт' || result === 'вырез'

@@ -24,6 +24,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { filterPstoRequestRows } from '@/lib/psto-modal-rows'
 import { buildPstoRequestDraftRows } from '@/lib/psto-report-mutation-updates'
+import { getPstoRequestBlockReason } from '@/lib/psto-status'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
@@ -61,6 +62,7 @@ export type PstoRequestDialogProps = {
   onToggleAllRows: () => void
   onToggleRow: (rowId: number) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
   onSubmit: () => void
 }
 
@@ -92,6 +94,7 @@ export function PstoRequestDialog({
   onToggleAllRows,
   onToggleRow,
   onOpenJournalRows,
+  onOpenPstoHistory,
   onSubmit,
 }: PstoRequestDialogProps) {
   const requestConclusionSettings = useRequestConclusionSettings()
@@ -165,6 +168,7 @@ export function PstoRequestDialog({
       onShowSelectedRows: () => setRowsViewMode('selected'),
       onClearSelection,
       onOpenJournalRows,
+      onOpenPstoHistory,
     }))
   })
   const openGroupContextMenu = useStableEventCallback((event: MouseEvent<HTMLElement>, group: SystemDocumentCreationGroup) => {
@@ -245,7 +249,12 @@ export function PstoRequestDialog({
                 Снять весь выбор
               </Button>
             ) : (
-              <Button variant="outline" size="sm" onClick={onToggleAllRows}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onToggleAllRows}
+                disabled={availableRowsCount === 0}
+              >
                 {areAllAvailableRowsSelected ? 'Снять все' : 'Выбрать доступные'}
               </Button>
             )
@@ -282,6 +291,7 @@ export function PstoRequestDialog({
                   row={row}
                   selected={selected}
                   disabled={disabled}
+                  disabledReason={disabled ? getPstoRequestBlockReason(row) : ''}
                   onToggleRow={stableOnToggleRow}
                   onOpenContextMenu={openRowContextMenu}
                 />

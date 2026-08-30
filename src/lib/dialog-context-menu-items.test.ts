@@ -23,6 +23,7 @@ function getAction(items: ContextActionMenuItem[], id: string) {
 function buildRowMenu(row: WeldRow, selectedIds = new Set<number>()) {
   const onSetSelectedRows = vi.fn()
   const onOpenJournalRows = vi.fn()
+  const onOpenPstoHistory = vi.fn()
   const menu = buildDialogRowContextMenu({
     x: 10,
     y: 20,
@@ -36,8 +37,9 @@ function buildRowMenu(row: WeldRow, selectedIds = new Set<number>()) {
     onShowSelectedRows: vi.fn(),
     onClearSelection: vi.fn(),
     onOpenJournalRows,
+    onOpenPstoHistory,
   })
-  return { menu, onSetSelectedRows, onOpenJournalRows }
+  return { menu, onSetSelectedRows, onOpenJournalRows, onOpenPstoHistory }
 }
 
 describe('dialog context menu items', () => {
@@ -63,6 +65,14 @@ describe('dialog context menu items', () => {
     getAction(menu.items, 'select-same-line').onSelect()
 
     expect(onSetSelectedRows).toHaveBeenCalledWith([1, 2])
+  })
+
+  it('opens PSTO history for the exact context row instead of the bulk selection', () => {
+    const { menu, onOpenPstoHistory } = buildRowMenu(rows[2], new Set([1, 2]))
+
+    getAction(menu.items, 'open-psto-history').onSelect()
+
+    expect(onOpenPstoHistory).toHaveBeenCalledWith(rows[2])
   })
 
   it('offers the group and the complete names-tab selection as separate transitions', () => {

@@ -58,4 +58,121 @@ describe('psto chronology checks', () => {
       'weld-after-result',
     ])
   })
+
+  it('checks TVMT and repeat PSTO dates across the complete cycle timeline', () => {
+    const issues = getDispatcherPstoChronologyIssues([
+      {
+        id: 1,
+        joint: 'F1',
+        weldDate: '2026-07-01',
+        pstoRequest: 'ПСТО-1',
+        pstoRequestDate: '2026-07-02',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-03',
+        tvmtRequest: 'ТВМТ-1',
+        tvmtRequestDate: '2026-07-04',
+        tvmtResult: 'не годен',
+        tvmtConclusionDate: '2026-07-05',
+        pstoRepeatCycles: [{
+          id: 2,
+          weldJointId: 1,
+          sequence: 2,
+          pstoRequest: 'ПСТО-2',
+          pstoRequestDate: '2026-07-04',
+          pstoResult: 'проведено',
+          pstoDate: '2026-07-06',
+          tvmtRequest: 'ТВМТ-2',
+          tvmtRequestDate: '2026-07-05',
+          tvmtResult: 'годен',
+          tvmtConclusionDate: '2026-07-04',
+        }],
+      },
+    ] as unknown as Parameters<typeof getDispatcherPstoChronologyIssues>[0])
+
+    expect(issues.map((issue) => issue.kind)).toEqual([
+      'previous-tvmt-after-repeat-request',
+      'psto-after-tvmt-request',
+      'psto-after-tvmt-result',
+      'tvmt-request-after-result',
+    ])
+  })
+
+  it('reports a repeat cycle that was not triggered by a failed previous TVMT', () => {
+    const issues = getDispatcherPstoChronologyIssues([
+      {
+        id: 1,
+        joint: 'F1',
+        weldDate: '2026-07-01',
+        pstoRequest: 'ПСТО-1',
+        pstoRequestDate: '2026-07-02',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-03',
+        tvmtRequest: 'ТВМТ-1',
+        tvmtRequestDate: '2026-07-04',
+        tvmtResult: 'годен',
+        tvmtConclusionDate: '2026-07-05',
+        pstoRepeatCycles: [{
+          id: 2,
+          weldJointId: 1,
+          sequence: 2,
+          pstoRequest: 'ПСТО-2',
+          pstoRequestDate: '2026-07-06',
+        }],
+      },
+    ] as unknown as Parameters<typeof getDispatcherPstoChronologyIssues>[0])
+
+    expect(issues).toHaveLength(1)
+    expect(issues[0]).toMatchObject({
+      kind: 'repeat-without-failed-tvmt',
+      message: 'Стык F1: цикл #2 создан без негодной ТВМТ предыдущего цикла.',
+    })
+  })
+
+  it('accepts a repeat cycle after a failed previous TVMT', () => {
+    const issues = getDispatcherPstoChronologyIssues([
+      {
+        id: 1,
+        joint: 'F1',
+        weldDate: '2026-07-01',
+        pstoRequest: 'ПСТО-1',
+        pstoRequestDate: '2026-07-02',
+        pstoResult: 'проведено',
+        pstoDate: '2026-07-03',
+        tvmtRequest: 'ТВМТ-1',
+        tvmtRequestDate: '2026-07-04',
+        tvmtResult: 'не годен',
+        tvmtConclusionDate: '2026-07-05',
+        pstoRepeatCycles: [{
+          id: 2,
+          weldJointId: 1,
+          sequence: 2,
+          pstoRequest: 'ПСТО-2',
+          pstoRequestDate: '2026-07-06',
+        }],
+      },
+    ] as unknown as Parameters<typeof getDispatcherPstoChronologyIssues>[0])
+
+    expect(issues).toEqual([])
+  })
+
+  it('does not treat duplicate controls as PSTO or TVMT cycle records', () => {
+    const issues = getDispatcherPstoChronologyIssues([
+      {
+        id: 1,
+        joint: 'F1',
+        weldDate: '2026-07-10',
+        duplicateControls: [{
+          id: 10,
+          weldJointId: 1,
+          method: 'ТВМТ',
+          result: 'годен',
+          controlDate: '2026-07-01',
+          conclusion: 'Дубль-ТВМТ-1',
+          conclusionDate: '2026-07-01',
+        }],
+      },
+    ] as unknown as Parameters<typeof getDispatcherPstoChronologyIssues>[0])
+
+    expect(issues).toEqual([])
+  })
 })

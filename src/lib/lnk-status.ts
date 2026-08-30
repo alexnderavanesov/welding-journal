@@ -25,6 +25,13 @@ import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 import { getDuplicateControls, getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY, formatControlBasisSummary } from '@/lib/control-assignment-basis'
+import {
+  getRejectedPreHeatTreatmentControls,
+  getPrimaryPstoStartStatusLabel,
+  isPrimaryLnkStageReady,
+} from '@/lib/lnk-control-stage'
+import { getPreHeatTreatmentReportValue } from '@/lib/pre-heat-treatment-report-fields'
+import { getCurrentPstoCycle, getPstoCycleSummary } from '@/lib/tvmt-cycle'
 
 export type LnkMethod = (typeof LNK_METHODS)[number]
 
@@ -52,6 +59,7 @@ export function isFinalLnkResultValue(value: unknown) {
 
 export function hasRejectedLnkResult(row: WeldInput) {
   if (getRejectedDuplicateControls(row).length > 0) return true
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) return true
   return LNK_METHODS.some((method) => {
     const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
     return result === 'ремонт' || result === 'вырез'
@@ -75,7 +83,11 @@ export function hasPendingLnkRequestResult(row: WeldInput) {
 
 export function getAvailableLnkRequestMethods(row: WeldInput) {
   if (hasRejectedLnkResult(row)) return []
-  return LNK_METHODS.filter((method) => isEnabledControlValue(row[method.enabledKey]) && !hasText(row[method.requestKey]))
+  return LNK_METHODS.filter((method) =>
+    isEnabledControlValue(row[method.enabledKey]) &&
+    !hasText(row[method.requestKey]) &&
+    isPrimaryLnkStageReady(row, method.code),
+  )
 }
 
 export function isRejectedJoint(row: WeldInput) {
@@ -109,6 +121,8 @@ export function getLnkRequestMethodBadgeClass(row: WeldInput, method: (typeof LN
 }
 
 export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  const preHeatTreatmentValue = getPreHeatTreatmentReportValue(row, fieldKey)
+  if (preHeatTreatmentValue !== undefined) return preHeatTreatmentValue
   if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) return formatControlBasisSummary(row, 'lnk')
   if (fieldKey === 'rkExposureScheme') {
     return getRkExposureSchemeState(row, loadOtherSettings().rkExposureTable).label
@@ -130,7 +144,18 @@ export function getWeldingJournalDisplayValue(row: WeldInput, fieldKey: WeldFiel
 
 export function getPstoDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
   if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) return formatControlBasisSummary(row, 'psto')
-  if (fieldKey === 'pstoResult' && isPstoNoNeed(row)) return 'нет потребности'
+  if (fieldKey === 'pstoControlBasis' || fieldKey === 'pstoCancellationDate') {
+    return isCancelledControlValue(row.pstoRequired) ? row[fieldKey] : ''
+  }
+  if (fieldKey === 'pstoCycleSummary') {
+    return getPstoCycleSummary(row, getPrimaryPstoStartStatusLabel(row))
+  }
+  const currentCycle = getCurrentPstoCycle(row)
+  const cycleValue = currentCycle && PSTO_CYCLE_REPORT_FIELD_KEYS.has(fieldKey)
+    ? currentCycle[fieldKey as PstoCycleReportFieldKey]
+    : undefined
+  if (fieldKey === 'pstoResult' && isPstoNoNeed(row, cycleValue)) return 'нет потребности'
+  if (cycleValue !== undefined) return cycleValue
   return row[fieldKey]
 }
 
@@ -181,10 +206,37 @@ export function hasAnyLnkRequest(row: WeldInput) {
   return LNK_METHODS.some((method) => hasText(row[method.requestKey]))
 }
 
-function isPstoNoNeed(row: WeldInput) {
+const PSTO_CYCLE_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
+  'pstoRequest',
+  'pstoRequestDate',
+  'pstoDate',
+  'heatTreatmentDiagram',
+  'pstoResult',
+  'pstoNote',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
+])
+
+type PstoCycleReportFieldKey =
+  | 'pstoRequest'
+  | 'pstoRequestDate'
+  | 'pstoDate'
+  | 'heatTreatmentDiagram'
+  | 'pstoResult'
+  | 'pstoNote'
+  | 'tvmtRequest'
+  | 'tvmtRequestDate'
+  | 'tvmtResult'
+  | 'tvmtConclusionDate'
+  | 'tvmtConclusion'
+
+function isPstoNoNeed(row: WeldInput, resultValue: unknown = row.pstoResult) {
   if (!isYesText(row.pstoRequired)) return false
   if (!isRejectedJoint(row)) return false
-  const result = String(row.pstoResult ?? '').trim().toLowerCase()
+  const result = String(resultValue ?? '').trim().toLowerCase()
   return result !== 'проведено' && result !== 'проведено (отменен)' && result !== 'отменен'
 }
 

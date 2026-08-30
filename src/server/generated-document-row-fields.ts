@@ -2,7 +2,7 @@ import { eq, inArray } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { generatedDocuments, generatedDocumentWeldJoints } from '@/db/schema'
-import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 

@@ -33,7 +33,7 @@ import {
   listRemoteDocumentTemplates,
   saveRemoteDocumentTemplate,
   updateRemoteDocumentTemplate,
-} from '@/server/document-templates'
+} from '@/server/document-templates-api'
 
 type XlsxModule = typeof import('xlsx')
 

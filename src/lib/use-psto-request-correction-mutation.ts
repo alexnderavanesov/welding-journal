@@ -19,7 +19,11 @@ export function usePstoRequestCorrectionMutation({
     mutationFn: async ({ record }: { record: RowWithId }) => {
       const updatedRecord = buildPstoRequestCorrectionRow(record)
 
-      const saved = await updateWeldRowOrThrow(updatedRecord)
+      const saved = await updateWeldRowOrThrow(
+        updatedRecord,
+        'Не удалось удалить позицию заявки ПСТО',
+        { mutationScope: 'psto' },
+      )
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {

@@ -65,7 +65,7 @@ export function getReportSummaryText({
     return `Стыков на ПСТО: ${heatTreatmentRowCount} · Выбрано: ${selectedHeatTreatmentRowCount}`
   }
   if (activeReport === 'lnk') {
-    return `Стыков на ЛНК: ${lnkRowCount} · Доступно для новой заявки: ${availableLnkRequestRowCount}`
+    return `Стыков на ЛНК: ${lnkRowCount} · Доступно для основной заявки: ${availableLnkRequestRowCount}`
   }
   if (activeReport === 'welderStamps') {
     return `Клейм: ${activeWelderStampCount} · Архив: ${archivedWelderStampCount} · Найдено: ${filteredWelderStampCount}`

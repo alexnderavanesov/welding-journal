@@ -15,7 +15,7 @@ import {
   getWeldFormSuggestions,
   type WeldFormSuggestion,
 } from '@/lib/weld-form-suggestions'
-import { listWeldFormSuggestions } from '@/server/welds'
+import { listWeldFormSuggestions } from '@/server/weld-read-api'
 import {
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,

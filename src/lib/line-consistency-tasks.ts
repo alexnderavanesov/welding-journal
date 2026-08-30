@@ -1,5 +1,6 @@
 import type { LineConsistencyTask, WeldRow } from '@/lib/dispatcher-types'
-import { isControlAdditionalValue } from '@/lib/control-availability-values'
+import { isControlAdditionalValue, isControlEnabledValue } from '@/lib/control-availability-values'
+import { isCancelledControlValue } from '@/lib/report-value-utils'
 import { isAngularConnectionType } from '@/lib/connection-type'
 
 type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence' | 'pstoPresence'>
@@ -26,7 +27,6 @@ const CONTROL_PRESENCE_FIELDS: ControlPresenceField[] = [
   { key: 'hasRk', label: 'РК' },
   { key: 'hasUzk', label: 'УЗК' },
   { key: 'hasPvk', label: 'ПВК' },
-  { key: 'hasTvmt', label: 'ТВМТ' },
 ]
 
 const ANGULAR_ALTERNATIVE_CONTROL_FIELDS = CONTROL_PRESENCE_FIELDS.filter(
@@ -134,7 +134,7 @@ function buildControlPresenceTasksForLine(groupRows: WeldRow[], representativeRo
       fieldLabel: 'Назначение контроля',
       title: 'Проверить назначение контроля линии',
       values,
-      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются несогласованные назначения контроля: ${valuesText}. На обычных стыках 100% линии набор «да» должен совпадать. Для стыка типа «У…» РК, УЗК и ПВК взаимозаменяемы: достаточно хотя бы одного из этих назначений. ВИК и ТВМТ сравниваются точно; РФА, СТЛС и МКК в проверку линии не входят. ПСТО проверяется отдельно. Нажмите «Показать», чтобы отфильтровать все стыки этой линии и исправить некорректные строки.`,
+      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются несогласованные назначения контроля: ${valuesText}. На обычных стыках 100% линии набор «да» должен совпадать. Для стыка типа «У…» РК, УЗК и ПВК взаимозаменяемы: достаточно хотя бы одного из этих назначений. ВИК сравнивается точно; РФА, СТЛС и МКК в проверку линии не входят. ПСТО и следующая за ним ТВМТ проверяются отдельно. Нажмите «Показать», чтобы отфильтровать все стыки этой линии и исправить некорректные строки.`,
     })
   }
 
@@ -144,26 +144,35 @@ function buildControlPresenceTasksForLine(groupRows: WeldRow[], representativeRo
 function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: WeldRow, line: string) {
   if (groupRows.length < 2) return []
 
-  const rowsWithPsto = groupRows.filter((row) => isRequiredControlPresence(row.pstoRequired))
-  if (rowsWithPsto.length === 0 || rowsWithPsto.length === groupRows.length) return []
-
-  const rowsWithoutPsto = groupRows.filter((row) => !isRequiredControlPresence(row.pstoRequired))
+  const rowsWithPsto = groupRows.filter((row) => isControlEnabledValue(row.pstoRequired))
+  const rowsCancelled = groupRows.filter((row) => isCancelledControlValue(row.pstoRequired))
+  const rowsWithoutPsto = groupRows.filter((row) => (
+    !isControlEnabledValue(row.pstoRequired) && !isCancelledControlValue(row.pstoRequired)
+  ))
+  const nonEmptyStates = [rowsWithPsto, rowsCancelled, rowsWithoutPsto].filter((rows) => rows.length > 0)
+  if (nonEmptyStates.length <= 1) return []
   const projectTitle = normalizeDisplayValue(representativeRow.projectTitle)
   const subtitleCode = normalizeDisplayValue(representativeRow.subtitleCode)
   const detailsContext = [
     projectTitle ? `проект ${projectTitle}` : '',
     subtitleCode ? `шифр ${subtitleCode}` : '',
   ].filter(Boolean).join(', ')
-  const missingJoints = rowsWithoutPsto
+  const inconsistentRows = [...rowsCancelled, ...rowsWithoutPsto]
+  const missingJoints = inconsistentRows
     .slice(0, 8)
     .map((row) => normalizeDisplayValue(row.joint) || `ID ${row.id}`)
     .join(', ')
-  const extraText = rowsWithoutPsto.length > 8 ? ` и еще ${rowsWithoutPsto.length - 8}` : ''
+  const extraText = inconsistentRows.length > 8 ? ` и еще ${inconsistentRows.length - 8}` : ''
+  const values = [
+    rowsWithPsto.length > 0 ? `ПСТО назначена: ${rowsWithPsto.length}` : '',
+    rowsCancelled.length > 0 ? `ПСТО отменена: ${rowsCancelled.length}` : '',
+    rowsWithoutPsto.length > 0 ? `Без ПСТО: ${rowsWithoutPsto.length}` : '',
+  ].filter(Boolean)
 
   return [
     {
       kind: 'line-consistency',
-      key: `line-consistency:pstoPresence:${normalizeKey(projectTitle)}:${normalizeKey(subtitleCode)}:${normalizeKey(line)}:${rowsWithPsto.length}:${rowsWithoutPsto.length}`,
+      key: `line-consistency:pstoPresence:${normalizeKey(projectTitle)}:${normalizeKey(subtitleCode)}:${normalizeKey(line)}:${rowsWithPsto.length}:${rowsCancelled.length}:${rowsWithoutPsto.length}`,
       row: representativeRow,
       line,
       projectTitle,
@@ -171,8 +180,8 @@ function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: 
       fieldKey: 'pstoPresence',
       fieldLabel: 'ПСТО',
       title: 'Проверить ПСТО по линии',
-      values: [`ПСТО есть: ${rowsWithPsto.length}`, `ПСТО нет: ${rowsWithoutPsto.length}`],
-      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} ПСТО назначено только у части стыков: с ПСТО ${rowsWithPsto.length}, без ПСТО ${rowsWithoutPsto.length}. Если ПСТО требуется хотя бы на одном стыке линии, обычно оно должно быть назначено на всю связку Проект + Шифр + Линия. Проверьте стыки без ПСТО: ${missingJoints}${extraText}.`,
+      values,
+      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются разные состояния программы ПСТО: ${values.join(', ')}. Назначение или отмена должны действовать на всю связку Проект + Шифр + Линия. Проверьте стыки: ${missingJoints}${extraText}.`,
     } satisfies LineConsistencyTask,
   ]
 }

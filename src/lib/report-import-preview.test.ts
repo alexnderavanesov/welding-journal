@@ -63,6 +63,94 @@ describe('existing rows report import preview', () => {
     })).rejects.toThrow('не более 500 строк')
   })
 
+  it('allows a move to a fully assigned PSTO line outside the filtered import scope', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'],
+      [[7, 'F1', 'Целевая линия']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        line: 'Исходная линия',
+        pstoRequest: 'Заявка ПСТО-001',
+      } as WeldRow],
+      fullyAssignedPstoLineKeys: ['["Проект","Шифр","Целевая линия"]'],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, line: 'Целевая линия' }])
+  })
+
+  it('blocks moving a primary LNK set onto a PSTO line and aggregates another field error', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С17'] })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия', 'Тип соединения'],
+      [[7, 'F1', 'Целевая линия', 'У18']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        line: 'Исходная линия',
+        connectionType: null,
+        vikRequest: 'Заявка ВИК-001',
+        vikResult: 'годен',
+        vikConclusion: 'Заключение ВИК-001',
+      } as WeldRow],
+      fullyAssignedPstoLineKeys: ['["Проект","Шифр","Целевая линия"]'],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('перенести комплект в «До ТО» или удалить')
+    expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['line', 'connectionType']))
+  })
+
+  it('does not mistake duplicate control for a primary set when moving onto a PSTO line', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'],
+      [[7, 'F1', 'Целевая линия']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        line: 'Исходная линия',
+        vikResult: 'ожидает заявку',
+        duplicateControls: [{
+          id: 1,
+          weldJointId: 7,
+          method: 'ВИК',
+          result: 'годен',
+          controlDate: '2026-08-01',
+          conclusion: 'Дубль-ВИК-001',
+          conclusionDate: '2026-08-01',
+        }],
+      } as WeldRow],
+      fullyAssignedPstoLineKeys: ['["Проект","Шифр","Целевая линия"]'],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, line: 'Целевая линия' }])
+  })
+
   it('rejects more than 500 new weld rows before validating their contents', async () => {
     const fields = getReportImportTemplateFields('weldingJournal')
     const file = buildWorkbookFile(
@@ -636,6 +724,102 @@ describe('existing rows report import preview', () => {
 
     expect(preview.errors).toEqual([])
     expect(preview.validRecords).toEqual([{ id: 7, weldDate: '2026-07-10' }])
+  })
+
+  it('blocks a line move with primary PSTO history and reports another row error together', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С17'] })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия', 'Тип соединения'],
+      [[7, 'F1', 'Новая линия', 'У18']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        line: 'Линия',
+        connectionType: null,
+        pstoRequest: 'Заявка ПСТО-001',
+      } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('Выполните перенос через карточку стыка')
+    expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['line', 'connectionType']))
+  })
+
+  it.each([
+    ['НК до ТО', {
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 7,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО-001',
+      }],
+    }],
+    ['повторным циклом ПСТО', {
+      pstoRepeatCycles: [{
+        id: 1,
+        weldJointId: 7,
+        sequence: 2,
+        pstoRequest: 'Заявка ПСТО-002',
+      }],
+    }],
+  ])('blocks a line move with %s history', async (_, relations) => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'],
+      [[7, 'F1', 'Новая линия']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{ id: 7, joint: 'F1', line: 'Линия', ...relations } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toHaveLength(1)
+    expect(preview.errors[0]?.message).toContain('Выполните перенос через карточку стыка')
+    expect(preview.errors[0]?.fieldKeys).toContain('line')
+  })
+
+  it('does not treat a duplicate-control record as PSTO lifecycle history during a line move', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'],
+      [[7, 'F1', 'Новая линия']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'F1',
+        line: 'Линия',
+        duplicateControls: [{
+          id: 1,
+          weldJointId: 7,
+          method: 'ВИК',
+          result: 'годен',
+          controlDate: '2026-08-01',
+          conclusion: 'Дубль-ВИК-001',
+          conclusionDate: '2026-08-01',
+        }],
+      } as WeldRow],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, line: 'Новая линия' }])
   })
 
   it('does not validate stale existing WDI when system WDI inputs changed', async () => {

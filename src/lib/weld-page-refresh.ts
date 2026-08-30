@@ -5,11 +5,11 @@ import {
   listHeatTreatmentReportPage,
   listLnkReportPage,
   listWeldingJournalPage,
-  type WeldPageRequest,
   type WeldPageResult,
   type WeldPageSize,
   type WeldReportKind,
-} from '@/server/welds'
+} from '@/server/weld-read-api'
+import type { WeldPageRequest } from '@/server/weld-contracts'
 
 export const WELD_JOINT_PAGES_QUERY_KEY = ['weld-joint-pages'] as const
 

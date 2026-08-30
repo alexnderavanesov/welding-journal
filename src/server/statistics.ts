@@ -5,6 +5,8 @@ import {
   appSettings,
   dispatcherAcceptedWarnings,
   duplicateControls,
+  preHeatTreatmentControls,
+  pstoRepeatCycles,
   welderStamps,
   weldJoints,
 } from '@/db/schema'
@@ -23,6 +25,7 @@ import {
 import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings } from '@/lib/other-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX } from '@/lib/percentage-line-summary'
+import { prepareStatisticsHeatTreatmentRows } from '@/lib/statistics-psto-cycle'
 import { toWelderStampPayload } from '@/server/welder-stamps'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
@@ -50,6 +53,11 @@ const STATISTICS_STATUS_ROW_SELECT = {
   hasRfa: weldJoints.hasRfa,
   hasStls: weldJoints.hasStls,
   hasMkk: weldJoints.hasMkk,
+  pstoRequired: weldJoints.pstoRequired,
+  pstoRequest: weldJoints.pstoRequest,
+  pstoRequestDate: weldJoints.pstoRequestDate,
+  pstoResult: weldJoints.pstoResult,
+  pstoDate: weldJoints.pstoDate,
   vikRequest: weldJoints.vikRequest,
   vikRequestDate: weldJoints.vikRequestDate,
   rkRequest: weldJoints.rkRequest,
@@ -105,11 +113,6 @@ const STATISTICS_GENERAL_ROW_SELECT = {
   stlsConclusionDate: weldJoints.stlsConclusionDate,
   mkkConclusion: weldJoints.mkkConclusion,
   mkkConclusionDate: weldJoints.mkkConclusionDate,
-  pstoRequired: weldJoints.pstoRequired,
-  pstoRequest: weldJoints.pstoRequest,
-  pstoRequestDate: weldJoints.pstoRequestDate,
-  pstoResult: weldJoints.pstoResult,
-  pstoDate: weldJoints.pstoDate,
   pstoCreatedAt: weldJoints.pstoCreatedAt,
   lnkCreatedAt: weldJoints.lnkCreatedAt,
 }
@@ -150,7 +153,7 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
     await assertSecurityScope('entry')
     return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v21', data),
+      buildDerivedCalculationCacheKey('statistics:v25', data),
       () => computeStatisticsServerResult(data),
     )
   })
@@ -164,7 +167,7 @@ async function computeStatisticsServerResult(
     ? sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`
     : undefined
   const rowSelect = getStatisticsRowSelect(data.tab)
-  const [sourceRows, duplicateRows, projectRows, subtitleRows, stampRows, settingsRows, acceptedWarningRows] = await Promise.all([
+  const [sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows, acceptedWarningRows] = await Promise.all([
     db
       .select(rowSelect)
       .from(weldJoints)
@@ -184,6 +187,44 @@ async function computeStatisticsServerResult(
       .innerJoin(weldJoints, eq(weldJoints.id, duplicateControls.weldJointId))
       .where(scopeWhere)
       .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)),
+    db
+      .select({
+        id: preHeatTreatmentControls.id,
+        weldJointId: preHeatTreatmentControls.weldJointId,
+        method: preHeatTreatmentControls.method,
+        requestName: preHeatTreatmentControls.requestName,
+        requestDate: preHeatTreatmentControls.requestDate,
+        result: preHeatTreatmentControls.result,
+        conclusionDate: preHeatTreatmentControls.conclusionDate,
+        conclusionName: preHeatTreatmentControls.conclusionName,
+        defectDescription: preHeatTreatmentControls.defectDescription,
+        rkExposureConfirmedDiameter: preHeatTreatmentControls.rkExposureConfirmedDiameter,
+      })
+      .from(preHeatTreatmentControls)
+      .innerJoin(weldJoints, eq(weldJoints.id, preHeatTreatmentControls.weldJointId))
+      .where(scopeWhere)
+      .orderBy(asc(preHeatTreatmentControls.weldJointId), asc(preHeatTreatmentControls.id)),
+    db
+      .select({
+        id: pstoRepeatCycles.id,
+        weldJointId: pstoRepeatCycles.weldJointId,
+        sequence: pstoRepeatCycles.sequence,
+        pstoRequest: pstoRepeatCycles.pstoRequest,
+        pstoRequestDate: pstoRepeatCycles.pstoRequestDate,
+        pstoDate: pstoRepeatCycles.pstoDate,
+        heatTreatmentDiagram: pstoRepeatCycles.heatTreatmentDiagram,
+        pstoResult: pstoRepeatCycles.pstoResult,
+        pstoNote: pstoRepeatCycles.pstoNote,
+        tvmtRequest: pstoRepeatCycles.tvmtRequest,
+        tvmtRequestDate: pstoRepeatCycles.tvmtRequestDate,
+        tvmtResult: pstoRepeatCycles.tvmtResult,
+        tvmtConclusionDate: pstoRepeatCycles.tvmtConclusionDate,
+        tvmtConclusion: pstoRepeatCycles.tvmtConclusion,
+      })
+      .from(pstoRepeatCycles)
+      .innerJoin(weldJoints, eq(weldJoints.id, pstoRepeatCycles.weldJointId))
+      .where(scopeWhere)
+      .orderBy(asc(pstoRepeatCycles.weldJointId), asc(pstoRepeatCycles.sequence)),
     db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints),
     db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere),
     data.tab === 'welders'
@@ -204,7 +245,11 @@ async function computeStatisticsServerResult(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.other) ?? DEFAULT_OTHER_SETTINGS,
   )
   const rows = prepareReportRows(
-    sourceRows as WeldRow[],
+    prepareStatisticsHeatTreatmentRows(
+      sourceRows as WeldRow[],
+      repeatCycleRows,
+      preControlRows,
+    ),
     duplicateRows.map(toDuplicateControlRecord),
     undefined,
     undefined,

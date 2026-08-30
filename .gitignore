@@ -9,6 +9,8 @@ backups/
 data/
 outputs/
 .pnpm-store/
+playwright-report/
+test-results/
 /db_dump*.sql
 /db_dump*.bak
 *.log

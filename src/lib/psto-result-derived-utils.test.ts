@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
+  getManagedPstoResultRows,
   getPstoResultSaveBlockReason,
   getSelectedPstoResultRows,
   hasPstoResultData,
@@ -14,6 +15,14 @@ import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-se
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('PSTO result request identity', () => {
+  it('keeps an assigned primary PSTO cycle before a result is entered', () => {
+    const assignedRow = { id: 1, pstoRequired: 'да' } as WeldRow
+    const unrelatedRow = { id: 2 } as WeldRow
+
+    expect(getManagedPstoResultRows([assignedRow, unrelatedRow], new Set([1, 2])))
+      .toEqual([assignedRow])
+  })
+
   it('does not treat derived waiting statuses as stored PSTO results', () => {
     expect(hasPstoResultData({ id: 1, pstoResult: 'ожидает заявку' } as WeldRow)).toBe(false)
     expect(hasPstoResultData({ id: 2, pstoResult: 'ожидает' } as WeldRow)).toBe(false)

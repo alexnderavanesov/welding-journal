@@ -11,6 +11,7 @@ import { normalizeResultStatus } from '@/lib/weld-status'
 import { getSuspensionOverlapForStamp } from '@/lib/welder-stamp-suspensions'
 import type { PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 
 export function buildPercentageLineControlTasks(
   rows: WeldRow[],
@@ -277,8 +278,14 @@ function getRejectedControlEventDate(row: WeldRow) {
     if (!applicableCodes.has(control.method)) return []
     return control.conclusionDate || control.controlDate ? [control.conclusionDate || control.controlDate] : []
   })
+  const rejectedPreHeatTreatmentDates = getRejectedPreHeatTreatmentControls(row).flatMap((control) => {
+    if (!applicableCodes.has(control.methodCode)) return []
+    const date = String(control.control.conclusionDate ?? '').trim()
+    return date ? [date] : []
+  })
 
-  return [...rejectedDates, ...rejectedDuplicateDates].sort(compareDateLike)[0] ?? String(row.weldDate ?? '').trim()
+  return [...rejectedDates, ...rejectedPreHeatTreatmentDates, ...rejectedDuplicateDates]
+    .sort(compareDateLike)[0] ?? String(row.weldDate ?? '').trim()
 }
 
 function compareDateLike(left: unknown, right: unknown) {

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { deleteWeldJoint, getWeldJointById } from '@/server/welds'
+import { deleteWeldJoint } from '@/server/weld-mutations-api'
+import { getWeldJointById } from '@/server/weld-read-api'
 import {
   buildRepeatedJointRows,
 } from '@/lib/weld-journal-mutation-updates'

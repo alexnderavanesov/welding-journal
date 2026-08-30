@@ -67,7 +67,7 @@ export function LnkResultManagerActions({
           title={removalBlockReason || undefined}
           className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          удалить результат
+          Удалить результат
         </button>
       </div>
       {removalBlockReason ? (

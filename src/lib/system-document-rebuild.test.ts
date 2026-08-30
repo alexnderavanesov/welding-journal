@@ -172,4 +172,38 @@ describe('system document rebuild preview', () => {
       decisions: [{ documentId: 22, action: 'rebuild' }],
     })).toContain('Заполните поля разделения')
   })
+
+  it('leaves pre-TO and repeat-cycle documents outside the legacy history rebuild', () => {
+    const preview = buildSystemDocumentRebuildDocuments({
+      sources: [{
+        document: {
+          documentId: 30,
+          id: 'system-document:30',
+          type: 'lnkConclusion',
+          methodCode: 'ВИК',
+          sourceKind: 'beforeHeatTreatment',
+          title: 'ЗНК-ВИК-до-ТО-001',
+          date: '2026-08-24',
+          label: 'Заключение ВИК до ТО',
+          fileName: 'doc.xlsx',
+          methodCodes: ['ВИК'],
+          rowCount: 1,
+          positionCount: 1,
+          projects: ['П'],
+          subtitleCodes: ['01'],
+          lines: ['L'],
+          periodFrom: '',
+          periodTo: '',
+          updatedAt: '',
+          rowIds: [1],
+        },
+        rows: [rows[0]],
+      }],
+      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      nextNumbers: {},
+    })
+
+    expect(preview.documents).toEqual([])
+    expect(preview.checkedDocumentCount).toBe(0)
+  })
 })

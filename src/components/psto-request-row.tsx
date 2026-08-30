@@ -9,11 +9,12 @@ type PstoRequestRowProps = {
   row: WeldRow
   selected: boolean
   disabled: boolean
+  disabledReason: string
   onToggleRow: (rowId: number) => void
   onOpenContextMenu: (event: MouseEvent<HTMLElement>, row: WeldRow) => void
 }
 
-function PstoRequestRowComponent({ row, selected, disabled, onToggleRow, onOpenContextMenu }: PstoRequestRowProps) {
+function PstoRequestRowComponent({ row, selected, disabled, disabledReason, onToggleRow, onOpenContextMenu }: PstoRequestRowProps) {
   return (
     <div
       onClick={() => {
@@ -47,7 +48,7 @@ function PstoRequestRowComponent({ row, selected, disabled, onToggleRow, onOpenC
       <span className="flex max-w-[28rem] flex-wrap justify-end gap-1.5">
         {disabled ? (
           <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
-            {String(row.pstoRequest ?? '').trim() || 'Заявка уже создана'}
+            {disabledReason || 'Заявка ПСТО недоступна'}
           </span>
         ) : (
           <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
@@ -67,5 +68,6 @@ export const PstoRequestRow = memo(PstoRequestRowComponent, (previous, next) => 
   previous.row === next.row &&
   previous.selected === next.selected &&
   previous.disabled === next.disabled &&
+  previous.disabledReason === next.disabledReason &&
   previous.onOpenContextMenu === next.onOpenContextMenu
 ))

@@ -82,7 +82,7 @@ describe('line consistency tasks', () => {
     expect(tasks).toHaveLength(0)
   })
 
-  it('ignores RFA, STLS and MKK differences on a 100 percent line', () => {
+  it('ignores TVMT, RFA, STLS and MKK differences on a 100 percent line', () => {
     const tasks = buildLineConsistencyTasks([
       row({
         id: 1,
@@ -99,16 +99,13 @@ describe('line consistency tasks', () => {
     expect(tasks).toHaveLength(0)
   })
 
-  it('still compares TVMT assignments on a 100 percent line', () => {
+  it('does not compare legacy TVMT assignments on a 100 percent line', () => {
     const tasks = buildLineConsistencyTasks([
       row({ id: 1, weldControlPercent: '100', hasVik: 'да', hasTvmt: 'да' }),
       row({ id: 2, weldControlPercent: '100', hasVik: 'да' }),
     ])
 
-    expect(tasks).toHaveLength(1)
-    expect(tasks[0]).toMatchObject({ fieldKey: 'controlPresence' })
-    expect(tasks[0]?.values).toEqual(['ВИК, ТВМТ', 'ВИК'])
-    expect(tasks[0]?.details).toContain('РФА, СТЛС и МКК в проверку линии не входят')
+    expect(tasks).toHaveLength(0)
   })
 
   it('accepts RK, UZK or PVK as alternatives for U-joints on a 100 percent line', () => {
@@ -184,7 +181,7 @@ describe('line consistency tasks', () => {
       line: '330-FG-05-001',
       fieldKey: 'pstoPresence',
       title: 'Проверить ПСТО по линии',
-      values: ['ПСТО есть: 1', 'ПСТО нет: 2'],
+      values: ['ПСТО назначена: 1', 'Без ПСТО: 2'],
     })
   })
 
@@ -200,6 +197,16 @@ describe('line consistency tasks', () => {
       buildLineConsistencyTasks([
         row({ id: 1, pstoRequired: '' }),
         row({ id: 2, pstoRequired: '' }),
+      ]),
+    ).toHaveLength(0)
+  })
+
+  it('treats legacy enabled PSTO values as assigned for line consistency', () => {
+    expect(
+      buildLineConsistencyTasks([
+        row({ id: 1, pstoRequired: 'да' }),
+        row({ id: 2, pstoRequired: 'дополнительный' }),
+        row({ id: 3, pstoRequired: 'замена РК/УЗК' }),
       ]),
     ).toHaveLength(0)
   })

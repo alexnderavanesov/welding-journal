@@ -70,7 +70,11 @@ export function usePstoRequestManagerMutation({
 
       if (updatedRecords.length === 0) throw new Error('Заявка ПСТО не найдена')
 
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось изменить заявку ПСТО',
+        { mutationScope: 'psto' },
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {

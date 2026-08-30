@@ -136,4 +136,30 @@ describe('system document creation plan', () => {
     expect(plan.missingSummary).toContain('не заполнено: линия')
     expect(plan.error).toBe('Заполните поля, необходимые для выбранного разделения.')
   })
+
+  it('keeps forced workflow partitions in separate documents', () => {
+    const plan = buildSystemDocumentCreationPlan({
+      type: 'lnkRequest',
+      date: '2026-08-24',
+      rows: [
+        { ...rows[0], pstoRepeatCycles: [] },
+        { ...rows[1], pstoRepeatCycles: [{ id: 5, weldJointId: 2, sequence: 2 }] },
+      ],
+      naming: { mode: 'system', customName: '' },
+      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      nextNumber: 20,
+      partitionBy: (row) => row.pstoRepeatCycles?.length
+        ? { key: 'repeat', label: 'Повторный цикл' }
+        : { key: 'primary', label: 'Первичный цикл' },
+    })
+
+    expect(plan.groups.map((group) => group.label)).toEqual([
+      'Все выбранные позиции · Первичный цикл',
+      'Все выбранные позиции · Повторный цикл',
+    ])
+    expect(plan.groups.map((group) => group.name)).toEqual([
+      'Заявка-24.08.2026-020',
+      'Заявка-24.08.2026-021',
+    ])
+  })
 })

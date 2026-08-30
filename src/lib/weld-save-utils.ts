@@ -1,12 +1,12 @@
 import {
   createWeldJoint,
   createWeldJoints,
-  massFillWeldJoints,
-  replaceWeldJoints,
   updateWeldJoint,
   updateSystemWeldJoint,
   updateWeldJoints,
-} from '@/server/welds'
+  type WeldMutationScope,
+} from '@/server/weld-mutations-api'
+import { massFillWeldJoints, replaceWeldJoints } from '@/server/weld-import-api'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
 import type { RepeatedJointRenameTask } from '@/lib/dispatcher-types'
@@ -36,8 +36,17 @@ export async function createWeldRowsOrThrow<T extends WeldInput>(
   return savedRows
 }
 
-export async function updateWeldRowOrThrow<T extends RowWithId>(record: T, errorMessage = 'Запись не найдена') {
-  const saved = await updateWeldJoint({ data: normalizeDateFieldsForSave(record) })
+export async function updateWeldRowOrThrow<T extends RowWithId>(
+  record: T,
+  errorMessage = 'Запись не найдена',
+  options: { mutationScope?: WeldMutationScope } = {},
+) {
+  const saved = await updateWeldJoint({
+    data: {
+      ...normalizeDateFieldsForSave(record),
+      mutationScope: options.mutationScope,
+    },
+  })
   if (!saved) throw new Error(errorMessage)
   return saved
 }
@@ -58,15 +67,19 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
   records: T[],
   errorMessage = 'Не удалось сохранить часть записей',
   options: {
+    mutationScope?: WeldMutationScope
     systemDocumentSequence?: SystemDocumentSequenceUpdate
     systemDocumentSequences?: SystemDocumentSequenceUpdate[]
+    requireFullyAssignedPstoLines?: boolean
   } = {},
 ) {
   const savedRows = await updateWeldJoints({
     data: {
       records: records.map((record) => normalizeDateFieldsForSave(record)),
+      mutationScope: options.mutationScope,
       systemDocumentSequence: options.systemDocumentSequence,
       systemDocumentSequences: options.systemDocumentSequences,
+      requireFullyAssignedPstoLines: options.requireFullyAssignedPstoLines,
     },
   })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)

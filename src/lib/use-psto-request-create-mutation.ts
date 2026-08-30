@@ -51,6 +51,8 @@ export function usePstoRequestCreateMutation({
         updatedRecords,
         'Не удалось сохранить часть записей',
         {
+          mutationScope: 'psto',
+          requireFullyAssignedPstoLines: true,
           systemDocumentSequences: groups
             .filter((group) => group.useSystemName)
             .map((group) => ({

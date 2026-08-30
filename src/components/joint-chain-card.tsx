@@ -10,23 +10,30 @@ export type JointChainCardProps = {
   index: number
   isCurrent: boolean
   onOpenRow: (row: WeldRow) => void
+  onSelect?: (row: WeldRow) => void
 }
 
-export function JointChainCard({ row, index, isCurrent, onOpenRow }: JointChainCardProps) {
+export function JointChainCard({ row, index, isCurrent, onOpenRow, onSelect }: JointChainCardProps) {
   const resultItems = getJointChainResultItems(row)
   const jointName = String(row.joint ?? '-')
 
   return (
     <div
-      className={`rounded-md border px-4 py-3 ${
-        isCurrent ? 'border-sky-200 bg-sky-50/70 shadow-sm shadow-sky-100' : 'border-slate-200 bg-white'
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect?.(row)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onSelect?.(row)
+      }}
+      className={`rounded-md border px-3 py-2.5 transition-colors ${
+        isCurrent ? 'border-sky-300 bg-sky-50/70 shadow-sm shadow-sky-100' : 'border-slate-200 bg-white hover:border-slate-300'
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-600">
           {index + 1}
         </span>
-        <span className="text-base font-semibold text-slate-900">{jointName}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{jointName}</span>
         <button
           type="button"
           onClick={() => onOpenRow(row)}
@@ -44,40 +51,23 @@ export function JointChainCard({ row, index, isCurrent, onOpenRow }: JointChainC
         <OfficialityBadge row={row} />
       </div>
 
-      <div className="mt-1 text-sm text-slate-600">{getJointTitle(row)}</div>
+      <div className="mt-1 truncate text-xs text-slate-500" title={getJointTitle(row)}>{getJointTitle(row)}</div>
+      <div className="mt-1 text-xs text-slate-500"><JointSpoolDateMeta row={row} /></div>
 
-      <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(260px,auto)]">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-slate-200/90 bg-white/75 px-3 py-2 text-xs text-slate-500">
-          <span>
-            <JointSpoolDateMeta row={row} />
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+          {getJointStatusDisplayLabel(row)}
+        </span>
+        {resultItems.length > 0 ? resultItems.map((item) => (
+          <span
+            key={`${row.id}:${item.label}:${item.value}`}
+            className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${item.className}`}
+          >
+            {item.label} {item.value}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span>Статус:</span>
-            <span className={`rounded border px-1.5 py-0.5 font-semibold ${getJointStatusBadgeClass(row)}`}>
-              {getJointStatusDisplayLabel(row)}
-            </span>
-          </span>
-        </div>
-
-        <div className="rounded-md border border-slate-200/90 bg-white/75 px-3 py-2">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase text-slate-400">Контроль</div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {resultItems.length > 0 ? (
-              resultItems.map((item) => (
-                <span
-                  key={`${row.id}:${item.label}:${item.value}`}
-                  className={`rounded border px-2 py-1 text-xs font-semibold ${item.className}`}
-                >
-                  {item.label} {item.value}
-                </span>
-              ))
-            ) : (
-              <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
-                результатов пока нет
-              </span>
-            )}
-          </div>
-        </div>
+        )) : (
+          <span className="text-xs text-slate-400">результатов нет</span>
+        )}
       </div>
     </div>
   )

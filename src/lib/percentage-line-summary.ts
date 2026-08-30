@@ -11,6 +11,7 @@ import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeFinalStatus, norma
 import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { isAngularConnectionType } from '@/lib/connection-type'
+import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 
 export type PercentageControlMethod = 'РК' | 'УЗК' | 'ПВК'
 
@@ -458,6 +459,7 @@ function isRejectedPrimaryPercentageControl(row: WeldRow, systemIndexSettings?: 
 
 function hasRejectedAnyControlResult(row: WeldRow) {
   if (hasRejectedDuplicateControl(row)) return true
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) return true
   return CONTROL_RESULT_PAIRS.some(({ resultKey }) => {
     const result = normalizeResultStatus(row[resultKey])
     return result === 'ремонт' || result === 'вырез'
@@ -473,6 +475,11 @@ function hasRejectedPercentageControlResult(row: WeldRow) {
   if (hasRejectedApplicableResult) return true
 
   const applicableCodes = new Set(applicableMethods.map(({ code }) => code))
+  if (getRejectedPreHeatTreatmentControls(row).some(
+    (control) => control.methodCode !== 'ВИК' && applicableCodes.has(control.methodCode),
+  )) {
+    return true
+  }
   return getRejectedDuplicateControls(row).some((control) => applicableCodes.has(control.method as PercentageControlMethod))
 }
 

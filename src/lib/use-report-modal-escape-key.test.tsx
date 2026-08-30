@@ -99,4 +99,32 @@ describe('useReportModalEscapeKey', () => {
 
     expect(onCloseRkExposureModal).not.toHaveBeenCalled()
   })
+
+  it('closes the active pre-TO workflow before an underlying report dialog', () => {
+    const onClosePreHeatTreatmentWorkflow = vi.fn()
+    const onCloseRkExposureModal = vi.fn()
+
+    renderHook(() => useReportModalEscapeKey(createOptions({
+      isPreHeatTreatmentWorkflowOpen: true,
+      onClosePreHeatTreatmentWorkflow,
+      onCloseRkExposureModal,
+    })))
+    pressEscape()
+
+    expect(onClosePreHeatTreatmentWorkflow).toHaveBeenCalledOnce()
+    expect(onCloseRkExposureModal).not.toHaveBeenCalled()
+  })
+
+  it('closes the active TVMT workflow on Escape', () => {
+    const onCloseTvmtWorkflow = vi.fn()
+
+    renderHook(() => useReportModalEscapeKey(createOptions({
+      isRkExposureModalOpen: false,
+      isTvmtWorkflowOpen: true,
+      onCloseTvmtWorkflow,
+    })))
+    pressEscape()
+
+    expect(onCloseTvmtWorkflow).toHaveBeenCalledOnce()
+  })
 })

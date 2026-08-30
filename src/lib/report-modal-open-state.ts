@@ -1,5 +1,9 @@
 import { isAnyReportModalOpen } from '@/lib/report-ui-state'
 
+export function hasOpenReportDialogProps(dialogProps: Record<string, unknown>) {
+  return Object.values(dialogProps).some(Boolean)
+}
+
 type ReportModalOpenStateParams = {
   isPstoRequestModalOpen: boolean
   isPstoRequestManagerOpen: boolean

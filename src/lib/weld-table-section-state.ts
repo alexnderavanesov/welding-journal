@@ -4,16 +4,19 @@ export function canCollapseSection(fields: Array<{ key: string }>, alwaysVisible
   return fields.some((field) => !alwaysVisibleFieldKeys.has(field.key))
 }
 
-export function readCollapsedSections(storageKey: string) {
-  if (typeof window === 'undefined') return new Set<string>()
+export function readCollapsedSections(
+  storageKey: string,
+  fallback: ReadonlySet<string> = new Set<string>(),
+) {
+  if (typeof window === 'undefined') return new Set(fallback)
 
   try {
     const stored = window.localStorage.getItem(getCollapsedSectionsStorageKey(storageKey))
-    if (!stored) return new Set<string>()
+    if (!stored) return new Set(fallback)
     const parsed = JSON.parse(stored)
     return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === 'string')) : new Set<string>()
   } catch {
-    return new Set<string>()
+    return new Set(fallback)
   }
 }
 

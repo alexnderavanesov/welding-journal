@@ -6,6 +6,9 @@ type PstoRequestDialogProps = NonNullable<ReportPstoDialogsProps['requestDialogP
 type PstoRequestManagerDialogProps = NonNullable<ReportPstoDialogsProps['requestManagerDialogProps']>
 type PstoResultDialogProps = NonNullable<ReportPstoDialogsProps['resultDialogProps']>
 type PstoResultManagerDialogProps = NonNullable<ReportPstoDialogsProps['resultManagerDialogProps']>
+type TvmtWorkflowDialogProps = NonNullable<ReportPstoDialogsProps['tvmtWorkflowDialogProps']>
+type PstoRepeatWorkflowDialogProps = NonNullable<ReportPstoDialogsProps['repeatWorkflowDialogProps']>
+type PstoLineProgramDialogProps = NonNullable<ReportPstoDialogsProps['lineProgramDialogProps']>
 
 type CreateReportPstoDialogsPropsOptions = {
   requestModalOpen: boolean
@@ -20,6 +23,10 @@ type CreateReportPstoDialogsPropsOptions = {
 
   resultManagerOpen: boolean
   resultManager: PstoResultManagerDialogProps
+
+  tvmtWorkflow: TvmtWorkflowDialogProps | null
+  repeatWorkflow: PstoRepeatWorkflowDialogProps | null
+  lineProgram: PstoLineProgramDialogProps | null
 }
 
 export function createReportPstoDialogsProps({
@@ -32,6 +39,9 @@ export function createReportPstoDialogsProps({
   result,
   resultManagerOpen,
   resultManager,
+  tvmtWorkflow,
+  repeatWorkflow,
+  lineProgram,
 }: CreateReportPstoDialogsPropsOptions): ReportPstoDialogsProps {
   return {
     requestDialogProps: requestModalOpen
@@ -58,5 +68,8 @@ export function createReportPstoDialogsProps({
         }
       : null,
     resultManagerDialogProps: resultManagerOpen ? resultManager : null,
+    tvmtWorkflowDialogProps: tvmtWorkflow,
+    repeatWorkflowDialogProps: repeatWorkflow,
+    lineProgramDialogProps: lineProgram,
   }
 }

@@ -1,0 +1,436 @@
+import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldInput } from '@/lib/weld-fields'
+import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { parseDateLikeToIso } from '@/lib/date-format'
+import {
+  hasPstoCycleExecutionHistory,
+  hasPstoExecutionHistory,
+} from '@/lib/psto-cycle'
+import {
+  isPreHeatTreatmentLnkMethodCode,
+  type PreHeatTreatmentControlRecord,
+  type PreHeatTreatmentLnkMethodCode,
+} from '@/lib/lnk-control-stage'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { getPstoTvmtWorkflowState } from '@/lib/tvmt-cycle'
+
+export type PstoLineIdentity = {
+  projectTitle: string
+  subtitleCode: string
+  line: string
+}
+
+type PstoLineIdentityInput = {
+  projectTitle?: unknown
+  subtitleCode?: unknown
+  line?: unknown
+}
+
+export type PstoLineRemovalDisposition = 'keepPrimary' | 'promoteBeforeHeatTreatment'
+export type PstoLineActivationDisposition = 'movePrimaryToBeforeHeatTreatment'
+export type PstoWeldLineMoveDisposition =
+  | PstoLineRemovalDisposition
+  | 'movePrimaryToBeforeHeatTreatment'
+  | 'deletePrimary'
+export type PstoLineAssignmentAction = 'assign' | 'remove' | 'cancel' | 'reactivate'
+
+export type PstoLineRemovalDecision = {
+  rowId: number
+  disposition: PstoLineRemovalDisposition
+}
+
+export type PstoLineActivationDecision = {
+  rowId: number
+  disposition: PstoLineActivationDisposition
+  methodCodes: PreHeatTreatmentLnkMethodCode[]
+}
+
+export type PstoLineAssignmentSummary = PstoLineIdentity & {
+  key: string
+  rowCount: number
+  assignedCount: number
+  cancelledCount: number
+  historyRowCount: number
+  preControlCount: number
+  repeatCycleCount: number
+}
+
+export type PstoLineRemovalPreviewRow = {
+  rowId: number
+  joint: string
+  spool: string
+  preMethods: PreHeatTreatmentLnkMethodCode[]
+  promotablePreMethods: PreHeatTreatmentLnkMethodCode[]
+  pendingPreMethods: PreHeatTreatmentLnkMethodCode[]
+  primaryMethods: PreHeatTreatmentLnkMethodCode[]
+  pstoRequest: string
+  pstoResult: string
+  repeatCycleCount: number
+  preservesPerformedHistory: boolean
+  hasConflict: boolean
+  blocksActivation: boolean
+  activationTransferBlockedMethods: PreHeatTreatmentLnkMethodCode[]
+}
+
+export type PstoLineRemovalPreview = {
+  identity: PstoLineIdentity
+  rowCount: number
+  assignedCount: number
+  requestOnlyCount: number
+  completedPstoCount: number
+  preControlCount: number
+  completedPreControlCount: number
+  pendingPreControlCount: number
+  repeatCycleCount: number
+  rows: PstoLineRemovalPreviewRow[]
+}
+
+export type PstoWeldLineMovePreview = {
+  sourceIdentity: PstoLineIdentity
+  targetIdentity: PstoLineIdentity
+  targetState: 'assigned' | 'unassigned' | 'cancelled'
+  requestOnlyCount: number
+  completedPstoCount: number
+  preControlCount: number
+  completedPreControlCount: number
+  pendingPreControlCount: number
+  repeatCycleCount: number
+  row: PstoLineRemovalPreviewRow
+}
+
+const PRIMARY_PSTO_DOCUMENT_KEYS = [
+  'pstoRequest',
+  'pstoRequestDate',
+  'pstoDate',
+  'heatTreatmentDiagram',
+  'pstoNote',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
+] as const satisfies readonly (keyof WeldRow)[]
+
+const PRIMARY_PSTO_WORKFLOW_KEYS = [
+  'pstoRequest',
+  'pstoRequestDate',
+  'pstoDate',
+  'heatTreatmentDiagram',
+  'pstoNote',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
+] as const satisfies readonly (keyof WeldRow)[]
+
+const PRIMARY_STAGED_LNK_CLEAR_KEYS = LNK_METHODS.flatMap((method) => (
+  isPreHeatTreatmentLnkMethodCode(method.code)
+    ? [
+        method.requestKey,
+        method.requestDateKey,
+        method.resultKey,
+        method.conclusionDateKey,
+        method.conclusionKey,
+      ]
+    : []
+)) as (keyof WeldRow)[]
+
+export function normalizePstoLineIdentity(value: PstoLineIdentityInput): PstoLineIdentity {
+  return {
+    projectTitle: normalizeText(value.projectTitle),
+    subtitleCode: normalizeText(value.subtitleCode),
+    line: normalizeText(value.line),
+  }
+}
+
+export function getPstoLineIdentityKey(value: PstoLineIdentityInput) {
+  const identity = normalizePstoLineIdentity(value)
+  return JSON.stringify([identity.projectTitle, identity.subtitleCode, identity.line])
+}
+
+export function buildPstoRemovedRow({
+  row,
+  controls,
+  disposition,
+}: {
+  row: WeldRow
+  controls: readonly PreHeatTreatmentControlRecord[]
+  disposition: PstoLineRemovalDisposition
+}): WeldRow {
+  return {
+    ...row,
+    pstoRequired: null,
+    pstoControlBasis: null,
+    pstoCancellationDate: null,
+  } as WeldRow
+}
+
+export function buildPstoMovedToUnassignedLineRow({
+  row,
+  controls,
+  disposition,
+}: {
+  row: WeldRow
+  controls: readonly PreHeatTreatmentControlRecord[]
+  disposition: PstoLineRemovalDisposition
+}): WeldRow {
+  const next = buildPstoCancelledRow({
+    row,
+    controls,
+    disposition,
+    cancellationDate: '',
+    cancellationBasis: '',
+  })
+  return {
+    ...next,
+    pstoRequired: null,
+    pstoControlBasis: null,
+    pstoCancellationDate: null,
+  } as WeldRow
+}
+
+export function buildPstoCancelledRow({
+  row,
+  controls,
+  disposition,
+  cancellationDate,
+  cancellationBasis,
+}: {
+  row: WeldRow
+  controls: readonly PreHeatTreatmentControlRecord[]
+  disposition: PstoLineRemovalDisposition
+  cancellationDate: string
+  cancellationBasis: string
+}): WeldRow {
+  const next = {
+    ...row,
+    pstoRequired: 'отменен',
+    pstoCancellationDate: cancellationDate,
+    pstoControlBasis: cancellationBasis || null,
+    pstoRepeatCycles: (row.pstoRepeatCycles ?? []).filter(hasPstoCycleExecutionHistory),
+  } as WeldRow
+  if (hasPerformedPstoHistory(row)) return next
+
+  next.pstoRequest = null
+  next.pstoRequestDate = null
+  if (disposition !== 'promoteBeforeHeatTreatment') return next
+
+  for (const key of PRIMARY_STAGED_LNK_CLEAR_KEYS) next[key] = null as never
+  next.lnkDefectDescription = null
+  next.rkExposureConfirmedDiameter = null
+
+  for (const control of controls) {
+    const methodCode = normalizeText(control.method).toLocaleUpperCase('ru-RU')
+    if (!isPreHeatTreatmentLnkMethodCode(methodCode)) continue
+    if (!hasCompletedPreHeatTreatmentResult(control)) continue
+    const method = LNK_METHODS.find((candidate) => candidate.code === methodCode)
+    if (!method) continue
+    next[method.requestKey] = textOrNull(control.requestName) as never
+    next[method.requestDateKey] = textOrNull(control.requestDate) as never
+    next[method.resultKey] = textOrNull(control.result) as never
+    next[method.conclusionDateKey] = textOrNull(control.conclusionDate) as never
+    next[method.conclusionKey] = textOrNull(control.conclusionName) as never
+    if (methodCode === 'РК') {
+      next.lnkDefectDescription = textOrNull(control.defectDescription)
+      next.rkExposureConfirmedDiameter = control.rkExposureConfirmedDiameter ?? null
+    }
+  }
+  return next
+}
+
+export function hasPerformedPstoHistory(row: WeldInput) {
+  return hasPstoExecutionHistory(row)
+}
+
+export function isPstoCancelledValue(value: unknown) {
+  return normalizeText(value).toLocaleLowerCase('ru-RU') === 'отменен'
+}
+
+export function getPreHeatTreatmentMethodCodes(
+  controls: readonly PreHeatTreatmentControlRecord[],
+) {
+  return [...new Set(controls.flatMap((control) => {
+    const methodCode = normalizeText(control.method).toLocaleUpperCase('ru-RU')
+    return isPreHeatTreatmentLnkMethodCode(methodCode) ? [methodCode] : []
+  }))].sort(comparePreMethods)
+}
+
+export function getCompletedPreHeatTreatmentMethodCodes(
+  controls: readonly PreHeatTreatmentControlRecord[],
+) {
+  return getPreHeatTreatmentMethodCodes(controls.filter(hasCompletedPreHeatTreatmentResult))
+}
+
+export function getPendingPreHeatTreatmentMethodCodes(
+  controls: readonly PreHeatTreatmentControlRecord[],
+) {
+  return getPreHeatTreatmentMethodCodes(controls.filter((control) => !hasCompletedPreHeatTreatmentResult(control)))
+}
+
+export function hasCompletedPreHeatTreatmentResult(control: PreHeatTreatmentControlRecord) {
+  const result = normalizeText(control.result).toLocaleLowerCase('ru-RU')
+  return result === 'годен' || result === 'ремонт' || result === 'вырез'
+}
+
+export function getPrimaryStagedMethodCodes(row: WeldRow) {
+  return LNK_METHODS.flatMap((method) => {
+    if (!isPreHeatTreatmentLnkMethodCode(method.code)) return []
+    const values: unknown[] = [
+      row[method.requestKey],
+      row[method.requestDateKey],
+      row[method.conclusionDateKey],
+      row[method.conclusionKey],
+    ]
+    if (isFinalLnkResult(row[method.resultKey])) values.push(row[method.resultKey])
+    if (method.code === 'РК') {
+      values.push(row.lnkDefectDescription, row.rkExposureConfirmedDiameter)
+    }
+    return values.some(hasText) ? [method.code] : []
+  }).sort(comparePreMethods)
+}
+
+export function requiresPrimaryStageResolutionForAssignedPstoLine(row: WeldRow) {
+  return (
+    !isControlEnabledValue(row.pstoRequired) &&
+    !hasPstoWorkflowStageData(row) &&
+    getPrimaryStagedMethodCodes(row).length > 0
+  )
+}
+
+export function blocksPstoLineActivation(row: WeldRow) {
+  if (isControlEnabledValue(row.pstoRequired)) return false
+  if (getPrimaryStagedMethodCodes(row).length === 0) return false
+  const reactivatedRow = {
+    ...row,
+    pstoRequired: 'да',
+    pstoCancellationDate: null,
+    pstoControlBasis: null,
+  } as WeldRow
+  return getPstoTvmtWorkflowState(reactivatedRow) !== 'complete'
+}
+
+export function getPstoLineActivationBlockReason(rows: readonly WeldRow[]) {
+  const blockedRows = rows.filter(blocksPstoLineActivation)
+  if (blockedRows.length === 0) return ''
+  const visibleJoints = blockedRows.slice(0, 8).map((row) => normalizeText(row.joint) || `ID ${row.id}`)
+  const hiddenCount = blockedRows.length - visibleJoints.length
+  const jointList = `${visibleJoints.join(', ')}${hiddenCount > 0 ? ` и еще ${hiddenCount}` : ''}`
+  return (
+    `Нельзя включить ПСТО: у стыков ${jointList} уже есть основной комплект ЛНК, ` +
+    'который окажется раньше обязательного цикла ПСТО/ТВМТ. ' +
+    'Выберите перенос комплекта в «НК до ТО» либо удалите в ЛНК результат и заключение, затем заявку основного НК.'
+  )
+}
+
+export function hasPstoWorkflowStageData(row: WeldInput) {
+  const hydrated = row as WeldInput & {
+    preHeatTreatmentControls?: unknown[]
+    pstoRepeatCycles?: unknown[]
+  }
+  return (
+    PRIMARY_PSTO_WORKFLOW_KEYS.some((key) => hasText(row[key])) ||
+    isCompletedPstoResult(row.pstoResult) ||
+    hasFinalTvmtResult(row.tvmtResult) ||
+    (hydrated.preHeatTreatmentControls?.length ?? 0) > 0 ||
+    (hydrated.pstoRepeatCycles?.length ?? 0) > 0
+  )
+}
+
+export function hasPrimaryPstoHistory(row: WeldInput) {
+  return (
+    PRIMARY_PSTO_DOCUMENT_KEYS.some((key) => hasText(row[key])) ||
+    isCompletedPstoResult(row.pstoResult) ||
+    hasFinalTvmtResult(row.tvmtResult)
+  )
+}
+
+export function hasPstoLifecycleData(row: WeldInput) {
+  const hydrated = row as WeldInput & {
+    preHeatTreatmentControls?: unknown[]
+    pstoRepeatCycles?: unknown[]
+  }
+  return (
+    hasPrimaryPstoHistory(row) ||
+    (hydrated.preHeatTreatmentControls?.length ?? 0) > 0 ||
+    (hydrated.pstoRepeatCycles?.length ?? 0) > 0
+  )
+}
+
+export function getLatestPstoLifecycleEventDate(row: WeldInput) {
+  const hydrated = row as WeldInput & {
+    preHeatTreatmentControls?: PreHeatTreatmentControlRecord[]
+    pstoRepeatCycles?: Array<{
+      pstoRequestDate?: unknown
+      pstoDate?: unknown
+      tvmtRequestDate?: unknown
+      tvmtConclusionDate?: unknown
+    }>
+  }
+  return [
+    row.pstoRequestDate,
+    row.pstoDate,
+    row.tvmtRequestDate,
+    row.tvmtConclusionDate,
+    ...(hydrated.preHeatTreatmentControls ?? []).flatMap((control) => [
+      control.requestDate,
+      control.conclusionDate,
+    ]),
+    ...(hydrated.pstoRepeatCycles ?? []).flatMap((cycle) => [
+      cycle.pstoRequestDate,
+      cycle.pstoDate,
+      cycle.tvmtRequestDate,
+      cycle.tvmtConclusionDate,
+    ]),
+  ]
+    .map(parseDateLikeToIso)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? ''
+}
+
+export function assertPstoCancellationDateAfterHistory(
+  rows: readonly WeldInput[],
+  cancellationDate: string,
+) {
+  const normalizedCancellationDate = parseDateLikeToIso(cancellationDate) ?? cancellationDate
+  const latest = rows
+    .map(getLatestPstoLifecycleEventDate)
+    .filter(Boolean)
+    .sort()
+    .at(-1)
+  if (latest && normalizedCancellationDate < latest) {
+    throw new Error(`Дата решения об отмене ПСТО не может быть раньше последнего сохраненного события (${latest}).`)
+  }
+}
+
+function comparePreMethods(left: PreHeatTreatmentLnkMethodCode, right: PreHeatTreatmentLnkMethodCode) {
+  const order: PreHeatTreatmentLnkMethodCode[] = ['ВИК', 'РК', 'УЗК', 'ПВК']
+  return order.indexOf(left) - order.indexOf(right)
+}
+
+function textOrNull(value: unknown) {
+  const normalized = normalizeText(value)
+  return normalized || null
+}
+
+function hasText(value: unknown) {
+  return normalizeText(value).length > 0
+}
+
+function isCompletedPstoResult(value: unknown) {
+  const result = normalizeText(value).toLocaleLowerCase('ru-RU')
+  return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
+}
+
+function hasFinalTvmtResult(value: unknown) {
+  const result = normalizeText(value).toLocaleLowerCase('ru-RU')
+  return Boolean(result) && !result.startsWith('ожидает')
+}
+
+function isFinalLnkResult(value: unknown) {
+  const result = normalizeText(value).toLocaleLowerCase('ru-RU')
+  return result === 'годен' || result === 'ремонт' || result === 'вырез'
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? '').trim()
+}

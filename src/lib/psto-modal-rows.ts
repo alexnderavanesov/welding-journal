@@ -7,6 +7,7 @@ import { hasText, isYesText } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
+import { isPrimaryPstoReady } from '@/lib/lnk-control-stage'
 
 export function filterPstoRowsByRequestName(rows: WeldRow[], requestName: string, requestDate?: string) {
   const name = requestName.trim()
@@ -39,7 +40,7 @@ export function rowBelongsToPstoRequest(row: WeldInput, requestName: string, req
 }
 
 export function canSelectPstoResultRow(row: WeldInput, requestName: string, requestDate?: string) {
-  if (!isYesText(row.pstoRequired)) return false
+  if (!isYesText(row.pstoRequired) || !isPrimaryPstoReady(row)) return false
   if (requestName.trim()) return rowBelongsToPstoRequest(row, requestName, requestDate)
   return hasText(row.pstoRequest)
 }

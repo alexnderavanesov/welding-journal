@@ -52,6 +52,7 @@ describe('weld field order', () => {
       'Сварка',
       'Клейма',
       'Контроль',
+      'НК до ТО',
       'Заявки',
       'Результат',
       'Заключения',
@@ -107,13 +108,54 @@ describe('weld field order', () => {
     expect(virtualFields.every((field) => isWeldFormFieldHidden({ key: field.key, virtual: true }))).toBe(true)
   })
 
-  it('shows one read-only control basis summary while keeping physical basis fields out of table layouts', () => {
+  it('shows staged controls only in one collapsible LNK section', () => {
+    const journalSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const lnkSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+    const stagedSection = lnkSections.find((group) => group.section === 'НК до ТО')
+
+    expect(journalSections.some((group) => group.section === 'НК до ТО')).toBe(false)
+    expect(pstoSections.some((group) => group.section === 'НК до ТО')).toBe(false)
+    expect(stagedSection?.fields).toHaveLength(22)
+    expect(stagedSection?.fields.map((field) => field.key)).toEqual(expect.arrayContaining([
+      'preVikRequest',
+      'preRkResult',
+      'preRkExposureScheme',
+      'preRkDefectDescription',
+      'preUzkConclusion',
+      'prePvkConclusionDate',
+    ]))
+    expect(stagedSection?.fields.every((field) => isWeldFormFieldHidden(field))).toBe(true)
+    expect(stagedSection?.fields.every((field) => !EXCEL_FIELDS.includes(field))).toBe(true)
+  })
+
+  it('keeps the PSTO cycle summary inside the PSTO section without duplicate section names', () => {
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+    const sectionNames = pstoSections.map((group) => group.section)
+
+    expect(new Set(sectionNames).size).toBe(sectionNames.length)
+    expect(pstoSections.find((group) => group.section === 'ПСТО')?.fields.some((field) => field.key === 'pstoCycleSummary')).toBe(true)
+  })
+
+  it('shows LNK assignment bases as a summary and PSTO cancellation basis in its dedicated column', () => {
     const visibleKeys = new Set(VISIBLE_FIELDS.map((field) => field.key))
 
     expect(visibleKeys.has('controlBasisSummary')).toBe(true)
     expect(WELDING_JOURNAL_BLOCKED_FIELD_KEYS.has('controlBasisSummary')).toBe(true)
     for (const fieldKey of CONTROL_BASIS_FIELD_KEYS) {
-      expect(visibleKeys.has(fieldKey)).toBe(false)
+      expect(visibleKeys.has(fieldKey)).toBe(fieldKey === 'pstoControlBasis')
       expect(formHiddenFieldKeys.has(fieldKey)).toBe(true)
       expect(EXCEL_FIELDS.some((field) => field.key === fieldKey)).toBe(true)
     }
@@ -122,7 +164,10 @@ describe('weld field order', () => {
       hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
       mergePstoSections: true,
     })
-    expect(pstoSections.find((group) => group.section === 'ПСТО')?.fields.some((field) => field.key === 'controlBasisSummary')).toBe(true)
+    const pstoFields = pstoSections.find((group) => group.section === 'ПСТО')?.fields ?? []
+    expect(pstoSections.flatMap((group) => group.fields).some((field) => field.key === 'controlBasisSummary')).toBe(false)
+    expect(pstoFields.some((field) => field.key === 'pstoCancellationDate')).toBe(true)
+    expect(pstoFields.some((field) => field.key === 'pstoControlBasis')).toBe(true)
   })
 
   it('keeps virtual RK exposure state and its hidden metadata outside Excel imports', () => {
@@ -454,6 +499,23 @@ describe('weld field order', () => {
     expect(formHiddenFieldKeys.has('pstoNote')).toBe(true)
   })
 
+  it('keeps TVMT BoQ and KS3 visibility unchanged while the operational cycle moves to PSTO', () => {
+    const pstoFields = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    }).flatMap((group) => group.fields)
+
+    expect(LNK_HIDDEN_FIELD_KEYS.has('tvmtBoq')).toBe(true)
+    expect(LNK_HIDDEN_FIELD_KEYS.has('tvmtKs3')).toBe(true)
+    expect(HEAT_TREATMENT_HIDDEN_FIELD_KEYS.has('tvmtBoq')).toBe(true)
+    expect(HEAT_TREATMENT_HIDDEN_FIELD_KEYS.has('tvmtKs3')).toBe(true)
+    expect(pstoFields.map((field) => field.key)).toEqual(expect.arrayContaining([
+      'tvmtRequest',
+      'tvmtResult',
+      'tvmtConclusion',
+    ]))
+  })
+
   it('shows request columns in the same control order as results', () => {
     const requests = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Заявки')
 
@@ -585,7 +647,7 @@ describe('weld field order', () => {
     ).toBe('ожидает заявку')
   })
 
-  it('does not let pending heat treatment keep a good NDT joint waiting', () => {
+  it('keeps a good post-treatment NDT joint waiting until PSTO and TVMT are complete', () => {
     expect(
       calculateFinalStatus({
         weldDate: '20.03.2025',
@@ -596,6 +658,42 @@ describe('weld field order', () => {
         pstoRequired: 'да',
         pstoResult: null,
       }),
+    ).toBe('ожидает заявку')
+
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasVik: 'да',
+        vikResult: 'годен',
+        pstoRequired: 'да',
+        pstoRequest: 'Заявка ПСТО-001',
+        pstoResult: 'проведено',
+        tvmtRequest: 'Заявка ТВМТ-001',
+        tvmtResult: 'годен',
+        preHeatTreatmentControls: [{
+          id: 1,
+          weldJointId: 1,
+          method: 'ВИК',
+          requestName: 'Заявка ВИК до ТО',
+          result: 'годен',
+          conclusionDate: '2025-03-19',
+        }],
+      } as unknown as Parameters<typeof calculateFinalStatus>[0]),
     ).toBe('годен')
+  })
+
+  it('requires repeat PSTO after a failed TVMT without rejecting the joint', () => {
+    expect(
+      calculateFinalStatus({
+        weldDate: '20.03.2025',
+        hasVik: 'да',
+        vikResult: 'годен',
+        pstoRequired: 'да',
+        pstoRequest: 'Заявка ПСТО-001',
+        pstoResult: 'проведено',
+        tvmtRequest: 'Заявка ТВМТ-001',
+        tvmtResult: 'не годен',
+      }),
+    ).toBe('ожидает заявку')
   })
 })

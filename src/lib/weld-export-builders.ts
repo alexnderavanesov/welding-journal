@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx'
+import type * as XLSXTypes from 'xlsx'
 import { VISIBLE_FIELDS, type WeldField, type WeldInput } from './weld-fields'
 import { getExportColumnWidth, normalizeSheetName, recordsToVisibleExportMatrix } from './weld-export-utils'
 import type { ExportWorkbookOptions } from './weld-export-types'
@@ -8,20 +8,22 @@ export { buildExportXlsxBytes } from './weld-export-xlsx-xml'
 export { recordsToVisibleExportMatrix } from './weld-export-utils'
 export type { ExportWorkbookOptions } from './weld-export-types'
 
-export function buildExportWorkbook(records: WeldInput[], options: ExportWorkbookOptions = {}) {
+export async function buildExportWorkbook(records: WeldInput[], options: ExportWorkbookOptions = {}) {
+  const XLSX = await import('xlsx')
   const fields = options.fields ?? VISIBLE_FIELDS
   const readOnlyFieldKeys = options.readOnlyFieldKeys ?? new Set()
   const worksheet = XLSX.utils.aoa_to_sheet(recordsToVisibleExportMatrix(records, fields))
-  applyExportWorksheetStyles(worksheet, fields, readOnlyFieldKeys)
+  applyExportWorksheetStyles(worksheet, fields, readOnlyFieldKeys, XLSX)
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, worksheet, normalizeSheetName(options.sheetName ?? 'ЕСО'))
   return workbook
 }
 
 function applyExportWorksheetStyles(
-  worksheet: XLSX.WorkSheet,
+  worksheet: XLSXTypes.WorkSheet,
   fields: readonly WeldField[],
   readOnlyFieldKeys: ReadonlySet<string>,
+  XLSX: typeof XLSXTypes,
 ) {
   worksheet['!cols'] = fields.map((field) => ({ wch: getExportColumnWidth(field) }))
   const range = worksheet['!ref'] ? XLSX.utils.decode_range(worksheet['!ref']) : null

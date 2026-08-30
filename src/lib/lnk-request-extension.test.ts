@@ -92,6 +92,27 @@ describe('lnk request extension', () => {
     expect(analysis.issues[1]?.reason).toContain('другой заявке')
   })
 
+  it('does not add a post-TO position before the PSTO and TVMT cycle is complete', () => {
+    const analysis = analyzeLnkRequestExtensionTargets({
+      rows: [weld({
+        pstoRequired: 'да',
+        preHeatTreatmentControls: [{
+          id: 10,
+          weldJointId: 1,
+          method: 'ВИК',
+          requestName: 'ВИК до ТО',
+          result: 'годен',
+        }],
+      })],
+      methodKeys: ['vikRequest'],
+      requestName: 'Заявка-001',
+      requestDate: '2026-08-14',
+    })
+
+    expect(analysis.targets).toEqual([])
+    expect(analysis.issues[0]?.reason).toContain('после ТО недоступен')
+  })
+
   it('applies the existing identity and pending result without changing other fields', () => {
     const original = weld({ projectTitle: 'Проект-1' })
     const [updated] = buildLnkRequestExtensionRows({

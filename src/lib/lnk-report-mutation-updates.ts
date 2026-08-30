@@ -5,7 +5,6 @@ export {
   buildLnkRequestRows,
 } from '@/lib/lnk-request-mutation-updates'
 export {
-  buildClearLnkGeneratedRows,
   buildLnkConclusionCorrectionRows,
   buildLnkFieldRow,
   buildLnkOfficialityRows,

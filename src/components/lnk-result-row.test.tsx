@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LnkResultRow } from '@/components/lnk-result-row'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -15,6 +15,10 @@ vi.mock('@/components/request-row-joint-heading', () => ({
 }))
 
 describe('LnkResultRow', () => {
+  beforeEach(() => {
+    renderJointHeading.mockClear()
+  })
+
   it('does not rerender an unchanged unselected row when another draft row changes', () => {
     const row = {
       id: 1,

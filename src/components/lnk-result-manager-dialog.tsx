@@ -3,7 +3,12 @@ import { CheckSquare2, ClipboardCheck, FileSpreadsheet, ListFilter, Pencil, Plus
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
+import {
+  LNK_MANAGER_DIALOG_HEIGHT_CLASS,
+  LNK_MANAGER_DIALOG_WIDTH_CLASS,
+} from '@/components/lnk-dialog-layout'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkResultManagerActions } from '@/components/lnk-result-manager-actions'
 import {
   type LnkResultChangeHintState,
@@ -46,10 +51,12 @@ export type LnkResultManagerDialogProps = {
   isResultReplacementPending: boolean
   isConclusionCorrectionPending: boolean
   onClose: () => void
+  onStageChange?: () => void
   onOpenAddResult: () => void
   onOpenRows: (row: WeldRow) => void
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
   canOpenDocument: (fieldKey: WeldFieldKey) => boolean
   onMethodChange: (methodKey: WeldFieldKey | '') => void
@@ -76,10 +83,12 @@ export function LnkResultManagerDialog({
   isResultReplacementPending,
   isConclusionCorrectionPending,
   onClose,
+  onStageChange,
   onOpenAddResult,
   onOpenRows,
   onOpenDocument,
   onOpenJournalRows,
+  onOpenPstoHistory,
   onCopyDocumentName,
   canOpenDocument,
   onMethodChange,
@@ -223,19 +232,23 @@ export function LnkResultManagerDialog({
       onOpenDocument: () => onOpenDocument(row, method.conclusionKey),
       onCopyDocumentName,
       onOpenJournalRows,
+      onOpenPstoHistory,
     }))
   }
 
   return (
     <LargeDialogShell
-      maxWidthClassName="max-w-[1320px]"
-      maxHeightClassName="h-[92vh]"
+      maxWidthClassName={LNK_MANAGER_DIALOG_WIDTH_CLASS}
+      maxHeightClassName={LNK_MANAGER_DIALOG_HEIGHT_CLASS}
       overlayClassName="z-[60] bg-slate-950/30"
     >
       <DialogHeader
         title="Редактирование результатов ЛНК"
         subtitle="Найдите внесенный результат, проверьте связанные документы или выполните допустимое изменение."
         onClose={onClose}
+        actions={onStageChange ? <LnkControlStageSwitch value="primary" onChange={(stage) => {
+          if (stage === 'beforeHeatTreatment') onStageChange()
+        }} /> : null}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[360px_minmax(0,1fr)]">

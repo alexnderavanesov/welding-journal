@@ -11,7 +11,7 @@ import {
   listWeldReportContextRows,
   listWeldJointSnapshotPage,
   type WeldReportContextKind,
-} from '@/server/welds'
+} from '@/server/weld-read-api'
 
 export function useWeldsQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({

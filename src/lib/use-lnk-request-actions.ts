@@ -183,6 +183,26 @@ export function useLnkRequestActions({
     setIsOpen(true)
   }
 
+  function openCreateLnkRequestModalForRows(rows: WeldRow[]) {
+    const availableMethods = new Set(
+      rows.flatMap((row) => getAvailableLnkRequestMethods(row).map((method) => method.requestKey)),
+    )
+    if (rows.length === 0 || availableMethods.size === 0) {
+      openCreateLnkRequestModal()
+      return
+    }
+
+    setMessage(null)
+    setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
+    setSelectedIds(new Set(rows.map((row) => row.id)))
+    setDraft({ ...createDefaultLnkRequestDraft(), methods: availableMethods })
+    setNaming(defaultNaming)
+    setSearch(rows.length === 1 ? String(rows[0]?.joint ?? rows[0]?.line ?? '') : '')
+    setComposerMode('create')
+    setTargetRequestKey('')
+    setIsOpen(true)
+  }
+
   function closeCreateLnkRequestModal() {
     if (mutation.isPending || extensionMutation.isPending) return
     setIsOpen(false)
@@ -202,6 +222,7 @@ export function useLnkRequestActions({
     handleExtendLnkRequest,
     openCreateLnkRequestModal,
     openCreateLnkRequestModalForRow,
+    openCreateLnkRequestModalForRows,
     openExtendLnkRequestModal,
     openExtendLnkRequestModalForRows,
     toggleAllLnkRequestRows,

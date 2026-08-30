@@ -6,6 +6,7 @@ import {
   isSystemDocumentTemplateId,
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
+import { listRemoteDocumentTemplateIds } from '@/server/document-templates-api'
 
 const SYSTEM_DOCUMENT_TEMPLATE_AVAILABILITY_QUERY_KEY = [
   'system-document-template-availability',
@@ -19,10 +20,7 @@ export function useSystemDocumentTemplateAvailability({
   const queryClient = useQueryClient()
   const availabilityQuery = useQuery({
     queryKey: SYSTEM_DOCUMENT_TEMPLATE_AVAILABILITY_QUERY_KEY,
-    queryFn: async () => {
-      const { listRemoteDocumentTemplateIds } = await import('@/server/document-templates')
-      return listRemoteDocumentTemplateIds()
-    },
+    queryFn: () => listRemoteDocumentTemplateIds(),
     enabled,
     staleTime: 60_000,
   })

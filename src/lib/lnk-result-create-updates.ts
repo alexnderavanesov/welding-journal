@@ -14,6 +14,7 @@ import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
+import { getPrimaryLnkStageBlockReason } from '@/lib/lnk-control-stage'
 
 export function buildLnkResultRows({
   records,
@@ -47,6 +48,10 @@ export function buildLnkResultRows({
     if (dateIssueRecord) throw new Error(formatDateBeforeWeldDateSaveReason(dateIssueRecord, controlDate, `Дата контроля ${method.code}`))
   }
   if (saveCheckSettings.lnkResultConclusionRequired && hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
+  if (hasNonEmptyResult) {
+    const blockedRecord = records.find((record) => getPrimaryLnkStageBlockReason(record, method.code))
+    if (blockedRecord) throw new Error(getPrimaryLnkStageBlockReason(blockedRecord, method.code))
+  }
   records.forEach((record) => assertLnkRepairAllowed(record, resultById[record.id] ?? '', saveCheckSettings))
   const normalizedControlDate = normalizeDateLikeForStorage(controlDate)
 

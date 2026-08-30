@@ -46,6 +46,11 @@ const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
   'pstoUpdatedAt',
   'lnkCreatedAt',
   'lnkUpdatedAt',
+  'hasTvmt',
+  'pstoRequired',
+  'pstoControlBasis',
+  'pstoCancellationDate',
+  'tvmtControlBasis',
   'vikRequest',
   'rkRequest',
   'uzkRequest',
@@ -107,8 +112,6 @@ const WELD_IMPORT_ALWAYS_CHECKED_FIELD_KEYS = new Set<string>([
   'hasRk',
   'hasUzk',
   'hasPvk',
-  'pstoRequired',
-  'hasTvmt',
   'hasRfa',
   'hasStls',
   'hasMkk',
@@ -134,18 +137,36 @@ const PREVIEW_FIELD_KEYS = [
 ] as const
 
 const REPORT_SPECIFIC_NOTE_FIELD_KEYS = new Set<WeldFieldKey>(['pstoNote', 'lnkNote'])
-const CONTROL_BASIS_IMPORT_FIELDS = CONTROL_BASIS_FIELD_KEYS.map((fieldKey) => {
-  const field = FIELD_BY_KEY.get(fieldKey)
-  if (!field) throw new Error(`Unknown control basis import field: ${fieldKey}`)
-  return field as WeldField
-})
+const CONTROL_BASIS_IMPORT_FIELDS = CONTROL_BASIS_FIELD_KEYS
+  .filter((fieldKey) => fieldKey !== 'pstoControlBasis' && fieldKey !== 'tvmtControlBasis')
+  .map((fieldKey) => {
+    const field = FIELD_BY_KEY.get(fieldKey)
+    if (!field) throw new Error(`Unknown control basis import field: ${fieldKey}`)
+    return field as WeldField
+  })
+
+const LEGACY_TVMT_ASSIGNMENT_FIELD_KEYS = new Set<WeldFieldKey>([
+  'hasTvmt',
+  'tvmtControlBasis',
+])
+
+const LINE_MANAGED_PSTO_FIELD_KEYS = new Set<WeldFieldKey>([
+  'pstoRequired',
+  'pstoControlBasis',
+  'pstoCancellationDate',
+])
 
 export function getReportImportTemplateFields(_activeReport: ImportableReport) {
   return VISIBLE_FIELDS.flatMap((field) => {
     if (field.key === CONTROL_BASIS_SUMMARY_FIELD_KEY) {
       return CONTROL_BASIS_IMPORT_FIELDS
     }
-    return field.key !== 'id' && !isVirtualWeldField(field) ? [field] : []
+    return field.key !== 'id' &&
+      !LEGACY_TVMT_ASSIGNMENT_FIELD_KEYS.has(field.key) &&
+      !LINE_MANAGED_PSTO_FIELD_KEYS.has(field.key) &&
+      !isVirtualWeldField(field)
+      ? [field]
+      : []
   })
 }
 

@@ -1,5 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldSnapshotPageResult } from '@/server/welds'
+import type { WeldSnapshotPageResult } from '@/server/weld-contracts'
 
 type LoadWeldSnapshotOptions = {
   fetchPage: (afterId: number) => Promise<WeldSnapshotPageResult>

@@ -6,6 +6,7 @@ import {
   type WeldFieldKey,
 } from './weld-field-definitions'
 import { LNK_CONCLUSION_FIELD_KEYS, LNK_REPORT_FIELD_KEYS } from './lnk-report-config'
+import { PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS } from '@/lib/pre-heat-treatment-report-fields'
 
 export const HEAT_TREATMENT_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoNote',
@@ -33,16 +34,24 @@ export const PSTO_RESULTS_FIELDS = [
 
 export const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
-  'controlBasisSummary',
   'pstoRequest',
   'pstoRequestDate',
   'pstoDate',
   'pstoResult',
+  'pstoCycleSummary',
   'heatTreatmentDiagram',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
   'pstoNote',
+  'pstoCancellationDate',
+  'pstoControlBasis',
 ])
 
 export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  ...PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS,
   ...MATERIAL_ADDITIONAL_FIELD_KEYS,
   ...WELDING_MATERIAL_FIELD_KEYS,
   'hasVik',
@@ -53,6 +62,7 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'hasRfa',
   'hasStls',
   'hasMkk',
+  'controlBasisSummary',
   'vikRequest',
   'vikRequestDate',
   'rkRequest',
@@ -100,6 +110,16 @@ export const HEAT_TREATMENT_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_REPORT_FIELD_KEYS,
   ...LNK_CONCLUSION_FIELD_KEYS,
 ])
+
+for (const fieldKey of [
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
+] as const satisfies readonly WeldFieldKey[]) {
+  HEAT_TREATMENT_HIDDEN_FIELD_KEYS.delete(fieldKey)
+}
 
 function getReportField(key: WeldFieldKey, group: string): WeldField {
   const field = FIELD_BY_KEY.get(key)

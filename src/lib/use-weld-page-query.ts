@@ -20,7 +20,7 @@ import {
   type WeldPageResult,
   type WeldReportKind,
   type WeldPageSize,
-} from '@/server/welds'
+} from '@/server/weld-read-api'
 
 type UseWeldPageQueryOptions = {
   enabled: boolean

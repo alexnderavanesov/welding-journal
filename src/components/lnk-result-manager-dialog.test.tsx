@@ -84,6 +84,7 @@ describe('LnkResultManagerDialog', () => {
     const actions = renderDialog()
 
     expect(screen.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-[1320px]', 'h-[92vh]')
     expect(screen.getByRole('heading', { name: 'Линия-1 · F1' })).toBeInTheDocument()
     expect(screen.getAllByText('ВИК-17').length).toBeGreaterThan(0)
 

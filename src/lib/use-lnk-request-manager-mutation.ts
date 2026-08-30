@@ -12,7 +12,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
-import { deleteLnkRequestDocument } from '@/server/welds'
+import { deleteLnkRequestDocument } from '@/server/weld-mutations-api'
 
 export function useLnkRequestManagerMutation({
   lnkRows,
@@ -80,7 +80,11 @@ export function useLnkRequestManagerMutation({
         action,
       })
       if (updatedRecords.length === 0) throw new Error('Заявка ЛНК не найдена')
-      const savedRows = await updateWeldRowsOrThrow(updatedRecords)
+      const savedRows = await updateWeldRowsOrThrow(
+        updatedRecords,
+        'Не удалось переименовать заявку ЛНК',
+        { mutationScope: 'lnk' },
+      )
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {

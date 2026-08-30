@@ -12,6 +12,11 @@ import {
 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
+import {
+  LNK_MANAGER_DIALOG_HEIGHT_CLASS,
+  LNK_MANAGER_DIALOG_WIDTH_CLASS,
+} from '@/components/lnk-dialog-layout'
+import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestManagerPosition } from '@/components/lnk-request-manager-position'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
@@ -23,6 +28,7 @@ import {
 } from '@/components/request-manager-panels'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LnkRequestExtensionOption } from '@/lib/lnk-request-extension'
@@ -54,12 +60,14 @@ export type LnkRequestManagerDialogProps = {
   isCorrectionPending: boolean
   canOpenDocument: boolean
   onClose: () => void
+  onStageChange?: () => void
   onChangeRequest: (request: RequestDocumentIdentity) => void
   onCreateRequest: () => void
   onAddPositions: (request: LnkRequestExtensionOption) => void
   onOpenRows: () => void
   onOpenDocument: (row: WeldRow, fieldKey: LnkRequestMethod['requestKey']) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
   onRequestNameDraftChange: (requestName: string) => void
   onRenameRequest: () => void
@@ -79,12 +87,14 @@ export function LnkRequestManagerDialog({
   isCorrectionPending,
   canOpenDocument,
   onClose,
+  onStageChange,
   onChangeRequest,
   onCreateRequest,
   onAddPositions,
   onOpenRows,
   onOpenDocument,
   onOpenJournalRows,
+  onOpenPstoHistory,
   onCopyDocumentName,
   onRequestNameDraftChange,
   onRenameRequest,
@@ -93,6 +103,7 @@ export function LnkRequestManagerDialog({
 }: LnkRequestManagerDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
+  const [methodFilter, setMethodFilter] = useState('')
   const [filter, setFilter] = useState<RegistryFilter>('all')
   const [showRequestSettings, setShowRequestSettings] = useState(false)
   const requestConclusionSettings = useRequestConclusionSettings()
@@ -133,6 +144,7 @@ export function LnkRequestManagerDialog({
   const filteredOptions = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('ru')
     return requestOptions.filter((request) => {
+      if (methodFilter && !request.methodCodes.includes(methodFilter)) return false
       if (filter === 'open' && request.disabledReason) return false
       if (filter === 'fixed' && !request.disabledReason) return false
       if (!query) return true
@@ -140,7 +152,7 @@ export function LnkRequestManagerDialog({
         .toLocaleLowerCase('ru')
         .includes(query)
     })
-  }, [filter, requestOptions, search])
+  }, [filter, methodFilter, requestOptions, search])
   const getRequestContext = (request: RequestDocumentIdentity) => {
     const rows = allRows.filter((row) =>
       LNK_METHODS.some((method) =>
@@ -226,22 +238,26 @@ export function LnkRequestManagerDialog({
       },
       onCopyDocumentName,
       onOpenJournalRows,
+      onOpenPstoHistory,
     }))
   }
 
   return (
     <LargeDialogShell
-      maxWidthClassName="max-w-[1240px]"
-      maxHeightClassName="h-[92vh]"
+      maxWidthClassName={LNK_MANAGER_DIALOG_WIDTH_CLASS}
+      maxHeightClassName={LNK_MANAGER_DIALOG_HEIGHT_CLASS}
       overlayClassName="z-[60] bg-slate-950/30"
     >
       <RequestDialogHeader
-        title="Заявки ЛНК"
+        title="Редактирование заявок ЛНК"
         subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
         onClose={onClose}
+        actions={onStageChange ? <LnkControlStageSwitch value="primary" onChange={(stage) => {
+          if (stage === 'beforeHeatTreatment') onStageChange()
+        }} /> : null}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
           <div className="space-y-3 border-b border-slate-200 p-4">
             <Button className="w-full" onClick={onCreateRequest} disabled={isManagerPending || isCorrectionPending}>
@@ -257,6 +273,16 @@ export function LnkRequestManagerDialog({
                 className="h-10 bg-white pl-9"
               />
             </label>
+            <Select
+              aria-label="Вид контроля в реестре"
+              value={methodFilter}
+              onChange={(event) => setMethodFilter(event.target.value)}
+            >
+              <option value="">Все виды контроля</option>
+              {LNK_METHODS.map((method) => (
+                <option key={method.code} value={method.code}>{method.code}</option>
+              ))}
+            </Select>
             <div className="grid grid-cols-3 rounded-md border border-slate-200 bg-white p-1 text-xs" role="group" aria-label="Фильтр заявок">
               {([
                 ['all', 'Все'],

@@ -21,6 +21,8 @@ type CreateReportHeaderActionsPropsOptions = {
   onOpenWeldingJournalCancelledAcceptedReport: () => void
   onOpenWeldingJournalSystemReport: () => void
   onCreatePstoRequest: () => void
+  createPstoRequestDisabled: boolean
+  onOpenPstoLineProgram: () => void
   onEditSelectedPstoRequest: () => void
   editSelectedPstoRequestDisabled: boolean
   onOpenPstoRequestRegistry: () => void
@@ -31,11 +33,17 @@ type CreateReportHeaderActionsPropsOptions = {
   editSelectedPstoResultsDisabled: boolean
   onOpenPstoResultRegistry: () => void
   pstoResultRegistryDisabled: boolean
+  onCreateTvmtRequest: () => void
+  createTvmtRequestDisabled: boolean
+  onAddTvmtResult: () => void
+  addTvmtResultDisabled: boolean
+  tvmtPending: boolean
   isPstoShowMenuOpen: boolean
   onTogglePstoShowMenu: () => void
   onOpenPstoCurrentReport: () => void
   onOpenPstoWaitingRequestReport: () => void
   onOpenPstoResultsReport: () => void
+  onPstoWorkflowMenuOpenChange: (open: boolean) => void
   onCreateLnkRequest: () => void
   onExtendLnkRequest: () => void
   onOpenLnkRequestRegistry: () => void
@@ -46,6 +54,8 @@ type CreateReportHeaderActionsPropsOptions = {
   editSelectedLnkResultsDisabled: boolean
   onOpenLnkResultRegistry: () => void
   lnkResultRegistryDisabled: boolean
+  onOpenPreHeatTreatmentLnkResultRegistry: (mode?: 'request' | 'result') => void
+  preHeatTreatmentLnkResultRegistryDisabled: boolean
   onOpenLnkOfficiality: () => void
   lnkOfficialityPending: boolean
   onOpenDuplicateControl: () => void
@@ -56,6 +66,7 @@ type CreateReportHeaderActionsPropsOptions = {
   onOpenLnkToRequestReport: () => void
   onOpenLnkWaitingNkReport: () => void
   onOpenLnkConclusionsReport: () => void
+  onLnkWorkflowMenuOpenChange: (open: boolean) => void
 }
 
 export function createReportHeaderActionsProps({
@@ -78,6 +89,8 @@ export function createReportHeaderActionsProps({
   onOpenWeldingJournalCancelledAcceptedReport,
   onOpenWeldingJournalSystemReport,
   onCreatePstoRequest,
+  createPstoRequestDisabled,
+  onOpenPstoLineProgram,
   onEditSelectedPstoRequest,
   editSelectedPstoRequestDisabled,
   onOpenPstoRequestRegistry,
@@ -88,11 +101,17 @@ export function createReportHeaderActionsProps({
   editSelectedPstoResultsDisabled,
   onOpenPstoResultRegistry,
   pstoResultRegistryDisabled,
+  onCreateTvmtRequest,
+  createTvmtRequestDisabled,
+  onAddTvmtResult,
+  addTvmtResultDisabled,
+  tvmtPending,
   isPstoShowMenuOpen,
   onTogglePstoShowMenu,
   onOpenPstoCurrentReport,
   onOpenPstoWaitingRequestReport,
   onOpenPstoResultsReport,
+  onPstoWorkflowMenuOpenChange,
   onCreateLnkRequest,
   onExtendLnkRequest,
   onOpenLnkRequestRegistry,
@@ -103,6 +122,8 @@ export function createReportHeaderActionsProps({
   editSelectedLnkResultsDisabled,
   onOpenLnkResultRegistry,
   lnkResultRegistryDisabled,
+  onOpenPreHeatTreatmentLnkResultRegistry,
+  preHeatTreatmentLnkResultRegistryDisabled,
   onOpenLnkOfficiality,
   lnkOfficialityPending,
   onOpenDuplicateControl,
@@ -113,6 +134,7 @@ export function createReportHeaderActionsProps({
   onOpenLnkToRequestReport,
   onOpenLnkWaitingNkReport,
   onOpenLnkConclusionsReport,
+  onLnkWorkflowMenuOpenChange,
 }: CreateReportHeaderActionsPropsOptions): ReportHeaderActionsProps {
   return {
     activeReport,
@@ -134,6 +156,8 @@ export function createReportHeaderActionsProps({
     onOpenWeldingJournalCancelledAcceptedReport,
     onOpenWeldingJournalSystemReport,
     onCreatePstoRequest,
+    createPstoRequestDisabled,
+    onOpenPstoLineProgram,
     onEditSelectedPstoRequest,
     editSelectedPstoRequestDisabled,
     onOpenPstoRequestRegistry,
@@ -144,11 +168,17 @@ export function createReportHeaderActionsProps({
     editSelectedPstoResultsDisabled,
     onOpenPstoResultRegistry,
     pstoResultRegistryDisabled,
+    onCreateTvmtRequest,
+    createTvmtRequestDisabled,
+    onAddTvmtResult,
+    addTvmtResultDisabled,
+    tvmtPending,
     isPstoShowMenuOpen,
     onTogglePstoShowMenu,
     onOpenPstoCurrentReport,
     onOpenPstoWaitingRequestReport,
     onOpenPstoResultsReport,
+    onPstoWorkflowMenuOpenChange,
     onCreateLnkRequest,
     onExtendLnkRequest,
     onOpenLnkRequestRegistry,
@@ -159,6 +189,8 @@ export function createReportHeaderActionsProps({
     editSelectedLnkResultsDisabled,
     onOpenLnkResultRegistry,
     lnkResultRegistryDisabled,
+    onOpenPreHeatTreatmentLnkResultRegistry,
+    preHeatTreatmentLnkResultRegistryDisabled,
     onOpenLnkOfficiality,
     lnkOfficialityPending,
     onOpenDuplicateControl,
@@ -169,5 +201,6 @@ export function createReportHeaderActionsProps({
     onOpenLnkToRequestReport,
     onOpenLnkWaitingNkReport,
     onOpenLnkConclusionsReport,
+    onLnkWorkflowMenuOpenChange,
   }
 }

@@ -71,6 +71,8 @@ export function usePstoResultMutations({
         updatedRecords,
         'Не удалось сохранить часть записей',
         {
+          mutationScope: 'psto',
+          requireFullyAssignedPstoLines: true,
           systemDocumentSequences: groups
             .filter((group) => group.useSystemName)
             .map((group) => ({
@@ -108,7 +110,11 @@ export function usePstoResultMutations({
     }) => {
       const updatedRecord = buildPstoResultCorrectionRow({ record, action, diagramName })
 
-      const saved = await updateWeldRowOrThrow(updatedRecord)
+      const saved = await updateWeldRowOrThrow(
+        updatedRecord,
+        'Не удалось изменить результат ПСТО',
+        { mutationScope: 'psto' },
+      )
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
@@ -134,7 +140,11 @@ export function usePstoResultMutations({
       rows: RowWithId[]
     }) => {
       const updatedRecord = buildHeatTreatmentFieldRow({ record, fieldKey, value, rows })
-      const saved = await updateWeldRowOrThrow(updatedRecord)
+      const saved = await updateWeldRowOrThrow(
+        updatedRecord,
+        'Не удалось обновить поле ПСТО',
+        { mutationScope: 'psto' },
+      )
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {

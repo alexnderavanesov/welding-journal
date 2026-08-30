@@ -170,6 +170,7 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   pstoClosurePercent: 0,
   methods: [],
   pstoMethod: { ...EMPTY_METHOD_SUMMARY, code: 'ПСТО' },
+  tvmtMethod: { ...EMPTY_METHOD_SUMMARY, code: 'ТВМТ' },
   controlDynamicsScale: 'day',
   controlDynamics: [],
 }
@@ -352,20 +353,26 @@ export function StatisticsPage({
   })
   const projectOptions = statisticsQuery.data?.projectOptions ?? []
   const subtitleOptions = statisticsQuery.data?.subtitleOptions ?? []
-  const summary = statisticsQuery.data?.summary ?? EMPTY_STATISTICS_SUMMARY
+  const returnedSummary = statisticsQuery.data?.summary ?? EMPTY_STATISTICS_SUMMARY
+  const summary = returnedSummary.pstoMethod && returnedSummary.tvmtMethod
+    ? returnedSummary
+    : {
+        ...returnedSummary,
+        pstoMethod: returnedSummary.pstoMethod ?? EMPTY_STATISTICS_SUMMARY.pstoMethod,
+        tvmtMethod: returnedSummary.tvmtMethod ?? EMPTY_STATISTICS_SUMMARY.tvmtMethod,
+      }
   const weldingDynamics = statisticsQuery.data?.weldingDynamics ?? EMPTY_WELDING_DYNAMICS
   const welderSummary = statisticsQuery.data?.welderSummary ?? EMPTY_WELDER_SUMMARY
   const lineSummary = statisticsQuery.data?.lineSummary ?? EMPTY_LINE_SUMMARY
   const percentageLineSummary = statisticsQuery.data?.percentageLineSummary ?? EMPTY_PERCENTAGE_LINE_SUMMARY
   const generalProgressSummary = statisticsQuery.data?.generalProgressSummary ?? EMPTY_LINE_SUMMARY
   const generalStateRowIds = statisticsQuery.data?.generalStateRowIds ?? EMPTY_STATISTICS_STATE_ROW_IDS
-  const orderedMethods = useMemo(() => {
-    const methodsByCode = new Map([...summary.methods, summary.pstoMethod].map((method) => [method.code, method]))
-    return ['ВИК', 'РК', 'УЗК', 'ПВК', 'ПСТО', 'ТВМТ', 'РФА', 'СТЛС', 'МКК']
+  const lnkMethods = useMemo(() => {
+    const methodsByCode = new Map(summary.methods.map((method) => [method.code, method]))
+    return ['ВИК', 'РК', 'УЗК', 'ПВК', 'РФА', 'СТЛС', 'МКК']
       .map((code) => methodsByCode.get(code))
       .filter((method): method is StatisticsMethodSummary => Boolean(method))
-  }, [summary.methods, summary.pstoMethod])
-  const lnkMethods = useMemo(() => orderedMethods.filter((method) => method.code !== 'ПСТО'), [orderedMethods])
+  }, [summary.methods])
   const unofficialCount = statisticsQuery.data?.unofficialCount ?? 0
   const unofficialRowIds = statisticsQuery.data?.unofficialRowIds ?? []
   const unofficialValue = statisticsQuery.data?.unofficialValue ?? 0
@@ -378,7 +385,7 @@ export function StatisticsPage({
       : activeTab === 'lnk'
         ? 'Заявки считаются по дате создания, заключения ЛНК — по дате заключения; потребность и состояния без заявки — по дате сварки.'
         : activeTab === 'psto'
-          ? 'Заявки считаются по дате создания, заключения ПСТО — по дате проведения; потребность и состояния без заявки — по дате сварки.'
+          ? 'Заявки считаются по дате создания, ПСТО — по дате проведения, ТВМТ — по дате заключения; учитывается только последний цикл стыка.'
           : 'Стыки отбираются по дате сварки.'
   const periodLabel = getStatisticsPeriodLabel(allPeriod, periodFrom, periodTo)
   const printableReport = useMemo(
@@ -712,7 +719,7 @@ export function StatisticsPage({
       ) : null}
 
       {activeTab === 'general' ? (
-        <>
+        <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               compact
@@ -812,7 +819,7 @@ export function StatisticsPage({
 
             <CurrentBacklogPanel summary={summary} stateRowIds={generalStateRowIds} unit={unit} onOpenRows={onOpenWeldRowIds} />
           </div>
-        </>
+        </div>
       ) : activeTab === 'lnk' || activeTab === 'psto' ? (
         <ControlStatisticsPanel
           control={activeTab}
@@ -1753,35 +1760,68 @@ function ControlStatisticsPanel({
           unit={unit}
         />
       ) : (
-        <ControlWorkflowCard
-          control="psto"
-          title="ПСТО"
-          subtitle="Послесварочная термообработка"
-          coverage={{
-            percent: summary.pstoRequestCoveragePercent,
-            completed: summary.pstoCreatedRequests,
-            total: summary.pstoRequiredRequests,
-            completedRowIds: summary.pstoMethod.rowIds.createdRequests,
-            totalRowIds: summary.pstoMethod.rowIds.requiredRequests,
-          }}
-          closure={{
-            percent: summary.pstoClosurePercent,
-            completed: summary.pstoClosed,
-            total: summary.pstoRequests,
-            completedRowIds: summary.pstoMethod.rowIds.closed,
-            totalRowIds: summary.pstoMethod.rowIds.requests,
-          }}
-          statuses={[
-            { label: 'Без заявки', value: summary.pstoMethod.waitingRequest, rowIds: summary.pstoMethod.rowIds.waitingRequest, tone: 'amber' },
-            { label: 'Ожидает ПСТО', value: summary.pstoMethod.waitingControl, rowIds: summary.pstoMethod.rowIds.waitingControl, tone: 'sky' },
-            { label: 'Проведено', value: summary.pstoMethod.good, rowIds: summary.pstoMethod.rowIds.good, tone: 'green' },
-          ]}
-          jointStateTotal={summary.totalRows}
-          jointStateStatuses={jointStateStatuses}
-          onOpenRows={onOpenControlRows}
-          onOpenStateRows={onOpenStateRows}
-          unit={unit}
-        />
+        <>
+          <ControlWorkflowCard
+            control="psto"
+            title="ПСТО"
+            subtitle="Послесварочная термообработка"
+            coverage={{
+              percent: summary.pstoRequestCoveragePercent,
+              completed: summary.pstoCreatedRequests,
+              total: summary.pstoRequiredRequests,
+              completedRowIds: summary.pstoMethod.rowIds.createdRequests,
+              totalRowIds: summary.pstoMethod.rowIds.requiredRequests,
+            }}
+            closure={{
+              percent: summary.pstoClosurePercent,
+              completed: summary.pstoClosed,
+              total: summary.pstoRequests,
+              completedRowIds: summary.pstoMethod.rowIds.closed,
+              totalRowIds: summary.pstoMethod.rowIds.requests,
+            }}
+            statuses={[
+              { label: 'Без заявки', value: summary.pstoMethod.waitingRequest, rowIds: summary.pstoMethod.rowIds.waitingRequest, tone: 'amber' },
+              { label: 'Ожидает ПСТО', value: summary.pstoMethod.waitingControl, rowIds: summary.pstoMethod.rowIds.waitingControl, tone: 'sky' },
+              { label: 'Проведено', value: summary.pstoMethod.good, rowIds: summary.pstoMethod.rowIds.good, tone: 'green' },
+            ]}
+            jointStateTotal={summary.totalRows}
+            jointStateStatuses={jointStateStatuses}
+            onOpenRows={onOpenControlRows}
+            onOpenStateRows={onOpenStateRows}
+            unit={unit}
+          />
+          <ControlWorkflowCard
+            control="psto"
+            title="ТВМТ"
+            subtitle="Контроль после последнего проведённого цикла ПСТО"
+            coverage={{
+              percent: summary.tvmtMethod.requestCoveragePercent,
+              completed: summary.tvmtMethod.createdRequests,
+              total: summary.tvmtMethod.requiredRequests,
+              completedRowIds: summary.tvmtMethod.rowIds.createdRequests,
+              totalRowIds: summary.tvmtMethod.rowIds.requiredRequests,
+            }}
+            closure={{
+              percent: summary.tvmtMethod.closurePercent,
+              completed: summary.tvmtMethod.closed,
+              total: summary.tvmtMethod.requests,
+              completedRowIds: summary.tvmtMethod.rowIds.closed,
+              totalRowIds: summary.tvmtMethod.rowIds.requests,
+            }}
+            statuses={[
+              { label: 'Без заявки', value: summary.tvmtMethod.waitingRequest, rowIds: summary.tvmtMethod.rowIds.waitingRequest, tone: 'amber' },
+              { label: 'Ожидает ТВМТ', value: summary.tvmtMethod.waitingControl, rowIds: summary.tvmtMethod.rowIds.waitingControl, tone: 'sky' },
+              { label: 'Годен', value: summary.tvmtMethod.good, rowIds: summary.tvmtMethod.rowIds.good, tone: 'green' },
+              { label: 'Повторная ПСТО', value: summary.tvmtMethod.rejected, rowIds: summary.tvmtMethod.rowIds.rejected, tone: 'rose' },
+            ]}
+            jointStateTotal={summary.totalRows}
+            jointStateStatuses={jointStateStatuses}
+            onOpenRows={onOpenControlRows}
+            onOpenStateRows={onOpenStateRows}
+            showJointStates={false}
+            unit={unit}
+          />
+        </>
       )}
 
       <ControlDynamicsPanel
@@ -2116,6 +2156,7 @@ function ControlWorkflowCard({
   onOpenRows,
   onOpenStateRows,
   statuses,
+  showJointStates = true,
   subtitle,
   title,
   unit,
@@ -2128,6 +2169,7 @@ function ControlWorkflowCard({
   onOpenRows?: StatisticsRowsOpenHandler
   onOpenStateRows?: (rowIds: number[], message?: string) => void
   statuses: ControlWorkflowStatus[]
+  showJointStates?: boolean
   subtitle: string
   title: string
   unit: StatisticsUnit
@@ -2199,7 +2241,7 @@ function ControlWorkflowCard({
           />
         ))}
       </div>
-      <div className="mt-3 border-t border-slate-100 pt-3">
+      {showJointStates ? <div className="mt-3 border-t border-slate-100 pt-3">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h3 className="text-sm font-semibold text-slate-800">Состояние стыков по дате сварки</h3>
           <p className="text-xs text-slate-500">
@@ -2219,7 +2261,7 @@ function ControlWorkflowCard({
             />
           ))}
         </div>
-      </div>
+      </div> : null}
     </section>
   )
 }
@@ -4823,9 +4865,10 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
 
   if (activeTab === 'psto') {
     const method = summary.pstoMethod
+    const tvmtMethod = summary.tvmtMethod
     return {
       title: 'Статистика ПСТО',
-      subtitle: 'Заявки, проведение и текущая очередь послесварочной термообработки.',
+      subtitle: 'Заявки, проведение ПСТО и ТВМТ по последнему циклу каждого стыка.',
       meta: [...baseMeta, { label: 'Расчет', value: periodDescription }],
       metrics: [
         {
@@ -4843,6 +4886,19 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         { label: 'Без заявки', value: formatStatisticValue(method.waitingRequest, unit), detail: 'Требуемые позиции без заявки', tone: 'amber' },
         { label: 'Ожидает ПСТО', value: formatStatisticValue(method.waitingControl, unit), detail: 'Заявки без проведения', tone: 'blue' },
         { label: 'Проведено', value: formatStatisticValue(method.good, unit), detail: 'Заключения за выбранный период', tone: 'green' },
+        {
+          label: 'Заявки ТВМТ',
+          value: formatPercent(tvmtMethod.requestCoveragePercent),
+          detail: `${tvmtMethod.createdRequests} из ${tvmtMethod.requiredRequests} требуемых позиций`,
+          tone: 'blue',
+        },
+        {
+          label: 'Заключения ТВМТ',
+          value: formatPercent(tvmtMethod.closurePercent),
+          detail: `${formatStatisticValue(tvmtMethod.closed, unit)} из ${formatStatisticValue(tvmtMethod.requests, unit)} заявок`,
+          tone: 'green',
+        },
+        { label: 'Негодная ТВМТ', value: formatStatisticValue(tvmtMethod.rejected, unit), detail: 'Результат последнего цикла; на действующей линии требуется повторная ПСТО', tone: 'amber' },
         {
           label: 'Неофициальные стыки',
           value: String(unofficialCount),
@@ -4865,6 +4921,22 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
             formatStatisticValue(method.waitingControl, unit),
             formatStatisticValue(method.good, unit),
             formatPercent(method.closurePercent),
+          ]],
+        },
+        {
+          title: 'ТВМТ последнего цикла',
+          columns: ['Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Без заявки', 'Ожидает ТВМТ', 'Годен', 'Повторная ПСТО', 'Закрытие'],
+          rows: [[
+            String(tvmtMethod.requiredRequests),
+            String(tvmtMethod.createdRequests),
+            formatPercent(tvmtMethod.requestCoveragePercent),
+            formatStatisticValue(tvmtMethod.requests, unit),
+            formatStatisticValue(tvmtMethod.closed, unit),
+            formatStatisticValue(tvmtMethod.waitingRequest, unit),
+            formatStatisticValue(tvmtMethod.waitingControl, unit),
+            formatStatisticValue(tvmtMethod.good, unit),
+            formatStatisticValue(tvmtMethod.rejected, unit),
+            formatPercent(tvmtMethod.closurePercent),
           ]],
         },
         {

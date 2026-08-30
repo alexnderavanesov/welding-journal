@@ -1,15 +1,15 @@
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey } from './weld-field-definitions'
 
-export const LNK_METHODS = [
-  { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', requestDateKey: 'vikRequestDate', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' },
-  { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', requestDateKey: 'rkRequestDate', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' },
-  { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', requestDateKey: 'uzkRequestDate', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' },
-  { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', requestDateKey: 'pvkRequestDate', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' },
-  { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', requestDateKey: 'tvmtRequestDate', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' },
-  { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', requestDateKey: 'rfaRequestDate', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' },
-  { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', requestDateKey: 'stlsRequestDate', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' },
-  { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', requestDateKey: 'mkkRequestDate', resultKey: 'mkkResult', conclusionDateKey: 'mkkConclusionDate', conclusionKey: 'mkkConclusion' },
-] as const satisfies ReadonlyArray<{
+const VIK_METHOD = { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', requestDateKey: 'vikRequestDate', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' } as const
+const RK_METHOD = { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', requestDateKey: 'rkRequestDate', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' } as const
+const UZK_METHOD = { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', requestDateKey: 'uzkRequestDate', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' } as const
+const PVK_METHOD = { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', requestDateKey: 'pvkRequestDate', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' } as const
+export const TVMT_METHOD = { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', requestDateKey: 'tvmtRequestDate', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' } as const
+const RFA_METHOD = { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', requestDateKey: 'rfaRequestDate', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' } as const
+const STLS_METHOD = { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', requestDateKey: 'stlsRequestDate', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' } as const
+const MKK_METHOD = { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', requestDateKey: 'mkkRequestDate', resultKey: 'mkkResult', conclusionDateKey: 'mkkConclusionDate', conclusionKey: 'mkkConclusion' } as const
+
+type LnkMethodDefinition = {
   code: string
   enabledKey: WeldFieldKey
   requestKey: WeldFieldKey
@@ -17,7 +17,30 @@ export const LNK_METHODS = [
   resultKey: WeldFieldKey
   conclusionDateKey: WeldFieldKey
   conclusionKey: WeldFieldKey
-}>
+}
+
+// ТВМТ хранится в прежних полях для совместимости, но больше не является
+// операционным методом ЛНК: ее процесс относится к циклу ПСТО.
+export const LNK_METHODS = [
+  VIK_METHOD,
+  RK_METHOD,
+  UZK_METHOD,
+  PVK_METHOD,
+  RFA_METHOD,
+  STLS_METHOD,
+  MKK_METHOD,
+] as const satisfies ReadonlyArray<LnkMethodDefinition>
+
+export const ALL_LNK_FIELD_METHODS = [
+  VIK_METHOD,
+  RK_METHOD,
+  UZK_METHOD,
+  PVK_METHOD,
+  TVMT_METHOD,
+  RFA_METHOD,
+  STLS_METHOD,
+  MKK_METHOD,
+] as const satisfies ReadonlyArray<LnkMethodDefinition>
 
 export const LNK_RESULT_OPTIONS = ['годен', 'ремонт', 'вырез'] as const
 export const LNK_EMPTY_RESULT_VALUE = '__empty__'
@@ -88,8 +111,8 @@ export const LNK_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>([
 export const LNK_EDITABLE_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
   ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) => fieldKey !== 'lnkCreatedAt' && fieldKey !== 'lnkUpdatedAt'),
 ])
-export const LNK_REQUEST_FIELD_KEYS = LNK_METHODS.map((method) => method.requestKey)
-export const LNK_REQUEST_DATE_FIELD_KEYS = LNK_METHODS.map((method) => method.requestDateKey)
+export const LNK_REQUEST_FIELD_KEYS = ALL_LNK_FIELD_METHODS.map((method) => method.requestKey)
+export const LNK_REQUEST_DATE_FIELD_KEYS = ALL_LNK_FIELD_METHODS.map((method) => method.requestDateKey)
 export const LNK_GENERATED_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]),
   'lnkDefectDescription',
@@ -98,6 +121,8 @@ export const LNK_GENERATED_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 export const LNK_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_EDITABLE_REPORT_FIELD_KEYS,
+  'preRkExposureScheme',
+  'preRkDefectDescription',
   'rkExposureScheme',
   'lnkDefectDescription',
   'lnkNote',

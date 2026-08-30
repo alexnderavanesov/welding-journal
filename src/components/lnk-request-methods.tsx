@@ -1,22 +1,27 @@
 import { Input } from '@/components/ui/input'
-import { LNK_METHODS } from '@/lib/report-config'
-import type { WeldFieldKey } from '@/lib/weld-fields'
 
-type LnkRequestMethodsProps = {
-  selectedMethodKeys: readonly WeldFieldKey[]
-  selectedMethods: ReadonlySet<WeldFieldKey>
-  requestDate?: string
-  onRequestDateChange?: (value: string) => void
-  onToggleMethod: (methodKey: WeldFieldKey) => void
+type LnkRequestMethodOption<MethodKey extends string> = {
+  code: string
+  requestKey: MethodKey
 }
 
-export function LnkRequestMethods({
+type LnkRequestMethodsProps<MethodKey extends string> = {
+  methods: readonly LnkRequestMethodOption<MethodKey>[]
+  selectedMethodKeys: readonly MethodKey[]
+  selectedMethods: ReadonlySet<MethodKey>
+  requestDate?: string
+  onRequestDateChange?: (value: string) => void
+  onToggleMethod: (methodKey: MethodKey) => void
+}
+
+export function LnkRequestMethods<MethodKey extends string>({
+  methods,
   selectedMethodKeys,
   selectedMethods,
   requestDate,
   onRequestDateChange,
   onToggleMethod,
-}: LnkRequestMethodsProps) {
+}: LnkRequestMethodsProps<MethodKey>) {
   const showRequestDate = requestDate !== undefined && onRequestDateChange
   return (
     <section className="border-b border-slate-100 px-5 py-2.5" data-lnk-request-methods="true">
@@ -24,11 +29,11 @@ export function LnkRequestMethods({
         <div className="flex shrink-0 items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-800">Виды контроля</h3>
           <span className="inline-flex w-10 justify-center rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-xs font-medium tabular-nums text-slate-500">
-            {selectedMethodKeys.length}/{LNK_METHODS.length}
+            {selectedMethodKeys.length}/{methods.length}
           </span>
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-          {LNK_METHODS.map((method) => (
+          {methods.map((method) => (
             <button
               key={method.requestKey}
               type="button"

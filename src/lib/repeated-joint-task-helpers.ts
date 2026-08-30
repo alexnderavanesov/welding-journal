@@ -5,7 +5,7 @@ import {
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
 } from '@/lib/report-config'
 import { normalizeSearchText } from '@/lib/report-row-utils'
-import { hasText } from '@/lib/report-value-utils'
+import { hasText, isPendingLnkResultValue } from '@/lib/report-value-utils'
 import {
   findLastIndex,
   formatRepeatedJointName,
@@ -18,6 +18,7 @@ import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
+import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 
 const repeatedJointUsageFieldKeys = [
   ...lnkRequestFieldKeys,
@@ -29,16 +30,53 @@ const repeatedJointUsageFieldKeys = [
   'heatTreatmentDiagram',
 ] as const satisfies readonly WeldFieldKey[]
 
+const repeatedJointPendingResultFieldKeys = new Set<WeldFieldKey>([
+  ...LNK_METHODS.map((method) => method.resultKey),
+  'pstoResult',
+])
+
 export function isUnusedRepeatedJointDraft(row: WeldInput) {
   if (hasText(row.weldDate)) return false
-  return !repeatedJointUsageFieldKeys.some((fieldKey) => hasText(row[fieldKey]))
+  return !repeatedJointUsageFieldKeys.some((fieldKey) => {
+    const value = row[fieldKey]
+    if (repeatedJointPendingResultFieldKeys.has(fieldKey) && isPendingLnkResultValue(value)) {
+      return false
+    }
+    return hasText(value)
+  })
 }
 
 export function getPrimaryRejectedLnkResult(row: WeldInput) {
   const cut = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'вырез')
   if (cut) return { method: cut, result: 'вырез' as const }
+  const preHeatTreatmentCut = getRejectedPreHeatTreatmentControls(row)
+    .find((control) => control.result === 'вырез')
+  if (preHeatTreatmentCut) {
+    return {
+      method: {
+        code: `${preHeatTreatmentCut.methodCode} до ТО`,
+        resultKey: `preHeatTreatment:${preHeatTreatmentCut.control.id}`,
+        enabledKey: '',
+        requestKey: '',
+      },
+      result: 'вырез' as const,
+    }
+  }
   const repair = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт')
   if (repair) return { method: repair, result: 'ремонт' as const }
+  const preHeatTreatmentRepair = getRejectedPreHeatTreatmentControls(row)
+    .find((control) => control.result === 'ремонт')
+  if (preHeatTreatmentRepair) {
+    return {
+      method: {
+        code: `${preHeatTreatmentRepair.methodCode} до ТО`,
+        resultKey: `preHeatTreatment:${preHeatTreatmentRepair.control.id}`,
+        enabledKey: '',
+        requestKey: '',
+      },
+      result: 'ремонт' as const,
+    }
+  }
   const duplicateCut = getRejectedDuplicateControls(row).find((control) => control.result === 'вырез')
   if (duplicateCut) {
     return {

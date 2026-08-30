@@ -83,6 +83,80 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
+  it('creates a repeated joint after a rejected pre-heat-treatment result', () => {
+    const rows = [
+      row({
+        id: 1,
+        joint: 'S12',
+        pstoRequired: 'да',
+        hasRk: 'да',
+        preHeatTreatmentControls: [{
+          id: 12,
+          weldJointId: 1,
+          method: 'РК',
+          result: 'ремонт',
+          conclusionDate: '2026-08-04',
+          conclusionName: 'ЗНК-РК до ТО',
+        }],
+      }),
+    ]
+
+    expect(buildRepeatedJointTasks(rows)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'create',
+        sourceJoint: 'S12',
+        targetJoint: 'S12R1',
+        methodCode: 'РК до ТО',
+        result: 'ремонт',
+      }),
+    ]))
+  })
+
+  it('removes an unused repeated-joint draft after its pre-heat-treatment rejection is cleared', () => {
+    const rows = [
+      row({ id: 1, joint: 'S12' }),
+      row({ id: 2, joint: 'S12R1', weldDate: null, finalStatus: 'ожидает ремонт' }),
+    ]
+
+    expect(buildRepeatedJointTasks(rows)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'delete',
+        targetJoint: 'S12R1',
+      }),
+    ]))
+  })
+
+  it('still removes a generated repeated-joint draft with derived waiting statuses', () => {
+    const rows = [
+      row({ id: 1, joint: 'S12' }),
+      row({
+        id: 2,
+        joint: 'S12W1',
+        weldDate: null,
+        pstoRequired: 'да',
+        hasVik: 'да',
+        hasRk: 'да',
+        vikResult: 'ожидает заявку',
+        rkResult: 'ожидает заявку',
+        pstoResult: 'ожидает заявку',
+        finalStatus: 'ожидает ремонт',
+      }),
+    ]
+
+    expect(buildRepeatedJointTasks(rows)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'delete',
+        targetJoint: 'S12W1',
+      }),
+    ]))
+    expect(buildRepeatedJointTasks(rows)).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'check',
+        targetJoint: 'S12W1',
+      }),
+    ]))
+  })
+
   it('creates the repair inside an indexed base chain', () => {
     const tasks = buildRepeatedJointTasks([
       row({ id: 1, joint: 'FB01', rkResult: 'ремонт' }),

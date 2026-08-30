@@ -20,6 +20,8 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "tsx e2e/run.ts",
+    "test:e2e:ui": "tsx e2e/run.ts --ui",
     "typecheck": "tsc --noEmit",
     "audit:prod": "pnpm audit --prod",
     "audit:all": "pnpm audit",
@@ -43,6 +45,7 @@
     "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/forms": "^0.5.9",
     "@tanstack/router-plugin": "^1.168.29",
     "@testing-library/jest-dom": "^7.0.0",

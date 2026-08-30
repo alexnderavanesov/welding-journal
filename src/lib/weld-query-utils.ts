@@ -1,7 +1,7 @@
 import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { sortWeldSnapshotRows } from '@/lib/weld-snapshot'
-import type { WeldPageResult } from '@/server/welds'
+import type { WeldPageResult } from '@/server/weld-contracts'
 import {
   invalidateWeldPageQueries,
   WELD_JOINT_PAGES_QUERY_KEY,
@@ -31,6 +31,7 @@ export function invalidateWeldJoints(queryClient: QueryClient, change?: WeldCach
   if (change) {
     updateCompleteWeldSnapshot(queryClient, change)
     updateLoadedWeldPages(queryClient, change)
+    updateLoadedWeldReportContexts(queryClient, change)
   } else {
     void queryClient.invalidateQueries({
       queryKey: WELD_COMPLETE_SNAPSHOT_QUERY_KEY,
@@ -49,6 +50,35 @@ export function invalidateWeldJoints(queryClient: QueryClient, change?: WeldCach
   void queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
+}
+
+export function updateLoadedWeldReportContexts(queryClient: QueryClient, change: WeldCacheChange) {
+  const deleteIds = new Set((change.deleteIds ?? []).map(Number))
+  const upsertRows = new Map(
+    (change.upsertRows ?? [])
+      .filter((row) => Number.isInteger(Number(row.id)))
+      .map((row) => [Number(row.id), row]),
+  )
+
+  queryClient.setQueriesData<WeldRow[]>(
+    { queryKey: WELD_REPORT_CONTEXT_QUERY_KEY },
+    (current) => {
+      if (!current) return current
+      let changed = false
+      const rows = current.flatMap((row) => {
+        const id = Number(row.id)
+        if (deleteIds.has(id)) {
+          changed = true
+          return []
+        }
+        const patch = upsertRows.get(id)
+        if (!patch) return [row]
+        changed = true
+        return [{ ...row, ...patch, id } as WeldRow]
+      })
+      return changed ? rows : current
+    },
+  )
 }
 
 export function updateLoadedWeldPages(queryClient: QueryClient, change: WeldCacheChange) {

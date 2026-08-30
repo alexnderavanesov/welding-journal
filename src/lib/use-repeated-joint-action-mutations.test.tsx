@@ -13,8 +13,11 @@ const mocks = vi.hoisted(() => ({
   updateSystemWeldRowOrThrow: vi.fn(),
 }))
 
-vi.mock('@/server/welds', () => ({
+vi.mock('@/server/weld-mutations-api', () => ({
   deleteWeldJoint: vi.fn(),
+}))
+
+vi.mock('@/server/weld-read-api', () => ({
   getWeldJointById: mocks.getWeldJointById,
 }))
 

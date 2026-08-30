@@ -10,6 +10,7 @@ import {
   isCancelledControlValue,
   isEnabledControlValue,
 } from '@/lib/report-value-utils'
+import { requiresPostHeatTreatmentCompletion } from '@/lib/tvmt-cycle'
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 
 export type StatisticsUnit = 'joints' | 'wdi'
@@ -84,6 +85,7 @@ export type StatisticsSummary = {
   pstoClosurePercent: number
   methods: StatisticsMethodSummary[]
   pstoMethod: StatisticsMethodSummary
+  tvmtMethod: StatisticsMethodSummary
   controlDynamicsScale: StatisticsControlDynamicsScale
   controlDynamics: StatisticsControlDynamicsBucket[]
 }
@@ -325,6 +327,14 @@ export function buildStatisticsSummary(
       rejected: [],
     },
   }
+  const tvmtMethod = buildTvmtStatisticsMethod({
+    rows,
+    periodRows,
+    weightedRows,
+    from,
+    to,
+    unit,
+  })
 
   const lnkRequests = methods.reduce((total, method) => total + method.requests, 0)
   const lnkRequiredRequests = methods.reduce((total, method) => total + method.requiredRequests, 0)
@@ -373,8 +383,90 @@ export function buildStatisticsSummary(
     pstoClosurePercent: getPercent(pstoClosedByRequest, pstoRequests),
     methods,
     pstoMethod,
+    tvmtMethod,
     controlDynamicsScale,
     controlDynamics,
+  }
+}
+
+function buildTvmtStatisticsMethod({
+  rows,
+  periodRows,
+  weightedRows,
+  from,
+  to,
+  unit,
+}: {
+  rows: WeldRow[]
+  periodRows: WeldRow[]
+  weightedRows: WeldRow[]
+  from: string
+  to: string
+  unit: StatisticsUnit
+}): StatisticsMethodSummary {
+  const requiredRequestRows = periodRows.filter(isStatisticsTvmtRequired)
+  const createdRequestRows = requiredRequestRows.filter(hasStatisticsTvmtRequest)
+  const activeRows = weightedRows.filter(isStatisticsTvmtRequired)
+  const requestSourceRows = getWeightedRows(
+    rows.filter((row) => isTvmtRequestInRange(row, from, to)),
+    unit,
+  )
+  const closedSourceRows = getWeightedRows(
+    rows.filter((row) => (
+      isStatisticsTvmtRequired(row) &&
+      isDateInRange(row.tvmtConclusionDate, from, to)
+    )),
+    unit,
+  )
+  const requestRows = requestSourceRows.filter(hasStatisticsTvmtRequest)
+  const closedRows = closedSourceRows.filter(hasTvmtClosedData)
+  const closedRequestRows = requestRows.filter(hasTvmtClosedData)
+  const closedWithoutRequestRows = closedRows.filter((row) => !hasStatisticsTvmtRequest(row))
+  const waitingRequestRows = activeRows.filter((row) => (
+    !hasStatisticsTvmtRequest(row) && !hasTvmtClosedData(row)
+  ))
+  const waitingControlRows = requestRows.filter((row) => !hasTvmtClosedData(row))
+  const goodRows = closedRows.filter((row) => normalizeTvmtStatisticsResult(row.tvmtResult) === 'good')
+  const rejectedRows = closedRows.filter((row) => normalizeTvmtStatisticsResult(row.tvmtResult) === 'failed')
+  const goodFromClosedRequestRows = closedRequestRows.filter(
+    (row) => normalizeTvmtStatisticsResult(row.tvmtResult) === 'good',
+  )
+  const rejectedFromClosedRequestRows = closedRequestRows.filter(
+    (row) => normalizeTvmtStatisticsResult(row.tvmtResult) === 'failed',
+  )
+  const requests = sumRows(requestRows, unit)
+  const closed = sumRows(closedRequestRows, unit)
+  const waitingControl = sumRows(waitingControlRows, unit)
+
+  return {
+    code: 'ТВМТ',
+    requiredRequests: requiredRequestRows.length,
+    createdRequests: createdRequestRows.length,
+    requestCoveragePercent: getPercent(createdRequestRows.length, requiredRequestRows.length),
+    requests,
+    closed,
+    totalClosed: sumRows(closedRows, unit),
+    closedWithoutRequest: sumRows(closedWithoutRequestRows, unit),
+    pending: waitingControl,
+    waitingRequest: sumRows(waitingRequestRows, unit),
+    waitingControl,
+    good: sumRows(goodRows, unit),
+    rejected: sumRows(rejectedRows, unit),
+    goodFromClosedRequests: sumRows(goodFromClosedRequestRows, unit),
+    rejectedFromClosedRequests: sumRows(rejectedFromClosedRequestRows, unit),
+    closurePercent: getPercent(closed, requests),
+    rowIds: {
+      requiredRequests: getRowIds(requiredRequestRows),
+      createdRequests: getRowIds(createdRequestRows),
+      requests: getRowIds(requestRows),
+      closed: getRowIds(closedRequestRows),
+      totalClosed: getRowIds(closedRows),
+      closedWithoutRequest: getRowIds(closedWithoutRequestRows),
+      waitingRequest: getRowIds(waitingRequestRows),
+      waitingControl: getRowIds(waitingControlRows),
+      good: getRowIds(goodRows),
+      rejected: getRowIds(rejectedRows),
+    },
   }
 }
 
@@ -526,11 +618,24 @@ function hasPstoClosedData(row: WeldRow) {
 function hasStatisticsPstoRequest(row: WeldRow) {
   if (!hasText(row.pstoRequest)) return false
   if (isStatisticsPstoNoNeed(row)) return false
-  return !isCancelledControlValue(row.pstoRequired) || hasPstoClosedData(row)
+  return (
+    !isCancelledControlValue(row.pstoRequired) ||
+    hasPstoClosedData(row) ||
+    hasCancelledPstoContinuation(row)
+  )
 }
 
 function isStatisticsPstoActive(row: WeldRow) {
-  return isEnabledControlValue(row.pstoRequired) && !isStatisticsPstoNoNeed(row)
+  return (
+    isEnabledControlValue(row.pstoRequired) ||
+    requiresPostHeatTreatmentCompletion(row) ||
+    hasCancelledPstoContinuation(row)
+  ) && !isStatisticsPstoNoNeed(row)
+}
+
+function hasCancelledPstoContinuation(row: WeldRow) {
+  if (!isCancelledControlValue(row.pstoRequired) || !hasText(row.pstoRequest)) return false
+  return String(row.pstoResult ?? '').trim().toLocaleLowerCase('ru-RU') !== 'отменен'
 }
 
 function isStatisticsPstoNoNeed(row: WeldRow) {
@@ -544,6 +649,33 @@ function isPstoRequestInRange(row: WeldRow, from: string, to: string) {
 
 function getPstoRequestDate(row: WeldRow) {
   return parseDateForStatistics(row.pstoRequestDate) ?? parseDateFromText(row.pstoRequest) ?? parseDateForStatistics(row.pstoCreatedAt)
+}
+
+function isStatisticsTvmtRequired(row: WeldRow) {
+  return hasPstoClosedData(row)
+}
+
+function hasStatisticsTvmtRequest(row: WeldRow) {
+  return isStatisticsTvmtRequired(row) && hasText(row.tvmtRequest)
+}
+
+function hasTvmtClosedData(row: WeldRow) {
+  return isStatisticsTvmtRequired(row) && normalizeTvmtStatisticsResult(row.tvmtResult) !== null
+}
+
+function isTvmtRequestInRange(row: WeldRow, from: string, to: string) {
+  if (!hasStatisticsTvmtRequest(row)) return false
+  const date = parseDateForStatistics(row.tvmtRequestDate) ??
+    parseDateFromText(row.tvmtRequest) ??
+    parseDateForStatistics(row.pstoCreatedAt)
+  return isIsoDateInRange(date, from, to)
+}
+
+function normalizeTvmtStatisticsResult(value: unknown) {
+  const normalized = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+  if (normalized === 'годен' || normalized === 'да') return 'good' as const
+  if (normalized === 'не годен') return 'failed' as const
+  return null
 }
 
 type StatisticsControlDynamicsDraft = Omit<

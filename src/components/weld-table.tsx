@@ -18,11 +18,12 @@ import {
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { ROW_ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
-import type { WeldColumnFilterOption, WeldReportKind } from '@/server/welds'
+import type { WeldColumnFilterOption, WeldReportKind } from '@/server/weld-contracts'
 import type { SystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { useWindowTableVirtualization } from '@/lib/use-window-table-virtualization'
 import { useWindowTableHorizontalVirtualization } from '@/lib/use-window-table-horizontal-virtualization'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
+import type { WeldTableSection } from '@/lib/weld-table-sections'
 
 const EMPTY_FIELD_KEY_SET = new Set<WeldFieldKey>()
 const EMPTY_NUMBER_SET = new Set<number>()
@@ -70,6 +71,8 @@ export type WeldTableProps = {
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  onOpenJoint?: (row: WeldRow) => void
+  controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
   openLinkedReportTitle?: string
   selectable?: boolean
@@ -82,6 +85,8 @@ export type WeldTableProps = {
   rowActions?: ReportRowActions
   extraColumns?: WeldTableExtraColumn[]
   stickyIdentityColumns?: boolean
+  defaultCollapsedSections?: ReadonlySet<string>
+  sectionLayout?: readonly WeldTableSection[]
   getContextMenuItems?: (
     row: WeldRow,
     selectedRows: WeldRow[],
@@ -118,6 +123,8 @@ export function WeldTable({
   onOpenDocument,
   onOpenLnkRequest,
   onOpenLnkResult,
+  onOpenJoint,
+  controlBasisEditorEnabled = false,
   availableSystemDocumentTypes = EMPTY_SYSTEM_DOCUMENT_TYPE_SET,
   selectable = false,
   selectedRowIds = EMPTY_NUMBER_SET,
@@ -129,6 +136,8 @@ export function WeldTable({
   rowActions,
   extraColumns = EMPTY_EXTRA_COLUMNS,
   stickyIdentityColumns = false,
+  defaultCollapsedSections = EMPTY_STRING_SET,
+  sectionLayout,
   getContextMenuItems,
 }: WeldTableProps) {
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
@@ -144,6 +153,7 @@ export function WeldTable({
   const stableOnOpenDocument = useStableEventCallback(onOpenDocument)
   const stableOnOpenLnkRequest = useStableEventCallback(onOpenLnkRequest)
   const stableOnOpenLnkResult = useStableEventCallback(onOpenLnkResult)
+  const stableOnOpenJoint = useStableEventCallback(onOpenJoint)
   const stableOnSelectedRowIdsChange = useStableEventCallback(onSelectedRowIdsChange)
   const stableIsRowSelectable = useStableEventCallback(isRowSelectable)
   const stableGetContextMenuItems = useStableEventCallback(getContextMenuItems)
@@ -256,6 +266,8 @@ export function WeldTable({
     mergePstoSections,
     rowActions: stableRowActions,
     collapsibleExtraSections,
+    defaultCollapsedSections,
+    sectionLayout,
   })
   const visibleExtraColumns = useMemo(
     () => getVisibleWeldTableExtraColumns(extraColumns, collapsedSections),
@@ -363,7 +375,8 @@ export function WeldTable({
       canOpenDocument: Boolean(onOpenDocument),
       canOpenLnkRequest: Boolean(onOpenLnkRequest),
       canOpenLnkResult: Boolean(onOpenLnkResult),
-      canOpenWeldEditor: Boolean(onEdit),
+      canOpenJoint: Boolean(onOpenJoint),
+      canOpenWeldEditor: controlBasisEditorEnabled && Boolean(onEdit),
       availableSystemDocumentTypes: stableAvailableSystemDocumentTypes,
     })
     if (tooltip) cell.title = tooltip
@@ -374,7 +387,9 @@ export function WeldTable({
     onOpenDocument,
     onOpenLnkRequest,
     onOpenLnkResult,
+    onOpenJoint,
     onEdit,
+    controlBasisEditorEnabled,
     stableAvailableSystemDocumentTypes,
     stableGetDisplayValue,
     tableRowsById,
@@ -515,6 +530,8 @@ export function WeldTable({
               onOpenDocument={onOpenDocument ? stableOnOpenDocument : undefined}
               onOpenLnkRequest={onOpenLnkRequest ? stableOnOpenLnkRequest : undefined}
               onOpenLnkResult={onOpenLnkResult ? stableOnOpenLnkResult : undefined}
+              onOpenJoint={onOpenJoint ? stableOnOpenJoint : undefined}
+              controlBasisEditorEnabled={controlBasisEditorEnabled}
               availableSystemDocumentTypes={stableAvailableSystemDocumentTypes}
               visibleFieldKeys={visibleFieldKeys}
             />

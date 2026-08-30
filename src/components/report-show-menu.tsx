@@ -12,12 +12,20 @@ export type ReportShowMenuProps = {
   onToggle: () => void
   items: ReportShowMenuItem[]
   widthClassName?: string
+  buttonClassName?: string
 }
 
-export function ReportShowMenu({ label = 'Показать', isOpen, onToggle, items, widthClassName = 'w-52' }: ReportShowMenuProps) {
+export function ReportShowMenu({
+  label = 'Показать',
+  isOpen,
+  onToggle,
+  items,
+  widthClassName = 'w-52',
+  buttonClassName,
+}: ReportShowMenuProps) {
   return (
     <div className="relative">
-      <Button variant="outline" onClick={onToggle}>
+      <Button variant="outline" onClick={onToggle} className={buttonClassName}>
         {label}
         <ChevronDown className="ml-2 h-4 w-4" />
       </Button>

@@ -46,6 +46,12 @@ describe('getWeldTableReadOnlyFieldTooltip', () => {
     expect(getWeldTableReadOnlyFieldTooltip('finalStatus')).toContain('рассчитывается автоматически')
   })
 
+  it('routes TVMT fields to the heat-treatment workflow instead of the LNK manager', () => {
+    expect(getWeldTableReadOnlyFieldTooltip('tvmtRequest')).toContain('Термообработка')
+    expect(getWeldTableReadOnlyFieldTooltip('tvmtResult')).toContain('Термообработка')
+    expect(getWeldTableReadOnlyFieldTooltip('tvmtConclusion')).toContain('Термообработка')
+  })
+
   it('explains both supported WDI modes without calling an ordinary report field systemic', () => {
     expect(getWeldTableReadOnlyFieldTooltip('wdi')).toContain('В пользовательском режиме')
     expect(getWeldTableReadOnlyFieldTooltip('wdi')).toContain('в системном рассчитывается автоматически')

@@ -1,9 +1,10 @@
-import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import type {
   SystemDocumentReference,
   SystemDocumentType,
 } from '@/lib/system-document-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { getPreHeatTreatmentReportField } from '@/lib/pre-heat-treatment-report-fields'
 
 export const LNK_CONCLUSION_TEMPLATE_PROFILES = [
   {
@@ -142,6 +143,11 @@ export function getSystemDocumentTemplateId(
 export function getSystemDocumentTemplateIdForField(
   fieldKey: WeldFieldKey,
 ): SystemDocumentTemplateId | null {
+  const preField = getPreHeatTreatmentReportField(fieldKey)
+  if (preField?.valueKey === 'requestName') return 'lnkRequest'
+  if (preField?.valueKey === 'conclusionName') {
+    return getLnkConclusionTemplateProfile(preField.methodCode).id
+  }
   const methodCode = LNK_CONCLUSION_METHOD_BY_FIELD.get(fieldKey)
   if (methodCode) {
     return getLnkConclusionTemplateProfile(methodCode).id

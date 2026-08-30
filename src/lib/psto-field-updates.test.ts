@@ -46,6 +46,22 @@ describe('clearCancelledPstoRequestWithoutResult', () => {
     expect(row.pstoResult).toBeNull()
   })
 
+  it('does not let BoQ or KS3 keep an unfinished PSTO request active', () => {
+    const row = clearCancelledPstoRequestWithoutResult({
+      pstoRequired: 'отменен',
+      pstoRequest: 'ПСТО-30.06.26-001',
+      pstoRequestDate: '2026-06-30',
+      pstoResult: null,
+      pstoBoq: 'BoQ-ПСТО',
+      pstoKs3: 'КС3-ПСТО',
+    } as WeldRow)
+
+    expect(row.pstoRequest).toBeNull()
+    expect(row.pstoRequestDate).toBeNull()
+    expect(row.pstoBoq).toBe('BoQ-ПСТО')
+    expect(row.pstoKs3).toBe('КС3-ПСТО')
+  })
+
   it('fills active PSTO result with waiting request status when request is missing', () => {
     const row = withPendingPstoResultStatus({
       pstoRequired: 'да',

@@ -11,6 +11,15 @@ export const WeldTableRowActions = memo(function WeldTableRowActions({
   row: WeldRow
   rowActions: ReportRowActions
 }) {
+  const canCreateRequest = rowActions.canCreateRequest(row)
+  const canAddResult = rowActions.canAddResult(row)
+  const createDisabledTitle = typeof rowActions.createDisabledTitle === 'function'
+    ? rowActions.createDisabledTitle(row)
+    : rowActions.createDisabledTitle
+  const resultDisabledTitle = typeof rowActions.resultDisabledTitle === 'function'
+    ? rowActions.resultDisabledTitle(row)
+    : rowActions.resultDisabledTitle
+
   return (
     <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">
       <div className="flex items-center justify-center gap-1">
@@ -20,12 +29,12 @@ export const WeldTableRowActions = memo(function WeldTableRowActions({
             event.stopPropagation()
             rowActions.onCreateRequest(row)
           }}
-          disabled={!rowActions.canCreateRequest(row)}
+          disabled={!canCreateRequest}
           className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
           title={
-            rowActions.canCreateRequest(row)
+            canCreateRequest
               ? rowActions.createTitle ?? 'Создать заявку на этот стык'
-              : rowActions.createDisabledTitle ?? 'Заявка по этому стыку уже создана'
+              : createDisabledTitle ?? 'Заявка по этому стыку уже создана'
           }
           aria-label={rowActions.createAriaLabel ?? 'Создать заявку на этот стык'}
         >
@@ -37,12 +46,12 @@ export const WeldTableRowActions = memo(function WeldTableRowActions({
             event.stopPropagation()
             rowActions.onAddResult(row)
           }}
-          disabled={!rowActions.canAddResult(row)}
+          disabled={!canAddResult}
           className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
           title={
-            rowActions.canAddResult(row)
+            canAddResult
               ? rowActions.resultTitle ?? 'Добавить результат на этот стык'
-              : rowActions.resultDisabledTitle ?? 'Сначала создайте заявку на этот стык'
+              : resultDisabledTitle ?? 'Сначала создайте заявку на этот стык'
           }
           aria-label={rowActions.resultAriaLabel ?? 'Добавить результат на этот стык'}
         >

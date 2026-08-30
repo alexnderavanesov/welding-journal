@@ -130,6 +130,26 @@ describe('getWeldFormSaveBlockReason', () => {
     )
   })
 
+  it('keeps performed PSTO history valid after moving a weld to a line without PSTO', () => {
+    const cycle = {
+      id: 1,
+      joint: 'S1',
+      pstoRequest: 'Заявка ПСТО-001',
+      pstoRequestDate: '2026-07-01',
+      pstoDate: '2026-07-02',
+      pstoResult: 'проведено',
+      tvmtRequest: 'Заявка ТВМТ-001',
+      tvmtRequestDate: '2026-07-02',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-07-03',
+      tvmtConclusion: 'ЗНК-ТВМТ-001',
+      hasTvmt: null,
+    } as WeldInput
+
+    expect(getWeldFormSaveBlockReason({ ...cycle, pstoRequired: 'да' }, initialValue)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ ...cycle, pstoRequired: null }, initialValue)).toBeNull()
+  })
+
   it('allows disabling control history protection in dangerous form checks', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'годен' } as WeldInput
 
@@ -194,8 +214,14 @@ describe('getWeldFormSaveBlockReason', () => {
     )
   })
 
-  it('blocks clearing PSTO availability when heat treatment report history exists', () => {
+  it('keeps completed PSTO history valid without an active line assignment', () => {
     const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoDate: '10.06.2026', pstoResult: 'проведено' } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
+  })
+
+  it('still blocks orphan PSTO financial history without execution or assignment', () => {
+    const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoBoq: 'Акт-1' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
       'ЗВ-27 · ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.',
@@ -330,6 +356,58 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldDraft
     const draft = {
       ...initialValue,
+      pstoRequestDate: '06.07.2026',
+    } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
+      'ЗВ-24 · Стык S1: дата заявки ПСТО 06.07.2026 раньше даты сварки 07.07.2026.',
+    )
+  })
+
+  it('allows restoring a missing PSTO cycle when an old post-TO LNK document already exists', () => {
+    const initialValue = {
+      id: 1,
+      joint: 'S1',
+      weldDate: '07.07.2026',
+      materialGroup: 'М01',
+      connectionType: 'С17',
+      weldingMethod: 'РД',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Заявка-ВИК',
+      vikRequestDate: '10.07.2026',
+      vikResult: 'годен',
+      vikConclusion: 'ЗНК-ВИК',
+      vikConclusionDate: '10.07.2026',
+    } as WeldDraft
+    const draft = {
+      ...initialValue,
+      pstoRequest: 'Заявка-ПСТО',
+      pstoRequestDate: '08.07.2026',
+    } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
+  })
+
+  it('still blocks a new PSTO date error while restoring an incomplete cycle', () => {
+    const initialValue = {
+      id: 1,
+      joint: 'S1',
+      weldDate: '07.07.2026',
+      materialGroup: 'М01',
+      connectionType: 'С17',
+      weldingMethod: 'РД',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Заявка-ВИК',
+      vikRequestDate: '10.07.2026',
+      vikResult: 'годен',
+      vikConclusion: 'ЗНК-ВИК',
+      vikConclusionDate: '10.07.2026',
+    } as WeldDraft
+    const draft = {
+      ...initialValue,
+      pstoRequest: 'Заявка-ПСТО',
       pstoRequestDate: '06.07.2026',
     } as WeldInput
 

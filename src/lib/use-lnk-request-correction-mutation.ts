@@ -9,7 +9,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
-import { clearLnkRequestPosition } from '@/server/welds'
+import { clearLnkRequestPosition } from '@/server/weld-mutations-api'
 
 export function hasRemainingLnkRequestDocumentPositions({
   rows,
@@ -70,7 +70,11 @@ export function useLnkRequestCorrectionMutation({
         return saved as unknown as WeldRow
       }
       const updatedRecord = buildLnkRequestCorrectionRow({ record, methodKey, requestName })
-      const saved = await updateWeldRowOrThrow(updatedRecord)
+      const saved = await updateWeldRowOrThrow(
+        updatedRecord,
+        'Не удалось изменить заявку ЛНК',
+        { mutationScope: 'lnk' },
+      )
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {

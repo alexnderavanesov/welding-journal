@@ -5,6 +5,7 @@ import { MetaSeparator } from '@/components/joint-meta'
 import { Button } from '@/components/ui/button'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getPstoCycleStageDeleteBlockReason } from '@/lib/psto-cycle-corrections'
 import { getPstoResultLabel } from '@/lib/report-badges'
 
 type PstoRequestManagerPositionProps = {
@@ -18,6 +19,8 @@ export function PstoRequestManagerPosition({
   isCorrectionPending,
   onClearPosition,
 }: PstoRequestManagerPositionProps) {
+  const deleteBlockReason = getPstoCycleStageDeleteBlockReason(row, 1, 'pstoRequest')
+
   return (
     <div className="grid grid-cols-[minmax(220px,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm">
       <div className="min-w-0">
@@ -33,7 +36,8 @@ export function PstoRequestManagerPosition({
         variant="outline"
         size="sm"
         onClick={() => onClearPosition(row)}
-        disabled={isCorrectionPending}
+        disabled={isCorrectionPending || Boolean(deleteBlockReason)}
+        title={deleteBlockReason || undefined}
         className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
       >
         <Trash2 className="mr-1.5 h-3.5 w-3.5" />

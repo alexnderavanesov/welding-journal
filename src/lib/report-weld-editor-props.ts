@@ -9,9 +9,12 @@ type CreateReportWeldEditorPropsOptions = {
   suggestionRows?: readonly WeldInput[]
   stampSelectOptions: WeldFormProps['stampSelectOptions']
   getExternalSaveBlockReason: WeldFormProps['getExternalSaveBlockReason']
+  onLineIdentityChange?: WeldFormProps['onLineIdentityChange']
+  preSaveDecision?: WeldFormProps['preSaveDecision']
   isSaving: boolean
   onCancel: WeldFormProps['onCancel']
   onSave: WeldFormProps['onSave']
+  moveDialogProps?: ReportWeldEditorProps['moveDialogProps']
 }
 
 export function createReportWeldEditorProps({
@@ -19,9 +22,12 @@ export function createReportWeldEditorProps({
   suggestionRows,
   stampSelectOptions,
   getExternalSaveBlockReason,
+  onLineIdentityChange,
+  preSaveDecision,
   isSaving,
   onCancel,
   onSave,
+  moveDialogProps,
 }: CreateReportWeldEditorPropsOptions): ReportWeldEditorProps {
   return {
     formKey: editing ? `${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}` : null,
@@ -33,10 +39,13 @@ export function createReportWeldEditorProps({
           suggestionRows,
           stampSelectOptions,
           getExternalSaveBlockReason,
+          onLineIdentityChange,
+          preSaveDecision,
           busy: isSaving,
           onCancel,
           onSave,
         }
       : null,
+    moveDialogProps: editing ? moveDialogProps ?? null : null,
   }
 }

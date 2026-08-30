@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { clearCancelledRejectedLnkGeneratedData, clearDisabledLnkRequests, restoreActiveLnkCancelledResults, withTouchedLnkTimestamp } from './lnk-field-updates'
+import {
+  clearCancelledRejectedLnkGeneratedData,
+  clearDisabledLnkRequests,
+  restoreActiveLnkCancelledResults,
+  withTouchedLnkTimestamp,
+} from './lnk-field-updates'
 import type { WeldInput } from './weld-fields'
 
 describe('clearCancelledRejectedLnkGeneratedData', () => {

@@ -8,10 +8,6 @@ import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import { useLnkResultSaveActions } from '@/lib/use-lnk-result-save-actions'
 
-vi.mock('@/lib/confirm-action-context', () => ({
-  useConfirmAction: () => vi.fn(),
-}))
-
 vi.mock('@/lib/save-check-settings', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/save-check-settings')>()
   return {
@@ -50,7 +46,6 @@ function useHarness(initialDraft = createDraft(), lnkRows = rows) {
     nextConclusionNumber: 1,
     requestConclusionSettings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     resultMutation: { mutate: vi.fn() },
-    clearGeneratedDataMutation: { mutate: vi.fn() },
     setDraft,
     setMessage: vi.fn(),
   })

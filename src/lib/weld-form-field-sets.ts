@@ -4,15 +4,13 @@ import {
   type WeldFieldKey,
 } from '@/lib/weld-field-definitions'
 import { CONTROL_BASIS_FIELD_KEYS } from '@/lib/control-assignment-basis'
-import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 
 export const yesEmptyFieldKeys = new Set([
-  'pstoRequired',
   'hasVik',
   'hasRk',
   'hasUzk',
   'hasPvk',
-  'hasTvmt',
   'hasRfa',
   'hasStls',
   'hasMkk',
@@ -72,7 +70,10 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'jsrDocument',
   'checklistDocument',
   'zniDocument',
+  'pstoRequired',
+  'pstoCancellationDate',
   ...CONTROL_BASIS_FIELD_KEYS,
+  'hasTvmt',
   'status',
   'createdAt',
   'weldingUpdatedAt',

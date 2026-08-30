@@ -6,7 +6,7 @@ import {
   getPstoConclusionDateParts,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
-import { LNK_METHODS } from '@/lib/report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/report-config'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
 export function formatPstoDiagramName(

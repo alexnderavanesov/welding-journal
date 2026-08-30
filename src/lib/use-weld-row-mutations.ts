@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { deleteWeldJoint, deleteWeldJoints } from '@/server/welds'
+import { deleteWeldJoint, deleteWeldJoints } from '@/server/weld-mutations-api'
 import { prepareWeldSaveValue } from '@/lib/weld-journal-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { createWeldRowOrThrow, updateWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
+import type { PstoWeldLineMoveDisposition } from '@/lib/psto-line-assignment'
 import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation-types'
 
 export function useWeldRowMutations({
@@ -19,12 +20,15 @@ export function useWeldRowMutations({
   const queryClient = useQueryClient()
 
   const saveMutation = useMutation({
-    mutationFn: async (value: WeldDraft) => {
+    mutationFn: async (value: WeldDraft & { pstoLineMoveDisposition?: PstoWeldLineMoveDisposition }) => {
       const validationRows = rows.length > 0 ? rows : editingRecord ? [editingRecord] : []
       const preparedValue = prepareWeldSaveValue({ value, rows: validationRows, welderStamps, welderStampSuspensions })
+      const saveValue = value.pstoLineMoveDisposition
+        ? { ...preparedValue, pstoLineMoveDisposition: value.pstoLineMoveDisposition }
+        : preparedValue
       return preparedValue.id
-        ? updateWeldRowOrThrow(preparedValue as WeldRow)
-        : createWeldRowOrThrow(preparedValue)
+        ? updateWeldRowOrThrow(saveValue as WeldRow & { pstoLineMoveDisposition?: PstoWeldLineMoveDisposition })
+        : createWeldRowOrThrow(saveValue)
     },
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [variables], variables.id && editingFocusField ? [editingFocusField] : [])

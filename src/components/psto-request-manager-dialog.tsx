@@ -18,7 +18,7 @@ import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
 import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
-import { hasText } from '@/lib/report-value-utils'
+import { getPstoCycleStageDeleteBlockReason } from '@/lib/psto-cycle-corrections'
 import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
 import {
@@ -41,6 +41,7 @@ export type PstoRequestManagerDialogProps = {
   onRenameRequest: () => void
   onOpenDocument: (row: WeldRow) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
   onClearPosition: (row: WeldRow) => void
   onDeleteRequest: (request?: RequestDocumentIdentity) => void
@@ -61,12 +62,18 @@ export function PstoRequestManagerDialog({
   onRenameRequest,
   onOpenDocument,
   onOpenJournalRows,
+  onOpenPstoHistory,
   onCopyDocumentName,
   onClearPosition,
   onDeleteRequest,
 }: PstoRequestManagerDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
-  const resultCount = requestRows.filter((row) => hasText(row.pstoResult)).length
+  const rowsWithLaterStages = requestRows.filter((row) => (
+    getPstoCycleStageDeleteBlockReason(row, 1, 'pstoRequest')
+  )).length
+  const requestDeleteBlockReason = rowsWithLaterStages > 0
+    ? `В ${rowsWithLaterStages} ${formatJointCount(rowsWithLaterStages)} уже есть последующие этапы. Сначала удалите их с конца цепочки в окне «История ПСТО и ТВМТ».`
+    : ''
   const requestConclusionSettings = useRequestConclusionSettings()
   const isSystemRequest = isSystemDocumentNameForRows(
     requestRows,
@@ -115,7 +122,8 @@ export function PstoRequestManagerDialog({
         label: 'Удалить заявку',
         icon: Trash2,
         danger: true,
-        disabled: isManagerPending,
+        disabled: isManagerPending || Boolean(requestDeleteBlockReason),
+        title: requestDeleteBlockReason || undefined,
         onSelect: () => onDeleteRequest(selectedIdentity),
       }],
       openDocumentDisabledReason: documentReason,
@@ -124,6 +132,7 @@ export function PstoRequestManagerDialog({
       },
       onCopyDocumentName,
       onOpenJournalRows,
+      onOpenPstoHistory,
     }))
   }
 
@@ -151,7 +160,7 @@ export function PstoRequestManagerDialog({
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-semibold text-slate-800">Используется:</span>
               <RequestManagerUsageBadge>Стыков: {requestRows.length}</RequestManagerUsageBadge>
-              <RequestManagerUsageBadge>С результатом: {resultCount}</RequestManagerUsageBadge>
+              <RequestManagerUsageBadge>С последующими этапами: {rowsWithLaterStages}</RequestManagerUsageBadge>
             </div>
           </RequestManagerUsagePanel>
         ) : (
@@ -189,12 +198,20 @@ export function PstoRequestManagerDialog({
         </RequestPositionPanel>
 
         <RequestDeletePanel
-          description="Будут очищены заявка, результат, дата и диаграмма ПСТО по всем стыкам, где используется выбранная заявка."
-          disabled={!requestName || isManagerPending}
+          description={requestDeleteBlockReason || 'Будут очищены только заявка ПСТО и ее дата по всем стыкам выбранной заявки.'}
+          disabled={!requestName || isManagerPending || Boolean(requestDeleteBlockReason)}
           onDelete={() => onDeleteRequest(selectedIdentity ?? undefined)}
         />
       </div>
       <DialogContextMenuLayer ref={contextMenuRef} />
     </LargeDialogShell>
   )
+}
+
+function formatJointCount(count: number) {
+  const mod100 = count % 100
+  const mod10 = count % 10
+  if (mod100 >= 11 && mod100 <= 14) return 'стыках'
+  if (mod10 === 1) return 'стыке'
+  return 'стыках'
 }

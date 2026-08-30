@@ -21,6 +21,7 @@ import {
   Minimize2,
   Minus,
   Archive,
+  ArrowLeftRight,
   PanelLeftClose,
   PanelLeftOpen,
   Rows3,
@@ -83,10 +84,7 @@ import {
   renameSystemDocumentToCurrentName,
 } from '@/lib/system-document-storage'
 import {
-  SYSTEM_DOCUMENT_TYPES,
-  getSystemDocumentProfile,
   getSystemDocumentTargetReport,
-  isSystemDocumentType,
   type SystemDocumentNavigationRequest,
   type SystemDocumentSummary,
   type SystemDocumentType,
@@ -108,9 +106,23 @@ import {
   invalidateWeldJoints,
   WELD_JOINTS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
-import { getDocumentGenerationData } from '@/server/welds'
+import { getDocumentGenerationData } from '@/server/weld-read-api'
 import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
 import { ALL_PAGE_SIZE } from '@/lib/use-pagination'
+import { isPreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
+import {
+  getScopedSystemDocumentMethodValues,
+  getScopedSystemDocumentStageValues,
+  getSystemDocumentMethodCodes,
+  getSystemDocumentStageClassName,
+  getSystemDocumentStageLabel,
+  getSystemDocumentStageTransferLabel,
+  type SystemDocumentMethodScope,
+} from '@/lib/system-document-stage'
+import {
+  previewLnkDocumentStageTransfer,
+  transferLnkDocumentStage,
+} from '@/server/lnk-document-stage-transfer'
 
 type DocumentsPageProps = {
   welderStamps: WelderStampRecord[]
@@ -157,12 +169,26 @@ const DOCUMENT_TYPE_OPTIONS: Array<{
   },
 ]
 
-const SYSTEM_DOCUMENT_TYPE_OPTIONS = SYSTEM_DOCUMENT_TYPES.map((type) => ({
-  id: type,
-  label: type === 'lnkConclusion' ? 'Заключения ЛНК' : getSystemDocumentProfile(type).label,
-}))
+type SystemDocumentViewId =
+  | SystemDocumentType
+  | 'tvmtRequest'
+  | 'tvmtConclusion'
 
-type DocumentsPageType = GeneratedDocumentType | SystemDocumentType
+const SYSTEM_DOCUMENT_TYPE_OPTIONS: Array<{
+  id: SystemDocumentViewId
+  documentType: SystemDocumentType
+  label: string
+  methodScope: SystemDocumentMethodScope
+}> = [
+  { id: 'lnkRequest', documentType: 'lnkRequest', label: 'Заявка ЛНК', methodScope: 'lnk' },
+  { id: 'lnkConclusion', documentType: 'lnkConclusion', label: 'Заключения ЛНК', methodScope: 'lnk' },
+  { id: 'pstoRequest', documentType: 'pstoRequest', label: 'Заявка ПСТО', methodScope: null },
+  { id: 'pstoConclusion', documentType: 'pstoConclusion', label: 'Заключение ПСТО', methodScope: null },
+  { id: 'tvmtRequest', documentType: 'lnkRequest', label: 'Заявка ТВМТ', methodScope: 'tvmt' },
+  { id: 'tvmtConclusion', documentType: 'lnkConclusion', label: 'Заключение ТВМТ', methodScope: 'tvmt' },
+]
+
+type DocumentsPageType = GeneratedDocumentType | SystemDocumentViewId
 type DocumentHistoryFilterKey =
   | 'title'
   | 'project'
@@ -171,6 +197,7 @@ type DocumentHistoryFilterKey =
   | 'period'
   | 'updatedAt'
   | 'method'
+  | 'stage'
   | 'date'
   | 'rowCount'
   | 'wdi'
@@ -195,6 +222,7 @@ const GENERATED_DOCUMENT_FILTERS: Array<{ key: DocumentHistoryFilterKey; label: 
 const SYSTEM_DOCUMENT_FILTERS: Array<{ key: DocumentHistoryFilterKey; label: string; className?: string }> = [
   { key: 'title', label: 'Документ' },
   { key: 'method', label: 'Вид НК', className: 'hidden xl:flex' },
+  { key: 'stage', label: 'Этап', className: 'hidden xl:flex' },
   { key: 'project', label: 'Проект', className: 'hidden min-[1800px]:flex' },
   { key: 'subtitle', label: 'Шифр', className: 'hidden min-[1800px]:flex' },
   { key: 'line', label: 'Линия', className: 'hidden min-[1800px]:flex' },
@@ -287,8 +315,25 @@ function getSystemDocumentNavigationIdentity(
     documentRecord.type,
     documentRecord.title.trim(),
     documentRecord.date.trim().slice(0, 10),
-    documentRecord.methodCode?.trim() ?? '',
+    documentRecord.type === 'lnkRequest' ? '' : documentRecord.methodCode?.trim() ?? '',
   ])
+}
+
+function getSystemDocumentViewId(
+  reference: Pick<SystemDocumentNavigationRequest, 'type' | 'methodCode'>,
+): SystemDocumentViewId {
+  if (reference.methodCode === 'ТВМТ') {
+    if (reference.type === 'lnkRequest') return 'tvmtRequest'
+    if (reference.type === 'lnkConclusion') return 'tvmtConclusion'
+  }
+  return reference.type
+}
+
+function intersectChoiceFilterValues(filterValue: string | undefined, allowedValues: string[]) {
+  const choiceFilter = parseWeldColumnChoiceFilter(filterValue ?? '')
+  if (choiceFilter?.kind !== 'values') return allowedValues
+  const requestedValues = new Set(choiceFilter.values)
+  return allowedValues.filter((value) => requestedValues.has(value))
 }
 
 export function DocumentsPage({
@@ -310,7 +355,7 @@ export function DocumentsPage({
   const [activeNavigationRequest, setActiveNavigationRequest] =
     useState<SystemDocumentNavigationRequest | null>(navigationRequest ?? null)
   const [activeDocumentType, setActiveDocumentType] = useState<DocumentsPageType>(
-    () => navigationRequest?.type ?? 'weldingJournal',
+    () => navigationRequest ? getSystemDocumentViewId(navigationRequest) : 'weldingJournal',
   )
   const [activeDocumentTemplate, setActiveDocumentTemplate] = useState<StoredDocumentTemplate | null>(null)
   const [templateDocumentPreview, setTemplateDocumentPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
@@ -325,7 +370,10 @@ export function DocumentsPage({
     tone: 'success' | 'error'
     text: string
   } | null>(null)
-  const isSystemDocument = isSystemDocumentType(activeDocumentType)
+  const activeSystemDocumentOption = SYSTEM_DOCUMENT_TYPE_OPTIONS.find(
+    (option) => option.id === activeDocumentType,
+  )
+  const isSystemDocument = Boolean(activeSystemDocumentOption)
   const availableSystemDocumentTemplates = useSystemDocumentTemplateAvailability()
   const activeGeneratedDocumentType: GeneratedDocumentType = isGeneratedDocumentType(activeDocumentType)
     ? activeDocumentType
@@ -383,7 +431,7 @@ export function DocumentsPage({
   useEffect(() => {
     if (!navigationRequest) return
     setActiveNavigationRequest(navigationRequest)
-    setActiveDocumentType(navigationRequest.type)
+    setActiveDocumentType(getSystemDocumentViewId(navigationRequest))
     setActiveWorkspaceTab('history')
     setTemplateDocumentPreview(null)
     setTemplatePreviewError(null)
@@ -424,7 +472,7 @@ export function DocumentsPage({
       }
     }
     const syncTemplate = () => {
-      loadDocumentTemplate(activeDocumentType)
+      loadDocumentTemplate(activeGeneratedDocumentType)
         .then((template) => {
           if (isMounted) setActiveDocumentTemplate(template ?? null)
         })
@@ -439,7 +487,7 @@ export function DocumentsPage({
       isMounted = false
       window.removeEventListener(DOCUMENT_TEMPLATE_STORAGE_EVENT, syncTemplate)
     }
-  }, [activeDocumentType, isSystemDocument])
+  }, [activeGeneratedDocumentType, isSystemDocument])
 
   useEffect(() => {
     const handleGeneratedDocumentChange = () => {
@@ -1034,10 +1082,11 @@ export function DocumentsPage({
         isSystemDocument ? (
           <SystemDocumentsPanel
             key={activeDocumentType}
-            documentLabel={getSystemDocumentProfile(activeDocumentType).label}
-            documentType={activeDocumentType}
+            documentLabel={activeSystemDocumentOption!.label}
+            documentType={activeSystemDocumentOption!.documentType}
+            methodScope={activeSystemDocumentOption!.methodScope}
             navigationRequest={
-              activeNavigationRequest?.type === activeDocumentType
+              activeNavigationRequest?.type === activeSystemDocumentOption!.documentType
                 ? activeNavigationRequest
                 : null
             }
@@ -1049,11 +1098,10 @@ export function DocumentsPage({
               onOpenDocumentRows?.(
                 documentRows.map((row) => row.id),
                 documentRecord.title,
-                getSystemDocumentTargetReport(documentRecord.type),
+                getSystemDocumentTargetReport(documentRecord),
               )
             }}
             onRenamed={async () => {
-              if (!isSystemDocumentType(activeDocumentType)) return
               await Promise.all([
                 invalidateWeldJoints(queryClient),
                 queryClient.invalidateQueries({
@@ -1447,6 +1495,7 @@ function GeneratedDocumentsPanel({
 function SystemDocumentsPanel({
   documentLabel,
   documentType,
+  methodScope,
   navigationRequest,
   availableTemplateIds,
   welderStamps,
@@ -1455,6 +1504,7 @@ function SystemDocumentsPanel({
 }: {
   documentLabel: string
   documentType: SystemDocumentType
+  methodScope: SystemDocumentMethodScope
   navigationRequest: SystemDocumentNavigationRequest | null
   availableTemplateIds: ReadonlySet<SystemDocumentTemplateId>
   welderStamps: WelderStampRecord[]
@@ -1470,6 +1520,7 @@ function SystemDocumentsPanel({
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
+  const [transferringDocumentId, setTransferringDocumentId] = useState<string | null>(null)
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [lnkConclusionTemplateFilter, setLnkConclusionTemplateFilter] =
@@ -1490,16 +1541,25 @@ function SystemDocumentsPanel({
 
   const effectiveColumnFilters = useMemo(
     () => {
-      if (documentType !== 'lnkConclusion' || lnkConclusionTemplateFilter === 'all') return columnFilters
-      const profile = LNK_CONCLUSION_TEMPLATE_PROFILES.find((candidate) => candidate.id === lnkConclusionTemplateFilter)
-      if (!profile) return columnFilters
-      const methodCodes = getLnkConclusionTemplateMethodCodes(profile.id)
-      return {
-        ...columnFilters,
-        method: buildWeldColumnValueFilter(methodCodes),
+      const filters = { ...columnFilters }
+      const stageValues = getScopedSystemDocumentStageValues(methodScope)
+      if (stageValues.length > 0) {
+        const selectedStageValues = intersectChoiceFilterValues(columnFilters.stage, stageValues)
+        filters.stage = buildWeldColumnValueFilter(
+          selectedStageValues.length > 0 ? selectedStageValues : ['__no_matching_document_stage__'],
+        )
       }
+      const methodValues = getScopedSystemDocumentMethodValues(methodScope)
+      if (methodValues.length > 0) {
+        filters.method = buildWeldColumnValueFilter(methodValues)
+      }
+      if (documentType === 'lnkConclusion' && methodScope === 'lnk' && lnkConclusionTemplateFilter !== 'all') {
+        const profile = LNK_CONCLUSION_TEMPLATE_PROFILES.find((candidate) => candidate.id === lnkConclusionTemplateFilter)
+        if (profile) filters.method = buildWeldColumnValueFilter(getLnkConclusionTemplateMethodCodes(profile.id))
+      }
+      return filters
     },
-    [columnFilters, documentType, lnkConclusionTemplateFilter],
+    [columnFilters, documentType, lnkConclusionTemplateFilter, methodScope],
   )
   const historyQuery = useQuery({
     queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'system-document-history', documentType, visibleLimit, effectiveColumnFilters],
@@ -1545,13 +1605,13 @@ function SystemDocumentsPanel({
   const hasActiveHistoryScope = hasActiveFilters || (
     documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all'
   )
-  const showMethodColumn = documentType.startsWith('lnk')
+  const showMethodColumn = documentType.startsWith('lnk') && methodScope !== 'tvmt'
   const historyFilters = showMethodColumn
     ? SYSTEM_DOCUMENT_FILTERS
     : SYSTEM_DOCUMENT_FILTERS.filter((filter) => filter.key !== 'method')
   const historyGridClassName = showMethodColumn
-    ? 'grid-cols-[34px_minmax(240px,1fr)_96px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_88px_96px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_88px_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_96px_128px_150px]'
-    : 'grid-cols-[34px_minmax(240px,1fr)_96px_150px] xl:grid-cols-[34px_minmax(300px,1.45fr)_96px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(340px,1.55fr)_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_96px_128px_150px]'
+    ? 'grid-cols-[34px_minmax(240px,1fr)_96px_150px] xl:grid-cols-[34px_minmax(280px,1.45fr)_76px_108px_96px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(320px,1.55fr)_76px_108px_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_96px_128px_150px]'
+    : 'grid-cols-[34px_minmax(240px,1fr)_96px_150px] xl:grid-cols-[34px_minmax(280px,1.45fr)_108px_96px_128px_150px] min-[1800px]:grid-cols-[34px_minmax(320px,1.55fr)_108px_minmax(130px,0.55fr)_minmax(120px,0.52fr)_minmax(150px,0.58fr)_96px_128px_150px]'
   const historyError =
     historyQuery.error instanceof Error
       ? historyQuery.error.message
@@ -1629,6 +1689,39 @@ function SystemDocumentsPanel({
     setRenamingDocumentId(null)
   }
 
+  const transferDocumentStage = async (documentRecord: SystemDocumentSummary) => {
+    const targetLabel = documentRecord.sourceKind === 'beforeHeatTreatment'
+      ? 'Основной'
+      : 'До ТО'
+    if (
+      !(await requireEditPassword(
+        `перенос документа «${documentRecord.title}» на этап «${targetLabel}»`,
+      ))
+    ) {
+      return
+    }
+    setTransferringDocumentId(documentRecord.id)
+    await runAction(async () => {
+      const preview = await previewLnkDocumentStageTransfer({ data: documentRecord })
+      const confirmed = await confirmAction({
+        title: `Перенести комплект на этап «${targetLabel}»`,
+        itemName: documentRecord.title,
+        description:
+          `Будет перенесено позиций: ${preview.positionCount} в ${preview.rowCount} стыках. ` +
+          `Виды НК: ${preview.methodCodes.join(', ')}. Завершенных результатов: ${preview.completedResultCount}.`,
+        warning:
+          'Заявка и уже связанный с ней результат переносятся вместе. Целевой этап должен быть пустым; нумерация и название документа не меняются. Дубль-контроль не затрагивается.',
+        confirmLabel: 'Перенести',
+        tone: 'warning',
+      })
+      if (!confirmed) return
+      await transferLnkDocumentStage({ data: documentRecord })
+      await onRenamed()
+      setActionNotice(`Комплект «${documentRecord.title}» перенесен на этап «${targetLabel}».`)
+    })
+    setTransferringDocumentId(null)
+  }
+
   const openDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
     openSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
   )
@@ -1704,7 +1797,7 @@ function SystemDocumentsPanel({
         </div>
       ) : null}
 
-      {documentType === 'lnkConclusion' ? (
+      {documentType === 'lnkConclusion' && methodScope === 'lnk' ? (
         <div
           className="flex flex-wrap gap-2 border-b border-[#d8e5eb] bg-white px-4 py-3"
           role="tablist"
@@ -1827,6 +1920,9 @@ function SystemDocumentsPanel({
             {visibleDocuments.map((documentRecord, documentIndex) => {
               const templateAvailable = hasTemplateForDocument(documentRecord)
               const isSelected = selectedDocumentIds.has(documentRecord.id)
+              const canTransferStage = canTransferSystemDocumentStage(documentRecord)
+              const canRenameDocument = !documentRecord.sourceKind
+              const methodCodes = getSystemDocumentMethodCodes(documentRecord)
               return (
                 <div
                   key={documentRecord.id}
@@ -1859,7 +1955,14 @@ function SystemDocumentsPanel({
                       items: [
                         ...bulkItems,
                         { id: 'show-document-rows', label: 'Показать стыки в отчете', icon: Rows3, onSelect: () => runAction(() => onOpenRows(documentRecord)) },
-                        { id: 'rename-document', label: 'Переименовать по текущему правилу', icon: FilePenLine, disabled: renamingDocumentId === documentRecord.id, onSelect: () => renameDocumentRecord(documentRecord) },
+                        ...(canTransferStage ? [{
+                          id: 'transfer-document-stage',
+                          label: getSystemDocumentStageTransferLabel(documentRecord),
+                          icon: ArrowLeftRight,
+                          disabled: transferringDocumentId === documentRecord.id,
+                          onSelect: () => transferDocumentStage(documentRecord),
+                        }] : []),
+                        { id: 'rename-document', label: 'Переименовать по текущему правилу', icon: FilePenLine, disabled: !canRenameDocument || renamingDocumentId === documentRecord.id, onSelect: () => renameDocumentRecord(documentRecord) },
                         { type: 'separator', id: 'open-separator' },
                         { id: 'open-document', label: 'Открыть Excel', icon: ExternalLink, disabled: !templateAvailable, onSelect: () => openDocumentRecord(documentRecord) },
                         { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !templateAvailable, onSelect: () => downloadDocumentRecord(documentRecord) },
@@ -1892,16 +1995,21 @@ function SystemDocumentsPanel({
                           {documentRecord.title}
                         </span>
                         <span className="mt-0.5 block break-words text-xs leading-4 text-slate-500 xl:hidden">
-                          {documentRecord.methodCodes.join(', ') || documentLabel} · {formatDate(documentRecord.date)}
+                          {methodCodes.join(', ') || documentLabel} · {getSystemDocumentStageLabel(documentRecord)} · {formatDate(documentRecord.date)}
                         </span>
                       </span>
                     </span>
                   </button>
                   {showMethodColumn ? (
-                    <span className="hidden truncate text-xs font-semibold text-slate-600 xl:block" title={documentRecord.methodCodes.join(', ')}>
-                      {documentRecord.methodCodes.join(', ') || '-'}
+                    <span className="hidden truncate text-xs font-semibold text-slate-600 xl:block" title={methodCodes.join(', ')}>
+                      {methodCodes.join(', ') || '-'}
                     </span>
                   ) : null}
+                  <span
+                    className={`hidden w-fit rounded border px-1.5 py-0.5 text-[11px] font-medium leading-4 xl:block ${getSystemDocumentStageClassName(documentRecord)}`}
+                  >
+                    {getSystemDocumentStageLabel(documentRecord)}
+                  </span>
                   <DocumentDimensionCell values={documentRecord.projects} />
                   <DocumentDimensionCell values={documentRecord.subtitleCodes} />
                   <span className="hidden truncate text-xs text-slate-600 min-[1800px]:block" title={documentRecord.lines.join(', ')}>{documentRecord.lines.join(', ') || '-'}</span>
@@ -1909,14 +2017,16 @@ function SystemDocumentsPanel({
                   <span className="hidden text-xs text-slate-600 xl:block">{formatDate(documentRecord.date) || '-'}</span>
                   <div className="flex items-center justify-end gap-1">
                     <DocumentHistoryActionButton
-                      title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord.type) === 'lnk' ? 'ЛНК' : 'ПСТО'}`}
+                      title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`}
                       tone="emerald"
                       onClick={() => void runAction(() => onOpenRows(documentRecord))}
                     ><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
                     <DocumentHistoryActionButton
-                      title="Переименовать по текущему системному правилу"
+                      title={canRenameDocument
+                        ? 'Переименовать по текущему системному правилу'
+                        : 'Документ отдельного этапа переименовывается в профильном процессе'}
                       tone="violet"
-                      disabled={renamingDocumentId === documentRecord.id}
+                      disabled={!canRenameDocument || renamingDocumentId === documentRecord.id}
                       onClick={() => void renameDocumentRecord(documentRecord)}
                     ><FilePenLine className="h-4 w-4" /></DocumentHistoryActionButton>
                     <DocumentHistoryActionButton
@@ -1969,6 +2079,16 @@ function formatGeneratedDocumentDate(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function canTransferSystemDocumentStage(documentRecord: SystemDocumentSummary) {
+  if (
+    !documentRecord.type.startsWith('lnk') ||
+    documentRecord.sourceKind === 'pstoRepeat' ||
+    documentRecord.sourceKind === 'pstoCycle'
+  ) return false
+  const methods = getSystemDocumentMethodCodes(documentRecord)
+  return methods.length > 0 && methods.every(isPreHeatTreatmentLnkMethodCode)
 }
 
 function DocumentDimensionCell({ values }: { values: string[] }) {

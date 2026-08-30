@@ -77,13 +77,27 @@ export function useReportEditActions({
 
     if (activeReport === 'lnk') {
       if (focusField && LNK_EDITABLE_FIELD_KEYS.has(focusField)) {
+        if (focusField === 'preRkExposureScheme' || focusField === 'preRkDefectDescription') {
+          const preRk = record.preHeatTreatmentControls?.find((control) => control.method === 'РК')
+          const preRkResult = String(preRk?.result ?? '').trim().toLocaleLowerCase('ru')
+          if (preRkResult !== 'годен' && preRkResult !== 'ремонт' && preRkResult !== 'вырез') {
+            setMessage('Сначала внесите действующий результат РК до ТО: годен, ремонт или вырез')
+            return
+          }
+          setRkExposureEditing({
+            record,
+            stage: 'beforeHeatTreatment',
+            returnPageScrollPosition,
+          })
+          return
+        }
         if (focusField === 'rkExposureScheme' || focusField === 'lnkDefectDescription') {
           const rkResult = String(record.rkResult ?? '').trim().toLocaleLowerCase('ru')
           if (rkResult !== 'годен' && rkResult !== 'ремонт' && rkResult !== 'вырез') {
             setMessage('Сначала внесите действующий результат РК: годен, ремонт или вырез')
             return
           }
-          setRkExposureEditing({ record, returnPageScrollPosition })
+          setRkExposureEditing({ record, stage: 'primary', returnPageScrollPosition })
           return
         }
         if (isLnkRequestField(focusField) && !isLnkRequestAllowedForRow(record, focusField)) {

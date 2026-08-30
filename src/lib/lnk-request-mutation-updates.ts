@@ -16,6 +16,7 @@ import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
+import { isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
 
 export type LnkRequestManagerAction = 'rename' | 'delete'
 
@@ -55,6 +56,7 @@ export function buildLnkRequestDraftRows({
       const method = getLnkMethodByRequestKey(requestKey)
       if (!method) continue
       if (!isEnabledControlValue(record[method.enabledKey])) continue
+      if (!isPrimaryLnkStageReady(record, method.code)) continue
       const existingRequestName = String(record[method.requestKey] ?? '').trim()
       if (existingRequestName) continue
       nextRecord[method.requestKey] = requestName

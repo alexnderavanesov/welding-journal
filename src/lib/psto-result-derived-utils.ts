@@ -9,6 +9,7 @@ import {
 import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { filterPstoResultRows } from '@/lib/report-row-utils'
 import { hasText } from '@/lib/report-value-utils'
+import { hasPrimaryPstoCycle } from '@/lib/psto-cycle'
 import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import {
@@ -131,7 +132,7 @@ function buildProposedPstoResultRowsForChecks(
 
 export function getManagedPstoResultRows(rows: WeldRow[], selectedRowIds: Set<number>) {
   return rows.filter(
-    (row) => selectedRowIds.has(row.id) && hasPstoResultData(row),
+    (row) => selectedRowIds.has(row.id) && (hasPstoResultData(row) || hasPrimaryPstoCycle(row)),
   )
 }
 

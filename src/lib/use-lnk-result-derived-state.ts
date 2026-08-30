@@ -13,11 +13,7 @@ import {
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
-import {
-  filterRequestDocumentIdentitiesBySearch,
-  type RequestDocumentIdentity,
-  withCurrentRequestDocumentIdentity,
-} from '@/lib/request-document-identity'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { getEffectiveLnkResultDraftValueForRow } from '@/lib/lnk-result-draft'
@@ -28,7 +24,6 @@ type LnkResultDerivedStateParams = {
   lnkRows: WeldRow[]
   lnkResultSelectedRows: WeldRow[]
   lnkResultRequestOptions: RequestDocumentIdentity[]
-  lnkResultRequestSearch: string
   selectedLnkResultRequestRows: WeldRow[]
   lnkResultDraft: LnkResultDraftState
   nextLnkConclusionName: string
@@ -42,7 +37,6 @@ export function useLnkResultDerivedState({
   lnkRows,
   lnkResultSelectedRows,
   lnkResultRequestOptions,
-  lnkResultRequestSearch,
   selectedLnkResultRequestRows,
   lnkResultDraft,
   nextLnkConclusionName,
@@ -59,26 +53,6 @@ export function useLnkResultDerivedState({
   const lnkResultAvailableRequestOptions = useMemo(() => {
     return lnkResultMethodRequestOptions
   }, [lnkResultMethodRequestOptions])
-
-  const filteredLnkResultRequestOptions = useMemo(
-    () =>
-      withCurrentRequestDocumentIdentity(
-        filterRequestDocumentIdentitiesBySearch(
-          lnkResultAvailableRequestOptions,
-          lnkResultRequestSearch,
-        ),
-        {
-          name: lnkResultDraft.requestName,
-          date: lnkResultDraft.requestDate,
-        },
-      ),
-    [
-      lnkResultAvailableRequestOptions,
-      lnkResultDraft.requestDate,
-      lnkResultDraft.requestName,
-      lnkResultRequestSearch,
-    ],
-  )
 
   const lnkResultSearchRows = useMemo(
     () =>
@@ -211,7 +185,6 @@ export function useLnkResultDerivedState({
 
   return {
     lnkResultAvailableRequestOptions,
-    filteredLnkResultRequestOptions,
     selectedLnkResultMethods,
     filteredLnkResultRows,
     lnkResultSearchRows,

@@ -55,6 +55,7 @@ import {
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { getBusinessDateIso } from '@/lib/business-date'
 import type { DispatcherDirtyScope } from '@/server/dispatcher-task-index-dirty'
+import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 
 const INSERT_CHUNK_SIZE = 1_000
 type DispatcherIndexTransaction = Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0]
@@ -191,7 +192,8 @@ async function rebuildFullDispatcherTaskIndex(
   lockedState: typeof dispatcherTaskIndexState.$inferSelect,
 ) {
     const calculationVersionChanged = !isDispatcherTaskIndexPayloadCurrent(lockedState.repeatedTasks)
-    const { preparedRows, tasks } = await calculateFullDispatcherTasks(tx)
+    const { sourceRows, preparedRows, tasks } = await calculateFullDispatcherTasks(tx)
+    await persistCalculatedFinalStatuses(tx, sourceRows, preparedRows)
     const compactRepeatedTasks = compactDispatcherTasksForTransport(tasks.repeatedJointTasks)
     const taskIndexRows = buildDispatcherTaskIndexRows(compactRepeatedTasks, preparedRows)
     const computedAt = new Date()
@@ -267,7 +269,7 @@ export async function calculateFullDispatcherTasks(
     .from(dispatcherAcceptedWarnings)
     .orderBy(asc(dispatcherAcceptedWarnings.acceptedAt))
   const settingsRows = await tx.select().from(appSettings)
-  const preparedRows = prepareReportRows(rows, duplicateRows.map(toDuplicateControlRecord))
+  const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicateRows)
   const currentDispatcherSettings = getDispatcherSettings(settingsRows)
   const tasks = buildVisibleDispatcherTasks({
     acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
@@ -282,7 +284,7 @@ export async function calculateFullDispatcherTasks(
     welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
     includeWelderStampExpiryTasks: options.includeWelderStampExpiryTasks,
   })
-  return { preparedRows, tasks }
+  return { sourceRows: rows, preparedRows, tasks }
 }
 
 async function rebuildScopedDispatcherTaskIndex(
@@ -318,7 +320,8 @@ async function rebuildScopedDispatcherTaskIndex(
     .from(dispatcherAcceptedWarnings)
     .orderBy(asc(dispatcherAcceptedWarnings.acceptedAt))
   const settingsRows = await tx.select().from(appSettings)
-  const preparedRows = prepareReportRows(rows, duplicateRows.map(toDuplicateControlRecord))
+  const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicateRows)
+  await persistCalculatedFinalStatuses(tx, rows, preparedRows)
   const scopedTasks = buildVisibleDispatcherTasks({
     acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
     dismissedRepeatedJointTaskKeys: new Set(),
@@ -374,6 +377,56 @@ async function rebuildScopedDispatcherTaskIndex(
 
 function normalizedTextEquals(column: SQLWrapper, value: string) {
   return sql`btrim(coalesce(${column}, '')) = ${String(value ?? '').trim()}`
+}
+
+export async function prepareDispatcherReportRows(
+  tx: DispatcherIndexTransaction,
+  rows: Array<typeof weldJoints.$inferSelect>,
+  duplicateRows: DuplicateControl[],
+) {
+  const rowsWithHeatTreatmentControls = await attachHeatTreatmentControlRelations(rows, tx)
+  return prepareReportRows(
+    rowsWithHeatTreatmentControls,
+    duplicateRows.map(toDuplicateControlRecord),
+  )
+}
+
+export function getFinalStatusPersistenceChanges(
+  sourceRows: ReadonlyArray<Pick<typeof weldJoints.$inferSelect, 'id' | 'finalStatus'>>,
+  preparedRows: ReadonlyArray<Pick<WeldRow, 'id' | 'finalStatus'>>,
+) {
+  const sourceById = new Map(sourceRows.map((row) => [row.id, row.finalStatus ?? null]))
+  return preparedRows.flatMap((row) => {
+    const previousFinalStatus = sourceById.get(row.id)
+    const finalStatus = row.finalStatus ?? null
+    return previousFinalStatus !== undefined && previousFinalStatus !== finalStatus
+      ? [{ id: row.id, previousFinalStatus, finalStatus }]
+      : []
+  })
+}
+
+async function persistCalculatedFinalStatuses(
+  tx: DispatcherIndexTransaction,
+  sourceRows: Array<typeof weldJoints.$inferSelect>,
+  preparedRows: WeldRow[],
+) {
+  const changes = getFinalStatusPersistenceChanges(sourceRows, preparedRows)
+  for (let index = 0; index < changes.length; index += INSERT_CHUNK_SIZE) {
+    const chunk = changes.slice(index, index + INSERT_CHUNK_SIZE)
+    if (chunk.length === 0) continue
+    const values = sql.join(chunk.map((change) => sql`(
+      ${change.id}::integer,
+      ${change.previousFinalStatus}::text,
+      ${change.finalStatus}::text
+    )`), sql`, `)
+    await tx.execute(sql`
+      update ${weldJoints} as "target"
+      set "final_status" = "changes"."final_status"
+      from (values ${values}) as "changes"("id", "previous_final_status", "final_status")
+      where "target"."id" = "changes"."id"
+        and "target"."final_status" is not distinct from "changes"."previous_final_status"
+    `)
+  }
 }
 
 function isDispatcherTaskInScopes(task: RepeatedJointTask, scopes: DispatcherDirtyScope[]) {

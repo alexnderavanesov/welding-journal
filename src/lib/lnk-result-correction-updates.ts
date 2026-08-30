@@ -1,6 +1,6 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { withTouchedLnkFinalStatus } from '@/lib/lnk-field-updates'
-import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   assertLnkRepairAllowed,
   assertValidLnkResultValue,
@@ -49,7 +49,7 @@ export function buildLnkResultCorrectionRow({
       : {}),
   } as RowWithId
   const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
-  assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)
+  assertNoNewLnkChronologyIssues([nextRecord], [record], saveCheckSettings)
   return nextRecord
 }
 
@@ -86,7 +86,11 @@ export function buildLnkResultReplacementRows({
     } as RowWithId)
   }
   const proposedRecords = [...updatedById.values()].map((record) => withTouchedLnkFinalStatus(record))
-  assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
+  assertNoNewLnkChronologyIssues(
+    proposedRecords,
+    [...new Map(updates.map(({ record }) => [record.id, record])).values()],
+    saveCheckSettings,
+  )
   return proposedRecords
 }
 
@@ -115,6 +119,6 @@ export function buildLnkConclusionCorrectionRows({
       } as RowWithId
       return withTouchedLnkFinalStatus(proposedRecord)
     })
-  assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
+  assertNoNewLnkChronologyIssues(proposedRecords, records, saveCheckSettings)
   return proposedRecords
 }

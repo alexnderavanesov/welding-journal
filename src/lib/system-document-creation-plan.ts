@@ -34,6 +34,11 @@ export type SystemDocumentCreationPlan = {
   error: string
 }
 
+export type SystemDocumentCreationPartition = {
+  key: string
+  label: string
+}
+
 export function buildSystemDocumentCreationPlan({
   type,
   methodCode,
@@ -43,6 +48,7 @@ export function buildSystemDocumentCreationPlan({
   settings,
   nextNumber,
   allowAllNamesEmpty = false,
+  partitionBy,
 }: {
   type: SystemDocumentType
   methodCode?: string
@@ -52,10 +58,14 @@ export function buildSystemDocumentCreationPlan({
   settings: RequestConclusionSettings
   nextNumber?: number
   allowAllNamesEmpty?: boolean
+  partitionBy?: (row: WeldRow) => SystemDocumentCreationPartition
 }): SystemDocumentCreationPlan {
   const settingId = getSystemDocumentSplitSettingId({ type, methodCode })
   const mode = settings.splitModes[settingId]
-  const splitGroups = buildSystemDocumentSplitGroups(rows, mode)
+  const splitGroups = partitionSystemDocumentSplitGroups(
+    buildSystemDocumentSplitGroups(rows, mode),
+    partitionBy,
+  )
   const groups = splitGroups.map((group, index) => ({
     key: group.key,
     label: group.label,
@@ -83,6 +93,33 @@ export function buildSystemDocumentCreationPlan({
     missingSummary: getSystemDocumentSplitMissingSummary(splitGroups),
     error: getCreationPlanError(groups, allowAllNamesEmpty),
   }
+}
+
+function partitionSystemDocumentSplitGroups(
+  groups: SystemDocumentSplitGroup<WeldRow>[],
+  partitionBy?: (row: WeldRow) => SystemDocumentCreationPartition,
+) {
+  if (!partitionBy) return groups
+  return groups.flatMap((group) => {
+    const partitions = new Map<string, {
+      partition: SystemDocumentCreationPartition
+      rows: WeldRow[]
+    }>()
+    for (const row of group.rows) {
+      const partition = partitionBy(row)
+      const current = partitions.get(partition.key) ?? { partition, rows: [] }
+      current.rows.push(row)
+      partitions.set(partition.key, current)
+    }
+    const entries = [...partitions.values()]
+    return entries.map(({ partition, rows }) => ({
+      ...group,
+      key: `${group.key}::${partition.key}`,
+      label: entries.length > 1 ? `${group.label} · ${partition.label}` : group.label,
+      rowIds: rows.map((row) => row.id),
+      rows,
+    }))
+  })
 }
 
 function buildGroupName({

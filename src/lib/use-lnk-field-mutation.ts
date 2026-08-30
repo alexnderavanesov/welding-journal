@@ -6,7 +6,7 @@ import { updateWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
-import { clearLnkRequestPosition } from '@/server/welds'
+import { clearLnkRequestPosition } from '@/server/weld-mutations-api'
 
 export function useLnkFieldMutation({
   lnkRequestOptions,
@@ -41,7 +41,11 @@ export function useLnkFieldMutation({
         return saved as unknown as WeldRow
       }
       const updatedRecord = buildLnkFieldRow({ record, fieldKey, value, lnkRequestOptions })
-      const saved = await updateWeldRowOrThrow(updatedRecord)
+      const saved = await updateWeldRowOrThrow(
+        updatedRecord,
+        'Не удалось обновить поле ЛНК',
+        { mutationScope: 'lnk' },
+      )
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {

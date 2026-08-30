@@ -9,6 +9,18 @@ import {
   type SaveCheckSettingId,
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
+import {
+  getPreHeatTreatmentControl,
+  getPreHeatTreatmentControls,
+  isPreHeatTreatmentLnkMethodCode,
+  PRE_HEAT_TREATMENT_LNK_METHODS,
+} from '@/lib/lnk-control-stage'
+import { isControlEnabledValue } from '@/lib/control-availability-values'
+import {
+  getCurrentPstoCycle,
+  getPstoTvmtWorkflowState,
+  requiresPostHeatTreatmentCompletion,
+} from '@/lib/tvmt-cycle'
 
 type LnkChronologyRow = WeldInput & { id?: number }
 
@@ -29,6 +41,10 @@ export type LnkChronologyIssueKind =
   | 'weld-after-request'
   | 'weld-after-conclusion'
   | 'request-after-conclusion'
+  | 'pre-after-psto'
+  | 'post-before-psto-cycle'
+  | 'post-before-psto'
+  | 'post-before-tvmt'
   | 'vik-missing-before-other'
   | 'vik-after-other'
 
@@ -53,7 +69,174 @@ export function getLnkChronologyIssues(
   const issues: LnkChronologyIssue[] = []
   for (const row of rows) {
     issues.push(...getRowRequestDateOrderIssues(row, settings, options))
+    issues.push(...getRowPreHeatTreatmentDateOrderIssues(row, settings, options))
+    issues.push(...getRowPostHeatTreatmentDateOrderIssues(row, settings))
     issues.push(...getRowVikOrderIssues(row, settings))
+    issues.push(...getRowPreHeatTreatmentVikOrderIssues(row, settings))
+  }
+  return issues
+}
+
+function getRowPreHeatTreatmentDateOrderIssues(
+  row: LnkChronologyRow,
+  settings: SaveCheckSettings,
+  options: LnkChronologyOptions,
+) {
+  if (!settings.lnkResultRequestDateOrder) return []
+  const issues: LnkChronologyIssue[] = []
+  const weldDate = parseDateLikeToIso(row.weldDate)
+  const pstoDate = parseDateLikeToIso(row.pstoDate)
+  const joint = formatJoint(row)
+
+  for (const control of getPreHeatTreatmentControls(row)) {
+    if (!isPreHeatTreatmentLnkMethodCode(control.method)) continue
+    const methodCode = `${control.method} до ТО`
+    const requestDate = parseDateLikeToIso(control.requestDate)
+    const conclusionDate = parseDateLikeToIso(control.conclusionDate)
+    const hasConclusion = isFinalResult(control.result)
+
+    if (options.includeMissingRequestDateIssue && hasConclusion && !requestDate) {
+      issues.push({
+        kind: 'request-date-missing',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: у ${methodCode} есть заключение, но нет даты заявки ЛНК.`,
+      })
+    }
+    if (requestDate && weldDate && requestDate < weldDate) {
+      issues.push({
+        kind: 'weld-after-request',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата заявки ${methodCode} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
+      })
+    }
+    if (conclusionDate && weldDate && conclusionDate < weldDate) {
+      issues.push({
+        kind: 'weld-after-conclusion',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата заключения ${methodCode} ${formatDisplayDate(conclusionDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
+      })
+    }
+    if (requestDate && conclusionDate && conclusionDate < requestDate) {
+      issues.push({
+        kind: 'request-after-conclusion',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата заключения ${methodCode} ${formatDisplayDate(conclusionDate)} раньше даты заявки ${formatDisplayDate(requestDate)}.`,
+      })
+    }
+    for (const [label, date] of [['заявки', requestDate], ['заключения', conclusionDate]] as const) {
+      if (!date || !pstoDate || date <= pstoDate) continue
+      issues.push({
+        kind: 'pre-after-psto',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата ${label} ${methodCode} ${formatDisplayDate(date)} позже даты ПСТО ${formatDisplayDate(pstoDate)}.`,
+      })
+    }
+  }
+  return issues
+}
+
+function getRowPostHeatTreatmentDateOrderIssues(
+  row: LnkChronologyRow,
+  settings: SaveCheckSettings,
+) {
+  if (!settings.lnkResultRequestDateOrder || !requiresPostHeatTreatmentCompletion(row)) return []
+  const issues: LnkChronologyIssue[] = []
+  const joint = formatJoint(row)
+  const cycle = getCurrentPstoCycle(row)
+  const pstoDate = parseDateLikeToIso(cycle?.pstoDate)
+  const tvmtDate = parseDateLikeToIso(cycle?.tvmtConclusionDate)
+  const cycleComplete = getPstoTvmtWorkflowState(row) === 'complete'
+
+  for (const method of LNK_METHODS) {
+    if (!isPreHeatTreatmentLnkMethodCode(method.code)) continue
+    const requestDate = parseDateLikeToIso(row[method.requestDateKey])
+    const conclusionDate = parseDateLikeToIso(row[method.conclusionDateKey])
+    const hasTrace = Boolean(
+      String(row[method.requestKey] ?? '').trim() ||
+      requestDate ||
+      isFinalLnkResultValue(row[method.resultKey]) ||
+      conclusionDate,
+    )
+    if (!hasTrace) continue
+    if (!cycleComplete) {
+      issues.push({
+        kind: 'post-before-psto-cycle',
+        methodCode: method.code,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: ${method.code} после ТО оформлен до завершения цикла ПСТО и ТВМТ.`,
+      })
+      continue
+    }
+    for (const [kind, label, date] of [
+      ['post-before-psto', 'заявки', requestDate],
+      ['post-before-psto', 'заключения', conclusionDate],
+    ] as const) {
+      if (!date || !pstoDate || date >= pstoDate) continue
+      issues.push({
+        kind,
+        methodCode: method.code,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата ${label} ${method.code} после ТО ${formatDisplayDate(date)} раньше даты ПСТО ${formatDisplayDate(pstoDate)}.`,
+      })
+    }
+    for (const [label, date] of [['заявки', requestDate], ['заключения', conclusionDate]] as const) {
+      if (!date || !tvmtDate || date >= tvmtDate) continue
+      issues.push({
+        kind: 'post-before-tvmt',
+        methodCode: method.code,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата ${label} ${method.code} после ТО ${formatDisplayDate(date)} раньше ТВМТ, завершившей цикл, ${formatDisplayDate(tvmtDate)}.`,
+      })
+    }
+  }
+  return issues
+}
+
+function getRowPreHeatTreatmentVikOrderIssues(
+  row: LnkChronologyRow,
+  settings: SaveCheckSettings,
+) {
+  const issues: LnkChronologyIssue[] = []
+  const vik = getPreHeatTreatmentControl(row, 'ВИК')
+  const vikDate = parseDateLikeToIso(vik?.conclusionDate)
+  const vikGood = String(vik?.result ?? '').trim().toLocaleLowerCase('ru-RU') === 'годен'
+  const joint = formatJoint(row)
+  for (const method of PRE_HEAT_TREATMENT_LNK_METHODS.slice(1)) {
+    const control = getPreHeatTreatmentControl(row, method.code)
+    if (!control || !isFinalResult(control.result)) continue
+    if (settings.lnkResultVikRequiredBeforeOther && !vikGood) {
+      issues.push({
+        kind: 'vik-missing-before-other',
+        methodCode: `${method.code} до ТО`,
+        reason: LNK_VIK_REQUIRED_REASON,
+        row,
+        message: `Стык ${joint}: нельзя сохранять результат ${method.code} до ТО, пока нет годного результата ВИК до ТО.`,
+      })
+      continue
+    }
+    const conclusionDate = parseDateLikeToIso(control.conclusionDate)
+    if (settings.lnkResultVikDateBeforeOther && vikDate && conclusionDate && conclusionDate < vikDate) {
+      issues.push({
+        kind: 'vik-after-other',
+        methodCode: `${method.code} до ТО`,
+        reason: LNK_VIK_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: дата ${method.code} до ТО ${formatDisplayDate(conclusionDate)} раньше даты ВИК до ТО ${formatDisplayDate(vikDate)}.`,
+      })
+    }
   }
   return issues
 }
@@ -64,11 +247,33 @@ export function findFirstLnkChronologyIssue(rows: WeldInput[], settings: SaveChe
 
 export function findFirstLnkChronologySaveBlockReason(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
   const issue = getLnkChronologyIssues(rows, settings)[0]
-  return issue ? formatSaveCheckBlockReason(getLnkChronologyIssueSaveCheckSettingId(issue), issue.message) : ''
+  return issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
+}
+
+export function findFirstNewLnkChronologySaveBlockReason(
+  rows: WeldInput[],
+  previousRows: WeldInput[],
+  settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  const previousIssueKeys = new Set(
+    getLnkChronologyIssues(previousRows, settings).map(getLnkChronologyIssueIdentity),
+  )
+  const issue = getLnkChronologyIssues(rows, settings)
+    .find((candidate) => !previousIssueKeys.has(getLnkChronologyIssueIdentity(candidate)))
+  return issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
 }
 
 export function assertNoLnkChronologyIssues(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
   const issue = findFirstLnkChronologyIssue(rows, settings)
+  if (issue) throw new Error(issue)
+}
+
+export function assertNoNewLnkChronologyIssues(
+  rows: WeldInput[],
+  previousRows: WeldInput[],
+  settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  const issue = findFirstNewLnkChronologySaveBlockReason(rows, previousRows, settings)
   if (issue) throw new Error(issue)
 }
 
@@ -92,6 +297,14 @@ function getLnkChronologyIssueSaveCheckSettingId(issue: LnkChronologyIssue): Sav
   if (issue.reason === LNK_VIK_DATE_ORDER_REASON) return 'lnkResultVikDateBeforeOther'
   if (issue.reason === LNK_VIK_REQUIRED_REASON) return 'lnkResultVikRequiredBeforeOther'
   return 'lnkResultRequestDateOrder'
+}
+
+function formatLnkChronologyIssueSaveBlockReason(issue: LnkChronologyIssue) {
+  return formatSaveCheckBlockReason(getLnkChronologyIssueSaveCheckSettingId(issue), issue.message)
+}
+
+function getLnkChronologyIssueIdentity(issue: LnkChronologyIssue) {
+  return `${issue.kind}\u0000${issue.methodCode}\u0000${issue.message}`
 }
 
 export function getDispatcherLnkChronologyIssues(rows: LnkChronologyRow[]) {
@@ -210,6 +423,11 @@ function getRowVikOrderIssues(row: LnkChronologyRow, settings: SaveCheckSettings
 
 function hasFinalLnkResult(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
   return isFinalLnkResultValue(row[method.resultKey])
+}
+
+function isFinalResult(value: unknown) {
+  const result = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+  return result === 'годен' || result === 'ремонт' || result === 'вырез'
 }
 
 function formatJoint(row: LnkChronologyRow) {

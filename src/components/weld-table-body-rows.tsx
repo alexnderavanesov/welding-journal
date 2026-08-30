@@ -54,6 +54,8 @@ type WeldTableBodyRowsProps = {
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  onOpenJoint?: (row: WeldRow) => void
+  controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
   visibleFieldKeys?: ReadonlySet<WeldFieldKey>
 }
@@ -91,6 +93,8 @@ export function WeldTableBodyRows({
   onOpenDocument,
   onOpenLnkRequest,
   onOpenLnkResult,
+  onOpenJoint,
+  controlBasisEditorEnabled,
   availableSystemDocumentTypes,
   visibleFieldKeys,
 }: WeldTableBodyRowsProps) {
@@ -148,6 +152,8 @@ export function WeldTableBodyRows({
             onOpenDocument={onOpenDocument}
             onOpenLnkRequest={onOpenLnkRequest}
             onOpenLnkResult={onOpenLnkResult}
+            onOpenJoint={onOpenJoint}
+            controlBasisEditorEnabled={controlBasisEditorEnabled}
             availableSystemDocumentTypes={availableSystemDocumentTypes}
           />
         )
@@ -187,6 +193,8 @@ type WeldTableBodyRowProps = {
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  onOpenJoint?: (row: WeldRow) => void
+  controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
 
@@ -221,6 +229,8 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
   onOpenDocument,
   onOpenLnkRequest,
   onOpenLnkResult,
+  onOpenJoint,
+  controlBasisEditorEnabled,
   availableSystemDocumentTypes,
 }: WeldTableBodyRowProps) {
   const stickyBackgroundClassName = getWeldTableStickyCellBackgroundClassName({
@@ -291,6 +301,8 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
             onOpenDocument={onOpenDocument}
             onOpenLnkRequest={onOpenLnkRequest}
             onOpenLnkResult={onOpenLnkResult}
+            onOpenJoint={onOpenJoint}
+            controlBasisEditorEnabled={controlBasisEditorEnabled}
             availableSystemDocumentTypes={availableSystemDocumentTypes}
           />
         )

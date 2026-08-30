@@ -56,6 +56,7 @@ export function parseCell(field: WeldField, value: unknown) {
   if (field.key === 'status') return parseJointStatus(value)
   if (field.key === 'finalStatus') return parseFinalStatus(value)
   if (field.key === 'pstoResult') return parsePstoResultStatus(value)
+  if (field.key === 'tvmtResult') return parseTvmtResultStatus(value)
   if (RESULT_FIELD_KEYS.has(field.key as never)) return parseResultStatus(value)
   return emptyToNull(value)
 }
@@ -105,6 +106,9 @@ function isRecognizedImportedStatus(field: WeldField, value: unknown) {
   if (field.key === 'pstoResult') {
     return ['проведено', 'да', ...RESULT_STATUS_OPTIONS.map((option) => option.toLowerCase())].includes(text)
   }
+  if (field.key === 'tvmtResult') {
+    return ['не годен', 'негоден', ...RESULT_STATUS_OPTIONS.map((option) => option.toLowerCase())].includes(text)
+  }
   if (RESULT_FIELD_KEYS.has(field.key as never)) {
     return ['проведено', 'да', 'годен (отменен)', ...RESULT_STATUS_OPTIONS.map((option) => option.toLowerCase())].includes(text)
   }
@@ -137,6 +141,14 @@ function parseResultStatus(value: unknown) {
   const normalized = emptyToNull(value)
   if (normalized === null) return null
   if (String(normalized).trim().toLowerCase() === 'проведено') return null
+  return normalizeResultStatus(normalized)
+}
+
+function parseTvmtResultStatus(value: unknown) {
+  const normalized = emptyToNull(value)
+  if (normalized === null) return null
+  const text = String(normalized).trim().toLowerCase()
+  if (text === 'не годен' || text === 'негоден') return 'не годен'
   return normalizeResultStatus(normalized)
 }
 

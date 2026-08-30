@@ -10,6 +10,7 @@ type UseWeldTableCollapsedSectionsParams = {
   availableSections: WeldTableSection[]
   alwaysVisibleFieldKeys: ReadonlySet<WeldFieldKey>
   collapsibleExtraSections?: ReadonlySet<string>
+  defaultCollapsedSections?: ReadonlySet<string>
 }
 
 export function useWeldTableCollapsedSections({
@@ -17,6 +18,7 @@ export function useWeldTableCollapsedSections({
   availableSections,
   alwaysVisibleFieldKeys,
   collapsibleExtraSections = EMPTY_SECTION_SET,
+  defaultCollapsedSections = EMPTY_SECTION_SET,
 }: UseWeldTableCollapsedSectionsParams) {
   const [collapsedState, setCollapsedState] = useState(() => ({
     storageKey,
@@ -26,8 +28,12 @@ export function useWeldTableCollapsedSections({
   const collapsedSections = collapsedState.storageKey === storageKey ? collapsedState.sections : new Set<string>()
 
   useEffect(() => {
-    setCollapsedState({ storageKey, sections: readCollapsedSections(storageKey), hydrated: true })
-  }, [storageKey])
+    setCollapsedState({
+      storageKey,
+      sections: readCollapsedSections(storageKey, defaultCollapsedSections),
+      hydrated: true,
+    })
+  }, [defaultCollapsedSections, storageKey])
 
   useEffect(() => {
     if (collapsedState.storageKey !== storageKey) return
@@ -39,7 +45,9 @@ export function useWeldTableCollapsedSections({
     (section: string) => {
       setCollapsedState((current) => {
         const currentSections =
-          current.storageKey === storageKey && current.hydrated ? current.sections : readCollapsedSections(storageKey)
+          current.storageKey === storageKey && current.hydrated
+            ? current.sections
+            : readCollapsedSections(storageKey, defaultCollapsedSections)
         const next = new Set(currentSections)
         const targetSection = availableSections.find((group) => group.section === section)
         const canCollapse = targetSection
@@ -57,7 +65,7 @@ export function useWeldTableCollapsedSections({
         return { storageKey, sections: next, hydrated: true }
       })
     },
-    [alwaysVisibleFieldKeys, availableSections, collapsibleExtraSections, storageKey],
+    [alwaysVisibleFieldKeys, availableSections, collapsibleExtraSections, defaultCollapsedSections, storageKey],
   )
 
   return { collapsedSections, toggleSection }

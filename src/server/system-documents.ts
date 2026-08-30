@@ -1,8 +1,9 @@
 import { createServerFn } from '@tanstack/react-start'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import {
+  isSystemDocumentSourceKind,
   isSystemDocumentType,
   type SystemDocumentReference,
   type SystemDocumentSummary,
@@ -68,11 +69,20 @@ function requireSystemDocumentType(value: unknown): SystemDocumentType {
   return value
 }
 
-function normalizeSystemDocumentReference(data: SystemDocumentReference): SystemDocumentReference {
+export function normalizeSystemDocumentReference(data: SystemDocumentReference): SystemDocumentReference {
   const type = requireSystemDocumentType(data?.type)
   const title = String(data?.title ?? '').trim()
   const date = String(data?.date ?? '').trim().slice(0, 10)
   const methodCode = String(data?.methodCode ?? '').trim()
+  const rawSourceKind = String(data?.sourceKind ?? '').trim()
+  if (rawSourceKind && !isSystemDocumentSourceKind(rawSourceKind)) {
+    throw new Error('Неизвестный этап системного документа.')
+  }
+  const sourceKind = isSystemDocumentSourceKind(rawSourceKind) ? rawSourceKind : undefined
+  const cycleSequences = [...new Set((Array.isArray(data?.cycleSequences) ? data.cycleSequences : [])
+    .map((value) => Math.floor(Number(value)))
+    .filter((value) => Number.isInteger(value) && value > 0))]
+    .sort((left, right) => left - right)
   if (!title) throw new Error('Не указано наименование системного документа.')
   if (type === 'lnkConclusion' && !LNK_METHODS.some((method) => method.code === methodCode)) {
     throw new Error('Не указан вид контроля заключения ЛНК.')
@@ -83,5 +93,7 @@ function normalizeSystemDocumentReference(data: SystemDocumentReference): System
     title,
     date,
     ...(methodCode ? { methodCode } : {}),
+    ...(sourceKind ? { sourceKind } : {}),
+    ...(cycleSequences.length > 0 ? { cycleSequences } : {}),
   }
 }

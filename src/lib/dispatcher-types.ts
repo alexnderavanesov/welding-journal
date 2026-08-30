@@ -1,12 +1,16 @@
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
+import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
+import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 
 export type WeldRow = WeldInput & {
   id: number
   rowVersion?: string
   activeDispatcherTasks?: string
   duplicateControls?: DuplicateControlRecord[]
+  preHeatTreatmentControls?: PreHeatTreatmentControlRecord[]
+  pstoRepeatCycles?: PstoRepeatCycleRecord[]
   jsrDocumentId?: number
   checklistDocumentId?: number
   zniDocumentId?: number

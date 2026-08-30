@@ -1,15 +1,42 @@
 import { canCollapseSection } from '@/lib/weld-table-section-state'
-import { VISIBLE_FIELD_SECTIONS, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
+import { VISIBLE_FIELD_SECTIONS, WELD_FIELDS, type WeldFieldKey } from '@/lib/weld-fields'
+
+type WeldTableField = (typeof WELD_FIELDS)[number]
 
 const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoRequired',
-  'controlBasisSummary',
   'pstoRequest',
+  'pstoRequestDate',
+  'pstoDate',
+  'pstoResult',
+  'pstoCycleSummary',
+  'heatTreatmentDiagram',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
+  'pstoNote',
+  'pstoCancellationDate',
+  'pstoControlBasis',
+])
+const PSTO_SECTION_FIELD_ORDER: readonly WeldFieldKey[] = [
+  'pstoRequired',
+  'pstoRequest',
+  'pstoRequestDate',
   'pstoDate',
   'pstoResult',
   'heatTreatmentDiagram',
+  'pstoCycleSummary',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
   'pstoNote',
-])
+  'pstoCancellationDate',
+  'pstoControlBasis',
+]
 const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'projectTitle',
   'subtitleCode',
@@ -24,7 +51,7 @@ const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
 
 export type WeldTableSection = {
   section: string
-  fields: WeldField[]
+  fields: WeldTableField[]
 }
 
 export type WeldTableDisplaySection = WeldTableSection & {
@@ -44,18 +71,28 @@ export function getAlwaysVisibleFieldKeys(mergePstoSections: boolean) {
 export function getAvailableWeldTableSections({
   hiddenFieldKeys,
   mergePstoSections,
+  sectionLayout = VISIBLE_FIELD_SECTIONS,
 }: {
   hiddenFieldKeys: ReadonlySet<WeldFieldKey>
   mergePstoSections: boolean
+  sectionLayout?: readonly WeldTableSection[]
 }) {
-  const sections = VISIBLE_FIELD_SECTIONS.map((group) => ({
+  const sections = sectionLayout.map((group) => ({
     ...group,
     fields: group.fields.filter((field) => !hiddenFieldKeys.has(field.key)),
   })).filter((group) => group.fields.length > 0)
 
   if (!mergePstoSections) return sections
 
-  const pstoFields = sections.flatMap((group) => group.fields).filter((field) => PSTO_SECTION_FIELD_KEYS.has(field.key))
+  const pstoFieldsByKey = new Map(
+    sections.flatMap((group) => group.fields)
+      .filter((field) => PSTO_SECTION_FIELD_KEYS.has(field.key))
+      .map((field) => [field.key, field]),
+  )
+  const pstoFields = PSTO_SECTION_FIELD_ORDER.flatMap((fieldKey) => {
+    const field = pstoFieldsByKey.get(fieldKey)
+    return field ? [field] : []
+  })
   const finalStatusFields = sections.flatMap((group) => group.fields).filter((field) => field.key === 'finalStatus')
   const sectionsWithoutPsto = sections
     .map((group) => ({

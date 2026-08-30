@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, FileSpreadsheet } from 'lucide-react'
+import { Copy, ExternalLink, FileSpreadsheet, History } from 'lucide-react'
 
 import type { ContextActionMenuItem, ContextActionMenuState } from '@/components/context-action-menu'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -18,6 +18,7 @@ type BuildManagerContextMenuOptions = {
   onOpenDocument: () => void
   onCopyDocumentName: (documentName: string) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
+  onOpenPstoHistory?: (row: WeldRow) => void
 }
 
 export function buildManagerContextMenu({
@@ -35,6 +36,7 @@ export function buildManagerContextMenu({
   onOpenDocument,
   onCopyDocumentName,
   onOpenJournalRows,
+  onOpenPstoHistory,
 }: BuildManagerContextMenuOptions): NonNullable<ContextActionMenuState> {
   const uniqueRows = Array.from(new Map(rows.map((row) => [row.id, row])).values())
   const items: ContextActionMenuItem[] = []
@@ -62,6 +64,15 @@ export function buildManagerContextMenu({
       onSelect: () => onCopyDocumentName(documentName),
     },
     { type: 'label', id: 'navigation-label', label: 'Переход' },
+    ...(onOpenPstoHistory && uniqueRows.length === 1
+      ? [{
+          id: 'open-psto-history',
+          label: 'История ПСТО и ТВМТ',
+          icon: History,
+          title: 'Открыть полную последовательность ПСТО и ТВМТ для этого стыка',
+          onSelect: () => onOpenPstoHistory(uniqueRows[0]!),
+        } satisfies ContextActionMenuItem]
+      : []),
     {
       id: 'open-in-welding-journal',
       label: uniqueRows.length > 1

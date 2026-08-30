@@ -96,6 +96,7 @@ const COLUMN_WIDTHS: Partial<Record<WeldFieldKey, number>> = {
   pstoRequestDate: 112,
   pstoDate: 112,
   pstoResult: RESULT_COLUMN_WIDTH,
+  pstoCycleSummary: 190,
   heatTreatmentDiagram: RESULT_COLUMN_WIDTH,
   pstoNote: RESULT_COLUMN_WIDTH,
   tvmtRequest: REQUEST_COLUMN_WIDTH,
