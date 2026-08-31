@@ -72,6 +72,7 @@ export type WeldTableProps = {
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenJoint?: (row: WeldRow) => void
+  onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
   openLinkedReportTitle?: string
@@ -124,6 +125,7 @@ export function WeldTable({
   onOpenLnkRequest,
   onOpenLnkResult,
   onOpenJoint,
+  onOpenJointOverview,
   controlBasisEditorEnabled = false,
   availableSystemDocumentTypes = EMPTY_SYSTEM_DOCUMENT_TYPE_SET,
   selectable = false,
@@ -154,6 +156,7 @@ export function WeldTable({
   const stableOnOpenLnkRequest = useStableEventCallback(onOpenLnkRequest)
   const stableOnOpenLnkResult = useStableEventCallback(onOpenLnkResult)
   const stableOnOpenJoint = useStableEventCallback(onOpenJoint)
+  const stableOnOpenJointOverview = useStableEventCallback(onOpenJointOverview)
   const stableOnSelectedRowIdsChange = useStableEventCallback(onSelectedRowIdsChange)
   const stableIsRowSelectable = useStableEventCallback(isRowSelectable)
   const stableGetContextMenuItems = useStableEventCallback(getContextMenuItems)
@@ -376,6 +379,7 @@ export function WeldTable({
       canOpenLnkRequest: Boolean(onOpenLnkRequest),
       canOpenLnkResult: Boolean(onOpenLnkResult),
       canOpenJoint: Boolean(onOpenJoint),
+      canOpenJointOverview: Boolean(onOpenJointOverview),
       canOpenWeldEditor: controlBasisEditorEnabled && Boolean(onEdit),
       availableSystemDocumentTypes: stableAvailableSystemDocumentTypes,
     })
@@ -388,6 +392,7 @@ export function WeldTable({
     onOpenLnkRequest,
     onOpenLnkResult,
     onOpenJoint,
+    onOpenJointOverview,
     onEdit,
     controlBasisEditorEnabled,
     stableAvailableSystemDocumentTypes,
@@ -531,6 +536,7 @@ export function WeldTable({
               onOpenLnkRequest={onOpenLnkRequest ? stableOnOpenLnkRequest : undefined}
               onOpenLnkResult={onOpenLnkResult ? stableOnOpenLnkResult : undefined}
               onOpenJoint={onOpenJoint ? stableOnOpenJoint : undefined}
+              onOpenJointOverview={onOpenJointOverview ? stableOnOpenJointOverview : undefined}
               controlBasisEditorEnabled={controlBasisEditorEnabled}
               availableSystemDocumentTypes={stableAvailableSystemDocumentTypes}
               visibleFieldKeys={visibleFieldKeys}

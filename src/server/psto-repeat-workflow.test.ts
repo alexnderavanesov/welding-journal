@@ -4,6 +4,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   buildWorkflowWrite,
   normalizePstoCycleStageCorrectionPayload,
+  normalizePstoTvmtAndRemoveLaterCyclesPayload,
   normalizePstoCycleWorkflowPayload,
   saveRepeatCycleWrites,
 } from '@/server/psto-repeat-workflow'
@@ -281,6 +282,12 @@ describe('PSTO cycle correction payload', () => {
     })).toThrow('Не указан цикл')
     expect(() => normalizePstoCycleStageCorrectionPayload({
       rowId: 1,
+      sequence: 2,
+      stage: 'pstoRequest',
+      action: 'delete',
+    })).toThrow('Не указан идентификатор повторного цикла')
+    expect(() => normalizePstoCycleStageCorrectionPayload({
+      rowId: 1,
       sequence: 1,
       stage: 'other' as 'pstoRequest',
       action: 'delete',
@@ -291,5 +298,22 @@ describe('PSTO cycle correction payload', () => {
       stage: 'pstoRequest',
       action: 'replace' as 'update',
     })).toThrow('Неизвестное изменение')
+  })
+
+  it('normalizes an atomic TVMT correction without accepting a client-supplied stage or action', () => {
+    expect(normalizePstoTvmtAndRemoveLaterCyclesPayload({
+      rowId: 12.8,
+      sequence: 1.9,
+      date: ' 2026-08-21 ',
+      name: ' Заключение ТВМТ-1 ',
+      result: ' годен ',
+    })).toEqual({
+      rowId: 12,
+      sequence: 1,
+      cycleId: undefined,
+      date: '2026-08-21',
+      name: 'Заключение ТВМТ-1',
+      result: 'годен',
+    })
   })
 })

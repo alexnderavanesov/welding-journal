@@ -33,7 +33,7 @@ const assignedPreview: PstoWeldLineMovePreview = {
 }
 
 describe('PstoWeldLineMoveDialog', () => {
-  it('defaults to moving the existing primary set to pre-TO when entering a PSTO line', () => {
+  it('defaults to preserving the existing primary set when entering a PSTO line', () => {
     const onConfirm = vi.fn()
     render(
       <PstoWeldLineMoveDialog
@@ -46,10 +46,27 @@ describe('PstoWeldLineMoveDialog', () => {
 
     expect(screen.getByRole('heading', { name: 'Перенос стыка на линию с ПСТО' })).toBeInTheDocument()
     expect(screen.getByText('Найден основной комплект: ВИК, РК')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Перенести основной комплект в «До ТО»/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Сохранить существующий основной НК/ })).toHaveAttribute('aria-pressed', 'true')
 
     expect(screen.getByText(/Решение выполнится только после сохранения карточки стыка/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Применить решение' }))
+    expect(onConfirm).toHaveBeenCalledWith('keepPrimary')
+  })
+
+  it('still allows moving a misclassified primary set to pre-TO explicitly', () => {
+    const onConfirm = vi.fn()
+    render(
+      <PstoWeldLineMoveDialog
+        preview={assignedPreview}
+        pending={false}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Перенести основной комплект в «До ТО»/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Применить решение' }))
+
     expect(onConfirm).toHaveBeenCalledWith('movePrimaryToBeforeHeatTreatment')
   })
 

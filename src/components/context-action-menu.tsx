@@ -9,6 +9,7 @@ export type ContextActionMenuItem =
       type?: 'item'
       id: string
       label: string
+      description?: string
       title?: string
       icon?: ComponentType<{ className?: string }>
       disabled?: boolean
@@ -78,12 +79,13 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
 
   if (!menu || typeof document === 'undefined') return null
 
-  const menuWidth = 240
   const viewportPadding = 8
+  const menuWidth = Math.min(320, Math.max(224, window.innerWidth - viewportPadding * 2))
   const menuHeight = estimateMenuHeight(menu.items) + (menu.heading ? 52 : 0)
   const maxMenuHeight = Math.max(160, window.innerHeight - viewportPadding * 2)
   const menuLeft = Math.min(menu.x, window.innerWidth - menuWidth - viewportPadding)
   const submenuOpensLeft = menuLeft + menuWidth * 2 + 4 > window.innerWidth - viewportPadding
+  const stackSubmenus = window.innerWidth < menuWidth * 2 + viewportPadding * 2
   const preferredTop =
     menu.y + Math.min(menuHeight, maxMenuHeight) > window.innerHeight - viewportPadding
       ? menu.y - Math.min(menuHeight, maxMenuHeight)
@@ -93,13 +95,13 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
   return createPortal(
     <div className="fixed inset-0 z-[100]" onMouseDown={onClose} onContextMenu={(event) => event.preventDefault()}>
       <div
-        className="absolute min-w-56 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12"
+        className="absolute min-w-0 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12"
         style={{
           left: Math.max(viewportPadding, menuLeft),
           top: menuTop,
           width: menuWidth,
           maxHeight: maxMenuHeight,
-          overflowY: menuHeight > maxMenuHeight ? 'auto' : undefined,
+          overflowY: stackSubmenus || menuHeight > maxMenuHeight ? 'auto' : undefined,
         }}
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -124,15 +126,17 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
           const Icon = item.icon
           const hasChildren = Boolean(item.children?.length)
           const isSubmenuOpen = openSubmenuId === item.id
+          const description = item.description ?? (item.disabled ? item.title : undefined)
           return (
             <div key={item.id} className="group/context-submenu relative">
               <button
                 type="button"
                 disabled={item.disabled}
                 title={item.title}
+                aria-label={item.label}
                 aria-haspopup={hasChildren ? 'menu' : undefined}
                 aria-expanded={hasChildren ? isSubmenuOpen : undefined}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
                   item.danger
                     ? 'text-rose-600 hover:bg-rose-50 hover:text-rose-700'
                     : 'text-slate-700 hover:bg-sky-50 hover:text-sky-900'
@@ -147,19 +151,38 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
                   item.onSelect()
                 }}
               >
-                {Icon ? <Icon className="h-4 w-4 shrink-0" /> : <span className="h-4 w-4 shrink-0" />}
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                {hasChildren ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> : null}
+                {Icon ? <Icon className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="h-4 w-4 shrink-0" />}
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words leading-5">{item.label}</span>
+                  {description ? (
+                    <span className={`mt-0.5 block text-xs font-normal leading-4 ${
+                      item.disabled ? 'text-slate-400' : 'text-slate-500'
+                    }`}>
+                      {description}
+                    </span>
+                  ) : null}
+                </span>
+                {hasChildren ? (
+                  <ChevronRight className={`mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform ${
+                    stackSubmenus && isSubmenuOpen ? 'rotate-90' : ''
+                  }`} />
+                ) : null}
               </button>
               {hasChildren ? (
                 <div
                   role="menu"
-                  className={`absolute top-0 z-[101] min-w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 transition-opacity ${
-                    submenuOpensLeft ? 'right-[calc(100%-1px)]' : 'left-[calc(100%-1px)]'
+                  className={`${
+                    stackSubmenus
+                      ? 'relative mx-2 mb-1 w-[calc(100%-1rem)] border-l-2 border-sky-100 bg-slate-50 py-1'
+                      : `absolute top-0 z-[101] w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 transition-opacity ${
+                        submenuOpensLeft ? 'right-[calc(100%-1px)]' : 'left-[calc(100%-1px)]'
+                      }`
                   } ${
                     isSubmenuOpen
                       ? 'visible opacity-100'
-                      : 'invisible opacity-0 group-hover/context-submenu:visible group-hover/context-submenu:opacity-100'
+                      : stackSubmenus
+                        ? 'hidden'
+                        : 'invisible opacity-0 group-hover/context-submenu:visible group-hover/context-submenu:opacity-100'
                   }`}
                 >
                   {item.children?.map((child) => {
@@ -172,13 +195,15 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
                       )
                     }
                     const ChildIcon = child.icon
+                    const childDescription = child.description ?? (child.disabled ? child.title : undefined)
                     return (
                       <button
                         key={child.id}
                         type="button"
                         disabled={child.disabled}
                         title={child.title}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                        aria-label={child.label}
+                        className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
                           child.danger
                             ? 'text-rose-600 hover:bg-rose-50 hover:text-rose-700'
                             : 'text-slate-700 hover:bg-sky-50 hover:text-sky-900'
@@ -189,8 +214,17 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
                           child.onSelect()
                         }}
                       >
-                        {ChildIcon ? <ChildIcon className="h-4 w-4 shrink-0" /> : <span className="h-4 w-4 shrink-0" />}
-                        <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                        {ChildIcon ? <ChildIcon className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="h-4 w-4 shrink-0" />}
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words leading-5">{child.label}</span>
+                          {childDescription ? (
+                            <span className={`mt-0.5 block text-xs font-normal leading-4 ${
+                              child.disabled ? 'text-slate-400' : 'text-slate-500'
+                            }`}>
+                              {childDescription}
+                            </span>
+                          ) : null}
+                        </span>
                       </button>
                     )
                   })}
@@ -209,6 +243,6 @@ function estimateMenuHeight(items: ContextActionMenuItem[]) {
   return items.reduce((height, item) => {
     if (item.type === 'separator') return height + 9
     if (item.type === 'label') return height + 28
-    return height + 36
+    return height + (item.description || (item.disabled && item.title) ? 56 : 36)
   }, 12)
 }

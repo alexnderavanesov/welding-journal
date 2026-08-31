@@ -27,7 +27,7 @@ type PstoLineIdentityInput = {
 }
 
 export type PstoLineRemovalDisposition = 'keepPrimary' | 'promoteBeforeHeatTreatment'
-export type PstoLineActivationDisposition = 'movePrimaryToBeforeHeatTreatment'
+export type PstoLineActivationDisposition = 'keepPrimary' | 'movePrimaryToBeforeHeatTreatment'
 export type PstoWeldLineMoveDisposition =
   | PstoLineRemovalDisposition
   | 'movePrimaryToBeforeHeatTreatment'
@@ -162,6 +162,15 @@ export function buildPstoRemovedRow({
     pstoControlBasis: null,
     pstoCancellationDate: null,
   } as WeldRow
+}
+
+export function buildPstoAssignedKeepPrimaryValidationRow(row: WeldRow): WeldRow {
+  return {
+    ...row,
+    pstoRequired: 'да',
+    pstoControlBasis: null,
+    pstoCancellationDate: null,
+  }
 }
 
 export function buildPstoMovedToUnassignedLineRow({
@@ -315,9 +324,9 @@ export function getPstoLineActivationBlockReason(rows: readonly WeldRow[]) {
   const hiddenCount = blockedRows.length - visibleJoints.length
   const jointList = `${visibleJoints.join(', ')}${hiddenCount > 0 ? ` и еще ${hiddenCount}` : ''}`
   return (
-    `Нельзя включить ПСТО: у стыков ${jointList} уже есть основной комплект ЛНК, ` +
-    'который окажется раньше обязательного цикла ПСТО/ТВМТ. ' +
-    'Выберите перенос комплекта в «НК до ТО» либо удалите в ЛНК результат и заключение, затем заявку основного НК.'
+    `У стыков ${jointList} уже есть основной комплект ЛНК. ` +
+    'Выберите: сохранить его как фактический контроль после ТО и позднее оформить отдельный НК до ТО ' +
+    'либо перенести комплект в «НК до ТО», если он был записан не на тот этап.'
   )
 }
 

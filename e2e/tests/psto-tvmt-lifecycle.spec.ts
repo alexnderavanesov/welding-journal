@@ -6,8 +6,11 @@ const JOINT = 'F1'
 const CANCELLED_CYCLE_JOINT = 'F2'
 const LATE_ASSIGNMENT_JOINT = 'F3'
 const REACTIVATED_JOINT = 'F4'
+const LINE_MOVE_JOINT = 'F6'
 
 test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор -> основной НК -> ремонт -> исправление', async ({ page }) => {
+  test.setTimeout(120_000)
+
   await page.goto('/lnk')
   await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
 
@@ -116,6 +119,59 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
   await expectWeld({ vik_result: 'годен', vik_conclusion_date: '2026-08-13' })
   await expect(page.getByText('Создать F1R1', { exact: true })).toBeHidden({ timeout: 15_000 })
+
+  await page.goto('/psto')
+  await page.getByRole('button', { name: JOINT, exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'История ПСТО и ТВМТ' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Основной цикл' }).click()
+  const primaryTvmtCard = page
+    .getByRole('heading', { name: 'Заключение ТВМТ' })
+    .locator('xpath=ancestor::article')
+  await primaryTvmtCard.getByRole('combobox').selectOption({ label: 'годен' })
+  await page.getByRole('button', { name: 'Удалить последующие циклы и сохранить' }).click()
+  await expect(page.getByRole('heading', { name: 'Исправить ТВМТ и удалить последующие циклы' })).toBeVisible()
+  await expect(page.getByText(/Циклы №2 и связанные с ними документы/)).toBeVisible()
+  await page.getByRole('button', { name: 'Удалить циклы и сохранить', exact: true }).click()
+
+  await expect(page.getByRole('tab', { name: 'Повтор #2' })).toBeHidden({ timeout: 15_000 })
+  await expectWeld({
+    tvmt_result: 'годен',
+    tvmt_conclusion_date: '2026-08-07',
+    vik_request_date: '2026-08-12',
+    vik_result: 'годен',
+    vik_conclusion_date: '2026-08-13',
+  })
+  await expectNoRepeatCycleForJoint(JOINT)
+  await expectPstoCycleDocumentPosition(JOINT, 1, true)
+  await expectPstoCycleDocumentPosition(JOINT, 2, false)
+
+  await page.goto('/documents')
+  await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
+  const stageFilterButton = page.getByTitle('Фильтр: Этап')
+  await expect(stageFilterButton).toBeVisible()
+  await stageFilterButton.click()
+  const stageFilterMenu = page.getByRole('dialog', { name: 'Фильтр: Этап' })
+  await expect(stageFilterMenu).toBeVisible()
+  expect(await stageFilterMenu.evaluate((element) => element.parentElement === document.body)).toBe(true)
+  const stageFilterMenuBox = await stageFilterMenu.boundingBox()
+  const viewport = page.viewportSize()
+  expect(stageFilterMenuBox).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  expect(stageFilterMenuBox!.y).toBeGreaterThanOrEqual(0)
+  expect(stageFilterMenuBox!.y + stageFilterMenuBox!.height).toBeLessThanOrEqual(viewport!.height)
+  await stageFilterMenu.getByRole('button', { name: 'Закрыть' }).click()
+
+  await page.getByRole('button', { name: /Столбцы 8\/8/ }).click()
+  await page.getByRole('checkbox', { name: 'Этап', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Столбцы 7\/8/ })).toBeVisible()
+  await expect(page.getByTitle('Фильтр: Этап')).toBeHidden()
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Заявка ПСТО', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Столбцы 7\/7/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Столбцы 7\/8/ })).toBeVisible()
+  await expect(page.getByTitle('Фильтр: Этап')).toBeHidden()
 })
 
 test('официальная отмена сохраняет выполненный цикл, но удаляет незапущенный повтор', async ({ page }) => {
@@ -171,7 +227,7 @@ test('официальная отмена сохраняет выполненн�
   )
 })
 
-test('позднее назначение ПСТО переносит основной комплект в НК до ТО только после подтверждения', async ({ page }) => {
+test('позднее назначение ПСТО сохраняет фактический основной НК для постепенного дозаполнения истории', async ({ page }) => {
   await seedLateAssignmentJoint()
   await page.goto('/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
@@ -183,35 +239,32 @@ test('позднее назначение ПСТО переносит основ
   await expect(page.getByText(LATE_ASSIGNMENT_JOINT, { exact: true })).toBeVisible()
   const submit = page.getByRole('button', { name: 'Назначить ПСТО', exact: true })
   await expect(submit).toBeDisabled()
-  await page.getByRole('button', { name: /Перенести перечисленные комплекты в «НК до ТО»/ }).click()
+  await page.getByRole('button', { name: /Сохранить существующий основной НК/ }).click()
   await expect(submit).toBeEnabled()
   await submit.click()
 
+  await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeHidden()
+
   await expectDatabaseWeld(LATE_ASSIGNMENT_JOINT, {
     psto_required: 'да',
-    vik_request: null,
-    vik_request_date: null,
-    vik_result: null,
-    vik_conclusion_date: null,
-    vik_conclusion: null,
+    vik_request: 'Заявка ВИК основная E2E-3',
+    vik_request_date: '2026-08-02',
+    vik_result: 'годен',
+    vik_conclusion_date: '2026-08-03',
+    vik_conclusion: 'Заключение ВИК основное E2E-3',
     final_status: 'ожидает заявку',
   })
-  await expectPreControl(LATE_ASSIGNMENT_JOINT, {
-    method: 'ВИК',
-    request_name: 'Заявка ВИК основная E2E-3',
-    request_date: '2026-08-02',
-    result: 'годен',
-    conclusion_date: '2026-08-03',
-    conclusion_name: 'Заключение ВИК основное E2E-3',
-  })
-  await expectDocumentStage(
-    LATE_ASSIGNMENT_JOINT,
-    'Заявка ВИК основная E2E-3',
-    'beforeHeatTreatment',
-  )
+  await expectNoPreControl(LATE_ASSIGNMENT_JOINT)
+
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  const row = page.getByText(LATE_ASSIGNMENT_JOINT, { exact: true }).first().locator('xpath=ancestor::tr')
+  const createPstoRequest = row.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' })
+  await expect(createPstoRequest).toBeDisabled()
+  await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
 })
 
-test('возобновление отмененной линии использует ту же защищенную подготовку НК', async ({ page }) => {
+test('возобновление отмененной линии также может сохранить фактический основной НК', async ({ page }) => {
   await seedReactivationLine()
   await page.goto('/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
@@ -223,29 +276,72 @@ test('возобновление отмененной линии использ�
   await expect(page.getByText(REACTIVATED_JOINT, { exact: true })).toBeVisible()
   const submit = page.getByRole('button', { name: 'Возобновить ПСТО', exact: true })
   await expect(submit).toBeDisabled()
-  await page.getByRole('button', { name: /Перенести перечисленные комплекты в «НК до ТО»/ }).click()
+  await page.getByRole('button', { name: /Сохранить существующий основной НК/ }).click()
   await submit.click()
 
   await expectDatabaseWeld(REACTIVATED_JOINT, {
     psto_required: 'да',
     psto_cancellation_date: null,
     psto_control_basis: null,
-    vik_request: null,
-    vik_result: null,
+    vik_request: 'Заявка ВИК основная E2E-4',
+    vik_result: 'годен',
     final_status: 'ожидает заявку',
   })
-  await expectPreControl(REACTIVATED_JOINT, {
-    method: 'ВИК',
-    request_name: 'Заявка ВИК основная E2E-4',
-    result: 'годен',
-    conclusion_name: 'Заключение ВИК основное E2E-4',
-  })
+  await expectNoPreControl(REACTIVATED_JOINT)
   await expectDatabaseWeld('F5', {
     psto_required: 'да',
     psto_cancellation_date: null,
     psto_result: 'проведено',
     tvmt_result: 'годен',
   })
+})
+
+test('карточка стыка переносит основной НК на линию с ПСТО без автоматического переноса в «До ТО»', async ({ page }) => {
+  await seedLineMoveJoint()
+  await page.goto('/journal')
+
+  const sourceRow = page
+    .getByText(LINE_MOVE_JOINT, { exact: true })
+    .first()
+    .locator('xpath=ancestor::tr')
+  await expect(sourceRow).toBeVisible()
+  await sourceRow.getByRole('button', { name: 'Редактировать', exact: true }).click()
+
+  const editor = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Редактирование стыка' }),
+  })
+  await expect(editor).toBeVisible()
+  const lineInput = editor.getByText('Линия', { exact: true }).locator('..').getByRole('textbox')
+  await lineInput.fill('E2E-L6')
+  await lineInput.press('Tab')
+
+  await expect(page.getByRole('heading', { name: 'Перенос стыка на линию с ПСТО' })).toBeVisible()
+  await page.getByRole('button', { name: /Сохранить существующий основной НК/ }).click()
+  await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
+  await expect(page.getByText(/отдельный НК до ТО можно оформить позже/)).toBeVisible()
+  await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(editor).toBeHidden()
+
+  await expectDatabaseWeld(LINE_MOVE_JOINT, {
+    line: 'E2E-L6',
+    psto_required: 'да',
+    vik_request: 'Заявка ВИК основная E2E-6',
+    vik_request_date: '2026-08-02',
+    vik_result: 'годен',
+    vik_conclusion_date: '2026-08-03',
+    vik_conclusion: 'Заключение ВИК основное E2E-6',
+    final_status: 'ожидает заявку',
+  })
+  await expectNoPreControl(LINE_MOVE_JOINT)
+
+  await page.goto('/psto')
+  const movedRow = page
+    .getByText(LINE_MOVE_JOINT, { exact: true })
+    .first()
+    .locator('xpath=ancestor::tr')
+  const createPstoRequest = movedRow.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' })
+  await expect(createPstoRequest).toBeDisabled()
+  await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
 })
 
 async function fillDate(page: Page, label: string, value: string) {
@@ -362,6 +458,18 @@ async function expectPreControl(joint: string, expected: Record<string, unknown>
   })).toEqual(expected)
 }
 
+async function expectNoPreControl(joint: string) {
+  await expect.poll(async () => withE2eDatabase(async (client) => {
+    const result = await client.query<{ count: number }>(`
+      select count(*)::int as count
+      from pre_heat_treatment_controls relation
+      inner join weld_joints weld on weld.id = relation.weld_joint_id
+      where weld.joint = $1
+    `, [joint])
+    return result.rows[0]?.count ?? -1
+  })).toBe(0)
+}
+
 async function seedCancelledCycleJoint() {
   await withE2eDatabase(async (client) => {
     const seed = await client.query<{ id: number }>(`
@@ -455,6 +563,47 @@ async function seedReactivationLine() {
           tvmt_request_date = '2026-08-06', tvmt_result = 'годен',
           tvmt_conclusion_date = '2026-08-07', tvmt_conclusion = 'Заключение ТВМТ E2E-5'
       where joint = 'F5'
+    `)
+  })
+}
+
+async function seedLineMoveJoint() {
+  await withE2eDatabase(async (client) => {
+    await client.query(`
+      insert into weld_joints (
+        weld_date, project_title, subtitle_code, line, isometry, joint, spool,
+        status, revision_actuality, welding_method, connection_type, material_group,
+        d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
+        vik_control_basis, vik_request, vik_request_date, vik_result,
+        vik_conclusion_date, vik_conclusion, psto_required, final_status,
+        welding_updated_at, lnk_created_at, lnk_updated_at, psto_created_at,
+        psto_updated_at
+      ) values (
+        '2026-08-01', 'E2E перенос', 'E2E-006', 'E2E-L5', 'ISO-E2E-6', 'F6', 'E2E-S6',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42, 'E2K6', 'E2K6', 'да',
+        'проект', 'Заявка ВИК основная E2E-6', '2026-08-02', 'годен',
+        '2026-08-03', 'Заключение ВИК основное E2E-6', null, 'годен',
+        now(), now(), now(), now(), now()
+      ), (
+        '2026-08-01', 'E2E перенос', 'E2E-006', 'E2E-L6', 'ISO-E2E-7', 'F7', 'E2E-S7',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42, 'E2K6', 'E2K6', null,
+        null, null, null, null,
+        null, null, 'да', 'ожидает НК',
+        now(), now(), now(), now(), now()
+      )
+    `)
+    await client.query(`
+      insert into welder_stamps (
+        naks_stamp, welder_name, weld_type, material_groups,
+        diameter_from, diameter_to, thickness_from, thickness_to,
+        valid_from, valid_to, naks_permits
+      ) values (
+        'E2K6', 'E2E сварщик', 'РД', 'M01',
+        '1', '1000', '1', '100', '2026-01-01', '2026-12-31',
+        '[{"id":"e2e-naks-6","weldType":"РД","materialGroups":"M01","diameterFrom":"1","diameterTo":"1000","thicknessFrom":"1","thicknessTo":"100","validFrom":"2026-01-01","validTo":"2026-12-31","note":"","archived":false}]'
+      )
     `)
   })
 }

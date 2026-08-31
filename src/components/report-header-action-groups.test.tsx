@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { HeatTreatmentHeaderActions, LnkHeaderActions } from '@/components/report-header-action-groups'
 
-function renderActions() {
+function renderActions(onWorkflowMenuOpenChange = vi.fn()) {
   const onCreateRequest = vi.fn()
   const onExtendRequest = vi.fn()
   const onOpenRequestRegistry = vi.fn()
@@ -36,6 +36,7 @@ function renderActions() {
       onOpenToRequestReport={vi.fn()}
       onOpenWaitingNkReport={vi.fn()}
       onOpenConclusionsReport={vi.fn()}
+      onWorkflowMenuOpenChange={onWorkflowMenuOpenChange}
     />,
   )
   return {
@@ -46,6 +47,7 @@ function renderActions() {
     onAddResult,
     onEditSelectedResults,
     onOpenResultRegistry,
+    onWorkflowMenuOpenChange,
   }
 }
 
@@ -59,6 +61,16 @@ describe('LnkHeaderActions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Результат' }))
     expect(screen.queryByRole('button', { name: 'Новая заявка' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Внести результаты' })).toBeInTheDocument()
+  })
+
+  it('closes a workflow menu and releases its context after an outside click', () => {
+    const actions = renderActions()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Заявка' }))
+    fireEvent.pointerDown(document.body)
+
+    expect(screen.queryByRole('button', { name: 'Новая заявка' })).not.toBeInTheDocument()
+    expect(actions.onWorkflowMenuOpenChange).toHaveBeenLastCalledWith(false)
   })
 
   it('keeps the show menu mutually exclusive with the workflow menus', () => {
@@ -145,7 +157,7 @@ describe('LnkHeaderActions', () => {
   })
 })
 
-function renderPstoActions() {
+function renderPstoActions(onWorkflowMenuOpenChange = vi.fn()) {
   const onOpenLineProgram = vi.fn()
   const onCreateRequest = vi.fn()
   const onEditSelectedRequest = vi.fn()
@@ -180,6 +192,7 @@ function renderPstoActions() {
       onOpenCurrentReport={vi.fn()}
       onOpenWaitingRequestReport={vi.fn()}
       onOpenResultsReport={vi.fn()}
+      onWorkflowMenuOpenChange={onWorkflowMenuOpenChange}
     />,
   )
   return {
@@ -192,6 +205,7 @@ function renderPstoActions() {
     onOpenResultRegistry,
     onCreateTvmtRequest,
     onAddTvmtResult,
+    onWorkflowMenuOpenChange,
   }
 }
 
@@ -213,6 +227,16 @@ describe('HeatTreatmentHeaderActions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Результат' }))
     expect(screen.queryByRole('button', { name: 'Новая заявка' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Внести результаты' })).toBeInTheDocument()
+  })
+
+  it('closes a workflow menu and releases its context with Escape', () => {
+    const actions = renderPstoActions()
+
+    fireEvent.click(screen.getByRole('button', { name: 'ТВМТ' }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(screen.queryByRole('button', { name: 'Новая заявка ТВМТ' })).not.toBeInTheDocument()
+    expect(actions.onWorkflowMenuOpenChange).toHaveBeenLastCalledWith(false)
   })
 
   it('closes the show menu when a workflow menu opens', () => {

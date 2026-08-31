@@ -1,39 +1,42 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ReportSummaryBar, type ReportSummaryBarProps } from '@/components/report-summary-bar'
 
 describe('ReportSummaryBar', () => {
-  it('keeps navigation messages inside the visible report width', () => {
+  it('keeps the stable report summary inside the visible report width', () => {
     render(
       <ReportSummaryBar
         {...createProps()}
         left={288}
-        message="Показана линия 330-HBFW-21-000: проверить назначение контроля линии"
       />,
     )
 
-    const message = screen.getByTitle('Показана линия 330-HBFW-21-000: проверить назначение контроля линии')
-    const summary = message.parentElement
+    const summary = screen.getByText(/Стыков на ЛНК: 9/)
 
-    expect(summary).toHaveStyle({ left: '288px', width: 'calc(100vw - 312px)' })
-    expect(message).toHaveClass('truncate', 'max-w-[60vw]')
+    expect(summary.parentElement).toHaveStyle({ left: '288px', width: 'calc(100vw - 312px)' })
   })
 
-  it('keeps LNK success messages next to the report summary', () => {
+  it('contains only stable report counters and no notification block', () => {
+    render(<ReportSummaryBar {...createProps()} />)
+
+    expect(screen.getByText(/Стыков на ЛНК: 9/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('offers an explicit return without replacing the stable counters', () => {
+    const onReturnContext = vi.fn()
     render(
       <ReportSummaryBar
         {...createProps()}
-        message="Заключение переименовано для позиций: 1"
-        messageVariant="lnk-success"
+        returnContext={{ title: 'Документы' }}
+        onReturnContext={onReturnContext}
       />,
     )
 
-    const message = screen.getByTitle('Заключение переименовано для позиций: 1')
-    const summaryGroup = message.parentElement
-
-    expect(summaryGroup).toHaveClass('flex-wrap')
-    expect(summaryGroup?.textContent).toContain('Стыков на ЛНК')
+    expect(screen.getByText(/Стыков на ЛНК: 9/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуться: Документы' }))
+    expect(onReturnContext).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -48,6 +48,7 @@ import { useHomePstoController } from '@/lib/use-home-psto-controller'
 import { useHomeWeldEditorController } from '@/lib/use-home-weld-editor-controller'
 import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
+import { useReportNavigationContext } from '@/lib/use-report-navigation-context'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
 import { useReportPageUiState } from '@/lib/use-report-page-ui-state'
 import { useReportImportMutations } from '@/lib/use-report-import-mutations'
@@ -82,7 +83,6 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
-  formatLnkRequestNavigationLabel,
   getLnkRequestIdentityForField,
   getLnkRequestNavigationEntries,
 } from '@/lib/lnk-request-navigation'
@@ -108,6 +108,7 @@ import { canAddTvmtResult, canCreateTvmtRequest } from '@/lib/tvmt-field-updates
 import {
   canAddPreHeatTreatmentResult,
   canCreatePreHeatTreatmentRequest,
+  PRE_HEAT_TREATMENT_RESULT_OPTIONS,
 } from '@/lib/pre-heat-treatment-control-updates'
 import {
   canCreateLnkWorkflowRequest,
@@ -116,6 +117,7 @@ import {
   getPreferredLnkRequestStage,
   getPreferredLnkResultStage,
 } from '@/lib/lnk-workflow-routing'
+import { buildWorkflowContextMenuItems } from '@/lib/workflow-context-menu-items'
 import {
   getPreHeatTreatmentControl,
   getPreHeatTreatmentControls,
@@ -130,7 +132,10 @@ import {
   PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS,
 } from '@/lib/pre-heat-treatment-report-fields'
 import { usePreHeatTreatmentResultCorrectionMutation } from '@/lib/use-pre-heat-treatment-result-correction-mutation'
-import { usePstoCycleCorrectionMutation } from '@/lib/use-psto-cycle-correction-mutation'
+import {
+  usePstoCycleCorrectionMutation,
+  usePstoTvmtCorrectionWithLaterCycleRemovalMutation,
+} from '@/lib/use-psto-cycle-correction-mutation'
 import { getPstoCycleStageLabel } from '@/lib/psto-cycle-corrections'
 import { hasPrimaryPstoCycle } from '@/lib/psto-cycle'
 import {
@@ -281,12 +286,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const {
     chainRecord,
+    documentsPageType,
     message,
     lnkNotice,
     setChainRecord,
+    setDocumentsPageType,
     setMessage,
     setLnkNotice,
   } = useReportPageUiState()
+  const dismissMessage = useCallback(() => setMessage(null), [setMessage])
+  const dismissLnkNotice = useCallback(() => setLnkNotice(null), [setLnkNotice])
   const {
     highlightedRowIds,
     highlightedCellKeys,
@@ -303,6 +312,22 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onSaved: (row) => highlightChangedRows([row], PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS),
   })
   const pstoCycleCorrectionMutation = usePstoCycleCorrectionMutation({
+    setMessage,
+    onSaved: (row) => highlightChangedRows([row], [
+      'pstoRequest',
+      'pstoRequestDate',
+      'pstoDate',
+      'pstoResult',
+      'heatTreatmentDiagram',
+      'tvmtRequest',
+      'tvmtRequestDate',
+      'tvmtResult',
+      'tvmtConclusionDate',
+      'tvmtConclusion',
+      'finalStatus',
+    ]),
+  })
+  const pstoTvmtCorrectionWithLaterCycleRemovalMutation = usePstoTvmtCorrectionWithLaterCycleRemovalMutation({
     setMessage,
     onSaved: (row) => highlightChangedRows([row], [
       'pstoRequest',
@@ -1167,7 +1192,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       openLnkRequestRegistry()
       return
     }
-    openLnkResultManager({ rowIds })
+    openLnkResultManager({ rowIds, allowEmpty: true })
   }
   const switchLnkWorkflowStage = (
     mode: 'request' | 'result',
@@ -1342,6 +1367,27 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setColumnFilters,
     setHeatTreatmentFilters,
     setLnkFilters,
+  })
+  const {
+    reportReturnContext,
+    captureReportContext,
+    clearReportContext,
+    restoreReportContext,
+  } = useReportNavigationContext({
+    activeReport,
+    columnFilters,
+    heatTreatmentFilters,
+    lnkFilters,
+    selectedWeldingJournalIds,
+    selectedHeatTreatmentIds,
+    selectedLnkIds,
+    setActiveReport,
+    setColumnFilters,
+    setHeatTreatmentFilters,
+    setLnkFilters,
+    setSelectedWeldingJournalIds,
+    setSelectedHeatTreatmentIds,
+    setSelectedLnkIds,
   })
   const dispatcherTaskServerFilters = useMemo(
     () => buildDispatcherTaskServerFilters(activeColumnFilters),
@@ -1576,6 +1622,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setHeatTreatmentFilters,
     setLnkFilters,
     setMessage,
+    onBeforeReportNavigation: captureReportContext,
   })
 
   const { changeActiveReport: changeActiveReportUnsafe } = useReportChangeActions({
@@ -1585,6 +1632,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   async function changeActiveReport(report: Parameters<typeof changeActiveReportUnsafe>[0]) {
     setMessage(null)
+    clearReportContext()
     changeActiveReportUnsafe(report)
   }
 
@@ -1765,6 +1813,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   const openPercentageLineStampRows = (filter: PercentageLineStampFilter) => {
+    captureReportContext('weldingJournal')
     setActiveReport('weldingJournal')
     setChainRecord(null)
     setEditing(null)
@@ -1779,6 +1828,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   ) => {
     const uniqueRowIds = Array.from(new Set(rowIds.map(Number))).filter(Number.isFinite)
     if (uniqueRowIds.length === 0) return
+    captureReportContext(targetReport)
     setActiveReport(targetReport)
     setChainRecord(null)
     setEditing(null)
@@ -1798,6 +1848,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   ) => {
     const uniqueRowIds = Array.from(new Set(rowIds)).filter(Number.isFinite)
     if (targetReport === 'lnk') {
+      captureReportContext('lnk')
       setActiveReport('lnk')
       setChainRecord(null)
       setEditing(null)
@@ -1806,6 +1857,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       return
     }
     if (targetReport === 'heatTreatment') {
+      captureReportContext('heatTreatment')
       setActiveReport('heatTreatment')
       setChainRecord(null)
       setEditing(null)
@@ -1818,6 +1870,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       `Показаны стыки ЖСР «${documentTitle}»: ${uniqueRowIds.length}. Строки документа выделены зеленым.`,
     )
     highlightChangedRows(uniqueRowIds.map((id) => ({ id })))
+  }
+
+  const openDocumentJointHistory = async (rowId: number) => {
+    const row = await getWeldJointById({ data: { id: rowId } })
+    if (!row) {
+      setMessage('Стык документа больше не найден. Обновите историю документов.')
+      return
+    }
+    setChainRecord(row as WeldRow)
   }
 
   const assignPercentageLineMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
@@ -1880,6 +1941,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setManagedPstoDiagramDrafts({})
   }
 
+  const openAllPstoHistory = () => {
+    setIsPstoResultRegistryAll(true)
+    setPstoResultDraft((current) => ({ ...current, rowIds: new Set() }))
+    setManagedPstoDiagramDrafts({})
+    setIsPstoResultManagerOpen(true)
+  }
+
   const openPstoHistoryFromDialog = (row: WeldRow) => {
     setIsLnkRequestModalOpen(false)
     setIsLnkRequestManagerOpen(false)
@@ -1918,7 +1986,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isReportImportModalOpen: isImportDialogOpen,
     canClosePstoRequestManager: !pstoRequestManagerMutation.isPending && !pstoRequestCorrectionMutation.isPending,
     canClosePstoResultManager:
-      !pstoResultCorrectionMutation.isPending && !pstoCycleCorrectionMutation.isPending,
+      !pstoResultCorrectionMutation.isPending &&
+      !pstoCycleCorrectionMutation.isPending &&
+      !pstoTvmtCorrectionWithLaterCycleRemovalMutation.isPending,
     canCloseLnkRequestManager: !lnkRequestManagerMutation.isPending && !lnkRequestCorrectionMutation.isPending,
     canCloseLnkResultManager:
       !lnkResultCorrectionMutation.isPending &&
@@ -1976,47 +2046,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openCreateLnkRequestModalForRow: openCreateLnkWorkflowRequestForRow,
     openAddLnkResultModalForRow: openAddLnkWorkflowResultForRow,
   })
-
-  const openLnkRequestContextForRow = (row: WeldRow, fieldKey?: WeldFieldKey) => {
-    const exactRequest = getLnkRequestIdentityForField(row, fieldKey)
-    if (exactRequest) {
-      openLnkRequestRegistry(exactRequest.name, exactRequest.date)
-      return
-    }
-
-    if (canCreateLnkWorkflowRequest(row)) {
-      openCreateLnkWorkflowRequestForRow(row)
-      return
-    }
-
-    const requests = getLnkRequestNavigationEntries([row])
-    if (requests.length === 1) {
-      openLnkRequestRegistry(requests[0].name, requests[0].date)
-      return
-    }
-
-    setMessage(
-      requests.length > 1
-        ? 'У стыка несколько заявок ЛНК. Выберите нужный вид контроля в подменю.'
-        : 'Для этого стыка нет заявок ЛНК',
-    )
-  }
-
-  const openPstoRequestContextForRow = (row: WeldRow) => {
-    if (canCreatePstoRequest(row) || canCreateRepeatPstoCycle(row)) {
-      setSelectedHeatTreatmentIds(new Set([row.id]))
-      openPstoRepeatWorkflow('request')
-      return
-    }
-
-    if (getCurrentPstoCycle(row)?.pstoRequest) {
-      setIsPstoResultRegistryAll(false)
-      openPstoResultManagerForRows([row])
-      return
-    }
-
-    setMessage('Для этого стыка нет заявки ПСТО')
-  }
 
   const openLnkOfficialityModalForRow = (row: WeldRow) => {
     setLnkOfficialityDraft({
@@ -2108,53 +2137,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         ? setSelectedHeatTreatmentIds
         : setSelectedWeldingJournalIds
 
-  const openLnkRequestContextForRows = (selectedRows: WeldRow[], fieldKey?: WeldFieldKey) => {
-    if (selectedRows.length <= 1) {
-      openLnkRequestContextForRow(selectedRows[0], fieldKey)
-      return
-    }
-
-    const creatableRows = selectedRows.filter(canCreateLnkWorkflowRequest)
-    if (creatableRows.length === selectedRows.length) {
-      openCreateLnkWorkflowRequestForRows(selectedRows)
-      return
-    }
-
-    if (creatableRows.length === 0) {
-      const commonRequests = getCommonLnkRequests(selectedRows)
-      if (commonRequests.length === 1) {
-        openLnkRequestRegistry(commonRequests[0].name, commonRequests[0].date)
-        return
-      }
-    }
-
-    setMessage('Для выбранных стыков заявка ЛНК ведет в разные действия')
-  }
-
-  const openPstoRequestContextForRows = (selectedRows: WeldRow[]) => {
-    if (selectedRows.length <= 1) {
-      openPstoRequestContextForRow(selectedRows[0])
-      return
-    }
-
-    const creatableRows = selectedRows.filter((row) => (
-      canCreatePstoRequest(row) || canCreateRepeatPstoCycle(row)
-    ))
-    if (creatableRows.length > 0) {
-      setSelectedHeatTreatmentIds(new Set(selectedRows.map((selectedRow) => selectedRow.id)))
-      openPstoRepeatWorkflow('request')
-      return
-    }
-
-    if (selectedRows.some((row) => getCurrentPstoCycle(row)?.pstoRequest)) {
-      setIsPstoResultRegistryAll(false)
-      openPstoResultManagerForRows(selectedRows)
-      return
-    }
-
-    setMessage('Для выбранных стыков заявка ПСТО ведет в разные действия')
-  }
-
   const openLnkResultModalForRows = (selectedRows: WeldRow[]) => {
     if (selectedRows.length <= 1) {
       openAddLnkResultModalForRow(selectedRows[0])
@@ -2224,22 +2206,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         ? undefined
         : 'Выбранные стыки требуют заявок на разных этапах ЛНК'
     }
-    return getCommonLnkRequests(selectedRows).length === 1 ? undefined : 'Выбранные стыки находятся в разных заявках ЛНК'
-  }
-
-  const getPstoRequestGroupDisabledReason = (selectedRows: WeldRow[]) => {
-    if (selectedRows.length <= 1) return undefined
-    const creatableCount = selectedRows.filter(canCreatePstoRequest).length
-    if (creatableCount > 0 && creatableCount < selectedRows.length) {
-      return 'Часть стыков требует создания заявки, а часть уже находится в заявке'
-    }
-    if (creatableCount === selectedRows.length) return undefined
-    const allRowsHaveRequest = selectedRows.every(
-      (selectedRow) => getPstoRequestDocumentIdentities([selectedRow]).length > 0,
-    )
-    return allRowsHaveRequest && getPstoRequestDocumentIdentities(selectedRows).length === 1
-      ? undefined
-      : 'Выбранные стыки находятся в разных заявках ПСТО'
+    return 'Все назначенные виды НК выбранных стыков уже находятся в заявках'
   }
 
   const getSelectedRowsReportCount = (selectedRows: WeldRow[], report: 'weldingJournal' | 'lnk' | 'heatTreatment') => {
@@ -2277,9 +2244,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const exactLnkResult = activeReport === 'lnk' && !isGroupAction
       ? getLnkResultNavigationEntryForField(row, fieldKey)
       : null
-    const rowLnkResults = activeReport === 'lnk' && !isGroupAction
-      ? getLnkResultNavigationEntries(row)
-      : []
     const pendingLnkResultMethods = activeReport === 'lnk' && !isGroupAction
       ? getPendingLnkResultMethods(row)
       : []
@@ -2294,23 +2258,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           Boolean(String(control.requestName ?? '').trim()),
         ))
       : []
-    const pstoRequestDisabledReason = activeReport === 'heatTreatment' ? getPstoRequestGroupDisabledReason(contextRows) : undefined
     const lnkResultDisabledReason =
       activeReport === 'lnk' && contextRows.some((selectedRow) => getLnkRowRequestNames(selectedRow).length === 0)
         ? 'Сначала создайте заявку ЛНК для всех выбранных стыков'
-        : undefined
-    const pstoResultRequests = activeReport === 'heatTreatment'
-      ? getPstoRequestDocumentIdentities(contextRows)
-      : []
-    const pstoResultRowsHaveRequests =
-      activeReport !== 'heatTreatment' ||
-      contextRows.every((selectedRow) => getPstoRequestDocumentIdentities([selectedRow]).length > 0)
-    const pstoResultDisabledReason =
-      activeReport === 'heatTreatment' &&
-      (!pstoResultRowsHaveRequests || pstoResultRequests.length === 0 || (isGroupAction && pstoResultRequests.length !== 1))
-        ? isGroupAction
-          ? 'Для результата ПСТО выберите стыки одной заявки ПСТО'
-          : 'Сначала создайте заявку ПСТО для этого стыка'
         : undefined
 
     const items: ContextActionMenuItem[] = []
@@ -2326,6 +2276,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           label: 'Открыть в документах',
           icon: FileText,
           onSelect: () => {
+            captureReportContext('documents')
             setSystemDocumentNavigationRequest({
               requestId: Date.now(),
               ...systemDocumentReference,
@@ -2391,6 +2342,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       {
         id: 'open-chain',
         label: 'История и цепочка стыка',
+        description: 'Полная хронология, активные ДЗ/ЗВ и следующий доступный шаг.',
         icon: GitBranch,
         disabled: isGroupAction,
         title: isGroupAction ? 'Историю и цепочку можно открыть только для одного стыка' : undefined,
@@ -2473,235 +2425,216 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     )
 
     if (activeReport === 'lnk') {
-      const lnkRequestMenuItem: ContextActionMenuItem = exactPreHeatTreatmentField
-        ? String(exactPreHeatTreatmentControl?.requestName ?? '').trim()
-          ? {
-              id: 'pre-heat-treatment-request-exact',
-              label: `Открыть заявку ${exactPreHeatTreatmentField.methodCode} до ТО`,
-              icon: FilePlus2,
-              onSelect: () => openPreHeatTreatmentResultRegistry({
-                rowIds: [row.id],
-                relationId: exactPreHeatTreatmentControl?.id ?? null,
-                registryMode: 'request',
-              }),
-            }
-          : {
-              id: 'pre-heat-treatment-request-create-exact',
-              label: `Создать заявку ${exactPreHeatTreatmentField.methodCode} до ТО`,
-              icon: FilePlus2,
-              disabled: !canCreatePreHeatTreatmentRequest(row, exactPreHeatTreatmentField.methodCode),
-              title: canCreatePreHeatTreatmentRequest(row, exactPreHeatTreatmentField.methodCode)
-                ? undefined
-                : 'Эта позиция НК до ТО недоступна для новой заявки',
-              onSelect: () => {
-                setSelectedLnkIds(new Set([row.id]))
-                openPreHeatTreatmentLnkWorkflow('request', exactPreHeatTreatmentField.methodCode)
-              },
-            }
-        : exactLnkRequest
-          ? {
-            id: 'lnk-request-exact',
-            label: `Открыть заявку ${exactLnkRequest.methodCodes.join('/')}`,
-            icon: FilePlus2,
-            onSelect: () => openLnkRequestRegistry(exactLnkRequest.name, exactLnkRequest.date),
-          }
-          : {
-            id: 'lnk-request',
-            label: 'Заявка ЛНК',
-            icon: FilePlus2,
-            onSelect: () => openLnkRequestContextForRows(contextRows, fieldKey),
-            children: [
-              {
-                id: 'lnk-request-create',
-                label: isGroupAction ? 'Создать из выбранных' : 'Создать новую',
-                icon: FilePlus2,
-                disabled: Boolean(lnkRequestDisabledReason),
-                title: lnkRequestDisabledReason,
-                onSelect: () => openLnkRequestContextForRows(contextRows, fieldKey),
-              },
-              {
-                id: 'lnk-request-extend',
-                label: isGroupAction ? 'Добавить выбранные в существующую' : 'Добавить позицию в существующую',
-                icon: ListFilter,
-                disabled: Boolean(lnkRequestDisabledReason) || lnkRequestExtensionOptions.length === 0,
-                title:
-                  lnkRequestDisabledReason ??
-                  (lnkRequestExtensionOptions.length === 0 ? 'Созданных заявок ЛНК пока нет' : undefined),
-                onSelect: () => openExtendLnkRequestModalForRows(contextRows),
-              },
-              { type: 'separator', id: 'lnk-request-existing-separator' },
-              ...(
-                isGroupAction && rowLnkRequests.length !== 1
-                  ? []
-                  : rowLnkRequests.map((request) => ({
-                      id: `lnk-request-open-${request.key}`,
-                      label: formatLnkRequestNavigationLabel(request),
-                      icon: ExternalLink,
-                      onSelect: () => openLnkRequestRegistry(request.name, request.date),
-                    }) satisfies ContextActionMenuItem)
-              ),
-              {
-                id: 'lnk-request-registry',
-                label: 'Все заявки ЛНК',
-                icon: ListFilter,
-                onSelect: () => openLnkRequestRegistry(),
-              },
-            ],
-          }
-      const lnkResultMenuItem: ContextActionMenuItem = exactPreHeatTreatmentField
-        ? String(exactPreHeatTreatmentControl?.result ?? '').trim() ||
-          String(exactPreHeatTreatmentControl?.conclusionName ?? '').trim()
-          ? {
-              id: 'pre-heat-treatment-result-exact',
-              label: `Открыть результат ${exactPreHeatTreatmentField.methodCode} до ТО`,
-              icon: ClipboardCheck,
-              onSelect: () => openPreHeatTreatmentResultRegistry({
-                rowIds: [row.id],
-                relationId: exactPreHeatTreatmentControl?.id ?? null,
-                registryMode: 'result',
-              }),
-            }
-          : {
-              id: 'pre-heat-treatment-result-create-exact',
-              label: `Внести результат ${exactPreHeatTreatmentField.methodCode} до ТО`,
-              icon: ClipboardCheck,
-              disabled: !canAddPreHeatTreatmentResult(row, exactPreHeatTreatmentField.methodCode),
-              title: canAddPreHeatTreatmentResult(row, exactPreHeatTreatmentField.methodCode)
-                ? undefined
-                : 'Сначала создайте заявку этого вида НК до ТО',
-              onSelect: () => {
-                setSelectedLnkIds(new Set([row.id]))
-                openPreHeatTreatmentLnkWorkflow('result', exactPreHeatTreatmentField.methodCode)
-              },
-            }
-        : exactLnkResult
-          ? {
-            id: 'lnk-result-exact',
-            label: `Открыть результат ${exactLnkResult.methodCode}`,
-            icon: ClipboardCheck,
-            onSelect: () => openExactLnkResult(row, exactLnkResult.methodKey),
-          }
-          : exactLnkResultMethod && pendingLnkResultMethods.some((method) => method.requestKey === exactLnkResultMethod.requestKey)
-          ? {
-              id: 'lnk-result-pending-exact',
-              label: `Внести результат ${exactLnkResultMethod.code}`,
-              icon: ClipboardCheck,
-              onSelect: () => openAddLnkResultModalForMethod(row, exactLnkResultMethod.requestKey),
-            }
-          : {
-              id: 'lnk-result',
-              label: 'Результат ЛНК',
-              icon: ClipboardCheck,
-              onSelect: () => undefined,
-              children: isGroupAction
-                ? [
-                    {
-                      id: 'lnk-result-add-selected',
-                      label: `Внести результаты выбранных (${contextRows.length})`,
-                      icon: ClipboardCheck,
-                      disabled: Boolean(lnkResultDisabledReason),
-                      title: lnkResultDisabledReason,
-                      onSelect: () => openLnkResultModalForRows(contextRows),
-                    },
-                    {
-                      id: 'lnk-result-edit-selected',
-                      label: `Редактировать результаты выбранных (${contextRows.length})`,
-                      icon: Pencil,
-                      disabled: !contextRows.some((selectedRow) => getLnkResultNavigationEntries(selectedRow).length > 0),
-                      title: contextRows.some((selectedRow) => getLnkResultNavigationEntries(selectedRow).length > 0)
-                        ? undefined
-                        : 'У выбранных стыков нет внесенных результатов',
-                      onSelect: () => openLnkResultRegistryForRows(contextRows),
-                    },
-                    { type: 'separator', id: 'lnk-result-selected-separator' },
-                    {
-                      id: 'lnk-result-registry',
-                      label: 'Все результаты ЛНК',
-                      icon: ListFilter,
-                      onSelect: openAllLnkResultRegistry,
-                    },
-                  ]
-                : [
-                    ...pendingLnkResultMethods.map((method) => ({
-                      id: `lnk-result-add-${method.requestKey}`,
-                      label: `Внести ${method.code}`,
-                      icon: ClipboardCheck,
-                      onSelect: () => openAddLnkResultModalForMethod(row, method.requestKey),
-                    }) satisfies ContextActionMenuItem),
-                    ...(pendingLnkResultMethods.length > 0 && rowLnkResults.length > 0
-                      ? [{ type: 'separator', id: 'lnk-result-state-separator' } as ContextActionMenuItem]
-                      : []),
-                    ...rowLnkResults.map((entry) => ({
-                      id: `lnk-result-open-${entry.changeKey}`,
-                      label: `Редактировать ${entry.methodCode} · ${entry.result}`,
-                      icon: Pencil,
-                      onSelect: () => openExactLnkResult(row, entry.methodKey),
-                    }) satisfies ContextActionMenuItem),
-                    { type: 'separator', id: 'lnk-result-registry-separator' },
-                    {
-                      id: 'lnk-result-row-registry',
-                      label: 'Все результаты стыка',
-                      icon: ListFilter,
-                      disabled: rowLnkResults.length === 0,
-                      title: rowLnkResults.length === 0 ? 'У стыка нет внесенных результатов' : undefined,
-                      onSelect: () => openLnkResultRegistryForRows([row]),
-                    },
-                    {
-                      id: 'lnk-result-registry',
-                      label: 'Все результаты ЛНК',
-                      icon: ListFilter,
-                      onSelect: openAllLnkResultRegistry,
-                    },
-                  ],
-            }
-      items.push(
-        lnkRequestMenuItem,
-        lnkResultMenuItem,
-        {
-          id: 'pre-heat-treatment-lnk',
-          label: exactPreHeatTreatmentField
-            ? `${exactPreHeatTreatmentField.methodCode} до ТО`
-            : 'НК до ТО',
-          icon: ClipboardCheck,
-          onSelect: () => undefined,
-          children: [
-            {
-              id: 'pre-heat-treatment-result-edit',
-              label: exactPreHeatTreatmentControl && String(exactPreHeatTreatmentControl.requestName ?? '').trim()
-                ? `Редактировать ${exactPreHeatTreatmentField?.methodCode} до ТО`
-                : isGroupAction
-                  ? `Редактировать НК выбранных (${preHeatTreatmentControlRows.length})`
-                  : 'НК этого стыка до ТО',
-              icon: Pencil,
-              disabled: preHeatTreatmentControlRows.length === 0,
-              title: preHeatTreatmentControlRows.length === 0 ? 'У выбранных стыков нет заявок НК до ТО' : undefined,
-              onSelect: () => openPreHeatTreatmentResultRegistry({
-                rowIds: contextRows.map((candidate) => candidate.id),
-                relationId: exactPreHeatTreatmentControl?.id ?? null,
-              }),
-            },
-            {
-              id: 'pre-heat-treatment-result-registry',
-              label: 'Все НК до ТО',
-              icon: ListFilter,
-              disabled: !hasPreHeatTreatmentResultRegistryRows,
-              onSelect: () => openPreHeatTreatmentResultRegistry(),
-            },
-          ],
-        },
-        {
-          id: 'lnk-officiality',
-          label: 'Официальность',
-          icon: BadgeCheck,
-          onSelect: () => openLnkOfficialityModalForRows(contextRows),
-        },
-        {
-          id: 'duplicate-control',
-          label: 'Дубль-контроль',
-          icon: ClipboardCheck,
-          onSelect: () => openDuplicateControlModalForRows(contextRows),
-        },
+      const hasFinalPreHeatTreatmentResult = (value: unknown) => {
+        const normalized = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+        return PRE_HEAT_TREATMENT_RESULT_OPTIONS.some((result) => result === normalized)
+      }
+      const exactPreRequestExists = Boolean(String(exactPreHeatTreatmentControl?.requestName ?? '').trim())
+      const exactPreResultExists = hasFinalPreHeatTreatmentResult(exactPreHeatTreatmentControl?.result)
+      const preHeatTreatmentResultRows = contextRows.filter((candidate) => (
+        getPreHeatTreatmentControls(candidate).some((control) => hasFinalPreHeatTreatmentResult(control.result))
+      ))
+      const primaryResultRows = contextRows.filter((candidate) => (
+        getLnkResultNavigationEntries(candidate).length > 0
+      ))
+      const exactPrimaryResultPending = Boolean(
+        exactLnkResultMethod && pendingLnkResultMethods.some(
+          (method) => method.requestKey === exactLnkResultMethod.requestKey,
+        ),
       )
+      const commonResultStage = getCommonLnkResultStage(contextRows)
+      const canCreateExactPreRequest = Boolean(
+        exactPreHeatTreatmentField && canCreatePreHeatTreatmentRequest(row, exactPreHeatTreatmentField.methodCode),
+      )
+      const canAddExactPreResult = Boolean(
+        exactPreHeatTreatmentField && canAddPreHeatTreatmentResult(row, exactPreHeatTreatmentField.methodCode),
+      )
+      const contextRequestStage = exactPreHeatTreatmentField
+        ? PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
+        : getCommonLnkRequestStage(contextRows)
+      const canCreateContextRequest = exactPreHeatTreatmentField
+        ? canCreateExactPreRequest
+        : contextRows.every(canCreateLnkWorkflowRequest) && Boolean(contextRequestStage)
+      const hasPreHeatTreatmentRequestOption = lnkRows.some((candidate) => (
+        getPreHeatTreatmentControls(candidate).some((control) => Boolean(String(control.requestName ?? '').trim()))
+      ))
+      const hasContextRequestExtensionOption = contextRequestStage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
+        ? hasPreHeatTreatmentRequestOption
+        : lnkRequestExtensionOptions.length > 0
+      const canAddContextResult = exactPreHeatTreatmentField
+        ? canAddExactPreResult
+        : exactPrimaryResultPending || Boolean(commonResultStage)
+
+      const openContextRequest = (submitMode: LnkRequestComposerMode) => {
+        if (exactPreHeatTreatmentField) {
+          setSelectedLnkIds(new Set([row.id]))
+          openPreHeatTreatmentLnkWorkflow(
+            'request',
+            exactPreHeatTreatmentField.methodCode,
+            submitMode,
+          )
+          return
+        }
+        if (submitMode === 'extend') {
+          if (contextRequestStage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
+            setSelectedLnkIds(new Set(contextRows.map((candidate) => candidate.id)))
+            openPreHeatTreatmentLnkWorkflow('request', undefined, 'extend')
+            return
+          }
+          openExtendLnkRequestModalForRows(contextRows)
+          return
+        }
+        openCreateLnkWorkflowRequestForRows(contextRows)
+      }
+      const openContextResult = () => {
+        if (exactPreHeatTreatmentField) {
+          setSelectedLnkIds(new Set([row.id]))
+          openPreHeatTreatmentLnkWorkflow('result', exactPreHeatTreatmentField.methodCode)
+          return
+        }
+        if (exactLnkResultMethod && exactPrimaryResultPending) {
+          openAddLnkResultModalForMethod(row, exactLnkResultMethod.requestKey)
+          return
+        }
+        if (commonResultStage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
+          setSelectedLnkIds(new Set(contextRows.map((candidate) => candidate.id)))
+          openPreHeatTreatmentLnkWorkflow('result')
+          return
+        }
+        openLnkResultModalForRows(contextRows)
+      }
+      const openPrimaryRequestEditor = () => {
+        const request = exactLnkRequest ?? (rowLnkRequests.length === 1 ? rowLnkRequests[0] : null)
+        openLnkRequestRegistry(request?.name, request?.date)
+      }
+      const primaryEditingActions: ContextActionMenuItem[] = []
+      if (rowLnkRequests.length > 0) {
+        primaryEditingActions.push({
+          id: 'lnk-request-edit-primary',
+          label: 'Заявка · Основной',
+          icon: FilePlus2,
+          onSelect: openPrimaryRequestEditor,
+        })
+      }
+      if (primaryResultRows.length > 0) {
+        primaryEditingActions.push({
+          id: 'lnk-result-edit-primary',
+          label: 'Результат и заключение · Основной',
+          icon: ClipboardCheck,
+          onSelect: () => exactLnkResult
+            ? openExactLnkResult(row, exactLnkResult.methodKey)
+            : openLnkResultRegistryForRows(primaryResultRows),
+        })
+      }
+      const preEditingActions: ContextActionMenuItem[] = []
+      if (preHeatTreatmentControlRows.length > 0) {
+        preEditingActions.push({
+          id: 'lnk-request-edit-before-heat-treatment',
+          label: 'Заявка · До ТО',
+          icon: FilePlus2,
+          onSelect: () => openPreHeatTreatmentResultRegistry({
+            rowIds: contextRows.map((candidate) => candidate.id),
+            relationId: exactPreRequestExists ? exactPreHeatTreatmentControl?.id ?? null : null,
+            registryMode: 'request',
+          }),
+        })
+      }
+      if (preHeatTreatmentResultRows.length > 0) {
+        preEditingActions.push({
+          id: 'lnk-result-edit-before-heat-treatment',
+          label: 'Результат и заключение · До ТО',
+          icon: ClipboardCheck,
+          onSelect: () => openPreHeatTreatmentResultRegistry({
+            rowIds: contextRows.map((candidate) => candidate.id),
+            relationId: exactPreResultExists ? exactPreHeatTreatmentControl?.id ?? null : null,
+            registryMode: 'result',
+          }),
+        })
+      }
+
+      items.push(...buildWorkflowContextMenuItems({
+        requests: [
+          {
+            id: 'lnk-request-create',
+            label: isGroupAction ? `Новая заявка для выбранных (${contextRows.length})` : 'Новая заявка',
+            icon: FilePlus2,
+            disabled: !canCreateContextRequest,
+            title: canCreateContextRequest
+              ? undefined
+              : exactPreHeatTreatmentField
+                ? 'Эта позиция НК до ТО недоступна для новой заявки'
+                : lnkRequestDisabledReason ?? 'Выбранные стыки требуют заявок на разных этапах ЛНК',
+            onSelect: () => openContextRequest('create'),
+          },
+          {
+            id: 'lnk-request-extend',
+            label: isGroupAction ? `Добавить выбранные (${contextRows.length}) в существующую` : 'Добавить в существующую',
+            icon: ListFilter,
+            disabled: !canCreateContextRequest || !hasContextRequestExtensionOption,
+            title: !canCreateContextRequest
+              ? lnkRequestDisabledReason ?? 'Нет доступных позиций для добавления'
+              : !hasContextRequestExtensionOption
+                ? contextRequestStage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
+                  ? 'Созданных заявок ЛНК до ТО пока нет'
+                  : 'Созданных основных заявок ЛНК пока нет'
+                : undefined,
+            onSelect: () => openContextRequest('extend'),
+          },
+          {
+            id: 'lnk-request-registry',
+            label: 'Все заявки',
+            icon: ListFilter,
+            onSelect: () => exactPreHeatTreatmentField
+              ? openPreHeatTreatmentResultRegistry({ registryMode: 'request' })
+              : openLnkRequestRegistry(),
+          },
+        ],
+        results: [
+          {
+            id: 'lnk-result-add',
+            label: isGroupAction ? `Внести результаты выбранных (${contextRows.length})` : 'Внести результат',
+            icon: ClipboardCheck,
+            disabled: !canAddContextResult,
+            title: canAddContextResult
+              ? undefined
+              : exactPreHeatTreatmentField
+                ? 'Сначала создайте заявку этого вида НК до ТО'
+                : lnkResultDisabledReason ?? 'Нет заявок, ожидающих результата на одном этапе ЛНК',
+            onSelect: openContextResult,
+          },
+          {
+            id: 'lnk-result-registry',
+            label: 'Все результаты',
+            icon: ListFilter,
+            disabled: exactPreHeatTreatmentField
+              ? !hasPreHeatTreatmentResultRegistryRows
+              : false,
+            title: exactPreHeatTreatmentField && !hasPreHeatTreatmentResultRegistryRows
+              ? 'Результатов НК до ТО пока нет'
+              : undefined,
+            onSelect: () => exactPreHeatTreatmentField
+              ? openPreHeatTreatmentResultRegistry({ registryMode: 'result' })
+              : openAllLnkResultRegistry(),
+          },
+        ],
+        editing: exactPreHeatTreatmentField
+          ? [...preEditingActions, ...primaryEditingActions]
+          : [...primaryEditingActions, ...preEditingActions],
+        additional: [
+          {
+            id: 'lnk-officiality',
+            label: 'Официальность',
+            icon: BadgeCheck,
+            onSelect: () => openLnkOfficialityModalForRows(contextRows),
+          },
+          {
+            id: 'duplicate-control',
+            label: 'Дубль-контроль',
+            icon: ClipboardCheck,
+            onSelect: () => openDuplicateControlModalForRows(contextRows),
+          },
+        ],
+      }))
       return items
     }
 
@@ -2712,72 +2645,87 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       const hasPstoResultCandidate = contextRows.some((candidate) => (
         getPstoTvmtWorkflowState(candidate) === 'waiting-psto'
       ))
-      items.push(
-        {
-          id: 'psto-request',
-          label: 'Заявка ПСТО',
-          icon: FilePlus2,
-          disabled: !hasPstoRequestCandidate,
-          title: hasPstoRequestCandidate ? undefined : 'Нет стыков, ожидающих заявку ПСТО',
-          onSelect: () => {
-            setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
-            openPstoRepeatWorkflow('request')
+      const hasTvmtRequestCandidate = contextRows.some(canCreateTvmtRequest)
+      const hasTvmtResultCandidate = contextRows.some(canAddTvmtResult)
+      const hasPstoHistory = contextRows.some(hasPrimaryPstoCycle)
+      const openPstoHistory = () => {
+        setIsPstoResultRegistryAll(false)
+        openPstoResultManagerForRows(contextRows)
+      }
+      items.push(...buildWorkflowContextMenuItems({
+        requests: [
+          {
+            id: 'psto-request-create',
+            label: 'Новая заявка · ПСТО',
+            icon: FilePlus2,
+            disabled: !hasPstoRequestCandidate,
+            title: hasPstoRequestCandidate ? undefined : 'Нет стыков, ожидающих заявку ПСТО',
+            onSelect: () => {
+              setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
+              openPstoRepeatWorkflow('request')
+            },
           },
-        },
-        {
-          id: 'psto-result',
-          label: 'Результат ПСТО',
-          icon: ClipboardCheck,
-          disabled: !hasPstoResultCandidate,
-          title: hasPstoResultCandidate ? undefined : 'Нет заявок ПСТО, ожидающих результата',
-          onSelect: () => {
-            setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
-            openPstoRepeatWorkflow('result')
+          {
+            id: 'tvmt-request-create',
+            label: 'Новая заявка · ТВМТ',
+            icon: FilePlus2,
+            disabled: !hasTvmtRequestCandidate,
+            title: hasTvmtRequestCandidate ? undefined : 'Нет проведенной ПСТО, ожидающей заявку ТВМТ',
+            onSelect: () => {
+              setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
+              openTvmtWorkflow('request')
+            },
           },
-        },
-        {
-          id: 'psto-tvmt-cycle',
-          label: 'ПСТО и ТВМТ',
-          icon: ClipboardCheck,
-          onSelect: () => undefined,
-          children: [
-            {
-              id: 'tvmt-request-create',
-              label: 'Создать заявку ТВМТ',
-              icon: FilePlus2,
-              disabled: !contextRows.some(canCreateTvmtRequest),
-              title: contextRows.some(canCreateTvmtRequest) ? undefined : 'Нет проведенной ПСТО, ожидающей заявку ТВМТ',
-              onSelect: () => {
-                setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
-                openTvmtWorkflow('request')
-              },
+          {
+            id: 'psto-request-registry',
+            label: 'Все заявки',
+            icon: ListFilter,
+            disabled: !hasPstoHistory,
+            title: hasPstoHistory ? undefined : 'История ПСТО и ТВМТ пока пуста',
+            onSelect: openAllPstoHistory,
+          },
+        ],
+        results: [
+          {
+            id: 'psto-result-create',
+            label: 'Внести результат · ПСТО',
+            icon: ClipboardCheck,
+            disabled: !hasPstoResultCandidate,
+            title: hasPstoResultCandidate ? undefined : 'Нет заявок ПСТО, ожидающих результата',
+            onSelect: () => {
+              setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
+              openPstoRepeatWorkflow('result')
             },
-            {
-              id: 'tvmt-result-create',
-              label: 'Внести результаты ТВМТ',
-              icon: ClipboardCheck,
-              disabled: !contextRows.some(canAddTvmtResult),
-              title: contextRows.some(canAddTvmtResult) ? undefined : 'Нет заявок ТВМТ, ожидающих результата',
-              onSelect: () => {
-                setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
-                openTvmtWorkflow('result')
-              },
+          },
+          {
+            id: 'tvmt-result-create',
+            label: 'Внести результат · ТВМТ',
+            icon: ClipboardCheck,
+            disabled: !hasTvmtResultCandidate,
+            title: hasTvmtResultCandidate ? undefined : 'Нет заявок ТВМТ, ожидающих результата',
+            onSelect: () => {
+              setSelectedHeatTreatmentIds(new Set(contextRows.map((candidate) => candidate.id)))
+              openTvmtWorkflow('result')
             },
-            { type: 'separator', id: 'psto-cycle-history-separator' },
-            {
-              id: 'psto-cycle-history',
-              label: isGroupAction ? `История выбранных (${contextRows.length})` : 'История ПСТО и ТВМТ',
-              icon: ListFilter,
-              disabled: !contextRows.some(hasPrimaryPstoCycle),
-              title: contextRows.some(hasPrimaryPstoCycle) ? undefined : 'У выбранных стыков нет назначения ПСТО',
-              onSelect: () => {
-                setIsPstoResultRegistryAll(false)
-                openPstoResultManagerForRows(contextRows)
-              },
-            },
-          ],
-        },
-      )
+          },
+          {
+            id: 'psto-result-registry',
+            label: 'Все результаты',
+            icon: ListFilter,
+            disabled: !hasPstoHistory,
+            title: hasPstoHistory ? undefined : 'История ПСТО и ТВМТ пока пуста',
+            onSelect: openAllPstoHistory,
+          },
+        ],
+        editing: hasPstoHistory
+          ? [{
+              id: 'psto-cycle-edit',
+              label: isGroupAction ? `ПСТО и ТВМТ выбранных (${contextRows.length})` : 'ПСТО и ТВМТ этого стыка',
+              icon: Pencil,
+              onSelect: openPstoHistory,
+            }]
+          : [],
+      }))
     }
 
     return items
@@ -2849,6 +2797,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       setMessage('Не удалось определить результат ЛНК для выбранной ячейки')
     },
     onOpenJoint: openPstoHistoryFromDialog,
+    onOpenJointOverview: (row) => setChainRecord(row),
     availableSystemDocumentTypes,
     onOpenDuplicateControl: openDuplicateControlModalForRow,
     rowActionHandlers,
@@ -2992,10 +2941,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       selectedPstoHeaderRows.length === 0 ||
       !selectedPstoHeaderRows.some((row) => Boolean(getCurrentPstoCycle(row)?.pstoRequest)),
     onOpenPstoRequestRegistry: () => {
-      setIsPstoResultRegistryAll(true)
-      setPstoResultDraft((current) => ({ ...current, rowIds: new Set() }))
-      setManagedPstoDiagramDrafts({})
-      setIsPstoResultManagerOpen(true)
+      openAllPstoHistory()
     },
     pstoRequestPending: pstoRequestMutation.isPending,
     onAddPstoResult: () => openPstoRepeatWorkflow('result'),
@@ -3006,10 +2952,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     },
     editSelectedPstoResultsDisabled: !selectedPstoHeaderRows.some(hasPstoResultData),
     onOpenPstoResultRegistry: () => {
-      setIsPstoResultRegistryAll(true)
-      setPstoResultDraft((current) => ({ ...current, rowIds: new Set() }))
-      setManagedPstoDiagramDrafts({})
-      setIsPstoResultManagerOpen(true)
+      openAllPstoHistory()
     },
     pstoResultRegistryDisabled: !isPstoRowsContextReady || pstoResultRegistryRows.length === 0,
     onCreateTvmtRequest: () => openTvmtWorkflow('request'),
@@ -3093,6 +3036,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (task.kind !== 'percentage-line-control' || task.issue !== 'rejected-primary') return
 
     const rowIds = task.targetRowIds && task.targetRowIds.length > 0 ? task.targetRowIds : [task.row.id]
+    captureReportContext('lnk')
     setChainRecord(null)
     setActiveReport('lnk')
     setLnkFilters(buildPercentageLineStampFilters(task))
@@ -3140,6 +3084,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       setMessage('Стык для редактирования не найден')
       return
     }
+    captureReportContext('weldingJournal')
     setActiveReport('weldingJournal')
     setChainRecord(null)
     setColumnFilters(buildPercentageLineStampFilters(task))
@@ -3149,6 +3094,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   function openWelderSuspensionFromPercentageLineTask(task: PercentageLineControlTask) {
     if (task.issue !== 'suspend-welder') return
+    captureReportContext('welderStamps')
     setActiveReport('welderStamps')
     setChainRecord(null)
     resetWelderStampSuspensionForm()
@@ -3177,6 +3123,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setMessage(`Предупреждение об отстранении клейма ${task.stamp} скрыто`)
   }
 
+  const reportLoadError = isServerPagedTab ? weldPageQuery.error : weldsQuery.error
+  const reportLoadErrorMessage = reportLoadError instanceof Error ? reportLoadError.message : null
   const reportSummaryBarProps = createReportSummaryBarProps({
     activeReport,
     left: stickyLeft,
@@ -3187,7 +3135,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.acceptedWdiTotal : filteredAcceptedWdiTotal,
     heatTreatmentRows: activeReport === 'heatTreatment' ? filteredVisibleRows : heatTreatmentRows,
     heatTreatmentRowCount: activeReport === 'heatTreatment' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
-    selectedHeatTreatmentRows,
+    selectedHeatTreatmentRowCount: selectedPstoHeaderRows.length,
     lnkRows: activeReport === 'lnk' ? filteredVisibleRows : lnkRows,
     lnkRowCount: activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
     availableLnkRequestRows: activeReport === 'lnk' ? filteredAvailableLnkRequestRowsForSummary : availableLnkRequestRows,
@@ -3195,12 +3143,23 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.availableRequestCount : undefined,
     welderStamps,
     filteredWelderStamps,
-    errorMessage: (isServerPagedTab ? weldPageQuery.error : weldsQuery.error)
-      ? ((isServerPagedTab ? weldPageQuery.error : weldsQuery.error) as Error).message
-      : null,
-    message,
-    lnkNotice: activeReport === 'lnk' ? lnkNotice : null,
+    returnContext: reportReturnContext,
+    onReturnContext: restoreReportContext,
+    onDismissReturnContext: clearReportContext,
   })
+  const reportNotificationToastProps = {
+    message: reportLoadErrorMessage ?? lnkNotice ?? message ?? undefined,
+    tone: reportLoadErrorMessage
+      ? 'error' as const
+      : lnkNotice
+        ? 'success' as const
+        : 'info' as const,
+    onDismiss: reportLoadErrorMessage
+      ? undefined
+      : lnkNotice
+        ? dismissLnkNotice
+        : dismissMessage,
+  }
 
   const reportTaskPanelsProps = createReportTaskPanelsProps({
     activeReport,
@@ -3218,6 +3177,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const runJointNextAction = (row: WeldRow, action: JointNextAction) => {
     setChainRecord(null)
+    const targetReport = action.kind === 'editWeld' || action.kind === 'dispatcherTask'
+      ? 'weldingJournal'
+      : action.kind === 'pstoRequest' || action.kind === 'pstoResult' || action.kind === 'tvmtRequest' || action.kind === 'tvmtResult'
+        ? 'heatTreatment'
+        : action.kind === 'preLnkRequest' || action.kind === 'preLnkResult' || action.kind === 'primaryLnkRequest' || action.kind === 'primaryLnkResult'
+          ? 'lnk'
+          : null
+    if (targetReport) captureReportContext(targetReport)
     if (action.kind === 'editWeld') {
       setActiveReport('weldingJournal')
       setEditing({ record: row })
@@ -3506,7 +3473,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     resultManager: {
       rows: managedPstoResultRows,
       diagramDrafts: managedPstoDiagramDrafts,
-      isPending: pstoResultCorrectionMutation.isPending || pstoCycleCorrectionMutation.isPending,
+      isPending:
+        pstoResultCorrectionMutation.isPending ||
+        pstoCycleCorrectionMutation.isPending ||
+        pstoTvmtCorrectionWithLaterCycleRemovalMutation.isPending,
       canOpenDocument: availableSystemDocumentTypes.has('pstoConclusion'),
       onClose: closePstoResultManager,
       onDiagramDraftChange: (rowId, value) =>
@@ -3524,13 +3494,42 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           title: `Удалить: ${getPstoCycleStageLabel(payload.stage).toLocaleLowerCase('ru-RU')}`,
           itemName: String(row.joint ?? '-').trim() || '-',
           description: 'Будет удален только выбранный последний этап. Предыдущие заявки, результаты и документы сохранятся.',
-          warning: 'Документы ЛНК после ТО не удаляются. Если цепочка станет незавершенной, диспетчер покажет проверку хронологии до восстановления этапа.',
+          warning: 'Документы основного ЛНК не удаляются. Если от этапа зависят последующие документы или возникнет новое нарушение хронологии, удаление будет заблокировано.',
           confirmLabel: 'Удалить этап',
           tone: 'danger',
         })
         if (!confirmed) return
         await runProtectedDelete('удаление этапа ПСТО/ТВМТ', async () => {
           await pstoCycleCorrectionMutation.mutateAsync(payload)
+        })
+      },
+      onCorrectTvmtAndRemoveLaterCycles: async (row, payload) => {
+        const laterCycles = [...(row.pstoRepeatCycles ?? [])]
+          .filter((cycle) => cycle.sequence > payload.sequence)
+          .sort((left, right) => left.sequence - right.sequence)
+        if (laterCycles.length === 0) {
+          setMessage('Последующих повторных циклов больше нет. Обновите историю ПСТО и ТВМТ.')
+          return
+        }
+        const cycleLabels = laterCycles.map((cycle) => `№${cycle.sequence}`).join(', ')
+        const documentCount = laterCycles.reduce((count, cycle) => count + [
+          cycle.pstoRequest,
+          cycle.heatTreatmentDiagram,
+          cycle.tvmtRequest,
+          cycle.tvmtConclusion,
+        ].filter((value) => String(value ?? '').trim()).length, 0)
+        const confirmed = await confirmAction({
+          title: 'Исправить ТВМТ и удалить последующие циклы',
+          itemName: `${String(row.line ?? '-').trim() || '-'} · ${String(row.joint ?? '-').trim() || '-'}`,
+          description: `Результат ТВМТ цикла №${payload.sequence} будет изменен на «годен». ` +
+            `Циклы ${cycleLabels} и связанные с ними документы (${documentCount}) будут удалены.`,
+          warning: 'Основной ЛНК сохранится. Перед записью система проверит его даты относительно исправленного цикла; при конфликте не изменится ничего. Действие нельзя отменить.',
+          confirmLabel: 'Удалить циклы и сохранить',
+          tone: 'danger',
+        })
+        if (!confirmed) return
+        await runProtectedDelete('исправление ТВМТ с удалением последующих циклов', async () => {
+          await pstoTvmtCorrectionWithLaterCycleRemovalMutation.mutateAsync(payload)
         })
       },
       onOpenDocument: (row, fieldKey = 'heatTreatmentDiagram') => openReportDocument(row, fieldKey),
@@ -3875,6 +3874,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onNavCollapsedChange: setNavCollapsed,
     onReportChange: changeActiveReport,
     reportHeaderActionsProps,
+    reportNotificationToastProps,
     reportSummaryBarProps,
     reportTaskPanelsProps,
     documentGenerationRequest,
@@ -3891,6 +3891,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onDocumentGenerationRequestHandled: handleDocumentGenerationRequest,
     onDocumentGenerated: setMessage,
     onOpenDocumentRows: openGeneratedDocumentRows,
+    onOpenDocumentJointHistory: openDocumentJointHistory,
+    documentsPageType,
+    onDocumentsPageTypeChange: setDocumentsPageType,
     systemDocumentNavigationRequest,
     onSystemDocumentNavigationRequestHandled: handleSystemDocumentNavigationRequest,
     reportChainDialogProps,

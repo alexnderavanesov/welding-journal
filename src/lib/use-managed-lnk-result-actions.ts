@@ -48,12 +48,14 @@ export function useManagedLnkResultActions({
     rowIds?: number[] | null
     methodKey?: WeldFieldKey | ''
     targetKey?: string
+    allowEmpty?: boolean
   } = {}) {
     const rowIds = options.rowIds === undefined ? [...selectedLnkResultRowIds] : options.rowIds
     const selectedIds = rowIds === null ? null : new Set(rowIds)
     const selectedRows = selectedIds === null ? lnkRows : lnkRows.filter((row) => selectedIds.has(row.id))
     if (
       isLnkRowsContextReady &&
+      !options.allowEmpty &&
       (selectedRows.length === 0 || !selectedRows.some((row) => getLnkResultNavigationEntries(row).length > 0))
     ) {
       setMessage('Выберите один или несколько стыков для редактирования результатов')

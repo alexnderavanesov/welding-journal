@@ -113,7 +113,7 @@ describe('existing rows report import preview', () => {
 
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('перенести комплект в «До ТО» или удалить')
+    expect(preview.errors[0]?.message).toContain('сохранить основной комплект')
     expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['line', 'connectionType']))
   })

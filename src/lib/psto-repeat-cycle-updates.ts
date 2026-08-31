@@ -1,5 +1,6 @@
 import { normalizeDateLikeForStorage, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   getCurrentPstoCycle,
   getNextPstoCycleSequence,
@@ -118,12 +119,20 @@ export function buildRepeatTvmtResultCycle({
     cycle.tvmtRequestDate,
     `Стык ${formatJoint(row)}: дата ТВМТ не может быть раньше даты заявки ТВМТ.`,
   )
-  return {
+  const nextCycle = {
     ...cycle,
     tvmtResult: normalizedResult === 'good' ? 'годен' : 'не годен',
     tvmtConclusionDate: date,
     tvmtConclusion: name,
   }
+  const nextRow = {
+    ...row,
+    pstoRepeatCycles: (row.pstoRepeatCycles ?? []).map((candidate) => (
+      candidate.id === nextCycle.id ? nextCycle : candidate
+    )),
+  }
+  assertNoNewLnkChronologyIssues([nextRow], [row])
+  return nextCycle
 }
 
 function requireCurrentRepeatCycle(

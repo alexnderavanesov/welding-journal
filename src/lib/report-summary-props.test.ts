@@ -13,7 +13,7 @@ describe('createReportSummaryBarProps', () => {
       acceptedWdiTotal: 0,
       heatTreatmentRows: [],
       heatTreatmentRowCount: 45,
-      selectedHeatTreatmentRows: [],
+      selectedHeatTreatmentRowCount: 3,
       lnkRows: [],
       lnkRowCount: 67,
       availableLnkRequestRows: [],
@@ -24,6 +24,7 @@ describe('createReportSummaryBarProps', () => {
 
     expect(props.weldingRowCount).toBe(123)
     expect(props.heatTreatmentRowCount).toBe(45)
+    expect(props.selectedHeatTreatmentRowCount).toBe(3)
     expect(props.lnkRowCount).toBe(67)
     expect(props.availableLnkRequestRowCount).toBe(56)
   })

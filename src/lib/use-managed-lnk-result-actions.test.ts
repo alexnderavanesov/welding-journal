@@ -173,4 +173,37 @@ describe('useManagedLnkResultActions', () => {
     expect(setMessage).not.toHaveBeenCalled()
     expect(setIsLnkResultManagerOpen).toHaveBeenCalledWith(true)
   })
+
+  it('keeps the registry open when switching stages into an empty primary result scope', () => {
+    const row = { id: 7, joint: 'F7' } as WeldRow
+    const setMessage = vi.fn()
+    const setIsLnkResultManagerOpen = vi.fn()
+    const setManagedLnkResultOrderIds = vi.fn()
+
+    const { result } = renderHook(() => useManagedLnkResultActions({
+      isLnkRowsContextReady: true,
+      lnkRows: [row],
+      selectedLnkResultRowIds: new Set(),
+      managedLnkPendingResultChanges: {},
+      managedLnkPendingResultRows: [],
+      lnkResultCorrectionMutation: { mutate: vi.fn() },
+      lnkResultReplacementMutation: { mutate: vi.fn() },
+      lnkConclusionCorrectionMutation: { mutate: vi.fn() },
+      setMessage,
+      setIsLnkResultModalOpen: vi.fn(),
+      setIsLnkResultManagerOpen,
+      setManagedLnkResultMethodKey: vi.fn(),
+      setManagedLnkConclusionDrafts: vi.fn(),
+      setManagedLnkResultOrderIds,
+      setManagedLnkResultTargetKey: vi.fn(),
+      setManagedLnkResultChangeHint: vi.fn(),
+      setManagedLnkPendingResultChanges: vi.fn(),
+    }))
+
+    act(() => result.current.openLnkResultManager({ rowIds: [row.id], allowEmpty: true }))
+
+    expect(setMessage).not.toHaveBeenCalled()
+    expect(setManagedLnkResultOrderIds).toHaveBeenCalledWith([row.id])
+    expect(setIsLnkResultManagerOpen).toHaveBeenCalledWith(true)
+  })
 })

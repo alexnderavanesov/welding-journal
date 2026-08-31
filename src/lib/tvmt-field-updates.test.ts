@@ -56,6 +56,24 @@ describe('primary TVMT updates', () => {
       finalStatus: 'ожидает заявку',
     })
   })
+
+  it('does not complete TVMT after an already stored primary LNK set', () => {
+    const requested = row({
+      tvmtRequest: 'Заявка ТВМТ-001',
+      tvmtRequestDate: '2026-08-22',
+      tvmtResult: 'ожидает НК',
+      vikRequestDate: '2026-08-22',
+      vikConclusionDate: '2026-08-22',
+      vikConclusion: 'ЗНК-ВИК основной',
+    })
+
+    expect(() => buildPrimaryTvmtResultRows({
+      records: [requested],
+      controlDate: '2026-08-23',
+      result: 'годен',
+      conclusionName: 'ЗНК-ТВМТ-001',
+    })).toThrow('раньше ТВМТ')
+  })
 })
 
 function row(values: Partial<WeldRow> = {}): WeldRow {

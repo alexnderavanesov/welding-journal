@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { FileSpreadsheet, Search, Trash2 } from 'lucide-react'
+import { ArrowRight, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
+import {
+  WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS,
+  WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS,
+  WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS,
+} from '@/components/workflow-dialog-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -19,6 +24,7 @@ import {
 } from '@/lib/psto-cycle'
 import {
   applyPstoCycleCorrection,
+  applyPstoTvmtCorrectionWithLaterCycleRemoval,
   getPstoCycleStageDeleteBlockReason,
   getPstoCycleStageLabel,
   type PstoCycleStage,
@@ -32,7 +38,10 @@ import {
 } from '@/lib/tvmt-cycle'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import type { CorrectPstoCycleStagePayload } from '@/server/psto-repeat-workflow'
+import type {
+  CorrectPstoCycleStagePayload,
+  CorrectPstoTvmtAndRemoveLaterCyclesPayload,
+} from '@/server/psto-repeat-workflow'
 
 type StageDraft = {
   date: string
@@ -51,6 +60,10 @@ export type PstoResultManagerDialogProps = {
   onDeleteResult: (row: WeldRow) => void
   onCorrectStage?: (payload: CorrectPstoCycleStagePayload) => void
   onDeleteStage?: (row: WeldRow, payload: CorrectPstoCycleStagePayload) => void
+  onCorrectTvmtAndRemoveLaterCycles?: (
+    row: WeldRow,
+    payload: CorrectPstoTvmtAndRemoveLaterCyclesPayload,
+  ) => void
   onOpenDocument: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
@@ -67,6 +80,7 @@ export function PstoResultManagerDialog({
   onDeleteResult,
   onCorrectStage,
   onDeleteStage,
+  onCorrectTvmtAndRemoveLaterCycles,
   onOpenDocument,
   onOpenJournalRows,
   onOpenPstoHistory,
@@ -167,7 +181,11 @@ export function PstoResultManagerDialog({
     canOpenDocumentForField ? canOpenDocumentForField(fieldKey) : canOpenDocument
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[1440px]" maxHeightClassName="h-[94vh]">
+    <LargeDialogShell
+      maxWidthClassName={WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS}
+      maxHeightClassName={WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS}
+      overlayClassName={WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS}
+    >
       <DialogHeader
         title="История ПСТО и ТВМТ"
         subtitle="Основной и повторные циклы одного стыка показаны в хронологическом порядке. Удаление выполняется только с конца цепочки."
@@ -275,7 +293,7 @@ export function PstoResultManagerDialog({
                   ))}
                 </div>
               </section>
-              <section className="grid gap-3 xl:grid-cols-2">
+              <section className="grid min-w-0 gap-3 xl:grid-cols-2">
                 {getExistingStages(selectedCycle).map((stage) => (
                   <CycleStageEditor
                     key={`${cycleKey(selectedCycle)}:${stage}`}
@@ -301,6 +319,17 @@ export function PstoResultManagerDialog({
                       getCycleDocumentRow(selectedRow, selectedCycle),
                       getStageDocumentField(stage),
                     )}
+                    onOpenCycle={setSelectedSequence}
+                    onCorrectTvmtAndRemoveLaterCycles={onCorrectTvmtAndRemoveLaterCycles
+                      ? (draft) => onCorrectTvmtAndRemoveLaterCycles(selectedRow, {
+                          rowId: selectedRow.id,
+                          sequence: selectedCycle.sequence,
+                          cycleId: selectedCycle.id,
+                          date: draft.date,
+                          name: draft.name,
+                          result: draft.result,
+                        })
+                      : undefined}
                     onOpenContextMenu={(event) => openStageContextMenu(event, selectedRow, selectedCycle, stage)}
                   />
                 ))}
@@ -323,6 +352,8 @@ function CycleStageEditor({
   onSave,
   onDelete,
   onOpenDocument,
+  onOpenCycle,
+  onCorrectTvmtAndRemoveLaterCycles,
   onOpenContextMenu,
 }: {
   row: WeldRow
@@ -333,6 +364,8 @@ function CycleStageEditor({
   onSave: (draft: StageDraft) => void
   onDelete: () => void
   onOpenDocument: () => void
+  onOpenCycle: (sequence: number) => void
+  onCorrectTvmtAndRemoveLaterCycles?: (draft: StageDraft) => void
   onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void
 }) {
   const stageData = getStageData(cycle, stage)
@@ -344,10 +377,17 @@ function CycleStageEditor({
   const saveBlockReason = hasChanges && draftComplete
     ? getPstoCycleStageSaveBlockReason(row, cycle, stage, draft)
     : ''
+  const blockingLaterCycleSequence = getBlockingLaterCycleSequence(
+    row,
+    cycle,
+    stage,
+    draft,
+    saveBlockReason,
+  )
 
   return (
     <article
-      className="rounded-md border border-slate-200 bg-slate-50/60 p-4"
+      className="min-w-0 rounded-md border border-slate-200 bg-slate-50/60 p-4"
       onContextMenu={onOpenContextMenu}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -362,11 +402,14 @@ function CycleStageEditor({
           Открыть
         </Button>
       </div>
-      <div className={`mt-4 grid gap-3 ${stage === 'tvmtResult' ? 'sm:grid-cols-[150px_150px_minmax(220px,1fr)]' : 'sm:grid-cols-[160px_minmax(220px,1fr)]'}`}>
+      <div className={`mt-4 grid min-w-0 gap-3 ${stage === 'tvmtResult'
+        ? 'sm:grid-cols-2'
+        : 'sm:grid-cols-[minmax(145px,0.8fr)_minmax(0,1.6fr)]'}`}>
         {stage === 'tvmtResult' ? (
-          <label className="space-y-1.5 text-xs font-medium text-slate-600">
+          <label className="min-w-0 space-y-1.5 text-xs font-medium text-slate-600">
             <span>Результат</span>
             <Select
+              className="min-w-0"
               value={draft.result}
               disabled={isPending}
               onChange={(event) => setDraft((current) => ({ ...current, result: event.target.value }))}
@@ -377,26 +420,28 @@ function CycleStageEditor({
             </Select>
           </label>
         ) : null}
-        <label className="space-y-1.5 text-xs font-medium text-slate-600">
+        <label className="min-w-0 space-y-1.5 text-xs font-medium text-slate-600">
           <span>Дата</span>
           <Input
+            className="min-w-0"
             type="date"
             value={draft.date}
             disabled={isPending}
             onChange={(event) => setDraft((current) => ({ ...current, date: event.target.value }))}
           />
         </label>
-        <label className="space-y-1.5 text-xs font-medium text-slate-600">
+        <label className={`min-w-0 space-y-1.5 text-xs font-medium text-slate-600 ${stage === 'tvmtResult' ? 'sm:col-span-2' : ''}`}>
           <span>{getNameLabel(stage)}</span>
           <Input
+            className="min-w-0"
             value={draft.name}
             disabled={isPending}
             onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
           />
         </label>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
-        <div className="space-y-1 text-xs leading-5">
+      <div className="mt-4 grid min-w-0 gap-3 border-t border-slate-200 pt-4">
+        <div className="min-w-0 space-y-2 break-words text-xs leading-5">
           <p className="text-slate-500">
             {deleteReason
               ? `Удаление заблокировано: ${deleteReason}`
@@ -404,32 +449,88 @@ function CycleStageEditor({
           </p>
           {saveBlockReason ? <p className="font-medium text-rose-700">Сохранение заблокировано: {saveBlockReason}</p> : null}
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
-            disabled={isPending || Boolean(deleteReason)}
-            title={deleteReason || undefined}
-            onClick={onDelete}
-          >
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            Удалить этап
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={isPending || !hasChanges || !draftComplete || Boolean(saveBlockReason)}
-            title={saveBlockReason || undefined}
-            onClick={() => onSave(draft)}
-          >
-            Сохранить
-          </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {blockingLaterCycleSequence ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                disabled={isPending}
+                onClick={() => onOpenCycle(blockingLaterCycleSequence)}
+              >
+                Просмотреть цикл №{blockingLaterCycleSequence}
+                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+              </Button>
+              {onCorrectTvmtAndRemoveLaterCycles ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={isPending}
+                  onClick={() => onCorrectTvmtAndRemoveLaterCycles(draft)}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Удалить последующие циклы и сохранить
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                disabled={isPending || Boolean(deleteReason)}
+                title={deleteReason || undefined}
+                onClick={onDelete}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                Удалить этап
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isPending || !hasChanges || !draftComplete || Boolean(saveBlockReason)}
+                title={saveBlockReason || undefined}
+                onClick={() => onSave(draft)}
+              >
+                Сохранить
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </article>
   )
+}
+
+function getBlockingLaterCycleSequence(
+  row: WeldRow,
+  cycle: PstoCycleSnapshot,
+  stage: PstoCycleStage,
+  draft: StageDraft,
+  saveBlockReason: string,
+) {
+  if (
+    stage !== 'tvmtResult' ||
+    normalizeTvmtResult(draft.result) !== 'good' ||
+    !saveBlockReason
+  ) return null
+
+  try {
+    return applyPstoTvmtCorrectionWithLaterCycleRemoval(row, {
+      sequence: cycle.sequence,
+      cycleId: cycle.source === 'repeat' ? cycle.id : undefined,
+      date: draft.date,
+      name: draft.name,
+      result: draft.result,
+    }).deletedRepeatCycles[0]?.sequence ?? null
+  } catch {
+    return null
+  }
 }
 
 function getPstoCycleStageSaveBlockReason(

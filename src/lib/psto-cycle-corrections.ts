@@ -35,6 +35,20 @@ export type PstoCycleCorrectionResult = {
   deletedRepeatCycleId: number | null
 }
 
+export type PstoTvmtCorrectionWithLaterCycleRemovalInput = {
+  sequence: number
+  cycleId?: number
+  date?: string
+  name?: string
+  result?: string
+}
+
+export type PstoTvmtCorrectionWithLaterCycleRemovalResult = {
+  row: WeldRow
+  repeatCycle: PstoRepeatCycleRecord | null
+  deletedRepeatCycles: PstoRepeatCycleRecord[]
+}
+
 export function applyPstoCycleCorrection(
   row: WeldRow,
   input: PstoCycleCorrectionInput,
@@ -46,9 +60,7 @@ export function applyPstoCycleCorrection(
   const index = timeline.findIndex((cycle) => cycle.sequence === input.sequence)
   const current = timeline[index]
   if (!current) throw new Error('Цикл ПСТО/ТВМТ больше не существует. Обновите отчет.')
-  if (current.source === 'repeat' && input.cycleId && current.id !== input.cycleId) {
-    throw new Error('Повторный цикл уже изменен. Обновите отчет.')
-  }
+  assertRepeatCycleIdentity(current, input.cycleId)
   assertStageExists(current, input.stage)
 
   const nextCycle = { ...current }
@@ -88,6 +100,71 @@ export function applyPstoCycleCorrection(
   }
 }
 
+export function applyPstoTvmtCorrectionWithLaterCycleRemoval(
+  row: WeldRow,
+  input: PstoTvmtCorrectionWithLaterCycleRemovalInput,
+): PstoTvmtCorrectionWithLaterCycleRemovalResult {
+  const repeats = [...(row.pstoRepeatCycles ?? [])]
+    .map((cycle) => ({ ...cycle }))
+    .sort((left, right) => left.sequence - right.sequence || left.id - right.id)
+  const timeline = buildPstoCycleTimeline(row, repeats)
+  const index = timeline.findIndex((cycle) => cycle.sequence === input.sequence)
+  const current = timeline[index]
+  if (!current) throw new Error('Цикл ПСТО/ТВМТ больше не существует. Обновите отчет.')
+  assertRepeatCycleIdentity(current, input.cycleId)
+  assertStageExists(current, 'tvmtResult')
+  if (normalizeTvmtResult(current.tvmtResult) !== 'failed') {
+    throw new Error('Удаление последующих циклов доступно только при исправлении негодной ТВМТ.')
+  }
+  if (normalizeTvmtResult(input.result) !== 'good') {
+    throw new Error('Последующие циклы можно удалить только при исправлении результата ТВМТ на «годен».')
+  }
+
+  const deletedRepeatCycles = repeats.filter((cycle) => cycle.sequence > current.sequence)
+  if (deletedRepeatCycles.length === 0) {
+    throw new Error('Последующих повторных циклов больше нет. Обновите историю ПСТО и ТВМТ.')
+  }
+
+  const nextCycle = { ...current }
+  const correctionInput: PstoCycleCorrectionInput = {
+    ...input,
+    stage: 'tvmtResult',
+    action: 'update',
+  }
+  updateStage(nextCycle, correctionInput)
+  validateTimeline(row, [
+    ...timeline.slice(0, index),
+    nextCycle,
+  ])
+
+  const remainingRepeats = repeats
+    .filter((cycle) => cycle.sequence <= current.sequence)
+    .map((cycle) => cycle.id === current.id ? applyRepeatCycle(cycle, nextCycle) : cycle)
+  const nextRow = current.source === 'primary'
+    ? { ...applyPrimaryCycle(row, nextCycle), pstoRepeatCycles: remainingRepeats }
+    : { ...row, pstoRepeatCycles: remainingRepeats }
+  const updatedRepeatCycle = current.source === 'repeat'
+    ? remainingRepeats.find((cycle) => cycle.id === current.id) ?? null
+    : null
+
+  assertNoPstoCorrectionCrossStageIssues(row, nextRow, correctionInput)
+  return {
+    row: { ...nextRow, finalStatus: calculateFinalStatus(nextRow) },
+    repeatCycle: updatedRepeatCycle,
+    deletedRepeatCycles,
+  }
+}
+
+function assertRepeatCycleIdentity(cycle: PstoCycleSnapshot, cycleId: number | undefined) {
+  if (cycle.source !== 'repeat') return
+  if (!cycleId) {
+    throw new Error('Не указан идентификатор повторного цикла. Обновите отчет.')
+  }
+  if (cycle.id !== cycleId) {
+    throw new Error('Повторный цикл уже изменен. Обновите отчет.')
+  }
+}
+
 const PSTO_CROSS_STAGE_ISSUE_KINDS = new Set<LnkChronologyIssue['kind']>([
   'pre-after-psto',
   'post-before-psto-cycle',
@@ -100,7 +177,7 @@ function assertNoPstoCorrectionCrossStageIssues(
   nextRow: WeldRow,
   input: PstoCycleCorrectionInput,
 ) {
-  assertPrimaryPstoNotAfterCancellation(nextRow, input)
+  assertPstoNotAfterCancellation(nextRow, input)
 
   const newIssue = getNewPstoCrossStageIssue(currentRow, nextRow)
   if (newIssue) throw new Error(newIssue.message)
@@ -114,20 +191,17 @@ function getNewPstoCrossStageIssue(currentRow: WeldRow, nextRow: WeldRow) {
     .find((issue) => !currentSignatures.has(getChronologyIssueSignature(issue)))
 }
 
-function assertPrimaryPstoNotAfterCancellation(
+function assertPstoNotAfterCancellation(
   row: WeldRow,
   input: PstoCycleCorrectionInput,
 ) {
   if (
     input.action !== 'update' ||
-    input.sequence !== 1 ||
     (input.stage !== 'pstoRequest' && input.stage !== 'pstoResult')
   ) return
 
   const cancellationDate = parseDateLikeToIso(row.pstoCancellationDate)
-  const eventDate = parseDateLikeToIso(
-    input.stage === 'pstoRequest' ? row.pstoRequestDate : row.pstoDate,
-  )
+  const eventDate = parseDateLikeToIso(input.date)
   if (cancellationDate && eventDate && eventDate > cancellationDate) {
     throw new Error(
       `Дата ${input.stage === 'pstoRequest' ? 'заявки ПСТО' : 'результата ПСТО'} не может быть позже даты официальной отмены ПСТО.`,
@@ -277,7 +351,10 @@ function validateTimeline(row: WeldRow, timeline: PstoCycleSnapshot[]) {
     const previous = timeline[index - 1]
     if (previous) {
       if (normalizeTvmtResult(previous.tvmtResult) !== 'failed') {
-        throw new Error(`Цикл #${cycle.sequence} допустим только после негодной ТВМТ предыдущего цикла.`)
+        throw new Error(
+          `Цикл #${cycle.sequence} допустим только после негодной ТВМТ предыдущего цикла. ` +
+          `Чтобы исправить предыдущий результат на «годен», сначала удалите этапы цикла #${cycle.sequence} с конца цепочки.`,
+        )
       }
       const previousTvmtDate = parseDateLikeToIso(previous.tvmtConclusionDate)
       if (previousTvmtDate && requestDate && requestDate < previousTvmtDate) {

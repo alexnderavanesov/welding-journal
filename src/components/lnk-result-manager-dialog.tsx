@@ -268,7 +268,7 @@ export function LnkResultManagerDialog({
               />
             </label>
             <Select
-              aria-label="Вид контроля в реестре результатов"
+              aria-label="Вид контроля в реестре"
               value={methodKey}
               onChange={(event) => {
                 setSelectedEntryKey('')

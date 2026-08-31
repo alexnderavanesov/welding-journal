@@ -13,6 +13,11 @@ describe('PSTO line assignment payload', () => {
           disposition: 'movePrimaryToBeforeHeatTreatment',
           methodCodes: [' вик ', 'РК', 'ВИК', 'ТВМТ'] as never,
         },
+        {
+          rowId: 4,
+          disposition: 'keepPrimary',
+          methodCodes: ['ПВК'],
+        },
       ],
       decisions: [
         { rowId: 1, disposition: 'keepPrimary' },
@@ -28,6 +33,10 @@ describe('PSTO line assignment payload', () => {
         rowId: 3,
         disposition: 'movePrimaryToBeforeHeatTreatment',
         methodCodes: ['ВИК', 'РК'],
+      }, {
+        rowId: 4,
+        disposition: 'keepPrimary',
+        methodCodes: ['ПВК'],
       }],
       decisions: [
         { rowId: 1, disposition: 'keepPrimary' },

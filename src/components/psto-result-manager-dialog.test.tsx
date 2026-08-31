@@ -139,4 +139,83 @@ describe('PstoResultManagerDialog', () => {
     fireEvent.click(saveButton)
     expect(onCorrectStage).not.toHaveBeenCalled()
   })
+
+  it('keeps a long TVMT conclusion inside the card and opens the repeat cycle blocking a correction', () => {
+    const onCorrectTvmtAndRemoveLaterCycles = vi.fn()
+    const row = {
+      id: 9,
+      projectTitle: 'Проект А',
+      subtitleCode: '400',
+      line: 'L-1',
+      joint: 'F9',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-1',
+      pstoRequestDate: '2026-08-02',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-03',
+      heatTreatmentDiagram: 'Диаграмма-1',
+      tvmtRequest: 'ТВМТ-1',
+      tvmtRequestDate: '2026-08-04',
+      tvmtResult: 'не годен',
+      tvmtConclusionDate: '2026-08-05',
+      tvmtConclusion: 'ЗНК-ТВМТ-29.08.2026-001',
+      pstoRepeatCycles: [{
+        id: 23,
+        weldJointId: 9,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoRequestDate: '2026-08-06',
+        pstoResult: 'проведено',
+        pstoDate: '2026-08-07',
+        heatTreatmentDiagram: 'Диаграмма-2',
+        tvmtRequest: 'ТВМТ-2',
+        tvmtRequestDate: '2026-08-08',
+        tvmtResult: 'годен',
+        tvmtConclusionDate: '2026-08-09',
+        tvmtConclusion: 'ЗНК-ТВМТ-29.08.2026-002',
+      }],
+    } as WeldRow
+
+    render(
+      <PstoResultManagerDialog
+        rows={[row]}
+        diagramDrafts={{}}
+        isPending={false}
+        canOpenDocument={false}
+        onClose={vi.fn()}
+        onDiagramDraftChange={vi.fn()}
+        onRenameDiagram={vi.fn()}
+        onDeleteResult={vi.fn()}
+        onCorrectStage={vi.fn()}
+        onCorrectTvmtAndRemoveLaterCycles={onCorrectTvmtAndRemoveLaterCycles}
+        onOpenDocument={vi.fn()}
+        onOpenJournalRows={vi.fn()}
+        onCopyDocumentName={vi.fn()}
+      />,
+    )
+
+    const repeatTab = screen.getByRole('tab', { name: 'Повтор #2' })
+    expect(repeatTab).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('Наименование заключения').closest('label')).toHaveClass('sm:col-span-2')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Основной цикл' }))
+    fireEvent.change(screen.getByLabelText('Результат'), { target: { value: 'годен' } })
+
+    expect(screen.getByText(/Сохранение заблокировано:.*сначала удалите этапы цикла #2/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить последующие циклы и сохранить' }))
+    expect(onCorrectTvmtAndRemoveLaterCycles).toHaveBeenCalledWith(row, {
+      rowId: 9,
+      sequence: 1,
+      cycleId: undefined,
+      date: '2026-08-05',
+      name: 'ЗНК-ТВМТ-29.08.2026-001',
+      result: 'годен',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Просмотреть цикл №2' }))
+
+    expect(repeatTab).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('Наименование заключения')).toHaveValue('ЗНК-ТВМТ-29.08.2026-002')
+  })
 })

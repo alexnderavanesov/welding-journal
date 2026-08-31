@@ -30,6 +30,49 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks.map(getDispatcherTaskCode)).not.toContain('ДЗ-16')
   })
 
+  it('keeps DZ-20 until a preserved primary LNK set receives its missing pre-TO and PSTO history', () => {
+    const legacyPrimary = row({
+      id: 8,
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Существующая заявка ВИК основная',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-08',
+      vikConclusion: 'Существующее заключение ВИК основное',
+    })
+
+    const pendingTasks = buildLnkChronologyCheckTasks([legacyPrimary])
+    expect(pendingTasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(pendingTasks[0])).toBe('ДЗ-20')
+    expect(pendingTasks[0].details).toContain('до завершения цикла ПСТО и ТВМТ')
+
+    const completedTasks = buildLnkChronologyCheckTasks([row({
+      ...legacyPrimary,
+      preHeatTreatmentControls: [{
+        id: 80,
+        weldJointId: 8,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-02',
+        result: 'годен',
+        conclusionDate: '2026-08-03',
+        conclusionName: 'Заключение ВИК до ТО',
+      }],
+      pstoRequest: 'Заявка ПСТО',
+      pstoRequestDate: '2026-08-04',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-05',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtRequestDate: '2026-08-05',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-06',
+      tvmtConclusion: 'Заключение ТВМТ',
+    })])
+    expect(completedTasks).toEqual([])
+  })
+
   it('moves PSTO result-before-weld chronology into DЗ-23', () => {
     const tasks = buildPstoChronologyCheckTasks([
       row({

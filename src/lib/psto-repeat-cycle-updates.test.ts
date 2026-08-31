@@ -101,4 +101,36 @@ describe('repeat PSTO and TVMT cycle updates', () => {
       requestDate: '2026-08-04',
     }).sequence).toBe(2)
   })
+
+  it('does not finish a repeat cycle after an already stored primary LNK set', () => {
+    const waitingTvmt = {
+      ...failedPrimary,
+      hasVik: 'да',
+      vikRequest: 'Заявка ВИК основная',
+      vikRequestDate: '2026-08-05',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-05',
+      vikConclusion: 'ЗНК-ВИК основное',
+      pstoRepeatCycles: [{
+        id: 21,
+        weldJointId: 10,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoRequestDate: '2026-08-04',
+        pstoDate: '2026-08-05',
+        pstoResult: 'проведено',
+        heatTreatmentDiagram: 'Диаграмма-2',
+        tvmtRequest: 'ТВМТ-2',
+        tvmtRequestDate: '2026-08-05',
+        tvmtResult: 'ожидает НК',
+      }],
+    }
+
+    expect(() => buildRepeatTvmtResultCycle({
+      row: waitingTvmt,
+      controlDate: '2026-08-06',
+      result: 'годен',
+      conclusionName: 'ЗТВМТ-2',
+    })).toThrow('раньше ТВМТ')
+  })
 })

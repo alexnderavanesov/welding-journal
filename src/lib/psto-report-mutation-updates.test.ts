@@ -96,6 +96,57 @@ describe('buildPstoResultRows', () => {
       diagramName: 'Диаграмма-1',
     })).toThrow('позже даты ПСТО')
   })
+
+  it('allows gradual PSTO backfill while preserving an existing primary LNK set', () => {
+    saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS, { syncRemote: false })
+    const legacyPrimary = {
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Существующая заявка ВИК основная',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-08',
+      vikConclusion: 'Существующее заключение ВИК основное',
+      preHeatTreatmentControls: [{
+        id: 11,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-02',
+        result: 'годен',
+        conclusionDate: '2026-08-03',
+        conclusionName: 'Заключение ВИК до ТО',
+      }],
+    } as RowWithId
+
+    const [requested] = buildPstoRequestRows({
+      records: [legacyPrimary],
+      requestName: 'Заявка ПСТО',
+      requestDate: '2026-08-04',
+    })
+    expect(requested).toMatchObject({
+      pstoRequest: 'Заявка ПСТО',
+      vikRequest: 'Существующая заявка ВИК основная',
+      vikConclusion: 'Существующее заключение ВИК основное',
+    })
+
+    const [performed] = buildPstoResultRows({
+      records: [requested],
+      rows: [requested],
+      pstoDate: '2026-08-05',
+      result: 'проведено',
+      diagramName: 'Диаграмма ПСТО',
+    })
+    expect(performed).toMatchObject({
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-05',
+      vikRequest: 'Существующая заявка ВИК основная',
+      vikResult: 'годен',
+    })
+  })
 })
 
 describe('buildPstoResultCorrectionRow', () => {

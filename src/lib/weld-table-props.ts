@@ -54,6 +54,7 @@ type CreateWeldTablePropsOptions = {
   onOpenLnkRequest?: WeldTableProps['onOpenLnkRequest']
   onOpenLnkResult?: WeldTableProps['onOpenLnkResult']
   onOpenJoint?: WeldTableProps['onOpenJoint']
+  onOpenJointOverview?: WeldTableProps['onOpenJointOverview']
   availableSystemDocumentTypes?: WeldTableProps['availableSystemDocumentTypes']
   onOpenDuplicateControl: (row: WeldRow) => void
   rowActionHandlers: ReportRowActionHandlers
@@ -89,6 +90,7 @@ export function createWeldTableProps({
   onOpenLnkRequest,
   onOpenLnkResult,
   onOpenJoint,
+  onOpenJointOverview,
   availableSystemDocumentTypes,
   onOpenDuplicateControl,
   rowActionHandlers,
@@ -142,6 +144,10 @@ export function createWeldTableProps({
         : undefined,
     onOpenLnkResult: activeReport === 'lnk' ? onOpenLnkResult : undefined,
     onOpenJoint: activeReport === 'heatTreatment' ? onOpenJoint : undefined,
+    onOpenJointOverview:
+      activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
+        ? onOpenJointOverview
+        : undefined,
     controlBasisEditorEnabled: activeReport === 'weldingJournal',
     availableSystemDocumentTypes:
       activeReport === 'lnk'

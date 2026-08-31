@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, Gauge, ListChecks, ListFilter, Pencil, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { ReportShowMenu } from '@/components/report-show-menu'
 import { Button } from '@/components/ui/button'
+import { WorkflowActionMenuItem } from '@/components/workflow-action-menu-item'
 
 type WeldingJournalHeaderActionsProps = {
   onCreateWeldJoint: () => void
@@ -134,9 +135,20 @@ export function HeatTreatmentHeaderActions({
   onOpenResultsReport,
   onWorkflowMenuOpenChange = () => undefined,
 }: HeatTreatmentHeaderActionsProps) {
+  const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
   const [isRequestMenuOpen, setIsRequestMenuOpen] = useState(false)
   const [isResultMenuOpen, setIsResultMenuOpen] = useState(false)
   const [isTvmtMenuOpen, setIsTvmtMenuOpen] = useState(false)
+  useDismissWorkflowMenus({
+    open: isRequestMenuOpen || isResultMenuOpen || isTvmtMenuOpen,
+    rootRef: workflowMenuRootRef,
+    onDismiss: () => {
+      setIsRequestMenuOpen(false)
+      setIsResultMenuOpen(false)
+      setIsTvmtMenuOpen(false)
+      onWorkflowMenuOpenChange(false)
+    },
+  })
   const runRequestAction = (action: () => void) => {
     setIsRequestMenuOpen(false)
     onWorkflowMenuOpenChange(false)
@@ -185,7 +197,7 @@ export function HeatTreatmentHeaderActions({
   }
 
   return (
-    <>
+    <div ref={workflowMenuRootRef} className="contents">
       <Button
         variant="outline"
         className="border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100 hover:text-teal-950"
@@ -212,36 +224,28 @@ export function HeatTreatmentHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isRequestMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-            <button
-              type="button"
+          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+            <WorkflowActionMenuItem
+              label="Новая заявка"
+              icon={Plus}
               onClick={() => runRequestAction(onCreateRequest)}
               disabled={createRequestDisabled}
-              title={createRequestDisabled ? 'Нет стыков, ожидающих заявку ПСТО' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4 text-sky-600" />
-              Новая заявка
-            </button>
-            <button
-              type="button"
+              disabledReason="Нет стыков, ожидающих заявку ПСТО. Откройте историю стыка, чтобы увидеть следующий обязательный этап."
+            />
+            <WorkflowActionMenuItem
+              label="Редактировать выбранную"
+              icon={Pencil}
               onClick={() => runRequestAction(onEditSelectedRequest)}
               disabled={editSelectedRequestDisabled}
-              title={editSelectedRequestDisabled ? 'Выберите в таблице стыки одной созданной заявки ПСТО' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Pencil className="h-4 w-4 text-sky-600" />
-              Редактировать выбранную
-            </button>
+              disabledReason="Выберите в таблице стык с созданной заявкой ПСТО."
+            />
             <div className="my-1 border-t border-slate-100" />
-            <button
-              type="button"
+            <WorkflowActionMenuItem
+              label="История ПСТО и ТВМТ"
+              icon={ListFilter}
+              tone="slate"
               onClick={() => runRequestAction(onOpenRequestRegistry)}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900"
-            >
-              <ListFilter className="h-4 w-4 text-slate-500" />
-              История ПСТО и ТВМТ
-            </button>
+            />
           </div>
         ) : null}
       </div>
@@ -256,38 +260,30 @@ export function HeatTreatmentHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isResultMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-            <button
-              type="button"
+          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+            <WorkflowActionMenuItem
+              label="Внести результаты"
+              icon={Plus}
               onClick={() => runResultAction(onAddResult)}
               disabled={resultDisabled}
-              title={resultDisabled ? 'Нет заявок ПСТО, ожидающих результата' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4 text-sky-600" />
-              Внести результаты
-            </button>
-            <button
-              type="button"
+              disabledReason="Нет заявок ПСТО, ожидающих результата. Сначала создайте заявку ПСТО."
+            />
+            <WorkflowActionMenuItem
+              label="Редактировать выбранные"
+              icon={ClipboardCheck}
               onClick={() => runResultAction(onEditSelectedResults)}
               disabled={editSelectedResultsDisabled}
-              title={editSelectedResultsDisabled ? 'Выберите в таблице стыки с внесенными результатами ПСТО' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ClipboardCheck className="h-4 w-4 text-sky-600" />
-              Редактировать выбранные
-            </button>
+              disabledReason="Выберите в таблице стык с уже внесенным результатом ПСТО."
+            />
             <div className="my-1 border-t border-slate-100" />
-            <button
-              type="button"
+            <WorkflowActionMenuItem
+              label="История ПСТО и ТВМТ"
+              icon={ListFilter}
+              tone="slate"
               onClick={() => runResultAction(onOpenResultRegistry)}
               disabled={resultRegistryDisabled}
-              title={resultRegistryDisabled ? 'История ПСТО и ТВМТ пока пуста' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ListFilter className="h-4 w-4 text-slate-500" />
-              История ПСТО и ТВМТ
-            </button>
+              disabledReason="История пока пуста: ни один цикл ПСТО еще не начат."
+            />
           </div>
         ) : null}
       </div>
@@ -303,27 +299,23 @@ export function HeatTreatmentHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isTvmtMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-            <button
-              type="button"
+          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+            <WorkflowActionMenuItem
+              label="Новая заявка ТВМТ"
+              icon={FilePlus2}
+              tone="violet"
               onClick={() => runTvmtAction(onCreateTvmtRequest)}
               disabled={createTvmtRequestDisabled}
-              title={createTvmtRequestDisabled ? 'Нет стыков с проведенной ПСТО, ожидающих заявку ТВМТ' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-violet-50 hover:text-violet-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <FilePlus2 className="h-4 w-4 text-violet-600" />
-              Новая заявка ТВМТ
-            </button>
-            <button
-              type="button"
+              disabledReason="Нет стыков с проведенной ПСТО, ожидающих заявку ТВМТ."
+            />
+            <WorkflowActionMenuItem
+              label="Внести результаты ТВМТ"
+              icon={ClipboardCheck}
+              tone="violet"
               onClick={() => runTvmtAction(onAddTvmtResult)}
               disabled={addTvmtResultDisabled}
-              title={addTvmtResultDisabled ? 'Нет заявок ТВМТ, ожидающих результата' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-violet-50 hover:text-violet-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ClipboardCheck className="h-4 w-4 text-violet-600" />
-              Внести результаты ТВМТ
-            </button>
+              disabledReason="Нет заявок ТВМТ, ожидающих результата. Сначала создайте заявку ТВМТ."
+            />
           </div>
         ) : null}
       </div>
@@ -338,7 +330,7 @@ export function HeatTreatmentHeaderActions({
           { label: 'Результаты ПСТО', onClick: onOpenResultsReport },
         ]}
       />
-    </>
+    </div>
   )
 }
 
@@ -393,8 +385,18 @@ export function LnkHeaderActions({
   onOpenConclusionsReport,
   onWorkflowMenuOpenChange = () => undefined,
 }: LnkHeaderActionsProps) {
+  const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
   const [isRequestMenuOpen, setIsRequestMenuOpen] = useState(false)
   const [isResultMenuOpen, setIsResultMenuOpen] = useState(false)
+  useDismissWorkflowMenus({
+    open: isRequestMenuOpen || isResultMenuOpen,
+    rootRef: workflowMenuRootRef,
+    onDismiss: () => {
+      setIsRequestMenuOpen(false)
+      setIsResultMenuOpen(false)
+      onWorkflowMenuOpenChange(false)
+    },
+  })
   const runRequestAction = (action: () => void) => {
     setIsRequestMenuOpen(false)
     onWorkflowMenuOpenChange(false)
@@ -427,7 +429,7 @@ export function LnkHeaderActions({
   }
 
   return (
-    <>
+    <div ref={workflowMenuRootRef} className="contents">
       <div className="relative">
         <Button
           variant="outline"
@@ -440,42 +442,33 @@ export function LnkHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isRequestMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-            <button
-              type="button"
+          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+            <WorkflowActionMenuItem
+              label="Новая заявка"
+              icon={Plus}
               onClick={() => runRequestAction(onCreateRequest)}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900"
-            >
-              <Plus className="h-4 w-4 text-sky-600" />
-              Новая заявка
-            </button>
-            <button
-              type="button"
+            />
+            <WorkflowActionMenuItem
+              label="Добавить позиции"
+              icon={FilePlus2}
               onClick={() => runRequestAction(onExtendRequest)}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900"
-            >
-              <FilePlus2 className="h-4 w-4 text-sky-600" />
-              Добавить позиции
-            </button>
+            />
             <div className="my-1 border-t border-slate-100" />
-            <button
-              type="button"
+            <WorkflowActionMenuItem
+              label="Все заявки до ТО"
+              icon={ListFilter}
+              tone="violet"
               onClick={() => runRequestAction(() => onOpenPreHeatTreatmentResultRegistry('request'))}
               disabled={preHeatTreatmentResultRegistryDisabled}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-violet-50 hover:text-violet-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ListFilter className="h-4 w-4 text-violet-600" />
-              Все заявки до ТО
-            </button>
+              disabledReason="Заявок НК до ТО пока нет. Создайте первую заявку в режиме «До ТО»."
+            />
             <div className="my-1 border-t border-slate-100" />
-            <button
-              type="button"
+            <WorkflowActionMenuItem
+              label="Все заявки ЛНК"
+              icon={ListFilter}
+              tone="slate"
               onClick={() => runRequestAction(onOpenRequestRegistry)}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900"
-            >
-              <ListFilter className="h-4 w-4 text-slate-500" />
-              Все заявки ЛНК
-            </button>
+            />
           </div>
         ) : null}
       </div>
@@ -490,47 +483,38 @@ export function LnkHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isResultMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
-            <button
-              type="button"
+          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+            <WorkflowActionMenuItem
+              label="Внести результаты"
+              icon={Plus}
               onClick={() => runResultAction(onAddResult)}
               disabled={resultDisabled}
-              title={resultDisabled ? 'Нет заявок ЛНК, ожидающих результата' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4 text-sky-600" />
-              Внести результаты
-            </button>
-            <button
-              type="button"
+              disabledReason="Нет заявок ЛНК, ожидающих результата. Сначала создайте заявку нужного этапа."
+            />
+            <WorkflowActionMenuItem
+              label="Редактировать выбранные"
+              icon={ClipboardCheck}
               onClick={() => runResultAction(onEditSelectedResults)}
               disabled={editSelectedResultsDisabled}
-              title={editSelectedResultsDisabled ? 'Выберите в таблице стыки с внесенными результатами' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ClipboardCheck className="h-4 w-4 text-sky-600" />
-              Редактировать выбранные
-            </button>
+              disabledReason="Выберите в таблице стык с внесенным результатом ЛНК."
+            />
             <div className="my-1 border-t border-slate-100" />
-            <button
-              type="button"
+            <WorkflowActionMenuItem
+              label="Все результаты ЛНК"
+              icon={ListFilter}
+              tone="slate"
               onClick={() => runResultAction(onOpenResultRegistry)}
               disabled={resultRegistryDisabled}
-              title={resultRegistryDisabled ? 'Нет внесенных результатов ЛНК' : undefined}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ListFilter className="h-4 w-4 text-slate-500" />
-              Все результаты ЛНК
-            </button>
-            <button
-              type="button"
+              disabledReason="Внесенных результатов основного ЛНК пока нет."
+            />
+            <WorkflowActionMenuItem
+              label="Все результаты до ТО"
+              icon={ListFilter}
+              tone="violet"
               onClick={() => runResultAction(() => onOpenPreHeatTreatmentResultRegistry('result'))}
               disabled={preHeatTreatmentResultRegistryDisabled}
-              className="flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-violet-50 hover:text-violet-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ListFilter className="h-4 w-4 text-violet-600" />
-              Все результаты до ТО
-            </button>
+              disabledReason="Результатов НК до ТО пока нет."
+            />
           </div>
         ) : null}
       </div>
@@ -562,6 +546,35 @@ export function LnkHeaderActions({
           { label: 'Показать заключения', onClick: onOpenConclusionsReport },
         ]}
       />
-    </>
+    </div>
   )
+}
+
+function useDismissWorkflowMenus({
+  open,
+  rootRef,
+  onDismiss,
+}: {
+  open: boolean
+  rootRef: RefObject<HTMLDivElement | null>
+  onDismiss: () => void
+}) {
+  useEffect(() => {
+    if (!open) return undefined
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && !rootRef.current?.contains(target)) onDismiss()
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onDismiss()
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onDismiss, open, rootRef])
 }

@@ -177,7 +177,7 @@ describe('PstoLineProgramDialog', () => {
     await waitFor(() => expect(onRunProtectedEdit).toHaveBeenCalledOnce())
   })
 
-  it('requires an explicit transfer decision for a late PSTO assignment with primary LNK', async () => {
+  it('requires an explicit decision and can preserve the primary LNK during late PSTO assignment', async () => {
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(activationConflictPreview)
     const { onRunProtectedEdit } = renderDialog()
     await screen.findByText('L-100')
@@ -187,7 +187,7 @@ describe('PstoLineProgramDialog', () => {
     expect(await screen.findByText('F11')).toBeInTheDocument()
     const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
     expect(submit).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: /Перенести перечисленные комплекты в «НК до ТО»/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Сохранить существующий основной НК/ }))
     expect(submit).toBeEnabled()
     fireEvent.click(submit)
 
@@ -197,6 +197,29 @@ describe('PstoLineProgramDialog', () => {
         action: 'assign',
         activationDecisions: [{
           rowId: 11,
+          disposition: 'keepPrimary',
+          methodCodes: ['ВИК', 'РК'],
+        }],
+      }),
+    }))
+  })
+
+  it('still allows an explicit transfer when the primary LNK was assigned to the wrong stage', async () => {
+    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(activationConflictPreview)
+    renderDialog()
+    await screen.findByText('L-100')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
+    await screen.findByText('F11')
+    const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
+    fireEvent.click(screen.getByRole('button', { name: /Перенести основной НК в «До ТО»/ }))
+    expect(submit).toBeEnabled()
+    fireEvent.click(submit)
+
+    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        activationDecisions: [{
+          rowId: 11,
           disposition: 'movePrimaryToBeforeHeatTreatment',
           methodCodes: ['ВИК', 'РК'],
         }],
@@ -204,7 +227,7 @@ describe('PstoLineProgramDialog', () => {
     }))
   })
 
-  it('keeps assignment blocked when the target pre-TO method is already occupied', async () => {
+  it('allows preserving primary LNK when the target pre-TO method is already occupied', async () => {
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
       ...activationConflictPreview,
       rows: [{
@@ -219,12 +242,15 @@ describe('PstoLineProgramDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
 
     expect(await screen.findByText(/В «НК до ТО» уже заполнено: ВИК/)).toBeInTheDocument()
-    expect(screen.getByText(/Сначала удалите основной результат и заключение/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Перенести перечисленные комплекты/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Назначить ПСТО' })).toBeDisabled()
+    expect(screen.getByText(/Основной комплект можно сохранить/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Перенести основной НК в «До ТО»/ })).toBeDisabled()
+    const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
+    expect(submit).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /Сохранить существующий основной НК/ }))
+    expect(submit).toBeEnabled()
   })
 
-  it('uses the same guarded transfer when a cancelled PSTO line is reactivated', async () => {
+  it('uses the same guarded preservation when a cancelled PSTO line is reactivated', async () => {
     const cancelledLine: PstoLineAssignmentSummary = {
       ...unassignedLine,
       key: 'line-c',
@@ -248,11 +274,18 @@ describe('PstoLineProgramDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Возобновить' }))
     expect(await screen.findByRole('heading', { name: 'Возобновление ПСТО' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Перенести перечисленные комплекты в «НК до ТО»/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Сохранить существующий основной НК/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Возобновить ПСТО' }))
 
     await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
-      data: expect.objectContaining({ action: 'reactivate' }),
+      data: expect.objectContaining({
+        action: 'reactivate',
+        activationDecisions: [{
+          rowId: 11,
+          disposition: 'keepPrimary',
+          methodCodes: ['ВИК', 'РК'],
+        }],
+      }),
     }))
   })
 

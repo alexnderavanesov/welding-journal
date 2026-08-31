@@ -16,6 +16,12 @@ import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
+import {
+  WORKFLOW_DIALOG_HEIGHT_CLASS,
+  WORKFLOW_DIALOG_OVERLAY_CLASS,
+  WORKFLOW_DIALOG_SHADOW_CLASS,
+  WORKFLOW_DIALOG_WIDTH_CLASS,
+} from '@/components/workflow-dialog-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatDateInputValue, getDateInputValidationReason } from '@/lib/date-format'
@@ -304,10 +310,10 @@ export function PstoRepeatWorkflowDialog({
 
   return (
     <LargeDialogShell
-      maxWidthClassName="max-w-[1480px]"
-      maxHeightClassName="h-full"
-      overlayClassName="z-50 bg-slate-950/20 py-2"
-      panelShadowClassName="shadow-slate-950/10"
+      maxWidthClassName={WORKFLOW_DIALOG_WIDTH_CLASS}
+      maxHeightClassName={WORKFLOW_DIALOG_HEIGHT_CLASS}
+      overlayClassName={WORKFLOW_DIALOG_OVERLAY_CLASS}
+      panelShadowClassName={WORKFLOW_DIALOG_SHADOW_CLASS}
     >
       <RequestDialogHeader
         title={mode === 'request' ? 'Заявка ПСТО' : 'Внесение результатов ПСТО'}

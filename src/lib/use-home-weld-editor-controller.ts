@@ -236,6 +236,9 @@ function getPstoLineMoveDraftDecisionSummary(
     const methods = preview.row.promotablePreMethods.join(', ') || 'НК до ТО'
     return `Выбрано: при сохранении завершенный комплект ${methods} станет основным.`
   }
+  if (preview.targetState === 'assigned') {
+    return `Выбрано: основной комплект ${primaryMethods} останется без изменений; отдельный НК до ТО можно оформить позже.`
+  }
   if (preview.row.preservesPerformedHistory) {
     return 'Выбрано: при сохранении выполненная история ПСТО, ТВМТ и НК останется доступной.'
   }

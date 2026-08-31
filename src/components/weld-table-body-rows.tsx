@@ -55,6 +55,7 @@ type WeldTableBodyRowsProps = {
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenJoint?: (row: WeldRow) => void
+  onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
   visibleFieldKeys?: ReadonlySet<WeldFieldKey>
@@ -94,6 +95,7 @@ export function WeldTableBodyRows({
   onOpenLnkRequest,
   onOpenLnkResult,
   onOpenJoint,
+  onOpenJointOverview,
   controlBasisEditorEnabled,
   availableSystemDocumentTypes,
   visibleFieldKeys,
@@ -153,6 +155,7 @@ export function WeldTableBodyRows({
             onOpenLnkRequest={onOpenLnkRequest}
             onOpenLnkResult={onOpenLnkResult}
             onOpenJoint={onOpenJoint}
+            onOpenJointOverview={onOpenJointOverview}
             controlBasisEditorEnabled={controlBasisEditorEnabled}
             availableSystemDocumentTypes={availableSystemDocumentTypes}
           />
@@ -194,6 +197,7 @@ type WeldTableBodyRowProps = {
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenJoint?: (row: WeldRow) => void
+  onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
@@ -230,6 +234,7 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
   onOpenLnkRequest,
   onOpenLnkResult,
   onOpenJoint,
+  onOpenJointOverview,
   controlBasisEditorEnabled,
   availableSystemDocumentTypes,
 }: WeldTableBodyRowProps) {
@@ -302,6 +307,7 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
             onOpenLnkRequest={onOpenLnkRequest}
             onOpenLnkResult={onOpenLnkResult}
             onOpenJoint={onOpenJoint}
+            onOpenJointOverview={onOpenJointOverview}
             controlBasisEditorEnabled={controlBasisEditorEnabled}
             availableSystemDocumentTypes={availableSystemDocumentTypes}
           />

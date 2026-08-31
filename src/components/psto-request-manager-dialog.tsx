@@ -6,6 +6,11 @@ import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoRequestManagerPosition } from '@/components/psto-request-manager-position'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
+  WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS,
+  WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS,
+  WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS,
+} from '@/components/workflow-dialog-layout'
+import {
   RequestDeletePanel,
   RequestManagerEmptyState,
   RequestManagerSelect,
@@ -137,10 +142,14 @@ export function PstoRequestManagerDialog({
   }
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[920px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[60] bg-slate-950/30">
+    <LargeDialogShell
+      maxWidthClassName={WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS}
+      maxHeightClassName={WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS}
+      overlayClassName={WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS}
+    >
       <RequestDialogHeader
-        title="Управление заявками ПСТО"
-        subtitle="Переименование и удаление уже созданных заявок."
+        title="Редактирование заявок ПСТО"
+        subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
         onClose={onClose}
       />
 

@@ -2,10 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
+import { buildWorkflowContextMenuItems } from '@/lib/workflow-context-menu-items'
 
 describe('ContextActionMenu', () => {
   afterEach(() => {
     document.querySelectorAll('[data-modal-dialog="true"]').forEach((node) => node.remove())
+    vi.unstubAllGlobals()
   })
 
   it('opens a document submenu without starting its first action', () => {
@@ -44,6 +46,41 @@ describe('ContextActionMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ЖСР' }))
 
     expect(onGenerate).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows compact workflow groups and runs only the selected nested action', () => {
+    const onClose = vi.fn()
+    const createPstoRequest = vi.fn()
+    const createTvmtRequest = vi.fn()
+
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 20,
+          y: 20,
+          items: buildWorkflowContextMenuItems({
+            requests: [
+              { id: 'psto-request', label: 'Новая заявка · ПСТО', onSelect: createPstoRequest },
+              { id: 'tvmt-request', label: 'Новая заявка · ТВМТ', onSelect: createTvmtRequest },
+            ],
+            results: [{ id: 'result', label: 'Внести результат · ПСТО', onSelect: vi.fn() }],
+            editing: [{ id: 'edit', label: 'ПСТО и ТВМТ этого стыка', onSelect: vi.fn() }],
+          }),
+        }}
+        onClose={onClose}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Заявки' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Результаты и заключения' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Редактирование' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Заявки' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Новая заявка · ТВМТ' }))
+
+    expect(createPstoRequest).not.toHaveBeenCalled()
+    expect(createTvmtRequest).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -114,5 +151,53 @@ describe('ContextActionMenu', () => {
     expect(screen.getByText('Переходы')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Переходы' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Открыть линию' })).toBeInTheDocument()
+  })
+
+  it('shows a disabled action reason without relying on a hover tooltip', () => {
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 20,
+          y: 20,
+          items: [{
+            id: 'psto-request',
+            label: 'Новая заявка ПСТО',
+            disabled: true,
+            title: 'Сначала завершите НК до ТО.',
+            onSelect: vi.fn(),
+          }],
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Новая заявка ПСТО' })).toBeDisabled()
+    expect(screen.getByText('Сначала завершите НК до ТО.')).toBeVisible()
+  })
+
+  it('stacks nested actions inside the menu on a narrow viewport', () => {
+    vi.stubGlobal('innerWidth', 390)
+
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 350,
+          y: 20,
+          items: [{
+            id: 'requests',
+            label: 'Заявки',
+            onSelect: vi.fn(),
+            children: [{ id: 'psto-request', label: 'Новая заявка ПСТО', onSelect: vi.fn() }],
+          }],
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Заявки' }))
+
+    expect(screen.getByRole('menu')).toHaveClass('relative')
+    expect(screen.getByRole('menu')).not.toHaveClass('absolute')
+    expect(screen.getByRole('button', { name: 'Новая заявка ПСТО' })).toBeVisible()
   })
 })

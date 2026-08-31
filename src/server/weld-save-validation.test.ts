@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { WeldJoint } from '@/db/schema'
 import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
-import { getPstoLineIdentityKey } from '@/lib/psto-line-assignment'
+import {
+  buildPstoAssignedKeepPrimaryValidationRow,
+  getPstoLineIdentityKey,
+} from '@/lib/psto-line-assignment'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -720,7 +724,44 @@ describe('validateServerWeldRecords', () => {
       previousRows: new Map([[previous.id, previous]]),
       context: assignedTargetContext,
       importMode: true,
-    })).toThrow('перенести комплект в «До ТО» или удалить')
+    })).toThrow('сохранить основной комплект')
+  })
+
+  it('allows an explicit keep-primary move to create only the temporary DZ-20 backfill task', () => {
+    const previous = {
+      id: 353,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-обычная',
+      joint: 'F353',
+      pstoRequired: null,
+      hasVik: 'да',
+      vikRequest: 'Заявка ВИК основная',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-08',
+      vikConclusion: 'Заключение ВИК основное',
+    } as unknown as WeldJoint
+    const assigned = {
+      ...previous,
+      line: 'L-ПСТО',
+      pstoRequired: 'да',
+    } as unknown as WeldInput
+
+    expect(() => validateServerWeldRecords({
+      records: [assigned],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('до завершения цикла ПСТО и ТВМТ')
+
+    expect(() => validateServerWeldRecords({
+      records: [assigned],
+      previousRows: new Map([[
+        previous.id,
+        buildPstoAssignedKeepPrimaryValidationRow(previous as unknown as WeldRow) as unknown as WeldJoint,
+      ]]),
+      context,
+    })).not.toThrow()
   })
 
   it('allows importing the same line move when the weld has only duplicate control data', () => {

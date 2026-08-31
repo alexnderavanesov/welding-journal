@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
+  buildPstoAssignedKeepPrimaryValidationRow,
   assertPstoCancellationDateAfterHistory,
   blocksPstoLineActivation,
   buildPstoCancelledRow,
@@ -21,6 +22,22 @@ describe('PSTO line assignment', () => {
       subtitleCode: ' 400 ',
       line: ' L-1 ',
     })).toBe(JSON.stringify(['Проект', '400', 'L-1']))
+  })
+
+  it('builds a validation baseline that preserves the main control while accepting assigned PSTO', () => {
+    const previous = makeRequestOnlyRow({
+      pstoRequired: null,
+      pstoControlBasis: 'старое основание',
+      pstoCancellationDate: '2026-08-01',
+    })
+
+    expect(buildPstoAssignedKeepPrimaryValidationRow(previous)).toMatchObject({
+      pstoRequired: 'да',
+      pstoControlBasis: null,
+      pstoCancellationDate: null,
+      vikRequest: 'Заявка после ТО',
+      vikResult: 'годен',
+    })
   })
 
   it('cleanly removes a mistaken assignment only when the line has no lifecycle data', () => {
@@ -315,7 +332,7 @@ describe('PSTO line assignment', () => {
     }))).toBe(true)
   })
 
-  it('blocks both a late assignment and a failed-cycle reactivation when primary LNK exists', () => {
+  it('requires an explicit preservation or transfer decision for late assignment and reactivation', () => {
     const lateAssignment = makeRow({
       pstoRequired: null,
       pstoRequest: null,
@@ -340,7 +357,7 @@ describe('PSTO line assignment', () => {
     expect(blocksPstoLineActivation(lateAssignment)).toBe(true)
     expect(blocksPstoLineActivation(cancelledFailed)).toBe(true)
     expect(getPstoLineActivationBlockReason([lateAssignment, cancelledFailed]))
-      .toContain('Выберите перенос комплекта в «НК до ТО»')
+      .toContain('сохранить его как фактический контроль после ТО')
   })
 
   it('does not disturb active lines or a cancelled line whose latest TVMT is good', () => {

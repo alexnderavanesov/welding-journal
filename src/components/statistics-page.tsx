@@ -1812,7 +1812,7 @@ function ControlStatisticsPanel({
               { label: 'Без заявки', value: summary.tvmtMethod.waitingRequest, rowIds: summary.tvmtMethod.rowIds.waitingRequest, tone: 'amber' },
               { label: 'Ожидает ТВМТ', value: summary.tvmtMethod.waitingControl, rowIds: summary.tvmtMethod.rowIds.waitingControl, tone: 'sky' },
               { label: 'Годен', value: summary.tvmtMethod.good, rowIds: summary.tvmtMethod.rowIds.good, tone: 'green' },
-              { label: 'Повторная ПСТО', value: summary.tvmtMethod.rejected, rowIds: summary.tvmtMethod.rowIds.rejected, tone: 'rose' },
+              { label: 'Не годен', value: summary.tvmtMethod.rejected, rowIds: summary.tvmtMethod.rowIds.rejected, tone: 'rose' },
             ]}
             jointStateTotal={summary.totalRows}
             jointStateStatuses={jointStateStatuses}
@@ -4691,7 +4691,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
       ['Годен', summary.good],
       ['Не годен', summary.rejected],
       ['Годен по дублю', summary.duplicateGood],
-      ['Не годен по дубю', summary.duplicateRejected],
+      ['Не годен по дублю', summary.duplicateRejected],
       ['Ожидает заявку', summary.waitingRequest],
       ['Ожидает НК', summary.waitingControl],
       ['Ожидает ремонт', summary.waitingRepair],
@@ -4925,7 +4925,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         },
         {
           title: 'ТВМТ последнего цикла',
-          columns: ['Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Без заявки', 'Ожидает ТВМТ', 'Годен', 'Повторная ПСТО', 'Закрытие'],
+          columns: ['Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Без заявки', 'Ожидает ТВМТ', 'Годен', 'Не годен', 'Закрытие'],
           rows: [[
             String(tvmtMethod.requiredRequests),
             String(tvmtMethod.createdRequests),

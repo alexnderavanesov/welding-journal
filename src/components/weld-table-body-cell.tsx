@@ -116,6 +116,7 @@ export function getWeldTableBodyCellTooltip({
   canOpenLnkRequest,
   canOpenLnkResult,
   canOpenJoint = false,
+  canOpenJointOverview = false,
   canOpenWeldEditor,
   availableSystemDocumentTypes,
 }: {
@@ -128,6 +129,7 @@ export function getWeldTableBodyCellTooltip({
   canOpenLnkRequest: boolean
   canOpenLnkResult: boolean
   canOpenJoint?: boolean
+  canOpenJointOverview?: boolean
   canOpenWeldEditor: boolean
   availableSystemDocumentTypes: ReadonlySet<SystemDocumentTemplateId>
 }) {
@@ -161,8 +163,11 @@ export function getWeldTableBodyCellTooltip({
   if (linkState.isLnkResultCardLink) {
     return composeWeldTableCellTooltip(visibleValue, 'Открыть карточку этого результата ЛНК')
   }
-  if (fieldKey === 'joint' && canOpenJoint) {
-    return composeWeldTableCellTooltip(visibleValue, 'Открыть историю ПСТО и ТВМТ этого стыка')
+  if (fieldKey === 'finalStatus' && (canOpenJointOverview || canOpenJoint)) {
+    return composeWeldTableCellTooltip(visibleValue, 'Открыть полную картину и следующий шаг этого стыка')
+  }
+  if (fieldKey === 'joint' && !isEditableCell && canOpenJoint) {
+    return composeWeldTableCellTooltip(visibleValue, 'Открыть профильную историю этого стыка')
   }
   if (linkState.isDocumentLink) {
     return composeWeldTableCellTooltip(
@@ -208,6 +213,7 @@ type WeldTableBodyCellProps = {
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkResult?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenJoint?: (row: WeldRow) => void
+  onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
   availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
@@ -233,6 +239,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   onOpenLnkRequest,
   onOpenLnkResult,
   onOpenJoint,
+  onOpenJointOverview,
   controlBasisEditorEnabled = false,
   availableSystemDocumentTypes = new Set(),
 }: WeldTableBodyCellProps) {
@@ -241,7 +248,12 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   const isStickyCell = stickyIdentityColumns && isStickyWeldTableField(field.key)
   const isControlBasisEditorLink =
     controlBasisEditorEnabled && fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY && Boolean(onEdit)
-  const isJointHistoryLink = fieldKey === 'joint' && Boolean(onOpenJoint)
+  const jointLinkHandler = fieldKey === 'finalStatus'
+    ? onOpenJointOverview ?? onOpenJoint
+    : fieldKey === 'joint' && !isEditableCell
+      ? onOpenJoint
+      : undefined
+  const isJointHistoryLink = Boolean(jointLinkHandler)
   const {
     isDocumentLink,
     isLnkRequestCardLink,
@@ -302,7 +314,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
           className={contentClass}
           onClick={(event) => {
             event.stopPropagation()
-            onOpenJoint?.(row)
+            jointLinkHandler?.(row)
           }}
         >
           <WeldTableValue field={field} value={visibleValue} isResultField={isResultField} />

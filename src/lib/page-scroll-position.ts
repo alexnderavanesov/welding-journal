@@ -29,3 +29,20 @@ export function resetPageScrollPosition() {
   document.body.scrollLeft = 0
   window.scrollTo({ left: 0, top: 0, behavior: 'auto' })
 }
+
+export function restorePageScrollPosition(position: PageScrollPosition) {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const scrollingElement = document.scrollingElement
+      if (scrollingElement) {
+        scrollingElement.scrollLeft = position.left
+        scrollingElement.scrollTop = position.top
+      }
+      document.documentElement.scrollLeft = position.left
+      document.documentElement.scrollTop = position.top
+      document.body.scrollLeft = position.left
+      document.body.scrollTop = position.top
+      window.scrollTo({ left: position.left, top: position.top, behavior: 'auto' })
+    })
+  })
+}

@@ -209,6 +209,62 @@ describe('getLnkChronologyIssues', () => {
     }))
   })
 
+  it('keeps DZ-20 temporary while legacy primary LNK is completed with a separate pre-TO chain', () => {
+    const legacyPrimary = {
+      id: 8,
+      joint: 'F8',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Существующая заявка ВИК основная',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-08',
+      vikConclusion: 'Существующее заключение ВИК основное',
+    } as WeldInput
+
+    expect(getLnkChronologyIssues([legacyPrimary])).toContainEqual(expect.objectContaining({
+      kind: 'post-before-psto-cycle',
+      methodCode: 'ВИК',
+    }))
+
+    const withPreControl = {
+      ...legacyPrimary,
+      preHeatTreatmentControls: [{
+        id: 80,
+        weldJointId: 8,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-02',
+        result: 'годен',
+        conclusionDate: '2026-08-03',
+        conclusionName: 'Заключение ВИК до ТО',
+      }],
+    } as WeldInput
+    expect(getLnkChronologyIssues([withPreControl])).toContainEqual(expect.objectContaining({
+      kind: 'post-before-psto-cycle',
+      methodCode: 'ВИК',
+    }))
+
+    const completedHistory = {
+      ...withPreControl,
+      pstoRequest: 'Заявка ПСТО',
+      pstoRequestDate: '2026-08-04',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-05',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtRequestDate: '2026-08-05',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-06',
+      tvmtConclusion: 'Заключение ТВМТ',
+    } as WeldInput
+    expect(getLnkChronologyIssues([completedHistory]).filter((issue) => (
+      issue.kind === 'post-before-psto-cycle' ||
+      issue.kind === 'post-before-psto' ||
+      issue.kind === 'post-before-tvmt'
+    ))).toEqual([])
+  })
+
   it('does not treat duplicate controls as pre/post chronology records', () => {
     const issues = getLnkChronologyIssues([{
       joint: 'F7',

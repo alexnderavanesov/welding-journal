@@ -44,6 +44,47 @@ describe('WeldTableBodyCell LNK request link', () => {
     expect(onOpenJoint).toHaveBeenCalledWith(row)
   })
 
+  it('opens the complete joint picture from the calculated final status', () => {
+    const onOpenJoint = vi.fn()
+    const onOpenJointOverview = vi.fn()
+    const row = { id: 9, joint: 'F9', finalStatus: 'ожидает НК' } as WeldRow
+    const field = {
+      key: 'finalStatus',
+      dbName: 'final_status',
+      label: 'Итоговый статус',
+      kind: 'text',
+      group: 'Статусы/отчетность',
+    } satisfies WeldField
+
+    render(
+      <table><tbody><tr>
+        <WeldTableBodyCell
+          row={row}
+          field={field}
+          displayValue={row.finalStatus}
+          isEditableCell={false}
+          isBlockedEditableCell={false}
+          isHighlightedRow={false}
+          isSelectedRow={false}
+          hasDispatcherTask={false}
+          isHighlightedCell={false}
+          isResultField
+          stickyLeft={0}
+          stickyIdentityLeadingWidth={0}
+          stickyIdentityColumns={false}
+          stickyBackgroundClassName="bg-white"
+          isSectionEnd={false}
+          onOpenJoint={onOpenJoint}
+          onOpenJointOverview={onOpenJointOverview}
+        />
+      </tr></tbody></table>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'ожидает НК' }))
+    expect(onOpenJointOverview).toHaveBeenCalledWith(row)
+    expect(onOpenJoint).not.toHaveBeenCalled()
+  })
+
   it('opens the weld editor from the read-only control basis summary', () => {
     const onEdit = vi.fn()
     const row = {

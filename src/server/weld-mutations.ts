@@ -33,6 +33,7 @@ type LnkStageTransferControlWrite,
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import {
 assertPstoCancellationDateAfterHistory,
+buildPstoAssignedKeepPrimaryValidationRow,
 buildPstoCancelledRow,
 buildPstoMovedToUnassignedLineRow,
 getCompletedPreHeatTreatmentMethodCodes,
@@ -243,8 +244,12 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
 
     if (requiresPrimaryStageResolution) {
       const disposition = data.pstoLineMoveDisposition
-      if (disposition !== 'movePrimaryToBeforeHeatTreatment' && disposition !== 'deletePrimary') {
-        throw new Error('Выберите, перенести основной комплект НК в «До ТО» или удалить его.')
+      if (
+        disposition !== 'keepPrimary' &&
+        disposition !== 'movePrimaryToBeforeHeatTreatment' &&
+        disposition !== 'deletePrimary'
+      ) {
+        throw new Error('Выберите: сохранить основной комплект, перенести его в «До ТО» или удалить.')
       }
       const positions = getPrimaryStagedMethodCodes(previous).map((methodCode) => ({
         rowId: id,
@@ -257,7 +262,13 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
         pstoRepeatCycles: previous.pstoRepeatCycles ?? [],
       } as WeldRow
 
-      if (disposition === 'movePrimaryToBeforeHeatTreatment') {
+      if (disposition === 'keepPrimary') {
+        record = moveRow
+        validationPreviousRows = new Map([[
+          id,
+          buildPstoAssignedKeepPrimaryValidationRow(previous) as unknown as WeldJoint,
+        ]])
+      } else if (disposition === 'movePrimaryToBeforeHeatTreatment') {
         const transfer = buildPrimaryToPreHeatTreatmentTransfer({
           rows: [moveRow],
           positions,

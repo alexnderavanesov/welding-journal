@@ -467,11 +467,14 @@ function normalizePayload(value: PstoLineAssignmentPayload) {
   const activationDecisions = (Array.isArray(value?.activationDecisions) ? value.activationDecisions : [])
     .flatMap((decision) => {
       const rowId = Math.floor(Number(decision?.rowId))
+      const disposition = decision?.disposition
       const methodCodes = [...new Set((Array.isArray(decision?.methodCodes) ? decision.methodCodes : [])
         .map((method) => String(method ?? '').trim().toLocaleUpperCase('ru-RU'))
         .filter(isPreHeatTreatmentLnkMethodCode))]
-      return rowId > 0 && decision?.disposition === 'movePrimaryToBeforeHeatTreatment' && methodCodes.length > 0
-        ? [{ rowId, disposition: decision.disposition, methodCodes }]
+      return rowId > 0 &&
+        (disposition === 'keepPrimary' || disposition === 'movePrimaryToBeforeHeatTreatment') &&
+        methodCodes.length > 0
+        ? [{ rowId, disposition, methodCodes }]
         : []
     })
   return {
@@ -559,24 +562,24 @@ function validateActivationDecisions(
   const positions: LnkStageTransferPosition[] = []
   for (const row of blockedRows) {
     const primaryMethods = getPrimaryStagedMethodCodes(row)
+    const decision = decisionsByRowId.get(row.id)
+    if (!decision) throw new Error(getPstoLineActivationBlockReason(blockedRows))
+    const decidedMethods = [...decision.methodCodes].sort(compareMethods)
+    if (
+      decidedMethods.length !== primaryMethods.length ||
+      decidedMethods.some((method, index) => method !== primaryMethods[index])
+    ) {
+      throw new Error(`Стык ${formatJoint(row)}: состав основного НК изменился. Обновите проверку линии.`)
+    }
+    if (decision.disposition === 'keepPrimary') continue
+
     const occupiedPreMethods = getPreHeatTreatmentMethodCodes(row.preHeatTreatmentControls ?? [])
       .filter((method) => primaryMethods.includes(method))
     if (occupiedPreMethods.length > 0) {
       throw new Error(
         `Стык ${formatJoint(row)}: в «НК до ТО» уже заполнено ${occupiedPreMethods.join(', ')}. ` +
-        'Перенос основного комплекта невозможен. Сначала удалите его результат и заключение, затем заявку через окна ЛНК.',
+        'Перенос основного комплекта невозможен; сохраните его основным либо исправьте комплекты через окна ЛНК.',
       )
-    }
-
-    const decision = decisionsByRowId.get(row.id)
-    if (!decision) throw new Error(getPstoLineActivationBlockReason(blockedRows))
-    const decidedMethods = [...decision.methodCodes].sort(compareMethods)
-    if (
-      decision.disposition !== 'movePrimaryToBeforeHeatTreatment' ||
-      decidedMethods.length !== primaryMethods.length ||
-      decidedMethods.some((method, index) => method !== primaryMethods[index])
-    ) {
-      throw new Error(`Стык ${formatJoint(row)}: состав основного НК изменился. Обновите проверку линии.`)
     }
     positions.push(...primaryMethods.map((methodCode) => ({ rowId: row.id, methodCode })))
   }

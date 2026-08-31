@@ -13,17 +13,16 @@ type CreateReportSummaryBarPropsOptions = {
   acceptedWdiTotal: number
   heatTreatmentRows: WeldRow[]
   heatTreatmentRowCount?: number
-  selectedHeatTreatmentRows: WeldRow[]
+  selectedHeatTreatmentRowCount: number
   lnkRows: WeldRow[]
   lnkRowCount?: number
   availableLnkRequestRows: WeldRow[]
   availableLnkRequestRowCount?: number
   welderStamps: WelderStampRecord[]
   filteredWelderStamps: WelderStampRecord[]
-  errorMessage?: string | null
-  message?: string | null
-  messageVariant?: ReportSummaryBarProps['messageVariant']
-  lnkNotice?: string | null
+  returnContext?: ReportSummaryBarProps['returnContext']
+  onReturnContext?: ReportSummaryBarProps['onReturnContext']
+  onDismissReturnContext?: ReportSummaryBarProps['onDismissReturnContext']
 }
 
 export function createReportSummaryBarProps({
@@ -35,17 +34,16 @@ export function createReportSummaryBarProps({
   acceptedWdiTotal,
   heatTreatmentRows,
   heatTreatmentRowCount,
-  selectedHeatTreatmentRows,
+  selectedHeatTreatmentRowCount,
   lnkRows,
   lnkRowCount,
   availableLnkRequestRows,
   availableLnkRequestRowCount,
   welderStamps,
   filteredWelderStamps,
-  errorMessage,
-  message,
-  messageVariant,
-  lnkNotice,
+  returnContext,
+  onReturnContext,
+  onDismissReturnContext,
 }: CreateReportSummaryBarPropsOptions): ReportSummaryBarProps {
   return {
     activeReport,
@@ -54,15 +52,14 @@ export function createReportSummaryBarProps({
     weldingRowCount: weldingRowCount ?? weldingRows.length,
     acceptedWdiTotalText: formatWdiTotal(acceptedWdiTotal),
     heatTreatmentRowCount: heatTreatmentRowCount ?? heatTreatmentRows.length,
-    selectedHeatTreatmentRowCount: selectedHeatTreatmentRows.length,
+    selectedHeatTreatmentRowCount,
     lnkRowCount: lnkRowCount ?? lnkRows.length,
     availableLnkRequestRowCount: availableLnkRequestRowCount ?? availableLnkRequestRows.length,
     activeWelderStampCount: welderStamps.filter((record) => !record.archived).length,
     archivedWelderStampCount: welderStamps.filter((record) => record.archived).length,
     filteredWelderStampCount: filteredWelderStamps.length,
-    errorMessage,
-    message: message ?? undefined,
-    messageVariant,
-    lnkNotice: lnkNotice ?? undefined,
+    returnContext,
+    onReturnContext,
+    onDismissReturnContext,
   }
 }

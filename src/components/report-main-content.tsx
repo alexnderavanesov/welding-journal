@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import type { WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
+import type { DocumentsPageType } from '@/components/documents-page'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
@@ -34,6 +35,9 @@ type ReportMainContentProps = {
     documentTitle: string,
     targetReport?: 'weldingJournal' | 'lnk' | 'heatTreatment',
   ) => void
+  onOpenDocumentJointHistory?: (rowId: number) => void
+  documentsPageType?: DocumentsPageType
+  onDocumentsPageTypeChange?: (documentType: DocumentsPageType) => void
   systemDocumentNavigationRequest?: SystemDocumentNavigationRequest | null
   onSystemDocumentNavigationRequestHandled?: (requestId: number) => void
 }
@@ -49,6 +53,9 @@ export function ReportMainContent({
   onOpenReportRowIds,
   onOpenWeldRowIds,
   onOpenDocumentRows,
+  onOpenDocumentJointHistory,
+  documentsPageType,
+  onDocumentsPageTypeChange,
   systemDocumentNavigationRequest,
   onSystemDocumentNavigationRequestHandled,
 }: ReportMainContentProps) {
@@ -81,9 +88,12 @@ export function ReportMainContent({
       <Suspense fallback={<ReportSectionFallback label="Загружаем документы" />}>
         <DocumentsPage
           welderStamps={welderStamps}
+          initialDocumentType={documentsPageType}
+          onDocumentTypeChange={onDocumentsPageTypeChange}
           navigationRequest={systemDocumentNavigationRequest}
           onNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
           onOpenDocumentRows={onOpenDocumentRows}
+          onOpenJointHistory={onOpenDocumentJointHistory}
         />
       </Suspense>
     )

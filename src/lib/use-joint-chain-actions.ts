@@ -21,6 +21,7 @@ type UseJointChainActionsOptions = {
   setHeatTreatmentFilters: Dispatch<SetStateAction<WeldFilters>>
   setLnkFilters: Dispatch<SetStateAction<WeldFilters>>
   setMessage: (value: string | null) => void
+  onBeforeReportNavigation?: (report: ActiveReport) => void
 }
 
 export function useJointChainActions({
@@ -31,12 +32,20 @@ export function useJointChainActions({
   setHeatTreatmentFilters,
   setLnkFilters,
   setMessage,
+  onBeforeReportNavigation,
 }: UseJointChainActionsOptions) {
+  function beginReportNavigation(report: ActiveReport) {
+    if (report !== activeReport) onBeforeReportNavigation?.(report)
+  }
+
   function showRepeatedJointTaskChain(row: WeldRow, baseJoint: string, messageText: string) {
     const filters = buildJointChainFilters(row, baseJoint)
     if (activeReport === 'lnk') {
       setActiveReport('lnk')
       setLnkFilters(filters)
+    } else if (activeReport === 'heatTreatment') {
+      setActiveReport('heatTreatment')
+      setHeatTreatmentFilters(filters)
     } else {
       setActiveReport('weldingJournal')
       setColumnFilters(filters)
@@ -53,6 +62,9 @@ export function useJointChainActions({
       if (activeReport === 'lnk') {
         setActiveReport('lnk')
         setLnkFilters(filters)
+      } else if (activeReport === 'heatTreatment') {
+        setActiveReport('heatTreatment')
+        setHeatTreatmentFilters(filters)
       } else {
         setActiveReport('weldingJournal')
         setColumnFilters(filters)
@@ -68,6 +80,9 @@ export function useJointChainActions({
       if (activeReport === 'lnk') {
         setActiveReport('lnk')
         setLnkFilters(filters)
+      } else if (activeReport === 'heatTreatment') {
+        setActiveReport('heatTreatment')
+        setHeatTreatmentFilters(filters)
       } else {
         setActiveReport('weldingJournal')
         setColumnFilters(filters)
@@ -90,6 +105,9 @@ export function useJointChainActions({
     if (activeReport === 'lnk') {
       setActiveReport('lnk')
       setLnkFilters(filters)
+    } else if (activeReport === 'heatTreatment') {
+      setActiveReport('heatTreatment')
+      setHeatTreatmentFilters(filters)
     } else {
       setActiveReport('weldingJournal')
       setColumnFilters(filters)
@@ -101,12 +119,14 @@ export function useJointChainActions({
     setChainRecord(null)
     const filters = buildExactJointFilters(row)
     if (activeReport === 'lnk') {
+      beginReportNavigation('weldingJournal')
       setActiveReport('weldingJournal')
       setColumnFilters(filters)
       setMessage(`Открыт стык ${String(row.joint ?? '-')} в сварочном журнале`)
       return
     }
     if (activeReport === 'weldingJournal') {
+      beginReportNavigation('lnk')
       setActiveReport('lnk')
       setLnkFilters(filters)
       setMessage(`Открыт стык ${String(row.joint ?? '-')} в отчете ЛНК`)
@@ -116,6 +136,7 @@ export function useJointChainActions({
   function openRowInReport(row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') {
     setChainRecord(null)
     const filters = buildExactJointFilters(row)
+    beginReportNavigation(report)
     if (report === 'weldingJournal') {
       setActiveReport('weldingJournal')
       setColumnFilters(filters)
@@ -142,6 +163,7 @@ export function useJointChainActions({
     }
 
     setChainRecord(null)
+    beginReportNavigation(report)
     const filters = buildRowIdListFilters(rowIds) as WeldFilters
     const count = rowIds.length
     if (report === 'weldingJournal') {
@@ -163,7 +185,16 @@ export function useJointChainActions({
 
   function openChainBaseInCurrentReport(row: WeldRow) {
     const baseJoint = getJointBaseFromRow(row)
-    showRepeatedJointTaskChain(row, baseJoint, `Показана вся цепочка стыка ${baseJoint}`)
+    const filters = buildJointChainFilters(row, baseJoint)
+    setChainRecord(null)
+    if (activeReport === 'lnk') {
+      setLnkFilters(filters)
+    } else if (activeReport === 'heatTreatment') {
+      setHeatTreatmentFilters(filters)
+    } else {
+      setColumnFilters(filters)
+    }
+    setMessage(`Показана вся цепочка стыка ${baseJoint}`)
   }
 
   return {

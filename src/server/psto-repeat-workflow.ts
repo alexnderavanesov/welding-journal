@@ -13,9 +13,11 @@ import {
 import type { PstoCycleSnapshot } from '@/lib/psto-cycle'
 import {
   applyPstoCycleCorrection,
+  applyPstoTvmtCorrectionWithLaterCycleRemoval,
   PSTO_CYCLE_STAGES,
   type PstoCycleCorrectionInput,
   type PstoCycleStage,
+  type PstoTvmtCorrectionWithLaterCycleRemovalInput,
 } from '@/lib/psto-cycle-corrections'
 import {
   buildPstoRequestRows,
@@ -42,6 +44,7 @@ import { attachDuplicateControlRelations } from '@/server/duplicate-control-rela
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
 import {
+  deletePstoRepeatCyclesInTransaction,
   getPstoCycleState,
   persistPstoCycleCorrection,
   persistPstoCycleWorkflowWrites,
@@ -234,6 +237,118 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
     })
   })
 
+export type CorrectPstoTvmtAndRemoveLaterCyclesPayload = {
+  rowId: number
+  sequence: number
+  cycleId?: number
+  date?: string
+  name?: string
+  result?: string
+}
+
+export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POST' })
+  .validator(normalizePstoTvmtAndRemoveLaterCyclesPayload)
+  .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
+    const db = requireDb()
+    return db.transaction(async (tx) => {
+      const [storedRow] = await tx
+        .select()
+        .from(weldJoints)
+        .where(eq(weldJoints.id, data.rowId))
+        .for('update')
+        .limit(1)
+      if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет ПСТО.')
+      await tx
+        .select({ id: pstoRepeatCycles.id })
+        .from(pstoRepeatCycles)
+        .where(eq(pstoRepeatCycles.weldJointId, data.rowId))
+        .for('update')
+
+      const [currentRow] = await attachDuplicateControlRelations(
+        await attachHeatTreatmentControlRelations([storedRow as WeldRow], tx),
+        tx,
+      )
+      const correction = applyPstoTvmtCorrectionWithLaterCycleRemoval(currentRow, data)
+      const currentRelationId = data.sequence === 1
+        ? data.rowId
+        : correction.repeatCycle?.id
+      if (!currentRelationId) throw new Error('Цикл ПСТО больше не существует. Обновите отчет ПСТО.')
+
+      const removedCyclePositions = correction.deletedRepeatCycles.flatMap((cycle) => [
+        {
+          weldJointId: data.rowId,
+          relationId: cycle.id,
+          sequence: cycle.sequence,
+        },
+        {
+          weldJointId: data.rowId,
+          relationId: cycle.id,
+          sequence: cycle.sequence,
+          methodCode: 'ТВМТ',
+        },
+      ])
+      await removeSourcedSystemDocumentPositionsInTransaction({
+        tx,
+        sourceKind: 'pstoCycle',
+        sourcePositions: [
+          {
+            weldJointId: data.rowId,
+            relationId: currentRelationId,
+            sequence: data.sequence,
+          },
+          {
+            weldJointId: data.rowId,
+            relationId: currentRelationId,
+            sequence: data.sequence,
+            methodCode: 'ТВМТ',
+          },
+          ...removedCyclePositions,
+        ],
+      })
+
+      const deletedCycleIds = correction.deletedRepeatCycles.map((cycle) => cycle.id)
+      await removeSourcedSystemDocumentPositionsInTransaction({
+        tx,
+        sourceKind: 'pstoRepeat',
+        relationIds: [
+          ...(data.sequence === 1 ? [] : [currentRelationId]),
+          ...deletedCycleIds,
+        ],
+      })
+      await deletePstoRepeatCyclesInTransaction(tx, deletedCycleIds)
+
+      const persistedRow = await persistPstoCycleCorrection({
+        tx,
+        currentRow,
+        correction: {
+          row: correction.row,
+          repeatCycle: correction.repeatCycle,
+          deletedRepeatCycleId: null,
+        },
+        sequence: data.sequence,
+      })
+      const savedRow = {
+        ...persistedRow,
+        pstoRepeatCycles: correction.row.pstoRepeatCycles ?? [],
+      }
+      if (data.sequence === 1) {
+        await syncSystemDocumentsForWeldChangesInTransaction(
+          tx,
+          [savedRow],
+          new Map([[currentRow.id, currentRow]]),
+        )
+      }
+      await syncAllPstoCycleDocuments(tx, savedRow, data.sequence)
+
+      await markDispatcherTaskIndexDirty(tx)
+      return (await attachDuplicateControlRelations(
+        await attachHeatTreatmentControlRelations([savedRow], tx),
+        tx,
+      ))[0]
+    })
+  })
+
 export function normalizePstoCycleStageCorrectionPayload(
   value: CorrectPstoCycleStagePayload,
 ): CorrectPstoCycleStagePayload & PstoCycleCorrectionInput {
@@ -243,6 +358,9 @@ export function normalizePstoCycleStageCorrectionPayload(
   if (sequence <= 0) throw new Error('Не указан цикл ПСТО/ТВМТ.')
   const cycleIdValue = Math.floor(Number(value?.cycleId))
   const cycleId = cycleIdValue > 0 ? cycleIdValue : undefined
+  if (sequence > 1 && !cycleId) {
+    throw new Error('Не указан идентификатор повторного цикла. Обновите отчет.')
+  }
   const stage = value?.stage
   if (!PSTO_CYCLE_STAGES.includes(stage)) throw new Error('Неизвестный этап ПСТО/ТВМТ.')
   const action = value?.action
@@ -256,6 +374,24 @@ export function normalizePstoCycleStageCorrectionPayload(
     date: String(value?.date ?? '').trim(),
     name: String(value?.name ?? '').trim(),
     result: String(value?.result ?? '').trim(),
+  }
+}
+
+export function normalizePstoTvmtAndRemoveLaterCyclesPayload(
+  value: CorrectPstoTvmtAndRemoveLaterCyclesPayload,
+): CorrectPstoTvmtAndRemoveLaterCyclesPayload & PstoTvmtCorrectionWithLaterCycleRemovalInput {
+  const normalized = normalizePstoCycleStageCorrectionPayload({
+    ...value,
+    stage: 'tvmtResult',
+    action: 'update',
+  })
+  return {
+    rowId: normalized.rowId,
+    sequence: normalized.sequence,
+    cycleId: normalized.cycleId,
+    date: normalized.date,
+    name: normalized.name,
+    result: normalized.result,
   }
 }
 

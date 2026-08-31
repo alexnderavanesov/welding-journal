@@ -3,6 +3,7 @@ import { ReportDialogs } from '@/components/report-dialogs'
 import { ReportHeaderActions, type ReportHeaderActionsProps } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
 import { ReportPageHeader } from '@/components/report-page-header'
+import { ReportNotificationToast, type ReportNotificationToastProps } from '@/components/report-notification-toast'
 import { ReportSummaryBar, type ReportSummaryBarProps } from '@/components/report-summary-bar'
 import { ReportTaskPanels, type ReportTaskPanelsProps } from '@/components/report-task-panels'
 import { ReportWorkspace } from '@/components/report-workspace'
@@ -20,6 +21,7 @@ type HomePageViewProps = {
   onNavCollapsedChange: ComponentProps<typeof ReportWorkspace>['onNavCollapsedChange']
   onReportChange: ComponentProps<typeof ReportWorkspace>['onReportChange']
   reportHeaderActionsProps: ReportHeaderActionsProps
+  reportNotificationToastProps: ReportNotificationToastProps
   reportSummaryBarProps: ReportSummaryBarProps
   reportTaskPanelsProps: ReportTaskPanelsProps
   documentGenerationRequest: DocumentGenerationRequest | null
@@ -36,6 +38,9 @@ type HomePageViewProps = {
   onDocumentGenerationRequestHandled: (requestId: number) => void
   onDocumentGenerated: (message: string) => void
   onOpenDocumentRows: ComponentProps<typeof ReportMainContent>['onOpenDocumentRows']
+  onOpenDocumentJointHistory: ComponentProps<typeof ReportMainContent>['onOpenDocumentJointHistory']
+  documentsPageType: ComponentProps<typeof ReportMainContent>['documentsPageType']
+  onDocumentsPageTypeChange: ComponentProps<typeof ReportMainContent>['onDocumentsPageTypeChange']
   systemDocumentNavigationRequest: ComponentProps<typeof ReportMainContent>['systemDocumentNavigationRequest']
   onSystemDocumentNavigationRequestHandled: ComponentProps<typeof ReportMainContent>['onSystemDocumentNavigationRequestHandled']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
@@ -57,6 +62,7 @@ export function HomePageView({
   onNavCollapsedChange,
   onReportChange,
   reportHeaderActionsProps,
+  reportNotificationToastProps,
   reportSummaryBarProps,
   reportTaskPanelsProps,
   documentGenerationRequest,
@@ -73,6 +79,9 @@ export function HomePageView({
   onDocumentGenerationRequestHandled,
   onDocumentGenerated,
   onOpenDocumentRows,
+  onOpenDocumentJointHistory,
+  documentsPageType,
+  onDocumentsPageTypeChange,
   systemDocumentNavigationRequest,
   onSystemDocumentNavigationRequestHandled,
   reportChainDialogProps,
@@ -100,6 +109,9 @@ export function HomePageView({
     onOpenReportRowIds,
     onOpenWeldRowIds,
     onOpenDocumentRows,
+    onOpenDocumentJointHistory,
+    documentsPageType,
+    onDocumentsPageTypeChange,
     systemDocumentNavigationRequest,
     onSystemDocumentNavigationRequestHandled,
   }, freezeReportBackground)
@@ -113,6 +125,8 @@ export function HomePageView({
       onReportChange={onReportChange}
     >
       <MemoizedReportBackground {...reportBackgroundProps} />
+
+      <ReportNotificationToast {...reportNotificationToastProps} />
 
       <ReportDialogs
         chainDialogProps={reportChainDialogProps}
@@ -156,6 +170,9 @@ type ReportBackgroundProps = Pick<
   | 'onOpenReportRowIds'
   | 'onOpenWeldRowIds'
   | 'onOpenDocumentRows'
+  | 'onOpenDocumentJointHistory'
+  | 'documentsPageType'
+  | 'onDocumentsPageTypeChange'
   | 'systemDocumentNavigationRequest'
   | 'onSystemDocumentNavigationRequestHandled'
 >
@@ -179,6 +196,9 @@ function ReportBackground({
   onOpenReportRowIds,
   onOpenWeldRowIds,
   onOpenDocumentRows,
+  onOpenDocumentJointHistory,
+  documentsPageType,
+  onDocumentsPageTypeChange,
   systemDocumentNavigationRequest,
   onSystemDocumentNavigationRequestHandled,
 }: ReportBackgroundProps) {
@@ -205,7 +225,7 @@ function ReportBackground({
         ) : null}
       </ReportPageHeader>
 
-      {!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
+      {!isStandaloneReport || reportSummaryBarProps.returnContext ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
 
       {!isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
 
@@ -220,6 +240,9 @@ function ReportBackground({
         onOpenReportRowIds={onOpenReportRowIds}
         onOpenWeldRowIds={onOpenWeldRowIds}
         onOpenDocumentRows={onOpenDocumentRows}
+        onOpenDocumentJointHistory={onOpenDocumentJointHistory}
+        documentsPageType={documentsPageType}
+        onDocumentsPageTypeChange={onDocumentsPageTypeChange}
         systemDocumentNavigationRequest={systemDocumentNavigationRequest}
         onSystemDocumentNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
       />

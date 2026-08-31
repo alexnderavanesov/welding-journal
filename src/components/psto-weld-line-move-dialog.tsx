@@ -29,7 +29,7 @@ export function PstoWeldLineMoveDialog({
   const targetIsAssigned = preview.targetState === 'assigned'
   const canPromote = preview.row.promotablePreMethods.length > 0
   const [disposition, setDisposition] = useState<PstoWeldLineMoveDisposition>(
-    initialDisposition ?? (targetIsAssigned ? 'movePrimaryToBeforeHeatTreatment' : 'keepPrimary'),
+    initialDisposition ?? 'keepPrimary',
   )
   const sourceLabel = formatLineIdentity(preview.sourceIdentity)
   const targetLabel = formatLineIdentity(preview.targetIdentity)
@@ -64,7 +64,9 @@ export function PstoWeldLineMoveDialog({
         {targetIsAssigned ? (
           <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
             <p className="font-semibold">Найден основной комплект: {preview.row.primaryMethods.join(', ')}</p>
-            <p className="mt-1 leading-5">На линии с ПСТО эти методы должны пройти этапы «До ТО» и «Основной» раздельно.</p>
+            <p className="mt-1 leading-5">
+              Если это фактический контроль после ТО, сохраните его без изменений. Отдельный комплект «До ТО» можно оформить позднее.
+            </p>
           </div>
         ) : (
           <div className="mt-4 grid overflow-hidden rounded-md border border-slate-200 bg-slate-200 sm:grid-cols-2 lg:grid-cols-5">
@@ -76,7 +78,13 @@ export function PstoWeldLineMoveDialog({
           </div>
         )}
 
-        {targetIsAssigned ? <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {targetIsAssigned ? <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <DecisionButton
+            selected={disposition === 'keepPrimary'}
+            title="Сохранить существующий основной НК"
+            description={`Заявки, результаты и заключения ${preview.row.primaryMethods.join(', ')} не изменятся. После сохранения отдельный НК до ТО можно заполнить в удобное время.`}
+            onClick={() => setDisposition('keepPrimary')}
+          />
           <DecisionButton
             selected={disposition === 'movePrimaryToBeforeHeatTreatment'}
             title="Перенести основной комплект в «До ТО»"
@@ -117,9 +125,12 @@ export function PstoWeldLineMoveDialog({
           <div className="flex items-start gap-2.5">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
             <div>
-              <p className="font-semibold">{targetIsAssigned ? 'После переноса' : preservesPerformedHistory ? 'Что будет сохранено' : 'Что будет изменено'}</p>
+              <p className="font-semibold">{targetIsAssigned ? 'После сохранения' : preservesPerformedHistory ? 'Что будет сохранено' : 'Что будет изменено'}</p>
               {targetIsAssigned ? (
-                <p className="mt-1">Система назначит ПСТО по целевой линии. До завершения НК до ТО, ПСТО и годной ТВМТ основной контроль после ТО будет недоступен.</p>
+                <p className="mt-1">
+                  Система назначит ПСТО по целевой линии. При сохранении основного комплекта ДЗ-20 временно останется,
+                  а первая заявка ПСТО будет доступна после годного НК до ТО.
+                </p>
               ) : preservesPerformedHistory ? (
                 <p className="mt-1">Выполненные ПСТО, ТВМТ, повторные циклы, НК до ТО и связанные документы останутся в истории стыка.</p>
               ) : (

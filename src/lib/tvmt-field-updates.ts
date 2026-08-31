@@ -1,5 +1,6 @@
 import { normalizeDateLikeForStorage, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import {
   getCurrentPstoCycle,
@@ -83,7 +84,7 @@ export function buildPrimaryTvmtResultRows({
   const name = conclusionName.trim()
   if (!name) throw new Error('Укажите наименование заключения ТВМТ.')
 
-  return records.map((record) => {
+  const proposedRows = records.map((record) => {
     if (!canAddPrimaryTvmtResult(record)) {
       throw new Error(`Стык ${formatJoint(record)}: результат ТВМТ сейчас недоступен.`)
     }
@@ -101,6 +102,8 @@ export function buildPrimaryTvmtResultRows({
       tvmtConclusion: name,
     })
   })
+  assertNoNewLnkChronologyIssues(proposedRows, records)
+  return proposedRows
 }
 
 function assertDateNotBeforePsto(record: WeldRow, date: string, label: string) {

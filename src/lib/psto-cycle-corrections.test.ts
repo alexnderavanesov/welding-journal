@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   applyPstoCycleCorrection,
+  applyPstoTvmtCorrectionWithLaterCycleRemoval,
   getPstoCycleStageDeleteBlockReason,
 } from '@/lib/psto-cycle-corrections'
 
@@ -73,7 +74,7 @@ describe('PSTO cycle corrections', () => {
       date: '2026-08-06',
       name: 'ЗТВМТ-1',
       result: 'годен',
-    })).toThrow('допустим только после негодной ТВМТ')
+    })).toThrow('сначала удалите этапы цикла #2 с конца цепочки')
     expect(getPstoCycleStageDeleteBlockReason(row, 1, 'tvmtResult')).toContain('последующие повторные циклы')
   })
 
@@ -205,6 +206,192 @@ describe('PSTO cycle corrections', () => {
       .toContain('до завершения цикла ПСТО и ТВМТ')
   })
 
+  it('atomically corrects failed TVMT and removes every dependent later cycle while preserving valid post-TO LNK', () => {
+    const row = makeRow({
+      tvmtResult: 'не годен',
+      hasVik: 'да',
+      vikRequest: 'Заявка ВИК после ТО',
+      vikRequestDate: '2026-08-11',
+      vikResult: 'годен',
+      vikConclusion: 'ЗНК ВИК после ТО',
+      vikConclusionDate: '2026-08-11',
+      pstoRepeatCycles: [
+        {
+          id: 41,
+          weldJointId: 1,
+          sequence: 2,
+          pstoRequest: 'Повтор-2',
+          pstoRequestDate: '2026-08-07',
+          pstoDate: '2026-08-08',
+          pstoResult: 'проведено',
+          heatTreatmentDiagram: 'Диаграмма-2',
+          tvmtRequest: 'Заявка ТВМТ-2',
+          tvmtRequestDate: '2026-08-08',
+          tvmtResult: 'не годен',
+          tvmtConclusionDate: '2026-08-09',
+          tvmtConclusion: 'ЗТВМТ-2',
+        },
+        {
+          id: 42,
+          weldJointId: 1,
+          sequence: 3,
+          pstoRequest: 'Повтор-3',
+          pstoRequestDate: '2026-08-09',
+          pstoDate: '2026-08-10',
+          pstoResult: 'проведено',
+          heatTreatmentDiagram: 'Диаграмма-3',
+          tvmtRequest: 'Заявка ТВМТ-3',
+          tvmtRequestDate: '2026-08-10',
+          tvmtResult: 'годен',
+          tvmtConclusionDate: '2026-08-10',
+          tvmtConclusion: 'ЗТВМТ-3',
+        },
+      ],
+    })
+
+    const result = applyPstoTvmtCorrectionWithLaterCycleRemoval(row, {
+      sequence: 1,
+      date: '2026-08-06',
+      name: 'ЗТВМТ-1 исправлено',
+      result: 'годен',
+    })
+
+    expect(result.deletedRepeatCycles.map((cycle) => cycle.id)).toEqual([41, 42])
+    expect(result.row).toEqual(expect.objectContaining({
+      tvmtResult: 'годен',
+      tvmtConclusion: 'ЗТВМТ-1 исправлено',
+      vikRequest: 'Заявка ВИК после ТО',
+      vikConclusion: 'ЗНК ВИК после ТО',
+      pstoRepeatCycles: [],
+    }))
+  })
+
+  it('rejects the atomic correction when the corrected TVMT date would invalidate preserved post-TO LNK', () => {
+    const row = makeRow({
+      tvmtResult: 'не годен',
+      hasVik: 'да',
+      vikRequest: 'Заявка ВИК после ТО',
+      vikRequestDate: '2026-08-10',
+      pstoRepeatCycles: [{
+        id: 41,
+        weldJointId: 1,
+        sequence: 2,
+        pstoRequest: 'Повтор-2',
+        pstoRequestDate: '2026-08-07',
+        pstoDate: '2026-08-08',
+        pstoResult: 'проведено',
+        heatTreatmentDiagram: 'Диаграмма-2',
+        tvmtRequest: 'Заявка ТВМТ-2',
+        tvmtRequestDate: '2026-08-08',
+        tvmtResult: 'годен',
+        tvmtConclusionDate: '2026-08-09',
+        tvmtConclusion: 'ЗТВМТ-2',
+      }],
+    })
+
+    expect(() => applyPstoTvmtCorrectionWithLaterCycleRemoval(row, {
+      sequence: 1,
+      date: '2026-08-11',
+      name: 'ЗТВМТ-1 исправлено',
+      result: 'годен',
+    })).toThrow('раньше ТВМТ, завершившей цикл')
+    expect(row.pstoRepeatCycles).toHaveLength(1)
+    expect(row.tvmtResult).toBe('не годен')
+  })
+
+  it('can correct a repeat TVMT and remove only the cycles that follow it', () => {
+    const row = makeRow({
+      tvmtResult: 'не годен',
+      hasRk: 'да',
+      rkRequest: 'Заявка РК после ТО',
+      rkRequestDate: '2026-08-12',
+      pstoRepeatCycles: [
+        {
+          id: 41,
+          weldJointId: 1,
+          sequence: 2,
+          pstoRequest: 'Повтор-2',
+          pstoRequestDate: '2026-08-07',
+          pstoDate: '2026-08-08',
+          pstoResult: 'проведено',
+          heatTreatmentDiagram: 'Диаграмма-2',
+          tvmtRequest: 'Заявка ТВМТ-2',
+          tvmtRequestDate: '2026-08-08',
+          tvmtResult: 'не годен',
+          tvmtConclusionDate: '2026-08-09',
+          tvmtConclusion: 'ЗТВМТ-2',
+        },
+        {
+          id: 42,
+          weldJointId: 1,
+          sequence: 3,
+          pstoRequest: 'Повтор-3',
+          pstoRequestDate: '2026-08-09',
+          pstoDate: '2026-08-10',
+          pstoResult: 'проведено',
+          heatTreatmentDiagram: 'Диаграмма-3',
+          tvmtRequest: 'Заявка ТВМТ-3',
+          tvmtRequestDate: '2026-08-10',
+          tvmtResult: 'годен',
+          tvmtConclusionDate: '2026-08-11',
+          tvmtConclusion: 'ЗТВМТ-3',
+        },
+      ],
+    })
+
+    const result = applyPstoTvmtCorrectionWithLaterCycleRemoval(row, {
+      sequence: 2,
+      cycleId: 41,
+      date: '2026-08-09',
+      name: 'ЗТВМТ-2 исправлено',
+      result: 'годен',
+    })
+
+    expect(result.deletedRepeatCycles.map((cycle) => cycle.id)).toEqual([42])
+    expect(result.repeatCycle).toEqual(expect.objectContaining({
+      id: 41,
+      sequence: 2,
+      tvmtResult: 'годен',
+      tvmtConclusion: 'ЗТВМТ-2 исправлено',
+    }))
+    expect(result.row.pstoRepeatCycles).toHaveLength(1)
+    expect(result.row.rkRequest).toBe('Заявка РК после ТО')
+  })
+
+  it('requires the exact repeat cycle identity before changing its history', () => {
+    const row = makeRow({
+      tvmtResult: 'не годен',
+      pstoRepeatCycles: [{
+        id: 41,
+        weldJointId: 1,
+        sequence: 2,
+        pstoRequest: 'Повтор-2',
+        pstoRequestDate: '2026-08-07',
+        pstoDate: '2026-08-08',
+        pstoResult: 'проведено',
+        heatTreatmentDiagram: 'Диаграмма-2',
+        tvmtRequest: 'Заявка ТВМТ-2',
+        tvmtRequestDate: '2026-08-08',
+        tvmtResult: 'не годен',
+        tvmtConclusionDate: '2026-08-09',
+        tvmtConclusion: 'ЗТВМТ-2',
+      }, {
+        id: 42,
+        weldJointId: 1,
+        sequence: 3,
+        pstoRequest: 'Повтор-3',
+        pstoRequestDate: '2026-08-10',
+      }],
+    })
+
+    expect(() => applyPstoTvmtCorrectionWithLaterCycleRemoval(row, {
+      sequence: 2,
+      date: '2026-08-09',
+      name: 'ЗТВМТ-2 исправлено',
+      result: 'годен',
+    })).toThrow('Не указан идентификатор повторного цикла')
+  })
+
   it('does not move the primary PSTO past the official cancellation date', () => {
     const row = makeRow({ pstoRequired: 'отменен', pstoCancellationDate: '2026-08-04' })
 
@@ -214,6 +401,33 @@ describe('PSTO cycle corrections', () => {
       action: 'update',
       date: '2026-08-05',
       name: 'Диаграмма-2',
+    })).toThrow('позже даты официальной отмены ПСТО')
+  })
+
+  it('does not move a repeat PSTO past the official cancellation date', () => {
+    const row = makeRow({
+      pstoRequired: 'отменен',
+      pstoCancellationDate: '2026-08-10',
+      tvmtResult: 'не годен',
+      pstoRepeatCycles: [{
+        id: 41,
+        weldJointId: 1,
+        sequence: 2,
+        pstoRequest: 'Повтор-2',
+        pstoRequestDate: '2026-08-07',
+        pstoDate: '2026-08-08',
+        pstoResult: 'проведено',
+        heatTreatmentDiagram: 'Диаграмма-2',
+      }],
+    })
+
+    expect(() => applyPstoCycleCorrection(row, {
+      sequence: 2,
+      cycleId: 41,
+      stage: 'pstoResult',
+      action: 'update',
+      date: '2026-08-11',
+      name: 'Диаграмма-2 исправлена',
     })).toThrow('позже даты официальной отмены ПСТО')
   })
 })
