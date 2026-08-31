@@ -96,6 +96,25 @@ describe('LargeDialogShell', () => {
     expect(dialog).toHaveAttribute('role', 'dialog')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
   })
+
+  it('renders the fixed layer in the document root instead of a report container', () => {
+    const reportContainer = document.createElement('div')
+    reportContainer.style.transform = 'translateX(10px)'
+    document.body.appendChild(reportContainer)
+
+    const view = render(
+      <LargeDialogShell>
+        <div>Диалог поверх отчета</div>
+      </LargeDialogShell>,
+      { container: reportContainer },
+    )
+
+    expect(reportContainer.querySelector('[data-modal-dialog="true"]')).toBeNull()
+    expect(document.body.querySelector('[data-modal-dialog="true"]')).toBeInTheDocument()
+
+    view.unmount()
+    reportContainer.remove()
+  })
 })
 
 function runNextFrame(frames: Map<number, FrameRequestCallback>) {

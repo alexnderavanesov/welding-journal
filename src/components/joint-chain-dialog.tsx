@@ -53,16 +53,17 @@ export function JointChainDialog({
 
   return (
     <LargeDialogShell
-      maxWidthClassName="max-w-[1480px]"
-      maxHeightClassName="h-[92vh]"
-      overlayClassName="z-[70] bg-slate-950/25"
-      panelRadiusClassName="rounded-lg"
-      panelShadowClassName="shadow-slate-950/15"
+      maxWidthClassName="max-w-[1180px]"
+      maxHeightClassName="h-full max-h-none"
+      overlayClassName="z-[70] bg-slate-950/25 !items-stretch !justify-end !px-0 !py-0"
+      panelRadiusClassName="rounded-l-lg rounded-r-none"
+      panelShadowClassName="shadow-[-18px_0_45px_-20px_rgba(15,23,42,0.35)]"
+      panelClassName="ml-auto !h-full !max-h-none border-y-0 border-r-0"
     >
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold text-slate-900">История и цепочка стыка {String(record.joint ?? '-')}</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Картина стыка {String(record.joint ?? '-')}</h2>
             <Button
               type="button"
               variant="outline"
@@ -106,7 +107,7 @@ export function JointChainDialog({
             <DialogInlineEmptyState>По этому стыку история не найдена.</DialogInlineEmptyState>
           </div>
         ) : (
-          <div className="grid h-full min-h-0 lg:grid-cols-[330px_minmax(0,1fr)]">
+          <div className="grid h-full min-h-0 lg:grid-cols-[380px_minmax(0,1fr)]">
             <aside className="min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
               <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Цепочка ремонта и выреза</div>
               <div className="space-y-2">

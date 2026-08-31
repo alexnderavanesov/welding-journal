@@ -46,4 +46,32 @@ describe('JointHistoryOverview', () => {
       taskKey: task.key,
     }))
   })
+
+  it('shows a performed PSTO as pending until TVMT finishes the cycle', () => {
+    render(
+      <JointHistoryOverview
+        row={{
+          id: 8,
+          projectTitle: 'Проект',
+          subtitleCode: '400',
+          line: 'L-1',
+          joint: 'F8',
+          weldDate: '2026-08-01',
+          pstoRequired: 'да',
+          pstoRequest: 'Заявка ПСТО-1',
+          pstoRequestDate: '2026-08-02',
+          pstoDate: '2026-08-03',
+          pstoResult: 'проведено',
+          heatTreatmentDiagram: 'ПСТО-Д-1',
+        } as WeldRow}
+        onOpenDocument={vi.fn()}
+        onOpenReport={vi.fn()}
+        onRunNextAction={vi.fn()}
+      />,
+    )
+
+    const status = screen.getByText('ПСТО: проведено · ТВМТ ожидается')
+    expect(status.className).toContain('bg-amber-50')
+    expect(status.className).not.toContain('bg-emerald-50')
+  })
 })

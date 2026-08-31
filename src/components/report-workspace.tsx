@@ -28,7 +28,7 @@ export function ReportWorkspace({
     activeReport === 'userGuide'
 
   return (
-    <main className="relative min-h-screen bg-white">
+    <main className="relative min-h-screen bg-[#f4f7f9]">
       <AppSidebar
         activeReport={activeReport}
         collapsed={navCollapsed}
@@ -37,12 +37,12 @@ export function ReportWorkspace({
       />
 
       <div
-        className={`min-w-0 bg-white py-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
+        className={`min-w-0 bg-[#f4f7f9] py-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
           navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72'
         }`}
       >
         <div
-          className={`space-y-4 bg-white ${
+          className={`space-y-4 bg-[#f4f7f9] ${
             isFluidReport ? 'min-w-0 w-full' : 'min-w-full w-max'
           }`}
           style={isFluidReport ? undefined : { minWidth: registerMinWidth }}

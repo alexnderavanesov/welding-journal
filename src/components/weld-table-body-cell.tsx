@@ -139,7 +139,7 @@ export function getWeldTableBodyCellTooltip({
       ? getFinalStatusErrorReason(row)
       : null
   if (finalStatusErrorReason) return finalStatusErrorReason
-  if (isEditableCell) {
+  if (isEditableCell && fieldKey !== 'joint') {
     return fieldKey === 'lnkDefectDescription' ||
       fieldKey === 'rkExposureScheme' ||
       fieldKey === 'preRkExposureScheme' ||
@@ -166,8 +166,8 @@ export function getWeldTableBodyCellTooltip({
   if (fieldKey === 'finalStatus' && (canOpenJointOverview || canOpenJoint)) {
     return composeWeldTableCellTooltip(visibleValue, 'Открыть полную картину и следующий шаг этого стыка')
   }
-  if (fieldKey === 'joint' && !isEditableCell && canOpenJoint) {
-    return composeWeldTableCellTooltip(visibleValue, 'Открыть профильную историю этого стыка')
+  if (fieldKey === 'joint' && (canOpenJointOverview || canOpenJoint)) {
+    return composeWeldTableCellTooltip(visibleValue, 'Открыть картину, хронологию и следующий шаг этого стыка')
   }
   if (linkState.isDocumentLink) {
     return composeWeldTableCellTooltip(
@@ -250,8 +250,8 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
     controlBasisEditorEnabled && fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY && Boolean(onEdit)
   const jointLinkHandler = fieldKey === 'finalStatus'
     ? onOpenJointOverview ?? onOpenJoint
-    : fieldKey === 'joint' && !isEditableCell
-      ? onOpenJoint
+    : fieldKey === 'joint'
+      ? onOpenJointOverview ?? onOpenJoint
       : undefined
   const isJointHistoryLink = Boolean(jointLinkHandler)
   const {

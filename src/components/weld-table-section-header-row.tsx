@@ -41,6 +41,7 @@ export function WeldTableSectionHeaderRow({
               section={extraGroup.section}
               colSpan={extraGroup.fields.length}
               collapsible={extraGroup.fields.some((column) => column.collapsible)}
+              appearance={extraGroup.fields.some((column) => column.appearance === 'quiet') ? 'quiet' : 'default'}
               onToggleSection={onToggleSection}
             />
           )),
@@ -72,6 +73,7 @@ export function WeldTableSectionHeaderRow({
           section={group.section}
           colSpan={group.fields.length}
           collapsible={group.fields.some((column) => column.collapsible)}
+          appearance={group.fields.some((column) => column.appearance === 'quiet') ? 'quiet' : 'default'}
           onToggleSection={onToggleSection}
         />
       ))}
@@ -91,17 +93,21 @@ function ExtraSectionHeader({
   section,
   colSpan,
   collapsible,
+  appearance,
   onToggleSection,
 }: {
   section: string
   colSpan: number
   collapsible: boolean
+  appearance: 'default' | 'quiet'
   onToggleSection: (section: string) => void
 }) {
   return (
     <th
       colSpan={colSpan}
-      className="border-b border-l border-r-2 border-t-2 border-b-[#e7f0f6] border-l-[#e7f0f6] border-r-[#d3e3ee] border-t-[#d3e3ee] bg-[#f6fbfe] px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)]"
+      className={appearance === 'quiet'
+        ? 'border-b border-l border-r-2 border-t-2 border-[#d9e6ee] bg-sky-50/30 px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7)]'
+        : 'border-b border-l border-r-2 border-t-2 border-b-[#e7f0f6] border-l-[#e7f0f6] border-r-[#d3e3ee] border-t-[#d3e3ee] bg-[#f6fbfe] px-3 py-3 text-center text-[13px] font-bold tracking-wide text-slate-700 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)]'}
     >
       <button
         type="button"

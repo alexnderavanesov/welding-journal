@@ -25,6 +25,7 @@ vi.mock('@/server/weld-read-api', () => ({
 describe('useWeldPageQuery refresh policy', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     serverMocks.listWeldingJournalPage.mockImplementation(({ data }) =>
       Promise.resolve(createPageResult(data.page, data.pageSize, 706)),
     )
@@ -92,6 +93,40 @@ describe('useWeldPageQuery refresh policy', () => {
       data: { page: 1, pageSize: 100, columnFilters: {} },
     })
     await waitFor(() => expect(result.current.rows).toHaveLength(100))
+  })
+
+  it('passes report sorting to the server and isolates the query cache', async () => {
+    const queryClient = createQueryClient()
+    const sort = { fieldKey: 'weldDate', direction: 'desc' } as const
+
+    renderHook(
+      () => useWeldPageQuery({ enabled: true, report: 'lnk', columnFilters: {}, sort }),
+      { wrapper: createWrapper(queryClient) },
+    )
+
+    await waitFor(() => expect(serverMocks.listLnkReportPage).toHaveBeenCalledTimes(1))
+    expect(serverMocks.listLnkReportPage).toHaveBeenCalledWith({
+      data: { page: 1, pageSize: 100, columnFilters: {}, sort },
+    })
+    expect(queryClient.getQueryCache().find({
+      queryKey: [...WELD_JOINT_PAGES_QUERY_KEY, 'lnk', {}, 100, sort],
+    })).toBeDefined()
+  })
+
+  it('restores the per-report all-rows page size from this browser', async () => {
+    window.localStorage.setItem('welding-report-page-size:v1', JSON.stringify({ lnk: -1 }))
+    const queryClient = createQueryClient()
+
+    const { result } = renderHook(
+      () => useWeldPageQuery({ enabled: true, report: 'lnk', columnFilters: {} }),
+      { wrapper: createWrapper(queryClient) },
+    )
+
+    await waitFor(() => expect(serverMocks.listLnkReportPage).toHaveBeenCalledTimes(1))
+    expect(serverMocks.listLnkReportPage).toHaveBeenCalledWith({
+      data: { page: 1, pageSize: 'all', columnFilters: {} },
+    })
+    expect(result.current.pageSize).toBe(-1)
   })
 
   it('refreshes an active three-page report once after a data invalidation', async () => {

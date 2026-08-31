@@ -31,6 +31,7 @@ function renderDialog(
   mode: 'request' | 'result',
   rowOrRows: WeldRow | WeldRow[],
   initialSelectedIds?: ReadonlySet<number>,
+  onOpenResultManager = vi.fn(),
 ) {
   let currentRows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
   let currentSelectedIds = initialSelectedIds ?? new Set(currentRows.map((row) => row.id))
@@ -49,6 +50,7 @@ function renderDialog(
         onRunProtectedEdit={(_label, action) => action()}
         onSaved={vi.fn()}
         onOpenJournalRows={vi.fn()}
+        onOpenResultManager={onOpenResultManager}
       />
     </QueryClientProvider>
   )
@@ -93,6 +95,7 @@ describe('PstoRepeatWorkflowDialog', () => {
     expect(screen.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeInTheDocument()
     expect(screen.getByText('Повторная ПСТО-2')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Все результаты' })).toBeEnabled()
   })
 
   it('selects the exact row request when the table selection arrives after the dialog opens', async () => {
@@ -135,6 +138,30 @@ describe('PstoRepeatWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Создать заявку' })).toBeEnabled()
   })
 
+  it('restores the exact PSTO request for a result when report data loads after the dialog opens', async () => {
+    const waitingResult = makeFailedTvmtRow({
+      pstoRequest: 'Заявка ПСТО-A',
+      pstoRequestDate: '2026-08-23',
+      pstoDate: null,
+      pstoResult: 'ожидает ПСТО',
+      tvmtRequest: null,
+      tvmtRequestDate: null,
+      tvmtResult: null,
+      tvmtConclusionDate: null,
+      tvmtConclusion: null,
+    })
+    const view = renderDialog('result', [], new Set([waitingResult.id]))
+
+    expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue('')
+    view.rerenderWithRows([waitingResult])
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue(
+      'Заявка ПСТО-A · 23.08.2026',
+    ))
+    expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+  })
+
   it('does not treat duplicates as a reason for a repeat PSTO cycle', () => {
     renderDialog('request', makeFailedTvmtRow({
       tvmtResult: 'годен',
@@ -168,7 +195,7 @@ describe('PstoRepeatWorkflowDialog', () => {
     }))
 
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeDisabled()
-    expect(screen.getByText('ожидает заявку НК до ТО: ВИК')).toBeInTheDocument()
+    expect(screen.getByText('Недоступно: Сначала создайте заявки НК до ТО: ВИК.')).toBeInTheDocument()
     expect(screen.queryByText(/ТВМТ не годен/)).not.toBeInTheDocument()
     expect(screen.queryByText('Цикл 2')).not.toBeInTheDocument()
   })

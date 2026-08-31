@@ -14,7 +14,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.goto('/lnk')
   await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
 
-  await page.getByRole('button', { name: 'Создать заявку ЛНК на этот стык' }).click()
+  await runNextAction(page, 'Создать заявку НК до ТО')
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-02')
   await page.getByRole('button', { name: 'Создать заявку до ТО' }).click()
@@ -24,7 +24,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
     request_date: '2026-08-02',
   })
 
-  await page.getByRole('button', { name: 'Добавить результат ЛНК на этот стык' }).click()
+  await runNextAction(page, 'Внести результат НК до ТО')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата контроля', '2026-08-03')
   await page.getByRole('button', { name: 'годен', exact: true }).click()
@@ -35,9 +35,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
     conclusion_date: '2026-08-03',
   })
 
-  await page.goto('/psto')
-  await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
-  await page.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' }).click()
+  await runNextAction(page, 'Создать заявку ПСТО')
+  await expect(page).toHaveURL(/\/psto$/)
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-04')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
@@ -48,21 +47,21 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
     final_status: 'ожидает НК',
   })
 
-  await page.getByRole('button', { name: 'Добавить результат ПСТО на этот стык' }).click()
+  await runNextAction(page, 'Внести результат ПСТО · цикл 1')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата ПСТО', '2026-08-05')
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeHidden()
   await expectWeld({ psto_date: '2026-08-05', psto_result: 'проведено' })
 
-  await openHeaderMenuItem(page, 'ТВМТ', 'Новая заявка ТВМТ')
+  await runNextAction(page, 'Создать заявку ТВМТ · цикл 1')
   await expect(page.getByRole('heading', { name: 'Заявка ТВМТ' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-06')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ТВМТ' })).toBeHidden()
   await expectWeld({ tvmt_request_date: '2026-08-06', tvmt_result: 'ожидает НК' })
 
-  await openHeaderMenuItem(page, 'ТВМТ', 'Внести результаты ТВМТ')
+  await runNextAction(page, 'Внести результат ТВМТ · цикл 1')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeVisible()
   await fillDate(page, 'Дата ТВМТ', '2026-08-07')
   await chooseOptionByLabel(page, 'Результат для выбранных', 'не годен')
@@ -70,46 +69,46 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeHidden()
   await expectWeld({ tvmt_result: 'не годен', tvmt_conclusion_date: '2026-08-07' })
 
-  await openHeaderMenuItem(page, 'Заявка', 'Новая заявка')
+  await runNextAction(page, 'Создать заявку повторной ПСТО · цикл 2')
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-08')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeHidden()
   await expectRepeatCycle({ sequence: 2, psto_request_date: '2026-08-08' })
 
-  await openHeaderMenuItem(page, 'Результат', 'Внести результаты')
+  await runNextAction(page, 'Внести результат ПСТО · цикл 2')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата ПСТО', '2026-08-09')
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeHidden()
   await expectRepeatCycle({ sequence: 2, psto_date: '2026-08-09', psto_result: 'проведено' })
 
-  await openHeaderMenuItem(page, 'ТВМТ', 'Новая заявка ТВМТ')
+  await runNextAction(page, 'Создать заявку ТВМТ · цикл 2')
   await fillDate(page, 'Дата заявки', '2026-08-10')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expectRepeatCycle({ sequence: 2, tvmt_request_date: '2026-08-10' })
 
-  await openHeaderMenuItem(page, 'ТВМТ', 'Внести результаты ТВМТ')
+  await runNextAction(page, 'Внести результат ТВМТ · цикл 2')
   await fillDate(page, 'Дата ТВМТ', '2026-08-11')
   await chooseOptionByLabel(page, 'Результат для выбранных', 'годен')
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectRepeatCycle({ sequence: 2, tvmt_result: 'годен', tvmt_conclusion_date: '2026-08-11' })
 
-  await page.goto('/lnk')
-  await page.getByRole('button', { name: 'Создать заявку ЛНК на этот стык' }).click()
+  await runNextAction(page, 'Создать заявку основного НК')
+  await expect(page).toHaveURL(/\/lnk$/)
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-12')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expectWeld({ vik_request_date: '2026-08-12', vik_result: 'ожидает НК' })
 
-  await page.getByRole('button', { name: 'Добавить результат ЛНК на этот стык' }).click()
+  await runNextAction(page, 'Внести результат основного НК')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК' })).toBeVisible()
   await chooseOptionByLabel(page, 'Метод контроля', 'ВИК')
   await fillDate(page, 'Дата контроля', '2026-08-13')
   await page.getByRole('button', { name: 'ремонт', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectWeld({ vik_result: 'ремонт', vik_conclusion_date: '2026-08-13' })
-  await expect(page.getByText('Создать F1R1', { exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: /^Создать F1R1/ }).first()).toBeVisible({ timeout: 15_000 })
 
   await openHeaderMenuItem(page, 'Результат', 'Все результаты ЛНК')
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeVisible()
@@ -118,10 +117,10 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
   await expectWeld({ vik_result: 'годен', vik_conclusion_date: '2026-08-13' })
-  await expect(page.getByText('Создать F1R1', { exact: true })).toBeHidden({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: /^Создать F1R1/ })).toHaveCount(0, { timeout: 15_000 })
 
   await page.goto('/psto')
-  await page.getByRole('button', { name: JOINT, exact: true }).click()
+  await openHeaderMenuItem(page, 'Результат', 'История ПСТО и ТВМТ')
   await expect(page.getByRole('heading', { name: 'История ПСТО и ТВМТ' })).toBeVisible()
   await page.getByRole('tab', { name: 'Основной цикл' }).click()
   const primaryTvmtCard = page
@@ -262,6 +261,59 @@ test('позднее назначение ПСТО сохраняет факти
   const createPstoRequest = row.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' })
   await expect(createPstoRequest).toBeDisabled()
   await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
+
+  await runNextAction(page, 'Создать заявку НК до ТО')
+  await expect(page).toHaveURL(/\/lnk$/)
+  await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
+  await fillDate(page, 'Дата заявки', '2026-08-01')
+  await page.getByRole('button', { name: 'Создать заявку до ТО' }).click()
+
+  await runNextAction(page, 'Внести результат НК до ТО')
+  await fillDate(page, 'Дата контроля', '2026-08-01')
+  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('button', { name: 'Сохранить результат до ТО' }).click()
+
+  await runNextAction(page, 'Создать заявку ПСТО')
+  await expect(page).toHaveURL(/\/psto$/)
+  await fillDate(page, 'Дата заявки', '2026-08-01')
+  await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+
+  await runNextAction(page, 'Внести результат ПСТО · цикл 1')
+  await fillDate(page, 'Дата ПСТО', '2026-08-02')
+  await page.getByRole('button', { name: 'Сохранить результат' }).click()
+
+  await runNextAction(page, 'Создать заявку ТВМТ · цикл 1')
+  await fillDate(page, 'Дата заявки', '2026-08-02')
+  await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+
+  await runNextAction(page, 'Внести результат ТВМТ · цикл 1')
+  await fillDate(page, 'Дата ТВМТ', '2026-08-02')
+  await chooseOptionByLabel(page, 'Результат для выбранных', 'годен')
+  await page.getByRole('button', { name: 'Сохранить результат' }).click()
+
+  await expectDatabaseWeld(LATE_ASSIGNMENT_JOINT, {
+    psto_required: 'да',
+    tvmt_result: 'годен',
+    vik_request: 'Заявка ВИК основная E2E-3',
+    vik_request_date: '2026-08-02',
+    vik_result: 'годен',
+    vik_conclusion_date: '2026-08-03',
+    vik_conclusion: 'Заключение ВИК основное E2E-3',
+    final_status: 'годен',
+  })
+  await expectPreControl(LATE_ASSIGNMENT_JOINT, {
+    method: 'ВИК',
+    request_date: '2026-08-01',
+    result: 'годен',
+    conclusion_date: '2026-08-01',
+  })
+  const completedRow = page
+    .getByText(LATE_ASSIGNMENT_JOINT, { exact: true })
+    .first()
+    .locator('xpath=ancestor::tr')
+  await expect(completedRow.getByText(/ДЗ-19/)).toBeVisible()
+  await expect(completedRow.getByText('ДЗ-20', { exact: false })).toHaveCount(0)
+  await expect(completedRow.getByText('Создать заявку основного НК', { exact: true })).toHaveCount(0)
 })
 
 test('возобновление отмененной линии также может сохранить фактический основной НК', async ({ page }) => {
@@ -349,6 +401,12 @@ async function fillDate(page: Page, label: string, value: string) {
   await expect(input).toBeVisible()
   await input.fill(value)
   await expect(input).toHaveValue(value)
+}
+
+async function runNextAction(page: Page, title: string) {
+  const button = page.getByRole('button', { name: `Выполнить: ${title}`, exact: true })
+  await expect(button).toBeVisible({ timeout: 15_000 })
+  await button.click()
 }
 
 async function chooseOptionByLabel(page: Page, label: string, value: string) {

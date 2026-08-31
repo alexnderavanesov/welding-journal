@@ -12,13 +12,9 @@ import {
 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
-import {
-  LNK_MANAGER_DIALOG_HEIGHT_CLASS,
-  LNK_MANAGER_DIALOG_WIDTH_CLASS,
-} from '@/components/lnk-dialog-layout'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestManagerPosition } from '@/components/lnk-request-manager-position'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
   RequestDeletePanel,
@@ -243,11 +239,7 @@ export function LnkRequestManagerDialog({
   }
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={LNK_MANAGER_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={LNK_MANAGER_DIALOG_HEIGHT_CLASS}
-      overlayClassName="z-[60] bg-slate-950/30"
-    >
+    <WorkflowDialogShell variant="manager">
       <RequestDialogHeader
         title="Редактирование заявок ЛНК"
         subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
@@ -497,7 +489,7 @@ export function LnkRequestManagerDialog({
       </div>
 
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

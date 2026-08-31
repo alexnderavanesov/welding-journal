@@ -4,7 +4,7 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { PstoRequestRow } from '@/components/psto-request-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
@@ -12,12 +12,6 @@ import { RequestManagerButton } from '@/components/request-manager-button'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
-import {
-  WORKFLOW_DIALOG_HEIGHT_CLASS,
-  WORKFLOW_DIALOG_OVERLAY_CLASS,
-  WORKFLOW_DIALOG_SHADOW_CLASS,
-  WORKFLOW_DIALOG_WIDTH_CLASS,
-} from '@/components/workflow-dialog-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getDateInputValidationReason } from '@/lib/date-format'
@@ -189,18 +183,17 @@ export function PstoRequestDialog({
   })
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={WORKFLOW_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={WORKFLOW_DIALOG_HEIGHT_CLASS}
-      overlayClassName={WORKFLOW_DIALOG_OVERLAY_CLASS}
-      panelShadowClassName={WORKFLOW_DIALOG_SHADOW_CLASS}
-    >
+    <WorkflowDialogShell>
       <RequestDialogHeader
         title="Заявка ПСТО"
         subtitle={`${headerDocumentLabel} · Стыков: ${selectedRows.length}`}
         onClose={onClose}
         actions={
-          <RequestManagerButton disabled={requestManagerOptions.length === 0} onClick={onOpenRequestManager} />
+          <RequestManagerButton
+            disabled={requestManagerOptions.length === 0}
+            disabledReason="Нет созданных заявок ПСТО для редактирования."
+            onClick={onOpenRequestManager}
+          />
         }
       />
 
@@ -335,7 +328,7 @@ export function PstoRequestDialog({
         onSubmit={onSubmit}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

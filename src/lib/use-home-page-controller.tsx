@@ -49,6 +49,7 @@ import { useHomeWeldEditorController } from '@/lib/use-home-weld-editor-controll
 import { useReportFilterState } from '@/lib/use-report-filter-state'
 import { useReportSelectionState } from '@/lib/use-report-selection-state'
 import { useReportNavigationContext } from '@/lib/use-report-navigation-context'
+import { useReportSortState } from '@/lib/use-report-sort-state'
 import { useReportShowMenuState } from '@/lib/use-report-show-menu-state'
 import { useReportPageUiState } from '@/lib/use-report-page-ui-state'
 import { useReportImportMutations } from '@/lib/use-report-import-mutations'
@@ -195,6 +196,12 @@ type UseHomePageControllerOptions = {
   activeReport?: ActiveReport
   onActiveReportChange?: (report: ActiveReport) => void
   journalSelectionToken?: string
+}
+
+type DeferredJointNextAction = {
+  targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment'
+  row: WeldRow
+  action: JointNextAction
 }
 
 export function useHomePageController(options: UseHomePageControllerOptions = {}) {
@@ -351,6 +358,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setSelectedLnkIds,
     setSelectedWeldingJournalIds,
   } = useReportSelectionState()
+  const deferredJointNextActionRef = useRef<DeferredJointNextAction | null>(null)
   const consumedJournalSelectionTokenRef = useRef('')
   useEffect(() => {
     const token = options.journalSelectionToken?.trim() ?? ''
@@ -480,6 +488,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     dismissRepeatedJointTasks,
     isRepeatedJointTaskExpanded,
     resetDismissedRepeatedJointTasks,
+    restoreDismissedRepeatedJointTask,
     setExpandedRepeatedJointTaskKeys,
     toggleRepeatedJointTaskDetails,
   } = useDispatcherTaskUiState()
@@ -700,13 +709,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isRemoteFinalStatusContextReady
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
-    enabled: isServerPagedTab || activeReport === 'welderStamps',
+    enabled: isServerPagedTab || activeReport === 'welderStamps' || Boolean(chainRecord),
   })
   const tableDuplicateKeys = isServerPagedTab && dispatcherTaskSnapshot.data
     ? dispatcherTaskSnapshot.duplicateKeys
     : undefined
   const visibleRepeatedJointTasks = isServerPagedTab
     ? dispatcherTaskSnapshot.repeatedJointTasks
+    : []
+  const adviceRepeatedJointTasks = isServerPagedTab || Boolean(chainRecord)
+    ? dispatcherTaskSnapshot.allRepeatedJointTasks
     : []
   const visibleRepeatedJointTaskGroups = isServerPagedTab
     ? dispatcherTaskSnapshot.repeatedJointTaskGroups
@@ -1217,7 +1229,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       }
       return
     }
-    if (selectedRows.length === 1) {
+    if (
+      selectedRows.length === 1 &&
+      getLnkRowRequestNames(selectedRows[0]!).length > 0
+    ) {
       openAddLnkResultModalForRow(selectedRows[0]!)
       return
     }
@@ -1368,6 +1383,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setHeatTreatmentFilters,
     setLnkFilters,
   })
+  const { sort: activeReportSort, setSort: setActiveReportSort } = useReportSortState(activeReport)
   const {
     reportReturnContext,
     captureReportContext,
@@ -1397,6 +1413,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     enabled: isServerPagedTab,
     report: isServerPagedTab ? activeReport : 'weldingJournal',
     columnFilters: isServerPagedTab ? dispatcherTaskServerFilters : {},
+    sort: isServerPagedTab ? activeReportSort : null,
   })
   const fullFinalStatusContext = useMemo(() => buildFinalStatusRowsContext(rows), [rows])
   const basePagedReportRows = useReportRows(
@@ -1949,6 +1966,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   const openPstoHistoryFromDialog = (row: WeldRow) => {
+    openPstoHistoryRowsFromDialog([row])
+  }
+
+  const openPstoHistoryRowsFromDialog = (rowsToOpen: readonly WeldRow[]) => {
     setIsLnkRequestModalOpen(false)
     setIsLnkRequestManagerOpen(false)
     setIsLnkResultModalOpen(false)
@@ -1962,7 +1983,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setTvmtWorkflowMode(null)
     setPstoRepeatWorkflowMode(null)
     setIsPstoResultRegistryAll(false)
-    openPstoResultManagerForRows([row])
+    openPstoResultManagerForRows(rowsToOpen)
   }
 
   useReportModalEscapeKey({
@@ -2743,6 +2764,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     manualFilterOptionsReport: isServerPagedTab ? activeReport : undefined,
     manualPagination: activeReportManualPagination,
     onColumnFiltersChange: activeFiltersSetter,
+    sort: activeReportSort,
+    onSortChange: setActiveReportSort,
     onEdit: handleProtectedEditRecord,
     onDelete: deleteWeldRowById,
     stickyLeft,
@@ -2805,6 +2828,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     selectable: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     selectedRowIds: activeSelectedRowIds,
     onSelectedRowIdsChange: setActiveSelectedRowIds,
+    dispatcherTasks: adviceRepeatedJointTasks,
+    onRunNextAction: runJointNextAction,
   })
 
   const welderStampsRegistryProps = createWelderStampsRegistryProps({
@@ -3175,8 +3200,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     columnFilters: activeColumnFilters,
     onColumnFiltersChange: activeFiltersSetter,
   })
-  const runJointNextAction = (row: WeldRow, action: JointNextAction) => {
-    setChainRecord(null)
+  function runJointNextAction(row: WeldRow, action: JointNextAction) {
     const targetReport = action.kind === 'editWeld' || action.kind === 'dispatcherTask'
       ? 'weldingJournal'
       : action.kind === 'pstoRequest' || action.kind === 'pstoResult' || action.kind === 'tvmtRequest' || action.kind === 'tvmtResult'
@@ -3185,39 +3209,45 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           ? 'lnk'
           : null
     if (targetReport) captureReportContext(targetReport)
+    setChainRecord(null)
+    if (targetReport && targetReport !== activeReport) {
+      deferredJointNextActionRef.current = { targetReport, row, action }
+      setActiveReport(targetReport)
+      return
+    }
+    openJointNextAction(row, action)
+  }
+
+  function openJointNextAction(row: WeldRow, action: JointNextAction) {
     if (action.kind === 'editWeld') {
-      setActiveReport('weldingJournal')
       setEditing({ record: row })
       return
     }
     if (action.kind === 'preLnkRequest' || action.kind === 'preLnkResult') {
-      setActiveReport('lnk')
       setSelectedLnkIds(new Set([row.id]))
       openPreHeatTreatmentLnkWorkflow(
         action.kind === 'preLnkRequest' ? 'request' : 'result',
-        action.methodCode as PreHeatTreatmentLnkMethodCode | undefined,
+        action.kind === 'preLnkResult'
+          ? action.methodCode as PreHeatTreatmentLnkMethodCode | undefined
+          : undefined,
       )
       return
     }
     if (action.kind === 'pstoRequest' || action.kind === 'pstoResult') {
-      setActiveReport('heatTreatment')
       setSelectedHeatTreatmentIds(new Set([row.id]))
       openPstoRepeatWorkflow(action.kind === 'pstoRequest' ? 'request' : 'result')
       return
     }
     if (action.kind === 'tvmtRequest' || action.kind === 'tvmtResult') {
-      setActiveReport('heatTreatment')
       setSelectedHeatTreatmentIds(new Set([row.id]))
       openTvmtWorkflow(action.kind === 'tvmtRequest' ? 'request' : 'result')
       return
     }
     if (action.kind === 'primaryLnkRequest') {
-      setActiveReport('lnk')
       openCreateLnkRequestModalForRow(row)
       return
     }
     if (action.kind === 'primaryLnkResult') {
-      setActiveReport('lnk')
       const method = getPendingLnkResultMethods(row)
         .find((candidate) => candidate.code === action.methodCode)
       if (method) openAddLnkResultModalForMethod(row, method.requestKey)
@@ -3225,17 +3255,29 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       return
     }
     if (action.kind === 'dispatcherTask') {
-      const task = visibleRepeatedJointTasks.find((candidate) => candidate.key === action.taskKey)
+      const task = adviceRepeatedJointTasks.find((candidate) => candidate.key === action.taskKey)
       openRowsInReport([task?.row ?? row], 'weldingJournal')
+      if (task) {
+        restoreDismissedRepeatedJointTask(task)
+        setExpandedRepeatedJointTaskKeys(new Set([task.key]))
+        window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+      }
       setMessage(task
-        ? `${action.title}. Действие доступно в задаче диспетчера над таблицей.`
+        ? `${action.title}. Нужная задача диспетчера раскрыта над таблицей.`
         : 'Задача диспетчера уже изменилась. Обновите отчет и откройте цепочку повторно.')
     }
   }
+
+  useEffect(() => {
+    const deferred = deferredJointNextActionRef.current
+    if (!deferred || deferred.targetReport !== activeReport) return
+    deferredJointNextActionRef.current = null
+    openJointNextAction(deferred.row, deferred.action)
+  }, [activeReport])
   const reportChainDialogProps = createReportChainDialogProps({
     chainRecord,
     chainRows,
-    dispatcherTasks: visibleRepeatedJointTasks,
+    dispatcherTasks: adviceRepeatedJointTasks,
     errorMessage: chainRowsError,
     isLoading: isChainRowsLoading,
     onClose: () => setChainRecord(null),
@@ -3554,6 +3596,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           },
           onOpenJournalRows: openModalRowsInWeldingJournal,
           onOpenPstoHistory: openPstoHistoryFromDialog,
+          onOpenResultManager: openPstoHistoryRowsFromDialog,
         }
       : null,
     repeatWorkflow: pstoRepeatWorkflowMode
@@ -3569,6 +3612,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           },
           onOpenJournalRows: openModalRowsInWeldingJournal,
           onOpenPstoHistory: openPstoHistoryFromDialog,
+          onOpenResultManager: openPstoHistoryRowsFromDialog,
         }
       : null,
     lineProgram: isPstoLineProgramOpen

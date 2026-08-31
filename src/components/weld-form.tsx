@@ -249,7 +249,7 @@ export function WeldForm({
     >
       <WeldFormHeader draft={draft} isEditing={isEditing} onCancel={onCancel} />
 
-      <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+      <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0">
         <WeldFormSections
           fieldsByGroup={fieldsByGroup}
           collapsedSections={collapsedSections}

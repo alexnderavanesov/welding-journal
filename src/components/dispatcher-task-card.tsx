@@ -53,7 +53,7 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
   return (
     <div
       key={task.key}
-      className={nested ? 'w-full bg-white' : 'w-full rounded-md border border-slate-200 bg-white'}
+      className={nested ? 'w-full bg-transparent' : 'w-full rounded-md border border-sky-100 bg-[#f8fcfe]'}
     >
       <div className="mx-auto grid min-h-11 w-full max-w-[1400px] grid-cols-[minmax(0,1fr)_auto] items-stretch">
         <button
@@ -102,10 +102,10 @@ export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCo
 
   return (
     <details
-      className="group/code w-full border-b border-slate-200 bg-white last:border-b-0"
+      className="group/code w-full border-b border-sky-100 bg-[#f8fcfe] last:border-b-0"
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
     >
-      <summary className="min-h-11 cursor-pointer list-none px-3 py-2 text-sm marker:hidden hover:bg-slate-50">
+      <summary className="min-h-11 cursor-pointer list-none px-3 py-2 text-sm marker:hidden hover:bg-white/75">
         <span className="mx-auto flex w-full max-w-[1600px] items-center gap-2">
           <span className="inline-flex min-w-0 items-center gap-1 rounded border border-violet-200 bg-violet-50 px-2 py-1">
             <strong className="shrink-0 font-semibold text-violet-700">{group.code}</strong>
@@ -128,8 +128,8 @@ export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCo
         </span>
       </summary>
       {isOpen ? (
-        <div className="border-t border-slate-100 bg-slate-50/40 pl-3">
-          <div className="overflow-hidden border-l border-slate-200 bg-white">
+        <div className="border-t border-sky-100 bg-sky-50/35 pl-3">
+          <div className="overflow-hidden border-l border-sky-100 bg-white/55">
             {visibleGroups.map((objectGroup) => (
               <DispatcherTaskGroup
                 key={objectGroup.key}

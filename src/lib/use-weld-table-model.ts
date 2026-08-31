@@ -47,11 +47,14 @@ type UseWeldTableModelOptions = {
   isRowSelectable: (row: RowWithId) => boolean
   storageKey: string
   hiddenFieldKeys: ReadonlySet<WeldFieldKey>
+  userHiddenFieldKeys?: ReadonlySet<WeldFieldKey>
   mergePstoSections: boolean
   rowActions?: ReportRowActions
   collapsibleExtraSections?: ReadonlySet<string>
   defaultCollapsedSections?: ReadonlySet<string>
   sectionLayout?: readonly WeldTableSection[]
+  controlledCollapsedSections?: ReadonlySet<string>
+  onToggleSection?: (section: string) => void
 }
 
 export function useWeldTableModel({
@@ -75,24 +78,33 @@ export function useWeldTableModel({
   isRowSelectable,
   storageKey,
   hiddenFieldKeys,
+  userHiddenFieldKeys,
   mergePstoSections,
   rowActions,
   collapsibleExtraSections,
   defaultCollapsedSections,
   sectionLayout,
+  controlledCollapsedSections,
+  onToggleSection,
 }: UseWeldTableModelOptions) {
   const alwaysVisibleFieldKeys = useMemo(() => getAlwaysVisibleFieldKeys(mergePstoSections), [mergePstoSections])
-  const availableSections = useMemo(
-    () => getAvailableWeldTableSections({ hiddenFieldKeys, mergePstoSections, sectionLayout }),
-    [hiddenFieldKeys, mergePstoSections, sectionLayout],
+  const combinedHiddenFieldKeys = useMemo(
+    () => new Set([...hiddenFieldKeys, ...(userHiddenFieldKeys ?? [])]),
+    [hiddenFieldKeys, userHiddenFieldKeys],
   )
-  const { collapsedSections, toggleSection } = useWeldTableCollapsedSections({
+  const availableSections = useMemo(
+    () => getAvailableWeldTableSections({ hiddenFieldKeys: combinedHiddenFieldKeys, mergePstoSections, sectionLayout }),
+    [combinedHiddenFieldKeys, mergePstoSections, sectionLayout],
+  )
+  const fallbackCollapsedState = useWeldTableCollapsedSections({
     storageKey,
     availableSections,
     alwaysVisibleFieldKeys,
     collapsibleExtraSections,
     defaultCollapsedSections,
   })
+  const collapsedSections = controlledCollapsedSections ?? fallbackCollapsedState.collapsedSections
+  const toggleSection = onToggleSection ?? fallbackCollapsedState.toggleSection
   const filteredSections = useMemo(
     () => getFilteredWeldTableSections({ availableSections, collapsedSections, alwaysVisibleFieldKeys }),
     [alwaysVisibleFieldKeys, availableSections, collapsedSections],

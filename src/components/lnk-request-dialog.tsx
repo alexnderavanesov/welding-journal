@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import {
-  LNK_WORKFLOW_DIALOG_HEIGHT_CLASS,
-  LNK_WORKFLOW_DIALOG_WIDTH_CLASS,
-} from '@/components/lnk-dialog-layout'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkExistingRequestSearch } from '@/components/lnk-existing-request-search'
 import { LnkRequestMethods } from '@/components/lnk-request-methods'
 import { LnkRequestModeToolbar } from '@/components/lnk-request-mode-toolbar'
@@ -301,12 +297,7 @@ export function LnkRequestDialog({
     }))
   })
   return (
-    <LargeDialogShell
-      maxWidthClassName={LNK_WORKFLOW_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={LNK_WORKFLOW_DIALOG_HEIGHT_CLASS}
-      overlayClassName="z-50 bg-slate-950/20 py-2"
-      panelShadowClassName="shadow-slate-950/10"
-    >
+    <WorkflowDialogShell>
       <RequestDialogHeader
         title="Заявка ЛНК"
         subtitle={`${submitMode === 'create' ? headerDocumentLabel : selectedExistingRequest?.label ?? 'Выберите заявку'} · Стыков: ${selectedRowsCount} · Добавится позиций: ${selectedTargetCount}`}
@@ -523,7 +514,7 @@ export function LnkRequestDialog({
         }}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

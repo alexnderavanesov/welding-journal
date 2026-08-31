@@ -6,6 +6,7 @@ import {
   buildPrimaryTvmtResultRows,
   canAddPrimaryTvmtResult,
   canCreatePrimaryTvmtRequest,
+  getTvmtWorkflowBlockReason,
 } from '@/lib/tvmt-field-updates'
 
 describe('primary TVMT updates', () => {
@@ -73,6 +74,26 @@ describe('primary TVMT updates', () => {
       result: 'годен',
       conclusionName: 'ЗНК-ТВМТ-001',
     })).toThrow('раньше ТВМТ')
+  })
+
+  it('explains cancellation instead of claiming PSTO was never assigned', () => {
+    expect(getTvmtWorkflowBlockReason(row({
+      pstoRequired: 'отменен',
+      pstoRequest: null,
+      pstoRequestDate: null,
+      pstoDate: null,
+      pstoResult: null,
+    }), 'request')).toBe('Недоступно: ПСТО по линии отменена.')
+  })
+
+  it('does not describe a failed TVMT on a cancelled line as good', () => {
+    expect(getTvmtWorkflowBlockReason(row({
+      pstoRequired: 'отменен',
+      tvmtRequest: 'Заявка ТВМТ-001',
+      tvmtResult: 'не годен',
+      tvmtConclusionDate: '2026-08-23',
+      tvmtConclusion: 'ЗНК-ТВМТ-001',
+    }), 'request')).toContain('негодная ТВМТ завершила текущий цикл')
   })
 })
 

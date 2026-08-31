@@ -15,6 +15,9 @@ export type JointChainCardProps = {
 
 export function JointChainCard({ row, index, isCurrent, onOpenRow, onSelect }: JointChainCardProps) {
   const resultItems = getJointChainResultItems(row)
+  const pstoTvmtItems = resultItems.filter((item) => item.stage === 'pstoTvmt')
+  const mainLnkItems = resultItems.filter((item) => item.stage === 'mainLnk')
+  const duplicateItems = resultItems.filter((item) => item.stage === 'duplicate')
   const jointName = String(row.joint ?? '-')
 
   return (
@@ -54,20 +57,46 @@ export function JointChainCard({ row, index, isCurrent, onOpenRow, onSelect }: J
       <div className="mt-1 truncate text-xs text-slate-500" title={getJointTitle(row)}>{getJointTitle(row)}</div>
       <div className="mt-1 text-xs text-slate-500"><JointSpoolDateMeta row={row} /></div>
 
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
-          {getJointStatusDisplayLabel(row)}
-        </span>
-        {resultItems.length > 0 ? resultItems.map((item) => (
-          <span
-            key={`${row.id}:${item.label}:${item.value}`}
-            className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${item.className}`}
-          >
-            {item.label} {item.value}
+      <div className="mt-3 space-y-2.5">
+        {pstoTvmtItems.length > 0 ? (
+          <ChainStatusGroup title="ПСТО и ТВМТ" items={pstoTvmtItems} />
+        ) : null}
+        {mainLnkItems.length > 0 ? (
+          <ChainStatusGroup title="Основной этап НК" items={mainLnkItems} />
+        ) : null}
+        {duplicateItems.length > 0 ? (
+          <ChainStatusGroup title="Дубль-контроль" items={duplicateItems} />
+        ) : null}
+        <div>
+          <div className="mb-1 text-[10px] font-semibold uppercase leading-4 text-slate-400">Итог по стыку</div>
+          <span className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+            {getJointStatusDisplayLabel(row)}
           </span>
-        )) : (
-          <span className="text-xs text-slate-400">результатов нет</span>
-        )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ChainStatusGroup({
+  title,
+  items,
+}: {
+  title: string
+  items: ReturnType<typeof getJointChainResultItems>
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold uppercase leading-4 text-slate-400">{title}</div>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {items.map((item) => (
+          <span
+            key={`${item.stage}:${item.label}:${item.value}`}
+            className={`max-w-full break-words rounded border px-1.5 py-0.5 text-xs font-semibold leading-4 ${item.className}`}
+          >
+            {item.label}: {item.value}
+          </span>
+        ))}
       </div>
     </div>
   )

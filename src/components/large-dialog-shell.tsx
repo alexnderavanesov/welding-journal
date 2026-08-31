@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 
 import type { PageScrollPosition } from '@/lib/page-scroll-position'
@@ -80,7 +81,7 @@ export function LargeDialogShell({
     }
   }, [returnPageScrollPosition])
 
-  return (
+  const shell = (
     <div className={cn('fixed inset-0 flex items-center justify-center overflow-hidden overscroll-contain px-4 backdrop-blur-[1px]', overlayClassName)}>
       <div
         data-modal-dialog="true"
@@ -99,4 +100,6 @@ export function LargeDialogShell({
       </div>
     </div>
   )
+
+  return typeof document === 'undefined' ? shell : createPortal(shell, document.body)
 }

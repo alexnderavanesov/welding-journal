@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import {
   LNK_RESULT_ROW_GRID_CLASS,
-  LNK_WORKFLOW_DIALOG_HEIGHT_CLASS,
-  LNK_WORKFLOW_DIALOG_WIDTH_CLASS,
 } from '@/components/lnk-dialog-layout'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
@@ -223,12 +221,7 @@ export function LnkResultDialog({
   })
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={LNK_WORKFLOW_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={LNK_WORKFLOW_DIALOG_HEIGHT_CLASS}
-      overlayClassName="z-50 bg-slate-950/20 py-2"
-      panelShadowClassName="shadow-slate-950/10"
-    >
+    <WorkflowDialogShell>
       <ResultDialogHeader
         title="Внесение результатов ЛНК"
         requestName={draft.requestName}
@@ -351,6 +344,6 @@ export function LnkResultDialog({
         onSave={onSave}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }

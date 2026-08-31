@@ -5,20 +5,15 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
+import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
 import { TvmtWorkflowRow, type TvmtWorkflowRowMode } from '@/components/tvmt-workflow-row'
-import {
-  WORKFLOW_DIALOG_HEIGHT_CLASS,
-  WORKFLOW_DIALOG_OVERLAY_CLASS,
-  WORKFLOW_DIALOG_SHADOW_CLASS,
-  WORKFLOW_DIALOG_WIDTH_CLASS,
-} from '@/components/workflow-dialog-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -53,6 +48,7 @@ import { getSystemDocumentTemplateId } from '@/lib/system-document-template-type
 import {
   canAddTvmtResult,
   canCreateTvmtRequest,
+  getTvmtWorkflowBlockReason,
   buildPrimaryTvmtRequestRows,
   buildPrimaryTvmtResultRows,
   getCurrentTvmtDocumentFields,
@@ -80,6 +76,7 @@ export type TvmtWorkflowDialogProps = {
   onSaved: (rows: WeldRow[], fieldKeys: WeldFieldKey[], message: string) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
+  onOpenResultManager?: (rows: readonly WeldRow[]) => void
 }
 
 type SaveResult = {
@@ -101,6 +98,7 @@ export function TvmtWorkflowDialog({
   onSaved,
   onOpenJournalRows,
   onOpenPstoHistory,
+  onOpenResultManager,
 }: TvmtWorkflowDialogProps) {
   const queryClient = useQueryClient()
   const settings = useRequestConclusionSettings()
@@ -367,19 +365,24 @@ export function TvmtWorkflowDialog({
   }
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={WORKFLOW_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={WORKFLOW_DIALOG_HEIGHT_CLASS}
-      overlayClassName={WORKFLOW_DIALOG_OVERLAY_CLASS}
-      panelShadowClassName={WORKFLOW_DIALOG_SHADOW_CLASS}
-    >
-      <RequestDialogHeader
-        title={mode === 'request' ? 'Заявка ТВМТ' : 'Внесение результатов ТВМТ'}
-        subtitle={mode === 'request'
-          ? `После проведенной ПСТО · Выбрано стыков: ${selectedRows.length}`
-          : `${selectedRequest?.name ?? 'Выберите заявку ТВМТ'} · Выбрано стыков: ${selectedRows.length}`}
-        onClose={onClose}
-      />
+    <WorkflowDialogShell>
+      {mode === 'request' ? (
+        <RequestDialogHeader
+          title="Заявка ТВМТ"
+          subtitle={`После проведенной ПСТО · Выбрано стыков: ${selectedRows.length}`}
+          onClose={onClose}
+        />
+      ) : (
+        <ResultDialogHeader
+          title="Внесение результатов ТВМТ"
+          requestName={selectedRequest?.name ?? ''}
+          selectedCount={selectedRows.length}
+          managerDisabled={!onOpenResultManager || requestRows.length === 0}
+          managerDisabledReason="Сначала выберите заявку ТВМТ с доступными позициями."
+          onOpenManager={() => onOpenResultManager?.(requestRows)}
+          onClose={onClose}
+        />
+      )}
 
       <section className={`grid shrink-0 gap-3 border-b border-slate-100 bg-slate-50/40 px-5 py-2.5 ${
         mode === 'result'
@@ -487,6 +490,7 @@ export function TvmtWorkflowDialog({
                   mode={mode}
                   selected={selectedIds.has(row.id)}
                   disabled={!canSelectRow(row)}
+                  disabledReason={getTvmtWorkflowBlockReason(row, mode)}
                   rowResult={rowResults[row.id] ?? ''}
                   onToggle={toggleRow}
                   onResultChange={(rowId, result) => setRowsResult([rowId], result)}
@@ -529,7 +533,7 @@ export function TvmtWorkflowDialog({
         )}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

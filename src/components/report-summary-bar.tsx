@@ -53,7 +53,7 @@ export function ReportSummaryBar({
 
   return (
     <div
-      className="sticky z-20 flex min-h-8 items-center justify-between gap-3 bg-white text-sm text-muted-foreground"
+      className="sticky z-20 flex min-h-8 items-center justify-between gap-3 bg-[#f4f7f9]/95 text-sm text-muted-foreground backdrop-blur-sm"
       style={{ left, width: `calc(100vw - ${left + 24}px)` }}
     >
       <span className="min-w-0 truncate">{summaryText}</span>

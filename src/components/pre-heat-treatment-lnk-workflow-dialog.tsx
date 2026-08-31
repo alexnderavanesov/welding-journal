@@ -5,12 +5,10 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkExistingRequestSearch } from '@/components/lnk-existing-request-search'
 import {
   LNK_RESULT_ROW_GRID_CLASS,
-  LNK_WORKFLOW_DIALOG_HEIGHT_CLASS,
-  LNK_WORKFLOW_DIALOG_WIDTH_CLASS,
 } from '@/components/lnk-dialog-layout'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestMethods } from '@/components/lnk-request-methods'
@@ -586,12 +584,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   }
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={LNK_WORKFLOW_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={LNK_WORKFLOW_DIALOG_HEIGHT_CLASS}
-      overlayClassName="z-50 bg-slate-950/20 py-2"
-      panelShadowClassName="shadow-slate-950/10"
-    >
+    <WorkflowDialogShell>
       {mode === 'request' ? (
         <RequestDialogHeader
           title="Заявка ЛНК до ТО"
@@ -611,6 +604,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
           requestName={selectedRequest?.name ?? ''}
           selectedCount={selectedRows.length}
           managerDisabled={!onOpenResultRegistry}
+          managerDisabledReason="Реестр результатов НК до ТО недоступен в этом контексте."
           onOpenManager={() => onOpenResultRegistry?.()}
           onClose={onClose}
           stageControl={onStageChange ? (
@@ -847,7 +841,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         )}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

@@ -13,6 +13,15 @@ export function useDispatcherTaskUiState() {
     setDismissedRepeatedJointTaskKeys((current) => new Set([...current, ...tasks.map((task) => task.key)]))
   }
 
+  function restoreDismissedRepeatedJointTask(task: DispatcherTask) {
+    setDismissedRepeatedJointTaskKeys((current) => {
+      if (!current.has(task.key)) return current
+      const next = new Set(current)
+      next.delete(task.key)
+      return next
+    })
+  }
+
   function resetDismissedRepeatedJointTasks() {
     setDismissedRepeatedJointTaskKeys(new Set())
   }
@@ -39,6 +48,7 @@ export function useDispatcherTaskUiState() {
     dismissRepeatedJointTasks,
     isRepeatedJointTaskExpanded,
     resetDismissedRepeatedJointTasks,
+    restoreDismissedRepeatedJointTask,
     setExpandedRepeatedJointTaskKeys,
     toggleRepeatedJointTaskDetails,
   }

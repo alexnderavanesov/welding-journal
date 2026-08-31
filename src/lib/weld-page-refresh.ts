@@ -8,6 +8,7 @@ import {
   type WeldPageResult,
   type WeldPageSize,
   type WeldReportKind,
+  type WeldSort,
 } from '@/server/weld-read-api'
 import type { WeldPageRequest } from '@/server/weld-contracts'
 
@@ -175,6 +176,7 @@ async function runLoadedPageRefresh({
     page: 1,
     pageSize: refreshPageSize,
     columnFilters: parsedKey.columnFilters,
+    ...(parsedKey.sort ? { sort: parsedKey.sort } : {}),
   })
 
   const rows = [...firstResult.rows]
@@ -187,6 +189,7 @@ async function runLoadedPageRefresh({
         page,
         pageSize: refreshPageSize,
         columnFilters: parsedKey.columnFilters,
+        ...(parsedKey.sort ? { sort: parsedKey.sort } : {}),
       })
       rows.push(...result.rows)
       if (!result.hasMore || result.rows.length === 0) break
@@ -229,6 +232,7 @@ type ParsedWeldPageQueryKey = {
   report: WeldReportKind
   columnFilters: Record<string, string>
   pageSize: WeldPageSize
+  sort?: WeldSort
 }
 
 function parseWeldPageQueryKey(queryKey: QueryKey): ParsedWeldPageQueryKey | null {
@@ -236,14 +240,23 @@ function parseWeldPageQueryKey(queryKey: QueryKey): ParsedWeldPageQueryKey | nul
   const report = queryKey[1]
   const columnFilters = queryKey[2]
   const pageSize = queryKey[3]
+  const sort = queryKey[4]
   if (report !== 'weldingJournal' && report !== 'lnk' && report !== 'heatTreatment') return null
   if (!columnFilters || typeof columnFilters !== 'object' || Array.isArray(columnFilters)) return null
   if (pageSize !== WELD_PAGE_ALL_SIZE && !WELD_PAGE_SIZE_OPTIONS.includes(pageSize as never)) return null
+  if (sort !== null && sort !== undefined && !isWeldSort(sort)) return null
   return {
     report,
     columnFilters: columnFilters as Record<string, string>,
     pageSize: pageSize as WeldPageSize,
+    ...(sort ? { sort } : {}),
   }
+}
+
+function isWeldSort(value: unknown): value is WeldSort {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const candidate = value as Partial<WeldSort>
+  return typeof candidate.fieldKey === 'string' && (candidate.direction === 'asc' || candidate.direction === 'desc')
 }
 
 function getRefreshStateMap(queryClient: QueryClient) {

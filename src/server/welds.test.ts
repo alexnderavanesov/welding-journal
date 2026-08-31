@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { sql } from 'drizzle-orm'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import {
   WELD_PAGE_ALL_SIZE,
   attachRkExposureSchemeFilterValues,
@@ -24,6 +26,7 @@ import {
   restrictWeldMutationRecord,
   shouldEnsureDispatcherTaskIndexForColumnFilter,
 } from './welds'
+import { getReportOrderBy } from './weld-read'
 import type { WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
@@ -441,6 +444,37 @@ describe('weld server pagination helpers', () => {
 
     expect(page.total).toBe(2)
     expect(page.rows.map((candidate) => candidate.joint)).toEqual(['S1', 'S2'])
+  })
+
+  it('sorts the full filtered report before pagination', () => {
+    const page = buildWeldReportPageFromRows(
+      [
+        row({ id: 1, joint: 'F2', line: 'LIN-1', hasVik: 'да' }),
+        row({ id: 2, joint: 'F10', line: 'LIN-1', hasVik: 'да' }),
+        row({ id: 3, joint: 'F1', line: 'LIN-1', hasVik: 'да' }),
+      ],
+      normalizeWeldPageRequest({
+        page: 1,
+        pageSize: 100,
+        columnFilters: {},
+        sort: { fieldKey: 'joint', direction: 'desc' },
+      }),
+      'lnk',
+    )
+
+    expect(page.rows.map((candidate) => candidate.joint)).toEqual(['F10', 'F2', 'F1'])
+  })
+
+  it('uses numeric parts when PostgreSQL sorts joint names', () => {
+    const orderBy = getReportOrderBy('weldingJournal', { fieldKey: 'joint', direction: 'desc' })
+    const compiled = new PgDialect().sqlToQuery(sql`
+      select 1 from ${sql.identifier('weld_joints')}
+      order by ${sql.join(orderBy, sql`, `)}
+    `)
+
+    expect(compiled.sql).toContain('substring')
+    expect(compiled.sql).toContain('regexp_replace')
+    expect(compiled.sql).toContain('::numeric')
   })
 
   it('builds contextual control basis summaries for each report', () => {

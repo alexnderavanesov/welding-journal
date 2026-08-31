@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { WeldTableBodyCell } from '@/components/weld-table-body-cell'
+import { getWeldTableBodyCellTooltip, WeldTableBodyCell } from '@/components/weld-table-body-cell'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldField } from '@/lib/weld-fields'
 
@@ -83,6 +83,101 @@ describe('WeldTableBodyCell LNK request link', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ожидает НК' }))
     expect(onOpenJointOverview).toHaveBeenCalledWith(row)
     expect(onOpenJoint).not.toHaveBeenCalled()
+  })
+
+  it('opens the complete joint picture from the joint number when both routes exist', () => {
+    const onOpenJoint = vi.fn()
+    const onOpenJointOverview = vi.fn()
+    const row = { id: 10, joint: 'F10' } as WeldRow
+    const field = {
+      key: 'joint',
+      dbName: 'joint',
+      label: 'Стык',
+      kind: 'text',
+      group: 'Стык',
+    } satisfies WeldField
+
+    render(
+      <table><tbody><tr>
+        <WeldTableBodyCell
+          row={row}
+          field={field}
+          displayValue={row.joint}
+          isEditableCell={false}
+          isBlockedEditableCell={false}
+          isHighlightedRow={false}
+          isSelectedRow={false}
+          hasDispatcherTask={false}
+          isHighlightedCell={false}
+          isResultField={false}
+          stickyLeft={0}
+          stickyIdentityLeadingWidth={0}
+          stickyIdentityColumns={false}
+          stickyBackgroundClassName="bg-white"
+          isSectionEnd={false}
+          onOpenJoint={onOpenJoint}
+          onOpenJointOverview={onOpenJointOverview}
+        />
+      </tr></tbody></table>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'F10' }))
+    expect(onOpenJointOverview).toHaveBeenCalledWith(row)
+    expect(onOpenJoint).not.toHaveBeenCalled()
+  })
+
+  it('opens the safe joint picture from an editable journal joint cell', () => {
+    const onEdit = vi.fn()
+    const onOpenJointOverview = vi.fn()
+    const row = { id: 11, joint: 'F11' } as WeldRow
+    const field = {
+      key: 'joint',
+      dbName: 'joint',
+      label: 'Стык',
+      kind: 'text',
+      group: 'Стык',
+    } satisfies WeldField
+
+    render(
+      <table><tbody><tr>
+        <WeldTableBodyCell
+          row={row}
+          field={field}
+          displayValue={row.joint}
+          isEditableCell
+          isBlockedEditableCell={false}
+          isHighlightedRow={false}
+          isSelectedRow={false}
+          hasDispatcherTask={false}
+          isHighlightedCell={false}
+          isResultField={false}
+          stickyLeft={0}
+          stickyIdentityLeadingWidth={0}
+          stickyIdentityColumns={false}
+          stickyBackgroundClassName="bg-white"
+          isSectionEnd={false}
+          onEdit={onEdit}
+          onOpenJointOverview={onOpenJointOverview}
+        />
+      </tr></tbody></table>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'F11' }))
+    expect(onOpenJointOverview).toHaveBeenCalledWith(row)
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(getWeldTableBodyCellTooltip({
+      row,
+      fieldKey: 'joint',
+      displayValue: row.joint,
+      isEditableCell: true,
+      isBlockedEditableCell: false,
+      canOpenDocument: false,
+      canOpenLnkRequest: false,
+      canOpenLnkResult: false,
+      canOpenJointOverview: true,
+      canOpenWeldEditor: true,
+      availableSystemDocumentTypes: new Set(),
+    })).toContain('Открыть картину')
   })
 
   it('opens the weld editor from the read-only control basis summary', () => {

@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type ReactNode,
+  type SetStateAction,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -130,9 +131,16 @@ import {
   getDocumentHistoryFilterMenuPosition,
   type DocumentHistoryFilterMenuPosition,
 } from '@/lib/document-history-filter-menu'
+import {
+  parseStoredDocumentNumberId,
+  parseStoredDocumentStringId,
+  useDocumentHistorySessionState,
+  useDocumentHistorySessionValue,
+} from '@/lib/use-document-history-session-state'
 import { ALL_PAGE_SIZE } from '@/lib/use-pagination'
 import { isPreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
 import {
+  getScopedSystemDocumentHistoryFilterOptions,
   getScopedSystemDocumentMethodValues,
   getScopedSystemDocumentStageValues,
   getSystemDocumentMethodCodes,
@@ -326,6 +334,12 @@ function intersectChoiceFilterValues(filterValue: string | undefined, allowedVal
   if (choiceFilter?.kind !== 'values') return allowedValues
   const requestedValues = new Set(choiceFilter.values)
   return allowedValues.filter((value) => requestedValues.has(value))
+}
+
+type LnkConclusionTemplateFilter = 'all' | LnkConclusionTemplateId
+
+function isLnkConclusionTemplateFilter(value: unknown): value is LnkConclusionTemplateFilter {
+  return value === 'all' || LNK_CONCLUSION_TEMPLATE_PROFILES.some((profile) => profile.id === value)
 }
 
 export function DocumentsPage({
@@ -1221,10 +1235,19 @@ function GeneratedDocumentsPanel({
   onOpenJointHistory: (documentRecord: StoredGeneratedDocument) => Promise<void>
 }) {
   const { requireDeletePassword } = useSecurityGuard()
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
-  const [pageSize, setPageSize] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
-  const [visibleLimit, setVisibleLimit] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(new Set())
+  const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(`generated:${documentType}`)
+  const {
+    pageSize,
+    setPageSize,
+    visibleLimit,
+    setVisibleLimit,
+    selectedDocumentIds,
+    setSelectedDocumentIds,
+  } = useDocumentHistorySessionState(
+    `generated:${documentType}`,
+    parseStoredDocumentNumberId,
+    DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
+  )
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [openingRowsDocumentId, setOpeningRowsDocumentId] = useState<number | null>(null)
   const [openRowsError, setOpenRowsError] = useState<string | null>(null)
@@ -1273,12 +1296,13 @@ function GeneratedDocumentsPanel({
         : null
 
   useEffect(() => {
+    if (!historyQuery.isSuccess || historyQuery.isPlaceholderData) return
     setSelectedDocumentIds((current) => {
       const availableIds = new Set(documents.map((documentRecord) => documentRecord.id))
       const next = new Set([...current].filter((id) => availableIds.has(id)))
       return next.size === current.size ? current : next
     })
-  }, [documents])
+  }, [documents, historyQuery.isPlaceholderData, historyQuery.isSuccess])
 
   useEffect(() => {
     setColumnFilters((current) => retainVisibleDocumentHistoryColumnFilters(current, visibleColumnKeySet))
@@ -1616,10 +1640,20 @@ function SystemDocumentsPanel({
 }) {
   const { requireEditPassword } = useSecurityGuard()
   const confirmAction = useConfirmAction()
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
-  const [pageSize, setPageSize] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
-  const [visibleLimit, setVisibleLimit] = useState(DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE)
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set())
+  const historyStorageKey = `system:${documentType}:${methodScope}`
+  const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(historyStorageKey)
+  const {
+    pageSize,
+    setPageSize,
+    visibleLimit,
+    setVisibleLimit,
+    selectedDocumentIds,
+    setSelectedDocumentIds,
+  } = useDocumentHistorySessionState(
+    historyStorageKey,
+    parseStoredDocumentStringId,
+    DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
+  )
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
@@ -1627,7 +1661,11 @@ function SystemDocumentsPanel({
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [lnkConclusionTemplateFilter, setLnkConclusionTemplateFilter] =
-    useState<'all' | LnkConclusionTemplateId>('all')
+    useDocumentHistorySessionValue(
+      `${historyStorageKey}:conclusion-template`,
+      'all' as LnkConclusionTemplateFilter,
+      isLnkConclusionTemplateFilter,
+    )
   const visibleColumnKeySet = useMemo(
     () => new Set(visibleColumns.map((column) => column.key)),
     [visibleColumns],
@@ -1688,7 +1726,10 @@ function SystemDocumentsPanel({
   })
   const documents = historyQuery.data?.documents ?? []
   const totalDocuments = historyQuery.data?.total ?? 0
-  const filterOptions = historyQuery.data?.filterOptions ?? {}
+  const filterOptions = useMemo(
+    () => getScopedSystemDocumentHistoryFilterOptions(historyQuery.data?.filterOptions, methodScope),
+    [historyQuery.data?.filterOptions, methodScope],
+  )
   const visibleDocuments = useMemo(
     () => {
       if (!navigationDocumentIdentity) return documents
@@ -1880,12 +1921,13 @@ function SystemDocumentsPanel({
   }
 
   useEffect(() => {
+    if (!historyQuery.isSuccess || historyQuery.isPlaceholderData) return
     setSelectedDocumentIds((current) => {
       const availableIds = new Set(visibleDocuments.map((documentRecord) => documentRecord.id))
       const next = new Set([...current].filter((id) => availableIds.has(id)))
       return next.size === current.size ? current : next
     })
-  }, [visibleDocuments])
+  }, [historyQuery.isPlaceholderData, historyQuery.isSuccess, visibleDocuments])
 
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -3052,4 +3094,53 @@ function CompactMetricCard({ label, value }: { label: string; value: string | nu
       <div className="mt-0.5 truncate text-xl font-semibold leading-none tabular-nums text-slate-900" title={String(value)}>{value}</div>
     </div>
   )
+}
+
+function useStoredDocumentHistoryFilters(storageKey: string) {
+  const fullStorageKey = `welding-journal:documents:filters:${storageKey}`
+  const [state, setState] = useState<{ key: string; filters: Record<string, string> }>(() => ({
+    key: fullStorageKey,
+    filters: readStoredDocumentHistoryFilters(fullStorageKey),
+  }))
+  const filters = state.key === fullStorageKey
+    ? state.filters
+    : readStoredDocumentHistoryFilters(fullStorageKey)
+
+  useEffect(() => {
+    setState({ key: fullStorageKey, filters: readStoredDocumentHistoryFilters(fullStorageKey) })
+  }, [fullStorageKey])
+
+  useEffect(() => {
+    if (state.key !== fullStorageKey || typeof window === 'undefined') return
+    window.localStorage.setItem(fullStorageKey, JSON.stringify(state.filters))
+  }, [fullStorageKey, state])
+
+  const setFilters = (next: SetStateAction<Record<string, string>>) => {
+    setState((current) => {
+      const currentFilters = current.key === fullStorageKey
+        ? current.filters
+        : readStoredDocumentHistoryFilters(fullStorageKey)
+      return {
+        key: fullStorageKey,
+        filters: typeof next === 'function' ? next(currentFilters) : next,
+      }
+    })
+  }
+
+  return [filters, setFilters] as const
+}
+
+function readStoredDocumentHistoryFilters(storageKey: string) {
+  if (typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? '{}') as Record<string, unknown>
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([key, value]) => {
+        const normalized = String(value ?? '').trim()
+        return normalized ? [[key, normalized]] : []
+      }),
+    )
+  } catch {
+    return {}
+  }
 }

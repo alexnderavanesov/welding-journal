@@ -38,8 +38,8 @@ describe('ContextActionMenu', () => {
     fireEvent.click(generateButton)
 
     expect(generateButton).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('menu')).toHaveClass('left-[calc(100%-1px)]')
-    expect(screen.getByRole('menu')).not.toHaveClass('ml-1')
+    expect(screen.getByRole('menu')).toHaveClass('fixed')
+    expect(screen.getByRole('menu').parentElement).toBe(document.body)
     expect(onGenerate).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
 
@@ -199,5 +199,108 @@ describe('ContextActionMenu', () => {
     expect(screen.getByRole('menu')).toHaveClass('relative')
     expect(screen.getByRole('menu')).not.toHaveClass('absolute')
     expect(screen.getByRole('button', { name: 'Новая заявка ПСТО' })).toBeVisible()
+  })
+
+  it('moves a submenu upward when it would cross the bottom viewport boundary', () => {
+    vi.stubGlobal('innerWidth', 1200)
+    vi.stubGlobal('innerHeight', 500)
+
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 100,
+          y: 120,
+          items: [{
+            id: 'results',
+            label: 'Результаты и заключения',
+            onSelect: vi.fn(),
+            children: [
+              { id: 'psto-result', label: 'Внести результат ПСТО', onSelect: vi.fn() },
+              { id: 'tvmt-result', label: 'Внести результат ТВМТ', onSelect: vi.fn() },
+            ],
+          }],
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const resultsButton = screen.getByRole('button', { name: 'Результаты и заключения' })
+    const anchor = resultsButton.parentElement
+    const submenu = screen.getByRole('menu')
+    if (!anchor) throw new Error('Submenu anchor is missing')
+    vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({
+      x: 100,
+      y: 430,
+      top: 430,
+      right: 420,
+      bottom: 466,
+      left: 100,
+      width: 320,
+      height: 36,
+      toJSON: () => ({}),
+    })
+    Object.defineProperty(submenu, 'scrollHeight', { configurable: true, value: 220 })
+
+    fireEvent.mouseEnter(anchor)
+
+    expect(submenu).toHaveStyle({ left: '419px', top: '272px', width: '320px', maxHeight: '484px' })
+    expect(submenu).toHaveClass('overflow-y-auto')
+  })
+
+  it('keeps a desktop submenu open when it is clicked after opening on hover', () => {
+    vi.stubGlobal('innerWidth', 1200)
+
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 100,
+          y: 120,
+          items: [{
+            id: 'results',
+            label: 'Результаты и заключения',
+            onSelect: vi.fn(),
+            children: [{ id: 'result', label: 'Внести результат', onSelect: vi.fn() }],
+          }],
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const resultsButton = screen.getByRole('button', { name: 'Результаты и заключения' })
+    const anchor = resultsButton.parentElement
+    if (!anchor) throw new Error('Submenu anchor is missing')
+
+    fireEvent.mouseEnter(anchor)
+    fireEvent.click(resultsButton)
+
+    expect(resultsButton).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('menu')).toHaveClass('visible')
+  })
+
+  it('does not close a long submenu while the user scrolls inside it', () => {
+    vi.stubGlobal('innerWidth', 1200)
+    const onClose = vi.fn()
+
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 100,
+          y: 120,
+          items: [{
+            id: 'results',
+            label: 'Результаты и заключения',
+            onSelect: vi.fn(),
+            children: [{ id: 'result', label: 'Внести результат', onSelect: vi.fn() }],
+          }],
+        }}
+        onClose={onClose}
+      />,
+    )
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Результаты и заключения' }).parentElement!)
+    fireEvent.scroll(screen.getByRole('menu'))
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('menu')).toHaveClass('visible')
   })
 })

@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react'
+import { BlockedActionHint } from '@/components/blocked-action-hint'
 import { Button } from '@/components/ui/button'
 
 export type ResultDialogFooterProps = {
@@ -26,22 +27,12 @@ export function ResultDialogFooter({
     <div className="flex items-end justify-between gap-4 border-t border-slate-200/80 px-5 py-4">
       <div className="min-h-5 text-sm text-slate-500">
         {saveBlockReason ? (
-          showDangerReason ? (
-            <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">
-              <span className="font-semibold">Сохранение заблокировано:</span> {saveBlockReason}
-              {blockReasonActionLabel && onBlockReasonAction ? (
-                <button
-                  type="button"
-                  onClick={onBlockReasonAction}
-                  className="font-semibold text-rose-800 underline decoration-rose-300 underline-offset-2 hover:text-rose-950"
-                >
-                  {blockReasonActionLabel}
-                </button>
-              ) : null}
-            </span>
-          ) : (
-            <span className="text-sm text-slate-500">{saveBlockReason}</span>
-          )
+          <BlockedActionHint
+            reason={showDangerReason ? `Сохранение заблокировано: ${saveBlockReason}` : saveBlockReason}
+            actionLabel={blockReasonActionLabel}
+            onAction={onBlockReasonAction}
+            tone={showDangerReason ? 'danger' : 'warning'}
+          />
         ) : null}
       </div>
       <div className="flex justify-end gap-2">

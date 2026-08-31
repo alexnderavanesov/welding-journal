@@ -25,12 +25,18 @@ export const WELD_SNAPSHOT_BATCH_SIZE = 1000
 export type WeldPageSize = (typeof WELD_PAGE_SIZE_OPTIONS)[number] | typeof WELD_PAGE_ALL_SIZE
 export type WeldReportKind = 'weldingJournal' | 'lnk' | 'heatTreatment'
 export type WeldReportContextKind = Exclude<WeldReportKind, 'weldingJournal'>
+export type WeldSortDirection = 'asc' | 'desc'
+export type WeldSort = {
+  fieldKey: WeldFieldKey
+  direction: WeldSortDirection
+}
 
 export type WeldPageRequest = WeldFilters & {
   report?: WeldReportKind
   page?: number
   pageSize?: WeldPageSize
   columnFilters?: Record<string, string>
+  sort?: WeldSort
 }
 
 export type WeldImportSecurityAction = 'newRecords' | 'massFill' | 'replaceData'

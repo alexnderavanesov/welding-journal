@@ -35,9 +35,9 @@ describe('ReportImportDialog save result', () => {
   it('keeps the preview open and shows a server rejection', async () => {
     const onClose = vi.fn()
     const onImportRecords = vi.fn().mockRejectedValue(new Error('Импорт остановлен: строка 2. ЗВ-26.'))
-    const view = renderDialog({ onClose, onImportRecords })
+    renderDialog({ onClose, onImportRecords })
 
-    await uploadPreviewFile(view.container)
+    await uploadPreviewFile()
     fireEvent.click(screen.getByRole('button', { name: 'Импортировать 1 строк' }))
 
     expect(await screen.findByText('Сохранение не выполнено. Импорт остановлен: строка 2. ЗВ-26.')).toBeInTheDocument()
@@ -48,9 +48,9 @@ describe('ReportImportDialog save result', () => {
   it('keeps the prepared preview open when password entry is cancelled', async () => {
     const onClose = vi.fn()
     const onImportRecords = vi.fn().mockResolvedValue(false)
-    const view = renderDialog({ onClose, onImportRecords })
+    renderDialog({ onClose, onImportRecords })
 
-    await uploadPreviewFile(view.container)
+    await uploadPreviewFile()
     fireEvent.click(screen.getByRole('button', { name: 'Импортировать 1 строк' }))
 
     await waitFor(() => expect(onImportRecords).toHaveBeenCalledTimes(1))
@@ -69,9 +69,9 @@ describe('ReportImportDialog save result', () => {
         { rowNumber: 2, title: 'Стык', message: 'Ошибка стыка', fieldKeys: ['joint'] },
       ],
     })
-    const view = renderDialog({ onClose: vi.fn(), onImportRecords: vi.fn().mockResolvedValue(true) })
+    renderDialog({ onClose: vi.fn(), onImportRecords: vi.fn().mockResolvedValue(true) })
 
-    await uploadPreviewFile(view.container, 'import.xlsx · найдено: 1 · к добавлению: 0')
+    await uploadPreviewFile('import.xlsx · найдено: 1 · к добавлению: 0')
 
     expect(screen.getByTitle('330-P49-03-000')).toHaveClass('bg-amber-50')
     expect(screen.getByTitle('F1')).toHaveClass('bg-amber-50')
@@ -108,8 +108,8 @@ function renderDialog({
   )
 }
 
-async function uploadPreviewFile(container: HTMLElement, summary = 'import.xlsx · найдено: 1 · к добавлению: 1') {
-  const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+async function uploadPreviewFile(summary = 'import.xlsx · найдено: 1 · к добавлению: 1') {
+  const input = document.body.querySelector<HTMLInputElement>('input[type="file"]')
   expect(input).not.toBeNull()
   fireEvent.change(input!, {
     target: { files: [new File(['test'], 'import.xlsx')] },

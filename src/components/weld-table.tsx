@@ -7,6 +7,7 @@ import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { getWeldTableBodyCellTooltip } from '@/components/weld-table-body-cell'
 import { WeldTableColumns } from '@/components/weld-table-columns'
 import { WeldTableHeader } from '@/components/weld-table-header'
+import { WeldReportViewControls } from '@/components/weld-report-view-controls'
 import { WeldTableSectionToolbar } from '@/components/weld-table-section-toolbar'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ReportRowActions } from '@/lib/report-row-actions'
@@ -16,14 +17,16 @@ import {
   type WeldTableExtraColumn,
 } from '@/lib/weld-table-extra-columns'
 import { useWeldTableModel } from '@/lib/use-weld-table-model'
+import { useWeldReportViewState } from '@/lib/use-weld-report-view-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { ROW_ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
-import type { WeldColumnFilterOption, WeldReportKind } from '@/server/weld-contracts'
+import type { WeldColumnFilterOption, WeldReportKind, WeldSort } from '@/server/weld-contracts'
 import type { SystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { useWindowTableVirtualization } from '@/lib/use-window-table-virtualization'
 import { useWindowTableHorizontalVirtualization } from '@/lib/use-window-table-horizontal-virtualization'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
+import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections } from '@/lib/weld-table-sections'
 
 const EMPTY_FIELD_KEY_SET = new Set<WeldFieldKey>()
 const EMPTY_NUMBER_SET = new Set<number>()
@@ -33,6 +36,7 @@ const EMPTY_EXTRA_COLUMNS: WeldTableExtraColumn[] = []
 const DEFAULT_CELL_EDITABLE = () => true
 const DEFAULT_DISPLAY_VALUE = (row: WeldRow, fieldKey: WeldFieldKey) => row[fieldKey]
 const DEFAULT_ROW_SELECTABLE = () => true
+const DEFAULT_SORT_CHANGE = () => undefined
 
 export type WeldTableProps = {
   rows: WeldRow[]
@@ -54,6 +58,8 @@ export type WeldTableProps = {
     onPageSizeChange: (pageSize: number) => void
   }
   onColumnFiltersChange: (filters: Record<string, string>) => void
+  sort?: WeldSort | null
+  onSortChange?: (sort: WeldSort | null) => void
   onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onDelete?: (id: number) => void
   stickyLeft?: number
@@ -107,6 +113,8 @@ export function WeldTable({
   manualFilterOptions,
   manualPagination,
   onColumnFiltersChange,
+  sort = null,
+  onSortChange = DEFAULT_SORT_CHANGE,
   onEdit,
   onDelete,
   stickyLeft = 0,
@@ -145,6 +153,7 @@ export function WeldTable({
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const tableRef = useRef<HTMLTableElement>(null)
   const stableOnColumnFiltersChange = useStableEventCallback(onColumnFiltersChange)
+  const stableOnSortChange = useStableEventCallback(onSortChange)
   const stableOnEdit = useStableEventCallback(onEdit)
   const stableOnDelete = useStableEventCallback(onDelete)
   const stableIsCellEditable = useStableEventCallback(isCellEditable)
@@ -224,6 +233,24 @@ export function WeldTable({
     () => getCollapsibleExtraSectionNames(extraColumns),
     [extraColumns],
   )
+  const configurableAlwaysVisibleFieldKeys = useMemo(
+    () => getAlwaysVisibleFieldKeys(false),
+    [],
+  )
+  const configurableSections = useMemo(
+    () => getAvailableWeldTableSections({ hiddenFieldKeys, mergePstoSections, sectionLayout }),
+    [hiddenFieldKeys, mergePstoSections, sectionLayout],
+  )
+  const reportView = useWeldReportViewState({
+    storageKey,
+    sections: configurableSections,
+    alwaysVisibleFieldKeys: configurableAlwaysVisibleFieldKeys,
+    defaultCollapsedSections,
+    columnFilters,
+    sort,
+    onColumnFiltersChange: stableOnColumnFiltersChange,
+    onSortChange: stableOnSortChange,
+  })
   const {
     alwaysVisibleFieldKeys,
     availableSections,
@@ -266,11 +293,14 @@ export function WeldTable({
     isRowSelectable: stableRowSelectable,
     storageKey,
     hiddenFieldKeys,
+    userHiddenFieldKeys: reportView.hiddenFieldKeys,
     mergePstoSections,
     rowActions: stableRowActions,
     collapsibleExtraSections,
     defaultCollapsedSections,
     sectionLayout,
+    controlledCollapsedSections: reportView.collapsedSections,
+    onToggleSection: reportView.toggleSection,
   })
   const visibleExtraColumns = useMemo(
     () => getVisibleWeldTableExtraColumns(extraColumns, collapsedSections),
@@ -453,6 +483,23 @@ export function WeldTable({
         tableMinWidth={fullTableMinWidth}
         stickyLeft={stickyLeft}
         onToggleSection={toggleSection}
+        viewControls={(
+          <WeldReportViewControls
+            sections={configurableSections}
+            alwaysVisibleFieldKeys={configurableAlwaysVisibleFieldKeys}
+            hiddenFieldKeys={reportView.hiddenFieldKeys}
+            activePreset={reportView.activePreset}
+            savedViews={reportView.savedViews}
+            sort={sort}
+            onApplyPreset={reportView.applyPreset}
+            onToggleField={reportView.toggleField}
+            onShowAllFields={reportView.showAllFields}
+            onSortChange={stableOnSortChange}
+            onSaveView={reportView.saveView}
+            onApplySavedView={reportView.applySavedView}
+            onDeleteSavedView={reportView.deleteSavedView}
+          />
+        )}
       />
       <div className="rounded-lg border border-[#dbe7f0] bg-white shadow-sm shadow-slate-200/45" style={{ minWidth: fullTableMinWidth }}>
         <table

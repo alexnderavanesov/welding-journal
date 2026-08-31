@@ -21,9 +21,13 @@ export function useDispatcherTaskSnapshot({
     staleTime: 15_000,
   })
   const duplicateKeys = useMemo(() => new Set(query.data?.duplicateKeys ?? []), [query.data?.duplicateKeys])
+  const allRepeatedJointTasks = useMemo(
+    () => query.data?.repeatedJointTasks ?? [],
+    [query.data?.repeatedJointTasks],
+  )
   const repeatedJointTasks = useMemo(
-    () => filterDismissedDispatcherTasks(query.data?.repeatedJointTasks, dismissedRepeatedJointTaskKeys),
-    [dismissedRepeatedJointTaskKeys, query.data?.repeatedJointTasks],
+    () => filterDismissedDispatcherTasks(allRepeatedJointTasks, dismissedRepeatedJointTaskKeys),
+    [allRepeatedJointTasks, dismissedRepeatedJointTaskKeys],
   )
   const welderStampExpiryTasks = useMemo(
     () => filterDismissedDispatcherTasks(query.data?.welderStampExpiryTasks, dismissedRepeatedJointTaskKeys),
@@ -41,6 +45,7 @@ export function useDispatcherTaskSnapshot({
 
   return {
     ...query,
+    allRepeatedJointTasks,
     duplicateKeys,
     repeatedJointTaskGroups,
     repeatedJointTasks,

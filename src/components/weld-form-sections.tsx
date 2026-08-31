@@ -105,7 +105,7 @@ export function WeldFormSections({
           Нет доступных полей для редактирования этой записи.
         </div>
       ) : null}
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 pb-3 backdrop-blur">
+      <div className="sticky top-0 z-10 -mx-6 -mt-px border-b border-slate-200 bg-slate-50/95 px-6 pb-2 pt-0 backdrop-blur">
         <div className="inline-flex rounded-md border border-slate-200 bg-white p-1 shadow-sm shadow-slate-200/50">
           <WeldFormTabButton
             active={activeTab === 'joint'}
@@ -310,15 +310,17 @@ function WeldFormTabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-9 items-center gap-2 rounded px-4 py-2 text-sm font-semibold transition-colors ${
-        active ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'
+      className={`inline-flex min-h-9 items-center gap-2 rounded border px-4 py-2 text-sm font-semibold transition-colors ${
+        active
+          ? 'border-sky-300 bg-sky-50 text-sky-900 shadow-sm shadow-sky-100/70'
+          : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900'
       }`}
     >
       <span>{label}</span>
       {statusCount > 0 ? (
         <span
           className={`rounded px-1.5 py-0.5 text-[10px] leading-none ${
-            active ? 'bg-white/15 text-white' : 'bg-sky-50 text-sky-700'
+            active ? 'bg-sky-100 text-sky-800' : 'bg-sky-50 text-sky-700'
           }`}
           title={`${statusLabel}: ${statusCount}`}
         >

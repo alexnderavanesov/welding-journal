@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Columns3 } from 'lucide-react'
 import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldField } from '@/lib/weld-fields'
 import { canCollapseSection } from '@/lib/weld-table-section-state'
+import type { ReactNode } from 'react'
 
 type WeldTableSectionToolbarProps = {
   sections: Array<{ section: string; fields: WeldField[] }>
@@ -11,6 +12,7 @@ type WeldTableSectionToolbarProps = {
   tableMinWidth: number
   stickyLeft: number
   onToggleSection: (section: string) => void
+  viewControls?: ReactNode
 }
 
 export function WeldTableSectionToolbar({
@@ -21,13 +23,15 @@ export function WeldTableSectionToolbar({
   tableMinWidth,
   stickyLeft,
   onToggleSection,
+  viewControls,
 }: WeldTableSectionToolbarProps) {
   const controls = getSectionControls(sections, extraColumns)
+  const toolbarWidth = Math.max(0, tableMinWidth)
 
   return (
     <div
       className="sticky z-20 flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50/95 px-2.5 py-1.5 shadow-sm shadow-slate-200/30 backdrop-blur"
-      style={{ left: stickyLeft, minWidth: tableMinWidth }}
+      style={{ left: stickyLeft, width: toolbarWidth, minWidth: toolbarWidth }}
     >
       <span className="mr-1 inline-flex h-7 items-center gap-1.5 text-xs font-semibold text-slate-600">
         <Columns3 className="h-3.5 w-3.5 text-slate-400" />
@@ -69,6 +73,7 @@ export function WeldTableSectionToolbar({
           </button>
         )
       })}
+      {viewControls}
     </div>
   )
 }

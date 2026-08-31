@@ -2,14 +2,9 @@ import { useRef, type MouseEvent } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { PstoRequestManagerPosition } from '@/components/psto-request-manager-position'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
-import {
-  WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS,
-  WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS,
-  WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS,
-} from '@/components/workflow-dialog-layout'
 import {
   RequestDeletePanel,
   RequestManagerEmptyState,
@@ -142,11 +137,7 @@ export function PstoRequestManagerDialog({
   }
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS}
-      overlayClassName={WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS}
-    >
+    <WorkflowDialogShell variant="manager">
       <RequestDialogHeader
         title="Редактирование заявок ПСТО"
         subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
@@ -213,7 +204,7 @@ export function PstoRequestManagerDialog({
         />
       </div>
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

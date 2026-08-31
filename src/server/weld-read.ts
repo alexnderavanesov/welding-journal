@@ -106,6 +106,7 @@ type WeldPageResult,
 type WeldPageSize,
 type WeldReportContextKind,
 type WeldReportKind,
+type WeldSort,
 type WeldRowsByIdsRequest,
 type WeldSnapshotPageRequest
 } from '@/server/weld-contracts'
@@ -644,7 +645,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
         .select()
         .from(weldJoints)
         .where(where)
-        .orderBy(...getReportOrderBy(report))
+        .orderBy(...getReportOrderBy(report, data.sort))
       const shouldCount = data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
       const countQuery = shouldCount
         ? db.select({ total: count() }).from(weldJoints).where(where)
@@ -712,7 +713,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
         .select(WELD_TABLE_SELECT)
         .from(weldJoints)
         .where(buildWhere(sourceFilterData))
-        .orderBy(...WELDING_JOURNAL_ORDER_BY),
+        .orderBy(...getReportOrderBy('weldingJournal', data.sort)),
       otherSettings,
     ), 'weldingJournal')
     const rowsWithDerivedValues = await attachRkExposureSchemeFilterValuesIfNeeded(
@@ -748,7 +749,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
     .select(WELD_TABLE_SELECT)
     .from(weldJoints)
     .where(where)
-    .orderBy(...WELDING_JOURNAL_ORDER_BY)
+    .orderBy(...getReportOrderBy('weldingJournal', data.sort))
 
   const shouldCount = data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
   const countQuery = shouldCount
@@ -1050,11 +1051,14 @@ export function toDuplicateControlRecord(row: DuplicateControl): DuplicateContro
 
 export function buildWeldReportPageFromRows(
   sourceRows: WeldJoint[],
-  request: Required<Pick<WeldPageRequest, 'page' | 'pageSize' | 'columnFilters'>>,
+  request: ReturnType<typeof normalizeWeldPageRequest>,
   report: WeldReportKind,
 ): WeldPageResult {
   const reportRows = buildServerReportRows(sourceRows, report)
-  const filteredRows = filterWeldRowsByColumns(reportRows, request.columnFilters)
+  const filteredRows = sortReportRows(
+    filterWeldRowsByColumns(reportRows, request.columnFilters),
+    request.sort,
+  )
   const rows =
     request.pageSize === WELD_PAGE_ALL_SIZE
       ? filteredRows
@@ -1455,7 +1459,7 @@ export async function listDerivedReportRowIds(
         .select(REPORT_DERIVED_FILTER_SELECT)
         .from(weldJoints)
         .where(where)
-        .orderBy(...getReportOrderBy(report))
+        .orderBy(...getReportOrderBy(report, filters.sort))
       const [sourceRowsWithControls, finalStatusContext, otherSettings] = await Promise.all([
         attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(sourceRows)),
         loadCurrentFinalStatusRowsContext(),
@@ -1593,19 +1597,33 @@ export function normalizeWeldColumnFilterOptionsRequest(data: WeldColumnFilterOp
   }
 }
 
-export function normalizeWeldPageRequest(data: WeldPageRequest | undefined): Required<Pick<WeldPageRequest, 'page' | 'pageSize' | 'columnFilters'>> & WeldFilters {
+export function normalizeWeldPageRequest(
+  data: WeldPageRequest | undefined,
+): Required<Pick<WeldPageRequest, 'page' | 'pageSize' | 'columnFilters'>> & WeldFilters & {
+  report?: WeldReportKind
+  sort?: WeldSort
+} {
   const page = Math.max(1, Math.floor(Number(data?.page) || 1))
   const pageSize = normalizeWeldPageSize(data?.pageSize)
   const columnFilters = Object.fromEntries(
     Object.entries(data?.columnFilters ?? {}).filter(([, value]) => String(value ?? '').trim()),
   )
+  const sort = normalizeWeldSort(data?.sort)
+  const { sort: _sort, ...rest } = data ?? {}
 
   return {
-    ...data,
+    ...rest,
     page,
     pageSize,
     columnFilters,
+    ...(sort ? { sort } : {}),
   }
+}
+
+export function normalizeWeldSort(value: WeldPageRequest['sort'] | undefined): WeldSort | undefined {
+  if (!value || (value.direction !== 'asc' && value.direction !== 'desc')) return undefined
+  if (!FIELD_BY_KEY.has(value.fieldKey) || !getWeldColumn(value.fieldKey)) return undefined
+  return { fieldKey: value.fieldKey, direction: value.direction }
 }
 
 export function normalizeWeldPageSize(value: unknown): WeldPageSize {
@@ -1890,14 +1908,75 @@ export function countMultiValueUsage(values: unknown[], separator: RegExp) {
   return counts
 }
 
-export function getReportOrderBy(report: Exclude<WeldReportKind, 'weldingJournal'>) {
+export function getReportOrderBy(report: WeldReportKind, sort?: WeldSort) {
+  const sortColumn = sort ? getWeldColumn(sort.fieldKey) : undefined
+  const requestedOrder = sort && sortColumn
+    ? sort.fieldKey === 'joint'
+      ? getNaturalJointOrderBy(sortColumn, sort.direction)
+      : [sort.direction === 'desc' ? sql`${sortColumn} desc nulls last` : sql`${sortColumn} asc nulls last`]
+    : []
+  if (report === 'weldingJournal') {
+    return requestedOrder.length > 0
+      ? [...requestedOrder, asc(weldJoints.line), asc(weldJoints.joint), asc(weldJoints.id)]
+      : WELDING_JOURNAL_ORDER_BY
+  }
   const createdAtColumn = report === 'lnk' ? weldJoints.lnkCreatedAt : weldJoints.pstoCreatedAt
-  return [
+  return requestedOrder.length > 0 ? [
+    ...requestedOrder,
+    asc(weldJoints.line),
+    asc(weldJoints.spool),
+    asc(weldJoints.joint),
+    asc(weldJoints.id),
+  ] : [
     sql`${createdAtColumn} desc nulls last`,
     asc(weldJoints.line),
     asc(weldJoints.spool),
     asc(weldJoints.joint),
   ]
+}
+
+function getNaturalJointOrderBy(column: SQLWrapper, direction: WeldSort['direction']): SQL[] {
+  const value = sql<string>`coalesce(${column}::text, '')`
+  const prefix = sql<string>`lower(substring(${value} from '^[^0-9]*'))`
+  const firstNumber = sql<number>`(substring(${value} from '[0-9]+'))::numeric`
+  const tail = sql<string>`regexp_replace(${value}, '^[^0-9]*[0-9]+', '')`
+  const tailPrefix = sql<string>`lower(substring(${tail} from '^[^0-9]*'))`
+  const secondNumber = sql<number>`(substring(${tail} from '[0-9]+'))::numeric`
+  const ordered = (expression: SQL, nullsFirst = false) => direction === 'desc'
+    ? sql`${expression} desc nulls last`
+    : nullsFirst
+      ? sql`${expression} asc nulls first`
+      : sql`${expression} asc nulls last`
+
+  return [
+    sql`case when ${column} is null or btrim(${column}::text) = '' then 1 else 0 end asc`,
+    ordered(prefix),
+    ordered(firstNumber, true),
+    ordered(tailPrefix),
+    ordered(secondNumber, true),
+    ordered(sql`lower(${value})`),
+  ]
+}
+
+export function sortReportRows(rows: WeldRow[], sort?: WeldSort) {
+  if (!sort) return rows
+  const field = FIELD_BY_KEY.get(sort.fieldKey)
+  if (!field) return rows
+  const direction = sort.direction === 'desc' ? -1 : 1
+  return [...rows].sort((left, right) => {
+    const leftValue = left[sort.fieldKey]
+    const rightValue = right[sort.fieldKey]
+    const leftEmpty = leftValue === null || leftValue === undefined || String(leftValue).trim() === ''
+    const rightEmpty = rightValue === null || rightValue === undefined || String(rightValue).trim() === ''
+    if (leftEmpty || rightEmpty) {
+      if (leftEmpty && rightEmpty) return left.id - right.id
+      return leftEmpty ? 1 : -1
+    }
+    const comparison = field.kind === 'number'
+      ? (Number(leftValue) || 0) - (Number(rightValue) || 0)
+      : String(leftValue).localeCompare(String(rightValue), 'ru', { numeric: true, sensitivity: 'base' })
+    return comparison === 0 ? left.id - right.id : comparison * direction
+  })
 }
 
 export * from '@/server/weld-contracts'

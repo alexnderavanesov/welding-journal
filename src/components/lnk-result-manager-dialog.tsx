@@ -3,11 +3,7 @@ import { CheckSquare2, ClipboardCheck, FileSpreadsheet, ListFilter, Pencil, Plus
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
-import {
-  LNK_MANAGER_DIALOG_HEIGHT_CLASS,
-  LNK_MANAGER_DIALOG_WIDTH_CLASS,
-} from '@/components/lnk-dialog-layout'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkResultManagerActions } from '@/components/lnk-result-manager-actions'
 import {
@@ -237,11 +233,7 @@ export function LnkResultManagerDialog({
   }
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={LNK_MANAGER_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={LNK_MANAGER_DIALOG_HEIGHT_CLASS}
-      overlayClassName="z-[60] bg-slate-950/30"
-    >
+    <WorkflowDialogShell variant="manager">
       <DialogHeader
         title="Редактирование результатов ЛНК"
         subtitle="Найдите внесенный результат, проверьте связанные документы или выполните допустимое изменение."
@@ -490,7 +482,7 @@ export function LnkResultManagerDialog({
         onSaveChanges={onSaveChanges}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

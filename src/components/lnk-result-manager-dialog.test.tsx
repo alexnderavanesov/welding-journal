@@ -84,7 +84,7 @@ describe('LnkResultManagerDialog', () => {
     const actions = renderDialog()
 
     expect(screen.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeInTheDocument()
-    expect(screen.getByRole('dialog')).toHaveClass('max-w-[1320px]', 'h-[92vh]')
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
     expect(screen.getByRole('heading', { name: 'Линия-1 · F1' })).toBeInTheDocument()
     expect(screen.getAllByText('ВИК-17').length).toBeGreaterThan(0)
 
@@ -115,7 +115,7 @@ describe('LnkResultManagerDialog', () => {
 
     expect(screen.getByRole('heading', { name: 'Линия-2 · F2' })).toBeInTheDocument()
     expect(screen.queryByText('Выберите результат слева, чтобы открыть его карточку.')).not.toBeInTheDocument()
-    expect(screen.getByRole('dialog')).toHaveClass('h-[92vh]')
+    expect(screen.getByRole('dialog')).toHaveClass('h-[calc(100dvh-1rem)]')
   })
 
   it('opens the exact result in the welding journal from its context menu', () => {

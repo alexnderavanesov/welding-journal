@@ -10,6 +10,21 @@ export function getScopedSystemDocumentMethodValues(scope: SystemDocumentMethodS
   return scope === 'tvmt' ? ['ТВМТ'] : []
 }
 
+export function getScopedSystemDocumentHistoryFilterOptions<T extends { value: string }>(
+  filterOptions: Record<string, T[]> | undefined,
+  scope: SystemDocumentMethodScope,
+): Record<string, T[]> {
+  const scopedOptions = { ...(filterOptions ?? {}) }
+  if (scope === 'lnk') {
+    const allowedStages = new Set(getScopedSystemDocumentStageValues(scope))
+    scopedOptions.stage = (scopedOptions.stage ?? []).filter((option) => allowedStages.has(option.value))
+    scopedOptions.method = (scopedOptions.method ?? []).filter((option) => option.value !== 'ТВМТ')
+  } else if (scope === 'tvmt') {
+    scopedOptions.method = (scopedOptions.method ?? []).filter((option) => option.value === 'ТВМТ')
+  }
+  return scopedOptions
+}
+
 export function getSystemDocumentStageLabel(documentRecord: SystemDocumentSummary) {
   if (documentRecord.sourceKind === 'beforeHeatTreatment') return 'До ТО'
   if (documentRecord.sourceKind === 'pstoRepeat' || documentRecord.sourceKind === 'pstoCycle') {

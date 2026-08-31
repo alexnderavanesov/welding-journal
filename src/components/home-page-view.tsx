@@ -202,24 +202,15 @@ function ReportBackground({
   systemDocumentNavigationRequest,
   onSystemDocumentNavigationRequestHandled,
 }: ReportBackgroundProps) {
-  const isFluidReport =
-    activeReport === 'statistics' ||
-    activeReport === 'percentageLines' ||
-    activeReport === 'welderStamps' ||
-    activeReport === 'documents' ||
-    activeReport === 'settings' ||
-    activeReport === 'userGuide'
   const isStandaloneReport =
     activeReport === 'statistics' ||
     activeReport === 'percentageLines' ||
     activeReport === 'documents' ||
     activeReport === 'settings' ||
     activeReport === 'userGuide'
-  const pageMinWidth = isFluidReport ? 0 : registerMinWidth
-
   return (
     <>
-      <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft} minWidth={pageMinWidth}>
+      <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft}>
         {activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
           <ReportHeaderActions {...reportHeaderActionsProps} />
         ) : null}

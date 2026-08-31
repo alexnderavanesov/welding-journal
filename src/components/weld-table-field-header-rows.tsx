@@ -704,7 +704,9 @@ function getColumnFilterCount(
 
 function ExtraFieldHeader({ column }: { column: WeldTableExtraColumn }) {
   return (
-    <th className="border-b border-r border-r-slate-200 bg-slate-100 px-3 py-2.5 text-center text-[13px] font-semibold text-slate-700">
+    <th className={column.appearance === 'quiet'
+      ? 'border-b border-l border-r-2 border-[#d9e6ee] bg-sky-50/30 px-3 py-2.5 text-center text-[13px] font-semibold text-slate-700'
+      : 'border-b border-r border-r-slate-200 bg-slate-100 px-3 py-2.5 text-center text-[13px] font-semibold text-slate-700'}>
       {column.label}
     </th>
   )

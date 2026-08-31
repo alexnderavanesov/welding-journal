@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  getScopedSystemDocumentHistoryFilterOptions,
   getScopedSystemDocumentMethodValues,
   getScopedSystemDocumentStageValues,
   getSystemDocumentMethodCodes,
@@ -14,6 +15,32 @@ describe('system document stages', () => {
     expect(getScopedSystemDocumentStageValues('lnk')).toEqual(['До ТО', 'Основной'])
     expect(getScopedSystemDocumentStageValues('tvmt')).toEqual([])
     expect(getScopedSystemDocumentMethodValues('tvmt')).toEqual(['ТВМТ'])
+  })
+
+  it('does not expose filters from the neighboring LNK and TVMT registries', () => {
+    const filterOptions = {
+      stage: [
+        { value: 'До ТО', count: 2 },
+        { value: 'Основной', count: 3 },
+        { value: 'Цикл 1', count: 4 },
+      ],
+      method: [
+        { value: 'ВИК', count: 5 },
+        { value: 'ТВМТ', count: 4 },
+      ],
+      line: [{ value: '111sto', count: 9 }],
+    }
+
+    expect(getScopedSystemDocumentHistoryFilterOptions(filterOptions, 'lnk')).toEqual({
+      stage: [
+        { value: 'До ТО', count: 2 },
+        { value: 'Основной', count: 3 },
+      ],
+      method: [{ value: 'ВИК', count: 5 }],
+      line: [{ value: '111sto', count: 9 }],
+    })
+    expect(getScopedSystemDocumentHistoryFilterOptions(filterOptions, 'tvmt').method)
+      .toEqual([{ value: 'ТВМТ', count: 4 }])
   })
 
   it('labels primary and repeated cycle documents without limiting the cycle count', () => {

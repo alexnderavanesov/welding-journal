@@ -55,7 +55,7 @@
 
 @layer components {
   .weld-table-row.weld-table-row--hoverable:hover {
-    background-color: #cfeeff;
+    background-color: #eaf6fb;
   }
 
   .weld-table-row.weld-table-row--hoverable:hover > td {
@@ -64,7 +64,7 @@
   }
 
   .weld-table-row.weld-table-row--hoverable:hover > td.sticky {
-    background-color: #cfeeff;
+    background-color: #eaf6fb;
   }
 }
 

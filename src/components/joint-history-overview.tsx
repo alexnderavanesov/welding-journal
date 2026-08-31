@@ -333,10 +333,10 @@ function getResultClass(value: string) {
   if (normalized.includes('не годен') || normalized.includes('ремонт') || normalized.includes('вырез')) {
     return 'border-rose-200 bg-rose-50 text-rose-700'
   }
+  if (normalized.includes('ожида')) return 'border-amber-200 bg-amber-50 text-amber-800'
   if (normalized.includes('годен') || normalized.includes('проведено')) {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   }
-  if (normalized.includes('ожида')) return 'border-amber-200 bg-amber-50 text-amber-800'
   return 'border-slate-200 bg-slate-50 text-slate-700'
 }
 

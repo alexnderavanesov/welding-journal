@@ -4,13 +4,8 @@ import { ArrowRight, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
-import {
-  WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS,
-  WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS,
-  WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS,
-} from '@/components/workflow-dialog-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -181,11 +176,7 @@ export function PstoResultManagerDialog({
     canOpenDocumentForField ? canOpenDocumentForField(fieldKey) : canOpenDocument
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS}
-      overlayClassName={WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS}
-    >
+    <WorkflowDialogShell variant="manager">
       <DialogHeader
         title="История ПСТО и ТВМТ"
         subtitle="Основной и повторные циклы одного стыка показаны в хронологическом порядке. Удаление выполняется только с конца цепочки."
@@ -339,7 +330,7 @@ export function PstoResultManagerDialog({
         </main>
       </div>
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

@@ -34,8 +34,12 @@ describe('DispatcherTaskPanel', () => {
 
     expect(screen.getAllByText('1 задача')).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'С задачами' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Диспетчер задач')).toHaveClass('max-w-7xl')
-    expect(screen.getByLabelText('Диспетчер задач')).toHaveStyle({ width: 'calc(100vw - 24px)' })
+    expect(screen.getByLabelText('Диспетчер задач')).not.toHaveClass('max-w-7xl')
+    expect(screen.getByLabelText('Диспетчер задач')).toHaveClass('bg-[#eef7fb]/95', 'border-sky-200/80')
+    expect(screen.getByLabelText('Диспетчер задач')).toHaveStyle({
+      width: 'calc(100vw - 12px)',
+      maxWidth: 'calc(100vw - 12px)',
+    })
     const groupSummary = screen.getByLabelText('Краткое описание задач 330-ATM-16-000')
     expect(within(groupSummary).getByText('ДЗ-27')).toBeInTheDocument()
     expect(within(groupSummary).getByText(/Проверить назначение контроля линии/)).toBeInTheDocument()

@@ -4,11 +4,7 @@ import { FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
-import {
-  LNK_MANAGER_DIALOG_HEIGHT_CLASS,
-  LNK_MANAGER_DIALOG_WIDTH_CLASS,
-} from '@/components/lnk-dialog-layout'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
 import { Button } from '@/components/ui/button'
@@ -209,11 +205,7 @@ export function PreHeatTreatmentResultManagerDialog({
   )
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={LNK_MANAGER_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={LNK_MANAGER_DIALOG_HEIGHT_CLASS}
-      overlayClassName="z-[60] bg-slate-950/30"
-    >
+    <WorkflowDialogShell variant="manager">
       <DialogHeader
         title={registryMode === 'request'
           ? 'Редактирование заявок ЛНК до ТО'
@@ -569,7 +561,7 @@ export function PreHeatTreatmentResultManagerDialog({
         </main>
       </div>
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

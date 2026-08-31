@@ -20,13 +20,18 @@ import {
   type WeldPageResult,
   type WeldReportKind,
   type WeldPageSize,
+  type WeldSort,
 } from '@/server/weld-read-api'
 
 type UseWeldPageQueryOptions = {
   enabled: boolean
   report?: WeldReportKind
   columnFilters: Record<string, string>
+  sort?: WeldSort | null
 }
+
+const PAGE_SIZE_STORAGE_KEY = 'welding-report-page-size:v1'
+type PageSizeByReport = Partial<Record<WeldReportKind, number>>
 
 function normalizeColumnFiltersForQuery(columnFilters: Record<string, string>) {
   return Object.fromEntries(
@@ -44,17 +49,32 @@ function toServerPageSize(pageSize: number): WeldPageSize {
     : 100
 }
 
-export function useWeldPageQuery({ enabled, report = 'weldingJournal', columnFilters }: UseWeldPageQueryOptions) {
+export function useWeldPageQuery({
+  enabled,
+  report = 'weldingJournal',
+  columnFilters,
+  sort = null,
+}: UseWeldPageQueryOptions) {
   const queryClient = useQueryClient()
-  const [pageSize, setPageSize] = useState<number>(100)
+  const [pageSizeByReport, setPageSizeByReport] = useState<PageSizeByReport>(readPageSizeByReport)
+  const pageSize = pageSizeByReport[report] ?? 100
+  const setPageSize = useCallback((nextPageSize: number) => {
+    setPageSizeByReport((current) => {
+      const next = { ...current, [report]: nextPageSize }
+      if (typeof window !== 'undefined') window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+  }, [report])
   const [refreshError, setRefreshError] = useState<Error | null>(null)
   const refreshErrorAtRef = useRef(0)
   const normalizedColumnFilters = useMemo(() => normalizeColumnFiltersForQuery(columnFilters), [columnFilters])
   const queryColumnFilters = useDebouncedValue(normalizedColumnFilters, 180)
   const serverPageSize = toServerPageSize(pageSize)
   const queryKey = useMemo(
-    () => [...WELD_JOINT_PAGES_QUERY_KEY, report, queryColumnFilters, serverPageSize] as const,
-    [queryColumnFilters, report, serverPageSize],
+    () => sort
+      ? [...WELD_JOINT_PAGES_QUERY_KEY, report, queryColumnFilters, serverPageSize, sort] as const
+      : [...WELD_JOINT_PAGES_QUERY_KEY, report, queryColumnFilters, serverPageSize] as const,
+    [queryColumnFilters, report, serverPageSize, sort],
   )
   const queryIdentity = useMemo(() => JSON.stringify(queryKey), [queryKey])
 
@@ -72,6 +92,7 @@ export function useWeldPageQuery({ enabled, report = 'weldingJournal', columnFil
         page: Number(pageParam) || 1,
         pageSize: serverPageSize,
         columnFilters: queryColumnFilters,
+        ...(sort ? { sort } : {}),
       }
       if (report === 'lnk') return listLnkReportPage({ data })
       if (report === 'heatTreatment') return listHeatTreatmentReportPage({ data })
@@ -179,5 +200,23 @@ export function useWeldPageQuery({ enabled, report = 'weldingJournal', columnFil
     loadMore,
     setPageSize,
     refetch: refresh,
+  }
+}
+
+function readPageSizeByReport(): PageSizeByReport {
+  if (typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PAGE_SIZE_STORAGE_KEY) ?? '{}') as Record<string, unknown>
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([report, value]) => {
+        if (report !== 'weldingJournal' && report !== 'lnk' && report !== 'heatTreatment') return []
+        const pageSize = Number(value)
+        return pageSize === ALL_PAGE_SIZE || WELD_PAGE_SIZE_OPTIONS.includes(pageSize as (typeof WELD_PAGE_SIZE_OPTIONS)[number])
+          ? [[report, pageSize]]
+          : []
+      }),
+    )
+  } catch {
+    return {}
   }
 }

@@ -26,6 +26,7 @@ function renderDialog(
   mode: 'request' | 'result',
   rowOrRows: WeldRow | WeldRow[],
   initialSelectedIds?: ReadonlySet<number>,
+  onOpenResultManager = vi.fn(),
 ) {
   let currentRows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
   let currentSelectedIds = initialSelectedIds ?? new Set(currentRows.map((row) => row.id))
@@ -46,6 +47,7 @@ function renderDialog(
         onRunProtectedEdit={(_label, action) => action()}
         onSaved={vi.fn()}
         onOpenJournalRows={vi.fn()}
+        onOpenResultManager={onOpenResultManager}
       />
     </QueryClientProvider>
   )
@@ -80,6 +82,24 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Создать заявку' })).toBeEnabled()
   })
 
+  it('restores the exact TVMT request for a result when report data loads after the dialog opens', async () => {
+    const waitingResult = makeRow({
+      tvmtRequest: 'Заявка-ТВМТ-001',
+      tvmtRequestDate: '2026-08-29',
+      tvmtResult: 'ожидает НК',
+    })
+    const view = renderDialog('result', [], new Set([waitingResult.id]))
+
+    expect(screen.getByRole('combobox', { name: 'Заявка ТВМТ' })).toHaveValue('')
+    view.rerenderWithRows([waitingResult])
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Заявка ТВМТ' })).toHaveValue(
+      'Заявка-ТВМТ-001 · 29.08.2026',
+    ))
+    expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
+  })
+
   it('opens result entry for the exact TVMT request and keeps the row result explicit', () => {
     renderDialog('result', makeRow({
       tvmtRequest: 'Заявка-ТВМТ-001',
@@ -90,6 +110,7 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /Результат ТВМТ/ })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Все результаты' })).toBeEnabled()
   })
 
   it('does not allow a TVMT request before PSTO is completed', () => {

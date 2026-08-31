@@ -58,16 +58,15 @@ export function buildJointNextActions(
   row: WeldRow,
   dispatcherTasks: readonly RepeatedJointTask[] = [],
 ): JointNextAction[] {
-  const taskActions = dispatcherTasks
+  const rowTasks = dispatcherTasks
     .filter((task) => isTaskForRow(task, row))
     .sort(compareTasks)
+  const taskActions = rowTasks.map(buildDispatcherAction)
+  const chainStructureActions = rowTasks
+    .filter((task) => task.kind === 'create' || task.kind === 'coil' || task.kind === 'delete' || task.kind === 'rename')
     .map(buildDispatcherAction)
-  const chainCreationActions = taskActions.filter((action) => {
-    const task = dispatcherTasks.find((candidate) => candidate.key === action.taskKey)
-    return task?.kind === 'create' || task?.kind === 'coil'
-  })
 
-  if (chainCreationActions.length > 0) return chainCreationActions
+  if (chainStructureActions.length > 0) return chainStructureActions
 
   if (!hasWeldDate(row)) {
     return [
@@ -120,6 +119,11 @@ export function buildJointNextActions(
 }
 
 function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
+  const pstoState = getPstoTvmtWorkflowState(row)
+  const currentCycle = getCurrentPstoCycle(row)
+  const activePhysicalCycleAction = buildActivePhysicalCycleAction(row, pstoState, currentCycle?.sequence ?? 1)
+  if (activePhysicalCycleAction) return activePhysicalCycleAction
+
   const preRequestMethods = getAvailablePreHeatTreatmentRequestMethods(row)
   if (preRequestMethods.length > 0) {
     return buildControlAction({
@@ -144,8 +148,6 @@ function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
     })
   }
 
-  const pstoState = getPstoTvmtWorkflowState(row)
-  const currentCycle = getCurrentPstoCycle(row)
   if (canCreatePstoWorkflowRequest(row)) {
     const sequence = pstoState === 'repeat-psto-required'
       ? getNextPstoCycleSequence(row)
@@ -158,38 +160,6 @@ function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
         ? 'Предыдущая ТВМТ не годна. Новый цикл относится только к этому стыку.'
         : 'НК до ТО завершён, можно начать физический цикл термообработки.',
       buttonLabel: 'Создать заявку',
-    })
-  }
-
-  if (canAddPstoWorkflowResult(row)) {
-    return buildControlAction({
-      row,
-      kind: 'pstoResult',
-      title: `Внести результат ПСТО · цикл ${currentCycle?.sequence ?? 1}`,
-      description: 'Заявка создана. Укажите дату ПСТО и диаграмму термообработки.',
-      buttonLabel: 'Внести результат',
-    })
-  }
-
-  if (canCreateTvmtRequest(row)) {
-    return buildControlAction({
-      row,
-      kind: 'tvmtRequest',
-      title: `Создать заявку ТВМТ · цикл ${currentCycle?.sequence ?? 1}`,
-      description: 'ПСТО проведена. Следующий обязательный этап: твердометрия.',
-      buttonLabel: 'Создать заявку',
-    })
-  }
-
-  if (canAddTvmtResult(row)) {
-    return buildControlAction({
-      row,
-      kind: 'tvmtResult',
-      title: `Внести результат ТВМТ · цикл ${currentCycle?.sequence ?? 1}`,
-      description: isPstoCancelledValue(row.pstoRequired)
-        ? 'Линия ПСТО отменена. Внесите фактический результат ТВМТ, чтобы закончить уже начатый цикл; новый повтор не откроется.'
-        : 'После годной ТВМТ откроется основной НК. Негодная ТВМТ потребует повторную ПСТО.',
-      buttonLabel: 'Внести результат',
     })
   }
 
@@ -243,6 +213,56 @@ function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
     }
   }
 
+  return null
+}
+
+function buildActivePhysicalCycleAction(
+  row: WeldRow,
+  pstoState: ReturnType<typeof getPstoTvmtWorkflowState>,
+  sequence: number,
+) {
+  if (canAddPstoWorkflowResult(row)) {
+    return buildControlAction({
+      row,
+      kind: 'pstoResult',
+      title: `Внести результат ПСТО · цикл ${sequence}`,
+      description: isPstoCancelledValue(row.pstoRequired)
+        ? 'Линия ПСТО отменена, но по этому физическому циклу уже есть фактические данные. Завершите сохранение результата ПСТО.'
+        : 'Физический цикл уже начат заявкой. Укажите дату ПСТО и диаграмму термообработки.',
+      buttonLabel: 'Внести результат',
+    })
+  }
+  if (canCreateTvmtRequest(row)) {
+    return buildControlAction({
+      row,
+      kind: 'tvmtRequest',
+      title: `Создать заявку ТВМТ · цикл ${sequence}`,
+      description: isPstoCancelledValue(row.pstoRequired)
+        ? 'Линия ПСТО отменена, но термообработка уже проведена. Закончите цикл твердометрией.'
+        : 'ПСТО проведена. Закончите уже начатый физический цикл твердометрией.',
+      buttonLabel: 'Создать заявку',
+    })
+  }
+  if (canAddTvmtResult(row)) {
+    return buildControlAction({
+      row,
+      kind: 'tvmtResult',
+      title: `Внести результат ТВМТ · цикл ${sequence}`,
+      description: isPstoCancelledValue(row.pstoRequired)
+        ? 'Линия ПСТО отменена. Внесите фактический результат ТВМТ, чтобы закончить уже начатый цикл; новый повтор не откроется.'
+        : 'После годной ТВМТ откроется основной НК. Негодная ТВМТ потребует повторную ПСТО.',
+      buttonLabel: 'Внести результат',
+    })
+  }
+  if (pstoState === 'repeat-psto-required' && canCreatePstoWorkflowRequest(row)) {
+    return buildControlAction({
+      row,
+      kind: 'pstoRequest',
+      title: `Создать заявку повторной ПСТО · цикл ${sequence + 1}`,
+      description: 'Предыдущая ТВМТ не годна. Новый цикл относится только к этому стыку.',
+      buttonLabel: 'Создать заявку',
+    })
+  }
   return null
 }
 

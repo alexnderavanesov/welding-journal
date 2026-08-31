@@ -6,11 +6,9 @@ import {
   getInactiveLnkRequestBadgeClass,
   getLnkResultBadgeClass,
   getPstoResultBadgeClass,
-  getPstoResultLabel,
 } from '@/lib/report-badges'
 import {
   getCancelledLnkResultDisplay,
-  getCancelledPstoResultDisplay,
   hasText,
   hasWeldDate,
   isCancelledControlValue,
@@ -31,7 +29,13 @@ import {
   isPrimaryLnkStageReady,
 } from '@/lib/lnk-control-stage'
 import { getPreHeatTreatmentReportValue } from '@/lib/pre-heat-treatment-report-fields'
-import { getCurrentPstoCycle, getPstoCycleSummary } from '@/lib/tvmt-cycle'
+import {
+  getCurrentPstoCycle,
+  getPstoCycleSummary,
+  getPstoTvmtWorkflowLabel,
+  getPstoTvmtWorkflowState,
+  normalizeTvmtResult,
+} from '@/lib/tvmt-cycle'
 
 export type LnkMethod = (typeof LNK_METHODS)[number]
 
@@ -240,40 +244,135 @@ function isPstoNoNeed(row: WeldInput, resultValue: unknown = row.pstoResult) {
   return result !== 'проведено' && result !== 'проведено (отменен)' && result !== 'отменен'
 }
 
-export function getJointChainResultItems(row: WeldInput) {
+export type JointChainResultItem = {
+  stage: 'pstoTvmt' | 'mainLnk' | 'duplicate'
+  label: string
+  value: string
+  className: string
+}
+
+export function getJointChainResultItems(row: WeldInput): JointChainResultItem[] {
   const lnkItems = formatLnkResultSummaryItems(row)
     .filter((item) => item.result)
     .map((item) => ({
+      stage: 'mainLnk' as const,
       label: item.method,
       value: item.result,
       className: item.inactive ? getInactiveLnkRequestBadgeClass() : getLnkResultBadgeClass(item.result),
     }))
-  const pstoItems =
-    isYesText(row.pstoRequired) ||
-    isCancelledControlValue(row.pstoRequired) ||
-    hasText(row.pstoRequest) ||
-    hasText(row.pstoResult) ||
-    hasText(row.heatTreatmentDiagram)
-      ? [
-          {
-            label: 'ПСТО',
-            value: isCancelledControlValue(row.pstoRequired)
-              ? getCancelledPstoResultDisplay(row.pstoResult)
-              : isRejectedJoint(row) && !hasText(row.pstoResult)
-                ? 'нет потребности'
-                : getPstoResultLabel(row.pstoResult),
-            className: isCancelledControlValue(row.pstoRequired)
-              ? getPstoResultBadgeClass(getCancelledPstoResultDisplay(row.pstoResult))
-              : isRejectedJoint(row) && !hasText(row.pstoResult)
-                ? getInactiveLnkRequestBadgeClass()
-                : getPstoResultBadgeClass(row.pstoResult),
-          },
-        ]
-      : []
+  const pstoItems = getJointChainPstoTvmtItems(row)
   const duplicateItems = getDuplicateControls(row).map((control) => ({
+    stage: 'duplicate' as const,
     label: `${control.method} дубль`,
     value: control.result,
     className: getLnkResultBadgeClass(control.result),
   }))
-  return [...lnkItems, ...duplicateItems, ...pstoItems]
+  return [...pstoItems, ...lnkItems, ...duplicateItems]
+}
+
+function getJointChainPstoTvmtItems(row: WeldInput): JointChainResultItem[] {
+  const currentCycle = getCurrentPstoCycle(row)
+  const workflowState = getPstoTvmtWorkflowState(row)
+  const sequence = currentCycle?.sequence ?? 1
+  const tvmtResult = normalizeTvmtResult(currentCycle?.tvmtResult)
+  const cancelled = isCancelledControlValue(row.pstoRequired)
+  const hasPstoStage = isYesText(row.pstoRequired)
+    || cancelled
+    || currentCycle !== null
+  if (!hasPstoStage) return []
+
+  const cancellationItem: JointChainResultItem = {
+    stage: 'pstoTvmt',
+    label: 'Линия ПСТО',
+    value: 'отменена',
+    className: getPstoResultBadgeClass('отменен'),
+  }
+
+  if (cancelled && workflowState === 'not-required') {
+    return [cancellationItem]
+  }
+
+  if (cancelled && workflowState === 'complete' && tvmtResult === 'failed') {
+    return [
+      cancellationItem,
+      {
+        stage: 'pstoTvmt',
+        label: `ТВМТ · цикл ${sequence}`,
+        value: 'не годен',
+        className: 'border-rose-200 bg-rose-50 text-rose-800',
+      },
+    ]
+  }
+
+  if (cancelled && workflowState !== 'complete') {
+    return [
+      cancellationItem,
+      {
+        stage: 'pstoTvmt',
+        label: `Цикл ${sequence}`,
+        value: getPstoTvmtWorkflowLabel(workflowState),
+        className: getPstoResultBadgeClass('ожидает'),
+      },
+    ]
+  }
+
+  if (workflowState === 'complete' && tvmtResult === 'good') {
+    return [
+      ...(cancelled ? [cancellationItem] : []),
+      {
+        stage: 'pstoTvmt',
+        label: 'ПСТО',
+        value: 'проведено',
+        className: getPstoResultBadgeClass('проведено'),
+      },
+      {
+        stage: 'pstoTvmt',
+        label: 'ТВМТ',
+        value: 'годен',
+        className: getLnkResultBadgeClass('годен'),
+      },
+    ]
+  }
+
+  if (isRejectedJoint(row) && !hasText(row.pstoResult)) {
+    return [{
+      stage: 'pstoTvmt',
+      label: 'ПСТО',
+      value: 'нет потребности',
+      className: getInactiveLnkRequestBadgeClass(),
+    }]
+  }
+
+  if (workflowState === 'repeat-psto-required') {
+    return [
+      {
+        stage: 'pstoTvmt',
+        label: `ТВМТ · цикл ${sequence}`,
+        value: 'не годен',
+        className: 'border-rose-200 bg-rose-50 text-rose-800',
+      },
+      {
+        stage: 'pstoTvmt',
+        label: 'ПСТО',
+        value: `требуется цикл ${sequence + 1}`,
+        className: getPstoResultBadgeClass('ожидает'),
+      },
+    ]
+  }
+
+  if (workflowState === 'not-required') {
+    return [{
+      stage: 'pstoTvmt',
+      label: 'ПСТО',
+      value: 'не требуется',
+      className: getInactiveLnkRequestBadgeClass(),
+    }]
+  }
+
+  return [{
+    stage: 'pstoTvmt',
+    label: `Цикл ${sequence}`,
+    value: getPstoTvmtWorkflowLabel(workflowState),
+    className: getPstoResultBadgeClass('ожидает'),
+  }]
 }

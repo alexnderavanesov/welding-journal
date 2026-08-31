@@ -33,6 +33,17 @@ describe('lazy loading boundaries', () => {
     expect(pstoDialogs.match(/lazy\(\(\) => import\(/g)?.length ?? 0).toBeGreaterThanOrEqual(7)
   })
 
+  it('loads the full user guide reference in separate content chunks', () => {
+    const userGuide = readFileSync(
+      resolve(process.cwd(), 'src/components/user-guide-page.tsx'),
+      'utf8',
+    )
+
+    expect(userGuide).toContain("import { WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'")
+    expect(userGuide.match(/import\('@\/components\/user-guide-content\/reference-sections-/g)).toHaveLength(3)
+    expect(userGuide).not.toMatch(/import\s+\{[^}]*REFERENCE_GUIDE_SECTIONS[^}]*\}\s+from/)
+  })
+
   it('keeps document clients on the browser-safe template API boundary', () => {
     const storage = readFileSync(
       resolve(process.cwd(), 'src/lib/document-template-storage.ts'),

@@ -6,15 +6,15 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { createReportRowActionHandlers } from '@/lib/report-row-action-handlers'
 import { getReportRowActions } from '@/lib/report-row-actions'
 
-function renderActions(row: WeldRow) {
+function renderActions(row: WeldRow, report: 'heatTreatment' | 'lnk' = 'heatTreatment') {
   const handlers = createReportRowActionHandlers({
     openCreatePstoRequestModalForRow: vi.fn(),
     openAddPstoResultModalForRow: vi.fn(),
     openCreateLnkRequestModalForRow: vi.fn(),
     openAddLnkResultModalForRow: vi.fn(),
   })
-  const rowActions = getReportRowActions('heatTreatment', handlers)
-  if (!rowActions) throw new Error('PSTO row actions are not configured')
+  const rowActions = getReportRowActions(report, handlers)
+  if (!rowActions) throw new Error(`${report} row actions are not configured`)
 
   render(
     <table>
@@ -60,5 +60,35 @@ describe('WeldTableRowActions for PSTO', () => {
       'Заявка ПСТО для цикла 1 уже создана: Заявка ПСТО-001.',
     )
     expect(screen.getByRole('button', { name: 'Добавить результат ПСТО на этот стык' })).toBeEnabled()
+  })
+})
+
+describe('WeldTableRowActions for LNK', () => {
+  it('explains that primary LNK is waiting for the completed PSTO/TVMT cycle', () => {
+    renderActions({
+      id: 3,
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 3,
+        method: 'ВИК',
+        requestName: 'Заявка до ТО',
+        result: 'годен',
+      }],
+    } as WeldRow, 'lnk')
+
+    expect(screen.getByRole('button', { name: 'Создать заявку ЛНК на этот стык' })).toHaveAttribute(
+      'title',
+      expect.stringContaining('Контроль ВИК после ТО недоступен'),
+    )
+  })
+
+  it('distinguishes missing requests from already completed results', () => {
+    renderActions({ id: 4, hasVik: 'да' } as WeldRow, 'lnk')
+    expect(screen.getByRole('button', { name: 'Добавить результат ЛНК на этот стык' })).toHaveAttribute(
+      'title',
+      'Сначала создайте заявку ЛНК на этот стык.',
+    )
   })
 })

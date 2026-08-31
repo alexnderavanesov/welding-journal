@@ -11,7 +11,7 @@ import {
   Settings,
   Stamp,
 } from 'lucide-react'
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import type { ActiveReport } from '@/lib/home-state'
@@ -39,6 +39,7 @@ const sidebarItems: Array<{
 
 export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {
   const sidebarRef = useRef<HTMLElement>(null)
+  const [isHorizontallyScrolled, setIsHorizontallyScrolled] = useState(false)
   const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }
   const guideItem = { report: 'userGuide' as const, label: 'Руководство пользователя', icon: BookOpenText }
   const itemClassName = (isActive: boolean, muted = false) =>
@@ -62,6 +63,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
 
     const alignToViewport = () => {
       frameId = null
+      setIsHorizontallyScrolled(getHorizontalPageOffset() > 1)
       if (sidebar.scrollLeft !== 0) sidebar.scrollLeft = 0
       const nextCorrection = getSidebarViewportCorrection(correction, sidebar.getBoundingClientRect().left)
       if (Math.abs(nextCorrection - correction) < 0.5) return
@@ -95,7 +97,9 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
   const sidebar = (
     <aside
       ref={sidebarRef}
-      className={`fixed inset-y-0 left-0 z-30 flex h-screen flex-col overflow-x-clip border-r border-slate-100 bg-white px-3 py-5 transition-[width] duration-200 [backface-visibility:hidden] ${
+      className={`fixed inset-y-0 left-0 z-30 flex h-screen flex-col overflow-x-clip border-r border-slate-100 bg-white px-3 py-5 transition-[width,box-shadow] duration-200 [backface-visibility:hidden] ${
+        isHorizontallyScrolled ? 'shadow-[10px_0_24px_-20px_rgba(15,23,42,0.7)]' : ''
+      } ${
         collapsed ? 'w-16' : 'w-48 lg:w-64 lg:px-4'
       }`}
       data-app-sidebar="true"
@@ -171,4 +175,12 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
 
 export function getSidebarViewportCorrection(currentCorrection: number, renderedLeft: number) {
   return currentCorrection - renderedLeft
+}
+
+function getHorizontalPageOffset() {
+  return Math.max(
+    Math.abs(window.scrollX),
+    Math.abs(document.documentElement.scrollLeft),
+    Math.abs(document.body.scrollLeft),
+  )
 }

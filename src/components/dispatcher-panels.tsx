@@ -46,8 +46,12 @@ export function DispatcherTaskPanel({
 
   return (
     <div
-      className="sticky z-30 max-w-7xl overflow-x-auto rounded-md border border-slate-200 bg-white/95 px-3 py-2 shadow-sm shadow-slate-200/60 backdrop-blur"
-      style={{ left: stickyLeft, width: `calc(100vw - ${stickyLeft + 24}px)` }}
+      className="sticky z-20 overflow-x-auto rounded-md border border-sky-200/80 bg-[#eef7fb]/95 px-3 py-2 shadow-sm shadow-sky-100/70 backdrop-blur"
+      style={{
+        left: stickyLeft,
+        width: `calc(100vw - ${stickyLeft + 12}px)`,
+        maxWidth: `calc(100vw - ${stickyLeft + 12}px)`,
+      }}
       aria-label="Диспетчер задач"
     >
       <div className="flex min-w-0 flex-col gap-2">
@@ -102,7 +106,7 @@ export function DispatcherTaskPanel({
           </div>
         </div>
         {isExpanded && groups.length > 0 ? (
-          <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+          <div className="overflow-hidden rounded-md border border-sky-100 bg-[#f8fcfe]">
             {groupingMode === 'codes'
               ? codeGroups.map((group) => (
                   <DispatcherTaskCodeGroup key={group.code} group={group} {...handlers} />

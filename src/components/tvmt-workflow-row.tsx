@@ -20,6 +20,7 @@ type TvmtWorkflowRowProps = {
   mode: TvmtWorkflowRowMode
   selected: boolean
   disabled: boolean
+  disabledReason: string
   rowResult: string
   onToggle: (rowId: number) => void
   onResultChange: (rowId: number, result: string) => void
@@ -31,6 +32,7 @@ function TvmtWorkflowRowComponent({
   mode,
   selected,
   disabled,
+  disabledReason,
   rowResult,
   onToggle,
   onResultChange,
@@ -103,6 +105,11 @@ function TvmtWorkflowRowComponent({
               {requestName}
             </span>
           ) : null}
+          {disabled ? (
+            <span className="max-w-full break-words rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+              {disabledReason}
+            </span>
+          ) : null}
         </span>
       </span>
 
@@ -139,6 +146,7 @@ export const TvmtWorkflowRow = memo(TvmtWorkflowRowComponent, (previous, next) =
   previous.mode === next.mode &&
   previous.selected === next.selected &&
   previous.disabled === next.disabled &&
+  previous.disabledReason === next.disabledReason &&
   previous.rowResult === next.rowResult &&
   previous.onOpenContextMenu === next.onOpenContextMenu
 ))

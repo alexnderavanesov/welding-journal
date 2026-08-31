@@ -88,13 +88,13 @@ describe('LnkRequestManagerDialog', () => {
     const dialog = screen.getByRole('dialog')
 
     expect(screen.getByRole('heading', { name: 'Редактирование заявок ЛНК' })).toBeInTheDocument()
-    expect(dialog).toHaveClass('max-w-[1320px]', 'h-[92vh]')
+    expect(dialog).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
     expect(screen.getAllByText('Открыта').length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole('button', { name: 'Закрытые' }))
     expect(screen.queryByRole('button', { name: /Заявка-001/ })).not.toBeInTheDocument()
     expect(screen.getByText('Закрыта')).toBeInTheDocument()
-    expect(dialog).toHaveClass('h-[92vh]')
+    expect(dialog).toHaveClass('h-[calc(100dvh-1rem)]')
 
     fireEvent.click(screen.getByRole('button', { name: /Заявка-002/ }))
     expect(onChangeRequest).toHaveBeenCalledWith(fixedRequest)

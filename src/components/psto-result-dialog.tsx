@@ -4,7 +4,7 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
 import { PstoResultSettings } from '@/components/psto-result-settings'
@@ -13,12 +13,6 @@ import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
-import {
-  WORKFLOW_DIALOG_HEIGHT_CLASS,
-  WORKFLOW_DIALOG_OVERLAY_CLASS,
-  WORKFLOW_DIALOG_SHADOW_CLASS,
-  WORKFLOW_DIALOG_WIDTH_CLASS,
-} from '@/components/workflow-dialog-layout'
 import { Button } from '@/components/ui/button'
 import {
   buildDialogRowContextMenu,
@@ -170,17 +164,13 @@ export function PstoResultDialog({
   })
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={WORKFLOW_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={WORKFLOW_DIALOG_HEIGHT_CLASS}
-      overlayClassName={WORKFLOW_DIALOG_OVERLAY_CLASS}
-      panelShadowClassName={WORKFLOW_DIALOG_SHADOW_CLASS}
-    >
+    <WorkflowDialogShell>
       <ResultDialogHeader
         title="Внесение результатов ПСТО"
         requestName={draft.requestName}
         selectedCount={draft.rowIds.size}
         managerDisabled={draft.rowIds.size === 0}
+        managerDisabledReason="Сначала выберите хотя бы один стык из заявки ПСТО."
         onOpenManager={onOpenManager}
         onClose={onClose}
       />
@@ -296,6 +286,6 @@ export function PstoResultDialog({
         onSave={onSave}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }

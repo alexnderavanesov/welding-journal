@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { UserGuidePage } from '@/components/user-guide-page'
 
 describe('UserGuidePage', () => {
-  it('opens with concise workflows and keeps the full reference separate', () => {
+  it('opens with concise workflows and loads the full reference on demand', async () => {
     render(<UserGuidePage />)
 
     expect(screen.getByRole('button', { name: 'Кратко' })).toHaveAttribute('aria-pressed', 'true')
@@ -14,7 +14,11 @@ describe('UserGuidePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Все правила' }))
 
     expect(screen.getByRole('button', { name: 'Все правила' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('link', { name: /Справочная карта системы/ })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: /Справочная карта системы/ })).toBeInTheDocument()
+    const referenceLinks = screen.getAllByRole('link')
+    expect(referenceLinks).toHaveLength(18)
+    expect(referenceLinks.at(-2)).toHaveTextContent('Таблицы правил и кейсов')
+    expect(referenceLinks.at(-1)).toHaveTextContent('Настройки')
   })
 
   it('shows one selected workflow instead of the whole guide', () => {
@@ -40,12 +44,12 @@ describe('UserGuidePage', () => {
     expect(screen.getByRole('heading', { name: 'С чего начать' })).toBeInTheDocument()
   })
 
-  it('explains that replacement import cannot erase completed control history', () => {
+  it('explains that replacement import cannot erase completed control history', async () => {
     render(<UserGuidePage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Все правила' }))
 
-    expect(screen.getAllByText(/ЗВ-27 заблокирует весь импорт/).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/ЗВ-27 заблокирует весь импорт/)).length).toBeGreaterThan(0)
     expect(screen.queryByText(/может очистить заявку, результат, заключение и дату/)).not.toBeInTheDocument()
   })
 })

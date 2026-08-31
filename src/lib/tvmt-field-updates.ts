@@ -1,9 +1,11 @@
 import { normalizeDateLikeForStorage, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { isCancelledControlValue } from '@/lib/report-value-utils'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import {
   getCurrentPstoCycle,
+  getPstoTvmtWorkflowLabel,
   getPstoTvmtWorkflowState,
   normalizeTvmtResult,
 } from '@/lib/tvmt-cycle'
@@ -24,6 +26,27 @@ export function canAddPrimaryTvmtResult(row: WeldRow) {
 
 export function canAddTvmtResult(row: WeldRow) {
   return getPstoTvmtWorkflowState(row) === 'waiting-tvmt'
+}
+
+export function getTvmtWorkflowBlockReason(row: WeldRow, mode: 'request' | 'result') {
+  const available = mode === 'request' ? canCreateTvmtRequest(row) : canAddTvmtResult(row)
+  if (available) return ''
+  const state = getPstoTvmtWorkflowState(row)
+  if (state === 'not-required') {
+    return isCancelledControlValue(row.pstoRequired)
+      ? 'Недоступно: ПСТО по линии отменена.'
+      : 'Недоступно: на линии не назначена ПСТО.'
+  }
+  if (state === 'complete') {
+    const tvmtResult = normalizeTvmtResult(getCurrentPstoCycle(row)?.tvmtResult)
+    if (tvmtResult === 'failed' && isCancelledControlValue(row.pstoRequired)) {
+      return 'Недоступно: линия ПСТО отменена; негодная ТВМТ завершила текущий цикл, новый повтор не создается.'
+    }
+    if (tvmtResult === 'good') return 'Недоступно: текущий цикл уже завершен годной ТВМТ.'
+    return 'Недоступно: текущий физический цикл уже завершен.'
+  }
+  if (state === 'repeat-psto-required') return 'Недоступно: сначала создайте и проведите повторную ПСТО.'
+  return `Недоступно: текущий этап — ${getPstoTvmtWorkflowLabel(state).toLocaleLowerCase('ru')}.`
 }
 
 export function getCurrentTvmtDocumentFields(row: WeldRow) {

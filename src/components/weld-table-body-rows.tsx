@@ -331,7 +331,9 @@ function HorizontalBodySpacer({ colSpan }: { colSpan: number }) {
 
 function ExtraBodyCell({ column, row }: { column: WeldTableExtraColumn; row: WeldRow }) {
   return (
-    <td className="border-b border-r border-b-slate-100 border-r-slate-200 bg-slate-50/80 p-0 align-top">
+    <td className={column.appearance === 'quiet'
+      ? 'border-b border-l border-r-2 border-[#d9e6ee] bg-sky-50/20 p-0 align-top'
+      : 'border-b border-r border-b-slate-100 border-r-slate-200 bg-slate-50/80 p-0 align-top'}>
       {column.renderCell(row)}
     </td>
   )

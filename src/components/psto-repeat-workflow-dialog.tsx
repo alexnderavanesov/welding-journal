@@ -5,23 +5,18 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import {
   PstoRepeatWorkflowRow,
   type PstoRepeatWorkflowRowMode,
 } from '@/components/psto-repeat-workflow-row'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
+import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
-import {
-  WORKFLOW_DIALOG_HEIGHT_CLASS,
-  WORKFLOW_DIALOG_OVERLAY_CLASS,
-  WORKFLOW_DIALOG_SHADOW_CLASS,
-  WORKFLOW_DIALOG_WIDTH_CLASS,
-} from '@/components/workflow-dialog-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatDateInputValue, getDateInputValidationReason } from '@/lib/date-format'
@@ -83,6 +78,7 @@ export type PstoRepeatWorkflowDialogProps = {
   onSaved: (rows: WeldRow[], fieldKeys: WeldFieldKey[], message: string) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
+  onOpenResultManager?: (rows: readonly WeldRow[]) => void
 }
 
 export function PstoRepeatWorkflowDialog({
@@ -94,6 +90,7 @@ export function PstoRepeatWorkflowDialog({
   onSaved,
   onOpenJournalRows,
   onOpenPstoHistory,
+  onOpenResultManager,
 }: PstoRepeatWorkflowDialogProps) {
   const queryClient = useQueryClient()
   const settings = useRequestConclusionSettings()
@@ -309,19 +306,24 @@ export function PstoRepeatWorkflowDialog({
   })
 
   return (
-    <LargeDialogShell
-      maxWidthClassName={WORKFLOW_DIALOG_WIDTH_CLASS}
-      maxHeightClassName={WORKFLOW_DIALOG_HEIGHT_CLASS}
-      overlayClassName={WORKFLOW_DIALOG_OVERLAY_CLASS}
-      panelShadowClassName={WORKFLOW_DIALOG_SHADOW_CLASS}
-    >
-      <RequestDialogHeader
-        title={mode === 'request' ? 'Заявка ПСТО' : 'Внесение результатов ПСТО'}
-        subtitle={mode === 'request'
-          ? `Первичный и повторные циклы · Выбрано стыков: ${selectedRows.length}`
-          : `${selectedRequest?.name ?? 'Выберите заявку ПСТО'} · Выбрано стыков: ${selectedRows.length}`}
-        onClose={onClose}
-      />
+    <WorkflowDialogShell>
+      {mode === 'request' ? (
+        <RequestDialogHeader
+          title="Заявка ПСТО"
+          subtitle={`Первичный и повторные циклы · Выбрано стыков: ${selectedRows.length}`}
+          onClose={onClose}
+        />
+      ) : (
+        <ResultDialogHeader
+          title="Внесение результатов ПСТО"
+          requestName={selectedRequest?.name ?? ''}
+          selectedCount={selectedRows.length}
+          managerDisabled={!onOpenResultManager || requestRows.length === 0}
+          managerDisabledReason="Сначала выберите заявку ПСТО с доступными позициями."
+          onOpenManager={() => onOpenResultManager?.(requestRows)}
+          onClose={onClose}
+        />
+      )}
 
       <section className={`grid shrink-0 gap-3 border-b border-slate-100 bg-slate-50/40 px-5 py-2.5 ${
         mode === 'result' ? 'grid-cols-[190px_minmax(360px,1fr)]' : 'grid-cols-[190px]'
@@ -448,7 +450,7 @@ export function PstoRepeatWorkflowDialog({
         )}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </LargeDialogShell>
+    </WorkflowDialogShell>
   )
 }
 

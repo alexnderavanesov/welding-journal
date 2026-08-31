@@ -6,6 +6,10 @@ import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getPrimaryPstoStartStatusLabel } from '@/lib/lnk-control-stage'
 import {
+  getPstoWorkflowRequestBlockReason,
+  getPstoWorkflowResultBlockReason,
+} from '@/lib/psto-status'
+import {
   getCurrentPstoCycle,
   getPstoWorkflowCycleSequence,
   getPstoTvmtWorkflowLabel,
@@ -41,9 +45,14 @@ function PstoRepeatWorkflowRowComponent({
     ? String(currentCycle?.tvmtConclusionDate ?? '').trim()
     : ''
   const workflowState = getPstoTvmtWorkflowState(row)
-  const disabledReason = workflowState === 'waiting-psto-request'
-    ? getPrimaryPstoStartStatusLabel(row) || getPstoTvmtWorkflowLabel(workflowState)
-    : getPstoTvmtWorkflowLabel(workflowState)
+  const workflowBlockReason = mode === 'request'
+    ? getPstoWorkflowRequestBlockReason(row)
+    : getPstoWorkflowResultBlockReason(row)
+  const disabledReason = `Недоступно: ${workflowBlockReason || (
+    workflowState === 'waiting-psto-request'
+      ? getPrimaryPstoStartStatusLabel(row) || getPstoTvmtWorkflowLabel(workflowState)
+      : getPstoTvmtWorkflowLabel(workflowState)
+  )}`
   const showCycle = workflowState !== 'not-required'
 
   return (

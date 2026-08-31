@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import type { RepeatedJointCreateTask, WeldRow } from '@/lib/dispatcher-types'
+import type {
+  RepeatedJointCheckTask,
+  RepeatedJointCreateTask,
+  RepeatedJointDeleteTask,
+  WeldRow,
+} from '@/lib/dispatcher-types'
 import { buildJointNextActions } from '@/lib/joint-next-actions'
 
 describe('joint next actions', () => {
@@ -32,10 +37,31 @@ describe('joint next actions', () => {
     })
   })
 
+  it('repairs an obsolete chain row before asking to fill its welding data', () => {
+    const source = row({ id: 1, joint: 'F3' })
+    const obsolete = row({ id: 2, joint: 'F3R2', weldDate: null })
+    const task: RepeatedJointDeleteTask = {
+      kind: 'delete',
+      key: 'delete:F3R2',
+      row: obsolete,
+      sourceRow: source,
+      sourceJoint: 'F3',
+      targetJoint: 'F3R2',
+      suffix: 'R',
+      reason: 'В цепочке больше нет основания для ремонта.',
+    }
+
+    expect(buildJointNextActions(obsolete, [task])[0]).toMatchObject({
+      kind: 'dispatcherTask',
+      taskKey: task.key,
+    })
+  })
+
   it('guides a PSTO weld through pre-TO request and result first', () => {
-    const waitingRequest = row({ pstoRequired: 'да', hasVik: 'да' })
+    const waitingRequest = row({ pstoRequired: 'да', hasVik: 'да', hasRk: 'да' })
     expect(buildJointNextActions(waitingRequest)[0]).toMatchObject({
       kind: 'preLnkRequest',
+      description: 'Ожидают заявки: ВИК, РК.',
       methodCode: 'ВИК',
     })
 
@@ -79,6 +105,175 @@ describe('joint next actions', () => {
     })
   })
 
+  it('guides every physical cycle stage and opens a repeat after failed TVMT', () => {
+    const requestedPsto = row({
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО-1',
+      pstoRequestDate: '2026-08-02',
+      pstoResult: 'ожидает ПСТО',
+    })
+    expect(buildJointNextActions(requestedPsto)[0]).toMatchObject({
+      kind: 'pstoResult',
+      title: 'Внести результат ПСТО · цикл 1',
+    })
+
+    const performedPsto = row({
+      ...requestedPsto,
+      pstoDate: '2026-08-03',
+      pstoResult: 'проведено',
+    })
+    expect(buildJointNextActions(performedPsto)[0]).toMatchObject({
+      kind: 'tvmtRequest',
+      title: 'Создать заявку ТВМТ · цикл 1',
+    })
+
+    const requestedTvmt = row({
+      ...performedPsto,
+      tvmtRequest: 'Заявка ТВМТ-1',
+      tvmtRequestDate: '2026-08-04',
+      tvmtResult: 'ожидает НК',
+    })
+    expect(buildJointNextActions(requestedTvmt)[0]).toMatchObject({
+      kind: 'tvmtResult',
+      title: 'Внести результат ТВМТ · цикл 1',
+      description: expect.stringContaining('Негодная ТВМТ потребует повторную ПСТО'),
+    })
+
+    const failedTvmt = row({
+      ...requestedTvmt,
+      tvmtResult: 'не годен',
+      tvmtConclusionDate: '2026-08-05',
+      tvmtConclusion: 'ЗНК-ТВМТ-1',
+    })
+    expect(buildJointNextActions(failedTvmt)[0]).toMatchObject({
+      kind: 'pstoRequest',
+      title: 'Создать заявку повторной ПСТО · цикл 2',
+    })
+
+    const requestedRepeat = row({
+      ...failedTvmt,
+      pstoRepeatCycles: [{
+        id: 2,
+        weldJointId: 1,
+        sequence: 2,
+        pstoRequest: 'Заявка ПСТО-2',
+        pstoRequestDate: '2026-08-06',
+        pstoResult: 'ожидает ПСТО',
+      }],
+    })
+    expect(buildJointNextActions(requestedRepeat)[0]).toMatchObject({
+      kind: 'pstoResult',
+      title: 'Внести результат ПСТО · цикл 2',
+    })
+  })
+
+  it('opens primary control only after good TVMT and completed pre-TO control', () => {
+    const completedPhysicalCycle = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка до ТО',
+        requestDate: '2026-08-01',
+        result: 'годен',
+        conclusionDate: '2026-08-02',
+        conclusionName: 'Заключение до ТО',
+      }],
+      pstoRequest: 'Заявка ПСТО-1',
+      pstoRequestDate: '2026-08-03',
+      pstoDate: '2026-08-04',
+      pstoResult: 'проведено',
+      tvmtRequest: 'Заявка ТВМТ-1',
+      tvmtRequestDate: '2026-08-05',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-06',
+      tvmtConclusion: 'Заключение ТВМТ-1',
+    })
+
+    expect(buildJointNextActions(completedPhysicalCycle)[0]).toMatchObject({
+      kind: 'primaryLnkRequest',
+      title: 'Создать заявку основного НК',
+    })
+  })
+
+  it('backfills a late PSTO assignment without replacing the preserved primary control', () => {
+    const preservedPrimary = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Фактическая заявка ВИК',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-08',
+      vikConclusion: 'Фактическое заключение ВИК',
+      finalStatus: 'ожидает заявку',
+    })
+
+    expect(buildJointNextActions(preservedPrimary)[0]).toMatchObject({
+      kind: 'preLnkRequest',
+      title: 'Создать заявку НК до ТО',
+      methodCode: 'ВИК',
+    })
+
+    const withPreRequest = row({
+      ...preservedPrimary,
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-02',
+        result: 'ожидает НК',
+      }],
+    })
+    expect(buildJointNextActions(withPreRequest)[0]).toMatchObject({
+      kind: 'preLnkResult',
+      title: 'Внести результат НК до ТО',
+    })
+
+    const completedHistory = row({
+      ...preservedPrimary,
+      preHeatTreatmentControls: [{
+        ...withPreRequest.preHeatTreatmentControls![0]!,
+        result: 'годен',
+        conclusionDate: '2026-08-03',
+        conclusionName: 'Заключение ВИК до ТО',
+      }],
+      pstoRequest: 'Заявка ПСТО',
+      pstoRequestDate: '2026-08-04',
+      pstoDate: '2026-08-05',
+      pstoResult: 'проведено',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtRequestDate: '2026-08-05',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-06',
+      tvmtConclusion: 'Заключение ТВМТ',
+      finalStatus: 'годен',
+    })
+
+    expect(buildJointNextActions(completedHistory)[0]).toMatchObject({
+      kind: 'complete',
+      title: 'Работа по стыку завершена',
+    })
+  })
+
+  it('finishes an already started physical cycle before backfilling missing pre-TO documents', () => {
+    const legacyRow = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      pstoRequest: 'Заявка ПСТО-1',
+      pstoRequestDate: '2026-08-02',
+      pstoResult: 'ожидает ПСТО',
+      preHeatTreatmentControls: [],
+    })
+
+    expect(buildJointNextActions(legacyRow)[0]).toMatchObject({
+      kind: 'pstoResult',
+      title: 'Внести результат ПСТО · цикл 1',
+    })
+  })
+
   it('finishes a physically started cycle after line cancellation', () => {
     const afterPsto = row({
       pstoRequired: 'отменен',
@@ -90,6 +285,7 @@ describe('joint next actions', () => {
     expect(buildJointNextActions(afterPsto)[0]).toMatchObject({
       kind: 'tvmtRequest',
       title: 'Создать заявку ТВМТ · цикл 1',
+      description: expect.stringContaining('Линия ПСТО отменена'),
     })
 
     const waitingTvmt = row({
@@ -144,6 +340,41 @@ describe('joint next actions', () => {
     expect(buildJointNextActions(row({ finalStatus: 'годен' }))[0]).toMatchObject({
       kind: 'complete',
       title: 'Работа по стыку завершена',
+    })
+  })
+
+  it('does not let a chronology check hide an available physical action', () => {
+    const current = row({
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО-1',
+      pstoRequestDate: '2026-08-02',
+      pstoResult: 'ожидает ПСТО',
+    })
+    const task: RepeatedJointCheckTask = {
+      kind: 'check',
+      key: 'check:chronology',
+      row: current,
+      sourceRow: current,
+      sourceJoint: 'F1',
+      targetJoint: 'F1',
+      baseJoint: 'F1',
+      suffix: 'R',
+      details: 'НК после ТО оформлен раньше цикла.',
+    }
+
+    expect(buildJointNextActions(current, [task])[0]).toMatchObject({
+      kind: 'pstoResult',
+      title: 'Внести результат ПСТО · цикл 1',
+    })
+  })
+
+  it('uses the same primary workflow on percentage lines', () => {
+    expect(buildJointNextActions(row({
+      weldControlPercent: '10',
+      hasVik: 'да',
+    }))[0]).toMatchObject({
+      kind: 'primaryLnkRequest',
+      title: 'Создать заявку основного НК',
     })
   })
 })

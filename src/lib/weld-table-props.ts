@@ -1,6 +1,8 @@
 import type { WeldTableProps } from '@/components/weld-table'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { getDuplicateControlTableColumns } from '@/lib/duplicate-control-table-columns'
+import { getJointNextActionTableColumns } from '@/lib/joint-next-action-table-column'
+import type { JointNextAction } from '@/lib/joint-next-actions'
 import type { ActiveReport } from '@/lib/home-state'
 import { isLnkRequestAllowedForRow, isLnkRequestField } from '@/lib/lnk-field-updates'
 import { getLnkDisplayValue, getPstoDisplayValue, getWeldingJournalDisplayValue } from '@/lib/lnk-status'
@@ -41,6 +43,8 @@ type CreateWeldTablePropsOptions = {
   manualFilterOptions?: WeldTableProps['manualFilterOptions']
   manualPagination?: WeldTableProps['manualPagination']
   onColumnFiltersChange: WeldTableProps['onColumnFiltersChange']
+  sort?: WeldTableProps['sort']
+  onSortChange?: WeldTableProps['onSortChange']
   onEdit: WeldTableProps['onEdit']
   onDelete: WeldTableProps['onDelete']
   stickyLeft: NonNullable<WeldTableProps['stickyLeft']>
@@ -62,6 +66,8 @@ type CreateWeldTablePropsOptions = {
   selectable?: WeldTableProps['selectable']
   selectedRowIds?: WeldTableProps['selectedRowIds']
   onSelectedRowIdsChange?: WeldTableProps['onSelectedRowIdsChange']
+  dispatcherTasks?: readonly RepeatedJointTask[]
+  onRunNextAction?: (row: WeldRow, action: JointNextAction) => void
 }
 
 export function createWeldTableProps({
@@ -77,6 +83,8 @@ export function createWeldTableProps({
   manualFilterOptions,
   manualPagination,
   onColumnFiltersChange,
+  sort,
+  onSortChange,
   onEdit,
   onDelete,
   stickyLeft,
@@ -98,6 +106,8 @@ export function createWeldTableProps({
   selectable,
   selectedRowIds,
   onSelectedRowIdsChange,
+  dispatcherTasks = [],
+  onRunNextAction,
 }: CreateWeldTablePropsOptions): WeldTableProps {
   return {
     rows,
@@ -111,6 +121,8 @@ export function createWeldTableProps({
     manualFilterOptions,
     manualPagination,
     onColumnFiltersChange,
+    sort,
+    onSortChange,
     onEdit,
     onDelete,
     stickyLeft,
@@ -157,7 +169,15 @@ export function createWeldTableProps({
           : NO_SYSTEM_DOCUMENT_TYPES,
     openLinkedReportTitle: getOpenLinkedReportTitle(activeReport),
     rowActions: getReportRowActions(activeReport, rowActionHandlers),
-    extraColumns: getDuplicateControlTableColumns({ activeReport, onOpenDuplicateControl }),
+    extraColumns: [
+      ...getJointNextActionTableColumns({
+        activeReport,
+        dispatcherTasks,
+        onRunNextAction,
+        onOpenOverview: onOpenJointOverview,
+      }),
+      ...getDuplicateControlTableColumns({ activeReport, onOpenDuplicateControl }),
+    ],
     getContextMenuItems,
     selectable,
     selectedRowIds,
