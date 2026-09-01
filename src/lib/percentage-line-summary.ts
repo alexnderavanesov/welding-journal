@@ -516,7 +516,7 @@ function isRevisionNotActual(row: WeldRow) {
 }
 
 function isUnofficial(row: WeldRow) {
-  return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
+  return String(row.officiality ?? '').trim().toLowerCase() === 'неофициальный'
 }
 
 function normalizeText(value: unknown) {

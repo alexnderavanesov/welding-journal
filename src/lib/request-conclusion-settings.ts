@@ -15,13 +15,21 @@ export const REQUEST_CONCLUSION_SETTINGS_EVENT = 'request-conclusion-settings-ch
 
 const REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY = 'welding-request-conclusion-settings'
 
-export type RequestConclusionNamingKind = 'lnkRequest' | 'lnkConclusion' | 'pstoRequest' | 'pstoConclusion'
+export type RequestConclusionNamingKind =
+  | 'lnkRequest'
+  | 'lnkConclusion'
+  | 'pstoRequest'
+  | 'pstoConclusion'
+  | 'tvmtRequest'
+  | 'tvmtConclusion'
 
 export const REQUEST_CONCLUSION_NAMING_KINDS: RequestConclusionNamingKind[] = [
   'lnkRequest',
   'lnkConclusion',
   'pstoRequest',
   'pstoConclusion',
+  'tvmtRequest',
+  'tvmtConclusion',
 ]
 
 export type RequestConclusionNamingItemSettings = {
@@ -78,6 +86,15 @@ export const REQUEST_CONCLUSION_DEFAULT_SETTINGS: RequestConclusionSettings = {
   pstoConclusion: {
     defaultMode: 'system',
     systemPattern: 'ПСТО-Д-{{ДатаКороткая}}-{{№}}',
+  },
+  tvmtRequest: {
+    defaultMode: 'system',
+    systemPattern: 'Заявка-{{Дата}}-{{№}}',
+  },
+  tvmtConclusion: {
+    defaultMode: 'system',
+    systemPattern: 'ЗНК-{{Метод}}-{{Дата}}-{{№}}',
+    systemPatternHistory: ['Заключение-{{Метод}}-{{Дата}}-{{№}}'],
   },
   splitModes: DEFAULT_SYSTEM_DOCUMENT_SPLIT_SETTINGS,
 }
@@ -166,6 +183,21 @@ export function getDefaultNamingState(settings: RequestConclusionSettings, kind:
     mode: settings[kind].defaultMode,
     customName: '',
   }
+}
+
+export function getRequestConclusionNamingKind({
+  type,
+  methodCode,
+}: {
+  type: 'lnkRequest' | 'lnkConclusion' | 'pstoRequest' | 'pstoConclusion'
+  methodCode?: string
+}): RequestConclusionNamingKind {
+  const normalizedMethod = String(methodCode ?? '').trim().toLocaleUpperCase('ru-RU')
+  if (normalizedMethod === 'ТВМТ') {
+    if (type === 'lnkRequest') return 'tvmtRequest'
+    if (type === 'lnkConclusion') return 'tvmtConclusion'
+  }
+  return type
 }
 
 export function buildSystemNameFromPattern(pattern: string, context: NamingPatternContext, existingNames: string[]) {
@@ -273,6 +305,14 @@ export function normalizeRequestConclusionSettings(value: unknown): RequestConcl
     lnkConclusion: normalizeSettingsItem(source.lnkConclusion, REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion),
     pstoRequest: normalizeSettingsItem(source.pstoRequest, REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoRequest),
     pstoConclusion: normalizeSettingsItem(source.pstoConclusion, REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoConclusion),
+    tvmtRequest: normalizeSettingsItem(
+      source.tvmtRequest ?? source.lnkRequest,
+      REQUEST_CONCLUSION_DEFAULT_SETTINGS.tvmtRequest,
+    ),
+    tvmtConclusion: normalizeSettingsItem(
+      source.tvmtConclusion ?? source.lnkConclusion,
+      REQUEST_CONCLUSION_DEFAULT_SETTINGS.tvmtConclusion,
+    ),
     splitModes: normalizeSystemDocumentSplitSettings(source.splitModes),
   }
 }

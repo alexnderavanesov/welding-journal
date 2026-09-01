@@ -35,25 +35,25 @@ export const LNK_CONCLUSION_TEMPLATE_PROFILES = [
     description: 'Шаблон заключения по капиллярному контролю.',
     methodCodes: ['ПВК'],
   },
-  {
-    id: 'lnkConclusionOther',
-    label: 'Прочие',
-    fullLabel: 'Заключение прочие',
-    description: 'Общий шаблон для ТВМТ, РФА, СТЛС, МКК и других видов НК без отдельной формы.',
-    methodCodes: [],
-    fallback: true,
-  },
 ] as const
 
-export type LnkConclusionTemplateId =
-  (typeof LNK_CONCLUSION_TEMPLATE_PROFILES)[number]['id']
+const LEGACY_LNK_CONCLUSION_TEMPLATE_PROFILE = {
+  id: 'lnkConclusionOther',
+  documentType: 'lnkConclusion',
+  label: 'Устаревшие прочие заключения',
+  description: 'Скрытый тип для совместимости с ранее созданными записями.',
+} as const
 
-export const SYSTEM_DOCUMENT_TEMPLATE_PROFILES = [
+export type LnkConclusionTemplateId =
+  | (typeof LNK_CONCLUSION_TEMPLATE_PROFILES)[number]['id']
+  | typeof LEGACY_LNK_CONCLUSION_TEMPLATE_PROFILE.id
+
+export const CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES = [
   {
     id: 'lnkRequest',
     documentType: 'lnkRequest',
     label: 'Заявка ЛНК',
-    description: 'Шаблон заявки на контроль.',
+    description: 'Шаблон заявки на ВИК, РК, УЗК и ПВК.',
   },
   ...LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => ({
     id: profile.id,
@@ -73,6 +73,23 @@ export const SYSTEM_DOCUMENT_TEMPLATE_PROFILES = [
     label: 'Заключение ПСТО',
     description: 'Шаблон заключения по результатам термообработки.',
   },
+  {
+    id: 'tvmtRequest',
+    documentType: 'lnkRequest',
+    label: 'Заявка ТВМТ',
+    description: 'Отдельный шаблон заявки на твердометрию.',
+  },
+  {
+    id: 'tvmtConclusion',
+    documentType: 'lnkConclusion',
+    label: 'Заключение ТВМТ',
+    description: 'Отдельный шаблон заключения по твердометрии.',
+  },
+] as const
+
+export const SYSTEM_DOCUMENT_TEMPLATE_PROFILES = [
+  ...CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
+  LEGACY_LNK_CONCLUSION_TEMPLATE_PROFILE,
 ] as const
 
 export type SystemDocumentTemplateId =
@@ -82,14 +99,18 @@ const SYSTEM_DOCUMENT_TEMPLATE_IDS = new Set<string>(
   SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => profile.id),
 )
 const LNK_CONCLUSION_TEMPLATE_IDS = new Set<string>(
-  LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => profile.id),
+  [
+    ...LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => profile.id),
+    LEGACY_LNK_CONCLUSION_TEMPLATE_PROFILE.id,
+  ],
 )
 const LNK_CONCLUSION_METHOD_BY_FIELD = new Map<WeldFieldKey, string>(
   LNK_METHODS.map((method) => [method.conclusionKey, method.code]),
 )
-const LNK_REQUEST_FIELDS = new Set<WeldFieldKey>(
-  LNK_METHODS.map((method) => method.requestKey),
+const LNK_REQUEST_METHOD_BY_FIELD = new Map<WeldFieldKey, string>(
+  LNK_METHODS.map((method) => [method.requestKey, method.code]),
 )
+const DOCUMENT_LNK_METHOD_CODES = new Set(['ВИК', 'РК', 'УЗК', 'ПВК'])
 
 export function isSystemDocumentTemplateId(
   value: unknown,
@@ -101,6 +122,27 @@ export function isLnkConclusionTemplateId(
   value: unknown,
 ): value is LnkConclusionTemplateId {
   return LNK_CONCLUSION_TEMPLATE_IDS.has(String(value ?? ''))
+}
+
+export function getSystemDocumentTemplateLoadCandidates(
+  templateId: SystemDocumentTemplateId,
+): SystemDocumentTemplateId[] {
+  if (templateId === 'tvmtRequest') return ['tvmtRequest', 'lnkRequest']
+  if (templateId === 'tvmtConclusion') return ['tvmtConclusion', 'lnkConclusionOther']
+  return [templateId]
+}
+
+export function resolveAvailableSystemDocumentTemplateIds(
+  values: readonly unknown[],
+): Set<SystemDocumentTemplateId> {
+  const available = new Set(values.filter(isSystemDocumentTemplateId))
+  if (!available.has('tvmtRequest') && available.has('lnkRequest')) {
+    available.add('tvmtRequest')
+  }
+  if (!available.has('tvmtConclusion') && available.has('lnkConclusionOther')) {
+    available.add('tvmtConclusion')
+  }
+  return available
 }
 
 export function getSystemDocumentTypeForTemplateId(
@@ -117,9 +159,7 @@ export function getLnkConclusionTemplateProfile(
   return (
     LNK_CONCLUSION_TEMPLATE_PROFILES.find((profile) =>
       profile.methodCodes.some((code) => code === normalizedMethod),
-    ) ??
-    LNK_CONCLUSION_TEMPLATE_PROFILES.find((profile) => 'fallback' in profile) ??
-    LNK_CONCLUSION_TEMPLATE_PROFILES[LNK_CONCLUSION_TEMPLATE_PROFILES.length - 1]
+    ) ?? LEGACY_LNK_CONCLUSION_TEMPLATE_PROFILE
   )
 }
 
@@ -127,14 +167,22 @@ export function getLnkConclusionTemplateMethodCodes(
   templateId: LnkConclusionTemplateId,
 ) {
   return LNK_METHODS
-    .filter((method) => getLnkConclusionTemplateProfile(method.code).id === templateId)
+    .filter((method) => getSystemDocumentTemplateId({
+      type: 'lnkConclusion',
+      methodCode: method.code,
+    }) === templateId)
     .map((method) => method.code)
 }
 
 export function getSystemDocumentTemplateId(
   reference: Pick<SystemDocumentReference, 'type' | 'methodCode'>,
 ): SystemDocumentTemplateId {
+  const methodCode = String(reference.methodCode ?? '').trim().toLocaleUpperCase('ru-RU')
+  if (reference.type === 'lnkRequest' && methodCode === 'ТВМТ') {
+    return 'tvmtRequest'
+  }
   if (reference.type === 'lnkConclusion') {
+    if (methodCode === 'ТВМТ') return 'tvmtConclusion'
     return getLnkConclusionTemplateProfile(reference.methodCode).id
   }
   return reference.type
@@ -150,9 +198,14 @@ export function getSystemDocumentTemplateIdForField(
   }
   const methodCode = LNK_CONCLUSION_METHOD_BY_FIELD.get(fieldKey)
   if (methodCode) {
-    return getLnkConclusionTemplateProfile(methodCode).id
+    if (methodCode === 'ТВМТ') return 'tvmtConclusion'
+    return DOCUMENT_LNK_METHOD_CODES.has(methodCode)
+      ? getLnkConclusionTemplateProfile(methodCode).id
+      : null
   }
-  if (LNK_REQUEST_FIELDS.has(fieldKey)) return 'lnkRequest'
+  const requestMethodCode = LNK_REQUEST_METHOD_BY_FIELD.get(fieldKey)
+  if (requestMethodCode === 'ТВМТ') return 'tvmtRequest'
+  if (requestMethodCode && DOCUMENT_LNK_METHOD_CODES.has(requestMethodCode)) return 'lnkRequest'
   if (fieldKey === 'pstoRequest') return 'pstoRequest'
   if (fieldKey === 'heatTreatmentDiagram') return 'pstoConclusion'
   return null

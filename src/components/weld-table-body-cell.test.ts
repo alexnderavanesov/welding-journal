@@ -42,7 +42,7 @@ describe('getWeldTableReadOnlyFieldTooltip', () => {
     expect(getWeldTableReadOnlyFieldTooltip('pstoResult')).toContain('добавлении или редактировании результата')
     expect(getWeldTableReadOnlyFieldTooltip('pstoDate')).toContain('добавлении или редактировании результата')
     expect(getWeldTableReadOnlyFieldTooltip('heatTreatmentDiagram')).toContain('добавлении или редактировании результата')
-    expect(getWeldTableReadOnlyFieldTooltip('status')).toContain('Сменить официальность')
+    expect(getWeldTableReadOnlyFieldTooltip('officiality')).toContain('Сменить официальность')
     expect(getWeldTableReadOnlyFieldTooltip('finalStatus')).toContain('рассчитывается автоматически')
   })
 

@@ -29,6 +29,7 @@ export const REQUIRED_EXCEL_HEADERS = EXCEL_FIELDS
 export function isKnownHeaderSet(headers: string[]) {
   const normalized = headers
     .map(normalizeHeader)
+    .map((header) => header === 'Статус' ? 'Официальность' : header)
     .filter(Boolean)
   return REQUIRED_EXCEL_HEADERS.every((header) => normalized.includes(header))
 }

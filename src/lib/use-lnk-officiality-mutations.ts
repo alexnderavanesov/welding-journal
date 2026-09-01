@@ -19,14 +19,14 @@ export function useLnkOfficialityMutations({
   const lnkOfficialityMutation = useMutation({
     mutationFn: async ({
       records,
-      status,
+      officiality,
     }: {
       records: RowWithId[]
-      status: 'official' | 'unofficial'
+      officiality: 'official' | 'unofficial'
     }) => {
-      const updatedRecords = buildLnkOfficialityRows({ records, status })
+      const updatedRecords = buildLnkOfficialityRows({ records, officiality })
 
-      if (updatedRecords.length === 0) throw new Error('Выбранные стыки уже имеют такой статус')
+      if (updatedRecords.length === 0) throw new Error('Выбранные стыки уже имеют такую официальность')
 
       const savedRows = await updateWeldRowsOrThrow(
         updatedRecords,
@@ -36,12 +36,12 @@ export function useLnkOfficialityMutations({
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
-      highlightChangedRows(savedRows, ['status'])
+      highlightChangedRows(savedRows, ['officiality'])
       resetDismissedRepeatedJointTasks()
       setMessage(
-        variables.status === 'unofficial'
-          ? `Статус "неофициальный" установлен для стыков: ${savedRows.length}`
-          : `Статус "официальный" установлен для стыков: ${savedRows.length}`,
+        variables.officiality === 'unofficial'
+          ? `Официальность "неофициальный" установлена для стыков: ${savedRows.length}`
+          : `Официальность "официальный" установлена для стыков: ${savedRows.length}`,
       )
       setLnkOfficialityDraft(createDefaultLnkOfficialityDraft())
       setIsLnkOfficialityModalOpen(false)

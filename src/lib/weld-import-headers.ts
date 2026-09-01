@@ -1,7 +1,10 @@
 import { EXCEL_FIELDS, normalizeHeader } from './weld-fields'
 
 export function normalizeImportHeaders(values: unknown[]) {
-  return values.map(normalizeHeader)
+  return values.map((value) => {
+    const header = normalizeHeader(value)
+    return header === 'Статус' ? 'Официальность' : header
+  })
 }
 
 export function mapHeadersToFields(headers: string[]) {

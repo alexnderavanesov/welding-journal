@@ -11,7 +11,7 @@ describe('lnk officiality derived rows', () => {
   it('shows rejected official rows first, then unofficial rows, and hides waiting NDT rows', () => {
     const rows = [
       row(1, { joint: 'S3', finalStatus: 'ожидает НК', rkRequest: 'R-1', rkResult: 'ожидает НК' }),
-      row(2, { joint: 'S2', status: 'неофициальный', rkResult: 'ремонт' }),
+      row(2, { joint: 'S2', officiality: 'неофициальный', rkResult: 'ремонт' }),
       row(3, { joint: 'S1', rkResult: 'ремонт' }),
       row(4, { joint: 'S4', finalStatus: 'годен', rkResult: 'годен' }),
     ]
@@ -31,7 +31,7 @@ describe('lnk officiality derived rows', () => {
 function draftState(overrides: Partial<LnkOfficialityDraftState> = {}): LnkOfficialityDraftState {
   return {
     search: '',
-    status: '',
+    officiality: '',
     rowIds: new Set(),
     ...overrides,
   }

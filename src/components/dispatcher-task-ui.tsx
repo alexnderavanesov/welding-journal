@@ -30,7 +30,7 @@ export function DispatcherTaskDetails({ task }: DispatcherTaskDetailsProps) {
 
   return (
     <div className="border-t border-slate-100 bg-slate-50/70 px-3 py-2 text-xs leading-5 text-slate-600">
-      <div className="mx-auto w-full max-w-[1600px]">
+      <div className="w-full">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
           {metrics.length > 0 ? (
@@ -106,7 +106,7 @@ export function DispatcherTaskGroupFrame({
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
     >
       <summary className="min-h-10 cursor-pointer list-none px-3 py-2 text-sm marker:hidden hover:bg-slate-50">
-        <span className="mx-auto flex w-full max-w-[1600px] items-center gap-2">
+        <span className="flex w-full items-center gap-2">
           <span className="font-semibold text-slate-900">{group.baseJoint}</span>
           <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
             {reminder ? formatReminderCount(group.tasks.length) : formatTaskCount(group.tasks.length)}

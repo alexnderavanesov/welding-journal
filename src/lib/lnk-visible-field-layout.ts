@@ -7,11 +7,12 @@ const BASE_SECTIONS: Array<{ section: string; fieldKeys: WeldFieldKey[] }> = [
     section: 'Проект',
     fieldKeys: [
       'projectTitle', 'subtitleCode', 'line', 'groupName', 'category', 'weldControlPercent',
-      'isometry', 'sheet', 'revisionNumber', 'revisionActuality',
+      'isometry', 'sheet', 'revisionNumber',
     ],
   },
+  { section: 'Статус', fieldKeys: ['officiality', 'revisionActuality'] },
   { section: 'Спул', fieldKeys: ['spool', 'spoolId'] },
-  { section: 'Стык', fieldKeys: ['joint', 'status', 'finalStatus'] },
+  { section: 'Стык', fieldKeys: ['joint', 'finalStatus'] },
   { section: 'Материалы', fieldKeys: ['element1', 'element2', 'material1', 'material2'] },
   {
     section: 'Сварка',

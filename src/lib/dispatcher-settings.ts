@@ -537,7 +537,7 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
   'percentage-rejected-primary': [
     {
       label: 'Действия -> Сменить официальность',
-      description: 'Открывает окно официальности стыков ЛНК, где можно перевести негодный стык в нужный статус по правилам проекта.',
+      description: 'Открывает окно официальности стыков ЛНК, где можно установить нужную официальность негодного стыка по правилам проекта.',
     },
     {
       label: 'Действия -> Принять',
@@ -836,7 +836,7 @@ export function normalizeDispatcherReminderDays(value: unknown, fallback = MIN_D
 
 export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSettingId {
   if (task.kind === 'welder-stamp-expiry') return task.permitKind === 'dls' ? 'welder-dls-expiry' : 'welder-stamp-expiry'
-  if (task.kind === 'create') return String(task.row.status ?? '').trim().toLowerCase() === 'неофициальный' ? 'repeated-create-official-from-unofficial' : 'repeated-create'
+  if (task.kind === 'create') return String(task.row.officiality ?? '').trim().toLowerCase() === 'неофициальный' ? 'repeated-create-official-from-unofficial' : 'repeated-create'
   if (task.kind === 'coil') return 'repeated-coil'
   if (task.kind === 'delete') return 'repeated-delete'
   if (task.kind === 'rename') return 'repeated-rename'

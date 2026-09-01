@@ -105,7 +105,7 @@ export function buildJointChainConsistencyCheckTasks(
       const reason = officialGoodCount > 1 ? 'несколько годных финалов' : 'есть продолжение после годного'
       const details =
         officialGoodCount > 1
-          ? `В цепочке найдено ${officialGoodCount} годных официальных стыка. Нужно определить, какой из них является актуальным финалом, а какие строки лишние или требуют смены статуса.`
+          ? `В цепочке найдено ${officialGoodCount} годных официальных стыка. Нужно определить, какой из них является актуальным финалом, а какие строки лишние или требуют смены официальности.`
           : `Стык ${String(firstOfficialGood.joint ?? '').trim() || '-'} уже годен с датой сварки ${formatDisplayDate(firstOfficialGood.weldDate) || '-'}, но после него найден стык ${String(rowAfterOfficialGood?.joint ?? '').trim() || '-'} с более поздней датой ${formatDisplayDate(rowAfterOfficialGood?.weldDate) || '-'}. Проверь, действительно ли цепочка должна продолжаться после годного стыка.`
       return [...checkTasks, createJointChainCheckTask(row, key, reason, details, systemIndexSettings)]
     }),

@@ -21,8 +21,15 @@ import {
   DOCUMENT_SEQUENCE_NUMBER_TOKEN,
 } from '@/lib/generated-document-naming'
 import { parseRkExposureDescription, type RkExposureLine } from '@/lib/rk-exposure'
-import { getGeneratedDocumentProfile, isGeneratedDocumentType } from '@/lib/generated-document-types'
-import { SYSTEM_DOCUMENT_TEMPLATE_PROFILES } from '@/lib/system-document-template-types'
+import {
+  getGeneratedDocumentProfile,
+  isGeneratedDocumentType,
+  type GeneratedDocumentType,
+} from '@/lib/generated-document-types'
+import {
+  CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
+  type SystemDocumentTemplateId,
+} from '@/lib/system-document-template-types'
 import {
   getSystemDocumentRowResult,
   type SystemDocumentTemplateContext,
@@ -67,10 +74,10 @@ export const DOCUMENT_TEMPLATE_TYPES = [
     label: 'ЗНИ',
     description: 'Запрос на инспекцию по выбранным стыкам.',
   },
-  ...SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
+  ...CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
 ] as const
 
-export type DocumentTemplateId = (typeof DOCUMENT_TEMPLATE_TYPES)[number]['id']
+export type DocumentTemplateId = GeneratedDocumentType | SystemDocumentTemplateId
 
 export type TemplateMarkerLocation = {
   sheet: string
@@ -218,29 +225,41 @@ export function normalizeDocumentTemplateConstructorConfig(
     return bindingRow >= repeatRow && bindingRow <= repeatRowEnd
   }
   const normalizeBindingForRepeatMode = (binding: DocumentTemplateCellBinding) => {
-    const insideRepeatBlock = isInsideRepeatBlock(binding)
+    const normalizedFieldBinding: DocumentTemplateCellBinding = {
+      ...binding,
+      field: migrateLegacyOfficialityField(binding.field),
+      parts: binding.parts?.map((part) => ({
+        ...part,
+        field: migrateLegacyOfficialityField(part.field),
+        compareField: migrateLegacyOfficialityField(part.compareField),
+      })),
+    }
+    const insideRepeatBlock = isInsideRepeatBlock(normalizedFieldBinding)
     if (repeatMode === 'groups' && insideRepeatBlock) {
-      return convertDocumentTemplateBindingToGroupSummary(binding)
+      return convertDocumentTemplateBindingToGroupSummary(normalizedFieldBinding)
     }
     if (
       collapsedJointGrouping &&
       insideRepeatBlock &&
-      binding.mode === 'summary' &&
-      binding.scope === 'group'
+      normalizedFieldBinding.mode === 'summary' &&
+      normalizedFieldBinding.scope === 'group'
     ) {
-      return convertDocumentTemplateBindingToJointRow(binding)
+      return convertDocumentTemplateBindingToJointRow(normalizedFieldBinding)
     }
-    return { ...binding, scope: undefined }
+    return { ...normalizedFieldBinding, scope: undefined }
   }
   return {
     ...config,
     repeatRow,
     repeatRowEnd,
     repeatMode,
-    repeatGroupBy: repeatMode === 'groups' ? config.repeatGroupBy : undefined,
+    repeatGroupBy: repeatMode === 'groups' ? migrateLegacyOfficialityField(config.repeatGroupBy) : undefined,
     nameConfig: config.nameConfig
       ? {
-          parts: config.nameConfig.parts.map((part) => ({ ...part })),
+          parts: config.nameConfig.parts.map((part) => ({
+            ...part,
+            field: migrateLegacyOfficialityField(part.field),
+          })),
         }
       : undefined,
     bindings: config.bindings.flatMap((binding) => {
@@ -269,6 +288,10 @@ export function normalizeDocumentTemplateConstructorConfig(
       return [normalizeBindingForRepeatMode(normalizedBinding)]
     }),
   }
+}
+
+function migrateLegacyOfficialityField<T>(field: T): T {
+  return (field === 'status' ? 'officiality' : field) as T
 }
 
 export function convertDocumentTemplateBindingToGroupSummary(
@@ -520,6 +543,9 @@ for (const [label, field] of FIELD_BY_LABEL.entries()) {
   if (isVirtualWeldField(field) && field.key !== CONTROL_BASIS_SUMMARY_FIELD_KEY) continue
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(label), field.key as keyof WeldInput)
 }
+
+TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName('Статус'), 'officiality')
+TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName('status'), 'officiality')
 
 export async function parseDocumentTemplateFile(file: File): Promise<TemplateUploadInfo & { fileData: ArrayBuffer }> {
   const extension = getFileExtension(file.name)

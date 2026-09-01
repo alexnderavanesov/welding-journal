@@ -54,7 +54,7 @@ export const LNK_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
   'lnkDefectDescription',
   'rkExposureConfirmedDiameter',
   'lnkNote',
-  'status',
+  'officiality',
 ])
 
 export const PSTO_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([

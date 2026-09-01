@@ -2,11 +2,14 @@ import type { SystemDocumentSummary } from '@/lib/system-document-types'
 
 export type SystemDocumentMethodScope = 'lnk' | 'tvmt' | null
 
+const DOCUMENT_LNK_METHOD_CODES = ['ВИК', 'РК', 'УЗК', 'ПВК'] as const
+
 export function getScopedSystemDocumentStageValues(scope: SystemDocumentMethodScope) {
   return scope === 'lnk' ? ['До ТО', 'Основной'] : []
 }
 
 export function getScopedSystemDocumentMethodValues(scope: SystemDocumentMethodScope) {
+  if (scope === 'lnk') return [...DOCUMENT_LNK_METHOD_CODES]
   return scope === 'tvmt' ? ['ТВМТ'] : []
 }
 
@@ -17,8 +20,9 @@ export function getScopedSystemDocumentHistoryFilterOptions<T extends { value: s
   const scopedOptions = { ...(filterOptions ?? {}) }
   if (scope === 'lnk') {
     const allowedStages = new Set(getScopedSystemDocumentStageValues(scope))
+    const allowedMethods = new Set(getScopedSystemDocumentMethodValues(scope))
     scopedOptions.stage = (scopedOptions.stage ?? []).filter((option) => allowedStages.has(option.value))
-    scopedOptions.method = (scopedOptions.method ?? []).filter((option) => option.value !== 'ТВМТ')
+    scopedOptions.method = (scopedOptions.method ?? []).filter((option) => allowedMethods.has(option.value))
   } else if (scope === 'tvmt') {
     scopedOptions.method = (scopedOptions.method ?? []).filter((option) => option.value === 'ТВМТ')
   }

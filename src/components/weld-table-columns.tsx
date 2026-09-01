@@ -1,7 +1,12 @@
 import { ACTIONS_COLUMN_WIDTH, getWeldColumnWidth } from '@/lib/weld-column-widths'
 import { ROW_ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
-import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
+import {
+  getTrailingWeldTableExtraColumns,
+  getWeldTableExtraColumnsAfterSection,
+  getWeldTableExtraColumnsBeforeSection,
+  type WeldTableExtraColumn,
+} from '@/lib/weld-table-extra-columns'
 
 type WeldTableColumnsProps = {
   sections: WeldTableDisplaySection[]
@@ -20,7 +25,7 @@ export function WeldTableColumns({
   hasChainAction,
   extraColumns,
 }: WeldTableColumnsProps) {
-  const trailingExtraColumns = getTrailingExtraColumns(extraColumns, sections)
+  const trailingExtraColumns = getTrailingWeldTableExtraColumns(extraColumns, sections)
   const hasControlColumn = selectable || hasChainAction
 
   return (
@@ -28,10 +33,11 @@ export function WeldTableColumns({
       {hasControlColumn ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
       {hasRowActions ? <col style={{ width: ROW_ACTIONS_COLUMN_WIDTH }} /> : null}
       {sections.flatMap((section) => [
-        ...extraColumns
-          .filter((column) => column.insertBeforeSection === section.section)
+        ...getWeldTableExtraColumnsBeforeSection(extraColumns, section.section)
           .map((column) => <col key={column.key} style={{ width: column.width }} />),
         ...section.fields.map((field) => <col key={field.key} style={{ width: getWeldColumnWidth(field.key) }} />),
+        ...getWeldTableExtraColumnsAfterSection(extraColumns, section.section)
+          .map((column) => <col key={column.key} style={{ width: column.width }} />),
       ])}
       {trailingExtraColumns.map((column) => (
         <col key={column.key} style={{ width: column.width }} />
@@ -39,9 +45,4 @@ export function WeldTableColumns({
       {!readOnly ? <col style={{ width: ACTIONS_COLUMN_WIDTH }} /> : null}
     </colgroup>
   )
-}
-
-function getTrailingExtraColumns(columns: WeldTableExtraColumn[], sections: WeldTableDisplaySection[]) {
-  const sectionNames = new Set(sections.map((section) => section.section))
-  return columns.filter((column) => !column.insertBeforeSection || !sectionNames.has(column.insertBeforeSection))
 }

@@ -84,6 +84,10 @@ type SaveResult = {
   documentCount: number
 }
 
+const TVMT_REQUEST_SEQUENCE_ID = getSystemDocumentTemplateId({
+  type: 'lnkRequest',
+  methodCode: 'ТВМТ',
+})
 const TVMT_CONCLUSION_SEQUENCE_ID = getSystemDocumentTemplateId({
   type: 'lnkConclusion',
   methodCode: 'ТВМТ',
@@ -110,7 +114,7 @@ export function TvmtWorkflowDialog({
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
   const [naming, setNaming] = useState<RequestNamingState>(() =>
-    getDefaultNamingState(settings, mode === 'request' ? 'lnkRequest' : 'lnkConclusion'),
+    getDefaultNamingState(settings, mode === 'request' ? 'tvmtRequest' : 'tvmtConclusion'),
   )
   const requestOptions = useMemo(() => getTvmtRequestOptions(rows), [rows])
   const [requestKey, setRequestKey] = useState(() =>
@@ -193,7 +197,7 @@ export function TvmtWorkflowDialog({
     resetKeys: [displayedSearch, rowsViewMode, requestKey],
   })
   const nextNumber = mode === 'request'
-    ? sequences?.lnkRequest
+    ? sequences?.[TVMT_REQUEST_SEQUENCE_ID]
     : sequences?.[TVMT_CONCLUSION_SEQUENCE_ID]
   const creationPlan = useMemo(() => buildSystemDocumentCreationPlan({
     type: mode === 'request' ? 'lnkRequest' : 'lnkConclusion',

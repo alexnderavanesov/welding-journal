@@ -45,11 +45,11 @@ export function getLnkOfficialitySaveBlockReason({
   lnkOfficialityDraft: LnkOfficialityDraftState
   selectedLnkOfficialityRows: WeldRow[]
 }) {
-  if (isLnkOfficialitySaving) return 'Статус сохраняется, дождитесь завершения.'
-  if (!lnkOfficialityDraft.status) return 'Выберите официальный или неофициальный статус.'
+  if (isLnkOfficialitySaving) return 'Официальность сохраняется, дождитесь завершения.'
+  if (!lnkOfficialityDraft.officiality) return 'Выберите значение «официальный» или «неофициальный».'
   if (selectedLnkOfficialityRows.length === 0) return 'Отметьте один или несколько стыков.'
-  if (lnkOfficialityDraft.status === 'unofficial' && selectedLnkOfficialityRows.some((row) => !hasRejectedLnkResult(row))) {
-    return 'Неофициальный статус можно назначить только стыкам с результатом контроля "ремонт" или "вырез".'
+  if (lnkOfficialityDraft.officiality === 'unofficial' && selectedLnkOfficialityRows.some((row) => !hasRejectedLnkResult(row))) {
+    return 'Значение «неофициальный» можно назначить только стыкам с результатом контроля «ремонт» или «вырез».'
   }
   return ''
 }
@@ -81,5 +81,5 @@ function isRejectedOfficialLnkOfficialityRow(row: WeldRow) {
 }
 
 function isUnofficialLnkOfficialityRow(row: WeldRow) {
-  return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
+  return String(row.officiality ?? '').trim().toLowerCase() === 'неофициальный'
 }

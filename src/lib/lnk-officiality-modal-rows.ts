@@ -7,7 +7,7 @@ export function filterLnkOfficialityRows(rows: WeldRow[], search: string, _selec
   return rows
     .filter((row) => {
       if (!query) return true
-      const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint, row.status]
+      const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint, row.officiality]
       const haystack = normalizeSearchText(values.map((value) => String(value ?? '')).join(' '))
       return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
     })

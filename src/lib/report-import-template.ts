@@ -37,7 +37,7 @@ export const REPLACE_DELETE_ROW_HEADER = 'Удалить строку'
 const WELD_IMPORT_IGNORED_FIELD_KEYS = new Set<string>([
   'id',
   'dispatcherTasks',
-  'status',
+  'officiality',
   'finalStatus',
   'revisionActuality',
   'createdAt',

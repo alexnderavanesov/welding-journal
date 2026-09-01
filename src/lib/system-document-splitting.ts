@@ -4,9 +4,11 @@ export const SYSTEM_DOCUMENT_SPLIT_SETTING_IDS = [
   'lnkConclusionRk',
   'lnkConclusionUzk',
   'lnkConclusionPvk',
-  'lnkConclusionOther',
   'pstoRequest',
   'pstoConclusion',
+  'tvmtRequest',
+  'tvmtConclusion',
+  'lnkConclusionOther',
 ] as const
 
 export type SystemDocumentSplitSettingId =
@@ -92,7 +94,12 @@ export function normalizeSystemDocumentSplitSettings(
     : {}
   return Object.fromEntries(
     SYSTEM_DOCUMENT_SPLIT_SETTING_IDS.map((id) => {
-      const mode = String(source[id] ?? '')
+      const legacyValue = id === 'tvmtRequest'
+        ? source.lnkRequest
+        : id === 'tvmtConclusion'
+          ? source.lnkConclusionOther
+          : undefined
+      const mode = String(source[id] ?? legacyValue ?? '')
       return [id, SPLIT_MODE_SET.has(mode) ? mode : 'none']
     }),
   ) as SystemDocumentSplitSettings
@@ -105,8 +112,12 @@ export function getSystemDocumentSplitSettingId({
   type: 'lnkRequest' | 'lnkConclusion' | 'pstoRequest' | 'pstoConclusion'
   methodCode?: string
 }): SystemDocumentSplitSettingId {
-  if (type !== 'lnkConclusion') return type
   const normalizedMethod = normalizeText(methodCode).toLocaleUpperCase('ru-RU')
+  if (normalizedMethod === 'ТВМТ') {
+    if (type === 'lnkRequest') return 'tvmtRequest'
+    if (type === 'lnkConclusion') return 'tvmtConclusion'
+  }
+  if (type !== 'lnkConclusion') return type
   if (normalizedMethod === 'ВИК') return 'lnkConclusionVik'
   if (normalizedMethod === 'РК') return 'lnkConclusionRk'
   if (normalizedMethod === 'УЗК') return 'lnkConclusionUzk'

@@ -74,7 +74,7 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'pstoCancellationDate',
   ...CONTROL_BASIS_FIELD_KEYS,
   'hasTvmt',
-  'status',
+  'officiality',
   'createdAt',
   'weldingUpdatedAt',
   ...LNK_METHODS.flatMap((method) => [method.requestKey, method.requestDateKey]),

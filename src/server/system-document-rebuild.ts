@@ -22,6 +22,7 @@ import {
 } from '@/lib/system-document-template-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import {
+  REQUEST_CONCLUSION_NAMING_KINDS,
   hasSystemDocumentNumberField,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
@@ -166,9 +167,9 @@ async function loadRebuildSnapshot(
   const fingerprint = hashValue({
     splitModes: settings.splitModes,
     patterns: Object.fromEntries(
-      ['lnkRequest', 'lnkConclusion', 'pstoRequest', 'pstoConclusion'].map((type) => [
-        type,
-        settings[type as keyof Pick<RequestConclusionSettings, 'lnkRequest' | 'lnkConclusion' | 'pstoRequest' | 'pstoConclusion'>].systemPattern,
+      REQUEST_CONCLUSION_NAMING_KINDS.map((kind) => [
+        kind,
+        settings[kind].systemPattern,
       ]),
     ),
   })
@@ -364,7 +365,10 @@ function getMatchingFieldKeys(document: SystemDocumentSummary, rows: WeldRow[]) 
   const fieldKeys = new Set<WeldFieldKey>()
   for (const row of rows) {
     if (document.type === 'lnkRequest') {
-      for (const method of LNK_METHODS) {
+      const requestMethods = document.methodCode === 'ТВМТ'
+        ? LNK_METHODS.filter((method) => method.code === 'ТВМТ')
+        : LNK_METHODS.filter((method) => method.code !== 'ТВМТ')
+      for (const method of requestMethods) {
         if (isSameValue(row[method.requestKey], document.title) && isSameDate(row[method.requestDateKey], document.date)) {
           fieldKeys.add(method.requestKey)
         }

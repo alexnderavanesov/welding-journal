@@ -53,7 +53,7 @@ export function parseCell(field: WeldField, value: unknown) {
   if (field.kind === 'number') return parseNumber(value)
   if (field.kind === 'date') return parseDate(value)
   if (field.key === 'lnkDefectDescription') return multilineTextToNull(value)
-  if (field.key === 'status') return parseJointStatus(value)
+  if (field.key === 'officiality') return parseJointOfficiality(value)
   if (field.key === 'finalStatus') return parseFinalStatus(value)
   if (field.key === 'pstoResult') return parsePstoResultStatus(value)
   if (field.key === 'tvmtResult') return parseTvmtResultStatus(value)
@@ -99,7 +99,7 @@ export function parseImportCell(field: WeldField, value: unknown) {
 
 function isRecognizedImportedStatus(field: WeldField, value: unknown) {
   const text = String(value).trim().toLowerCase()
-  if (field.key === 'status') return ['официальный', 'неофициальный'].includes(text)
+  if (field.key === 'officiality') return ['официальный', 'неофициальный'].includes(text)
   if (field.key === 'finalStatus') {
     return ['ожидает', 'не годен по дублю', ...FINAL_STATUS_OPTIONS.map((option) => option.toLowerCase())].includes(text)
   }
@@ -158,7 +158,7 @@ function parseFinalStatus(value: unknown) {
   return normalizeFinalStatus(normalized)
 }
 
-function parseJointStatus(value: unknown) {
+function parseJointOfficiality(value: unknown) {
   const normalized = emptyToNull(value)
   if (normalized === null) return null
   return String(normalized).trim().toLowerCase() === 'неофициальный' ? 'неофициальный' : null

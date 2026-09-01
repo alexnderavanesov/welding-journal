@@ -4,6 +4,7 @@ import {
   buildSystemNameFromPattern,
   buildSystemNameWithNumber,
   extractSystemNameNumber,
+  getRequestConclusionNamingKind,
   hasSystemDocumentNumberField,
   loadRequestConclusionSettings,
   normalizeRequestConclusionSettings,
@@ -17,6 +18,31 @@ import { formatLnkRequestName } from '@/lib/report-request-naming'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('request and conclusion naming settings', () => {
+  it('uses independent naming kinds for TVMT documents', () => {
+    expect(getRequestConclusionNamingKind({ type: 'lnkRequest', methodCode: 'ТВМТ' })).toBe('tvmtRequest')
+    expect(getRequestConclusionNamingKind({ type: 'lnkConclusion', methodCode: 'ТВМТ' })).toBe('tvmtConclusion')
+    expect(getRequestConclusionNamingKind({ type: 'lnkConclusion', methodCode: 'РК' })).toBe('lnkConclusion')
+  })
+
+  it('inherits the previous shared LNK formulas when TVMT settings are missing', () => {
+    const settings = normalizeRequestConclusionSettings({
+      lnkRequest: {
+        defaultMode: 'custom',
+        systemPattern: 'Старая-заявка-{{№}}',
+      },
+      lnkConclusion: {
+        defaultMode: 'system',
+        systemPattern: 'Старое-заключение-{{№}}',
+      },
+    })
+
+    expect(settings.tvmtRequest).toMatchObject({
+      defaultMode: 'custom',
+      systemPattern: 'Старая-заявка-{{№}}',
+    })
+    expect(settings.tvmtConclusion.systemPattern).toBe('Старое-заключение-{{№}}')
+  })
+
   it('uses ZNK in the default LNK conclusion name while recognizing the previous default', () => {
     expect(REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion).toEqual({
       defaultMode: 'system',

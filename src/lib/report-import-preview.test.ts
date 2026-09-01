@@ -449,12 +449,12 @@ describe('existing rows report import preview', () => {
     expect(preview.errors[0]?.message).toContain(expectedCode)
   })
 
-  it('keeps unofficial status out of mass fill update payloads', async () => {
-    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Статус', 'Марка стали 1'], [[7, 'F1', '', '09Г2С']])
+  it('keeps officiality out of mass fill update payloads', async () => {
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Официальность', 'Марка стали 1'], [[7, 'F1', '', '09Г2С']])
     const preview = await buildReportMassFillPreview({
       activeReport: 'weldingJournal',
       file,
-      rows: [{ id: 7, joint: 'F1', status: 'н/п', material1: null, finalStatus: 'ожидает сварку' } as WeldRow],
+      rows: [{ id: 7, joint: 'F1', officiality: 'н/п', material1: null, finalStatus: 'ожидает сварку' } as WeldRow],
       weldFormStampSelectOptions: {},
       welderStamps: [buildWelderStampRecord('ABC1')],
       welderStampSuspensions: [],
@@ -465,11 +465,11 @@ describe('existing rows report import preview', () => {
   })
 
   it('keeps system fields out of replace data update payloads', async () => {
-    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Статус', 'Марка стали 1'], [[7, 'F1', 'официальный', '12Х18Н10Т']])
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Официальность', 'Марка стали 1'], [[7, 'F1', 'официальный', '12Х18Н10Т']])
     const preview = await buildReportReplaceDataPreview({
       activeReport: 'weldingJournal',
       file,
-      rows: [{ id: 7, joint: 'F1', status: 'н/п', material1: '09Г2С', finalStatus: 'ожидает сварку' } as WeldRow],
+      rows: [{ id: 7, joint: 'F1', officiality: 'н/п', material1: '09Г2С', finalStatus: 'ожидает сварку' } as WeldRow],
       weldFormStampSelectOptions: {},
       welderStamps: [buildWelderStampRecord('ABC1')],
       welderStampSuspensions: [],
@@ -635,7 +635,7 @@ describe('existing rows report import preview', () => {
     const preview = await buildReportMassFillPreview({
       activeReport: 'weldingJournal',
       file,
-      rows: [{ id: 7, joint: 'F1', status: 'н/п', d1: null, wdi: null, finalStatus: 'ожидает сварку' } as WeldRow],
+      rows: [{ id: 7, joint: 'F1', officiality: 'н/п', d1: null, wdi: null, finalStatus: 'ожидает сварку' } as WeldRow],
       weldFormStampSelectOptions: {},
       welderStamps: [buildWelderStampRecord('ABC1')],
       welderStampSuspensions: [],
@@ -831,7 +831,7 @@ describe('existing rows report import preview', () => {
     const preview = await buildReportReplaceDataPreview({
       activeReport: 'weldingJournal',
       file,
-      rows: [{ id: 7, joint: 'F1', status: 'н/п', d1: 100, wdi: 3.94, finalStatus: 'ожидает сварку' } as WeldRow],
+      rows: [{ id: 7, joint: 'F1', officiality: 'н/п', d1: 100, wdi: 3.94, finalStatus: 'ожидает сварку' } as WeldRow],
       weldFormStampSelectOptions: {},
       welderStamps: [],
       welderStampSuspensions: [],
@@ -882,7 +882,7 @@ describe('existing rows report import preview', () => {
         {
           id: 7,
           joint: 'F1',
-          status: 'н/п',
+          officiality: 'н/п',
           connectionType: 'С17',
           d1: 57,
           d2: 108,

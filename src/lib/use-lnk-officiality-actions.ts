@@ -40,7 +40,7 @@ export function useLnkOfficialityActions({
     if (isSaveDisabled) return
     mutation.mutate({
       records: selectedRows,
-      status: draft.status as 'official' | 'unofficial',
+      officiality: draft.officiality as 'official' | 'unofficial',
     })
   }
 

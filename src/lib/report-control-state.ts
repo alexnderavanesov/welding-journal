@@ -33,8 +33,8 @@ export function hasLnkReportEntry(row: WeldInput) {
   return hasWeldDate(row) && hasAnyLnkReportControl(row)
 }
 
-export function withOfficialJointStatus(record: WeldInput) {
-  return { ...record, status: null }
+export function withOfficialJoint(record: WeldInput) {
+  return { ...record, officiality: null }
 }
 
 export function withPendingLnkResults<T extends WeldInput>(row: T): T {

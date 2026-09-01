@@ -49,6 +49,7 @@ export function WeldReportViewControls({
   const [viewName, setViewName] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const isPointerInsidePanelRef = useRef(false)
   const fields = useMemo(() => sections.flatMap((section) => section.fields), [sections])
   const sortableFields = useMemo(() => fields.filter((field) => !('virtual' in field && field.virtual)), [fields])
   const visibleCount = fields.filter((field) => !hiddenFieldKeys.has(field.key)).length
@@ -67,6 +68,7 @@ export function WeldReportViewControls({
     const closeOnScroll = (event: Event) => {
       const target = event.target
       if (target instanceof Node && panelRef.current?.contains(target)) return
+      if (isPointerInsidePanelRef.current) return
       setPanel(null)
     }
     const closeOnResize = () => setPanel(null)
@@ -75,6 +77,7 @@ export function WeldReportViewControls({
     window.addEventListener('resize', closeOnResize)
     window.addEventListener('scroll', closeOnScroll, true)
     return () => {
+      isPointerInsidePanelRef.current = false
       document.removeEventListener('pointerdown', closeOnPointerDown)
       window.removeEventListener('keydown', closeOnEscape)
       window.removeEventListener('resize', closeOnResize)
@@ -112,7 +115,8 @@ export function WeldReportViewControls({
   return (
     <div
       ref={rootRef}
-      className="relative sticky right-6 ml-auto flex shrink-0 items-center gap-1.5 border-r border-slate-200 bg-slate-50/95 pl-2 pr-2 shadow-[-8px_0_10px_-10px_rgba(15,23,42,0.35)] after:pointer-events-none after:absolute after:-bottom-1.5 after:-right-6 after:-top-1.5 after:w-6 after:bg-[#f4f7f9] after:content-['']"
+      data-report-view-controls
+      className="relative sticky right-0 ml-auto flex shrink-0 items-center gap-1.5 bg-slate-50 pl-2 pr-8 before:pointer-events-none before:absolute before:-bottom-1.5 before:right-full before:-top-1.5 before:w-8 before:border-r before:border-slate-200 before:bg-gradient-to-r before:from-transparent before:to-slate-50 before:content-['']"
     >
       <ViewButton
         active={panel === 'presets'}
@@ -141,6 +145,15 @@ export function WeldReportViewControls({
               ref={panelRef}
               role="dialog"
               aria-label={getPanelLabel(panel)}
+              onPointerEnter={() => {
+                isPointerInsidePanelRef.current = true
+              }}
+              onPointerLeave={() => {
+                isPointerInsidePanelRef.current = false
+              }}
+              onWheelCapture={() => {
+                isPointerInsidePanelRef.current = true
+              }}
               className="fixed z-[90] w-[min(390px,calc(100vw-24px))] overflow-x-hidden overflow-y-auto rounded-md border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
               style={{ left: panelPosition.left, top: panelPosition.top, maxHeight: panelPosition.maxHeight }}
             >

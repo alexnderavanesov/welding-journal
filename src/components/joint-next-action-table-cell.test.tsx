@@ -59,4 +59,35 @@ describe('JointNextActionTableCell', () => {
     fireEvent.click(screen.getByText('Нужно проверить данные стыка'))
     expect(onOpenOverview).toHaveBeenCalledWith(row)
   })
+
+  it('runs the displayed workflow from the cell background without opening the row editor', () => {
+    const row = {
+      id: 14,
+      joint: 'F14',
+      weldDate: '2026-08-31',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО-14',
+      pstoRequestDate: '2026-09-01',
+      pstoResult: 'ожидает ПСТО',
+    } as WeldRow
+    const onRun = vi.fn()
+    const onEditRow = vi.fn()
+    const { container } = render(
+      <div onClick={onEditRow}>
+        <JointNextActionTableCell
+          row={row}
+          dispatcherTasks={[]}
+          onRun={onRun}
+          onOpenOverview={vi.fn()}
+        />
+      </div>,
+    )
+
+    const cellBackground = container.querySelector('[data-joint-next-action-cell="true"]')
+    if (!cellBackground) throw new Error('Next-action cell was not rendered')
+    fireEvent.click(cellBackground)
+
+    expect(onRun).toHaveBeenCalledWith(row, expect.objectContaining({ kind: 'pstoResult' }))
+    expect(onEditRow).not.toHaveBeenCalled()
+  })
 })

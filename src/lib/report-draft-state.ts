@@ -25,7 +25,7 @@ export type LnkResultDraftState = {
 export type LnkOfficialityDraftState = {
   rowIds: Set<number>
   search: string
-  status: 'official' | 'unofficial' | ''
+  officiality: 'official' | 'unofficial' | ''
 }
 
 export type PstoResultDraftState = {
@@ -63,7 +63,7 @@ export function createDefaultLnkOfficialityDraft(): LnkOfficialityDraftState {
   return {
     rowIds: new Set(),
     search: '',
-    status: '',
+    officiality: '',
   }
 }
 

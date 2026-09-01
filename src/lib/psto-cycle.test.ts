@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildPstoCycleTimeline,
+  hasAnyPstoCycle,
   hasPrimaryPstoCycle,
   hasPstoCycleExecutionHistory,
   hasPstoExecutionHistory,
@@ -64,6 +65,13 @@ describe('PSTO cycle timeline', () => {
       ['repeat', 2, 'ПСТО-002'],
       ['repeat', 3, 'ПСТО-003'],
     ])
+  })
+
+  it('recognizes a valid repeat cycle even when legacy primary fields are empty', () => {
+    const repeatCycles = [{ id: 20, weldJointId: 1, sequence: 2, pstoRequest: 'ПСТО-002' }]
+
+    expect(hasAnyPstoCycle({}, repeatCycles)).toBe(true)
+    expect(hasAnyPstoCycle({}, [{ ...repeatCycles[0], sequence: 1 }])).toBe(false)
   })
 
   it('does not expose an unassigned empty row as a PSTO cycle', () => {

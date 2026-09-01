@@ -61,4 +61,35 @@ describe('weld report views', () => {
       },
     })
   })
+
+  it('migrates the former status field key in saved browser views', () => {
+    window.localStorage.setItem('welding-report-view:v1:lnk', JSON.stringify({
+      activePreset: 'custom',
+      hiddenFieldKeys: ['status'],
+      customHiddenFieldKeys: ['status'],
+      collapsedSections: ['Статус'],
+      savedViews: [{
+        id: 'legacy-view',
+        name: 'Старый вид',
+        snapshot: {
+          hiddenFieldKeys: ['status'],
+          collapsedSections: ['Статус'],
+          columnFilters: { status: 'неофициальный' },
+          sort: { fieldKey: 'status', direction: 'asc' },
+        },
+      }],
+    }))
+
+    expect(readWeldReportViewStorage('lnk', new Set())).toMatchObject({
+      hiddenFieldKeys: ['officiality'],
+      customHiddenFieldKeys: ['officiality'],
+      savedViews: [{
+        snapshot: {
+          hiddenFieldKeys: ['officiality'],
+          columnFilters: { officiality: 'неофициальный' },
+          sort: { fieldKey: 'officiality', direction: 'asc' },
+        },
+      }],
+    })
+  })
 })

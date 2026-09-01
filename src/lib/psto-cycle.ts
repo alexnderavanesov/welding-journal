@@ -71,6 +71,15 @@ export function hasPrimaryPstoCycle(row: WeldInput) {
   )
 }
 
+export function hasAnyPstoCycle(
+  row: WeldInput,
+  repeatCycles: readonly PstoRepeatCycleRecord[] = getRowRepeatCycles(row),
+) {
+  return hasPrimaryPstoCycle(row) || repeatCycles.some(
+    (cycle) => Number.isInteger(cycle.sequence) && cycle.sequence >= 2,
+  )
+}
+
 export function hasPstoExecutionHistory(
   row: WeldInput,
   repeatCycles: readonly PstoRepeatCycleRecord[] = getRowRepeatCycles(row),

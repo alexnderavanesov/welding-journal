@@ -116,6 +116,8 @@ describe('system document sequence update', () => {
       },
       {
         id: 4,
+        tvmtRequest: 'Заявка-06.08.2026-009',
+        tvmtRequestDate: '2026-08-06',
         tvmtConclusion: 'Заключение-ТВМТ-06.08.2026-006',
         tvmtConclusionDate: '2026-08-06',
       },
@@ -125,7 +127,71 @@ describe('system document sequence update', () => {
     expect(sequences.lnkConclusionRk).toBe(3)
     expect(sequences.lnkConclusionUzk).toBe(1)
     expect(sequences.lnkConclusionPvk).toBe(1)
-    expect(sequences.lnkConclusionOther).toBe(7)
+    expect(sequences.lnkConclusionOther).toBe(5)
+    expect(sequences.tvmtRequest).toBe(10)
+    expect(sequences.tvmtConclusion).toBe(7)
+  })
+
+  it('continues LNK numbering after documents from the before-heat-treatment stage', () => {
+    const sequences = getInitialSystemDocumentSequenceNumbers([
+      {
+        id: 1,
+        vikRequest: 'Заявка-06.08.2026-009',
+        vikRequestDate: '2026-08-06',
+        vikConclusion: 'ЗНК-ВИК-06.08.2026-008',
+        vikConclusionDate: '2026-08-06',
+        preHeatTreatmentControls: [
+          {
+            id: 21,
+            weldJointId: 1,
+            method: 'ВИК',
+            requestName: 'Заявка-07.08.2026-015',
+            requestDate: '2026-08-07',
+            conclusionName: 'ЗНК-ВИК-07.08.2026-018',
+            conclusionDate: '2026-08-07',
+          },
+        ],
+      },
+    ])
+
+    expect(sequences.lnkRequest).toBe(16)
+    expect(sequences.lnkConclusionVik).toBe(19)
+  })
+
+  it('continues PSTO and independent TVMT numbering after documents in repeat cycles', () => {
+    const sequences = getInitialSystemDocumentSequenceNumbers([
+      {
+        id: 1,
+        pstoRequest: 'ПСТО-06.08.26-004',
+        pstoRequestDate: '2026-08-06',
+        heatTreatmentDiagram: 'ПСТО-Д-06.08.26-003',
+        pstoDate: '2026-08-06',
+        tvmtRequest: 'Заявка-06.08.2026-009',
+        tvmtRequestDate: '2026-08-06',
+        tvmtConclusion: 'ЗНК-ТВМТ-06.08.2026-006',
+        tvmtConclusionDate: '2026-08-06',
+        pstoRepeatCycles: [
+          {
+            id: 11,
+            weldJointId: 1,
+            sequence: 2,
+            pstoRequest: 'ПСТО-07.08.26-014',
+            pstoRequestDate: '2026-08-07',
+            heatTreatmentDiagram: 'ПСТО-Д-07.08.26-011',
+            pstoDate: '2026-08-07',
+            tvmtRequest: 'Заявка-07.08.2026-017',
+            tvmtRequestDate: '2026-08-07',
+            tvmtConclusion: 'ЗНК-ТВМТ-07.08.2026-012',
+            tvmtConclusionDate: '2026-08-07',
+          },
+        ],
+      },
+    ])
+
+    expect(sequences.pstoRequest).toBe(15)
+    expect(sequences.pstoConclusion).toBe(12)
+    expect(sequences.tvmtRequest).toBe(18)
+    expect(sequences.tvmtConclusion).toBe(13)
   })
 
   it('does not reuse a removed number from the middle of a split conclusion series', () => {

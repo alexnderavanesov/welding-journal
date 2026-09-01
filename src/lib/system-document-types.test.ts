@@ -45,7 +45,22 @@ describe('system document grouping', () => {
     ], 'lnkRequest')
 
     expect(getSystemDocumentTargetReport(tvmtRequest)).toBe('heatTreatment')
+    expect(tvmtRequest).toMatchObject({ methodCode: 'ТВМТ', label: 'Заявка ТВМТ' })
     expect(getSystemDocumentTargetReport(vikRequest)).toBe('lnk')
+  })
+
+  it('does not merge TVMT and LNK requests with the same name and date', () => {
+    const documents = buildSystemDocumentSummaries([
+      row(1, {
+        vikRequest: 'Общее имя',
+        vikRequestDate: '2026-08-02',
+        tvmtRequest: 'Общее имя',
+        tvmtRequestDate: '2026-08-02',
+      }),
+    ], 'lnkRequest')
+
+    expect(documents).toHaveLength(2)
+    expect(documents.map((document) => document.methodCode ?? 'ЛНК').sort()).toEqual(['ЛНК', 'ТВМТ'])
   })
 
   it('combines LNK request methods with the same name and date into one document', () => {
@@ -619,5 +634,29 @@ describe('system document grouping', () => {
 
     expect(result.fieldKeys).toEqual([fieldKey])
     expect(result.records[0]?.[fieldKey as WeldFieldKey]).toBe('Новое имя')
+  })
+
+  it('renames a TVMT request without touching an equally named LNK request', () => {
+    const result = buildSystemDocumentRenameRows(
+      {
+        type: 'lnkRequest',
+        title: 'Общее имя',
+        date: '2026-08-02',
+        methodCode: 'ТВМТ',
+      },
+      [row(1, {
+        vikRequest: 'Общее имя',
+        vikRequestDate: '2026-08-02',
+        tvmtRequest: 'Общее имя',
+        tvmtRequestDate: '2026-08-02',
+      })],
+      'Новое ТВМТ',
+    )
+
+    expect(result.fieldKeys).toEqual(['tvmtRequest'])
+    expect(result.records[0]).toMatchObject({
+      vikRequest: 'Общее имя',
+      tvmtRequest: 'Новое ТВМТ',
+    })
   })
 })

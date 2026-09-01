@@ -208,6 +208,11 @@ function ReportBackground({
     activeReport === 'documents' ||
     activeReport === 'settings' ||
     activeReport === 'userGuide'
+  const isWeldTableReport =
+    activeReport === 'weldingJournal' ||
+    activeReport === 'heatTreatment' ||
+    activeReport === 'lnk'
+  const reportTaskPanels = !isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null
   return (
     <>
       <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft}>
@@ -216,9 +221,9 @@ function ReportBackground({
         ) : null}
       </ReportPageHeader>
 
-      {!isStandaloneReport || reportSummaryBarProps.returnContext ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
+      {!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
 
-      {!isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null}
+      {!isWeldTableReport ? reportTaskPanels : null}
 
       <ReportMainContent
         activeReport={activeReport}
@@ -236,6 +241,7 @@ function ReportBackground({
         onDocumentsPageTypeChange={onDocumentsPageTypeChange}
         systemDocumentNavigationRequest={systemDocumentNavigationRequest}
         onSystemDocumentNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
+        reportTaskPanels={isWeldTableReport ? reportTaskPanels : null}
       />
     </>
   )

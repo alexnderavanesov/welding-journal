@@ -62,10 +62,10 @@ export function LnkOfficialityDialog({
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <LnkOfficialitySettings
-          status={draft.status}
+          officiality={draft.officiality}
           selectedRows={selectedRows}
           counters={counters}
-          onStatusChange={(status) => onDraftChange((current) => ({ ...current, status }))}
+          onOfficialityChange={(officiality) => onDraftChange((current) => ({ ...current, officiality }))}
         />
 
         <section className="flex min-h-0 flex-col">
@@ -140,12 +140,12 @@ export function LnkOfficialityDialog({
           </Button>
           <Button onClick={onSave} disabled={isSaveDisabled}>
             <Check className="mr-2 h-4 w-4" />
-            Сохранить статус
+            Сохранить официальность
           </Button>
         </div>
       </div>
       {showSelectedPreview ? (
-        <LnkOfficialityPreviewDialog rows={selectedRows} status={draft.status} onClose={() => setShowSelectedPreview(false)} />
+        <LnkOfficialityPreviewDialog rows={selectedRows} officiality={draft.officiality} onClose={() => setShowSelectedPreview(false)} />
       ) : null}
     </LargeDialogShell>
   )
@@ -153,14 +153,14 @@ export function LnkOfficialityDialog({
 
 function LnkOfficialityPreviewDialog({
   rows,
-  status,
+  officiality,
   onClose,
 }: {
   rows: WeldRow[]
-  status: LnkOfficialityDraftState['status']
+  officiality: LnkOfficialityDraftState['officiality']
   onClose: () => void
 }) {
-  const statusLabel = status === 'official' ? 'официальный' : 'неофициальный'
+  const officialityLabel = officiality === 'official' ? 'официальный' : 'неофициальный'
 
   return (
     <LargeDialogShell
@@ -170,7 +170,7 @@ function LnkOfficialityPreviewDialog({
     >
       <DialogHeader
         title="Предпросмотр выбранных стыков"
-        subtitle={`Будет установлен статус: ${statusLabel} · Выбрано: ${rows.length}`}
+        subtitle={`Будет установлена официальность: ${officialityLabel} · Выбрано: ${rows.length}`}
         onClose={onClose}
         closeLabel="Закрыть предпросмотр"
       />
@@ -190,7 +190,7 @@ function LnkOfficialityPreviewDialog({
                 </div>
                 <div className="flex shrink-0 flex-wrap justify-end gap-2">
                   <span className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">
-                    станет: {statusLabel}
+                    станет: {officialityLabel}
                   </span>
                   <span className={`rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
                     {getJointStatusLabel(row)}

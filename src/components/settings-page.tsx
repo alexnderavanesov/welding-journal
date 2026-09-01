@@ -197,7 +197,7 @@ const SETTINGS_TABS = [
     id: 'requests',
     label: 'Заявки и заключения',
     icon: Inbox,
-    searchKeywords: 'название имя нумерация номер дата заявки заключения ЛНК ПСТО разделение проект шифр линия стык пересборка история',
+    searchKeywords: 'название имя нумерация номер дата заявки заключения ЛНК ПСТО ТВМТ разделение проект шифр линия стык пересборка история',
   },
   {
     id: 'data',
@@ -2467,7 +2467,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                   <span>
                     <span className="block text-sm font-semibold">Заключения ЛНК</span>
                     <span className={`mt-1 block text-xs ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
-                      Отдельные формы ВИК, РК, УЗК, ПВК и прочих видов НК.
+                      Отдельные формы ВИК, РК, УЗК и ПВК.
                     </span>
                   </span>
                   {uploadedCount > 0 ? (
@@ -2538,8 +2538,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 })}
               </div>
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                «Прочие» используется для видов НК без отдельной формы. Новую самостоятельную форму,
-                например РФА, можно будет добавить без изменения созданных заключений.
+                Заключение ТВМТ настраивается отдельно в своем пункте после документов ПСТО.
               </p>
             </div>
           ) : null}
@@ -2948,7 +2947,7 @@ function WeldingJournalTemplateOptionsPanel({
           checked={options.officialOnly}
           disabled={disabled}
           label="Учет официальных стыков"
-          description="В документ попадут только стыки без статуса «неофициальный»."
+          description="В документ попадут только стыки, у которых официальность не равна «неофициальный»."
           onChange={(checked) => onChange('officialOnly', checked)}
         />
         <TemplateOptionCheckbox
@@ -3169,6 +3168,25 @@ const REQUEST_NAMING_CARD_GROUPS: Array<{
       },
     ],
   },
+  {
+    id: 'tvmt',
+    title: 'ТВМТ',
+    description: 'Имена заявок и заключений твердометрии в цикле термообработки.',
+    cards: [
+      {
+        id: 'tvmtRequest',
+        title: 'Заявки ТВМТ',
+        description: 'Имя новой заявки ТВМТ из раздела термообработки.',
+        placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.tvmtRequest.systemPattern,
+      },
+      {
+        id: 'tvmtConclusion',
+        title: 'Заключения ТВМТ',
+        description: 'Имя заключения при внесении результата ТВМТ.',
+        placeholder: REQUEST_CONCLUSION_DEFAULT_SETTINGS.tvmtConclusion.systemPattern,
+      },
+    ],
+  },
 ]
 
 const SYSTEM_DOCUMENT_SPLIT_SECTIONS: Array<{
@@ -3189,7 +3207,6 @@ const SYSTEM_DOCUMENT_SPLIT_SECTIONS: Array<{
       { id: 'lnkConclusionRk', title: 'Заключение РК', description: 'Применяется при внесении результата РК.' },
       { id: 'lnkConclusionUzk', title: 'Заключение УЗК', description: 'Применяется при внесении результата УЗК.' },
       { id: 'lnkConclusionPvk', title: 'Заключение ПВК', description: 'Применяется при внесении результата ПВК.' },
-      { id: 'lnkConclusionOther', title: 'Прочие заключения ЛНК', description: 'ТВМТ, РФА, СТЛС, МКК и остальные виды без отдельной формы.' },
     ],
   },
   {
@@ -3198,6 +3215,14 @@ const SYSTEM_DOCUMENT_SPLIT_SECTIONS: Array<{
     items: [
       { id: 'pstoRequest', title: 'Заявка ПСТО', description: 'Применяется при создании новой заявки ПСТО.' },
       { id: 'pstoConclusion', title: 'Заключение ПСТО', description: 'Применяется при внесении результата и диаграммы ПСТО.' },
+    ],
+  },
+  {
+    title: 'ТВМТ',
+    description: 'Заявки и заключения твердометрии в цикле термообработки.',
+    items: [
+      { id: 'tvmtRequest', title: 'Заявка ТВМТ', description: 'Применяется при создании заявки ТВМТ.' },
+      { id: 'tvmtConclusion', title: 'Заключение ТВМТ', description: 'Применяется при внесении результата ТВМТ.' },
     ],
   },
 ]
@@ -3437,8 +3462,9 @@ function RequestNamingSettingsCard({
     setParts(createRequestNamingPatternDraftParts(settings.systemPattern))
   }, [settings.systemPattern])
 
+  const supportsMethodField = kind === 'lnkConclusion' || kind === 'tvmtConclusion'
   const availableFields = REQUEST_NAMING_PATTERN_FIELDS.filter(
-    (field) => field.id !== 'method' || kind === 'lnkConclusion',
+    (field) => field.id !== 'method' || supportsMethodField,
   )
   const patternDraft = serializeRequestNamingPattern(parts)
   const hasPattern = patternDraft.trim().length > 0
@@ -3453,7 +3479,7 @@ function RequestNamingSettingsCard({
     hasPattern ? patternDraft : placeholder,
     {
       date: new Date(),
-      methodCode: kind === 'lnkConclusion' ? 'РК' : undefined,
+      methodCode: kind === 'lnkConclusion' ? 'РК' : kind === 'tvmtConclusion' ? 'ТВМТ' : undefined,
       projectTitle: 'Риформинг',
       subtitleCode: '400',
       line: 'LIN-001',

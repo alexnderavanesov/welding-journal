@@ -34,11 +34,11 @@ describe('weld field order', () => {
       'Изометрия',
       'Номер листа',
       'Номер ИЗМа',
+      'Официальность',
       'Актуальность по ИЗМу',
       'Спул',
       'ID cпула',
       'Стык',
-      'Статус',
       'Материал 1',
     ])
   })
@@ -46,6 +46,7 @@ describe('weld field order', () => {
   it('groups visible columns into section headers', () => {
     expect(VISIBLE_FIELD_SECTIONS.map((group) => group.section)).toEqual([
       'Проект',
+      'Статус',
       'Спул',
       'Стык',
       'Материалы',
@@ -146,7 +147,23 @@ describe('weld field order', () => {
     const sectionNames = pstoSections.map((group) => group.section)
 
     expect(new Set(sectionNames).size).toBe(sectionNames.length)
-    expect(pstoSections.find((group) => group.section === 'ПСТО')?.fields.some((field) => field.key === 'pstoCycleSummary')).toBe(true)
+    expect(pstoSections.find((group) => group.section === 'ПСТО')?.fields.map((field) => field.key)).toEqual([
+      'pstoRequired',
+      'pstoCycleSummary',
+      'pstoRequest',
+      'pstoRequestDate',
+      'heatTreatmentDiagram',
+      'pstoDate',
+      'pstoResult',
+      'tvmtRequest',
+      'tvmtRequestDate',
+      'tvmtConclusion',
+      'tvmtConclusionDate',
+      'tvmtResult',
+      'pstoNote',
+      'pstoCancellationDate',
+      'pstoControlBasis',
+    ])
   })
 
   it('shows LNK assignment bases as a summary and PSTO cancellation basis in its dedicated column', () => {
@@ -227,7 +244,13 @@ describe('weld field order', () => {
       mergePstoSections: true,
     })
 
-    expect(journalSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(true)
+    const journalMaterialSection = journalSections.find((group) => group.section === 'Материал (дополнительно)')
+
+    expect(journalMaterialSection?.fields.slice(-2).map((field) => field.key)).toEqual([
+      'elementLength1',
+      'elementLength2',
+    ])
+    expect(journalMaterialSection?.fields.slice(-2).map((field) => field.kind)).toEqual(['number', 'number'])
     expect(lnkSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(false)
     expect(pstoSections.some((group) => group.section === 'Материал (дополнительно)')).toBe(false)
   })
@@ -275,6 +298,60 @@ describe('weld field order', () => {
       'subtitleCode',
       'line',
       'weldControlPercent',
+    ])
+  })
+
+  it('keeps the status section optional and fully collapsible in every report', () => {
+    const alwaysVisibleFieldKeys = getAlwaysVisibleFieldKeys(false)
+    const statusSection = VISIBLE_FIELD_SECTIONS.find((group) => group.section === 'Статус')
+
+    expect(statusSection?.fields.map((field) => field.key)).toEqual(['officiality', 'revisionActuality'])
+    expect(statusSection?.fields.every((field) => !alwaysVisibleFieldKeys.has(field.key))).toBe(true)
+    expect(getFilteredWeldTableSections({
+      availableSections: [statusSection!],
+      collapsedSections: new Set(['Статус']),
+      alwaysVisibleFieldKeys,
+    })).toEqual([])
+
+    const journalSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+    })
+    const pstoSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    })
+    for (const sections of [journalSections, pstoSections]) {
+      expect(sections.slice(0, 2).map((section) => section.section)).toEqual(['Проект', 'Статус'])
+      expect(sections.find((section) => section.section === 'Статус')?.fields.map((field) => field.key)).toEqual([
+        'officiality',
+        'revisionActuality',
+      ])
+    }
+  })
+
+  it('keeps the final PSTO and TVMT cycle columns in workflow order', () => {
+    const pstoSection = getAvailableWeldTableSections({
+      hiddenFieldKeys: HEAT_TREATMENT_HIDDEN_FIELD_KEYS,
+      mergePstoSections: true,
+    }).find((section) => section.section === 'ПСТО')
+
+    expect(pstoSection?.fields.map((field) => field.key)).toEqual([
+      'pstoRequired',
+      'pstoCycleSummary',
+      'pstoRequest',
+      'pstoRequestDate',
+      'heatTreatmentDiagram',
+      'pstoDate',
+      'pstoResult',
+      'tvmtRequest',
+      'tvmtRequestDate',
+      'tvmtConclusion',
+      'tvmtConclusionDate',
+      'tvmtResult',
+      'pstoNote',
+      'pstoCancellationDate',
+      'pstoControlBasis',
     ])
   })
 

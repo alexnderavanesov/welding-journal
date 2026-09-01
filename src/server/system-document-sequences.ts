@@ -2,7 +2,13 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, eq, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
-import { appSettings, generatedDocuments, weldJoints } from '@/db/schema'
+import {
+  appSettings,
+  generatedDocuments,
+  preHeatTreatmentControls,
+  pstoRepeatCycles,
+  weldJoints,
+} from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
@@ -11,6 +17,7 @@ import {
   addRowsToNamingPatternContext,
   buildSystemNameWithNumber,
   getPstoConclusionDateParts,
+  getRequestConclusionNamingKind,
   hasSystemDocumentNumberField,
   normalizeRequestConclusionSettings,
   type NamingPatternContext,
@@ -29,6 +36,10 @@ import {
   isSystemDocumentTemplateId,
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
+import {
+  buildPreHeatTreatmentSystemDocumentRow,
+  buildPstoRepeatSystemDocumentRow,
+} from '@/lib/system-document-virtual-row'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { assertSecurityScope } from '@/server/security-functions'
 
@@ -124,6 +135,10 @@ export function normalizeSystemDocumentSequenceUpdate(
     if (fieldKeys.some((fieldKey) => !LNK_REQUEST_KEYS.has(fieldKey))) {
       throw new Error('Передано неизвестное поле заявки ЛНК.')
     }
+    const isTvmtRequest = fieldKeys.length === 1 && fieldKeys[0] === 'tvmtRequest'
+    if (isTvmtRequest !== (methodCode === 'ТВМТ')) {
+      throw new Error('Заявка ТВМТ должна иметь отдельный вид контроля.')
+    }
   } else if (type === 'lnkConclusion') {
     const method = LNK_METHODS.find((candidate) => candidate.code === methodCode)
     if (!method || fieldKeys.length !== 1 || fieldKeys[0] !== method.conclusionKey) {
@@ -171,10 +186,22 @@ export function getInitialSystemDocumentSequenceNumbers(
   weldRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   settings: RequestConclusionSettings = REQUEST_CONCLUSION_DEFAULT_SETTINGS,
 ) {
+  const documentRows = weldRows.flatMap((row) => [
+    row,
+    ...(row.preHeatTreatmentControls?.length
+      ? [buildPreHeatTreatmentSystemDocumentRow(
+          row as WeldRow,
+          row.preHeatTreatmentControls,
+        )]
+      : []),
+    ...(row.pstoRepeatCycles ?? []).map((cycle) =>
+      buildPstoRepeatSystemDocumentRow(row as WeldRow, cycle),
+    ),
+  ])
   const summariesByType = new Map(
     SYSTEM_DOCUMENT_TYPES.map((type) => [
       type,
-      buildSystemDocumentSummaries(weldRows, type),
+      buildSystemDocumentSummaries(documentRows, type),
     ] as const),
   )
   return Object.fromEntries(
@@ -199,7 +226,7 @@ export async function reserveSystemDocumentName(
   const sequenceId = getSystemDocumentTemplateId(request)
   await lockSystemDocumentNumberCounter(tx, sequenceId)
   const settings = await readRequestConclusionSettings(tx)
-  const pattern = settings[request.type].systemPattern
+  const pattern = settings[getRequestConclusionNamingKind(request)].systemPattern
   if (!hasSystemDocumentNumberField(pattern)) {
     throw new Error(
       'В системном имени обязательно поле «Порядковый номер». Добавьте его в настройках заявок и заключений.',
@@ -282,8 +309,26 @@ async function readAndInitializeSystemDocumentSequenceNumbers<SequenceId extends
 
 async function readInitialSequenceNumbers(db: Pick<Db, 'select'>) {
   const rows = await db.select(SYSTEM_DOCUMENT_SEQUENCE_SELECT).from(weldJoints)
+  const preControls = await db.select().from(preHeatTreatmentControls)
+  const repeatCycles = await db.select().from(pstoRepeatCycles)
   const settings = await readRequestConclusionSettings(db)
-  const weldRows = rows as unknown as Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>
+  const preControlsByWeldJointId = new Map<number, typeof preControls>()
+  for (const control of preControls) {
+    const current = preControlsByWeldJointId.get(control.weldJointId) ?? []
+    current.push(control)
+    preControlsByWeldJointId.set(control.weldJointId, current)
+  }
+  const repeatCyclesByWeldJointId = new Map<number, typeof repeatCycles>()
+  for (const cycle of repeatCycles) {
+    const current = repeatCyclesByWeldJointId.get(cycle.weldJointId) ?? []
+    current.push(cycle)
+    repeatCyclesByWeldJointId.set(cycle.weldJointId, current)
+  }
+  const weldRows = rows.map((row) => ({
+    ...row,
+    preHeatTreatmentControls: preControlsByWeldJointId.get(row.id) ?? [],
+    pstoRepeatCycles: repeatCyclesByWeldJointId.get(row.id) ?? [],
+  })) as unknown as Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>
   return getInitialSystemDocumentSequenceNumbers(weldRows, settings)
 }
 
@@ -335,6 +380,24 @@ async function systemDocumentNameExists(
   const where = buildSystemDocumentNameWhere(request, name)
   const [row] = await db.select({ id: weldJoints.id }).from(weldJoints).where(where).limit(1)
   if (row) return true
+  const preControlWhere = buildPreHeatTreatmentSystemDocumentNameWhere(request, name)
+  if (preControlWhere) {
+    const [preControl] = await db
+      .select({ id: preHeatTreatmentControls.id })
+      .from(preHeatTreatmentControls)
+      .where(preControlWhere)
+      .limit(1)
+    if (preControl) return true
+  }
+  const repeatCycleWhere = buildPstoRepeatSystemDocumentNameWhere(request, name)
+  if (repeatCycleWhere) {
+    const [repeatCycle] = await db
+      .select({ id: pstoRepeatCycles.id })
+      .from(pstoRepeatCycles)
+      .where(repeatCycleWhere)
+      .limit(1)
+    if (repeatCycle) return true
+  }
   const [indexedDocument] = await db
     .select({ id: generatedDocuments.id })
     .from(generatedDocuments)
@@ -349,7 +412,10 @@ async function systemDocumentNameExists(
 
 function buildSystemDocumentNameWhere(request: SystemDocumentSequenceUpdate, name: string): SQL {
   if (request.type === 'lnkRequest') {
-    return or(...LNK_METHODS.map((method) => {
+    const requestMethods = request.methodCode === 'ТВМТ'
+      ? LNK_METHODS.filter((method) => method.code === 'ТВМТ')
+      : LNK_METHODS.filter((method) => method.code !== 'ТВМТ')
+    return or(...requestMethods.map((method) => {
       return and(textEquals(weldJoints[method.requestKey], name), dateEquals(weldJoints[method.requestDateKey], request.date))!
     })) ?? sql`false`
   }
@@ -361,6 +427,59 @@ function buildSystemDocumentNameWhere(request: SystemDocumentSequenceUpdate, nam
     return and(textEquals(weldJoints.pstoRequest, name), dateEquals(weldJoints.pstoRequestDate, request.date)) ?? sql`false`
   }
   return and(textEquals(weldJoints.heatTreatmentDiagram, name), dateEquals(weldJoints.pstoDate, request.date)) ?? sql`false`
+}
+
+function buildPreHeatTreatmentSystemDocumentNameWhere(
+  request: SystemDocumentSequenceUpdate,
+  name: string,
+): SQL | null {
+  if (request.type === 'lnkRequest' && request.methodCode !== 'ТВМТ') {
+    return and(
+      textEquals(preHeatTreatmentControls.requestName, name),
+      dateEquals(preHeatTreatmentControls.requestDate, request.date),
+    ) ?? sql`false`
+  }
+  if (request.type === 'lnkConclusion') {
+    const methodCode = request.methodCode
+    if (!methodCode || methodCode === 'ТВМТ') return null
+    return and(
+      eq(preHeatTreatmentControls.method, methodCode),
+      textEquals(preHeatTreatmentControls.conclusionName, name),
+      dateEquals(preHeatTreatmentControls.conclusionDate, request.date),
+    ) ?? sql`false`
+  }
+  return null
+}
+
+function buildPstoRepeatSystemDocumentNameWhere(
+  request: SystemDocumentSequenceUpdate,
+  name: string,
+): SQL | null {
+  if (request.type === 'lnkRequest' && request.methodCode === 'ТВМТ') {
+    return and(
+      textEquals(pstoRepeatCycles.tvmtRequest, name),
+      dateEquals(pstoRepeatCycles.tvmtRequestDate, request.date),
+    ) ?? sql`false`
+  }
+  if (request.type === 'lnkConclusion' && request.methodCode === 'ТВМТ') {
+    return and(
+      textEquals(pstoRepeatCycles.tvmtConclusion, name),
+      dateEquals(pstoRepeatCycles.tvmtConclusionDate, request.date),
+    ) ?? sql`false`
+  }
+  if (request.type === 'pstoRequest') {
+    return and(
+      textEquals(pstoRepeatCycles.pstoRequest, name),
+      dateEquals(pstoRepeatCycles.pstoRequestDate, request.date),
+    ) ?? sql`false`
+  }
+  if (request.type === 'pstoConclusion') {
+    return and(
+      textEquals(pstoRepeatCycles.heatTreatmentDiagram, name),
+      dateEquals(pstoRepeatCycles.pstoDate, request.date),
+    ) ?? sql`false`
+  }
+  return null
 }
 
 function createNamingContext(

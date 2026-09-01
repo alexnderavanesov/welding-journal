@@ -15,6 +15,7 @@ import {
   getDispatcherTaskFilterMode,
 } from '@/lib/dispatcher-task-row-codes'
 import { formatTaskCount } from '@/lib/dispatcher-format'
+import { REPORT_RIGHT_EDGE_GUTTER_PX } from '@/lib/report-layout'
 import { useIncrementalDispatcherGroups } from '@/lib/use-incremental-dispatcher-groups'
 
 type DispatcherTaskPanelProps = {
@@ -44,13 +45,15 @@ export function DispatcherTaskPanel({
 
   if (tasks.length === 0 && dispatcherFilterMode === 'all') return null
 
+  const viewportWidth = `calc(100vw - ${stickyLeft + REPORT_RIGHT_EDGE_GUTTER_PX}px)`
+
   return (
     <div
       className="sticky z-20 overflow-x-auto rounded-md border border-sky-200/80 bg-[#eef7fb]/95 px-3 py-2 shadow-sm shadow-sky-100/70 backdrop-blur"
       style={{
         left: stickyLeft,
-        width: `calc(100vw - ${stickyLeft + 12}px)`,
-        maxWidth: `calc(100vw - ${stickyLeft + 12}px)`,
+        width: '100%',
+        maxWidth: viewportWidth,
       }}
       aria-label="Диспетчер задач"
     >

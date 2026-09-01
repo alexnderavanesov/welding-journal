@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { CheckSquare2, MoreHorizontal, X } from 'lucide-react'
 
 import { ContextActionMenu, type ContextActionMenuItem, type ContextActionMenuState } from '@/components/context-action-menu'
@@ -27,6 +27,7 @@ import { useWindowTableHorizontalVirtualization } from '@/lib/use-window-table-h
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections } from '@/lib/weld-table-sections'
+import { REPORT_RIGHT_EDGE_GUTTER_PX } from '@/lib/report-layout'
 
 const EMPTY_FIELD_KEY_SET = new Set<WeldFieldKey>()
 const EMPTY_NUMBER_SET = new Set<number>()
@@ -99,6 +100,7 @@ export type WeldTableProps = {
     selectedRows: WeldRow[],
     fieldKey?: WeldFieldKey,
   ) => ContextActionMenuItem[]
+  reportTaskPanels?: ReactNode
 }
 
 export function WeldTable({
@@ -149,6 +151,7 @@ export function WeldTable({
   defaultCollapsedSections = EMPTY_STRING_SET,
   sectionLayout,
   getContextMenuItems,
+  reportTaskPanels,
 }: WeldTableProps) {
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const tableRef = useRef<HTMLTableElement>(null)
@@ -438,181 +441,195 @@ export function WeldTable({
   }, [])
 
   return (
-    <div className="space-y-3" style={{ width: fullTableMinWidth }}>
-      {selectable && selectedRows.length > 0 ? (
+    <div
+      data-report-table-layout
+      style={{ width: fullTableMinWidth + REPORT_RIGHT_EDGE_GUTTER_PX }}
+    >
+      {reportTaskPanels ? (
         <div
-          className="fixed bottom-2 z-[35] flex h-11 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white/95 px-3 shadow-lg shadow-slate-900/10 backdrop-blur"
-          style={{
-            left: stickyLeft + 4,
-            width: `min(720px, calc(100vw - ${stickyLeft + 20}px))`,
-          }}
-          aria-label="Действия с выбранными стыками"
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            <CheckSquare2 className="h-4 w-4 shrink-0 text-sky-700" />
-            <span className="shrink-0 text-sm font-semibold text-slate-900">Выбрано: {selectedRows.length}</span>
-            <span className="hidden truncate text-xs text-slate-500 md:block">Групповые действия применяются ко всем выбранным строкам.</span>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {getContextMenuItems ? (
-              <button
-                type="button"
-                onClick={openSelectedRowsContextMenu}
-                className="inline-flex h-8 items-center gap-1.5 rounded border border-sky-200 bg-white px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-                Действия
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={clearSelectedRows}
-              className="inline-flex h-8 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-            >
-              <X className="h-4 w-4" />
-              Снять выбор
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <WeldTableSectionToolbar
-        sections={availableSections}
-        extraColumns={extraColumns}
-        collapsedSections={collapsedSections}
-        alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
-        tableMinWidth={fullTableMinWidth}
-        stickyLeft={stickyLeft}
-        onToggleSection={toggleSection}
-        viewControls={(
-          <WeldReportViewControls
-            sections={configurableSections}
-            alwaysVisibleFieldKeys={configurableAlwaysVisibleFieldKeys}
-            hiddenFieldKeys={reportView.hiddenFieldKeys}
-            activePreset={reportView.activePreset}
-            savedViews={reportView.savedViews}
-            sort={sort}
-            onApplyPreset={reportView.applyPreset}
-            onToggleField={reportView.toggleField}
-            onShowAllFields={reportView.showAllFields}
-            onSortChange={stableOnSortChange}
-            onSaveView={reportView.saveView}
-            onApplySavedView={reportView.applySavedView}
-            onDeleteSavedView={reportView.deleteSavedView}
-          />
-        )}
-      />
-      <div className="rounded-lg border border-[#dbe7f0] bg-white shadow-sm shadow-slate-200/45" style={{ minWidth: fullTableMinWidth }}>
-        <table
-          ref={tableRef}
-          data-horizontal-virtualized={horizontalVirtualizationEnabled ? 'true' : 'false'}
-          onMouseOver={handleTableMouseOver}
-          onMouseOut={handleTableMouseOut}
-          className="table-fixed border-separate border-spacing-0 text-[13px] text-slate-700 [&_td]:outline-none [&_th]:outline-none"
+          data-report-task-panels-frame
+          className="mb-4"
           style={{ width: fullTableMinWidth }}
         >
-          <WeldTableColumns
-            sections={filteredSections}
-            readOnly={readOnly}
-            selectable={selectable}
-            hasRowActions={hasRowActions}
-            hasChainAction={hasChainAction}
-            extraColumns={visibleExtraColumns}
-          />
-          <WeldTableHeader
-            selectable={selectable}
-            allVisibleRowsSelected={allVisibleRowsSelected}
-            someVisibleRowsSelected={someVisibleRowsSelected}
-            selectableVisibleRowsCount={selectableVisibleRows.length}
-            selectedRowsCount={selectedRows.length}
-            onSetVisibleRowsSelected={setVisibleRowsSelected}
-            hasChainAction={hasChainAction}
-            hasColumnFilters={hasColumnFilters}
-            onResetColumnFilters={() => stableOnColumnFiltersChange({})}
-            hasRowActions={hasRowActions}
-            rowActionsHeaderLabel={rowActions?.headerLabel ?? 'Быстрые действия'}
-            rowActionsScreenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
-            filteredSections={filteredSections}
-            extraColumns={visibleExtraColumns}
-            alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
-            readOnly={readOnly}
-            rows={headerFilterRows}
-            stickyLeft={stickyIdentityColumns ? stickyLeft : 0}
-            stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
-            stickyIdentityColumns={stickyIdentityColumns}
-            onToggleSection={toggleSection}
-            columnFilters={columnFilters}
-            canEditField={canEditField}
-            manualFilterOptionsReport={manualFilterOptionsReport}
-            manualFilterOptions={manualFilterOptions}
-            onColumnFiltersChange={stableOnColumnFiltersChange}
-            visibleFieldKeys={visibleFieldKeys}
-          />
-          <tbody ref={bodyRef}>
-            <TableVirtualSpacer colSpan={fullTableColumnSpan} height={topSpacerHeight} />
-            <WeldTableBodyRows
-              rows={visibleRows}
-              rowIndexes={rowIndexes}
-              measureRow={measureRow}
+          {reportTaskPanels}
+        </div>
+      ) : null}
+      <div data-report-table-frame className="space-y-3" style={{ width: fullTableMinWidth }}>
+        {selectable && selectedRows.length > 0 ? (
+          <div
+            className="fixed bottom-2 z-[35] flex h-11 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white/95 px-3 shadow-lg shadow-slate-900/10 backdrop-blur"
+            style={{
+              left: stickyLeft + 4,
+              width: `min(720px, calc(100vw - ${stickyLeft + 20}px))`,
+            }}
+            aria-label="Действия с выбранными стыками"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <CheckSquare2 className="h-4 w-4 shrink-0 text-sky-700" />
+              <span className="shrink-0 text-sm font-semibold text-slate-900">Выбрано: {selectedRows.length}</span>
+              <span className="hidden truncate text-xs text-slate-500 md:block">Групповые действия применяются ко всем выбранным строкам.</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {getContextMenuItems ? (
+                <button
+                  type="button"
+                  onClick={openSelectedRowsContextMenu}
+                  className="inline-flex h-8 items-center gap-1.5 rounded border border-sky-200 bg-white px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                  Действия
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={clearSelectedRows}
+                className="inline-flex h-8 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+                Снять выбор
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <WeldTableSectionToolbar
+          sections={availableSections}
+          extraColumns={extraColumns}
+          collapsedSections={collapsedSections}
+          alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
+          tableMinWidth={fullTableMinWidth}
+          stickyLeft={stickyLeft}
+          onToggleSection={toggleSection}
+          viewControls={(
+            <WeldReportViewControls
+              sections={configurableSections}
+              alwaysVisibleFieldKeys={configurableAlwaysVisibleFieldKeys}
+              hiddenFieldKeys={reportView.hiddenFieldKeys}
+              activePreset={reportView.activePreset}
+              savedViews={reportView.savedViews}
+              sort={sort}
+              onApplyPreset={reportView.applyPreset}
+              onToggleField={reportView.toggleField}
+              onShowAllFields={reportView.showAllFields}
+              onSortChange={stableOnSortChange}
+              onSaveView={reportView.saveView}
+              onApplySavedView={reportView.applySavedView}
+              onDeleteSavedView={reportView.deleteSavedView}
+            />
+          )}
+        />
+        <div className="rounded-lg border border-[#dbe7f0] bg-white shadow-sm shadow-slate-200/45" style={{ minWidth: fullTableMinWidth }}>
+          <table
+            ref={tableRef}
+            data-horizontal-virtualized={horizontalVirtualizationEnabled ? 'true' : 'false'}
+            onMouseOver={handleTableMouseOver}
+            onMouseOut={handleTableMouseOut}
+            className="table-fixed border-separate border-spacing-0 text-[13px] text-slate-700 [&_td]:outline-none [&_th]:outline-none"
+            style={{ width: fullTableMinWidth }}
+          >
+            <WeldTableColumns
               sections={filteredSections}
-              colSpan={fullTableColumnSpan}
               readOnly={readOnly}
               selectable={selectable}
-              selectedRowIds={selectedRowIds}
-              onSetRowSelected={setRowSelected}
-              isRowSelectable={stableRowSelectable}
-              hasChainAction={hasChainAction}
               hasRowActions={hasRowActions}
-              rowActions={stableRowActions}
+              hasChainAction={hasChainAction}
               extraColumns={visibleExtraColumns}
-              duplicateKeys={tableDuplicateKeys}
-              highlightedRowIds={highlightedRowIds}
-              highlightedCellKeys={highlightedCellKeys}
-              dispatcherTaskRowIds={dispatcherTaskRowIds}
-              contextMenuAnchorRowId={contextMenu?.anchorRowId}
-              canEditField={canEditField}
-              canEditCell={canEditCell}
+            />
+            <WeldTableHeader
+              selectable={selectable}
+              allVisibleRowsSelected={allVisibleRowsSelected}
+              someVisibleRowsSelected={someVisibleRowsSelected}
+              selectableVisibleRowsCount={selectableVisibleRows.length}
+              selectedRowsCount={selectedRows.length}
+              onSetVisibleRowsSelected={setVisibleRowsSelected}
+              hasChainAction={hasChainAction}
+              hasColumnFilters={hasColumnFilters}
+              onResetColumnFilters={() => stableOnColumnFiltersChange({})}
+              hasRowActions={hasRowActions}
+              rowActionsHeaderLabel={rowActions?.headerLabel ?? 'Быстрые действия'}
+              rowActionsScreenReaderLabel={rowActions?.headerLabel ?? 'Действия'}
+              filteredSections={filteredSections}
+              extraColumns={visibleExtraColumns}
+              alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
+              readOnly={readOnly}
+              rows={headerFilterRows}
               stickyLeft={stickyIdentityColumns ? stickyLeft : 0}
               stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
               stickyIdentityColumns={stickyIdentityColumns}
-              getDisplayValue={stableGetDisplayValue}
-              getActionRow={getActionRow}
-              onEdit={onEdit ? stableOnEdit : undefined}
-              onDelete={onDelete ? stableOnDelete : undefined}
-              onContextMenu={getContextMenuItems ? openRowContextMenu : undefined}
-              onOpenDocument={onOpenDocument ? stableOnOpenDocument : undefined}
-              onOpenLnkRequest={onOpenLnkRequest ? stableOnOpenLnkRequest : undefined}
-              onOpenLnkResult={onOpenLnkResult ? stableOnOpenLnkResult : undefined}
-              onOpenJoint={onOpenJoint ? stableOnOpenJoint : undefined}
-              onOpenJointOverview={onOpenJointOverview ? stableOnOpenJointOverview : undefined}
-              controlBasisEditorEnabled={controlBasisEditorEnabled}
-              availableSystemDocumentTypes={stableAvailableSystemDocumentTypes}
+              onToggleSection={toggleSection}
+              columnFilters={columnFilters}
+              canEditField={canEditField}
+              manualFilterOptionsReport={manualFilterOptionsReport}
+              manualFilterOptions={manualFilterOptions}
+              onColumnFiltersChange={stableOnColumnFiltersChange}
               visibleFieldKeys={visibleFieldKeys}
             />
-            <TableVirtualSpacer colSpan={fullTableColumnSpan} height={bottomSpacerHeight} />
-          </tbody>
-        </table>
+            <tbody ref={bodyRef}>
+              <TableVirtualSpacer colSpan={fullTableColumnSpan} height={topSpacerHeight} />
+              <WeldTableBodyRows
+                rows={visibleRows}
+                rowIndexes={rowIndexes}
+                measureRow={measureRow}
+                sections={filteredSections}
+                colSpan={fullTableColumnSpan}
+                readOnly={readOnly}
+                selectable={selectable}
+                selectedRowIds={selectedRowIds}
+                onSetRowSelected={setRowSelected}
+                isRowSelectable={stableRowSelectable}
+                hasChainAction={hasChainAction}
+                hasRowActions={hasRowActions}
+                rowActions={stableRowActions}
+                extraColumns={visibleExtraColumns}
+                duplicateKeys={tableDuplicateKeys}
+                highlightedRowIds={highlightedRowIds}
+                highlightedCellKeys={highlightedCellKeys}
+                dispatcherTaskRowIds={dispatcherTaskRowIds}
+                contextMenuAnchorRowId={contextMenu?.anchorRowId}
+                canEditField={canEditField}
+                canEditCell={canEditCell}
+                stickyLeft={stickyIdentityColumns ? stickyLeft : 0}
+                stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
+                stickyIdentityColumns={stickyIdentityColumns}
+                getDisplayValue={stableGetDisplayValue}
+                getActionRow={getActionRow}
+                onEdit={onEdit ? stableOnEdit : undefined}
+                onDelete={onDelete ? stableOnDelete : undefined}
+                onContextMenu={getContextMenuItems ? openRowContextMenu : undefined}
+                onOpenDocument={onOpenDocument ? stableOnOpenDocument : undefined}
+                onOpenLnkRequest={onOpenLnkRequest ? stableOnOpenLnkRequest : undefined}
+                onOpenLnkResult={onOpenLnkResult ? stableOnOpenLnkResult : undefined}
+                onOpenJoint={onOpenJoint ? stableOnOpenJoint : undefined}
+                onOpenJointOverview={onOpenJointOverview ? stableOnOpenJointOverview : undefined}
+                controlBasisEditorEnabled={controlBasisEditorEnabled}
+                availableSystemDocumentTypes={stableAvailableSystemDocumentTypes}
+                visibleFieldKeys={visibleFieldKeys}
+              />
+              <TableVirtualSpacer colSpan={fullTableColumnSpan} height={bottomSpacerHeight} />
+            </tbody>
+          </table>
+        </div>
+        <div
+          className="sticky w-[min(100vw-2rem,720px)]"
+          style={{
+            left: stickyLeft,
+            maxWidth: `calc(100vw - ${stickyLeft + 24}px)`,
+          }}
+        >
+          <PaginationBar
+            totalCount={pagination.totalCount}
+            firstItemNumber={pagination.firstItemNumber}
+            lastItemNumber={pagination.lastItemNumber}
+            pageSize={pagination.pageSize}
+            hasMore={pagination.hasMore}
+            onLoadMore={pagination.loadMore}
+            onPageSizeChange={pagination.setPageSize}
+          />
+        </div>
+        {selectable && selectedRows.length > 0 ? (
+          <div className="h-12" data-selection-panel-clearance aria-hidden="true" />
+        ) : null}
+        <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
       </div>
-      <div
-        className="sticky w-[min(100vw-2rem,720px)]"
-        style={{
-          left: stickyLeft,
-          maxWidth: `calc(100vw - ${stickyLeft + 24}px)`,
-        }}
-      >
-        <PaginationBar
-          totalCount={pagination.totalCount}
-          firstItemNumber={pagination.firstItemNumber}
-          lastItemNumber={pagination.lastItemNumber}
-          pageSize={pagination.pageSize}
-          hasMore={pagination.hasMore}
-          onLoadMore={pagination.loadMore}
-          onPageSizeChange={pagination.setPageSize}
-        />
-      </div>
-      {selectable && selectedRows.length > 0 ? (
-        <div className="h-12" data-selection-panel-clearance aria-hidden="true" />
-      ) : null}
-      <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </div>
   )
 }

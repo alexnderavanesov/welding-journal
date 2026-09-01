@@ -38,7 +38,7 @@ const STATISTICS_STATUS_ROW_SELECT = {
   subtitleCode: weldJoints.subtitleCode,
   line: weldJoints.line,
   joint: weldJoints.joint,
-  status: weldJoints.status,
+  officiality: weldJoints.officiality,
   wdi: weldJoints.wdi,
   connectionType: weldJoints.connectionType,
   d1: weldJoints.d1,

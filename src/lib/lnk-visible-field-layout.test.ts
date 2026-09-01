@@ -8,6 +8,7 @@ describe('LNK visible field layout', () => {
   it('keeps the approved chronological section order', () => {
     expect(LNK_VISIBLE_FIELD_SECTIONS.map((section) => section.section)).toEqual([
       'Проект',
+      'Статус',
       'Спул',
       'Стык',
       'Материалы',
@@ -35,6 +36,18 @@ describe('LNK visible field layout', () => {
       'lnkDefectDescription',
       'rkConclusionDate',
       'rkConclusion',
+    ])
+  })
+
+  it('keeps officiality and revision actuality in the optional status section', () => {
+    expect(LNK_VISIBLE_FIELD_SECTIONS.slice(0, 2).map((section) => section.section)).toEqual(['Проект', 'Статус'])
+    expect(LNK_VISIBLE_FIELD_SECTIONS.find((section) => section.section === 'Статус')?.fields.map((field) => field.key)).toEqual([
+      'officiality',
+      'revisionActuality',
+    ])
+    expect(LNK_VISIBLE_FIELD_SECTIONS.find((section) => section.section === 'Стык')?.fields.map((field) => field.key)).toEqual([
+      'joint',
+      'finalStatus',
     ])
   })
 

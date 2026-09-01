@@ -54,7 +54,7 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
       requestNameDraft={openRequest.name}
       isManagerPending={false}
       isCorrectionPending={false}
-      canOpenDocument
+      canOpenDocument={() => true}
       onClose={vi.fn()}
       onChangeRequest={onChangeRequest}
       onCreateRequest={vi.fn()}

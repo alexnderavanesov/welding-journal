@@ -1,5 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
+import { migrateLegacyWeldFieldRecordKeys } from '@/lib/weld-fields'
 import type { WeldImportScopeRequest } from '@/server/weld-contracts'
 
 const CONTROL_COLUMN_KEYS = {
@@ -47,11 +48,11 @@ export function normalizeWeldImportScopeRequest(
   data: WeldImportScopeRequest | undefined,
 ): Required<WeldImportScopeRequest> {
   return {
-    columnFilters: Object.fromEntries(
+    columnFilters: migrateLegacyWeldFieldRecordKeys(Object.fromEntries(
       Object.entries(data?.columnFilters ?? {})
         .map(([key, value]) => [key, String(value ?? '').trim()] as const)
         .filter(([, value]) => value.length > 0),
-    ),
+    )),
   }
 }
 

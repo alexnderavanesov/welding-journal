@@ -94,16 +94,23 @@ function getSectionControls(
     controls.push(
       ...extraGroups.filter((group) => group.insertBeforeSection === section.section),
       { kind: 'fields', ...section },
+      ...extraGroups.filter((group) => group.insertAfterSection === section.section),
     )
   }
   controls.push(
-    ...extraGroups.filter((group) => !group.insertBeforeSection || !sectionNames.has(group.insertBeforeSection)),
+    ...extraGroups.filter((group) => {
+      const anchorSection = group.insertBeforeSection ?? group.insertAfterSection
+      return !anchorSection || !sectionNames.has(anchorSection)
+    }),
   )
   return controls
 }
 
 function groupCollapsibleExtraColumns(columns: WeldTableExtraColumn[]) {
-  const groups = new Map<string, Extract<SectionControl, { kind: 'extra' }> & { insertBeforeSection?: string }>()
+  const groups = new Map<string, Extract<SectionControl, { kind: 'extra' }> & {
+    insertBeforeSection?: string
+    insertAfterSection?: string
+  }>()
   for (const column of columns) {
     if (!column.collapsible) continue
     const group = groups.get(column.section)
@@ -115,6 +122,7 @@ function groupCollapsibleExtraColumns(columns: WeldTableExtraColumn[]) {
         section: column.section,
         columns: [column],
         insertBeforeSection: column.insertBeforeSection,
+        insertAfterSection: column.insertAfterSection,
       })
     }
   }

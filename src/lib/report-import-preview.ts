@@ -7,7 +7,7 @@ import {
   parseWorkbook,
 } from '@/lib/weld-import-readers'
 import { readFirstSheetRows } from '@/lib/weld-import-sheet-reader'
-import { withOfficialJointStatus } from '@/lib/report-control-state'
+import { withOfficialJoint } from '@/lib/report-control-state'
 import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { assertNoLnkRepairRuleIssues } from '@/lib/lnk-result-rules'
 import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
@@ -464,7 +464,7 @@ function validateReportImportRecords(
   const systemIndexSettings = loadSystemIndexSettings()
 
   records.forEach((record, index) => {
-    const candidate = { ...withOfficialJointStatus(record) }
+    const candidate = { ...withOfficialJoint(record) }
     const validationMessages: string[] = []
     const validationFieldKeys = new Set<WeldFieldKey>()
     const jointNameReason = saveCheckSettings.manualJointName

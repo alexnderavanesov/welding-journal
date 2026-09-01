@@ -33,4 +33,14 @@ describe('useReportSortState', () => {
       heatTreatment: { fieldKey: 'pstoDate', direction: 'desc' },
     })
   })
+
+  it('migrates the former status sort key to officiality', () => {
+    window.localStorage.setItem('welding-report-sort:v1', JSON.stringify({
+      weldingJournal: { fieldKey: 'status', direction: 'asc' },
+    }))
+
+    expect(readSortByReport()).toEqual({
+      weldingJournal: { fieldKey: 'officiality', direction: 'asc' },
+    })
+  })
 })

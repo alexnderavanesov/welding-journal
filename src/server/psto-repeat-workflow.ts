@@ -648,7 +648,7 @@ function getSequenceRequest(
   }> = {
     pstoRequest: { type: 'pstoRequest', fieldKeys: ['pstoRequest'] },
     pstoResult: { type: 'pstoConclusion', fieldKeys: ['heatTreatmentDiagram'] },
-    tvmtRequest: { type: 'lnkRequest', fieldKeys: ['tvmtRequest'] },
+    tvmtRequest: { type: 'lnkRequest', fieldKeys: ['tvmtRequest'], methodCode: 'ТВМТ' },
     tvmtResult: { type: 'lnkConclusion', fieldKeys: ['tvmtConclusion'], methodCode: 'ТВМТ' },
   }
   return { ...config[action], date, provisionalName }

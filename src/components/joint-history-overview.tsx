@@ -69,7 +69,7 @@ export function JointHistoryOverview({
           <HistoryLine
             label="Сварка"
             date={row.weldDate}
-            value={text(row.status) || 'без статуса'}
+            value={`Официальность: ${text(row.officiality) || 'официальный'}`}
             secondary={`Итоговый статус: ${text(row.finalStatus) || '-'}`}
           />
         </HistorySection>

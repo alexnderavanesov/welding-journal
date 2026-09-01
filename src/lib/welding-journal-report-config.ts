@@ -81,7 +81,7 @@ export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'lnkNote',
   'weldingJournalNote',
   'finalStatus',
-  'status',
+  'officiality',
 ])
 
 export const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -110,7 +110,7 @@ export const WELDING_JOURNAL_BLOCKED_FIELD_KEYS = new Set<WeldFieldKey>([
   'jsrDocument',
   'checklistDocument',
   'zniDocument',
-  'status',
+  'officiality',
   'createdAt',
   'weldingUpdatedAt',
   'finalStatus',
@@ -213,7 +213,7 @@ const WELDING_JOURNAL_BASE_REPORT_FIELD_KEYS = [
   'joint',
   'wdi',
   'weldDate',
-  'status',
+  'officiality',
   'finalStatus',
 ] as const satisfies readonly WeldFieldKey[]
 

@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joints" RENAME COLUMN "status" TO "officiality";

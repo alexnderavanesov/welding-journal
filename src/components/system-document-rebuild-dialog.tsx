@@ -13,7 +13,7 @@ import {
   type SystemDocumentRebuildPreview,
 } from '@/lib/system-document-rebuild'
 import {
-  SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
+  CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import {
@@ -53,8 +53,12 @@ export function SystemDocumentRebuildDialog({
   useEffect(() => {
     const preview = previewMutation.data
     if (!preview) return
+    const configurableTemplateIds = new Set<SystemDocumentTemplateId>(
+      CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => profile.id),
+    )
     const affected = new Set<SystemDocumentTemplateId>(
       preview.documents
+        .filter((document) => configurableTemplateIds.has(document.templateId))
         .filter((document) => document.willChangeAutomatically || document.requiresCustomNameDecision)
         .map((document) => document.templateId),
     )
@@ -157,7 +161,7 @@ export function SystemDocumentRebuildDialog({
                 </p>
               </div>
               <div className="grid gap-px bg-slate-200 sm:grid-cols-2">
-                {SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => {
+                {CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => {
                   const documents = preview.documents.filter((document) => document.templateId === profile.id)
                   const changes = documents.filter((document) => document.willChangeAutomatically || document.requiresCustomNameDecision)
                   return (

@@ -1,17 +1,51 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useReportNavigationContext } from '@/lib/use-report-navigation-context'
 import type { ActiveReport } from '@/lib/home-state'
+import { useReportNavigationContext } from '@/lib/use-report-navigation-context'
+import type { WeldFilters } from '@/server/weld-contracts'
+
+type HookProps = {
+  activeReport: ActiveReport
+  columnFilters: WeldFilters
+  heatTreatmentFilters: WeldFilters
+  lnkFilters: WeldFilters
+  selectedWeldingJournalIds: Set<number>
+  selectedHeatTreatmentIds: Set<number>
+  selectedLnkIds: Set<number>
+}
+
+function createHookProps(activeReport: ActiveReport, overrides: Partial<HookProps> = {}): HookProps {
+  return {
+    activeReport,
+    columnFilters: {},
+    heatTreatmentFilters: {},
+    lnkFilters: {},
+    selectedWeldingJournalIds: new Set(),
+    selectedHeatTreatmentIds: new Set(),
+    selectedLnkIds: new Set(),
+    ...overrides,
+  }
+}
 
 describe('useReportNavigationContext', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    window.history.replaceState({}, '', '/journal')
+    Object.defineProperties(window, {
+      scrollX: { configurable: true, value: 0 },
+      scrollY: { configurable: true, value: 0 },
+    })
+    document.documentElement.scrollLeft = 0
+    document.documentElement.scrollTop = 0
+    document.body.scrollLeft = 0
+    document.body.scrollTop = 0
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       callback(0)
       return 1
     })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
@@ -19,122 +53,173 @@ describe('useReportNavigationContext', () => {
     vi.restoreAllMocks()
   })
 
-  it('restores the source report filters and selected rows', () => {
-    const setActiveReport = vi.fn()
-    const setColumnFilters = vi.fn()
-    const setSelectedWeldingJournalIds = vi.fn()
-    const { result, rerender } = renderHook(({ activeReport }: { activeReport: ActiveReport }) => useReportNavigationContext({
-      activeReport,
-      columnFilters: { line: '330-D01', projectTitle: 'Риформинг' },
-      heatTreatmentFilters: {},
-      lnkFilters: {},
-      selectedWeldingJournalIds: new Set([12, 14]),
-      selectedHeatTreatmentIds: new Set(),
-      selectedLnkIds: new Set(),
-      setActiveReport,
-      setColumnFilters,
+  it('restores report filters, selection, and scroll on browser Back and Forward entries', () => {
+    const setters = {
+      setColumnFilters: vi.fn(),
       setHeatTreatmentFilters: vi.fn(),
       setLnkFilters: vi.fn(),
-      setSelectedWeldingJournalIds,
+      setSelectedWeldingJournalIds: vi.fn(),
       setSelectedHeatTreatmentIds: vi.fn(),
       setSelectedLnkIds: vi.fn(),
-    }), { initialProps: { activeReport: 'weldingJournal' as ActiveReport } })
+    }
+    const journalProps = createHookProps('weldingJournal', {
+      columnFilters: { line: '330-D01', projectTitle: 'Риформинг' },
+      selectedWeldingJournalIds: new Set([12, 14]),
+    })
+    Object.defineProperties(window, {
+      scrollX: { configurable: true, value: 84 },
+      scrollY: { configurable: true, value: 420 },
+    })
+    const { result, rerender } = renderHook(
+      (props: HookProps) => useReportNavigationContext({ ...props, ...setters }),
+      { initialProps: journalProps },
+    )
 
     act(() => result.current.captureReportContext('lnk'))
-    expect(result.current.reportReturnContext).toEqual({ report: 'weldingJournal', title: 'Сварочный журнал' })
+    const journalHistoryState = window.history.state
 
-    rerender({ activeReport: 'lnk' })
-    act(() => result.current.restoreReportContext())
-    expect(setActiveReport).toHaveBeenCalledWith('weldingJournal')
-    expect(setColumnFilters).toHaveBeenCalledWith({ line: '330-D01', projectTitle: 'Риформинг' })
-    expect(setSelectedWeldingJournalIds).toHaveBeenCalledWith(new Set([12, 14]))
-    expect(result.current.reportReturnContext).toBeNull()
-
-    rerender({ activeReport: 'weldingJournal' })
+    Object.defineProperties(window, {
+      scrollX: { configurable: true, value: 0 },
+      scrollY: { configurable: true, value: 0 },
+    })
+    act(() => window.history.pushState({}, '', '/lnk'))
+    const lnkProps = createHookProps('lnk', {
+      lnkFilters: { line: '330-D02' },
+      selectedLnkIds: new Set([21]),
+    })
+    rerender(lnkProps)
     act(() => vi.runAllTimers())
-    expect(window.scrollTo).toHaveBeenCalled()
+    const lnkHistoryState = window.history.state
+    vi.clearAllMocks()
+
+    act(() => window.history.replaceState(journalHistoryState, '', '/journal'))
+    rerender(createHookProps('weldingJournal'))
+    act(() => vi.runAllTimers())
+
+    expect(setters.setColumnFilters).toHaveBeenCalledWith({ line: '330-D01', projectTitle: 'Риформинг' })
+    expect(setters.setSelectedWeldingJournalIds).toHaveBeenCalledWith(new Set([12, 14]))
+    expect(window.scrollTo).toHaveBeenCalledWith({ left: 84, top: 420, behavior: 'auto' })
+
+    vi.clearAllMocks()
+    act(() => window.history.replaceState(lnkHistoryState, '', '/lnk'))
+    rerender(createHookProps('lnk'))
+    act(() => vi.runAllTimers())
+
+    expect(setters.setLnkFilters).toHaveBeenCalledWith({ line: '330-D02' })
+    expect(setters.setSelectedLnkIds).toHaveBeenCalledWith(new Set([21]))
   })
 
-  it('keeps the original source during several linked transitions', () => {
-    const { result } = renderHook(() => useReportNavigationContext({
-      activeReport: 'documents',
-      columnFilters: {},
-      heatTreatmentFilters: {},
-      lnkFilters: {},
-      selectedWeldingJournalIds: new Set(),
-      selectedHeatTreatmentIds: new Set(),
-      selectedLnkIds: new Set(),
-      setActiveReport: vi.fn(),
+  it('does not restore a copied snapshot that belongs to another report', () => {
+    const setters = {
       setColumnFilters: vi.fn(),
       setHeatTreatmentFilters: vi.fn(),
       setLnkFilters: vi.fn(),
       setSelectedWeldingJournalIds: vi.fn(),
       setSelectedHeatTreatmentIds: vi.fn(),
       setSelectedLnkIds: vi.fn(),
+    }
+    const { result, rerender } = renderHook(
+      (props: HookProps) => useReportNavigationContext({ ...props, ...setters }),
+      {
+        initialProps: createHookProps('weldingJournal', {
+          columnFilters: { line: 'source-line' },
+          selectedWeldingJournalIds: new Set([5]),
+        }),
+      },
+    )
+
+    act(() => result.current.captureReportContext('lnk'))
+    const copiedSourceState = window.history.state
+    vi.clearAllMocks()
+
+    act(() => window.history.pushState(copiedSourceState, '', '/lnk'))
+    rerender(createHookProps('lnk', {
+      lnkFilters: { line: 'target-line' },
+      selectedLnkIds: new Set([8]),
     }))
 
-    act(() => {
-      result.current.captureReportContext('lnk')
-      result.current.captureReportContext('heatTreatment')
-    })
+    expect(setters.setColumnFilters).not.toHaveBeenCalled()
+    expect(setters.setLnkFilters).not.toHaveBeenCalled()
 
-    expect(result.current.reportReturnContext).toEqual({ report: 'documents', title: 'Документы' })
-  })
+    const targetHistoryState = window.history.state
+    act(() => window.history.pushState({}, '', '/documents'))
+    rerender(createHookProps('documents'))
+    vi.clearAllMocks()
 
-  it('restores scrolling when a linked transition has already returned to the source report type', () => {
-    const setLnkFilters = vi.fn()
-    const { result, rerender } = renderHook(({ activeReport }: { activeReport: ActiveReport }) => useReportNavigationContext({
-      activeReport,
-      columnFilters: {},
-      heatTreatmentFilters: {},
-      lnkFilters: { line: '330-D01' },
-      selectedWeldingJournalIds: new Set(),
-      selectedHeatTreatmentIds: new Set(),
-      selectedLnkIds: new Set([21]),
-      setActiveReport: vi.fn(),
-      setColumnFilters: vi.fn(),
-      setHeatTreatmentFilters: vi.fn(),
-      setLnkFilters,
-      setSelectedWeldingJournalIds: vi.fn(),
-      setSelectedHeatTreatmentIds: vi.fn(),
-      setSelectedLnkIds: vi.fn(),
-    }), { initialProps: { activeReport: 'lnk' as ActiveReport } })
-
-    act(() => result.current.captureReportContext('documents'))
-    rerender({ activeReport: 'documents' })
-    rerender({ activeReport: 'lnk' })
-    act(() => result.current.restoreReportContext())
+    act(() => window.history.replaceState(targetHistoryState, '', '/lnk'))
+    rerender(createHookProps('lnk'))
     act(() => vi.runAllTimers())
 
-    expect(setLnkFilters).toHaveBeenCalledWith({ line: '330-D01' })
-    expect(window.scrollTo).toHaveBeenCalled()
+    expect(setters.setLnkFilters).toHaveBeenCalledWith({ line: 'target-line' })
+    expect(setters.setSelectedLnkIds).toHaveBeenCalledWith(new Set([8]))
   })
 
-  it('cancels a pending scroll restore when the return route is dismissed', () => {
-    const { result, rerender } = renderHook(({ activeReport }: { activeReport: ActiveReport }) => useReportNavigationContext({
-      activeReport,
-      columnFilters: {},
-      heatTreatmentFilters: {},
-      lnkFilters: {},
-      selectedWeldingJournalIds: new Set(),
-      selectedHeatTreatmentIds: new Set(),
-      selectedLnkIds: new Set(),
-      setActiveReport: vi.fn(),
+  it('keeps the latest filters and selection in the current browser entry', () => {
+    const setters = {
       setColumnFilters: vi.fn(),
       setHeatTreatmentFilters: vi.fn(),
       setLnkFilters: vi.fn(),
       setSelectedWeldingJournalIds: vi.fn(),
       setSelectedHeatTreatmentIds: vi.fn(),
       setSelectedLnkIds: vi.fn(),
-    }), { initialProps: { activeReport: 'lnk' as ActiveReport } })
+    }
+    const { rerender } = renderHook(
+      (props: HookProps) => useReportNavigationContext({ ...props, ...setters }),
+      {
+        initialProps: createHookProps('heatTreatment', {
+          heatTreatmentFilters: { line: 'old-line' },
+          selectedHeatTreatmentIds: new Set([31]),
+        }),
+      },
+    )
 
-    act(() => result.current.captureReportContext('documents'))
-    rerender({ activeReport: 'documents' })
-    act(() => result.current.restoreReportContext())
-    act(() => result.current.clearReportContext())
-    rerender({ activeReport: 'lnk' })
+    rerender(createHookProps('heatTreatment', {
+      heatTreatmentFilters: { line: 'new-line' },
+      selectedHeatTreatmentIds: new Set([32, 33]),
+    }))
+    const updatedHistoryState = window.history.state
+
+    act(() => window.history.pushState({}, '', '/documents'))
+    rerender(createHookProps('documents'))
+    vi.clearAllMocks()
+
+    act(() => window.history.replaceState(updatedHistoryState, '', '/psto'))
+    rerender(createHookProps('heatTreatment'))
     act(() => vi.runAllTimers())
 
-    expect(window.scrollTo).not.toHaveBeenCalled()
+    expect(setters.setHeatTreatmentFilters).toHaveBeenCalledWith({ line: 'new-line' })
+    expect(setters.setSelectedHeatTreatmentIds).toHaveBeenCalledWith(new Set([32, 33]))
+  })
+
+  it('restores legacy status filters from browser history as officiality', () => {
+    const setters = {
+      setColumnFilters: vi.fn(),
+      setHeatTreatmentFilters: vi.fn(),
+      setLnkFilters: vi.fn(),
+      setSelectedWeldingJournalIds: vi.fn(),
+      setSelectedHeatTreatmentIds: vi.fn(),
+      setSelectedLnkIds: vi.fn(),
+    }
+    window.history.replaceState({
+      __weldingReportContext: {
+        version: 1,
+        report: 'lnk',
+        filters: { status: 'неофициальный', line: '330-D03' },
+        selectedRowIds: [41],
+        scrollPosition: { left: 0, top: 0 },
+      },
+    }, '', '/lnk')
+
+    renderHook(() => useReportNavigationContext({
+      ...createHookProps('lnk'),
+      ...setters,
+    }))
+    act(() => vi.runAllTimers())
+
+    expect(setters.setLnkFilters).toHaveBeenCalledWith({
+      officiality: 'неофициальный',
+      line: '330-D03',
+    })
+    expect(setters.setSelectedLnkIds).toHaveBeenCalledWith(new Set([41]))
   })
 })

@@ -27,6 +27,7 @@ export function getDuplicateControlTableColumns({
       section: 'Дубль контроль',
       label: 'Результаты дубля',
       width: DUPLICATE_CONTROL_COLUMN_WIDTH,
+      appearance: 'quiet',
       insertBeforeSection: 'Прочее',
       collapsible: true,
       renderCell: (row) => <DuplicateControlTableCell row={row} onOpen={onOpenDuplicateControl} />,

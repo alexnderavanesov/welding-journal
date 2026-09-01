@@ -17,7 +17,18 @@ const rows = [
 describe('system document splitting', () => {
   it('keeps the current single-document behavior by default', () => {
     expect(normalizeSystemDocumentSplitSettings(undefined).lnkRequest).toBe('none')
+    expect(normalizeSystemDocumentSplitSettings(undefined).tvmtRequest).toBe('none')
     expect(buildSystemDocumentSplitGroups(rows, 'none')).toHaveLength(1)
+  })
+
+  it('inherits the previous shared TVMT split rules', () => {
+    const settings = normalizeSystemDocumentSplitSettings({
+      lnkRequest: 'line',
+      lnkConclusionOther: 'joint',
+    })
+
+    expect(settings.tvmtRequest).toBe('line')
+    expect(settings.tvmtConclusion).toBe('joint')
   })
 
   it('uses hierarchical project, subtitle and line identities', () => {
@@ -46,6 +57,7 @@ describe('system document splitting', () => {
   it('routes every LNK conclusion form to its own setting', () => {
     expect(getSystemDocumentSplitSettingId({ type: 'lnkConclusion', methodCode: 'ВИК' })).toBe('lnkConclusionVik')
     expect(getSystemDocumentSplitSettingId({ type: 'lnkConclusion', methodCode: 'РК' })).toBe('lnkConclusionRk')
-    expect(getSystemDocumentSplitSettingId({ type: 'lnkConclusion', methodCode: 'ТВМТ' })).toBe('lnkConclusionOther')
+    expect(getSystemDocumentSplitSettingId({ type: 'lnkRequest', methodCode: 'ТВМТ' })).toBe('tvmtRequest')
+    expect(getSystemDocumentSplitSettingId({ type: 'lnkConclusion', methodCode: 'ТВМТ' })).toBe('tvmtConclusion')
   })
 })

@@ -182,6 +182,27 @@ describe('document template storage', () => {
     })
   })
 
+  it('migrates the former status field in saved constructor bindings', () => {
+    const legacyConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatMode: 'groups',
+      repeatGroupBy: 'status',
+      bindings: [
+        { cell: 'A2', mode: 'row', field: 'status' },
+        { cell: 'B2', mode: 'summary', parts: [{ field: 'status', compareField: 'status' }] },
+      ],
+      nameConfig: { parts: [{ type: 'field', field: 'status' }] },
+    } as unknown as DocumentTemplateConstructorConfig
+
+    const normalized = normalizeDocumentTemplateConstructorConfig(legacyConfig)
+
+    expect(normalized.repeatGroupBy).toBe('officiality')
+    expect(normalized.bindings[0].field).toBe('officiality')
+    expect(normalized.bindings[1].parts).toEqual([{ field: 'officiality', compareField: 'officiality' }])
+    expect(normalized.nameConfig?.parts[0]).toEqual({ type: 'field', field: 'officiality' })
+  })
+
   it('ignores template markers that are not current system field names', () => {
     expect(extractTemplateFields('{{Неизвестное поле}} {{Способ сварки}} {{Стык/"н/п"}}')).toEqual(['Способ сварки', 'Стык'])
   })

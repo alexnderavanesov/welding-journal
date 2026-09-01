@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import type { WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import type { DocumentsPageType } from '@/components/documents-page'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
@@ -40,6 +40,7 @@ type ReportMainContentProps = {
   onDocumentsPageTypeChange?: (documentType: DocumentsPageType) => void
   systemDocumentNavigationRequest?: SystemDocumentNavigationRequest | null
   onSystemDocumentNavigationRequestHandled?: (requestId: number) => void
+  reportTaskPanels?: ReactNode
 }
 
 export function ReportMainContent({
@@ -58,6 +59,7 @@ export function ReportMainContent({
   onDocumentsPageTypeChange,
   systemDocumentNavigationRequest,
   onSystemDocumentNavigationRequestHandled,
+  reportTaskPanels,
 }: ReportMainContentProps) {
   if (activeReport === 'statistics' || activeReport === 'percentageLines') {
     return (
@@ -115,7 +117,7 @@ export function ReportMainContent({
     )
   }
 
-  return <WeldTable {...weldTableProps} />
+  return <WeldTable {...weldTableProps} reportTaskPanels={reportTaskPanels} />
 }
 
 function ReportSectionFallback({ label }: { label: string }) {

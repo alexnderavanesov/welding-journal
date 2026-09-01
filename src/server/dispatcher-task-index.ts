@@ -449,7 +449,7 @@ async function listDuplicateWeldKeys(tx: DispatcherIndexTransaction) {
   const rows = await tx
     .select({ key })
     .from(weldJoints)
-    .where(sql`lower(btrim(coalesce(${weldJoints.status}, ''))) <> 'неофициальный'`)
+    .where(sql`lower(btrim(coalesce(${weldJoints.officiality}, ''))) <> 'неофициальный'`)
     .groupBy(project, subtitle, line, joint)
     .having(sql`count(*) > 1 and not (${project} = '' and ${subtitle} = '' and ${line} = '' and ${joint} = '')`)
   return rows.map((row) => row.key).sort()
@@ -478,7 +478,7 @@ const DISPATCHER_ROW_CONTEXT_KEYS = [
   'subtitleCode',
   'line',
   'joint',
-  'status',
+  'officiality',
   'weldDate',
 ] as const
 

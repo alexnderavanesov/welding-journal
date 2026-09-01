@@ -55,7 +55,7 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
       key={task.key}
       className={nested ? 'w-full bg-transparent' : 'w-full rounded-md border border-sky-100 bg-[#f8fcfe]'}
     >
-      <div className="mx-auto grid min-h-11 w-full max-w-[1400px] grid-cols-[minmax(0,1fr)_auto] items-stretch">
+      <div className="grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] items-stretch">
         <button
           type="button"
           onClick={() => handlers.onToggleDetails(task)}
@@ -106,7 +106,7 @@ export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCo
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
     >
       <summary className="min-h-11 cursor-pointer list-none px-3 py-2 text-sm marker:hidden hover:bg-white/75">
-        <span className="mx-auto flex w-full max-w-[1600px] items-center gap-2">
+        <span className="flex w-full items-center gap-2">
           <span className="inline-flex min-w-0 items-center gap-1 rounded border border-violet-200 bg-violet-50 px-2 py-1">
             <strong className="shrink-0 font-semibold text-violet-700">{group.code}</strong>
             <span className="truncate text-slate-700">· {group.label}</span>

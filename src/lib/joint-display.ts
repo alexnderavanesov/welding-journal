@@ -31,7 +31,7 @@ export function formatJointWdiLabel(row: WeldInput) {
 }
 
 export function isUnofficialJoint(row: WeldInput) {
-  return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
+  return String(row.officiality ?? '').trim().toLowerCase() === 'неофициальный'
 }
 
 export function getJointChainIdentity(

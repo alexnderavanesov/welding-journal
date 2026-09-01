@@ -1,8 +1,7 @@
 import { createDefaultPstoResultDraft } from '@/lib/report-draft-state'
 import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
-import { hasPstoResultData } from '@/lib/psto-result-derived-utils'
-import { hasPrimaryPstoCycle } from '@/lib/psto-cycle'
+import { hasAnyPstoCycle } from '@/lib/psto-cycle'
 import {
   buildManagedPstoDiagramDrafts,
   resolvePstoResultDraftAfterBulkToggle,
@@ -76,7 +75,7 @@ export function createPstoResultActionHandlers({
   }
 
   function openPstoResultManagerForRows(rowsToManage: readonly RowWithId[]) {
-    const selectedRows = rowsToManage.filter((row) => hasPstoResultData(row) || hasPrimaryPstoCycle(row))
+    const selectedRows = rowsToManage.filter((row) => hasAnyPstoCycle(row, row.pstoRepeatCycles ?? []))
     if (selectedRows.length === 0) {
       setMessage('Для выбранных стыков нет назначения или истории ПСТО')
       return

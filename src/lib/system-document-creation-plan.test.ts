@@ -48,6 +48,34 @@ describe('system document creation plan', () => {
     ])
   })
 
+  it('uses the independent TVMT naming and split settings', () => {
+    const settings = {
+      ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      tvmtConclusion: {
+        defaultMode: 'system' as const,
+        systemPattern: 'ТВМТ-Акт-{{№}}',
+      },
+      splitModes: {
+        ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes,
+        tvmtConclusion: 'joint' as const,
+      },
+    }
+    const plan = buildSystemDocumentCreationPlan({
+      type: 'lnkConclusion',
+      methodCode: 'ТВМТ',
+      date: '2026-08-24',
+      rows,
+      naming: { mode: 'system', customName: '' },
+      settings,
+      nextNumber: 4,
+    })
+
+    expect(plan.groups.map((group) => group.name)).toEqual([
+      'ТВМТ-Акт-004',
+      'ТВМТ-Акт-005',
+    ])
+  })
+
   it('requires unique manual names for every group', () => {
     const settings = {
       ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,

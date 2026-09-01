@@ -325,8 +325,10 @@ describe('welding journal import template', () => {
 
     expect(payload).toContain('fgColor rgb="FFDCEBFA"')
     expect(payload).toContain('<c r="A1" t="inlineStr" s="1"><is><t>ID записи</t></is></c>')
-    expect(payload).toContain('<c r="N1" t="inlineStr" s="1"><is><t>Стык</t></is></c>')
-    expect(payload).toContain('<c r="N2" t="inlineStr" s="2"><is><t>S1</t></is></c>')
+    expect(payload).toContain('<c r="K1" t="inlineStr" s="1"><is><t>Официальность</t></is></c>')
+    expect(payload).toContain('<c r="L1" t="inlineStr" s="1"><is><t>Актуальность по ИЗМу</t></is></c>')
+    expect(payload).toContain('<c r="O1" t="inlineStr" s="1"><is><t>Стык</t></is></c>')
+    expect(payload).toContain('<c r="O2" t="inlineStr" s="2"><is><t>S1</t></is></c>')
   })
 
   it('marks WDI column as grey in system import templates', () => {

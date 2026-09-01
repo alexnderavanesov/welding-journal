@@ -21,11 +21,11 @@ export const PSTO_WAITING_REQUEST_FIELDS = [
   getReportField('joint', 'ПСТО'),
   getReportField('wdi', 'ПСТО'),
   getReportField('weldDate', 'ПСТО'),
-  getReportField('status', 'ПСТО'),
+  getReportField('officiality', 'ПСТО'),
 ] as unknown as WeldField[]
 
 export const PSTO_RESULTS_FIELDS = [
-  ...PSTO_WAITING_REQUEST_FIELDS.filter((field) => field.key !== 'status'),
+  ...PSTO_WAITING_REQUEST_FIELDS.filter((field) => field.key !== 'officiality'),
   getReportField('pstoRequest', 'ПСТО'),
   getReportField('pstoRequestDate', 'ПСТО'),
   getReportField('pstoDate', 'ПСТО'),

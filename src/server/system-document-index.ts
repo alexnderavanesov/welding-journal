@@ -47,7 +47,7 @@ const BASE_HISTORY_SELECT = {
   updatedAt: weldJoints.updatedAt,
 }
 
-const SYSTEM_DOCUMENT_INDEX_VERSION = '3'
+const SYSTEM_DOCUMENT_INDEX_VERSION = '4'
 
 const LNK_REQUEST_HISTORY_SELECT = {
   ...BASE_HISTORY_SELECT,
@@ -1550,7 +1550,10 @@ export function systemDocumentStorageType(templateId: string) {
 
 function buildSystemDocumentWhere(reference: SystemDocumentReference): SQL {
   if (reference.type === 'lnkRequest') {
-    const conditions = LNK_METHODS.map((method) =>
+    const requestMethods = reference.methodCode === 'ТВМТ'
+      ? LNK_METHODS.filter((method) => method.code === 'ТВМТ')
+      : LNK_METHODS.filter((method) => method.code !== 'ТВМТ')
+    const conditions = requestMethods.map((method) =>
       and(
         textEquals(weldJoints[method.requestKey], reference.title),
         dateEquals(weldJoints[method.requestDateKey], reference.date),

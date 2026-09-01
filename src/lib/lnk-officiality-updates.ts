@@ -4,19 +4,19 @@ import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 
 export function buildLnkOfficialityRows({
   records,
-  status,
+  officiality,
 }: {
   records: RowWithId[]
-  status: 'official' | 'unofficial'
+  officiality: 'official' | 'unofficial'
 }) {
-  if (status === 'unofficial') {
+  if (officiality === 'unofficial') {
     const invalidRecords = records.filter((record) => !hasRejectedLnkResult(record))
     if (invalidRecords.length > 0) {
-      throw new Error('Неофициальный статус можно назначить только после результата контроля "ремонт" или "вырез"')
+      throw new Error('Значение «неофициальный» можно назначить только после результата контроля «ремонт» или «вырез»')
     }
   }
-  const nextStatus = status === 'unofficial' ? 'неофициальный' : null
+  const nextOfficiality = officiality === 'unofficial' ? 'неофициальный' : null
   return records
-    .map((record) => withTouchedLnkTimestamp({ ...record, status: nextStatus }))
-    .filter((record, index) => String(records[index].status ?? '').trim() !== String(nextStatus ?? '').trim()) as RowWithId[]
+    .map((record) => withTouchedLnkTimestamp({ ...record, officiality: nextOfficiality }))
+    .filter((record, index) => String(records[index].officiality ?? '').trim() !== String(nextOfficiality ?? '').trim()) as RowWithId[]
 }

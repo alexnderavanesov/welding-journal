@@ -21,7 +21,10 @@ import {
   type SystemDocumentSummary,
   type SystemDocumentType,
 } from '@/lib/system-document-types'
-import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import {
+  getSystemDocumentTemplateId,
+  getSystemDocumentTemplateLoadCandidates,
+} from '@/lib/system-document-template-types'
 import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { loadSystemDocumentSequence } from '@/lib/system-document-sequence-storage'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
@@ -145,7 +148,7 @@ export async function createCurrentSystemDocumentBlob({
   template?: StoredDocumentTemplate | null
 }) {
   const currentTemplate = template === undefined
-    ? await loadDocumentTemplate(getSystemDocumentTemplateId(reference))
+    ? await loadFirstSystemDocumentTemplate(getSystemDocumentTemplateId(reference))
     : template
   if (!currentTemplate || !['xlsx', 'xls'].includes(currentTemplate.fileType)) {
     throw new Error('Шаблон системного документа не загружен.')
@@ -173,6 +176,16 @@ export async function createCurrentSystemDocumentBlob({
       loadRequestConclusionSettings(),
     ),
   })
+}
+
+async function loadFirstSystemDocumentTemplate(
+  templateId: ReturnType<typeof getSystemDocumentTemplateId>,
+) {
+  for (const candidateId of getSystemDocumentTemplateLoadCandidates(templateId)) {
+    const template = await loadDocumentTemplate(candidateId)
+    if (template) return template
+  }
+  return undefined
 }
 
 export function openSystemDocument({

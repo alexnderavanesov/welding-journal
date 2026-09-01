@@ -119,6 +119,7 @@ import {
   getPreferredLnkResultStage,
 } from '@/lib/lnk-workflow-routing'
 import { buildWorkflowContextMenuItems } from '@/lib/workflow-context-menu-items'
+import { buildPstoCycleHistoryContextMenuItem } from '@/lib/psto-report-context-menu'
 import {
   getPreHeatTreatmentControl,
   getPreHeatTreatmentControls,
@@ -138,13 +139,12 @@ import {
   usePstoTvmtCorrectionWithLaterCycleRemovalMutation,
 } from '@/lib/use-psto-cycle-correction-mutation'
 import { getPstoCycleStageLabel } from '@/lib/psto-cycle-corrections'
-import { hasPrimaryPstoCycle } from '@/lib/psto-cycle'
 import {
   canCreateRepeatPstoCycle,
   getCurrentPstoCycle,
   getPstoTvmtWorkflowState,
 } from '@/lib/tvmt-cycle'
-import { withOfficialJointStatus } from '@/lib/report-control-state'
+import { withOfficialJoint } from '@/lib/report-control-state'
 import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
 import {
   getLnkRequestDocumentIdentities,
@@ -1384,12 +1384,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setLnkFilters,
   })
   const { sort: activeReportSort, setSort: setActiveReportSort } = useReportSortState(activeReport)
-  const {
-    reportReturnContext,
-    captureReportContext,
-    clearReportContext,
-    restoreReportContext,
-  } = useReportNavigationContext({
+  const { captureReportContext } = useReportNavigationContext({
     activeReport,
     columnFilters,
     heatTreatmentFilters,
@@ -1397,7 +1392,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     selectedWeldingJournalIds,
     selectedHeatTreatmentIds,
     selectedLnkIds,
-    setActiveReport,
     setColumnFilters,
     setHeatTreatmentFilters,
     setLnkFilters,
@@ -1649,7 +1643,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   async function changeActiveReport(report: Parameters<typeof changeActiveReportUnsafe>[0]) {
     setMessage(null)
-    clearReportContext()
+    captureReportContext(report)
     changeActiveReportUnsafe(report)
   }
 
@@ -2072,7 +2066,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setLnkOfficialityDraft({
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
-      status: '',
+      officiality: '',
     })
     setIsLnkOfficialityModalOpen(true)
   }
@@ -2194,7 +2188,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setLnkOfficialityDraft({
       rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
       search: '',
-      status: '',
+      officiality: '',
     })
     setIsLnkOfficialityModalOpen(true)
   }
@@ -2668,11 +2662,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       ))
       const hasTvmtRequestCandidate = contextRows.some(canCreateTvmtRequest)
       const hasTvmtResultCandidate = contextRows.some(canAddTvmtResult)
-      const hasPstoHistory = contextRows.some(hasPrimaryPstoCycle)
-      const openPstoHistory = () => {
-        setIsPstoResultRegistryAll(false)
-        openPstoResultManagerForRows(contextRows)
-      }
+      const pstoCycleHistoryItem = buildPstoCycleHistoryContextMenuItem({
+        rows: contextRows,
+        onOpen: (rows) => {
+          setIsPstoResultRegistryAll(false)
+          openPstoResultManagerForRows(rows)
+        },
+      })
+      const hasPstoHistory = !pstoCycleHistoryItem.disabled
+      items.push(pstoCycleHistoryItem)
       items.push(...buildWorkflowContextMenuItems({
         requests: [
           {
@@ -2738,14 +2736,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
             onSelect: openAllPstoHistory,
           },
         ],
-        editing: hasPstoHistory
-          ? [{
-              id: 'psto-cycle-edit',
-              label: isGroupAction ? `ПСТО и ТВМТ выбранных (${contextRows.length})` : 'ПСТО и ТВМТ этого стыка',
-              icon: Pencil,
-              onSelect: openPstoHistory,
-            }]
-          : [],
+        editing: [],
       }))
     }
 
@@ -3041,7 +3032,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onClose: () => setIsImportDialogOpen(false),
     onImportRecords: (records: WeldInput[], skippedRows: number) =>
       runProtectedImport('импорт новых данных', async () => {
-        const result = await importMutation.mutateAsync(records.map(withOfficialJointStatus))
+        const result = await importMutation.mutateAsync(records.map(withOfficialJoint))
         setMessage(`Добавлено ${result.inserted}, пропущено служебных строк: ${skippedRows}`)
       }),
     onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) =>
@@ -3068,7 +3059,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setLnkOfficialityDraft({
       rowIds: new Set(rowIds),
       search: '',
-      status: '',
+      officiality: '',
     })
     setIsLnkOfficialityModalOpen(true)
     setMessage(`Открыта официальность по клейму ${task.stamp} на линии ${task.line}`)
@@ -3168,9 +3159,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.availableRequestCount : undefined,
     welderStamps,
     filteredWelderStamps,
-    returnContext: reportReturnContext,
-    onReturnContext: restoreReportContext,
-    onDismissReturnContext: clearReportContext,
   })
   const reportNotificationToastProps = {
     message: reportLoadErrorMessage ?? lnkNotice ?? message ?? undefined,
@@ -3293,7 +3281,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (!editing) return
     const saveValue: WeldDraft = {
       ...value,
-      status: editing.record.status ?? null,
+      officiality: editing.record.officiality ?? null,
       id: editing.record.id,
     }
     if (!saveValue.id) {
@@ -3688,7 +3676,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestNameDraft: managedLnkRequestNameDraft,
       isManagerPending: lnkRequestManagerMutation.isPending,
       isCorrectionPending: lnkRequestCorrectionMutation.isPending,
-      canOpenDocument: availableSystemDocumentTypes.has('lnkRequest'),
+      canOpenDocument: (fieldKey) => {
+        const templateId = getSystemDocumentTemplateIdForField(fieldKey)
+        return Boolean(templateId && availableSystemDocumentTypes.has(templateId))
+      },
       onClose: closeLnkRequestManager,
       onStageChange: () => openPreHeatTreatmentResultRegistry({
         rowIds: managedLnkRequestRows.map((row) => row.id),

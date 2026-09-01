@@ -42,6 +42,8 @@ const BASE_WELDING_JOURNAL_FIELD_KEYS: WeldFieldKey[] = [
   'materialNormativeDocument2',
   'materialCertificateNumber1',
   'materialCertificateNumber2',
+  'elementLength1',
+  'elementLength2',
   'weldingMethod',
   'connectionType',
   'materialGroup',

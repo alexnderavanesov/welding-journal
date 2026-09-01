@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 
 import type { ActiveReport } from '@/lib/home-state'
-import { FIELD_BY_KEY, isVirtualWeldField } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, isVirtualWeldField, migrateLegacyWeldFieldKey } from '@/lib/weld-fields'
 import type { WeldReportKind, WeldSort } from '@/server/weld-contracts'
 
 const STORAGE_KEY = 'welding-report-sort:v1'
@@ -54,6 +54,8 @@ function isWeldReportKind(value: unknown): value is WeldReportKind {
 function isWeldSort(value: unknown): value is WeldSort {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const candidate = value as Partial<WeldSort>
-  const field = typeof candidate.fieldKey === 'string' ? FIELD_BY_KEY.get(candidate.fieldKey as never) : undefined
+  const normalizedFieldKey = migrateLegacyWeldFieldKey(candidate.fieldKey)
+  const field = FIELD_BY_KEY.get(normalizedFieldKey as never)
+  if (field) candidate.fieldKey = normalizedFieldKey as WeldSort['fieldKey']
   return Boolean(field) && !isVirtualWeldField(field) && (candidate.direction === 'asc' || candidate.direction === 'desc')
 }

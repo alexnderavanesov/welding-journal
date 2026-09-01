@@ -1,0 +1,1 @@
+export const REPORT_RIGHT_EDGE_GUTTER_PX = 12

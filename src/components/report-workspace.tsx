@@ -37,12 +37,12 @@ export function ReportWorkspace({
       />
 
       <div
-        className={`min-w-0 bg-[#f4f7f9] py-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
+        className={`min-w-0 bg-[#f4f7f9] pt-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
           navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72'
         }`}
       >
         <div
-          className={`space-y-4 bg-[#f4f7f9] ${
+          className={`space-y-4 bg-[#f4f7f9] pb-5 ${
             isFluidReport ? 'min-w-0 w-full' : 'min-w-full w-max'
           }`}
           style={isFluidReport ? undefined : { minWidth: registerMinWidth }}

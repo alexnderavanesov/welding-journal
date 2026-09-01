@@ -7,6 +7,7 @@ import {
   buildSystemNameWithNumber,
   extractSystemNameNumber,
   getPstoConclusionDateParts,
+  getRequestConclusionNamingKind,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -111,6 +112,15 @@ export function isSystemDocumentSourceKind(value: unknown): value is SystemDocum
 
 export function getSystemDocumentProfile(type: SystemDocumentType) {
   return SYSTEM_DOCUMENT_PROFILES[type]
+}
+
+export function getSystemDocumentLabel(
+  reference: Pick<SystemDocumentReference, 'type' | 'methodCode'>,
+) {
+  const isTvmt = normalizeText(reference.methodCode).toLocaleUpperCase('ru-RU') === 'ТВМТ'
+  if (isTvmt && reference.type === 'lnkRequest') return 'Заявка ТВМТ'
+  if (isTvmt && reference.type === 'lnkConclusion') return 'Заключение ТВМТ'
+  return getSystemDocumentProfile(reference.type).label
 }
 
 export function getSystemDocumentTargetReport(
@@ -273,6 +283,7 @@ export function buildSystemDocumentSummaries(
           type,
           title: row[method.requestKey],
           date: row[method.requestDateKey],
+          ...(method.code === 'ТВМТ' ? { methodCode: method.code } : {}),
         })
         if (reference) addSummaryPosition(groups, reference, row, method.code)
       }
@@ -315,7 +326,7 @@ export function createSystemDocumentTemplateContext(
 ): SystemDocumentTemplateContext {
   return {
     ...reference,
-    label: getSystemDocumentProfile(reference.type).label,
+    label: getSystemDocumentLabel(reference),
     number: getSystemDocumentNumber(reference, settings),
     methodCodes,
   }
@@ -351,12 +362,13 @@ function getSystemDocumentRawNumberCandidates(
         line: reference.lines.join(', '),
       }
     : baseContext
-  const namingSettings = settings[reference.type]
+  const namingKind = getRequestConclusionNamingKind(reference)
+  const namingSettings = settings[namingKind]
   const patterns = Array.from(
     new Set([
       namingSettings.systemPattern,
       ...(namingSettings.systemPatternHistory ?? []),
-      REQUEST_CONCLUSION_DEFAULT_SETTINGS[reference.type].systemPattern,
+      REQUEST_CONCLUSION_DEFAULT_SETTINGS[namingKind].systemPattern,
     ]),
   )
   const candidates = patterns
@@ -419,7 +431,7 @@ export function buildCurrentSystemDocumentName(
         methodCode: reference.methodCode,
       }
   return buildSystemNameWithNumber(
-    settings[reference.type].systemPattern,
+    settings[getRequestConclusionNamingKind(reference)].systemPattern,
     addRowsToNamingPatternContext(baseContext, rows),
     number,
   )
@@ -441,7 +453,10 @@ export function buildSystemDocumentRenameRows(
     }
 
     if (reference.type === 'lnkRequest') {
-      for (const method of LNK_METHODS) renameField(method.requestKey, method.requestDateKey)
+      const requestMethods = reference.methodCode === 'ТВМТ'
+        ? LNK_METHODS.filter((method) => method.code === 'ТВМТ')
+        : LNK_METHODS.filter((method) => method.code !== 'ТВМТ')
+      for (const method of requestMethods) renameField(method.requestKey, method.requestDateKey)
     } else if (reference.type === 'lnkConclusion') {
       const method = LNK_METHODS.find((candidate) => candidate.code === reference.methodCode)
       if (method) renameField(method.conclusionKey, method.conclusionDateKey)
@@ -573,7 +588,7 @@ function finalizeSystemDocumentSummary(group: MutableSystemDocumentSummary): Sys
     ...(group.cycleSequences?.length ? { cycleSequences: normalizeCycleSequences(group.cycleSequences) } : {}),
     id: getSystemDocumentId(group),
     documentId: group.documentId ?? 0,
-    label: getSystemDocumentProfile(group.type).label,
+    label: getSystemDocumentLabel(group),
     fileName: `${sanitizeFileName(group.title)}.xlsx`,
     methodCodes: sortValues(group.methodCodes),
     rowCount: group.rowIds.size,

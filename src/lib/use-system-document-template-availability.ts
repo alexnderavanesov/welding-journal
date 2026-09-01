@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { DOCUMENT_TEMPLATE_STORAGE_EVENT } from '@/lib/document-storage-events'
 import {
-  isSystemDocumentTemplateId,
+  resolveAvailableSystemDocumentTemplateIds,
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import { listRemoteDocumentTemplateIds } from '@/server/document-templates-api'
@@ -39,11 +39,7 @@ export function useSystemDocumentTemplateAvailability({
   }, [queryClient])
 
   return useMemo<ReadonlySet<SystemDocumentTemplateId>>(
-    () =>
-      new Set(
-        (availabilityQuery.data ?? [])
-          .filter(isSystemDocumentTemplateId),
-      ),
+    () => resolveAvailableSystemDocumentTemplateIds(availabilityQuery.data ?? []),
     [availabilityQuery.data],
   )
 }

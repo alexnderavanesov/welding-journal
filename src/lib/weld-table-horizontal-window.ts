@@ -1,4 +1,9 @@
-import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
+import {
+  getTrailingWeldTableExtraColumns,
+  getWeldTableExtraColumnsAfterSection,
+  getWeldTableExtraColumnsBeforeSection,
+  type WeldTableExtraColumn,
+} from '@/lib/weld-table-extra-columns'
 import { getWeldColumnWidth } from '@/lib/weld-column-widths'
 import type { WeldField, WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldTableDisplaySection } from '@/lib/weld-table-sections'
@@ -42,8 +47,8 @@ export function buildWeldTableFieldSpans({
   let offset = leadingWidth
 
   for (const section of sections) {
-    for (const column of extraColumns) {
-      if (column.insertBeforeSection === section.section) offset += column.width
+    for (const column of getWeldTableExtraColumnsBeforeSection(extraColumns, section.section)) {
+      offset += column.width
     }
     for (const field of section.fields) {
       const width = getWeldColumnWidth(field.key)
@@ -54,6 +59,9 @@ export function buildWeldTableFieldSpans({
         sticky: isStickyWeldTableField(field.key),
       })
       offset += width
+    }
+    for (const column of getWeldTableExtraColumnsAfterSection(extraColumns, section.section)) {
+      offset += column.width
     }
   }
 
@@ -103,8 +111,7 @@ export function buildWeldTableRenderColumns({
   }
 
   for (const section of sections) {
-    for (const column of extraColumns) {
-      if (column.insertBeforeSection !== section.section) continue
+    for (const column of getWeldTableExtraColumnsBeforeSection(extraColumns, section.section)) {
       flushSpacer()
       columns.push({ kind: 'extra', key: `extra-${column.key}`, column })
     }
@@ -122,21 +129,16 @@ export function buildWeldTableRenderColumns({
         isSectionEnd: fieldIndex === section.fields.length - 1,
       })
     })
+
+    for (const column of getWeldTableExtraColumnsAfterSection(extraColumns, section.section)) {
+      flushSpacer()
+      columns.push({ kind: 'extra', key: `extra-${column.key}`, column })
+    }
   }
 
   flushSpacer()
-  for (const column of getTrailingExtraColumns(extraColumns, sections)) {
+  for (const column of getTrailingWeldTableExtraColumns(extraColumns, sections)) {
     columns.push({ kind: 'extra', key: `extra-${column.key}`, column })
   }
   return columns
-}
-
-function getTrailingExtraColumns(
-  columns: WeldTableExtraColumn[],
-  sections: WeldTableDisplaySection[],
-) {
-  const sectionNames = new Set(sections.map((section) => section.section))
-  return columns.filter(
-    (column) => !column.insertBeforeSection || !sectionNames.has(column.insertBeforeSection),
-  )
 }

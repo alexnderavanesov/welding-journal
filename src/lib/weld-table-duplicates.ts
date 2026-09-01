@@ -28,8 +28,8 @@ export function getDuplicateKey(row: WeldInput) {
 }
 
 function isUnofficialJoint(row: WeldInput) {
-  const status = normalizeDuplicateValue(row.status)
-  return status === 'неофициальный'
+  const officiality = normalizeDuplicateValue(row.officiality)
+  return officiality === 'неофициальный'
 }
 
 function normalizeDuplicateValue(value: unknown) {

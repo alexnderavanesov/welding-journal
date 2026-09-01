@@ -27,7 +27,7 @@ export function getJointNextActionTableColumns({
     label: 'Следующее действие',
     width: 340,
     appearance: 'quiet',
-    insertBeforeSection: 'Материалы',
+    insertAfterSection: 'Стык',
     collapsible: true,
     renderCell: (row) => (
       <JointNextActionTableCell

@@ -1,4 +1,8 @@
-import type { WeldFieldKey } from '@/lib/weld-fields'
+import {
+  migrateLegacyWeldFieldKey,
+  migrateLegacyWeldFieldRecordKeys,
+  type WeldFieldKey,
+} from '@/lib/weld-fields'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import type { WeldSort } from '@/server/weld-contracts'
 
@@ -112,7 +116,7 @@ function isFieldVisibleInPreset(fieldKey: string, preset: Exclude<WeldReportColu
   if (preset === 'documents') {
     return /request|conclusion|diagram|document|jsr|checklist|zni/.test(normalized)
   }
-  return /date|request|result|conclusion|psto|tvmt|heattreatment|status/.test(normalized)
+  return /date|request|result|conclusion|psto|tvmt|heattreatment|status|officiality/.test(normalized)
 }
 
 function normalizeSavedViews(value: unknown): SavedWeldReportView[] {
@@ -131,17 +135,18 @@ function normalizeSnapshot(value: WeldReportViewSnapshot): WeldReportViewSnapsho
   return {
     hiddenFieldKeys: normalizeFieldKeys(value.hiddenFieldKeys),
     collapsedSections: normalizeStrings(value.collapsedSections),
-    columnFilters: Object.fromEntries(
-      Object.entries(value.columnFilters ?? {}).filter(([, filter]) => String(filter ?? '').trim()),
-    ),
+    columnFilters: migrateLegacyWeldFieldRecordKeys(Object.fromEntries(
+      Object.entries(value.columnFilters ?? {})
+        .filter(([, filter]) => String(filter ?? '').trim()),
+    )),
     sort: value.sort && (value.sort.direction === 'asc' || value.sort.direction === 'desc')
-      ? { fieldKey: value.sort.fieldKey, direction: value.sort.direction }
+      ? { fieldKey: migrateLegacyWeldFieldKey(value.sort.fieldKey) as WeldFieldKey, direction: value.sort.direction }
       : null,
   }
 }
 
 function normalizeFieldKeys(value: unknown) {
-  return normalizeStrings(value) as WeldFieldKey[]
+  return normalizeStrings(value).map(migrateLegacyWeldFieldKey) as WeldFieldKey[]
 }
 
 function normalizeStrings(value: unknown, fallback: string[] = []) {

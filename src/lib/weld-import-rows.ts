@@ -49,7 +49,7 @@ export function parseWorksheetRows(
     if (!('spoolId' in record)) {
       record.spoolId = null
     }
-    record.status = null
+    record.officiality = null
     record.finalStatus = calculateFinalStatus(record)
     records.push(record)
   }

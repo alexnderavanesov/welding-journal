@@ -16,20 +16,13 @@ import {
   deleteDocumentTemplateFileVersions,
   resolveDocumentTemplateStorageDirectory,
 } from '@/server/document-template-files'
+import { GENERATED_DOCUMENT_TYPES } from '@/lib/generated-document-types'
+import { SYSTEM_DOCUMENT_TEMPLATE_PROFILES } from '@/lib/system-document-template-types'
 import { assertSecurityScope } from '@/server/security-functions'
 
 const DOCUMENT_TEMPLATE_IDS = new Set<DocumentTemplateId>([
-  'weldingJournal',
-  'checklist',
-  'zni',
-  'lnkRequest',
-  'lnkConclusionVik',
-  'lnkConclusionRk',
-  'lnkConclusionUzk',
-  'lnkConclusionPvk',
-  'lnkConclusionOther',
-  'pstoRequest',
-  'pstoConclusion',
+  ...GENERATED_DOCUMENT_TYPES,
+  ...SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => profile.id),
 ])
 const templateStore = createDocumentTemplateFileStore(resolveDocumentTemplateStorageDirectory())
 

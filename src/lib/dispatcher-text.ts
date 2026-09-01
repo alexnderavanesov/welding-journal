@@ -195,5 +195,5 @@ function formatDispatcherTaskText(value: string) {
 }
 
 function isUnofficialDispatcherJoint(row: WeldInput) {
-  return String(row.status ?? '').trim().toLowerCase() === 'неофициальный'
+  return String(row.officiality ?? '').trim().toLowerCase() === 'неофициальный'
 }

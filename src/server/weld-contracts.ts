@@ -13,7 +13,7 @@ export type WeldFilters = {
   pstoRequired?: string
   weldingMethod?: string
   materialGroup?: string
-  status?: string
+  officiality?: string
   finalStatus?: string
   controlMethod?: string
 }

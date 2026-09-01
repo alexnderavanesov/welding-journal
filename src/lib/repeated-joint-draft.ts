@@ -18,7 +18,7 @@ export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string)
   draft.pstoRepeatCycles = []
   restoreRepeatedJointControlAvailability(draft, sourceRow)
   draft.joint = targetJoint
-  draft.status = null
+  draft.officiality = null
   draft.createdAt = new Date().toISOString()
   draft.finalStatus = calculateFinalStatus(draft)
   return draft

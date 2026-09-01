@@ -153,16 +153,52 @@ describe('weld import/export', () => {
     expect(wdiValue).toBe(1.25)
   })
 
-  it('keeps imported joint status official until the dedicated status flow changes it', () => {
-    const status = label('status')
-    const result = parseWorksheetRows([
+  it('keeps element lengths numeric during export and import', () => {
+    const [headers, row] = recordsToVisibleExportMatrix([{
+      joint: 'S13',
+      elementLength1: 1250.5,
+      elementLength2: 840,
+    }])
+
+    expect(row[headers.indexOf(label('elementLength1'))]).toBe(1250.5)
+    expect(row[headers.indexOf(label('elementLength2'))]).toBe(840)
+
+    const imported = parseWorksheetRows([
       FULL_EXCEL_HEADERS,
-      [...FULL_EXCEL_HEADERS.map((header) => (header === label('joint') ? 'S13' : header === status ? 'неофициальный' : null))],
-      [...FULL_EXCEL_HEADERS.map((header) => (header === label('joint') ? 'S14' : header === status ? 'официальный' : null))],
+      FULL_EXCEL_HEADERS.map((header) => {
+        if (header === label('joint')) return 'S14'
+        if (header === label('elementLength1')) return '1250,5'
+        if (header === label('elementLength2')) return 840
+        return null
+      }),
     ])
 
-    expect(result.records[0].status).toBeNull()
-    expect(result.records[1].status).toBeNull()
+    expect(imported.records[0].elementLength1).toBe(1250.5)
+    expect(imported.records[0].elementLength2).toBe(840)
+  })
+
+  it('keeps imported joint officiality official until the dedicated officiality flow changes it', () => {
+    const officiality = label('officiality')
+    const result = parseWorksheetRows([
+      FULL_EXCEL_HEADERS,
+      [...FULL_EXCEL_HEADERS.map((header) => (header === label('joint') ? 'S13' : header === officiality ? 'неофициальный' : null))],
+      [...FULL_EXCEL_HEADERS.map((header) => (header === label('joint') ? 'S14' : header === officiality ? 'официальный' : null))],
+    ])
+
+    expect(result.records[0].officiality).toBeNull()
+    expect(result.records[1].officiality).toBeNull()
+  })
+
+  it('accepts the former Status header while exporting the new Officiality header', () => {
+    const legacyHeaders = FULL_EXCEL_HEADERS.map((header) => header === 'Официальность' ? 'Статус' : header)
+    const result = parseWorksheetRows([
+      legacyHeaders,
+      legacyHeaders.map((header) => header === label('joint') ? 'S15' : header === 'Статус' ? 'неофициальный' : null),
+    ])
+
+    expect(FULL_EXCEL_HEADERS).toContain('Официальность')
+    expect(FULL_EXCEL_HEADERS).not.toContain('Статус')
+    expect(result.records[0].officiality).toBeNull()
   })
 
   it('converts exported yes/no values to booleans', () => {

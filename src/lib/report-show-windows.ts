@@ -28,7 +28,7 @@ import type { WeldField, WeldInput } from '@/lib/weld-fields'
 
 const WAITING_LNK_FIELDS_WITH_STATUS = [
   ...LNK_WAITING_NK_FIELDS,
-  { key: 'status', label: 'Статус', kind: 'text', group: 'ЛНК', visible: true },
+  { key: 'workflowStatus', dbName: '__workflow_status', label: 'Статус', kind: 'text', group: 'ЛНК', visible: true, virtual: true },
 ] as WeldField[]
 
 export function openLnkWaitingNkReportWindow(rows: ReportRow[]) {

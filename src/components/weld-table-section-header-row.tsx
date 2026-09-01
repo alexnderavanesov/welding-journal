@@ -1,5 +1,10 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
+import {
+  getTrailingWeldTableExtraColumns,
+  getWeldTableExtraColumnsAfterSection,
+  getWeldTableExtraColumnsBeforeSection,
+  type WeldTableExtraColumn,
+} from '@/lib/weld-table-extra-columns'
 import { canCollapseSection } from '@/lib/weld-table-section-state'
 import type { WeldField } from '@/lib/weld-fields'
 
@@ -24,18 +29,23 @@ export function WeldTableSectionHeaderRow({
   extraColumns,
   onToggleSection,
 }: WeldTableSectionHeaderRowProps) {
-  const trailingExtraSections = groupExtraColumnsBySection(getTrailingExtraColumns(extraColumns, sections))
+  const trailingExtraSections = groupExtraColumnsBySection(
+    getTrailingWeldTableExtraColumns(extraColumns, sections),
+  )
 
   return (
     <>
       {sections.flatMap((group) => {
         const canCollapse = canCollapseSection(group.fields, alwaysVisibleFieldKeys)
         const canToggle = group.collapsed || canCollapse
-        const insertedExtraSections = groupExtraColumnsBySection(
-          extraColumns.filter((column) => column.insertBeforeSection === group.section),
+        const extraSectionsBefore = groupExtraColumnsBySection(
+          getWeldTableExtraColumnsBeforeSection(extraColumns, group.section),
+        )
+        const extraSectionsAfter = groupExtraColumnsBySection(
+          getWeldTableExtraColumnsAfterSection(extraColumns, group.section),
         )
         return [
-          ...insertedExtraSections.map((extraGroup) => (
+          ...extraSectionsBefore.map((extraGroup) => (
             <ExtraSectionHeader
               key={`extra-${extraGroup.section}`}
               section={extraGroup.section}
@@ -65,6 +75,16 @@ export function WeldTableSectionHeaderRow({
               {getSectionTitle(group.section)}
             </button>
           </th>,
+          ...extraSectionsAfter.map((extraGroup) => (
+            <ExtraSectionHeader
+              key={`extra-${extraGroup.section}`}
+              section={extraGroup.section}
+              colSpan={extraGroup.fields.length}
+              collapsible={extraGroup.fields.some((column) => column.collapsible)}
+              appearance={extraGroup.fields.some((column) => column.appearance === 'quiet') ? 'quiet' : 'default'}
+              onToggleSection={onToggleSection}
+            />
+          )),
         ]
       })}
       {trailingExtraSections.map((group) => (
@@ -140,9 +160,4 @@ function groupExtraColumnsBySection(columns: WeldTableExtraColumn[]) {
     }
   }
   return groups
-}
-
-function getTrailingExtraColumns(columns: WeldTableExtraColumn[], sections: WeldTableSectionGroup[]) {
-  const sectionNames = new Set(sections.map((section) => section.section))
-  return columns.filter((column) => !column.insertBeforeSection || !sectionNames.has(column.insertBeforeSection))
 }

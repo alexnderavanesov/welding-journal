@@ -29,8 +29,8 @@ const WELDING_JOURNAL_FIELD_TOOLTIP =
   'Данные сварочного журнала. Чтобы изменить значение, откройте карточку стыка в разделе «Сварочный журнал».'
 const WDI_TOOLTIP =
   'Значение WDI хранится в сварочном журнале. В пользовательском режиме оно меняется в карточке стыка, а в системном рассчитывается автоматически по текущему правилу проекта.'
-const OFFICIALITY_STATUS_TOOLTIP =
-  'Статус официальности стыка. Меняется действием «Сменить официальность» в разделе «ЛНК» и не редактируется напрямую.'
+const OFFICIALITY_TOOLTIP =
+  'Официальность стыка. Меняется действием «Сменить официальность» в разделе «ЛНК» и не редактируется напрямую.'
 const FINAL_STATUS_TOOLTIP =
   'Итоговый статус рассчитывается автоматически по сварке, назначениям, заявкам, результатам контроля, ПСТО и цепочке стыка.'
 const LNK_REQUEST_TOOLTIP =
@@ -95,7 +95,7 @@ export function getWeldTableReadOnlyFieldTooltip(fieldKey: WeldFieldKey) {
   if (fieldKey === 'zniDocument') return ZNI_DOCUMENT_TOOLTIP
   if (fieldKey === 'controlBasisSummary') return CONTROL_BASIS_SUMMARY_TOOLTIP
   if (fieldKey === 'wdi') return WDI_TOOLTIP
-  if (fieldKey === 'status') return OFFICIALITY_STATUS_TOOLTIP
+  if (fieldKey === 'officiality') return OFFICIALITY_TOOLTIP
   if (fieldKey === 'finalStatus') return FINAL_STATUS_TOOLTIP
   if (getPreHeatTreatmentReportField(fieldKey)) return PRE_HEAT_TREATMENT_LNK_TOOLTIP
   if (LNK_REQUEST_FIELD_KEYS.has(fieldKey)) return LNK_REQUEST_TOOLTIP

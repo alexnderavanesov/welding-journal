@@ -75,7 +75,7 @@ export type LnkOfficialityMutation = {
   isPending: boolean
   mutate: (value: {
     records: WeldRow[]
-    status: 'official' | 'unofficial'
+    officiality: 'official' | 'unofficial'
   }) => void
 }
 

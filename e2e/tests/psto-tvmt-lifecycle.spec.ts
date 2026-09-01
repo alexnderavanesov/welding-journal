@@ -533,7 +533,7 @@ async function seedCancelledCycleJoint() {
     const seed = await client.query<{ id: number }>(`
       insert into weld_joints (
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
-        status, revision_actuality, welding_method, connection_type, material_group,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
         vik_control_basis, psto_required, psto_request, psto_request_date,
         psto_date, heat_treatment_diagram, psto_result, tvmt_request,
@@ -569,7 +569,7 @@ async function seedLateAssignmentJoint() {
     await client.query(`
       insert into weld_joints (
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
-        status, revision_actuality, welding_method, connection_type, material_group,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
         vik_control_basis, vik_request, vik_request_date, vik_result,
         vik_conclusion_date, vik_conclusion, final_status,
@@ -591,7 +591,7 @@ async function seedReactivationLine() {
     await client.query(`
       insert into weld_joints (
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
-        status, revision_actuality, welding_method, connection_type, material_group,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
         vik_control_basis, vik_request, vik_request_date, vik_result,
         vik_conclusion_date, vik_conclusion, psto_required, psto_cancellation_date,
@@ -630,7 +630,7 @@ async function seedLineMoveJoint() {
     await client.query(`
       insert into weld_joints (
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,
-        status, revision_actuality, welding_method, connection_type, material_group,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
         d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
         vik_control_basis, vik_request, vik_request_date, vik_result,
         vik_conclusion_date, vik_conclusion, psto_required, final_status,

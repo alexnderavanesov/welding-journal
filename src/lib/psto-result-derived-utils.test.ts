@@ -23,6 +23,15 @@ describe('PSTO result request identity', () => {
       .toEqual([assignedRow])
   })
 
+  it('keeps a repeat-only legacy row available in the cycle history manager', () => {
+    const repeatOnlyRow = {
+      id: 3,
+      pstoRepeatCycles: [{ id: 30, weldJointId: 3, sequence: 2, pstoRequest: 'ПСТО-002' }],
+    } as WeldRow
+
+    expect(getManagedPstoResultRows([repeatOnlyRow], new Set([3]))).toEqual([repeatOnlyRow])
+  })
+
   it('does not treat derived waiting statuses as stored PSTO results', () => {
     expect(hasPstoResultData({ id: 1, pstoResult: 'ожидает заявку' } as WeldRow)).toBe(false)
     expect(hasPstoResultData({ id: 2, pstoResult: 'ожидает' } as WeldRow)).toBe(false)

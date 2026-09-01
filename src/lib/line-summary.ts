@@ -139,7 +139,7 @@ function getActualRowsFromChain(
   finalStatusContext: FinalStatusRowsContext,
   systemIndexSettings?: SystemIndexSettings,
 ) {
-  const officialRows = chainRows.filter((row) => !isUnofficial(row.status))
+  const officialRows = chainRows.filter((row) => !isUnofficial(row.officiality))
   if (officialRows.length === 0) return []
 
   const goodOfficialRows = officialRows.filter((row) => normalizeStatus(calculateFinalStatusInRows(row, allRows, finalStatusContext)) === 'годен')

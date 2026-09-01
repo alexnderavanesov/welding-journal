@@ -2,7 +2,7 @@ import { memo, type MouseEvent } from 'react'
 
 import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
-import { Select } from '@/components/ui/select'
+import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getPrimaryPstoStartStatusLabel } from '@/lib/lnk-control-stage'
@@ -116,19 +116,14 @@ function TvmtWorkflowRowComponent({
       {mode === 'result' ? (
         <span className="min-w-0" onClick={(event) => event.stopPropagation()}>
           {selected ? (
-            <Select
-              aria-label={`Результат ТВМТ: ${String(row.joint ?? row.id)}`}
+            <WorkflowResultOptionPicker
               value={rowResult}
-              onChange={(event) => onResultChange(row.id, event.target.value)}
-              className="h-9 bg-white"
-            >
-              <option value="">Выберите результат</option>
-              {TVMT_RESULT_OPTIONS.map((result) => (
-                <option key={result} value={result}>{result}</option>
-              ))}
-            </Select>
+              options={TVMT_RESULT_OPTIONS}
+              compact
+              onChange={(result) => onResultChange(row.id, result)}
+            />
           ) : (
-            <span aria-hidden="true" className="block h-9" />
+            <span aria-hidden="true" className="block h-11" />
           )}
         </span>
       ) : null}

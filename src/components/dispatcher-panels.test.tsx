@@ -37,7 +37,7 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.getByLabelText('Диспетчер задач')).not.toHaveClass('max-w-7xl')
     expect(screen.getByLabelText('Диспетчер задач')).toHaveClass('bg-[#eef7fb]/95', 'border-sky-200/80')
     expect(screen.getByLabelText('Диспетчер задач')).toHaveStyle({
-      width: 'calc(100vw - 12px)',
+      width: '100%',
       maxWidth: 'calc(100vw - 12px)',
     })
     const groupSummary = screen.getByLabelText('Краткое описание задач 330-ATM-16-000')
@@ -148,6 +148,10 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.getByText('2 объекта')).toBeInTheDocument()
     expect(screen.getByText('лишних 6')).toBeInTheDocument()
     expect(screen.queryByText('330-ATM-16-000 · ABC1')).not.toBeInTheDocument()
+
+    const codeGroupSummary = screen.getByText('ДЗ-02').closest('summary')
+    expect(codeGroupSummary?.firstElementChild).toHaveClass('w-full')
+    expect(codeGroupSummary?.firstElementChild).not.toHaveClass('mx-auto', 'max-w-[1600px]')
 
     const details = screen.getByText('ДЗ-02').closest('details')
     expect(details).not.toBeNull()

@@ -21,7 +21,7 @@ export function buildLnkWaitingNkRows(rows: WeldInput[]) {
           requestName,
           requestDate: row[method.requestDateKey] ?? '',
           controlMethod: method.code,
-          status: 'ожидает НК',
+          workflowStatus: 'ожидает НК',
         },
       ]
     }),
@@ -41,7 +41,7 @@ export function buildLnkToRequestRows(rows: WeldInput[]) {
       requestName: '',
       requestDate: '',
       controlMethod: method.code,
-      status: 'ожидает заявку',
+      workflowStatus: 'ожидает заявку',
     })),
   )
 }

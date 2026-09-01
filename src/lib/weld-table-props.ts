@@ -26,7 +26,12 @@ const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
   'lnkRequest',
   ...LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => profile.id),
 ])
-const PSTO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>(['pstoRequest', 'pstoConclusion'])
+const PSTO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
+  'pstoRequest',
+  'pstoConclusion',
+  'tvmtRequest',
+  'tvmtConclusion',
+])
 const NO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>()
 const LNK_DEFAULT_COLLAPSED_SECTIONS = new Set(['НК до ТО'])
 

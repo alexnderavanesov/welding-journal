@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
 import { ReportSummaryBar, type ReportSummaryBarProps } from '@/components/report-summary-bar'
 
@@ -22,21 +22,6 @@ describe('ReportSummaryBar', () => {
 
     expect(screen.getByText(/Стыков на ЛНК: 9/)).toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-  })
-
-  it('offers an explicit return without replacing the stable counters', () => {
-    const onReturnContext = vi.fn()
-    render(
-      <ReportSummaryBar
-        {...createProps()}
-        returnContext={{ title: 'Документы' }}
-        onReturnContext={onReturnContext}
-      />,
-    )
-
-    expect(screen.getByText(/Стыков на ЛНК: 9/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Вернуться: Документы' }))
-    expect(onReturnContext).toHaveBeenCalledTimes(1)
   })
 })
 

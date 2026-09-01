@@ -40,7 +40,7 @@ export const WELD_FIELDS = [
   { key: 'joint', dbName: 'joint', label: 'Стык', kind: 'text', group: 'Стык', visible: true },
   { key: 'spool', dbName: 'spool', label: 'Спул', kind: 'text', group: 'Стык' },
   { key: 'spoolId', dbName: 'spool_id', label: 'ID cпула', kind: 'text', group: 'Стык' },
-  { key: 'status', dbName: 'status', label: 'Статус', kind: 'text', group: 'Статусы/отчетность', visible: true },
+  { key: 'officiality', dbName: 'officiality', label: 'Официальность', kind: 'text', group: 'Статусы/отчетность', visible: true },
   { key: 'revisionActuality', dbName: 'revision_actuality', label: 'Актуальность по ИЗМу', kind: 'text', group: 'Статусы/отчетность' },
   { key: 'orderCode1', dbName: 'order_code_1', label: 'Код заказа 1', kind: 'text', group: 'Материал (дополнительно)' },
   { key: 'orderCode2', dbName: 'order_code_2', label: 'Код заказа 2', kind: 'text', group: 'Материал (дополнительно)' },
@@ -58,6 +58,8 @@ export const WELD_FIELDS = [
   { key: 'materialNormativeDocument2', dbName: 'material_normative_document_2', label: 'Нормативный документ материала 2', kind: 'text', group: 'Материал (дополнительно)' },
   { key: 'materialCertificateNumber1', dbName: 'material_certificate_number_1', label: 'Номер сертификата на материал 1', kind: 'text', group: 'Материал (дополнительно)' },
   { key: 'materialCertificateNumber2', dbName: 'material_certificate_number_2', label: 'Номер сертификата на материал 2', kind: 'text', group: 'Материал (дополнительно)' },
+  { key: 'elementLength1', dbName: 'element_length_1', label: 'Длина элемента 1, мм', kind: 'number', group: 'Материал (дополнительно)' },
+  { key: 'elementLength2', dbName: 'element_length_2', label: 'Длина элемента 2, мм', kind: 'number', group: 'Материал (дополнительно)' },
   { key: 'weldingMethod', dbName: 'welding_method', label: 'Способ сварки', kind: 'text', group: 'Сварка', visible: true },
   { key: 'connectionType', dbName: 'connection_type', label: 'Тип соединения', kind: 'text', group: 'Сварка' },
   { key: 'materialGroup', dbName: 'material_group', label: 'Группа материалов', kind: 'text', group: 'Сварка' },
@@ -338,6 +340,8 @@ export const MATERIAL_ADDITIONAL_FIELD_KEYS = [
   'materialNormativeDocument2',
   'materialCertificateNumber1',
   'materialCertificateNumber2',
+  'elementLength1',
+  'elementLength2',
 ] as const satisfies readonly WeldFieldKey[]
 
 export function normalizeHeader(value: unknown) {
@@ -349,6 +353,21 @@ export function normalizeHeader(value: unknown) {
 
 export const FIELD_BY_LABEL = new Map(WELD_FIELDS.map((field) => [normalizeHeader(field.label), field] as const))
 export const FIELD_BY_KEY = new Map(WELD_FIELDS.map((field) => [field.key, field]))
+
+export function migrateLegacyWeldFieldKey(value: unknown) {
+  const fieldKey = String(value ?? '').trim()
+  return fieldKey === 'status' ? 'officiality' : fieldKey
+}
+
+export function migrateLegacyWeldFieldRecordKeys<T>(value: Readonly<Record<string, T>>) {
+  const migrated = Object.fromEntries(
+    Object.entries(value).filter(([fieldKey]) => fieldKey !== 'status'),
+  ) as Record<string, T>
+  if (!Object.hasOwn(migrated, 'officiality') && Object.hasOwn(value, 'status')) {
+    migrated.officiality = value.status
+  }
+  return migrated
+}
 
 export function isVirtualWeldField(field: WeldField | undefined) {
   return field?.virtual === true

@@ -5,20 +5,20 @@ import type { LnkOfficialityCounters } from '@/lib/lnk-officiality-derived-utils
 import type { LnkOfficialityDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-type LnkOfficialityStatus = LnkOfficialityDraftState['status']
+type LnkOfficialityValue = LnkOfficialityDraftState['officiality']
 
 type LnkOfficialitySettingsProps = {
-  status: LnkOfficialityStatus
+  officiality: LnkOfficialityValue
   selectedRows: WeldRow[]
   counters: LnkOfficialityCounters
-  onStatusChange: (status: LnkOfficialityStatus) => void
+  onOfficialityChange: (officiality: LnkOfficialityValue) => void
 }
 
 const OFFICIALITY_OPTIONS = [
   {
     value: 'official' as const,
     title: 'Официальный',
-    description: 'Рабочий статус по умолчанию. В таблице поле остается пустым.',
+    description: 'Официальность по умолчанию. В таблице поле остается пустым.',
     className: 'border-emerald-200 bg-emerald-50 text-emerald-900',
   },
   {
@@ -30,23 +30,23 @@ const OFFICIALITY_OPTIONS = [
 ]
 
 export function LnkOfficialitySettings({
-  status,
+  officiality,
   selectedRows,
   counters,
-  onStatusChange,
+  onOfficialityChange,
 }: LnkOfficialitySettingsProps) {
   return (
     <aside className="space-y-3">
       <section className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-900">1. Статус</h3>
+          <h3 className="text-sm font-semibold text-slate-900">1. Официальность</h3>
           <span className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800">
             ЛНК
           </span>
         </div>
         <div className="space-y-2">
           {OFFICIALITY_OPTIONS.map((option) => {
-            const selected = status === option.value
+            const selected = officiality === option.value
             const unavailable =
               option.value === 'unofficial' &&
               selectedRows.length > 0 &&
@@ -56,7 +56,7 @@ export function LnkOfficialitySettings({
                 key={option.value}
                 type="button"
                 disabled={unavailable}
-                onClick={() => onStatusChange(option.value)}
+                onClick={() => onOfficialityChange(option.value)}
                 className={`w-full rounded-md border p-3 text-left transition-colors ${
                   unavailable
                     ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
@@ -83,7 +83,7 @@ export function LnkOfficialitySettings({
       <section className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">
         <h3 className="mb-2 text-sm font-semibold text-slate-900">2. Что изменится</h3>
         <p className="leading-6">
-          Изменяется только поле <span className="font-semibold text-slate-800">Статус</span>. Заявки, результаты,
+          Изменяется только поле <span className="font-semibold text-slate-800">Официальность</span>. Заявки, результаты,
           заключения и даты не затрагиваются.
         </p>
       </section>

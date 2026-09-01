@@ -20,9 +20,6 @@ type CreateReportSummaryBarPropsOptions = {
   availableLnkRequestRowCount?: number
   welderStamps: WelderStampRecord[]
   filteredWelderStamps: WelderStampRecord[]
-  returnContext?: ReportSummaryBarProps['returnContext']
-  onReturnContext?: ReportSummaryBarProps['onReturnContext']
-  onDismissReturnContext?: ReportSummaryBarProps['onDismissReturnContext']
 }
 
 export function createReportSummaryBarProps({
@@ -41,9 +38,6 @@ export function createReportSummaryBarProps({
   availableLnkRequestRowCount,
   welderStamps,
   filteredWelderStamps,
-  returnContext,
-  onReturnContext,
-  onDismissReturnContext,
 }: CreateReportSummaryBarPropsOptions): ReportSummaryBarProps {
   return {
     activeReport,
@@ -58,8 +52,5 @@ export function createReportSummaryBarProps({
     activeWelderStampCount: welderStamps.filter((record) => !record.archived).length,
     archivedWelderStampCount: welderStamps.filter((record) => record.archived).length,
     filteredWelderStampCount: filteredWelderStamps.length,
-    returnContext,
-    onReturnContext,
-    onDismissReturnContext,
   }
 }

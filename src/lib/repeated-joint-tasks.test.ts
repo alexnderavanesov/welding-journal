@@ -8,9 +8,9 @@ import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 describe('buildRepeatedJointTasks', () => {
   it('creates one official same-name target task for multiple unofficial rejected source rows', () => {
     const rows = [
-      row({ id: 1, joint: 'S2', status: 'неофициальный', rkResult: 'вырез' }),
-      row({ id: 2, joint: 'S2', status: 'неофициальный', pvkResult: 'вырез' }),
-      row({ id: 3, joint: 'S2', status: 'неофициальный', rkResult: 'вырез' }),
+      row({ id: 1, joint: 'S2', officiality: 'неофициальный', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S2', officiality: 'неофициальный', pvkResult: 'вырез' }),
+      row({ id: 3, joint: 'S2', officiality: 'неофициальный', rkResult: 'вырез' }),
     ]
 
     const createTasks = buildRepeatedJointTasks(rows).filter((task) => task.kind === 'create')

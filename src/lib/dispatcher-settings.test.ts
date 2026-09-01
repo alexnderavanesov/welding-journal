@@ -60,11 +60,11 @@ function makePercentageTask(issue: 'missing' | 'excess', title: string): Dispatc
   }
 }
 
-function makeCreateTask(status: string): DispatcherTask {
+function makeCreateTask(officiality: string): DispatcherTask {
   return {
     kind: 'create',
-    key: `create:${status || 'regular'}`,
-    row: { ...row, status },
+    key: `create:${officiality || 'regular'}`,
+    row: { ...row, officiality },
     sourceJoint: 'F1',
     targetJoint: 'F1R1',
     result: 'ремонт',

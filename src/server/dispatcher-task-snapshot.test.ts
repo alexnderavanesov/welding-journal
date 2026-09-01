@@ -26,7 +26,7 @@ describe('dispatcher task snapshot transport', () => {
       subtitleCode: '400',
       line: 'LIN-1',
       joint: 'F1',
-      status: 'ожидает НК',
+      officiality: 'неофициальный',
       weldDate: '2026-07-01',
     })
     expect(task.row.material1).toBeUndefined()
@@ -59,7 +59,7 @@ function weldRow(): WeldRow {
     subtitleCode: '400',
     line: 'LIN-1',
     joint: 'F1',
-    status: 'ожидает НК',
+    officiality: 'неофициальный',
     weldDate: '2026-07-01',
     material1: '09Г2С',
   }

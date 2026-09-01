@@ -69,6 +69,8 @@ import {
 buildFinalStatusRowsContext,
 calculateFinalStatusInRows,
 FIELD_BY_KEY,
+migrateLegacyWeldFieldKey,
+migrateLegacyWeldFieldRecordKeys,
 type WeldFieldKey,
 type WeldInput
 } from '@/lib/weld-fields'
@@ -188,7 +190,7 @@ export const REPORT_DERIVED_FILTER_SELECT = {
   wdi: weldJoints.wdi,
   spool: weldJoints.spool,
   joint: weldJoints.joint,
-  status: weldJoints.status,
+  officiality: weldJoints.officiality,
   finalStatus: weldJoints.finalStatus,
   pstoRequired: weldJoints.pstoRequired,
   pstoCancellationDate: weldJoints.pstoCancellationDate,
@@ -282,7 +284,7 @@ export const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'isometry',
   'sheet',
   'revisionNumber',
-  'status',
+  'officiality',
   'revisionActuality',
   'orderCode1',
   'orderCode2',
@@ -300,6 +302,8 @@ export const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'materialNormativeDocument2',
   'materialCertificateNumber1',
   'materialCertificateNumber2',
+  'elementLength1',
+  'elementLength2',
   'weldingMethod',
   'connectionType',
   'materialGroup',
@@ -1090,7 +1094,7 @@ export async function loadCurrentFinalStatusRowsContext() {
       subtitleCode: weldJoints.subtitleCode,
       line: weldJoints.line,
       joint: weldJoints.joint,
-      status: weldJoints.status,
+      officiality: weldJoints.officiality,
       vikResult: weldJoints.vikResult,
       rkResult: weldJoints.rkResult,
       uzkResult: weldJoints.uzkResult,
@@ -1109,7 +1113,7 @@ export async function loadCurrentFinalStatusRowsContext() {
       )`,
     })
     .from(weldJoints)
-    .where(eq(weldJoints.status, 'неофициальный'))
+    .where(eq(weldJoints.officiality, 'неофициальный'))
   const rowsWithDuplicates = rows.map(({ rejectedDuplicateMethod, ...row }) => rejectedDuplicateMethod
     ? {
         ...row,
@@ -1588,7 +1592,7 @@ export async function listSourceColumnFilterOptions(
 export function normalizeWeldColumnFilterOptionsRequest(data: WeldColumnFilterOptionsRequest | undefined) {
   const request = normalizeWeldPageRequest(data)
   const report = data?.report ?? 'weldingJournal'
-  const fieldKey = String(data?.fieldKey ?? '') as WeldFieldKey
+  const fieldKey = migrateLegacyWeldFieldKey(data?.fieldKey) as WeldFieldKey
 
   return {
     ...request,
@@ -1605,14 +1609,17 @@ export function normalizeWeldPageRequest(
 } {
   const page = Math.max(1, Math.floor(Number(data?.page) || 1))
   const pageSize = normalizeWeldPageSize(data?.pageSize)
-  const columnFilters = Object.fromEntries(
+  const columnFilters = migrateLegacyWeldFieldRecordKeys(Object.fromEntries(
     Object.entries(data?.columnFilters ?? {}).filter(([, value]) => String(value ?? '').trim()),
-  )
+  ))
   const sort = normalizeWeldSort(data?.sort)
-  const { sort: _sort, ...rest } = data ?? {}
+  const source = data as (WeldPageRequest & { status?: string }) | undefined
+  const { sort: _sort, status: legacyOfficiality, ...rest } = source ?? {}
+  const officiality = rest.officiality ?? legacyOfficiality
 
   return {
     ...rest,
+    ...(officiality !== undefined ? { officiality } : {}),
     page,
     pageSize,
     columnFilters,
@@ -1622,8 +1629,9 @@ export function normalizeWeldPageRequest(
 
 export function normalizeWeldSort(value: WeldPageRequest['sort'] | undefined): WeldSort | undefined {
   if (!value || (value.direction !== 'asc' && value.direction !== 'desc')) return undefined
-  if (!FIELD_BY_KEY.has(value.fieldKey) || !getWeldColumn(value.fieldKey)) return undefined
-  return { fieldKey: value.fieldKey, direction: value.direction }
+  const fieldKey = migrateLegacyWeldFieldKey(value.fieldKey) as WeldFieldKey
+  if (!FIELD_BY_KEY.has(fieldKey) || !getWeldColumn(fieldKey)) return undefined
+  return { fieldKey, direction: value.direction }
 }
 
 export function normalizeWeldPageSize(value: unknown): WeldPageSize {
@@ -1702,7 +1710,7 @@ export function buildDerivedReportCacheKey(
     pstoRequired: filters.pstoRequired ?? '',
     weldingMethod: filters.weldingMethod ?? '',
     materialGroup: filters.materialGroup ?? '',
-    status: filters.status ?? '',
+    officiality: filters.officiality ?? '',
     finalStatus: filters.finalStatus ?? '',
     controlMethod: filters.controlMethod ?? '',
     columnFilters: filters.columnFilters ?? {},

@@ -27,7 +27,7 @@ export default async function globalSetup() {
         isometry,
         joint,
         spool,
-        status,
+        officiality,
         revision_actuality,
         welding_method,
         connection_type,

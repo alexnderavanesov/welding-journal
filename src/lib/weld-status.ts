@@ -56,7 +56,7 @@ export function buildFinalStatusRowsContext(rows: readonly WeldInput[]): FinalSt
   const rejectedUnofficialSameNameRepairKeys = new Set<string>()
 
   for (const row of rows) {
-    if (!isUnofficialStatus(row.status) || !hasRejectedControlResult(row)) continue
+    if (!isUnofficialStatus(row.officiality) || !hasRejectedControlResult(row)) continue
     const key = getSameNameRejectedRepairLookupKey(row)
     if (key) rejectedUnofficialSameNameRepairKeys.add(key)
   }
@@ -184,7 +184,7 @@ function getPendingWeldFinalStatus(record: WeldInput) {
 }
 
 function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows: readonly WeldInput[], context?: FinalStatusRowsContext) {
-  if (hasText(record.weldDate) || isUnofficialStatus(record.status)) return false
+  if (hasText(record.weldDate) || isUnofficialStatus(record.officiality)) return false
   const joint = String(record.joint ?? '').trim()
   if (!joint) return false
 
@@ -201,7 +201,7 @@ function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows
   return rows.some((row) => {
     if (row === record) return false
     if (record.id !== undefined && row.id !== undefined && record.id === row.id) return false
-    if (!isUnofficialStatus(row.status) || !hasRejectedControlResult(row)) return false
+    if (!isUnofficialStatus(row.officiality) || !hasRejectedControlResult(row)) return false
     const identity = getSameNameChainIdentity(row)
     return identity === targetIdentity && normalizeJointChainPart(row.joint) === normalizeJointChainPart(joint)
   })

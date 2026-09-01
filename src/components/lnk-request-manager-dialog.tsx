@@ -54,7 +54,7 @@ export type LnkRequestManagerDialogProps = {
   requestNameDraft: string
   isManagerPending: boolean
   isCorrectionPending: boolean
-  canOpenDocument: boolean
+  canOpenDocument: (fieldKey: LnkRequestMethod['requestKey']) => boolean
   onClose: () => void
   onStageChange?: () => void
   onChangeRequest: (request: RequestDocumentIdentity) => void
@@ -185,8 +185,8 @@ export function LnkRequestManagerDialog({
       : null
     const documentReason = !context.row || !context.method
       ? 'В заявке нет позиций'
-      : !canOpenDocument
-        ? 'Сначала загрузите шаблон заявки ЛНК в настройках документов'
+      : !canOpenDocument(context.method.requestKey)
+        ? 'Для этого вида контроля нет доступного шаблона заявки'
         : null
 
     onChangeRequest(request)
@@ -237,6 +237,13 @@ export function LnkRequestManagerDialog({
       onOpenPstoHistory,
     }))
   }
+
+  const selectedDocumentMethod = selectedIdentity
+    ? getRequestContext(selectedIdentity).method
+    : undefined
+  const canOpenSelectedDocument = Boolean(
+    selectedDocumentMethod && canOpenDocument(selectedDocumentMethod.requestKey),
+  )
 
   return (
     <WorkflowDialogShell variant="manager">
@@ -391,8 +398,8 @@ export function LnkRequestManagerDialog({
                         const context = getRequestContext(selectedIdentity)
                         if (context.row && context.method) onOpenDocument(context.row, context.method.requestKey)
                       }}
-                      disabled={!canOpenDocument || requestRows.length === 0}
-                      title={!canOpenDocument ? 'Сначала загрузите шаблон заявки ЛНК в настройках документов' : undefined}
+                      disabled={!canOpenSelectedDocument || requestRows.length === 0}
+                      title={!canOpenSelectedDocument ? 'Для этого вида контроля нет доступного шаблона заявки' : undefined}
                     >
                       <FileSpreadsheet className="mr-2 h-4 w-4" />
                       Открыть документ

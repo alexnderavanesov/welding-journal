@@ -56,4 +56,34 @@ describe('WeldTable header layout', () => {
     expect(filterMenu).toHaveClass('fixed')
     expect(filterMenu?.parentElement).toBe(document.body)
   })
+
+  it('keeps task panels and the table on one right edge with a visible gutter', () => {
+    const hiddenFieldKeys = new Set(
+      VISIBLE_FIELDS
+        .map((field) => field.key as WeldFieldKey)
+        .filter((fieldKey) => fieldKey !== 'line'),
+    )
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <WeldTable
+          rows={[{ id: 1, line: '330-P1' } as WeldRow]}
+          columnFilters={{}}
+          onColumnFiltersChange={vi.fn()}
+          readOnly
+          hiddenFieldKeys={hiddenFieldKeys}
+          reportTaskPanels={<div data-testid="report-task-panels">Диспетчер</div>}
+        />
+      </QueryClientProvider>,
+    )
+
+    const layout = container.querySelector<HTMLElement>('[data-report-table-layout]')
+    const taskPanelsFrame = container.querySelector<HTMLElement>('[data-report-task-panels-frame]')
+    const tableFrame = container.querySelector<HTMLElement>('[data-report-table-frame]')
+
+    expect(taskPanelsFrame?.style.width).toBe(tableFrame?.style.width)
+    expect(Number.parseFloat(layout?.style.width ?? '0')).toBe(
+      Number.parseFloat(tableFrame?.style.width ?? '0') + 12,
+    )
+  })
 })

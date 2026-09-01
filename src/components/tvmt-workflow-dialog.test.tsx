@@ -34,8 +34,8 @@ function renderDialog(
     defaultOptions: { queries: { retry: false } },
   })
   queryClient.setQueryData(SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY, {
-    lnkRequest: 10,
-    lnkConclusionOther: 20,
+    tvmtRequest: 10,
+    tvmtConclusion: 20,
   })
   const renderTree = () => (
     <QueryClientProvider client={queryClient}>
@@ -108,8 +108,16 @@ describe('TvmtWorkflowDialog', () => {
     }))
 
     expect(screen.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /Результат ТВМТ/ })).toHaveValue('')
+    const goodResult = screen.getByRole('button', { name: 'годен' })
+    const failedResult = screen.getByRole('button', { name: 'не годен' })
+    expect(goodResult).toHaveAttribute('aria-pressed', 'false')
+    expect(failedResult).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
+
+    fireEvent.click(failedResult)
+
+    expect(failedResult).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Все результаты' })).toBeEnabled()
   })
 

@@ -54,7 +54,7 @@ export const filterKeys = [
   'pstoRequired',
   'weldingMethod',
   'materialGroup',
-  'status',
+  'officiality',
   'finalStatus',
 ] as const
 

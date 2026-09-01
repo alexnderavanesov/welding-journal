@@ -240,6 +240,19 @@ describe('weld server pagination helpers', () => {
     expect(normalizeWeldPageRequest({ page: 2.9, pageSize: WELD_PAGE_ALL_SIZE }).page).toBe(2)
   })
 
+  it('migrates the legacy status filter and sort key at the server boundary', () => {
+    const normalized = normalizeWeldPageRequest({
+      status: 'неофициальный',
+      columnFilters: { status: 'неофициальный' },
+      sort: { fieldKey: 'status', direction: 'asc' },
+    } as unknown as Parameters<typeof normalizeWeldPageRequest>[0])
+
+    expect(normalized.officiality).toBe('неофициальный')
+    expect(normalized).not.toHaveProperty('status')
+    expect(normalized.columnFilters).toEqual({ officiality: 'неофициальный' })
+    expect(normalized.sort).toEqual({ fieldKey: 'officiality', direction: 'asc' })
+  })
+
   it('checks the dispatcher index only for dispatcher-backed column options', () => {
     expect(shouldEnsureDispatcherTaskIndexForColumnFilter('dispatcherTasks', {})).toBe(true)
     expect(shouldEnsureDispatcherTaskIndexForColumnFilter('line', {
@@ -393,6 +406,14 @@ describe('weld server pagination helpers', () => {
         [DISPATCHER_TASK_FILTER_KEY]: filters[DISPATCHER_TASK_FILTER_KEY],
         projectTitle: 'Риформинг',
       },
+    })
+  })
+
+  it('migrates the legacy status column in the server import scope', () => {
+    expect(normalizeWeldImportScopeRequest({
+      columnFilters: { status: 'неофициальный' },
+    })).toEqual({
+      columnFilters: { officiality: 'неофициальный' },
     })
   })
 

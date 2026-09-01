@@ -686,7 +686,7 @@ describe('buildStatisticsSummary', () => {
         line: 'LIN-243-11-3321',
         joint: 'S2',
         weldDate: '2026-07-03',
-        status: 'неофициальный',
+        officiality: 'неофициальный',
         hasRk: 'да',
         rkResult: 'вырез',
       },

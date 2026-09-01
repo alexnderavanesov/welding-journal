@@ -2,6 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   addRowsToNamingPatternContext,
   buildSystemNameWithNumber,
+  getRequestConclusionNamingKind,
   getPstoConclusionDateParts,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
@@ -157,7 +158,7 @@ function buildGroupName({
         ...(methodCode ? { methodCode } : {}),
       }
   return buildSystemNameWithNumber(
-    settings[type].systemPattern,
+    settings[getRequestConclusionNamingKind({ type, methodCode })].systemPattern,
     addRowsToNamingPatternContext(baseContext, group.rows),
     Math.max(1, Math.floor(nextNumber ?? 1)) + groupIndex,
   )

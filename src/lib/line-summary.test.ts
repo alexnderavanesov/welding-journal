@@ -6,8 +6,8 @@ import { buildLineSummary } from '@/lib/line-summary'
 describe('buildLineSummary', () => {
   it('does not count chain predecessors before the good official joint', () => {
     const rows = [
-      makeRow(1, { joint: 'S2', status: 'неофициальный', weldDate: '2026-07-01', rkResult: 'вырез' }),
-      makeRow(2, { joint: 'S2', status: 'неофициальный', weldDate: '2026-07-02', rkResult: 'вырез' }),
+      makeRow(1, { joint: 'S2', officiality: 'неофициальный', weldDate: '2026-07-01', rkResult: 'вырез' }),
+      makeRow(2, { joint: 'S2', officiality: 'неофициальный', weldDate: '2026-07-02', rkResult: 'вырез' }),
       makeRow(3, { joint: 'S2', weldDate: '2026-07-03', rkResult: 'вырез' }),
       makeRow(4, { joint: 'S2W1', weldDate: '2026-07-04', rkResult: 'годен', wdi: '2.5' }),
     ]

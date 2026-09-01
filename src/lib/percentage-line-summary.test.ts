@@ -419,7 +419,7 @@ describe('buildPercentageLineSummaries', () => {
       makeRow(1, { joint: 'S1', hasRk: 'да' }),
       makeRow(2, { joint: 'S2', rkResult: 'вырез' }),
       makeRow(3, { joint: 'S3', hasUzk: 'дополнительный' }),
-      makeRow(4, { joint: 'S4', status: 'неофициальный' }),
+      makeRow(4, { joint: 'S4', officiality: 'неофициальный' }),
       makeRow(5, { joint: 'S5', revisionActuality: 'не актуален' }),
       makeRow(6, { joint: 'S6' }),
     ]
