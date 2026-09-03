@@ -84,9 +84,20 @@ export function buildJointNextActions(
 
   const directAction = buildDirectWorkflowAction(row)
   if (directAction) return [directAction, ...taskActions]
-  if (taskActions.length > 0) return taskActions
 
   const status = getJointStatusLabel(row)
+  if (
+    row.chainContinuation &&
+    (status === 'не годен' || status === 'не годен по дублю')
+  ) {
+    return [
+      buildChainContinuationAction(row),
+      ...taskActions,
+    ]
+  }
+
+  if (taskActions.length > 0) return taskActions
+
   if (status === 'годен') {
     return [{
       key: `complete:${row.id}`,
@@ -102,7 +113,7 @@ export function buildJointNextActions(
       key: `rejected:${row.id}`,
       kind: 'blocked',
       title: 'Ожидается решение по негодному результату',
-      description: 'Проверьте задачи диспетчера: система должна предложить следующий R/W-стык либо проверку цепочки.',
+      description: 'Диспетчер должен предложить следующий R/W-стык или показать конкретное нарушение последовательности стыков.',
       tone: 'warning',
     }]
   }
@@ -116,6 +127,36 @@ export function buildJointNextActions(
       : 'Следующее профильное действие не определено. Проверьте назначения, документы и активные ДЗ/ЗВ ниже.',
     tone: 'warning',
   }]
+}
+
+function buildChainContinuationAction(row: WeldRow): JointNextAction {
+  const continuation = row.chainContinuation!
+  const targets = continuation.targetJoints.join(' + ')
+  if (continuation.kind === 'coil') {
+    return {
+      key: `chain-continuation:${row.id}:coil`,
+      kind: 'complete',
+      title: 'Цепочка продолжена катушкой',
+      description: `Решение принято, стыки ${targets} созданы. Дальнейшая работа ведется по ним.`,
+      tone: 'success',
+    }
+  }
+  if (continuation.kind === 'official-joint') {
+    return {
+      key: `chain-continuation:${row.id}:official`,
+      kind: 'complete',
+      title: `Цепочка продолжена официальным стыком ${targets}`,
+      description: 'Неофициальный результат учтен, дальнейшая работа ведется по официальной записи стыка.',
+      tone: 'success',
+    }
+  }
+  return {
+    key: `chain-continuation:${row.id}:repeated`,
+    kind: 'complete',
+    title: `Цепочка продолжена стыком ${targets}`,
+    description: 'Следующий стык уже создан, решение по негодному результату принято.',
+    tone: 'success',
+  }
 }
 
 function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {

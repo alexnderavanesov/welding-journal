@@ -137,6 +137,7 @@ function getDispatcherTaskTargetRowIds(task: Exclude<DispatcherTask, { kind: 'we
       )
       .map((row) => row.id)
   }
+  if (task.kind === 'rename') return task.changes.map((change) => change.rowId)
 
   return [task.row.id]
 }

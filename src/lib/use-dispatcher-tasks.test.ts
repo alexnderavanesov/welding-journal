@@ -58,6 +58,22 @@ describe('buildVisibleDispatcherTasks', () => {
     expect([...rowIds].every((id) => Number.isFinite(id))).toBe(true)
   })
 
+  it('highlights every row covered by one atomic chain rename task', () => {
+    const tasks = buildTasks(
+      { ...disabledSettings(), 'repeated-rename': true },
+      {
+        rows: [
+          row({ id: 1, joint: 'S1', rkResult: 'вырез' }),
+          row({ id: 2, joint: 'S1R1', rkResult: 'ремонт' }),
+          row({ id: 3, joint: 'S1R2' }),
+        ],
+      },
+    )
+
+    expect(tasks.repeatedJointTasks).toHaveLength(1)
+    expect(getDispatcherTaskRowIds(tasks.repeatedJointTasks)).toEqual(new Set([2, 3]))
+  })
+
   it('can skip repeated row tasks when a page only needs reminder tasks', () => {
     const tasks = buildTasks(
       {

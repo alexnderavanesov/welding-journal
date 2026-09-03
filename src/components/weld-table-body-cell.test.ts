@@ -37,6 +37,7 @@ describe('getWeldTableReadOnlyFieldTooltip', () => {
   })
 
   it('distinguishes PSTO requests, PSTO results and calculated statuses', () => {
+    expect(getWeldTableReadOnlyFieldTooltip('pstoRequired')).toContain('Меняется только через «Программу ПСТО»')
     expect(getWeldTableReadOnlyFieldTooltip('pstoRequest')).toContain('создании или изменении заявки')
     expect(getWeldTableReadOnlyFieldTooltip('pstoRequestDate')).toContain('создании или изменении заявки')
     expect(getWeldTableReadOnlyFieldTooltip('pstoResult')).toContain('добавлении или редактировании результата')

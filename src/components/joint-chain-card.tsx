@@ -5,6 +5,8 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointChainResultItems, getJointStatusBadgeClass, getJointStatusDisplayLabel } from '@/lib/lnk-status'
 import { getJointTitle } from '@/lib/report-ui-state'
 
+const CHAIN_STATUS_BADGE_CLASS = 'inline-flex min-h-6 max-w-full items-center rounded border px-2 py-0.5 text-xs font-semibold leading-4'
+
 export type JointChainCardProps = {
   row: WeldRow
   index: number
@@ -69,7 +71,7 @@ export function JointChainCard({ row, index, isCurrent, onOpenRow, onSelect }: J
         ) : null}
         <div>
           <div className="mb-1 text-[10px] font-semibold uppercase leading-4 text-slate-400">Итог по стыку</div>
-          <span className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+          <span className={`${CHAIN_STATUS_BADGE_CLASS} ${getJointStatusBadgeClass(row)}`}>
             {getJointStatusDisplayLabel(row)}
           </span>
         </div>
@@ -92,7 +94,7 @@ function ChainStatusGroup({
         {items.map((item) => (
           <span
             key={`${item.stage}:${item.label}:${item.value}`}
-            className={`max-w-full break-words rounded border px-1.5 py-0.5 text-xs font-semibold leading-4 ${item.className}`}
+            className={`${CHAIN_STATUS_BADGE_CLASS} break-words ${item.className}`}
           >
             {item.label}: {item.value}
           </span>

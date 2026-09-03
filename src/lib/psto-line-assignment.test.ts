@@ -106,6 +106,28 @@ describe('PSTO line assignment', () => {
     })
   })
 
+  it('removes derived waiting results when an untreated line is cancelled', () => {
+    const next = buildPstoCancelledRow({
+      row: makeRequestOnlyRow({
+        pstoRequest: null,
+        pstoRequestDate: null,
+        pstoResult: 'ожидает заявку',
+        tvmtResult: 'ожидает ТВМТ',
+      }),
+      controls: [],
+      disposition: 'keepPrimary',
+      cancellationDate: '2026-08-09',
+      cancellationBasis: '',
+    })
+
+    expect(next).toMatchObject({
+      pstoRequired: 'отменен',
+      pstoRequest: null,
+      pstoResult: null,
+      tvmtResult: null,
+    })
+  })
+
   it('drops an unstarted repeat request but preserves a physically started repeat during cancellation', () => {
     const requestOnly = {
       id: 21,

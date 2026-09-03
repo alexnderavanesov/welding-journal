@@ -1,17 +1,22 @@
-import type { RepeatedJointTask } from '@/lib/dispatcher-types'
+import type { JointChainContinuation, RepeatedJointTask } from '@/lib/dispatcher-types'
 
 // Increment when dispatcher rules change in a way that requires existing rows
 // to be recalculated without a corresponding database mutation.
-export const DISPATCHER_TASK_CALCULATION_VERSION = 19
+export const DISPATCHER_TASK_CALCULATION_VERSION = 22
 
 type DispatcherTaskIndexPayload = {
   version: number
+  chainContinuations: JointChainContinuation[]
   tasks: RepeatedJointTask[]
 }
 
-export function serializeDispatcherTaskIndexPayload(tasks: RepeatedJointTask[]) {
+export function serializeDispatcherTaskIndexPayload(
+  tasks: RepeatedJointTask[],
+  chainContinuations: JointChainContinuation[] = [],
+) {
   return JSON.stringify({
     version: DISPATCHER_TASK_CALCULATION_VERSION,
+    chainContinuations,
     tasks,
   } satisfies DispatcherTaskIndexPayload)
 }
@@ -19,14 +24,15 @@ export function serializeDispatcherTaskIndexPayload(tasks: RepeatedJointTask[]) 
 export function parseDispatcherTaskIndexPayload(value: unknown): DispatcherTaskIndexPayload {
   const parsed = parseJson(value)
   if (Array.isArray(parsed)) {
-    return { version: 0, tasks: parsed as RepeatedJointTask[] }
+    return { version: 0, chainContinuations: [], tasks: parsed as RepeatedJointTask[] }
   }
   if (!parsed || typeof parsed !== 'object') {
-    return { version: 0, tasks: [] }
+    return { version: 0, chainContinuations: [], tasks: [] }
   }
   const payload = parsed as Partial<DispatcherTaskIndexPayload>
   return {
     version: typeof payload.version === 'number' ? payload.version : 0,
+    chainContinuations: Array.isArray(payload.chainContinuations) ? payload.chainContinuations : [],
     tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
   }
 }

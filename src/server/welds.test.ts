@@ -17,6 +17,8 @@ import {
   getReportContextSelect,
   getWeldColumnFilterOptionSourceFilters,
   mergeDuplicateControlsIntoRows,
+  mergeEarlyCoilDecisionMetadataIntoRows,
+  mergeJointChainContinuationMetadataIntoRows,
   normalizeWeldPageRequest,
   normalizeWeldImportScopeRequest,
   normalizeWeldPageSize,
@@ -729,6 +731,38 @@ describe('weld server pagination helpers', () => {
 
     expect(rows[0].duplicateControls).toEqual([])
     expect(rows[1].duplicateControls?.map((control) => control.id)).toEqual([10])
+  })
+
+  it('marks only report rows that own an accepted early-coil decision', () => {
+    const rows = mergeEarlyCoilDecisionMetadataIntoRows(
+      [row({ id: 1 }), row({ id: 2 }), row({ id: 3 })],
+      new Set([2]),
+    )
+
+    expect(rows[0]).not.toHaveProperty('earlyCoilDecisionAccepted')
+    expect(rows[1]).toMatchObject({ id: 2, earlyCoilDecisionAccepted: true })
+    expect(rows[2]).not.toHaveProperty('earlyCoilDecisionAccepted')
+  })
+
+  it('attaches a resolved chain continuation only to its exact source row', () => {
+    const continuation = {
+      kind: 'repeated-joint' as const,
+      sourceRowId: 2,
+      sourceJoint: 'S2',
+      targetJoints: ['S2R1'],
+      targetRowIds: [4],
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'LIN-1',
+    }
+    const rows = mergeJointChainContinuationMetadataIntoRows(
+      [row({ id: 1 }), row({ id: 2 }), row({ id: 3 })],
+      [continuation],
+    )
+
+    expect(rows[0]).not.toHaveProperty('chainContinuation')
+    expect(rows[1]).toMatchObject({ id: 2, chainContinuation: continuation })
+    expect(rows[2]).not.toHaveProperty('chainContinuation')
   })
 })
 

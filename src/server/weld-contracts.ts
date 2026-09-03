@@ -1,5 +1,8 @@
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
-import type { PstoWeldLineMoveDisposition } from '@/lib/psto-line-assignment'
+import type {
+  PstoWeldLineMoveDisposition,
+  WeldChainLineMovePlan,
+} from '@/lib/psto-line-assignment'
 import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
@@ -124,6 +127,7 @@ export type WeldMutationScope = 'welding' | 'lnk' | 'psto'
 
 export type WeldPayload = WeldDraft & {
   pstoLineMoveDisposition?: PstoWeldLineMoveDisposition
+  weldChainLineMovePlan?: WeldChainLineMovePlan
   mutationScope?: WeldMutationScope
 }
 

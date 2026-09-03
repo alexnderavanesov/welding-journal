@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useRepeatedJointActionMutations } from '@/lib/use-repeated-joint-action-mutations'
+import type { RepeatedJointRenameTask } from '@/lib/dispatcher-types'
 
 const mocks = vi.hoisted(() => ({
   buildRepeatedJointRows: vi.fn(),
@@ -68,7 +69,7 @@ describe('useRepeatedJointActionMutations', () => {
   })
 
   it('sends the dispatcher rename task for authoritative server validation', async () => {
-    const task = {
+    const task: RepeatedJointRenameTask = {
       kind: 'rename',
       key: 'rename:21',
       row: { id: 21, line: 'LIN-2', joint: 'S2R1' },
@@ -77,8 +78,9 @@ describe('useRepeatedJointActionMutations', () => {
       currentJoint: 'S2R1',
       targetJoint: 'S2W1',
       baseJoint: 'S2',
-    } as const
-    mocks.updateSystemWeldRowOrThrow.mockResolvedValue({ ...task.row, joint: 'S2W1' })
+      changes: [{ rowId: 21, currentJoint: 'S2R1', targetJoint: 'S2W1' }],
+    }
+    mocks.updateSystemWeldRowOrThrow.mockResolvedValue([{ ...task.row, joint: 'S2W1' }])
 
     const { result } = renderMutationHook()
     await act(async () => {

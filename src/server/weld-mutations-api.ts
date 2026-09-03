@@ -25,6 +25,13 @@ export const updateWeldJoint = createServerFn({ method: 'POST' })
     return server.updateWeldJoint({ data })
   })
 
+export const moveWeldJointChain = createServerFn({ method: 'POST' })
+  .validator((data: WeldPayload) => data)
+  .handler(async ({ data }) => {
+    const server = await import('@/server/weld-mutations')
+    return server.moveWeldJointChain({ data })
+  })
+
 export const updateSystemWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: SystemRepeatedJointRenameRequest) => data)
   .handler(async ({ data }) => {

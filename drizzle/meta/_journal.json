@@ -232,6 +232,13 @@
       "when": 1788347755000,
       "tag": "0032_tense_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788457499365,
+      "tag": "0033_mean_captain_stacy",
+      "breakpoints": true
     }
   ]
 }

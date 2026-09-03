@@ -21,6 +21,18 @@ describe('clearCancelledPstoRequestWithoutResult', () => {
     expect(row.pstoResult).toBeNull()
   })
 
+  it('clears a stale waiting status after PSTO is cancelled without a request', () => {
+    const row = clearCancelledPstoRequestWithoutResult({
+      pstoRequired: 'отменен',
+      pstoRequest: null,
+      pstoRequestDate: null,
+      pstoDate: null,
+      pstoResult: 'ожидает заявку',
+    } as WeldRow)
+
+    expect(row.pstoResult).toBeNull()
+  })
+
   it('keeps PSTO request and date when inactive PSTO already has conducted result', () => {
     const row = clearCancelledPstoRequestWithoutResult({
       pstoRequired: null,

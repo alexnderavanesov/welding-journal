@@ -103,6 +103,9 @@ export function getDispatcherTaskRowIds(tasks: DispatcherTask[]) {
   for (const task of tasks) {
     if (task.kind === 'welder-stamp-expiry') continue
     rowIds.add(task.row.id)
+    if (task.kind === 'rename') {
+      task.changes.forEach((change) => rowIds.add(change.rowId))
+    }
     if (task.kind === 'percentage-line-control') {
       task.targetRowIds?.forEach((rowId) => rowIds.add(rowId))
     }

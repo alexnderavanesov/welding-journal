@@ -7,7 +7,12 @@ import { JointChainCard } from '@/components/joint-chain-card'
 import { JointHistoryOverview } from '@/components/joint-history-overview'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
-import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
+import type {
+  RepeatedJointCreateTask,
+  RepeatedJointRenameTask,
+  RepeatedJointTask,
+  WeldRow,
+} from '@/lib/dispatcher-types'
 import { getJointChainSubtitle } from '@/lib/joint-display'
 import {
   getJointBranchRows,
@@ -32,6 +37,12 @@ type JointChainDialogProps = {
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
+  canCreateRepeatedJoint: boolean
+  isRepeatedJointPending: boolean
+  onCreateRepeatedJoint: (task: RepeatedJointCreateTask) => void
+  canRenameRepeatedJoint: boolean
+  isRenameRepeatedJointPending: boolean
+  onRenameRepeatedJoint: (task: RepeatedJointRenameTask) => void
   canCreateEarlyCoil: boolean
   isEarlyCoilPending: boolean
   onCreateEarlyCoil: (row: WeldRow, candidate: WeldJointChainEarlyCoilCandidate) => void
@@ -52,6 +63,12 @@ export function JointChainDialog({
   onOpenDocument,
   onOpenReport,
   onRunNextAction,
+  canCreateRepeatedJoint,
+  isRepeatedJointPending,
+  onCreateRepeatedJoint,
+  canRenameRepeatedJoint,
+  isRenameRepeatedJointPending,
+  onRenameRepeatedJoint,
   canCreateEarlyCoil,
   isEarlyCoilPending,
   onCreateEarlyCoil,
@@ -65,6 +82,12 @@ export function JointChainDialog({
   const branchRows = getJointBranchRows(rows, selectedRow)
   const relations = getJointCoilRelations(selectedRow, rows, transitions)
   const branchRowIds = new Set(branchRows.map((row) => row.id))
+  const repeatedJointCreateTasks = dispatcherTasks.filter(
+    (task): task is RepeatedJointCreateTask => task.kind === 'create' && branchRowIds.has(task.row.id),
+  )
+  const repeatedJointRenameTasks = dispatcherTasks.filter(
+    (task): task is RepeatedJointRenameTask => task.kind === 'rename' && branchRowIds.has(task.row.id),
+  )
   const earlyCoilCandidate = earlyCoilCandidates.find((candidate) =>
     branchRowIds.has(candidate.sourceRowId),
   ) ?? null
@@ -130,41 +153,51 @@ export function JointChainDialog({
           </div>
         ) : (
           <div className="grid h-full min-h-0 lg:grid-cols-[380px_minmax(0,1fr)]">
-            <aside className="min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
-              <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Цепочка ремонта и выреза</div>
-              <div className="space-y-2">
-                {branchRows.map((row, index) => (
-                  <JointChainCard
-                    key={row.id}
-                    row={row}
-                    index={index}
-                    isCurrent={row.id === selectedRow.id}
-                    onOpenRow={onOpenRow}
-                    onSelect={(nextRow) => setSelectedRowId(nextRow.id)}
+            <aside className="flex min-h-0 flex-col overflow-y-auto border-b border-slate-200 bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
+              <div>
+                <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Цепочка ремонта и выреза</div>
+                <div className="space-y-2">
+                  {branchRows.map((row, index) => (
+                    <JointChainCard
+                      key={row.id}
+                      row={row}
+                      index={index}
+                      isCurrent={row.id === selectedRow.id}
+                      onOpenRow={onOpenRow}
+                      onSelect={(nextRow) => setSelectedRowId(nextRow.id)}
+                    />
+                  ))}
+                </div>
+                {relations.outgoing?.targetRowIds.some(Boolean) ? (
+                  <CoilContinuationPanel
+                    transition={relations.outgoing}
+                    rows={rows}
+                    onSelect={(row) => setSelectedRowId(row.id)}
                   />
-                ))}
+                ) : null}
+                {(canCreateRepeatedJoint && repeatedJointCreateTasks.length > 0) ||
+                (canRenameRepeatedJoint && repeatedJointRenameTasks.length > 0) ||
+                (canCreateEarlyCoil && earlyCoilCandidate) ? (
+                  <ChainContinuationActionsPanel
+                    repeatedJointTasks={canCreateRepeatedJoint ? repeatedJointCreateTasks : []}
+                    repeatedJointRenameTasks={canRenameRepeatedJoint ? repeatedJointRenameTasks : []}
+                    earlyCoilCandidate={canCreateEarlyCoil ? earlyCoilCandidate : null}
+                    rows={rows}
+                    isRepeatedJointPending={isRepeatedJointPending}
+                    isRenameRepeatedJointPending={isRenameRepeatedJointPending}
+                    isEarlyCoilPending={isEarlyCoilPending}
+                    onCreateRepeatedJoint={onCreateRepeatedJoint}
+                    onRenameRepeatedJoint={onRenameRepeatedJoint}
+                    onCreateEarlyCoil={onCreateEarlyCoil}
+                  />
+                ) : null}
               </div>
-              {relations.outgoing?.targetRowIds.some(Boolean) ? (
-                <CoilContinuationPanel
-                  transition={relations.outgoing}
-                  rows={rows}
-                  onSelect={(row) => setSelectedRowId(row.id)}
-                />
-              ) : null}
-              {canCreateEarlyCoil && earlyCoilCandidate ? (
-                <EarlyCoilActionPanel
-                  candidate={earlyCoilCandidate}
-                  rows={rows}
-                  disabled={isEarlyCoilPending}
-                  onCreate={onCreateEarlyCoil}
-                />
-              ) : null}
-            </aside>
-            <main className="min-h-0 overflow-y-auto px-5 py-4">
               <JointBranchRelations
                 relations={relations}
                 onSelect={(row) => setSelectedRowId(row.id)}
               />
+            </aside>
+            <main className="min-h-0 overflow-y-auto px-5 py-4">
               <JointHistoryOverview
                 row={selectedRow}
                 dispatcherTasks={dispatcherTasks}
@@ -228,40 +261,106 @@ function CoilContinuationPanel({
   )
 }
 
-function EarlyCoilActionPanel({
-  candidate,
+function ChainContinuationActionsPanel({
+  repeatedJointTasks,
+  repeatedJointRenameTasks,
+  earlyCoilCandidate,
   rows,
-  disabled,
-  onCreate,
+  isRepeatedJointPending,
+  isRenameRepeatedJointPending,
+  isEarlyCoilPending,
+  onCreateRepeatedJoint,
+  onRenameRepeatedJoint,
+  onCreateEarlyCoil,
 }: {
-  candidate: WeldJointChainEarlyCoilCandidate
+  repeatedJointTasks: RepeatedJointCreateTask[]
+  repeatedJointRenameTasks: RepeatedJointRenameTask[]
+  earlyCoilCandidate: WeldJointChainEarlyCoilCandidate | null
   rows: WeldRow[]
-  disabled: boolean
-  onCreate: (row: WeldRow, candidate: WeldJointChainEarlyCoilCandidate) => void
+  isRepeatedJointPending: boolean
+  isRenameRepeatedJointPending: boolean
+  isEarlyCoilPending: boolean
+  onCreateRepeatedJoint: (task: RepeatedJointCreateTask) => void
+  onRenameRepeatedJoint: (task: RepeatedJointRenameTask) => void
+  onCreateEarlyCoil: (row: WeldRow, candidate: WeldJointChainEarlyCoilCandidate) => void
 }) {
-  const sourceRow = rows.find((row) => row.id === candidate.sourceRowId)
-  if (!sourceRow) return null
+  const earlyCoilSourceRow = earlyCoilCandidate
+    ? rows.find((row) => row.id === earlyCoilCandidate.sourceRowId) ?? null
+    : null
+  const hasRepeatedJointAction = repeatedJointTasks.length > 0
+  const hasRenameAction = repeatedJointRenameTasks.length > 0
+  const hasEarlyCoilAction = Boolean(earlyCoilCandidate && earlyCoilSourceRow)
+  const replacementJoint = earlyCoilCandidate?.replacementJoint ?? null
+  if (!hasRepeatedJointAction && !hasRenameAction && !hasEarlyCoilAction) return null
+  const title = hasRenameAction
+    ? 'Исправить имена цепочки'
+    : hasRepeatedJointAction && hasEarlyCoilAction
+    ? 'Выберите продолжение цепочки'
+    : hasRepeatedJointAction
+      ? 'Продолжить цепочку'
+      : replacementJoint
+        ? `Заменить пустой ${replacementJoint} на катушку`
+        : 'Нужна катушка до лимита ремонтов'
   return (
-    <section className="mt-4 border-t border-amber-200 pt-4" aria-label="Досрочная врезка катушки">
+    <section className="mt-4 border-t border-amber-200 pt-4" aria-label="Продолжение цепочки стыка">
       <div className="flex items-start gap-2.5">
         <GitFork className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-900">Нужна катушка до лимита ремонтов</p>
+          <p className="text-sm font-semibold text-slate-900">{title}</p>
           <p className="mt-1 text-xs leading-5 text-slate-600">
-            Можно завершить ветку {candidate.sourceJoint} и создать {candidate.targetJoints.join(' + ')}.
+            {hasRenameAction
+              ? 'Диспетчер повторно прошел фактические результаты: порядок R/W отражает их историю, а номера каждого вида пересчитаны заново.'
+              : hasRepeatedJointAction && hasEarlyCoilAction
+              ? `Можно продолжить цепочку по счетчику либо завершить ветку ${earlyCoilCandidate!.sourceJoint} катушкой.`
+              : hasRepeatedJointAction
+                ? 'Диспетчер подтвердил допустимое продолжение цепочки.'
+                : replacementJoint
+                  ? `Будут созданы ${earlyCoilCandidate!.targetJoints.join(' и ')} по негодному результату ${earlyCoilCandidate!.sourceJoint}.`
+                  : `Можно завершить ветку ${earlyCoilCandidate!.sourceJoint} и создать ${earlyCoilCandidate!.targetJoints.join(' + ')}.`}
           </p>
         </div>
       </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="mt-3 h-8 w-full border-amber-300 bg-amber-50 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-        disabled={disabled}
-        onClick={() => onCreate(sourceRow, candidate)}
-      >
-        Врезать катушку досрочно
-      </Button>
+      <div className="mt-3 space-y-2">
+        {repeatedJointRenameTasks.map((task) => (
+          <Button
+            key={task.key}
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-auto min-h-8 w-full whitespace-normal border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            disabled={isRenameRepeatedJointPending}
+            onClick={() => onRenameRepeatedJoint(task)}
+          >
+            Переименовать {task.currentJoint} -&gt; {task.targetJoint}
+            {task.changes.length > 1 ? ` (+${task.changes.length - 1} далее)` : ''}
+          </Button>
+        ))}
+        {repeatedJointTasks.map((task) => (
+          <Button
+            key={task.key}
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 w-full border-sky-300 bg-sky-50 text-xs font-semibold text-sky-900 hover:bg-sky-100"
+            disabled={isRepeatedJointPending}
+            onClick={() => onCreateRepeatedJoint(task)}
+          >
+            Создать {task.targetJoint}
+          </Button>
+        ))}
+        {earlyCoilCandidate && earlyCoilSourceRow ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 w-full border-amber-300 bg-amber-50 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            disabled={isEarlyCoilPending}
+            onClick={() => onCreateEarlyCoil(earlyCoilSourceRow, earlyCoilCandidate)}
+          >
+            Врезать катушку досрочно
+          </Button>
+        ) : null}
+      </div>
     </section>
   )
 }
@@ -278,7 +377,7 @@ function JointBranchRelations({
   const siblingRow = relations.siblingRow
   const currentJoint = String(relations.currentBranchRoot?.joint ?? relations.branchJoint).trim()
   return (
-    <section className="mb-4 border-b border-sky-200 bg-sky-50/60 px-3.5 py-3" aria-label="Связи стыка катушки">
+    <section className="mt-auto border-t border-sky-200 bg-sky-50/60 px-3.5 py-3" aria-label="Связи стыка катушки">
       <div className="flex items-start gap-2.5">
         <GitFork className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
         <div className="min-w-0 flex-1">

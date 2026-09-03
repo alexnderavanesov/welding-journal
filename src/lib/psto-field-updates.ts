@@ -85,7 +85,13 @@ export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoUpdat
 
 export function clearCancelledPstoRequestWithoutResult<T extends PstoRow>(record: T): T {
   if (isEnabledControlValue(record.pstoRequired) || hasPstoResultHistory(record)) return record
-  if (!hasText(record.pstoRequest) && !hasText(record.pstoRequestDate) && !hasText(record.pstoDate)) return record
+  const hasPendingResult = isPendingPstoResult(record.pstoResult)
+  if (
+    !hasText(record.pstoRequest) &&
+    !hasText(record.pstoRequestDate) &&
+    !hasText(record.pstoDate) &&
+    !hasPendingResult
+  ) return record
   return {
     ...record,
     pstoRequest: null,

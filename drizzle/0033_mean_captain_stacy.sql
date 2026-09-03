@@ -1,0 +1,1 @@
+CREATE INDEX "weld_joints_normalized_line_identity_idx" ON "weld_joints" USING btree (btrim(coalesce("project_title", '')),btrim(coalesce("subtitle_code", '')),btrim(coalesce("line", '')));

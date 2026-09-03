@@ -87,6 +87,38 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, line: 'Целевая линия' }])
   })
 
+  it('directs a chain line move to the base-joint card instead of replacing rows by import', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'],
+      [[7, 'S1', 'Целевая линия']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7,
+        joint: 'S1',
+        line: 'Исходная линия',
+      }, {
+        id: 8,
+        joint: 'S1Y1',
+        line: 'Исходная линия',
+      }, {
+        id: 9,
+        joint: 'S1Y2',
+        line: 'Исходная линия',
+      }] as WeldRow[],
+      weldFormStampSelectOptions: {},
+      welderStamps: [],
+      welderStampSuspensions: [],
+    })
+
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('Линию цепочки S1 нельзя менять импортом')
+    expect(preview.errors[0]?.message).toContain('через карточку базового стыка S1')
+    expect(preview.errors[0]?.fieldKeys).toContain('line')
+  })
+
   it('blocks moving a primary LNK set onto a PSTO line and aggregates another field error', async () => {
     saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С17'] })
     const file = buildWorkbookFile(

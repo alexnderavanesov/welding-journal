@@ -4,7 +4,6 @@ import { normalizeSearchText } from '@/lib/report-row-utils'
 import { hasWeldDate } from '@/lib/report-value-utils'
 import { formatDisplayDate } from '@/lib/date-format'
 import {
-  formatRepeatedJointName,
   getCoilJointNames,
   normalizeJointChainPart,
   parseRepeatedJointName,
@@ -40,7 +39,7 @@ import {
   hasRepeatedJointTarget,
   isUnusedRepeatedJointDraft,
 } from '@/lib/repeated-joint-task-helpers'
-import { getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
+import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import type { DataListSettings } from '@/lib/data-list-settings'
@@ -51,6 +50,7 @@ export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
 
 type ObsoleteRepeatedJointInfo = {
+  row: WeldRow
   sourceRow: WeldRow
   sourceJoint: string
   targetJoint: string
@@ -147,12 +147,22 @@ export function buildRepeatedJointTasks(
     const repeated = getObsoleteRepeatedJointInfo(matchingJointRowsIndex, row, systemIndexSettings)
     if (repeated) obsoleteByRowId.set(row.id, repeated)
   }
-  const directObsoleteInfos = Array.from(obsoleteByRowId.values())
-  for (const row of rows) {
-    if (obsoleteByRowId.has(row.id)) continue
-    const repeated = getPropagatedObsoleteRepeatedJointInfo(row, directObsoleteInfos, systemIndexSettings)
-    if (repeated) obsoleteByRowId.set(row.id, repeated)
-  }
+  const renameTasks = buildObsoleteRepeatedJointRenameTasks({
+    blockedChainKeys,
+    matchingJointRowsIndex,
+    obsoleteInfos: [...obsoleteByRowId.values()],
+    rows,
+    systemIndexSettings,
+  })
+  const renameChangeRowIds = new Set(renameTasks.flatMap((task) => task.changes.map((change) => change.rowId)))
+  const renameReplacementTargetKeys = new Set([...obsoleteByRowId.values()].flatMap((info) => {
+    if (
+      !info.expectedTargetJoint ||
+      normalizeJointChainPart(info.targetJoint) === normalizeJointChainPart(info.expectedTargetJoint)
+    ) return []
+    const key = getCreateTaskTargetKey(info.sourceRow, info.expectedTargetJoint)
+    return key ? [key] : []
+  }))
   const createTaskTargetKeys = new Set<string>()
 
   for (const row of rows) {
@@ -164,7 +174,7 @@ export function buildRepeatedJointTasks(
     if (!sourceJoint) continue
     if (hasCompletedParentBranch(rows, row, sourceJoint, systemIndexSettings)) continue
 
-    const suffix = getExpectedRepeatedJointSuffix(row, rejection.result)
+    const suffix = getExpectedRepeatedJointSuffix(row, rejection.result, systemIndexSettings)
     const parsed = parseRepeatedJointName(sourceJoint, systemIndexSettings)
     const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint, systemIndexSettings)
     const lastOfficialRejectedRow = officialRejectedChainRows.at(-1)
@@ -172,6 +182,7 @@ export function buildRepeatedJointTasks(
       earlyCoilDecisionSourceRowIds,
       officialRejectedRows: officialRejectedChainRows,
       sourceRow: row,
+      systemIndexSettings,
     })
     if (coilTransitionMode) {
       const targetJoints = getCoilJointNames(parsed.base, systemIndexSettings)
@@ -194,6 +205,7 @@ export function buildRepeatedJointTasks(
     const targetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejection.result, systemIndexSettings)
     if (hasRepeatedJointTarget(rows, row, targetJoint)) continue
     const createTargetKey = getCreateTaskTargetKey(row, targetJoint)
+    if (createTargetKey && renameReplacementTargetKeys.has(createTargetKey)) continue
     if (createTargetKey && createTaskTargetKeys.has(createTargetKey)) continue
     if (createTargetKey) createTaskTargetKeys.add(createTargetKey)
 
@@ -208,25 +220,36 @@ export function buildRepeatedJointTasks(
       methodCode: rejection.method.code,
     })
   }
+  tasks.push(...renameTasks)
   const checkTaskChainKeys = new Set<string>()
   for (const row of rows) {
     const repeated = obsoleteByRowId.get(row.id)
     if (!repeated) continue
+    if (renameChangeRowIds.has(row.id)) continue
     if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys, systemIndexSettings)) continue
     if (
       repeated.expectedTargetJoint &&
       normalizeJointChainPart(repeated.expectedTargetJoint) !== normalizeJointChainPart(repeated.targetJoint) &&
       !hasRepeatedJointTarget(rows, repeated.sourceRow, repeated.expectedTargetJoint)
     ) {
+      const identity = getJointChainIdentity(row, systemIndexSettings)
+      const baseJoint = parseRepeatedJointName(repeated.targetJoint, systemIndexSettings).base
+      const chainKey = identity
+        ? `${identity.project}:${identity.subtitle}:${identity.line}:${identity.baseJoint}`
+        : `${normalizeSearchText(row.projectTitle)}:${normalizeSearchText(row.subtitleCode)}:${normalizeSearchText(row.line)}:${normalizeSearchText(baseJoint)}`
+      if (checkTaskChainKeys.has(chainKey)) continue
+      checkTaskChainKeys.add(chainKey)
       tasks.push({
-        kind: 'rename',
-        key: `rename-obsolete:${repeated.sourceRow.id}:${row.id}:${repeated.sourceJoint}:${repeated.targetJoint}:${repeated.expectedTargetJoint}`,
+        kind: 'check',
+        key: `check-obsolete-rename:${chainKey}:${row.id}`,
         row,
         sourceRow: repeated.sourceRow,
         sourceJoint: repeated.sourceJoint,
-        currentJoint: repeated.targetJoint,
-        targetJoint: repeated.expectedTargetJoint,
-        baseJoint: parseRepeatedJointName(repeated.expectedTargetJoint, systemIndexSettings).base,
+        targetJoint: repeated.targetJoint,
+        baseJoint,
+        suffix: repeated.suffix,
+        reason: 'проверить целостность цепочки',
+        details: `Стык ${repeated.targetJoint} должен называться ${repeated.expectedTargetJoint}, но диспетчер не может безопасно перестроить продолжение цепочки автоматически. Проверь существующие имена и возможные дубли.`,
       })
     } else if (isUnusedRepeatedJointDraft(row)) {
       tasks.push({
@@ -300,6 +323,7 @@ function buildOrphanGoodRepeatedJointRenameTasks(
       currentJoint,
       targetJoint,
       baseJoint: parseRepeatedJointName(targetJoint, systemIndexSettings).base,
+      changes: [{ rowId: row.id, currentJoint, targetJoint }],
     })
   }
   return tasks
@@ -358,96 +382,160 @@ function getObsoleteRepeatedJointInfo(
   const targetJoint = String(row.joint ?? '').trim()
   const parsed = parseRepeatedJointName(targetJoint, systemIndexSettings)
   if (parsed.segments.length === 0) return null
-  let obsoleteCandidate: ObsoleteRepeatedJointInfo | null = null
+  const obsoleteCandidates: ObsoleteRepeatedJointInfo[] = []
   for (const candidate of getRepeatedJointSourceCandidates(parsed, systemIndexSettings)) {
     const sourceRows = findMatchingJointRowsInIndex(index, row, candidate.sourceJoint)
     if (sourceRows.length === 0) continue
     const validSource = sourceRows.find((sourceRow) => {
       const rejection = getPrimaryRejectedLnkResult(sourceRow)
-      const expectedSuffix = rejection ? (rejection.result === 'ремонт' ? 'R' : 'W') : null
+      const expectedSuffix = rejection
+        ? getExpectedRepeatedJointSuffix(sourceRow, rejection.result, systemIndexSettings)
+        : null
       const expectedTargetJoint = rejection
         ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result, systemIndexSettings)
         : ''
       return expectedSuffix === candidate.suffix && normalizeJointChainPart(expectedTargetJoint) === normalizeJointChainPart(targetJoint)
     })
     if (validSource) return null
-    const sourceRow = sourceRows[0]
-    const rejection = getPrimaryRejectedLnkResult(sourceRow)
-    const expectedTargetJoint = rejection
-      ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result, systemIndexSettings)
-      : ''
-    obsoleteCandidate =
-      obsoleteCandidate ?? {
+    for (const sourceRow of sourceRows) {
+      const rejection = getPrimaryRejectedLnkResult(sourceRow)
+      const expectedTargetJoint = rejection
+        ? getExpectedRepeatedJointName(sourceRow, candidate.sourceJoint, rejection.result, systemIndexSettings)
+        : ''
+      obsoleteCandidates.push({
+        row,
         sourceRow,
         sourceJoint: candidate.sourceJoint,
         targetJoint,
         expectedTargetJoint,
         suffix: candidate.suffix,
         reason: getObsoleteRepeatedJointReason(sourceRow, rejection, expectedTargetJoint, targetJoint),
-      }
+      })
+    }
   }
-  return obsoleteCandidate
+  const uniqueCandidates = [...new Map(
+    obsoleteCandidates.map((candidate) => [candidate.sourceRow.id, candidate]),
+  ).values()]
+  return uniqueCandidates.length === 1 ? uniqueCandidates[0]! : null
 }
 
-function getPropagatedObsoleteRepeatedJointInfo(
-  row: WeldRow,
-  directObsoleteInfos: ObsoleteRepeatedJointInfo[],
-  systemIndexSettings: SystemIndexSettings,
-): ObsoleteRepeatedJointInfo | null {
-  const targetJoint = String(row.joint ?? '').trim()
-  const parsed = parseRepeatedJointName(targetJoint, systemIndexSettings)
-  if (parsed.segments.length === 0) return null
-
-  for (const direct of directObsoleteInfos) {
-    if (!direct.expectedTargetJoint) continue
-    if (normalizeJointChainPart(direct.targetJoint) === normalizeJointChainPart(targetJoint)) continue
-    if (!isSameRepeatedJointLine(row, direct.sourceRow)) continue
-
-    const directTarget = parseRepeatedJointName(direct.targetJoint, systemIndexSettings)
-    const directExpected = parseRepeatedJointName(direct.expectedTargetJoint, systemIndexSettings)
-    if (directTarget.segments.length === 0) continue
-    if (normalizeJointChainPart(parsed.base) !== normalizeJointChainPart(directTarget.base)) continue
-
-    const changedSegmentIndex = directTarget.segments.length - 1
-    if (parsed.segments.length <= changedSegmentIndex) continue
-
-    const hasSamePrefixBeforeChangedSegment = directTarget.segments
-      .slice(0, changedSegmentIndex)
-      .every((segment, index) => {
-        const currentSegment = parsed.segments[index]
-        return currentSegment?.suffix === segment.suffix && currentSegment.index === segment.index
-      })
-    if (!hasSamePrefixBeforeChangedSegment) continue
-
-    const changedSegment = directTarget.segments[changedSegmentIndex]
-    const currentSegment = parsed.segments[changedSegmentIndex]
-    if (!currentSegment || currentSegment.suffix !== changedSegment.suffix || currentSegment.index < changedSegment.index) continue
-
-    const expectedTargetJoint = formatRepeatedJointName(directExpected.base, [
-      ...directExpected.segments,
-      ...parsed.segments.slice(changedSegmentIndex),
-    ], systemIndexSettings)
-    if (normalizeJointChainPart(expectedTargetJoint) === normalizeJointChainPart(targetJoint)) continue
-
-    return {
-      sourceRow: direct.sourceRow,
-      sourceJoint: direct.sourceJoint,
-      targetJoint,
-      expectedTargetJoint,
-      suffix: direct.suffix,
-      reason: `Стык ${targetJoint} продолжает цепочку стыка ${direct.targetJoint}, который должен быть переименован в ${direct.expectedTargetJoint}. Поэтому продолжение цепочки тоже нужно переименовать.`,
+function buildObsoleteRepeatedJointRenameTasks({
+  blockedChainKeys,
+  matchingJointRowsIndex,
+  obsoleteInfos,
+  rows,
+  systemIndexSettings,
+}: {
+  blockedChainKeys: Set<string>
+  matchingJointRowsIndex: MatchingJointRowsIndex
+  obsoleteInfos: ObsoleteRepeatedJointInfo[]
+  rows: WeldRow[]
+  systemIndexSettings: SystemIndexSettings
+}): RepeatedJointRenameTask[] {
+  const potentialChildrenBySourceRowId = new Map<number, WeldRow[]>()
+  const potentialSourceRowIdsByChildRowId = new Map<number, Set<number>>()
+  for (const childRow of rows) {
+    const childJoint = String(childRow.joint ?? '').trim()
+    const parsed = parseRepeatedJointName(childJoint, systemIndexSettings)
+    if (parsed.segments.length === 0) continue
+    for (const candidate of getRepeatedJointSourceCandidates(parsed, systemIndexSettings)) {
+      for (const sourceRow of findMatchingJointRowsInIndex(matchingJointRowsIndex, childRow, candidate.sourceJoint)) {
+        const children = potentialChildrenBySourceRowId.get(sourceRow.id) ?? []
+        if (!children.some((row) => row.id === childRow.id)) children.push(childRow)
+        potentialChildrenBySourceRowId.set(sourceRow.id, children)
+        const sourceIds = potentialSourceRowIdsByChildRowId.get(childRow.id) ?? new Set<number>()
+        sourceIds.add(sourceRow.id)
+        potentialSourceRowIdsByChildRowId.set(childRow.id, sourceIds)
+      }
     }
   }
 
-  return null
-}
-
-function isSameRepeatedJointLine(row: WeldInput, sourceRow: WeldInput) {
-  return (
-    normalizeSearchText(row.projectTitle) === normalizeSearchText(sourceRow.projectTitle) &&
-    normalizeSearchText(row.subtitleCode) === normalizeSearchText(sourceRow.subtitleCode) &&
-    normalizeSearchText(row.line) === normalizeSearchText(sourceRow.line)
+  const tasks: RepeatedJointRenameTask[] = []
+  const claimedRowIds = new Set<number>()
+  const sortedInfos = [...obsoleteInfos].sort((left, right) =>
+    compareJointChainRows(left.row, right.row, systemIndexSettings),
   )
+  for (const info of sortedInfos) {
+    if (claimedRowIds.has(info.row.id)) continue
+    if (!info.expectedTargetJoint) continue
+    if (normalizeJointChainPart(info.targetJoint) === normalizeJointChainPart(info.expectedTargetJoint)) continue
+    if (hasRepeatedJointTarget(rows, info.sourceRow, info.expectedTargetJoint)) continue
+    if (
+      isRowInBlockedRepeatedJointChain(info.row, blockedChainKeys, systemIndexSettings) ||
+      isRowInBlockedRepeatedJointChain(info.sourceRow, blockedChainKeys, systemIndexSettings)
+    ) continue
+
+    const sourceChildren = potentialChildrenBySourceRowId.get(info.sourceRow.id) ?? []
+    if (sourceChildren.length !== 1 || sourceChildren[0]?.id !== info.row.id) continue
+    const changes: RepeatedJointRenameTask['changes'] = []
+    const visitedRowIds = new Set<number>()
+    let currentRow: WeldRow | undefined = info.row
+    let targetJoint = info.expectedTargetJoint
+    let isSafePlan = true
+
+    while (currentRow) {
+      if (visitedRowIds.has(currentRow.id)) {
+        isSafePlan = false
+        break
+      }
+      visitedRowIds.add(currentRow.id)
+      const currentJoint = String(currentRow.joint ?? '').trim()
+      if (!currentJoint || !targetJoint || normalizeJointChainPart(currentJoint) === normalizeJointChainPart(targetJoint)) {
+        isSafePlan = false
+        break
+      }
+      changes.push({ rowId: currentRow.id, currentJoint, targetJoint })
+
+      const children: WeldRow[] = potentialChildrenBySourceRowId.get(currentRow.id) ?? []
+      if (children.length === 0) break
+      if (children.length !== 1) {
+        isSafePlan = false
+        break
+      }
+      const childRow: WeldRow = children[0]!
+      const childSourceRowIds = potentialSourceRowIdsByChildRowId.get(childRow.id) ?? new Set<number>()
+      if (childSourceRowIds.size !== 1 || !childSourceRowIds.has(currentRow.id)) {
+        isSafePlan = false
+        break
+      }
+      const rejection = getPrimaryRejectedLnkResult(currentRow)
+      if (!rejection) {
+        isSafePlan = false
+        break
+      }
+      targetJoint = getExpectedRepeatedJointName(
+        currentRow,
+        targetJoint,
+        rejection.result,
+        systemIndexSettings,
+      )
+      currentRow = childRow
+    }
+
+    if (!isSafePlan || changes.length === 0 || changes.some((change) => claimedRowIds.has(change.rowId))) continue
+    const planRowIds = new Set(changes.map((change) => change.rowId))
+    const uniqueTargets = new Set(changes.map((change) => normalizeJointChainPart(change.targetJoint)))
+    if (uniqueTargets.size !== changes.length) continue
+    const hasCollision = changes.some((change) =>
+      findMatchingJointRowsInIndex(matchingJointRowsIndex, info.row, change.targetJoint)
+        .some((row) => !planRowIds.has(row.id)),
+    )
+    if (hasCollision) continue
+
+    changes.forEach((change) => claimedRowIds.add(change.rowId))
+    tasks.push({
+      kind: 'rename',
+      key: `rename-obsolete:${info.sourceRow.id}:${changes.map((change) => `${change.rowId}:${change.currentJoint}:${change.targetJoint}`).join('|')}`,
+      row: info.row,
+      sourceRow: info.sourceRow,
+      sourceJoint: info.sourceJoint,
+      currentJoint: changes[0]!.currentJoint,
+      targetJoint: changes[0]!.targetJoint,
+      baseJoint: parseRepeatedJointName(changes[0]!.targetJoint, systemIndexSettings).base,
+      changes,
+    })
+  }
+  return tasks
 }
 
 function getObsoleteRepeatedJointReason(

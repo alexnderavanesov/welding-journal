@@ -187,12 +187,17 @@ export function useRepeatedJointTaskActions({
       return
     }
 
+    const renamePlan = currentTask.changes
+      .map((change) => `${change.currentJoint} -> ${change.targetJoint}`)
+      .join('; ')
     const confirmed = await confirmAction({
-      title: 'Переименовать повторный стык',
-      itemName: `${task.currentJoint} -> ${task.targetJoint}`,
-      description: 'Диспетчер задач обнаружил, что название повторного стыка не соответствует текущим правилам цепочки.',
-      warning: 'Проверьте цепочку перед подтверждением.',
-      confirmLabel: 'Переименовать',
+      title: currentTask.changes.length > 1 ? 'Исправить имена цепочки' : 'Переименовать повторный стык',
+      itemName: `${currentTask.currentJoint} -> ${currentTask.targetJoint}`,
+      description:
+        `Диспетчер пересчитал имена от измененного звена по фактическим результатам цепочки. ` +
+        `Будут выполнены изменения: ${renamePlan}.`,
+      warning: 'Все перечисленные стыки будут переименованы вместе. Данные и документы останутся привязаны к тем же записям.',
+      confirmLabel: currentTask.changes.length > 1 ? 'Исправить цепочку' : 'Переименовать',
       tone: 'warning',
     })
     if (!confirmed) return

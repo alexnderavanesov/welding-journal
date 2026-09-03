@@ -1,6 +1,7 @@
 import {
   createWeldJoint,
   createWeldJoints,
+  moveWeldJointChain,
   updateWeldJoint,
   updateSystemWeldJoint,
   updateWeldJoints,
@@ -51,16 +52,19 @@ export async function updateWeldRowOrThrow<T extends RowWithId>(
   return saved
 }
 
-export async function updateSystemWeldRowOrThrow(task: RepeatedJointRenameTask, errorMessage = 'Запись не найдена') {
-  const saved = await updateSystemWeldJoint({
-    data: {
-      id: task.row.id,
-      currentJoint: task.currentJoint,
-      targetJoint: task.targetJoint,
-    },
-  })
-  if (!saved) throw new Error(errorMessage)
+export async function moveWeldJointChainOrThrow<T extends RowWithId>(
+  record: T,
+  errorMessage = 'Не удалось перенести цепочку стыка',
+) {
+  const saved = await moveWeldJointChain({ data: normalizeDateFieldsForSave(record) })
+  if (!saved.every(Boolean)) throw new Error(errorMessage)
   return saved
+}
+
+export async function updateSystemWeldRowOrThrow(task: RepeatedJointRenameTask, errorMessage = 'Запись не найдена') {
+  const savedRows = await updateSystemWeldJoint({ data: { changes: task.changes } })
+  if (!savedRows.every(Boolean)) throw new Error(errorMessage)
+  return savedRows
 }
 
 export async function updateWeldRowsOrThrow<T extends RowWithId>(

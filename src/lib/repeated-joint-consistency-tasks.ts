@@ -127,6 +127,7 @@ export function buildJointChainConsistencyCheckTasks(
 export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
   return (
     task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON &&
+    task.reason !== 'проверить целостность цепочки' &&
     task.reason !== COIL_CHAIN_INTEGRITY_REASON &&
     task.reason !== 'проверить клеймо' &&
     !isLnkChronologyReason(task.reason) &&
@@ -147,7 +148,6 @@ function buildCoilIntegrityCheckTasks(
 ) {
   const tasks: RepeatedJointCheckTask[] = []
   for (const transition of transitions) {
-    if (transition.targetRowIds.every((rowId) => rowId === null)) continue
     const targetRows = transition.targetRowIds
       .map((rowId) => rows.find((row) => row.id === rowId))
       .filter((row): row is WeldRow => Boolean(row))

@@ -79,6 +79,35 @@ describe('PSTO cycle timeline', () => {
     expect(buildPstoCycleTimeline({})).toEqual([])
   })
 
+  it('does not mistake a cancelled derived waiting status for a real PSTO cycle', () => {
+    for (const pstoResult of ['ожидает', 'ожидает заявку', 'отменен']) {
+      const row = { pstoRequired: 'отменен', pstoResult }
+      expect(hasPrimaryPstoCycle(row)).toBe(false)
+      expect(buildPstoCycleTimeline(row)).toEqual([])
+    }
+  })
+
+  it('keeps a physically started primary PSTO cycle visible after cancellation', () => {
+    expect(buildPstoCycleTimeline({
+      pstoRequired: 'отменен',
+      pstoRequest: 'ПСТО-001',
+      pstoDate: '2026-08-02',
+      pstoResult: 'проведено',
+    })).toEqual([
+      expect.objectContaining({
+        source: 'primary',
+        sequence: 1,
+        pstoRequest: 'ПСТО-001',
+        pstoResult: 'проведено',
+      }),
+    ])
+
+    expect(buildPstoCycleTimeline({
+      pstoRequired: 'отменен',
+      pstoRequest: 'ПСТО-001',
+    })).toEqual([])
+  })
+
   it('does not treat derived waiting labels as performed PSTO history', () => {
     expect(hasPstoExecutionHistory({
       pstoResult: 'ожидает заявку',

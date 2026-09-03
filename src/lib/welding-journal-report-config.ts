@@ -151,7 +151,6 @@ export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoCycleSummary',
   ...MATERIAL_ADDITIONAL_FIELD_KEYS,
   ...WELDING_MATERIAL_FIELD_KEYS,
-  'pstoRequired',
   'pstoCancellationDate',
   'pstoControlBasis',
   'pstoRequest',

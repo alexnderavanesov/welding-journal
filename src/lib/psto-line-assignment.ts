@@ -32,6 +32,14 @@ export type PstoWeldLineMoveDisposition =
   | PstoLineRemovalDisposition
   | 'movePrimaryToBeforeHeatTreatment'
   | 'deletePrimary'
+export type PstoWeldLineMoveDecision = {
+  rowId: number
+  disposition: PstoWeldLineMoveDisposition
+}
+export type WeldChainLineMovePlan = {
+  expectedRowIds: number[]
+  decisions: PstoWeldLineMoveDecision[]
+}
 export type PstoLineAssignmentAction = 'assign' | 'remove' | 'cancel' | 'reactivate'
 
 export type PstoLineRemovalDecision = {
@@ -72,6 +80,10 @@ export type PstoLineRemovalPreviewRow = {
   activationTransferBlockedMethods: PreHeatTreatmentLnkMethodCode[]
 }
 
+export type PstoWeldLineMovePreviewRow = PstoLineRemovalPreviewRow & {
+  requiresDisposition: boolean
+}
+
 export type PstoLineRemovalPreview = {
   identity: PstoLineIdentity
   rowCount: number
@@ -89,13 +101,18 @@ export type PstoWeldLineMovePreview = {
   sourceIdentity: PstoLineIdentity
   targetIdentity: PstoLineIdentity
   targetState: 'assigned' | 'unassigned' | 'cancelled'
+  rootRowId: number
+  rootJoint: string
+  isChainMove: boolean
+  expectedRowIds: number[]
   requestOnlyCount: number
   completedPstoCount: number
   preControlCount: number
   completedPreControlCount: number
   pendingPreControlCount: number
   repeatCycleCount: number
-  row: PstoLineRemovalPreviewRow
+  rows: PstoWeldLineMovePreviewRow[]
+  row: PstoWeldLineMovePreviewRow
 }
 
 const PRIMARY_PSTO_DOCUMENT_KEYS = [
@@ -221,6 +238,8 @@ export function buildPstoCancelledRow({
 
   next.pstoRequest = null
   next.pstoRequestDate = null
+  next.pstoResult = null
+  next.tvmtResult = null
   if (disposition !== 'promoteBeforeHeatTreatment') return next
 
   for (const key of PRIMARY_STAGED_LNK_CLEAR_KEYS) next[key] = null as never

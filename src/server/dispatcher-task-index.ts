@@ -34,6 +34,8 @@ import {
   serializeDispatcherTaskIndexPayload,
 } from '@/lib/dispatcher-task-index-payload'
 import type { RepeatedJointTask, WeldRow, WelderStampExpiryTask } from '@/lib/dispatcher-types'
+import { buildJointChainContinuations } from '@/lib/joint-chain-continuations'
+import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { DEFAULT_DATA_LIST_SETTINGS, normalizeDataListSettings } from '@/lib/data-list-settings'
@@ -192,7 +194,7 @@ async function rebuildFullDispatcherTaskIndex(
   lockedState: typeof dispatcherTaskIndexState.$inferSelect,
 ) {
     const calculationVersionChanged = !isDispatcherTaskIndexPayloadCurrent(lockedState.repeatedTasks)
-    const { sourceRows, preparedRows, tasks } = await calculateFullDispatcherTasks(tx)
+    const { chainContinuations, sourceRows, preparedRows, tasks } = await calculateFullDispatcherTasks(tx)
     await persistCalculatedFinalStatuses(tx, sourceRows, preparedRows)
     const compactRepeatedTasks = compactDispatcherTasksForTransport(tasks.repeatedJointTasks)
     const taskIndexRows = buildDispatcherTaskIndexRows(compactRepeatedTasks, preparedRows)
@@ -215,7 +217,7 @@ async function rebuildFullDispatcherTaskIndex(
       .update(dispatcherTaskIndexState)
       .set({
         computedRevision: lockedState.sourceRevision,
-        repeatedTasks: serializeDispatcherTaskIndexPayload(compactRepeatedTasks),
+        repeatedTasks: serializeDispatcherTaskIndexPayload(compactRepeatedTasks, chainContinuations),
         welderStampExpiryTasks: JSON.stringify(tasks.welderStampExpiryTasks),
         duplicateKeys: JSON.stringify([...getDuplicateKeys(preparedRows)].sort()),
         dirtyScopes: '[]',
@@ -271,20 +273,26 @@ export async function calculateFullDispatcherTasks(
   const settingsRows = await tx.select().from(appSettings)
   const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicateRows)
   const currentDispatcherSettings = getDispatcherSettings(settingsRows)
+  const acceptedDispatcherWarningKeys = new Set(acceptedWarnings.map((row) => row.key))
+  const systemIndexSettings = getSystemIndexSettings(settingsRows)
+  const chainContinuations = buildJointChainContinuations(preparedRows, {
+    earlyCoilDecisionSourceRowIds: getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys),
+    systemIndexSettings,
+  })
   const tasks = buildVisibleDispatcherTasks({
-    acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
+    acceptedDispatcherWarningKeys,
     dismissedRepeatedJointTaskKeys: new Set(),
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: options.dispatcherSettings?.(currentDispatcherSettings) ?? currentDispatcherSettings,
     dataListSettings: getDataListSettings(settingsRows),
     saveCheckSettings: getSaveCheckSettings(settingsRows),
-    systemIndexSettings: getSystemIndexSettings(settingsRows),
+    systemIndexSettings,
     rows: preparedRows,
     welderStamps: stampRows.map(toWelderStampRecord),
     welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
     includeWelderStampExpiryTasks: options.includeWelderStampExpiryTasks,
   })
-  return { sourceRows: rows, preparedRows, tasks }
+  return { chainContinuations, sourceRows: rows, preparedRows, tasks }
 }
 
 async function rebuildScopedDispatcherTaskIndex(
@@ -322,23 +330,36 @@ async function rebuildScopedDispatcherTaskIndex(
   const settingsRows = await tx.select().from(appSettings)
   const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicateRows)
   await persistCalculatedFinalStatuses(tx, rows, preparedRows)
+  const acceptedDispatcherWarningKeys = new Set(acceptedWarnings.map((row) => row.key))
+  const systemIndexSettings = getSystemIndexSettings(settingsRows)
+  const scopedChainContinuations = buildJointChainContinuations(preparedRows, {
+    earlyCoilDecisionSourceRowIds: getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys),
+    systemIndexSettings,
+  })
   const scopedTasks = buildVisibleDispatcherTasks({
-    acceptedDispatcherWarningKeys: new Set(acceptedWarnings.map((row) => row.key)),
+    acceptedDispatcherWarningKeys,
     dismissedRepeatedJointTaskKeys: new Set(),
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: getDispatcherSettings(settingsRows),
     dataListSettings: getDataListSettings(settingsRows),
     saveCheckSettings: getSaveCheckSettings(settingsRows),
-    systemIndexSettings: getSystemIndexSettings(settingsRows),
+    systemIndexSettings,
     rows: preparedRows,
     welderStamps: stampRows.map(toWelderStampRecord),
     welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
   })
-  const previousTasks = parseDispatcherTaskIndexPayload(lockedState.repeatedTasks).tasks
+  const previousPayload = parseDispatcherTaskIndexPayload(lockedState.repeatedTasks)
+  const previousTasks = previousPayload.tasks
   const compactScopedTasks = compactDispatcherTasksForTransport(scopedTasks.repeatedJointTasks)
   const repeatedTasks = [
     ...previousTasks.filter((task) => !isDispatcherTaskInScopes(task, dirtyScopes)),
     ...compactScopedTasks,
+  ]
+  const chainContinuations = [
+    ...previousPayload.chainContinuations.filter(
+      (continuation) => !isChainContinuationInScopes(continuation, dirtyScopes),
+    ),
+    ...scopedChainContinuations,
   ]
   const rowIdSet = new Set(rowIds)
   const taskIndexRows = buildDispatcherTaskIndexRows(compactScopedTasks, preparedRows)
@@ -363,7 +384,7 @@ async function rebuildScopedDispatcherTaskIndex(
     .update(dispatcherTaskIndexState)
     .set({
       computedRevision: lockedState.sourceRevision,
-      repeatedTasks: serializeDispatcherTaskIndexPayload(repeatedTasks),
+      repeatedTasks: serializeDispatcherTaskIndexPayload(repeatedTasks, chainContinuations),
       duplicateKeys: JSON.stringify(await listDuplicateWeldKeys(tx)),
       dirtyScopes: '[]',
       fullRebuild: false,
@@ -437,6 +458,17 @@ function isDispatcherTaskInScopes(task: RepeatedJointTask, scopes: DispatcherDir
     String(taskScope.projectTitle ?? '').trim() === String(scope.projectTitle ?? '').trim() &&
     String(taskScope.subtitleCode ?? '').trim() === String(scope.subtitleCode ?? '').trim() &&
     String(taskScope.line ?? '').trim() === String(scope.line ?? '').trim(),
+  )
+}
+
+function isChainContinuationInScopes(
+  continuation: { projectTitle: string; subtitleCode: string; line: string },
+  scopes: DispatcherDirtyScope[],
+) {
+  return scopes.some((scope) =>
+    String(continuation.projectTitle ?? '').trim() === String(scope.projectTitle ?? '').trim() &&
+    String(continuation.subtitleCode ?? '').trim() === String(scope.subtitleCode ?? '').trim() &&
+    String(continuation.line ?? '').trim() === String(scope.line ?? '').trim(),
   )
 }
 

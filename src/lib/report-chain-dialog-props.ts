@@ -16,6 +16,12 @@ type CreateReportChainDialogPropsOptions = {
   onOpenDocument: ChainDialogProps['onOpenDocument']
   onOpenReport: ChainDialogProps['onOpenReport']
   onRunNextAction: ChainDialogProps['onRunNextAction']
+  canCreateRepeatedJoint: ChainDialogProps['canCreateRepeatedJoint']
+  isRepeatedJointPending: ChainDialogProps['isRepeatedJointPending']
+  onCreateRepeatedJoint: ChainDialogProps['onCreateRepeatedJoint']
+  canRenameRepeatedJoint: ChainDialogProps['canRenameRepeatedJoint']
+  isRenameRepeatedJointPending: ChainDialogProps['isRenameRepeatedJointPending']
+  onRenameRepeatedJoint: ChainDialogProps['onRenameRepeatedJoint']
   canCreateEarlyCoil: ChainDialogProps['canCreateEarlyCoil']
   isEarlyCoilPending: ChainDialogProps['isEarlyCoilPending']
   onCreateEarlyCoil: ChainDialogProps['onCreateEarlyCoil']
@@ -36,6 +42,12 @@ export function createReportChainDialogProps({
   onOpenDocument,
   onOpenReport,
   onRunNextAction,
+  canCreateRepeatedJoint,
+  isRepeatedJointPending,
+  onCreateRepeatedJoint,
+  canRenameRepeatedJoint,
+  isRenameRepeatedJointPending,
+  onRenameRepeatedJoint,
   canCreateEarlyCoil,
   isEarlyCoilPending,
   onCreateEarlyCoil,
@@ -57,6 +69,12 @@ export function createReportChainDialogProps({
           onOpenDocument,
           onOpenReport,
           onRunNextAction,
+          canCreateRepeatedJoint,
+          isRepeatedJointPending,
+          onCreateRepeatedJoint,
+          canRenameRepeatedJoint,
+          isRenameRepeatedJointPending,
+          onRenameRepeatedJoint,
           canCreateEarlyCoil,
           isEarlyCoilPending,
           onCreateEarlyCoil,

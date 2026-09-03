@@ -95,6 +95,24 @@ describe('useRepeatedJointTaskActions', () => {
       task,
     })
   })
+
+  it('shows every atomic rename in the confirmation before mutating the chain', async () => {
+    const task = renameTask()
+    task.changes.push({ rowId: 3, currentJoint: 'S1R2', targetJoint: 'S1W1R1' })
+    const options = createOptions(vi.fn().mockResolvedValue([task]))
+    const { result } = renderHook(() => useRepeatedJointTaskActions(options))
+
+    await act(async () => {
+      await result.current.renameObsoleteRepeatedJoint(task)
+    })
+
+    expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Исправить имена цепочки',
+      description: expect.stringContaining('S1R1 -> S1W1; S1R2 -> S1W1R1'),
+      warning: expect.stringContaining('Данные и документы останутся'),
+    }))
+    expect(options.renameRepeatedJointMutation.mutate).toHaveBeenCalledWith(task)
+  })
 })
 
 function createOptions(loadTasks: () => Promise<RepeatedJointTask[]>) {
@@ -146,5 +164,6 @@ function renameTask(): RepeatedJointRenameTask {
     currentJoint: 'S1R1',
     targetJoint: 'S1W1',
     baseJoint: 'S1',
+    changes: [{ rowId: 2, currentJoint: 'S1R1', targetJoint: 'S1W1' }],
   } as RepeatedJointRenameTask
 }

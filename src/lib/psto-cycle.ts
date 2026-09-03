@@ -1,4 +1,4 @@
-import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { isControlCancelledValue, isControlEnabledValue } from '@/lib/control-availability-values'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export type PstoRepeatCycleRecord = {
@@ -65,6 +65,9 @@ export function buildPstoCycleTimeline(
 }
 
 export function hasPrimaryPstoCycle(row: WeldInput) {
+  if (isControlCancelledValue(row.pstoRequired)) {
+    return hasPstoExecutionHistory(row, [])
+  }
   return (
     isControlEnabledValue(row.pstoRequired) ||
     PRIMARY_PSTO_CYCLE_FIELD_KEYS.some((key) => hasText(row[key]))

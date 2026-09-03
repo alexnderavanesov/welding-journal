@@ -1,4 +1,4 @@
-import { count, eq, inArray, sql } from 'drizzle-orm'
+import { and, count, eq, inArray, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -72,16 +72,40 @@ export async function getPreHeatTreatmentLnkExemptionsForNewRows(
   const settings = await loadControlProcessSettingsFromTransaction(tx)
   if (!settings.preHeatTreatmentLnkEnabled) return rows.map(() => true)
 
-  const exemptLines = await tx
-    .select({
-      projectTitle: weldJoints.projectTitle,
-      subtitleCode: weldJoints.subtitleCode,
-      line: weldJoints.line,
-    })
-    .from(weldJoints)
-    .where(eq(weldJoints.preHeatTreatmentLnkExempt, true))
-    .groupBy(weldJoints.projectTitle, weldJoints.subtitleCode, weldJoints.line)
-  const exemptLineKeys = new Set(exemptLines.map(getPstoLineIdentityKey))
+  const identitiesByKey = new Map(
+    rows.flatMap((row) => {
+      const identity = normalizePstoLineIdentity(row)
+      return identity.line ? [[getPstoLineIdentityKey(identity), identity] as const] : []
+    }),
+  )
+  const identities = [...identitiesByKey.values()]
+  const exemptLineKeys = new Set<string>()
+  for (let offset = 0; offset < identities.length; offset += 500) {
+    const chunk = identities.slice(offset, offset + 500)
+    const identityTuples = sql.join(
+      chunk.map((identity) => sql`(${identity.projectTitle}, ${identity.subtitleCode}, ${identity.line})`),
+      sql`, `,
+    )
+    const exemptLines = await tx
+      .select({
+        projectTitle: weldJoints.projectTitle,
+        subtitleCode: weldJoints.subtitleCode,
+        line: weldJoints.line,
+      })
+      .from(weldJoints)
+      .where(and(
+        eq(weldJoints.preHeatTreatmentLnkExempt, true),
+        sql`(
+          btrim(coalesce(${weldJoints.projectTitle}, '')),
+          btrim(coalesce(${weldJoints.subtitleCode}, '')),
+          btrim(coalesce(${weldJoints.line}, ''))
+        ) in (${identityTuples})`,
+      ))
+      .groupBy(weldJoints.projectTitle, weldJoints.subtitleCode, weldJoints.line)
+    for (const exemptLine of exemptLines) {
+      exemptLineKeys.add(getPstoLineIdentityKey(exemptLine))
+    }
+  }
 
   return rows.map((row) => {
     const identity = normalizePstoLineIdentity(row)

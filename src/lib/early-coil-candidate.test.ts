@@ -51,6 +51,10 @@ describe('evaluateEarlyCoilCandidate', () => {
     const editedExpected = { ...emptyExpected, updatedAt: '2026-09-02T08:01:00.000Z' }
     expect(evaluateEarlyCoilCandidate([base, source, editedExpected], source).reason)
       .toMatch(/уже содержит данные, историю или документы/)
+
+    const weldedExpected = { ...emptyExpected, weldDate: '2026-09-03' }
+    expect(evaluateEarlyCoilCandidate([base, source, weldedExpected], source).reason)
+      .toMatch(/уже содержит данные, историю или документы/)
   })
 
   it('blocks replacement when controls or documents are attached', () => {

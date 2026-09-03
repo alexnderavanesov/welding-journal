@@ -28,6 +28,16 @@ describe('getReportExportOptions', () => {
     ]))
   })
 
+  it('exports the read-only PSTO assignment immediately after assignment bases in LNK', () => {
+    const options = getReportExportOptions('lnk', 'ЛНК')
+    const fieldKeys = options.fields.map((field) => field.key)
+    const basisIndex = fieldKeys.indexOf('controlBasisSummary')
+
+    expect(basisIndex).toBeGreaterThanOrEqual(0)
+    expect(fieldKeys[basisIndex + 1]).toBe('pstoRequired')
+    expect(options.readOnlyFieldKeys.has('pstoRequired')).toBe(true)
+  })
+
   it('omits disabled process sections from the current LNK export', () => {
     const fieldKeys = getReportExportOptions('lnk', 'ЛНК', {
       layeredControlEnabled: false,

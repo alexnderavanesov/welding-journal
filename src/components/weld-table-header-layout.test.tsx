@@ -57,7 +57,7 @@ describe('WeldTable header layout', () => {
     expect(filterMenu?.parentElement).toBe(document.body)
   })
 
-  it('keeps task panels and the table on one right edge with a visible gutter', () => {
+  it('keeps task panels and the table on one inset right edge without a synthetic border', () => {
     const hiddenFieldKeys = new Set(
       VISIBLE_FIELDS
         .map((field) => field.key as WeldFieldKey)
@@ -80,10 +80,14 @@ describe('WeldTable header layout', () => {
     const layout = container.querySelector<HTMLElement>('[data-report-table-layout]')
     const taskPanelsFrame = container.querySelector<HTMLElement>('[data-report-task-panels-frame]')
     const tableFrame = container.querySelector<HTMLElement>('[data-report-table-frame]')
+    const tableBorderFrame = tableFrame?.querySelector<HTMLElement>(':scope > .relative')
 
     expect(taskPanelsFrame?.style.width).toBe(tableFrame?.style.width)
     expect(Number.parseFloat(layout?.style.width ?? '0')).toBe(
       Number.parseFloat(tableFrame?.style.width ?? '0') + 12,
     )
+    expect(tableBorderFrame).toHaveClass('after:right-0', 'after:bg-[#dbe7f0]')
+    expect(tableBorderFrame).not.toHaveClass('overflow-hidden')
+    expect(container.querySelector('[data-report-visible-right-edge]')).toBeNull()
   })
 })

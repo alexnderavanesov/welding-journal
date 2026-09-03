@@ -7,6 +7,7 @@ import type { WeldFilters } from '@/server/weld-contracts'
 
 const REPORT_NAVIGATION_HISTORY_KEY = '__weldingReportContext'
 const REPORT_NAVIGATION_HISTORY_VERSION = 1
+const SCROLL_POSITION_PERSIST_DELAY_MS = 250
 
 type ReportNavigationSnapshot = {
   version: typeof REPORT_NAVIGATION_HISTORY_VERSION
@@ -161,13 +162,14 @@ export function useReportNavigationContext({
   ])
 
   useEffect(() => {
-    let frameId: number | null = null
+    let timeoutId: number | null = null
     const persistScrollPosition = () => {
-      if (isRestoringRef.current || frameId !== null) return
-      frameId = window.requestAnimationFrame(() => {
-        frameId = null
+      if (isRestoringRef.current) return
+      if (timeoutId !== null) window.clearTimeout(timeoutId)
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null
         persistCurrentReportContext()
-      })
+      }, SCROLL_POSITION_PERSIST_DELAY_MS)
     }
     const persistBeforeLeaving = () => {
       if (!isRestoringRef.current) persistCurrentReportContext()
@@ -178,7 +180,7 @@ export function useReportNavigationContext({
     return () => {
       window.removeEventListener('scroll', persistScrollPosition)
       window.removeEventListener('pagehide', persistBeforeLeaving)
-      if (frameId !== null) window.cancelAnimationFrame(frameId)
+      if (timeoutId !== null) window.clearTimeout(timeoutId)
     }
   }, [persistCurrentReportContext])
 

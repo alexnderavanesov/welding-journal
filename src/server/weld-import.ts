@@ -37,6 +37,7 @@ import {
 assertEarlyCoilDecisionRowsCanBeDeleted,
 assertEarlyCoilDecisionSourcesRemainValid,
 } from '@/server/early-coil-decision-guard'
+import { assertJointChainIdentityChangesUseDedicatedMove } from '@/server/joint-chain-line-move-guard'
 import {
 removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction,
 syncSystemDocumentsForWeldChangesInTransaction
@@ -224,6 +225,12 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
           otherSettings: validationContext.otherSettings,
         })
         records = mergeWeldRecordsWithPrevious(records, previousRows)
+        await assertJointChainIdentityChangesUseDedicatedMove(
+          tx,
+          records,
+          previousRows,
+          validationContext.systemIndexSettings,
+        )
         await assertEarlyCoilDecisionSourcesRemainValid(tx, records, previousRows)
         prepareServerWeldRecords({
           records,

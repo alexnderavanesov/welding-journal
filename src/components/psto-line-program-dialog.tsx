@@ -70,7 +70,8 @@ export function PstoLineProgramDialog({
   const [cancellationDate, setCancellationDate] = useState(() => formatDateInputValue(new Date()))
   const [cancellationBasis, setCancellationBasis] = useState('')
   const [decisions, setDecisions] = useState<Record<number, PstoLineRemovalDisposition>>({})
-  const [activationDisposition, setActivationDisposition] = useState<PstoLineActivationDisposition | null>(null)
+  const [activationDispositions, setActivationDispositions] =
+    useState<Record<number, PstoLineActivationDisposition>>({})
   const linesQuery = useQuery({
     queryKey: PSTO_LINE_ASSIGNMENTS_QUERY_KEY,
     queryFn: () => listPstoLineAssignments(),
@@ -101,7 +102,7 @@ export function PstoLineProgramDialog({
       setCancellationDate(formatDateInputValue(new Date()))
       setCancellationBasis('')
       setDecisions({})
-      setActivationDisposition(null)
+      setActivationDispositions({})
       previewMutation.reset()
     },
     onError: (error) => onSaved([], (error as Error).message),
@@ -115,7 +116,7 @@ export function PstoLineProgramDialog({
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
     setDecisions({})
-    setActivationDisposition(null)
+    setActivationDispositions({})
     previewMutation.reset()
     saveMutation.reset()
   }, [open])
@@ -132,18 +133,18 @@ export function PstoLineProgramDialog({
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
     setDecisions({})
-    setActivationDisposition(null)
+    setActivationDispositions({})
     previewMutation.reset()
     saveMutation.reset()
   }
   const openAssign = (line: PstoLineAssignmentSummary) => {
-    setActivationDisposition(null)
+    setActivationDispositions({})
     previewMutation.reset()
     setView({ type: 'assign', line })
     previewMutation.mutate(toIdentity(line))
   }
   const openReactivate = (line: PstoLineAssignmentSummary) => {
-    setActivationDisposition(null)
+    setActivationDispositions({})
     previewMutation.reset()
     setView({ type: 'reactivate', line })
     previewMutation.mutate(toIdentity(line))
@@ -163,14 +164,16 @@ export function PstoLineProgramDialog({
     ) return
     const reactivating = view.type === 'reactivate'
     const blockedRows = previewMutation.data.rows.filter((row) => row.blocksActivation)
-    if (
-      (blockedRows.length > 0 && !activationDisposition) ||
-      (activationDisposition === 'movePrimaryToBeforeHeatTreatment' &&
-        blockedRows.some((row) => row.activationTransferBlockedMethods.length > 0))
-    ) return
+    if (blockedRows.some((row) => {
+      const disposition = activationDispositions[row.rowId]
+      return !disposition || (
+        disposition === 'movePrimaryToBeforeHeatTreatment' &&
+        row.activationTransferBlockedMethods.length > 0
+      )
+    })) return
     const activationDecisions: PstoLineActivationDecision[] = blockedRows.map((row) => ({
       rowId: row.rowId,
-      disposition: activationDisposition!,
+      disposition: activationDispositions[row.rowId]!,
       methodCodes: row.primaryMethods,
     }))
     onRunProtectedEdit(reactivating ? 'возобновление программы ПСТО' : 'назначение ПСТО на всю линию', async () => {
@@ -248,12 +251,12 @@ export function PstoLineProgramDialog({
           preview={previewMutation.data ?? null}
           previewLoading={previewMutation.isPending}
           previewError={(previewMutation.error as Error | null)?.message ?? ''}
-          activationDisposition={activationDisposition}
+          activationDispositions={activationDispositions}
           pending={saveMutation.isPending}
           error={(saveMutation.error as Error | null)?.message ?? ''}
-          onActivationDispositionChange={setActivationDisposition}
+          onActivationDispositionsChange={setActivationDispositions}
           onRetry={() => {
-            setActivationDisposition(null)
+            setActivationDispositions({})
             previewMutation.mutate(toIdentity(view.line))
           }}
           onCancel={goBack}
@@ -543,10 +546,10 @@ function AssignmentView({
   preview,
   previewLoading,
   previewError,
-  activationDisposition,
+  activationDispositions,
   pending,
   error,
-  onActivationDispositionChange,
+  onActivationDispositionsChange,
   onRetry,
   onCancel,
   onSubmit,
@@ -556,26 +559,39 @@ function AssignmentView({
   preview: PstoLineRemovalPreview | null
   previewLoading: boolean
   previewError: string
-  activationDisposition: PstoLineActivationDisposition | null
+  activationDispositions: Record<number, PstoLineActivationDisposition>
   pending: boolean
   error: string
-  onActivationDispositionChange: (value: PstoLineActivationDisposition) => void
+  onActivationDispositionsChange: (value: Record<number, PstoLineActivationDisposition>) => void
   onRetry: () => void
   onCancel: () => void
   onSubmit: () => void
 }) {
   const blockedRows = preview?.rows.filter((row) => row.blocksActivation) ?? []
-  const transferBlockedRows = blockedRows.filter(
-    (row) => row.activationTransferBlockedMethods.length > 0,
+  const selectedDecisionCount = blockedRows.filter(
+    (row) => Boolean(activationDispositions[row.rowId]),
+  ).length
+  const hasInvalidTransfer = blockedRows.some(
+    (row) => activationDispositions[row.rowId] === 'movePrimaryToBeforeHeatTreatment' &&
+      row.activationTransferBlockedMethods.length > 0,
   )
   const submitDisabled = (
     pending ||
     previewLoading ||
     !preview ||
     Boolean(previewError) ||
-    (blockedRows.length > 0 && !activationDisposition) ||
-    (activationDisposition === 'movePrimaryToBeforeHeatTreatment' && transferBlockedRows.length > 0)
+    selectedDecisionCount < blockedRows.length ||
+    hasInvalidTransfer
   )
+  const setAllActivationDispositions = (mode: 'keepPrimary' | 'moveAvailable') => {
+    const next: Record<number, PstoLineActivationDisposition> = {}
+    for (const row of blockedRows) {
+      next[row.rowId] = mode === 'keepPrimary' || row.activationTransferBlockedMethods.length > 0
+        ? 'keepPrimary'
+        : 'movePrimaryToBeforeHeatTreatment'
+    }
+    onActivationDispositionsChange(next)
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
@@ -616,54 +632,74 @@ function AssignmentView({
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                   <div>
-                    <p className="font-semibold">Выберите судьбу существующего основного НК</p>
+                    <p className="font-semibold">Выберите судьбу основного НК для каждого стыка</p>
                     <p className="mt-1 leading-5">
-                      Для фактического контроля после ТО сохраните основной комплект и позднее оформите отдельный НК до ТО.
-                      ДЗ-20 временно останется до заполнения всей цепочки и поможет найти недостающие этапы.
+                      Комплект каждого стыка переносится целиком. Для фактического контроля после ТО оставьте его основным
+                      и позднее оформите отдельный НК до ТО.
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 bg-white text-xs"
+                        onClick={() => setAllActivationDispositions('keepPrimary')}
+                      >
+                        Все оставить основными
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 bg-white text-xs"
+                        onClick={() => setAllActivationDispositions('moveAvailable')}
+                        title="Стыки с уже заполненным НК до ТО останутся на основном этапе"
+                      >
+                        Доступные перенести в «До ТО»
+                      </Button>
+                      <span className="ml-auto text-xs font-medium tabular-nums text-amber-800">
+                        Выбрано: {selectedDecisionCount} из {blockedRows.length}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
-                {blockedRows.map((row) => (
-                  <div key={row.rowId} className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(180px,0.75fr)_minmax(240px,1fr)]">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-slate-800">{row.joint || `#${row.rowId}`}</p>
-                      <p className="mt-0.5 truncate text-xs text-slate-500">Спул: {row.spool || '—'}</p>
+              <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
+                {blockedRows.map((row) => {
+                  const jointLabel = row.joint || `#${row.rowId}`
+                  return (
+                    <div
+                      key={row.rowId}
+                      className="grid gap-3 px-4 py-3 text-sm md:grid-cols-[minmax(130px,0.55fr)_minmax(220px,1fr)_minmax(300px,1.25fr)] md:items-center"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-800">{jointLabel}</p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">Спул: {row.spool || '—'}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-600">Основной НК: <MethodList methods={row.primaryMethods} /></p>
+                        {row.activationTransferBlockedMethods.length > 0 ? (
+                          <p className="mt-1 text-xs leading-5 text-amber-700">
+                            В «НК до ТО» уже заполнено: {row.activationTransferBlockedMethods.join(', ')}.
+                            Для этого стыка доступно только сохранение основного комплекта.
+                          </p>
+                        ) : null}
+                      </div>
+                      <ActivationDispositionSelector
+                        jointLabel={jointLabel}
+                        selected={activationDispositions[row.rowId]}
+                        transferDisabled={row.activationTransferBlockedMethods.length > 0}
+                        onChange={(disposition) => onActivationDispositionsChange({
+                          ...activationDispositions,
+                          [row.rowId]: disposition,
+                        })}
+                      />
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-xs text-slate-600">Основной НК: <MethodList methods={row.primaryMethods} /></p>
-                      {row.activationTransferBlockedMethods.length > 0 ? (
-                        <p className="mt-1 text-xs leading-5 text-amber-700">
-                          В «НК до ТО» уже заполнено: {row.activationTransferBlockedMethods.join(', ')}.
-                          Основной комплект можно сохранить; недоступен только перенос поверх уже созданных данных до ТО.
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-              <div className="border-t border-slate-200 bg-slate-50 p-3">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <ActivationDecisionButton
-                    selected={activationDisposition === 'keepPrimary'}
-                    title="Сохранить существующий основной НК"
-                    description="Основные заявки, результаты и заключения не изменятся. Отдельный НК до ТО можно оформить позже; до завершения цепочки ДЗ-20 останется активной."
-                    onClick={() => onActivationDispositionChange('keepPrimary')}
-                  />
-                  <ActivationDecisionButton
-                    selected={activationDisposition === 'movePrimaryToBeforeHeatTreatment'}
-                    disabled={transferBlockedRows.length > 0}
-                    title="Перенести основной НК в «До ТО»"
-                    description={transferBlockedRows.length > 0
-                      ? 'Перенос недоступен: по одному или нескольким методам этап «До ТО» уже заполнен.'
-                      : 'Используйте только если существующий комплект фактически относится к контролю до ТО. Основной этап освободится.'}
-                    onClick={() => onActivationDispositionChange('movePrimaryToBeforeHeatTreatment')}
-                  />
-                </div>
-                <p className="mt-3 text-xs leading-5 text-slate-600">
-                  Выбор сам по себе ничего не сохраняет. Изменение линии произойдет только после нажатия итоговой кнопки ниже.
-                </p>
+              <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600">
+                Выбор сам по себе ничего не сохраняет. ПСТО по-прежнему назначается всей линии только после нажатия итоговой кнопки.
               </div>
             </section>
           ) : preview ? (
@@ -686,43 +722,55 @@ function AssignmentView({
   )
 }
 
-function ActivationDecisionButton({
+function ActivationDispositionSelector({
+  jointLabel,
   selected,
-  disabled = false,
-  title,
-  description,
-  onClick,
+  transferDisabled,
+  onChange,
 }: {
-  selected: boolean
-  disabled?: boolean
-  title: string
-  description: string
-  onClick: () => void
+  jointLabel: string
+  selected: PstoLineActivationDisposition | undefined
+  transferDisabled: boolean
+  onChange: (value: PstoLineActivationDisposition) => void
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      disabled={disabled}
-      onClick={onClick}
-      className={`min-h-28 rounded-md border p-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-        selected
-          ? 'border-sky-400 bg-sky-50 text-sky-950 ring-1 ring-sky-200'
-          : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50/50'
-      }`}
-    >
-      <span className="flex items-start gap-3">
-        <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
-          selected ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300 bg-white text-transparent'
-        }`}>
-          <Check className="h-3.5 w-3.5" />
-        </span>
-        <span>
-          <span className="block font-semibold">{title}</span>
-          <span className="mt-1 block text-xs leading-5 text-slate-600">{description}</span>
-        </span>
-      </span>
-    </button>
+    <div className="min-w-0">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase text-slate-500">Судьба комплекта</p>
+      <div
+        role="group"
+        aria-label={`Судьба основного НК для стыка ${jointLabel}`}
+        className="grid min-h-10 grid-cols-2 gap-1 rounded-md border border-slate-200 bg-slate-100 p-1"
+      >
+        <button
+          type="button"
+          aria-label={`Оставить основной НК для стыка ${jointLabel}`}
+          aria-pressed={selected === 'keepPrimary'}
+          onClick={() => onChange('keepPrimary')}
+          className={`rounded px-2 py-1.5 text-xs font-semibold transition-colors ${
+            selected === 'keepPrimary'
+              ? 'bg-white text-sky-800 shadow-sm ring-1 ring-sky-200'
+              : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
+          }`}
+        >
+          Оставить основным
+        </button>
+        <button
+          type="button"
+          aria-label={`Перенести основной НК стыка ${jointLabel} в «До ТО»`}
+          aria-pressed={selected === 'movePrimaryToBeforeHeatTreatment'}
+          disabled={transferDisabled}
+          title={transferDisabled ? 'Этап «До ТО» уже содержит данные этого вида НК' : undefined}
+          onClick={() => onChange('movePrimaryToBeforeHeatTreatment')}
+          className={`rounded px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:text-slate-300 ${
+            selected === 'movePrimaryToBeforeHeatTreatment'
+              ? 'bg-white text-sky-800 shadow-sm ring-1 ring-sky-200'
+              : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
+          }`}
+        >
+          В «До ТО»
+        </button>
+      </div>
+    </div>
   )
 }
 

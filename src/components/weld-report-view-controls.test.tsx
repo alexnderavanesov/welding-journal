@@ -30,20 +30,40 @@ function renderControls() {
 }
 
 describe('WeldReportViewControls', () => {
-  it('uses its own right padding without extending the report scroll width', () => {
+  it('stays constrained to the visible right edge throughout horizontal scrolling', () => {
     renderControls()
 
     const controls = screen.getByRole('button', { name: /Наборы/ }).parentElement
 
     expect(controls).toHaveAttribute('data-report-view-controls')
     expect(controls).toHaveClass(
-      'right-0',
-      'pr-8',
+      'right-3',
+      'w-[27rem]',
+      'max-w-[calc(100vw-1.75rem)]',
+      'justify-end',
+      'mr-[-0.75rem]',
+      'pr-2',
+      'z-10',
+      'border-l',
+      'border-slate-300',
       'bg-slate-50',
-      'before:bg-gradient-to-r',
-      'before:border-r',
+      'after:z-10',
+      'after:w-8',
+      'after:bg-slate-50',
     )
-    expect(controls).not.toHaveClass('right-6', 'after:bg-slate-50')
+    expect(controls).toHaveClass('left-[max(0.5rem,calc(100vw-27rem-0.75rem))]')
+    expect(controls).not.toHaveClass(
+      'right-0',
+      'right-6',
+      'pr-8',
+      'before:w-8',
+      'before:bg-slate-50',
+      'before:bg-gradient-to-r',
+      'before:from-transparent',
+      'before:border-r',
+      'after:border-l',
+      'after:bg-white',
+    )
   })
 
   it('keeps the portaled columns panel open while the user scrolls inside it', () => {

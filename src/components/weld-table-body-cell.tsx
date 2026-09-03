@@ -49,6 +49,8 @@ const PSTO_REQUEST_TOOLTIP =
   'Данные заявки ПСТО. Заполняются при создании или изменении заявки в разделе «ПСТО» и не редактируются напрямую в таблице.'
 const PSTO_RESULT_TOOLTIP =
   'Данные результата ПСТО. Заполняются при добавлении или редактировании результата в разделе «ПСТО».'
+const PSTO_ASSIGNMENT_TOOLTIP =
+  'Назначение ПСТО для линии. Меняется только через «Программу ПСТО» и в отчете «ЛНК» показано для информации.'
 const TVMT_WORKFLOW_TOOLTIP =
   'Данные ТВМТ текущего цикла. Заявка и результат оформляются профильными действиями в разделе «Термообработка».'
 const RECORD_NUMBER_TOOLTIP =
@@ -103,6 +105,7 @@ export function getWeldTableReadOnlyFieldTooltip(fieldKey: WeldFieldKey) {
   if (fieldKey === 'wdi') return WDI_TOOLTIP
   if (fieldKey === 'officiality') return OFFICIALITY_TOOLTIP
   if (fieldKey === 'finalStatus') return FINAL_STATUS_TOOLTIP
+  if (fieldKey === 'pstoRequired') return PSTO_ASSIGNMENT_TOOLTIP
   if (getPreHeatTreatmentReportField(fieldKey)) return PRE_HEAT_TREATMENT_LNK_TOOLTIP
   if (LNK_REQUEST_FIELD_KEYS.has(fieldKey)) return LNK_REQUEST_TOOLTIP
   if (LNK_RESULT_FIELD_KEYS.has(fieldKey)) return LNK_RESULT_TOOLTIP

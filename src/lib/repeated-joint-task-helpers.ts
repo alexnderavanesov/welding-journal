@@ -101,12 +101,20 @@ export function getExpectedRepeatedJointName(
   settings: SystemIndexSettings = loadSystemIndexSettings(),
 ) {
   if (isUnofficialJoint(sourceRow)) return sourceJoint.trim()
-  const suffix = getExpectedRepeatedJointSuffix(sourceRow, result)
+  const suffix = getExpectedRepeatedJointSuffix(
+    { ...sourceRow, joint: sourceJoint },
+    result,
+    settings,
+  )
   return getNextRepeatedJointName(sourceJoint, suffix, settings)
 }
 
-export function getExpectedRepeatedJointSuffix(sourceRow: WeldInput, result: 'ремонт' | 'вырез'): 'R' | 'W' {
-  return result === 'ремонт' && !isLnkRepairForbiddenByOfficialRepairLimit(sourceRow) ? 'R' : 'W'
+export function getExpectedRepeatedJointSuffix(
+  sourceRow: WeldInput,
+  result: 'ремонт' | 'вырез',
+  settings: SystemIndexSettings = loadSystemIndexSettings(),
+): 'R' | 'W' {
+  return result === 'ремонт' && !isLnkRepairForbiddenByOfficialRepairLimit(sourceRow, settings) ? 'R' : 'W'
 }
 
 export function getOfficialRejectedJointChainRows(
@@ -152,7 +160,7 @@ export function getRepeatedJointSourceCandidates(
 }
 
 export function hasRepeatedJointTarget(rows: WeldRow[], sourceRow: WeldInput, targetJoint: string) {
-  return Boolean(findRepeatedJointRow(rows, sourceRow, targetJoint))
+  return Boolean(findRepeatedJointTarget(rows, sourceRow, targetJoint))
 }
 
 export function findMatchingJointRows(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
@@ -183,7 +191,7 @@ function getNextRepeatedJointName(
   return formatRepeatedJointName(parsed.base, segments, settings)
 }
 
-function findRepeatedJointRow(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
+export function findRepeatedJointTarget(rows: WeldRow[], sourceRow: WeldInput, joint: string) {
   const sourceIdentity = getRepeatedJointIdentity(sourceRow, joint)
   if (!sourceIdentity) return null
   const sourceId = typeof (sourceRow as { id?: unknown }).id === 'number' ? (sourceRow as { id: number }).id : null

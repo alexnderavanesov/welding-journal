@@ -1,6 +1,7 @@
 import { ArrowRight, CheckCircle2, ExternalLink, FileText, ListTodo, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { isControlCancelledValue } from '@/lib/control-availability-values'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-actions'
@@ -30,6 +31,7 @@ export function JointHistoryOverview({
 }: JointHistoryOverviewProps) {
   const preControls = getPreHeatTreatmentControls(row)
   const cycles = buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? [])
+  const pstoCancelled = isControlCancelledValue(row.pstoRequired)
   const nextActions = buildJointNextActions(row, dispatcherTasks)
   const mainControls = LNK_METHODS.filter((method) => [
     row[method.enabledKey],
@@ -94,7 +96,14 @@ export function JointHistoryOverview({
           })}
         </HistorySection>
 
-        <HistorySection title="ПСТО и ТВМТ" empty={cycles.length === 0}>
+        <HistorySection title="ПСТО и ТВМТ" empty={!pstoCancelled && cycles.length === 0}>
+          {pstoCancelled ? (
+            <HistoryLine
+              label="Линия ПСТО"
+              date={row.pstoCancellationDate}
+              value="отменена"
+            />
+          ) : null}
           {cycles.map((cycle) => (
             <PstoCycleLine key={cycle.sequence} row={row} cycle={cycle} onOpenDocument={onOpenDocument} />
           ))}

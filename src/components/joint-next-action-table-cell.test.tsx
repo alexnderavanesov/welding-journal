@@ -5,24 +5,26 @@ import { JointNextActionTableCell } from '@/components/joint-next-action-table-c
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('JointNextActionTableCell', () => {
-  it('runs the same next action that is shown in the joint picture', () => {
+  it('opens the joint picture from the text and runs the shown action only from the arrow', () => {
     const row = { id: 12, line: '330-D01', joint: 'F12', weldDate: '' } as WeldRow
     const onRun = vi.fn()
+    const onOpenOverview = vi.fn()
     render(
       <JointNextActionTableCell
         row={row}
         dispatcherTasks={[]}
         onRun={onRun}
-        onOpenOverview={vi.fn()}
+        onOpenOverview={onOpenOverview}
       />,
     )
 
     fireEvent.click(screen.getByText('Заполнить сварку F12'))
-    expect(onRun).toHaveBeenCalledWith(row, expect.objectContaining({ kind: 'editWeld' }))
+    expect(onOpenOverview).toHaveBeenCalledWith(row)
+    expect(onRun).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Выполнить: Заполнить сварку F12' }))
-    expect(onRun).toHaveBeenCalledTimes(2)
-    expect(onRun).toHaveBeenLastCalledWith(row, expect.objectContaining({ kind: 'editWeld' }))
+    expect(onRun).toHaveBeenCalledTimes(1)
+    expect(onRun).toHaveBeenCalledWith(row, expect.objectContaining({ kind: 'editWeld' }))
   })
 
   it('opens the joint history from the dedicated info button without running the action', () => {
@@ -60,7 +62,7 @@ describe('JointNextActionTableCell', () => {
     expect(onOpenOverview).toHaveBeenCalledWith(row)
   })
 
-  it('runs the displayed workflow from the cell background without opening the row editor', () => {
+  it('opens the joint picture from the cell background without triggering the parent row', () => {
     const row = {
       id: 14,
       joint: 'F14',
@@ -71,6 +73,7 @@ describe('JointNextActionTableCell', () => {
       pstoResult: 'ожидает ПСТО',
     } as WeldRow
     const onRun = vi.fn()
+    const onOpenOverview = vi.fn()
     const onEditRow = vi.fn()
     const { container } = render(
       <div onClick={onEditRow}>
@@ -78,7 +81,7 @@ describe('JointNextActionTableCell', () => {
           row={row}
           dispatcherTasks={[]}
           onRun={onRun}
-          onOpenOverview={vi.fn()}
+          onOpenOverview={onOpenOverview}
         />
       </div>,
     )
@@ -87,7 +90,8 @@ describe('JointNextActionTableCell', () => {
     if (!cellBackground) throw new Error('Next-action cell was not rendered')
     fireEvent.click(cellBackground)
 
-    expect(onRun).toHaveBeenCalledWith(row, expect.objectContaining({ kind: 'pstoResult' }))
+    expect(onOpenOverview).toHaveBeenCalledWith(row)
+    expect(onRun).not.toHaveBeenCalled()
     expect(onEditRow).not.toHaveBeenCalled()
   })
 })

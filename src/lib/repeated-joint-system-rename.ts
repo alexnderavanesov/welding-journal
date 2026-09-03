@@ -1,4 +1,4 @@
-import type { RepeatedJointRenameTask, WeldRow } from '@/lib/dispatcher-types'
+import type { RepeatedJointRenameChange, RepeatedJointRenameTask, WeldRow } from '@/lib/dispatcher-types'
 import { normalizeJointName, parseJointName } from '@/lib/joint-name'
 import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
 import {
@@ -7,9 +7,7 @@ import {
 } from '@/lib/system-index-settings'
 
 export type SystemRepeatedJointRenameRequest = {
-  id: number
-  currentJoint: string
-  targetJoint: string
+  changes: RepeatedJointRenameChange[]
 }
 
 export function isAuthorizedSystemRepeatedJointRename(
@@ -21,8 +19,15 @@ export function isAuthorizedSystemRepeatedJointRename(
     ...row,
     joint: toCanonicalSystemJointName(row.joint, systemIndexSettings),
   }))
-  const canonicalCurrentJoint = toCanonicalSystemJointName(request.currentJoint, systemIndexSettings)
-  const canonicalTargetJoint = toCanonicalSystemJointName(request.targetJoint, systemIndexSettings)
+  const canonicalChanges = request.changes.map((change) => ({
+    rowId: Number(change.rowId),
+    currentJoint: toCanonicalSystemJointName(change.currentJoint, systemIndexSettings),
+    targetJoint: toCanonicalSystemJointName(change.targetJoint, systemIndexSettings),
+  }))
+  if (
+    canonicalChanges.length === 0 ||
+    new Set(canonicalChanges.map((change) => change.rowId)).size !== canonicalChanges.length
+  ) return false
 
   return buildRepeatedJointTasks(canonicalRows, [], [], {
     includeControlHistoryChecks: false,
@@ -36,10 +41,23 @@ export function isAuthorizedSystemRepeatedJointRename(
   }).some(
     (task): task is RepeatedJointRenameTask =>
       task.kind === 'rename' &&
-      task.row.id === request.id &&
-      normalizeJointName(task.currentJoint).toUpperCase() === canonicalCurrentJoint.toUpperCase() &&
-      normalizeJointName(task.targetJoint).toUpperCase() === canonicalTargetJoint.toUpperCase(),
+      isSameRenamePlan(task.changes, canonicalChanges),
   )
+}
+
+function isSameRenamePlan(
+  expected: readonly RepeatedJointRenameChange[],
+  actual: readonly RepeatedJointRenameChange[],
+) {
+  return expected.length === actual.length && expected.every((change, index) => {
+    const candidate = actual[index]
+    return Boolean(
+      candidate &&
+      change.rowId === candidate.rowId &&
+      normalizeJointName(change.currentJoint).toUpperCase() === normalizeJointName(candidate.currentJoint).toUpperCase() &&
+      normalizeJointName(change.targetJoint).toUpperCase() === normalizeJointName(candidate.targetJoint).toUpperCase()
+    )
+  })
 }
 
 export function toCanonicalSystemJointName(

@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   getEarlyCoilDecisionInvalidationReason,
   getEarlyCoilDecisionTargetSource,
+  refreshEarlyCoilDecisionContextsInTransaction,
 } from '@/server/early-coil-decision-guard'
+import { getEarlyCoilDecisionKey } from '@/lib/early-coil-decision'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -87,6 +89,42 @@ describe('getEarlyCoilDecisionInvalidationReason', () => {
       .toMatch(/официальным/)
   })
 
+  it('allows only a server-authorized line move while preserving the accepted decision', () => {
+    expect(getEarlyCoilDecisionInvalidationReason(
+      { ...previous, line: 'Другая линия' },
+      previous,
+      { allowLineMove: true },
+    )).toBeNull()
+    expect(getEarlyCoilDecisionInvalidationReason(
+      { ...previous, projectTitle: 'Другой проект', line: 'Другая линия' },
+      previous,
+      { allowLineMove: true },
+    )).toMatch(/нельзя изменить/)
+    expect(getEarlyCoilDecisionInvalidationReason(
+      { ...previous, line: 'Другая линия', rkResult: 'годен' },
+      previous,
+      { allowLineMove: true },
+    )).toMatch(/должен оставаться хотя бы один/)
+  })
+
+  it('allows only a server-authorized R/W rename while preserving the accepted decision', () => {
+    expect(getEarlyCoilDecisionInvalidationReason(
+      { ...previous, joint: 'S1W1' },
+      previous,
+      { allowJointRename: true },
+    )).toBeNull()
+    expect(getEarlyCoilDecisionInvalidationReason(
+      { ...previous, joint: 'S1W1', line: 'Другая линия' },
+      previous,
+      { allowJointRename: true },
+    )).toMatch(/нельзя изменить/)
+    expect(getEarlyCoilDecisionInvalidationReason(
+      { ...previous, joint: 'S1W1', rkResult: 'годен' },
+      previous,
+      { allowJointRename: true },
+    )).toMatch(/должен оставаться хотя бы один/)
+  })
+
   it('recognizes only the Y1/Y2 rows created from the exact accepted branch and scope', () => {
     const source = row({ id: 10, joint: 'S1Y1R1', rkResult: 'ремонт' })
     const decisions = [{ source, settings: DEFAULT_SYSTEM_INDEX_SETTINGS }]
@@ -103,6 +141,29 @@ describe('getEarlyCoilDecisionInvalidationReason', () => {
       row({ id: 13, joint: 'S1Y1Y2', line: 'Другая линия', rkResult: null }),
       decisions,
     )).toBeNull()
+  })
+
+  it('refreshes several accepted-decision contexts with one batched write', async () => {
+    const rows = [
+      row({ id: 10, joint: 'S10R1', rkResult: 'ремонт' }),
+      row({ id: 20, joint: 'S20R1', rkResult: 'ремонт' }),
+      row({ id: 30, joint: 'S30R1', rkResult: 'ремонт' }),
+    ]
+    const where = vi.fn().mockResolvedValue(
+      rows.map((source) => ({ key: getEarlyCoilDecisionKey(source.id) })),
+    )
+    const from = vi.fn().mockReturnValue({ where })
+    const select = vi.fn().mockReturnValue({ from })
+    const execute = vi.fn().mockResolvedValue(undefined)
+
+    await refreshEarlyCoilDecisionContextsInTransaction(
+      { select, execute } as never,
+      rows,
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+    )
+
+    expect(select).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledTimes(1)
   })
 })
 

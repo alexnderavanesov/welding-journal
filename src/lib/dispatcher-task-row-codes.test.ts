@@ -3,6 +3,7 @@ import type {
   DispatcherTask,
   RepeatedJointCheckTask,
   RepeatedJointCoilTask,
+  RepeatedJointRenameTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
 import {
@@ -78,6 +79,23 @@ function earlyCoilTask(rowValue: WeldRow): RepeatedJointCoilTask {
     result: 'ремонт',
     methodCode: 'ВИК',
     transitionMode: 'early-decision',
+  }
+}
+
+function renameTask(rows: WeldRow[]): RepeatedJointRenameTask {
+  return {
+    kind: 'rename',
+    key: 'rename-chain-2',
+    row: rows[1]!,
+    sourceRow: rows[0]!,
+    sourceJoint: 'S1',
+    currentJoint: 'S1R1',
+    targetJoint: 'S1W1',
+    baseJoint: 'S1',
+    changes: [
+      { rowId: rows[1]!.id, currentJoint: 'S1R1', targetJoint: 'S1W1' },
+      { rowId: rows[2]!.id, currentJoint: 'S1R2', targetJoint: 'S1W1R1' },
+    ],
   }
 }
 
@@ -196,6 +214,24 @@ describe('dispatcher task row codes', () => {
     )
     expect(activeByRowId.get(1)).toBe('ДЗ-09')
     expect(allByRowId.get(1)).toBe('ДЗ-09')
+  })
+
+  it('indexes one chain rename task on every row changed by the atomic plan', () => {
+    const rows = [
+      row(1, { joint: 'S1' }),
+      row(2, { joint: 'S1R1' }),
+      row(3, { joint: 'S1R2' }),
+    ]
+
+    const persistedRows = buildDispatcherTaskIndexRows([renameTask(rows)], rows)
+
+    expect(persistedRows).toEqual([
+      { rowId: 2, taskKey: 'rename-chain-2', code: 'ДЗ-11' },
+      { rowId: 3, taskKey: 'rename-chain-2', code: 'ДЗ-11' },
+    ])
+    const { allByRowId } = buildMergedDispatcherTaskCodes(persistedRows, [])
+    expect(allByRowId.get(2)).toBe('ДЗ-11')
+    expect(allByRowId.get(3)).toBe('ДЗ-11')
   })
 
   it('keeps active codes separate while exposing the union in the virtual field', () => {

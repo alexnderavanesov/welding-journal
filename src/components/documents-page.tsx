@@ -2170,8 +2170,12 @@ function SystemDocumentsPanel({
             {visibleDocuments.map((documentRecord, documentIndex) => {
               const templateAvailable = hasTemplateForDocument(documentRecord)
               const isSelected = selectedDocumentIds.has(documentRecord.id)
-              const canTransferStage = controlProcessSettings.preHeatTreatmentLnkEnabled &&
-                canTransferSystemDocumentStage(documentRecord)
+              const isBulkSelectionContext = isSelected && selectedDocuments.length > 1
+              const canTransferStage = canShowSystemDocumentStageTransfer({
+                documentRecord,
+                processEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled,
+                isBulkSelectionContext,
+              })
               const canRenameDocument = !documentRecord.sourceKind
               const methodCodes = getSystemDocumentMethodCodes(documentRecord)
               return (
@@ -2189,7 +2193,7 @@ function SystemDocumentsPanel({
                   style={{ gridTemplateColumns: historyGridLayout.gridTemplateColumns }}
                   onContextMenu={(event) => {
                     event.preventDefault()
-                    const bulkItems = selectedDocumentIds.has(documentRecord.id) && selectedDocuments.length > 1
+                    const bulkItems = isBulkSelectionContext
                       ? [
                           {
                             id: 'download-selected-archive',
@@ -2360,6 +2364,18 @@ function canTransferSystemDocumentStage(documentRecord: SystemDocumentSummary) {
   ) return false
   const methods = getSystemDocumentMethodCodes(documentRecord)
   return methods.length > 0 && methods.every(isPreHeatTreatmentLnkMethodCode)
+}
+
+export function canShowSystemDocumentStageTransfer({
+  documentRecord,
+  processEnabled,
+  isBulkSelectionContext,
+}: {
+  documentRecord: SystemDocumentSummary
+  processEnabled: boolean
+  isBulkSelectionContext: boolean
+}) {
+  return processEnabled && !isBulkSelectionContext && canTransferSystemDocumentStage(documentRecord)
 }
 
 function DocumentDimensionCell({ values }: { values: string[] }) {

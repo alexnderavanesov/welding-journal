@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 export type ReportNotificationToastProps = {
@@ -16,6 +17,7 @@ export function ReportNotificationToast({
   durationMs = 10_000,
 }: ReportNotificationToastProps) {
   const [isPaused, setIsPaused] = useState(false)
+  const [hasOpenModal, setHasOpenModal] = useState(false)
   const [dismissedMessage, setDismissedMessage] = useState<string | null>(null)
   const dismiss = useCallback(() => {
     if (!message) return
@@ -26,6 +28,21 @@ export function ReportNotificationToast({
   useEffect(() => {
     setDismissedMessage(null)
     setIsPaused(false)
+  }, [message])
+
+  useEffect(() => {
+    if (!message || typeof document === 'undefined') {
+      setHasOpenModal(false)
+      return undefined
+    }
+
+    const syncModalState = () => {
+      setHasOpenModal(Boolean(document.querySelector('[data-modal-dialog="true"]')))
+    }
+    syncModalState()
+    const observer = new MutationObserver(syncModalState)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
   }, [message])
 
   useEffect(() => {
@@ -41,12 +58,15 @@ export function ReportNotificationToast({
   const isError = tone === 'error'
   const Icon = isError ? AlertCircle : isSuccess ? CheckCircle2 : Info
 
-  return (
+  const toast = (
     <div
       role="status"
       aria-live="polite"
       className={cn(
-        'fixed bottom-20 right-4 z-[35] flex w-[calc(100vw-2rem)] max-w-sm items-center gap-2.5 rounded-lg border bg-white/95 p-2.5 pr-2 text-[13px] shadow-[0_12px_30px_rgba(15,23,42,0.16)] backdrop-blur-sm xl:bottom-5 xl:right-20',
+        'fixed right-4 z-[220] flex w-[calc(100vw-2rem)] max-w-sm items-center gap-2.5 rounded-lg border bg-white p-2.5 pr-2 text-[13px] shadow-[0_14px_36px_rgba(15,23,42,0.24)] transition-[bottom,right] duration-150',
+        hasOpenModal
+          ? 'bottom-24 xl:bottom-24 xl:right-6'
+          : 'bottom-20 xl:bottom-5 xl:right-20',
         isError
           ? 'border-rose-200 text-rose-950 shadow-rose-100/50'
           : isSuccess
@@ -81,4 +101,5 @@ export function ReportNotificationToast({
       </button>
     </div>
   )
+  return typeof document === 'undefined' ? toast : createPortal(toast, document.body)
 }

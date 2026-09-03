@@ -276,7 +276,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     checkEditedWeldLineMove,
     getPstoLineMoveSaveBlockReason,
     pstoLineMovePreSaveDecision,
-    getPstoLineMoveDisposition,
+    getPstoLineMoveSaveData,
     confirmPstoLineMove,
   } = weldEditorController
   const [welderStampSuspensionEditorOpenSignal, setWelderStampSuspensionEditorOpenSignal] = useState(0)
@@ -3322,6 +3322,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenDocument: openReportDocument,
     onOpenReport: (row, report) => openRowsInReport([row], report),
     onRunNextAction: runJointNextAction,
+    canCreateRepeatedJoint: activeReport === 'weldingJournal',
+    isRepeatedJointPending: repeatedJointMutation.isPending,
+    onCreateRepeatedJoint: createRepeatedJoint,
+    canRenameRepeatedJoint: activeReport === 'weldingJournal',
+    isRenameRepeatedJointPending: renameRepeatedJointMutation.isPending,
+    onRenameRepeatedJoint: (task) =>
+      runProtectedEdit('переименование стыка', () => renameObsoleteRepeatedJoint(task)),
     canCreateEarlyCoil: activeReport === 'weldingJournal',
     isEarlyCoilPending: earlyCoilMutation.isPending,
     onCreateEarlyCoil: (row, candidate) =>
@@ -3341,9 +3348,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       return
     }
 
-    const disposition = getPstoLineMoveDisposition(saveValue)
-    saveMutation.mutate(disposition
-      ? { ...saveValue, pstoLineMoveDisposition: disposition }
+    const lineMoveSaveData = getPstoLineMoveSaveData(saveValue)
+    saveMutation.mutate(lineMoveSaveData
+      ? { ...saveValue, ...lineMoveSaveData }
       : saveValue)
   }
   const reportWeldEditorProps = createReportWeldEditorProps({
@@ -3369,7 +3376,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     moveDialogProps: pstoLineMoveDraftState?.status === 'required' && pstoLineMoveDraftState.dialogOpen
       ? {
           preview: pstoLineMoveDraftState.preview,
-          initialDisposition: pstoLineMoveDraftState.disposition,
+          initialDecisions: pstoLineMoveDraftState.decisions,
           pending: false,
           error: null,
           onClose: () => {

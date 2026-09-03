@@ -2,19 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PstoWeldLineMoveDialog } from '@/components/psto-weld-line-move-dialog'
-import type { PstoWeldLineMovePreview } from '@/lib/psto-line-assignment'
+import type {
+  PstoWeldLineMovePreview,
+  PstoWeldLineMovePreviewRow,
+} from '@/lib/psto-line-assignment'
 
-const assignedPreview: PstoWeldLineMovePreview = {
-  sourceIdentity: { projectTitle: 'Проект', subtitleCode: '400', line: 'L-1' },
-  targetIdentity: { projectTitle: 'Проект', subtitleCode: '400', line: 'L-2' },
-  targetState: 'assigned',
-  requestOnlyCount: 0,
-  completedPstoCount: 0,
-  preControlCount: 0,
-  completedPreControlCount: 0,
-  pendingPreControlCount: 0,
-  repeatCycleCount: 0,
-  row: {
+const assignedRow: PstoWeldLineMovePreviewRow = {
     rowId: 7,
     joint: 'F7',
     spool: 'S1',
@@ -29,7 +22,25 @@ const assignedPreview: PstoWeldLineMovePreview = {
     hasConflict: false,
     blocksActivation: true,
     activationTransferBlockedMethods: [],
-  },
+    requiresDisposition: true,
+}
+
+const assignedPreview: PstoWeldLineMovePreview = {
+  sourceIdentity: { projectTitle: 'Проект', subtitleCode: '400', line: 'L-1' },
+  targetIdentity: { projectTitle: 'Проект', subtitleCode: '400', line: 'L-2' },
+  targetState: 'assigned',
+  rootRowId: 7,
+  rootJoint: 'F7',
+  isChainMove: false,
+  expectedRowIds: [7],
+  requestOnlyCount: 0,
+  completedPstoCount: 0,
+  preControlCount: 0,
+  completedPreControlCount: 0,
+  pendingPreControlCount: 0,
+  repeatCycleCount: 0,
+  rows: [assignedRow],
+  row: assignedRow,
 }
 
 describe('PstoWeldLineMoveDialog', () => {
@@ -50,7 +61,7 @@ describe('PstoWeldLineMoveDialog', () => {
 
     expect(screen.getByText(/Решение выполнится только после сохранения карточки стыка/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Применить решение' }))
-    expect(onConfirm).toHaveBeenCalledWith('keepPrimary')
+    expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
   })
 
   it('still allows moving a misclassified primary set to pre-TO explicitly', () => {
@@ -67,7 +78,7 @@ describe('PstoWeldLineMoveDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /Перенести основной комплект в «До ТО»/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Применить решение' }))
 
-    expect(onConfirm).toHaveBeenCalledWith('movePrimaryToBeforeHeatTreatment')
+    expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'movePrimaryToBeforeHeatTreatment' }])
   })
 
   it('allows deleting the primary set explicitly without changing the dialog destination', () => {
@@ -84,7 +95,7 @@ describe('PstoWeldLineMoveDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /Удалить основной комплект/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Применить решение' }))
 
-    expect(onConfirm).toHaveBeenCalledWith('deletePrimary')
+    expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'deletePrimary' }])
   })
 
   it('keeps the established choices when moving PSTO history to a line without PSTO', () => {
@@ -98,6 +109,11 @@ describe('PstoWeldLineMoveDialog', () => {
             preMethods: ['ВИК'],
             promotablePreMethods: ['ВИК'],
           },
+          rows: [{
+            ...assignedPreview.row,
+            preMethods: ['ВИК'],
+            promotablePreMethods: ['ВИК'],
+          }],
         }}
         pending={false}
         onClose={vi.fn()}
@@ -114,7 +130,7 @@ describe('PstoWeldLineMoveDialog', () => {
     render(
       <PstoWeldLineMoveDialog
         preview={assignedPreview}
-        initialDisposition="deletePrimary"
+        initialDecisions={[{ rowId: 7, disposition: 'deletePrimary' }]}
         pending={false}
         onClose={vi.fn()}
         onConfirm={vi.fn()}
@@ -122,5 +138,40 @@ describe('PstoWeldLineMoveDialog', () => {
     )
 
     expect(screen.getByRole('button', { name: /Удалить основной комплект/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('shows every chain row and confirms one decision per row', () => {
+    const onConfirm = vi.fn()
+    const coilRow: PstoWeldLineMovePreviewRow = {
+      ...assignedRow,
+      rowId: 8,
+      joint: 'F7Y1',
+      primaryMethods: [],
+      blocksActivation: false,
+      requiresDisposition: false,
+    }
+    render(
+      <PstoWeldLineMoveDialog
+        preview={{
+          ...assignedPreview,
+          isChainMove: true,
+          expectedRowIds: [7, 8],
+          rows: [assignedRow, coilRow],
+        }}
+        pending={false}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Перенос цепочки F7' })).toBeInTheDocument()
+    expect(screen.getByText(/F7, F7Y1/)).toBeInTheDocument()
+    expect(screen.getByText('Перенос без дополнительного решения')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос цепочки' }))
+    expect(onConfirm).toHaveBeenCalledWith([
+      { rowId: 7, disposition: 'keepPrimary' },
+      { rowId: 8, disposition: 'keepPrimary' },
+    ])
   })
 })

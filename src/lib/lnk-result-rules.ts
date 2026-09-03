@@ -3,6 +3,7 @@ import { formatJointDiameterLabel, getMinimumJointDiameter, isUnofficialJoint } 
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON } from '@/lib/report-config'
 import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export function isLnkRepairForbiddenByDiameter(row: WeldInput) {
@@ -10,11 +11,14 @@ export function isLnkRepairForbiddenByDiameter(row: WeldInput) {
   return diameter !== null && diameter < 89
 }
 
-export function isLnkRepairForbiddenByOfficialRepairLimit(row: WeldInput) {
+export function isLnkRepairForbiddenByOfficialRepairLimit(
+  row: WeldInput,
+  systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
   if (isUnofficialJoint(row)) return false
   const joint = String(row.joint ?? '').trim()
   if (!joint) return false
-  return getRepeatedJointRepairCount(parseRepeatedJointName(joint)) >= 2
+  return getRepeatedJointRepairCount(parseRepeatedJointName(joint, systemIndexSettings)) >= 2
 }
 
 export function isLnkRepairForbidden(row: WeldInput) {

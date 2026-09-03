@@ -15,17 +15,29 @@ describe('dispatcher task index payload', () => {
     expect(isDispatcherTaskIndexPayloadCurrent(JSON.stringify(legacyTasks))).toBe(false)
     expect(parseDispatcherTaskIndexPayload(JSON.stringify(legacyTasks))).toEqual({
       version: 0,
+      chainContinuations: [],
       tasks: legacyTasks,
     })
   })
 
-  it('round-trips the current calculation version and tasks', () => {
+  it('round-trips the current calculation version, tasks, and resolved chain continuations', () => {
     const tasks = [{ kind: 'check', key: 'current' }] as RepeatedJointTask[]
-    const serialized = serializeDispatcherTaskIndexPayload(tasks)
+    const chainContinuations = [{
+      kind: 'repeated-joint' as const,
+      sourceRowId: 1,
+      sourceJoint: 'S1',
+      targetJoints: ['S1R1'],
+      targetRowIds: [2],
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'LIN-1',
+    }]
+    const serialized = serializeDispatcherTaskIndexPayload(tasks, chainContinuations)
 
     expect(isDispatcherTaskIndexPayloadCurrent(serialized)).toBe(true)
     expect(parseDispatcherTaskIndexPayload(serialized)).toEqual({
       version: DISPATCHER_TASK_CALCULATION_VERSION,
+      chainContinuations,
       tasks,
     })
   })

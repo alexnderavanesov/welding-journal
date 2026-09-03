@@ -45,6 +45,22 @@ describe('joint coil transitions', () => {
     }])
   })
 
+  it('preserves the automatic coil limit when earlier repeated rows are missing', () => {
+    const rows = [
+      row(1, 'S30', { rkResult: 'вырез' }),
+      row(4, 'S30W3', { rkResult: 'вырез' }),
+    ]
+
+    expect(buildJointCoilTransitions(rows)).toMatchObject([{
+      parentBranchJoint: 'S30',
+      sourceRowId: 4,
+      sourceJoint: 'S30W3',
+      targetJoints: ['S30Y1', 'S30Y2'],
+      targetRowIds: [null, null],
+      mode: 'limit',
+    }])
+  })
+
   it('keeps nested coil transitions independent from their parent coil', () => {
     const rows = [
       row(1, 'S1', { rkResult: 'ремонт' }),

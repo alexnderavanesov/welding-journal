@@ -1,5 +1,6 @@
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 
+import type { requireDb } from '@/db'
 import {
   appSettings,
   dispatcherAcceptedWarnings,
@@ -31,15 +32,25 @@ import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-con
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 
 type GuardTransaction = SystemDocumentSequenceTransaction
+type GuardReadClient = Pick<ReturnType<typeof requireDb>, 'select'>
 
 const IDENTITY_FIELDS = ['projectTitle', 'subtitleCode', 'line', 'joint'] as const
 
 export function getEarlyCoilDecisionInvalidationReason(
   record: WeldInput,
   previous: WeldInput,
+  options: { allowJointRename?: boolean; allowLineMove?: boolean } = {},
 ) {
-  const identityChanged = hasIdentityChanged(record, previous)
-  if (identityChanged) return 'нельзя изменить проект, шифр, линию или номер исходного стыка'
+  const changedIdentityFields = getChangedIdentityFields(record, previous)
+  if (
+    changedIdentityFields.length > 0 &&
+    !(
+      (options.allowLineMove && changedIdentityFields.every((fieldKey) => fieldKey === 'line')) ||
+      (options.allowJointRename && changedIdentityFields.every((fieldKey) => fieldKey === 'joint'))
+    )
+  ) {
+    return 'нельзя изменить проект, шифр, линию или номер исходного стыка'
+  }
   if (isUnofficialJoint(record)) return 'исходный стык должен оставаться официальным'
   if (!getPrimaryRejectedLnkResult(record)) {
     return 'у исходного стыка должен оставаться хотя бы один результат «ремонт» или «вырез»'
@@ -51,6 +62,10 @@ export async function assertEarlyCoilDecisionSourcesRemainValid(
   tx: GuardTransaction,
   records: readonly WeldInput[],
   previousRows: ReadonlyMap<number, WeldJoint>,
+  options: {
+    allowedJointRenameRowIds?: ReadonlySet<number>
+    allowedLineMoveRowIds?: ReadonlySet<number>
+  } = {},
 ) {
   const recordsById = new Map(records.flatMap((record) => {
     const id = Math.floor(Number(record.id))
@@ -61,7 +76,14 @@ export async function assertEarlyCoilDecisionSourcesRemainValid(
     const record = recordsById.get(sourceRowId)
     const previous = previousRows.get(sourceRowId)
     if (!record || !previous) continue
-    const reason = getEarlyCoilDecisionInvalidationReason(record, previous as unknown as WeldInput)
+    const reason = getEarlyCoilDecisionInvalidationReason(
+      record,
+      previous as unknown as WeldInput,
+      {
+        allowJointRename: options.allowedJointRenameRowIds?.has(sourceRowId) === true,
+        allowLineMove: options.allowedLineMoveRowIds?.has(sourceRowId) === true,
+      },
+    )
     if (reason) throw buildGuardError(previous, reason)
   }
 
@@ -72,9 +94,71 @@ export async function assertEarlyCoilDecisionSourcesRemainValid(
   if (identityChanges.length === 0) return
   const activeDecisions = await loadActiveEarlyCoilDecisions(tx)
   for (const previous of identityChanges) {
+    const record = recordsById.get(previous.id)
+    if (
+      record &&
+      (
+        (options.allowedLineMoveRowIds?.has(previous.id) &&
+          getChangedIdentityFields(record, previous).every((fieldKey) => fieldKey === 'line')) ||
+        (options.allowedJointRenameRowIds?.has(previous.id) &&
+          getChangedIdentityFields(record, previous).every((fieldKey) => fieldKey === 'joint'))
+      )
+    ) continue
     const source = getEarlyCoilDecisionTargetSource(previous, activeDecisions)
     if (source) throw buildTargetGuardError(previous, source, 'нельзя изменить проект, шифр, линию или номер стыка')
   }
+}
+
+export async function refreshEarlyCoilDecisionContextsInTransaction(
+  tx: GuardTransaction,
+  rows: readonly WeldInput[],
+  settings: SystemIndexSettings,
+) {
+  const rowsById = new Map(rows.flatMap((row) => {
+    const id = Number(row.id)
+    return Number.isInteger(id) && id > 0 ? [[id, row] as const] : []
+  }))
+  if (rowsById.size === 0) return
+  const warnings = await tx
+    .select({ key: dispatcherAcceptedWarnings.key })
+    .from(dispatcherAcceptedWarnings)
+    .where(inArray(dispatcherAcceptedWarnings.key, [...rowsById.keys()].map(getEarlyCoilDecisionKey)))
+
+  const updates = warnings.flatMap((warning) => {
+    const parsed = parseEarlyCoilDecisionKey(warning.key)
+    const source = parsed ? rowsById.get(parsed.sourceRowId) : undefined
+    if (!source) return []
+    const sourceJoint = String(source.joint ?? '').trim()
+    const sourceBranch = parseRepeatedJointName(sourceJoint, settings).base
+    const targetJoints = getCoilJointNames(sourceBranch, settings)
+    return [{
+      key: warning.key,
+      title: `Досрочная врезка катушки ${targetJoints.join(' + ')}`,
+      context: buildDecisionContext(source, sourceJoint, targetJoints),
+    }]
+  })
+  for (let offset = 0; offset < updates.length; offset += 1_000) {
+    const chunk = updates.slice(offset, offset + 1_000)
+    const values = sql.join(
+      chunk.map((update) => sql`(${update.key}::text, ${update.title}::text, ${update.context}::text)`),
+      sql`, `,
+    )
+    await tx.execute(sql`
+      update ${dispatcherAcceptedWarnings} as "target"
+      set
+        "title" = "changes"."title",
+        "context" = "changes"."context"
+      from (values ${values}) as "changes"("key", "title", "context")
+      where "target"."key" = "changes"."key"
+    `)
+  }
+}
+
+export async function hasActiveEarlyCoilDecisionForSource(
+  tx: GuardReadClient,
+  sourceRowId: number,
+) {
+  return (await loadProtectedSourceIds(tx, [sourceRowId])).has(sourceRowId)
 }
 
 export async function assertStoredEarlyCoilDecisionSourcesRemainValid(
@@ -113,7 +197,13 @@ export async function assertEarlyCoilDecisionRowsCanBeDeleted(
   const activeDecisions = await loadActiveEarlyCoilDecisions(tx)
   for (const row of rows) {
     const source = getEarlyCoilDecisionTargetSource(row, activeDecisions)
-    if (source) throw buildTargetGuardError(row, source, 'стык нельзя удалить обычным действием')
+    if (source) {
+      throw buildTargetGuardError(
+        row,
+        source,
+        'нельзя удалить отдельно или вместе с парным стыком обычным действием',
+      )
+    }
   }
 }
 
@@ -135,7 +225,7 @@ export function getEarlyCoilDecisionTargetSource(
   })?.source ?? null
 }
 
-async function loadProtectedSourceIds(tx: GuardTransaction, sourceRowIds: readonly number[]) {
+async function loadProtectedSourceIds(tx: GuardReadClient, sourceRowIds: readonly number[]) {
   const ids = uniqueIds(sourceRowIds)
   if (ids.length === 0) return new Set<number>()
   const keys = ids.map(getEarlyCoilDecisionKey)
@@ -192,7 +282,11 @@ async function loadActiveEarlyCoilDecisions(tx: GuardTransaction): Promise<Activ
 }
 
 function hasIdentityChanged(record: WeldInput, previous: WeldInput) {
-  return IDENTITY_FIELDS.some(
+  return getChangedIdentityFields(record, previous).length > 0
+}
+
+function getChangedIdentityFields(record: WeldInput, previous: WeldInput) {
+  return IDENTITY_FIELDS.filter(
     (fieldKey) => normalizeJointChainPart(record[fieldKey]) !== normalizeJointChainPart(previous[fieldKey]),
   )
 }
@@ -203,6 +297,20 @@ function hasSameScope(left: WeldInput, right: WeldInput) {
     normalizeJointChainPart(left.subtitleCode) === normalizeJointChainPart(right.subtitleCode) &&
     normalizeJointChainPart(left.line) === normalizeJointChainPart(right.line)
   )
+}
+
+function buildDecisionContext(
+  row: WeldInput,
+  sourceJoint: string,
+  targetJoints: readonly string[],
+) {
+  return [
+    row.projectTitle ? `Проект: ${row.projectTitle}` : '',
+    row.subtitleCode ? `Шифр: ${row.subtitleCode}` : '',
+    row.line ? `Линия: ${row.line}` : '',
+    `Исходный стык: ${sourceJoint}`,
+    `Катушка: ${targetJoints.join(' + ')}`,
+  ].filter(Boolean).join(' · ')
 }
 
 function parseStoredValue(value: unknown) {

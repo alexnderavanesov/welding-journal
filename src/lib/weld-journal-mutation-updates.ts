@@ -40,7 +40,6 @@ import { parseDateLikeToIso } from '@/lib/date-format'
 import type {
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
-  RepeatedJointRenameTask,
   WeldDraft,
   WeldRow,
 } from '@/lib/dispatcher-types'
@@ -94,10 +93,6 @@ export function prepareWeldSaveValue({
 export function buildRepeatedJointRows(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
   const targetJoints = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
   return targetJoints.map((targetJoint) => buildRepeatedJointDraft(task.row, targetJoint))
-}
-
-export function buildRenamedRepeatedJointRow(task: RepeatedJointRenameTask) {
-  return { ...task.row, joint: task.targetJoint }
 }
 
 export function prepareImportedWeldRecords({

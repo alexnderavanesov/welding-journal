@@ -89,11 +89,18 @@ export function useRepeatedJointActionMutations({
     mutationFn: async (task: RepeatedJointRenameTask) => {
       return updateSystemWeldRowOrThrow(task)
     },
-    onSuccess: async (saved, task) => {
-      highlightChangedRows(saved ? [saved] : [task.row], ['joint'])
+    onSuccess: async (savedRows, task) => {
+      highlightChangedRows(savedRows.length > 0 ? savedRows : [task.row], ['joint'])
       dismissRepeatedJointTask(task)
-      setMessage(`Стык ${task.currentJoint} переименован в ${task.targetJoint}`)
-      await invalidateWeldJoints(queryClient, { upsertRows: saved ? [saved] : [] })
+      setMessage(
+        task.changes.length > 1
+          ? `Цепочка исправлена: переименовано стыков - ${task.changes.length}`
+          : `Стык ${task.currentJoint} переименован в ${task.targetJoint}`,
+      )
+      await Promise.all([
+        invalidateWeldJoints(queryClient, { upsertRows: savedRows }),
+        queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
+      ])
     },
     onError: (error) => {
       setMessage((error as Error).message)

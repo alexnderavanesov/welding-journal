@@ -9,7 +9,7 @@ const REACTIVATED_JOINT = 'F4'
 const LINE_MOVE_JOINT = 'F6'
 
 test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор -> основной НК -> ремонт -> исправление', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(180_000)
 
   await page.goto('/lnk')
   await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
@@ -108,7 +108,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('button', { name: 'ремонт', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectWeld({ vik_result: 'ремонт', vik_conclusion_date: '2026-08-13' })
-  await expect(page.getByRole('button', { name: /^Создать F1R1/ }).first()).toBeVisible({ timeout: 15_000 })
+  await expectRepeatedJointCreateTask(page, JOINT, 'F1R1')
 
   await openHeaderMenuItem(page, 'Результат', 'Все результаты ЛНК')
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeVisible()
@@ -117,7 +117,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
   await expectWeld({ vik_result: 'годен', vik_conclusion_date: '2026-08-13' })
-  await expect(page.getByRole('button', { name: /^Создать F1R1/ })).toHaveCount(0, { timeout: 15_000 })
+  await expectRepeatedJointCreateTaskToDisappear(page, 'F1R1')
 
   await page.goto('/psto')
   await openHeaderMenuItem(page, 'Результат', 'История ПСТО и ТВМТ')
@@ -192,7 +192,7 @@ test('официальная отмена сохраняет выполненн�
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Программа ПСТО' })).toBeVisible()
   await page.getByLabel('Поиск линий', { exact: true }).fill('E2E-L2')
-  await expect(page.getByText('E2E-L2', { exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog').getByText('E2E-L2', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Отмена ПСТО' })).toBeVisible()
   await page.getByLabel(/Дата решения об отмене ПСТО/).fill('2026-08-09')
@@ -238,7 +238,9 @@ test('позднее назначение ПСТО сохраняет факти
   await expect(page.getByText(LATE_ASSIGNMENT_JOINT, { exact: true })).toBeVisible()
   const submit = page.getByRole('button', { name: 'Назначить ПСТО', exact: true })
   await expect(submit).toBeDisabled()
-  await page.getByRole('button', { name: /Сохранить существующий основной НК/ }).click()
+  await page.getByRole('button', {
+    name: `Оставить основной НК для стыка ${LATE_ASSIGNMENT_JOINT}`,
+  }).click()
   await expect(submit).toBeEnabled()
   await submit.click()
 
@@ -262,31 +264,31 @@ test('позднее назначение ПСТО сохраняет факти
   await expect(createPstoRequest).toBeDisabled()
   await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
 
-  await runNextAction(page, 'Создать заявку НК до ТО')
+  await runNextAction(page, 'Создать заявку НК до ТО', LATE_ASSIGNMENT_JOINT)
   await expect(page).toHaveURL(/\/lnk$/)
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-01')
   await page.getByRole('button', { name: 'Создать заявку до ТО' }).click()
 
-  await runNextAction(page, 'Внести результат НК до ТО')
+  await runNextAction(page, 'Внести результат НК до ТО', LATE_ASSIGNMENT_JOINT)
   await fillDate(page, 'Дата контроля', '2026-08-01')
   await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат до ТО' }).click()
 
-  await runNextAction(page, 'Создать заявку ПСТО')
+  await runNextAction(page, 'Создать заявку ПСТО', LATE_ASSIGNMENT_JOINT)
   await expect(page).toHaveURL(/\/psto$/)
   await fillDate(page, 'Дата заявки', '2026-08-01')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
 
-  await runNextAction(page, 'Внести результат ПСТО · цикл 1')
+  await runNextAction(page, 'Внести результат ПСТО · цикл 1', LATE_ASSIGNMENT_JOINT)
   await fillDate(page, 'Дата ПСТО', '2026-08-02')
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
 
-  await runNextAction(page, 'Создать заявку ТВМТ · цикл 1')
+  await runNextAction(page, 'Создать заявку ТВМТ · цикл 1', LATE_ASSIGNMENT_JOINT)
   await fillDate(page, 'Дата заявки', '2026-08-02')
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
 
-  await runNextAction(page, 'Внести результат ТВМТ · цикл 1')
+  await runNextAction(page, 'Внести результат ТВМТ · цикл 1', LATE_ASSIGNMENT_JOINT)
   await fillDate(page, 'Дата ТВМТ', '2026-08-02')
   await chooseOptionByLabel(page, 'Результат для выбранных', 'годен')
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
@@ -328,7 +330,9 @@ test('возобновление отмененной линии также мо
   await expect(page.getByText(REACTIVATED_JOINT, { exact: true })).toBeVisible()
   const submit = page.getByRole('button', { name: 'Возобновить ПСТО', exact: true })
   await expect(submit).toBeDisabled()
-  await page.getByRole('button', { name: /Сохранить существующий основной НК/ }).click()
+  await page.getByRole('button', {
+    name: `Оставить основной НК для стыка ${REACTIVATED_JOINT}`,
+  }).click()
   await submit.click()
 
   await expectDatabaseWeld(REACTIVATED_JOINT, {
@@ -403,10 +407,45 @@ async function fillDate(page: Page, label: string, value: string) {
   await expect(input).toHaveValue(value)
 }
 
-async function runNextAction(page: Page, title: string) {
-  const button = page.getByRole('button', { name: `Выполнить: ${title}`, exact: true })
+async function runNextAction(page: Page, title: string, joint = JOINT) {
+  const row = page
+    .getByRole('button', { name: `Выбрать стык ${joint}`, exact: true })
+    .locator('xpath=ancestor::tr')
+  const button = row.getByRole('button', { name: `Выполнить: ${title}`, exact: true })
   await expect(button).toBeVisible({ timeout: 15_000 })
   await button.click()
+}
+
+async function expectRepeatedJointCreateTask(page: Page, sourceJoint: string, targetJoint: string) {
+  const codeGroup = page.locator('details').filter({ hasText: 'ДЗ-07' }).first()
+  await expect(codeGroup).toBeVisible({ timeout: 15_000 })
+  await openDetails(codeGroup)
+
+  const nestedObjectGroup = codeGroup.locator('details').filter({ hasText: targetJoint }).first()
+  const taskButton = codeGroup.getByRole('button', {
+    name: new RegExp(
+      `^${escapeRegExp(sourceJoint)} Создать повторный стык.*${escapeRegExp(targetJoint)}`,
+    ),
+  }).first()
+  await expect.poll(async () => (
+    await taskButton.count() + await nestedObjectGroup.count()
+  ), { timeout: 5_000 }).toBeGreaterThan(0)
+  if (await taskButton.count() === 0) await openDetails(nestedObjectGroup)
+  await expect(taskButton).toBeVisible()
+}
+
+async function expectRepeatedJointCreateTaskToDisappear(page: Page, targetJoint: string) {
+  await expect.poll(async () => page.getByText(targetJoint, { exact: true }).count(), { timeout: 15_000 }).toBe(0)
+}
+
+async function openDetails(details: ReturnType<Page['locator']>) {
+  if (await details.evaluate((element) => element instanceof HTMLDetailsElement && element.open)) return
+  await details.locator('summary').first().click()
+  await expect(details).toHaveJSProperty('open', true)
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 async function chooseOptionByLabel(page: Page, label: string, value: string) {

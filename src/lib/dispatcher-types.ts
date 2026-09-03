@@ -4,8 +4,21 @@ import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
 import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 
+export type JointChainContinuation = {
+  kind: 'repeated-joint' | 'official-joint' | 'coil'
+  sourceRowId: number
+  sourceJoint: string
+  targetJoints: string[]
+  targetRowIds: number[]
+  projectTitle: string
+  subtitleCode: string
+  line: string
+}
+
 export type WeldRow = WeldInput & {
   id: number
+  chainContinuation?: JointChainContinuation
+  earlyCoilDecisionAccepted?: boolean
   preHeatTreatmentLnkExempt?: boolean
   rowVersion?: string
   activeDispatcherTasks?: string
@@ -56,6 +69,12 @@ export type RepeatedJointDeleteTask = {
   reason: string
 }
 
+export type RepeatedJointRenameChange = {
+  rowId: number
+  currentJoint: string
+  targetJoint: string
+}
+
 export type RepeatedJointRenameTask = {
   kind: 'rename'
   key: string
@@ -65,6 +84,7 @@ export type RepeatedJointRenameTask = {
   currentJoint: string
   targetJoint: string
   baseJoint: string
+  changes: RepeatedJointRenameChange[]
 }
 
 export type RepeatedJointCheckTask = {

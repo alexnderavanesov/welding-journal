@@ -4,6 +4,7 @@ import {
   findLastIndex,
   formatRepeatedJointName,
   getCoilJointNames,
+  getRepeatedJointFailureCount,
   normalizeJointChainPart,
   parseJointChainName,
   parseRepeatedJointName,
@@ -47,13 +48,18 @@ export function getCoilTransitionModeForSource({
   earlyCoilDecisionSourceRowIds = new Set(),
   officialRejectedRows,
   sourceRow,
+  systemIndexSettings = loadSystemIndexSettings(),
 }: {
   earlyCoilDecisionSourceRowIds?: ReadonlySet<number>
   officialRejectedRows: readonly WeldRow[]
   sourceRow: WeldRow
+  systemIndexSettings?: SystemIndexSettings
 }): JointCoilTransitionMode | null {
   if (isUnofficialJoint(sourceRow) || officialRejectedRows.at(-1)?.id !== sourceRow.id) return null
-  if (officialRejectedRows.length > 3) return 'limit'
+  const inferredRejectedCount = getRepeatedJointFailureCount(
+    parseRepeatedJointName(String(sourceRow.joint ?? ''), systemIndexSettings),
+  ) + 1
+  if (Math.max(officialRejectedRows.length, inferredRejectedCount) > 3) return 'limit'
   return earlyCoilDecisionSourceRowIds.has(sourceRow.id) ? 'early-decision' : null
 }
 
@@ -97,6 +103,7 @@ export function buildJointCoilTransitions(
       earlyCoilDecisionSourceRowIds: earlyDecisionSourceRowIds,
       officialRejectedRows,
       sourceRow: row,
+      systemIndexSettings: settings,
     })
     if (!mode) continue
     const parentBranchJoint = parseRepeatedJointName(rowJoint, settings).base

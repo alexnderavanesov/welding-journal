@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { CONTROL_ASSIGNMENT_BASIS_FIELDS } from '@/lib/control-assignment-basis'
 import { DUPLICATE_CONTROL_METHODS } from '@/lib/duplicate-control-types'
-import { ALL_LNK_FIELD_METHODS, LNK_METHODS } from '@/lib/lnk-report-config'
+import { ALL_LNK_FIELD_METHODS, LNK_EDITABLE_FIELD_KEYS, LNK_METHODS } from '@/lib/lnk-report-config'
 import { getLnkVisibleFieldSections, LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import { CONTROL_RESULT_PAIRS } from '@/lib/weld-status'
 import { getAvailableWeldTableSections } from '@/lib/weld-table-sections'
@@ -54,6 +54,24 @@ describe('LNK visible field layout', () => {
       LNK_VISIBLE_FIELD_SECTIONS.find((section) => section.section === 'Послойный контроль')
         ?.fields.map((field) => field.key),
     ).toEqual(['layeredVikDocuments', 'layeredPvkDocuments'])
+  })
+
+  it('shows the read-only PSTO assignment immediately after assignment bases', () => {
+    const availableSections = getAvailableWeldTableSections({
+      hiddenFieldKeys: LNK_HIDDEN_FIELD_KEYS,
+      mergePstoSections: false,
+      sectionLayout: LNK_VISIBLE_FIELD_SECTIONS,
+    })
+
+    expect(availableSections.find((section) => section.section === 'Назначения')?.fields.map((field) => field.key)).toEqual([
+      'hasVik',
+      'hasRk',
+      'hasUzk',
+      'hasPvk',
+      'controlBasisSummary',
+      'pstoRequired',
+    ])
+    expect(LNK_EDITABLE_FIELD_KEYS.has('pstoRequired')).toBe(false)
   })
 
   it('places RK scheme and defects between the result and conclusion', () => {

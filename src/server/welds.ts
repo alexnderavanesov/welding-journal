@@ -56,6 +56,8 @@ export {
   listWeldingJournalPage,
   mergeDispatcherTaskCodesIntoRows,
   mergeDuplicateControlsIntoRows,
+  mergeEarlyCoilDecisionMetadataIntoRows,
+  mergeJointChainContinuationMetadataIntoRows,
   normalizeDocumentGenerationDataRequest,
   normalizeWeldPageRequest,
   normalizeWeldPageSize,

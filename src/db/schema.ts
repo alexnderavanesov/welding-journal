@@ -157,6 +157,11 @@ export const weldJoints = pgTable(
     index('weld_joints_final_status_idx').on(table.finalStatus),
     index('weld_joints_psto_required_idx').on(table.pstoRequired),
     index('weld_joints_line_joint_idx').on(table.line, table.joint),
+    index('weld_joints_normalized_line_identity_idx').on(
+      sql`btrim(coalesce(${table.projectTitle}, ''))`,
+      sql`btrim(coalesce(${table.subtitleCode}, ''))`,
+      sql`btrim(coalesce(${table.line}, ''))`,
+    ),
     index('weld_joints_journal_order_idx').on(
       table.createdAt.desc().nullsLast(),
       table.weldDate.desc().nullsLast(),

@@ -22,14 +22,39 @@ describe('system repeated-joint rename authorization', () => {
     ] as WeldRow[]
 
     expect(isAuthorizedSystemRepeatedJointRename(rows, {
-      id: 2,
-      currentJoint: 'F1W1',
-      targetJoint: 'F1R1',
+      changes: [{ rowId: 2, currentJoint: 'F1W1', targetJoint: 'F1R1' }],
     }, DEFAULT_SYSTEM_INDEX_SETTINGS)).toBe(true)
     expect(isAuthorizedSystemRepeatedJointRename(rows, {
-      id: 2,
-      currentJoint: 'F1W1',
-      targetJoint: 'F999',
+      changes: [{ rowId: 2, currentJoint: 'F1W1', targetJoint: 'F999' }],
+    }, DEFAULT_SYSTEM_INDEX_SETTINGS)).toBe(false)
+  })
+
+  it('authorizes only the complete current rename plan', () => {
+    const rows = [
+      { ...baseRow, id: 1, joint: 'S1', finalStatus: 'не годен', rkResult: 'вырез' },
+      { ...baseRow, id: 2, joint: 'S1R1', finalStatus: 'не годен', rkResult: 'ремонт' },
+      { ...baseRow, id: 3, joint: 'S1R2', finalStatus: 'ожидает сварку' },
+    ] as WeldRow[]
+    const fullPlan = {
+      changes: [
+        { rowId: 2, currentJoint: 'S1R1', targetJoint: 'S1W1' },
+        { rowId: 3, currentJoint: 'S1R2', targetJoint: 'S1W1R1' },
+      ],
+    }
+
+    expect(isAuthorizedSystemRepeatedJointRename(
+      rows,
+      fullPlan,
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+    )).toBe(true)
+    expect(isAuthorizedSystemRepeatedJointRename(rows, {
+      changes: [fullPlan.changes[0]!],
+    }, DEFAULT_SYSTEM_INDEX_SETTINGS)).toBe(false)
+    expect(isAuthorizedSystemRepeatedJointRename(rows, {
+      changes: [
+        fullPlan.changes[0]!,
+        { rowId: 3, currentJoint: 'S1R2', targetJoint: 'S1W1R2' },
+      ],
     }, DEFAULT_SYSTEM_INDEX_SETTINGS)).toBe(false)
   })
 
@@ -43,5 +68,16 @@ describe('system repeated-joint rename authorization', () => {
       coil: 'E',
     }
     expect(toCanonicalSystemJointName('B7D1', settings)).toBe('F7W1')
+    const rows = [
+      { ...baseRow, id: 1, joint: 'B7', finalStatus: 'не годен', rkResult: 'вырез' },
+      { ...baseRow, id: 2, joint: 'B7C1', finalStatus: 'не годен', rkResult: 'ремонт' },
+      { ...baseRow, id: 3, joint: 'B7C2', finalStatus: 'ожидает сварку' },
+    ] as WeldRow[]
+    expect(isAuthorizedSystemRepeatedJointRename(rows, {
+      changes: [
+        { rowId: 2, currentJoint: 'B7C1', targetJoint: 'B7D1' },
+        { rowId: 3, currentJoint: 'B7C2', targetJoint: 'B7D1C1' },
+      ],
+    }, settings)).toBe(true)
   })
 })

@@ -191,6 +191,45 @@ describe('useReportNavigationContext', () => {
     expect(setters.setSelectedHeatTreatmentIds).toHaveBeenCalledWith(new Set([32, 33]))
   })
 
+  it('coalesces a long series of scroll events into one history update', () => {
+    const setters = {
+      setColumnFilters: vi.fn(),
+      setHeatTreatmentFilters: vi.fn(),
+      setLnkFilters: vi.fn(),
+      setSelectedWeldingJournalIds: vi.fn(),
+      setSelectedHeatTreatmentIds: vi.fn(),
+      setSelectedLnkIds: vi.fn(),
+    }
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    renderHook(() => useReportNavigationContext({
+      ...createHookProps('weldingJournal'),
+      ...setters,
+    }))
+    replaceState.mockClear()
+    Object.defineProperties(window, {
+      scrollX: { configurable: true, value: 840 },
+      scrollY: { configurable: true, value: 360 },
+    })
+
+    act(() => {
+      for (let index = 0; index < 240; index += 1) {
+        window.dispatchEvent(new Event('scroll'))
+      }
+      vi.advanceTimersByTime(249)
+    })
+
+    expect(replaceState).not.toHaveBeenCalled()
+
+    act(() => vi.advanceTimersByTime(1))
+
+    expect(replaceState).toHaveBeenCalledOnce()
+    expect(window.history.state.__weldingReportContext.scrollPosition).toEqual({
+      left: 840,
+      top: 360,
+    })
+  })
+
   it('restores legacy status filters from browser history as officiality', () => {
     const setters = {
       setColumnFilters: vi.fn(),

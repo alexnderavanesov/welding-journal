@@ -30,6 +30,96 @@ describe('joint next actions', () => {
     })
   })
 
+  it('shows an accepted early coil as a completed decision instead of an unresolved rejection', () => {
+    const source = row({
+      joint: 'F51',
+      finalStatus: 'не годен',
+      rkResult: 'ремонт',
+      earlyCoilDecisionAccepted: true,
+      chainContinuation: continuation('coil', ['F51Y1', 'F51Y2'], [2, 3]),
+    })
+
+    expect(buildJointNextActions(source)).toEqual([
+      expect.objectContaining({
+        kind: 'complete',
+        title: 'Цепочка продолжена катушкой',
+        tone: 'success',
+      }),
+    ])
+  })
+
+  it('keeps independent dispatcher checks visible after an accepted early coil', () => {
+    const source = row({
+      joint: 'F51',
+      finalStatus: 'не годен',
+      rkResult: 'ремонт',
+      earlyCoilDecisionAccepted: true,
+      chainContinuation: continuation('coil', ['F51Y1', 'F51Y2'], [2, 3]),
+    })
+    const task: RepeatedJointCheckTask = {
+      kind: 'check',
+      key: 'check:F51:stamp',
+      row: source,
+      sourceRow: source,
+      sourceJoint: 'F51',
+      targetJoint: 'F51',
+      baseJoint: 'F51',
+      suffix: 'R',
+      reason: 'проверить клеймо',
+      details: 'Не заполнено клеймо.',
+    }
+
+    expect(buildJointNextActions(source, [task])).toEqual([
+      expect.objectContaining({ title: 'Цепочка продолжена катушкой', tone: 'success' }),
+      expect.objectContaining({ kind: 'dispatcherTask', taskKey: task.key }),
+    ])
+  })
+
+  it('shows an existing repeated joint as a resolved decision on the rejected predecessor', () => {
+    const source = row({
+      joint: 'SB43',
+      finalStatus: 'не годен',
+      vikResult: 'ремонт',
+      chainContinuation: continuation('repeated-joint', ['SB43R1'], [2]),
+    })
+
+    expect(buildJointNextActions(source)[0]).toMatchObject({
+      kind: 'complete',
+      title: 'Цепочка продолжена стыком SB43R1',
+      tone: 'success',
+    })
+  })
+
+  it('shows an official same-name continuation after an unofficial rejected record', () => {
+    const source = row({
+      joint: 'SB43R1',
+      officiality: 'неофициальный',
+      finalStatus: 'не годен',
+      vikResult: 'ремонт',
+      chainContinuation: continuation('official-joint', ['SB43R1'], [2]),
+    })
+
+    expect(buildJointNextActions(source)[0]).toMatchObject({
+      kind: 'complete',
+      title: 'Цепочка продолжена официальным стыком SB43R1',
+      tone: 'success',
+    })
+  })
+
+  it('does not hide an unresolved rejection from an accepted flag without existing coil joints', () => {
+    const source = row({
+      joint: 'F51',
+      finalStatus: 'не годен',
+      rkResult: 'ремонт',
+      earlyCoilDecisionAccepted: true,
+    })
+
+    expect(buildJointNextActions(source)[0]).toMatchObject({
+      kind: 'blocked',
+      title: 'Ожидается решение по негодному результату',
+    })
+  })
+
   it('opens the weld card before any control for a created repeated joint', () => {
     expect(buildJointNextActions(row({ joint: 'F3R1', weldDate: null }))[0]).toMatchObject({
       kind: 'editWeld',
@@ -409,4 +499,21 @@ function row(overrides: Partial<WeldRow> = {}): WeldRow {
     weldDate: '2026-08-01',
     ...overrides,
   } as WeldRow
+}
+
+function continuation(
+  kind: NonNullable<WeldRow['chainContinuation']>['kind'],
+  targetJoints: string[],
+  targetRowIds: number[],
+): NonNullable<WeldRow['chainContinuation']> {
+  return {
+    kind,
+    sourceRowId: 1,
+    sourceJoint: 'F51',
+    targetJoints,
+    targetRowIds,
+    projectTitle: 'Проект',
+    subtitleCode: '400',
+    line: 'L-1',
+  }
 }

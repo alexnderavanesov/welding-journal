@@ -517,7 +517,7 @@ export function WeldTable({
             />
           )}
         />
-        <div className="rounded-lg border border-[#dbe7f0] bg-white shadow-sm shadow-slate-200/45" style={{ minWidth: fullTableMinWidth }}>
+        <div className="relative rounded-lg border border-[#dbe7f0] bg-white shadow-sm shadow-slate-200/45 after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-10 after:w-px after:bg-[#dbe7f0] after:content-['']">
           <table
             ref={tableRef}
             data-horizontal-virtualized={horizontalVirtualizationEnabled ? 'true' : 'false'}

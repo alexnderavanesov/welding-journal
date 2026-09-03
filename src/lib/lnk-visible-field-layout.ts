@@ -27,7 +27,7 @@ const BASE_SECTIONS: Array<{ section: string; fieldKeys: WeldFieldKey[] }> = [
   },
   {
     section: 'Назначения',
-    fieldKeys: ['hasVik', 'hasRk', 'hasUzk', 'hasPvk', 'controlBasisSummary'],
+    fieldKeys: ['hasVik', 'hasRk', 'hasUzk', 'hasPvk', 'controlBasisSummary', 'pstoRequired'],
   },
   {
     section: 'Послойный контроль',

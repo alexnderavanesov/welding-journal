@@ -27,40 +27,31 @@ export function JointNextActionTableCell({
     : action.tone === 'warning'
       ? 'text-amber-700'
       : 'text-sky-800'
-  const openPrimaryAction = () => {
-    if (action.buttonLabel) {
-      onRun(row, action)
-    } else {
-      onOpenOverview(row)
-    }
-  }
-  const handlePrimaryClick = (event: MouseEvent) => {
+  const handleOverviewClick = (event: MouseEvent) => {
     event.stopPropagation()
-    openPrimaryAction()
+    onOpenOverview(row)
+  }
+  const handleActionClick = (event: MouseEvent) => {
+    event.stopPropagation()
+    if (action.buttonLabel) onRun(row, action)
+    else onOpenOverview(row)
   }
 
   return (
     <div
       data-joint-next-action-cell="true"
       className="flex h-[52px] min-w-0 cursor-pointer items-center gap-2 px-2.5"
-      title={`${action.title}\n${action.description}`}
-      onClick={handlePrimaryClick}
+      title={`${action.title}\n${action.description}\nОткрыть картину стыка`}
+      onClick={handleOverviewClick}
     >
       <Icon className={`h-4 w-4 shrink-0 ${actionClass}`} />
-      <button
-        type="button"
-        onClick={handlePrimaryClick}
-        className="min-w-0 flex-1 text-left"
-      >
+      <div className="min-w-0 flex-1 text-left">
         <span className={`block truncate text-xs font-semibold ${actionClass}`}>{action.title}</span>
         <span className="mt-0.5 block truncate text-[11px] text-slate-500">{action.description}</span>
-      </button>
+      </div>
       <button
         type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onOpenOverview(row)
-        }}
+        onClick={handleOverviewClick}
         aria-label={`Открыть историю и цепочку стыка ${String(row.joint ?? '').trim() || row.id}`}
         title="История и цепочка стыка"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-white/80 text-slate-500 hover:border-sky-300 hover:bg-white hover:text-sky-800"
@@ -69,7 +60,7 @@ export function JointNextActionTableCell({
       </button>
       <button
         type="button"
-        onClick={handlePrimaryClick}
+        onClick={handleActionClick}
         aria-label={action.buttonLabel ? `Выполнить: ${action.title}` : 'Открыть картину стыка'}
         title={action.buttonLabel ? `${action.buttonLabel}: ${action.title}` : 'Открыть картину стыка'}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-white/80 text-slate-600 hover:border-sky-300 hover:bg-white hover:text-sky-800"

@@ -24,8 +24,12 @@ export function WelderStampNotificationCard({ task, isTaskExpanded, onToggleDeta
   const isExpanded = isTaskExpanded(task)
 
   return (
-    <div key={task.key} className="flex w-fit max-w-full flex-col gap-1 rounded-md border border-amber-200 bg-white/95 px-2 py-1.5">
-      <div className="flex max-w-full items-center gap-1.5">
+    <div
+      key={task.key}
+      data-welder-stamp-notification-card="true"
+      className="flex w-full max-w-full flex-col gap-1 rounded-md border border-amber-200 bg-white/95 px-2 py-1.5"
+    >
+      <div className="flex w-full max-w-full items-center gap-1.5">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           <WelderStampTaskContent task={task} label={formatWelderStampTaskLabel(task)} />
         </div>

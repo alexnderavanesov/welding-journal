@@ -115,7 +115,10 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
     if (task.key.startsWith('rename-orphan-good:')) {
       return `Стык ${task.currentJoint} находится в цепочке, но исходный или предыдущий стык ${task.targetJoint} не найден в журнале. Так как ${task.currentJoint} уже годен, диспетчер предлагает переименовать его в ${task.targetJoint} и сделать актуальным финалом цепочки.`
     }
-    return `Стык ${task.currentJoint} больше не соответствует правилам именования этой цепочки. По текущей официальности и результатам контроля ожидается имя ${task.targetJoint}, поэтому диспетчер предлагает переименовать его после проверки.`
+    const continuationText = task.changes.length > 1
+      ? ` Вместе с ним будут последовательно переименованы еще ${task.changes.length - 1} стыка: ${task.changes.slice(1).map((change) => `${change.currentJoint} -> ${change.targetJoint}`).join(', ')}.`
+      : ''
+    return `Стык ${task.currentJoint} больше не соответствует правилам именования этой цепочки. По текущей официальности и результатам контроля ожидается имя ${task.targetJoint}.${continuationText} Система повторно проходит фактические результаты от измененного звена: порядок R/W отражает их историю, а номера каждого вида считаются заново. Данные и документы остаются у тех же записей.`
   }
   if (task.kind === 'duplicate-check') {
     return `В журнале найдено несколько строк с одинаковыми проектом, шифром, линией и номером стыка ${task.baseJoint}. Спул при этой проверке не учитывается. Проверь, это допустимые записи или лишние дубли.`
@@ -176,7 +179,10 @@ function getRepeatedJointTaskDetailsHeadingText(task: DispatcherTask) {
   if (task.kind === 'delete') {
     return `${formatRepeatedJointTaskHeadingJoint(task.sourceJoint, task.sourceRow)} · ${task.reason} · удалить ${formatRepeatedJointTaskHeadingJoint(task.targetJoint, task.row)}`
   }
-  if (task.kind === 'rename') return `${formatRepeatedJointTaskHeadingJoint(task.currentJoint, task.row)} → ${task.targetJoint}`
+  if (task.kind === 'rename') {
+    const continuationText = task.changes.length > 1 ? ` · всего переименований: ${task.changes.length}` : ''
+    return `${formatRepeatedJointTaskHeadingJoint(task.currentJoint, task.row)} → ${task.targetJoint}${continuationText}`
+  }
   if (task.kind === 'duplicate-check') return `${formatRepeatedJointTaskHeadingJoint(task.baseJoint, task.row)} · найдено дублей: ${task.count}`
   if (task.kind === 'line-consistency') return `${task.line} · ${task.title}`
   if (task.kind === 'percentage-line-control') return `${task.line} · клеймо ${task.stamp} · ${task.title}`

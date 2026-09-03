@@ -74,4 +74,35 @@ describe('JointHistoryOverview', () => {
     expect(status.className).toContain('bg-amber-50')
     expect(status.className).not.toContain('bg-emerald-50')
   })
+
+  it('shows cancellation without inventing a pending PSTO cycle for a completed joint', () => {
+    render(
+      <JointHistoryOverview
+        row={{
+          id: 14,
+          projectTitle: 'Проект',
+          subtitleCode: '400',
+          line: 'L-1',
+          joint: 'S14',
+          weldDate: '2026-08-01',
+          pstoRequired: 'отменен',
+          pstoCancellationDate: '2026-09-03',
+          pstoResult: 'ожидает заявку',
+          hasVik: 'да',
+          vikRequest: 'Заявка ВИК-1',
+          vikResult: 'годен',
+          finalStatus: 'годен',
+        } as WeldRow}
+        onOpenDocument={vi.fn()}
+        onOpenReport={vi.fn()}
+        onRunNextAction={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Работа по стыку завершена')).toBeInTheDocument()
+    expect(screen.getByText('Линия ПСТО')).toBeInTheDocument()
+    expect(screen.getByText('отменена')).toBeInTheDocument()
+    expect(screen.queryByText('Цикл 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/ПСТО: ожидает заявку/)).not.toBeInTheDocument()
+  })
 })

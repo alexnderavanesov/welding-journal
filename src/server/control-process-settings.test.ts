@@ -77,6 +77,20 @@ describe('control process settings transitions', () => {
     )).toEqual([false])
   })
 
+  it('checks one repeated target line with one exemption query', async () => {
+    const calls: string[] = []
+    const tx = settingTransaction({
+      layeredControlEnabled: true,
+      preHeatTreatmentLnkEnabled: true,
+    }, calls, [row(10, 'Линия 1')])
+
+    expect(await getPreHeatTreatmentLnkExemptionsForNewRows(
+      tx,
+      Array.from({ length: 100 }, (_, index) => row(index + 1, 'Линия 1')),
+    )).toEqual(Array.from({ length: 100 }, () => true))
+    expect(calls).toEqual(['lock', 'read', 'read'])
+  })
+
   it('locks the process setting before deciding the state of a new weld', async () => {
     const calls: string[] = []
 

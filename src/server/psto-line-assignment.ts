@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
+  appSettings,
   duplicateControls,
   preHeatTreatmentControls,
   pstoRepeatCycles,
@@ -11,6 +12,7 @@ import {
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
+import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
 import {
   assertPstoCancellationDateAfterHistory,
   blocksPstoLineActivation,
@@ -30,7 +32,6 @@ import {
   requiresPrimaryStageResolutionForAssignedPstoLine,
   type PstoLineAssignmentAction,
   type PstoLineActivationDecision,
-  type PstoLineAssignmentSummary,
   type PstoLineIdentity,
   type PstoLineRemovalDecision,
   type PstoLineRemovalDisposition,
@@ -47,9 +48,18 @@ import {
 } from '@/lib/lnk-control-stage'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
+import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
+import {
+  DEFAULT_SYSTEM_INDEX_SETTINGS,
+  normalizeSystemIndexSettings,
+} from '@/lib/system-index-settings'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
-import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
+import {
+  assertStoredEarlyCoilDecisionSourcesRemainValid,
+  hasActiveEarlyCoilDecisionForSource,
+} from '@/server/early-coil-decision-guard'
 import {
   deletePstoRepeatCyclesInTransaction,
   getPrimaryPstoCyclePersistenceValues,
@@ -57,6 +67,7 @@ import {
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { assertSecurityScope } from '@/server/security-functions'
+import { loadPstoLineAssignmentSummaries } from '@/server/psto-line-assignment-summary'
 import {
   removeSourcedSystemDocumentPositionsInTransaction,
   syncSystemDocumentsForWeldChangesInTransaction,
@@ -71,6 +82,15 @@ type PstoLineAssignmentPayload = {
   decisions?: PstoLineRemovalDecision[]
 }
 
+function parseStoredJson(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return null
+  }
+}
+
 export function normalizePstoLineAssignmentPayload(value: PstoLineAssignmentPayload) {
   return normalizePayload(value)
 }
@@ -78,59 +98,7 @@ export function normalizePstoLineAssignmentPayload(value: PstoLineAssignmentPayl
 export const listPstoLineAssignments = createServerFn({ method: 'GET' })
   .handler(async () => {
     await assertSecurityScope('entry')
-    const db = requireDb()
-    const rows = await db
-      .select()
-      .from(weldJoints)
-      .orderBy(
-        asc(weldJoints.projectTitle),
-        asc(weldJoints.subtitleCode),
-        asc(weldJoints.line),
-        asc(weldJoints.id),
-      )
-    const rowIds = rows.map((row) => row.id)
-    const [controls, repeats] = rowIds.length > 0
-      ? await Promise.all([
-          db
-            .select({ id: preHeatTreatmentControls.id, weldJointId: preHeatTreatmentControls.weldJointId })
-            .from(preHeatTreatmentControls)
-            .where(inArray(preHeatTreatmentControls.weldJointId, rowIds)),
-          db
-            .select({ id: pstoRepeatCycles.id, weldJointId: pstoRepeatCycles.weldJointId })
-            .from(pstoRepeatCycles)
-            .where(inArray(pstoRepeatCycles.weldJointId, rowIds)),
-        ])
-      : [[], []]
-    const preCountByRowId = countByRowId(controls)
-    const repeatCountByRowId = countByRowId(repeats)
-    const summaries = new Map<string, PstoLineAssignmentSummary>()
-    for (const row of rows as WeldRow[]) {
-      const identity = normalizePstoLineIdentity(row)
-      if (!identity.line) continue
-      const key = getPstoLineIdentityKey(identity)
-      const current = summaries.get(key) ?? {
-        ...identity,
-        key,
-        rowCount: 0,
-        assignedCount: 0,
-        cancelledCount: 0,
-        historyRowCount: 0,
-        preControlCount: 0,
-        repeatCycleCount: 0,
-      }
-      const preControlCount = preCountByRowId.get(row.id) ?? 0
-      const repeatCycleCount = repeatCountByRowId.get(row.id) ?? 0
-      current.rowCount += 1
-      if (isControlEnabledValue(row.pstoRequired)) current.assignedCount += 1
-      if (isPstoCancelledValue(row.pstoRequired)) current.cancelledCount += 1
-      if (hasPrimaryPstoHistory(row) || preControlCount > 0 || repeatCycleCount > 0) {
-        current.historyRowCount += 1
-      }
-      current.preControlCount += preControlCount
-      current.repeatCycleCount += repeatCycleCount
-      summaries.set(key, current)
-    }
-    return [...summaries.values()]
+    return loadPstoLineAssignmentSummaries(requireDb())
   })
 
 export const getPstoLineRemovalPreview = createServerFn({ method: 'POST' })
@@ -165,16 +133,74 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
       return null
     }
 
+    if (!data.targetIdentity.projectTitle || !data.targetIdentity.subtitleCode || !data.targetIdentity.line) {
+      throw new Error('Для переноса укажите проект, шифр и линию.')
+    }
+
+    const [systemIndexRow] = await db
+      .select({ value: appSettings.value })
+      .from(appSettings)
+      .where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex))
+      .limit(1)
+    const systemIndexSettings = normalizeSystemIndexSettings(
+      parseStoredJson(systemIndexRow?.value) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
+    )
+    const parsedSourceJoint = parseJointChainName(
+      String(storedRow.joint ?? ''),
+      systemIndexSettings,
+    )
+    const rootJoint = parsedSourceJoint.base || String(storedRow.joint ?? '').trim()
+    if (parsedSourceJoint.segments.length > 0) {
+      throw new Error(
+        `Стык ${String(storedRow.joint ?? '').trim() || `#${storedRow.id}`} входит в цепочку ${rootJoint}. ` +
+        `Линия всей цепочки изменяется через базовый стык ${rootJoint}.`,
+      )
+    }
+
+    const sourceScopeRows = sourceIdentity.line
+      ? await db.select().from(weldJoints).where(buildLineWhere(sourceIdentity))
+      : [storedRow]
+    const hydratedSourceScopeRows = await attachHeatTreatmentControlRelations(sourceScopeRows as WeldRow[])
+    const chainRows = getJointChainRows(
+      hydratedSourceScopeRows,
+      storedRow,
+      systemIndexSettings,
+    )
+    const isChainMove = chainRows.length > 1 ||
+      await hasActiveEarlyCoilDecisionForSource(db, storedRow.id)
+    if (
+      isChainMove &&
+      (
+        normalizeJointChainPart(sourceIdentity.projectTitle) !== normalizeJointChainPart(data.targetIdentity.projectTitle) ||
+        normalizeJointChainPart(sourceIdentity.subtitleCode) !== normalizeJointChainPart(data.targetIdentity.subtitleCode)
+      )
+    ) {
+      throw new Error(
+        `Для цепочки ${rootJoint} можно изменить только линию. Проект и шифр цепочки должны остаться прежними.`,
+      )
+    }
+
     const targetRows = data.targetIdentity.line
       ? await db
-          .select({
-            pstoRequired: weldJoints.pstoRequired,
-            pstoCancellationDate: weldJoints.pstoCancellationDate,
-            pstoControlBasis: weldJoints.pstoControlBasis,
-          })
+          .select()
           .from(weldJoints)
           .where(buildLineWhere(data.targetIdentity))
       : []
+    if (isChainMove) {
+      const collisions = targetRows.filter((row) => (
+        normalizeJointChainPart(parseJointChainName(
+          String(row.joint ?? ''),
+          systemIndexSettings,
+        ).base) === normalizeJointChainPart(rootJoint)
+      ))
+      if (collisions.length > 0) {
+        const joints = [...new Set(collisions.map((row) => String(row.joint ?? '').trim() || `#${row.id}`))]
+        throw new Error(
+          `На целевой линии уже есть цепочка ${rootJoint}: ${joints.slice(0, 8).join(', ')}` +
+          `${joints.length > 8 ? ` и еще ${joints.length - 8}` : ''}. Выберите другую линию или устраните конфликт.`,
+        )
+      }
+    }
     const targetAssignedCount = targetRows.filter((row) => isControlEnabledValue(row.pstoRequired)).length
     const targetCancelledCount = targetRows.filter((row) => isPstoCancelledValue(row.pstoRequired)).length
     if (
@@ -185,33 +211,51 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
     ) {
       throw new Error('Целевая линия содержит смешанное назначение ПСТО. Сначала выровняйте ее в «Программе ПСТО».')
     }
-    const [row] = await attachHeatTreatmentControlRelations([storedRow as WeldRow])
     const targetAssigned = targetRows.length > 0 && targetAssignedCount === targetRows.length
-    if (targetAssigned && !requiresPrimaryStageResolutionForAssignedPstoLine(row)) return null
+    const sourceRow = chainRows.find((row) => row.id === storedRow.id) ?? (storedRow as WeldRow)
     if (
+      !isChainMove &&
+      targetAssigned &&
+      !requiresPrimaryStageResolutionForAssignedPstoLine(sourceRow)
+    ) return null
+    if (
+      !isChainMove &&
       !targetAssigned &&
-      !hasPrimaryPstoHistory(row) &&
-      (row.preHeatTreatmentControls?.length ?? 0) === 0 &&
-      (row.pstoRepeatCycles?.length ?? 0) === 0
+      !hasPrimaryPstoHistory(sourceRow) &&
+      (sourceRow.preHeatTreatmentControls?.length ?? 0) === 0 &&
+      (sourceRow.pstoRepeatCycles?.length ?? 0) === 0
     ) {
       return null
     }
-    const preview = buildRemovalPreview(sourceIdentity, [row])
+    const targetState = targetAssigned
+      ? 'assigned'
+      : targetRows.length > 0 && targetCancelledCount === targetRows.length
+        ? 'cancelled'
+        : 'unassigned'
+    const preview = buildRemovalPreview(sourceIdentity, chainRows)
+    const sourceRowsById = new Map(chainRows.map((row) => [row.id, row]))
+    const previewRows = preview.rows.map((row) => ({
+      ...row,
+      requiresDisposition: targetAssigned
+        ? requiresPrimaryStageResolutionForAssignedPstoLine(sourceRowsById.get(row.rowId)!)
+        : hasPstoLifecycleData(sourceRowsById.get(row.rowId)!),
+    }))
     return {
       sourceIdentity,
       targetIdentity: data.targetIdentity,
-      targetState: targetAssigned
-        ? 'assigned'
-        : targetRows.length > 0 && targetCancelledCount === targetRows.length
-          ? 'cancelled'
-          : 'unassigned',
+      targetState,
+      rootRowId: storedRow.id,
+      rootJoint,
+      isChainMove,
+      expectedRowIds: chainRows.map((row) => row.id),
       requestOnlyCount: preview.requestOnlyCount,
       completedPstoCount: preview.completedPstoCount,
       preControlCount: preview.preControlCount,
       completedPreControlCount: preview.completedPreControlCount,
       pendingPreControlCount: preview.pendingPreControlCount,
       repeatCycleCount: preview.repeatCycleCount,
-      row: preview.rows[0]!,
+      rows: previewRows,
+      row: previewRows.find((row) => row.rowId === storedRow.id)!,
     }
   })
 
@@ -314,7 +358,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
           )
         }
         await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
-        await markDispatcherTaskIndexDirty(tx)
+        await markDispatcherTaskIndexDirty(tx, { scopes: [data.identity] })
         return updatedRows
       }
 
@@ -345,7 +389,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
           } as WeldRow)
         }
         await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
-        await markDispatcherTaskIndexDirty(tx)
+        await markDispatcherTaskIndexDirty(tx, { scopes: [data.identity] })
         return updatedRows
       }
 
@@ -452,7 +496,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
         )
       }
       await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
-      await markDispatcherTaskIndexDirty(tx)
+      await markDispatcherTaskIndexDirty(tx, { scopes: [data.identity] })
       return updatedRows
     })
   })
@@ -674,12 +718,6 @@ function compareMethods(left: string, right: string) {
 
 function isRemovalDisposition(value: unknown): value is PstoLineRemovalDisposition {
   return value === 'keepPrimary' || value === 'promoteBeforeHeatTreatment'
-}
-
-function countByRowId(records: Array<{ weldJointId: number }>) {
-  const counts = new Map<number, number>()
-  for (const record of records) counts.set(record.weldJointId, (counts.get(record.weldJointId) ?? 0) + 1)
-  return counts
 }
 
 function groupByRowId<Row extends { weldJointId: number }>(records: Row[]) {

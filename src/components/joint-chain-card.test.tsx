@@ -45,9 +45,13 @@ describe('JointChainCard', () => {
     expect(screen.getByText('ПСТО и ТВМТ')).toBeInTheDocument()
     expect(screen.getByText('Цикл 2: ожидает ТВМТ')).toBeInTheDocument()
     expect(screen.getByText('Основной этап НК')).toBeInTheDocument()
-    expect(screen.getByText('ВИК: ожидает НК')).toBeInTheDocument()
+    const stageBadge = screen.getByText('ВИК: ожидает НК')
+    expect(stageBadge).toBeInTheDocument()
     expect(screen.getByText('Итог по стыку')).toBeInTheDocument()
-    expect(screen.getByText('ожидает НК', { selector: 'span' })).toBeInTheDocument()
+    const finalBadge = screen.getByText('ожидает НК', { selector: 'span' })
+    expect(finalBadge).toBeInTheDocument()
+    expect(stageBadge).toHaveClass('inline-flex', 'min-h-6', 'px-2', 'leading-4')
+    expect(finalBadge).toHaveClass('inline-flex', 'min-h-6', 'px-2', 'leading-4')
     expect(screen.queryByText('ПСТО: проведено')).not.toBeInTheDocument()
 
     const content = container.textContent ?? ''

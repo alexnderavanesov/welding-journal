@@ -42,7 +42,7 @@ export function WelderStampNotificationPanel({
             Скрыть все
           </Button>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex w-full flex-col gap-1.5">
           {visibleGroups.map((group) => (
             <WelderStampNotificationGroup
               key={group.key}

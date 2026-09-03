@@ -28,10 +28,12 @@ import {
 } from '@/lib/report-import-template'
 import { loadOtherSettings } from '@/lib/other-settings'
 import { formatSaveCheckBlockReason, loadSaveCheckSettings } from '@/lib/save-check-settings'
-import { loadSystemIndexSettings } from '@/lib/system-index-settings'
+import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
 import { getMissingWeldImportIdentityFields } from '@/lib/weld-import-identity'
 import { validateManualJointName } from '@/lib/joint-name'
+import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
+import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import { isSystemWdiMode } from '@/lib/wdi'
 import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/report-config'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
@@ -277,6 +279,7 @@ async function buildExistingRowsImportPreview({
       existingRow,
       rows,
       fullyAssignedPstoLineKeys,
+      systemIndexSettings,
     )
     if (pstoLineMoveReason) {
       validationMessages.push(pstoLineMoveReason)
@@ -358,11 +361,30 @@ function getImportPstoLineMoveBlockReason(
   existingRow: WeldRow,
   scopeRows: WeldRow[],
   fullyAssignedPstoLineKeys: readonly string[],
+  systemIndexSettings: SystemIndexSettings,
 ) {
   const sourceKey = getPstoLineIdentityKey(existingRow)
   const targetIdentity = normalizePstoLineIdentity(candidate)
   const targetKey = getPstoLineIdentityKey(targetIdentity)
   if (sourceKey === targetKey) return ''
+
+  const parsedJoint = parseJointChainName(String(existingRow.joint ?? ''), systemIndexSettings)
+  const rootJoint = parsedJoint.base || String(existingRow.joint ?? '').trim()
+  const chainRows = getJointChainRows(scopeRows, existingRow, systemIndexSettings)
+  const belongsToChain = parsedJoint.segments.length > 0 || chainRows.length > 1
+  if (belongsToChain) {
+    const sourceIdentity = normalizePstoLineIdentity(existingRow)
+    const projectOrSubtitleChanged = (
+      normalizeJointChainPart(sourceIdentity.projectTitle) !== normalizeJointChainPart(targetIdentity.projectTitle) ||
+      normalizeJointChainPart(sourceIdentity.subtitleCode) !== normalizeJointChainPart(targetIdentity.subtitleCode)
+    )
+    if (projectOrSubtitleChanged) {
+      return `Проект и шифр цепочки ${rootJoint} нельзя менять импортом. ` +
+        `Линию цепочки изменяйте через карточку базового стыка ${rootJoint} в сварочном журнале.`
+    }
+    return `Линию цепочки ${rootJoint} нельзя менять импортом. Выполните перенос через карточку базового стыка ${rootJoint} ` +
+      'в сварочном журнале: система перенесет все R/W/Y-стыки одной операцией.'
+  }
 
   const targetRows = scopeRows.filter((row) => getPstoLineIdentityKey(row) === targetKey)
   const targetAssignedCount = targetRows.filter((row) => isControlEnabledValue(row.pstoRequired)).length

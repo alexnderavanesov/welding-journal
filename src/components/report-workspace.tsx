@@ -26,9 +26,14 @@ export function ReportWorkspace({
     activeReport === 'documents' ||
     activeReport === 'settings' ||
     activeReport === 'userGuide'
+  const isWideTableReport =
+    activeReport === 'weldingJournal' ||
+    activeReport === 'heatTreatment' ||
+    activeReport === 'lnk'
+  const workspaceBackgroundClass = isWideTableReport ? 'bg-white' : 'bg-[#f4f7f9]'
 
   return (
-    <main className="relative min-h-screen bg-[#f4f7f9]">
+    <main className={`relative min-h-screen ${workspaceBackgroundClass}`}>
       <AppSidebar
         activeReport={activeReport}
         collapsed={navCollapsed}
@@ -37,12 +42,12 @@ export function ReportWorkspace({
       />
 
       <div
-        className={`min-w-0 bg-[#f4f7f9] pt-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
+        className={`min-w-0 ${workspaceBackgroundClass} pt-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
           navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72'
         }`}
       >
         <div
-          className={`space-y-4 bg-[#f4f7f9] pb-5 ${
+          className={`space-y-4 ${workspaceBackgroundClass} pb-5 ${
             isFluidReport ? 'min-w-0 w-full' : 'min-w-full w-max'
           }`}
           style={isFluidReport ? undefined : { minWidth: registerMinWidth }}

@@ -27,7 +27,8 @@ DISPATCHER_TASK_FILTER_KEY,
 DISPATCHER_TASKS_FIELD_KEY,
 parseDispatcherTaskServerFilter,
 } from '@/lib/dispatcher-task-row-codes'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { JointChainContinuation, WeldRow } from '@/lib/dispatcher-types'
+import { parseDispatcherTaskIndexPayload } from '@/lib/dispatcher-task-index-payload'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import {
 isPreHeatTreatmentLnkMethodCode,
@@ -41,6 +42,7 @@ import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import {
   EARLY_COIL_DECISION_KIND,
+  getEarlyCoilDecisionKey,
   getEarlyCoilDecisionSourceRowIds,
 } from '@/lib/early-coil-decision'
 import { evaluateEarlyCoilCandidate } from '@/lib/early-coil-candidate'
@@ -450,12 +452,10 @@ export const listWeldJointChain = createServerFn({ method: 'GET' })
 
     const chainRows = getJointChainRows(weldCandidates, weldRecord, systemIndexSettings)
     const hydratedRows = await attachReportPageMetadata(chainRows)
-    const acceptedWarnings = await db
-      .select({ key: dispatcherAcceptedWarnings.key })
-      .from(dispatcherAcceptedWarnings)
-      .where(eq(dispatcherAcceptedWarnings.kind, EARLY_COIL_DECISION_KIND))
-    const earlyCoilDecisionSourceRowIds = getEarlyCoilDecisionSourceRowIds(
-      acceptedWarnings.map((warning) => warning.key),
+    const earlyCoilDecisionSourceRowIds = new Set(
+      hydratedRows
+        .filter((row) => row.earlyCoilDecisionAccepted)
+        .map((row) => row.id),
     )
     const documentLinks = hydratedRows.length > 0
       ? await db
@@ -652,7 +652,7 @@ export function sortUsageAggregateRows(rows: UsageAggregateRow[]): Array<[string
 
 export async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>) {
   const db = requireDb()
-  const [, otherSettings] = await Promise.all([
+  const [dispatcherState, otherSettings] = await Promise.all([
     ensureDispatcherTaskIndexFresh(),
     loadServerOtherSettings(),
   ])
@@ -698,7 +698,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
           : undefined
       const reportRows = applyCurrentSystemWdi(buildServerReportRows(rows, report), otherSettings)
       const rowsWithMetadata = compactWeldRowsForTransport(
-        await attachReportPageMetadata(reportRows),
+        await attachReportPageMetadata(reportRows, { dispatcherState }),
       )
 
       return {
@@ -722,7 +722,10 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
       data.pageSize === WELD_PAGE_ALL_SIZE
         ? filteredIds
         : filteredIds.slice((data.page - 1) * data.pageSize, data.page * data.pageSize)
-    const rows = applyCurrentSystemWdi(await getFullReportRowsByIds(pageIds, report), otherSettings)
+    const rows = applyCurrentSystemWdi(
+      await getFullReportRowsByIds(pageIds, report, dispatcherState),
+      otherSettings,
+    )
 
     return {
       rows,
@@ -759,7 +762,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
       0,
     )
     const rows = compactWeldRowsForTransport(
-      await attachReportPageMetadata(pageRows),
+      await attachReportPageMetadata(pageRows, { dispatcherState }),
     )
     return {
       rows,
@@ -798,7 +801,10 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
       ? Number(countRow.total) || 0
       : undefined
   const rowsWithMetadata = compactWeldRowsForTransport(
-    await attachReportPageMetadata(buildServerReportRows(applyCurrentSystemWdi(rows, otherSettings), 'weldingJournal')),
+    await attachReportPageMetadata(
+      buildServerReportRows(applyCurrentSystemWdi(rows, otherSettings), 'weldingJournal'),
+      { dispatcherState },
+    ),
   )
 
   return {
@@ -1039,34 +1045,109 @@ export async function attachDispatcherTaskCodesToPage<Row extends { id: number }
   if (rows.length === 0) return rows
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
-  const result = await requireDb().execute<DispatcherTaskCodeRow & { source: 'active' | 'background' }>(sql`
-    select ${dispatcherRowTasks.weldJointId} as "rowId", ${dispatcherRowTasks.code} as "code", 'active' as "source"
-    from ${dispatcherRowTasks}
-    where ${inArray(dispatcherRowTasks.weldJointId, ids)}
-    union all
-    select ${dispatcherBackgroundRowTasks.weldJointId} as "rowId", ${dispatcherBackgroundRowTasks.code} as "code", 'background' as "source"
-    from ${dispatcherBackgroundRowTasks}
-    where ${inArray(dispatcherBackgroundRowTasks.weldJointId, ids)}
-  `)
-  const activeTaskRows = result.rows.filter((row) => row.source === 'active')
-  const backgroundTaskRows = result.rows.filter((row) => row.source === 'background')
+  const taskRows: Array<DispatcherTaskCodeRow & { source: 'active' | 'background' }> = []
+  for (const idChunk of splitNumberBatches(ids, 1000)) {
+    const result = await requireDb().execute<DispatcherTaskCodeRow & { source: 'active' | 'background' }>(sql`
+      select ${dispatcherRowTasks.weldJointId} as "rowId", ${dispatcherRowTasks.code} as "code", 'active' as "source"
+      from ${dispatcherRowTasks}
+      where ${inArray(dispatcherRowTasks.weldJointId, idChunk)}
+      union all
+      select ${dispatcherBackgroundRowTasks.weldJointId} as "rowId", ${dispatcherBackgroundRowTasks.code} as "code", 'background' as "source"
+      from ${dispatcherBackgroundRowTasks}
+      where ${inArray(dispatcherBackgroundRowTasks.weldJointId, idChunk)}
+    `)
+    taskRows.push(...result.rows)
+  }
+  const activeTaskRows = taskRows.filter((row) => row.source === 'active')
+  const backgroundTaskRows = taskRows.filter((row) => row.source === 'background')
   return mergeDispatcherTaskCodesIntoRows(rows, activeTaskRows, backgroundTaskRows)
 }
 
-export async function attachReportPageMetadata<Row extends DuplicateControlCarrier>(rows: Row[]) {
-  const [rowsWithDuplicateControls, rowsWithGeneratedDocuments, rowsWithDispatcherTasks, rowsWithHeatTreatmentControls] = await Promise.all([
+type DispatcherTaskIndexState = Awaited<ReturnType<typeof ensureDispatcherTaskIndexFresh>>
+
+export async function attachReportPageMetadata<Row extends DuplicateControlCarrier>(
+  rows: Row[],
+  options: {
+    dispatcherState?: DispatcherTaskIndexState
+    includeJointWorkflowMetadata?: boolean
+  } = {},
+) {
+  const includeJointWorkflowMetadata = options.includeJointWorkflowMetadata ?? true
+  const dispatcherState = rows.length > 0 && includeJointWorkflowMetadata
+    ? options.dispatcherState ?? await ensureDispatcherTaskIndexFresh()
+    : null
+  const [
+    rowsWithDuplicateControls,
+    rowsWithGeneratedDocuments,
+    rowsWithDispatcherTasks,
+    rowsWithHeatTreatmentControls,
+    rowsWithEarlyCoilDecisions,
+  ] = await Promise.all([
     attachDuplicateControlsToPage(rows),
     attachGeneratedDocumentFields(rows),
     attachDispatcherTaskCodesToPage(rows),
     attachHeatTreatmentControlRelations(rows),
+    includeJointWorkflowMetadata ? attachEarlyCoilDecisionMetadataToPage(rows) : Promise.resolve(rows),
   ])
+  const rowsWithChainContinuations = mergeJointChainContinuationMetadataIntoRows(
+    rows,
+    dispatcherState
+      ? parseDispatcherTaskIndexPayload(dispatcherState.repeatedTasks).chainContinuations
+      : [],
+  )
   return rows.map((row, index) => ({
     ...row,
     ...rowsWithDuplicateControls[index],
     ...rowsWithGeneratedDocuments[index],
     ...rowsWithDispatcherTasks[index],
     ...rowsWithHeatTreatmentControls[index],
+    ...rowsWithEarlyCoilDecisions[index],
+    ...rowsWithChainContinuations[index],
   }))
+}
+
+export function mergeJointChainContinuationMetadataIntoRows<Row extends { id: number }>(
+  rows: Row[],
+  continuations: readonly JointChainContinuation[],
+): Array<Row & { chainContinuation?: JointChainContinuation }> {
+  const continuationByRowId = new Map(
+    continuations.map((continuation) => [continuation.sourceRowId, continuation] as const),
+  )
+  return rows.map((row) => {
+    const continuation = continuationByRowId.get(Number(row.id))
+    return continuation ? { ...row, chainContinuation: continuation } : { ...row }
+  })
+}
+
+type EarlyCoilDecisionMetadata = { earlyCoilDecisionAccepted?: true }
+
+export async function attachEarlyCoilDecisionMetadataToPage<Row extends { id: number }>(rows: Row[]) {
+  if (rows.length === 0) return rows as Array<Row & EarlyCoilDecisionMetadata>
+  const ids = [...new Set(rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0))]
+  if (ids.length === 0) return rows as Array<Row & EarlyCoilDecisionMetadata>
+  const warnings: Array<{ key: string }> = []
+  for (const idChunk of splitNumberBatches(ids, 1000)) {
+    warnings.push(...await requireDb()
+      .select({ key: dispatcherAcceptedWarnings.key })
+      .from(dispatcherAcceptedWarnings)
+      .where(and(
+        eq(dispatcherAcceptedWarnings.kind, EARLY_COIL_DECISION_KIND),
+        inArray(dispatcherAcceptedWarnings.key, idChunk.map(getEarlyCoilDecisionKey)),
+      )))
+  }
+  return mergeEarlyCoilDecisionMetadataIntoRows(
+    rows,
+    getEarlyCoilDecisionSourceRowIds(warnings.map((warning) => warning.key)),
+  )
+}
+
+export function mergeEarlyCoilDecisionMetadataIntoRows<Row extends { id: number }>(
+  rows: Row[],
+  sourceRowIds: ReadonlySet<number>,
+): Array<Row & EarlyCoilDecisionMetadata> {
+  return rows.map((row) => sourceRowIds.has(Number(row.id))
+    ? { ...row, earlyCoilDecisionAccepted: true }
+    : { ...row })
 }
 
 export type DispatcherTaskCodeRow = { rowId: number; code: string }
@@ -1217,7 +1298,11 @@ export async function loadServerRkExposureTable() {
   return (await loadServerOtherSettings()).rkExposureTable
 }
 
-export async function getFullReportRowsByIds(ids: number[], report: Exclude<WeldReportKind, 'weldingJournal'>) {
+export async function getFullReportRowsByIds(
+  ids: number[],
+  report: Exclude<WeldReportKind, 'weldingJournal'>,
+  dispatcherState?: DispatcherTaskIndexState,
+) {
   if (ids.length === 0) return []
   const db = requireDb()
   const chunks = Array.from({ length: Math.ceil(ids.length / 1000) }, (_, index) =>
@@ -1241,7 +1326,7 @@ export async function getFullReportRowsByIds(ids: number[], report: Exclude<Weld
       (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER),
   )
   return compactWeldRowsForTransport(
-    await attachReportPageMetadata(reportRows),
+    await attachReportPageMetadata(reportRows, { dispatcherState }),
   )
 }
 
@@ -1330,7 +1415,7 @@ export async function listColumnFilterOptions(data: ReturnType<typeof normalizeW
           .where(where)
           .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
         const sourceRowsWithMetadata = data.fieldKey === DISPATCHER_TASKS_FIELD_KEY
-          ? await attachReportPageMetadata(sourceRows)
+          ? await attachReportPageMetadata(sourceRows, { includeJointWorkflowMetadata: false })
           : await attachHeatTreatmentControlRelations(
               await attachDuplicateControlsToPage(sourceRows),
             )
@@ -1371,7 +1456,7 @@ export async function listColumnFilterOptions(data: ReturnType<typeof normalizeW
       data.fieldKey,
     )
     const rowsWithMetadata = generatedDocumentType || data.fieldKey === 'finalStatus' || data.fieldKey === DISPATCHER_TASKS_FIELD_KEY
-      ? await attachReportPageMetadata(rowsWithExposureScheme)
+      ? await attachReportPageMetadata(rowsWithExposureScheme, { includeJointWorkflowMetadata: false })
       : rowsWithExposureScheme
     return buildWeldColumnFilterOptionsFromRows(
       filterWeldRowsByColumns(rowsWithMetadata, derivedColumnFilters),

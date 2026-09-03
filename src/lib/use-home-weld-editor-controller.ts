@@ -7,8 +7,10 @@ import type {
 import {
   getPstoLineIdentityKey,
   normalizePstoLineIdentity,
+  type PstoWeldLineMoveDecision,
   type PstoWeldLineMoveDisposition,
   type PstoWeldLineMovePreview,
+  type WeldChainLineMovePlan,
 } from '@/lib/psto-line-assignment'
 import type { WeldInput } from '@/lib/weld-fields'
 import { getPstoWeldLineMovePreview } from '@/server/weld-line-operations'
@@ -23,7 +25,7 @@ export type PstoLineMoveDraftState = {
   | {
       status: 'required'
       preview: PstoWeldLineMovePreview
-      disposition: PstoWeldLineMoveDisposition | null
+      decisions: PstoWeldLineMoveDecision[] | null
       dialogOpen: boolean
     }
 )
@@ -108,7 +110,7 @@ export function useHomeWeldEditorController() {
         targetIdentityKey,
         status: 'required',
         preview,
-        disposition: null,
+        decisions: null,
         dialogOpen: true,
       })
     }).catch((error) => {
@@ -140,7 +142,7 @@ export function useHomeWeldEditorController() {
       return 'Проверяем перенос стыка между линиями. Дождитесь завершения проверки.'
     }
     if (state.status === 'error') return `Не удалось проверить перенос стыка: ${state.error}`
-    if (state.status === 'required' && !state.disposition) {
+    if (state.status === 'required' && !state.decisions) {
       return 'Перед сохранением выберите, как обработать связанные документы и результаты.'
     }
     return null
@@ -170,7 +172,7 @@ export function useHomeWeldEditorController() {
       }
     }
     if (state.status !== 'required') return null
-    if (!state.disposition) {
+    if (!state.decisions) {
       return {
         status: 'required' as const,
         message: 'До сохранения карточки нужно решить, как обработать связанные документы и результаты.',
@@ -180,26 +182,39 @@ export function useHomeWeldEditorController() {
     }
     return {
       status: 'resolved' as const,
-      message: getPstoLineMoveDraftDecisionSummary(state.preview, state.disposition),
+      message: getPstoLineMoveDraftDecisionSummary(state.preview, state.decisions),
       actionLabel: 'Изменить',
       onAction: openPstoLineMoveDraftDecision,
     }
   }, [editingRowId, openPstoLineMoveDraftDecision, pstoLineMoveDraftState])
 
-  const getPstoLineMoveDisposition = useCallback((draft: WeldInput & { id?: number | null }) => {
+  const getPstoLineMoveSaveData = useCallback((draft: WeldInput & { id?: number | null }): {
+    pstoLineMoveDisposition?: PstoWeldLineMoveDisposition
+    weldChainLineMovePlan?: WeldChainLineMovePlan
+  } | null => {
     const targetIdentityKey = getPstoLineIdentityKey(draft)
     const state = pstoLineMoveDraftStateRef.current
-    return state?.status === 'required' &&
+    if (!(state?.status === 'required' &&
       state.rowId === draft.id &&
-      state.targetIdentityKey === targetIdentityKey
-      ? state.disposition
-      : null
+      state.targetIdentityKey === targetIdentityKey &&
+      state.decisions)) return null
+
+    if (state.preview.isChainMove) {
+      return {
+        weldChainLineMovePlan: {
+          expectedRowIds: state.preview.expectedRowIds,
+          decisions: state.decisions,
+        },
+      }
+    }
+    const sourceDecision = state.decisions.find((decision) => decision.rowId === state.rowId)
+    return sourceDecision ? { pstoLineMoveDisposition: sourceDecision.disposition } : null
   }, [])
 
-  const confirmPstoLineMove = useCallback((disposition: PstoWeldLineMoveDisposition) => {
+  const confirmPstoLineMove = useCallback((decisions: PstoWeldLineMoveDecision[]) => {
     const current = pstoLineMoveDraftStateRef.current
     if (current?.status !== 'required') return
-    commitPstoLineMoveDraftState({ ...current, disposition, dialogOpen: false })
+    commitPstoLineMoveDraftState({ ...current, decisions, dialogOpen: false })
   }, [commitPstoLineMoveDraftState])
 
   return {
@@ -216,15 +231,21 @@ export function useHomeWeldEditorController() {
     checkEditedWeldLineMove,
     getPstoLineMoveSaveBlockReason,
     pstoLineMovePreSaveDecision,
-    getPstoLineMoveDisposition,
+    getPstoLineMoveSaveData,
     confirmPstoLineMove,
   }
 }
 
 function getPstoLineMoveDraftDecisionSummary(
   preview: PstoWeldLineMovePreview,
-  disposition: PstoWeldLineMoveDisposition,
+  decisions: PstoWeldLineMoveDecision[],
 ) {
+  if (preview.isChainMove) {
+    const decisionCount = preview.rows.filter((row) => row.requiresDisposition).length
+    return `Подтвержден перенос всей цепочки ${preview.rootJoint}: записей ${preview.rows.length}` +
+      `${decisionCount > 0 ? `, решений по ПСТО и НК до ТО: ${decisionCount}` : ''}.`
+  }
+  const disposition = decisions.find((decision) => decision.rowId === preview.row.rowId)?.disposition ?? 'keepPrimary'
   const primaryMethods = preview.row.primaryMethods.join(', ') || 'ВИК/РК/УЗК/ПВК'
   if (disposition === 'movePrimaryToBeforeHeatTreatment') {
     return `Выбрано: при сохранении основной комплект ${primaryMethods} будет перенесен в «До ТО».`

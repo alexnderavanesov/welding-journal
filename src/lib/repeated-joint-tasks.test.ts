@@ -72,6 +72,115 @@ describe('buildRepeatedJointTasks', () => {
     expect(tasks.some((task) => task.kind === 'check' && task.reason === 'проверить целостность катушки')).toBe(false)
   })
 
+  it('restores only the missing target when an accepted early coil pair was damaged', () => {
+    const rows = [
+      row({ id: 1, joint: 'F51', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'F51Y1', weldDate: null }),
+    ]
+
+    const tasks = buildRepeatedJointTasks(rows, [], [], {
+      earlyCoilDecisionSourceRowIds: new Set([1]),
+    })
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'coil',
+        sourceJoint: 'F51',
+        targetJoints: ['F51Y2'],
+        transitionMode: 'early-decision',
+      }),
+      expect.objectContaining({
+        kind: 'check',
+        reason: 'проверить целостность катушки',
+      }),
+    ]))
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'create', targetJoint: 'F51R1' }),
+    ]))
+  })
+
+  it.each([
+    ['пустого', null],
+    ['заполненного', '2026-07-03'],
+  ])('keeps the chain warning and next R task after the base of a %s orphan was deleted', (_label, weldDate) => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 2, joint: 'F44R1', weldDate, rkResult: 'ремонт' }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'check',
+        sourceJoint: 'F44R1',
+        reason: 'проверить целостность цепочки',
+      }),
+      expect.objectContaining({
+        kind: 'create',
+        sourceJoint: 'F44R1',
+        targetJoint: 'F44R2',
+      }),
+    ]))
+  })
+
+  it('offers both gap restoration and continuation from the last rejected surviving row', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'F44', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'F44R2', rkResult: 'вырез' }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'check', reason: 'проверить целостность цепочки' }),
+      expect.objectContaining({ kind: 'create', sourceJoint: 'F44', targetJoint: 'F44R1' }),
+      expect.objectContaining({ kind: 'create', sourceJoint: 'F44R2', targetJoint: 'F44R2W1' }),
+    ]))
+  })
+
+  it.each([
+    [
+      'первого ремонта',
+      [row({ id: 1, joint: 'F45', rkResult: 'ремонт' })],
+      'F45R1',
+    ],
+    [
+      'последующего ремонта',
+      [
+        row({ id: 1, joint: 'F46', rkResult: 'ремонт' }),
+        row({ id: 2, joint: 'F46R1', rkResult: 'ремонт' }),
+      ],
+      'F46R2',
+    ],
+    [
+      'третьего выреза перед лимитом катушки',
+      [
+        row({ id: 1, joint: 'S47', rkResult: 'вырез' }),
+        row({ id: 2, joint: 'S47W1', rkResult: 'вырез' }),
+        row({ id: 3, joint: 'S47W2', rkResult: 'вырез' }),
+      ],
+      'S47W3',
+    ],
+  ])('reoffers a deleted terminal row for %s', (_label, rows, targetJoint) => {
+    expect(buildRepeatedJointTasks(rows)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'create', targetJoint }),
+    ]))
+  })
+
+  it('restores a deleted coil root and still continues its rejected surviving branch', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S30', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S30W1', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'S30W2', rkResult: 'вырез' }),
+      row({ id: 4, joint: 'S30W3', rkResult: 'вырез' }),
+      row({ id: 6, joint: 'S30Y1R1', rkResult: 'ремонт' }),
+      row({ id: 7, joint: 'S30Y2' }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'check', reason: 'проверить целостность цепочки', sourceJoint: 'S30Y1R1' }),
+      expect.objectContaining({ kind: 'check', reason: 'проверить целостность катушки' }),
+      expect.objectContaining({ kind: 'coil', sourceJoint: 'S30W3', targetJoints: ['S30Y1'] }),
+      expect.objectContaining({ kind: 'create', sourceJoint: 'S30Y1R1', targetJoint: 'S30Y1R2' }),
+    ]))
+  })
+
   it('creates a nested early coil from the current Y branch base', () => {
     const rows = [
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
@@ -150,11 +259,36 @@ describe('buildRepeatedJointTasks', () => {
 
     expect(buildRepeatedJointTasks(rows)).toEqual(expect.arrayContaining([
       expect.objectContaining({
+        kind: 'check',
+        reason: 'проверить целостность катушки',
+      }),
+      expect.objectContaining({
         kind: 'coil',
         sourceJoint: 'S30W3',
         targetJoints: ['S30Y1', 'S30Y2'],
         transitionMode: 'limit',
       }),
+    ]))
+  })
+
+  it('does not reset the automatic coil counter when intermediate rows were deleted', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S31', rkResult: 'вырез' }),
+      row({ id: 4, joint: 'S31W3', rkResult: 'вырез' }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'check', reason: 'проверить целостность цепочки' }),
+      expect.objectContaining({ kind: 'check', reason: 'проверить целостность катушки' }),
+      expect.objectContaining({
+        kind: 'coil',
+        sourceJoint: 'S31W3',
+        targetJoints: ['S31Y1', 'S31Y2'],
+        transitionMode: 'limit',
+      }),
+    ]))
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'create', sourceJoint: 'S31W3', targetJoint: 'S31W4' }),
     ]))
   })
 
@@ -357,27 +491,138 @@ describe('buildRepeatedJointTasks', () => {
     expect(tasks.some((task) => task.kind === 'check' && task.reason === 'проверить целостность цепочки')).toBe(false)
   })
 
-  it('propagates obsolete repeated joint renames through the following chain rows', () => {
+  it('restarts R/W counters while rebuilding a chain after an earlier result changes', () => {
     const rows = [
+      row({ id: 1, joint: 'S1', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S1R1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'S1R2' }),
+    ]
+
+    const tasks = buildRepeatedJointTasks(rows)
+    const renameTasks = tasks.filter((task) => task.kind === 'rename')
+
+    expect(renameTasks).toHaveLength(1)
+    expect(renameTasks[0]).toEqual(expect.objectContaining({
+      currentJoint: 'S1R1',
+      targetJoint: 'S1W1',
+      changes: [
+        { rowId: 2, currentJoint: 'S1R1', targetJoint: 'S1W1' },
+        { rowId: 3, currentJoint: 'S1R2', targetJoint: 'S1W1R1' },
+      ],
+    }))
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'create', targetJoint: 'S1W1' }),
+    ]))
+  })
+
+  it('preserves the factual R/W order while restarting the changed suffix counter', () => {
+    const renameTasks = buildRepeatedJointTasks([
       row({ id: 1, joint: 'F1', rkResult: 'ремонт' }),
       row({ id: 2, joint: 'F1W1', rkResult: 'вырез' }),
       row({ id: 3, joint: 'F1W2' }),
-    ]
+    ]).filter((task) => task.kind === 'rename')
 
-    const renameTasks = buildRepeatedJointTasks(rows).filter((task) => task.kind === 'rename')
+    expect(renameTasks).toHaveLength(1)
+    expect(renameTasks[0]?.changes).toEqual([
+      { rowId: 2, currentJoint: 'F1W1', targetJoint: 'F1R1' },
+      { rowId: 3, currentJoint: 'F1W2', targetJoint: 'F1R1W1' },
+    ])
+  })
 
-    expect(renameTasks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          currentJoint: 'F1W1',
-          targetJoint: 'F1R1',
-        }),
-        expect.objectContaining({
-          currentJoint: 'F1W2',
-          targetJoint: 'F1R1W2',
-        }),
-      ]),
-    )
+  it('rebuilds only the continuation after a result changes in the middle of a chain', () => {
+    const renameTasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1R1', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'S1R2', rkResult: 'ремонт' }),
+      row({ id: 4, joint: 'S1R3' }),
+    ]).filter((task) => task.kind === 'rename')
+
+    expect(renameTasks).toHaveLength(1)
+    expect(renameTasks[0]?.changes).toEqual([
+      { rowId: 3, currentJoint: 'S1R2', targetJoint: 'S1R1W1' },
+      { rowId: 4, currentJoint: 'S1R3', targetJoint: 'S1R2W1' },
+    ])
+  })
+
+  it('replays every later result when several earlier links changed', () => {
+    const renameTasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S1R1', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'S1R2', rkResult: 'ремонт' }),
+      row({ id: 4, joint: 'S1R3' }),
+    ]).filter((task) => task.kind === 'rename')
+
+    expect(renameTasks).toHaveLength(1)
+    expect(renameTasks[0]?.changes).toEqual([
+      { rowId: 2, currentJoint: 'S1R1', targetJoint: 'S1W1' },
+      { rowId: 3, currentJoint: 'S1R2', targetJoint: 'S1W2' },
+      { rowId: 4, currentJoint: 'S1R3', targetJoint: 'S1W2R1' },
+    ])
+  })
+
+  it('rebuilds counters with configured system suffixes', () => {
+    const systemIndexSettings = {
+      ...DEFAULT_SYSTEM_INDEX_SETTINGS,
+      shopJoint: 'A',
+      fieldJoint: 'B',
+      repair: 'C',
+      cutout: 'D',
+      coil: 'E',
+    }
+    const renameTasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'B7', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'B7C1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'B7C2' }),
+    ], [], [], { systemIndexSettings }).filter((task) => task.kind === 'rename')
+
+    expect(renameTasks[0]?.changes).toEqual([
+      { rowId: 2, currentJoint: 'B7C1', targetJoint: 'B7D1' },
+      { rowId: 3, currentJoint: 'B7C2', targetJoint: 'B7D1C1' },
+    ])
+  })
+
+  it('does not offer an automatic rename when the rebuilt name is already occupied', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S1R1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'S1W1' }),
+    ])
+
+    expect(tasks.some((task) => task.kind === 'rename')).toBe(false)
+  })
+
+  it('does not offer a conflicting create when a downstream collision blocks the chain rename', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S1R1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'S1R2' }),
+      row({ id: 4, joint: 'S1W1R1' }),
+    ])
+
+    expect(tasks.some((task) => task.kind === 'rename')).toBe(false)
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'create', targetJoint: 'S1W1' }),
+    ]))
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'check', reason: 'проверить целостность цепочки' }),
+    ]))
+  })
+
+  it('keeps the forced cutout target valid after the official repair limit', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1R1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'S1R2', rkResult: 'ремонт' }),
+      row({ id: 4, joint: 'S1R2W1' }),
+    ])
+
+    expect(tasks.filter((task) => (
+      task.row.id === 4 && (
+        task.kind === 'rename' ||
+        task.kind === 'delete' ||
+        (task.kind === 'check' && task.key.startsWith('check-obsolete'))
+      )
+    ))).toEqual([])
   })
 
   it('adds a dispatcher task when a percentage line stamp lacks RK/UZK coverage', () => {
