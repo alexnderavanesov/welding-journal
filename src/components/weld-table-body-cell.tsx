@@ -8,7 +8,13 @@ import { getStickyWeldTableFieldStyle, isStickyWeldTableField } from '@/lib/weld
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
 import {
   GENERATED_DOCUMENT_PROFILES,
+  type GeneratedDocumentType,
 } from '@/lib/generated-document-types'
+import {
+  getLayeredControlDocumentProfile,
+  getLayeredControlDocumentTypesForCompositeField,
+  isLayeredControlCompositeFieldKey,
+} from '@/lib/layered-control-documents'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getLnkResultMethodForField } from '@/lib/lnk-result-navigation'
 import {
@@ -173,6 +179,7 @@ export function getWeldTableBodyCellTooltip({
     return composeWeldTableCellTooltip(
       visibleValue,
       `Открыть актуальную версию документа «${getDocumentLabel({
+        generatedDocumentType: linkState.generatedDocumentType,
         systemDocumentType: linkState.systemDocumentType,
         isSystemDocumentLink: linkState.isSystemDocumentLink,
         isChecklistDocumentLink: linkState.isChecklistDocumentLink,
@@ -245,6 +252,9 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
 }: WeldTableBodyCellProps) {
   const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const fieldKey = field.key as WeldFieldKey
+  const layeredDocumentTypes = isLayeredControlCompositeFieldKey(fieldKey)
+    ? getLayeredControlDocumentTypesForCompositeField(fieldKey)
+    : []
   const isStickyCell = stickyIdentityColumns && isStickyWeldTableField(field.key)
   const isControlBasisEditorLink =
     controlBasisEditorEnabled && fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY && Boolean(onEdit)
@@ -308,7 +318,30 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
         onEdit?.(row, field.key as WeldFieldKey)
       }}
     >
-      {isJointHistoryLink ? (
+      {layeredDocumentTypes.length > 0 ? (
+        <div className="flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
+          {layeredDocumentTypes.map((type) => {
+            const profile = getLayeredControlDocumentProfile(type)
+            const title = String(row[profile.fieldKey] ?? '').trim()
+            const documentId = Number(row[profile.idKey as keyof WeldRow])
+            if (!title || !Number.isInteger(documentId) || documentId <= 0) return null
+            return (
+              <button
+                key={type}
+                type="button"
+                title={title}
+                className="h-[21px] truncate border-0 bg-transparent px-1 text-center text-[12px] font-medium leading-[21px] text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpenDocument?.(row, profile.fieldKey as WeldFieldKey)
+                }}
+              >
+                {profile.stageLabel}
+              </button>
+            )
+          })}
+        </div>
+      ) : isJointHistoryLink ? (
         <button
           type="button"
           className={contentClass}
@@ -396,6 +429,19 @@ function getWeldTableCellLinkState({
     fieldKey === 'checklistDocument' && Boolean(row.checklistDocumentId) && hasVisibleValue
   const isZniDocumentLink =
     fieldKey === 'zniDocument' && Boolean(row.zniDocumentId) && hasVisibleValue
+  const generatedDocumentType = (
+    Object.entries(GENERATED_DOCUMENT_PROFILES) as Array<
+      [GeneratedDocumentType, (typeof GENERATED_DOCUMENT_PROFILES)[GeneratedDocumentType]]
+    >
+  ).find(([, profile]) => profile.fieldKey === fieldKey)?.[0]
+  const generatedDocumentProfile = generatedDocumentType
+    ? GENERATED_DOCUMENT_PROFILES[generatedDocumentType]
+    : null
+  const isGeneratedDocumentLink = Boolean(
+    generatedDocumentProfile &&
+      row[generatedDocumentProfile.idKey] &&
+      hasVisibleValue,
+  )
   const preHeatTreatmentField = getPreHeatTreatmentReportField(fieldKey)
   const systemDocumentType = hasVisibleValue ? getSystemDocumentTypeForField(fieldKey) : null
   const systemDocumentTemplateId = systemDocumentType ? getSystemDocumentTemplateIdForField(fieldKey) : null
@@ -419,9 +465,7 @@ function getWeldTableCellLinkState({
     ) &&
     !(isSystemDocumentLink && systemDocumentType === 'lnkConclusion')
   const isDocumentLink =
-    isJsrDocumentLink ||
-    isChecklistDocumentLink ||
-    isZniDocumentLink ||
+    isGeneratedDocumentLink ||
     (isSystemDocumentLink && !isLnkRequestCardLink && !isLnkResultCardLink)
 
   return {
@@ -431,6 +475,7 @@ function getWeldTableCellLinkState({
     isLnkResultCardLink,
     isSystemDocumentLink,
     isZniDocumentLink,
+    generatedDocumentType,
     systemDocumentType,
   }
 }
@@ -465,17 +510,20 @@ function getStickyWeldTableBodyCellClass({
 }
 
 function getDocumentLabel({
+  generatedDocumentType,
   systemDocumentType,
   isSystemDocumentLink,
   isChecklistDocumentLink,
   isZniDocumentLink,
 }: {
+  generatedDocumentType?: GeneratedDocumentType
   systemDocumentType: ReturnType<typeof getSystemDocumentTypeForField>
   isSystemDocumentLink: boolean
   isChecklistDocumentLink: boolean
   isZniDocumentLink: boolean
 }) {
   if (systemDocumentType && isSystemDocumentLink) return getSystemDocumentProfile(systemDocumentType).label
+  if (generatedDocumentType) return GENERATED_DOCUMENT_PROFILES[generatedDocumentType].label
   if (isChecklistDocumentLink) return GENERATED_DOCUMENT_PROFILES.checklist.label
   if (isZniDocumentLink) return GENERATED_DOCUMENT_PROFILES.zni.label
   return GENERATED_DOCUMENT_PROFILES.weldingJournal.label

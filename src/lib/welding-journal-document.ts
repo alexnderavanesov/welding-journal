@@ -1,5 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
+  loadGeneratedDocument,
   loadGeneratedDocumentRows,
   openGeneratedDocument,
   type StoredGeneratedDocument,
@@ -15,8 +16,13 @@ import type { GeneratedDocumentType } from '@/server/generated-documents'
 import {
   GENERATED_DOCUMENT_PROFILES,
   getGeneratedDocumentProfile,
+  isLayeredControlDocumentType,
   type GeneratedDocumentFieldKey,
 } from '@/lib/generated-document-types'
+import {
+  getLayeredControlDocumentProfile,
+  normalizeLayeredControlDate,
+} from '@/lib/layered-control-documents'
 
 export const WELDING_JOURNAL_DOCUMENT_MIME_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -89,15 +95,26 @@ export async function createCurrentGeneratedDocumentBlob({
   rows,
   welderStamps,
   template,
+  documentRecord,
 }: {
   type: GeneratedDocumentType
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
   template?: StoredDocumentTemplate | null
+  documentRecord?: Pick<StoredGeneratedDocument, 'title' | 'documentNumber' | 'periodFrom'> | null
 }) {
   const currentTemplate = template === undefined ? await loadDocumentTemplate(type) : template
+  if (isLayeredControlDocumentType(type) && !currentTemplate) {
+    throw new Error('Файл шаблона не найден в общем хранилище.')
+  }
+  const layeredTemplateData = isLayeredControlDocumentType(type)
+    ? buildLayeredControlTemplateData(type, rows, documentRecord)
+    : null
   return currentTemplate?.fileType === 'xlsx' || currentTemplate?.fileType === 'xls'
-    ? createWeldingJournalBlobFromTemplate(currentTemplate, rows, { welderStamps })
+    ? createWeldingJournalBlobFromTemplate(currentTemplate, layeredTemplateData?.rows ?? rows, {
+        welderStamps,
+        ...(layeredTemplateData ? { systemDocument: layeredTemplateData.context } : {}),
+      })
     : createBaseWeldingJournalDocumentBlob(rows, type)
 }
 
@@ -138,12 +155,69 @@ export function openGeneratedDocumentForRow(
   void openGeneratedDocument(
     documentRecord,
     async () => {
-      const rows = await loadGeneratedDocumentRows(documentId)
+      const [rows, storedDocument] = await Promise.all([
+        loadGeneratedDocumentRows(documentId),
+        loadGeneratedDocument(documentId),
+      ])
       if (rows.length === 0) throw new Error('В документе больше нет стыков.')
-      return createCurrentGeneratedDocumentBlob({ type, rows, welderStamps })
+      return createCurrentGeneratedDocumentBlob({
+        type,
+        rows,
+        welderStamps,
+        documentRecord: storedDocument ?? documentRecord,
+      })
     },
     previewWindow,
   )
+}
+
+function buildLayeredControlTemplateData(
+  type: Extract<GeneratedDocumentType, `layered${string}`>,
+  rows: WeldRow[],
+  documentRecord?: Pick<StoredGeneratedDocument, 'title' | 'documentNumber' | 'periodFrom'> | null,
+) {
+  const profile = getLayeredControlDocumentProfile(type)
+  const firstRow = rows[0]
+  const date = normalizeLayeredControlDate(documentRecord?.periodFrom ?? firstRow?.weldDate)
+  const title = String(
+    documentRecord?.title ?? firstRow?.[profile.fieldKey] ?? profile.templateLabel,
+  ).trim()
+  const documentNumber = Number(documentRecord?.documentNumber)
+  const currentRows = rows.map((row) => {
+    const conclusionDate = normalizeLayeredControlDate(row.weldDate)
+    if (profile.method === 'ВИК') {
+      return {
+        ...row,
+        vikRequest: null,
+        vikRequestDate: null,
+        vikResult: 'годен',
+        vikConclusionDate: conclusionDate,
+        vikConclusion: title,
+      } as WeldRow
+    }
+    return {
+      ...row,
+      pvkRequest: null,
+      pvkRequestDate: null,
+      pvkResult: 'годен',
+      pvkConclusionDate: conclusionDate,
+      pvkConclusion: title,
+    } as WeldRow
+  })
+
+  return {
+    rows: currentRows,
+    context: {
+      type: 'lnkConclusion' as const,
+      label: `Заключение ${profile.templateLabel}`,
+      title,
+      date,
+      number: Number.isInteger(documentNumber) && documentNumber > 0 ? String(documentNumber) : '',
+      methodCodes: [profile.method],
+      methodCode: profile.method,
+      resultOverride: 'годен',
+    },
+  }
 }
 
 export async function createBaseWeldingJournalDocumentBlob(

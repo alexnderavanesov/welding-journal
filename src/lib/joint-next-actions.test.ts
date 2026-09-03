@@ -105,6 +105,26 @@ describe('joint next actions', () => {
     })
   })
 
+  it('skips pre-TO control but preserves the PSTO to TVMT to primary LNK order for an exempt line', () => {
+    const beforePsto = row({
+      pstoRequired: 'да',
+      preHeatTreatmentLnkExempt: true,
+      hasVik: 'да',
+    })
+    expect(buildJointNextActions(beforePsto)[0]).toMatchObject({ kind: 'pstoRequest' })
+
+    const afterTvmt = row({
+      ...beforePsto,
+      pstoRequest: 'Заявка ПСТО',
+      pstoDate: '2026-08-03',
+      pstoResult: 'проведено',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-04',
+    })
+    expect(buildJointNextActions(afterTvmt)[0]).toMatchObject({ kind: 'primaryLnkRequest' })
+  })
+
   it('guides every physical cycle stage and opens a repeat after failed TVMT', () => {
     const requestedPsto = row({
       pstoRequired: 'да',

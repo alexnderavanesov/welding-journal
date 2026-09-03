@@ -26,6 +26,7 @@ export type DispatcherTaskCardHandlers = {
   onShowTask: (task: DispatcherTask) => void
   onOpenTaskOfficiality: (task: DispatcherTask) => void
   onCreateTask: (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => void
+  onCreateEarlyCoil: (task: RepeatedJointCreateTask) => void
   onDeleteTask: (task: RepeatedJointDeleteTask) => void
   onRenameTask: (task: RepeatedJointRenameTask) => void
   onAcceptPercentageLineTask: (task: PercentageLineControlTask) => void
@@ -33,6 +34,8 @@ export type DispatcherTaskCardHandlers = {
   onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
   onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
   canRunDispatcherMutation: boolean
+  canCreateEarlyCoil: boolean
+  isEarlyCoilPending: boolean
   isCreatePending: boolean
   isDeletePending: boolean
   isRenamePending: boolean

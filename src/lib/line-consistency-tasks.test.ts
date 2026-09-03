@@ -82,23 +82,6 @@ describe('line consistency tasks', () => {
     expect(tasks).toHaveLength(0)
   })
 
-  it('ignores TVMT, RFA, STLS and MKK differences on a 100 percent line', () => {
-    const tasks = buildLineConsistencyTasks([
-      row({
-        id: 1,
-        weldControlPercent: '100',
-        hasVik: 'да',
-        hasTvmt: 'да',
-        hasRfa: 'да',
-        hasStls: 'да',
-        hasMkk: 'да',
-      }),
-      row({ id: 2, weldControlPercent: '100', hasVik: 'да', hasTvmt: 'да' }),
-    ])
-
-    expect(tasks).toHaveLength(0)
-  })
-
   it('does not compare legacy TVMT assignments on a 100 percent line', () => {
     const tasks = buildLineConsistencyTasks([
       row({ id: 1, weldControlPercent: '100', hasVik: 'да', hasTvmt: 'да' }),

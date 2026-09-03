@@ -1,4 +1,5 @@
 export const PROJECT_SETTING_KEYS = {
+  controlProcesses: 'control-processes',
   dataList: 'data-list',
   dispatcher: 'dispatcher',
   dispatcherBackground: 'dispatcher-background',
@@ -18,7 +19,8 @@ export function isProjectSettingKey(value: unknown): value is ProjectSettingKey 
 }
 
 export function projectSettingAffectsDispatcherIndex(key: unknown) {
-  return key === PROJECT_SETTING_KEYS.dataList ||
+  return key === PROJECT_SETTING_KEYS.controlProcesses ||
+    key === PROJECT_SETTING_KEYS.dataList ||
     key === PROJECT_SETTING_KEYS.dispatcher ||
     key === PROJECT_SETTING_KEYS.dispatcherReminders ||
     key === PROJECT_SETTING_KEYS.saveCheck ||
@@ -26,7 +28,9 @@ export function projectSettingAffectsDispatcherIndex(key: unknown) {
 }
 
 export function projectSettingAffectsDerivedCalculations(key: unknown) {
-  return key === PROJECT_SETTING_KEYS.other || key === PROJECT_SETTING_KEYS.systemIndex
+  return key === PROJECT_SETTING_KEYS.controlProcesses ||
+    key === PROJECT_SETTING_KEYS.other ||
+    key === PROJECT_SETTING_KEYS.systemIndex
 }
 
 export const PROJECT_SETTING_REMOTE_PERSIST_EVENT = 'project-setting-remote-persist'

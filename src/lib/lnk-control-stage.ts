@@ -84,7 +84,12 @@ export function getRequiredLnkControlStages(
   return [PRIMARY_LNK_CONTROL_STAGE]
 }
 
-export function requiresPreHeatTreatmentLnk(row: WeldInput) {
+export function requiresPreHeatTreatmentLnk(row: WeldInput & { preHeatTreatmentLnkExempt?: boolean }) {
+  if (row.preHeatTreatmentLnkExempt === true) return false
+  return requiresHeatTreatmentStagedLnk(row)
+}
+
+export function requiresHeatTreatmentStagedLnk(row: WeldInput) {
   return isControlEnabledValue(row.pstoRequired) || requiresPostHeatTreatmentCompletion(row)
 }
 
@@ -181,7 +186,7 @@ export function isPrimaryPstoReady(row: WeldInput) {
 
 function getPrimaryPstoStartPrerequisites(row: WeldInput) {
   const empty = { rejected: [] as string[], missingRequests: [] as string[], pendingResults: [] as string[] }
-  if (!isControlEnabledValue(row.pstoRequired)) return empty
+  if (!isControlEnabledValue(row.pstoRequired) || !requiresPreHeatTreatmentLnk(row)) return empty
   const requiredMethods = PRE_HEAT_TREATMENT_LNK_METHODS.filter((method) =>
     isControlEnabledValue(row[method.enabledKey]),
   )
@@ -207,16 +212,17 @@ export function getPrimaryLnkStageBlockReason(
 ) {
   const normalizedMethod = normalizeMethodCode(methodCode)
   if (!isPreHeatTreatmentLnkMethodCode(normalizedMethod)) return ''
-  const requiresStagedControl = requiresPreHeatTreatmentLnk(row)
-  if (!requiresStagedControl) return ''
+  if (!requiresHeatTreatmentStagedLnk(row)) return ''
 
-  const incompleteMethods = PRE_HEAT_TREATMENT_LNK_METHODS.flatMap((method) => {
-    if (!isControlEnabledValue(row[method.enabledKey])) return []
-    const control = getPreHeatTreatmentControl(row, method.code)
-    return normalizeResult(control?.result) === 'годен' ? [] : [method.code]
-  })
-  if (incompleteMethods.length > 0) {
-    return `Сначала завершите НК до ТО: ${incompleteMethods.join(', ')}.`
+  if (requiresPreHeatTreatmentLnk(row)) {
+    const incompleteMethods = PRE_HEAT_TREATMENT_LNK_METHODS.flatMap((method) => {
+      if (!isControlEnabledValue(row[method.enabledKey])) return []
+      const control = getPreHeatTreatmentControl(row, method.code)
+      return normalizeResult(control?.result) === 'годен' ? [] : [method.code]
+    })
+    if (incompleteMethods.length > 0) {
+      return `Сначала завершите НК до ТО: ${incompleteMethods.join(', ')}.`
+    }
   }
 
   const pstoState = getPstoTvmtWorkflowState(row)

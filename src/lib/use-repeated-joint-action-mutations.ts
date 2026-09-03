@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { deleteWeldJoint } from '@/server/weld-mutations-api'
+import { createEarlyCoilDecision, deleteWeldJoint } from '@/server/weld-mutations-api'
 import { getWeldJointById } from '@/server/weld-read-api'
 import {
   buildRepeatedJointRows,
@@ -21,6 +21,30 @@ export function useRepeatedJointActionMutations({
   dismissRepeatedJointTask,
 }: UseWeldJournalMutationsOptions) {
   const queryClient = useQueryClient()
+
+  const earlyCoilMutation = useMutation({
+    mutationFn: async ({ sourceRowId }: { sourceRowId: number; task?: RepeatedJointCreateTask }) =>
+      createEarlyCoilDecision({ data: { sourceRowId } }),
+    onSuccess: async (result, variables) => {
+      const createdRows = result.createdRows as WeldRow[]
+      highlightChangedRows(createdRows, ['joint', 'weldDate', 'finalStatus'])
+      if (variables.task) dismissRepeatedJointTask(variables.task)
+      setMessage(
+        `Созданы стыки катушки ${result.targetJoints.join(', ')} для ${result.sourceJoint}. Решение сохранено в принятых исключениях.`,
+      )
+      await Promise.all([
+        invalidateWeldJoints(queryClient, {
+          deleteIds: result.deletedRowIds,
+          upsertRows: createdRows,
+        }),
+        queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
+        queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
+      ])
+    },
+    onError: (error) => {
+      setMessage((error as Error).message)
+    },
+  })
 
   const repeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => {
@@ -77,6 +101,7 @@ export function useRepeatedJointActionMutations({
   })
 
   return {
+    earlyCoilMutation,
     obsoleteRepeatedJointMutation,
     renameRepeatedJointMutation,
     repeatedJointMutation,

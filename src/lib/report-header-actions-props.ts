@@ -54,8 +54,6 @@ type CreateReportHeaderActionsPropsOptions = {
   editSelectedLnkResultsDisabled: boolean
   onOpenLnkResultRegistry: () => void
   lnkResultRegistryDisabled: boolean
-  onOpenPreHeatTreatmentLnkResultRegistry: (mode?: 'request' | 'result') => void
-  preHeatTreatmentLnkResultRegistryDisabled: boolean
   onOpenLnkOfficiality: () => void
   lnkOfficialityPending: boolean
   onOpenDuplicateControl: () => void
@@ -122,8 +120,6 @@ export function createReportHeaderActionsProps({
   editSelectedLnkResultsDisabled,
   onOpenLnkResultRegistry,
   lnkResultRegistryDisabled,
-  onOpenPreHeatTreatmentLnkResultRegistry,
-  preHeatTreatmentLnkResultRegistryDisabled,
   onOpenLnkOfficiality,
   lnkOfficialityPending,
   onOpenDuplicateControl,
@@ -189,8 +185,6 @@ export function createReportHeaderActionsProps({
     editSelectedLnkResultsDisabled,
     onOpenLnkResultRegistry,
     lnkResultRegistryDisabled,
-    onOpenPreHeatTreatmentLnkResultRegistry,
-    preHeatTreatmentLnkResultRegistryDisabled,
     onOpenLnkOfficiality,
     lnkOfficialityPending,
     onOpenDuplicateControl,

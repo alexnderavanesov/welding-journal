@@ -54,13 +54,13 @@ describe('LnkRequestDialog', () => {
     expect(screen.getByRole('dialog')).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
     expect(screen.getByRole('heading', { name: 'Заявка ЛНК' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Все заявки' })).toBeInTheDocument()
-    expect(screen.getByText('0/7')).toHaveClass('w-10', 'tabular-nums')
+    expect(screen.getByText('0/4')).toHaveClass('w-10', 'tabular-nums')
     expect(screen.getByDisplayValue('2026-08-14').closest('[data-lnk-request-methods]')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Стыки' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: /Заявки и имена/ })).toHaveTextContent('0')
 
     fireEvent.click(screen.getByRole('button', { name: 'ВИК' }))
-    expect(screen.getByText('1/7')).toHaveClass('w-10', 'tabular-nums')
+    expect(screen.getByText('1/4')).toHaveClass('w-10', 'tabular-nums')
     expect(screen.getByText(/Добавится позиций: 1/)).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Заявки и имена/ })).toHaveTextContent('1')
 

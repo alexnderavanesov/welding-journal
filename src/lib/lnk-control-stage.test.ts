@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
+import type { WeldInput } from '@/lib/weld-fields'
 import {
   PRE_HEAT_TREATMENT_LNK_METHODS,
   buildPreHeatTreatmentControlSnapshot,
   buildPrimaryLnkControlSnapshot,
   getRequiredLnkControlStages,
   getPrimaryLnkStageBlockReason,
+  getPreHeatTreatmentPendingFinalStatus,
   getPrimaryPstoStartBlockReason,
   getPrimaryPstoStartStatusLabel,
   getRejectedPreHeatTreatmentControls,
   isPreHeatTreatmentLnkMethodCode,
+  type PreHeatTreatmentControlRecord,
 } from '@/lib/lnk-control-stage'
 
 describe('LNK control stages', () => {
@@ -22,25 +25,60 @@ describe('LNK control stages', () => {
     ])
     expect(isPreHeatTreatmentLnkMethodCode(' вик ')).toBe(true)
     expect(isPreHeatTreatmentLnkMethodCode('ТВМТ')).toBe(false)
-    expect(isPreHeatTreatmentLnkMethodCode('РФА')).toBe(false)
-    expect(isPreHeatTreatmentLnkMethodCode('СТЛС')).toBe(false)
-    expect(isPreHeatTreatmentLnkMethodCode('МКК')).toBe(false)
   })
 
   it('requires both stages only when PSTO and the selected method are assigned', () => {
-    const row = { pstoRequired: 'да', hasVik: 'да', hasRk: 'да', hasRfa: 'да' }
+    const row = { pstoRequired: 'да', hasVik: 'да', hasRk: 'да' }
 
     expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['beforeHeatTreatment', 'primary'])
     expect(getRequiredLnkControlStages(row, 'РК')).toEqual(['beforeHeatTreatment', 'primary'])
-    expect(getRequiredLnkControlStages(row, 'РФА')).toEqual(['primary'])
     expect(getRequiredLnkControlStages(row, 'УЗК')).toEqual([])
   })
 
   it('keeps every assigned method in the primary stage when PSTO is absent', () => {
-    const row = { pstoRequired: '', hasVik: 'да', hasRfa: 'да' }
+    const row = { pstoRequired: '', hasVik: 'да' }
 
     expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['primary'])
-    expect(getRequiredLnkControlStages(row, 'РФА')).toEqual(['primary'])
+  })
+
+  it('does not restore pre-control requirements for a grandfathered PSTO row', () => {
+    const row = {
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentLnkExempt: true,
+    }
+
+    expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['primary'])
+    expect(getPrimaryPstoStartBlockReason(row)).toBe('')
+    expect(getPreHeatTreatmentPendingFinalStatus(row)).toBeNull()
+    expect(getPrimaryLnkStageBlockReason(row, 'ВИК')).toContain('ПСТО')
+    expect(getPrimaryLnkStageBlockReason({
+      ...row,
+      pstoRequest: 'Заявка ПСТО',
+      pstoDate: '2026-09-02',
+      pstoResult: 'проведено',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-09-02',
+    }, 'ВИК')).toBe('')
+  })
+
+  it('opens primary LNK after an officially cancelled cycle with failed TVMT', () => {
+    expect(getPrimaryLnkStageBlockReason({
+      pstoRequired: 'отменен',
+      hasVik: 'да',
+      pstoRequest: 'Заявка ПСТО',
+      pstoResult: 'проведено',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtResult: 'не годен',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'годен',
+      }],
+    } as WeldInput & { preHeatTreatmentControls: PreHeatTreatmentControlRecord[] }, 'ВИК')).toBe('')
   })
 
   it('treats all existing weld fields as the primary or post-heat-treatment record', () => {
@@ -112,7 +150,6 @@ describe('LNK control stages', () => {
     expect(getPrimaryLnkStageBlockReason(preComplete, 'ВИК')).toBe('')
     expect(getPrimaryLnkStageBlockReason({ ...preComplete, tvmtResult: 'не годен' }, 'ВИК'))
       .toContain('требуется повторная ПСТО')
-    expect(getPrimaryLnkStageBlockReason(base, 'РФА')).toBe('')
   })
 
   it('does not use duplicate controls in primary-stage readiness', () => {

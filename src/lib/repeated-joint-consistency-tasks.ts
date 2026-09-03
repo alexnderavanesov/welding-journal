@@ -14,9 +14,13 @@ import {
 import { getJointStatusLabel } from '@/lib/lnk-status'
 import { formatDisplayDate } from '@/lib/date-format'
 import { getWeldDateOrderValue } from '@/lib/report-date-rules'
-import { formatRepeatedJointName, getCoilJointNames, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
+import { formatRepeatedJointName, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
+import {
+  buildJointCoilTransitions,
+  type JointCoilTransition,
+} from '@/lib/joint-chain-transitions'
 import { createJointChainCheckTask, isIncompleteWeldStampGroupReason } from '@/lib/repeated-joint-check-tasks'
 import { compareJointChainRows, getRepeatedJointBranchKey, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import { getExpectedRepeatedJointName } from '@/lib/repeated-joint-task-helpers'
@@ -43,22 +47,15 @@ export function buildJointChainConsistencyCheckTasks(
   rows: WeldRow[],
   { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }: JointChainConsistencyTaskDeps,
   systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
+  earlyCoilDecisionSourceRowIds: ReadonlySet<number> = new Set(),
 ): RepeatedJointCheckTask[] {
   const groups = new Map<string, WeldRow[]>()
-  const chainGroups = new Map<string, WeldRow[]>()
   for (const row of rows) {
     const key = getRepeatedJointBranchKey(row, systemIndexSettings)
     if (key) {
       const group = groups.get(key) ?? []
       group.push(row)
       groups.set(key, group)
-    }
-
-    const chainKey = getJointChainConsistencyKey(row, systemIndexSettings)
-    if (chainKey) {
-      const chainGroup = chainGroups.get(chainKey) ?? []
-      chainGroup.push(row)
-      chainGroups.set(chainKey, chainGroup)
     }
   }
 
@@ -110,17 +107,18 @@ export function buildJointChainConsistencyCheckTasks(
       return [...checkTasks, createJointChainCheckTask(row, key, reason, details, systemIndexSettings)]
     }),
   ]
-  tasks.push(...buildCoilIntegrityCheckTasks(
-    rows,
-    chainGroups,
-    { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows },
+  const coilTransitions = buildJointCoilTransitions(rows, {
+    earlyCoilDecisionSourceRowIds,
+    getOfficialRejectedJointChainRows,
+    getPrimaryRejectedLnkResult,
     systemIndexSettings,
-  ))
+  })
+  tasks.push(...buildCoilIntegrityCheckTasks(rows, coilTransitions, getPrimaryRejectedLnkResult, systemIndexSettings))
   tasks.push(...buildObsoleteChildBranchCheckTasks(
     rows,
-    chainGroups,
     groups,
-    { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows },
+    coilTransitions,
+    getPrimaryRejectedLnkResult,
     systemIndexSettings,
   ))
   return dedupeRepeatedJointCheckTasks(tasks)
@@ -143,57 +141,49 @@ export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
 
 function buildCoilIntegrityCheckTasks(
   rows: WeldRow[],
-  chainGroups: Map<string, WeldRow[]>,
-  deps: JointChainConsistencyTaskDeps,
+  transitions: readonly JointCoilTransition[],
+  getPrimaryRejectedLnkResult: RejectionResolver,
   systemIndexSettings: SystemIndexSettings,
 ) {
   const tasks: RepeatedJointCheckTask[] = []
-  for (const [chainKey, chainRows] of chainGroups) {
-    const coilGroups = new Map<string, WeldRow[]>()
-    for (const row of chainRows) {
-      const coilBaseJoint = getCoilBaseJoint(String(row.joint ?? ''), systemIndexSettings)
-      if (!coilBaseJoint) continue
-      const group = coilGroups.get(coilBaseJoint) ?? []
-      group.push(row)
-      coilGroups.set(coilBaseJoint, group)
-    }
-    if (coilGroups.size === 0) continue
+  for (const transition of transitions) {
+    if (transition.targetRowIds.every((rowId) => rowId === null)) continue
+    const targetRows = transition.targetRowIds
+      .map((rowId) => rows.find((row) => row.id === rowId))
+      .filter((row): row is WeldRow => Boolean(row))
+    const sourceRow = transition.sourceRowId
+      ? rows.find((row) => row.id === transition.sourceRowId)
+      : undefined
+    const taskRow = sourceRow ?? targetRows[0]
+    if (!taskRow) continue
 
     const details: string[] = []
-    const sourceRow = [...coilGroups.values()].flat()
-      .sort((left, right) => compareJointChainRows(left, right, systemIndexSettings))[0]
-    if (!sourceRow) continue
-
-    for (const [coilBaseJoint, coilRows] of coilGroups) {
-      const expectedCoilJoints = getCoilJointNames(coilBaseJoint, systemIndexSettings)
-      const missingCoilJoints = expectedCoilJoints.filter((joint) => !hasMatchingRepeatedJoint(rows, sourceRow, joint))
-      if (missingCoilJoints.length > 0) {
-        const existingText = coilRows.map((row) => String(row.joint ?? '').trim()).filter(Boolean).join(', ') || '-'
-        details.push(
-          `Катушка ${coilBaseJoint} создана не полностью: найдено ${existingText}, но не найдено ${missingCoilJoints.join(' и ')}. Катушка должна состоять из двух стыков ${expectedCoilJoints.join(' и ')}.`,
-        )
-      }
+    const missingCoilJoints = transition.targetJoints.filter((_, index) => !transition.targetRowIds[index])
+    if (missingCoilJoints.length > 0) {
+      const existingText = targetRows.map((row) => String(row.joint ?? '').trim()).filter(Boolean).join(', ') || '-'
+      details.push(
+        `Катушка ${transition.parentBranchJoint} создана не полностью: найдено ${existingText}, но не найдено ${missingCoilJoints.join(' и ')}. Катушка должна состоять из двух стыков ${transition.targetJoints.join(' и ')}.`,
+      )
     }
 
-    if (!hasValidOfficialCoilTrigger(rows, chainRows, deps)) {
-      const coilText = [...coilGroups.keys()]
-        .map((coilBaseJoint) => getCoilJointNames(coilBaseJoint, systemIndexSettings).join('/'))
-        .join(', ')
-      const expectedTriggerJoint = getExpectedCoilTriggerJoint(
-        chainRows,
-        deps.getPrimaryRejectedLnkResult,
+    if (!transition.mode) {
+      const expectedTriggerJoint = getExpectedCoilTriggerJointForBranch(
+        rows,
+        taskRow,
+        transition.parentBranchJoint,
+        getPrimaryRejectedLnkResult,
         systemIndexSettings,
       )
       details.push(
-        `В цепочке уже есть стык катушки ${coilText}, но диспетчер не нашел официальный негодный стык, который по правилам должен породить катушку.${expectedTriggerJoint ? ` Перед катушкой ожидается следующий повторный стык ${expectedTriggerJoint} и его негодный результат контроля.` : ' Сначала должен существовать следующий повторный стык и его негодный результат контроля.'} До этого катушка считается преждевременной.`,
+        `В цепочке уже есть стык катушки ${transition.targetJoints.join('/')}, но диспетчер не нашел для ветки ${transition.parentBranchJoint} ни достижения лимита, ни принятого решения о досрочной катушке.${expectedTriggerJoint ? ` Перед катушкой ожидается следующий повторный стык ${expectedTriggerJoint} и его негодный результат контроля.` : ' Сначала должен существовать негодный официальный стык этой ветки.'} До этого катушка считается преждевременной.`,
       )
     }
 
     if (details.length === 0) continue
     tasks.push(
       createJointChainCheckTask(
-        sourceRow,
-        `${chainKey}:coil-integrity`,
+        taskRow,
+        `${transition.key}:coil-integrity`,
         COIL_CHAIN_INTEGRITY_REASON,
         details.join(' '),
         systemIndexSettings,
@@ -205,31 +195,23 @@ function buildCoilIntegrityCheckTasks(
 
 function buildObsoleteChildBranchCheckTasks(
   rows: WeldRow[],
-  chainGroups: Map<string, WeldRow[]>,
   branchGroups: Map<string, WeldRow[]>,
-  { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }: JointChainConsistencyTaskDeps,
+  transitions: readonly JointCoilTransition[],
+  getPrimaryRejectedLnkResult: RejectionResolver,
   systemIndexSettings: SystemIndexSettings,
 ) {
   const tasks: RepeatedJointCheckTask[] = []
-  for (const [chainKey, chainRows] of chainGroups) {
-    const branchKeys = [...new Set(
-      chainRows.map((row) => getRepeatedJointBranchKey(row, systemIndexSettings)).filter(Boolean) as string[],
-    )]
-    const unofficialRejectedRowWithObsoleteCoil = chainRows.find((row) => {
-      if (!isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
-      if (hasValidOfficialCoilTrigger(rows, chainRows, { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows })) return false
-      const rowBranchKey = getRepeatedJointBranchKey(row, systemIndexSettings)
-      return branchKeys.some((branchKey) => {
-        if (branchKey === rowBranchKey) return false
-        const branchJoint = branchKey.split(':').at(-1) ?? ''
-        return hasJointChainSegment(branchJoint, 'Y', systemIndexSettings)
-      })
-    })
-    if (unofficialRejectedRowWithObsoleteCoil) {
+  for (const [branchKey, group] of branchGroups) {
+    const transition = transitions.find((candidate) => candidate.key === branchKey)
+    if (!transition) continue
+    const unofficialRejectedRowWithObsoleteCoil = group.find(
+      (row) => isUnofficialJoint(row) && Boolean(getPrimaryRejectedLnkResult(row)),
+    )
+    if (unofficialRejectedRowWithObsoleteCoil && !transition.mode) {
       tasks.push(
         createJointChainCheckTask(
           unofficialRejectedRowWithObsoleteCoil,
-          `${chainKey}:unofficial-rejected-with-coil`,
+          `${branchKey}:unofficial-rejected-with-coil`,
           UNOFFICIAL_REJECTED_WITH_COIL_REASON,
           `Стык ${String(unofficialRejectedRowWithObsoleteCoil.joint ?? '').trim() || '-'} отмечен как неофициальный, но в этой же цепочке уже есть ветка катушки ${getConfiguredJointChainSuffix('Y', systemIndexSettings)}. После смены официальности катушка может быть лишней или требовать другой логики, поэтому нужно проверить цепочку целиком.`,
           systemIndexSettings,
@@ -238,37 +220,20 @@ function buildObsoleteChildBranchCheckTasks(
       continue
     }
 
-    const completedBranchKeys = branchKeys.filter((branchKey) => {
-      const group = branchGroups.get(branchKey) ?? []
-      return group.some((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
-    })
-
-    for (const completedBranchKey of completedBranchKeys) {
-      const completedBranchJoint = completedBranchKey.split(':').at(-1) ?? ''
-      const completedBranchHasCoil = hasJointChainSegment(completedBranchJoint, 'Y', systemIndexSettings)
-      const obsoleteChildKey = branchKeys.find((branchKey) => {
-        if (branchKey === completedBranchKey) return false
-        const branchJoint = branchKey.split(':').at(-1) ?? ''
-        return completedBranchHasCoil
-          ? branchJoint.startsWith(`${completedBranchJoint}${getConfiguredJointChainSuffix('Y', systemIndexSettings)}`)
-          : hasJointChainSegment(branchJoint, 'Y', systemIndexSettings)
-      })
-      if (!obsoleteChildKey) continue
-
-      const sourceRow = branchGroups.get(completedBranchKey)?.find((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
-      const childRow = branchGroups.get(obsoleteChildKey)?.[0]
-      const row = childRow ?? sourceRow
-      if (!row) continue
+    const sourceRow = group.find((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
+    const childRow = transition.targetRowIds
+      .map((rowId) => rows.find((row) => row.id === rowId))
+      .find(Boolean)
+    if (sourceRow && childRow) {
       tasks.push(
         createJointChainCheckTask(
-          row,
-          `${chainKey}:${completedBranchKey}:child`,
+          childRow,
+          `${branchKey}:child-after-good`,
           'есть лишняя ветка после годного',
           `Ветка ${String(childRow?.joint ?? '').trim() || '-'} выглядит лишней, потому что в цепочке уже есть годный официальный стык ${String(sourceRow?.joint ?? '').trim() || '-'}${sourceRow?.weldDate ? ` с датой сварки ${formatDisplayDate(sourceRow.weldDate)}` : ''}. Проверь, нужно ли оставлять эту ветку.`,
           systemIndexSettings,
         ),
       )
-      break
     }
   }
   return tasks
@@ -376,21 +341,28 @@ function getJointChainStepKey(row: WeldInput, systemIndexSettings: SystemIndexSe
   return `${normalizeJointChainPart(parsed.base)}:${parsed.segments.map((segment) => `${segment.suffix}${segment.index}`).join('')}`
 }
 
-function getCoilBaseJoint(joint: string, systemIndexSettings: SystemIndexSettings) {
-  const parsed = parseJointChainName(joint, systemIndexSettings)
-  const firstCoilIndex = parsed.segments.findIndex((segment) => segment.suffix === 'Y')
-  if (firstCoilIndex < 0) return null
-  const baseSegments = parsed.segments.slice(0, firstCoilIndex)
-  return formatRepeatedJointName(parsed.base, baseSegments, systemIndexSettings)
-}
-
-function getExpectedCoilTriggerJoint(
-  chainRows: WeldRow[],
+function getExpectedCoilTriggerJointForBranch(
+  rows: WeldRow[],
+  anchorRow: WeldRow,
+  parentBranchJoint: string,
   getPrimaryRejectedLnkResult: RejectionResolver,
   systemIndexSettings: SystemIndexSettings,
 ) {
-  const rejectedRows = chainRows
-    .filter((row) => !isUnofficialJoint(row) && getPrimaryRejectedLnkResult(row))
+  const branchIdentity = getRepeatedJointIdentity(anchorRow, parentBranchJoint)
+  if (!branchIdentity) return ''
+  const rejectedRows = rows
+    .filter((row) => {
+      if (isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
+      const rowBranch = parseRepeatedJointName(String(row.joint ?? ''), systemIndexSettings).base
+      const rowIdentity = getRepeatedJointIdentity(row, rowBranch)
+      return Boolean(
+        rowIdentity &&
+          rowIdentity.project === branchIdentity.project &&
+          rowIdentity.subtitle === branchIdentity.subtitle &&
+          rowIdentity.line === branchIdentity.line &&
+          rowIdentity.joint === branchIdentity.joint,
+      )
+    })
     .sort((left, right) => compareJointChainRows(left, right, systemIndexSettings))
   const lastRejectedRow = rejectedRows.at(-1)
   if (!lastRejectedRow) return ''
@@ -404,16 +376,6 @@ function isRepeatedJointRejection(value: unknown): value is { result: 'ремо�
   if (!value || typeof value !== 'object') return false
   const result = (value as { result?: unknown }).result
   return result === 'ремонт' || result === 'вырез'
-}
-
-function hasValidOfficialCoilTrigger(rows: WeldRow[], chainRows: WeldRow[], { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows }: JointChainConsistencyTaskDeps) {
-  return chainRows.some((row) => {
-    if (isUnofficialJoint(row) || !getPrimaryRejectedLnkResult(row)) return false
-    const sourceJoint = String(row.joint ?? '').trim()
-    if (!sourceJoint) return false
-    const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint)
-    return officialRejectedChainRows.length > 3 && officialRejectedChainRows.at(-1)?.id === row.id
-  })
 }
 
 function hasJointChainSegment(
@@ -469,7 +431,8 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
       task.reason === LNK_RESULT_COMPLETENESS_REASON ||
       task.reason === PSTO_RESULT_COMPLETENESS_REASON ||
       task.reason === CONTROL_HISTORY_REASON ||
-      isIncompleteWeldStampGroupReason(task.reason)
+      isIncompleteWeldStampGroupReason(task.reason) ||
+      task.reason === COIL_CHAIN_INTEGRITY_REASON
         ? task.key
         : `${task.baseJoint}:${task.reason ?? ''}`
     if (seen.has(key)) return false

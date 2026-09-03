@@ -383,4 +383,53 @@ describe('WeldTableBodyCell LNK request link', () => {
     expect(onOpenLnkResult).toHaveBeenCalledWith(row, 'vikResult')
     expect(onOpenDocument).not.toHaveBeenCalled()
   })
+
+  it('shows two compact layered conclusions in one method cell and opens the exact document', () => {
+    const onOpenDocument = vi.fn()
+    const row = {
+      id: 12,
+      joint: 'F12',
+      layeredVikEdgesDocument: 'ВИК - кромки - F12 - 01.09.2026',
+      layeredVikEdgesDocumentId: 41,
+      layeredVikLayersDocument: 'ВИК - слои - F12 - 01.09.2026',
+      layeredVikLayersDocumentId: 42,
+      layeredVikDocuments: 'Кромки\nСлои',
+    } as WeldRow
+    const field = {
+      key: 'layeredVikDocuments',
+      dbName: '__layered_vik_documents',
+      label: 'Послойный ВИК',
+      kind: 'text',
+      group: 'Документы',
+      virtual: true,
+    } satisfies WeldField
+
+    render(
+      <table><tbody><tr>
+        <WeldTableBodyCell
+          row={row}
+          field={field}
+          displayValue={row.layeredVikDocuments}
+          isEditableCell={false}
+          isBlockedEditableCell={false}
+          isHighlightedRow={false}
+          isSelectedRow={false}
+          hasDispatcherTask={false}
+          isHighlightedCell={false}
+          isResultField={false}
+          stickyLeft={0}
+          stickyIdentityLeadingWidth={0}
+          stickyIdentityColumns={false}
+          stickyBackgroundClassName="bg-white"
+          isSectionEnd={false}
+          onOpenDocument={onOpenDocument}
+        />
+      </tr></tbody></table>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Кромки' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Слои' }))
+    expect(onOpenDocument).toHaveBeenNthCalledWith(1, row, 'layeredVikEdgesDocument')
+    expect(onOpenDocument).toHaveBeenNthCalledWith(2, row, 'layeredVikLayersDocument')
+  })
 })

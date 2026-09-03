@@ -3,6 +3,7 @@
 import { requireDb } from '@/db'
 import {
 appSettings,
+dispatcherAcceptedWarnings,
 dispatcherBackgroundRowTasks,
 dispatcherRowTasks,
 duplicateControls,
@@ -38,6 +39,12 @@ type RkExposureTableSettings
 import { PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS } from '@/lib/pre-heat-treatment-report-fields'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
+import {
+  EARLY_COIL_DECISION_KIND,
+  getEarlyCoilDecisionSourceRowIds,
+} from '@/lib/early-coil-decision'
+import { evaluateEarlyCoilCandidate } from '@/lib/early-coil-candidate'
+import { buildJointCoilTransitions } from '@/lib/joint-chain-transitions'
 import {
 ALL_LNK_FIELD_METHODS,
 HEAT_TREATMENT_EDITABLE_FIELD_KEYS,
@@ -207,51 +214,33 @@ export const REPORT_DERIVED_FILTER_SELECT = {
   hasPvk: weldJoints.hasPvk,
   hasUzk: weldJoints.hasUzk,
   hasTvmt: weldJoints.hasTvmt,
-  hasRfa: weldJoints.hasRfa,
-  hasStls: weldJoints.hasStls,
-  hasMkk: weldJoints.hasMkk,
   vikRequest: weldJoints.vikRequest,
   rkRequest: weldJoints.rkRequest,
   pvkRequest: weldJoints.pvkRequest,
   uzkRequest: weldJoints.uzkRequest,
   tvmtRequest: weldJoints.tvmtRequest,
-  rfaRequest: weldJoints.rfaRequest,
-  stlsRequest: weldJoints.stlsRequest,
-  mkkRequest: weldJoints.mkkRequest,
   ...LNK_REQUEST_DATE_DERIVED_FILTER_SELECT,
   vikResult: weldJoints.vikResult,
   rkResult: weldJoints.rkResult,
   pvkResult: weldJoints.pvkResult,
   uzkResult: weldJoints.uzkResult,
   tvmtResult: weldJoints.tvmtResult,
-  rfaResult: weldJoints.rfaResult,
-  stlsResult: weldJoints.stlsResult,
-  mkkResult: weldJoints.mkkResult,
   vikControlBasis: weldJoints.vikControlBasis,
   rkControlBasis: weldJoints.rkControlBasis,
   uzkControlBasis: weldJoints.uzkControlBasis,
   pvkControlBasis: weldJoints.pvkControlBasis,
   tvmtControlBasis: weldJoints.tvmtControlBasis,
-  rfaControlBasis: weldJoints.rfaControlBasis,
-  stlsControlBasis: weldJoints.stlsControlBasis,
-  mkkControlBasis: weldJoints.mkkControlBasis,
   pstoControlBasis: weldJoints.pstoControlBasis,
   vikConclusionDate: weldJoints.vikConclusionDate,
   rkConclusionDate: weldJoints.rkConclusionDate,
   pvkConclusionDate: weldJoints.pvkConclusionDate,
   uzkConclusionDate: weldJoints.uzkConclusionDate,
   tvmtConclusionDate: weldJoints.tvmtConclusionDate,
-  rfaConclusionDate: weldJoints.rfaConclusionDate,
-  stlsConclusionDate: weldJoints.stlsConclusionDate,
-  mkkConclusionDate: weldJoints.mkkConclusionDate,
   vikConclusion: weldJoints.vikConclusion,
   rkConclusion: weldJoints.rkConclusion,
   pvkConclusion: weldJoints.pvkConclusion,
   uzkConclusion: weldJoints.uzkConclusion,
   tvmtConclusion: weldJoints.tvmtConclusion,
-  rfaConclusion: weldJoints.rfaConclusion,
-  stlsConclusion: weldJoints.stlsConclusion,
-  mkkConclusion: weldJoints.mkkConclusion,
   lnkDefectDescription: weldJoints.lnkDefectDescription,
   rkExposureConfirmedDiameter: weldJoints.rkExposureConfirmedDiameter,
 }
@@ -337,9 +326,6 @@ export const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'hasUzk',
   'hasPvk',
   'hasTvmt',
-  'hasRfa',
-  'hasStls',
-  'hasMkk',
   'pstoNote',
   'lnkNote',
   'testTypes',
@@ -438,7 +424,7 @@ export const listWeldJointChain = createServerFn({ method: 'GET' })
     await assertSecurityScope('entry')
     const db = requireDb()
     const [record] = await db.select().from(weldJoints).where(eq(weldJoints.id, data.id)).limit(1)
-    if (!record) return { record: null, rows: [] }
+    if (!record) return { record: null, rows: [], transitions: [], earlyCoilCandidates: [] }
 
     const candidates = await db
       .select()
@@ -464,10 +450,47 @@ export const listWeldJointChain = createServerFn({ method: 'GET' })
 
     const chainRows = getJointChainRows(weldCandidates, weldRecord, systemIndexSettings)
     const hydratedRows = await attachReportPageMetadata(chainRows)
+    const acceptedWarnings = await db
+      .select({ key: dispatcherAcceptedWarnings.key })
+      .from(dispatcherAcceptedWarnings)
+      .where(eq(dispatcherAcceptedWarnings.kind, EARLY_COIL_DECISION_KIND))
+    const earlyCoilDecisionSourceRowIds = getEarlyCoilDecisionSourceRowIds(
+      acceptedWarnings.map((warning) => warning.key),
+    )
+    const documentLinks = hydratedRows.length > 0
+      ? await db
+          .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+          .from(generatedDocumentWeldJoints)
+          .where(inArray(generatedDocumentWeldJoints.weldJointId, hydratedRows.map((row) => row.id)))
+      : []
+    const documentedRowIds = new Set(documentLinks.map((link) => link.weldJointId))
+    const typedRows = hydratedRows as WeldRow[]
+    const transitions = buildJointCoilTransitions(typedRows, {
+      earlyCoilDecisionSourceRowIds,
+      systemIndexSettings,
+    })
+    const earlyCoilCandidates = typedRows.flatMap((row) => {
+      const evaluation = evaluateEarlyCoilCandidate(typedRows, row, {
+        documentedRowIds,
+        earlyCoilDecisionSourceRowIds,
+        systemIndexSettings,
+      })
+      return evaluation.candidate
+        ? [{
+            replacementJoint: String(evaluation.candidate.replacementRow?.joint ?? '').trim() || null,
+            replacementRowId: evaluation.candidate.replacementRow?.id ?? null,
+            sourceJoint: evaluation.candidate.sourceJoint,
+            sourceRowId: evaluation.candidate.sourceRow.id,
+            targetJoints: evaluation.candidate.targetJoints,
+          }]
+        : []
+    })
 
     return {
       record: hydratedRows.find((row) => row.id === weldRecord.id) ?? weldRecord,
-      rows: hydratedRows as WeldRow[],
+      rows: typedRows,
+      transitions,
+      earlyCoilCandidates,
     }
   })
 
@@ -895,6 +918,15 @@ export function buildPrimaryLnkStageReadyWhere(methodCode: string) {
     weldJoints.pstoRequired,
     ENABLED_CONTROL_REPORT_VALUES,
   )
+  const hasExecutionHistory = buildPstoExecutionHistoryWhere()
+  const heatTreatmentStagedLnkRequired = or(
+    pstoRequired,
+    hasExecutionHistory,
+  ) ?? sql`false`
+  const preHeatTreatmentRequired = and(
+    heatTreatmentStagedLnkRequired,
+    eq(weldJoints.preHeatTreatmentLnkExempt, false),
+  ) ?? sql`false`
   const allPreHeatTreatmentControlsGood = and(
     ...PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => {
       const enabledColumn = getWeldColumn(method.enabledKey)
@@ -927,12 +959,24 @@ export function buildPrimaryLnkStageReadyWhere(methodCode: string) {
   )
   const primaryCycleComplete = sql`
     lower(btrim(coalesce(${weldJoints.pstoResult}, ''))) in ('проведено', 'проведено (отменен)', 'да')
-    and lower(btrim(coalesce(${weldJoints.tvmtResult}, ''))) in ('годен', 'да')
+    and (
+      lower(btrim(coalesce(${weldJoints.tvmtResult}, ''))) in ('годен', 'да')
+      or (
+        not (${pstoRequired})
+        and lower(btrim(coalesce(${weldJoints.tvmtResult}, ''))) in ('не годен', 'негоден', 'ремонт', 'вырез')
+      )
+    )
   `
   const latestRepeatCycleComplete = sql<boolean>`coalesce((
     select
       lower(btrim(coalesce(${pstoRepeatCycles.pstoResult}, ''))) in ('проведено', 'проведено (отменен)', 'да')
-      and lower(btrim(coalesce(${pstoRepeatCycles.tvmtResult}, ''))) in ('годен', 'да')
+      and (
+        lower(btrim(coalesce(${pstoRepeatCycles.tvmtResult}, ''))) in ('годен', 'да')
+        or (
+          not (${pstoRequired})
+          and lower(btrim(coalesce(${pstoRepeatCycles.tvmtResult}, ''))) in ('не годен', 'негоден', 'ремонт', 'вырез')
+        )
+      )
     from ${pstoRepeatCycles}
     where ${pstoRepeatCycles.weldJointId} = ${weldJoints.id}
     order by ${pstoRepeatCycles.sequence} desc
@@ -942,13 +986,12 @@ export function buildPrimaryLnkStageReadyWhere(methodCode: string) {
     and(sql`not (${hasRepeatCycle})`, primaryCycleComplete),
     and(hasRepeatCycle, latestRepeatCycleComplete),
   ) ?? sql`false`
-  const hasExecutionHistory = buildPstoExecutionHistoryWhere()
 
   return or(
     and(sql`not (${pstoRequired})`, sql`not (${hasExecutionHistory})`),
     and(
       currentCycleComplete,
-      or(sql`not (${pstoRequired})`, allPreHeatTreatmentControlsGood),
+      or(sql`not (${preHeatTreatmentRequired})`, allPreHeatTreatmentControlsGood),
     ),
   ) ?? sql`false`
 }
@@ -1100,9 +1143,6 @@ export async function loadCurrentFinalStatusRowsContext() {
       uzkResult: weldJoints.uzkResult,
       pvkResult: weldJoints.pvkResult,
       tvmtResult: weldJoints.tvmtResult,
-      rfaResult: weldJoints.rfaResult,
-      stlsResult: weldJoints.stlsResult,
-      mkkResult: weldJoints.mkkResult,
       rejectedDuplicateMethod: sql<string | null>`(
         select ${duplicateControls.method}
         from ${duplicateControls}
@@ -1524,8 +1564,12 @@ export async function listFinalStatusColumnFilterOptions(
 
 export async function listGeneratedDocumentColumnFilterOptions(
   data: ReturnType<typeof normalizeWeldColumnFilterOptionsRequest>,
-  documentType: string,
+  documentType: string | readonly string[],
 ) {
+  const documentTypes = Array.isArray(documentType) ? [...documentType] : [documentType]
+  const typeWhere = documentTypes.length === 1
+    ? eq(generatedDocuments.type, documentTypes[0])
+    : inArray(generatedDocuments.type, documentTypes)
   const db = requireDb()
   const valueExpression = sql<string>`coalesce(${generatedDocuments.title}, '')`
   const where = buildWhere({ ...data, columnFilters: data.columnFilters })
@@ -1540,7 +1584,7 @@ export async function listGeneratedDocumentColumnFilterOptions(
       generatedDocuments,
       and(
         eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
-        eq(generatedDocuments.type, documentType),
+        typeWhere,
       ),
     )
     .where(where)

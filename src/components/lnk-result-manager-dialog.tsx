@@ -33,6 +33,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 type ResultFilter = 'all' | 'годен' | 'ремонт' | 'вырез'
 
 export type LnkResultManagerDialogProps = {
+  embedded?: boolean
   rows: WeldRow[]
   methods: LnkResultMethod[]
   entries: LnkResultManagerEntryData[]
@@ -65,6 +66,7 @@ export type LnkResultManagerDialogProps = {
 }
 
 export function LnkResultManagerDialog({
+  embedded = false,
   rows,
   methods,
   entries,
@@ -232,8 +234,8 @@ export function LnkResultManagerDialog({
     }))
   }
 
-  return (
-    <WorkflowDialogShell variant="manager">
+  const content = (
+    <>
       <DialogHeader
         title="Редактирование результатов ЛНК"
         subtitle="Найдите внесенный результат, проверьте связанные документы или выполните допустимое изменение."
@@ -482,8 +484,10 @@ export function LnkResultManagerDialog({
         onSaveChanges={onSaveChanges}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </WorkflowDialogShell>
+    </>
   )
+
+  return embedded ? content : <WorkflowDialogShell variant="manager">{content}</WorkflowDialogShell>
 }
 
 function ResultMetric({ label, value }: { label: string; value: string }) {

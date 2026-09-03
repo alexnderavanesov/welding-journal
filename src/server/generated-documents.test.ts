@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildRemoteDocumentHistoryResult,
+  normalizeGeneratedDocumentHistoryRequest,
   normalizeDocumentHistoryLimit,
   normalizeSaveGeneratedDocumentBatch,
   type SaveGeneratedDocumentInput,
@@ -51,6 +52,12 @@ describe('generated document batch', () => {
       }),
     ])
   })
+
+  it('rejects manual creation of automatic layered conclusions', () => {
+    expect(() => normalizeSaveGeneratedDocumentBatch([
+      { ...input('ВИК - кромки - F1', [1]), type: 'layeredVikEdges' },
+    ])).toThrow('Неизвестный тип документа.')
+  })
 })
 
 describe('generated document history', () => {
@@ -89,6 +96,18 @@ describe('generated document history', () => {
 
   it('does not stop cumulative history loading at the former 5000-document boundary', () => {
     expect(normalizeDocumentHistoryLimit(5_100)).toBe(5_100)
+  })
+
+  it('normalizes a combined layered history without losing legacy single-type requests', () => {
+    expect(normalizeGeneratedDocumentHistoryRequest({
+      types: ['layeredVikEdges', 'layeredVikLayers', 'layeredVikEdges'],
+    })).toEqual({
+      type: 'layeredVikEdges',
+      types: ['layeredVikEdges', 'layeredVikLayers'],
+      limit: 100,
+      columnFilters: {},
+    })
+    expect(normalizeGeneratedDocumentHistoryRequest({ type: 'checklist' }).types).toEqual(['checklist'])
   })
 })
 

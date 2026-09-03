@@ -4,6 +4,13 @@ import type { SystemRepeatedJointRenameRequest } from '@/lib/repeated-joint-syst
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldBatchUpdateData, WeldPayload } from '@/server/weld-contracts'
 
+export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
+  .validator((data: { sourceRowId: number }) => data)
+  .handler(async ({ data }) => {
+    const server = await import('@/server/early-coil-workflow')
+    return server.createEarlyCoilDecision({ data })
+  })
+
 export const createWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: WeldPayload) => data)
   .handler(async ({ data }) => {

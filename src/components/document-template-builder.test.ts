@@ -5,12 +5,15 @@ import {
   getDocumentTemplateRepeatTarget,
   getDocumentTemplateBuilderIssues,
   getDocumentTemplateRepeatedRows,
+  getUnavailableDocumentTemplatePasteFields,
   includeTemplateCellInRepeatBlock,
+  pasteDocumentTemplateCellBinding,
   shouldShowDocumentTemplateRepeatControls,
   validateDocumentTemplateBuilderConfig,
 } from '@/components/document-template-builder'
 import type {
   DocumentTemplateConstructorConfig,
+  DocumentTemplateFieldKey,
   DocumentTemplateWorkbookPreview,
 } from '@/lib/document-template-storage'
 
@@ -310,5 +313,152 @@ describe('document template builder repeat block', () => {
     expect(getDocumentTemplateRepeatedRows(config, 1)).toBe(2)
     expect(getDocumentTemplateRepeatedRows(config, 5)).toBe(10)
     expect(getDocumentTemplateRepeatedRows(config, 20)).toBe(40)
+  })
+
+  it('pastes the complete cell content and only replaces the destination address in the same block', () => {
+    const source = {
+      cell: 'B18',
+      mode: 'row' as const,
+      parts: [
+        {
+          field: 'd1' as const,
+          numericOperation: 'min' as const,
+          compareField: 'd2' as const,
+          multiplier: '3,14',
+          prefix: 'D=',
+          suffix: ' мм',
+          lineBreakAfter: true,
+        },
+        { field: 'joint' as const, prefix: 'Стык ' },
+      ],
+      uniqueParts: false,
+      separator: 'custom' as const,
+      customSeparator: ' / ',
+      emptyMode: 'custom' as const,
+      emptyText: 'нет данных',
+      filledMode: 'custom' as const,
+      filledText: 'заполнено',
+    }
+    const config: DocumentTemplateConstructorConfig = {
+      ...createConfig(),
+      repeatRow: 18,
+      repeatRowEnd: 19,
+      bindings: [source, { cell: 'C18', mode: 'row', parts: [{ field: 'line' }] }],
+    }
+
+    const result = pasteDocumentTemplateCellBinding(config, preview, source, 'C18')
+
+    expect(result.bindings.find((binding) => binding.cell === 'C18')).toEqual({
+      ...source,
+      cell: 'C18',
+      field: undefined,
+      uniqueValues: undefined,
+      scope: undefined,
+    })
+    expect(result.bindings.filter((binding) => binding.cell === 'C18')).toHaveLength(1)
+    expect(result.bindings.find((binding) => binding.cell === 'C18')?.parts).not.toBe(source.parts)
+  })
+
+  it('adapts copied content to a document summary outside the repeated block', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      ...createConfig(),
+      repeatRow: 18,
+      repeatRowEnd: 19,
+    }
+    const source = {
+      cell: 'B18',
+      mode: 'row' as const,
+      parts: [{ field: 'joint' as const, prefix: 'Стык ' }],
+      uniqueParts: false,
+      separator: 'newline' as const,
+      emptyMode: 'np' as const,
+    }
+
+    const result = pasteDocumentTemplateCellBinding(config, preview, source, 'D10')
+
+    expect(result.bindings.find((binding) => binding.cell === 'D10')).toMatchObject({
+      mode: 'summary',
+      parts: [{ field: 'joint', prefix: 'Стык ' }],
+      uniqueValues: false,
+      separator: 'newline',
+      emptyMode: 'np',
+      scope: undefined,
+    })
+    expect(result.bindings.find((binding) => binding.cell === 'D10')?.uniqueParts).toBeUndefined()
+  })
+
+  it('adapts copied content to the destination group without losing its settings', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      version: 1,
+      sheetName: 'Чек-лист',
+      repeatRow: 18,
+      repeatRowEnd: 19,
+      repeatMode: 'groups',
+      repeatGroupBy: 'line',
+      bindings: [],
+    }
+    const source = {
+      cell: 'A5',
+      mode: 'row' as const,
+      parts: [{ field: '__index' as const, prefix: '№ ' }],
+      emptyMode: 'custom' as const,
+      emptyText: '-',
+    }
+
+    const result = pasteDocumentTemplateCellBinding(config, preview, source, 'C18')
+
+    expect(result.bindings).toEqual([
+      expect.objectContaining({
+        cell: 'C18',
+        mode: 'summary',
+        scope: 'group',
+        parts: [{ field: '__groupIndex', prefix: '№ ' }],
+        uniqueValues: true,
+        emptyMode: 'custom',
+        emptyText: '-',
+      }),
+    ])
+  })
+
+  it('creates the repeated block when a row cell is pasted into a new template', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      version: 1,
+      sheetName: 'Чек-лист',
+      bindings: [],
+    }
+    const source = {
+      cell: 'A5',
+      mode: 'row' as const,
+      parts: [{ field: 'joint' as const }],
+    }
+
+    const result = pasteDocumentTemplateCellBinding(config, preview, source, 'B18')
+
+    expect(result.repeatRow).toBe(18)
+    expect(result.repeatRowEnd).toBe(19)
+    expect(result.bindings).toEqual([
+      expect.objectContaining({ cell: 'B18', mode: 'row', parts: [{ field: 'joint' }] }),
+    ])
+  })
+
+  it('detects system-only fields that cannot be pasted into a user template', () => {
+    const config: DocumentTemplateConstructorConfig = {
+      version: 1,
+      sheetName: 'Чек-лист',
+      bindings: [],
+    }
+    const availableFields = new Set<DocumentTemplateFieldKey>(['joint', '__index'])
+
+    expect(getUnavailableDocumentTemplatePasteFields(
+      config,
+      preview,
+      {
+        cell: 'A5',
+        mode: 'summary',
+        parts: [{ field: '__systemDocumentNumber' }, { field: 'joint' }],
+      },
+      'B18',
+      availableFields,
+    )).toEqual(['__systemDocumentNumber'])
   })
 })

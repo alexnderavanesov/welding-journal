@@ -23,9 +23,6 @@ const REQUEST_FIELD_KEYS = new Set<WeldFieldKey>([
   'pvkRequest',
   'pstoRequest',
   'tvmtRequest',
-  'rfaRequest',
-  'stlsRequest',
-  'mkkRequest',
 ])
 
 const RESULT_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -36,9 +33,6 @@ const RESULT_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pstoResult',
   'heatTreatmentDiagram',
   'tvmtResult',
-  'rfaResult',
-  'stlsResult',
-  'mkkResult',
   'pstoNote',
   'finalStatus',
 ])

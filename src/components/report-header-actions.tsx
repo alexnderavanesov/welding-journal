@@ -54,8 +54,6 @@ export type ReportHeaderActionsProps = {
   editSelectedLnkResultsDisabled: boolean
   onOpenLnkResultRegistry: () => void
   lnkResultRegistryDisabled: boolean
-  onOpenPreHeatTreatmentLnkResultRegistry: (mode?: 'request' | 'result') => void
-  preHeatTreatmentLnkResultRegistryDisabled: boolean
   onOpenLnkOfficiality: () => void
   lnkOfficialityPending: boolean
   onOpenDuplicateControl: () => void
@@ -122,8 +120,6 @@ export function ReportHeaderActions({
   editSelectedLnkResultsDisabled,
   onOpenLnkResultRegistry,
   lnkResultRegistryDisabled,
-  onOpenPreHeatTreatmentLnkResultRegistry,
-  preHeatTreatmentLnkResultRegistryDisabled,
   onOpenLnkOfficiality,
   lnkOfficialityPending,
   onOpenDuplicateControl,
@@ -178,8 +174,6 @@ export function ReportHeaderActions({
           editSelectedResultsDisabled={editSelectedLnkResultsDisabled}
           onOpenResultRegistry={onOpenLnkResultRegistry}
           resultRegistryDisabled={lnkResultRegistryDisabled}
-          onOpenPreHeatTreatmentResultRegistry={onOpenPreHeatTreatmentLnkResultRegistry}
-          preHeatTreatmentResultRegistryDisabled={preHeatTreatmentLnkResultRegistryDisabled}
           onOpenOfficiality={onOpenLnkOfficiality}
           officialityPending={lnkOfficialityPending}
           onOpenDuplicateControl={onOpenDuplicateControl}

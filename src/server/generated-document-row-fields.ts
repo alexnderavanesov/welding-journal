@@ -5,6 +5,7 @@ import { generatedDocuments, generatedDocumentWeldJoints } from '@/db/schema'
 import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { ensureLayeredControlDocumentsInitialized } from '@/server/layered-control-documents'
 
 export type GeneratedDocumentRowFields = {
   jsrDocument?: string | null
@@ -13,6 +14,16 @@ export type GeneratedDocumentRowFields = {
   checklistDocumentId?: number
   zniDocument?: string | null
   zniDocumentId?: number
+  layeredVikEdgesDocument?: string | null
+  layeredVikEdgesDocumentId?: number
+  layeredVikLayersDocument?: string | null
+  layeredVikLayersDocumentId?: number
+  layeredPvkEdgesDocument?: string | null
+  layeredPvkEdgesDocumentId?: number
+  layeredPvkLayersDocument?: string | null
+  layeredPvkLayersDocumentId?: number
+  layeredVikDocuments?: string | null
+  layeredPvkDocuments?: string | null
   systemDocumentIds?: Partial<Record<WeldFieldKey, number>>
 }
 
@@ -45,6 +56,18 @@ export function applyGeneratedDocumentFields<Row extends GeneratedDocumentCarrie
     const jsrAssignment = weldAssignments.find((assignment) => assignment.type === 'weldingJournal')
     const checklistAssignment = weldAssignments.find((assignment) => assignment.type === 'checklist')
     const zniAssignment = weldAssignments.find((assignment) => assignment.type === 'zni')
+    const layeredVikEdgesAssignment = weldAssignments.find(
+      (assignment) => assignment.type === 'layeredVikEdges',
+    )
+    const layeredVikLayersAssignment = weldAssignments.find(
+      (assignment) => assignment.type === 'layeredVikLayers',
+    )
+    const layeredPvkEdgesAssignment = weldAssignments.find(
+      (assignment) => assignment.type === 'layeredPvkEdges',
+    )
+    const layeredPvkLayersAssignment = weldAssignments.find(
+      (assignment) => assignment.type === 'layeredPvkLayers',
+    )
     const systemDocumentIds = buildSystemDocumentIds(row, weldAssignments)
     return {
       ...row,
@@ -63,6 +86,40 @@ export function applyGeneratedDocumentFields<Row extends GeneratedDocumentCarrie
             zniDocumentId: zniAssignment.documentId,
           }
         : {}),
+      ...(layeredVikEdgesAssignment
+        ? {
+            layeredVikEdgesDocument: layeredVikEdgesAssignment.title,
+            layeredVikEdgesDocumentId: layeredVikEdgesAssignment.documentId,
+          }
+        : {}),
+      ...(layeredVikLayersAssignment
+        ? {
+            layeredVikLayersDocument: layeredVikLayersAssignment.title,
+            layeredVikLayersDocumentId: layeredVikLayersAssignment.documentId,
+          }
+        : {}),
+      ...(layeredPvkEdgesAssignment
+        ? {
+            layeredPvkEdgesDocument: layeredPvkEdgesAssignment.title,
+            layeredPvkEdgesDocumentId: layeredPvkEdgesAssignment.documentId,
+          }
+        : {}),
+      ...(layeredPvkLayersAssignment
+        ? {
+            layeredPvkLayersDocument: layeredPvkLayersAssignment.title,
+            layeredPvkLayersDocumentId: layeredPvkLayersAssignment.documentId,
+          }
+        : {}),
+      ...buildLayeredCompositeField(
+        'layeredVikDocuments',
+        layeredVikEdgesAssignment,
+        layeredVikLayersAssignment,
+      ),
+      ...buildLayeredCompositeField(
+        'layeredPvkDocuments',
+        layeredPvkEdgesAssignment,
+        layeredPvkLayersAssignment,
+      ),
       ...(Object.keys(systemDocumentIds).length > 0 ? { systemDocumentIds } : {}),
     } as Row & GeneratedDocumentRowFields
   })
@@ -117,6 +174,7 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
   rows: Row[],
 ): Promise<Array<Row & GeneratedDocumentRowFields>> {
   if (rows.length === 0) return rows
+  await ensureLayeredControlDocumentsInitialized()
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
 
@@ -134,4 +192,16 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
     .where(inArray(generatedDocumentWeldJoints.weldJointId, ids))
 
   return applyGeneratedDocumentFields(rows, assignments)
+}
+
+function buildLayeredCompositeField(
+  fieldKey: 'layeredVikDocuments' | 'layeredPvkDocuments',
+  edgesAssignment: GeneratedDocumentRowAssignment | undefined,
+  layersAssignment: GeneratedDocumentRowAssignment | undefined,
+) {
+  const lines = [
+    edgesAssignment ? `Кромки: ${edgesAssignment.title}` : '',
+    layersAssignment ? `Слои: ${layersAssignment.title}` : '',
+  ].filter(Boolean)
+  return lines.length > 0 ? { [fieldKey]: lines.join('\n') } : {}
 }

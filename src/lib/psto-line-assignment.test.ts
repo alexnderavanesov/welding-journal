@@ -294,6 +294,18 @@ describe('PSTO line assignment', () => {
     }))).toBe(false)
   })
 
+  it('does not request a stage transfer while pre-heat-treatment LNK is exempt', () => {
+    const row = makeRow({
+      pstoRequired: null,
+      preHeatTreatmentLnkExempt: true,
+      vikRequest: 'Заявка ВИК основная',
+      vikResult: 'годен',
+    })
+
+    expect(requiresPrimaryStageResolutionForAssignedPstoLine(row)).toBe(false)
+    expect(blocksPstoLineActivation(row)).toBe(false)
+  })
+
   it('recognizes RK coordinates as primary-stage data even without a document name', () => {
     expect(requiresPrimaryStageResolutionForAssignedPstoLine(makeRow({
       pstoRequired: null,

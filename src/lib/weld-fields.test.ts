@@ -67,7 +67,7 @@ describe('weld field order', () => {
     ])
   })
 
-  it('shows JSR and Checklist document links only in the welding journal', () => {
+  it('keeps manual documents only in the journal default layout', () => {
     const journalSections = getAvailableWeldTableSections({
       hiddenFieldKeys: WELDING_JOURNAL_HIDDEN_FIELD_KEYS,
       mergePstoSections: false,
@@ -100,6 +100,16 @@ describe('weld field order', () => {
     expect(formHiddenFieldKeys.has('jsrDocument')).toBe(true)
     expect(formHiddenFieldKeys.has('checklistDocument')).toBe(true)
     expect(formHiddenFieldKeys.has('zniDocument')).toBe(true)
+    for (const fieldKey of [
+      'layeredVikEdgesDocument',
+      'layeredVikLayersDocument',
+      'layeredPvkEdgesDocument',
+      'layeredPvkLayersDocument',
+      'layeredVikDocuments',
+      'layeredPvkDocuments',
+    ] as const) {
+      expect(EXCEL_FIELDS.some((field) => field.key === fieldKey)).toBe(false)
+    }
   })
 
   it('keeps every virtual system field out of the create and edit form', () => {
@@ -371,12 +381,6 @@ describe('weld field order', () => {
       'Дата ПВК',
       'Заключение ТВМТ',
       'Дата ТВМТ',
-      'Заключение РФА',
-      'Дата РФА',
-      'Заключение СТЛС',
-      'Дата СТЛС',
-      'Заключение МКК',
-      'Дата МКК',
       'Примечание ЛНК',
     ])
   })
@@ -400,9 +404,6 @@ describe('weld field order', () => {
       'BoQ УЗК',
       'BoQ ПВК',
       'BoQ ТВМТ',
-      'BoQ РФА',
-      'BoQ СТЛС',
-      'BoQ МКК',
       'BoQ ГИ',
       'BoQ ПИ',
     ])
@@ -414,9 +415,6 @@ describe('weld field order', () => {
       'КС3 УЗК',
       'КС3 ПВК',
       'КС3 ТВМТ',
-      'КС3 РФА',
-      'КС3 СТЛС',
-      'КС3 МКК',
       'КС3 ГИ',
       'КС3 ПИ',
     ])
@@ -474,9 +472,6 @@ describe('weld field order', () => {
       'BoQ УЗК',
       'BoQ ПВК',
       'BoQ ТВМТ',
-      'BoQ РФА',
-      'BoQ СТЛС',
-      'BoQ МКК',
       'BoQ ГИ',
       'BoQ ПИ',
     ])
@@ -488,9 +483,6 @@ describe('weld field order', () => {
       'КС3 УЗК',
       'КС3 ПВК',
       'КС3 ТВМТ',
-      'КС3 РФА',
-      'КС3 СТЛС',
-      'КС3 МКК',
       'КС3 ГИ',
       'КС3 ПИ',
     ])
@@ -609,12 +601,6 @@ describe('weld field order', () => {
       'Дата заявки ПСТО',
       'Заявка ТВМТ',
       'Дата заявки ТВМТ',
-      'Заявка РФА',
-      'Дата заявки РФА',
-      'Заявка СТЛС',
-      'Дата заявки СТЛС',
-      'Заявка МКК',
-      'Дата заявки МКК',
       'Дата ПСТО',
     ])
   })

@@ -110,11 +110,6 @@ describe('system document sequence update', () => {
         rkConclusionDate: '2026-08-06',
       },
       {
-        id: 3,
-        rfaConclusion: 'Заключение-РФА-06.08.2026-004',
-        rfaConclusionDate: '2026-08-06',
-      },
-      {
         id: 4,
         tvmtRequest: 'Заявка-06.08.2026-009',
         tvmtRequestDate: '2026-08-06',
@@ -127,7 +122,7 @@ describe('system document sequence update', () => {
     expect(sequences.lnkConclusionRk).toBe(3)
     expect(sequences.lnkConclusionUzk).toBe(1)
     expect(sequences.lnkConclusionPvk).toBe(1)
-    expect(sequences.lnkConclusionOther).toBe(5)
+    expect(sequences.lnkConclusionOther).toBe(1)
     expect(sequences.tvmtRequest).toBe(10)
     expect(sequences.tvmtConclusion).toBe(7)
   })

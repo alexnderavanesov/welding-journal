@@ -5,9 +5,6 @@ const RK_METHOD = { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', 
 const UZK_METHOD = { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', requestDateKey: 'uzkRequestDate', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' } as const
 const PVK_METHOD = { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', requestDateKey: 'pvkRequestDate', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' } as const
 export const TVMT_METHOD = { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', requestDateKey: 'tvmtRequestDate', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' } as const
-const RFA_METHOD = { code: 'РФА', enabledKey: 'hasRfa', requestKey: 'rfaRequest', requestDateKey: 'rfaRequestDate', resultKey: 'rfaResult', conclusionDateKey: 'rfaConclusionDate', conclusionKey: 'rfaConclusion' } as const
-const STLS_METHOD = { code: 'СТЛС', enabledKey: 'hasStls', requestKey: 'stlsRequest', requestDateKey: 'stlsRequestDate', resultKey: 'stlsResult', conclusionDateKey: 'stlsConclusionDate', conclusionKey: 'stlsConclusion' } as const
-const MKK_METHOD = { code: 'МКК', enabledKey: 'hasMkk', requestKey: 'mkkRequest', requestDateKey: 'mkkRequestDate', resultKey: 'mkkResult', conclusionDateKey: 'mkkConclusionDate', conclusionKey: 'mkkConclusion' } as const
 
 type LnkMethodDefinition = {
   code: string
@@ -26,9 +23,6 @@ export const LNK_METHODS = [
   RK_METHOD,
   UZK_METHOD,
   PVK_METHOD,
-  RFA_METHOD,
-  STLS_METHOD,
-  MKK_METHOD,
 ] as const satisfies ReadonlyArray<LnkMethodDefinition>
 
 export const ALL_LNK_FIELD_METHODS = [
@@ -37,9 +31,6 @@ export const ALL_LNK_FIELD_METHODS = [
   UZK_METHOD,
   PVK_METHOD,
   TVMT_METHOD,
-  RFA_METHOD,
-  STLS_METHOD,
-  MKK_METHOD,
 ] as const satisfies ReadonlyArray<LnkMethodDefinition>
 
 export const LNK_RESULT_OPTIONS = ['годен', 'ремонт', 'вырез'] as const
@@ -79,12 +70,6 @@ export const LNK_REPORT_FIELD_KEYS = new Set<WeldFieldKey>([
   'pvkKs3',
   'tvmtBoq',
   'tvmtKs3',
-  'rfaBoq',
-  'rfaKs3',
-  'stlsBoq',
-  'stlsKs3',
-  'mkkBoq',
-  'mkkKs3',
 ])
 
 export const LNK_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>([
@@ -98,12 +83,6 @@ export const LNK_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pvkConclusion',
   'tvmtConclusionDate',
   'tvmtConclusion',
-  'rfaConclusionDate',
-  'rfaConclusion',
-  'stlsConclusionDate',
-  'stlsConclusion',
-  'mkkConclusionDate',
-  'mkkConclusion',
   'lnkDefectDescription',
   'lnkNote',
 ])

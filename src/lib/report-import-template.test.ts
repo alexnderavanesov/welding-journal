@@ -31,9 +31,6 @@ const WORK_CODE_AND_ACCEPTANCE_KEYS = [
   'uzkBoq',
   'pvkBoq',
   'tvmtBoq',
-  'rfaBoq',
-  'stlsBoq',
-  'mkkBoq',
   'ks3',
   'testKs3',
   'piKs3',
@@ -43,9 +40,6 @@ const WORK_CODE_AND_ACCEPTANCE_KEYS = [
   'uzkKs3',
   'pvkKs3',
   'tvmtKs3',
-  'rfaKs3',
-  'stlsKs3',
-  'mkkKs3',
 ] as const
 
 const WELDING_MATERIAL_KEYS = [
@@ -297,6 +291,17 @@ describe('welding journal import template', () => {
     expect(stripIgnoredImportFields({ id: 999, dispatcherTasks: 'ДЗ-18', joint: 'S1' }, 'weldingJournal')).toEqual({
       joint: 'S1',
     })
+    for (const fieldKey of [
+      'layeredVikEdgesDocument',
+      'layeredVikLayersDocument',
+      'layeredPvkEdgesDocument',
+      'layeredPvkLayersDocument',
+      'layeredVikDocuments',
+      'layeredPvkDocuments',
+    ] as const) {
+      expect(getReportImportTemplateFields('weldingJournal').some((field) => field.key === fieldKey)).toBe(false)
+      expect(getReportImportCellKind('weldingJournal', fieldKey)).toBe('ignored')
+    }
   })
 
   it('imports work code and acceptance values instead of stripping them as service fields', () => {

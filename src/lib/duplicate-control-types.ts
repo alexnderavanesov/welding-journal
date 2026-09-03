@@ -1,4 +1,4 @@
-export const DUPLICATE_CONTROL_METHODS = ['ВИК', 'РК', 'УЗК', 'ПВК', 'ТВМТ', 'РФА', 'СТЛС', 'МКК'] as const
+export const DUPLICATE_CONTROL_METHODS = ['ВИК', 'РК', 'УЗК', 'ПВК', 'ТВМТ'] as const
 export const DUPLICATE_CONTROL_RESULTS = ['годен', 'ремонт', 'вырез'] as const
 
 export type DuplicateControlMethod = (typeof DUPLICATE_CONTROL_METHODS)[number]

@@ -17,6 +17,7 @@ describe('isProjectSettingKey', () => {
 
 describe('projectSettingAffectsDispatcherIndex', () => {
   it.each([
+    PROJECT_SETTING_KEYS.controlProcesses,
     PROJECT_SETTING_KEYS.dataList,
     PROJECT_SETTING_KEYS.dispatcher,
     PROJECT_SETTING_KEYS.dispatcherReminders,
@@ -34,6 +35,7 @@ describe('projectSettingAffectsDispatcherIndex', () => {
   })
 
   it.each([
+    PROJECT_SETTING_KEYS.controlProcesses,
     PROJECT_SETTING_KEYS.other,
     PROJECT_SETTING_KEYS.systemIndex,
   ])('invalidates derived calculations for %s changes', (key) => {

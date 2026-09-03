@@ -28,7 +28,7 @@ describe('system document stages', () => {
       method: [
         { value: 'ВИК', count: 5 },
         { value: 'ТВМТ', count: 4 },
-        { value: 'РФА', count: 2 },
+        { value: 'ДРУГОЙ МЕТОД', count: 2 },
       ],
       line: [{ value: '111sto', count: 9 }],
     }

@@ -39,6 +39,7 @@ import {
 } from '@/lib/tvmt-cycle'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
@@ -86,6 +87,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await loadControlProcessSettingsFromTransaction(tx)
       const rowIds = [...new Set(data.groups.flatMap((group) => group.rowIds))]
       const storedRows = await tx
         .select()
@@ -163,6 +165,7 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await loadControlProcessSettingsFromTransaction(tx)
       const [storedRow] = await tx
         .select()
         .from(weldJoints)
@@ -252,6 +255,7 @@ export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POS
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await loadControlProcessSettingsFromTransaction(tx)
       const [storedRow] = await tx
         .select()
         .from(weldJoints)

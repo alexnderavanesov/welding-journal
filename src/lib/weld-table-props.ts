@@ -21,6 +21,7 @@ import {
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
+import type { WeldTableSection } from '@/lib/weld-table-sections'
 
 const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
   'lnkRequest',
@@ -73,6 +74,7 @@ type CreateWeldTablePropsOptions = {
   onSelectedRowIdsChange?: WeldTableProps['onSelectedRowIdsChange']
   dispatcherTasks?: readonly RepeatedJointTask[]
   onRunNextAction?: (row: WeldRow, action: JointNextAction) => void
+  lnkSectionLayout?: WeldTableSection[]
 }
 
 export function createWeldTableProps({
@@ -113,6 +115,7 @@ export function createWeldTableProps({
   onSelectedRowIdsChange,
   dispatcherTasks = [],
   onRunNextAction,
+  lnkSectionLayout = LNK_VISIBLE_FIELD_SECTIONS,
 }: CreateWeldTablePropsOptions): WeldTableProps {
   return {
     rows,
@@ -190,7 +193,7 @@ export function createWeldTableProps({
     storageKey: activeReport,
     hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
     mergePstoSections: shouldMergePstoSections(activeReport),
-    sectionLayout: activeReport === 'lnk' ? LNK_VISIBLE_FIELD_SECTIONS : undefined,
+    sectionLayout: activeReport === 'lnk' ? lnkSectionLayout : undefined,
     defaultCollapsedSections: activeReport === 'lnk' ? LNK_DEFAULT_COLLAPSED_SECTIONS : undefined,
     stickyIdentityColumns: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     onFilterLine,

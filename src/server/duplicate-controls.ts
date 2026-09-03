@@ -13,6 +13,7 @@ import { parseDateLikeToIso } from '@/lib/date-format'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { assertSecurityScope } from '@/server/security-functions'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
+import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
 
 export type DuplicateControlPayload = {
   id?: number
@@ -42,18 +43,26 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
     const insertData = toDbInsert(data)
     return db.transaction(async (tx) => {
       if (data.id) {
+        const previous = await lockDuplicateControl(tx, data.id)
+        if (!previous) throw new Error(`Дубль-контроль ${data.id} не найден`)
         const [updated] = await tx
           .update(duplicateControls)
           .set({ ...insertData, updatedAt: new Date() })
           .where(eq(duplicateControls.id, data.id))
           .returning()
         if (!updated) throw new Error(`Дубль-контроль ${data.id} не найден`)
-        await touchLnkProfile(tx, [updated.weldJointId])
+        const affectedWeldJointIds = getDuplicateControlAffectedWeldJointIds(
+          previous.weldJointId,
+          updated.weldJointId,
+        )
+        await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, affectedWeldJointIds)
+        await touchLnkProfile(tx, affectedWeldJointIds)
         await markDispatcherTaskIndexDirty(tx)
         return toPayload(updated)
       }
 
       const [created] = await tx.insert(duplicateControls).values(insertData).returning()
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, [created.weldJointId])
       await touchLnkProfile(tx, [created.weldJointId])
       await markDispatcherTaskIndexDirty(tx)
       return toPayload(created)
@@ -71,8 +80,11 @@ export const saveDuplicateControls = createServerFn({ method: 'POST' })
     const db = requireDb()
     return db.transaction(async (tx) => {
       const saved: DuplicateControlRecord[] = []
+      const affectedWeldJointIds: number[] = []
       for (const { record, insertData } of prepared) {
         if (record.id) {
+          const previous = await lockDuplicateControl(tx, record.id)
+          if (!previous) throw new Error(`Дубль-контроль ${record.id} не найден`)
           const [updated] = await tx
             .update(duplicateControls)
             .set({ ...insertData, updatedAt: new Date() })
@@ -80,13 +92,19 @@ export const saveDuplicateControls = createServerFn({ method: 'POST' })
             .returning()
           if (!updated) throw new Error(`Дубль-контроль ${record.id} не найден`)
           saved.push(toPayload(updated))
+          affectedWeldJointIds.push(previous.weldJointId, updated.weldJointId)
           continue
         }
 
         const [created] = await tx.insert(duplicateControls).values(insertData).returning()
         saved.push(toPayload(created))
+        affectedWeldJointIds.push(created.weldJointId)
       }
-      await touchLnkProfile(tx, saved.map((record) => record.weldJointId))
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(
+        tx,
+        getDuplicateControlAffectedWeldJointIds(...affectedWeldJointIds),
+      )
+      await touchLnkProfile(tx, getDuplicateControlAffectedWeldJointIds(...affectedWeldJointIds))
       await markDispatcherTaskIndexDirty(tx)
       return saved
     })
@@ -102,7 +120,10 @@ export const deleteDuplicateControl = createServerFn({ method: 'POST' })
         .delete(duplicateControls)
         .where(eq(duplicateControls.id, data.id))
         .returning({ weldJointId: duplicateControls.weldJointId })
-      if (deleted) await touchLnkProfile(tx, [deleted.weldJointId])
+      if (deleted) {
+        await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, [deleted.weldJointId])
+        await touchLnkProfile(tx, [deleted.weldJointId])
+      }
       await markDispatcherTaskIndexDirty(tx)
     })
     return { ok: true }
@@ -148,6 +169,23 @@ function dateOrNull(value: unknown) {
   const iso = parseDateLikeToIso(text)
   if (!iso) throw new Error(`Некорректная дата дубль-контроля: ${text}`)
   return iso
+}
+
+export function getDuplicateControlAffectedWeldJointIds(...values: number[]) {
+  return [...new Set(values.map(Number).filter((id) => Number.isInteger(id) && id > 0))]
+}
+
+async function lockDuplicateControl(
+  tx: Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0],
+  id: number,
+) {
+  const [row] = await tx
+    .select()
+    .from(duplicateControls)
+    .where(eq(duplicateControls.id, id))
+    .for('update')
+    .limit(1)
+  return row ?? null
 }
 
 async function touchLnkProfile(

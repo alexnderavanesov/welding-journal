@@ -19,6 +19,7 @@ import {
 import type { ReportRow } from '@/lib/report-row-actions'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldInput } from '@/lib/weld-fields'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
 
 type UseReportOutputActionsParams = {
   activeReport: ActiveReport
@@ -49,6 +50,7 @@ export function useReportOutputActions({
   weldingJournalRows,
   visibleRows,
 }: UseReportOutputActionsParams) {
+  const controlProcessSettings = useControlProcessSettings()
   return useMemo(() => {
     function requireContextReady(ready: boolean, reportLabel: string) {
       if (ready) return true
@@ -61,7 +63,7 @@ export function useReportOutputActions({
       setIsLnkShowMenuOpen(false)
       const result = await openCurrentReportWindow(
         visibleRows,
-        getReportExportOptions(activeReport, activeTitle).fields,
+        getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
         'ЛНК: текущая версия',
         getReportExportFilename(activeReport),
       )
@@ -94,7 +96,7 @@ export function useReportOutputActions({
       setIsPstoShowMenuOpen(false)
       const result = await openCurrentReportWindow(
         visibleRows,
-        getReportExportOptions(activeReport, activeTitle).fields,
+        getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
         'Термообработка: текущая версия',
         getReportExportFilename(activeReport),
       )
@@ -119,7 +121,7 @@ export function useReportOutputActions({
       setIsWeldingJournalShowMenuOpen(false)
       const result = await openWeldingJournalCurrentReportWindow(
         visibleRows,
-        getReportExportOptions(activeReport, activeTitle).fields,
+        getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
       )
       if (!result.ok) setMessage(result.message)
     }
@@ -179,6 +181,7 @@ export function useReportOutputActions({
   }, [
     activeReport,
     activeTitle,
+    controlProcessSettings,
     heatTreatmentRows,
     isLnkRowsContextReady,
     isPstoRowsContextReady,

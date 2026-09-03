@@ -37,6 +37,7 @@ import {
   type SqlDocumentHistoryResult,
 } from '@/server/document-history-sql'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
+import { syncLayeredControlDocumentsForWeldChangesInTransaction } from '@/server/layered-control-documents'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -549,6 +550,8 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
     ...previousRows.keys(),
   ])
   if (rowIds.size === 0) return
+
+  await syncLayeredControlDocumentsForWeldChangesInTransaction(tx, currentRows, previousRows)
 
   for (const type of ['lnkRequest', 'lnkConclusion', 'pstoRequest', 'pstoConclusion'] as const) {
     const previousReferences = collectSystemDocumentReferences([...previousRows.values()], type)

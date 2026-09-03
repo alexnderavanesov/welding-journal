@@ -15,6 +15,7 @@ import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welde
 import type { DataListSettings } from '@/lib/data-list-settings'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
+import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
 
 const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-missing',
@@ -63,9 +64,11 @@ export function buildVisibleDispatcherTasks({
   welderStampSuspensions,
 }: BuildVisibleDispatcherTasksInput) {
   const hiddenDispatcherTaskKeys = new Set([...dismissedRepeatedJointTaskKeys, ...acceptedDispatcherWarningKeys])
+  const earlyCoilDecisionSourceRowIds = getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys)
   const repeatedJointTasks = includeRepeatedJointTasks
     ? buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
         dataListSettings,
+        earlyCoilDecisionSourceRowIds,
         saveCheckSettings,
         systemIndexSettings,
         includeControlHistoryChecks: isDispatcherSettingEnabled('check-control-history', dispatcherSettings),

@@ -58,7 +58,13 @@ import {
   resetGeneratedDocumentSequence,
 } from '@/lib/generated-document-storage'
 import type { GeneratedDocumentType } from '@/server/generated-documents'
-import { isGeneratedDocumentType } from '@/lib/generated-document-types'
+import {
+  LAYERED_CONTROL_DOCUMENT_TYPES,
+  isGeneratedDocumentType,
+  isLayeredControlDocumentType,
+  isManualGeneratedDocumentType,
+} from '@/lib/generated-document-types'
+import { getLayeredControlDocumentProfile } from '@/lib/layered-control-documents'
 import {
   loadSystemDocumentSequence,
   resetStoredSystemDocumentSequence,
@@ -121,6 +127,11 @@ import {
   type SystemIndexKey,
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
+import {
+  saveControlProcessSettingsAndWait,
+  useControlProcessSettings,
+  type ControlProcessSettings,
+} from '@/lib/control-process-settings'
 import {
   saveOtherSettingsAndWait,
   useOtherSettings,
@@ -185,6 +196,11 @@ import {
   refreshDispatcherBackgroundNow,
 } from '@/server/dispatcher-background-task-functions'
 import { getAcceptedWarningContextParts } from '@/lib/dispatcher-accepted-warning-display'
+import { parseEarlyCoilDecisionKey } from '@/lib/early-coil-decision'
+import {
+  getControlProcessSettingsOverview,
+  type ControlProcessSettingsOverview,
+} from '@/server/control-process-settings-api'
 
 const SETTINGS_TABS = [
   {
@@ -227,7 +243,13 @@ const SETTINGS_TABS = [
     id: 'other',
     label: 'Прочее',
     icon: SlidersHorizontal,
-    searchKeywords: 'WDI ВДИ D T диаметр толщина таблица дюйм-диаметров экспозиция РК пересчет',
+    searchKeywords: 'WDI ВДИ D T диаметр толщина таблица дюйм-диаметров пересчет',
+  },
+  {
+    id: 'processes',
+    label: 'Процессы контроля',
+    icon: Layers3,
+    searchKeywords: 'послойный НК до ТО ПСТО ВИК ПВК РК экспозиция диаметр включить выключить',
   },
   {
     id: 'security',
@@ -489,6 +511,8 @@ export function SettingsPage() {
             />
           ) : activeTab === 'other' ? (
             <OtherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} onDirtyChange={handleOtherDirtyChange} />
+          ) : activeTab === 'processes' ? (
+            <ControlProcessesSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : (
             <SecuritySettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           )}
@@ -936,7 +960,6 @@ function OtherSettingsPanel({
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
   const [isWdiEditorOpen, setIsWdiEditorOpen] = useState(false)
-  const [isRkExposureEditorOpen, setIsRkExposureEditorOpen] = useState(false)
   const [isWdiRulesExpanded, setIsWdiRulesExpanded] = useState(false)
   const [wdiRulesDraft, setWdiRulesDraft] = useState<WdiCalculationRules>(settings.wdiCalculationRules)
   const [wdiRulesMessage, setWdiRulesMessage] = useState<string | null>(null)
@@ -980,13 +1003,6 @@ function OtherSettingsPanel({
   const saveWdiTable = useCallback(
     (table: NonNullable<typeof settings.wdiTable>) => runProtectedSettingsChange(() =>
       saveOtherSettingsAndWait({ ...settings, wdiCalculationMode: 'table', wdiTable: table }),
-    ),
-    [runProtectedSettingsChange, settings],
-  )
-
-  const saveRkExposureTable = useCallback(
-    (table: NonNullable<typeof settings.rkExposureTable>) => runProtectedSettingsChange(() =>
-      saveOtherSettingsAndWait({ ...settings, rkExposureTable: table }),
     ),
     [runProtectedSettingsChange, settings],
   )
@@ -1295,50 +1311,8 @@ function OtherSettingsPanel({
         </div>
       </section>
 
-      <section className="rounded-md border border-slate-300 bg-white p-4 shadow-sm shadow-slate-200/60">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="max-w-4xl">
-            <h4 className="text-sm font-semibold text-slate-900">Экспозиции по диаметрам</h4>
-            <p className="mt-1 text-sm leading-5 text-slate-500">
-              Таблица задаёт варианты снимков или координат мерного пояса для РК. Диаметр строки действует до следующего диаметра,
-              а знак «+» отмечает вариант по умолчанию. Замена таблицы не переписывает уже сохранённые описания дефектов.
-            </p>
-          </div>
-          <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
-            settings.rkExposureTable
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-slate-200 bg-slate-50 text-slate-500'
-          }`}>
-            {settings.rkExposureTable ? 'настроено' : 'не настроено'}
-          </span>
-        </div>
-        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0 text-sm text-slate-600">
-              <div className="font-semibold text-slate-800">Справочник снимков РК</div>
-              <div className="mt-1">
-                {settings.rkExposureTable
-                  ? `${settings.rkExposureTable.entries.length} диапазонов · ${settings.rkExposureTable.entries.reduce((sum, entry) => sum + entry.options.length, 0)} вариантов`
-                  : 'Справочник пока не заполнен.'}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsRkExposureEditorOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 shadow-sm shadow-sky-100/50 hover:bg-sky-100"
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              {settings.rkExposureTable ? 'Редактировать справочник' : 'Заполнить справочник'}
-            </button>
-          </div>
-        </div>
-      </section>
-
       {isWdiEditorOpen ? (
         <WdiTableEditorDialog table={settings.wdiTable} onClose={() => setIsWdiEditorOpen(false)} onSave={saveWdiTable} />
-      ) : null}
-      {isRkExposureEditorOpen ? (
-        <RkExposureTableEditorDialog table={settings.rkExposureTable} onClose={() => setIsRkExposureEditorOpen(false)} onSave={saveRkExposureTable} />
       ) : null}
       {wdiPreview ? (
         <WdiRecalculationPreviewDialog
@@ -1353,6 +1327,275 @@ function OtherSettingsPanel({
       ) : null}
     </div>
   )
+}
+
+function ControlProcessesSettingsPanel({
+  runProtectedSettingsChange,
+}: {
+  runProtectedSettingsChange: ProtectedSettingsChange
+}) {
+  const settings = useControlProcessSettings()
+  const otherSettings = useOtherSettings()
+  const queryClient = useQueryClient()
+  const confirmAction = useConfirmAction()
+  const [savingKey, setSavingKey] = useState<keyof ControlProcessSettings | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [isRkExposureEditorOpen, setIsRkExposureEditorOpen] = useState(false)
+  const overviewQuery = useQuery({
+    queryKey: ['control-process-settings-overview'],
+    queryFn: () => getControlProcessSettingsOverview(),
+    staleTime: 10_000,
+  })
+  const overview: ControlProcessSettingsOverview = overviewQuery.data ?? {
+    preHeatTreatmentBlockerCount: 0,
+  }
+
+  const saveRkExposureTable = useCallback(
+    (table: NonNullable<typeof otherSettings.rkExposureTable>) => runProtectedSettingsChange(() =>
+      saveOtherSettingsAndWait({ ...otherSettings, rkExposureTable: table }),
+    ),
+    [otherSettings, runProtectedSettingsChange],
+  )
+
+  async function changeProcessSetting(
+    key: keyof ControlProcessSettings,
+    enabled: boolean,
+  ) {
+    if (settings[key] === enabled || savingKey) return
+    setMessage(null)
+
+    const confirmation = getControlProcessSettingConfirmation(key, enabled)
+    const confirmed = await confirmAction({
+      title: confirmation.title,
+      itemName: confirmation.itemName,
+      description: confirmation.description,
+      warning: confirmation.warning,
+      confirmLabel: confirmation.confirmLabel,
+      tone: 'warning',
+    })
+    if (!confirmed) return
+
+    setSavingKey(key)
+    try {
+      const saved = await runProtectedSettingsChange(() =>
+        saveControlProcessSettingsAndWait({ ...settings, [key]: enabled }),
+      )
+      if (!saved) return
+      await queryClient.invalidateQueries({ queryKey: ['control-process-settings-overview'] })
+      setMessage(`${key === 'layeredControlEnabled' ? 'Послойный НК' : 'НК до ТО'} ${enabled ? 'включен' : 'выключен'} для проекта.`)
+    } catch (error) {
+      setMessage(getErrorMessage(error, 'Не удалось изменить процесс контроля.'))
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+  const preHeatTreatmentDisableReason = settings.preHeatTreatmentLnkEnabled && overview.preHeatTreatmentBlockerCount > 0
+    ? `Нельзя выключить: незавершенных заявок или негодных результатов — ${overview.preHeatTreatmentBlockerCount}.`
+    : overviewQuery.isPending
+      ? 'Проверяем незавершенные заявки и результаты...'
+      : null
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
+        <div className="flex items-center gap-2">
+          <Layers3 className="h-5 w-5 text-slate-500" />
+          <h3 className="text-base font-semibold text-slate-900">Процессы контроля</h3>
+        </div>
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+          Два независимых процесса проекта. Изменения защищены общим паролем настроек, если он включен.
+        </p>
+      </div>
+
+      <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+        <div className="border-b border-slate-200 bg-slate-100 px-4 py-3">
+          <h4 className="text-sm font-semibold text-slate-900">Доступность процессов</h4>
+        </div>
+        <div className="divide-y divide-slate-200">
+          <ControlProcessToggle
+            title="Послойный НК"
+            description="Автоматическое формирование заключений ВИК и ПВК кромок и слоев для заваренных У-стыков."
+            detail={settings.layeredControlEnabled
+              ? 'Новые документы создаются автоматически. Существующие документы продолжают обновляться по шаблонам.'
+              : 'Новые документы не создаются. История и номера сохранены; после включения недостающие заключения будут сформированы автоматически.'}
+            checked={settings.layeredControlEnabled}
+            disabled={savingKey !== null}
+            busy={savingKey === 'layeredControlEnabled'}
+            onChange={(enabled) => void changeProcessSetting('layeredControlEnabled', enabled)}
+          />
+          <ControlProcessToggle
+            title="НК до ТО"
+            description="Отдельные заявки и результаты ЛНК до начала ПСТО. Послойный контроль от этой настройки не зависит."
+            detail={preHeatTreatmentDisableReason ?? (settings.preHeatTreatmentLnkEnabled
+              ? 'ПСТО начинается только после годных результатов назначенных видов НК до ТО.'
+              : 'Новые заявки и результаты недоступны. История сохранена; основной ЛНК открывается после завершения ПСТО и ТВМТ.')}
+            checked={settings.preHeatTreatmentLnkEnabled}
+            disabled={savingKey !== null || Boolean(preHeatTreatmentDisableReason)}
+            busy={savingKey === 'preHeatTreatmentLnkEnabled'}
+            warning={Boolean(preHeatTreatmentDisableReason)}
+            onChange={(enabled) => void changeProcessSetting('preHeatTreatmentLnkEnabled', enabled)}
+          />
+        </div>
+        {overviewQuery.error ? (
+          <div className="border-t border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            Не удалось заранее проверить незавершенный НК до ТО. Сервер все равно выполнит обязательную проверку при сохранении.
+          </div>
+        ) : null}
+        {message ? (
+          <div className={`border-t px-4 py-3 text-sm ${message.startsWith('Не удалось') || message.includes('нельзя')
+            ? 'border-rose-200 bg-rose-50 text-rose-700'
+            : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            {message}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+        <div className="border-b border-slate-200 bg-slate-100 px-4 py-3">
+          <h4 className="text-sm font-semibold text-slate-900">Параметры РК</h4>
+          <p className="mt-1 text-sm leading-5 text-slate-500">
+            Справочники, которые используются при оформлении радиографического контроля.
+          </p>
+        </div>
+        <div className="p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="max-w-4xl">
+              <h5 className="text-sm font-semibold text-slate-900">Экспозиции по диаметрам</h5>
+              <p className="mt-1 text-sm leading-5 text-slate-500">
+                Таблица задает варианты снимков или координат мерного пояса для РК. Диаметр строки действует до следующего диаметра,
+                а знак «+» отмечает вариант по умолчанию. Замена таблицы не переписывает уже сохраненные описания дефектов.
+              </p>
+            </div>
+            <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+              otherSettings.rkExposureTable
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-50 text-slate-500'
+            }`}>
+              {otherSettings.rkExposureTable ? 'настроено' : 'не настроено'}
+            </span>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 text-sm text-slate-600">
+              <div className="font-semibold text-slate-800">Справочник снимков РК</div>
+              <div className="mt-1">
+                {otherSettings.rkExposureTable
+                  ? `${otherSettings.rkExposureTable.entries.length} диапазонов · ${otherSettings.rkExposureTable.entries.reduce((sum, entry) => sum + entry.options.length, 0)} вариантов`
+                  : 'Справочник пока не заполнен.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsRkExposureEditorOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 shadow-sm shadow-sky-100/50 hover:bg-sky-100"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {otherSettings.rkExposureTable ? 'Редактировать справочник' : 'Заполнить справочник'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {isRkExposureEditorOpen ? (
+        <RkExposureTableEditorDialog
+          table={otherSettings.rkExposureTable}
+          onClose={() => setIsRkExposureEditorOpen(false)}
+          onSave={saveRkExposureTable}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function ControlProcessToggle({
+  title,
+  description,
+  detail,
+  checked,
+  disabled,
+  busy,
+  warning = false,
+  onChange,
+}: {
+  title: string
+  description: string
+  detail: string
+  checked: boolean
+  disabled: boolean
+  busy: boolean
+  warning?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className={`flex gap-4 p-4 transition-colors ${disabled ? 'cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-slate-50'}`}>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="peer sr-only"
+      />
+      <span className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors ${
+        checked ? 'border-sky-700 bg-sky-700' : 'border-slate-300 bg-slate-200'
+      } ${disabled ? 'opacity-60' : ''}`} aria-hidden="true">
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-slate-900">{title}</span>
+          <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${checked
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
+            {busy ? 'сохраняется...' : checked ? 'включено' : 'выключено'}
+          </span>
+        </span>
+        <span className="mt-1 block text-sm leading-5 text-slate-600">{description}</span>
+        <span className={`mt-2 block text-xs leading-5 ${warning ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>
+          {detail}
+        </span>
+      </span>
+    </label>
+  )
+}
+
+function getControlProcessSettingConfirmation(
+  key: keyof ControlProcessSettings,
+  enabled: boolean,
+) {
+  if (key === 'layeredControlEnabled') {
+    return enabled
+      ? {
+          title: 'Включить послойный НК',
+          itemName: 'Автоматическое формирование заключений',
+          description: 'Система сразу проверит все ранее созданные заваренные У-стыки и сформирует недостающие документы ВИК/ПВК кромок и слоев.',
+          warning: 'Существующие документы и их номера останутся без изменений.',
+          confirmLabel: 'Включить',
+        }
+      : {
+          title: 'Выключить послойный НК',
+          itemName: 'Остановить создание новых документов',
+          description: 'Новые заключения послойного контроля создаваться не будут. Основные ВИК и ПВК продолжат работать обычно.',
+          warning: 'Существующие документы, история и номера сохранятся и останутся доступными.',
+          confirmLabel: 'Выключить',
+        }
+  }
+
+  return enabled
+    ? {
+        title: 'Включить НК до ТО',
+        itemName: 'Вернуть этап контроля перед ПСТО',
+        description: 'Требование вернется для линий, на которых ПСТО еще не начиналось.',
+        warning: 'Уже начатые или завершенные во время отключения линии не будут заблокированы задним числом.',
+        confirmLabel: 'Включить',
+      }
+    : {
+        title: 'Выключить НК до ТО',
+        itemName: 'Исключить отдельный этап перед ПСТО',
+        description: 'Новые заявки и результаты до ТО станут недоступны. После ПСТО и ТВМТ стык перейдет к основному ЛНК.',
+        warning: 'Операция будет отклонена, если остались незавершенные заявки или негодные результаты. История сохранится.',
+        confirmLabel: 'Выключить',
+      }
 }
 
 function WdiRulePresetButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -2139,7 +2382,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
   const activeTemplate = DOCUMENT_TEMPLATE_TYPES.find((template) => template.id === activeTemplateId) ?? DOCUMENT_TEMPLATE_TYPES[0]
   const activeUpload = uploads[activeTemplateId]
   const documentOptions = getWeldingJournalTemplateOptions(
-    isGeneratedDocumentType(activeTemplateId)
+    isManualGeneratedDocumentType(activeTemplateId)
       ? activeUpload?.options?.[activeTemplateId]
       : undefined,
   )
@@ -2309,7 +2552,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     optionKey: keyof WeldingJournalTemplateOptions,
     value: WeldingJournalTemplateOptions[keyof WeldingJournalTemplateOptions],
   ) => {
-    if (!activeUpload || !isGeneratedDocumentType(activeTemplateId)) return
+    if (!activeUpload || !isManualGeneratedDocumentType(activeTemplateId)) return
 
     const nextOptions = {
       ...documentOptions,
@@ -2350,7 +2593,9 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
       itemName: `${activeTemplate.label} · ${activeUpload.fileName}`,
       description: 'Общий исходный файл и настройки конструктора будут удалены для всех пользователей проекта.',
       warning:
-        'Данные стыков и уже созданные записи истории не изменятся, но новые документы этого типа нельзя будет сформировать до загрузки нового шаблона.',
+        isLayeredControlDocumentType(activeTemplateId)
+          ? 'Заключения и их номера сохранятся, названия вернутся к стандартному виду. До загрузки шаблона предпросмотр Excel будет недоступен.'
+          : 'Данные стыков и уже созданные записи истории не изменятся, но новые документы этого типа нельзя будет сформировать до загрузки нового шаблона.',
       confirmLabel: 'Удалить шаблон',
       tone: 'danger',
     })
@@ -2438,6 +2683,48 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
         <div className="rounded-md border border-slate-300 bg-white p-2 shadow-sm shadow-slate-200/60">
           {DOCUMENT_TEMPLATE_TYPES.map((templateType) => {
+            if (
+              isLayeredControlDocumentType(templateType.id) &&
+              templateType.id !== LAYERED_CONTROL_DOCUMENT_TYPES[0]
+            ) {
+              return null
+            }
+            if (templateType.id === LAYERED_CONTROL_DOCUMENT_TYPES[0]) {
+              const isActive = isLayeredControlDocumentType(activeTemplateId)
+              const uploadedCount = LAYERED_CONTROL_DOCUMENT_TYPES.filter(
+                (id) => Boolean(uploads[id]),
+              ).length
+              return (
+                <button
+                  key="layeredControl"
+                  type="button"
+                  onClick={() => setActiveTemplateId(
+                    isLayeredControlDocumentType(activeTemplateId)
+                      ? activeTemplateId
+                      : LAYERED_CONTROL_DOCUMENT_TYPES[0],
+                  )}
+                  className={`flex w-full items-start justify-between gap-3 rounded-md px-3 py-3 text-left transition-colors ${
+                    isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span>
+                    <span className="block text-sm font-semibold">Послойный НК</span>
+                    <span className={`mt-1 block text-xs ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                      Четыре формы ВИК и ПВК по кромкам и слоям.
+                    </span>
+                  </span>
+                  {uploadedCount > 0 ? (
+                    <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
+                      isActive
+                        ? 'border-slate-600 bg-slate-800 text-emerald-300'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    }`}>
+                      {uploadedCount}/{LAYERED_CONTROL_DOCUMENT_TYPES.length}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            }
             if (
               isLnkConclusionTemplateId(templateType.id) &&
               templateType.id !== LNK_CONCLUSION_TEMPLATE_PROFILES[0].id
@@ -2542,6 +2829,41 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
               </p>
             </div>
           ) : null}
+          {isLayeredControlDocumentType(activeTemplateId) ? (
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Форма послойного заключения
+              </div>
+              <div className="flex flex-wrap gap-2" role="tablist" aria-label="Форма послойного НК">
+                {LAYERED_CONTROL_DOCUMENT_TYPES.map((type) => {
+                  const profile = getLayeredControlDocumentProfile(type)
+                  const isActive = activeTemplateId === type
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => setActiveTemplateId(type)}
+                      className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors ${
+                        isActive
+                          ? 'border-sky-700 bg-sky-700 text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
+                      }`}
+                    >
+                      {profile.templateLabel}
+                      {uploads[type] ? (
+                        <CheckCircle2 className={`h-3.5 w-3.5 ${isActive ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                По каждому подходящему У-стыку система ведет четыре независимых номера. Заявки не создаются.
+              </p>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -2642,6 +2964,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
 
           <div className="space-y-6">
             {(activeUpload && isGeneratedDocumentType(activeTemplateId)) ||
+            isLayeredControlDocumentType(activeTemplateId) ||
             isSystemDocumentTemplateId(activeTemplateId) ? (
               <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
@@ -2670,7 +2993,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 </button>
               </div>
             ) : null}
-            {isGeneratedDocumentType(activeTemplateId) ? (
+            {isManualGeneratedDocumentType(activeTemplateId) ? (
               <WeldingJournalTemplateOptionsPanel
                 disabled={!activeUpload}
                 documentLabel={activeTemplate.label}
@@ -3754,9 +4077,14 @@ function DispatcherSettingsPanel({
   const reminderSettings = useDispatcherReminderSettings()
   const backgroundSettings = useDispatcherBackgroundSettings()
   const [acceptedWarningsExpanded, setAcceptedWarningsExpanded] = useState(true)
+  const [acceptedWarningsMessage, setAcceptedWarningsMessage] = useState<{
+    text: string
+    tone: 'error' | 'success'
+  } | null>(null)
   const disabledCount = Object.values(settings).filter((enabled) => !enabled).length
   const totalCount = Object.values(settings).length
   const confirmAction = useConfirmAction()
+  const { requireDeletePassword } = useSecurityGuard()
   const queryClient = useQueryClient()
   const acceptedWarningsQuery = useQuery({
     queryKey: ['dispatcher-accepted-warnings'],
@@ -3780,13 +4108,26 @@ function DispatcherSettingsPanel({
   })
   const revokeAcceptedWarningMutation = useMutation({
     mutationFn: (key: string) => revokeDispatcherAcceptedWarning({ data: { key } }),
-    onSuccess: async () => {
+    onSuccess: async (result, key) => {
+      setAcceptedWarningsMessage({
+        text: parseEarlyCoilDecisionKey(key)
+          ? `Решение о досрочной катушке отменено${result.deletedRowIds.length > 0 ? `; удалено пустых стыков: ${result.deletedRowIds.length}` : ''}.`
+          : 'Принятое исключение отменено.',
+        tone: 'success',
+      })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
         invalidateWeldPageQueries(queryClient),
+        queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
       ])
+    },
+    onError: (error) => {
+      setAcceptedWarningsMessage({
+        text: getErrorMessage(error, 'Не удалось отменить принятое исключение.'),
+        tone: 'error',
+      })
     },
   })
 
@@ -3818,17 +4159,32 @@ function DispatcherSettingsPanel({
   }
 
   const revokeAcceptedWarning = async (key: string, label: string) => {
+    const isEarlyCoilDecision = Boolean(parseEarlyCoilDecisionKey(key))
     const confirmed = await confirmAction({
-      title: 'Отменить принятое исключение',
+      title: isEarlyCoilDecision ? 'Отменить досрочную врезку катушки' : 'Отменить принятое исключение',
       itemName: label,
-      description: 'Если нарушение все еще существует, после пересчета оно снова появится в диспетчере.',
-      confirmLabel: 'Отменить исключение',
+      description: isEarlyCoilDecision
+        ? 'Система удалит созданные стыки катушки только если они остались полностью пустыми и нетронутыми. После отмены диспетчер снова предложит обычный следующий ремонт или вырез.'
+        : 'Если нарушение все еще существует, после пересчета оно снова появится в диспетчере.',
+      warning: isEarlyCoilDecision
+        ? 'Если у стыков катушки уже появились изменения, сварка, контроль, документы или продолжение цепочки, отмена будет заблокирована без удаления данных.'
+        : undefined,
+      confirmLabel: isEarlyCoilDecision ? 'Отменить решение' : 'Отменить исключение',
       tone: 'warning',
     })
     if (!confirmed) return
-    await runProtectedSettingsChange(async () => {
-      await revokeAcceptedWarningMutation.mutateAsync(key)
-    })
+    setAcceptedWarningsMessage(null)
+    try {
+      await runProtectedSettingsChange(async () => {
+        if (
+          isEarlyCoilDecision &&
+          !(await requireDeletePassword('отмену досрочной врезки катушки'))
+        ) return
+        await revokeAcceptedWarningMutation.mutateAsync(key)
+      })
+    } catch {
+      // The mutation displays the authoritative server reason in this panel.
+    }
   }
 
   return (
@@ -3964,7 +4320,8 @@ function DispatcherSettingsPanel({
             </div>
             <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
               Здесь хранятся ситуации, которые пользователь осознанно разрешил кнопкой «Принять». Диспетчер продолжает показывать все остальные
-              задачи. Исключение можно отменить в любой момент.
+              задачи. Обычное исключение можно отменить в любой момент. Решение о досрочной катушке отменяется только пока оба созданных стыка
+              остаются полностью нетронутыми.
             </p>
           </div>
           <button
@@ -3978,7 +4335,17 @@ function DispatcherSettingsPanel({
           </button>
         </div>
         {acceptedWarningsExpanded ? (
-          acceptedWarningsQuery.isLoading ? (
+          <>
+            {acceptedWarningsMessage ? (
+              <div className={`border-b px-4 py-2.5 text-xs font-medium ${
+                acceptedWarningsMessage.tone === 'error'
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              }`}>
+                {acceptedWarningsMessage.text}
+              </div>
+            ) : null}
+            {acceptedWarningsQuery.isLoading ? (
             <div className="px-4 py-5 text-sm text-slate-500">Загружаем исключения...</div>
           ) : acceptedWarningsQuery.data?.length ? (
             <div className="divide-y divide-slate-100">
@@ -4021,7 +4388,8 @@ function DispatcherSettingsPanel({
             </div>
           ) : (
             <div className="px-4 py-5 text-sm text-slate-500">Принятых исключений пока нет.</div>
-          )
+          )}
+          </>
         ) : null}
       </section>
     </div>
@@ -4035,6 +4403,8 @@ function getAcceptedWarningCategory(kind: string) {
     case 'delete':
     case 'rename':
       return 'Цепочка стыков'
+    case 'early-coil':
+      return 'Досрочная катушка'
     case 'check':
     case 'duplicate-check':
       return 'Проверка стыка'

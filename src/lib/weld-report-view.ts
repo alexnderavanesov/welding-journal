@@ -1,8 +1,11 @@
 import {
+  FIELD_BY_KEY,
+  isVirtualWeldField,
   migrateLegacyWeldFieldKey,
   migrateLegacyWeldFieldRecordKeys,
   type WeldFieldKey,
 } from '@/lib/weld-fields'
+import { isHiddenReportFilterKey } from '@/lib/report-hidden-filters'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import type { WeldSort } from '@/server/weld-contracts'
 
@@ -132,21 +135,34 @@ function normalizeSavedViews(value: unknown): SavedWeldReportView[] {
 }
 
 function normalizeSnapshot(value: WeldReportViewSnapshot): WeldReportViewSnapshot {
+  const columnFilters = migrateLegacyWeldFieldRecordKeys(Object.fromEntries(
+    Object.entries(value.columnFilters ?? {})
+      .filter(([, filter]) => String(filter ?? '').trim()),
+  ))
+  const sortFieldKey = value.sort ? migrateLegacyWeldFieldKey(value.sort.fieldKey) : ''
+  const sortField = isKnownWeldFieldKey(sortFieldKey) ? FIELD_BY_KEY.get(sortFieldKey) : undefined
   return {
     hiddenFieldKeys: normalizeFieldKeys(value.hiddenFieldKeys),
     collapsedSections: normalizeStrings(value.collapsedSections),
-    columnFilters: migrateLegacyWeldFieldRecordKeys(Object.fromEntries(
-      Object.entries(value.columnFilters ?? {})
-        .filter(([, filter]) => String(filter ?? '').trim()),
-    )),
-    sort: value.sort && (value.sort.direction === 'asc' || value.sort.direction === 'desc')
-      ? { fieldKey: migrateLegacyWeldFieldKey(value.sort.fieldKey) as WeldFieldKey, direction: value.sort.direction }
+    columnFilters: Object.fromEntries(
+      Object.entries(columnFilters)
+        .filter(([fieldKey]) => isKnownWeldFieldKey(fieldKey) || isHiddenReportFilterKey(fieldKey)),
+    ),
+    sort: value.sort && sortField && !isVirtualWeldField(sortField) &&
+        (value.sort.direction === 'asc' || value.sort.direction === 'desc')
+      ? { fieldKey: sortFieldKey as WeldFieldKey, direction: value.sort.direction }
       : null,
   }
 }
 
 function normalizeFieldKeys(value: unknown) {
-  return normalizeStrings(value).map(migrateLegacyWeldFieldKey) as WeldFieldKey[]
+  return normalizeStrings(value)
+    .map(migrateLegacyWeldFieldKey)
+    .filter(isKnownWeldFieldKey)
+}
+
+function isKnownWeldFieldKey(fieldKey: string): fieldKey is WeldFieldKey {
+  return FIELD_BY_KEY.has(fieldKey as WeldFieldKey)
 }
 
 function normalizeStrings(value: unknown, fallback: string[] = []) {

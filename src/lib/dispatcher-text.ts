@@ -103,6 +103,9 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   }
   if (task.kind === 'coil') {
     const dateText = formatDisplayDate(task.row.weldDate) || '-'
+    if (task.transitionMode === 'early-decision') {
+      return `По стыку ${task.sourceJoint} принято решение о досрочной врезке катушки после результата ${task.methodCode} - ${task.result}${dateText !== '-' ? `, дата сварки ${dateText}` : ''}. Нужно восстановить отсутствующую часть пары: ${task.targetJoints.join(' и ')}.`
+    }
     return `По стыку ${task.sourceJoint} достигнут лимит негодных официальных результатов: текущий результат ${task.methodCode} - ${task.result}${dateText !== '-' ? `, дата сварки ${dateText}` : ''}. Вместо очередного повторного стыка требуется катушка: ${task.targetJoints.join(' и ')}.`
   }
   if (task.kind === 'delete') {

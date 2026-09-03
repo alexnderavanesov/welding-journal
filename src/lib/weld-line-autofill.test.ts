@@ -32,7 +32,7 @@ describe('getWeldLineAutofillState', () => {
     })
   })
 
-  it('does not copy line-managed PSTO/TVMT or line-only LNK methods', () => {
+  it('does not copy line-managed PSTO/TVMT state', () => {
     const state = getWeldLineAutofillState(
       { line: 'LIN-1', joint: 'S2' },
       [
@@ -42,9 +42,6 @@ describe('getWeldLineAutofillState', () => {
           weldControlPercent: '100',
           hasVik: 'да',
           hasTvmt: 'да',
-          hasRfa: 'да',
-          hasStls: 'да',
-          hasMkk: 'да',
         },
         {
           id: 2,
@@ -59,9 +56,6 @@ describe('getWeldLineAutofillState', () => {
     expect(state.disabledReason).toBeNull()
     expect(state.values.hasVik).toBe('да')
     expect(state.values.hasTvmt).toBeUndefined()
-    expect(state.values.hasRfa).toBeUndefined()
-    expect(state.values.hasStls).toBeUndefined()
-    expect(state.values.hasMkk).toBeUndefined()
   })
 
   it('blocks autofill when existing source rows have different line data', () => {

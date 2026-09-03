@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { startTransition, useCallback, useState } from 'react'
 import { createEmptyDuplicateControlDraft, type DuplicateControlDraft } from '@/lib/duplicate-control-types'
 import type { PreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
@@ -59,12 +59,14 @@ export function useHomeLnkController() {
     relationId?: number | null
     registryMode?: 'request' | 'result'
   } = {}) => {
-    closePrimaryLnkDialogs()
-    setPreHeatTreatmentWorkflowMode(null)
-    setPreHeatTreatmentResultManagerRowIds(rowIds)
-    setPreHeatTreatmentResultManagerInitialRelationId(relationId)
-    setPreHeatTreatmentResultManagerMode(registryMode)
-    setIsPreHeatTreatmentResultManagerOpen(true)
+    startTransition(() => {
+      closePrimaryLnkDialogs()
+      setPreHeatTreatmentWorkflowMode(null)
+      setPreHeatTreatmentResultManagerRowIds(rowIds)
+      setPreHeatTreatmentResultManagerInitialRelationId(relationId)
+      setPreHeatTreatmentResultManagerMode(registryMode)
+      setIsPreHeatTreatmentResultManagerOpen(true)
+    })
   }, [closePrimaryLnkDialogs])
 
   const closePreHeatTreatmentResultRegistry = useCallback((isPending = false) => {

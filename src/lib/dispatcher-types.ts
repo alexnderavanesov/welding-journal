@@ -6,6 +6,7 @@ import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 
 export type WeldRow = WeldInput & {
   id: number
+  preHeatTreatmentLnkExempt?: boolean
   rowVersion?: string
   activeDispatcherTasks?: string
   duplicateControls?: DuplicateControlRecord[]
@@ -14,6 +15,10 @@ export type WeldRow = WeldInput & {
   jsrDocumentId?: number
   checklistDocumentId?: number
   zniDocumentId?: number
+  layeredVikEdgesDocumentId?: number
+  layeredVikLayersDocumentId?: number
+  layeredPvkEdgesDocumentId?: number
+  layeredPvkLayersDocumentId?: number
   systemDocumentIds?: Partial<Record<WeldFieldKey, number>>
 }
 export type WeldDraft = WeldInput & { id?: number }
@@ -37,6 +42,7 @@ export type RepeatedJointCoilTask = {
   targetJoints: string[]
   result: 'ремонт' | 'вырез'
   methodCode: string
+  transitionMode?: 'limit' | 'early-decision'
 }
 
 export type RepeatedJointDeleteTask = {

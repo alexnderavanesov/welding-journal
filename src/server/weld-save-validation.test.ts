@@ -727,6 +727,42 @@ describe('validateServerWeldRecords', () => {
     })).toThrow('сохранить основной комплект')
   })
 
+  it('does not demand a pre-TO stage decision when a moved weld inherits an exemption', () => {
+    const previous = {
+      id: 354,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-обычная',
+      joint: 'F354',
+      pstoRequired: null,
+      vikRequest: 'Заявка ВИК-001',
+      vikResult: 'годен',
+      vikConclusion: 'Заключение ВИК-001',
+      preHeatTreatmentControls: [],
+      pstoRepeatCycles: [],
+    } as unknown as WeldJoint
+    const record = {
+      ...previous,
+      line: 'L-ПСТО-освобождена',
+      preHeatTreatmentLnkExempt: true,
+    } as unknown as WeldInput
+
+    expect(() => prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        pstoLineAssignments: new Map([[getPstoLineIdentityKey(record), {
+          rowCount: 2,
+          assignedCount: 2,
+          cancelledCount: 0,
+        }]]),
+      },
+      importMode: true,
+    })).not.toThrow()
+    expect(record.pstoRequired).toBe('да')
+  })
+
   it('allows an explicit keep-primary move to create only the temporary DZ-20 backfill task', () => {
     const previous = {
       id: 353,

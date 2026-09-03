@@ -1,6 +1,9 @@
 import type * as XLSXTypes from 'xlsx'
 import { formatBusinessDateTime } from '@/lib/business-date'
-import { DOCUMENT_TEMPLATE_STORAGE_EVENT } from '@/lib/document-storage-events'
+import {
+  DOCUMENT_TEMPLATE_STORAGE_EVENT,
+  GENERATED_DOCUMENT_STORAGE_EVENT,
+} from '@/lib/document-storage-events'
 import { FIELD_BY_KEY, FIELD_BY_LABEL, isVirtualWeldField, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY, formatControlBasisSummary } from '@/lib/control-assignment-basis'
@@ -16,16 +19,23 @@ import {
   isWeldingJournalDocumentSplitMode,
   type WeldingJournalDocumentSplitMode,
 } from '@/lib/welding-journal-document-splitting'
-import {
-  DOCUMENT_FORMATION_DATE_TOKEN,
-  DOCUMENT_SEQUENCE_NUMBER_TOKEN,
-} from '@/lib/generated-document-naming'
+import type { DocumentTemplateNameConfig } from '@/lib/document-template-name'
+export type {
+  DocumentTemplateNameConfig,
+  DocumentTemplateNameFieldKey,
+  DocumentTemplateNamePart,
+} from '@/lib/document-template-name'
+export {
+  buildDocumentTemplateName,
+  createDefaultDocumentTemplateNameConfig,
+} from '@/lib/document-template-name'
 import { parseRkExposureDescription, type RkExposureLine } from '@/lib/rk-exposure'
 import {
-  getGeneratedDocumentProfile,
-  isGeneratedDocumentType,
+  LAYERED_CONTROL_DOCUMENT_TYPES,
+  isLayeredControlDocumentType,
   type GeneratedDocumentType,
 } from '@/lib/generated-document-types'
+import { getLayeredControlDocumentProfile } from '@/lib/layered-control-documents'
 import {
   CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
   type SystemDocumentTemplateId,
@@ -75,6 +85,14 @@ export const DOCUMENT_TEMPLATE_TYPES = [
     description: 'Запрос на инспекцию по выбранным стыкам.',
   },
   ...CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES,
+  ...LAYERED_CONTROL_DOCUMENT_TYPES.map((id) => {
+    const profile = getLayeredControlDocumentProfile(id)
+    return {
+      id,
+      label: profile.templateLabel,
+      description: profile.templateDescription,
+    }
+  }),
 ] as const
 
 export type DocumentTemplateId = GeneratedDocumentType | SystemDocumentTemplateId
@@ -159,23 +177,6 @@ export type DocumentTemplateCellBinding = {
   filledText?: string
 }
 
-export type DocumentTemplateNameFieldKey =
-  | keyof WeldInput
-  | '__periodFrom'
-  | '__periodTo'
-  | '__formationDate'
-  | '__documentNumber'
-
-export type DocumentTemplateNamePart = {
-  type: 'text' | 'field'
-  text?: string
-  field?: DocumentTemplateNameFieldKey
-}
-
-export type DocumentTemplateNameConfig = {
-  parts: DocumentTemplateNamePart[]
-}
-
 export type DocumentTemplateConstructorConfig = {
   version: 1
   sheetName: string
@@ -185,26 +186,6 @@ export type DocumentTemplateConstructorConfig = {
   repeatGroupBy?: DocumentTemplateFieldKey
   bindings: DocumentTemplateCellBinding[]
   nameConfig?: DocumentTemplateNameConfig
-}
-
-export function createDefaultDocumentTemplateNameConfig(
-  templateId: DocumentTemplateId = 'weldingJournal',
-): DocumentTemplateNameConfig {
-  const documentLabel =
-    templateId === 'weldingJournal'
-      ? 'Сварочный журнал'
-      : isGeneratedDocumentType(templateId)
-        ? getGeneratedDocumentProfile(templateId).label
-        : 'Документ'
-  return {
-    parts: [
-      { type: 'field', field: 'subtitleCode' },
-      { type: 'text', text: ` - ${documentLabel} - ` },
-      { type: 'field', field: '__periodFrom' },
-      { type: 'text', text: ' - ' },
-      { type: 'field', field: '__periodTo' },
-    ],
-  }
 }
 
 export function normalizeDocumentTemplateConstructorConfig(
@@ -330,65 +311,6 @@ export function convertDocumentTemplateBindingToJointRow(
     uniqueValues: undefined,
     scope: undefined,
   }
-}
-
-export function buildDocumentTemplateName({
-  config,
-  records,
-  periodFrom,
-  periodTo,
-}: {
-  config?: DocumentTemplateNameConfig
-  records: WeldInput[]
-  periodFrom: string
-  periodTo: string
-}) {
-  const currentConfig = config ?? createDefaultDocumentTemplateNameConfig()
-  const value = currentConfig.parts
-    .map((part) => {
-      if (part.type === 'text') return part.text ?? ''
-      if (!part.field) return ''
-      if (part.field === '__periodFrom') return formatDocumentNameDate(periodFrom)
-      if (part.field === '__periodTo') return formatDocumentNameDate(periodTo)
-      if (part.field === '__formationDate') return DOCUMENT_FORMATION_DATE_TOKEN
-      if (part.field === '__documentNumber') return DOCUMENT_SEQUENCE_NUMBER_TOKEN
-
-      const field = FIELD_BY_KEY.get(part.field)
-      const values = Array.from(
-        new Set(
-          records
-            .map((record) => {
-              const rawValue = record[part.field as keyof WeldInput]
-              if (rawValue == null || rawValue === '') return ''
-              return field?.kind === 'date'
-                ? formatDocumentNameDate(String(rawValue))
-                : String(rawValue).trim()
-            })
-            .filter(Boolean),
-        ),
-      ).sort((left, right) => left.localeCompare(right, 'ru', { numeric: true }))
-
-      if (values.length <= 3) return values.join(', ')
-      return `${values.slice(0, 3).join(', ')} и еще ${values.length - 3}`
-    })
-    .join('')
-
-  return sanitizeDocumentName(value) || 'Сварочный журнал'
-}
-
-function formatDocumentNameDate(value: string) {
-  const rawValue = value.trim()
-  const isoMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (isoMatch) return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1].slice(-2)}`
-
-  const displayMatch = rawValue.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
-  if (displayMatch) return `${displayMatch[1]}.${displayMatch[2]}.${displayMatch[3].slice(-2)}`
-
-  return rawValue
-}
-
-function sanitizeDocumentName(value: string) {
-  return value.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 export type StoredDocumentTemplate = TemplateUploadInfo & {
@@ -1315,6 +1237,14 @@ export async function createWeldingJournalBlobFromTemplate(
       records,
       normalizeDocumentTemplateConstructorConfig(constructorConfig),
       context,
+    )
+  }
+
+  if (isLayeredControlDocumentType(template.id)) {
+    const templateLabel = getLayeredControlDocumentProfile(template.id).templateLabel
+    throw new Error(
+      `Шаблон «${templateLabel}» загружен, но конструктор заполнения не настроен. `
+      + `Откройте «Настройки» → «Документы» → «Послойный НК» → «${templateLabel}» и назначьте поля ячейкам.`,
     )
   }
 
@@ -3477,6 +3407,7 @@ function encodeColumnReference(column: number) {
 function notifyDocumentTemplateStorageChanged() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new Event(DOCUMENT_TEMPLATE_STORAGE_EVENT))
+  window.dispatchEvent(new Event(GENERATED_DOCUMENT_STORAGE_EVENT))
 }
 
 function fromRemoteDocumentTemplate(

@@ -45,6 +45,7 @@ type LnkRequestMethod = (typeof LNK_METHODS)[number]
 type RegistryFilter = 'all' | 'open' | 'fixed'
 
 export type LnkRequestManagerDialogProps = {
+  embedded?: boolean
   requestName: string
   requestDate: string
   requestOptions: LnkRequestExtensionOption[]
@@ -72,6 +73,7 @@ export type LnkRequestManagerDialogProps = {
 }
 
 export function LnkRequestManagerDialog({
+  embedded = false,
   requestName,
   requestDate,
   requestOptions,
@@ -245,8 +247,8 @@ export function LnkRequestManagerDialog({
     selectedDocumentMethod && canOpenDocument(selectedDocumentMethod.requestKey),
   )
 
-  return (
-    <WorkflowDialogShell variant="manager">
+  const content = (
+    <>
       <RequestDialogHeader
         title="Редактирование заявок ЛНК"
         subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
@@ -496,8 +498,10 @@ export function LnkRequestManagerDialog({
       </div>
 
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </WorkflowDialogShell>
+    </>
   )
+
+  return embedded ? content : <WorkflowDialogShell variant="manager">{content}</WorkflowDialogShell>
 }
 
 function RequestStatusBadge({ isFixed, compact = false }: { isFixed: boolean | null; compact?: boolean }) {

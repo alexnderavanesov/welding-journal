@@ -15,8 +15,10 @@ import {
   calculateFinalStatusInRows,
   normalizeFinalStatus,
 } from '@/lib/weld-status'
-import type { GeneratedDocumentType } from '@/server/generated-documents'
-import { getGeneratedDocumentProfile } from '@/lib/generated-document-types'
+import {
+  getGeneratedDocumentProfile,
+  type ManualGeneratedDocumentType,
+} from '@/lib/generated-document-types'
 
 export type WeldingJournalGenerationFilters = {
   projects?: string[]
@@ -25,7 +27,7 @@ export type WeldingJournalGenerationFilters = {
 }
 
 export type WeldingJournalGenerationPlan = {
-  type: GeneratedDocumentType
+  type: ManualGeneratedDocumentType
   documentLabel: string
   rows: WeldRow[]
   groups: WeldRow[][]
@@ -95,7 +97,7 @@ export function buildWeldingJournalGenerationPlan({
   periodTo,
   manualTitle,
 }: {
-  type?: GeneratedDocumentType
+  type?: ManualGeneratedDocumentType
   documentLabel?: string
   rows: WeldRow[]
   template: StoredDocumentTemplate | null
@@ -114,6 +116,7 @@ export function buildWeldingJournalGenerationPlan({
         records: group,
         periodFrom,
         periodTo,
+        templateId: type,
       }),
     ),
   )

@@ -10,6 +10,9 @@ import {
   GENERATED_DOCUMENT_TYPES,
   getGeneratedDocumentProfile,
   isGeneratedDocumentType,
+  isLayeredControlDocumentType,
+  isManualGeneratedDocumentType,
+  MANUAL_GENERATED_DOCUMENT_TYPES,
   type GeneratedDocumentType,
 } from '@/lib/generated-document-types'
 import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings, type OtherSettings } from '@/lib/other-settings'
@@ -24,6 +27,16 @@ import {
 } from '@/server/document-history-sql'
 import { buildCurrentWdiSqlExpression } from '@/server/current-wdi-sql'
 import { assertSecurityScope } from '@/server/security-functions'
+import { getLayeredControlStageLabel } from '@/lib/layered-control-documents'
+import { ensureLayeredControlDocumentsInitialized } from '@/server/layered-control-documents'
+import {
+  lockGeneratedDocumentNumberCounter,
+  lockGeneratedDocumentNumberSequence,
+  readGeneratedDocumentNextNumber,
+  writeGeneratedDocumentNextNumber,
+  type GeneratedDocumentNumberSequence,
+  type GeneratedDocumentsTransaction,
+} from '@/server/generated-document-number-sequence'
 
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
 
@@ -40,6 +53,7 @@ export type RemoteGeneratedDocument = {
   rowCount: number
   wdiTotal?: number
   documentNumber?: number
+  stage?: string
   projects: string[]
   subtitleCodes: string[]
   lines: string[]
@@ -52,7 +66,8 @@ export type RemoteDocumentHistoryFilterOption = {
 }
 
 export type RemoteGeneratedDocumentHistoryRequest = {
-  type: GeneratedDocumentType
+  type?: GeneratedDocumentType
+  types?: GeneratedDocumentType[]
   limit?: number
   columnFilters?: Record<string, string>
 }
@@ -75,10 +90,6 @@ export type SaveGeneratedDocumentInput = {
   wdiTotal?: number
 }
 
-type GeneratedDocumentsTransaction = Parameters<
-  Parameters<ReturnType<typeof requireDb>['transaction']>[0]
->[0]
-
 export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' })
   .validator((data: { type: GeneratedDocumentType }) => ({
     type: isGeneratedDocumentType(data?.type) ? data.type : 'weldingJournal',
@@ -89,6 +100,7 @@ export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' })
   })
 
 async function loadRemoteGeneratedDocuments(type: GeneratedDocumentType) {
+  if (isLayeredControlDocumentType(type)) await ensureLayeredControlDocumentsInitialized()
   const db = requireDb()
   const records = await db
     .select({
@@ -149,6 +161,7 @@ export const listRemoteGeneratedDocumentHistory = createServerFn({ method: 'GET'
 
 const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
   'title',
+  'stage',
   'project',
   'subtitle',
   'line',
@@ -161,6 +174,9 @@ const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
 async function loadRemoteGeneratedDocumentHistory(
   data: ReturnType<typeof normalizeGeneratedDocumentHistoryRequest>,
 ): Promise<RemoteGeneratedDocumentHistoryResult> {
+  if (data.types.some(isLayeredControlDocumentType)) {
+    await ensureLayeredControlDocumentsInitialized()
+  }
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
   const currentWdi = buildCurrentWdiSqlExpression(otherSettings, {
@@ -175,6 +191,13 @@ async function loadRemoteGeneratedDocumentHistory(
     select
       "document_aggregate".*,
       array["document_aggregate"."title"]::text[] as "filter_title",
+      array[
+        case
+          when "document_aggregate"."type" in ('layeredVikEdges', 'layeredPvkEdges') then 'Кромки'
+          when "document_aggregate"."type" in ('layeredVikLayers', 'layeredPvkLayers') then 'Слои'
+          else ''
+        end
+      ]::text[] as "filter_stage",
       case
         when cardinality("document_aggregate"."projects") = 0 then array['']::text[]
         else "document_aggregate"."projects"
@@ -248,7 +271,7 @@ async function loadRemoteGeneratedDocumentHistory(
         on ${generatedDocumentWeldJoints.documentId} = ${generatedDocuments.id}
       left join ${weldJoints}
         on ${weldJoints.id} = ${generatedDocumentWeldJoints.weldJointId}
-      where ${generatedDocuments.type} = ${data.type}
+      where ${inArray(generatedDocuments.type, data.types)}
       group by ${generatedDocuments.id}
     ) as "document_aggregate"
   `
@@ -269,11 +292,21 @@ async function loadRemoteGeneratedDocumentHistory(
 export function normalizeGeneratedDocumentHistoryRequest(
   data: RemoteGeneratedDocumentHistoryRequest | undefined,
 ) {
+  const types = normalizeGeneratedDocumentHistoryTypes(data)
   return {
-    type: isGeneratedDocumentType(data?.type) ? data.type : 'weldingJournal',
+    type: types[0],
+    types,
     limit: normalizeDocumentHistoryLimit(data?.limit),
     columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
   }
+}
+
+function normalizeGeneratedDocumentHistoryTypes(
+  data: RemoteGeneratedDocumentHistoryRequest | undefined,
+): GeneratedDocumentType[] {
+  const values = Array.isArray(data?.types) ? data.types : [data?.type]
+  const types = [...new Set(values.filter(isGeneratedDocumentType))]
+  return types.length > 0 ? types : ['weldingJournal']
 }
 
 export function normalizeDocumentHistoryLimit(value: unknown) {
@@ -378,6 +411,7 @@ function getGeneratedDocumentHistoryFilterValues(
   key: string,
 ) {
   if (key === 'title') return [documentRecord.title]
+  if (key === 'stage') return [documentRecord.stage ?? '']
   if (key === 'project') return documentRecord.projects.length ? documentRecord.projects : ['']
   if (key === 'subtitle') return documentRecord.subtitleCodes.length ? documentRecord.subtitleCodes : ['']
   if (key === 'line') return documentRecord.lines.length ? documentRecord.lines : ['']
@@ -472,6 +506,7 @@ export const getRemoteGeneratedDocumentSequence = createServerFn({ method: 'GET'
   .validator((data: { type: GeneratedDocumentType }) => ({ type: requireGeneratedDocumentType(data?.type) }))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
+    if (isLayeredControlDocumentType(data.type)) await ensureLayeredControlDocumentsInitialized()
     const db = requireDb()
     return {
       type: data.type,
@@ -667,7 +702,7 @@ export const deleteRemoteGeneratedDocument = createServerFn({ method: 'POST' })
           generatedDocuments,
           and(
             eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
-            inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+            inArray(generatedDocuments.type, [...MANUAL_GENERATED_DOCUMENT_TYPES]),
           ),
         )
         .where(eq(generatedDocumentWeldJoints.documentId, data.id))
@@ -676,7 +711,7 @@ export const deleteRemoteGeneratedDocument = createServerFn({ method: 'POST' })
         .where(
           and(
             eq(generatedDocuments.id, data.id),
-            inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+            inArray(generatedDocuments.type, [...MANUAL_GENERATED_DOCUMENT_TYPES]),
           ),
         )
         .returning({ id: generatedDocuments.id })
@@ -690,7 +725,7 @@ export const deleteRemoteGeneratedDocument = createServerFn({ method: 'POST' })
 function normalizeSaveGeneratedDocumentInput(data: SaveGeneratedDocumentInput): SaveGeneratedDocumentInput {
   const weldJointIds = [...new Set((data?.weldJointIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))]
   if (weldJointIds.length === 0) throw new Error('Для документа не выбраны стыки.')
-  if (!isGeneratedDocumentType(data?.type)) {
+  if (!isManualGeneratedDocumentType(data?.type)) {
     throw new Error('Неизвестный тип документа.')
   }
 
@@ -746,6 +781,9 @@ function toRemoteGeneratedDocument(
     rowCount: record.rowCount,
     wdiTotal: record.wdiTotal ?? undefined,
     documentNumber: record.documentNumber ?? undefined,
+    ...(isLayeredControlDocumentType(record.type)
+      ? { stage: getLayeredControlStageLabel(record.type) }
+      : {}),
     projects: record.projects ?? [],
     subtitleCodes: record.subtitleCodes ?? [],
     lines: record.lines ?? [],
@@ -771,6 +809,9 @@ function toRemoteGeneratedDocumentHistoryRow(
     rowCount: Math.max(0, Number(record.rowCount) || 0),
     wdiTotal: Number(record.wdiTotal) || 0,
     ...(Number.isInteger(documentNumber) && documentNumber > 0 ? { documentNumber } : {}),
+    ...(isLayeredControlDocumentType(record.type)
+      ? { stage: getLayeredControlStageLabel(record.type) }
+      : {}),
     projects: normalizeDocumentHistoryStringArray(record.projects),
     subtitleCodes: normalizeDocumentHistoryStringArray(record.subtitleCodes),
     lines: normalizeDocumentHistoryStringArray(record.lines),
@@ -781,90 +822,6 @@ function toRemoteGeneratedDocumentHistoryRow(
 
 function normalizeDocumentHistoryStringArray(value: unknown) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : []
-}
-
-type GeneratedDocumentNumberSequence = {
-  take: () => number
-  persist: () => Promise<void>
-}
-
-async function lockGeneratedDocumentNumberSequence(
-  tx: GeneratedDocumentsTransaction,
-  type: GeneratedDocumentType,
-): Promise<GeneratedDocumentNumberSequence> {
-  await lockGeneratedDocumentNumberCounter(tx, type)
-  let nextNumber = await readGeneratedDocumentNextNumber(tx, type)
-  let changed = false
-
-  return {
-    take: () => {
-      const value = nextNumber
-      nextNumber += 1
-      changed = true
-      return value
-    },
-    persist: async () => {
-      if (changed) await writeGeneratedDocumentNextNumber(tx, type, nextNumber)
-    },
-  }
-}
-
-async function lockGeneratedDocumentNumberCounter(
-  tx: GeneratedDocumentsTransaction,
-  type: GeneratedDocumentType,
-) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${generatedDocumentCounterKey(type)}))`)
-}
-
-async function readGeneratedDocumentNextNumber(
-  db: Pick<ReturnType<typeof requireDb>, 'select'>,
-  type: GeneratedDocumentType,
-) {
-  const key = generatedDocumentCounterKey(type)
-  const [setting] = await db.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, key)).limit(1)
-  const storedValue = parsePositiveIntegerSetting(setting?.value)
-  if (storedValue) return storedValue
-
-  const [record] = await db
-    .select({ value: max(generatedDocuments.documentNumber) })
-    .from(generatedDocuments)
-    .where(eq(generatedDocuments.type, type))
-  return Math.max(1, Number(record?.value ?? 0) + 1)
-}
-
-async function writeGeneratedDocumentNextNumber(
-  tx: GeneratedDocumentsTransaction,
-  type: GeneratedDocumentType,
-  nextNumber: number,
-) {
-  const value = JSON.stringify(Math.max(1, Math.floor(nextNumber)))
-  await tx
-    .insert(appSettings)
-    .values({
-      key: generatedDocumentCounterKey(type),
-      value,
-    })
-    .onConflictDoUpdate({
-      target: appSettings.key,
-      set: {
-        value,
-        updatedAt: sql`now()`,
-      },
-    })
-}
-
-function generatedDocumentCounterKey(type: GeneratedDocumentType) {
-  return `generated-document-next-number:${type}`
-}
-
-function parsePositiveIntegerSetting(value: string | undefined) {
-  if (!value) return null
-  try {
-    const parsed = Number(JSON.parse(value))
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : null
-  } catch {
-    return null
-  }
 }
 
 async function loadGeneratedDocumentOtherSettings(

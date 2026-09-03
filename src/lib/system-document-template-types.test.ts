@@ -20,9 +20,6 @@ describe('system document template routing', () => {
     ['УЗК', 'lnkConclusionUzk'],
     ['ПВК', 'lnkConclusionPvk'],
     ['ТВМТ', 'tvmtConclusion'],
-    ['РФА', 'lnkConclusionOther'],
-    ['СТЛС', 'lnkConclusionOther'],
-    ['МКК', 'lnkConclusionOther'],
   ] as const)('routes %s conclusions to %s', (methodCode, templateId) => {
     expect(
       getSystemDocumentTemplateId({
@@ -38,12 +35,8 @@ describe('system document template routing', () => {
     )
   })
 
-  it('keeps unsupported legacy methods outside the TVMT template', () => {
-    expect(getLnkConclusionTemplateMethodCodes('lnkConclusionOther')).toEqual([
-      'РФА',
-      'СТЛС',
-      'МКК',
-    ])
+  it('keeps the hidden legacy fallback outside active LNK methods', () => {
+    expect(getLnkConclusionTemplateMethodCodes('lnkConclusionOther')).toEqual([])
   })
 
   it('keeps only supported document methods in the visible settings', () => {
@@ -70,8 +63,6 @@ describe('system document template routing', () => {
     expect(getSystemDocumentTemplateIdForField('vikConclusion')).toBe(
       'lnkConclusionVik',
     )
-    expect(getSystemDocumentTemplateIdForField('rfaConclusion')).toBeNull()
-    expect(getSystemDocumentTemplateIdForField('rfaRequest')).toBeNull()
     expect(getSystemDocumentTemplateIdForField('tvmtRequest')).toBe('tvmtRequest')
     expect(getSystemDocumentTemplateIdForField('tvmtConclusion')).toBe('tvmtConclusion')
     expect(getSystemDocumentTemplateIdForField('vikRequest')).toBe('lnkRequest')

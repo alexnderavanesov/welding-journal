@@ -44,8 +44,10 @@ type RequestFilter = 'all' | 'open' | 'fixed'
 type ResultFilter = 'all' | 'годен' | 'ремонт' | 'вырез'
 
 export type PreHeatTreatmentResultManagerDialogProps = {
+  embedded?: boolean
   rows: WeldRow[]
   registryMode: PreHeatTreatmentRegistryMode
+  readOnly?: boolean
   initialRelationId?: number | null
   isPending: boolean
   onClose: () => void
@@ -62,8 +64,10 @@ export type PreHeatTreatmentResultManagerDialogProps = {
 }
 
 export function PreHeatTreatmentResultManagerDialog({
+  embedded = false,
   rows,
   registryMode,
+  readOnly = false,
   initialRelationId,
   isPending,
   onClose,
@@ -146,9 +150,11 @@ export function PreHeatTreatmentResultManagerDialog({
       managesResult ? 'conclusionName' : 'requestName',
     )
     const documentName = text(managesResult ? entry.control.conclusionName : entry.control.requestName)
-    const deleteReason = managesResult
-      ? getPreHeatTreatmentResultRemovalBlockReason(entry.row, entry.control)
-      : getPreHeatTreatmentRequestRemovalBlockReason(entry.row, entry.control)
+    const deleteReason = readOnly
+      ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.'
+      : managesResult
+        ? getPreHeatTreatmentResultRemovalBlockReason(entry.row, entry.control)
+        : getPreHeatTreatmentRequestRemovalBlockReason(entry.row, entry.control)
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
       heading: `${text(entry.row.line) || '-'} · ${text(entry.row.joint) || '-'}`,
@@ -204,15 +210,17 @@ export function PreHeatTreatmentResultManagerDialog({
     resultDraft.name !== text(selectedEntry.control.conclusionName)
   )
 
-  return (
-    <WorkflowDialogShell variant="manager">
+  const content = (
+    <>
       <DialogHeader
         title={registryMode === 'request'
-          ? 'Редактирование заявок ЛНК до ТО'
-          : 'Редактирование результатов ЛНК до ТО'}
-        subtitle={registryMode === 'request'
-          ? 'Найдите заявку, проверьте ее состав или выполните доступное действие.'
-          : 'Найдите внесенный результат, проверьте связанные документы или выполните допустимое изменение.'}
+          ? readOnly ? 'История заявок ЛНК до ТО' : 'Редактирование заявок ЛНК до ТО'
+          : readOnly ? 'История результатов ЛНК до ТО' : 'Редактирование результатов ЛНК до ТО'}
+        subtitle={readOnly
+          ? 'Процесс выключен в настройках проекта. Документы и сохраненные данные доступны без изменений.'
+          : registryMode === 'request'
+            ? 'Найдите заявку, проверьте ее состав или выполните доступное действие.'
+            : 'Найдите внесенный результат, проверьте связанные документы или выполните допустимое изменение.'}
         onClose={onClose}
         actions={onStageChange ? <LnkControlStageSwitch value="beforeHeatTreatment" onChange={(stage) => {
           if (stage === 'primary') onStageChange()
@@ -221,9 +229,11 @@ export function PreHeatTreatmentResultManagerDialog({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
           <div className="space-y-3 border-b border-slate-200 p-4">
-            <Button className="w-full" onClick={onOpenWorkflow} disabled={isPending}>
+            <Button className="w-full" onClick={onOpenWorkflow} disabled={isPending || readOnly}>
               <Plus className="mr-2 h-4 w-4" />
-              {registryMode === 'request' ? 'Новая заявка' : 'Внести результаты'}
+              {readOnly
+                ? 'Процесс выключен'
+                : registryMode === 'request' ? 'Новая заявка' : 'Внести результаты'}
             </Button>
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -444,7 +454,7 @@ export function PreHeatTreatmentResultManagerDialog({
                     <Input
                       type="date"
                       value={requestDraft.date}
-                      disabled={isPending}
+                      disabled={isPending || readOnly}
                       onChange={(event) => setRequestDraft((current) => ({ ...current, date: event.target.value }))}
                     />
                   </label>
@@ -452,7 +462,7 @@ export function PreHeatTreatmentResultManagerDialog({
                     <span>Наименование заявки</span>
                     <Input
                       value={requestDraft.name}
-                      disabled={isPending}
+                      disabled={isPending || readOnly}
                       onChange={(event) => setRequestDraft((current) => ({ ...current, name: event.target.value }))}
                     />
                   </label>
@@ -466,8 +476,8 @@ export function PreHeatTreatmentResultManagerDialog({
                       type="button"
                       variant="outline"
                       className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
-                      disabled={isPending || Boolean(requestDeleteReason)}
-                      title={requestDeleteReason || undefined}
+                      disabled={isPending || readOnly || Boolean(requestDeleteReason)}
+                      title={readOnly ? 'НК до ТО выключен в настройках проекта.' : requestDeleteReason || undefined}
                       onClick={() => onDeleteRequest(selectedEntry.row, selectedEntry.control)}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
@@ -475,7 +485,7 @@ export function PreHeatTreatmentResultManagerDialog({
                     </Button>
                     <Button
                       type="button"
-                      disabled={isPending || !hasRequestChanges || !requestDraft.date || !requestDraft.name}
+                      disabled={isPending || readOnly || !hasRequestChanges || !requestDraft.date || !requestDraft.name}
                       onClick={() => onCorrect({
                         relationId: selectedEntry.control.id,
                         stage: 'request',
@@ -498,7 +508,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       <span>Результат</span>
                       <Select
                         value={resultDraft.result}
-                        disabled={isPending}
+                        disabled={isPending || readOnly}
                         onChange={(event) => setResultDraft((current) => ({ ...current, result: event.target.value }))}
                       >
                         {PRE_HEAT_TREATMENT_RESULT_OPTIONS.map((result) => <option key={result}>{result}</option>)}
@@ -509,7 +519,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       <Input
                         type="date"
                         value={resultDraft.date}
-                        disabled={isPending}
+                        disabled={isPending || readOnly}
                         onChange={(event) => setResultDraft((current) => ({ ...current, date: event.target.value }))}
                       />
                     </label>
@@ -517,7 +527,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       <span>Наименование заключения</span>
                       <Input
                         value={resultDraft.name}
-                        disabled={isPending}
+                        disabled={isPending || readOnly}
                         onChange={(event) => setResultDraft((current) => ({ ...current, name: event.target.value }))}
                       />
                     </label>
@@ -531,8 +541,8 @@ export function PreHeatTreatmentResultManagerDialog({
                         type="button"
                         variant="outline"
                         className="border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
-                        disabled={isPending || Boolean(resultDeleteReason)}
-                        title={resultDeleteReason || undefined}
+                        disabled={isPending || readOnly || Boolean(resultDeleteReason)}
+                        title={readOnly ? 'НК до ТО выключен в настройках проекта.' : resultDeleteReason || undefined}
                         onClick={() => onDeleteResult(selectedEntry.row, selectedEntry.control)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -540,7 +550,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       </Button>
                       <Button
                         type="button"
-                        disabled={isPending || !hasResultChanges || !resultDraft.date || !resultDraft.name || !resultDraft.result}
+                        disabled={isPending || readOnly || !hasResultChanges || !resultDraft.date || !resultDraft.name || !resultDraft.result}
                         onClick={() => onCorrect({
                           relationId: selectedEntry.control.id,
                           stage: 'result',
@@ -561,8 +571,10 @@ export function PreHeatTreatmentResultManagerDialog({
         </main>
       </div>
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </WorkflowDialogShell>
+    </>
   )
+
+  return embedded ? content : <WorkflowDialogShell variant="manager">{content}</WorkflowDialogShell>
 }
 
 function buildEntries(rows: WeldRow[], registryMode: PreHeatTreatmentRegistryMode): PreResultEntry[] {

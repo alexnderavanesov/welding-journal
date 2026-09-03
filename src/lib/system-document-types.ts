@@ -78,6 +78,7 @@ export type SystemDocumentTemplateContext = {
   number: string
   methodCodes: string[]
   methodCode?: string
+  resultOverride?: string
 }
 
 export const SYSTEM_DOCUMENT_PROFILES = {
@@ -486,6 +487,7 @@ export function getSystemDocumentRowResult(
   row: WeldInput,
   context: SystemDocumentTemplateContext,
 ) {
+  if (context.resultOverride !== undefined) return context.resultOverride
   if (context.type === 'pstoConclusion') return row.pstoResult ?? ''
   if (context.type !== 'lnkConclusion' || !context.methodCode) return ''
   const method = LNK_METHODS.find((candidate) => candidate.code === context.methodCode)

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   Check,
   ChevronRight,
+  ClipboardPaste,
+  Copy,
   FileText,
   ListChecks,
   MousePointer2,
@@ -16,7 +18,16 @@ import {
   X,
 } from 'lucide-react'
 
+import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import {
+  DOCUMENT_TEMPLATE_CELL_CLIPBOARD_STORAGE_KEY,
+  cloneDocumentTemplateCellBinding,
+  createDocumentTemplateCellClipboardPayload,
+  readDocumentTemplateCellClipboard,
+  writeDocumentTemplateCellClipboard,
+  type DocumentTemplateCellClipboardPayload,
+} from '@/lib/document-template-cell-clipboard'
 import {
   convertDocumentTemplateBindingToGroupSummary,
   convertDocumentTemplateBindingToJointRow,
@@ -32,7 +43,10 @@ import {
   type DocumentTemplateWorkbookPreview,
   type StoredDocumentTemplate,
 } from '@/lib/document-template-storage'
-import { isGeneratedDocumentFieldKey } from '@/lib/generated-document-types'
+import {
+  isGeneratedDocumentFieldKey,
+  isLayeredControlDocumentType,
+} from '@/lib/generated-document-types'
 import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { WELD_FIELDS, isVirtualWeldField, type WeldInput } from '@/lib/weld-fields'
 import { STAMP_NAME_TEMPLATE_FIELDS } from '@/lib/welder-stamp-names'
@@ -288,6 +302,80 @@ export function applyDocumentTemplateRepeatTarget(
   }
 }
 
+function convertDocumentTemplateBindingToDocumentSummary(
+  binding: DocumentTemplateCellBinding,
+): DocumentTemplateCellBinding {
+  const parts = getBindingParts(binding).map((part) => ({
+    ...part,
+    field: part.field === '__groupIndex' ? '__index' as const : part.field,
+    compareField: part.compareField === '__groupIndex' ? '__index' as const : part.compareField,
+  }))
+  return {
+    ...binding,
+    mode: 'summary',
+    field: undefined,
+    parts,
+    uniqueParts: undefined,
+    uniqueValues:
+      binding.mode === 'summary'
+        ? binding.uniqueValues ?? true
+        : binding.uniqueParts ?? true,
+    scope: undefined,
+  }
+}
+
+export function pasteDocumentTemplateCellBinding(
+  config: DocumentTemplateConstructorConfig,
+  preview: DocumentTemplateWorkbookPreview | null,
+  copiedBinding: DocumentTemplateCellBinding,
+  targetCell: string,
+): DocumentTemplateConstructorConfig {
+  const copied = cloneDocumentTemplateCellBinding(copiedBinding)
+  let nextBinding: DocumentTemplateCellBinding
+
+  if (config.repeatRow && isCellInRepeatBlock(config, preview, targetCell)) {
+    nextBinding = config.repeatMode === 'groups'
+      ? convertDocumentTemplateBindingToGroupSummary(copied)
+      : convertDocumentTemplateBindingToJointRow(copied)
+  } else if (config.repeatRow) {
+    nextBinding = convertDocumentTemplateBindingToDocumentSummary(copied)
+  } else if (copied.mode === 'row' || copied.scope === 'group') {
+    nextBinding = convertDocumentTemplateBindingToJointRow(copied)
+  } else {
+    nextBinding = convertDocumentTemplateBindingToDocumentSummary(copied)
+  }
+
+  nextBinding = { ...nextBinding, cell: targetCell }
+  const nextConfig = {
+    ...config,
+    bindings: [
+      ...config.bindings.filter((binding) => binding.cell !== targetCell),
+      nextBinding,
+    ],
+  }
+
+  return !config.repeatRow && nextBinding.mode === 'row'
+    ? includeTemplateCellInRepeatBlock(nextConfig, preview, targetCell)
+    : nextConfig
+}
+
+export function getUnavailableDocumentTemplatePasteFields(
+  config: DocumentTemplateConstructorConfig,
+  preview: DocumentTemplateWorkbookPreview | null,
+  copiedBinding: DocumentTemplateCellBinding,
+  targetCell: string,
+  availableFields: ReadonlySet<DocumentTemplateFieldKey>,
+) {
+  const candidate = pasteDocumentTemplateCellBinding(config, preview, copiedBinding, targetCell)
+  const pastedBinding = candidate.bindings.find((binding) => binding.cell === targetCell)
+  if (!pastedBinding) return []
+
+  const fields = getBindingParts(pastedBinding).flatMap((part) =>
+    part.compareField ? [part.field, part.compareField] : [part.field],
+  )
+  return [...new Set(fields.filter((field) => !availableFields.has(field)))]
+}
+
 export function validateDocumentTemplateBuilderConfig(
   draft: DocumentTemplateConstructorConfig,
   preview: DocumentTemplateWorkbookPreview | null,
@@ -385,6 +473,12 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cellContextMenu, setCellContextMenu] = useState<ContextActionMenuState>(null)
+  const [cellClipboard, setCellClipboard] = useState<DocumentTemplateCellClipboardPayload | null>(() =>
+    typeof window === 'undefined'
+      ? null
+      : readDocumentTemplateCellClipboard(window.localStorage),
+  )
 
   useEffect(() => {
     let mounted = true
@@ -415,6 +509,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   }, [draft])
 
   const selectedBinding = draft.bindings.find((binding) => binding.cell === selectedCell)
+  const supportsCurrentDocumentFields = isSystemTemplate || isLayeredControlDocumentType(template.id)
   const builderIssues = useMemo(
     () => getDocumentTemplateBuilderIssues(draft, preview, { requireNameConfig: !isSystemTemplate }),
     [draft, isSystemTemplate, preview],
@@ -429,7 +524,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     [draft.bindings],
   )
   const fieldGroups = useMemo(() => {
-    const fieldOptions = (isSystemTemplate
+    const fieldOptions = (supportsCurrentDocumentFields
       ? [...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
       : BASE_FIELD_OPTIONS
     ).filter((field) => field.key !== '__groupIndex' || draft.repeatMode === 'groups')
@@ -440,7 +535,17 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       groups.set(field.group, values)
     }
     return Array.from(groups.entries())
-  }, [draft.repeatMode, isSystemTemplate])
+  }, [draft.repeatMode, supportsCurrentDocumentFields])
+  const availableTemplateFields = useMemo(
+    () => new Set<DocumentTemplateFieldKey>([
+      ...fieldGroups.flatMap(([, fields]) => fields.map((field) => field.key)),
+      '__welderName',
+      ...(supportsCurrentDocumentFields
+        ? ['__systemDocumentMethods', '__systemDocumentResult'] as const
+        : []),
+    ]),
+    [fieldGroups, supportsCurrentDocumentFields],
+  )
   const repeatTarget = getDocumentTemplateRepeatTarget(draft)
   const selectedCellInsideRepeatBlock = selectedCell
     ? isCellInRepeatBlock(draft, preview, selectedCell)
@@ -480,6 +585,156 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       description: 'Ячейка собирает значения из всех выбранных стыков и заполняется один раз.',
     }
   }, [draft.repeatMode, draft.repeatRow, selectedBinding?.mode, selectedCellInsideRepeatBlock])
+
+  const readCurrentCellClipboard = useCallback(() => {
+    if (typeof window === 'undefined') return cellClipboard
+    const storedClipboard = readDocumentTemplateCellClipboard(window.localStorage)
+    setCellClipboard(storedClipboard)
+    return storedClipboard
+  }, [cellClipboard])
+
+  const copyCellBinding = useCallback((binding: DocumentTemplateCellBinding) => {
+    const payload = createDocumentTemplateCellClipboardPayload({
+      binding,
+      templateId: template.id,
+      templateFileName: template.fileName,
+      sheetName: draft.sheetName,
+    })
+    if (typeof window !== 'undefined') {
+      writeDocumentTemplateCellClipboard(window.localStorage, payload)
+    }
+    setCellClipboard(payload)
+  }, [draft.sheetName, template.fileName, template.id])
+
+  const getCellPasteIssue = useCallback((
+    cell: string,
+    clipboard: DocumentTemplateCellClipboardPayload,
+  ) => {
+    const unavailableFields = getUnavailableDocumentTemplatePasteFields(
+      draft,
+      preview,
+      clipboard.binding,
+      cell,
+      availableTemplateFields,
+    )
+    if (!unavailableFields.length) return null
+    const labels = unavailableFields.map((field) =>
+      [...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
+        .find((option) => option.key === field)?.label ?? field,
+    )
+    return `Для этого шаблона недоступны поля: ${labels.join(', ')}.`
+  }, [availableTemplateFields, draft, preview])
+
+  const pasteCellBinding = useCallback((cell: string, clipboard: DocumentTemplateCellClipboardPayload) => {
+    const pasteIssue = getCellPasteIssue(cell, clipboard)
+    if (pasteIssue) {
+      setError(pasteIssue)
+      return
+    }
+    setSelectedCell(cell)
+    setDraft((current) => pasteDocumentTemplateCellBinding(current, preview, clipboard.binding, cell))
+  }, [getCellPasteIssue, preview])
+
+  const removeCellBinding = useCallback((cell: string) => {
+    setSelectedCell(cell)
+    setDraft((current) => ({
+      ...current,
+      bindings: current.bindings.filter((binding) => binding.cell !== cell),
+    }))
+  }, [])
+
+  const openCellContextMenu = useCallback((
+    event: ReactMouseEvent<HTMLTableCellElement>,
+    cell: string,
+    binding: DocumentTemplateCellBinding | undefined,
+  ) => {
+    event.preventDefault()
+    setSelectedCell(cell)
+    const clipboard = typeof window === 'undefined'
+      ? cellClipboard
+      : readDocumentTemplateCellClipboard(window.localStorage)
+    const pasteIssue = clipboard ? getCellPasteIssue(cell, clipboard) : null
+    setCellClipboard(clipboard)
+    setCellContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      heading: `Ячейка ${cell}`,
+      description: binding ? formatTemplateBindingSummary(binding) : 'Назначение не задано',
+      items: [
+        {
+          id: 'copy-cell-binding',
+          label: 'Копировать содержимое',
+          description: 'Все поля и правила заполнения ячейки',
+          icon: Copy,
+          disabled: !binding,
+          title: binding ? undefined : 'В ячейке нет назначенного содержимого.',
+          onSelect: () => binding && copyCellBinding(binding),
+        },
+        {
+          id: 'paste-cell-binding',
+          label: binding ? 'Вставить с заменой' : 'Вставить содержимое',
+          description: clipboard && !pasteIssue
+            ? `Из ${clipboard.source.cell} · ${clipboard.source.templateFileName}`
+            : undefined,
+          icon: ClipboardPaste,
+          disabled: !clipboard || Boolean(pasteIssue),
+          title: pasteIssue ?? (clipboard ? undefined : 'Сначала скопируйте настроенную ячейку.'),
+          onSelect: () => clipboard && pasteCellBinding(cell, clipboard),
+        },
+        { type: 'separator', id: 'cell-binding-separator' },
+        {
+          id: 'clear-cell-binding',
+          label: 'Очистить назначение',
+          icon: Trash2,
+          disabled: !binding,
+          danger: true,
+          title: binding ? undefined : 'В ячейке нет назначенного содержимого.',
+          onSelect: () => binding && removeCellBinding(cell),
+        },
+      ],
+    })
+  }, [cellClipboard, copyCellBinding, getCellPasteIssue, pasteCellBinding, removeCellBinding])
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) return
+      if (event.key !== null && event.key !== DOCUMENT_TEMPLATE_CELL_CLIPBOARD_STORAGE_KEY) return
+      setCellClipboard(readDocumentTemplateCellClipboard(window.localStorage))
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'content') return
+    const handleClipboardShortcut = (event: KeyboardEvent) => {
+      if ((!event.ctrlKey && !event.metaKey) || event.altKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement
+        && (
+          target.isContentEditable
+          || target.tagName === 'INPUT'
+          || target.tagName === 'TEXTAREA'
+          || target.tagName === 'SELECT'
+        )
+      ) return
+
+      const key = event.key.toLowerCase()
+      if (key === 'c' && selectedBinding) {
+        event.preventDefault()
+        copyCellBinding(selectedBinding)
+        return
+      }
+      if (key !== 'v' || !selectedCell) return
+      const clipboard = readCurrentCellClipboard()
+      if (!clipboard) return
+      event.preventDefault()
+      pasteCellBinding(selectedCell, clipboard)
+    }
+    window.addEventListener('keydown', handleClipboardShortcut)
+    return () => window.removeEventListener('keydown', handleClipboardShortcut)
+  }, [activeTab, copyCellBinding, pasteCellBinding, readCurrentCellClipboard, selectedBinding, selectedCell])
 
   const setRepeatRow = (row: number) => {
     const currentStart = draft.repeatRow
@@ -588,10 +843,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   }
 
   const removeSelectedBinding = () => {
-    setDraft((current) => ({
-      ...current,
-      bindings: current.bindings.filter((binding) => binding.cell !== selectedCell),
-    }))
+    removeCellBinding(selectedCell)
   }
 
   const updateNameParts = (parts: DocumentTemplateNamePart[]) => {
@@ -745,7 +997,18 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                               key={cell.address}
                               rowSpan={cell.rowSpan}
                               colSpan={cell.columnSpan}
-                              onClick={() => setSelectedCell(cell.address)}
+                              tabIndex={selected ? 0 : -1}
+                              aria-label={`Ячейка ${cell.address}`}
+                              onFocus={() => setSelectedCell(cell.address)}
+                              onClick={(event) => {
+                                event.currentTarget.focus()
+                                setCellContextMenu(null)
+                                setSelectedCell(cell.address)
+                              }}
+                              onContextMenu={(event) => {
+                                event.currentTarget.focus()
+                                openCellContextMenu(event, cell.address, binding)
+                              }}
                               className={`relative h-11 max-w-60 cursor-pointer border-b border-r border-slate-200 px-2 py-1 align-middle ${
                                 selected
                                   ? 'bg-sky-100 ring-2 ring-inset ring-sky-500'
@@ -1098,6 +1361,11 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
           {isSaving ? 'Сохраняю...' : 'Сохранить конструктор'}
         </button>
       </div>
+      <ContextActionMenu
+        menu={cellContextMenu}
+        closeOnEscapeWithModal
+        onClose={() => setCellContextMenu(null)}
+      />
     </LargeDialogShell>
   )
 }

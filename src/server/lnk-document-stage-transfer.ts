@@ -32,6 +32,8 @@ import {
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
+import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
@@ -68,6 +70,10 @@ export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+      if (!processSettings.preHeatTreatmentLnkEnabled) {
+        throw new Error('НК до ТО выключен в настройках проекта. Перенос документов этого этапа недоступен.')
+      }
       const context = await loadTransferContext(tx, data, true)
       const rowIds = context.rows.map((row) => row.id)
       const duplicateRecords = rowIds.length > 0
@@ -125,6 +131,7 @@ export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
         await syncSystemDocumentsForWeldChangesInTransaction(tx, nextRows, previousRows)
       }
 
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
       await markDispatcherTaskIndexDirty(tx)
       return { preview: context.preview, rows: nextRows }
     })

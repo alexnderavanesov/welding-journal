@@ -16,6 +16,8 @@ describe('generated document row fields', () => {
           { weldJointId: 10, documentId: 1, type: 'weldingJournal', title: 'ЖСР №1' },
           { weldJointId: 10, documentId: 2, type: 'checklist', title: 'Чек-лист №7' },
           { weldJointId: 10, documentId: 3, type: 'zni', title: 'ЗНИ №4' },
+          { weldJointId: 10, documentId: 5, type: 'layeredVikEdges', title: 'ВИК - кромки - S1 - 10.08.2026' },
+          { weldJointId: 10, documentId: 6, type: 'layeredVikLayers', title: 'ВИК - слои - S1 - 10.08.2026' },
           {
             weldJointId: 10,
             documentId: 4,
@@ -37,6 +39,11 @@ describe('generated document row fields', () => {
         checklistDocumentId: 2,
         zniDocument: 'ЗНИ №4',
         zniDocumentId: 3,
+        layeredVikEdgesDocument: 'ВИК - кромки - S1 - 10.08.2026',
+        layeredVikEdgesDocumentId: 5,
+        layeredVikLayersDocument: 'ВИК - слои - S1 - 10.08.2026',
+        layeredVikLayersDocumentId: 6,
+        layeredVikDocuments: 'Кромки: ВИК - кромки - S1 - 10.08.2026\nСлои: ВИК - слои - S1 - 10.08.2026',
         systemDocumentIds: { rkRequest: 4 },
       },
     ])

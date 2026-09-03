@@ -3,10 +3,11 @@ import type { ActiveReport } from '@/lib/home-state'
 
 type CreateDispatcherTaskCardHandlersOptions = Omit<
   DispatcherTaskCardHandlers,
-  'canRunDispatcherMutation' | 'isCreatePending' | 'isDeletePending' | 'isRenamePending'
+  'canRunDispatcherMutation' | 'canCreateEarlyCoil' | 'isCreatePending' | 'isEarlyCoilPending' | 'isDeletePending' | 'isRenamePending'
 > & {
   activeReport: ActiveReport
   isCreatePending: boolean
+  isEarlyCoilPending: boolean
   isDeletePending: boolean
   isRenamePending: boolean
 }
@@ -14,6 +15,7 @@ type CreateDispatcherTaskCardHandlersOptions = Omit<
 export function createDispatcherTaskCardHandlers({
   activeReport,
   isCreatePending,
+  isEarlyCoilPending,
   isDeletePending,
   isRenamePending,
   ...handlers
@@ -21,7 +23,9 @@ export function createDispatcherTaskCardHandlers({
   return {
     ...handlers,
     canRunDispatcherMutation: activeReport !== 'lnk',
+    canCreateEarlyCoil: activeReport === 'weldingJournal',
     isCreatePending,
+    isEarlyCoilPending,
     isDeletePending,
     isRenamePending,
   }

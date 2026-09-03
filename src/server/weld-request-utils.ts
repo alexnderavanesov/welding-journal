@@ -9,9 +9,6 @@ const CONTROL_COLUMN_KEYS = {
   ПВК: 'hasPvk',
   УЗК: 'hasUzk',
   ТВМТ: 'pstoRequired',
-  РФА: 'hasRfa',
-  СТЛС: 'hasStls',
-  МКК: 'hasMkk',
 } as const
 
 export type DuplicateControlCarrier = {

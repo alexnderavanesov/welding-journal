@@ -11,6 +11,8 @@ import {
   getDispatcherTaskAcceptanceContext,
   getDispatcherTaskAcceptanceTitle,
 } from '@/lib/dispatcher-task-acceptance'
+import { parseEarlyCoilDecisionKey } from '@/lib/early-coil-decision'
+import { revokeEarlyCoilDecisionInTransaction } from '@/server/early-coil-workflow'
 
 export type DispatcherAcceptedWarningPayload = {
   key: string
@@ -85,11 +87,15 @@ export const revokeDispatcherAcceptedWarning = createServerFn({ method: 'POST' }
   .validator((data: { key: string }) => ({ key: String(data?.key ?? '').trim() }))
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
+    if (parseEarlyCoilDecisionKey(data.key)) await assertSecurityScope('delete')
     if (!data.key) throw new Error('Не передан ключ принятого исключения')
     const db = requireDb()
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
+      const earlyCoilResult = await revokeEarlyCoilDecisionInTransaction(tx, data.key)
+      if (earlyCoilResult.handled) return { ok: true, deletedRowIds: earlyCoilResult.deletedRowIds }
       await tx.delete(dispatcherAcceptedWarnings).where(eq(dispatcherAcceptedWarnings.key, data.key))
       await markDispatcherTaskIndexDirty(tx)
+      return { ok: true, deletedRowIds: [] }
     })
-    return { ok: true }
+    return result
   })

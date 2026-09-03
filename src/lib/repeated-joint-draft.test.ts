@@ -33,4 +33,24 @@ describe('buildRepeatedJointDraft', () => {
     expect(draft.hasVik).toBe('да')
     expect(draft.finalStatus).toBe('ожидает ремонт')
   })
+
+  it('does not inherit a rejected duplicate control into a new coil joint', () => {
+    const draft = buildRepeatedJointDraft({
+      id: 10,
+      joint: 'F1',
+      weldDate: '2026-08-20',
+      duplicateControls: [{
+        id: 41,
+        weldJointId: 10,
+        method: 'РК',
+        result: 'ремонт',
+        controlDate: '2026-08-20',
+        conclusion: 'Дубль РК',
+        conclusionDate: '2026-08-20',
+      }],
+    } as WeldRow, 'F1Y1')
+
+    expect((draft as WeldRow).duplicateControls).toEqual([])
+    expect(draft.finalStatus).toBe('ожидает сварку')
+  })
 })

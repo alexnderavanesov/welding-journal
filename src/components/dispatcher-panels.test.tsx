@@ -15,6 +15,32 @@ describe('DispatcherTaskPanel', () => {
     window.localStorage.clear()
   })
 
+  it('offers an early coil only for an official create task in the welding journal', () => {
+    const onCreateEarlyCoil = vi.fn()
+    const handlers = {
+      ...createHandlers(vi.fn()),
+      onCreateEarlyCoil,
+      canCreateEarlyCoil: true,
+    }
+    const task = {
+      kind: 'create',
+      key: 'create:early-coil',
+      row: { id: 51, projectTitle: 'Проект', subtitleCode: 'Шифр', line: 'Линия', joint: 'F51' } as WeldRow,
+      sourceJoint: 'F51',
+      targetJoint: 'F51R1',
+      result: 'ремонт',
+      suffix: 'R',
+      methodCode: 'ВИК',
+    } as const
+
+    const { rerender } = render(<DispatcherTaskCard task={task} {...handlers} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Катушка досрочно' }))
+    expect(onCreateEarlyCoil).toHaveBeenCalledWith(task)
+
+    rerender(<DispatcherTaskCard task={task} {...handlers} canCreateEarlyCoil={false} />)
+    expect(screen.queryByRole('button', { name: 'Катушка досрочно' })).not.toBeInTheDocument()
+  })
+
   it('keeps quick filters available while the task list is collapsed', () => {
     const { task, group } = createTaskGroup()
     const onShowTask = vi.fn()
@@ -362,6 +388,7 @@ function createHandlers(onShowTask: DispatcherTaskCardHandlers['onShowTask']): D
     onShowTask,
     onOpenTaskOfficiality: vi.fn(),
     onCreateTask: vi.fn(),
+    onCreateEarlyCoil: vi.fn(),
     onDeleteTask: vi.fn(),
     onRenameTask: vi.fn(),
     onAcceptPercentageLineTask: vi.fn(),
@@ -369,7 +396,9 @@ function createHandlers(onShowTask: DispatcherTaskCardHandlers['onShowTask']): D
     onSuspendPercentageLineWelder: vi.fn(),
     onSkipPercentageLineWelderSuspension: vi.fn(),
     canRunDispatcherMutation: true,
+    canCreateEarlyCoil: true,
     isCreatePending: false,
+    isEarlyCoilPending: false,
     isDeletePending: false,
     isRenamePending: false,
   }

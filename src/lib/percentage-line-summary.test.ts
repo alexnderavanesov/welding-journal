@@ -47,9 +47,9 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.requiredControls).toBe(3)
   })
 
-  it('does not add required RK/UZK controls after a rejected primary joint by another control method', () => {
+  it('does not add required RK/UZK controls after a rejected primary joint by VIK', () => {
     const rows = [
-      makeRow(1, { joint: 'S1', hasRfa: 'дополнительный', rfaResult: 'вырез', hasRk: 'да' }),
+      makeRow(1, { joint: 'S1', hasVik: 'дополнительный', vikResult: 'вырез', hasRk: 'да' }),
       makeRow(2, { joint: 'S2' }),
       makeRow(3, { joint: 'S3' }),
       makeRow(4, { joint: 'S4' }),

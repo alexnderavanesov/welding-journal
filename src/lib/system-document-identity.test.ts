@@ -71,10 +71,10 @@ describe('system document identity matching', () => {
     const matches = matchSystemDocumentIdentityIds({
       documents: [
         { id: 10, type: 'system:lnkConclusionOther', title: 'Общее имя', periodFrom: '2026-08-25', identityScope: 'ТВМТ' },
-        { id: 11, type: 'system:lnkConclusionOther', title: 'Общее имя', periodFrom: '2026-08-25', identityScope: 'РФА' },
+        { id: 11, type: 'system:lnkConclusionOther', title: 'Общее имя', periodFrom: '2026-08-25', identityScope: 'ДРУГОЙ МЕТОД' },
       ],
       targets: [
-        { type: 'system:lnkConclusionOther', title: 'Общее имя', date: '2026-08-25', rowIds: [1], identityScope: 'РФА' },
+        { type: 'system:lnkConclusionOther', title: 'Общее имя', date: '2026-08-25', rowIds: [1], identityScope: 'ДРУГОЙ МЕТОД' },
         { type: 'system:lnkConclusionOther', title: 'Общее имя', date: '2026-08-25', rowIds: [1], identityScope: 'ТВМТ' },
       ],
       assignedRowsByDocument: new Map([

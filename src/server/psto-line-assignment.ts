@@ -47,7 +47,9 @@ import {
 } from '@/lib/lnk-control-stage'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
+import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
 import {
   deletePstoRepeatCyclesInTransaction,
   getPrimaryPstoCyclePersistenceValues,
@@ -219,6 +221,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
       const storedRows = await tx
         .select()
         .from(weldJoints)
@@ -255,7 +258,9 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
         if (data.action === 'reactivate' && !rows.every((row) => isPstoCancelledValue(row.pstoRequired))) {
           throw new Error('Возобновление доступно только для полностью отмененной линии ПСТО.')
         }
-        const activationPositions = validateActivationDecisions(rows, data.activationDecisions)
+        const activationPositions = processSettings.preHeatTreatmentLnkEnabled
+          ? validateActivationDecisions(rows, data.activationDecisions)
+          : []
         const activationTransfer = activationPositions.length > 0
           ? buildPrimaryToPreHeatTreatmentTransfer({ rows, positions: activationPositions })
           : { rows, controls: [] }
@@ -308,6 +313,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
             savedActivationControls,
           )
         }
+        await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
         await markDispatcherTaskIndexDirty(tx)
         return updatedRows
       }
@@ -338,6 +344,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
             duplicateControls: row.duplicateControls ?? [],
           } as WeldRow)
         }
+        await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
         await markDispatcherTaskIndexDirty(tx)
         return updatedRows
       }
@@ -444,6 +451,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
           unstartedRepeatCycles.map((cycle) => cycle.id),
         )
       }
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
       await markDispatcherTaskIndexDirty(tx)
       return updatedRows
     })

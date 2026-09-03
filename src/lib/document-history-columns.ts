@@ -36,6 +36,16 @@ export const GENERATED_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnD
   { key: 'updatedAt', label: 'Обновлен', gridTrack: '140px', minWidth: 140, dateGrouped: true },
 ]
 
+export const LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefinition[] = [
+  { key: 'title', label: 'Заключение', gridTrack: 'minmax(280px, 1.5fr)', minWidth: 280, required: true },
+  { key: 'stage', label: 'Этап', gridTrack: '100px', minWidth: 100 },
+  { key: 'project', label: 'Проект', gridTrack: 'minmax(140px, 0.72fr)', minWidth: 140 },
+  { key: 'subtitle', label: 'Шифр', gridTrack: 'minmax(130px, 0.66fr)', minWidth: 130 },
+  { key: 'line', label: 'Линия', gridTrack: 'minmax(150px, 0.72fr)', minWidth: 150 },
+  { key: 'period', label: 'Дата заключения', gridTrack: '150px', minWidth: 150, dateGrouped: true },
+  { key: 'updatedAt', label: 'Обновлен', gridTrack: '140px', minWidth: 140, dateGrouped: true },
+]
+
 export const SYSTEM_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefinition[] = [
   { key: 'title', label: 'Документ', gridTrack: 'minmax(280px, 1.5fr)', minWidth: 280, required: true },
   { key: 'method', label: 'Вид НК', gridTrack: '84px', minWidth: 84 },

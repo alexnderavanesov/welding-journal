@@ -84,10 +84,10 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
     throw new Error('Эта настройка изменяется только через специальный защищенный раздел.')
   }
 
-  const savedRevision = await requireDb().transaction(async (tx) => {
+  const savedResult = await requireDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedKey}))`)
     const [current] = await tx
-      .select({ updatedAt: appSettings.updatedAt })
+      .select({ value: appSettings.value, updatedAt: appSettings.updatedAt })
       .from(appSettings)
       .where(eq(appSettings.key, normalizedKey))
       .limit(1)
@@ -98,16 +98,25 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
         throw new Error('Настройка уже изменена другим пользователем. Свежие данные загружены; повторите изменение.')
       }
     }
+    let preparedValue = value
+    if (normalizedKey === PROJECT_SETTING_KEYS.controlProcesses) {
+      const { prepareControlProcessSettingsChangeInTransaction } = await import('@/server/control-process-settings')
+      preparedValue = prepareAppSettingValue(await prepareControlProcessSettingsChangeInTransaction({
+        tx,
+        currentValue: current ? parseStoredSetting(current.value) : undefined,
+        nextValue: value,
+      }))
+    }
     const [saved] = await tx
       .insert(appSettings)
       .values({
         key: normalizedKey,
-        value: serializeSettingValue(value),
+        value: serializeSettingValue(preparedValue),
       })
       .onConflictDoUpdate({
         target: appSettings.key,
         set: {
-          value: serializeSettingValue(value),
+          value: serializeSettingValue(preparedValue),
           updatedAt: sql`now()`,
         },
       })
@@ -119,21 +128,28 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
     }
     if (normalizedKey === PROJECT_SETTING_KEYS.dispatcherBackground) {
       const { applyDispatcherBackgroundSetting } = await import('@/server/dispatcher-background-task-index')
-      await applyDispatcherBackgroundSetting(normalizeDispatcherBackgroundSettings(value).enabled, tx)
+      await applyDispatcherBackgroundSetting(normalizeDispatcherBackgroundSettings(preparedValue).enabled, tx)
     }
     if (normalizedKey === PROJECT_SETTING_KEYS.dispatcher) {
       const { normalizeDispatcherSettings } = await import('@/lib/dispatcher-settings')
       const { pruneEnabledDispatcherBackgroundTasks } = await import('@/server/dispatcher-background-task-index')
-      await pruneEnabledDispatcherBackgroundTasks(normalizeDispatcherSettings(value), tx)
+      await pruneEnabledDispatcherBackgroundTasks(normalizeDispatcherSettings(preparedValue), tx)
     }
-    return saved?.updatedAt.toISOString() ?? null
+    return {
+      value: preparedValue,
+      updatedAt: saved?.updatedAt.toISOString() ?? null,
+    }
   })
 
   return {
     key: normalizedKey,
-    value,
-    updatedAt: savedRevision,
+    value: savedResult.value,
+    updatedAt: savedResult.updatedAt,
   }
+}
+
+function prepareAppSettingValue(value: unknown): AppSettingValue {
+  return value as AppSettingValue
 }
 
 export const listAppSettingsSnapshot = createServerFn({ method: 'GET' }).handler(async () => {

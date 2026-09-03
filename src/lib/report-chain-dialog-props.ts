@@ -5,6 +5,8 @@ type ChainDialogProps = NonNullable<ReportChainDialogProps['dialogProps']>
 type CreateReportChainDialogPropsOptions = {
   chainRecord: ChainDialogProps['record'] | null
   chainRows: ChainDialogProps['rows']
+  transitions: ChainDialogProps['transitions']
+  earlyCoilCandidates: ChainDialogProps['earlyCoilCandidates']
   dispatcherTasks: ChainDialogProps['dispatcherTasks']
   errorMessage: ChainDialogProps['errorMessage']
   isLoading: ChainDialogProps['isLoading']
@@ -14,12 +16,17 @@ type CreateReportChainDialogPropsOptions = {
   onOpenDocument: ChainDialogProps['onOpenDocument']
   onOpenReport: ChainDialogProps['onOpenReport']
   onRunNextAction: ChainDialogProps['onRunNextAction']
+  canCreateEarlyCoil: ChainDialogProps['canCreateEarlyCoil']
+  isEarlyCoilPending: ChainDialogProps['isEarlyCoilPending']
+  onCreateEarlyCoil: ChainDialogProps['onCreateEarlyCoil']
   onRetry: ChainDialogProps['onRetry']
 }
 
 export function createReportChainDialogProps({
   chainRecord,
   chainRows,
+  transitions,
+  earlyCoilCandidates,
   dispatcherTasks,
   errorMessage,
   isLoading,
@@ -29,6 +36,9 @@ export function createReportChainDialogProps({
   onOpenDocument,
   onOpenReport,
   onRunNextAction,
+  canCreateEarlyCoil,
+  isEarlyCoilPending,
+  onCreateEarlyCoil,
   onRetry,
 }: CreateReportChainDialogPropsOptions): ReportChainDialogProps {
   return {
@@ -36,6 +46,8 @@ export function createReportChainDialogProps({
       ? {
           record: chainRecord,
           rows: chainRows,
+          transitions,
+          earlyCoilCandidates,
           dispatcherTasks,
           errorMessage,
           isLoading,
@@ -45,6 +57,9 @@ export function createReportChainDialogProps({
           onOpenDocument,
           onOpenReport,
           onRunNextAction,
+          canCreateEarlyCoil,
+          isEarlyCoilPending,
+          onCreateEarlyCoil,
           onRetry,
         }
       : null,

@@ -207,6 +207,18 @@ describe('document template storage', () => {
     expect(extractTemplateFields('{{Неизвестное поле}} {{Способ сварки}} {{Стык/"н/п"}}')).toEqual(['Способ сварки', 'Стык'])
   })
 
+  it('requires constructor bindings for layered-control templates instead of legacy markers', async () => {
+    const template = createXlsxTemplate([['Заключение ВИК слоёв']])
+    template.id = 'layeredVikLayers'
+    template.markerCount = 0
+
+    await expect(
+      createWeldingJournalBlobFromTemplate(template, [{ joint: 'F2' }] as WeldInput[]),
+    ).rejects.toThrow(
+      'Шаблон «ВИК слоёв» загружен, но конструктор заполнения не настроен. Откройте «Настройки» → «Документы» → «Послойный НК» → «ВИК слоёв» и назначьте поля ячейкам.',
+    )
+  })
+
   it('keeps ordinary empty template fields empty', async () => {
     const template = createXlsxTemplate([['{{ID материала 1}}', '{{Стык}}']])
     const blob = await createWeldingJournalBlobFromTemplate(template, [

@@ -37,8 +37,10 @@ import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
@@ -90,6 +92,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await assertPreHeatTreatmentLnkEnabled(tx)
       const rowIds = [...new Set(data.groups.flatMap((group) =>
         group.positions.map((position) => position.rowId),
       ))]
@@ -143,6 +146,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         rkExposureTable,
       }))
       const savedControls = await saveControlWrites(tx, data.action, writes)
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
       await syncPreHeatTreatmentDocuments({
         tx,
         action: data.action,
@@ -168,6 +172,7 @@ export const updatePreHeatTreatmentRkExposure = createServerFn({ method: 'POST' 
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await assertPreHeatTreatmentLnkEnabled(tx)
       const [storedRow] = await tx
         .select()
         .from(weldJoints)
@@ -230,6 +235,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await assertPreHeatTreatmentLnkEnabled(tx)
       const [storedControl] = await tx
         .select()
         .from(preHeatTreatmentControls)
@@ -264,6 +270,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
         await tx
           .delete(preHeatTreatmentControls)
           .where(eq(preHeatTreatmentControls.id, currentControl.id))
+        await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, [row.id])
         const [updatedRow] = await touchLnkRows(tx, [row], [], [currentControl.id])
         await markDispatcherTaskIndexDirty(tx)
         return (await attachDuplicateControlRelations(
@@ -307,6 +314,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
         .set({ ...toControlInsert(nextControl), updatedAt: new Date() })
         .where(eq(preHeatTreatmentControls.id, currentControl.id))
         .returning()
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, [row.id])
 
       const position = {
         rowId: row.id,
@@ -513,6 +521,13 @@ async function loadRkExposureTable(tx: SystemDocumentSequenceTransaction) {
     return normalizeOtherSettings(JSON.parse(storedSettings.value)).rkExposureTable
   } catch {
     return DEFAULT_OTHER_SETTINGS.rkExposureTable
+  }
+}
+
+async function assertPreHeatTreatmentLnkEnabled(tx: SystemDocumentSequenceTransaction) {
+  const settings = await loadControlProcessSettingsFromTransaction(tx)
+  if (!settings.preHeatTreatmentLnkEnabled) {
+    throw new Error('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.')
   }
 }
 

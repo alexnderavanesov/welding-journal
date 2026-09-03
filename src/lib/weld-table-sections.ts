@@ -1,42 +1,12 @@
 import { canCollapseSection } from '@/lib/weld-table-section-state'
 import { VISIBLE_FIELD_SECTIONS, WELD_FIELDS, type WeldFieldKey } from '@/lib/weld-fields'
+import {
+  PSTO_SECTION_FIELD_KEYS,
+  PSTO_SECTION_FIELD_ORDER,
+} from '@/lib/psto-report-config'
 
 type WeldTableField = (typeof WELD_FIELDS)[number]
 
-const PSTO_SECTION_FIELD_KEYS = new Set<WeldFieldKey>([
-  'pstoRequired',
-  'pstoRequest',
-  'pstoRequestDate',
-  'pstoDate',
-  'pstoResult',
-  'pstoCycleSummary',
-  'heatTreatmentDiagram',
-  'tvmtRequest',
-  'tvmtRequestDate',
-  'tvmtResult',
-  'tvmtConclusionDate',
-  'tvmtConclusion',
-  'pstoNote',
-  'pstoCancellationDate',
-  'pstoControlBasis',
-])
-const PSTO_SECTION_FIELD_ORDER: readonly WeldFieldKey[] = [
-  'pstoRequired',
-  'pstoCycleSummary',
-  'pstoRequest',
-  'pstoRequestDate',
-  'heatTreatmentDiagram',
-  'pstoDate',
-  'pstoResult',
-  'tvmtRequest',
-  'tvmtRequestDate',
-  'tvmtConclusion',
-  'tvmtConclusionDate',
-  'tvmtResult',
-  'pstoNote',
-  'pstoCancellationDate',
-  'pstoControlBasis',
-]
 const ALWAYS_VISIBLE_FIELD_KEYS = new Set<WeldFieldKey>([
   'projectTitle',
   'subtitleCode',

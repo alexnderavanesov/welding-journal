@@ -76,6 +76,29 @@ describe('repeated joint chain consistency tasks', () => {
     expect(coilTask?.details).toContain('S2W3')
     expect(coilTask?.details).toContain('преждевременной')
   })
+
+  it('accepts only the exact branch covered by an early-coil decision', () => {
+    const rejectedDeps = {
+      getPrimaryRejectedLnkResult: (currentRow: WeldInput) => (currentRow.pvkResult === 'вырез' ? { result: 'вырез' } : null),
+      getOfficialRejectedJointChainRows: (rows: WeldRow[], source: WeldInput) => rows.filter((candidate) => (
+        candidate.id === source.id && candidate.pvkResult === 'вырез'
+      )),
+    }
+    const rows = [
+      row({ id: 1, joint: 'S3', pvkResult: 'вырез' }),
+      row({ id: 2, joint: 'S3Y1', pvkResult: 'вырез' }),
+      row({ id: 3, joint: 'S3Y2' }),
+      row({ id: 4, joint: 'S3Y1Y1' }),
+      row({ id: 5, joint: 'S3Y1Y2' }),
+    ]
+
+    const outerOnly = buildJointChainConsistencyCheckTasks(rows, rejectedDeps, undefined, new Set([1]))
+    const bothBranches = buildJointChainConsistencyCheckTasks(rows, rejectedDeps, undefined, new Set([1, 2]))
+
+    expect(outerOnly.filter((task) => task.reason === 'проверить целостность катушки')).toHaveLength(1)
+    expect(outerOnly.find((task) => task.reason === 'проверить целостность катушки')?.details).toContain('S3Y1Y1/S3Y1Y2')
+    expect(bothBranches.filter((task) => task.reason === 'проверить целостность катушки')).toHaveLength(0)
+  })
 })
 
 function row(values: Partial<WeldRow>): WeldRow {

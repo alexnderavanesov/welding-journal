@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, WeldDraft, WeldRow } from '@/lib/dispatcher-types'
@@ -21,7 +21,7 @@ import {
 } from '@/lib/dispatcher-task-row-codes'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
-import { prepareReportRows, useReportRows } from '@/lib/use-report-rows'
+import { useReportRows } from '@/lib/use-report-rows'
 import { useWeldPageQuery } from '@/lib/use-weld-page-query'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
@@ -95,6 +95,7 @@ import {
   getPendingLnkResultMethods,
 } from '@/lib/lnk-result-navigation'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import { buildHeatTreatmentReportRows, buildLnkReportRows, sumAcceptedWdi } from '@/lib/report-row-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
@@ -155,7 +156,10 @@ import {
   getOfficialStampCompatibilitySaveBlockReason,
 } from '@/lib/welder-stamp-compatibility'
 import { useOtherSettings } from '@/lib/other-settings'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { getLnkVisibleFieldSections } from '@/lib/lnk-visible-field-layout'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 import {
   buildLineFilters,
@@ -208,6 +212,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const queryClient = useQueryClient()
   const saveCheckSettings = useSaveCheckSettings()
   const otherSettings = useOtherSettings()
+  const controlProcessSettings = useControlProcessSettings()
+  const systemIndexSettings = useSystemIndexSettings()
+  const lnkSectionLayout = useMemo(
+    () => getLnkVisibleFieldSections(controlProcessSettings),
+    [controlProcessSettings.layeredControlEnabled, controlProcessSettings.preHeatTreatmentLnkEnabled],
+  )
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const lnkController = useHomeLnkController()
   const pstoController = useHomePstoController()
@@ -234,7 +244,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setDuplicateControlDraft,
     openPreHeatTreatmentResultRegistry,
     closePreHeatTreatmentResultRegistry: closePreHeatTreatmentResultRegistryState,
-    openPreHeatTreatmentLnkWorkflow,
+    openPreHeatTreatmentLnkWorkflow: openPreHeatTreatmentLnkWorkflowState,
   } = lnkController
   const {
     isPstoResultRegistryAll,
@@ -303,6 +313,26 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   } = useReportPageUiState()
   const dismissMessage = useCallback(() => setMessage(null), [setMessage])
   const dismissLnkNotice = useCallback(() => setLnkNotice(null), [setLnkNotice])
+  const openPreHeatTreatmentLnkWorkflow = useCallback(
+    (...args: Parameters<typeof openPreHeatTreatmentLnkWorkflowState>) => {
+      if (!controlProcessSettings.preHeatTreatmentLnkEnabled) {
+        setMessage('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.')
+        return
+      }
+      openPreHeatTreatmentLnkWorkflowState(...args)
+    },
+    [controlProcessSettings.preHeatTreatmentLnkEnabled, openPreHeatTreatmentLnkWorkflowState, setMessage],
+  )
+  useEffect(() => {
+    if (!controlProcessSettings.preHeatTreatmentLnkEnabled) {
+      setPreHeatTreatmentLnkWorkflowMode(null)
+      setPreHeatTreatmentLnkInitialMethodCode(undefined)
+    }
+  }, [
+    controlProcessSettings.preHeatTreatmentLnkEnabled,
+    setPreHeatTreatmentLnkInitialMethodCode,
+    setPreHeatTreatmentLnkWorkflowMode,
+  ])
   const {
     highlightedRowIds,
     highlightedCellKeys,
@@ -662,7 +692,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     finalStatusContextQuery.data !== undefined && !finalStatusContextQuery.isFetching
   const {
     duplicateControls,
-    refetchDuplicateControls,
     saveDuplicateControlMutation,
     deleteDuplicateControlMutation,
   } = useDuplicateControls({
@@ -800,6 +829,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const {
     chainRows,
+    chainTransitions,
+    chainEarlyCoilCandidates,
     chainRowsError,
     isChainRowsLoading,
     retryChainRows,
@@ -954,6 +985,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const {
     deleteManyMutation,
     deleteMutation,
+    earlyCoilMutation,
     importMutation,
     obsoleteRepeatedJointMutation,
     renameRepeatedJointMutation,
@@ -973,27 +1005,20 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const {
     createRepeatedJoint,
+    createEarlyCoil,
+    createEarlyCoilFromChain,
     deleteObsoleteRepeatedJoint,
     renameObsoleteRepeatedJoint,
   } = useRepeatedJointTaskActions({
     activeReport,
-    rows,
-    loadRows: async () => {
-      const [weldResult, controlsResult] = await Promise.all([
-        weldsQuery.refetch(),
-        refetchDuplicateControls(),
-      ])
-      return prepareReportRows(
-        weldResult.data,
-        controlsResult.data ?? [],
-        undefined,
-        undefined,
-        otherSettings,
-      )
+    systemIndexSettings,
+    loadTasks: async () => {
+      const result = await dispatcherTaskSnapshot.refetch()
+      if (result.error) throw result.error
+      return result.data?.repeatedJointTasks ?? []
     },
-    welderStamps,
-    welderStampSuspensions,
     repeatedJointMutation,
+    earlyCoilMutation,
     obsoleteRepeatedJointMutation,
     renameRepeatedJointMutation,
     setMessage,
@@ -1197,14 +1222,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
   const openPrimaryLnkRegistryFromPreHeatTreatment = () => {
     const rowIds = preHeatTreatmentResultManagerRowIds
-    setIsPreHeatTreatmentResultManagerOpen(false)
-    setPreHeatTreatmentResultManagerRowIds(null)
-    setPreHeatTreatmentResultManagerInitialRelationId(null)
-    if (preHeatTreatmentResultManagerMode === 'request') {
-      openLnkRequestRegistry()
-      return
-    }
-    openLnkResultManager({ rowIds, allowEmpty: true })
+    startTransition(() => {
+      setIsPreHeatTreatmentResultManagerOpen(false)
+      setPreHeatTreatmentResultManagerRowIds(null)
+      setPreHeatTreatmentResultManagerInitialRelationId(null)
+      if (preHeatTreatmentResultManagerMode === 'request') {
+        openLnkRequestRegistry()
+        return
+      }
+      openLnkResultManager({ rowIds, allowEmpty: true })
+    })
   }
   const switchLnkWorkflowStage = (
     mode: 'request' | 'result',
@@ -1214,6 +1241,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   ) => {
     const selectedRows = lnkRows.filter((row) => selectedRowIds.includes(row.id))
     if (stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
+      if (!controlProcessSettings.preHeatTreatmentLnkEnabled) {
+        setMessage('НК до ТО выключен в настройках проекта.')
+        return
+      }
       if (selectedRowIds.length > 0) setSelectedLnkIds(new Set(selectedRowIds))
       openPreHeatTreatmentLnkWorkflow(mode, undefined, requestSubmitMode)
       return
@@ -2037,6 +2068,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onShowTask: showRepeatedJointTask,
     onOpenTaskOfficiality: openPercentageLineTaskOfficiality,
     onCreateTask: createRepeatedJoint,
+    onCreateEarlyCoil: (task) => runProtectedEdit('досрочная врезка катушки', () => createEarlyCoil(task)),
     onDeleteTask: (task) => runProtectedDelete('удаление повторного стыка', () => deleteObsoleteRepeatedJoint(task)),
     onRenameTask: (task) => runProtectedEdit('переименование стыка', () => renameObsoleteRepeatedJoint(task)),
     onAcceptPercentageLineTask: acceptPercentageLineTask,
@@ -2045,6 +2077,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       runProtectedEdit('добавление отстранения сварщика', () => openWelderSuspensionFromPercentageLineTask(task)),
     onSkipPercentageLineWelderSuspension: skipWelderSuspensionFromPercentageLineTask,
     isCreatePending: repeatedJointMutation.isPending,
+    isEarlyCoilPending: earlyCoilMutation.isPending,
     isDeletePending: obsoleteRepeatedJointMutation.isPending,
     isRenamePending: renameRepeatedJointMutation.isPending,
   })
@@ -2459,10 +2492,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       )
       const commonResultStage = getCommonLnkResultStage(contextRows)
       const canCreateExactPreRequest = Boolean(
-        exactPreHeatTreatmentField && canCreatePreHeatTreatmentRequest(row, exactPreHeatTreatmentField.methodCode),
+        controlProcessSettings.preHeatTreatmentLnkEnabled &&
+        exactPreHeatTreatmentField &&
+        canCreatePreHeatTreatmentRequest(row, exactPreHeatTreatmentField.methodCode),
       )
       const canAddExactPreResult = Boolean(
-        exactPreHeatTreatmentField && canAddPreHeatTreatmentResult(row, exactPreHeatTreatmentField.methodCode),
+        controlProcessSettings.preHeatTreatmentLnkEnabled &&
+        exactPreHeatTreatmentField &&
+        canAddPreHeatTreatmentResult(row, exactPreHeatTreatmentField.methodCode),
       )
       const contextRequestStage = exactPreHeatTreatmentField
         ? PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
@@ -2821,6 +2858,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onSelectedRowIdsChange: setActiveSelectedRowIds,
     dispatcherTasks: adviceRepeatedJointTasks,
     onRunNextAction: runJointNextAction,
+    lnkSectionLayout,
   })
 
   const welderStampsRegistryProps = createWelderStampsRegistryProps({
@@ -2889,8 +2927,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }, [lnkRows, preHeatTreatmentResultManagerRowIds])
   const hasPreHeatTreatmentResultRegistryRows = useMemo(
     () => lnkRows.some((row) => getPreHeatTreatmentControls(row).some((control) =>
-      Boolean(String(control.requestName ?? '').trim()),
+      isFinalLnkResultValue(control.result),
     )),
+    [lnkRows],
+  )
+  const hasPrimaryLnkResultRegistryRows = useMemo(
+    () => lnkRows.some((row) => getLnkResultNavigationEntries(row).length > 0),
     [lnkRows],
   )
   useEffect(() => {
@@ -2998,13 +3040,17 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     editSelectedLnkResultsDisabled:
       selectedLnkIds.size === 0 ||
       !tableActionRows.some((row) => selectedLnkIds.has(row.id) && getLnkResultNavigationEntries(row).length > 0),
-    onOpenLnkResultRegistry: openAllLnkResultRegistry,
+    onOpenLnkResultRegistry: () => {
+      if (!hasPrimaryLnkResultRegistryRows && hasPreHeatTreatmentResultRegistryRows) {
+        openPreHeatTreatmentResultRegistry({ registryMode: 'result' })
+        return
+      }
+      openAllLnkResultRegistry()
+    },
     lnkResultRegistryDisabled:
-      isLnkRowsContextReady && !lnkRows.some((row) => getLnkResultNavigationEntries(row).length > 0),
-    onOpenPreHeatTreatmentLnkResultRegistry: (registryMode = 'result') =>
-      openPreHeatTreatmentResultRegistry({ registryMode }),
-    preHeatTreatmentLnkResultRegistryDisabled:
-      isLnkRowsContextReady && !hasPreHeatTreatmentResultRegistryRows,
+      isLnkRowsContextReady &&
+      !hasPrimaryLnkResultRegistryRows &&
+      !hasPreHeatTreatmentResultRegistryRows,
     onOpenLnkOfficiality: openLnkOfficialityModal,
     lnkOfficialityPending: lnkOfficialityMutation.isPending,
     onOpenDuplicateControl: openDuplicateControlModal,
@@ -3265,6 +3311,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const reportChainDialogProps = createReportChainDialogProps({
     chainRecord,
     chainRows,
+    transitions: chainTransitions,
+    earlyCoilCandidates: chainEarlyCoilCandidates,
     dispatcherTasks: adviceRepeatedJointTasks,
     errorMessage: chainRowsError,
     isLoading: isChainRowsLoading,
@@ -3274,6 +3322,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenDocument: openReportDocument,
     onOpenReport: (row, report) => openRowsInReport([row], report),
     onRunNextAction: runJointNextAction,
+    canCreateEarlyCoil: activeReport === 'weldingJournal',
+    isEarlyCoilPending: earlyCoilMutation.isPending,
+    onCreateEarlyCoil: (row, candidate) =>
+      runProtectedEdit('досрочная врезка катушки', () => createEarlyCoilFromChain(row, candidate)),
     onRetry: retryChainRows,
   })
   const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
@@ -3653,12 +3705,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onSetSelectedRows: (rowIds) => setSelectedLnkIds(new Set(rowIds)),
       onOpenJournalRows: openModalRowsInWeldingJournal,
       onOpenPstoHistory: openPstoHistoryFromDialog,
-      onStageChange: (stage, rowIds, requestSubmitMode) => switchLnkWorkflowStage(
-        'request',
-        stage,
-        rowIds,
-        requestSubmitMode,
-      ),
+      onStageChange: controlProcessSettings.preHeatTreatmentLnkEnabled
+        ? (stage, rowIds, requestSubmitMode) => switchLnkWorkflowStage(
+            'request',
+            stage,
+            rowIds,
+            requestSubmitMode,
+          )
+        : undefined,
       onToggleAllRows: toggleAllLnkRequestRows,
       onToggleRow: toggleLnkRequestRow,
       onSubmit: (methodKeys) => runProtectedEdit('создание заявки ЛНК', () => handleCreateLnkRequest(methodKeys)),
@@ -3681,10 +3735,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         return Boolean(templateId && availableSystemDocumentTypes.has(templateId))
       },
       onClose: closeLnkRequestManager,
-      onStageChange: () => openPreHeatTreatmentResultRegistry({
-        rowIds: managedLnkRequestRows.map((row) => row.id),
-        registryMode: 'request',
-      }),
+      onStageChange: controlProcessSettings.preHeatTreatmentLnkEnabled
+        ? () => openPreHeatTreatmentResultRegistry({
+            rowIds: managedLnkRequestRows.map((row) => row.id),
+            registryMode: 'request',
+          })
+        : undefined,
       onChangeRequest: changeManagedLnkRequest,
       onCreateRequest: openCreateLnkRequestFromRegistry,
       onAddPositions: (request) => {
@@ -3725,10 +3781,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isResultReplacementPending: lnkResultReplacementMutation.isPending,
       isConclusionCorrectionPending: lnkConclusionCorrectionMutation.isPending,
       onClose: closeLnkResultManager,
-      onStageChange: () => openPreHeatTreatmentResultRegistry({
-        rowIds: managedLnkResultRows.map((row) => row.id),
-        registryMode: 'result',
-      }),
+      onStageChange: controlProcessSettings.preHeatTreatmentLnkEnabled
+        ? () => openPreHeatTreatmentResultRegistry({
+            rowIds: managedLnkResultRows.map((row) => row.id),
+            registryMode: 'result',
+          })
+        : undefined,
       onOpenAddResult: openAddLnkResultFromRegistry,
       onOpenRows: (row) => {
         closeLnkResultManager()
@@ -3833,7 +3891,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onSetRowsResult: setLnkResultForRows,
       onOpenJournalRows: openModalRowsInWeldingJournal,
       onOpenPstoHistory: openPstoHistoryFromDialog,
-      onStageChange: (stage, rowIds) => switchLnkWorkflowStage('result', stage, rowIds),
+      onStageChange: controlProcessSettings.preHeatTreatmentLnkEnabled
+        ? (stage, rowIds) => switchLnkWorkflowStage('result', stage, rowIds)
+        : undefined,
       onToggleAllRows: toggleAllLnkResultRows,
       onSearchChange: (search) => setLnkResultDraft((current) => ({ ...current, search })),
       onRequestChange: changeLnkResultRequest,
@@ -3842,7 +3902,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onSave: () => runProtectedEdit('сохранение результата ЛНК', handleAddLnkResult),
     },
     selectableResultRows: selectableVisibleLnkResultRows,
-    preHeatTreatmentWorkflow: preHeatTreatmentLnkWorkflowMode
+    preHeatTreatmentWorkflow: preHeatTreatmentLnkWorkflowMode && controlProcessSettings.preHeatTreatmentLnkEnabled
       ? {
           mode: preHeatTreatmentLnkWorkflowMode,
           rows: lnkRows,
@@ -3873,6 +3933,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       : null,
     preHeatTreatmentResultManager: isPreHeatTreatmentResultManagerOpen
       ? {
+          readOnly: !controlProcessSettings.preHeatTreatmentLnkEnabled,
           rows: preHeatTreatmentResultRegistryRows,
           registryMode: preHeatTreatmentResultManagerMode,
           initialRelationId: preHeatTreatmentResultManagerInitialRelationId,

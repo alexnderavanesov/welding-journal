@@ -118,7 +118,8 @@ describe('weld server pagination helpers', () => {
   })
 
   it('keeps stale fields from another workflow out of a scoped save', () => {
-    const staleClientRow = row({
+    const staleClientRow = {
+      ...row({
       responsible: 'Петров',
       hasRk: 'да',
       rkRequest: 'Заявка РК-2',
@@ -126,7 +127,9 @@ describe('weld server pagination helpers', () => {
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-1',
       tvmtResult: null,
-    })
+      }),
+      preHeatTreatmentLnkExempt: false,
+    }
 
     const lnkRecord = restrictWeldMutationRecord(staleClientRow, 'lnk')
     expect(lnkRecord).toMatchObject({
@@ -138,6 +141,7 @@ describe('weld server pagination helpers', () => {
     expect(lnkRecord).not.toHaveProperty('hasRk')
     expect(lnkRecord).not.toHaveProperty('pstoRequest')
     expect(lnkRecord).not.toHaveProperty('tvmtResult')
+    expect(lnkRecord).not.toHaveProperty('preHeatTreatmentLnkExempt')
 
     const pstoRecord = restrictWeldMutationRecord(staleClientRow, 'psto')
     expect(pstoRecord).toMatchObject({
@@ -147,6 +151,7 @@ describe('weld server pagination helpers', () => {
     })
     expect(pstoRecord).not.toHaveProperty('pstoRequired')
     expect(pstoRecord).not.toHaveProperty('rkRequest')
+    expect(pstoRecord).not.toHaveProperty('preHeatTreatmentLnkExempt')
 
     const weldingRecord = restrictWeldMutationRecord(staleClientRow, 'welding')
     expect(weldingRecord).toMatchObject({
@@ -156,6 +161,7 @@ describe('weld server pagination helpers', () => {
     })
     expect(weldingRecord).not.toHaveProperty('rkRequest')
     expect(weldingRecord).not.toHaveProperty('pstoRequest')
+    expect(weldingRecord).not.toHaveProperty('preHeatTreatmentLnkExempt')
 
     expect(prepareWeldInputForPersistence({
       ...staleClientRow,

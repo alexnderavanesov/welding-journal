@@ -369,7 +369,7 @@ export function StatisticsPage({
   const generalStateRowIds = statisticsQuery.data?.generalStateRowIds ?? EMPTY_STATISTICS_STATE_ROW_IDS
   const lnkMethods = useMemo(() => {
     const methodsByCode = new Map(summary.methods.map((method) => [method.code, method]))
-    return ['ВИК', 'РК', 'УЗК', 'ПВК', 'РФА', 'СТЛС', 'МКК']
+    return ['ВИК', 'РК', 'УЗК', 'ПВК']
       .map((code) => methodsByCode.get(code))
       .filter((method): method is StatisticsMethodSummary => Boolean(method))
   }, [summary.methods])

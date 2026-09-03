@@ -50,9 +50,6 @@ const STATISTICS_STATUS_ROW_SELECT = {
   hasPvk: weldJoints.hasPvk,
   hasUzk: weldJoints.hasUzk,
   hasTvmt: weldJoints.hasTvmt,
-  hasRfa: weldJoints.hasRfa,
-  hasStls: weldJoints.hasStls,
-  hasMkk: weldJoints.hasMkk,
   pstoRequired: weldJoints.pstoRequired,
   pstoRequest: weldJoints.pstoRequest,
   pstoRequestDate: weldJoints.pstoRequestDate,
@@ -68,19 +65,11 @@ const STATISTICS_STATUS_ROW_SELECT = {
   uzkRequestDate: weldJoints.uzkRequestDate,
   tvmtRequest: weldJoints.tvmtRequest,
   tvmtRequestDate: weldJoints.tvmtRequestDate,
-  rfaRequest: weldJoints.rfaRequest,
-  rfaRequestDate: weldJoints.rfaRequestDate,
-  stlsRequest: weldJoints.stlsRequest,
-  stlsRequestDate: weldJoints.stlsRequestDate,
-  mkkRequest: weldJoints.mkkRequest,
   vikResult: weldJoints.vikResult,
   rkResult: weldJoints.rkResult,
   pvkResult: weldJoints.pvkResult,
   uzkResult: weldJoints.uzkResult,
   tvmtResult: weldJoints.tvmtResult,
-  rfaResult: weldJoints.rfaResult,
-  stlsResult: weldJoints.stlsResult,
-  mkkResult: weldJoints.mkkResult,
 }
 
 const STATISTICS_GENERAL_ROW_SELECT = {
@@ -96,7 +85,6 @@ const STATISTICS_GENERAL_ROW_SELECT = {
   stamp2KFact: weldJoints.stamp2KFact,
   stamp2ZFact: weldJoints.stamp2ZFact,
   stamp2OFact: weldJoints.stamp2OFact,
-  mkkRequestDate: weldJoints.mkkRequestDate,
   vikConclusion: weldJoints.vikConclusion,
   vikConclusionDate: weldJoints.vikConclusionDate,
   rkConclusion: weldJoints.rkConclusion,
@@ -107,12 +95,6 @@ const STATISTICS_GENERAL_ROW_SELECT = {
   uzkConclusionDate: weldJoints.uzkConclusionDate,
   tvmtConclusion: weldJoints.tvmtConclusion,
   tvmtConclusionDate: weldJoints.tvmtConclusionDate,
-  rfaConclusion: weldJoints.rfaConclusion,
-  rfaConclusionDate: weldJoints.rfaConclusionDate,
-  stlsConclusion: weldJoints.stlsConclusion,
-  stlsConclusionDate: weldJoints.stlsConclusionDate,
-  mkkConclusion: weldJoints.mkkConclusion,
-  mkkConclusionDate: weldJoints.mkkConclusionDate,
   pstoCreatedAt: weldJoints.pstoCreatedAt,
   lnkCreatedAt: weldJoints.lnkCreatedAt,
 }
@@ -153,7 +135,7 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
     await assertSecurityScope('entry')
     return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v25', data),
+      buildDerivedCalculationCacheKey('statistics:v26', data),
       () => computeStatisticsServerResult(data),
     )
   })

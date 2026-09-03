@@ -11,6 +11,7 @@ import {
 } from '@/lib/joint-chain'
 import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
+import { getCoilTransitionModeForSource } from '@/lib/joint-chain-transitions'
 import {
   buildControlHistoryCheckTasks,
   buildForbiddenRepairByDiameterCheckTasks,
@@ -61,6 +62,7 @@ type ObsoleteRepeatedJointInfo = {
 type MatchingJointRowsIndex = Map<string, WeldRow[]>
 
 type BuildRepeatedJointTasksOptions = {
+  earlyCoilDecisionSourceRowIds?: ReadonlySet<number>
   dataListSettings?: DataListSettings
   saveCheckSettings?: SaveCheckSettings
   systemIndexSettings?: SystemIndexSettings
@@ -91,6 +93,7 @@ export function buildRepeatedJointTasks(
     includeWelderStampCompatibilityChecks = true,
   } = options
   const systemIndexSettings = options.systemIndexSettings ?? DEFAULT_SYSTEM_INDEX_SETTINGS
+  const earlyCoilDecisionSourceRowIds = options.earlyCoilDecisionSourceRowIds ?? new Set<number>()
   const getConfiguredOfficialRejectedJointChainRows = (
     sourceRows: WeldRow[],
     sourceRow: WeldInput,
@@ -104,6 +107,7 @@ export function buildRepeatedJointTasks(
       rows,
       { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows: getConfiguredOfficialRejectedJointChainRows },
       systemIndexSettings,
+      earlyCoilDecisionSourceRowIds,
     ),
     ...buildLnkChronologyCheckTasks(rows, systemIndexSettings),
     ...buildPstoChronologyCheckTasks(rows, systemIndexSettings),
@@ -164,7 +168,12 @@ export function buildRepeatedJointTasks(
     const parsed = parseRepeatedJointName(sourceJoint, systemIndexSettings)
     const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint, systemIndexSettings)
     const lastOfficialRejectedRow = officialRejectedChainRows.at(-1)
-    if (!isUnofficialJoint(row) && officialRejectedChainRows.length > 3 && lastOfficialRejectedRow?.id === row.id) {
+    const coilTransitionMode = getCoilTransitionModeForSource({
+      earlyCoilDecisionSourceRowIds,
+      officialRejectedRows: officialRejectedChainRows,
+      sourceRow: row,
+    })
+    if (coilTransitionMode) {
       const targetJoints = getCoilJointNames(parsed.base, systemIndexSettings)
         .filter((targetJoint) => !hasRepeatedJointTarget(rows, row, targetJoint))
       if (targetJoints.length === 0) continue
@@ -177,6 +186,7 @@ export function buildRepeatedJointTasks(
         targetJoints,
         result: rejection.result,
         methodCode: rejection.method.code,
+        transitionMode: coilTransitionMode,
       })
       continue
     }

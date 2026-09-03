@@ -11,9 +11,6 @@ export const yesEmptyFieldKeys = new Set([
   'hasRk',
   'hasUzk',
   'hasPvk',
-  'hasRfa',
-  'hasStls',
-  'hasMkk',
 ])
 
 export const percentageControlFieldKeys = new Set<WeldFieldKey>(['hasRk', 'hasUzk'])
@@ -47,9 +44,6 @@ export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
   'uzkBoq',
   'pvkBoq',
   'tvmtBoq',
-  'rfaBoq',
-  'stlsBoq',
-  'mkkBoq',
   'ks3',
   'testKs3',
   'piKs3',
@@ -59,9 +53,6 @@ export const secondaryWeldFormFieldKeys = new Set<WeldFieldKey>([
   'uzkKs3',
   'pvkKs3',
   'tvmtKs3',
-  'rfaKs3',
-  'stlsKs3',
-  'mkkKs3',
 ])
 
 export const formHiddenFieldKeys = new Set<WeldFieldKey>([
@@ -88,9 +79,6 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'pvkResult',
   'pstoResult',
   'tvmtResult',
-  'rfaResult',
-  'stlsResult',
-  'mkkResult',
   'pstoNote',
   'finalStatus',
   'pstoCreatedAt',
@@ -107,12 +95,6 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'pvkConclusion',
   'tvmtConclusionDate',
   'tvmtConclusion',
-  'rfaConclusionDate',
-  'rfaConclusion',
-  'stlsConclusionDate',
-  'stlsConclusion',
-  'mkkConclusionDate',
-  'mkkConclusion',
   'lnkDefectDescription',
   'rkExposureScheme',
   'rkExposureConfirmedDiameter',

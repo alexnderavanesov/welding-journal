@@ -26,6 +26,8 @@ export function useJointChainDialogState({
 
   return {
     chainRows: chainQuery.data?.rows ?? [],
+    chainTransitions: chainQuery.data?.transitions ?? [],
+    chainEarlyCoilCandidates: chainQuery.data?.earlyCoilCandidates ?? [],
     chainRowsError: chainQuery.error instanceof Error ? chainQuery.error.message : null,
     isChainRowsLoading: chainQuery.isLoading,
     retryChainRows: () => chainQuery.refetch(),

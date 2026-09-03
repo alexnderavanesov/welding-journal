@@ -25,8 +25,8 @@ describe('LNK stage transfer', () => {
       vikResult: 'годен',
       vikConclusionDate: '2026-08-02',
       vikConclusion: 'ЗНК-ВИК-1',
-      rfaRequest: 'РФА-1',
-      rfaResult: 'годен',
+      rkRequest: 'РК-1',
+      rkResult: 'годен',
       duplicateControls,
     })
 
@@ -46,8 +46,8 @@ describe('LNK stage transfer', () => {
       vikRequest: null,
       vikResult: null,
       vikConclusion: null,
-      rfaRequest: 'РФА-1',
-      rfaResult: 'годен',
+      rkRequest: 'РК-1',
+      rkResult: 'годен',
     })
     expect(transfer.rows[0]?.duplicateControls).toBe(duplicateControls)
   })

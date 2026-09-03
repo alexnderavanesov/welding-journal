@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { DispatcherTask, RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
+import type {
+  DispatcherTask,
+  RepeatedJointCheckTask,
+  RepeatedJointCoilTask,
+  WeldRow,
+} from '@/lib/dispatcher-types'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
   DISPATCHER_TASKS_WITH_FILTER,
@@ -60,6 +65,19 @@ function coreDataTask(rowValue: WeldRow): DispatcherTask {
     ...stampTask(rowValue),
     key: `core-${rowValue.id}`,
     reason: 'проверить основные данные стыка',
+  }
+}
+
+function earlyCoilTask(rowValue: WeldRow): RepeatedJointCoilTask {
+  return {
+    kind: 'coil',
+    key: `early-coil-${rowValue.id}`,
+    row: rowValue,
+    sourceJoint: String(rowValue.joint),
+    targetJoints: [`${String(rowValue.joint)}Y1`, `${String(rowValue.joint)}Y2`],
+    result: 'ремонт',
+    methodCode: 'ВИК',
+    transitionMode: 'early-decision',
   }
 }
 
@@ -163,6 +181,21 @@ describe('dispatcher task row codes', () => {
     expect(buildDispatcherTaskIndexRows([coreDataTask(rows[0])], rows)).toEqual([
       { rowId: 1, taskKey: 'core-1', code: 'ДЗ-31' },
     ])
+  })
+
+  it('persists an accepted early-coil recovery task as ДЗ-09 in the virtual field', () => {
+    const rows = [row(1)]
+    const persistedRows = buildDispatcherTaskIndexRows([earlyCoilTask(rows[0])], rows)
+
+    expect(persistedRows).toEqual([
+      { rowId: 1, taskKey: 'early-coil-1', code: 'ДЗ-09' },
+    ])
+    const { activeByRowId, allByRowId } = buildMergedDispatcherTaskCodes(
+      persistedRows.map(({ rowId, code }) => ({ rowId, code })),
+      [],
+    )
+    expect(activeByRowId.get(1)).toBe('ДЗ-09')
+    expect(allByRowId.get(1)).toBe('ДЗ-09')
   })
 
   it('keeps active codes separate while exposing the union in the virtual field', () => {

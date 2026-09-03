@@ -7,6 +7,7 @@ import { useRepeatedJointActionMutations } from '@/lib/use-repeated-joint-action
 
 const mocks = vi.hoisted(() => ({
   buildRepeatedJointRows: vi.fn(),
+  createEarlyCoilDecision: vi.fn(),
   createWeldRowsOrThrow: vi.fn(),
   getWeldJointById: vi.fn(),
   invalidateWeldJoints: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/server/weld-mutations-api', () => ({
+  createEarlyCoilDecision: mocks.createEarlyCoilDecision,
   deleteWeldJoint: vi.fn(),
 }))
 
@@ -85,6 +87,28 @@ describe('useRepeatedJointActionMutations', () => {
 
     expect(mocks.getWeldJointById).not.toHaveBeenCalled()
     expect(mocks.updateSystemWeldRowOrThrow).toHaveBeenCalledWith(task)
+  })
+
+  it('uses the atomic server workflow for an early coil and refreshes the chain', async () => {
+    mocks.createEarlyCoilDecision.mockResolvedValue({
+      createdRows: [{ id: 31, joint: 'S1Y1' }, { id: 32, joint: 'S1Y2' }],
+      deletedRowIds: [30],
+      decisionKey: 'early-coil:17',
+      sourceJoint: 'S1R1',
+      targetJoints: ['S1Y1', 'S1Y2'],
+    })
+
+    const { result } = renderMutationHook()
+    await act(async () => {
+      await result.current.earlyCoilMutation.mutateAsync({ sourceRowId: 17 })
+    })
+
+    expect(mocks.createEarlyCoilDecision).toHaveBeenCalledWith({ data: { sourceRowId: 17 } })
+    expect(mocks.buildRepeatedJointRows).not.toHaveBeenCalled()
+    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ deleteIds: [30] }),
+    )
   })
 })
 

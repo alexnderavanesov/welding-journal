@@ -7,6 +7,7 @@ import type { LnkResultDialogProps } from '@/components/lnk-result-dialog'
 import type { LnkResultManagerDialogProps } from '@/components/lnk-result-manager-dialog'
 import type { PreHeatTreatmentLnkWorkflowDialogProps } from '@/components/pre-heat-treatment-lnk-workflow-dialog'
 import type { PreHeatTreatmentResultManagerDialogProps } from '@/components/pre-heat-treatment-result-manager-dialog'
+import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 
 const DuplicateControlDialog = lazy(() => import('@/components/duplicate-control-dialog').then((module) => ({ default: module.DuplicateControlDialog })))
 const LnkOfficialityDialog = lazy(() => import('@/components/lnk-officiality-dialog').then((module) => ({ default: module.LnkOfficialityDialog })))
@@ -38,20 +39,30 @@ export function ReportLnkDialogs({
   preHeatTreatmentWorkflowDialogProps,
   preHeatTreatmentResultManagerDialogProps,
 }: ReportLnkDialogsProps) {
+  const managerDialog = requestManagerDialogProps ? (
+    <LnkRequestManagerDialog {...requestManagerDialogProps} embedded />
+  ) : resultManagerDialogProps ? (
+    <LnkResultManagerDialog {...resultManagerDialogProps} embedded />
+  ) : preHeatTreatmentResultManagerDialogProps ? (
+    <PreHeatTreatmentResultManagerDialog {...preHeatTreatmentResultManagerDialogProps} embedded />
+  ) : null
+
   return (
-    <Suspense fallback={null}>
-      {requestDialogProps ? <LnkRequestDialog {...requestDialogProps} /> : null}
-      {requestManagerDialogProps ? <LnkRequestManagerDialog {...requestManagerDialogProps} /> : null}
-      {resultManagerDialogProps ? <LnkResultManagerDialog {...resultManagerDialogProps} /> : null}
-      {officialityDialogProps ? <LnkOfficialityDialog {...officialityDialogProps} /> : null}
-      {duplicateControlDialogProps ? <DuplicateControlDialog {...duplicateControlDialogProps} /> : null}
-      {resultDialogProps ? <LnkResultDialog {...resultDialogProps} /> : null}
-      {preHeatTreatmentWorkflowDialogProps ? (
-        <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentWorkflowDialogProps} />
+    <>
+      <Suspense fallback={null}>
+        {requestDialogProps ? <LnkRequestDialog {...requestDialogProps} /> : null}
+        {officialityDialogProps ? <LnkOfficialityDialog {...officialityDialogProps} /> : null}
+        {duplicateControlDialogProps ? <DuplicateControlDialog {...duplicateControlDialogProps} /> : null}
+        {resultDialogProps ? <LnkResultDialog {...resultDialogProps} /> : null}
+        {preHeatTreatmentWorkflowDialogProps ? (
+          <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentWorkflowDialogProps} />
+        ) : null}
+      </Suspense>
+      {managerDialog ? (
+        <WorkflowDialogShell variant="manager">
+          <Suspense fallback={null}>{managerDialog}</Suspense>
+        </WorkflowDialogShell>
       ) : null}
-      {preHeatTreatmentResultManagerDialogProps ? (
-        <PreHeatTreatmentResultManagerDialog {...preHeatTreatmentResultManagerDialogProps} />
-      ) : null}
-    </Suspense>
+    </>
   )
 }

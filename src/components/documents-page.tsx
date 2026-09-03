@@ -71,9 +71,14 @@ import {
   WELDING_JOURNAL_DOCUMENT_SPLIT_MODES,
 } from '@/lib/welding-journal-document-splitting'
 import {
-  isGeneratedDocumentType,
+  isManualGeneratedDocumentType,
   type GeneratedDocumentType,
+  type ManualGeneratedDocumentType,
 } from '@/lib/generated-document-types'
+import {
+  LAYERED_CONTROL_DOCUMENT_VIEWS,
+  type LayeredControlDocumentViewId,
+} from '@/lib/layered-control-documents'
 import {
   buildWeldingJournalGenerationPlan,
   ensureWeldingJournalXlsxFileName,
@@ -117,6 +122,7 @@ import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/w
 import {
   DOCUMENT_HISTORY_COLUMNS_STORAGE_KEY,
   GENERATED_DOCUMENT_HISTORY_COLUMNS,
+  LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS,
   SYSTEM_DOCUMENT_HISTORY_COLUMNS,
   getDocumentHistoryGridLayout,
   getVisibleDocumentHistoryColumns,
@@ -139,6 +145,7 @@ import {
 } from '@/lib/use-document-history-session-state'
 import { ALL_PAGE_SIZE } from '@/lib/use-pagination'
 import { isPreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
 import {
   getScopedSystemDocumentHistoryFilterOptions,
   getScopedSystemDocumentMethodValues,
@@ -177,7 +184,7 @@ const DOCUMENT_PARAMETERS_COLLAPSED_STORAGE_KEY = 'welding-journal:documents:par
 const DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE = 100
 
 const DOCUMENT_TYPE_OPTIONS: Array<{
-  type: GeneratedDocumentType
+  type: ManualGeneratedDocumentType
   label: string
   title: string
   description: string
@@ -221,7 +228,7 @@ const SYSTEM_DOCUMENT_TYPE_OPTIONS: Array<{
   { id: 'tvmtConclusion', documentType: 'lnkConclusion', label: 'Заключение ТВМТ', methodScope: 'tvmt' },
 ]
 
-export type DocumentsPageType = GeneratedDocumentType | SystemDocumentViewId
+export type DocumentsPageType = ManualGeneratedDocumentType | SystemDocumentViewId | LayeredControlDocumentViewId
 type DocumentHistoryFilterKey = DocumentHistoryColumnKey
 
 type DocumentHistoryColumnOption = {
@@ -395,16 +402,22 @@ export function DocumentsPage({
   const activeSystemDocumentOption = SYSTEM_DOCUMENT_TYPE_OPTIONS.find(
     (option) => option.id === activeDocumentType,
   )
+  const activeLayeredDocumentView = LAYERED_CONTROL_DOCUMENT_VIEWS.find(
+    (view) => view.id === activeDocumentType,
+  )
   const isSystemDocument = Boolean(activeSystemDocumentOption)
+  const isLayeredDocumentView = Boolean(activeLayeredDocumentView)
+  const isManualGeneratedDocumentView = !isSystemDocument && !isLayeredDocumentView
   const availableHistoryColumns = useMemo(
     () => {
+      if (activeLayeredDocumentView) return [...LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS]
       if (!activeSystemDocumentOption) return [...GENERATED_DOCUMENT_HISTORY_COLUMNS]
       const showMethodColumn = activeSystemDocumentOption.documentType.startsWith('lnk')
         && activeSystemDocumentOption.methodScope !== 'tvmt'
       return SYSTEM_DOCUMENT_HISTORY_COLUMNS.filter(
         (column) => showMethodColumn || column.key !== 'method',
       )
-    }, [activeSystemDocumentOption],
+    }, [activeLayeredDocumentView, activeSystemDocumentOption],
   )
   const visibleHistoryColumns = useMemo(
     () => getVisibleDocumentHistoryColumns({
@@ -419,19 +432,22 @@ export function DocumentsPage({
     [visibleHistoryColumns],
   )
   const availableSystemDocumentTemplates = useSystemDocumentTemplateAvailability()
-  const activeGeneratedDocumentType: GeneratedDocumentType = isGeneratedDocumentType(activeDocumentType)
+  const activeGeneratedDocumentType: ManualGeneratedDocumentType = isManualGeneratedDocumentType(activeDocumentType)
     ? activeDocumentType
     : 'weldingJournal'
+  const activeGeneratedHistoryTypes: GeneratedDocumentType[] = activeLayeredDocumentView
+    ? [...activeLayeredDocumentView.types]
+    : [activeGeneratedDocumentType]
   const generatedDocumentsTotalQuery = useQuery({
     queryKey: [
       ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-      activeGeneratedDocumentType,
+      activeGeneratedHistoryTypes,
       'paged',
       DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
       {},
     ],
     queryFn: () => loadGeneratedDocumentHistory({
-      type: activeGeneratedDocumentType,
+      types: activeGeneratedHistoryTypes,
       limit: DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
       columnFilters: {},
     }),
@@ -466,7 +482,7 @@ export function DocumentsPage({
   const generationDataQuery = useQuery({
     queryKey: [...WELD_JOINTS_QUERY_KEY, 'document-generation', generationDataRequest],
     queryFn: () => getDocumentGenerationData({ data: generationDataRequest }),
-    enabled: !isSystemDocument,
+    enabled: isManualGeneratedDocumentView,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
   })
@@ -524,7 +540,7 @@ export function DocumentsPage({
 
   useEffect(() => {
     let isMounted = true
-    if (isSystemDocument) {
+    if (!isManualGeneratedDocumentView) {
       setActiveDocumentTemplate(null)
       return () => {
         isMounted = false
@@ -546,7 +562,7 @@ export function DocumentsPage({
       isMounted = false
       window.removeEventListener(DOCUMENT_TEMPLATE_STORAGE_EVENT, syncTemplate)
     }
-  }, [activeGeneratedDocumentType, isSystemDocument])
+  }, [activeGeneratedDocumentType, isManualGeneratedDocumentView])
 
   useEffect(() => {
     const handleGeneratedDocumentChange = () => {
@@ -564,7 +580,7 @@ export function DocumentsPage({
 
   const journalRows = useMemo(
     () => {
-      if (isSystemDocument) return []
+      if (!isManualGeneratedDocumentView) return []
       return prepareWeldingJournalDocumentRows({
         sourceRows: rows,
         contextRows: rows,
@@ -579,7 +595,7 @@ export function DocumentsPage({
       })
     },
     [
-      isSystemDocument,
+      isManualGeneratedDocumentView,
       periodFrom,
       periodTo,
       rows,
@@ -628,7 +644,7 @@ export function DocumentsPage({
 
   useEffect(() => {
     let isActive = true
-    if (isSystemDocument || !activeDocumentTemplate || previewRows.length === 0) {
+    if (!isManualGeneratedDocumentView || !activeDocumentTemplate || previewRows.length === 0) {
       setTemplateDocumentPreview(null)
       setTemplatePreviewError(null)
       setIsTemplatePreviewLoading(false)
@@ -655,7 +671,7 @@ export function DocumentsPage({
     return () => {
       isActive = false
     }
-  }, [activeDocumentTemplate, isSystemDocument, previewRows, welderStamps])
+  }, [activeDocumentTemplate, isManualGeneratedDocumentView, previewRows, welderStamps])
 
   const handleGenerateDocuments = async () => {
     if (journalDocumentGroups.length === 0 || isGenerating) return
@@ -779,8 +795,28 @@ export function DocumentsPage({
                 {option.label}
               </button>
             ))}
+            {LAYERED_CONTROL_DOCUMENT_VIEWS.map((view) => (
+              <button
+                key={view.id}
+                type="button"
+                onClick={() => {
+                  setActiveNavigationRequest(null)
+                  setActiveDocumentType(view.id)
+                  setActiveWorkspaceTab('history')
+                  setTemplateDocumentPreview(null)
+                  setTemplatePreviewError(null)
+                }}
+                className={`rounded-md border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                  activeDocumentType === view.id
+                    ? 'border-[#17627d] bg-[#17627d] text-white'
+                    : 'border-[#cbdde6] bg-white text-[#31566a] hover:border-[#79aebe] hover:bg-[#edf7fa]'
+                }`}
+              >
+                {view.label}
+              </button>
+            ))}
           </div>
-          {isSystemDocument || activeWorkspaceTab === 'history' ? (
+          {isSystemDocument || isLayeredDocumentView || activeWorkspaceTab === 'history' ? (
             <DocumentHistoryColumnChooser
               columns={availableHistoryColumns}
               visibleColumnKeys={visibleHistoryColumnKeys}
@@ -790,7 +826,7 @@ export function DocumentsPage({
         </div>
       </div>
 
-      {!isSystemDocument ? (
+      {isManualGeneratedDocumentView ? (
         <div
           className="flex min-w-0 items-center gap-1 rounded-md border border-[#c8dbe4] bg-[#eaf3f6] p-1"
           role="tablist"
@@ -832,7 +868,7 @@ export function DocumentsPage({
         </div>
       ) : null}
 
-      {!isSystemDocument && activeWorkspaceTab === 'generation' ? (
+      {isManualGeneratedDocumentView && activeWorkspaceTab === 'generation' ? (
       <section className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white">
         <div className="grid min-w-0 border-b border-slate-200 bg-slate-50/50 xl:grid-cols-[minmax(0,1fr)_minmax(460px,0.72fr)]">
           <div className="min-w-0 px-4 py-3.5">
@@ -1128,7 +1164,7 @@ export function DocumentsPage({
         onDismiss={() => setGenerationNotice(null)}
       />
 
-      {isSystemDocument || activeWorkspaceTab === 'history' ? (
+      {isSystemDocument || isLayeredDocumentView || activeWorkspaceTab === 'history' ? (
         isSystemDocument ? (
           <SystemDocumentsPanel
             key={activeDocumentType}
@@ -1167,6 +1203,42 @@ export function DocumentsPage({
                   queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
                 }),
               ])
+            }}
+          />
+        ) : activeLayeredDocumentView ? (
+          <GeneratedDocumentsPanel
+            key={activeLayeredDocumentView.id}
+            documentType={activeLayeredDocumentView.types[0]}
+            documentTypes={activeLayeredDocumentView.types}
+            initialTotal={generatedDocumentsTotal}
+            documentLabel={activeLayeredDocumentView.label}
+            documentFieldLabel={activeLayeredDocumentView.label}
+            visibleColumns={visibleHistoryColumns}
+            allowDelete={false}
+            singleDate
+            onOpenRows={async (documentRecord) => {
+              const documentRows = await loadGeneratedDocumentRows(documentRecord.id)
+              if (documentRows.length === 0) throw new Error('В документе больше нет стыков.')
+              onOpenDocumentRows?.(
+                documentRows.map((row) => row.id),
+                documentRecord.title,
+                'lnk',
+              )
+            }}
+            onOpenJointHistory={async (documentRecord) => {
+              const documentRows = await loadGeneratedDocumentRows(documentRecord.id)
+              if (documentRows.length !== 1) throw new Error('Картина стыка доступна для документа с одним стыком.')
+              onOpenJointHistory?.(documentRows[0].id)
+            }}
+            createDocumentBlob={async (documentRecord) => {
+              const documentRows = await loadGeneratedDocumentRows(documentRecord.id)
+              if (documentRows.length === 0) throw new Error('В документе больше нет стыков.')
+              return createCurrentGeneratedDocumentBlob({
+                type: documentRecord.type,
+                rows: documentRows,
+                welderStamps,
+                documentRecord,
+              })
             }}
           />
         ) : (
@@ -1215,27 +1287,35 @@ export function DocumentsPage({
 
 function GeneratedDocumentsPanel({
   documentType,
+  documentTypes,
   initialTotal,
   documentLabel,
   documentFieldLabel,
   visibleColumns,
   onRepeat,
+  allowDelete = true,
+  singleDate = false,
   createDocumentBlob,
   onOpenRows,
   onOpenJointHistory,
 }: {
   documentType: GeneratedDocumentType
+  documentTypes?: readonly GeneratedDocumentType[]
   initialTotal: number
   documentLabel: string
   documentFieldLabel: string
   visibleColumns: readonly DocumentHistoryColumnDefinition[]
-  onRepeat: (documentRecord: StoredGeneratedDocument) => void
+  onRepeat?: (documentRecord: StoredGeneratedDocument) => void
+  allowDelete?: boolean
+  singleDate?: boolean
   createDocumentBlob: (documentRecord: StoredGeneratedDocument) => Promise<Blob>
   onOpenRows: (documentRecord: StoredGeneratedDocument) => Promise<void>
   onOpenJointHistory: (documentRecord: StoredGeneratedDocument) => Promise<void>
 }) {
   const { requireDeletePassword } = useSecurityGuard()
-  const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(`generated:${documentType}`)
+  const historyTypes = documentTypes ?? [documentType]
+  const historyStorageKey = `generated:${historyTypes.join('+')}`
+  const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(historyStorageKey)
   const {
     pageSize,
     setPageSize,
@@ -1244,7 +1324,7 @@ function GeneratedDocumentsPanel({
     selectedDocumentIds,
     setSelectedDocumentIds,
   } = useDocumentHistorySessionState(
-    `generated:${documentType}`,
+    historyStorageKey,
     parseStoredDocumentNumberId,
     DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
   )
@@ -1262,9 +1342,9 @@ function GeneratedDocumentsPanel({
     [visibleColumns],
   )
   const historyQuery = useQuery({
-    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, documentType, 'paged', visibleLimit, columnFilters],
+    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, historyTypes, 'paged', visibleLimit, columnFilters],
     queryFn: () => loadGeneratedDocumentHistory({
-      type: documentType,
+      types: [...historyTypes],
       limit: visibleLimit,
       columnFilters,
     }),
@@ -1511,12 +1591,14 @@ function GeneratedDocumentsPanel({
                         icon: GitBranch,
                         onSelect: () => openDocumentJointHistory(documentRecord),
                       }] : []),
-                      { id: 'repeat-document', label: 'Повторить с параметрами', icon: SlidersHorizontal, onSelect: () => onRepeat(documentRecord) },
+                      ...(onRepeat ? [{ id: 'repeat-document', label: 'Повторить с параметрами', icon: SlidersHorizontal, onSelect: () => onRepeat(documentRecord) }] : []),
                       { type: 'separator', id: 'open-separator' },
                       { id: 'open-document', label: 'Открыть Excel', icon: ExternalLink, onSelect: () => openDocumentRecord(documentRecord) },
                       { id: 'download-document', label: 'Скачать Excel', icon: Download, onSelect: () => downloadDocumentRecord(documentRecord) },
-                      { type: 'separator', id: 'delete-separator' },
-                      { id: 'delete-document', label: 'Удалить', icon: Trash2, danger: true, onSelect: () => deleteDocumentRecord(documentRecord) },
+                      ...(allowDelete ? [
+                        { type: 'separator' as const, id: 'delete-separator' },
+                        { id: 'delete-document', label: 'Удалить', icon: Trash2, danger: true, onSelect: () => deleteDocumentRecord(documentRecord) },
+                      ] : []),
                     ],
                   })
                 }}
@@ -1543,12 +1625,19 @@ function GeneratedDocumentsPanel({
                     </span>
                   </span>
                 </button>
+                {visibleColumnKeySet.has('stage') ? (
+                  <span className="inline-flex w-fit items-center rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">
+                    {documentRecord.stage ?? '-'}
+                  </span>
+                ) : null}
                 {visibleColumnKeySet.has('project') ? <DocumentDimensionCell values={documentRecord.projects} /> : null}
                 {visibleColumnKeySet.has('subtitle') ? <DocumentDimensionCell values={documentRecord.subtitleCodes} /> : null}
                 {visibleColumnKeySet.has('line') ? <DocumentDimensionCell values={documentRecord.lines} /> : null}
                 {visibleColumnKeySet.has('period') ? (
                   <span className="text-xs text-slate-600">
-                    {formatDate(documentRecord.periodFrom)} - {formatDate(documentRecord.periodTo)}
+                    {singleDate
+                      ? formatDate(documentRecord.periodFrom ?? documentRecord.periodTo)
+                      : `${formatDate(documentRecord.periodFrom)} - ${formatDate(documentRecord.periodTo)}`}
                   </span>
                 ) : null}
                 {visibleColumnKeySet.has('rowCount') ? (
@@ -1575,18 +1664,22 @@ function GeneratedDocumentsPanel({
                       onClick={() => void openDocumentJointHistory(documentRecord)}
                     ><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton>
                   ) : null}
-                  <DocumentHistoryActionButton title="Повторить с параметрами" tone="violet" onClick={() => onRepeat(documentRecord)}>
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </DocumentHistoryActionButton>
+                  {onRepeat ? (
+                    <DocumentHistoryActionButton title="Повторить с параметрами" tone="violet" onClick={() => onRepeat(documentRecord)}>
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </DocumentHistoryActionButton>
+                  ) : null}
                   <DocumentHistoryActionButton title="Открыть Excel" tone="sky" onClick={() => void openDocumentRecord(documentRecord)}>
                     <ExternalLink className="h-4 w-4" />
                   </DocumentHistoryActionButton>
                   <DocumentHistoryActionButton title="Скачать Excel" onClick={() => void downloadDocumentRecord(documentRecord)}>
                     <Download className="h-4 w-4" />
                   </DocumentHistoryActionButton>
-                  <DocumentHistoryActionButton title="Удалить документ" tone="rose" onClick={() => void deleteDocumentRecord(documentRecord)}>
-                    <Trash2 className="h-4 w-4" />
-                  </DocumentHistoryActionButton>
+                  {allowDelete ? (
+                    <DocumentHistoryActionButton title="Удалить документ" tone="rose" onClick={() => void deleteDocumentRecord(documentRecord)}>
+                      <Trash2 className="h-4 w-4" />
+                    </DocumentHistoryActionButton>
+                  ) : null}
                 </div>
               </div>
               )
@@ -1639,6 +1732,7 @@ function SystemDocumentsPanel({
   onRenamed: () => Promise<void>
 }) {
   const { requireEditPassword } = useSecurityGuard()
+  const controlProcessSettings = useControlProcessSettings()
   const confirmAction = useConfirmAction()
   const historyStorageKey = `system:${documentType}:${methodScope}`
   const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(historyStorageKey)
@@ -2076,7 +2170,8 @@ function SystemDocumentsPanel({
             {visibleDocuments.map((documentRecord, documentIndex) => {
               const templateAvailable = hasTemplateForDocument(documentRecord)
               const isSelected = selectedDocumentIds.has(documentRecord.id)
-              const canTransferStage = canTransferSystemDocumentStage(documentRecord)
+              const canTransferStage = controlProcessSettings.preHeatTreatmentLnkEnabled &&
+                canTransferSystemDocumentStage(documentRecord)
               const canRenameDocument = !documentRecord.sourceKind
               const methodCodes = getSystemDocumentMethodCodes(documentRecord)
               return (

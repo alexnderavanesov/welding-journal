@@ -32,6 +32,11 @@ markDispatcherTaskIndexDirty
 } from '@/server/dispatcher-task-index-dirty'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { assertSecurityScope } from '@/server/security-functions'
+import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
+import {
+assertEarlyCoilDecisionRowsCanBeDeleted,
+assertEarlyCoilDecisionSourcesRemainValid,
+} from '@/server/early-coil-decision-guard'
 import {
 removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction,
 syncSystemDocumentsForWeldChangesInTransaction
@@ -189,6 +194,7 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
     assertWeldImportRowLimit(data.records.length + data.deleteIds.length)
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await loadControlProcessSettingsFromTransaction(tx)
       if (data.records.some((record) => !record.id)) {
         throw new Error('Не передан id одной из заменяемых записей')
       }
@@ -218,6 +224,7 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
           otherSettings: validationContext.otherSettings,
         })
         records = mergeWeldRecordsWithPrevious(records, previousRows)
+        await assertEarlyCoilDecisionSourcesRemainValid(tx, records, previousRows)
         prepareServerWeldRecords({
           records,
           previousRows,
@@ -232,6 +239,9 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
         })
       }
 
+      if (data.deleteIds.length > 0) {
+        await assertEarlyCoilDecisionRowsCanBeDeleted(tx, deletedRows)
+      }
       const updated = await updateWeldJointsInBatches(tx, records, previousRows)
 
       if (data.deleteIds.length > 0) {

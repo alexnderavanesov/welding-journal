@@ -3,6 +3,7 @@ import type { PstoWeldLineMoveDisposition } from '@/lib/psto-line-assignment'
 import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
+import type { JointCoilTransition } from '@/lib/joint-chain-transitions'
 
 export type WeldFilters = {
   search?: string
@@ -68,7 +69,20 @@ export type WeldColumnFilterOption = { value: string; count: number; label: stri
 export type WeldColumnFilterOptionsRequest = WeldPageRequest & { fieldKey: WeldFieldKey }
 export type WeldFormSuggestionsRequest = { fieldKey: WeldFieldKey; draft: WeldInput }
 export type WeldLineAutofillRequest = { draft: WeldInput }
-export type WeldJointChainResult = { record: WeldRow | null; rows: WeldRow[] }
+export type WeldJointChainEarlyCoilCandidate = {
+  replacementJoint: string | null
+  replacementRowId: number | null
+  sourceJoint: string
+  sourceRowId: number
+  targetJoints: [string, string]
+}
+
+export type WeldJointChainResult = {
+  record: WeldRow | null
+  rows: WeldRow[]
+  transitions: JointCoilTransition[]
+  earlyCoilCandidates: WeldJointChainEarlyCoilCandidate[]
+}
 export type WeldRowsByIdsRequest = { ids: number[] }
 export type WeldSnapshotPageRequest = { afterId?: number; batchSize?: number }
 

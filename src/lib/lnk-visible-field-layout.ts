@@ -27,7 +27,11 @@ const BASE_SECTIONS: Array<{ section: string; fieldKeys: WeldFieldKey[] }> = [
   },
   {
     section: 'Назначения',
-    fieldKeys: ['hasVik', 'hasRk', 'hasUzk', 'hasPvk', 'hasRfa', 'hasStls', 'hasMkk', 'controlBasisSummary'],
+    fieldKeys: ['hasVik', 'hasRk', 'hasUzk', 'hasPvk', 'controlBasisSummary'],
+  },
+  {
+    section: 'Послойный контроль',
+    fieldKeys: ['layeredVikDocuments', 'layeredPvkDocuments'],
   },
   {
     section: 'НК до ТО',
@@ -62,11 +66,26 @@ const LNK_SECTION_LAYOUT: Array<{ section: string; fieldKeys: WeldFieldKey[] }> 
   },
 ]
 
-export const LNK_VISIBLE_FIELD_SECTIONS: WeldTableSection[] = LNK_SECTION_LAYOUT.map(({ section, fieldKeys }) => ({
-  section,
-  fields: fieldKeys.map((fieldKey) => {
-    const field = FIELD_BY_KEY.get(fieldKey)
-    if (!field) throw new Error(`Unknown LNK report field: ${fieldKey}`)
-    return field
-  }),
-}))
+export type LnkVisibleFieldSectionOptions = {
+  layeredControlEnabled: boolean
+  preHeatTreatmentLnkEnabled: boolean
+}
+
+export function getLnkVisibleFieldSections({
+  layeredControlEnabled = true,
+  preHeatTreatmentLnkEnabled = true,
+}: Partial<LnkVisibleFieldSectionOptions> = {}): WeldTableSection[] {
+  return LNK_SECTION_LAYOUT
+    .filter(({ section }) => layeredControlEnabled || section !== 'Послойный контроль')
+    .filter(({ section }) => preHeatTreatmentLnkEnabled || section !== 'НК до ТО')
+    .map(({ section, fieldKeys }) => ({
+      section,
+      fields: fieldKeys.map((fieldKey) => {
+        const field = FIELD_BY_KEY.get(fieldKey)
+        if (!field) throw new Error(`Unknown LNK report field: ${fieldKey}`)
+        return field
+      }),
+    }))
+}
+
+export const LNK_VISIBLE_FIELD_SECTIONS = getLnkVisibleFieldSections()

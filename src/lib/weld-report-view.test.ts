@@ -92,4 +92,42 @@ describe('weld report views', () => {
       }],
     })
   })
+
+  it('drops removed field keys from old views and keeps hidden service filters', () => {
+    window.localStorage.setItem('welding-report-view:v1:lnk', JSON.stringify({
+      activePreset: 'custom',
+      hiddenFieldKeys: ['hasMkk', 'line'],
+      customHiddenFieldKeys: ['mkkResult', 'joint'],
+      collapsedSections: ['МКК', 'Проект'],
+      savedViews: [{
+        id: 'removed-methods',
+        name: 'Старые методы',
+        snapshot: {
+          hiddenFieldKeys: ['hasRfa', 'line'],
+          collapsedSections: ['РФА'],
+          columnFilters: {
+            rfaResult: 'годен',
+            line: '330-D01',
+            __dispatcherTaskFilter: '{"mode":"with"}',
+          },
+          sort: { fieldKey: 'stlsConclusion', direction: 'asc' },
+        },
+      }],
+    }))
+
+    expect(readWeldReportViewStorage('lnk', new Set())).toMatchObject({
+      hiddenFieldKeys: ['line'],
+      customHiddenFieldKeys: ['joint'],
+      savedViews: [{
+        snapshot: {
+          hiddenFieldKeys: ['line'],
+          columnFilters: {
+            line: '330-D01',
+            __dispatcherTaskFilter: '{"mode":"with"}',
+          },
+          sort: null,
+        },
+      }],
+    })
+  })
 })

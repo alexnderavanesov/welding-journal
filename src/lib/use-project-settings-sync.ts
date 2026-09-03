@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listAppSettingsSnapshot, saveAppSetting, type AppSettingValue } from '@/server/app-settings'
+import { applyRemoteControlProcessSettings } from '@/lib/control-process-settings'
 import { applyRemoteDataListSettings } from '@/lib/data-list-settings'
 import { applyRemoteDispatcherBackgroundSettings } from '@/lib/dispatcher-background-settings'
 import {
@@ -36,6 +37,10 @@ type ProjectSettingSyncEntry = {
 }
 
 const PROJECT_SETTING_SYNC_ENTRIES: ProjectSettingSyncEntry[] = [
+  {
+    key: PROJECT_SETTING_KEYS.controlProcesses,
+    applyRemote: applyRemoteControlProcessSettings,
+  },
   {
     key: PROJECT_SETTING_KEYS.other,
     applyRemote: applyRemoteOtherSettings,

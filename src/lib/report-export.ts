@@ -6,9 +6,10 @@ import {
 import {
   ALWAYS_VISIBLE_FIELD_KEYS as alwaysVisibleFieldKeys,
   COLLAPSED_SECTIONS_STORAGE_PREFIX as collapsedSectionsStoragePrefix,
-  HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
-  LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
-  PSTO_SECTION_FIELD_KEYS as pstoSectionFieldKeys,
+    HEAT_TREATMENT_EDITABLE_FIELD_KEYS as heatTreatmentEditableFieldKeys,
+    LNK_EDITABLE_FIELD_KEYS as lnkEditableFieldKeys,
+    PSTO_SECTION_FIELD_ORDER as pstoSectionFieldOrder,
+    PSTO_SECTION_FIELD_KEYS as pstoSectionFieldKeys,
   WELDING_JOURNAL_BLOCKED_FIELD_KEYS as weldingJournalBlockedFieldKeys,
 } from '@/lib/report-config'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
@@ -53,7 +54,15 @@ export function getReportExportSections(
 
   if (!mergePstoSections) return sections
 
-  const pstoFields = sections.flatMap((group) => group.fields).filter((field) => pstoSectionFieldKeys.has(field.key))
+  const pstoFieldsByKey = new Map(
+    sections.flatMap((group) => group.fields)
+      .filter((field) => pstoSectionFieldKeys.has(field.key))
+      .map((field) => [field.key, field]),
+  )
+  const pstoFields = pstoSectionFieldOrder.flatMap((fieldKey) => {
+    const field = pstoFieldsByKey.get(fieldKey)
+    return field ? [field] : []
+  })
   const finalStatusFields = sections.flatMap((group) => group.fields).filter((field) => field.key === 'finalStatus')
   const sectionsWithoutPsto = sections
     .map((group) => ({

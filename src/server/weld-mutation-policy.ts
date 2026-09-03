@@ -26,6 +26,7 @@ export const SYSTEM_FIELD_KEYS = new Set([
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
+  'preHeatTreatmentLnkExempt',
   CONTROL_BASIS_SUMMARY_FIELD_KEY,
   'createdAt',
   'weldingUpdatedAt',

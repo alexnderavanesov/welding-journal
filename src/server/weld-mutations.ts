@@ -62,6 +62,11 @@ splitWeldImportInsertBatches
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
 import {
+getPreHeatTreatmentLnkExemptionForNewRow,
+getPreHeatTreatmentLnkExemptionsForNewRows,
+loadControlProcessSettingsFromTransaction,
+} from '@/server/control-process-settings'
+import {
 markDispatcherTaskIndexDirty,
 type DispatcherDirtyScope,
 } from '@/server/dispatcher-task-index-dirty'
@@ -102,6 +107,10 @@ updateWeldJointsInBatches,
 } from '@/server/weld-persistence'
 import { restrictWeldMutationRecord } from '@/server/weld-mutation-policy'
 import { splitNumberBatches } from '@/server/weld-request-utils'
+import {
+assertEarlyCoilDecisionRowsCanBeDeleted,
+assertEarlyCoilDecisionSourcesRemainValid,
+} from '@/server/early-coil-decision-guard'
 
 export { restrictWeldMutationRecord } from '@/server/weld-mutation-policy'
 
@@ -118,7 +127,11 @@ export const createWeldJoint = createServerFn({ method: 'POST' })
         previousRows: new Map(),
         context: validationContext,
       })
-      const [created] = await tx.insert(weldJoints).values(toDbInsert(data, true)).returning()
+      const preHeatTreatmentLnkExempt = await getPreHeatTreatmentLnkExemptionForNewRow(tx, data)
+      const [created] = await tx
+        .insert(weldJoints)
+        .values({ ...toDbInsert(data, true), preHeatTreatmentLnkExempt })
+        .returning()
       await syncSystemDocumentsForWeldChangesInTransaction(tx, [created], new Map())
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([data], new Map()) })
       return created
@@ -171,6 +184,11 @@ export const updateSystemWeldJoint = createServerFn({ method: 'POST' })
       }
 
       const record = { ...previous, joint: data.targetJoint }
+      await assertEarlyCoilDecisionSourcesRemainValid(
+        tx,
+        [record],
+        new Map([[previous.id, previous]]),
+      )
       validateServerWeldRecords({
         records: [record],
         previousRows: new Map([[previous.id, previous]]),
@@ -202,6 +220,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
   const db = requireDb()
 
   return db.transaction(async (tx) => {
+    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
     const mutationScope = data.mutationScope ?? 'welding'
     const scopedData = restrictWeldMutationRecord(data, mutationScope)
     const previousRows = await loadPreviousWeldRows(tx, [scopedData])
@@ -226,6 +245,9 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       targetLineState.cancelledCount === targetLineState.rowCount,
     )
     const identityChanged = getPstoLineIdentityKey(previous) !== getPstoLineIdentityKey(targetIdentity)
+    if (identityChanged && previous.preHeatTreatmentLnkExempt !== true) {
+      record.preHeatTreatmentLnkExempt = await getPreHeatTreatmentLnkExemptionForNewRow(tx, record)
+    }
     if (
       (data.pstoLineMoveDisposition === 'movePrimaryToBeforeHeatTreatment' ||
         data.pstoLineMoveDisposition === 'deletePrimary') &&
@@ -234,8 +256,10 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       throw new Error('Назначение ПСТО целевой линии изменилось. Вернитесь к форме и проверьте линию еще раз.')
     }
     const requiresPrimaryStageResolution = (
+      processSettings.preHeatTreatmentLnkEnabled &&
       identityChanged &&
       targetLineAssigned &&
+      record.preHeatTreatmentLnkExempt !== true &&
       requiresPrimaryStageResolutionForAssignedPstoLine(previous)
     )
     const requiresLifecycleCleanup = identityChanged && !targetLineAssigned && hasPstoLifecycleHistory(previousStored)
@@ -375,6 +399,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       }
     }
 
+    await assertEarlyCoilDecisionSourcesRemainValid(tx, [record], previousRows)
     prepareServerWeldRecords({
       records: [record],
       previousRows: validationPreviousRows,
@@ -400,7 +425,12 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
     const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(id), new Date())
     const [updated] = await tx
       .update(weldJoints)
-      .set({ ...insertData, ...timestampUpdates, updatedAt: new Date() })
+      .set({
+        ...insertData,
+        preHeatTreatmentLnkExempt: record.preHeatTreatmentLnkExempt === true,
+        ...timestampUpdates,
+        updatedAt: new Date(),
+      })
       .where(eq(weldJoints.id, id))
       .returning()
     if (!updated) throw new Error(`Запись ${id} не найдена`)
@@ -451,6 +481,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
     assertUniqueWeldMutationTargets(data.records)
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await loadControlProcessSettingsFromTransaction(tx)
       let records = data.records
       const previousRows = await loadPreviousWeldRows(tx, records)
       const systemDocumentSequences = [
@@ -487,9 +518,24 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         records.map((record) => restrictWeldMutationRecord(record, mutationScope)),
         previousRows,
       )
+      const inheritedPreHeatTreatmentExemptions = await getPreHeatTreatmentLnkExemptionsForNewRows(
+        tx,
+        records,
+      )
+      records.forEach((record, index) => {
+        const previous = record.id ? previousRows.get(Number(record.id)) : undefined
+        if (
+          previous?.preHeatTreatmentLnkExempt === true ||
+          inheritedPreHeatTreatmentExemptions[index] === true
+        ) {
+          const weldRecord = record as WeldRow
+          weldRecord.preHeatTreatmentLnkExempt = true
+        }
+      })
       if (data.requireFullyAssignedPstoLines) {
         await assertPstoWorkflowLinesFullyAssigned(tx, records)
       }
+      await assertEarlyCoilDecisionSourcesRemainValid(tx, records, previousRows)
       prepareServerWeldRecords({
         records,
         previousRows,
@@ -673,6 +719,7 @@ export const deleteWeldJoint = createServerFn({ method: 'POST' })
 
     await db.transaction(async (tx) => {
       const [previousRow] = await tx.select().from(weldJoints).where(eq(weldJoints.id, data.id)).limit(1)
+      await assertEarlyCoilDecisionRowsCanBeDeleted(tx, previousRow ? [previousRow] : [])
       await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
         tx,
         weldJointIds: [data.id],
@@ -721,6 +768,8 @@ export const deleteWeldJoints = createServerFn({ method: 'POST' })
         throw new Error(`Не найдены стыки: ${missingIds.join(', ')}`)
       }
 
+      await assertEarlyCoilDecisionRowsCanBeDeleted(tx, previousRows)
+
       await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
         tx,
         weldJointIds: data.ids,
@@ -756,9 +805,18 @@ export async function insertWeldJointsInBatches(
   records: readonly WeldInput[],
 ) {
   const inserted: WeldJoint[] = []
+  const preHeatTreatmentLnkExemptions = await getPreHeatTreatmentLnkExemptionsForNewRows(tx, records)
+  let offset = 0
   for (const batch of splitWeldImportInsertBatches(records)) {
-    const rows = await tx.insert(weldJoints).values(batch.map((record) => toDbInsert(record, true))).returning()
+    const rows = await tx
+      .insert(weldJoints)
+      .values(batch.map((record, index) => ({
+        ...toDbInsert(record, true),
+        preHeatTreatmentLnkExempt: preHeatTreatmentLnkExemptions[offset + index] ?? false,
+      })))
+      .returning()
     inserted.push(...rows)
+    offset += batch.length
   }
   return inserted
 }

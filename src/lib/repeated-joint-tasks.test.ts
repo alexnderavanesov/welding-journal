@@ -37,6 +37,127 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
+  it('replaces the normal R/W task with a coil task after an accepted early decision', () => {
+    const rows = [row({ id: 1, joint: 'F51', rkResult: 'ремонт' })]
+
+    const tasks = buildRepeatedJointTasks(rows, [], [], {
+      earlyCoilDecisionSourceRowIds: new Set([1]),
+    })
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'coil',
+        sourceJoint: 'F51',
+        targetJoints: ['F51Y1', 'F51Y2'],
+        transitionMode: 'early-decision',
+      }),
+    ]))
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'create', sourceJoint: 'F51', targetJoint: 'F51R1' }),
+    ]))
+  })
+
+  it('accepts a complete early coil without producing a chain warning or another R/W task', () => {
+    const rows = [
+      row({ id: 1, joint: 'F51', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'F51Y1', weldDate: null }),
+      row({ id: 3, joint: 'F51Y2', weldDate: null }),
+    ]
+
+    const tasks = buildRepeatedJointTasks(rows, [], [], {
+      earlyCoilDecisionSourceRowIds: new Set([1]),
+    })
+
+    expect(tasks.some((task) => task.kind === 'create' || task.kind === 'coil')).toBe(false)
+    expect(tasks.some((task) => task.kind === 'check' && task.reason === 'проверить целостность катушки')).toBe(false)
+  })
+
+  it('creates a nested early coil from the current Y branch base', () => {
+    const rows = [
+      row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1Y1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'S1Y2', rkResult: '' }),
+    ]
+
+    const tasks = buildRepeatedJointTasks(rows, [], [], {
+      earlyCoilDecisionSourceRowIds: new Set([1, 2]),
+    })
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'coil',
+        sourceJoint: 'S1Y1',
+        targetJoints: ['S1Y1Y1', 'S1Y1Y2'],
+        transitionMode: 'early-decision',
+      }),
+    ]))
+  })
+
+  it('uses rejected pre-TO and duplicate results as early-coil reasons', () => {
+    const preHeatRows = [row({
+      id: 1,
+      joint: 'S20',
+      hasVik: 'да',
+      pstoRequired: 'да',
+      preHeatTreatmentControls: [{
+        id: 20,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-07-01',
+        result: 'вырез',
+        conclusionDate: '2026-07-01',
+        conclusionName: 'Заключение ВИК до ТО',
+      }],
+    })]
+    const duplicateRows = [row({
+      id: 2,
+      joint: 'S21',
+      duplicateControls: [{
+        id: 21,
+        weldJointId: 2,
+        method: 'ВИК',
+        result: 'ремонт',
+        controlDate: '',
+        conclusion: '',
+        conclusionDate: '',
+      }],
+    })]
+
+    expect(buildRepeatedJointTasks(preHeatRows, [], [], {
+      earlyCoilDecisionSourceRowIds: new Set([1]),
+      includeIncompleteStampChecks: false,
+      includeJointCoreDataChecks: false,
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'coil', methodCode: 'ВИК до ТО', targetJoints: ['S20Y1', 'S20Y2'] }),
+    ]))
+    expect(buildRepeatedJointTasks(duplicateRows, [], [], {
+      earlyCoilDecisionSourceRowIds: new Set([2]),
+      includeIncompleteStampChecks: false,
+      includeJointCoreDataChecks: false,
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'coil', methodCode: 'ВИК (дубль)', targetJoints: ['S21Y1', 'S21Y2'] }),
+    ]))
+  })
+
+  it('keeps the existing automatic coil threshold unchanged', () => {
+    const rows = [
+      row({ id: 1, joint: 'S30', hasVik: 'да', vikRequest: 'ЗВК-1', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-1' }),
+      row({ id: 2, joint: 'S30W1', hasVik: 'да', vikRequest: 'ЗВК-2', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-2' }),
+      row({ id: 3, joint: 'S30W2', hasVik: 'да', vikRequest: 'ЗВК-3', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-3' }),
+      row({ id: 4, joint: 'S30W3', hasVik: 'да', vikRequest: 'ЗВК-4', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-4' }),
+    ]
+
+    expect(buildRepeatedJointTasks(rows)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'coil',
+        sourceJoint: 'S30W3',
+        targetJoints: ['S30Y1', 'S30Y2'],
+        transitionMode: 'limit',
+      }),
+    ]))
+  })
+
   it('creates a W-index repeated joint after duplicate control cut result', () => {
     const rows = [
       row({
@@ -417,14 +538,14 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
-  it('does not start percentage-line follow-up when a primary joint is rejected by a non-RK/UZK control', () => {
+  it('does not start percentage-line follow-up when a primary joint is rejected by VIK', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       row({
         id: index + 1,
         joint: `S${index + 1}`,
         stamp1K: 'ABC1',
-        hasRfa: index === 0 ? 'дополнительный' : '',
-        rfaResult: index === 0 ? 'вырез' : '',
+        hasVik: index === 0 ? 'дополнительный' : '',
+        vikResult: index === 0 ? 'вырез' : '',
       }),
     )
 

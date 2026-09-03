@@ -345,8 +345,6 @@ type LnkHeaderActionsProps = {
   editSelectedResultsDisabled: boolean
   onOpenResultRegistry: () => void
   resultRegistryDisabled: boolean
-  onOpenPreHeatTreatmentResultRegistry?: (mode?: 'request' | 'result') => void
-  preHeatTreatmentResultRegistryDisabled?: boolean
   onOpenOfficiality: () => void
   officialityPending: boolean
   onOpenDuplicateControl: () => void
@@ -371,8 +369,6 @@ export function LnkHeaderActions({
   editSelectedResultsDisabled,
   onOpenResultRegistry,
   resultRegistryDisabled,
-  onOpenPreHeatTreatmentResultRegistry = () => undefined,
-  preHeatTreatmentResultRegistryDisabled = false,
   onOpenOfficiality,
   officialityPending,
   onOpenDuplicateControl,
@@ -455,15 +451,6 @@ export function LnkHeaderActions({
             />
             <div className="my-1 border-t border-slate-100" />
             <WorkflowActionMenuItem
-              label="Все заявки до ТО"
-              icon={ListFilter}
-              tone="violet"
-              onClick={() => runRequestAction(() => onOpenPreHeatTreatmentResultRegistry('request'))}
-              disabled={preHeatTreatmentResultRegistryDisabled}
-              disabledReason="Заявок НК до ТО пока нет. Создайте первую заявку в режиме «До ТО»."
-            />
-            <div className="my-1 border-t border-slate-100" />
-            <WorkflowActionMenuItem
               label="Все заявки ЛНК"
               icon={ListFilter}
               tone="slate"
@@ -505,15 +492,7 @@ export function LnkHeaderActions({
               tone="slate"
               onClick={() => runResultAction(onOpenResultRegistry)}
               disabled={resultRegistryDisabled}
-              disabledReason="Внесенных результатов основного ЛНК пока нет."
-            />
-            <WorkflowActionMenuItem
-              label="Все результаты до ТО"
-              icon={ListFilter}
-              tone="violet"
-              onClick={() => runResultAction(() => onOpenPreHeatTreatmentResultRegistry('result'))}
-              disabled={preHeatTreatmentResultRegistryDisabled}
-              disabledReason="Результатов НК до ТО пока нет."
+              disabledReason="Внесенных результатов ЛНК пока нет."
             />
           </div>
         ) : null}

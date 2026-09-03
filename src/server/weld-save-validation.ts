@@ -276,6 +276,7 @@ function applyPstoLineAssignments({
       identityChanged &&
       targetAssigned &&
       previous &&
+      (record as WeldRow).preHeatTreatmentLnkExempt !== true &&
       requiresPrimaryStageResolutionForAssignedPstoLine(previous as unknown as WeldRow)
     ) {
       throw buildPstoLineAssignmentError({

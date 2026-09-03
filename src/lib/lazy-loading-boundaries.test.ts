@@ -65,6 +65,22 @@ describe('lazy loading boundaries', () => {
     expect(api).not.toMatch(/from '@\/server\/document-templates'/)
     expect(api).toContain("await import('@/server/document-templates')")
   })
+
+  it('keeps control-process settings on a browser-safe server API boundary', () => {
+    const settingsPage = readFileSync(
+      resolve(process.cwd(), 'src/components/settings-page.tsx'),
+      'utf8',
+    )
+    const api = readFileSync(
+      resolve(process.cwd(), 'src/server/control-process-settings-api.ts'),
+      'utf8',
+    )
+
+    expect(settingsPage).toContain("from '@/server/control-process-settings-api'")
+    expect(settingsPage).not.toContain("from '@/server/control-process-settings'")
+    expect(api).not.toContain("from '@/server/control-process-settings'")
+    expect(api).toContain("await import('@/server/control-process-settings')")
+  })
 })
 
 function collectTypeScriptSources(directory: string): string[] {

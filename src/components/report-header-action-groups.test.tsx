@@ -8,7 +8,6 @@ function renderActions(onWorkflowMenuOpenChange = vi.fn()) {
   const onCreateRequest = vi.fn()
   const onExtendRequest = vi.fn()
   const onOpenRequestRegistry = vi.fn()
-  const onOpenPreHeatTreatmentResultRegistry = vi.fn()
   const onAddResult = vi.fn()
   const onEditSelectedResults = vi.fn()
   const onOpenResultRegistry = vi.fn()
@@ -24,8 +23,6 @@ function renderActions(onWorkflowMenuOpenChange = vi.fn()) {
       editSelectedResultsDisabled={false}
       onOpenResultRegistry={onOpenResultRegistry}
       resultRegistryDisabled={false}
-      onOpenPreHeatTreatmentResultRegistry={onOpenPreHeatTreatmentResultRegistry}
-      preHeatTreatmentResultRegistryDisabled={false}
       onOpenOfficiality={vi.fn()}
       officialityPending={false}
       onOpenDuplicateControl={vi.fn()}
@@ -43,7 +40,6 @@ function renderActions(onWorkflowMenuOpenChange = vi.fn()) {
     onCreateRequest,
     onExtendRequest,
     onOpenRequestRegistry,
-    onOpenPreHeatTreatmentResultRegistry,
     onAddResult,
     onEditSelectedResults,
     onOpenResultRegistry,
@@ -116,7 +112,7 @@ describe('LnkHeaderActions', () => {
     expect(screen.getByRole('button', { name: 'Текущая версия' })).toBeInTheDocument()
   })
 
-  it('keeps new, extend and registry workflows as separate commands', () => {
+  it('keeps one shared registry entry for request workflows', () => {
     const actions = renderActions()
 
     fireEvent.click(screen.getByRole('button', { name: 'Заявка' }))
@@ -132,11 +128,10 @@ describe('LnkHeaderActions', () => {
     expect(actions.onCreateRequest).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Заявка' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Все заявки до ТО' }))
-    expect(actions.onOpenPreHeatTreatmentResultRegistry).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Все заявки до ТО' })).not.toBeInTheDocument()
   })
 
-  it('keeps add, selected edit and full result registry as separate commands', () => {
+  it('keeps one shared registry entry for result workflows', () => {
     const actions = renderActions()
 
     fireEvent.click(screen.getByRole('button', { name: 'Результат' }))
@@ -152,8 +147,7 @@ describe('LnkHeaderActions', () => {
     expect(actions.onOpenResultRegistry).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Результат' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Все результаты до ТО' }))
-    expect(actions.onOpenPreHeatTreatmentResultRegistry).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Все результаты до ТО' })).not.toBeInTheDocument()
   })
 })
 

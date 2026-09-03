@@ -291,7 +291,4 @@ const legacyControlAvailabilityFieldKeys = [
   'hasUzk',
   'hasPvk',
   'hasTvmt',
-  'hasRfa',
-  'hasStls',
-  'hasMkk',
 ] as const

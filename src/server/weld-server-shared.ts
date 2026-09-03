@@ -62,7 +62,13 @@ export const GENERATED_DOCUMENT_FIELD_TYPES = {
   jsrDocument: 'weldingJournal',
   checklistDocument: 'checklist',
   zniDocument: 'zni',
-} as const satisfies Partial<Record<WeldFieldKey, string>>
+  layeredVikEdgesDocument: 'layeredVikEdges',
+  layeredVikLayersDocument: 'layeredVikLayers',
+  layeredPvkEdgesDocument: 'layeredPvkEdges',
+  layeredPvkLayersDocument: 'layeredPvkLayers',
+  layeredVikDocuments: ['layeredVikEdges', 'layeredVikLayers'],
+  layeredPvkDocuments: ['layeredPvkEdges', 'layeredPvkLayers'],
+} as const satisfies Partial<Record<WeldFieldKey, string | readonly string[]>>
 
 export const WELDING_JOURNAL_ORDER_BY = [
   sql`${weldJoints.createdAt} desc nulls last`,
@@ -208,7 +214,14 @@ export function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<str
   }
 }
 
-export function buildGeneratedDocumentColumnWhere(query: string, documentType: string) {
+export function buildGeneratedDocumentColumnWhere(
+  query: string,
+  documentType: string | readonly string[],
+) {
+  const documentTypes = Array.isArray(documentType) ? [...documentType] : [documentType]
+  const typeWhere = documentTypes.length === 1
+    ? eq(generatedDocuments.type, documentTypes[0])
+    : inArray(generatedDocuments.type, documentTypes)
   const titleMatch = (value: string) =>
     sql`exists (
       select 1
@@ -216,7 +229,7 @@ export function buildGeneratedDocumentColumnWhere(query: string, documentType: s
       inner join ${generatedDocuments}
         on ${generatedDocuments.id} = ${generatedDocumentWeldJoints.documentId}
       where ${generatedDocumentWeldJoints.weldJointId} = ${weldJoints.id}
-        and ${generatedDocuments.type} = ${documentType}
+        and ${typeWhere}
         and lower(trim(coalesce(${generatedDocuments.title}, ''))) = lower(trim(${value}))
     )`
   const withoutDocument = sql`not exists (
@@ -225,7 +238,7 @@ export function buildGeneratedDocumentColumnWhere(query: string, documentType: s
     inner join ${generatedDocuments}
       on ${generatedDocuments.id} = ${generatedDocumentWeldJoints.documentId}
     where ${generatedDocumentWeldJoints.weldJointId} = ${weldJoints.id}
-      and ${generatedDocuments.type} = ${documentType}
+      and ${typeWhere}
   )`
   const choiceFilter = parseWeldColumnChoiceFilter(query)
   if (choiceFilter?.kind === 'values') {
@@ -244,7 +257,7 @@ export function buildGeneratedDocumentColumnWhere(query: string, documentType: s
     inner join ${generatedDocuments}
       on ${generatedDocuments.id} = ${generatedDocumentWeldJoints.documentId}
     where ${generatedDocumentWeldJoints.weldJointId} = ${weldJoints.id}
-      and ${generatedDocuments.type} = ${documentType}
+      and ${typeWhere}
       and coalesce(${generatedDocuments.title}, '') ilike ${`%${query}%`}
   )`
 }

@@ -70,12 +70,6 @@ export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'uzkKs3',
   'tvmtBoq',
   'tvmtKs3',
-  'rfaBoq',
-  'rfaKs3',
-  'stlsBoq',
-  'stlsKs3',
-  'mkkBoq',
-  'mkkKs3',
   'lnkDefectDescription',
   'rkExposureConfirmedDiameter',
   'lnkNote',
@@ -120,6 +114,12 @@ export const WELDING_JOURNAL_BLOCKED_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  'layeredVikEdgesDocument',
+  'layeredVikLayersDocument',
+  'layeredPvkEdgesDocument',
+  'layeredPvkLayersDocument',
+  'layeredVikDocuments',
+  'layeredPvkDocuments',
   ...PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS,
   'pstoCycleSummary',
   'pstoCancellationDate',
@@ -144,6 +144,10 @@ export const WELDING_JOURNAL_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
 ])
 
 export const LNK_HIDDEN_FIELD_KEYS = new Set<WeldFieldKey>([
+  'layeredVikEdgesDocument',
+  'layeredVikLayersDocument',
+  'layeredPvkEdgesDocument',
+  'layeredPvkLayersDocument',
   'pstoCycleSummary',
   ...MATERIAL_ADDITIONAL_FIELD_KEYS,
   ...WELDING_MATERIAL_FIELD_KEYS,
@@ -224,9 +228,6 @@ const WELDING_JOURNAL_CONTROL_STATE_FIELD_KEYS = [
   'hasPvk',
   'pstoRequired',
   'hasTvmt',
-  'hasRfa',
-  'hasStls',
-  'hasMkk',
 ] as const satisfies readonly WeldFieldKey[]
 
 const WELDING_JOURNAL_REQUEST_FIELD_KEYS = [

@@ -10,9 +10,6 @@ export const CONTROL_ASSIGNMENT_BASIS_FIELDS = [
   { code: 'РК', assignmentKey: 'hasRk', basisKey: 'rkControlBasis', scope: 'lnk' },
   { code: 'УЗК', assignmentKey: 'hasUzk', basisKey: 'uzkControlBasis', scope: 'lnk' },
   { code: 'ПВК', assignmentKey: 'hasPvk', basisKey: 'pvkControlBasis', scope: 'lnk' },
-  { code: 'РФА', assignmentKey: 'hasRfa', basisKey: 'rfaControlBasis', scope: 'lnk' },
-  { code: 'СТЛС', assignmentKey: 'hasStls', basisKey: 'stlsControlBasis', scope: 'lnk' },
-  { code: 'МКК', assignmentKey: 'hasMkk', basisKey: 'mkkControlBasis', scope: 'lnk' },
 ] as const satisfies readonly {
   code: string
   assignmentKey: WeldFieldKey

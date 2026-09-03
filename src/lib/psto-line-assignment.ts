@@ -299,6 +299,7 @@ export function getPrimaryStagedMethodCodes(row: WeldRow) {
 
 export function requiresPrimaryStageResolutionForAssignedPstoLine(row: WeldRow) {
   return (
+    row.preHeatTreatmentLnkExempt !== true &&
     !isControlEnabledValue(row.pstoRequired) &&
     !hasPstoWorkflowStageData(row) &&
     getPrimaryStagedMethodCodes(row).length > 0
@@ -306,6 +307,7 @@ export function requiresPrimaryStageResolutionForAssignedPstoLine(row: WeldRow) 
 }
 
 export function blocksPstoLineActivation(row: WeldRow) {
+  if (row.preHeatTreatmentLnkExempt === true) return false
   if (isControlEnabledValue(row.pstoRequired)) return false
   if (getPrimaryStagedMethodCodes(row).length === 0) return false
   const reactivatedRow = {

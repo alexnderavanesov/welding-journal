@@ -1,17 +1,18 @@
 import type { ActiveReport } from '@/lib/home-state'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import {
-  buildRepeatedJointTasks,
-  isUnusedRepeatedJointDraft,
-} from '@/lib/repeated-joint-tasks'
+import { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-tasks'
 import type {
   RepeatedJointCoilTask,
   RepeatedJointCreateTask,
   RepeatedJointDeleteTask,
   RepeatedJointRenameTask,
+  RepeatedJointTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
-import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import { getCoilJointNames, parseRepeatedJointName } from '@/lib/joint-chain'
+import { isUnofficialJoint } from '@/lib/joint-display'
+import type { SystemIndexSettings } from '@/lib/system-index-settings'
+import type { WeldJointChainEarlyCoilCandidate } from '@/server/weld-contracts'
 
 type MutationLike<TValue> = {
   mutate: (value: TValue) => void
@@ -19,11 +20,10 @@ type MutationLike<TValue> = {
 
 type UseRepeatedJointTaskActionsOptions = {
   activeReport: ActiveReport
-  rows: WeldRow[]
-  loadRows?: () => Promise<WeldRow[]>
-  welderStamps: WelderStampRecord[]
-  welderStampSuspensions: WelderStampSuspensionRecord[]
+  loadTasks: () => Promise<RepeatedJointTask[]>
+  systemIndexSettings: SystemIndexSettings
   repeatedJointMutation: MutationLike<RepeatedJointCreateTask | RepeatedJointCoilTask>
+  earlyCoilMutation: MutationLike<{ sourceRowId: number; task?: RepeatedJointCreateTask }>
   obsoleteRepeatedJointMutation: MutationLike<RepeatedJointDeleteTask>
   renameRepeatedJointMutation: MutationLike<RepeatedJointRenameTask>
   setMessage: (value: string) => void
@@ -31,23 +31,21 @@ type UseRepeatedJointTaskActionsOptions = {
 
 export function useRepeatedJointTaskActions({
   activeReport,
-  rows,
-  loadRows,
-  welderStamps,
-  welderStampSuspensions,
+  loadTasks,
+  systemIndexSettings,
   repeatedJointMutation,
+  earlyCoilMutation,
   obsoleteRepeatedJointMutation,
   renameRepeatedJointMutation,
   setMessage,
 }: UseRepeatedJointTaskActionsOptions) {
   const confirmAction = useConfirmAction()
 
-  async function getCurrentRows() {
-    if (rows.length > 0) return rows
+  async function getCurrentTasks() {
     try {
-      return (await loadRows?.()) ?? []
+      return await loadTasks()
     } catch {
-      setMessage('Не удалось обновить данные журнала для проверки задачи. Повторите действие.')
+      setMessage('Не удалось обновить диспетчер для проверки задачи. Повторите действие.')
       return null
     }
   }
@@ -58,9 +56,9 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const currentRows = await getCurrentRows()
-    if (!currentRows) return
-    const currentTask = buildRepeatedJointTasks(currentRows, welderStamps, welderStampSuspensions).find(
+    const currentTasks = await getCurrentTasks()
+    if (!currentTasks) return
+    const currentTask = currentTasks.find(
       (candidate): candidate is RepeatedJointCreateTask | RepeatedJointCoilTask =>
         (candidate.kind === 'create' || candidate.kind === 'coil') && candidate.key === task.key,
     )
@@ -72,15 +70,86 @@ export function useRepeatedJointTaskActions({
     repeatedJointMutation.mutate(currentTask)
   }
 
+  async function createEarlyCoil(task: RepeatedJointCreateTask) {
+    if (activeReport !== 'weldingJournal') {
+      setMessage('Досрочная врезка катушки доступна только из сварочного журнала.')
+      return
+    }
+    if (isUnofficialJoint(task.row)) {
+      setMessage('Досрочную катушку можно создать только после негодного официального стыка.')
+      return
+    }
+
+    const targetJoints = getCoilJointNames(
+      parseRepeatedJointName(task.sourceJoint, systemIndexSettings).base,
+      systemIndexSettings,
+    ) as [string, string]
+    await confirmAndCreateEarlyCoil({
+      sourceRow: task.row,
+      sourceJoint: task.sourceJoint,
+      targetJoints,
+      replacementJoint: task.targetJoint,
+      task,
+    })
+  }
+
+  async function createEarlyCoilFromChain(
+    sourceRow: WeldRow,
+    candidate: WeldJointChainEarlyCoilCandidate,
+  ) {
+    if (activeReport !== 'weldingJournal') {
+      setMessage('Досрочная врезка катушки доступна только из сварочного журнала.')
+      return
+    }
+    await confirmAndCreateEarlyCoil({
+      sourceRow,
+      sourceJoint: candidate.sourceJoint,
+      targetJoints: candidate.targetJoints,
+      replacementJoint: candidate.replacementJoint ?? '',
+    })
+  }
+
+  async function confirmAndCreateEarlyCoil({
+    sourceRow,
+    sourceJoint,
+    targetJoints,
+    replacementJoint,
+    task,
+  }: {
+    sourceRow: WeldRow
+    sourceJoint: string
+    targetJoints: [string, string]
+    replacementJoint: string
+    task?: RepeatedJointCreateTask
+  }) {
+    if (isUnofficialJoint(sourceRow)) {
+      setMessage('Досрочную катушку можно создать только после негодного официального стыка.')
+      return
+    }
+    const confirmed = await confirmAction({
+      title: 'Врезать катушку досрочно',
+      itemName: `${sourceJoint} -> ${targetJoints.join(' + ')}`,
+      description:
+        'Система завершит текущую ветку ремонта или выреза и создаст два новых стыка катушки. Решение сохранится в настройках среди принятых исключений.',
+      warning: replacementJoint
+        ? `Если ожидаемый стык ${replacementJoint} уже создан и остается полностью пустым, он будет заменен катушкой. Заполненные или измененные стыки система не удаляет.`
+        : 'Перед созданием сервер еще раз проверит актуальность цепочки. Заполненные или измененные стыки система не удаляет.',
+      confirmLabel: 'Врезать катушку',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+    earlyCoilMutation.mutate({ sourceRowId: sourceRow.id, task })
+  }
+
   async function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {
     if (activeReport === 'lnk') {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Удаление стыков доступно из сварочного журнала.')
       return
     }
 
-    const currentRows = await getCurrentRows()
-    if (!currentRows) return
-    const currentTask = buildRepeatedJointTasks(currentRows, welderStamps, welderStampSuspensions).find(
+    const currentTasks = await getCurrentTasks()
+    if (!currentTasks) return
+    const currentTask = currentTasks.find(
       (candidate): candidate is RepeatedJointDeleteTask => candidate.kind === 'delete' && candidate.key === task.key,
     )
     if (!currentTask) {
@@ -108,9 +177,9 @@ export function useRepeatedJointTaskActions({
       return
     }
 
-    const currentRows = await getCurrentRows()
-    if (!currentRows) return
-    const currentTask = buildRepeatedJointTasks(currentRows, welderStamps, welderStampSuspensions).find(
+    const currentTasks = await getCurrentTasks()
+    if (!currentTasks) return
+    const currentTask = currentTasks.find(
       (candidate): candidate is RepeatedJointRenameTask => candidate.kind === 'rename' && candidate.key === task.key,
     )
     if (!currentTask) {
@@ -131,6 +200,8 @@ export function useRepeatedJointTaskActions({
   }
 
   return {
+    createEarlyCoil,
+    createEarlyCoilFromChain,
     createRepeatedJoint,
     deleteObsoleteRepeatedJoint,
     renameObsoleteRepeatedJoint,

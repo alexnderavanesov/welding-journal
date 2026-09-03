@@ -17,10 +17,7 @@ export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
   'uzkResult',
   'pvkResult',
   'tvmtResult',
-  'rfaResult',
-  'stlsResult',
   'pstoResult',
-  'mkkResult',
   'preVikResult',
   'preRkResult',
   'preUzkResult',
@@ -33,9 +30,6 @@ export const CONTROL_RESULT_PAIRS = [
   { code: 'РК', enabledKey: 'hasRk', resultKey: 'rkResult' },
   { code: 'УЗК', enabledKey: 'hasUzk', resultKey: 'uzkResult' },
   { code: 'ПВК', enabledKey: 'hasPvk', resultKey: 'pvkResult' },
-  { code: 'РФА', enabledKey: 'hasRfa', resultKey: 'rfaResult' },
-  { code: 'СТЛС', enabledKey: 'hasStls', resultKey: 'stlsResult' },
-  { code: 'МКК', enabledKey: 'hasMkk', resultKey: 'mkkResult' },
 ] as const satisfies ReadonlyArray<{ code: string; enabledKey: WeldFieldKey; resultKey: WeldFieldKey }>
 
 const CONTROL_STATE_PAIRS = [
@@ -43,9 +37,6 @@ const CONTROL_STATE_PAIRS = [
   { enabledKey: 'hasRk', requestKey: 'rkRequest', resultKey: 'rkResult' },
   { enabledKey: 'hasUzk', requestKey: 'uzkRequest', resultKey: 'uzkResult' },
   { enabledKey: 'hasPvk', requestKey: 'pvkRequest', resultKey: 'pvkResult' },
-  { enabledKey: 'hasRfa', requestKey: 'rfaRequest', resultKey: 'rfaResult' },
-  { enabledKey: 'hasStls', requestKey: 'stlsRequest', resultKey: 'stlsResult' },
-  { enabledKey: 'hasMkk', requestKey: 'mkkRequest', resultKey: 'mkkResult' },
 ] as const satisfies ReadonlyArray<{ enabledKey: WeldFieldKey; requestKey: WeldFieldKey; resultKey: WeldFieldKey }>
 
 export type FinalStatusRowsContext = {

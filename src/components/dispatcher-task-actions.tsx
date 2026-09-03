@@ -17,6 +17,7 @@ import type {
 } from '@/lib/dispatcher-types'
 import { isLnkChronologyCheckReason } from '@/lib/lnk-chronology-checks'
 import { isPstoChronologyCheckReason } from '@/lib/psto-chronology-checks'
+import { isUnofficialJoint } from '@/lib/joint-display'
 
 export type RepeatedJointTaskActionsProps = {
   task: DispatcherTask
@@ -25,6 +26,7 @@ export type RepeatedJointTaskActionsProps = {
   onShowTask: (task: DispatcherTask) => void
   onOpenTaskOfficiality: (task: DispatcherTask) => void
   onCreateTask: (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => void
+  onCreateEarlyCoil: (task: RepeatedJointCreateTask) => void
   onDeleteTask: (task: RepeatedJointDeleteTask) => void
   onRenameTask: (task: RepeatedJointRenameTask) => void
   onAcceptPercentageLineTask: (task: PercentageLineControlTask) => void
@@ -32,6 +34,8 @@ export type RepeatedJointTaskActionsProps = {
   onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
   onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
   canRunDispatcherMutation: boolean
+  canCreateEarlyCoil: boolean
+  isEarlyCoilPending: boolean
   isCreatePending: boolean
   isDeletePending: boolean
   isRenamePending: boolean
@@ -44,6 +48,7 @@ export function RepeatedJointTaskActions({
   onShowTask,
   onOpenTaskOfficiality,
   onCreateTask,
+  onCreateEarlyCoil,
   onDeleteTask,
   onRenameTask,
   onAcceptPercentageLineTask,
@@ -51,6 +56,8 @@ export function RepeatedJointTaskActions({
   onSuspendPercentageLineWelder,
   onSkipPercentageLineWelderSuspension,
   canRunDispatcherMutation,
+  canCreateEarlyCoil,
+  isEarlyCoilPending,
   isCreatePending,
   isDeletePending,
   isRenamePending,
@@ -82,6 +89,18 @@ export function RepeatedJointTaskActions({
           <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
             {task.kind === 'coil' ? 'Катушка' : 'Создать'}
           </Button>
+          {task.kind === 'create' && canCreateEarlyCoil && !isUnofficialJoint(task.row) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onCreateEarlyCoil(task)}
+              disabled={isEarlyCoilPending}
+              className={dispatcherActionButtonClass}
+            >
+              Катушка досрочно
+            </Button>
+          ) : null}
           <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
             Цепочка
           </Button>

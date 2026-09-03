@@ -5,6 +5,7 @@ import {
   derivedCalculationCache,
   derivedCalculationState,
 } from '@/db/schema'
+import { DERIVED_CALCULATION_REVISION_FLOOR } from '@/lib/derived-calculation-cache-version'
 
 const DERIVED_CALCULATION_STATE_ID = 1
 const MAX_CACHED_CALCULATIONS = 96
@@ -86,9 +87,18 @@ async function readCacheSnapshot(cacheKey: string) {
   const result = await requireDb().execute<{ sourceRevision: number | string; payload: string | null }>(sql`
     with "ensure_state" as (
       insert into ${derivedCalculationState} ("id", "source_revision", "updated_at")
-      values (${DERIVED_CALCULATION_STATE_ID}, 0, now())
-      on conflict ("id") do nothing
+      values (${DERIVED_CALCULATION_STATE_ID}, ${DERIVED_CALCULATION_REVISION_FLOOR}, now())
+      on conflict ("id") do update
+      set
+        "source_revision" = ${DERIVED_CALCULATION_REVISION_FLOOR},
+        "updated_at" = now()
+      where ${derivedCalculationState.sourceRevision} < ${DERIVED_CALCULATION_REVISION_FLOOR}
       returning "source_revision"
+    ),
+    "clear_outdated_cache" as (
+      delete from ${derivedCalculationCache}
+      where exists (select 1 from "ensure_state")
+      returning "cache_key"
     ),
     "current_state" as (
       select "source_revision" from "ensure_state"
@@ -102,6 +112,7 @@ async function readCacheSnapshot(cacheKey: string) {
       "current_state"."source_revision" as "sourceRevision",
       ${derivedCalculationCache.payload} as "payload"
     from "current_state"
+    cross join (select count(*) from "clear_outdated_cache") as "cache_cleanup"
     left join ${derivedCalculationCache}
       on ${derivedCalculationCache.cacheKey} = ${cacheKey}
       and ${derivedCalculationCache.sourceRevision} = "current_state"."source_revision"

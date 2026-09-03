@@ -60,6 +60,7 @@ export const WELD_BATCH_UPDATE_FIELD_KEYS = [
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
+  'preHeatTreatmentLnkExempt',
   ...WELD_BATCH_PROFILE_TIMESTAMP_KEYS,
 ] as readonly (keyof NewWeldJoint)[]
 
@@ -206,6 +207,9 @@ export function buildWeldBatchUpdatePayload(
   const values: Record<string, unknown> = {
     id,
     ...toDbInsert(record),
+    preHeatTreatmentLnkExempt:
+      (record as WeldInput & { preHeatTreatmentLnkExempt?: boolean }).preHeatTreatmentLnkExempt === true ||
+      previous.preHeatTreatmentLnkExempt === true,
     weldingUpdatedAt: timestampUpdates.weldingUpdatedAt ?? previous.weldingUpdatedAt,
     pstoCreatedAt: timestampUpdates.pstoCreatedAt ?? previous.pstoCreatedAt,
     pstoUpdatedAt: timestampUpdates.pstoUpdatedAt ?? previous.pstoUpdatedAt,

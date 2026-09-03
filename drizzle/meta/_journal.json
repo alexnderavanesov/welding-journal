@@ -218,6 +218,20 @@
       "when": 1788214258335,
       "tag": "0030_adorable_war_machine",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788294092263,
+      "tag": "0031_slimy_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788347755000,
+      "tag": "0032_tense_loki",
+      "breakpoints": true
     }
   ]
 }
