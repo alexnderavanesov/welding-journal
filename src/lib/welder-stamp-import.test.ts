@@ -14,7 +14,7 @@ describe('welder stamp import validation', () => {
       validateWelderStampFieldsForImport(records, {
         [officialStampField]: [{ value: 'ABC1' }],
       }),
-    ).toThrow('активного реестра клейм')
+    ).toThrow(/ЗВ-01.*активного реестра клейм/)
   })
 
   it('allows unknown official stamps when registry checking is disabled', () => {
@@ -33,5 +33,14 @@ describe('welder stamp import validation', () => {
         },
       ),
     ).not.toThrow()
+  })
+
+  it('reports every unknown official stamp from one row together', () => {
+    const records = [{ joint: 'F1', stamp1K: 'BAD-K', stamp1Z: 'BAD-Z' }] as WeldInput[]
+
+    expect(() => validateWelderStampFieldsForImport(records, {
+      stamp1K: [{ value: 'GOOD-K' }],
+      stamp1Z: [{ value: 'GOOD-Z' }],
+    })).toThrow(/BAD-K.*BAD-Z/)
   })
 })

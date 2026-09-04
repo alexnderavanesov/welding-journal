@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createServerFn } from '@tanstack/react-start'
-import { inArray } from 'drizzle-orm'
+import { asc, inArray } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
@@ -29,18 +29,22 @@ import {
 import {
   loadIndexedSystemDocumentSummaries,
   loadSystemDocumentSummaries,
-  lockSystemDocumentIndex,
+  lockSystemDocumentIndexes,
   syncSystemDocumentsForWeldChangesInTransaction,
 } from '@/server/system-document-index'
+import { lockAllControlProcessSettings } from '@/server/control-process-settings-lock'
+import { lockLayeredControlDocumentsForWeldChange } from '@/server/layered-control-documents'
 import {
   lockSystemDocumentNumberCounter,
   readRequestConclusionSettings,
-  readSystemDocumentNextNumber,
-  reserveSystemDocumentName,
+  readSystemDocumentNextNumbers,
+  reserveSystemDocumentNames,
+  type SystemDocumentNameReservationInput,
   type SystemDocumentSequenceTransaction,
 } from '@/server/system-document-sequences'
 import { assertSecurityScope } from '@/server/security-functions'
 import { updateWeldJointsInBatches } from '@/server/weld-persistence'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 type RebuildPreviewRequest = {
   templateIds?: SystemDocumentTemplateId[]
@@ -58,13 +62,6 @@ type RebuildSnapshot = {
   sources: SystemDocumentRebuildSource[]
   settings: RequestConclusionSettings
 }
-
-const SYSTEM_DOCUMENT_INDEX_LOCK_ORDER = [
-  'lnkRequest',
-  'lnkConclusion',
-  'pstoRequest',
-  'pstoConclusion',
-] as const
 
 export const previewSystemDocumentRebuild = createServerFn({ method: 'POST' })
   .validator((data: RebuildPreviewRequest | undefined) => ({
@@ -95,6 +92,7 @@ export const applySystemDocumentRebuild = createServerFn({ method: 'POST' })
     await ensureSystemDocumentIndexes()
     const db = requireDb()
     return db.transaction(async (tx) => {
+      await lockAllControlProcessSettings(tx)
       for (const templateId of [...data.templateIds].sort()) {
         await lockSystemDocumentNumberCounter(tx, templateId)
       }
@@ -103,17 +101,20 @@ export const applySystemDocumentRebuild = createServerFn({ method: 'POST' })
       const selectedRowIds = initialSnapshot.sources
         .filter((source) => data.templateIds.includes(getSystemDocumentTemplateId(source.document)))
         .flatMap((source) => source.document.rowIds)
-      if (selectedRowIds.length > 0) {
+      const orderedSelectedRowIds = [...new Set(selectedRowIds)].sort((left, right) => left - right)
+      for (const rowIdBatch of splitNumberBatches(orderedSelectedRowIds, 1000)) {
         await tx
           .select({ id: weldJoints.id })
           .from(weldJoints)
-          .where(inArray(weldJoints.id, Array.from(new Set(selectedRowIds))))
+          .where(inArray(weldJoints.id, rowIdBatch))
+          .orderBy(asc(weldJoints.id))
           .for('update')
       }
 
-      // Normal document creation locks counters, updates rows and then syncs
-      // indexes. Rebuild follows the same order to avoid cross-workflow deadlocks.
-      for (const type of SYSTEM_DOCUMENT_INDEX_LOCK_ORDER) await lockSystemDocumentIndex(tx, type)
+      // Normal document creation locks counters, rows, layered documents and
+      // then system indexes. Rebuild follows the same order.
+      await lockLayeredControlDocumentsForWeldChange(tx)
+      await lockSystemDocumentIndexes(tx)
 
       const snapshot = await loadRebuildSnapshot(tx)
       assertFreshRebuildSnapshot(snapshot.preview, data)
@@ -150,19 +151,19 @@ async function loadRebuildSnapshot(
     documents.push(...await loadIndexedSystemDocumentSummaries(tx, type))
   }
   const rowIds = Array.from(new Set(documents.flatMap((document) => document.rowIds)))
-  const rows = rowIds.length > 0
-    ? await tx.select().from(weldJoints).where(inArray(weldJoints.id, rowIds))
-    : []
+  const rows: Array<typeof weldJoints.$inferSelect> = []
+  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+    rows.push(...await tx.select().from(weldJoints).where(inArray(weldJoints.id, rowIdBatch)))
+  }
   const rowsById = new Map(rows.map((row) => [row.id, row as unknown as WeldRow]))
   const sources = documents.map((document) => ({
     document,
     rows: document.rowIds.map((id) => rowsById.get(id)).filter((row): row is WeldRow => Boolean(row)),
   }))
-  const nextNumberEntries: Array<[SystemDocumentTemplateId, number]> = []
-  for (const profile of SYSTEM_DOCUMENT_TEMPLATE_PROFILES) {
-    nextNumberEntries.push([profile.id, await readSystemDocumentNextNumber(tx, profile.id)])
-  }
-  const nextNumbers = Object.fromEntries(nextNumberEntries) as Record<SystemDocumentTemplateId, number>
+  const nextNumbers = await readSystemDocumentNextNumbers(
+    tx,
+    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => profile.id),
+  )
   const basePreview = buildSystemDocumentRebuildDocuments({ sources, settings, nextNumbers })
   const fingerprint = hashValue({
     splitModes: settings.splitModes,
@@ -224,6 +225,44 @@ async function applyRebuildPlan({
     used.add(number)
     usedNumbersByTemplate.set(document.templateId, used)
   }
+  const reservationInputs: SystemDocumentNameReservationInput[] = []
+  const reservationIndexByGroup = new Map<string, number>()
+  for (const documentPreview of snapshot.preview.documents) {
+    if (!selectedTemplateIds.has(documentPreview.templateId) || !documentPreview.isSystemName) continue
+    const decision = decisionByDocumentId.get(documentPreview.documentId)
+    const shouldRebuild = documentPreview.willChangeAutomatically ||
+      (documentPreview.requiresCustomNameDecision && decision?.action === 'rebuild')
+    if (!shouldRebuild) continue
+    if (!hasSystemDocumentNumberField(snapshot.settings[documentPreview.type].systemPattern)) {
+      throw new Error('В системном имени обязательно поле «Порядковый номер». Добавьте его в настройках заявок и заключений.')
+    }
+    const source = sourceByDocumentId.get(documentPreview.documentId)
+    if (!source) throw new Error(`Системный документ ${documentPreview.documentId} больше не найден.`)
+    for (const [index, groupPreview] of documentPreview.groups.entries()) {
+      if (index === 0) continue
+      const groupRows = groupPreview.rowIds
+        .map((id) => source.rows.find((row) => row.id === id))
+        .filter((row): row is WeldRow => Boolean(row))
+      reservationIndexByGroup.set(
+        rebuildGroupKey(documentPreview.documentId, groupPreview.key),
+        reservationInputs.length,
+      )
+      reservationInputs.push({
+        request: {
+          type: source.document.type,
+          date: source.document.date,
+          ...(source.document.methodCode ? { methodCode: source.document.methodCode } : {}),
+          fieldKeys: getMatchingFieldKeys(source.document, groupRows),
+          provisionalName: groupPreview.previewName,
+        },
+        rows: groupRows,
+      })
+    }
+  }
+  const reservations = await reserveSystemDocumentNames(tx, reservationInputs, {
+    countersAlreadyLocked: true,
+    occupiedNumbersBySequence: usedNumbersByTemplate,
+  })
   let rebuiltDocumentCount = 0
 
   for (const documentPreview of snapshot.preview.documents) {
@@ -250,17 +289,10 @@ async function applyRebuildPlan({
         if (index === 0) {
           nextName = groupPreview.previewName
         } else {
-          const fieldKeys = getMatchingFieldKeys(source.document, groupRows)
-          const reserved = await reserveUniqueRebuildName({
-            tx,
-            document: source.document,
-            templateId: documentPreview.templateId,
-            fieldKeys,
-            rows: groupRows,
-            provisionalName: groupPreview.previewName,
-            usedNumbersByTemplate,
-          })
-          nextName = reserved.name
+          const reservationIndex = reservationIndexByGroup.get(
+            rebuildGroupKey(documentPreview.documentId, groupPreview.key),
+          )
+          nextName = reservationIndex == null ? '' : reservations[reservationIndex]?.name ?? ''
         }
       } else {
         nextName = String(decision?.groupNames?.[groupPreview.key] ?? '').trim()
@@ -296,39 +328,8 @@ async function applyRebuildPlan({
   }
 }
 
-async function reserveUniqueRebuildName({
-  tx,
-  document,
-  templateId,
-  fieldKeys,
-  rows,
-  provisionalName,
-  usedNumbersByTemplate,
-}: {
-  tx: SystemDocumentSequenceTransaction
-  document: SystemDocumentSummary
-  templateId: SystemDocumentTemplateId
-  fieldKeys: WeldFieldKey[]
-  rows: WeldRow[]
-  provisionalName: string
-  usedNumbersByTemplate: Map<SystemDocumentTemplateId, Set<number>>
-}) {
-  const usedNumbers = usedNumbersByTemplate.get(templateId) ?? new Set<number>()
-  for (let attempt = 0; attempt < 10_000; attempt += 1) {
-    const reserved = await reserveSystemDocumentName(tx, {
-      type: document.type,
-      date: document.date,
-      ...(document.methodCode ? { methodCode: document.methodCode } : {}),
-      fieldKeys,
-      provisionalName,
-    }, rows)
-    if (!usedNumbers.has(reserved.number)) {
-      usedNumbers.add(reserved.number)
-      usedNumbersByTemplate.set(templateId, usedNumbers)
-      return reserved
-    }
-  }
-  throw new Error('Не удалось назначить уникальный порядковый номер системного документа.')
+function rebuildGroupKey(documentId: number, groupKey: string) {
+  return `${documentId}:${groupKey}`
 }
 
 function applyDocumentGroupName({

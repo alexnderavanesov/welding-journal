@@ -81,6 +81,19 @@ describe('lazy loading boundaries', () => {
     expect(api).not.toContain("from '@/server/control-process-settings'")
     expect(api).toContain("await import('@/server/control-process-settings')")
   })
+
+  it('does not initialize the PostgreSQL driver in the browser bundle', () => {
+    const database = readFileSync(resolve(process.cwd(), 'src/db/index.ts'), 'utf8')
+
+    expect(database).toContain("import.meta.env?.SSR ?? typeof window === 'undefined'")
+    expect(database).toContain("import('drizzle-orm/node-postgres')")
+    expect(database).toContain("import('pg')")
+    expect(database).not.toMatch(
+      /import\s+(?!type\b)[^;\n]+\s+from\s+['"](?:pg|drizzle-orm\/node-postgres)['"]/,
+    )
+    expect(database).not.toContain("from '@/server-env'")
+    expect(database).not.toContain("from './ssl'")
+  })
 })
 
 function collectTypeScriptSources(directory: string): string[] {

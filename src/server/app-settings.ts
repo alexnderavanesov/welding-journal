@@ -11,6 +11,11 @@ import {
   invalidateDerivedCalculationCache,
   markDispatcherTaskIndexDirty,
 } from '@/server/dispatcher-task-index-dirty'
+import { getNextTimestampVersion } from '@/server/timestamp-version'
+import {
+  lockWeldValidationSettings,
+  projectSettingAffectsWeldValidationSnapshot,
+} from '@/server/weld-validation-settings-lock'
 
 export type AppSettingValue =
   | string
@@ -25,7 +30,7 @@ export type AppSettingsMap = Record<string, AppSettingValue>
 export type AppSettingPayload = {
   key: string
   value: AppSettingValue
-  expectedUpdatedAt?: string | null
+  expectedUpdatedAt: string | null
 }
 
 export type AppSettingsSnapshot = {
@@ -85,6 +90,13 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
   }
 
   const savedResult = await requireDb().transaction(async (tx) => {
+    if (normalizedKey === PROJECT_SETTING_KEYS.controlProcesses) {
+      const { lockAllControlProcessSettings } = await import('@/server/control-process-settings-lock')
+      await lockAllControlProcessSettings(tx, 'exclusive')
+    }
+    if (projectSettingAffectsWeldValidationSnapshot(normalizedKey)) {
+      await lockWeldValidationSettings(tx, 'exclusive')
+    }
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedKey}))`)
     const [current] = await tx
       .select({ value: appSettings.value, updatedAt: appSettings.updatedAt })
@@ -92,19 +104,20 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
       .where(eq(appSettings.key, normalizedKey))
       .limit(1)
       .for('update')
-    if (expectedUpdatedAt !== undefined) {
-      const currentRevision = current?.updatedAt.toISOString() ?? null
-      if (currentRevision !== expectedUpdatedAt) {
-        throw new Error('Настройка уже изменена другим пользователем. Свежие данные загружены; повторите изменение.')
-      }
-    }
+    assertAppSettingVersion(current?.updatedAt.toISOString() ?? null, expectedUpdatedAt)
+    const nextUpdatedAt = current ? getNextTimestampVersion(current.updatedAt) : new Date()
     let preparedValue = value
+    if (normalizedKey === PROJECT_SETTING_KEYS.saveCheck) {
+      const { normalizeSaveCheckSettings } = await import('@/lib/save-check-settings')
+      preparedValue = prepareAppSettingValue(normalizeSaveCheckSettings(value))
+    }
     if (normalizedKey === PROJECT_SETTING_KEYS.controlProcesses) {
       const { prepareControlProcessSettingsChangeInTransaction } = await import('@/server/control-process-settings')
       preparedValue = prepareAppSettingValue(await prepareControlProcessSettingsChangeInTransaction({
         tx,
         currentValue: current ? parseStoredSetting(current.value) : undefined,
         nextValue: value,
+        processLocksAlreadyHeld: true,
       }))
     }
     const [saved] = await tx
@@ -112,12 +125,13 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
       .values({
         key: normalizedKey,
         value: serializeSettingValue(preparedValue),
+        updatedAt: nextUpdatedAt,
       })
       .onConflictDoUpdate({
         target: appSettings.key,
         set: {
           value: serializeSettingValue(preparedValue),
-          updatedAt: sql`now()`,
+          updatedAt: nextUpdatedAt,
         },
       })
       .returning({ updatedAt: appSettings.updatedAt })
@@ -160,3 +174,12 @@ export const listAppSettingsSnapshot = createServerFn({ method: 'GET' }).handler
 export const saveAppSetting = createServerFn({ method: 'POST' })
   .validator((data: AppSettingPayload) => data)
   .handler(async ({ data }) => saveAppSettingToDb(data))
+
+export function assertAppSettingVersion(
+  currentRevision: string | null,
+  expectedRevision: string | null | undefined,
+) {
+  if (currentRevision !== expectedRevision) {
+    throw new Error('Настройка уже изменена другим пользователем. Свежие данные загружены; повторите изменение.')
+  }
+}

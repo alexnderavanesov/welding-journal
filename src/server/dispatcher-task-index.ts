@@ -39,7 +39,6 @@ import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { DEFAULT_DATA_LIST_SETTINGS, normalizeDataListSettings } from '@/lib/data-list-settings'
-import { DEFAULT_SAVE_CHECK_SETTINGS, normalizeSaveCheckSettings } from '@/lib/save-check-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, normalizeSystemIndexSettings } from '@/lib/system-index-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { getDuplicateKeys } from '@/lib/weld-table-utils'
@@ -58,8 +57,13 @@ import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dir
 import { getBusinessDateIso } from '@/lib/business-date'
 import type { DispatcherDirtyScope } from '@/server/dispatcher-task-index-dirty'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
+import { encodeIdentityKey } from '@/lib/identity-key'
+import { WELD_EFFECTIVE_OFFICIALITY } from '@/server/weld-server-shared'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 const INSERT_CHUNK_SIZE = 1_000
+const MAX_SCOPED_REBUILD_SCOPES = 500
 type DispatcherIndexTransaction = Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0]
 let pendingDispatcherTaskIndexRefresh: Promise<typeof dispatcherTaskIndexState.$inferSelect> | null = null
 
@@ -120,6 +124,9 @@ async function ensureDispatcherTaskIndexFreshOnce() {
   if (isDispatcherTaskIndexFresh(state)) return state
 
   state = await db.transaction(async (tx) => {
+    // Registry writers take this lock before invalidating the dispatcher index.
+    // Keep the same order here so concurrent rebuild/save transactions cannot deadlock.
+    await lockWelderStampRegistry(tx)
     await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_INDEX_LOCK_ID})`)
     const [lockedState] = await tx
       .select()
@@ -133,6 +140,7 @@ async function ensureDispatcherTaskIndexFreshOnce() {
       isDispatcherTaskIndexPayloadCurrent(lockedState.repeatedTasks) &&
       !lockedState.fullRebuild &&
       dirtyScopes.length > 0 &&
+      dirtyScopes.length <= MAX_SCOPED_REBUILD_SCOPES &&
       lockedState.computedAt &&
       isDispatcherTaskIndexBusinessDateCurrent(lockedState.computedAt)
     ) {
@@ -285,7 +293,6 @@ export async function calculateFullDispatcherTasks(
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: options.dispatcherSettings?.(currentDispatcherSettings) ?? currentDispatcherSettings,
     dataListSettings: getDataListSettings(settingsRows),
-    saveCheckSettings: getSaveCheckSettings(settingsRows),
     systemIndexSettings,
     rows: preparedRows,
     welderStamps: stampRows.map(toWelderStampRecord),
@@ -316,13 +323,14 @@ async function rebuildScopedDispatcherTaskIndex(
     .select()
     .from(welderStampSuspensions)
     .orderBy(asc(welderStampSuspensions.id))
-  const duplicateRows = rowIds.length
-    ? await tx
-        .select()
-        .from(duplicateControls)
-        .where(inArray(duplicateControls.weldJointId, rowIds))
-        .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
-    : []
+  const duplicateRows: DuplicateControl[] = []
+  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+    duplicateRows.push(...await tx
+      .select()
+      .from(duplicateControls)
+      .where(inArray(duplicateControls.weldJointId, rowIdBatch))
+      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)))
+  }
   const acceptedWarnings = await tx
     .select()
     .from(dispatcherAcceptedWarnings)
@@ -342,7 +350,6 @@ async function rebuildScopedDispatcherTaskIndex(
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: getDispatcherSettings(settingsRows),
     dataListSettings: getDataListSettings(settingsRows),
-    saveCheckSettings: getSaveCheckSettings(settingsRows),
     systemIndexSettings,
     rows: preparedRows,
     welderStamps: stampRows.map(toWelderStampRecord),
@@ -366,7 +373,9 @@ async function rebuildScopedDispatcherTaskIndex(
     .filter((taskRow) => rowIdSet.has(taskRow.rowId))
 
   if (rowIds.length > 0) {
-    await tx.delete(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, rowIds))
+    for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+      await tx.delete(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, rowIdBatch))
+    }
   }
   for (let index = 0; index < taskIndexRows.length; index += INSERT_CHUNK_SIZE) {
     const chunk = taskIndexRows.slice(index, index + INSERT_CHUNK_SIZE)
@@ -397,7 +406,7 @@ async function rebuildScopedDispatcherTaskIndex(
 }
 
 function normalizedTextEquals(column: SQLWrapper, value: string) {
-  return sql`btrim(coalesce(${column}, '')) = ${String(value ?? '').trim()}`
+  return sql`lower(btrim(coalesce(${column}, ''))) = ${normalizeScopeText(value)}`
 }
 
 export async function prepareDispatcherReportRows(
@@ -455,9 +464,9 @@ function isDispatcherTaskInScopes(task: RepeatedJointTask, scopes: DispatcherDir
     ? task
     : task.row
   return scopes.some((scope) =>
-    String(taskScope.projectTitle ?? '').trim() === String(scope.projectTitle ?? '').trim() &&
-    String(taskScope.subtitleCode ?? '').trim() === String(scope.subtitleCode ?? '').trim() &&
-    String(taskScope.line ?? '').trim() === String(scope.line ?? '').trim(),
+    normalizeScopeText(taskScope.projectTitle) === normalizeScopeText(scope.projectTitle) &&
+    normalizeScopeText(taskScope.subtitleCode) === normalizeScopeText(scope.subtitleCode) &&
+    normalizeScopeText(taskScope.line) === normalizeScopeText(scope.line),
   )
 }
 
@@ -466,10 +475,14 @@ function isChainContinuationInScopes(
   scopes: DispatcherDirtyScope[],
 ) {
   return scopes.some((scope) =>
-    String(continuation.projectTitle ?? '').trim() === String(scope.projectTitle ?? '').trim() &&
-    String(continuation.subtitleCode ?? '').trim() === String(scope.subtitleCode ?? '').trim() &&
-    String(continuation.line ?? '').trim() === String(scope.line ?? '').trim(),
+    normalizeScopeText(continuation.projectTitle) === normalizeScopeText(scope.projectTitle) &&
+    normalizeScopeText(continuation.subtitleCode) === normalizeScopeText(scope.subtitleCode) &&
+    normalizeScopeText(continuation.line) === normalizeScopeText(scope.line),
   )
+}
+
+function normalizeScopeText(value: unknown) {
+  return String(value ?? '').trim().toLocaleLowerCase('ru-RU')
 }
 
 async function listDuplicateWeldKeys(tx: DispatcherIndexTransaction) {
@@ -477,14 +490,15 @@ async function listDuplicateWeldKeys(tx: DispatcherIndexTransaction) {
   const subtitle = normalizedDuplicatePart(weldJoints.subtitleCode)
   const line = normalizedDuplicatePart(weldJoints.line)
   const joint = normalizedDuplicatePart(weldJoints.joint)
-  const key = sql<string>`concat(${project}, '|', ${subtitle}, '|', ${line}, '|', ${joint})`
   const rows = await tx
-    .select({ key })
+    .select({ project, subtitle, line, joint })
     .from(weldJoints)
-    .where(sql`lower(btrim(coalesce(${weldJoints.officiality}, ''))) <> 'неофициальный'`)
+    .where(sql`lower(btrim(coalesce(${WELD_EFFECTIVE_OFFICIALITY}, ''))) <> 'неофициальный'`)
     .groupBy(project, subtitle, line, joint)
     .having(sql`count(*) > 1 and not (${project} = '' and ${subtitle} = '' and ${line} = '' and ${joint} = '')`)
-  return rows.map((row) => row.key).sort()
+  return rows
+    .map((row) => encodeIdentityKey([row.project, row.subtitle, row.line, row.joint]))
+    .sort()
 }
 
 function normalizedDuplicatePart(column: SQLWrapper) {
@@ -559,12 +573,6 @@ function getDataListSettings(rows: AppSetting[]) {
   )
 }
 
-function getSaveCheckSettings(rows: AppSetting[]) {
-  return normalizeSaveCheckSettings(
-    getStoredSetting(rows, PROJECT_SETTING_KEYS.saveCheck) ?? DEFAULT_SAVE_CHECK_SETTINGS,
-  )
-}
-
 function getSystemIndexSettings(rows: AppSetting[]) {
   return normalizeSystemIndexSettings(
     getStoredSetting(rows, PROJECT_SETTING_KEYS.systemIndex) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
@@ -625,6 +633,7 @@ function toWelderStampSuspensionRecord(row: WelderStampSuspension): WelderStampS
 function toDuplicateControlRecord(row: DuplicateControl): DuplicateControlRecord {
   return {
     id: row.id,
+    version: row.updatedAt?.toISOString?.() ?? '',
     weldJointId: row.weldJointId,
     method: row.method as DuplicateControlRecord['method'],
     result: row.result as DuplicateControlRecord['result'],

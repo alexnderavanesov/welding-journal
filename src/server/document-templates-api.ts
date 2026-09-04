@@ -25,10 +25,12 @@ type SaveDocumentTemplateInput = {
   locations: TemplateMarkerLocation[]
   warnings: string[]
   constructorConfig?: DocumentTemplateConstructorConfig | null
+  expectedVersion: string | null
 }
 
 type UpdateDocumentTemplateInput = {
   id: DocumentTemplateId
+  expectedVersion: string
   options?: DocumentTemplateOptions
   constructorConfig?: DocumentTemplateConstructorConfig
 }
@@ -67,7 +69,7 @@ export const updateRemoteDocumentTemplate = createServerFn({ method: 'POST' })
   })
 
 export const deleteRemoteDocumentTemplate = createServerFn({ method: 'POST' })
-  .validator((data: { id: DocumentTemplateId }) => data)
+  .validator((data: { id: DocumentTemplateId; expectedVersion: string }) => data)
   .handler(async ({ data }) => {
     const server = await import('@/server/document-templates')
     return server.deleteRemoteDocumentTemplate({ data })

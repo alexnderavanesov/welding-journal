@@ -17,6 +17,30 @@ export type DispatcherDirtyScope = {
   line: string
 }
 
+type DispatcherDirtyScopeSource = {
+  projectTitle?: unknown
+  subtitleCode?: unknown
+  line?: unknown
+}
+
+export function getDispatcherDirtyScopes(
+  records: readonly DispatcherDirtyScopeSource[],
+  previousRows: ReadonlyMap<number, DispatcherDirtyScopeSource>,
+) {
+  const scopes = new Map<string, DispatcherDirtyScope>()
+  const addScope = (record: DispatcherDirtyScopeSource) => {
+    const scope = {
+      projectTitle: String(record.projectTitle ?? '').trim(),
+      subtitleCode: String(record.subtitleCode ?? '').trim(),
+      line: String(record.line ?? '').trim(),
+    }
+    scopes.set(JSON.stringify(scope), scope)
+  }
+  records.forEach(addScope)
+  previousRows.forEach(addScope)
+  return [...scopes.values()]
+}
+
 export async function markDispatcherTaskIndexDirty(
   executor: SqlExecutor = requireDb(),
   options: {

@@ -284,6 +284,22 @@ describe('getLnkResultSaveBlockReason', () => {
     ).not.toThrow()
   })
 
+  it('rejects an arbitrary LNK date even when an old setting disabled ZV-14', () => {
+    expect(() => buildLnkResultRows({
+      records: [baseRow],
+      methodKey: 'rkRequest',
+      controlDate: 'после ремонта',
+      resultById: { 1: 'годен' },
+      conclusionName: 'Заключение-РК',
+      saveCheckSettings: {
+        ...DEFAULT_SAVE_CHECK_SETTINGS,
+        lnkResultControlDateFormat: false,
+        lnkResultDateAfterWeldDate: false,
+        lnkResultRequestDateOrder: false,
+      },
+    })).toThrow('Дата контроля')
+  })
+
   it('keeps the stored conclusion date separate from a custom LNK conclusion name', () => {
     const row = {
       ...baseRow,
@@ -314,6 +330,38 @@ describe('getLnkResultSaveBlockReason', () => {
 
     expect(updated.lnkDefectDescription).toBe('1: ДНО\n2: ДНО')
     expect(updated.rkExposureConfirmedDiameter).toBe(95)
+  })
+
+  it('keeps VIK defect descriptions consistent across result changes and deletion', () => {
+    const [good] = buildLnkResultRows({
+      records: [baseRow],
+      methodKey: 'vikRequest',
+      controlDate: '2026-07-04',
+      resultById: { 1: 'годен' },
+      conclusionName: 'Заключение-ВИК',
+    })
+    expect(good.vikDefectDescription).toBe('ДНО')
+
+    const rejected = buildLnkResultCorrectionRow({
+      record: good,
+      methodKey: 'vikRequest',
+      result: 'ремонт',
+    })
+    expect(rejected.vikDefectDescription).toBeNull()
+
+    const cut = buildLnkResultCorrectionRow({
+      record: { ...rejected, vikDefectDescription: 'Трещина 12 мм' },
+      methodKey: 'vikRequest',
+      result: 'вырез',
+    })
+    expect(cut.vikDefectDescription).toBe('Трещина 12 мм')
+
+    const cleared = buildLnkResultCorrectionRow({
+      record: cut,
+      methodKey: 'vikRequest',
+      result: null,
+    })
+    expect(cleared.vikDefectDescription).toBeNull()
   })
 
   it('preserves manually edited RK descriptions when the same result is saved again', () => {
@@ -361,6 +409,7 @@ describe('getLnkResultSaveBlockReason', () => {
       'ЗНК-ВИК-25.08.2026-018',
     ])
     expect(result.map((sourceRow) => sourceRow.vikResult)).toEqual(['годен', null, 'годен'])
+    expect(updated17.vikDefectDescription).toBeNull()
   })
 
   it('allows correcting a result while an older post-TO chronology issue is being repaired', () => {

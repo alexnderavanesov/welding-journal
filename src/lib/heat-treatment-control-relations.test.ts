@@ -56,4 +56,18 @@ describe('heat-treatment control relations', () => {
       ['Заявка РК до ТО-001', '0-100, 100-0', 'ДНО; пора'],
     ])
   })
+
+  it('materializes plain VIK, UZK and PVK defect descriptions without RK parsing', () => {
+    const [row] = mergePreHeatTreatmentControlsIntoRows([{ id: 1 }], [
+      { id: 11, weldJointId: 1, method: 'ВИК', defectDescription: 'Пора: 12 мм' },
+      { id: 12, weldJointId: 1, method: 'УЗК', defectDescription: 'Трещина; зона 2' },
+      { id: 13, weldJointId: 1, method: 'ПВК', defectDescription: 'ДНО' },
+    ])
+
+    expect(row).toMatchObject({
+      preVikDefectDescription: 'Пора: 12 мм',
+      preUzkDefectDescription: 'Трещина; зона 2',
+      prePvkDefectDescription: 'ДНО',
+    })
+  })
 })

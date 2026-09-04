@@ -1,5 +1,7 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
+import { getWeldLineMembershipLockKeys } from '@/server/weld-line-membership-lock'
 import { withE2eDatabase } from '../database'
 
 const JOINT = 'F1'
@@ -7,6 +9,13 @@ const CANCELLED_CYCLE_JOINT = 'F2'
 const LATE_ASSIGNMENT_JOINT = 'F3'
 const REACTIVATED_JOINT = 'F4'
 const LINE_MOVE_JOINT = 'F6'
+const STAGE_SYNC_JOINT = 'F8'
+const STAGE_SYNC_SOURCE_LINE = 'E2E-L8'
+const STAGE_SYNC_TARGET_LINE = 'E2E-L9'
+const CONCURRENT_PSTO_PROJECT = 'E2E конкурентная линия'
+const CONCURRENT_PSTO_SUBTITLE = 'E2E-010'
+const CONCURRENT_PSTO_LINE = 'E2E-L10'
+const LNK_REPORT_VIEW_STORAGE_KEY = 'welding-report-view:v1:lnk'
 
 test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор -> основной НК -> ремонт -> исправление', async ({ page }) => {
   test.setTimeout(180_000)
@@ -33,6 +42,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expectDatabaseRow('pre_heat_treatment_controls', {
     result: 'годен',
     conclusion_date: '2026-08-03',
+    defect_description: 'ДНО',
   })
 
   await runNextAction(page, 'Создать заявку ПСТО')
@@ -107,7 +117,11 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await fillDate(page, 'Дата контроля', '2026-08-13')
   await page.getByRole('button', { name: 'ремонт', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
-  await expectWeld({ vik_result: 'ремонт', vik_conclusion_date: '2026-08-13' })
+  await expectWeld({
+    vik_result: 'ремонт',
+    vik_conclusion_date: '2026-08-13',
+    vik_defect_description: null,
+  })
   await expectRepeatedJointCreateTask(page, JOINT, 'F1R1')
 
   await openHeaderMenuItem(page, 'Результат', 'Все результаты ЛНК')
@@ -116,7 +130,11 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('button', { name: 'годен', exact: true }).last().click()
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
-  await expectWeld({ vik_result: 'годен', vik_conclusion_date: '2026-08-13' })
+  await expectWeld({
+    vik_result: 'годен',
+    vik_conclusion_date: '2026-08-13',
+    vik_defect_description: 'ДНО',
+  })
   await expectRepeatedJointCreateTaskToDisappear(page, 'F1R1')
 
   await page.goto('/psto')
@@ -400,6 +418,486 @@ test('карточка стыка переносит основной НК на 
   await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
 })
 
+test('этап НК одинаково меняется из ПСТО, документов и карточки стыка', async ({ page }) => {
+  test.setTimeout(300_000)
+  await seedStageSynchronizationLines()
+  await showOnlyStageSynchronizationFields(page)
+
+  await page.goto('/lnk')
+  await runNextAction(page, 'Создать заявку основного НК', STAGE_SYNC_JOINT)
+  await fillDate(page, 'Дата заявки', '2026-08-20')
+  await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+
+  await runNextAction(page, 'Внести результат основного НК', STAGE_SYNC_JOINT)
+  await fillDate(page, 'Дата контроля', '2026-08-21')
+  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
+
+  const titles = await loadVikDocumentTitles(STAGE_SYNC_JOINT, true)
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_SOURCE_LINE,
+    stage: 'primary',
+    titles,
+    pstoRequired: null,
+    completed: true,
+  })
+
+  await openPstoLineProgram(page, STAGE_SYNC_SOURCE_LINE)
+  await page.getByRole('button', { name: 'Назначить', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
+  await expect(page.getByText('Основной НК: ВИК', { exact: true })).toBeVisible()
+  await page.getByRole('button', {
+    name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»`,
+  }).click()
+  await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+  await closePstoLineProgram(page)
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_SOURCE_LINE,
+    stage: 'beforeHeatTreatment',
+    titles,
+    completed: true,
+  })
+
+  const documentRow = await openLnkDocumentRow(page, titles.request, 'request')
+  await documentRow.click({ button: 'right' })
+  await page.getByRole('button', { name: 'Перенести в «Основной»', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Перенести комплект на этап «Основной»' })).toBeVisible()
+  await page.getByRole('button', { name: 'Перенести', exact: true }).click()
+  await expect(page.getByText(`Комплект «${titles.request}» перенесен на этап «Основной».`)).toBeVisible()
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_SOURCE_LINE,
+    stage: 'primary',
+    titles,
+    completed: true,
+  })
+
+  const primaryDocumentRow = await openLnkDocumentRow(page, titles.request, 'request')
+  await primaryDocumentRow.click({ button: 'right' })
+  await page.getByRole('button', { name: 'Перенести в «До ТО»', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Перенести комплект на этап «До ТО»' })).toBeVisible()
+  await page.getByRole('button', { name: 'Перенести', exact: true }).click()
+  await expect(page.getByText(`Комплект «${titles.request}» перенесен на этап «До ТО».`)).toBeVisible()
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_SOURCE_LINE,
+    stage: 'beforeHeatTreatment',
+    titles,
+    completed: true,
+  })
+
+  await openReport(page, 'Сварочный журнал', '/journal')
+  const sourceRow = page
+    .getByRole('button', { name: `Выбрать стык ${STAGE_SYNC_JOINT}`, exact: true })
+    .locator('xpath=ancestor::tr')
+  await expect(sourceRow).toBeVisible()
+  await sourceRow.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  const editor = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Редактирование стыка' }),
+  })
+  const lineInput = editor.getByText('Линия', { exact: true }).locator('..').getByRole('textbox')
+  await lineInput.fill(STAGE_SYNC_TARGET_LINE)
+  await lineInput.press('Tab')
+  await expect(page.getByRole('heading', { name: 'Перенос стыка на линию без ПСТО' })).toBeVisible()
+  await expect(page.getByText('До ТО: ВИК', { exact: false })).toBeVisible()
+  const promotePreControl = page.getByRole('button', { name: /^Перенести завершенный НК до ТО/ })
+  await expect(promotePreControl).toBeVisible()
+  await promotePreControl.click()
+  await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
+  await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(editor).toBeHidden()
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_TARGET_LINE,
+    stage: 'primary',
+    titles,
+    pstoRequired: null,
+    completed: true,
+  })
+
+  await openPstoLineProgram(page, STAGE_SYNC_TARGET_LINE)
+  await page.getByRole('button', { name: 'Назначить', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
+  await expect(page.getByText('Основной НК: ВИК', { exact: true })).toBeVisible()
+  await page.getByRole('button', {
+    name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»`,
+  }).click()
+  await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+  await closePstoLineProgram(page)
+  await expectDatabaseWeld('F9', { psto_required: 'да' })
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_TARGET_LINE,
+    stage: 'beforeHeatTreatment',
+    titles,
+    completed: true,
+  })
+
+  await openPstoLineProgram(page, STAGE_SYNC_TARGET_LINE)
+  await page.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Отмена ПСТО' })).toBeVisible()
+  await expect(page.getByText('НК до ТО: ВИК', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Перенести завершенный НК до ТО', exact: true }).click()
+  await page.getByLabel(/Дата решения об отмене ПСТО/).fill('2026-08-22')
+  await page.getByLabel('Основание отмены ПСТО', { exact: true }).fill('Сквозной E2E-тест этапа')
+  await page.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
+  await closePstoLineProgram(page)
+  await expectDatabaseWeld('F9', { psto_required: 'отменен' })
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_TARGET_LINE,
+    stage: 'primary',
+    titles,
+    pstoRequired: 'отменен',
+    completed: true,
+  })
+
+  await openPstoLineProgram(page, STAGE_SYNC_TARGET_LINE)
+  await page.getByRole('button', { name: 'Возобновить', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Возобновление ПСТО' })).toBeVisible()
+  await expect(page.getByText('Основной НК: ВИК', { exact: true })).toBeVisible()
+  await page.getByRole('button', {
+    name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»`,
+  }).click()
+  await page.getByRole('button', { name: 'Возобновить ПСТО', exact: true }).click()
+  await closePstoLineProgram(page)
+  await expectDatabaseWeld('F9', { psto_required: 'да' })
+  await expectVikStageEverywhere(page, {
+    joint: STAGE_SYNC_JOINT,
+    line: STAGE_SYNC_TARGET_LINE,
+    stage: 'beforeHeatTreatment',
+    titles,
+    completed: true,
+  })
+})
+
+test('не назначает ПСТО по устаревшему составу линии при одновременном добавлении стыка', async ({ page }) => {
+  test.setTimeout(120_000)
+  await seedConcurrentPstoLine()
+  await openPstoLineProgram(page, CONCURRENT_PSTO_LINE)
+  await page.getByRole('button', { name: 'Назначить', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
+
+  const [lockKey] = getWeldLineMembershipLockKeys([{
+    projectTitle: CONCURRENT_PSTO_PROJECT,
+    subtitleCode: CONCURRENT_PSTO_SUBTITLE,
+    line: CONCURRENT_PSTO_LINE,
+  }])
+  expect(lockKey).toBeTruthy()
+
+  await withE2eDatabase(async (client) => {
+    let committed = false
+    await client.query('begin')
+    try {
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [lockKey])
+      await client.query(`
+        insert into weld_joints (
+          weld_date, project_title, subtitle_code, line, isometry, joint, spool,
+          officiality, revision_actuality, welding_method, connection_type, material_group,
+          d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, final_status,
+          welding_updated_at, lnk_created_at, lnk_updated_at, psto_created_at, psto_updated_at
+        ) values (
+          '2026-08-24', $1, $2, $3, 'ISO-E2E-10-B', 'F10-B', 'E2E-S10',
+          'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+          108, 108, 4, 4, 0.42, 'E2K10', 'E2K10', 'годен',
+          now(), now(), now(), now(), now()
+        )
+      `, [CONCURRENT_PSTO_PROJECT, CONCURRENT_PSTO_SUBTITLE, CONCURRENT_PSTO_LINE])
+
+      const submit = page.getByRole('button', { name: 'Назначить ПСТО', exact: true })
+      await submit.click()
+      await expect(submit).toBeDisabled()
+      await expect.poll(async () => {
+        const result = await client.query(`
+          select count(*)::int as count
+          from pg_stat_activity
+          where datname = current_database()
+            and pid <> pg_backend_pid()
+            and wait_event_type = 'Lock'
+            and wait_event = 'advisory'
+        `)
+        return Number(result.rows[0]?.count ?? 0)
+      }, { timeout: 15_000 }).toBeGreaterThan(0)
+
+      await client.query('commit')
+      committed = true
+    } finally {
+      if (!committed) await client.query('rollback')
+    }
+  })
+
+  await expect(page.getByRole('status')).toContainText('Открытые данные устарели')
+  await expect.poll(async () => withE2eDatabase(async (client) => {
+    const result = await client.query(`
+      select joint, psto_required
+      from weld_joints
+      where project_title = $1 and subtitle_code = $2 and line = $3
+      order by joint
+    `, [CONCURRENT_PSTO_PROJECT, CONCURRENT_PSTO_SUBTITLE, CONCURRENT_PSTO_LINE])
+    return result.rows
+  })).toEqual([
+    { joint: 'F10-A', psto_required: null },
+    { joint: 'F10-B', psto_required: null },
+  ])
+})
+
+type VikDocumentTitles = {
+  request: string
+  conclusion: string
+}
+
+type ExpectedVikStage = 'primary' | 'beforeHeatTreatment'
+
+async function showOnlyStageSynchronizationFields(page: Page) {
+  const visibleFieldKeys = new Set([
+    'line',
+    'joint',
+    'pstoRequired',
+    'vikRequest',
+    'vikResult',
+    'vikConclusion',
+    'preVikRequest',
+    'preVikResult',
+    'preVikConclusion',
+  ])
+  const hiddenFieldKeys = LNK_VISIBLE_FIELD_SECTIONS
+    .flatMap((section) => section.fields.map((field) => field.key))
+    .filter((fieldKey) => !visibleFieldKeys.has(fieldKey))
+
+  await page.addInitScript(({ storageKey, hiddenFields }) => {
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      activePreset: 'custom',
+      hiddenFieldKeys: hiddenFields,
+      customHiddenFieldKeys: hiddenFields,
+      collapsedSections: [],
+      savedViews: [],
+    }))
+  }, { storageKey: LNK_REPORT_VIEW_STORAGE_KEY, hiddenFields: hiddenFieldKeys })
+}
+
+async function openReport(page: Page, label: string, path: string) {
+  await page.goto(path)
+  await expect(page).toHaveURL(new RegExp(`${path}$`))
+  await expect(page.locator('header').getByRole('heading', { name: label, exact: true })).toBeVisible()
+}
+
+async function openPstoLineProgram(page: Page, line: string) {
+  await openReport(page, 'Термообработка', '/psto')
+  await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
+  const program = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Программа ПСТО' }),
+  })
+  await expect(program).toBeVisible()
+  await program.getByLabel('Поиск линий', { exact: true }).fill(line)
+  await expect(program.getByText(line, { exact: true })).toBeVisible()
+}
+
+async function closePstoLineProgram(page: Page) {
+  const program = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Программа ПСТО' }),
+  })
+  await expect(program).toBeVisible()
+  await program.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(program).toBeHidden()
+}
+
+async function openLnkDocumentRow(page: Page, title: string, type: 'request' | 'conclusion') {
+  await openReport(page, 'Документы', '/documents')
+  await page.getByRole('button', {
+    name: type === 'request' ? 'Заявка ЛНК' : 'Заключения ЛНК',
+    exact: true,
+  }).click()
+  const titleText = page.getByText(title, { exact: true }).first()
+  await expect(titleText).toBeVisible()
+  const row = titleText.locator(
+    'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " grid ")][1]',
+  )
+  await expect(row).toBeVisible()
+  return row
+}
+
+async function expectVikStageEverywhere(page: Page, {
+  joint,
+  line,
+  stage,
+  titles,
+  pstoRequired = 'да',
+  completed = false,
+}: {
+  joint: string
+  line: string
+  stage: ExpectedVikStage
+  titles: VikDocumentTitles
+  pstoRequired?: string | null
+  completed?: boolean
+}) {
+  await expectStoredVikStage({ joint, line, stage, titles, pstoRequired, completed })
+  await expectDocumentStage(joint, titles.request, stage === 'beforeHeatTreatment' ? 'beforeHeatTreatment' : undefined)
+  if (completed) {
+    await expectDocumentStage(joint, titles.conclusion, stage === 'beforeHeatTreatment' ? 'beforeHeatTreatment' : undefined)
+  }
+
+  await openReport(page, 'ЛНК', '/lnk')
+  const lnkRow = page
+    .getByRole('button', { name: `Выбрать стык ${joint}`, exact: true })
+    .locator('xpath=ancestor::tr')
+  await expect(lnkRow).toBeVisible()
+  await expect(lnkRow.locator('td[data-weld-field-key="line"]')).toHaveText(line)
+  await expect(lnkRow.locator('td[data-weld-field-key="pstoRequired"]')).toHaveText(pstoRequired ?? '')
+  await expectVikCells(lnkRow, stage, titles, pstoRequired, completed)
+
+  const documentRow = await openLnkDocumentRow(
+    page,
+    completed ? titles.conclusion : titles.request,
+    completed ? 'conclusion' : 'request',
+  )
+  await expect(documentRow.getByText(stage === 'primary' ? 'Основной' : 'До ТО', { exact: true })).toBeVisible()
+  await expect(documentRow.getByText(line, { exact: true })).toBeVisible()
+}
+
+async function expectVikCells(
+  row: Locator,
+  stage: ExpectedVikStage,
+  titles: VikDocumentTitles,
+  pstoRequired: string | null,
+  completed: boolean,
+) {
+  const pendingPrimaryResult = pstoRequired === 'да' ? 'ожидает заявку' : ''
+  const activeResult = completed ? 'годен' : 'ожидает НК'
+  const activeConclusion = completed ? titles.conclusion : ''
+  const primaryValues = stage === 'primary'
+    ? { vikRequest: titles.request, vikResult: activeResult, vikConclusion: activeConclusion }
+    : { vikRequest: '', vikResult: pendingPrimaryResult, vikConclusion: '' }
+  const preValues = stage === 'beforeHeatTreatment'
+    ? { preVikRequest: titles.request, preVikResult: activeResult, preVikConclusion: activeConclusion }
+    : { preVikRequest: '', preVikResult: '', preVikConclusion: '' }
+
+  for (const [fieldKey, expectedValue] of Object.entries({ ...primaryValues, ...preValues })) {
+    await expect(row.locator(`td[data-weld-field-key="${fieldKey}"]`)).toHaveText(expectedValue)
+  }
+}
+
+async function expectStoredVikStage({
+  joint,
+  line,
+  stage,
+  titles,
+  pstoRequired,
+  completed,
+}: {
+  joint: string
+  line: string
+  stage: ExpectedVikStage
+  titles: VikDocumentTitles
+  pstoRequired: string | null
+  completed: boolean
+}) {
+  const activeResult = completed ? 'годен' : 'ожидает НК'
+  const activeConclusionDate = completed ? '2026-08-21' : null
+  const activeConclusion = completed ? titles.conclusion : null
+  const activeDefectDescription = completed ? 'ДНО' : null
+  await expect.poll(async () => withE2eDatabase(async (client) => {
+    const weld = await client.query(`
+      select id, line, psto_required, vik_request, vik_request_date, vik_result,
+             vik_conclusion_date, vik_conclusion, vik_defect_description
+      from weld_joints
+      where joint = $1
+    `, [joint])
+    const controls = await client.query(`
+      select method, request_name, request_date, result, conclusion_date,
+             conclusion_name, defect_description
+      from pre_heat_treatment_controls
+      where weld_joint_id = $1 and method = 'ВИК'
+      order by id
+    `, [weld.rows[0]?.id])
+    return {
+      weld: pick(weld.rows[0] ?? {}, [
+        'line',
+        'psto_required',
+        'vik_request',
+        'vik_request_date',
+        'vik_result',
+        'vik_conclusion_date',
+        'vik_conclusion',
+        'vik_defect_description',
+      ]),
+      controls: controls.rows.map((control) => pick(control, [
+        'method',
+        'request_name',
+        'request_date',
+        'result',
+        'conclusion_date',
+        'conclusion_name',
+        'defect_description',
+      ])),
+    }
+  })).toEqual(stage === 'primary'
+    ? {
+        weld: {
+          line,
+          psto_required: pstoRequired,
+          vik_request: titles.request,
+          vik_request_date: '2026-08-20',
+          vik_result: activeResult,
+          vik_conclusion_date: activeConclusionDate,
+          vik_conclusion: activeConclusion,
+          vik_defect_description: activeDefectDescription,
+        },
+        controls: [],
+      }
+    : {
+        weld: {
+          line,
+          psto_required: pstoRequired,
+          vik_request: null,
+          vik_request_date: null,
+          vik_result: null,
+          vik_conclusion_date: null,
+          vik_conclusion: null,
+          vik_defect_description: null,
+        },
+        controls: [{
+          method: 'ВИК',
+          request_name: titles.request,
+          request_date: '2026-08-20',
+          result: activeResult,
+          conclusion_date: activeConclusionDate,
+          conclusion_name: activeConclusion,
+          defect_description: activeDefectDescription,
+        }],
+      })
+}
+
+async function loadVikDocumentTitles(joint: string, requireConclusion = false): Promise<VikDocumentTitles> {
+  let titles: VikDocumentTitles = { request: '', conclusion: '' }
+  await expect.poll(async () => {
+    titles = await withE2eDatabase(async (client) => {
+      const result = await client.query<{
+        vik_request: string | null
+        vik_conclusion: string | null
+        pre_request: string | null
+        pre_conclusion: string | null
+      }>(`
+        select weld.vik_request, weld.vik_conclusion,
+               control.request_name as pre_request,
+               control.conclusion_name as pre_conclusion
+        from weld_joints weld
+        left join pre_heat_treatment_controls control
+          on control.weld_joint_id = weld.id and control.method = 'ВИК'
+        where weld.joint = $1
+      `, [joint])
+      return {
+        request: result.rows[0]?.vik_request ?? result.rows[0]?.pre_request ?? '',
+        conclusion: result.rows[0]?.vik_conclusion ?? result.rows[0]?.pre_conclusion ?? '',
+      }
+    })
+    return Boolean(titles.request && (!requireConclusion || titles.conclusion))
+  }).toBe(true)
+  return titles
+}
+
 async function fillDate(page: Page, label: string, value: string) {
   const input = page.getByLabel(label, { exact: true })
   await expect(input).toBeVisible()
@@ -524,7 +1022,7 @@ async function expectPstoCycleDocumentPosition(joint: string, sequence: number, 
   })).toBe(expected)
 }
 
-async function expectDocumentStage(joint: string, title: string, sourceKind: string) {
+async function expectDocumentStage(joint: string, title: string, sourceKind: string | undefined) {
   await expect.poll(async () => withE2eDatabase(async (client) => {
     const documents = await client.query<{ source_metadata: string | null }>(`
       select document.source_metadata
@@ -533,14 +1031,14 @@ async function expectDocumentStage(joint: string, title: string, sourceKind: str
       inner join weld_joints weld on weld.id = assignment.weld_joint_id
       where weld.joint = $1 and document.title = $2
     `, [joint, title])
-    return documents.rows.some((document) => {
+    return documents.rows.map((document) => {
       try {
-        return JSON.parse(document.source_metadata ?? '{}').sourceKind === sourceKind
+        return JSON.parse(document.source_metadata ?? '{}').sourceKind ?? null
       } catch {
-        return false
+        return 'invalid-metadata'
       }
     })
-  })).toBe(true)
+  })).toEqual([sourceKind ?? null])
 }
 
 async function expectPreControl(joint: string, expected: Record<string, unknown>) {
@@ -702,6 +1200,59 @@ async function seedLineMoveJoint() {
         '[{"id":"e2e-naks-6","weldType":"РД","materialGroups":"M01","diameterFrom":"1","diameterTo":"1000","thicknessFrom":"1","thicknessTo":"100","validFrom":"2026-01-01","validTo":"2026-12-31","note":"","archived":false}]'
       )
     `)
+  })
+}
+
+async function seedStageSynchronizationLines() {
+  await withE2eDatabase(async (client) => {
+    await client.query(`
+      insert into weld_joints (
+        weld_date, project_title, subtitle_code, line, isometry, joint, spool,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
+        d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik,
+        vik_control_basis, psto_required, final_status, welding_updated_at,
+        lnk_created_at, lnk_updated_at, psto_created_at, psto_updated_at
+      ) values (
+        '2026-08-19', 'E2E синхронизация этапа', 'E2E-008', $1,
+        'ISO-E2E-8', $2, 'E2E-S8', 'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42, 'E2K8', 'E2K8', 'да', 'проект', null,
+        'ожидает заявку', now(), now(), now(), now(), now()
+      ), (
+        '2026-08-19', 'E2E синхронизация этапа', 'E2E-008', $3,
+        'ISO-E2E-9', 'F9', 'E2E-S9', 'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42, 'E2K9', 'E2K9', null, null, null,
+        'годен', now(), now(), now(), now(), now()
+      )
+    `, [STAGE_SYNC_SOURCE_LINE, STAGE_SYNC_JOINT, STAGE_SYNC_TARGET_LINE])
+    await client.query(`
+      insert into welder_stamps (
+        naks_stamp, welder_name, weld_type, material_groups,
+        diameter_from, diameter_to, thickness_from, thickness_to,
+        valid_from, valid_to, naks_permits
+      ) values (
+        'E2K8', 'E2E сварщик 8', 'РД', 'M01',
+        '1', '1000', '1', '100', '2026-01-01', '2026-12-31',
+        '[{"id":"e2e-naks-8","weldType":"РД","materialGroups":"M01","diameterFrom":"1","diameterTo":"1000","thicknessFrom":"1","thicknessTo":"100","validFrom":"2026-01-01","validTo":"2026-12-31","note":"","archived":false}]'
+      )
+    `)
+  })
+}
+
+async function seedConcurrentPstoLine() {
+  await withE2eDatabase(async (client) => {
+    await client.query(`
+      insert into weld_joints (
+        weld_date, project_title, subtitle_code, line, isometry, joint, spool,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
+        d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, final_status,
+        welding_updated_at, lnk_created_at, lnk_updated_at, psto_created_at, psto_updated_at
+      ) values (
+        '2026-08-24', $1, $2, $3, 'ISO-E2E-10-A', 'F10-A', 'E2E-S10',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42, 'E2K10', 'E2K10', 'годен',
+        now(), now(), now(), now(), now()
+      )
+    `, [CONCURRENT_PSTO_PROJECT, CONCURRENT_PSTO_SUBTITLE, CONCURRENT_PSTO_LINE])
   })
 }
 

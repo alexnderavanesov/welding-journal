@@ -13,6 +13,7 @@ import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
   getPrimaryPstoLifecycleDestructiveChangeReason,
+  getSystemDocumentIntegrityReason,
   getSystemWorkflowStageTransitionReason,
   loadPreviousWeldRows,
   mergeWeldRecordsWithPrevious,
@@ -32,6 +33,102 @@ const context: ServerWeldValidationContext = {
 }
 
 describe('validateServerWeldRecords', () => {
+  it('protects fixed request and TVMT document dates at the server boundary', () => {
+    const previous = {
+      id: 70,
+      joint: 'F70',
+      hasVik: 'да',
+      pstoRequired: 'да',
+    } as WeldJoint
+
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      vikRequest: 'Заявка ВИК',
+      vikRequestDate: '31.02.2026',
+    } as unknown as WeldInput, previous)).toContain('Дата заявки ВИК')
+
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      pstoRequest: 'Заявка ПСТО',
+      pstoRequestDate: '',
+    } as unknown as WeldInput, previous)).toContain('заявки ПСТО укажите дату')
+
+    const beforeTvmt = {
+      ...previous,
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtRequestDate: '2026-08-20',
+      tvmtResult: 'ожидает НК',
+    } as WeldJoint
+    expect(getSystemDocumentIntegrityReason({
+      ...beforeTvmt,
+      tvmtResult: 'годен',
+      tvmtConclusionDate: 'not-a-date',
+      tvmtConclusion: 'Заключение ТВМТ',
+    } as unknown as WeldInput, beforeTvmt)).toContain('Дата ТВМТ')
+  })
+
+  it('does not block unrelated edits or one-field repair of legacy incomplete TVMT data', () => {
+    const previous = {
+      id: 71,
+      joint: 'F71',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '',
+      tvmtConclusion: '',
+    } as WeldJoint
+
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      note: 'исправлено примечание',
+    } as unknown as WeldInput, previous)).toBe('')
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      tvmtConclusion: 'Заключение ТВМТ',
+    } as unknown as WeldInput, previous)).toBe('')
+  })
+
+  it('audits a legacy official-stamp issue without blocking an unrelated edit', () => {
+    const previous = {
+      id: 72,
+      joint: 'S72',
+      stamp1K: 'OLD',
+      responsible: '',
+    } as WeldJoint
+
+    expect(() => validateServerWeldRecords({
+      records: [{ ...previous, responsible: 'Иванов' } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).not.toThrow()
+
+    expect(() => validateServerWeldRecords({
+      records: [{ ...previous, stamp1K: 'NEW' } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('ЗВ-01')
+  })
+
+  it('audits a legacy control-history issue without blocking an unrelated edit', () => {
+    const previous = {
+      id: 73,
+      joint: 'S73',
+      hasRk: null,
+      rkResult: 'годен',
+      responsible: '',
+    } as WeldJoint
+
+    expect(() => validateServerWeldRecords({
+      records: [{ ...previous, responsible: 'Иванов' } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).not.toThrow()
+
+    expect(() => validateServerWeldRecords({
+      records: [{ ...previous, hasUzk: null, uzkResult: 'годен' } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('ЗВ-27')
+  })
+
   it('locks stored weld rows before merging a scoped workflow update', async () => {
     const lockModes: string[] = []
     const stored = { id: 5, joint: 'F5' } as WeldJoint
@@ -1197,5 +1294,303 @@ describe('validateServerWeldRecords', () => {
         context,
       }),
     ).toThrow('ЗВ-20')
+  })
+
+  it('blocks repair after two official repairs through ZВ-20', () => {
+    const previous = {
+      id: 19,
+      joint: 'F1R2',
+      d1: 159,
+      d2: 159,
+      hasRk: 'да',
+      rkResult: 'ремонт',
+      responsible: '',
+    } as WeldJoint
+    const record = { ...previous, responsible: 'Иванов' } as unknown as WeldInput
+
+    expect(() => validateServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow(/ЗВ-20.*после двух ремонтов/)
+  })
+
+  it('applies ZВ-20 to a forbidden pre-TO repair too', () => {
+    const previous = {
+      id: 20,
+      joint: 'F2R2',
+      d1: 159,
+      d2: 159,
+      pstoRequired: 'да',
+      hasRk: 'да',
+      responsible: '',
+      preHeatTreatmentControls: [{
+        id: 201,
+        weldJointId: 20,
+        method: 'РК',
+        result: 'ремонт',
+      }],
+    } as unknown as WeldJoint
+    const record = { ...previous, responsible: 'Иванов' } as unknown as WeldInput
+
+    expect(() => validateServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow(/ЗВ-20.*РК до ТО/)
+  })
+
+  it('enforces LNK result date and conclusion settings on the server', () => {
+    const previous = {
+      id: 21,
+      joint: 'F21',
+      hasVik: 'да',
+      vikResult: null,
+    } as WeldJoint
+
+    expect(() => validateServerWeldRecords({
+      records: [{ ...previous, vikResult: 'годен' } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('ЗВ-13')
+
+    expect(() => validateServerWeldRecords({
+      records: [{
+        ...previous,
+        vikResult: 'годен',
+        vikConclusionDate: 'не дата',
+        vikConclusion: 'ВИК-21',
+      } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('ЗВ-14')
+
+    expect(() => validateServerWeldRecords({
+      records: [{
+        ...previous,
+        vikResult: 'годен',
+        vikConclusionDate: '2026-08-21',
+        vikConclusion: '',
+      } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context,
+    })).toThrow('ЗВ-19')
+  })
+
+  it('does not let the general ZВ-11 override disabled LNK result checks', () => {
+    const previous = {
+      id: 22,
+      joint: 'F22',
+      hasVik: 'да',
+      vikResult: null,
+    } as WeldJoint
+    const record = {
+      ...previous,
+      vikResult: 'годен',
+      vikConclusionDate: 'не дата',
+      vikConclusion: '',
+    } as unknown as WeldInput
+
+    expect(() => validateServerWeldRecords({
+      records: [record],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        saveCheckSettings: {
+          ...DEFAULT_SAVE_CHECK_SETTINGS,
+          lnkResultControlDateRequired: false,
+          lnkResultControlDateFormat: false,
+          lnkResultConclusionRequired: false,
+        },
+      },
+    })).toThrow('ЗВ-14')
+  })
+
+  it('keeps ZВ-15 and ZВ-16 independent at the server boundary', () => {
+    const previous = {
+      id: 24,
+      joint: 'F24',
+      weldDate: '2026-08-10',
+      hasVik: 'да',
+      vikRequest: 'ВИК-24',
+      vikRequestDate: '2026-08-10',
+      vikResult: null,
+    } as WeldJoint
+    const baseSettings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+      requiredMaterialGroupWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+      requiredWeldingMethodWithWeldDate: false,
+      lnkResultVikDateBeforeOther: false,
+      lnkResultVikRequiredBeforeOther: false,
+    }
+    const beforeWeld = {
+      ...previous,
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-09',
+      vikConclusion: 'ЗВИК-24',
+    } as unknown as WeldInput
+
+    expect(() => validateServerWeldRecords({
+      records: [beforeWeld],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        saveCheckSettings: {
+          ...baseSettings,
+          lnkResultDateAfterWeldDate: true,
+          lnkResultRequestDateOrder: false,
+        },
+      },
+    })).toThrow('ЗВ-15')
+
+    expect(() => validateServerWeldRecords({
+      records: [beforeWeld],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        saveCheckSettings: {
+          ...baseSettings,
+          lnkResultDateAfterWeldDate: false,
+          lnkResultRequestDateOrder: false,
+        },
+      },
+    })).not.toThrow()
+
+    const requestAfterConclusion = {
+      ...beforeWeld,
+      vikRequestDate: '2026-08-12',
+      vikConclusionDate: '2026-08-11',
+    } as unknown as WeldInput
+    expect(() => validateServerWeldRecords({
+      records: [requestAfterConclusion],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        saveCheckSettings: {
+          ...baseSettings,
+          lnkResultDateAfterWeldDate: false,
+          lnkResultRequestDateOrder: true,
+        },
+      },
+    })).toThrow('ЗВ-16')
+  })
+
+  it('enforces PSTO result date and diagram settings on the server', () => {
+    const previous = {
+      id: 23,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-23',
+      joint: 'F23',
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-23',
+      pstoRequestDate: '2026-08-20',
+      pstoResult: null,
+    } as WeldJoint
+    const pstoContext = {
+      ...context,
+      pstoLineAssignments: new Map([[getPstoLineIdentityKey(previous), {
+        rowCount: 1,
+        assignedCount: 1,
+      }]]),
+    }
+
+    expect(() => validateServerWeldRecords({
+      records: [{ ...previous, pstoResult: 'проведено' } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context: pstoContext,
+    })).toThrow('ЗВ-21')
+
+    expect(() => validateServerWeldRecords({
+      records: [{
+        ...previous,
+        pstoResult: 'проведено',
+        pstoDate: '2026-08-21',
+        heatTreatmentDiagram: '',
+      } as unknown as WeldInput],
+      previousRows: new Map([[previous.id, previous]]),
+      context: pstoContext,
+    })).toThrow('ЗВ-25')
+  })
+
+  it('keeps ZВ-23 and ZВ-24 independent at the server boundary', () => {
+    const previous = {
+      id: 25,
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-25',
+      joint: 'F25',
+      weldDate: '2026-08-10',
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-25',
+      pstoRequestDate: '2026-08-10',
+      pstoResult: null,
+    } as WeldJoint
+    const pstoLineAssignments = new Map([[getPstoLineIdentityKey(previous), {
+      rowCount: 1,
+      assignedCount: 1,
+    }]])
+    const baseSettings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      requiredRootStampWithWeldDate: false,
+      requiredMaterialGroupWithWeldDate: false,
+      requiredConnectionTypeWithWeldDate: false,
+      requiredWeldingMethodWithWeldDate: false,
+    }
+    const beforeWeld = {
+      ...previous,
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-09',
+      heatTreatmentDiagram: 'Диаграмма-25',
+    } as unknown as WeldInput
+
+    expect(() => validateServerWeldRecords({
+      records: [beforeWeld],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        pstoLineAssignments,
+        saveCheckSettings: {
+          ...baseSettings,
+          pstoResultDateAfterWeldDate: true,
+          pstoResultRequestDateOrder: false,
+        },
+      },
+    })).toThrow('ЗВ-23')
+
+    expect(() => validateServerWeldRecords({
+      records: [beforeWeld],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        pstoLineAssignments,
+        saveCheckSettings: {
+          ...baseSettings,
+          pstoResultDateAfterWeldDate: false,
+          pstoResultRequestDateOrder: false,
+        },
+      },
+    })).not.toThrow()
+
+    const requestAfterResult = {
+      ...beforeWeld,
+      pstoRequestDate: '2026-08-12',
+      pstoDate: '2026-08-11',
+    } as unknown as WeldInput
+    expect(() => validateServerWeldRecords({
+      records: [requestAfterResult],
+      previousRows: new Map([[previous.id, previous]]),
+      context: {
+        ...context,
+        pstoLineAssignments,
+        saveCheckSettings: {
+          ...baseSettings,
+          pstoResultDateAfterWeldDate: false,
+          pstoResultRequestDateOrder: true,
+        },
+      },
+    })).toThrow('ЗВ-24')
   })
 })

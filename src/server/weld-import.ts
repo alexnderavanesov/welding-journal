@@ -71,6 +71,11 @@ import {
 updateWeldJointsInBatches,
 } from '@/server/weld-persistence'
 import {
+getChangedWeldLineMemberships,
+haveSameWeldLineMemberships,
+lockWeldLineMemberships,
+} from '@/server/weld-line-membership-lock'
+import {
 applyCurrentSystemWdi,
 buildWhere,
 getColumnFilterOptionFilters,
@@ -83,11 +88,14 @@ import {
   compactWeldRowsForTransport,
   normalizeWeldImportScopeRequest,
 } from '@/server/weld-request-utils'
+import { CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES } from '@/lib/control-availability-values'
 
-export const WELD_IMPORT_SCOPE_SELECT = {
-  ...WELD_TABLE_SELECT,
-  rowVersion: sql<string>`xmin::text`.as('row_version'),
-}
+const CONTROL_ENABLED_VALUES_SQL = sql.join(
+  CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES.map((value) => sql`${value}`),
+  sql`, `,
+)
+
+export const WELD_IMPORT_SCOPE_SELECT = WELD_TABLE_SELECT
 
 export const listWeldingJournalImportScope = createServerFn({ method: 'GET' })
   .validator((data: WeldImportScopeRequest | undefined) => normalizeWeldImportScopeRequest(data))
@@ -147,16 +155,16 @@ export const listWeldingJournalImportScope = createServerFn({ method: 'GET' })
   })
 
 export async function listFullyAssignedPstoLineKeys(db: ReturnType<typeof requireDb>) {
-  const normalizedProjectTitle = sql<string>`btrim(coalesce(${weldJoints.projectTitle}, ''))`
-  const normalizedSubtitleCode = sql<string>`btrim(coalesce(${weldJoints.subtitleCode}, ''))`
-  const normalizedLine = sql<string>`btrim(coalesce(${weldJoints.line}, ''))`
+  const normalizedProjectTitle = sql<string>`lower(btrim(coalesce(${weldJoints.projectTitle}, '')))`
+  const normalizedSubtitleCode = sql<string>`lower(btrim(coalesce(${weldJoints.subtitleCode}, '')))`
+  const normalizedLine = sql<string>`lower(btrim(coalesce(${weldJoints.line}, '')))`
   const rows = await db
     .select({
       projectTitle: normalizedProjectTitle,
       subtitleCode: normalizedSubtitleCode,
       line: normalizedLine,
       rowCount: sql<number>`count(*)::int`,
-      assignedCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) in ('да', 'дополнительный', 'замена рк/узк'))::int`,
+      assignedCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) in (${CONTROL_ENABLED_VALUES_SQL}))::int`,
     })
     .from(weldJoints)
     .where(sql`btrim(coalesce(${weldJoints.line}, '')) <> ''`)
@@ -169,11 +177,17 @@ export async function listFullyAssignedPstoLineKeys(db: ReturnType<typeof requir
 }
 
 export const massFillWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: { records: WeldPayload[] }) => data)
+  .validator((data: { records: WeldPayload[]; expectedVersions: WeldRowVersionTarget[] }) => ({
+    records: Array.isArray(data?.records) ? data.records : [],
+    expectedVersions: Array.isArray(data?.expectedVersions) ? data.expectedVersions : [],
+  }))
   .handler(async ({ data }) => {
     await assertSecurityScope(getWeldImportSecurityScope('massFill'))
     assertWeldImportRowLimit(data.records.length)
-    const updated = await updateWeldJointRows(data, true)
+    const updated = await updateWeldJointRows({
+      records: data.records,
+      expectedVersions: data.expectedVersions,
+    }, true)
     return updated.map((row) => ({ id: row.id }))
   })
 
@@ -204,6 +218,32 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
         ...data.records.map((record) => Number(record.id)),
         ...data.deleteIds,
       ].sort((left, right) => left - right)
+      const identityRows = targetIds.length > 0
+        ? await tx
+            .select({
+              id: weldJoints.id,
+              projectTitle: weldJoints.projectTitle,
+              subtitleCode: weldJoints.subtitleCode,
+              line: weldJoints.line,
+            })
+            .from(weldJoints)
+            .where(inArray(weldJoints.id, targetIds))
+        : []
+      const identityRowsById = new Map(identityRows.map((row) => [row.id, row]))
+      const identityDrafts = data.records.map((record) => ({
+        ...identityRowsById.get(Number(record.id)),
+        ...record,
+      }))
+      await lockWeldLineMemberships(tx, [
+        ...data.deleteIds.flatMap((id) => {
+          const previous = identityRowsById.get(id)
+          return previous ? [previous] : []
+        }),
+        ...identityDrafts.flatMap((record) => {
+          const previous = identityRowsById.get(Number(record.id))
+          return previous ? getChangedWeldLineMemberships(previous, record) : []
+        }),
+      ])
       await lockAndAssertWeldRowVersions(tx, targetIds, data.expectedVersions)
 
       const previousRows = await loadPreviousWeldRows(tx, data.records)
@@ -213,11 +253,22 @@ export const replaceWeldJoints = createServerFn({ method: 'POST' })
       if (deletedRows.length !== data.deleteIds.length) {
         throw new Error('Одна или несколько удаляемых записей больше не существуют. Скачайте свежий шаблон.')
       }
+      if (!haveSameWeldLineMemberships(identityRows, [
+        ...previousRows.values(),
+        ...deletedRows,
+      ])) {
+        throw new Error(
+          'Один или несколько стыков были перенесены на другую линию другим пользователем. Ничего не изменено. Скачайте свежий шаблон и повторите импорт.',
+        )
+      }
       const deletedRowsById = new Map(deletedRows.map((row) => [row.id, row]))
       let records = data.records
 
       if (records.length > 0) {
-        const validationContext = await loadServerWeldValidationContext(tx)
+        const validationContext = await loadServerWeldValidationContext(tx, [
+          ...previousRows.values(),
+          ...records,
+        ])
         assertExistingRowsImportPayload({
           records,
           previousRows,
@@ -316,7 +367,9 @@ export const importWeldJoints = createServerFn({ method: 'POST' })
     const db = requireDb()
 
     return db.transaction(async (tx) => {
-      const validationContext = await loadServerWeldValidationContext(tx)
+      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+      await lockWeldLineMemberships(tx, data.records)
+      const validationContext = await loadServerWeldValidationContext(tx, data.records)
       prepareServerWeldRecords({
         records: data.records,
         previousRows: new Map(),
@@ -329,7 +382,7 @@ export const importWeldJoints = createServerFn({ method: 'POST' })
         context: validationContext,
         importMode: true,
       })
-      const rows = await insertWeldJointsInBatches(tx, data.records)
+      const rows = await insertWeldJointsInBatches(tx, data.records, processSettings)
       await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(data.records, new Map()) })
       return { inserted: rows.length, rows: rows.map((row) => ({ id: row.id })) }

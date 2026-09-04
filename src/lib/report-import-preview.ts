@@ -8,10 +8,8 @@ import {
 } from '@/lib/weld-import-readers'
 import { readFirstSheetRows } from '@/lib/weld-import-sheet-reader'
 import { withOfficialJoint } from '@/lib/report-control-state'
-import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { assertNoLnkRepairRuleIssues } from '@/lib/lnk-result-rules'
-import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
-import { prepareImportedWeldRecords } from '@/lib/weld-journal-mutation-updates'
+import { collectImportedWeldRecordPreparationErrors } from '@/lib/weld-journal-mutation-updates'
 import { getArchivedOfficialStampValuesForRecord } from '@/lib/welder-stamp-compatibility'
 import {
   MASS_FILL_ROW_ID_HEADER,
@@ -29,7 +27,10 @@ import {
 import { loadOtherSettings } from '@/lib/other-settings'
 import { formatSaveCheckBlockReason, loadSaveCheckSettings } from '@/lib/save-check-settings'
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
-import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
+import {
+  getControlAvailabilityReportHistoryIssues,
+  getWeldFormSaveBlockReason,
+} from '@/lib/weld-form-save-reasons'
 import { getMissingWeldImportIdentityFields } from '@/lib/weld-import-identity'
 import { validateManualJointName } from '@/lib/joint-name'
 import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
@@ -68,6 +69,7 @@ export type ReportImportPreview = {
   errors: ReportImportPreviewError[]
   skippedRows: number
   expectedRowVersions?: WeldRowVersionTarget[]
+  recordRowNumbers?: number[]
 }
 
 type ReportImportPreviewValidationOptions = {
@@ -102,12 +104,19 @@ export async function buildReportImportPreview({
   const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport))
   const fields = getReportImportPreviewFields(activeReport)
 
-  const { validRecords, errors } = validateReportImportRecords(records, {
-    activeReport,
-    weldFormStampSelectOptions,
-    welderStamps,
-    welderStampSuspensions,
-  })
+  const { validRecords, errors } = validateReportImportRecords(
+    records,
+    {
+      activeReport,
+      weldFormStampSelectOptions,
+      welderStamps,
+      welderStampSuspensions,
+    },
+    {
+      rowNumbers: parsed.recordRowNumbers,
+      cellErrors: parsed.cellErrors,
+    },
+  )
 
   return {
     fileName: file.name,
@@ -116,6 +125,7 @@ export async function buildReportImportPreview({
     validRecords,
     errors,
     skippedRows: parsed.skippedRows,
+    recordRowNumbers: parsed.recordRowNumbers,
   }
 }
 
@@ -225,27 +235,24 @@ async function buildExistingRowsImportPreview({
     }
 
     const updates: ReportImportRecord = { id: existingRow.id }
-    try {
-      fieldsByColumn.forEach((field, columnIndex) => {
-        if (!field || isExistingRowsFieldLocked(mode, activeReport, field, existingRow)) return
+    const validationMessages: string[] = []
+    const validationFieldKeys = new Set<WeldFieldKey>()
+    fieldsByColumn.forEach((field, columnIndex) => {
+      if (!field || isExistingRowsFieldLocked(mode, activeReport, field, existingRow)) return
+      try {
         const value = parseImportCell(field, row[columnIndex])
         if (mode === 'massFill' && emptyToNull(value) === null) return
         if (mode === 'replaceData' && normalizePreviewValue(value) === normalizePreviewValue(existingRow[field.key as keyof WeldRow])) return
         ;(updates as Record<string, unknown>)[field.key] = value
-      })
-    } catch (error) {
-      errors.push({
-        rowNumber,
-        title: getRecordTitle(existingRow),
-        message: getImportErrorMessage(error),
-        id: existingRow.id,
-      })
-      return
-    }
+      } catch (error) {
+        validationMessages.push(getImportErrorMessage(error))
+        validationFieldKeys.add(field.key as WeldFieldKey)
+      }
+    })
 
     const changedKeys = Object.keys(updates).filter((key) => key !== 'id')
     const candidate = { ...existingRow, ...updates } as ReportImportRecord
-    if (changedKeys.length === 0) {
+    if (changedKeys.length === 0 && validationMessages.length === 0) {
       skippedRows += 1
       return
     }
@@ -256,12 +263,22 @@ async function buildExistingRowsImportPreview({
 
     records.push(candidate)
     const changedFieldKeys = getKnownFieldKeys(changedKeys)
-    const validationMessages: string[] = []
-    const validationFieldKeys = new Set<WeldFieldKey>()
+    const controlHistoryIssues = saveCheckSettings.controlHistoryProtection
+      ? getControlAvailabilityReportHistoryIssues(candidate)
+      : []
+    if (controlHistoryIssues.length > 0) {
+      validationMessages.push(formatSaveCheckBlockReason(
+        'controlHistoryProtection',
+        controlHistoryIssues.map((issue) => issue.message).join(' '),
+      ))
+      controlHistoryIssues.forEach((issue) => {
+        issue.fieldKeys.forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+      })
+    }
     const formBlockReason = getWeldFormSaveBlockReason(candidate, existingRow, saveCheckSettings, {
       systemIndexSettings,
     })
-    if (formBlockReason) {
+    if (formBlockReason && !(controlHistoryIssues.length > 0 && formBlockReason.includes('ЗВ-27'))) {
       validationMessages.push(
         formBlockReason.includes('ЗВ-26')
           ? `${formBlockReason} Исправьте номер в карточке стыка: серое поле “Стык” не изменяется импортом.`
@@ -296,28 +313,18 @@ async function buildExistingRowsImportPreview({
     }
 
     let preparedUpdates: ReportImportRecord | null = null
-    try {
-      const candidateForPrepare = prepareCandidateForExistingRowsValidation(candidate)
-      const prepared = prepareImportedWeldRecords({
-        records: [candidateForPrepare],
-        skipManualJointNameValidation: true,
-        skipLnkRepairRuleValidation: true,
-        allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(existingRow, welderStamps),
-        weldFormStampSelectOptions,
-        welderStamps,
-        welderStampSuspensions,
-      })[0] as ReportImportRecord
-      if (hasChangedLnkRepairRuleInputs(candidate, existingRow)) {
-        assertNoLnkRepairRuleIssues([prepared], loadSaveCheckSettings())
-      }
-      preparedUpdates = { id: existingRow.id }
-      changedKeys.forEach((key) => {
-        const field = FIELD_BY_KEY.get(key as WeldFieldKey)
-        if (!field) return
-        ;(preparedUpdates as Record<string, unknown>)[field.key] = prepared[field.key]
-      })
-      applyPreparedDerivedUpdates(preparedUpdates, prepared, existingRow, changedKeys)
-    } catch (error) {
+    const candidateForPrepare = prepareCandidateForExistingRowsValidation(candidate)
+    const preparation = collectImportedWeldRecordPreparationErrors({
+      records: [candidateForPrepare],
+      skipManualJointNameValidation: true,
+      skipLnkRepairRuleValidation: true,
+      allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(existingRow, welderStamps),
+      weldFormStampSelectOptions,
+      welderStamps,
+      welderStampSuspensions,
+    })
+    const prepared = preparation.records[0] as ReportImportRecord
+    for (const error of preparation.errors) {
       const message = getImportErrorMessage(error)
       validationMessages.push(message)
       getImportErrorFieldKeys({
@@ -326,6 +333,31 @@ async function buildExistingRowsImportPreview({
         activeReport,
         fallbackFieldKeys: changedFieldKeys,
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+    }
+    let repairRuleError = false
+    if (hasChangedLnkRepairRuleInputs(candidate, existingRow)) {
+      try {
+        assertNoLnkRepairRuleIssues([prepared], loadSaveCheckSettings())
+      } catch (error) {
+        repairRuleError = true
+        const message = getImportErrorMessage(error)
+        validationMessages.push(message)
+        getImportErrorFieldKeys({
+          message,
+          record: candidate,
+          activeReport,
+          fallbackFieldKeys: changedFieldKeys,
+        }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+      }
+    }
+    if (preparation.errors.length === 0 && !repairRuleError) {
+      preparedUpdates = { id: existingRow.id }
+      changedKeys.forEach((key) => {
+        const field = FIELD_BY_KEY.get(key as WeldFieldKey)
+        if (!field) return
+        ;(preparedUpdates as Record<string, unknown>)[field.key] = prepared[field.key]
+      })
+      applyPreparedDerivedUpdates(preparedUpdates, prepared, existingRow, changedKeys)
     }
 
     if (validationMessages.length > 0 || !preparedUpdates) {
@@ -340,9 +372,12 @@ async function buildExistingRowsImportPreview({
     }
 
     validRecords.push(preparedUpdates)
-    if (mode === 'replaceData') {
-      expectedRowVersions.push({ id: existingRow.id, version: expectedRowVersion })
-    }
+    expectedRowVersions.push({
+      id: existingRow.id,
+      version: mode === 'replaceData'
+        ? expectedRowVersion
+        : String(existingRow.rowVersion ?? '').trim(),
+    })
   })
 
   return {
@@ -352,7 +387,7 @@ async function buildExistingRowsImportPreview({
     validRecords,
     errors,
     skippedRows,
-    ...(mode === 'replaceData' ? { expectedRowVersions } : {}),
+    expectedRowVersions,
   }
 }
 
@@ -462,11 +497,15 @@ export function fixReportImportPreviewErrors(
 
   const errorRowNumbers = new Set(preview.errors.map((error) => error.rowNumber))
   const fixedRecords = preview.records.map((record, index) => {
-    const rowNumber = index + 2
+    const rowNumber = preview.recordRowNumbers?.[index] ?? index + 2
     if (!errorRowNumbers.has(rowNumber)) return record
     return fixImportRecordCheckedCells(record, options)
   })
-  const { validRecords, errors } = validateReportImportRecords(fixedRecords, options)
+  const { validRecords, errors } = validateReportImportRecords(
+    fixedRecords,
+    options,
+    { rowNumbers: preview.recordRowNumbers },
+  )
 
   return {
     ...preview,
@@ -479,6 +518,15 @@ export function fixReportImportPreviewErrors(
 function validateReportImportRecords(
   records: ReportImportRecord[],
   { activeReport, weldFormStampSelectOptions, welderStamps, welderStampSuspensions }: ReportImportPreviewValidationOptions,
+  source: {
+    rowNumbers?: readonly number[]
+    cellErrors?: readonly {
+      recordIndex: number
+      rowNumber: number
+      message: string
+      fieldKeys: readonly string[]
+    }[]
+  } = {},
 ) {
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
@@ -487,8 +535,23 @@ function validateReportImportRecords(
 
   records.forEach((record, index) => {
     const candidate = { ...withOfficialJoint(record) }
-    const validationMessages: string[] = []
-    const validationFieldKeys = new Set<WeldFieldKey>()
+    const cellErrors = source.cellErrors?.filter((error) => error.recordIndex === index) ?? []
+    const validationMessages: string[] = cellErrors.map((error) => error.message)
+    const validationFieldKeys = new Set<WeldFieldKey>(cellErrors.flatMap((error) =>
+      error.fieldKeys.filter((fieldKey): fieldKey is WeldFieldKey => FIELD_BY_KEY.has(fieldKey as WeldFieldKey)),
+    ))
+    const controlHistoryIssues = saveCheckSettings.controlHistoryProtection
+      ? getControlAvailabilityReportHistoryIssues(candidate)
+      : []
+    if (controlHistoryIssues.length > 0) {
+      validationMessages.push(formatSaveCheckBlockReason(
+        'controlHistoryProtection',
+        controlHistoryIssues.map((issue) => issue.message).join(' '),
+      ))
+      controlHistoryIssues.forEach((issue) => {
+        issue.fieldKeys.forEach((fieldKey) => validationFieldKeys.add(fieldKey))
+      })
+    }
     const jointNameReason = saveCheckSettings.manualJointName
       ? validateManualJointName(candidate.joint, systemIndexSettings)
       : null
@@ -505,18 +568,14 @@ function validateReportImportRecords(
     }
 
     let preparedRecord: ReportImportRecord | null = null
-    try {
-      const prepared = prepareImportedWeldRecords({
-        records: [candidate],
-        skipManualJointNameValidation: true,
-        weldFormStampSelectOptions,
-        welderStamps,
-        welderStampSuspensions,
-      })
-      assertNoLnkChronologyIssues(prepared, saveCheckSettings)
-      assertNoPstoChronologyIssues(prepared, saveCheckSettings)
-      preparedRecord = { ...prepared[0], id: record.id }
-    } catch (error) {
+    const preparation = collectImportedWeldRecordPreparationErrors({
+      records: [candidate],
+      skipManualJointNameValidation: true,
+      weldFormStampSelectOptions,
+      welderStamps,
+      welderStampSuspensions,
+    })
+    for (const error of preparation.errors) {
       const message = getImportErrorMessage(error)
       validationMessages.push(message)
       getImportErrorFieldKeys({
@@ -526,10 +585,13 @@ function validateReportImportRecords(
         fallbackFieldKeys: getRecordFallbackErrorFieldKeys(record, activeReport),
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
     }
+    if (preparation.errors.length === 0) {
+      preparedRecord = { ...preparation.records[0], id: record.id }
+    }
 
     if (validationMessages.length > 0 || !preparedRecord) {
       errors.push({
-        rowNumber: index + 2,
+        rowNumber: source.rowNumbers?.[index] ?? index + 2,
         title: getRecordTitle(record),
         message: [...new Set(validationMessages)].join(' '),
         id: record.id,

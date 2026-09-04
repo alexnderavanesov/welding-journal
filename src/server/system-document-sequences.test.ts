@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
 
 import {
   applyReservedSystemDocumentNames,
   getInitialSystemDocumentSequenceNumbers,
+  loadExistingSystemDocumentNameKeys,
   normalizeSystemDocumentSequenceUpdate,
+  reserveSystemDocumentNames,
 } from '@/server/system-document-sequences'
+import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
 
 describe('system document sequence update', () => {
   it('accepts several LNK request fields in one system request', () => {
@@ -199,5 +203,65 @@ describe('system document sequence update', () => {
       }))
 
     expect(getInitialSystemDocumentSequenceNumbers(rows).lnkConclusionVik).toBe(22)
+  })
+
+  it.each([2, 100])('reserves %i split document names with a bounded query count', async (documentCount) => {
+    let selectCall = 0
+    const select = vi.fn(() => {
+      selectCall += 1
+      const result = selectCall === 1 ? [] : [{ value: '1' }]
+      const chain = {
+        from: vi.fn(),
+        where: vi.fn(),
+        limit: vi.fn().mockResolvedValue(result),
+      }
+      chain.from.mockReturnValue(chain)
+      chain.where.mockReturnValue(chain)
+      return chain
+    })
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
+    const values = vi.fn(() => ({ onConflictDoUpdate }))
+    const insert = vi.fn(() => ({ values }))
+    const tx = { execute, select, insert } as unknown as GeneratedDocumentsTransaction
+    const request = normalizeSystemDocumentSequenceUpdate({
+      type: 'pstoRequest',
+      date: '2026-09-04',
+      fieldKeys: ['pstoRequest'],
+      provisionalName: 'ПСТО-04.09.26-001',
+    })
+
+    const reservations = await reserveSystemDocumentNames(
+      tx,
+      Array.from({ length: documentCount }, (_, index) => ({
+        request: { ...request, provisionalName: `ПСТО-${index + 1}` },
+        rows: [{ line: `Линия ${index + 1}` }],
+      })),
+    )
+
+    expect(reservations).toHaveLength(documentCount)
+    expect(new Set(reservations.map((reservation) => reservation.name)).size).toBe(documentCount)
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(select).toHaveBeenCalledTimes(2)
+    expect(insert).toHaveBeenCalledTimes(1)
+  })
+
+  it('chunks a production-sized date set below the PostgreSQL parameter limit', async () => {
+    const execute = vi.fn().mockResolvedValue({ rows: [] })
+    const requests = Array.from({ length: 12_000 }, (_, index) => ({
+      type: 'pstoRequest' as const,
+      date: new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10),
+      fieldKeys: ['pstoRequest' as const],
+      provisionalName: `ПСТО-${index + 1}`,
+    }))
+
+    await loadExistingSystemDocumentNameKeys({ execute } as never, requests)
+
+    expect(execute.mock.calls.length).toBeGreaterThan(1)
+    for (const [query] of execute.mock.calls) {
+      expect(new PgDialect().sqlToQuery(query).params.length).toBeLessThanOrEqual(10_000)
+    }
   })
 })

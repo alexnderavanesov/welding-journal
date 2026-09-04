@@ -19,6 +19,7 @@ import {
   loadSystemIndexSettings,
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 export type JointCoilTransitionMode = 'limit' | 'early-decision'
 
@@ -90,7 +91,7 @@ export function buildJointCoilTransitions(
     const rowBranch = parseRepeatedJointName(rowJoint, settings).base
     const parentBranch = getCoilParentBranchJoint(rowBranch, settings)
     if (parentBranch) {
-      const key = normalizeJointChainPart(parentBranch)
+      const key = buildTransitionKey(row, parentBranch)
       if (!anchorsByParentBranch.has(key)) {
         anchorsByParentBranch.set(key, { parentBranchJoint: parentBranch, row })
       }
@@ -107,9 +108,10 @@ export function buildJointCoilTransitions(
     })
     if (!mode) continue
     const parentBranchJoint = parseRepeatedJointName(rowJoint, settings).base
-    validSourcesByParentBranch.set(normalizeJointChainPart(parentBranchJoint), { mode, row })
-    if (!anchorsByParentBranch.has(normalizeJointChainPart(parentBranchJoint))) {
-      anchorsByParentBranch.set(normalizeJointChainPart(parentBranchJoint), { parentBranchJoint, row })
+    const transitionKey = buildTransitionKey(row, parentBranchJoint)
+    validSourcesByParentBranch.set(transitionKey, { mode, row })
+    if (!anchorsByParentBranch.has(transitionKey)) {
+      anchorsByParentBranch.set(transitionKey, { parentBranchJoint, row })
     }
   }
 
@@ -176,15 +178,17 @@ export function getJointCoilRelations(
   const branchJoint = parseRepeatedJointName(String(row.joint ?? ''), settings).base
   const parentBranchJoint = getCoilParentBranchJoint(branchJoint, settings)
   const incoming = parentBranchJoint
-    ? transitions.find((transition) => sameJoint(transition.parentBranchJoint, parentBranchJoint)) ?? null
+    ? transitions.find((transition) => transition.key === buildTransitionKey(row, parentBranchJoint)) ?? null
     : null
-  const outgoing = transitions.find((transition) => sameJoint(transition.parentBranchJoint, branchJoint)) ?? null
-  const currentBranchRoot = rows.find((candidate) => sameJoint(candidate.joint, branchJoint)) ?? null
+  const outgoing = transitions.find(
+    (transition) => transition.key === buildTransitionKey(row, branchJoint),
+  ) ?? null
+  const currentBranchRoot = findMatchingJointRow(rows, row, branchJoint) ?? null
   const siblingJoint = incoming
     ? incoming.targetJoints.find((joint) => !sameJoint(joint, branchJoint)) ?? ''
     : ''
   const siblingRow = siblingJoint
-    ? rows.find((candidate) => sameJoint(candidate.joint, siblingJoint)) ?? null
+    ? findMatchingJointRow(rows, row, siblingJoint) ?? null
     : null
   const sourceRow = incoming?.sourceRowId
     ? rows.find((candidate) => candidate.id === incoming.sourceRowId) ?? null
@@ -246,7 +250,12 @@ function findLatestRejectedBranchRow(
 function buildTransitionKey(row: WeldRow, parentBranchJoint: string) {
   const identity = getRepeatedJointIdentity(row, parentBranchJoint)
   return identity
-    ? `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
+    ? encodeIdentityKey([
+        identity.project,
+        identity.subtitle,
+        identity.line,
+        identity.joint,
+      ])
     : normalizeJointChainPart(parentBranchJoint)
 }
 

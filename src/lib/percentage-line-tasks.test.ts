@@ -72,8 +72,27 @@ describe('percentage line tasks for U-joints', () => {
       count: 2,
     })
     expect(tasks.find((task) => task.issue === 'suspend-welder')).toMatchObject({
-      suspensionFrom: '04.08.2026',
+      suspensionFrom: '2026-08-04',
     })
+  })
+
+  it('never proposes a malformed control date for suspension', () => {
+    const tasks = buildPercentageLineControlTasks(
+      Array.from({ length: 6 }, (_, index) =>
+        row(index + 1, {
+          weldDate: `2026-07-${String(index + 1).padStart(2, '0')}`,
+          hasRk: index < 4 ? 'да' : '',
+          rkResult: index < 4 ? 'вырез' : '',
+          rkConclusionDate: index < 3 ? `2026-08-0${index + 1}` : '31.02.2026',
+        }),
+      ),
+    )
+
+    expect(tasks.find((task) => task.issue === 'suspend-welder')).toMatchObject({
+      suspensionFrom: '2026-08-03',
+    })
+    expect(tasks.find((task) => task.issue === 'suspend-welder')?.suspensionFrom)
+      .not.toBe('31.02.2026')
   })
 })
 

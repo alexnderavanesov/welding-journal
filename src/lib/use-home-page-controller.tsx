@@ -80,7 +80,6 @@ import {
 } from '@/lib/use-welds-query'
 import { useDuplicateControls } from '@/lib/use-duplicate-controls'
 import type { ContextActionMenuItem } from '@/components/context-action-menu'
-import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -94,7 +93,7 @@ import {
   getLnkResultNavigationEntryForField,
   getPendingLnkResultMethods,
 } from '@/lib/lnk-result-navigation'
-import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { getLnkRepairResultSaveReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import { buildHeatTreatmentReportRows, buildLnkReportRows, sumAcceptedWdi } from '@/lib/report-row-utils'
@@ -154,12 +153,13 @@ import {
 import {
   getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilitySaveBlockReason,
+  shouldValidateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
 import { useOtherSettings } from '@/lib/other-settings'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
 import { getLnkVisibleFieldSections } from '@/lib/lnk-visible-field-layout'
-import { useSaveCheckSettings } from '@/lib/save-check-settings'
-import { useSystemIndexSettings } from '@/lib/system-index-settings'
+import { formatSaveCheckBlockReason, useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { useSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 import {
   buildLineFilters,
@@ -176,6 +176,7 @@ import {
   isPercentageControlMethodAvailableForRow,
   type PercentageControlMethod,
 } from '@/lib/percentage-line-summary'
+import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
 import {
   createEmptyDuplicateControlDraft,
   type DuplicateControlDraft,
@@ -187,6 +188,7 @@ import {
   useRequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import { getWeldJointById, listWeldJointRowsByIds } from '@/server/weld-read-api'
+import { updatePercentageLineControls } from '@/server/weld-mutations-api'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
 import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
@@ -1329,6 +1331,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     await runProtectedDelete('удаление результата НК до ТО', async () => {
       await preHeatTreatmentResultCorrectionMutation.mutateAsync({
         relationId: control.id,
+        expectedVersion: String(row.rowVersion ?? '').trim(),
         stage: 'result',
         action: 'delete',
       })
@@ -1350,6 +1353,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     await runProtectedDelete('удаление заявки НК до ТО', async () => {
       await preHeatTreatmentResultCorrectionMutation.mutateAsync({
         relationId: control.id,
+        expectedVersion: String(row.rowVersion ?? '').trim(),
         stage: 'request',
         action: 'delete',
       })
@@ -1396,7 +1400,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const duplicateControlSaveBlockReason = getDuplicateControlSaveBlockReason({
     draft: duplicateControlDraft,
     isSaving: saveDuplicateControlMutation.isPending,
+    saveCheckSettings,
     selectedRows: selectedDuplicateControlRows,
+    systemIndexSettings,
   })
   const {
     activeColumnFilters,
@@ -1737,6 +1743,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (!(await requireEditPassword('редактирование дубль-контроля'))) return
     setDuplicateControlDraft({
       id: control.id,
+      expectedVersion: String(control.version ?? ''),
       rowIds: new Set([control.weldJointId]),
       methods: new Set([control.method]),
       result: control.result,
@@ -1757,6 +1764,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const payloads = selectedDuplicateControlRows.flatMap((row) =>
       methods.map((method) => ({
         id: duplicateControlDraft.id,
+        expectedVersion: duplicateControlDraft.expectedVersion,
         weldJointId: row.id,
         method,
         result,
@@ -1782,7 +1790,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       tone: 'danger',
     })
     if (!confirmed) return
-    await deleteDuplicateControlMutation.mutateAsync(control.id)
+    await deleteDuplicateControlMutation.mutateAsync({
+      id: control.id,
+      expectedVersion: String(control.version ?? ''),
+    })
     setMessage('Дубль-контроль удален')
   }
 
@@ -1816,14 +1827,19 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   async function deleteWeldRowById(id: number) {
     if (!(await requireDeletePassword('удаление стыка'))) return
-    const row = rows.find((candidate) => candidate.id === id)
+    const row = tableActionRows.find((candidate) => candidate.id === id)
+    const version = String(row?.rowVersion ?? '').trim()
+    if (!row || !version) {
+      setMessage('Открытые данные устарели. Обновите отчет и повторите удаление.')
+      return
+    }
     const confirmed = await confirmAction({
       title: 'Удалить стык',
       itemName: row ? `${String(row.line ?? '-')} · ${String(row.joint ?? '-')}` : 'Запись стыка',
       description: 'Запись будет удалена из сварочного журнала.',
       warning: 'Связанные данные по этому стыку могут стать неактуальными. Это действие нельзя отменить.',
     })
-    if (confirmed) deleteMutation.mutate(id)
+    if (confirmed) deleteMutation.mutate({ id, version })
   }
 
   async function deleteWeldRowsByIds(ids: number[]) {
@@ -1843,8 +1859,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     })
     if (!confirmed) return
 
+    const rowsById = new Map(tableActionRows.map((row) => [row.id, row]))
+    const targets = rowIds.map((id) => ({
+      id,
+      version: String(rowsById.get(id)?.rowVersion ?? '').trim(),
+    }))
+    if (targets.some((target) => !target.version)) {
+      setMessage('Открытые данные устарели. Обновите отчет и повторите удаление.')
+      return
+    }
+
     try {
-      await deleteManyMutation.mutateAsync(rowIds)
+      await deleteManyMutation.mutateAsync(targets)
       setSelectedWeldingJournalIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
       setSelectedLnkIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
       setSelectedHeatTreatmentIds((current) => new Set([...current].filter((id) => !rowIds.includes(id))))
@@ -1923,7 +1949,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setChainRecord(row as WeldRow)
   }
 
-  const assignPercentageLineMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
+  const assignPercentageLineMissingControls = async (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+    method: PercentageControlMethod,
+  ) => {
     const targetRows = await listWeldJointRowsByIds({ data: { ids: rowIds } })
     if (targetRows.length === 0) {
       setMessage('Стыки для назначения контроля не найдены')
@@ -1937,34 +1967,40 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       throw new Error('ПВК по расчету процентной линии можно назначить только на стык типа «У…».')
     }
 
+    const savedRows = await updatePercentageLineControls({
+      data: {
+        ...scope,
+        action: 'assign',
+        method,
+        targets: targetRows.map((row) => ({ id: row.id, version: String(row.rowVersion ?? '').trim() })),
+      },
+    })
     const fieldKey = method === 'УЗК' ? 'hasUzk' : method === 'ПВК' ? 'hasPvk' : 'hasRk'
-    const savedRows = await updateWeldRowsOrThrow(
-      targetRows.map((row) => ({
-        ...row,
-        [fieldKey]: 'да',
-      })),
-      'Не удалось назначить контроль по процентной линии',
-    )
     highlightChangedRows(savedRows, [fieldKey])
     setMessage(`Назначен ${method} по процентной линии: ${savedRows.length}.`)
     await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
   }
 
-  const cancelPercentageLineMissingControls = async (rowIds: number[]) => {
+  const cancelPercentageLineMissingControls = async (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+  ) => {
     const targetRows = await listWeldJointRowsByIds({ data: { ids: rowIds } })
     if (targetRows.length === 0) {
       setMessage('Стыки для закрытия недобора не найдены')
       return
     }
 
-    const savedRows = await updateWeldRowsOrThrow(
-      targetRows.map((row) => ({
-        ...row,
-        hasRk: 'отменен',
-        hasUzk: 'отменен',
-      })),
-      'Не удалось закрыть недобор процентной линии',
-    )
+    if (targetRows.length !== new Set(rowIds).size) {
+      throw new Error('Часть выбранных стыков уже недоступна. Обновите расчет и повторите действие.')
+    }
+    const savedRows = await updatePercentageLineControls({
+      data: {
+        ...scope,
+        action: 'cancel',
+        targets: targetRows.map((row) => ({ id: row.id, version: String(row.rowVersion ?? '').trim() })),
+      },
+    })
     highlightChangedRows(savedRows, ['hasRk', 'hasUzk'])
     setMessage(`Недобор закрыт отменой РК/УЗК: ${savedRows.length}.`)
     await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
@@ -3081,9 +3117,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         const result = await importMutation.mutateAsync(records.map(withOfficialJoint))
         setMessage(`Добавлено ${result.inserted}, пропущено служебных строк: ${skippedRows}`)
       }),
-    onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) =>
+    onMassFillRecords: (
+      records: ReportImportRecord[],
+      skippedRows: number,
+      expectedVersions: WeldRowVersionTarget[],
+    ) =>
       runProtectedImport('массовое заполнение данных', async () => {
-        await weldMassFillMutation.mutateAsync({ records, skippedRows })
+        await weldMassFillMutation.mutateAsync({ records, skippedRows, expectedVersions })
       }),
     onReplaceDataRecords: async (
       records: ReportImportRecord[],
@@ -3358,10 +3398,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     suggestionRows: rows.length > 0 ? rows : undefined,
     stampSelectOptions: (draft) => getWeldFormStampSelectOptions(draft, allowedArchivedOfficialStampsForEditing),
     getExternalSaveBlockReason: (draft) => {
-      const stampReason = getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
-        saveCheckSettings,
-        suspensions: welderStampSuspensions,
-      })
+      const stampReason = shouldValidateOfficialStampCompatibilityForSave(draft, editing?.record)
+        ? getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {
+            saveCheckSettings,
+            suspensions: welderStampSuspensions,
+          })
+        : null
       return stampReason ?? getPstoLineMoveSaveBlockReason(draft)
     },
     onLineIdentityChange: checkEditedWeldLineMove,
@@ -4023,11 +4065,15 @@ function filterDuplicateControlRows(rows: WeldRow[], search: string, _selectedId
 function getDuplicateControlSaveBlockReason({
   draft,
   isSaving,
+  saveCheckSettings,
   selectedRows,
+  systemIndexSettings,
 }: {
   draft: DuplicateControlDraft
   isSaving: boolean
+  saveCheckSettings: SaveCheckSettings
   selectedRows: WeldRow[]
+  systemIndexSettings: SystemIndexSettings
 }) {
   if (isSaving) return 'Дубль-контроль сохраняется, дождитесь завершения.'
   if (selectedRows.length === 0) return 'Выберите один или несколько стыков.'
@@ -4035,6 +4081,18 @@ function getDuplicateControlSaveBlockReason({
   if (!draft.result) return 'Выберите результат дубль-контроля.'
   if (draft.id && (selectedRows.length !== 1 || draft.methods.size !== 1)) {
     return 'При редактировании должна быть выбрана одна запись дубль-контроля.'
+  }
+  if (String(draft.result).trim().toLowerCase() === 'ремонт') {
+    const methodCodes = [...draft.methods].map((method) => `${method} (дубль)`).join(', ')
+    for (const row of selectedRows) {
+      const reason = getLnkRepairResultSaveReason(
+        row,
+        methodCodes,
+        saveCheckSettings,
+        systemIndexSettings,
+      )
+      if (reason) return formatSaveCheckBlockReason('lnkResultRepairRules', reason)
+    }
   }
   return null
 }

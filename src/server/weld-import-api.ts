@@ -15,7 +15,7 @@ export const listWeldingJournalImportScope = createServerFn({ method: 'GET' })
   })
 
 export const massFillWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: { records: WeldPayload[] }) => data)
+  .validator((data: { records: WeldPayload[]; expectedVersions: WeldRowVersionTarget[] }) => data)
   .handler(async ({ data }) => {
     const server = await import('@/server/weld-import')
     return server.massFillWeldJoints({ data })

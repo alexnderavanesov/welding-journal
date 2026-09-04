@@ -95,7 +95,7 @@ export const formHiddenFieldKeys = new Set<WeldFieldKey>([
   'pvkConclusion',
   'tvmtConclusionDate',
   'tvmtConclusion',
-  'lnkDefectDescription',
+  ...LNK_METHODS.flatMap((method) => method.defectDescriptionKey ? [method.defectDescriptionKey] : []),
   'rkExposureScheme',
   'rkExposureConfirmedDiameter',
   'lnkNote',

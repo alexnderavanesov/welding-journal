@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, notExists, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -32,6 +32,7 @@ import {
   type GeneratedDocumentsTransaction,
 } from '@/server/generated-document-number-sequence'
 import { lockControlProcessSettings } from '@/server/control-process-settings-lock'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 const LAYERED_CONTROL_INDEX_SETTING_KEY = 'layered-control-document-index-version'
 const LAYERED_CONTROL_INDEX_VERSION = '1'
@@ -53,6 +54,21 @@ type ExistingLayeredAssignment = {
   wdiTotal: number | null
   documentNumber: number | null
   createdAt: Date
+}
+
+type LayeredControlDocumentWrite = {
+  rowId: number
+  type: LayeredControlDocumentType
+  targetDocumentId: number | null
+  title: string
+  fileName: string
+  mimeType: string
+  periodFrom: string | null
+  periodTo: string | null
+  rowCount: number
+  wdiTotal: number
+  documentNumber: number
+  shouldUpdate: boolean
 }
 
 export function getLayeredControlDocumentTypesToRetain(
@@ -114,19 +130,29 @@ export async function syncLayeredControlDocumentsForWeldChangesInTransaction(
   previousRows: ReadonlyMap<number, LayeredRow>,
 ) {
   const requestedIds = [...new Set(currentRows.map((row) => Number(row.id)).filter(Number.isInteger))]
+    .sort((left, right) => left - right)
   if (requestedIds.length === 0) return
-  await lockControlProcessSettings(tx, 'layeredControl')
-  await lockLayeredControlSync(tx)
-  const persistedRows = await tx
-    .select()
-    .from(weldJoints)
-    .where(inArray(weldJoints.id, requestedIds))
+  await lockLayeredControlDocumentsForWeldChange(tx)
+  const persistedRows: LayeredRow[] = []
+  for (const idBatch of splitNumberBatches(requestedIds, 1000)) {
+    persistedRows.push(...await tx
+      .select()
+      .from(weldJoints)
+      .where(inArray(weldJoints.id, idBatch)))
+  }
   await syncLayeredControlRowsInTransaction(
     tx,
     persistedRows,
     previousRows,
     { allowCreate: await isLayeredControlCreationEnabled(tx) },
   )
+}
+
+export async function lockLayeredControlDocumentsForWeldChange(
+  tx: GeneratedDocumentsTransaction,
+) {
+  await lockControlProcessSettings(tx, 'layeredControl')
+  await lockLayeredControlSync(tx)
 }
 
 export async function ensureLayeredControlDocumentsInitialized() {
@@ -220,6 +246,8 @@ async function syncLayeredControlRowsInTransaction(
     return sequence
   }
 
+  const writes: LayeredControlDocumentWrite[] = []
+  const duplicateAssignments: Array<{ documentId: number; weldJointId: number }> = []
   for (const row of rows) {
     const methodsWithDocuments = [...(assignedMethodsByRow.get(row.id) ?? [])]
     const guardError = getLayeredControlHistoryGuardError({
@@ -237,96 +265,48 @@ async function syncLayeredControlRowsInTransaction(
       const existing = candidates[0]
       if (!existing && (!allowCreate || !requiredTypes.has(type))) continue
 
-      let target = existing
-      if (!target) {
-        const sequence = await getSequence(type)
-        const documentNumber = sequence.take()
-        const now = new Date()
-        const title = buildLayeredControlDocumentTitle({
-          type,
-          row,
-          documentNumber,
-          formedAt: now,
-          nameConfig: templateNameConfigs.get(type),
-        })
-        const [created] = await tx
-          .insert(generatedDocuments)
-          .values({
-            type,
-            title,
-            fileName: makeXlsxFileName(title),
-            mimeType: XLSX_MIME_TYPE,
-            periodFrom: normalizeLayeredControlDate(row.weldDate),
-            periodTo: normalizeLayeredControlDate(row.weldDate),
-            rowCount: 1,
-            wdiTotal: Number(row.wdi) || 0,
-            documentNumber,
-            sourceMetadata: JSON.stringify({ kind: 'layeredControl', version: 1 }),
-          })
-          .returning()
-        await tx.insert(generatedDocumentWeldJoints).values({
-          documentId: created.id,
-          weldJointId: row.id,
-        })
-        target = {
-          weldJointId: row.id,
-          documentId: created.id,
-          type,
-          title: created.title,
-          fileName: created.fileName,
-          mimeType: created.mimeType,
-          periodFrom: created.periodFrom,
-          periodTo: created.periodTo,
-          rowCount: created.rowCount,
-          wdiTotal: created.wdiTotal,
-          documentNumber: created.documentNumber,
-          createdAt: created.createdAt,
-        }
-      }
-
-      const documentNumber = target.documentNumber ?? (await getSequence(type)).take()
+      const documentNumber = existing?.documentNumber ?? (await getSequence(type)).take()
       const title = buildLayeredControlDocumentTitle({
         type,
         row,
         documentNumber,
-        formedAt: target.createdAt,
+        formedAt: existing?.createdAt ?? new Date(),
         nameConfig: templateNameConfigs.get(type),
       })
       const date = normalizeLayeredControlDate(row.weldDate)
       const fileName = makeXlsxFileName(title)
       const wdiTotal = Number(row.wdi) || 0
-      if (
-        target.title !== title ||
-        target.fileName !== fileName ||
-        target.mimeType !== XLSX_MIME_TYPE ||
-        target.periodFrom !== date ||
-        target.periodTo !== date ||
-        target.rowCount !== 1 ||
-        Number(target.wdiTotal ?? 0) !== wdiTotal ||
-        target.documentNumber !== documentNumber
-      ) {
-        await tx
-          .update(generatedDocuments)
-          .set({
-            title,
-            fileName,
-            mimeType: XLSX_MIME_TYPE,
-            periodFrom: date,
-            periodTo: date,
-            rowCount: 1,
-            wdiTotal,
-            documentNumber,
-            updatedAt: new Date(),
-          })
-          .where(eq(generatedDocuments.id, target.documentId))
-      }
-
-      for (const duplicate of candidates.slice(1)) {
-        await detachDuplicateLayeredAssignment(tx, duplicate)
-      }
+      writes.push({
+        rowId: row.id,
+        type,
+        targetDocumentId: existing?.documentId ?? null,
+        title,
+        fileName,
+        mimeType: XLSX_MIME_TYPE,
+        periodFrom: date,
+        periodTo: date,
+        rowCount: 1,
+        wdiTotal,
+        documentNumber,
+        shouldUpdate: Boolean(existing && (
+          existing.title !== title ||
+          existing.fileName !== fileName ||
+          existing.mimeType !== XLSX_MIME_TYPE ||
+          existing.periodFrom !== date ||
+          existing.periodTo !== date ||
+          existing.rowCount !== 1 ||
+          Number(existing.wdiTotal ?? 0) !== wdiTotal ||
+          existing.documentNumber !== documentNumber
+        )),
+      })
+      duplicateAssignments.push(...candidates.slice(1).map((duplicate) => ({
+        documentId: duplicate.documentId,
+        weldJointId: duplicate.weldJointId,
+      })))
     }
   }
 
+  await persistLayeredControlDocumentWrites(tx, writes, duplicateAssignments)
   for (const sequence of sequences.values()) await sequence.persist()
 }
 
@@ -334,28 +314,44 @@ async function loadExistingLayeredAssignments(
   tx: GeneratedDocumentsTransaction,
   rowIds: number[],
 ): Promise<ExistingLayeredAssignment[]> {
-  const records = await tx
-    .select({
-      weldJointId: generatedDocumentWeldJoints.weldJointId,
-      documentId: generatedDocuments.id,
-      type: generatedDocuments.type,
-      title: generatedDocuments.title,
-      fileName: generatedDocuments.fileName,
-      mimeType: generatedDocuments.mimeType,
-      periodFrom: generatedDocuments.periodFrom,
-      periodTo: generatedDocuments.periodTo,
-      rowCount: generatedDocuments.rowCount,
-      wdiTotal: generatedDocuments.wdiTotal,
-      documentNumber: generatedDocuments.documentNumber,
-      createdAt: generatedDocuments.createdAt,
-    })
-    .from(generatedDocumentWeldJoints)
-    .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
-    .where(and(
-      inArray(generatedDocumentWeldJoints.weldJointId, rowIds),
-      inArray(generatedDocuments.type, [...LAYERED_CONTROL_DOCUMENT_TYPES]),
-    ))
-    .orderBy(asc(generatedDocuments.id))
+  const records: Array<{
+    weldJointId: number
+    documentId: number
+    type: string
+    title: string
+    fileName: string
+    mimeType: string
+    periodFrom: string | null
+    periodTo: string | null
+    rowCount: number
+    wdiTotal: number | null
+    documentNumber: number | null
+    createdAt: Date
+  }> = []
+  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+    records.push(...await tx
+      .select({
+        weldJointId: generatedDocumentWeldJoints.weldJointId,
+        documentId: generatedDocuments.id,
+        type: generatedDocuments.type,
+        title: generatedDocuments.title,
+        fileName: generatedDocuments.fileName,
+        mimeType: generatedDocuments.mimeType,
+        periodFrom: generatedDocuments.periodFrom,
+        periodTo: generatedDocuments.periodTo,
+        rowCount: generatedDocuments.rowCount,
+        wdiTotal: generatedDocuments.wdiTotal,
+        documentNumber: generatedDocuments.documentNumber,
+        createdAt: generatedDocuments.createdAt,
+      })
+      .from(generatedDocumentWeldJoints)
+      .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
+      .where(and(
+        inArray(generatedDocumentWeldJoints.weldJointId, rowIdBatch),
+        inArray(generatedDocuments.type, [...LAYERED_CONTROL_DOCUMENT_TYPES]),
+      )))
+  }
+  records.sort((left, right) => left.documentId - right.documentId)
   return records.flatMap((record) =>
     isLayeredControlDocumentType(record.type)
       ? [{ ...record, type: record.type }]
@@ -406,23 +402,134 @@ function buildLayeredControlDocumentTitle({
   return resolveGeneratedDocumentNamePattern(pattern, { documentNumber, formedAt })
 }
 
-async function detachDuplicateLayeredAssignment(
+export async function persistLayeredControlDocumentWrites(
   tx: GeneratedDocumentsTransaction,
-  assignment: ExistingLayeredAssignment,
+  writes: readonly LayeredControlDocumentWrite[],
+  duplicateAssignments: readonly { documentId: number; weldJointId: number }[] = [],
+  now = new Date(),
 ) {
-  await tx
-    .delete(generatedDocumentWeldJoints)
-    .where(and(
-      eq(generatedDocumentWeldJoints.documentId, assignment.documentId),
-      eq(generatedDocumentWeldJoints.weldJointId, assignment.weldJointId),
-    ))
-  const [{ total }] = await tx
-    .select({ total: count() })
-    .from(generatedDocumentWeldJoints)
-    .where(eq(generatedDocumentWeldJoints.documentId, assignment.documentId))
-  if (Number(total) === 0) {
-    await tx.delete(generatedDocuments).where(eq(generatedDocuments.id, assignment.documentId))
+  const changedExistingWrites = [...new Map(writes
+    .filter((write) => write.targetDocumentId != null && write.shouldUpdate)
+    .map((write) => [write.targetDocumentId!, write])).values()]
+  for (let offset = 0; offset < changedExistingWrites.length; offset += 250) {
+    const batch = changedExistingWrites.slice(offset, offset + 250)
+    const values = sql.join(batch.map((write) => sql`(
+      ${write.targetDocumentId!}::integer,
+      ${write.title}::text,
+      ${write.fileName}::text,
+      ${write.mimeType}::text,
+      ${write.periodFrom}::date,
+      ${write.periodTo}::date,
+      ${write.rowCount}::integer,
+      ${write.wdiTotal}::numeric,
+      ${write.documentNumber}::integer,
+      ${now}::timestamptz
+    )`), sql`, `)
+    await tx.execute(sql`
+      update "generated_documents" as document
+      set
+        "title" = refreshed.title,
+        "file_name" = refreshed.file_name,
+        "mime_type" = refreshed.mime_type,
+        "period_from" = refreshed.period_from,
+        "period_to" = refreshed.period_to,
+        "row_count" = refreshed.row_count,
+        "wdi_total" = refreshed.wdi_total,
+        "document_number" = refreshed.document_number,
+        "updated_at" = refreshed.updated_at
+      from (values ${values}) as refreshed(
+        id,
+        title,
+        file_name,
+        mime_type,
+        period_from,
+        period_to,
+        row_count,
+        wdi_total,
+        document_number,
+        updated_at
+      )
+      where document."id" = refreshed.id
+    `)
   }
+
+  const newWrites = writes.filter((write) => write.targetDocumentId == null)
+  const insertedDocumentIds = new Map<string, number>()
+  for (let offset = 0; offset < newWrites.length; offset += 250) {
+    const batch = newWrites.slice(offset, offset + 250)
+    const inserted = await tx
+      .insert(generatedDocuments)
+      .values(batch.map((write) => ({
+        type: write.type,
+        title: write.title,
+        fileName: write.fileName,
+        mimeType: write.mimeType,
+        periodFrom: write.periodFrom,
+        periodTo: write.periodTo,
+        rowCount: write.rowCount,
+        wdiTotal: write.wdiTotal,
+        documentNumber: write.documentNumber,
+        sourceMetadata: JSON.stringify({ kind: 'layeredControl', version: 1 }),
+      })))
+      .returning({
+        id: generatedDocuments.id,
+        type: generatedDocuments.type,
+        documentNumber: generatedDocuments.documentNumber,
+      })
+    inserted.forEach((document) => {
+      if (isLayeredControlDocumentType(document.type) && document.documentNumber != null) {
+        insertedDocumentIds.set(layeredDocumentNumberKey(document.type, document.documentNumber), document.id)
+      }
+    })
+  }
+
+  const newAssignments = newWrites.map((write) => {
+    const documentId = insertedDocumentIds.get(layeredDocumentNumberKey(write.type, write.documentNumber))
+    if (!documentId) throw new Error('Не удалось сопоставить созданный послойный документ.')
+    return { documentId, weldJointId: write.rowId }
+  })
+  for (let offset = 0; offset < newAssignments.length; offset += 1000) {
+    await tx
+      .insert(generatedDocumentWeldJoints)
+      .values(newAssignments.slice(offset, offset + 1000))
+      .onConflictDoNothing()
+  }
+
+  const duplicates = [...new Map(duplicateAssignments.map((assignment) => [
+    `${assignment.documentId}:${assignment.weldJointId}`,
+    assignment,
+  ])).values()]
+  for (let offset = 0; offset < duplicates.length; offset += 500) {
+    const batch = duplicates.slice(offset, offset + 500)
+    const values = sql.join(batch.map((assignment) => sql`(
+      ${assignment.documentId}::integer,
+      ${assignment.weldJointId}::integer
+    )`), sql`, `)
+    await tx.execute(sql`
+      delete from "generated_document_weld_joints" as assignment
+      using (values ${values}) as duplicate(document_id, weld_joint_id)
+      where assignment."document_id" = duplicate.document_id
+        and assignment."weld_joint_id" = duplicate.weld_joint_id
+    `)
+  }
+  const duplicateDocumentIds = [...new Set(duplicates.map((assignment) => assignment.documentId))]
+  for (const documentIdBatch of splitNumberBatches(duplicateDocumentIds, 1000)) {
+    await tx
+      .delete(generatedDocuments)
+      .where(and(
+        inArray(generatedDocuments.id, documentIdBatch),
+        notExists(
+          tx
+            .select({ value: sql`1` })
+            .from(generatedDocumentWeldJoints)
+            .where(eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id)),
+        ),
+      ))
+  }
+}
+
+function layeredDocumentNumberKey(type: LayeredControlDocumentType, documentNumber: number) {
+  return `${type}:${documentNumber}`
 }
 
 function hasLayeredControlBasis(row: LayeredRow, assignmentKey: 'hasVik' | 'hasPvk') {

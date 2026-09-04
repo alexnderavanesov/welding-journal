@@ -13,7 +13,6 @@ import {
 import { buildWelderStampExpiryTasks } from '@/lib/welder-stamp-expiry-tasks'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import type { DataListSettings } from '@/lib/data-list-settings'
-import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
 
@@ -40,7 +39,6 @@ export type BuildVisibleDispatcherTasksInput = {
   dispatcherReminderSettings: DispatcherReminderSettings
   dispatcherSettings: DispatcherSettings
   dataListSettings?: DataListSettings
-  saveCheckSettings?: SaveCheckSettings
   systemIndexSettings?: SystemIndexSettings
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
@@ -55,7 +53,6 @@ export function buildVisibleDispatcherTasks({
   dispatcherReminderSettings,
   dispatcherSettings,
   dataListSettings,
-  saveCheckSettings,
   systemIndexSettings,
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
@@ -69,7 +66,6 @@ export function buildVisibleDispatcherTasks({
     ? buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
         dataListSettings,
         earlyCoilDecisionSourceRowIds,
-        saveCheckSettings,
         systemIndexSettings,
         includeControlHistoryChecks: isDispatcherSettingEnabled('check-control-history', dispatcherSettings),
         includeIncompleteStampChecks: isDispatcherSettingEnabled('check-incomplete-stamps', dispatcherSettings),

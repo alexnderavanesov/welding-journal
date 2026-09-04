@@ -1,4 +1,9 @@
 export const LEGACY_CONTROL_REPLACEMENT_VALUE = 'замена РК/УЗК'
+export const CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES = [
+  'да',
+  'дополнительный',
+  LEGACY_CONTROL_REPLACEMENT_VALUE.toLocaleLowerCase('ru-RU'),
+] as const
 
 export function normalizeControlAvailabilityText(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()

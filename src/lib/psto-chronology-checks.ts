@@ -1,4 +1,4 @@
-import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
+import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
   formatSaveCheckBlockReason,
@@ -14,8 +14,11 @@ export const PSTO_REQUEST_DATE_ORDER_REASON = 'проверить даты ПС�
 
 export type PstoChronologyIssueKind =
   | 'request-date-missing'
+  | 'request-date-invalid'
+  | 'request-name-missing'
   | 'weld-after-request'
   | 'weld-after-result'
+  | 'result-date-invalid'
   | 'request-after-result'
   | 'psto-after-tvmt-request'
   | 'psto-after-tvmt-result'
@@ -23,6 +26,9 @@ export type PstoChronologyIssueKind =
   | 'previous-tvmt-after-repeat-request'
   | 'repeat-without-failed-tvmt'
   | 'tvmt-request-date-missing'
+  | 'tvmt-request-date-invalid'
+  | 'tvmt-request-name-missing'
+  | 'tvmt-result-date-invalid'
 
 export type PstoChronologyIssue = {
   kind: PstoChronologyIssueKind
@@ -32,8 +38,9 @@ export type PstoChronologyIssue = {
 }
 
 type PstoChronologyOptions = {
+  includeInvalidDateIssues?: boolean
   includeResultBeforeWeldIssue?: boolean
-  includeMissingRequestDateIssue?: boolean
+  includeRequestIntegrityIssues?: boolean
   includeInvalidRepeatTriggerIssue?: boolean
 }
 
@@ -46,7 +53,14 @@ export function getPstoChronologyIssues(
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   options: PstoChronologyOptions = {},
 ): PstoChronologyIssue[] {
-  if (!settings.pstoResultRequestDateOrder) return []
+  if (
+    !settings.pstoResultRequestDateOrder &&
+    !settings.pstoResultDateAfterWeldDate &&
+    !options.includeInvalidDateIssues &&
+    !options.includeResultBeforeWeldIssue &&
+    !options.includeRequestIntegrityIssues &&
+    !options.includeInvalidRepeatTriggerIssue
+  ) return []
 
   const issues: PstoChronologyIssue[] = []
   for (const row of rows) {
@@ -61,6 +75,7 @@ export function getPstoChronologyIssues(
         cycle,
         previousCycle,
         weldDate,
+        settings,
         options,
       }))
     }
@@ -80,7 +95,7 @@ export function findFirstPstoChronologySaveBlockReason(
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
   const issue = getPstoChronologyIssues(rows, settings)[0]
-  return issue ? formatSaveCheckBlockReason('pstoResultRequestDateOrder', issue.message) : ''
+  return issue ? formatPstoChronologyIssueSaveBlockReason(issue) : ''
 }
 
 export function findFirstNewPstoChronologySaveBlockReason(
@@ -93,14 +108,14 @@ export function findFirstNewPstoChronologySaveBlockReason(
   )
   const issue = getPstoChronologyIssues(rows, settings)
     .find((candidate) => !previousIssueKeys.has(getPstoChronologyIssueIdentity(candidate)))
-  return issue ? formatSaveCheckBlockReason('pstoResultRequestDateOrder', issue.message) : ''
+  return issue ? formatPstoChronologyIssueSaveBlockReason(issue) : ''
 }
 
 export function assertNoPstoChronologyIssues(
   rows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
-  const issue = findFirstPstoChronologyIssue(rows, settings)
+  const issue = findFirstPstoChronologySaveBlockReason(rows, settings)
   if (issue) throw new Error(issue)
 }
 
@@ -113,7 +128,8 @@ export function getDispatcherPstoChronologyIssues(rows: PstoChronologyRow[]) {
     },
     {
       includeResultBeforeWeldIssue: true,
-      includeMissingRequestDateIssue: true,
+      includeInvalidDateIssues: true,
+      includeRequestIntegrityIssues: true,
       includeInvalidRepeatTriggerIssue: true,
     },
   )
@@ -125,6 +141,7 @@ function getCycleIssues({
   cycle,
   previousCycle,
   weldDate,
+  settings,
   options,
 }: {
   row: PstoChronologyRow
@@ -132,12 +149,19 @@ function getCycleIssues({
   cycle: PstoCycleSnapshot
   previousCycle?: PstoCycleSnapshot
   weldDate: string | null
+  settings: SaveCheckSettings
   options: PstoChronologyOptions
 }) {
   const issues: PstoChronologyIssue[] = []
+  const pstoRequestName = String(cycle.pstoRequest ?? '').trim()
+  const hasPstoRequestDate = hasDateInputValue(cycle.pstoRequestDate)
   const requestDate = parseDateLikeToIso(cycle.pstoRequestDate)
+  const hasPstoResultDate = hasDateInputValue(cycle.pstoDate)
   const resultDate = parseDateLikeToIso(cycle.pstoDate)
+  const tvmtRequestName = String(cycle.tvmtRequest ?? '').trim()
+  const hasTvmtRequestDate = hasDateInputValue(cycle.tvmtRequestDate)
   const tvmtRequestDate = parseDateLikeToIso(cycle.tvmtRequestDate)
+  const hasTvmtResultDate = hasDateInputValue(cycle.tvmtConclusionDate)
   const tvmtResultDate = parseDateLikeToIso(cycle.tvmtConclusionDate)
   const previousTvmtDate = parseDateLikeToIso(previousCycle?.tvmtConclusionDate)
   const hasResult = hasFinalPstoResult(cycle.pstoResult)
@@ -145,10 +169,18 @@ function getCycleIssues({
   const pstoLabel = cycle.sequence === 1 ? 'ПСТО' : `повторной ПСТО #${cycle.sequence}`
   const tvmtLabel = cycle.sequence === 1 ? 'ТВМТ' : `ТВМТ цикла #${cycle.sequence}`
   const hasTrace = Boolean(
-    cycle.pstoRequest || requestDate || hasResult || resultDate ||
-    cycle.tvmtRequest || tvmtRequestDate || hasTvmtResult || tvmtResultDate,
+    cycle.pstoRequest || hasPstoRequestDate || hasResult || hasPstoResultDate ||
+    cycle.tvmtRequest || hasTvmtRequestDate || hasTvmtResult || hasTvmtResultDate,
   )
   if (!hasTrace) return issues
+
+  const hasTvmtTrace = Boolean(
+    tvmtRequestName || hasTvmtRequestDate || hasTvmtResult ||
+    hasTvmtResultDate || String(cycle.tvmtConclusion ?? '').trim(),
+  )
+  const hasPstoTrace = Boolean(
+    pstoRequestName || hasPstoRequestDate || hasResult || hasPstoResultDate || hasTvmtTrace,
+  )
 
   if (
     options.includeInvalidRepeatTriggerIssue &&
@@ -162,63 +194,113 @@ function getCycleIssues({
     ))
   }
 
-  if (options.includeMissingRequestDateIssue && hasResult && !requestDate) {
+  const requestDateReason = getDateInputValidationReason(cycle.pstoRequestDate, `Дата заявки ${pstoLabel}`)
+  const resultDateReason = getDateInputValidationReason(cycle.pstoDate, `Дата результата ${pstoLabel}`)
+  const tvmtRequestDateReason = getDateInputValidationReason(cycle.tvmtRequestDate, `Дата заявки ${tvmtLabel}`)
+  const tvmtResultDateReason = getDateInputValidationReason(cycle.tvmtConclusionDate, `Дата результата ${tvmtLabel}`)
+  if (options.includeInvalidDateIssues && requestDateReason) {
+    issues.push(createIssue(
+      row,
+      'request-date-invalid',
+      `Стык ${joint}: ${requestDateReason}`,
+    ))
+  } else if (options.includeRequestIntegrityIssues && hasPstoTrace && !hasPstoRequestDate) {
     issues.push(createIssue(
       row,
       'request-date-missing',
-      `Стык ${joint}: у ${pstoLabel} есть результат, но нет даты заявки ПСТО.`,
+      `Стык ${joint}: у ${pstoLabel} есть данные цикла, но нет даты заявки ПСТО.`,
     ))
   }
-  if (options.includeMissingRequestDateIssue && hasTvmtResult && !tvmtRequestDate) {
+  if (options.includeInvalidDateIssues && resultDateReason) {
+    issues.push(createIssue(
+      row,
+      'result-date-invalid',
+      `Стык ${joint}: ${resultDateReason}`,
+    ))
+  }
+  if (options.includeRequestIntegrityIssues && hasPstoTrace && !pstoRequestName) {
+    issues.push(createIssue(
+      row,
+      'request-name-missing',
+      `Стык ${joint}: у ${pstoLabel} есть данные цикла, но нет наименования заявки ПСТО.`,
+    ))
+  }
+  if (options.includeInvalidDateIssues && tvmtRequestDateReason) {
+    issues.push(createIssue(
+      row,
+      'tvmt-request-date-invalid',
+      `Стык ${joint}: ${tvmtRequestDateReason}`,
+    ))
+  } else if (options.includeRequestIntegrityIssues && hasTvmtTrace && !hasTvmtRequestDate) {
     issues.push(createIssue(
       row,
       'tvmt-request-date-missing',
-      `Стык ${joint}: у ${tvmtLabel} есть результат, но нет даты заявки ТВМТ.`,
+      `Стык ${joint}: у ${tvmtLabel} есть данные контроля, но нет даты заявки ТВМТ.`,
     ))
   }
-  if (requestDate && weldDate && requestDate < weldDate) {
+  if (options.includeInvalidDateIssues && tvmtResultDateReason) {
+    issues.push(createIssue(
+      row,
+      'tvmt-result-date-invalid',
+      `Стык ${joint}: ${tvmtResultDateReason}`,
+    ))
+  }
+  if (options.includeRequestIntegrityIssues && hasTvmtTrace && !tvmtRequestName) {
+    issues.push(createIssue(
+      row,
+      'tvmt-request-name-missing',
+      `Стык ${joint}: у ${tvmtLabel} есть данные контроля, но нет наименования заявки ТВМТ.`,
+    ))
+  }
+  if (settings.pstoResultRequestDateOrder && requestDate && weldDate && requestDate < weldDate) {
     issues.push(createIssue(
       row,
       'weld-after-request',
       `Стык ${joint}: дата заявки ${pstoLabel} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
     ))
   }
-  if (options.includeResultBeforeWeldIssue && hasResult && resultDate && weldDate && resultDate < weldDate) {
+  if (
+    (settings.pstoResultDateAfterWeldDate || options.includeResultBeforeWeldIssue) &&
+    hasResult &&
+    resultDate &&
+    weldDate &&
+    resultDate < weldDate
+  ) {
     issues.push(createIssue(
       row,
       'weld-after-result',
       `Стык ${joint}: дата результата ${pstoLabel} ${formatDisplayDate(resultDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
     ))
   }
-  if (requestDate && resultDate && resultDate < requestDate) {
+  if (settings.pstoResultRequestDateOrder && requestDate && resultDate && resultDate < requestDate) {
     issues.push(createIssue(
       row,
       'request-after-result',
       `Стык ${joint}: дата результата ${pstoLabel} ${formatDisplayDate(resultDate)} раньше даты заявки ПСТО ${formatDisplayDate(requestDate)}.`,
     ))
   }
-  if (requestDate && previousTvmtDate && requestDate < previousTvmtDate) {
+  if (settings.pstoResultRequestDateOrder && requestDate && previousTvmtDate && requestDate < previousTvmtDate) {
     issues.push(createIssue(
       row,
       'previous-tvmt-after-repeat-request',
       `Стык ${joint}: дата заявки ${pstoLabel} ${formatDisplayDate(requestDate)} раньше результата предыдущей ТВМТ ${formatDisplayDate(previousTvmtDate)}.`,
     ))
   }
-  if (tvmtRequestDate && resultDate && tvmtRequestDate < resultDate) {
+  if (settings.pstoResultRequestDateOrder && tvmtRequestDate && resultDate && tvmtRequestDate < resultDate) {
     issues.push(createIssue(
       row,
       'psto-after-tvmt-request',
       `Стык ${joint}: дата заявки ${tvmtLabel} ${formatDisplayDate(tvmtRequestDate)} раньше даты ${pstoLabel} ${formatDisplayDate(resultDate)}.`,
     ))
   }
-  if (tvmtResultDate && resultDate && tvmtResultDate < resultDate) {
+  if (settings.pstoResultRequestDateOrder && tvmtResultDate && resultDate && tvmtResultDate < resultDate) {
     issues.push(createIssue(
       row,
       'psto-after-tvmt-result',
       `Стык ${joint}: дата результата ${tvmtLabel} ${formatDisplayDate(tvmtResultDate)} раньше даты ${pstoLabel} ${formatDisplayDate(resultDate)}.`,
     ))
   }
-  if (tvmtRequestDate && tvmtResultDate && tvmtResultDate < tvmtRequestDate) {
+  if (settings.pstoResultRequestDateOrder && tvmtRequestDate && tvmtResultDate && tvmtResultDate < tvmtRequestDate) {
     issues.push(createIssue(
       row,
       'tvmt-request-after-result',
@@ -240,6 +322,13 @@ function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {
   return `${issue.kind}\u0000${issue.message}`
 }
 
+function formatPstoChronologyIssueSaveBlockReason(issue: PstoChronologyIssue) {
+  const settingId = issue.kind === 'weld-after-result'
+    ? 'pstoResultDateAfterWeldDate'
+    : 'pstoResultRequestDateOrder'
+  return formatSaveCheckBlockReason(settingId, issue.message)
+}
+
 function hasFinalPstoResult(value: unknown) {
   const result = String(value ?? '').trim().toLowerCase()
   return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
@@ -251,4 +340,9 @@ function getRepeatCycles(row: PstoChronologyRow) {
 
 function formatJoint(row: PstoChronologyRow) {
   return String(row.joint ?? '').trim() || `ID ${String(row.id ?? '-')}`
+}
+
+function hasDateInputValue(value: unknown) {
+  const text = String(value ?? '').trim()
+  return Boolean(text && text !== '-')
 }

@@ -30,6 +30,10 @@ import {
   getPreHeatTreatmentReportField,
   PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS,
 } from '@/lib/pre-heat-treatment-report-fields'
+import {
+  getLnkDefectDescriptionDescriptor,
+  getLnkDefectDescriptionEditBlockReason,
+} from '@/lib/lnk-defect-description'
 
 const WELDING_JOURNAL_FIELD_TOOLTIP =
   'Данные сварочного журнала. Чтобы изменить значение, откройте карточку стыка в разделе «Сварочный журнал».'
@@ -148,8 +152,10 @@ export function getWeldTableBodyCellTooltip({
       ? getFinalStatusErrorReason(row)
       : null
   if (finalStatusErrorReason) return finalStatusErrorReason
+  const defectDescriptor = getLnkDefectDescriptionDescriptor(fieldKey)
   if (isEditableCell && fieldKey !== 'joint') {
-    return fieldKey === 'lnkDefectDescription' ||
+    return defectDescriptor ||
+      fieldKey === 'lnkDefectDescription' ||
       fieldKey === 'rkExposureScheme' ||
       fieldKey === 'preRkExposureScheme' ||
       fieldKey === 'preRkDefectDescription'
@@ -194,6 +200,12 @@ export function getWeldTableBodyCellTooltip({
     return composeWeldTableCellTooltip(visibleValue, 'Открыть карточку стыка на вкладке «Назначение контроля»')
   }
   if (isBlockedEditableCell) {
+    if (defectDescriptor) {
+      return composeWeldTableCellTooltip(
+        visibleValue,
+        getLnkDefectDescriptionEditBlockReason(row, defectDescriptor),
+      )
+    }
     return 'Недоступно: отсутствует отметка "да" в назначении соответствующего контроля'
   }
   const tooltipValue = DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)
@@ -446,6 +458,7 @@ function getWeldTableCellLinkState({
       hasVisibleValue,
   )
   const preHeatTreatmentField = getPreHeatTreatmentReportField(fieldKey)
+  const defectDescriptionField = getLnkDefectDescriptionDescriptor(fieldKey)
   const systemDocumentType = hasVisibleValue ? getSystemDocumentTypeForField(fieldKey) : null
   const systemDocumentTemplateId = systemDocumentType ? getSystemDocumentTemplateIdForField(fieldKey) : null
   const isLnkRequestCardLink =
@@ -460,6 +473,7 @@ function getWeldTableCellLinkState({
   const isLnkResultCardLink =
     hasVisibleValue &&
     canOpenLnkResult &&
+    !defectDescriptionField &&
     Boolean(
       getLnkResultMethodForField(fieldKey) ||
       (preHeatTreatmentField &&

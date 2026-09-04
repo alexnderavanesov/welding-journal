@@ -30,6 +30,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 type GuardTransaction = SystemDocumentSequenceTransaction
 type GuardReadClient = Pick<ReturnType<typeof requireDb>, 'select'>
@@ -119,10 +120,10 @@ export async function refreshEarlyCoilDecisionContextsInTransaction(
     return Number.isInteger(id) && id > 0 ? [[id, row] as const] : []
   }))
   if (rowsById.size === 0) return
-  const warnings = await tx
-    .select({ key: dispatcherAcceptedWarnings.key })
-    .from(dispatcherAcceptedWarnings)
-    .where(inArray(dispatcherAcceptedWarnings.key, [...rowsById.keys()].map(getEarlyCoilDecisionKey)))
+  const warnings = await loadAcceptedWarningsByKeys(
+    tx,
+    [...rowsById.keys()].map(getEarlyCoilDecisionKey),
+  )
 
   const updates = warnings.flatMap((warning) => {
     const parsed = parseEarlyCoilDecisionKey(warning.key)
@@ -168,11 +169,15 @@ export async function assertStoredEarlyCoilDecisionSourcesRemainValid(
   const ids = uniqueIds(sourceRowIds)
   const protectedSourceIds = await loadProtectedSourceIds(tx, ids)
   if (protectedSourceIds.size === 0) return
-  const rows = await tx
-    .select()
-    .from(weldJoints)
-    .where(inArray(weldJoints.id, [...protectedSourceIds]))
-    .for('update')
+  const rows: WeldJoint[] = []
+  for (const idBatch of splitNumberBatches([...protectedSourceIds].sort((left, right) => left - right), 1000)) {
+    rows.push(...await tx
+      .select()
+      .from(weldJoints)
+      .where(inArray(weldJoints.id, idBatch))
+      .orderBy(weldJoints.id)
+      .for('update'))
+  }
   const hydratedRows = await attachDuplicateControlRelations(
     await attachHeatTreatmentControlRelations(rows as WeldRow[], tx),
     tx,
@@ -228,11 +233,7 @@ export function getEarlyCoilDecisionTargetSource(
 async function loadProtectedSourceIds(tx: GuardReadClient, sourceRowIds: readonly number[]) {
   const ids = uniqueIds(sourceRowIds)
   if (ids.length === 0) return new Set<number>()
-  const keys = ids.map(getEarlyCoilDecisionKey)
-  const warnings = await tx
-    .select({ key: dispatcherAcceptedWarnings.key })
-    .from(dispatcherAcceptedWarnings)
-    .where(inArray(dispatcherAcceptedWarnings.key, keys))
+  const warnings = await loadAcceptedWarningsByKeys(tx, ids.map(getEarlyCoilDecisionKey))
   return new Set(warnings.flatMap((warning) => {
     const parsed = parseEarlyCoilDecisionKey(warning.key)
     return parsed ? [parsed.sourceRowId] : []
@@ -266,10 +267,13 @@ async function loadActiveEarlyCoilDecisions(tx: GuardTransaction): Promise<Activ
     return parsed ? [parsed.sourceRowId] : []
   }))]
   if (sourceIds.length === 0) return []
-  const sources = await tx
-    .select()
-    .from(weldJoints)
-    .where(inArray(weldJoints.id, sourceIds))
+  const sources: WeldJoint[] = []
+  for (const idBatch of splitNumberBatches(sourceIds, 1000)) {
+    sources.push(...await tx
+      .select()
+      .from(weldJoints)
+      .where(inArray(weldJoints.id, idBatch)))
+  }
   const [setting] = await tx
     .select({ value: appSettings.value })
     .from(appSettings)
@@ -324,4 +328,18 @@ function parseStoredValue(value: unknown) {
 
 function uniqueIds(values: readonly number[]) {
   return [...new Set(values.map(Number).filter((id) => Number.isInteger(id) && id > 0))]
+}
+
+async function loadAcceptedWarningsByKeys(
+  tx: GuardReadClient,
+  keys: readonly string[],
+) {
+  const warnings: Array<{ key: string }> = []
+  for (let offset = 0; offset < keys.length; offset += 1000) {
+    warnings.push(...await tx
+      .select({ key: dispatcherAcceptedWarnings.key })
+      .from(dispatcherAcceptedWarnings)
+      .where(inArray(dispatcherAcceptedWarnings.key, keys.slice(offset, offset + 1000))))
+  }
+  return warnings
 }

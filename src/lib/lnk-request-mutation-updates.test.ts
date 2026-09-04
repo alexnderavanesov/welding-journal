@@ -6,10 +6,26 @@ import {
   buildLnkRequestCorrectionRow,
   buildLnkRequestDraftRows,
   buildLnkRequestManagerRows,
+  buildLnkRequestRows,
 } from '@/lib/lnk-request-mutation-updates'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 
 describe('lnk request mutation updates', () => {
+  it('rejects a new LNK request without a real request date', () => {
+    const records = [{
+      id: 1,
+      joint: 'F1',
+      hasVik: 'да',
+    }] as RowWithId[]
+
+    expect(() => buildLnkRequestRows({
+      records,
+      methodKeys: ['vikRequest'],
+      requestName: 'Заявка-1',
+      requestDate: '31.02.2026',
+    })).toThrow('Дата заявки ЛНК')
+  })
+
   it('builds draft rows that can be checked before saving a request', () => {
     const records = [
       {
@@ -127,6 +143,7 @@ describe('lnk request mutation updates', () => {
       vikRequest: 'Заявка-001',
       vikRequestDate: '2026-07-21',
       vikResult: 'ожидает НК',
+      vikDefectDescription: 'Устаревшее описание',
       hasRk: 'да',
       rkRequest: 'Заявка-001',
       rkRequestDate: '2026-07-21',
@@ -143,6 +160,7 @@ describe('lnk request mutation updates', () => {
     expect(updated.vikRequest).toBeNull()
     expect(updated.vikRequestDate).toBeNull()
     expect(updated.vikResult).toBeNull()
+    expect(updated.vikDefectDescription).toBeNull()
     expect(updated.rkRequest).toBe('Заявка-001')
     expect(updated.rkResult).toBe('ожидает НК')
   })

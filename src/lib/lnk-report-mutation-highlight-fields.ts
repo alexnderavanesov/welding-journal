@@ -6,14 +6,14 @@ const LNK_COMMON_HIGHLIGHT_FIELDS = ['lnkCreatedAt', 'lnkUpdatedAt', 'finalStatu
 export function getLnkRequestPositionHighlightFields(methodKey: WeldFieldKey): WeldFieldKey[] {
   const method = getLnkMethodByRequestKey(methodKey)
   return method
-    ? [method.requestKey, method.resultKey, method.conclusionDateKey, method.conclusionKey, ...LNK_COMMON_HIGHLIGHT_FIELDS]
+    ? [method.requestKey, method.resultKey, method.conclusionDateKey, method.conclusionKey, method.defectDescriptionKey, ...LNK_COMMON_HIGHLIGHT_FIELDS]
     : [...LNK_COMMON_HIGHLIGHT_FIELDS]
 }
 
 export function getLnkResultHighlightFields(methodKey: WeldFieldKey): WeldFieldKey[] {
   const method = getLnkMethodByRequestKey(methodKey)
   return method
-    ? [method.resultKey, method.conclusionDateKey, method.conclusionKey, ...LNK_COMMON_HIGHLIGHT_FIELDS]
+    ? [method.resultKey, method.conclusionDateKey, method.conclusionKey, method.defectDescriptionKey, ...LNK_COMMON_HIGHLIGHT_FIELDS]
     : [...LNK_COMMON_HIGHLIGHT_FIELDS]
 }
 
@@ -27,9 +27,10 @@ export function getLnkResultReplacementHighlightFields(
 ): WeldFieldKey[] {
   return [
     ...new Set(
-      updates
-        .map(({ methodKey }) => getLnkMethodByRequestKey(methodKey)?.resultKey)
-        .filter(Boolean) as WeldFieldKey[],
+      updates.flatMap(({ methodKey }) => {
+        const method = getLnkMethodByRequestKey(methodKey)
+        return method ? [method.resultKey, method.defectDescriptionKey] : []
+      }),
     ),
     ...LNK_COMMON_HIGHLIGHT_FIELDS,
   ]

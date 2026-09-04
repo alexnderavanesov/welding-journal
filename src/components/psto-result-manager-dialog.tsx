@@ -32,6 +32,7 @@ import {
   normalizeTvmtResult,
 } from '@/lib/tvmt-cycle'
 import { usePagePagination } from '@/lib/use-page-pagination'
+import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type {
   CorrectPstoCycleStagePayload,
@@ -82,6 +83,7 @@ export function PstoResultManagerDialog({
   onCopyDocumentName,
   canOpenDocumentForField,
 }: PstoResultManagerDialogProps) {
+  const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const filteredRows = useMemo(() => {
@@ -291,6 +293,7 @@ export function PstoResultManagerDialog({
                     row={selectedRow}
                     cycle={selectedCycle}
                     stage={stage}
+                    saveCheckSettings={saveCheckSettings}
                     isPending={isPending}
                     canOpenDocument={canOpenDocumentForStage(getStageDocumentField(stage))}
                     onSave={(draft) => {
@@ -314,6 +317,7 @@ export function PstoResultManagerDialog({
                     onCorrectTvmtAndRemoveLaterCycles={onCorrectTvmtAndRemoveLaterCycles
                       ? (draft) => onCorrectTvmtAndRemoveLaterCycles(selectedRow, {
                           rowId: selectedRow.id,
+                          expectedVersion: String(selectedRow.rowVersion ?? '').trim(),
                           sequence: selectedCycle.sequence,
                           cycleId: selectedCycle.id,
                           date: draft.date,
@@ -338,6 +342,7 @@ function CycleStageEditor({
   row,
   cycle,
   stage,
+  saveCheckSettings,
   isPending,
   canOpenDocument,
   onSave,
@@ -350,6 +355,7 @@ function CycleStageEditor({
   row: WeldRow
   cycle: PstoCycleSnapshot
   stage: PstoCycleStage
+  saveCheckSettings: SaveCheckSettings
   isPending: boolean
   canOpenDocument: boolean
   onSave: (draft: StageDraft) => void
@@ -364,9 +370,14 @@ function CycleStageEditor({
   useEffect(() => setDraft(stageData), [stageData.date, stageData.name, stageData.result])
   const deleteReason = getPstoCycleStageDeleteBlockReason(row, cycle.sequence, stage)
   const hasChanges = draft.date !== stageData.date || draft.name !== stageData.name || draft.result !== stageData.result
-  const draftComplete = Boolean(draft.date && draft.name && (stage !== 'tvmtResult' || draft.result))
+  const draftComplete = stage === 'pstoResult'
+    ? Boolean(
+        (!saveCheckSettings.pstoResultDateRequired || draft.date) &&
+        (!saveCheckSettings.pstoResultDiagramRequired || draft.name),
+      )
+    : Boolean(draft.date && draft.name && (stage !== 'tvmtResult' || draft.result))
   const saveBlockReason = hasChanges && draftComplete
-    ? getPstoCycleStageSaveBlockReason(row, cycle, stage, draft)
+    ? getPstoCycleStageSaveBlockReason(row, cycle, stage, draft, saveCheckSettings)
     : ''
   const blockingLaterCycleSequence = getBlockingLaterCycleSequence(
     row,
@@ -374,6 +385,7 @@ function CycleStageEditor({
     stage,
     draft,
     saveBlockReason,
+    saveCheckSettings,
   )
 
   return (
@@ -504,6 +516,7 @@ function getBlockingLaterCycleSequence(
   stage: PstoCycleStage,
   draft: StageDraft,
   saveBlockReason: string,
+  saveCheckSettings: SaveCheckSettings,
 ) {
   if (
     stage !== 'tvmtResult' ||
@@ -518,7 +531,7 @@ function getBlockingLaterCycleSequence(
       date: draft.date,
       name: draft.name,
       result: draft.result,
-    }).deletedRepeatCycles[0]?.sequence ?? null
+    }, saveCheckSettings).deletedRepeatCycles[0]?.sequence ?? null
   } catch {
     return null
   }
@@ -529,6 +542,7 @@ function getPstoCycleStageSaveBlockReason(
   cycle: PstoCycleSnapshot,
   stage: PstoCycleStage,
   draft: StageDraft,
+  saveCheckSettings: SaveCheckSettings,
 ) {
   try {
     applyPstoCycleCorrection(row, {
@@ -539,7 +553,7 @@ function getPstoCycleStageSaveBlockReason(
       date: draft.date,
       name: draft.name,
       result: draft.result,
-    })
+    }, saveCheckSettings)
     return ''
   } catch (error) {
     return error instanceof Error ? error.message : 'Проверьте хронологию цикла.'
@@ -581,6 +595,7 @@ function createPayload(
 ): CorrectPstoCycleStagePayload {
   return {
     rowId: row.id,
+    expectedVersion: String(row.rowVersion ?? '').trim(),
     sequence: cycle.sequence,
     cycleId: cycle.id,
     stage,

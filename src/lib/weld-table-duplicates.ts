@@ -1,5 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 const DUPLICATE_CHECK_FIELD_KEYS: WeldFieldKey[] = [
   'projectTitle',
@@ -24,7 +25,7 @@ export function getDuplicateKey(row: WeldInput) {
   if (isUnofficialJoint(row)) return null
   const values = DUPLICATE_CHECK_FIELD_KEYS.map((key) => normalizeDuplicateValue(row[key]))
   if (values.every((value) => value === '')) return null
-  return values.join('|')
+  return encodeIdentityKey(values)
 }
 
 function isUnofficialJoint(row: WeldInput) {

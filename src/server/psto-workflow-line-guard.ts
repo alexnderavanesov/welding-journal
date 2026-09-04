@@ -5,6 +5,7 @@ import { isControlEnabledValue } from '@/lib/control-availability-values'
 import {
   getPstoLineIdentityKey,
   normalizePstoLineIdentity,
+  normalizePstoLineIdentityPart,
   type PstoLineIdentity,
 } from '@/lib/psto-line-assignment'
 import { isCancelledControlValue } from '@/lib/report-value-utils'
@@ -36,15 +37,19 @@ export async function assertPstoWorkflowLinesFullyAssigned(
   }
   if (identities.length === 0) return
 
-  const lineRows = await tx
-    .select({
-      projectTitle: weldJoints.projectTitle,
-      subtitleCode: weldJoints.subtitleCode,
-      line: weldJoints.line,
-      pstoRequired: weldJoints.pstoRequired,
-    })
-    .from(weldJoints)
-    .where(or(...identities.map(buildLineWhere)))
+  const lineRows: PstoWorkflowLineRow[] = []
+  for (let offset = 0; offset < identities.length; offset += 500) {
+    const identityBatch = identities.slice(offset, offset + 500)
+    lineRows.push(...await tx
+      .select({
+        projectTitle: weldJoints.projectTitle,
+        subtitleCode: weldJoints.subtitleCode,
+        line: weldJoints.line,
+        pstoRequired: weldJoints.pstoRequired,
+      })
+      .from(weldJoints)
+      .where(or(...identityBatch.map(buildLineWhere))))
+  }
 
   const error = getPstoWorkflowLineAssignmentError(selectedRows, lineRows, options)
   if (error) throw new Error(error)
@@ -96,9 +101,9 @@ function uniqueLineIdentities(rows: readonly PstoWorkflowLineRow[]) {
 
 function buildLineWhere(identity: PstoLineIdentity) {
   return and(
-    sql`btrim(coalesce(${weldJoints.projectTitle}, '')) = ${identity.projectTitle}`,
-    sql`btrim(coalesce(${weldJoints.subtitleCode}, '')) = ${identity.subtitleCode}`,
-    sql`btrim(coalesce(${weldJoints.line}, '')) = ${identity.line}`,
+    sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = ${normalizePstoLineIdentityPart(identity.projectTitle)}`,
+    sql`lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = ${normalizePstoLineIdentityPart(identity.subtitleCode)}`,
+    sql`lower(btrim(coalesce(${weldJoints.line}, ''))) = ${normalizePstoLineIdentityPart(identity.line)}`,
   )
 }
 

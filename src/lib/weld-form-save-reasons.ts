@@ -1,13 +1,12 @@
 import type { WeldDraft } from '@/lib/dispatcher-types'
-import { getDateInputValidationReason, getTodayIsoDate, parseDateLikeToIso } from '@/lib/date-format'
+import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
   hasReservedJointSystemPart,
   normalizeJointName,
   validateJointNameStructure,
   validateManualJointName,
 } from '@/lib/joint-name'
-import { formatJointDiameterLabel } from '@/lib/joint-display'
-import { isLnkRepairForbiddenByDiameter } from '@/lib/lnk-result-rules'
+import { findFirstLnkRepairRuleIssue } from '@/lib/lnk-result-rules'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
   formatSaveCheckBlockReason,
@@ -30,7 +29,7 @@ import {
   hasText,
 } from '@/lib/report-value-utils'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-import { factualWelderStampFieldKeys } from '@/lib/weld-form-field-sets'
+import { factualWelderStampFieldKeys, isWeldFormFieldHidden } from '@/lib/weld-form-field-sets'
 import {
   getRequiredConnectionTypeMessage,
   getRequiredMaterialGroupMessage,
@@ -38,6 +37,7 @@ import {
 } from '@/lib/weld-validation'
 import type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-types'
 import { getStampSelectValue, isAdditionalValue, isCancelledValue, isYesValue } from '@/lib/weld-form-value-utils'
+import { shouldValidateOfficialStampCompatibilityForSave } from '@/lib/welder-stamp-compatibility-validation'
 
 export function getWeldFormSaveBlockReason(
   draft: WeldInput,
@@ -72,7 +72,9 @@ export function getWeldFormSaveBlockReason(
     }
   }
 
-  const reportHistoryReason = saveCheckSettings.controlHistoryProtection ? getControlAvailabilityReportHistoryReason(draft) : null
+  const reportHistoryReason = saveCheckSettings.controlHistoryProtection
+    ? getNewControlAvailabilityReportHistoryReason(draft, initialValue)
+    : null
   if (reportHistoryReason) return formatSaveCheckBlockReason('controlHistoryProtection', reportHistoryReason)
 
   if (shouldCheckDocumentChronologyForForm(draft, initialValue)) {
@@ -83,8 +85,8 @@ export function getWeldFormSaveBlockReason(
   }
 
   if (saveCheckSettings.lnkResultRepairRules) {
-    const repairDiameterReason = getWeldFormRepairDiameterSaveBlockReason(draft)
-    if (repairDiameterReason) return formatSaveCheckBlockReason('lnkResultRepairRules', repairDiameterReason)
+    const repairReason = findFirstLnkRepairRuleIssue([draft], saveCheckSettings, options.systemIndexSettings)
+    if (repairReason) return formatSaveCheckBlockReason('lnkResultRepairRules', repairReason)
   }
 
   const currentJoint = normalizeJointName(draft.joint)
@@ -143,21 +145,9 @@ function shouldCheckDocumentChronologyForForm(draft: WeldInput, initialValue: We
   )
 }
 
-function getWeldFormRepairDiameterSaveBlockReason(row: WeldInput) {
-  if (!isLnkRepairForbiddenByDiameter(row)) return null
-
-  const repairMethods = LNK_METHODS.filter(
-    (method) => getNormalizedResult(row[method.resultKey]) === 'ремонт',
-  )
-  if (repairMethods.length === 0) return null
-
-  const methodCodes = repairMethods.map((method) => method.code).join(', ')
-  const diameterText = formatJointDiameterLabel(row)
-  return `результат ${methodCodes} - «ремонт» нельзя сохранить при минимальном диаметре ${diameterText} мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.`
-}
-
 export type ControlAvailabilityReportHistoryIssue = {
   code: string
+  fieldKeys: WeldFieldKey[]
   message: string
   report: 'lnk' | 'psto'
 }
@@ -170,6 +160,12 @@ export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): Con
 
     issues.push({
       code: method.code,
+      fieldKeys: [
+        method.enabledKey,
+        method.resultKey,
+        method.conclusionDateKey,
+        method.conclusionKey,
+      ],
       message: `${method.code}: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.`,
       report: 'lnk',
     })
@@ -182,6 +178,17 @@ export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): Con
   ) {
     issues.push({
       code: 'ПСТО',
+      fieldKeys: [
+        'pstoRequired',
+        'pstoResult',
+        'heatTreatmentDiagram',
+        'pstoNote',
+        'tvmtRequest',
+        'tvmtRequestDate',
+        'tvmtResult',
+        'tvmtConclusionDate',
+        'tvmtConclusion',
+      ],
       message: 'ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.',
       report: 'psto',
     })
@@ -190,8 +197,12 @@ export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): Con
   return issues
 }
 
-function getControlAvailabilityReportHistoryReason(draft: WeldInput) {
-  return getControlAvailabilityReportHistoryIssues(draft)[0]?.message ?? null
+function getNewControlAvailabilityReportHistoryReason(draft: WeldInput, initialValue: WeldDraft) {
+  const previousIssueCodes = new Set(
+    getControlAvailabilityReportHistoryIssues(initialValue).map((issue) => issue.code),
+  )
+  return getControlAvailabilityReportHistoryIssues(draft)
+    .find((issue) => !previousIssueCodes.has(issue.code))?.message ?? null
 }
 
 export function getWeldFormAutoClearHint(draft: WeldInput, initialValue: WeldDraft) {
@@ -301,7 +312,8 @@ function hasAnyText(row: WeldInput, fieldKeys: readonly WeldFieldKey[]) {
 }
 
 function hasRealLnkReportHistory(row: WeldInput, method: (typeof LNK_METHODS)[number]) {
-  return hasRealLnkResultValue(row[method.resultKey]) || hasAnyText(row, [method.conclusionDateKey, method.conclusionKey])
+  const result = getNormalizedResult(row[method.resultKey])
+  return result === 'годен (отменен)' || hasRealLnkResultValue(result) || hasAnyText(row, [method.conclusionDateKey, method.conclusionKey])
 }
 
 function hasRealPstoReportHistory(row: WeldInput) {
@@ -311,8 +323,6 @@ function hasRealPstoReportHistory(row: WeldInput) {
     hasAnyText(row, [
       'heatTreatmentDiagram',
       'pstoNote',
-      'pstoBoq',
-      'pstoKs3',
       'tvmtRequest',
       'tvmtRequestDate',
       'tvmtResult',
@@ -349,17 +359,25 @@ function getActivePstoResultAfterSave(row: WeldInput) {
 export function getWeldStampSaveBlockReason(
   draft: WeldInput,
   stampSelectOptions: StampSelectOptions | undefined,
+  config: {
+    initialValue?: WeldDraft
+    saveCheckSettings?: SaveCheckSettings
+  } = {},
 ) {
   if (!stampSelectOptions) return null
+  if (config.initialValue && !shouldValidateOfficialStampCompatibilityForSave(draft, config.initialValue)) {
+    return null
+  }
 
-  for (const [fieldKey, options] of Object.entries(stampSelectOptions) as Array<[WeldFieldKey, readonly StampSelectOption[]]>) {
+  for (const [fieldKey, fieldOptions] of Object.entries(stampSelectOptions) as Array<[WeldFieldKey, readonly StampSelectOption[]]>) {
     if (factualWelderStampFieldKeys.has(fieldKey)) continue
 
     const value = getStampSelectValue(draft[fieldKey])
     if (!value) continue
 
-    const selectedOption = options.find((option) => option.value.trim() === value)
+    const selectedOption = fieldOptions.find((option) => option.value.trim() === value)
     if (!selectedOption) {
+      if (config.saveCheckSettings?.officialRegistry === false) continue
       return formatSaveCheckBlockReason('officialRegistry', `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} должно быть выбрано из активного реестра клейм.`)
     }
     if (selectedOption.disabled) {
@@ -372,21 +390,12 @@ export function getWeldStampSaveBlockReason(
 }
 
 function getWeldFormDateSaveBlockReason(draft: WeldInput, saveCheckSettings: SaveCheckSettings) {
-  if (!saveCheckSettings.dateFormat && !saveCheckSettings.weldDateNotFuture) return ''
-
   for (const fieldKey of dateFieldKeys) {
     const field = FIELD_BY_KEY.get(fieldKey)
-    if (saveCheckSettings.dateFormat) {
-      const reason = getDateInputValidationReason(draft[fieldKey], field?.label ?? 'Дата', {
-        disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
-      })
-      if (reason) return formatSaveCheckBlockReason(getDateReasonSaveCheckSettingId(fieldKey, reason), lowerFirst(reason))
-      continue
-    }
-
-    if (fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture && isFutureDateLike(draft[fieldKey])) {
-      return formatSaveCheckBlockReason('weldDateNotFuture', 'дата сварки не может быть позже сегодняшней.')
-    }
+    const reason = getDateInputValidationReason(draft[fieldKey], field?.label ?? 'Дата', {
+      disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
+    })
+    if (reason) return formatSaveCheckBlockReason(getDateReasonSaveCheckSettingId(fieldKey, reason), lowerFirst(reason))
   }
   return ''
 }
@@ -397,19 +406,16 @@ function getDateReasonSaveCheckSettingId(fieldKey: WeldFieldKey, reason: string)
 }
 
 function getStampSelectOptionSaveCheckSettingId(reason: string): SaveCheckSettingId {
-  if (reason.includes('отстран')) return 'officialSuspension'
-  if (reason.includes('способ')) return 'officialWeldingMethod'
-  if (reason.includes('групп')) return 'officialMaterialGroup'
-  if (reason.includes('дат')) return 'officialNaksDate'
-  if (reason.includes('диаметр')) return 'officialDiameter'
-  if (reason.includes('толщин')) return 'officialThickness'
-  if (reason.includes('ДЛС')) return 'officialDls'
+  const normalizedReason = reason.toLocaleLowerCase('ru-RU')
+  if (normalizedReason.includes('клеймо в архив')) return 'officialArchive'
+  if (normalizedReason.includes('длс')) return 'officialDls'
+  if (normalizedReason.includes('отстран')) return 'officialSuspension'
+  if (normalizedReason.includes('способ')) return 'officialWeldingMethod'
+  if (normalizedReason.includes('групп')) return 'officialMaterialGroup'
+  if (normalizedReason.includes('дат')) return 'officialNaksDate'
+  if (normalizedReason.includes('диаметр')) return 'officialDiameter'
+  if (normalizedReason.includes('толщин')) return 'officialThickness'
   return 'officialRegistry'
-}
-
-function isFutureDateLike(value: unknown) {
-  const isoDate = parseDateLikeToIso(value)
-  return Boolean(isoDate && isoDate > getTodayIsoDate())
 }
 
 function normalizeDateForComparison(value: unknown) {
@@ -421,5 +427,5 @@ function lowerFirst(value: string) {
 }
 
 const dateFieldKeys = [...FIELD_BY_KEY.entries()]
-  .filter(([, field]) => field.kind === 'date')
+  .filter(([, field]) => field.kind === 'date' && !isWeldFormFieldHidden(field))
   .map(([fieldKey]) => fieldKey as WeldFieldKey)

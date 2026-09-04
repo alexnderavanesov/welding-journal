@@ -34,6 +34,19 @@ describe('buildPercentageLineSummaries', () => {
     )
   })
 
+  it('treats stamp casing as the same official stamp', () => {
+    const summaries = buildPercentageLineSummaries([
+      makeRow(1, { stamp1K: 'ABC1' }),
+      makeRow(2, { stamp1K: 'abc1' }),
+    ])
+
+    expect(summaries[0].stamps).toHaveLength(1)
+    expect(summaries[0].stamps[0]).toEqual(expect.objectContaining({
+      stamp: 'ABC1',
+      officialJointCount: 2,
+    }))
+  })
+
   it('adds two controls after a rejected primary joint when line percent is above 1', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       makeRow(index + 1, { joint: `S${index + 1}`, rkResult: index === 0 ? 'вырез' : '' }),
@@ -562,6 +575,16 @@ describe('buildPercentageLineSummaries', () => {
     ]
 
     expect(buildPercentageLineSummaries(rows)).toHaveLength(0)
+  })
+
+  it('does not merge different percentage lines that contain separator characters', () => {
+    const summaries = buildPercentageLineSummaries([
+      makeRow(1, { projectTitle: 'A|B', subtitleCode: 'C', line: 'LIN-1' }),
+      makeRow(2, { projectTitle: 'A', subtitleCode: 'B|C', line: 'LIN-1' }),
+    ])
+
+    expect(summaries).toHaveLength(2)
+    expect(summaries.map((summary) => summary.rowCount)).toEqual([1, 1])
   })
 })
 

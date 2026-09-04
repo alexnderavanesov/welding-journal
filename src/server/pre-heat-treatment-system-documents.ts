@@ -2,7 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
 import { buildSystemDocumentSummaries } from '@/lib/system-document-types'
 import { buildPreHeatTreatmentSystemDocumentRow } from '@/lib/system-document-virtual-row'
-import { upsertSourcedSystemDocumentInTransaction } from '@/server/system-document-index'
+import { upsertSourcedSystemDocumentsInTransaction } from '@/server/system-document-index'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 
 export async function syncPreHeatTreatmentDocumentsInTransaction(
@@ -19,6 +19,7 @@ export async function syncPreHeatTreatmentDocumentsInTransaction(
     return buildPreHeatTreatmentSystemDocumentRow(row, rowControls)
   })
 
+  const documents = [] as Parameters<typeof upsertSourcedSystemDocumentsInTransaction>[0]['documents'][number][]
   for (const type of ['lnkRequest', 'lnkConclusion'] as const) {
     for (const summary of buildSystemDocumentSummaries(virtualRows, type)) {
       const documentControls = controls.filter((control) => (
@@ -28,8 +29,7 @@ export async function syncPreHeatTreatmentDocumentsInTransaction(
             text(control.conclusionName) === summary.title &&
             text(control.conclusionDate) === summary.date
       ))
-      await upsertSourcedSystemDocumentInTransaction({
-        tx,
+      documents.push({
         summary: { ...summary, sourceKind: 'beforeHeatTreatment' },
         sourcePositions: documentControls.map((control) => ({
           kind: 'beforeHeatTreatment' as const,
@@ -40,6 +40,7 @@ export async function syncPreHeatTreatmentDocumentsInTransaction(
       })
     }
   }
+  await upsertSourcedSystemDocumentsInTransaction({ tx, documents })
 }
 
 function groupByRowId<Row extends { weldJointId: number }>(records: Row[]) {

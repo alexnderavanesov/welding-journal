@@ -88,7 +88,7 @@ describe('control process settings transitions', () => {
       tx,
       Array.from({ length: 100 }, (_, index) => row(index + 1, 'Линия 1')),
     )).toEqual(Array.from({ length: 100 }, () => true))
-    expect(calls).toEqual(['lock', 'read', 'read'])
+    expect(calls).toEqual(['lock', 'lock', 'read', 'read'])
   })
 
   it('locks the process setting before deciding the state of a new weld', async () => {
@@ -98,7 +98,7 @@ describe('control process settings transitions', () => {
       preHeatTreatmentLnkEnabled: false,
     }, calls), [row(1, 'Линия 1')])
 
-    expect(calls).toEqual(['lock', 'read'])
+    expect(calls).toEqual(['lock', 'lock', 'read'])
   })
 })
 

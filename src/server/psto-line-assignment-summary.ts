@@ -11,6 +11,12 @@ import {
   normalizePstoLineIdentity,
   type PstoLineAssignmentSummary,
 } from '@/lib/psto-line-assignment'
+import { CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES } from '@/lib/control-availability-values'
+
+const CONTROL_ENABLED_VALUES_SQL = sql.join(
+  CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES.map((value) => sql`${value}`),
+  sql`, `,
+)
 
 type PstoLineAssignmentSummarySqlRow = {
   projectTitle: string
@@ -49,7 +55,7 @@ export async function loadPstoLineAssignmentSummaries(
       btrim(coalesce(${weldJoints.line}, '')) as "line",
       count(*)::integer as "rowCount",
       (count(*) filter (
-        where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) in ('да', 'дополнительный')
+        where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) in (${CONTROL_ENABLED_VALUES_SQL})
       ))::integer as "assignedCount",
       (count(*) filter (
         where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) = 'отменен'

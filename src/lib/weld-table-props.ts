@@ -22,6 +22,10 @@ import {
 } from '@/lib/system-document-template-types'
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
+import {
+  getLnkDefectDescriptionDescriptor,
+  isLnkDefectDescriptionEditable,
+} from '@/lib/lnk-defect-description'
 
 const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
   'lnkRequest',
@@ -142,7 +146,11 @@ export function createWeldTableProps({
     blockedFieldKeys: getReportBlockedFieldKeys(activeReport),
     isCellEditable:
       activeReport === 'lnk'
-        ? (row, fieldKey) => !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
+        ? (row, fieldKey) => {
+            const descriptor = getLnkDefectDescriptionDescriptor(fieldKey)
+            if (descriptor) return isLnkDefectDescriptionEditable(row, descriptor)
+            return !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
+          }
         : undefined,
     getDisplayValue:
       activeReport === 'lnk'

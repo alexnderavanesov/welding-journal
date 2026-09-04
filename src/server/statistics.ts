@@ -30,6 +30,7 @@ import { toWelderStampPayload } from '@/server/welder-stamps'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
 import { assertSecurityScope } from '@/server/security-functions'
+import { WELD_EFFECTIVE_OFFICIALITY } from '@/server/weld-server-shared'
 
 const STATISTICS_STATUS_ROW_SELECT = {
   id: weldJoints.id,
@@ -38,7 +39,7 @@ const STATISTICS_STATUS_ROW_SELECT = {
   subtitleCode: weldJoints.subtitleCode,
   line: weldJoints.line,
   joint: weldJoints.joint,
-  officiality: weldJoints.officiality,
+  officiality: WELD_EFFECTIVE_OFFICIALITY,
   wdi: weldJoints.wdi,
   connectionType: weldJoints.connectionType,
   d1: weldJoints.d1,
@@ -164,6 +165,7 @@ async function computeStatisticsServerResult(
         controlDate: duplicateControls.controlDate,
         conclusion: duplicateControls.conclusion,
         conclusionDate: duplicateControls.conclusionDate,
+        updatedAt: duplicateControls.updatedAt,
       })
       .from(duplicateControls)
       .innerJoin(weldJoints, eq(weldJoints.id, duplicateControls.weldJointId))
@@ -346,11 +348,12 @@ function toFilterOptions(values: unknown[]) {
 function toDuplicateControlRecord(
   row: Pick<
     typeof duplicateControls.$inferSelect,
-    'id' | 'weldJointId' | 'method' | 'result' | 'controlDate' | 'conclusion' | 'conclusionDate'
+    'id' | 'weldJointId' | 'method' | 'result' | 'controlDate' | 'conclusion' | 'conclusionDate' | 'updatedAt'
   >,
 ): DuplicateControlRecord {
   return {
     id: row.id,
+    version: row.updatedAt?.toISOString?.() ?? '',
     weldJointId: row.weldJointId,
     method: row.method as DuplicateControlRecord['method'],
     result: row.result as DuplicateControlRecord['result'],

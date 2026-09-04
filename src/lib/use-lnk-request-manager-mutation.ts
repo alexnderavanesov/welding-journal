@@ -3,16 +3,14 @@ import {
   LNK_METHODS,
   LNK_REQUEST_FIELD_KEYS as lnkRequestFieldKeys,
 } from '@/lib/report-config'
-import { buildLnkRequestManagerRows } from '@/lib/lnk-report-mutation-updates'
 import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
-import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
-import { deleteLnkRequestDocument } from '@/server/weld-mutations-api'
+import { manageLnkRequestDocument } from '@/server/weld-mutations-api'
 
 export function useLnkRequestManagerMutation({
   lnkRows,
@@ -65,26 +63,26 @@ export function useLnkRequestManagerMutation({
         }
       }
 
-      if (action === 'delete') {
-        const savedRows = await deleteLnkRequestDocument({
-          data: { requestName: currentName, requestDate },
-        })
-        return savedRows as unknown as WeldRow[]
-      }
-
-      const updatedRecords = buildLnkRequestManagerRows({
-        records: lnkRows,
-        requestName: currentName,
-        requestDate,
-        nextRequestName: renamedName,
-        action,
-      })
-      if (updatedRecords.length === 0) throw new Error('Заявка ЛНК не найдена')
-      const savedRows = await updateWeldRowsOrThrow(
-        updatedRecords,
-        'Не удалось переименовать заявку ЛНК',
-        { mutationScope: 'lnk' },
+      const requestRows = lnkRows.filter((row) =>
+        LNK_METHODS.some((method) => isSameRequestDocument(
+          row[method.requestKey],
+          row[method.requestDateKey],
+          { name: currentName, date: requestDate },
+        )),
       )
+      if (requestRows.length === 0) throw new Error('Заявка ЛНК не найдена')
+      const savedRows = await manageLnkRequestDocument({
+        data: {
+          requestName: currentName,
+          requestDate,
+          nextRequestName: renamedName,
+          action,
+          expectedVersions: requestRows.map((row) => ({
+            id: row.id,
+            version: String(row.rowVersion ?? ''),
+          })),
+        },
+      })
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {

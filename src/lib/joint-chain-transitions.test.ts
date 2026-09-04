@@ -126,6 +126,53 @@ describe('joint coil transitions', () => {
       mode: 'early-decision',
     })
   })
+
+  it('keeps equal joint names on different lines in separate coil transitions', () => {
+    const rows = [
+      row(1, 'S1', { line: 'LIN-A', rkResult: 'ремонт' }),
+      row(2, 'S1Y1', { line: 'LIN-A' }),
+      row(3, 'S1Y2', { line: 'LIN-A' }),
+      row(4, 'S1', { line: 'LIN-B', rkResult: 'ремонт' }),
+      row(5, 'S1Y1', { line: 'LIN-B' }),
+      row(6, 'S1Y2', { line: 'LIN-B' }),
+    ]
+    const transitions = buildJointCoilTransitions(rows, {
+      earlyCoilDecisionSourceRowIds: new Set([1]),
+    })
+
+    expect(transitions).toHaveLength(2)
+    expect(transitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceRowId: 1, targetRowIds: [2, 3], mode: 'early-decision' }),
+      expect.objectContaining({ sourceRowId: null, targetRowIds: [5, 6], mode: null }),
+    ]))
+
+    const lineBRelation = getJointCoilRelations(rows[4], rows, transitions)
+    expect(lineBRelation.currentBranchRoot?.id).toBe(5)
+    expect(lineBRelation.siblingRow?.id).toBe(6)
+    expect(lineBRelation.sourceRow).toBeNull()
+  })
+
+  it('treats joint and line letter case as the same identity', () => {
+    const rows = [
+      row(1, 's1', { line: 'Lin123', rkResult: 'ремонт' }),
+      row(2, 'S1Y1', { line: 'LIN123' }),
+      row(3, 's1y2', { line: 'lin123' }),
+    ]
+    const transitions = buildJointCoilTransitions(rows, {
+      earlyCoilDecisionSourceRowIds: new Set([1]),
+    })
+
+    expect(transitions).toHaveLength(1)
+    expect(transitions[0]).toMatchObject({
+      sourceRowId: 1,
+      targetRowIds: [2, 3],
+      mode: 'early-decision',
+    })
+    expect(getJointCoilRelations(rows[1], rows, transitions)).toMatchObject({
+      sourceRow: { id: 1 },
+      siblingRow: { id: 3 },
+    })
+  })
 })
 
 function row(id: number, joint: string, values: Partial<WeldRow> = {}): WeldRow {

@@ -6,6 +6,7 @@ import {
   buildRepeatTvmtRequestCycle,
   buildRepeatTvmtResultCycle,
 } from '@/lib/psto-repeat-cycle-updates'
+import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('repeat PSTO and TVMT cycle updates', () => {
   const failedPrimary = {
@@ -132,5 +133,121 @@ describe('repeat PSTO and TVMT cycle updates', () => {
       result: 'годен',
       conclusionName: 'ЗТВМТ-2',
     })).toThrow('раньше ТВМТ')
+  })
+
+  it('enforces ZВ-22 for a repeat result and allows free text only when it is disabled', () => {
+    const repeat = {
+      id: 21,
+      weldJointId: 10,
+      sequence: 2,
+      pstoRequest: 'ПСТО-2',
+      pstoRequestDate: '2026-08-04',
+    }
+    const waitingPsto = { ...failedPrimary, pstoRepeatCycles: [repeat] }
+    const settings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      pstoResultDateAfterWeldDate: false,
+      pstoResultRequestDateOrder: false,
+    }
+
+    expect(() => buildRepeatPstoResultCycle({
+      row: waitingPsto,
+      pstoDate: 'дата уточняется',
+      diagramName: 'Диаграмма-2',
+      saveCheckSettings: settings,
+    })).toThrow('корректную дату повторной ПСТО')
+
+    expect(() => buildRepeatPstoResultCycle({
+      row: waitingPsto,
+      pstoDate: 'дата уточняется',
+      diagramName: 'Диаграмма-2',
+      saveCheckSettings: { ...settings, pstoResultDateFormat: false },
+    })).toThrow('корректную дату повторной ПСТО')
+  })
+
+  it('rejects malformed dates in repeat request and TVMT stages', () => {
+    expect(() => buildRepeatPstoRequestCycle({
+      row: failedPrimary,
+      requestName: 'ПСТО-2',
+      requestDate: 'не дата',
+    })).toThrow('корректную дату документа')
+
+    const waitingTvmtRequest = {
+      ...failedPrimary,
+      pstoRepeatCycles: [{
+        id: 21,
+        weldJointId: 10,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoRequestDate: '2026-08-04',
+        pstoDate: '2026-08-05',
+        pstoResult: 'проведено',
+        heatTreatmentDiagram: 'Диаграмма-2',
+      }],
+    }
+    expect(() => buildRepeatTvmtRequestCycle({
+      row: waitingTvmtRequest,
+      requestName: 'ТВМТ-2',
+      requestDate: 'не дата',
+    })).toThrow('корректную дату документа')
+  })
+
+  it('rejects every repeat-cycle date before the system minimum', () => {
+    expect(() => buildRepeatPstoRequestCycle({
+      row: failedPrimary,
+      requestName: 'ПСТО-2',
+      requestDate: '2023-12-31',
+    })).toThrow('Дата повторной заявки ПСТО не может быть раньше 01.01.2024')
+
+    const waitingPsto = {
+      ...failedPrimary,
+      pstoRepeatCycles: [{
+        id: 21,
+        weldJointId: 10,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoRequestDate: '2026-08-04',
+      }],
+    }
+    expect(() => buildRepeatPstoResultCycle({
+      row: waitingPsto,
+      pstoDate: '2023-12-31',
+      diagramName: 'Диаграмма-2',
+    })).toThrow('Дата повторной ПСТО не может быть раньше 01.01.2024')
+
+    const waitingTvmtRequest = {
+      ...failedPrimary,
+      pstoRepeatCycles: [{
+        id: 21,
+        weldJointId: 10,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoRequestDate: '2026-08-04',
+        pstoDate: '2026-08-05',
+        pstoResult: 'проведено',
+        heatTreatmentDiagram: 'Диаграмма-2',
+      }],
+    }
+    expect(() => buildRepeatTvmtRequestCycle({
+      row: waitingTvmtRequest,
+      requestName: 'ТВМТ-2',
+      requestDate: '2023-12-31',
+    })).toThrow('Дата заявки ТВМТ не может быть раньше 01.01.2024')
+
+    const waitingTvmt = {
+      ...failedPrimary,
+      pstoRepeatCycles: [{
+        ...waitingTvmtRequest.pstoRepeatCycles[0],
+        tvmtRequest: 'ТВМТ-2',
+        tvmtRequestDate: '2026-08-05',
+        tvmtResult: 'ожидает НК',
+      }],
+    }
+    expect(() => buildRepeatTvmtResultCycle({
+      row: waitingTvmt,
+      controlDate: '2023-12-31',
+      result: 'годен',
+      conclusionName: 'ЗТВМТ-2',
+    })).toThrow('Дата ТВМТ не может быть раньше 01.01.2024')
   })
 })

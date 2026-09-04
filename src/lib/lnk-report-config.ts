@@ -1,10 +1,60 @@
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey } from './weld-field-definitions'
 
-const VIK_METHOD = { code: 'ВИК', enabledKey: 'hasVik', requestKey: 'vikRequest', requestDateKey: 'vikRequestDate', resultKey: 'vikResult', conclusionDateKey: 'vikConclusionDate', conclusionKey: 'vikConclusion' } as const
-const RK_METHOD = { code: 'РК', enabledKey: 'hasRk', requestKey: 'rkRequest', requestDateKey: 'rkRequestDate', resultKey: 'rkResult', conclusionDateKey: 'rkConclusionDate', conclusionKey: 'rkConclusion' } as const
-const UZK_METHOD = { code: 'УЗК', enabledKey: 'hasUzk', requestKey: 'uzkRequest', requestDateKey: 'uzkRequestDate', resultKey: 'uzkResult', conclusionDateKey: 'uzkConclusionDate', conclusionKey: 'uzkConclusion' } as const
-const PVK_METHOD = { code: 'ПВК', enabledKey: 'hasPvk', requestKey: 'pvkRequest', requestDateKey: 'pvkRequestDate', resultKey: 'pvkResult', conclusionDateKey: 'pvkConclusionDate', conclusionKey: 'pvkConclusion' } as const
-export const TVMT_METHOD = { code: 'ТВМТ', enabledKey: 'hasTvmt', requestKey: 'tvmtRequest', requestDateKey: 'tvmtRequestDate', resultKey: 'tvmtResult', conclusionDateKey: 'tvmtConclusionDate', conclusionKey: 'tvmtConclusion' } as const
+const VIK_METHOD = {
+  code: 'ВИК',
+  enabledKey: 'hasVik',
+  requestKey: 'vikRequest',
+  requestDateKey: 'vikRequestDate',
+  resultKey: 'vikResult',
+  conclusionDateKey: 'vikConclusionDate',
+  conclusionKey: 'vikConclusion',
+  defectDescriptionKey: 'vikDefectDescription',
+  preDefectDescriptionKey: 'preVikDefectDescription',
+} as const
+const RK_METHOD = {
+  code: 'РК',
+  enabledKey: 'hasRk',
+  requestKey: 'rkRequest',
+  requestDateKey: 'rkRequestDate',
+  resultKey: 'rkResult',
+  conclusionDateKey: 'rkConclusionDate',
+  conclusionKey: 'rkConclusion',
+  defectDescriptionKey: 'lnkDefectDescription',
+  preDefectDescriptionKey: 'preRkDefectDescription',
+} as const
+const UZK_METHOD = {
+  code: 'УЗК',
+  enabledKey: 'hasUzk',
+  requestKey: 'uzkRequest',
+  requestDateKey: 'uzkRequestDate',
+  resultKey: 'uzkResult',
+  conclusionDateKey: 'uzkConclusionDate',
+  conclusionKey: 'uzkConclusion',
+  defectDescriptionKey: 'uzkDefectDescription',
+  preDefectDescriptionKey: 'preUzkDefectDescription',
+} as const
+const PVK_METHOD = {
+  code: 'ПВК',
+  enabledKey: 'hasPvk',
+  requestKey: 'pvkRequest',
+  requestDateKey: 'pvkRequestDate',
+  resultKey: 'pvkResult',
+  conclusionDateKey: 'pvkConclusionDate',
+  conclusionKey: 'pvkConclusion',
+  defectDescriptionKey: 'pvkDefectDescription',
+  preDefectDescriptionKey: 'prePvkDefectDescription',
+} as const
+export const TVMT_METHOD = {
+  code: 'ТВМТ',
+  enabledKey: 'hasTvmt',
+  requestKey: 'tvmtRequest',
+  requestDateKey: 'tvmtRequestDate',
+  resultKey: 'tvmtResult',
+  conclusionDateKey: 'tvmtConclusionDate',
+  conclusionKey: 'tvmtConclusion',
+  defectDescriptionKey: null,
+  preDefectDescriptionKey: null,
+} as const
 
 type LnkMethodDefinition = {
   code: string
@@ -14,6 +64,8 @@ type LnkMethodDefinition = {
   resultKey: WeldFieldKey
   conclusionDateKey: WeldFieldKey
   conclusionKey: WeldFieldKey
+  defectDescriptionKey: WeldFieldKey | null
+  preDefectDescriptionKey: WeldFieldKey | null
 }
 
 // ТВМТ хранится в прежних полях для совместимости, но больше не является
@@ -83,7 +135,7 @@ export const LNK_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>([
   'pvkConclusion',
   'tvmtConclusionDate',
   'tvmtConclusion',
-  'lnkDefectDescription',
+  ...LNK_METHODS.map((method) => method.defectDescriptionKey),
   'lnkNote',
 ])
 
@@ -94,16 +146,16 @@ export const LNK_REQUEST_FIELD_KEYS = ALL_LNK_FIELD_METHODS.map((method) => meth
 export const LNK_REQUEST_DATE_FIELD_KEYS = ALL_LNK_FIELD_METHODS.map((method) => method.requestDateKey)
 export const LNK_GENERATED_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_METHODS.flatMap((method) => [method.resultKey, method.conclusionDateKey, method.conclusionKey]),
-  'lnkDefectDescription',
+  ...LNK_METHODS.map((method) => method.defectDescriptionKey),
   'rkExposureConfirmedDiameter',
   'lnkNote',
 ])
 export const LNK_EDITABLE_FIELD_KEYS = new Set<WeldFieldKey>([
   ...LNK_EDITABLE_REPORT_FIELD_KEYS,
   'preRkExposureScheme',
-  'preRkDefectDescription',
+  ...LNK_METHODS.map((method) => method.preDefectDescriptionKey),
   'rkExposureScheme',
-  'lnkDefectDescription',
+  ...LNK_METHODS.map((method) => method.defectDescriptionKey),
   'lnkNote',
 ])
 function getReportField(key: WeldFieldKey, group: string): WeldField {

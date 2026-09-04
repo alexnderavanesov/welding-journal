@@ -12,6 +12,7 @@ import type {
   PstoWeldLineMoveDisposition,
   WeldChainLineMovePlan,
 } from '@/lib/psto-line-assignment'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation-types'
 
 export function useWeldRowMutations({
@@ -66,14 +67,16 @@ export function useWeldRowMutations({
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const result = await deleteWeldJoint({ data: { id } })
+    mutationFn: async (target: WeldRowVersionTarget) => {
+      const result = await deleteWeldJoint({
+        data: target,
+      })
       if (!result) throw new Error('Запись не найдена')
       return result
     },
-    onSuccess: async (_result, id) => {
+    onSuccess: async (_result, target) => {
       setMessage('Запись удалена')
-      invalidateWeldJoints(queryClient, { deleteIds: [id] })
+      invalidateWeldJoints(queryClient, { deleteIds: [target.id] })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -81,9 +84,13 @@ export function useWeldRowMutations({
   })
 
   const deleteManyMutation = useMutation({
-    mutationFn: async (ids: number[]) => deleteWeldJoints({ data: { ids } }),
-    onSuccess: async (_result, ids) => {
-      invalidateWeldJoints(queryClient, { deleteIds: ids })
+    mutationFn: async (targets: WeldRowVersionTarget[]) => {
+      return deleteWeldJoints({
+        data: { targets },
+      })
+    },
+    onSuccess: async (_result, targets) => {
+      invalidateWeldJoints(queryClient, { deleteIds: targets.map((target) => target.id) })
     },
     onError: (error) => {
       setMessage((error as Error).message)

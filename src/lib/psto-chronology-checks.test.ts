@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { getDispatcherPstoChronologyIssues, getPstoChronologyIssues } from '@/lib/psto-chronology-checks'
+import {
+  findFirstPstoChronologySaveBlockReason,
+  getDispatcherPstoChronologyIssues,
+  getPstoChronologyIssues,
+} from '@/lib/psto-chronology-checks'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('psto chronology checks', () => {
@@ -41,6 +45,44 @@ describe('psto chronology checks', () => {
     ).toEqual([])
   })
 
+  it('enforces ZV-23 independently when ZV-24 is disabled', () => {
+    const rows = [{
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-07-10',
+      pstoRequest: 'ПСТО-001',
+      pstoRequestDate: '2026-07-11',
+      pstoResult: 'проведено',
+      pstoDate: '2026-07-09',
+    }] as Parameters<typeof getPstoChronologyIssues>[0]
+    const settings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      pstoResultRequestDateOrder: false,
+    }
+
+    expect(getPstoChronologyIssues(rows, settings)).toContainEqual(expect.objectContaining({
+      kind: 'weld-after-result',
+    }))
+    expect(findFirstPstoChronologySaveBlockReason(rows, settings)).toContain('ЗВ-23')
+  })
+
+  it('does not apply ZV-24 request ordering when only ZV-23 is enabled', () => {
+    const rows = [{
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-07-10',
+      pstoRequest: 'ПСТО-001',
+      pstoRequestDate: '2026-07-09',
+      pstoResult: 'проведено',
+      pstoDate: '2026-07-11',
+    }] as Parameters<typeof getPstoChronologyIssues>[0]
+
+    expect(getPstoChronologyIssues(rows, {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      pstoResultRequestDateOrder: false,
+    })).toEqual([])
+  })
+
   it('shows every independent PSTO chronology problem in dispatcher diagnostics', () => {
     const issues = getDispatcherPstoChronologyIssues([
       {
@@ -56,6 +98,80 @@ describe('psto chronology checks', () => {
     expect(issues.map((issue) => issue.kind)).toEqual([
       'request-date-missing',
       'weld-after-result',
+    ])
+  })
+
+  it('reports invalid dates in primary and repeat PSTO/TVMT cycles', () => {
+    const issues = getDispatcherPstoChronologyIssues([{
+      id: 1,
+      joint: 'F1',
+      pstoRequest: 'ПСТО-1',
+      pstoRequestDate: '31.02.2026',
+      pstoResult: 'проведено',
+      pstoDate: '2023-12-31',
+      tvmtRequest: 'ТВМТ-1',
+      tvmtRequestDate: 'не дата',
+      tvmtResult: 'не годен',
+      tvmtConclusionDate: '32.07.2026',
+      pstoRepeatCycles: [{
+        id: 2,
+        weldJointId: 1,
+        sequence: 2,
+        pstoRequest: 'ПСТО-2',
+        pstoRequestDate: '30.02.2026',
+        pstoResult: 'проведено',
+        pstoDate: '2023-01-01',
+        tvmtRequest: 'ТВМТ-2',
+        tvmtRequestDate: 'ошибка',
+        tvmtResult: 'годен',
+        tvmtConclusionDate: '31.04.2026',
+      }],
+    }] as unknown as Parameters<typeof getDispatcherPstoChronologyIssues>[0])
+
+    expect(issues.filter((issue) => issue.kind.endsWith('-invalid')).map((issue) => issue.kind)).toEqual([
+      'request-date-invalid',
+      'result-date-invalid',
+      'tvmt-request-date-invalid',
+      'tvmt-result-date-invalid',
+      'request-date-invalid',
+      'result-date-invalid',
+      'tvmt-request-date-invalid',
+      'tvmt-result-date-invalid',
+    ])
+    expect(issues.some((issue) => issue.kind.endsWith('-missing'))).toBe(false)
+  })
+
+  it('reports every missing part of pending PSTO and TVMT requests', () => {
+    const issues = getDispatcherPstoChronologyIssues([{
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-07-01',
+      pstoRequest: 'ПСТО-1',
+      tvmtRequestDate: '2026-07-04',
+    }])
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'request-date-missing' }),
+      expect.objectContaining({ kind: 'tvmt-request-name-missing' }),
+    ]))
+  })
+
+  it('reports missing names and dates when cycle results exist without requests', () => {
+    const issues = getDispatcherPstoChronologyIssues([{
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-07-01',
+      pstoResult: 'проведено',
+      pstoDate: '2026-07-03',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-07-05',
+    }])
+
+    expect(issues.map((issue) => issue.kind)).toEqual([
+      'request-date-missing',
+      'request-name-missing',
+      'tvmt-request-date-missing',
+      'tvmt-request-name-missing',
     ])
   })
 

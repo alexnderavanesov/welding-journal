@@ -45,7 +45,7 @@ export type ReportImportDialogProps = {
   columnFilters: Record<string, string>
   onClose: () => void
   onImportRecords: (records: WeldInput[], skippedRows: number) => Promise<boolean>
-  onMassFillRecords: (records: ReportImportRecord[], skippedRows: number) => Promise<boolean>
+  onMassFillRecords: (records: ReportImportRecord[], skippedRows: number, expectedVersions: WeldRowVersionTarget[]) => Promise<boolean>
   onReplaceDataRecords: (records: ReportImportRecord[], skippedRows: number, expectedVersions: WeldRowVersionTarget[]) => Promise<boolean>
 }
 
@@ -205,7 +205,7 @@ export function ReportImportDialog({
       const saved = mode === 'replaceData'
         ? await onReplaceDataRecords(preview.validRecords, preview.skippedRows, preview.expectedRowVersions ?? [])
         : mode === 'massFill'
-          ? await onMassFillRecords(preview.validRecords, preview.skippedRows)
+          ? await onMassFillRecords(preview.validRecords, preview.skippedRows, preview.expectedRowVersions ?? [])
           : await onImportRecords(preview.validRecords, preview.skippedRows)
       if (!saved) return
       resetImportState()

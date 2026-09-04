@@ -1,4 +1,4 @@
-import { normalizeDateLikeForStorage, parseDateLikeToIso } from '@/lib/date-format'
+import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkChronologyIssues, type LnkChronologyIssue } from '@/lib/lnk-chronology-checks'
 import {
@@ -8,6 +8,11 @@ import {
 } from '@/lib/psto-cycle'
 import { isCompletedPstoResult, normalizeTvmtResult } from '@/lib/tvmt-cycle'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import {
+  DEFAULT_SAVE_CHECK_SETTINGS,
+  loadSaveCheckSettings,
+  type SaveCheckSettings,
+} from '@/lib/save-check-settings'
 
 export const PSTO_CYCLE_STAGES = [
   'pstoRequest',
@@ -52,6 +57,7 @@ export type PstoTvmtCorrectionWithLaterCycleRemovalResult = {
 export function applyPstoCycleCorrection(
   row: WeldRow,
   input: PstoCycleCorrectionInput,
+  saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
 ): PstoCycleCorrectionResult {
   const repeats = [...(row.pstoRepeatCycles ?? [])]
     .map((cycle) => ({ ...cycle }))
@@ -69,15 +75,15 @@ export function applyPstoCycleCorrection(
     if (blockReason) throw new Error(blockReason)
     clearStage(nextCycle, input.stage)
   } else {
-    updateStage(nextCycle, input)
+    updateStage(nextCycle, input, saveCheckSettings)
   }
 
   const nextTimeline = timeline.map((cycle, cycleIndex) => cycleIndex === index ? nextCycle : cycle)
-  validateTimeline(row, nextTimeline)
+  validateTimeline(row, nextTimeline, saveCheckSettings)
 
   if (current.source === 'primary') {
     const nextRow = applyPrimaryCycle(row, nextCycle)
-    assertNoPstoCorrectionCrossStageIssues(row, nextRow, input)
+    assertNoPstoCorrectionCrossStageIssues(row, nextRow, input, saveCheckSettings)
     return {
       row: { ...nextRow, finalStatus: calculateFinalStatus(nextRow) },
       repeatCycle: null,
@@ -92,7 +98,7 @@ export function applyPstoCycleCorrection(
     ? repeats.filter((cycle) => cycle.id !== relation.id)
     : repeats.map((cycle) => cycle.id === relation.id ? applyRepeatCycle(cycle, nextCycle) : cycle)
   const nextRow = { ...row, pstoRepeatCycles: nextRepeatCycles }
-  assertNoPstoCorrectionCrossStageIssues(row, nextRow, input)
+  assertNoPstoCorrectionCrossStageIssues(row, nextRow, input, saveCheckSettings)
   return {
     row: { ...nextRow, finalStatus: calculateFinalStatus(nextRow) },
     repeatCycle: deleteWholeCycle ? null : nextRepeatCycles.find((cycle) => cycle.id === relation.id) ?? null,
@@ -103,6 +109,7 @@ export function applyPstoCycleCorrection(
 export function applyPstoTvmtCorrectionWithLaterCycleRemoval(
   row: WeldRow,
   input: PstoTvmtCorrectionWithLaterCycleRemovalInput,
+  saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
 ): PstoTvmtCorrectionWithLaterCycleRemovalResult {
   const repeats = [...(row.pstoRepeatCycles ?? [])]
     .map((cycle) => ({ ...cycle }))
@@ -131,11 +138,11 @@ export function applyPstoTvmtCorrectionWithLaterCycleRemoval(
     stage: 'tvmtResult',
     action: 'update',
   }
-  updateStage(nextCycle, correctionInput)
+  updateStage(nextCycle, correctionInput, saveCheckSettings)
   validateTimeline(row, [
     ...timeline.slice(0, index),
     nextCycle,
-  ])
+  ], saveCheckSettings)
 
   const remainingRepeats = repeats
     .filter((cycle) => cycle.sequence <= current.sequence)
@@ -147,7 +154,7 @@ export function applyPstoTvmtCorrectionWithLaterCycleRemoval(
     ? remainingRepeats.find((cycle) => cycle.id === current.id) ?? null
     : null
 
-  assertNoPstoCorrectionCrossStageIssues(row, nextRow, correctionInput)
+  assertNoPstoCorrectionCrossStageIssues(row, nextRow, correctionInput, saveCheckSettings)
   return {
     row: { ...nextRow, finalStatus: calculateFinalStatus(nextRow) },
     repeatCycle: updatedRepeatCycle,
@@ -176,18 +183,23 @@ function assertNoPstoCorrectionCrossStageIssues(
   currentRow: WeldRow,
   nextRow: WeldRow,
   input: PstoCycleCorrectionInput,
+  saveCheckSettings: SaveCheckSettings,
 ) {
   assertPstoNotAfterCancellation(nextRow, input)
 
-  const newIssue = getNewPstoCrossStageIssue(currentRow, nextRow)
+  const newIssue = getNewPstoCrossStageIssue(currentRow, nextRow, saveCheckSettings)
   if (newIssue) throw new Error(newIssue.message)
 }
 
-function getNewPstoCrossStageIssue(currentRow: WeldRow, nextRow: WeldRow) {
+function getNewPstoCrossStageIssue(
+  currentRow: WeldRow,
+  nextRow: WeldRow,
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
   const currentSignatures = new Set(
-    getPstoCrossStageIssues(currentRow).map(getChronologyIssueSignature),
+    getPstoCrossStageIssues(currentRow, saveCheckSettings).map(getChronologyIssueSignature),
   )
-  return getPstoCrossStageIssues(nextRow)
+  return getPstoCrossStageIssues(nextRow, saveCheckSettings)
     .find((issue) => !currentSignatures.has(getChronologyIssueSignature(issue)))
 }
 
@@ -209,8 +221,8 @@ function assertPstoNotAfterCancellation(
   }
 }
 
-function getPstoCrossStageIssues(row: WeldRow) {
-  return getLnkChronologyIssues([row])
+function getPstoCrossStageIssues(row: WeldRow, saveCheckSettings: SaveCheckSettings) {
+  return getLnkChronologyIssues([row], saveCheckSettings)
     .filter((issue) => PSTO_CROSS_STAGE_ISSUE_KINDS.has(issue.kind))
 }
 
@@ -257,19 +269,29 @@ export function getPstoCycleStageLabel(stage: PstoCycleStage) {
   return getStageLabel(stage)
 }
 
-function updateStage(cycle: PstoCycleSnapshot, input: PstoCycleCorrectionInput) {
-  const date = requireDate(input.date)
+function updateStage(
+  cycle: PstoCycleSnapshot,
+  input: PstoCycleCorrectionInput,
+  saveCheckSettings: SaveCheckSettings,
+) {
+  if (input.stage === 'pstoResult') {
+    const date = normalizeOptionalPstoResultDate(input.date, saveCheckSettings)
+    const name = String(input.name ?? '').trim()
+    if (saveCheckSettings.pstoResultDiagramRequired && !name) {
+      throw new Error('Укажите наименование: результат ПСТО.')
+    }
+    cycle.pstoDate = date
+    cycle.heatTreatmentDiagram = name
+    return
+  }
+
+  const date = requireDate(input.date, `Дата: ${getStageLabel(input.stage).toLocaleLowerCase('ru-RU')}`)
   const name = String(input.name ?? '').trim()
   if (!name) throw new Error(`Укажите наименование: ${getStageLabel(input.stage).toLocaleLowerCase('ru-RU')}.`)
 
   if (input.stage === 'pstoRequest') {
     cycle.pstoRequest = name
     cycle.pstoRequestDate = date
-    return
-  }
-  if (input.stage === 'pstoResult') {
-    cycle.pstoDate = date
-    cycle.heatTreatmentDiagram = name
     return
   }
   if (input.stage === 'tvmtRequest') {
@@ -310,11 +332,16 @@ function clearStage(cycle: PstoCycleSnapshot, stage: PstoCycleStage) {
   cycle.pstoRequestDate = ''
 }
 
-function validateTimeline(row: WeldRow, timeline: PstoCycleSnapshot[]) {
+function validateTimeline(
+  row: WeldRow,
+  timeline: PstoCycleSnapshot[],
+  saveCheckSettings: SaveCheckSettings,
+) {
   const weldDate = parseDateLikeToIso(row.weldDate)
   for (const [index, cycle] of timeline.entries()) {
     const label = cycle.sequence === 1 ? 'основного цикла' : `цикла #${cycle.sequence}`
     const requestDate = parseDateLikeToIso(cycle.pstoRequestDate)
+    const hasPstoDate = String(cycle.pstoDate ?? '').trim().length > 0
     const pstoDate = parseDateLikeToIso(cycle.pstoDate)
     const tvmtRequestDate = parseDateLikeToIso(cycle.tvmtRequestDate)
     const tvmtDate = parseDateLikeToIso(cycle.tvmtConclusionDate)
@@ -323,29 +350,44 @@ function validateTimeline(row: WeldRow, timeline: PstoCycleSnapshot[]) {
 
     if (cycle.pstoRequest || requestDate) {
       if (!cycle.pstoRequest || !requestDate) throw new Error(`У заявки ПСТО ${label} должны быть имя и дата.`)
-      if (weldDate && requestDate < weldDate) {
+      if (saveCheckSettings.pstoResultRequestDateOrder && weldDate && requestDate < weldDate) {
         throw new Error(`Дата заявки ПСТО ${label} не может быть раньше даты сварки.`)
       }
     }
     if (hasPstoResult || pstoDate || cycle.heatTreatmentDiagram) {
       if (!cycle.pstoRequest || !requestDate) throw new Error(`Сначала восстановите заявку ПСТО ${label}.`)
-      if (!hasPstoResult || !pstoDate || !cycle.heatTreatmentDiagram) {
-        throw new Error(`У результата ПСТО ${label} должны быть дата и диаграмма.`)
+      if (!hasPstoResult) throw new Error(`Восстановите результат ПСТО ${label}.`)
+      if (saveCheckSettings.pstoResultDateRequired && !hasPstoDate) {
+        throw new Error(`У результата ПСТО ${label} должна быть дата.`)
       }
-      if (pstoDate < requestDate) throw new Error(`Дата результата ПСТО ${label} не может быть раньше даты заявки.`)
+      if (saveCheckSettings.pstoResultDiagramRequired && !cycle.heatTreatmentDiagram) {
+        throw new Error(`У результата ПСТО ${label} должна быть диаграмма.`)
+      }
+      if (saveCheckSettings.pstoResultDateAfterWeldDate && pstoDate && weldDate && pstoDate < weldDate) {
+        throw new Error(`Дата результата ПСТО ${label} не может быть раньше даты сварки.`)
+      }
+      if (saveCheckSettings.pstoResultRequestDateOrder && pstoDate && pstoDate < requestDate) {
+        throw new Error(`Дата результата ПСТО ${label} не может быть раньше даты заявки.`)
+      }
     }
     if (cycle.tvmtRequest || tvmtRequestDate) {
-      if (!hasPstoResult || !pstoDate) throw new Error(`Сначала восстановите результат ПСТО ${label}.`)
+      if (!hasPstoResult) throw new Error(`Сначала восстановите результат ПСТО ${label}.`)
       if (!cycle.tvmtRequest || !tvmtRequestDate) throw new Error(`У заявки ТВМТ ${label} должны быть имя и дата.`)
-      if (tvmtRequestDate < pstoDate) throw new Error(`Дата заявки ТВМТ ${label} не может быть раньше ПСТО.`)
+      if (saveCheckSettings.pstoResultRequestDateOrder && pstoDate && tvmtRequestDate < pstoDate) {
+        throw new Error(`Дата заявки ТВМТ ${label} не может быть раньше ПСТО.`)
+      }
     }
     if (tvmtResult || tvmtDate || cycle.tvmtConclusion) {
       if (!cycle.tvmtRequest || !tvmtRequestDate) throw new Error(`Сначала восстановите заявку ТВМТ ${label}.`)
       if (!tvmtResult || !tvmtDate || !cycle.tvmtConclusion) {
         throw new Error(`У результата ТВМТ ${label} должны быть результат, дата и заключение.`)
       }
-      if (pstoDate && tvmtDate < pstoDate) throw new Error(`Дата результата ТВМТ ${label} не может быть раньше ПСТО.`)
-      if (tvmtDate < tvmtRequestDate) throw new Error(`Дата результата ТВМТ ${label} не может быть раньше даты заявки.`)
+      if (saveCheckSettings.pstoResultRequestDateOrder && pstoDate && tvmtDate < pstoDate) {
+        throw new Error(`Дата результата ТВМТ ${label} не может быть раньше ПСТО.`)
+      }
+      if (saveCheckSettings.pstoResultRequestDateOrder && tvmtDate < tvmtRequestDate) {
+        throw new Error(`Дата результата ТВМТ ${label} не может быть раньше даты заявки.`)
+      }
     }
 
     const previous = timeline[index - 1]
@@ -357,7 +399,12 @@ function validateTimeline(row: WeldRow, timeline: PstoCycleSnapshot[]) {
         )
       }
       const previousTvmtDate = parseDateLikeToIso(previous.tvmtConclusionDate)
-      if (previousTvmtDate && requestDate && requestDate < previousTvmtDate) {
+      if (
+        saveCheckSettings.pstoResultRequestDateOrder &&
+        previousTvmtDate &&
+        requestDate &&
+        requestDate < previousTvmtDate
+      ) {
         throw new Error(`Дата заявки ПСТО цикла #${cycle.sequence} не может быть раньше предыдущей ТВМТ.`)
       }
     }
@@ -415,10 +462,27 @@ function applyRepeatCycle(
   }
 }
 
-function requireDate(value: unknown) {
-  const date = normalizeDateLikeForStorage(value)
-  if (!date) throw new Error('Укажите дату документа.')
+function requireDate(value: unknown, label: string) {
+  const rawDate = String(value ?? '').trim()
+  if (!rawDate) throw new Error('Укажите дату документа.')
+  const date = parseDateLikeToIso(rawDate)
+  if (!date) throw new Error('Укажите корректную дату документа.')
+  const reason = getDateInputValidationReason(date, label)
+  if (reason) throw new Error(reason)
   return date
+}
+
+function normalizeOptionalPstoResultDate(value: unknown, settings: SaveCheckSettings) {
+  const rawDate = String(value ?? '').trim()
+  if (!rawDate) {
+    if (settings.pstoResultDateRequired) throw new Error('Укажите дату документа.')
+    return ''
+  }
+  const parsedDate = parseDateLikeToIso(rawDate)
+  if (!parsedDate) throw new Error('Укажите корректную дату ПСТО.')
+  const reason = getDateInputValidationReason(parsedDate, 'Дата результата ПСТО')
+  if (reason) throw new Error(reason)
+  return parsedDate
 }
 
 function stageIndex(stage: PstoCycleStage) {

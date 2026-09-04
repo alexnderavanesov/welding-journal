@@ -33,6 +33,60 @@ describe('PSTO cycle corrections', () => {
     })).toThrow('не может быть раньше ПСТО')
   })
 
+  it('keeps PSTO date format mandatory when other date rules are disabled', () => {
+    const settings = {
+      ...makeSaveCheckSettings(),
+      pstoResultDateRequired: true,
+      pstoResultDateFormat: false,
+      pstoResultDateAfterWeldDate: false,
+      pstoResultRequestDateOrder: false,
+    }
+    expect(() => applyPstoCycleCorrection(makeRow(), {
+      sequence: 1,
+      stage: 'pstoResult',
+      action: 'update',
+      date: 'дата уточняется',
+      name: 'Диаграмма-2',
+    }, settings)).toThrow('корректную дату ПСТО')
+  })
+
+  it('rejects malformed dates when correcting request and TVMT stages', () => {
+    expect(() => applyPstoCycleCorrection(makeRow(), {
+      sequence: 1,
+      stage: 'pstoRequest',
+      action: 'update',
+      date: 'не дата',
+      name: 'Заявка ПСТО-2',
+    })).toThrow('корректную дату документа')
+
+    expect(() => applyPstoCycleCorrection(makeRow(), {
+      sequence: 1,
+      stage: 'tvmtResult',
+      action: 'update',
+      date: 'не дата',
+      name: 'ЗТВМТ-2',
+      result: 'годен',
+    })).toThrow('корректную дату документа')
+  })
+
+  it('rejects dates before the system minimum in cycle corrections', () => {
+    expect(() => applyPstoCycleCorrection(makeRow(), {
+      sequence: 1,
+      stage: 'pstoRequest',
+      action: 'update',
+      date: '2023-12-31',
+      name: 'Заявка ПСТО-2',
+    })).toThrow('не может быть раньше 01.01.2024')
+
+    expect(() => applyPstoCycleCorrection(makeRow(), {
+      sequence: 1,
+      stage: 'pstoResult',
+      action: 'update',
+      date: '2023-12-31',
+      name: 'Диаграмма-2',
+    })).toThrow('Дата результата ПСТО не может быть раньше 01.01.2024')
+  })
+
   it('deletes only the tail of the latest cycle without cascading', () => {
     const row = makeRow()
     expect(getPstoCycleStageDeleteBlockReason(row, 1, 'pstoResult')).toContain('Заключение ТВМТ')
@@ -451,4 +505,40 @@ function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
     pstoRepeatCycles: [],
     ...overrides,
   } as WeldRow
+}
+
+function makeSaveCheckSettings() {
+  return {
+    officialRegistry: true,
+    officialArchive: true,
+    officialNaksDate: true,
+    officialSuspension: true,
+    officialWeldingMethod: true,
+    officialMaterialGroup: true,
+    officialDiameter: true,
+    officialThickness: true,
+    officialDls: true,
+    requiredRootStampWithWeldDate: true,
+    requiredMaterialGroupWithWeldDate: true,
+    requiredConnectionTypeWithWeldDate: true,
+    requiredWeldingMethodWithWeldDate: true,
+    dateFormat: true,
+    weldDateNotFuture: true,
+    lnkResultControlDateRequired: true,
+    lnkResultControlDateFormat: true,
+    lnkResultDateAfterWeldDate: true,
+    lnkResultRequestDateOrder: true,
+    lnkResultVikDateBeforeOther: true,
+    lnkResultVikRequiredBeforeOther: true,
+    lnkResultConclusionRequired: true,
+    lnkResultRepairRules: true,
+    pstoResultDateRequired: true,
+    pstoResultDateFormat: true,
+    pstoResultDateAfterWeldDate: true,
+    pstoResultRequestDateOrder: true,
+    pstoResultDiagramRequired: true,
+    manualJointName: true,
+    controlHistoryProtection: true,
+    systemJointRenameProtection: true,
+  }
 }

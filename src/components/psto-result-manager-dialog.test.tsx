@@ -9,6 +9,7 @@ describe('PstoResultManagerDialog', () => {
     const onCorrectStage = vi.fn()
     const row = {
       id: 7,
+      rowVersion: '107',
       projectTitle: 'Проект А',
       subtitleCode: '400',
       line: 'L-1',
@@ -57,6 +58,7 @@ describe('PstoResultManagerDialog', () => {
 
     expect(onCorrectStage).toHaveBeenCalledWith({
       rowId: 7,
+      expectedVersion: '107',
       sequence: 1,
       cycleId: undefined,
       stage: 'tvmtResult',
@@ -71,6 +73,7 @@ describe('PstoResultManagerDialog', () => {
     const onCorrectStage = vi.fn()
     const row = {
       id: 8,
+      rowVersion: '108',
       projectTitle: 'Проект А',
       subtitleCode: '400',
       line: 'L-1',
@@ -144,6 +147,7 @@ describe('PstoResultManagerDialog', () => {
     const onCorrectTvmtAndRemoveLaterCycles = vi.fn()
     const row = {
       id: 9,
+      rowVersion: '109',
       projectTitle: 'Проект А',
       subtitleCode: '400',
       line: 'L-1',
@@ -206,6 +210,7 @@ describe('PstoResultManagerDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Удалить последующие циклы и сохранить' }))
     expect(onCorrectTvmtAndRemoveLaterCycles).toHaveBeenCalledWith(row, {
       rowId: 9,
+      expectedVersion: '109',
       sequence: 1,
       cycleId: undefined,
       date: '2026-08-05',

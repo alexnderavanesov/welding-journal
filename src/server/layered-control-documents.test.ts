@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   getLayeredControlDocumentTypesToRetain,
   getLayeredControlHistoryGuardError,
+  persistLayeredControlDocumentWrites,
 } from '@/server/layered-control-documents'
 
 const previous = {
@@ -66,3 +67,68 @@ describe('layered control history guard', () => {
     })).toContain('выберите «отменен»')
   })
 })
+
+describe('layered control document database load', () => {
+  it.each([2, 100])('inserts %i documents and assignments in two batch operations', async (documentCount) => {
+    const returning = vi.fn()
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined)
+    let insertCall = 0
+    const insert = vi.fn(() => {
+      insertCall += 1
+      return {
+        values: vi.fn((records: Array<Record<string, unknown>>) => {
+          if (insertCall === 1) {
+            returning.mockResolvedValueOnce(records.map((record, index) => ({
+              id: 2_000 + index,
+              type: record.type,
+              documentNumber: record.documentNumber,
+            })).reverse())
+            return { returning }
+          }
+          return { onConflictDoNothing }
+        }),
+      }
+    })
+    const execute = vi.fn().mockResolvedValue(undefined)
+
+    await persistLayeredControlDocumentWrites(
+      { insert, execute } as never,
+      Array.from({ length: documentCount }, (_, index) => layeredWrite(index, null)),
+    )
+
+    expect(insert).toHaveBeenCalledTimes(2)
+    expect(returning).toHaveBeenCalledTimes(1)
+    expect(onConflictDoNothing).toHaveBeenCalledTimes(1)
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it.each([2, 100])('updates %i changed documents with one batch operation', async (documentCount) => {
+    const execute = vi.fn().mockResolvedValue(undefined)
+    const insert = vi.fn()
+
+    await persistLayeredControlDocumentWrites(
+      { insert, execute } as never,
+      Array.from({ length: documentCount }, (_, index) => layeredWrite(index, 3_000 + index)),
+    )
+
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(insert).not.toHaveBeenCalled()
+  })
+})
+
+function layeredWrite(index: number, targetDocumentId: number | null) {
+  return {
+    rowId: index + 1,
+    type: 'layeredVikEdges' as const,
+    targetDocumentId,
+    title: `ВИК кромок ${index + 1}`,
+    fileName: `ВИК кромок ${index + 1}.xlsx`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    periodFrom: '2026-09-04',
+    periodTo: '2026-09-04',
+    rowCount: 1,
+    wdiTotal: 1,
+    documentNumber: index + 1,
+    shouldUpdate: targetDocumentId != null,
+  }
+}

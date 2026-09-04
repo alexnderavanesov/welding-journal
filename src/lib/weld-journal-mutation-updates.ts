@@ -95,15 +95,7 @@ export function buildRepeatedJointRows(task: RepeatedJointCreateTask | RepeatedJ
   return targetJoints.map((targetJoint) => buildRepeatedJointDraft(task.row, targetJoint))
 }
 
-export function prepareImportedWeldRecords({
-  records,
-  skipManualJointNameValidation = false,
-  skipLnkRepairRuleValidation = false,
-  allowedArchivedOfficialStamps = [],
-  weldFormStampSelectOptions,
-  welderStamps,
-  welderStampSuspensions,
-}: {
+type PrepareImportedWeldRecordsOptions = {
   records: WeldInput[]
   skipManualJointNameValidation?: boolean
   skipLnkRepairRuleValidation?: boolean
@@ -111,27 +103,66 @@ export function prepareImportedWeldRecords({
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
-}) {
+}
+
+export function prepareImportedWeldRecords(options: PrepareImportedWeldRecordsOptions) {
+  const steps = getImportedWeldRecordPreparationSteps(options)
+  for (const step of steps) step()
+  return options.records
+}
+
+export function collectImportedWeldRecordPreparationErrors(
+  options: PrepareImportedWeldRecordsOptions,
+) {
+  const errors: Error[] = []
+  for (const step of getImportedWeldRecordPreparationSteps(options)) {
+    try {
+      step()
+    } catch (error) {
+      errors.push(error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+  return { records: options.records, errors }
+}
+
+function getImportedWeldRecordPreparationSteps({
+  records,
+  skipManualJointNameValidation = false,
+  skipLnkRepairRuleValidation = false,
+  allowedArchivedOfficialStamps = [],
+  weldFormStampSelectOptions,
+  welderStamps,
+  welderStampSuspensions,
+}: PrepareImportedWeldRecordsOptions) {
   const saveCheckSettings = loadSaveCheckSettings()
-  const preparedRecords = records
-  normalizeSystemWdiForImport(preparedRecords)
-  normalizeLegacyControlAvailabilityForImport(preparedRecords)
-  validateRequiredRootStampsForImport(preparedRecords, saveCheckSettings)
-  validateRequiredWeldCoreFieldsForImport(preparedRecords, saveCheckSettings)
-  if (!skipManualJointNameValidation) validateManualJointNamesForImport(preparedRecords, saveCheckSettings)
-  validateWeldDatesForImport(preparedRecords, saveCheckSettings)
-  normalizeWeldingMethodsForImport(preparedRecords)
-  normalizeConnectionTypesAndMaterialGroupsForImport(preparedRecords)
-  normalizeTestTypesForImport(preparedRecords)
-  validateWelderStampFieldsForImport(preparedRecords, weldFormStampSelectOptions, allowedArchivedOfficialStamps, saveCheckSettings)
-  validateOfficialStampCompatibilityForImport(preparedRecords, welderStamps, {
-    saveCheckSettings,
-    suspensions: welderStampSuspensions,
-  })
-  if (!skipLnkRepairRuleValidation) assertNoLnkRepairRuleIssues(preparedRecords, saveCheckSettings)
-  assertNoLnkChronologyIssues(preparedRecords, saveCheckSettings)
-  assertNoPstoChronologyIssues(preparedRecords, saveCheckSettings)
-  return preparedRecords
+  return [
+    () => normalizeSystemWdiForImport(records),
+    () => normalizeLegacyControlAvailabilityForImport(records),
+    () => validateRequiredRootStampsForImport(records, saveCheckSettings),
+    () => validateRequiredWeldCoreFieldsForImport(records, saveCheckSettings),
+    ...(!skipManualJointNameValidation
+      ? [() => validateManualJointNamesForImport(records, saveCheckSettings)]
+      : []),
+    () => validateWeldDatesForImport(records, saveCheckSettings),
+    () => normalizeWeldingMethodsForImport(records),
+    () => normalizeConnectionTypesAndMaterialGroupsForImport(records),
+    () => normalizeTestTypesForImport(records),
+    () => validateWelderStampFieldsForImport(
+      records,
+      weldFormStampSelectOptions,
+      allowedArchivedOfficialStamps,
+      saveCheckSettings,
+    ),
+    () => validateOfficialStampCompatibilityForImport(records, welderStamps, {
+      saveCheckSettings,
+      suspensions: welderStampSuspensions,
+    }),
+    ...(!skipLnkRepairRuleValidation
+      ? [() => assertNoLnkRepairRuleIssues(records, saveCheckSettings)]
+      : []),
+    () => assertNoLnkChronologyIssues(records, saveCheckSettings),
+    () => assertNoPstoChronologyIssues(records, saveCheckSettings),
+  ]
 }
 
 function normalizeSystemWdiForImport(records: WeldInput[]) {

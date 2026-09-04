@@ -1,5 +1,5 @@
 import { LNK_METHODS } from '@/lib/report-config'
-import { normalizeDateLikeForStorage } from '@/lib/date-format'
+import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import {
@@ -31,6 +31,9 @@ export function buildLnkRequestRows({
   requestName: string
   requestDate: string
 }) {
+  if (!requestName.trim()) throw new Error('Укажите наименование заявки ЛНК')
+  const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ЛНК')
+  if (requestDateReason) throw new Error(requestDateReason)
   const saveCheckSettings = loadSaveCheckSettings()
   const proposedRecords = buildLnkRequestDraftRows({ records, methodKeys, requestName, requestDate })
   assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
@@ -63,6 +66,7 @@ export function buildLnkRequestDraftRows({
       nextRecord[method.requestDateKey] = normalizedRequestDate
       if (!hasText(nextRecord[method.resultKey])) {
         nextRecord[method.resultKey] = 'ожидает НК'
+        if (method.code !== 'РК') nextRecord[method.defectDescriptionKey] = null
       }
       changed = true
     }
@@ -91,6 +95,7 @@ export function buildLnkRequestCorrectionRow({
     proposedRecord[method.requestKey] = requestName
     if (!hasText(proposedRecord[method.resultKey])) {
       proposedRecord[method.resultKey] = 'ожидает НК'
+      if (method.code !== 'РК') proposedRecord[method.defectDescriptionKey] = null
     }
     const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
     assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)

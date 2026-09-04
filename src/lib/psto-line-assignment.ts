@@ -1,7 +1,8 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import type { WeldInput } from '@/lib/weld-fields'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
-import { parseDateLikeToIso } from '@/lib/date-format'
+import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
   hasPstoCycleExecutionHistory,
   hasPstoExecutionHistory,
@@ -38,9 +39,11 @@ export type PstoWeldLineMoveDecision = {
 }
 export type WeldChainLineMovePlan = {
   expectedRowIds: number[]
+  expectedVersions: WeldRowVersionTarget[]
   decisions: PstoWeldLineMoveDecision[]
 }
 export type PstoLineAssignmentAction = 'assign' | 'remove' | 'cancel' | 'reactivate'
+export type PstoLineAssignmentState = 'assigned' | 'cancelled' | 'unassigned' | 'mixed'
 
 export type PstoLineRemovalDecision = {
   rowId: number
@@ -86,6 +89,7 @@ export type PstoWeldLineMovePreviewRow = PstoLineRemovalPreviewRow & {
 
 export type PstoLineRemovalPreview = {
   identity: PstoLineIdentity
+  expectedVersions: WeldRowVersionTarget[]
   rowCount: number
   assignedCount: number
   requestOnlyCount: number
@@ -105,6 +109,7 @@ export type PstoWeldLineMovePreview = {
   rootJoint: string
   isChainMove: boolean
   expectedRowIds: number[]
+  expectedVersions: WeldRowVersionTarget[]
   requestOnlyCount: number
   completedPstoCount: number
   preControlCount: number
@@ -147,6 +152,7 @@ const PRIMARY_STAGED_LNK_CLEAR_KEYS = LNK_METHODS.flatMap((method) => (
         method.resultKey,
         method.conclusionDateKey,
         method.conclusionKey,
+        method.defectDescriptionKey,
       ]
     : []
 )) as (keyof WeldRow)[]
@@ -161,7 +167,15 @@ export function normalizePstoLineIdentity(value: PstoLineIdentityInput): PstoLin
 
 export function getPstoLineIdentityKey(value: PstoLineIdentityInput) {
   const identity = normalizePstoLineIdentity(value)
-  return JSON.stringify([identity.projectTitle, identity.subtitleCode, identity.line])
+  return JSON.stringify([
+    normalizePstoLineIdentityPart(identity.projectTitle),
+    normalizePstoLineIdentityPart(identity.subtitleCode),
+    normalizePstoLineIdentityPart(identity.line),
+  ])
+}
+
+export function normalizePstoLineIdentityPart(value: unknown) {
+  return normalizeText(value).toLocaleLowerCase('ru-RU')
 }
 
 export function buildPstoRemovedRow({
@@ -243,7 +257,6 @@ export function buildPstoCancelledRow({
   if (disposition !== 'promoteBeforeHeatTreatment') return next
 
   for (const key of PRIMARY_STAGED_LNK_CLEAR_KEYS) next[key] = null as never
-  next.lnkDefectDescription = null
   next.rkExposureConfirmedDiameter = null
 
   for (const control of controls) {
@@ -257,8 +270,8 @@ export function buildPstoCancelledRow({
     next[method.resultKey] = textOrNull(control.result) as never
     next[method.conclusionDateKey] = textOrNull(control.conclusionDate) as never
     next[method.conclusionKey] = textOrNull(control.conclusionName) as never
+    next[method.defectDescriptionKey] = textOrNull(control.defectDescription) as never
     if (methodCode === 'РК') {
-      next.lnkDefectDescription = textOrNull(control.defectDescription)
       next.rkExposureConfirmedDiameter = control.rkExposureConfirmedDiameter ?? null
     }
   }
@@ -271,6 +284,46 @@ export function hasPerformedPstoHistory(row: WeldInput) {
 
 export function isPstoCancelledValue(value: unknown) {
   return normalizeText(value).toLocaleLowerCase('ru-RU') === 'отменен'
+}
+
+export function getPstoLineAssignmentState(
+  rows: readonly Pick<WeldInput, 'pstoRequired'>[],
+): PstoLineAssignmentState {
+  if (rows.length === 0) return 'unassigned'
+  if (rows.every((row) => isControlEnabledValue(row.pstoRequired))) return 'assigned'
+  if (rows.every((row) => isPstoCancelledValue(row.pstoRequired))) return 'cancelled'
+  if (rows.every((row) => !isControlEnabledValue(row.pstoRequired) && !isPstoCancelledValue(row.pstoRequired))) {
+    return 'unassigned'
+  }
+  return 'mixed'
+}
+
+export function assertPstoLineAssignmentActionAllowed(
+  action: PstoLineAssignmentAction,
+  state: PstoLineAssignmentState,
+) {
+  if (action === 'assign') {
+    if (state === 'assigned') {
+      throw new Error('ПСТО уже назначено на всю линию. Обновите программу ПСТО.')
+    }
+    if (state === 'cancelled') {
+      throw new Error('ПСТО на линии уже официально отменено. Для повторного назначения используйте «Возобновить».')
+    }
+    return
+  }
+  if (action === 'reactivate') {
+    if (state !== 'cancelled') {
+      throw new Error('Возобновление доступно только для полностью отмененной линии ПСТО. Обновите программу ПСТО.')
+    }
+    return
+  }
+  if (state !== 'assigned') {
+    throw new Error(
+      action === 'remove'
+        ? 'Ошибочное назначение можно убрать только с полностью назначенной линии. Обновите программу ПСТО.'
+        : 'Официальную отмену можно оформить только для полностью назначенной линии. Обновите программу ПСТО.',
+    )
+  }
 }
 
 export function getPreHeatTreatmentMethodCodes(
@@ -309,8 +362,9 @@ export function getPrimaryStagedMethodCodes(row: WeldRow) {
       row[method.conclusionKey],
     ]
     if (isFinalLnkResult(row[method.resultKey])) values.push(row[method.resultKey])
+    values.push(row[method.defectDescriptionKey])
     if (method.code === 'РК') {
-      values.push(row.lnkDefectDescription, row.rkExposureConfirmedDiameter)
+      values.push(row.rkExposureConfirmedDiameter)
     }
     return values.some(hasText) ? [method.code] : []
   }).sort(comparePreMethods)
@@ -421,7 +475,15 @@ export function assertPstoCancellationDateAfterHistory(
   rows: readonly WeldInput[],
   cancellationDate: string,
 ) {
-  const normalizedCancellationDate = parseDateLikeToIso(cancellationDate) ?? cancellationDate
+  const normalizedCancellationDate = parseDateLikeToIso(cancellationDate)
+  if (!normalizedCancellationDate) {
+    throw new Error('Укажите корректную дату решения об отмене ПСТО.')
+  }
+  const dateReason = getDateInputValidationReason(
+    normalizedCancellationDate,
+    'Дата решения об отмене ПСТО',
+  )
+  if (dateReason) throw new Error(dateReason)
   const latest = rows
     .map(getLatestPstoLifecycleEventDate)
     .filter(Boolean)

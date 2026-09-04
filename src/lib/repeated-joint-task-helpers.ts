@@ -62,6 +62,13 @@ export function getPrimaryRejectedLnkResult(row: WeldInput) {
       result: 'вырез' as const,
     }
   }
+  const duplicateCut = getRejectedDuplicateControls(row).find((control) => control.result === 'вырез')
+  if (duplicateCut) {
+    return {
+      method: { code: `${duplicateCut.method} (дубль)`, resultKey: `duplicate:${duplicateCut.id}`, enabledKey: '', requestKey: '' },
+      result: 'вырез' as const,
+    }
+  }
   const repair = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт')
   if (repair) return { method: repair, result: 'ремонт' as const }
   const preHeatTreatmentRepair = getRejectedPreHeatTreatmentControls(row)
@@ -75,13 +82,6 @@ export function getPrimaryRejectedLnkResult(row: WeldInput) {
         requestKey: '',
       },
       result: 'ремонт' as const,
-    }
-  }
-  const duplicateCut = getRejectedDuplicateControls(row).find((control) => control.result === 'вырез')
-  if (duplicateCut) {
-    return {
-      method: { code: `${duplicateCut.method} (дубль)`, resultKey: `duplicate:${duplicateCut.id}`, enabledKey: '', requestKey: '' },
-      result: 'вырез' as const,
     }
   }
   const duplicateRepair = getRejectedDuplicateControls(row).find((control) => control.result === 'ремонт')

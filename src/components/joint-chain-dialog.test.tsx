@@ -8,7 +8,7 @@ import type {
   RepeatedJointTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
-import type { JointCoilTransition } from '@/lib/joint-chain-transitions'
+import { buildJointCoilTransitions, type JointCoilTransition } from '@/lib/joint-chain-transitions'
 
 describe('JointChainDialog', () => {
   it('navigates from a completed branch to both coil joints and back through their relations', () => {
@@ -18,24 +18,24 @@ describe('JointChainDialog', () => {
       row({ id: 3, joint: 'S1Y1', rkResult: '' }),
       row({ id: 4, joint: 'S1Y2', rkResult: '' }),
     ]
-    const transition: JointCoilTransition = {
-      key: 'project:code:line:s1',
-      parentBranchJoint: 'S1',
-      sourceRowId: 2,
-      sourceJoint: 'S1R1',
-      targetJoints: ['S1Y1', 'S1Y2'],
-      targetRowIds: [3, 4],
-      mode: 'early-decision',
-    }
+    const transition = buildJointCoilTransitions(rows, {
+      earlyCoilDecisionSourceRowIds: new Set([2]),
+    })[0]!
 
     renderDialog({ rows, transitions: [transition] })
 
+    const outgoingPanel = screen.getByRole('region', { name: 'Продолжение цепочки катушкой' })
     expect(screen.getByText('Стык превратился в катушку')).toBeInTheDocument()
     expect(screen.getByText(/по принятому досрочному решению/)).toBeInTheDocument()
+    expect(outgoingPanel.parentElement).toHaveClass('mt-auto')
+    expect(outgoingPanel).toHaveClass('min-h-[132px]', 'bg-sky-50/60', 'px-3.5', 'py-3')
     fireEvent.click(screen.getByRole('button', { name: 'S1Y1' }))
 
     expect(screen.getByRole('heading', { name: 'Картина стыка S1Y1' })).toBeInTheDocument()
     expect(screen.getByText('S1Y1 является стыком катушки').closest('aside')).toBeInTheDocument()
+    const incomingPanel = screen.getByRole('region', { name: 'Связи стыка катушки' })
+    expect(incomingPanel.parentElement).toHaveClass('mt-auto')
+    expect(incomingPanel).toHaveClass('min-h-[132px]', 'bg-sky-50/60', 'px-3.5', 'py-3')
     expect(screen.getByRole('button', { name: 'Предыдущий: S1R1' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Парный: S1Y2' }))
 

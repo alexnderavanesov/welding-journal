@@ -28,7 +28,12 @@ export function useRkExposureMutation({
     }) => {
       if (stage === 'beforeHeatTreatment') {
         return await updatePreHeatTreatmentRkExposure({
-          data: { rowId: record.id, lines, confirmedDiameter },
+          data: {
+            rowId: record.id,
+            expectedVersion: String(record.rowVersion ?? '').trim(),
+            lines,
+            confirmedDiameter,
+          },
         }) as WeldRow
       }
       const updatedRecord = buildRkExposureEditedRow({ record, lines, confirmedDiameter })

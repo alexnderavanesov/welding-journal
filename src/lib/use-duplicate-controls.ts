@@ -22,7 +22,8 @@ export function useDuplicateControls({ enabled = true }: { enabled?: boolean } =
   })
 
   const deleteDuplicateControlMutation = useMutation({
-    mutationFn: async (id: number) => deleteDuplicateControl({ data: { id } }),
+    mutationFn: async ({ id, expectedVersion }: { id: number; expectedVersion: string }) =>
+      deleteDuplicateControl({ data: { id, expectedVersion } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROLS_QUERY_KEY })
       await invalidateWeldJoints(queryClient)

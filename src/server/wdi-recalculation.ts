@@ -15,6 +15,7 @@ import {
 } from '@/lib/wdi-recalculation'
 import { invalidateDerivedCalculationCache } from '@/server/dispatcher-task-index-dirty'
 import { assertSecurityScope } from '@/server/security-functions'
+import { lockWeldValidationSettings } from '@/server/weld-validation-settings-lock'
 
 export type RecalculateWdiInput = {
   calculationSignature: string
@@ -38,6 +39,7 @@ export const recalculateWdi = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
     return requireDb().transaction(async (tx) => {
+      await lockWeldValidationSettings(tx)
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${PROJECT_SETTING_KEYS.other}))`)
       await tx.execute(sql`
         lock table "weld_joints", "generated_documents", "generated_document_weld_joints"

@@ -4,6 +4,7 @@ import type { DocumentsPageType } from '@/components/documents-page'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
+import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { SystemDocumentNavigationRequest } from '@/lib/system-document-types'
@@ -21,8 +22,15 @@ type ReportMainContentProps = {
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
   weldTableProps: WeldTableProps
-  onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
-  onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
+  onAssignPercentageLineMissingControls?: (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+    method: PercentageControlMethod,
+  ) => Promise<void> | void
+  onCancelPercentageLineMissingControls?: (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+  ) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
   onOpenReportRowIds?: (

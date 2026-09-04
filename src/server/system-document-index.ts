@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, notInArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, eq, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -36,8 +36,14 @@ import {
   normalizeSqlDocumentHistoryResult,
   type SqlDocumentHistoryResult,
 } from '@/server/document-history-sql'
+import { attachPreHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
-import { syncLayeredControlDocumentsForWeldChangesInTransaction } from '@/server/layered-control-documents'
+import {
+  lockLayeredControlDocumentsForWeldChange,
+  syncLayeredControlDocumentsForWeldChangesInTransaction,
+} from '@/server/layered-control-documents'
+import { WELD_TABLE_SELECT } from '@/server/weld-server-shared'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -49,6 +55,12 @@ const BASE_HISTORY_SELECT = {
 }
 
 const SYSTEM_DOCUMENT_INDEX_VERSION = '4'
+export const SYSTEM_DOCUMENT_INDEX_LOCK_ORDER: readonly SystemDocumentType[] = [
+  'lnkRequest',
+  'lnkConclusion',
+  'pstoRequest',
+  'pstoConclusion',
+]
 
 const LNK_REQUEST_HISTORY_SELECT = {
   ...BASE_HISTORY_SELECT,
@@ -184,7 +196,7 @@ export async function loadSystemDocumentRows(data: SystemDocumentReference): Pro
   if (data.sourceKind && !documentId && data.sourceKind !== 'pstoCycle') return []
   const rows = documentId
     ? await db
-        .select({ weld: weldJoints, sourceMetadata: generatedDocuments.sourceMetadata })
+        .select({ ...WELD_TABLE_SELECT, sourceMetadata: generatedDocuments.sourceMetadata })
         .from(generatedDocumentWeldJoints)
         .innerJoin(
           generatedDocuments,
@@ -203,10 +215,10 @@ export async function loadSystemDocumentRows(data: SystemDocumentReference): Pro
         )
         .then((records) => {
           sourceMetadata = records[0]?.sourceMetadata ?? null
-          return records.map((record) => record.weld)
+          return records.map(({ sourceMetadata: _sourceMetadata, ...record }) => record)
         })
     : await db
-        .select()
+        .select(WELD_TABLE_SELECT)
         .from(weldJoints)
         .where(buildSystemDocumentWhere(data))
         .orderBy(
@@ -217,10 +229,17 @@ export async function loadSystemDocumentRows(data: SystemDocumentReference): Pro
         )
 
   const metadata = parseSystemDocumentMetadata(sourceMetadata)
+  if (metadata?.sourceKind === 'beforeHeatTreatment') {
+    const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
+    return (await overlaySourcedSystemDocumentRows(rowsWithPreControls, metadata))
+      .map(compactSystemDocumentRow)
+  }
+
   const hydratedRows = metadata?.sourceKind
     ? await overlaySourcedSystemDocumentRows(rows, metadata)
     : rows
-  return hydratedRows.map(compactSystemDocumentRow)
+  return (await attachPreHeatTreatmentControlRelations(hydratedRows, db))
+    .map(compactSystemDocumentRow)
 }
 
 async function findSourcedSystemDocumentId(
@@ -273,121 +292,348 @@ export async function upsertSourcedSystemDocumentInTransaction({
   summary: SystemDocumentSummary & { sourceKind: SystemDocumentSourceKind }
   sourcePositions: SystemDocumentSourcePosition[]
 }) {
-  const storageType = systemDocumentStorageType(getSystemDocumentTemplateId(summary))
-  const candidates = await tx
-    .select()
-    .from(generatedDocuments)
-    .where(and(
-      eq(generatedDocuments.type, storageType),
-      eq(generatedDocuments.title, summary.title),
-      sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${summary.date}`,
-    ))
-  const sourcedExisting = candidates.find((document) => {
-    const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
-    return (
-      metadata?.sourceKind === summary.sourceKind &&
-      String(metadata.methodCode ?? '') === String(summary.methodCode ?? '') &&
-      (summary.sourceKind === 'pstoCycle' || sameCycleSequences(metadata.cycleSequences, summary.cycleSequences))
-    )
+  const [documentId] = await upsertSourcedSystemDocumentsInTransaction({
+    tx,
+    documents: [{ summary, sourcePositions }],
   })
-  const legacyPrimaryDocuments = summary.sourceKind === 'pstoCycle' &&
-    (summary.cycleSequences ?? []).includes(1)
-    ? candidates.filter((document) => isCompatibleLegacyPrimaryDocument(document, summary))
-    : []
-  const existing = sourcedExisting ?? legacyPrimaryDocuments[0]
-  const mergedDocuments = [
-    ...(sourcedExisting ? [sourcedExisting] : []),
-    ...legacyPrimaryDocuments.filter((document) => document.id !== sourcedExisting?.id),
-  ]
-  const existingMetadata = parseSystemDocumentMetadata(existing?.sourceMetadata)
-  const existingAssignments = mergedDocuments.length > 0
-    ? await tx
-        .select({
-          documentId: generatedDocumentWeldJoints.documentId,
-          weldJointId: generatedDocumentWeldJoints.weldJointId,
-        })
-        .from(generatedDocumentWeldJoints)
-        .where(inArray(generatedDocumentWeldJoints.documentId, mergedDocuments.map((document) => document.id)))
-    : []
-  const rowIds = [...new Set([
-    ...existingAssignments.map((assignment) => assignment.weldJointId),
-    ...summary.rowIds,
-  ])].sort((left, right) => left - right)
-  const mergedSourcePositions = normalizeSystemDocumentSourcePositions([
-    ...(existingMetadata?.sourcePositions ?? []),
-    ...legacyPrimaryDocuments.flatMap((document) => {
-      const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
-      const methodCode = summary.methodCode === 'ТВМТ' ? 'ТВМТ' : undefined
-      return existingAssignments
-        .filter((assignment) => assignment.documentId === document.id)
-        .map((assignment) => ({
-          kind: 'pstoCycle' as const,
-          weldJointId: assignment.weldJointId,
-          relationId: assignment.weldJointId,
-          sequence: 1,
-          ...(methodCode ? { methodCode } : {}),
-        }))
-    }),
-    ...sourcePositions,
-  ])
-  const mergedSummary: SystemDocumentSummary & { sourceKind: SystemDocumentSourceKind } = {
-    ...summary,
-    sourceKind: summary.sourceKind,
-    rowIds,
-    rowCount: rowIds.length,
-    positionCount: mergedSourcePositions.length,
-    cycleSequences: normalizeCycleSequences(mergedSourcePositions.map((position) => position.sequence)),
-    methodCodes: mergeStringArrays(existingMetadata?.methodCodes, summary.methodCodes),
-    projects: mergeStringArrays(existingMetadata?.projects, summary.projects),
-    subtitleCodes: mergeStringArrays(existingMetadata?.subtitleCodes, summary.subtitleCodes),
-    lines: mergeStringArrays(existingMetadata?.lines, summary.lines),
-    periodFrom: minText(existingMetadata?.periodFrom, summary.periodFrom),
-    periodTo: maxText(existingMetadata?.periodTo, summary.periodTo),
+  return documentId
+}
+
+export type SourcedSystemDocumentUpsertInput = {
+  summary: SystemDocumentSummary & { sourceKind: SystemDocumentSourceKind }
+  sourcePositions: SystemDocumentSourcePosition[]
+}
+
+type SourcedSystemDocumentUpsertGroup = SourcedSystemDocumentUpsertInput & {
+  inputIndexes: number[]
+  scopeKey: string
+  storageType: string
+}
+
+type SourcedSystemDocumentUpsertPlan = SourcedSystemDocumentUpsertGroup & {
+  targetDocumentId: number | null
+  redundantDocumentIds: number[]
+  rowIds: number[]
+  sourceMetadata: string
+}
+
+export async function upsertSourcedSystemDocumentsInTransaction({
+  tx,
+  documents,
+}: {
+  tx: SystemDocumentSequenceTransaction
+  documents: readonly SourcedSystemDocumentUpsertInput[]
+}) {
+  if (documents.length === 0) return []
+  await lockLayeredControlDocumentsForWeldChange(tx)
+  await lockSystemDocumentIndexes(tx, documents.map(({ summary }) => summary.type))
+  const groups = groupSourcedSystemDocumentUpserts(documents)
+  const candidates = await loadSourcedSystemDocumentCandidates(tx, groups)
+  const candidateIds = [...new Set(candidates.map((document) => document.id))]
+  const existingAssignments: Array<{ documentId: number; weldJointId: number }> = []
+  for (const documentIdBatch of splitNumberBatches(candidateIds, 1000)) {
+    existingAssignments.push(...await tx
+      .select({
+        documentId: generatedDocumentWeldJoints.documentId,
+        weldJointId: generatedDocumentWeldJoints.weldJointId,
+      })
+      .from(generatedDocumentWeldJoints)
+      .where(inArray(generatedDocumentWeldJoints.documentId, documentIdBatch)))
+  }
+  const candidatesByLookupKey = new Map<string, typeof candidates>()
+  for (const candidate of candidates) {
+    const key = sourcedSystemDocumentLookupKey(candidate.type, candidate.title, candidate.periodFrom ?? '')
+    const current = candidatesByLookupKey.get(key) ?? []
+    current.push(candidate)
+    candidatesByLookupKey.set(key, current)
   }
 
-  let documentId = existing?.id ?? 0
-  if (existing) {
-    await tx
-      .update(generatedDocuments)
-      .set({
-        fileName: mergedSummary.fileName,
-        rowCount: mergedSummary.rowCount,
-        sourceMetadata: serializeSystemDocumentSummary(mergedSummary, mergedSourcePositions),
-        updatedAt: new Date(),
-      })
-      .where(eq(generatedDocuments.id, existing.id))
-    await tx
-      .delete(generatedDocumentWeldJoints)
-      .where(eq(generatedDocumentWeldJoints.documentId, existing.id))
-    const redundantDocumentIds = mergedDocuments
-      .map((document) => document.id)
-      .filter((documentId) => documentId !== existing.id)
-    if (redundantDocumentIds.length > 0) {
-      await tx.delete(generatedDocuments).where(inArray(generatedDocuments.id, redundantDocumentIds))
+  const plans = groups.map((group): SourcedSystemDocumentUpsertPlan => {
+    const summary = group.summary
+    const matchingCandidates = candidatesByLookupKey.get(
+      sourcedSystemDocumentLookupKey(group.storageType, summary.title, summary.date),
+    ) ?? []
+    const sourcedExisting = matchingCandidates.find((document) => {
+      const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
+      return (
+        metadata?.sourceKind === summary.sourceKind &&
+        String(metadata.methodCode ?? '') === String(summary.methodCode ?? '') &&
+        (summary.sourceKind === 'pstoCycle' || sameCycleSequences(metadata.cycleSequences, summary.cycleSequences))
+      )
+    })
+    const legacyPrimaryDocuments = summary.sourceKind === 'pstoCycle' &&
+      (summary.cycleSequences ?? []).includes(1)
+      ? matchingCandidates.filter((document) => isCompatibleLegacyPrimaryDocument(document, summary))
+      : []
+    const existing = sourcedExisting ?? legacyPrimaryDocuments[0]
+    const mergedDocuments = [
+      ...(sourcedExisting ? [sourcedExisting] : []),
+      ...legacyPrimaryDocuments.filter((document) => document.id !== sourcedExisting?.id),
+    ]
+    const mergedDocumentIds = new Set(mergedDocuments.map((document) => document.id))
+    const assignments = existingAssignments.filter((assignment) => mergedDocumentIds.has(assignment.documentId))
+    const existingMetadata = parseSystemDocumentMetadata(existing?.sourceMetadata)
+    const rowIds = [...new Set([
+      ...assignments.map((assignment) => assignment.weldJointId),
+      ...summary.rowIds,
+    ])].sort((left, right) => left - right)
+    const mergedSourcePositions = normalizeSystemDocumentSourcePositions([
+      ...(existingMetadata?.sourcePositions ?? []),
+      ...legacyPrimaryDocuments.flatMap((document) => {
+        const methodCode = summary.methodCode === 'ТВМТ' ? 'ТВМТ' : undefined
+        return assignments
+          .filter((assignment) => assignment.documentId === document.id)
+          .map((assignment) => ({
+            kind: 'pstoCycle' as const,
+            weldJointId: assignment.weldJointId,
+            relationId: assignment.weldJointId,
+            sequence: 1,
+            ...(methodCode ? { methodCode } : {}),
+          }))
+      }),
+      ...group.sourcePositions,
+    ])
+    const mergedSummary: SystemDocumentSummary & { sourceKind: SystemDocumentSourceKind } = {
+      ...summary,
+      sourceKind: summary.sourceKind,
+      rowIds,
+      rowCount: rowIds.length,
+      positionCount: mergedSourcePositions.length,
+      cycleSequences: normalizeCycleSequences(mergedSourcePositions.map((position) => position.sequence)),
+      methodCodes: mergeStringArrays(existingMetadata?.methodCodes, summary.methodCodes),
+      projects: mergeStringArrays(existingMetadata?.projects, summary.projects),
+      subtitleCodes: mergeStringArrays(existingMetadata?.subtitleCodes, summary.subtitleCodes),
+      lines: mergeStringArrays(existingMetadata?.lines, summary.lines),
+      periodFrom: minText(existingMetadata?.periodFrom, summary.periodFrom),
+      periodTo: maxText(existingMetadata?.periodTo, summary.periodTo),
     }
-  } else {
-    const [created] = await tx
-      .insert(generatedDocuments)
-      .values({
-        type: storageType,
-        title: mergedSummary.title,
-        fileName: mergedSummary.fileName,
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        periodFrom: mergedSummary.date || null,
-        periodTo: mergedSummary.date || null,
-        rowCount: mergedSummary.rowCount,
-        sourceMetadata: serializeSystemDocumentSummary(mergedSummary, mergedSourcePositions),
+    return {
+      ...group,
+      summary: mergedSummary,
+      sourcePositions: mergedSourcePositions,
+      targetDocumentId: existing?.id ?? null,
+      redundantDocumentIds: mergedDocuments
+        .map((document) => document.id)
+        .filter((documentId) => documentId !== existing?.id),
+      rowIds,
+      sourceMetadata: serializeSystemDocumentSummary(mergedSummary, mergedSourcePositions),
+    }
+  })
+
+  const documentIdsByScope = await persistSourcedSystemDocumentUpsertPlans(tx, plans)
+  const result = Array<number>(documents.length)
+  for (const plan of plans) {
+    const documentId = documentIdsByScope.get(plan.scopeKey)
+    if (!documentId) throw new Error('Не удалось сохранить системный документ.')
+    plan.inputIndexes.forEach((inputIndex) => {
+      result[inputIndex] = documentId
+    })
+  }
+  return result
+}
+
+function groupSourcedSystemDocumentUpserts(
+  documents: readonly SourcedSystemDocumentUpsertInput[],
+): SourcedSystemDocumentUpsertGroup[] {
+  const groups = new Map<string, SourcedSystemDocumentUpsertGroup>()
+  documents.forEach((document, inputIndex) => {
+    const storageType = systemDocumentStorageType(getSystemDocumentTemplateId(document.summary))
+    const scopeKey = sourcedSystemDocumentScopeKey(storageType, document.summary)
+    const sourcePositions = normalizeSystemDocumentSourcePositions(document.sourcePositions)
+    const current = groups.get(scopeKey)
+    if (!current) {
+      groups.set(scopeKey, {
+        summary: { ...document.summary },
+        sourcePositions,
+        inputIndexes: [inputIndex],
+        scopeKey,
+        storageType,
       })
-      .returning({ id: generatedDocuments.id })
-    documentId = created.id
+      return
+    }
+
+    const mergedSourcePositions = normalizeSystemDocumentSourcePositions([
+      ...current.sourcePositions,
+      ...sourcePositions,
+    ])
+    const rowIds = [...new Set([
+      ...current.summary.rowIds,
+      ...document.summary.rowIds,
+    ])].sort((left, right) => left - right)
+    current.summary = {
+      ...document.summary,
+      sourceKind: document.summary.sourceKind,
+      rowIds,
+      rowCount: rowIds.length,
+      positionCount: mergedSourcePositions.length,
+      cycleSequences: normalizeCycleSequences(mergedSourcePositions.map((position) => position.sequence)),
+      methodCodes: mergeStringArrays(current.summary.methodCodes, document.summary.methodCodes),
+      projects: mergeStringArrays(current.summary.projects, document.summary.projects),
+      subtitleCodes: mergeStringArrays(current.summary.subtitleCodes, document.summary.subtitleCodes),
+      lines: mergeStringArrays(current.summary.lines, document.summary.lines),
+      periodFrom: minText(current.summary.periodFrom, document.summary.periodFrom),
+      periodTo: maxText(current.summary.periodTo, document.summary.periodTo),
+    }
+    current.sourcePositions = mergedSourcePositions
+    current.inputIndexes.push(inputIndex)
+  })
+  return [...groups.values()]
+}
+
+async function loadSourcedSystemDocumentCandidates(
+  tx: SystemDocumentSequenceTransaction,
+  groups: readonly SourcedSystemDocumentUpsertGroup[],
+) {
+  const lookupGroups = new Map<string, {
+    storageType: string
+    date: string
+    titles: Set<string>
+  }>()
+  for (const group of groups) {
+    const key = JSON.stringify([group.storageType, group.summary.date])
+    const lookup = lookupGroups.get(key) ?? {
+      storageType: group.storageType,
+      date: group.summary.date,
+      titles: new Set<string>(),
+    }
+    lookup.titles.add(group.summary.title)
+    lookupGroups.set(key, lookup)
   }
-  if (rowIds.length > 0) {
-    await tx
-      .insert(generatedDocumentWeldJoints)
-      .values(rowIds.map((weldJointId) => ({ documentId, weldJointId })))
-      .onConflictDoNothing()
+
+  const candidates: Array<typeof generatedDocuments.$inferSelect> = []
+  for (const { storageType, date, titles } of lookupGroups.values()) {
+    for (const titleBatch of splitStringBatches([...titles], 1000)) {
+      candidates.push(...await tx
+        .select()
+        .from(generatedDocuments)
+        .where(and(
+          eq(generatedDocuments.type, storageType),
+          inArray(generatedDocuments.title, titleBatch),
+          sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${date}`,
+        )))
+    }
   }
-  return documentId
+  return candidates
+}
+
+export async function persistSourcedSystemDocumentUpsertPlans(
+  tx: SystemDocumentSequenceTransaction,
+  plans: readonly SourcedSystemDocumentUpsertPlan[],
+  now = new Date(),
+) {
+  const documentIdsByScope = new Map<string, number>()
+  const existingPlans = plans.filter((plan) => plan.targetDocumentId != null)
+  for (let offset = 0; offset < existingPlans.length; offset += 500) {
+    const batch = existingPlans.slice(offset, offset + 500)
+    const values = sql.join(batch.map((plan) => sql`(
+      ${plan.targetDocumentId!}::integer,
+      ${plan.summary.fileName}::text,
+      ${plan.rowIds.length}::integer,
+      ${plan.sourceMetadata}::text,
+      ${now}::timestamptz
+    )`), sql`, `)
+    await tx.execute(sql`
+      update "generated_documents" as document
+      set
+        "file_name" = refreshed.file_name,
+        "row_count" = refreshed.row_count,
+        "source_metadata" = refreshed.source_metadata,
+        "updated_at" = refreshed.updated_at
+      from (values ${values}) as refreshed(id, file_name, row_count, source_metadata, updated_at)
+      where document."id" = refreshed.id
+    `)
+    batch.forEach((plan) => documentIdsByScope.set(plan.scopeKey, plan.targetDocumentId!))
+  }
+
+  const newPlans = plans.filter((plan) => plan.targetDocumentId == null)
+  for (let offset = 0; offset < newPlans.length; offset += 250) {
+    const batch = newPlans.slice(offset, offset + 250)
+    const inserted = await tx
+      .insert(generatedDocuments)
+      .values(batch.map((plan) => ({
+        type: plan.storageType,
+        title: plan.summary.title,
+        fileName: plan.summary.fileName,
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        periodFrom: plan.summary.date || null,
+        periodTo: plan.summary.date || null,
+        rowCount: plan.rowIds.length,
+        sourceMetadata: plan.sourceMetadata,
+      })))
+      .returning({
+        id: generatedDocuments.id,
+        type: generatedDocuments.type,
+        title: generatedDocuments.title,
+        periodFrom: generatedDocuments.periodFrom,
+        sourceMetadata: generatedDocuments.sourceMetadata,
+      })
+    for (const document of inserted) {
+      const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
+      if (!metadata?.sourceKind) continue
+      documentIdsByScope.set(
+        sourcedSystemDocumentScopeKey(document.type, {
+          title: document.title,
+          date: document.periodFrom ?? '',
+          sourceKind: metadata.sourceKind,
+          methodCode: metadata.methodCode,
+          cycleSequences: metadata.cycleSequences,
+        }),
+        document.id,
+      )
+    }
+    for (const plan of batch) {
+      if (!documentIdsByScope.has(plan.scopeKey)) {
+        throw new Error('Не удалось сопоставить созданный системный документ.')
+      }
+    }
+  }
+
+  const targetDocumentIds = new Set(documentIdsByScope.values())
+  const redundantDocumentIds = [...new Set(plans
+    .flatMap((plan) => plan.redundantDocumentIds)
+    .filter((documentId) => !targetDocumentIds.has(documentId)))]
+  for (const documentIdBatch of splitNumberBatches(redundantDocumentIds, 1000)) {
+    await tx.delete(generatedDocuments).where(inArray(generatedDocuments.id, documentIdBatch))
+  }
+
+  await replaceGeneratedDocumentAssignmentsInTransaction(
+    tx,
+    existingPlans.map((plan) => plan.targetDocumentId!),
+    plans.map((plan) => {
+      const documentId = documentIdsByScope.get(plan.scopeKey)
+      if (!documentId) throw new Error('Не удалось определить запись системного документа.')
+      return { documentId, rowIds: plan.rowIds }
+    }),
+  )
+  return documentIdsByScope
+}
+
+function sourcedSystemDocumentLookupKey(storageType: string, title: string, date: string) {
+  return JSON.stringify([storageType, title, date])
+}
+
+function sourcedSystemDocumentScopeKey(
+  storageType: string,
+  reference: Pick<SystemDocumentReference, 'title' | 'date' | 'sourceKind' | 'methodCode' | 'cycleSequences'>,
+) {
+  return JSON.stringify([
+    storageType,
+    reference.title,
+    reference.date,
+    reference.sourceKind ?? '',
+    reference.methodCode ?? '',
+    ...(reference.sourceKind === 'pstoCycle'
+      ? []
+      : normalizeCycleSequences(reference.cycleSequences)),
+  ])
+}
+
+function splitStringBatches(values: readonly string[], batchSize: number) {
+  const batches: string[][] = []
+  for (let offset = 0; offset < values.length; offset += batchSize) {
+    batches.push(values.slice(offset, offset + batchSize))
+  }
+  return batches
 }
 
 export async function removeSourcedSystemDocumentPositionsInTransaction({
@@ -408,24 +654,69 @@ export async function removeSourcedSystemDocumentPositionsInTransaction({
   const removedWeldJointIds = new Set(weldJointIds.map(Number).filter((value) => Number.isInteger(value) && value > 0))
   if (removedIds.size === 0 && removedPositionKeys.size === 0 && removedWeldJointIds.size === 0) return
 
-  const documents = await tx.select().from(generatedDocuments)
-  for (const document of documents) {
+  await lockLayeredControlDocumentsForWeldChange(tx)
+  await lockSystemDocumentIndexes(tx)
+  const candidateWeldJointIds = new Set([
+    ...removedWeldJointIds,
+    ...sourcePositions.map((position) => Number(position.weldJointId)),
+  ])
+  if (removedIds.size > 0 && sourceKind === 'beforeHeatTreatment') {
+    for (const idBatch of splitNumberBatches([...removedIds], 1000)) {
+      const controls = await tx
+        .select({ weldJointId: preHeatTreatmentControls.weldJointId })
+        .from(preHeatTreatmentControls)
+        .where(inArray(preHeatTreatmentControls.id, idBatch))
+      controls.forEach((control) => candidateWeldJointIds.add(control.weldJointId))
+    }
+  }
+  if (removedIds.size > 0 && (sourceKind === 'pstoRepeat' || sourceKind === 'pstoCycle')) {
+    for (const idBatch of splitNumberBatches([...removedIds], 1000)) {
+      const cycles = await tx
+        .select({ weldJointId: pstoRepeatCycles.weldJointId })
+        .from(pstoRepeatCycles)
+        .where(inArray(pstoRepeatCycles.id, idBatch))
+      cycles.forEach((cycle) => candidateWeldJointIds.add(cycle.weldJointId))
+    }
+    if (sourceKind === 'pstoCycle') {
+      removedIds.forEach((id) => candidateWeldJointIds.add(id))
+    }
+  }
+  const candidateIds = [...candidateWeldJointIds]
+    .filter((id) => Number.isInteger(id) && id > 0)
+  if (candidateIds.length === 0) return
+  const documentsById = new Map<number, typeof generatedDocuments.$inferSelect>()
+  for (const idBatch of splitNumberBatches(candidateIds, 1000)) {
+    const documentRows = await tx
+      .select({ document: generatedDocuments })
+      .from(generatedDocumentWeldJoints)
+      .innerJoin(
+        generatedDocuments,
+        eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
+      )
+      .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch))
+    documentRows.forEach(({ document }) => documentsById.set(document.id, document))
+  }
+  const changes = [...documentsById.values()].flatMap((document) => {
     const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
-    if (metadata?.sourceKind !== sourceKind) continue
+    if (metadata?.sourceKind !== sourceKind) return []
     const remainingPositions = metadata.sourcePositions.filter((position) => {
       if (position.kind !== sourceKind) return true
       if (removedWeldJointIds.has(position.weldJointId)) return false
       if (removedPositionKeys.has(getSourcePositionMatchKey(position))) return false
       return !removedIds.has(position.relationId)
     })
-    if (remainingPositions.length === metadata.sourcePositions.length) continue
-    if (remainingPositions.length === 0) {
-      await tx.delete(generatedDocuments).where(eq(generatedDocuments.id, document.id))
-      continue
-    }
-
-    const rowIds = [...new Set(remainingPositions.map((position) => position.weldJointId))]
-      .sort((left, right) => left - right)
+    return remainingPositions.length === metadata.sourcePositions.length
+      ? []
+      : [{ document, metadata, remainingPositions }]
+  })
+  const remainingRowIds = [...new Set(changes.flatMap(({ remainingPositions }) =>
+    remainingPositions.map((position) => position.weldJointId),
+  ))]
+  const rowsById = new Map<number, Pick<
+    typeof weldJoints.$inferSelect,
+    'id' | 'projectTitle' | 'subtitleCode' | 'line' | 'weldDate'
+  >>()
+  for (const idBatch of splitNumberBatches(remainingRowIds, 1000)) {
     const rows = await tx
       .select({
         id: weldJoints.id,
@@ -435,7 +726,19 @@ export async function removeSourcedSystemDocumentPositionsInTransaction({
         weldDate: weldJoints.weldDate,
       })
       .from(weldJoints)
-      .where(inArray(weldJoints.id, rowIds))
+      .where(inArray(weldJoints.id, idBatch))
+    rows.forEach((row) => rowsById.set(row.id, row))
+  }
+  const persistedChanges = changes.map(({ document, metadata, remainingPositions }) => {
+    const rowIds = [...new Set(remainingPositions.map((position) => position.weldJointId))]
+      .sort((left, right) => left - right)
+    if (rowIds.length === 0) {
+      return { documentId: document.id, rowIds, sourceMetadata: document.sourceMetadata ?? '' }
+    }
+    const rows = rowIds.flatMap((rowId) => {
+      const row = rowsById.get(rowId)
+      return row ? [row] : []
+    })
     const methodCodes = normalizeStringArray(
       remainingPositions.map((position) => position.methodCode).filter(Boolean),
     )
@@ -452,21 +755,13 @@ export async function removeSourcedSystemDocumentPositionsInTransaction({
       periodTo: weldDates.at(-1) ?? metadata.periodTo,
       sourcePositions: remainingPositions,
     }
-    await tx
-      .update(generatedDocuments)
-      .set({
-        rowCount: rowIds.length,
-        sourceMetadata: JSON.stringify(nextMetadata),
-        updatedAt: new Date(),
-      })
-      .where(eq(generatedDocuments.id, document.id))
-    await tx
-      .delete(generatedDocumentWeldJoints)
-      .where(eq(generatedDocumentWeldJoints.documentId, document.id))
-    await tx
-      .insert(generatedDocumentWeldJoints)
-      .values(rowIds.map((weldJointId) => ({ documentId: document.id, weldJointId })))
-  }
+    return {
+      documentId: document.id,
+      rowIds,
+      sourceMetadata: JSON.stringify(nextMetadata),
+    }
+  })
+  await persistSourcedSystemDocumentChangesInTransaction(tx, persistedChanges)
 }
 
 function getSourcePositionMatchKey(
@@ -492,14 +787,18 @@ export async function removeHeatTreatmentSourcedDocumentPositionsForWeldsInTrans
     .filter((value) => Number.isInteger(value) && value > 0))]
   if (rowIds.length === 0) return
 
-  const preControls = await tx
-    .select({ id: preHeatTreatmentControls.id })
-    .from(preHeatTreatmentControls)
-    .where(inArray(preHeatTreatmentControls.weldJointId, rowIds))
-  const repeatCycles = await tx
-    .select({ id: pstoRepeatCycles.id })
-    .from(pstoRepeatCycles)
-    .where(inArray(pstoRepeatCycles.weldJointId, rowIds))
+  const preControls: Array<{ id: number }> = []
+  const repeatCycles: Array<{ id: number }> = []
+  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+    preControls.push(...await tx
+      .select({ id: preHeatTreatmentControls.id })
+      .from(preHeatTreatmentControls)
+      .where(inArray(preHeatTreatmentControls.weldJointId, rowIdBatch)))
+    repeatCycles.push(...await tx
+      .select({ id: pstoRepeatCycles.id })
+      .from(pstoRepeatCycles)
+      .where(inArray(pstoRepeatCycles.weldJointId, rowIdBatch)))
+  }
 
   await removeSourcedSystemDocumentPositionsInTransaction({
     tx,
@@ -553,17 +852,21 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
 
   await syncLayeredControlDocumentsForWeldChangesInTransaction(tx, currentRows, previousRows)
 
-  for (const type of ['lnkRequest', 'lnkConclusion', 'pstoRequest', 'pstoConclusion'] as const) {
+  const changes = SYSTEM_DOCUMENT_INDEX_LOCK_ORDER.flatMap((type) => {
     const previousReferences = collectSystemDocumentReferences([...previousRows.values()], type)
     const currentReferences = collectSystemDocumentReferences(currentRows, type)
-    if (!hasSystemDocumentImpact({ currentRows, previousRows, type })) continue
+    if (!hasSystemDocumentImpact({ currentRows, previousRows, type })) return []
     const affectedReferences = uniqueSystemDocumentReferences([
       ...previousReferences,
       ...currentReferences,
     ])
-    if (affectedReferences.length === 0) continue
+    return affectedReferences.length > 0
+      ? [{ type, previousReferences, affectedReferences }]
+      : []
+  })
+  await lockSystemDocumentIndexes(tx, changes.map((change) => change.type))
 
-    await lockSystemDocumentIndex(tx, type)
+  for (const { type, previousReferences, affectedReferences } of changes) {
     const rows = await loadSystemDocumentRowsForReferences(tx, type, affectedReferences)
     const affectedKeys = new Set(affectedReferences.map(getLogicalReferenceKey))
     const summaries = buildSystemDocumentSummaries(
@@ -586,17 +889,23 @@ async function refreshSourcedSystemDocumentMetadataInTransaction(
   changedRowIds: number[],
 ) {
   if (changedRowIds.length === 0) return
-  const assignments = await tx
-    .select({ documentId: generatedDocumentWeldJoints.documentId })
-    .from(generatedDocumentWeldJoints)
-    .where(inArray(generatedDocumentWeldJoints.weldJointId, changedRowIds))
-  const documentIds = [...new Set(assignments.map((assignment) => assignment.documentId))]
-  if (documentIds.length === 0) return
+  const documentIds = new Set<number>()
+  for (const idBatch of splitNumberBatches(changedRowIds, 1000)) {
+    const assignments = await tx
+      .select({ documentId: generatedDocumentWeldJoints.documentId })
+      .from(generatedDocumentWeldJoints)
+      .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch))
+    assignments.forEach((assignment) => documentIds.add(assignment.documentId))
+  }
+  if (documentIds.size === 0) return
 
-  const documents = await tx
-    .select()
-    .from(generatedDocuments)
-    .where(inArray(generatedDocuments.id, documentIds))
+  const documents: Array<typeof generatedDocuments.$inferSelect> = []
+  for (const idBatch of splitNumberBatches([...documentIds], 1000)) {
+    documents.push(...await tx
+      .select()
+      .from(generatedDocuments)
+      .where(inArray(generatedDocuments.id, idBatch)))
+  }
   const sourcedDocuments = documents.flatMap((document) => {
     const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
     return metadata?.sourceKind ? [{ document, metadata }] : []
@@ -606,8 +915,12 @@ async function refreshSourcedSystemDocumentMetadataInTransaction(
   const sourceRowIds = [...new Set(sourcedDocuments.flatMap(({ metadata }) =>
     metadata.sourcePositions.map((position) => position.weldJointId),
   ))]
-  const rows = sourceRowIds.length > 0
-    ? await tx
+  const rows: Array<Pick<
+    typeof weldJoints.$inferSelect,
+    'id' | 'projectTitle' | 'subtitleCode' | 'line' | 'weldDate'
+  >> = []
+  for (const idBatch of splitNumberBatches(sourceRowIds, 1000)) {
+    rows.push(...await tx
         .select({
           id: weldJoints.id,
           projectTitle: weldJoints.projectTitle,
@@ -616,36 +929,219 @@ async function refreshSourcedSystemDocumentMetadataInTransaction(
           weldDate: weldJoints.weldDate,
         })
         .from(weldJoints)
-        .where(inArray(weldJoints.id, sourceRowIds))
-    : []
+        .where(inArray(weldJoints.id, idBatch)))
+  }
 
-  for (const { document, metadata } of sourcedDocuments) {
+  const changes = sourcedDocuments.map(({ document, metadata }) => {
     const summary = buildSourcedSystemDocumentMetadataSummary({
       sourcePositions: metadata.sourcePositions,
       rows,
     })
     if (summary.sourcePositions.length === 0) {
-      await tx.delete(generatedDocuments).where(eq(generatedDocuments.id, document.id))
-      continue
+      return { documentId: document.id, rowIds: [], sourceMetadata: document.sourceMetadata ?? '' }
     }
     const nextMetadata: SystemDocumentMetadata = {
       ...metadata,
       ...summary,
     }
-    await tx
-      .update(generatedDocuments)
-      .set({
-        rowCount: summary.rowIds.length,
-        sourceMetadata: JSON.stringify(nextMetadata),
-        updatedAt: new Date(),
-      })
-      .where(eq(generatedDocuments.id, document.id))
+    return {
+      documentId: document.id,
+      rowIds: summary.rowIds,
+      sourceMetadata: JSON.stringify(nextMetadata),
+    }
+  })
+  await persistSourcedSystemDocumentChangesInTransaction(tx, changes)
+}
+
+export async function persistSourcedSystemDocumentChangesInTransaction(
+  tx: SystemDocumentSequenceTransaction,
+  changes: readonly {
+    documentId: number
+    rowIds: readonly number[]
+    sourceMetadata: string
+  }[],
+  now = new Date(),
+) {
+  const normalizedChanges = [...new Map(changes
+    .filter((change) => Number.isInteger(change.documentId) && change.documentId > 0)
+    .map((change) => [change.documentId, {
+      ...change,
+      rowIds: [...new Set(change.rowIds
+        .map(Number)
+        .filter((rowId) => Number.isInteger(rowId) && rowId > 0))]
+        .sort((left, right) => left - right),
+    }])).values()]
+    .sort((left, right) => left.documentId - right.documentId)
+  if (normalizedChanges.length === 0) return
+
+  const emptyDocumentIds = normalizedChanges
+    .filter((change) => change.rowIds.length === 0)
+    .map((change) => change.documentId)
+  for (const idBatch of splitNumberBatches(emptyDocumentIds, 1000)) {
+    await tx.delete(generatedDocuments).where(inArray(generatedDocuments.id, idBatch))
+  }
+
+  const retainedChanges = normalizedChanges.filter((change) => change.rowIds.length > 0)
+  if (retainedChanges.length === 0) return
+  for (let offset = 0; offset < retainedChanges.length; offset += 500) {
+    const batch = retainedChanges.slice(offset, offset + 500)
+    const values = sql.join(batch.map((change) => sql`(
+      ${change.documentId}::integer,
+      ${change.rowIds.length}::integer,
+      ${change.sourceMetadata}::text,
+      ${now}::timestamptz
+    )`), sql`, `)
+    await tx.execute(sql`
+      update "generated_documents" as document
+      set
+        "row_count" = refreshed.row_count,
+        "source_metadata" = refreshed.source_metadata,
+        "updated_at" = refreshed.updated_at
+      from (values ${values}) as refreshed(id, row_count, source_metadata, updated_at)
+      where document."id" = refreshed.id
+    `)
+  }
+  await replaceGeneratedDocumentAssignmentsInTransaction(
+    tx,
+    retainedChanges.map((change) => change.documentId),
+    retainedChanges,
+  )
+}
+
+export async function persistSystemDocumentSummaryRecordsInTransaction({
+  tx,
+  summaries,
+  matchedDocumentIds,
+  now = new Date(),
+}: {
+  tx: SystemDocumentSequenceTransaction
+  summaries: readonly SystemDocumentSummary[]
+  matchedDocumentIds: ReadonlyMap<number, number>
+  now?: Date
+}) {
+  const entries = summaries.map((summary, summaryIndex) => ({ summary, summaryIndex }))
+  const resolvedDocumentIds = new Map(matchedDocumentIds)
+  const existingEntries = entries.filter(({ summaryIndex }) => resolvedDocumentIds.has(summaryIndex))
+  for (let offset = 0; offset < existingEntries.length; offset += 250) {
+    const batch = existingEntries.slice(offset, offset + 250)
+    const values = sql.join(batch.map(({ summary, summaryIndex }) => sql`(
+      ${resolvedDocumentIds.get(summaryIndex)!}::integer,
+      ${summary.title}::text,
+      ${summary.fileName}::text,
+      ${summary.date || null}::date,
+      ${summary.rowCount}::integer,
+      ${serializeSystemDocumentSummary(summary)}::text,
+      ${summary.updatedAt ? new Date(summary.updatedAt) : now}::timestamptz
+    )`), sql`, `)
+    await tx.execute(sql`
+      update "generated_documents" as document
+      set
+        "title" = refreshed.title,
+        "file_name" = refreshed.file_name,
+        "period_from" = refreshed.period_date,
+        "period_to" = refreshed.period_date,
+        "row_count" = refreshed.row_count,
+        "source_metadata" = refreshed.source_metadata,
+        "updated_at" = refreshed.updated_at
+      from (values ${values}) as refreshed(
+        id,
+        title,
+        file_name,
+        period_date,
+        row_count,
+        source_metadata,
+        updated_at
+      )
+      where document."id" = refreshed.id
+    `)
+  }
+
+  const newEntries = entries.filter(({ summaryIndex }) => !resolvedDocumentIds.has(summaryIndex))
+  const insertedDocuments: Array<typeof generatedDocuments.$inferSelect> = []
+  for (let offset = 0; offset < newEntries.length; offset += 250) {
+    const batch = newEntries.slice(offset, offset + 250)
+    insertedDocuments.push(...await tx
+      .insert(generatedDocuments)
+      .values(batch.map(({ summary }) => ({
+        type: systemDocumentStorageType(getSystemDocumentTemplateId(summary)),
+        title: summary.title,
+        fileName: summary.fileName,
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        periodFrom: summary.date || null,
+        periodTo: summary.date || null,
+        rowCount: summary.rowCount,
+        sourceMetadata: serializeSystemDocumentSummary(summary),
+      })))
+      .returning())
+  }
+  if (insertedDocuments.length !== newEntries.length) {
+    throw new Error('Не удалось создать все записи системных документов.')
+  }
+  const insertedMatches = matchSystemDocumentIdentityIds({
+    documents: insertedDocuments.map(toStoredSystemDocumentIdentity),
+    targets: newEntries.map(({ summary }) => toSystemDocumentIdentityTarget(summary)),
+    assignedRowsByDocument: new Map(),
+  })
+  for (const [newEntryIndex, { summaryIndex }] of newEntries.entries()) {
+    const documentId = insertedMatches.get(newEntryIndex)
+    if (!documentId) throw new Error('Не удалось сопоставить созданный системный документ.')
+    resolvedDocumentIds.set(summaryIndex, documentId)
+  }
+
+  return entries.map(({ summary, summaryIndex }) => {
+    const documentId = resolvedDocumentIds.get(summaryIndex)
+    if (!documentId) throw new Error('Не удалось определить запись системного документа.')
+    return {
+      ...summary,
+      documentId,
+      id: `system-document:${documentId}`,
+    }
+  })
+}
+
+async function replaceGeneratedDocumentAssignmentsInTransaction(
+  tx: SystemDocumentSequenceTransaction,
+  documentIdsToClear: readonly number[],
+  summaries: readonly Pick<SystemDocumentSummary, 'documentId' | 'rowIds'>[],
+) {
+  const documentIds = [...new Set(documentIdsToClear
+    .map(Number)
+    .filter((documentId) => Number.isInteger(documentId) && documentId > 0))]
+    .sort((left, right) => left - right)
+  for (const idBatch of splitNumberBatches(documentIds, 1000)) {
     await tx
       .delete(generatedDocumentWeldJoints)
-      .where(eq(generatedDocumentWeldJoints.documentId, document.id))
+      .where(inArray(generatedDocumentWeldJoints.documentId, idBatch))
+  }
+
+  const assignments = [...new Map(summaries.flatMap((summary) =>
+    summary.rowIds.map((weldJointId) => ({
+      documentId: Number(summary.documentId),
+      weldJointId: Number(weldJointId),
+    })))
+    .filter((assignment) => (
+      Number.isInteger(assignment.documentId) && assignment.documentId > 0 &&
+      Number.isInteger(assignment.weldJointId) && assignment.weldJointId > 0
+    ))
+    .map((assignment) => [`${assignment.documentId}:${assignment.weldJointId}`, assignment])).values()]
+  for (let offset = 0; offset < assignments.length; offset += 1000) {
     await tx
       .insert(generatedDocumentWeldJoints)
-      .values(summary.rowIds.map((weldJointId) => ({ documentId: document.id, weldJointId })))
+      .values(assignments.slice(offset, offset + 1000))
+      .onConflictDoNothing()
+  }
+}
+
+async function insertGeneratedDocumentAssignments(
+  tx: SystemDocumentSequenceTransaction,
+  documentId: number,
+  weldJointIds: readonly number[],
+) {
+  for (const idBatch of splitNumberBatches(weldJointIds, 1000)) {
+    await tx
+      .insert(generatedDocumentWeldJoints)
+      .values(idBatch.map((weldJointId) => ({ documentId, weldJointId })))
+      .onConflictDoNothing()
   }
 }
 
@@ -688,111 +1184,51 @@ async function indexSystemDocumentSummariesInTransaction(
   type: SystemDocumentType,
   summaries: SystemDocumentSummary[],
 ): Promise<SystemDocumentSummary[]> {
-    const storageTypes = SYSTEM_DOCUMENT_TEMPLATE_PROFILES
-      .filter((profile) => profile.documentType === type)
-      .map((profile) => systemDocumentStorageType(profile.id))
-    const allExistingDocuments = storageTypes.length
-      ? await tx.select().from(generatedDocuments).where(inArray(generatedDocuments.type, storageTypes))
-      : []
-    const effectiveSummaries = filterLegacyCycleSummariesShadowedBySourcedDocuments(
-      summaries,
-      allExistingDocuments.map((document) => toIndexedSourceDocumentIdentity(document, type)),
-    )
-    const existingDocuments = allExistingDocuments.filter(isPrimaryIndexedDocument)
-    const existingDocumentIds = existingDocuments.map((document) => document.id)
-    const existingAssignments = existingDocumentIds.length
-      ? await tx
-          .select()
-          .from(generatedDocumentWeldJoints)
-          .where(inArray(generatedDocumentWeldJoints.documentId, existingDocumentIds))
-      : []
-    const assignedRowsByDocument = new Map<number, Set<number>>()
-    existingAssignments.forEach((assignment) => {
-      const rowIds = assignedRowsByDocument.get(assignment.documentId) ?? new Set<number>()
-      rowIds.add(assignment.weldJointId)
-      assignedRowsByDocument.set(assignment.documentId, rowIds)
-    })
-    const matchedDocumentIds = matchSystemDocumentIdentityIds({
-      documents: existingDocuments.map(toStoredSystemDocumentIdentity),
-      targets: effectiveSummaries.map((summary) => ({
-        type: systemDocumentStorageType(getSystemDocumentTemplateId(summary)),
-        title: summary.title,
-        date: summary.date,
-        rowIds: summary.rowIds,
-        ...(getSystemDocumentIdentityScope(summary)
-          ? { identityScope: getSystemDocumentIdentityScope(summary) }
-          : {}),
-      })),
-      assignedRowsByDocument,
-    })
-    const existingDocumentsById = new Map(existingDocuments.map((document) => [document.id, document]))
-    const targetDocumentIds: number[] = []
-    const indexedSummaries: SystemDocumentSummary[] = []
+  const storageTypes = SYSTEM_DOCUMENT_TEMPLATE_PROFILES
+    .filter((profile) => profile.documentType === type)
+    .map((profile) => systemDocumentStorageType(profile.id))
+  const allExistingDocuments = storageTypes.length
+    ? await tx.select().from(generatedDocuments).where(inArray(generatedDocuments.type, storageTypes))
+    : []
+  const effectiveSummaries = filterLegacyCycleSummariesShadowedBySourcedDocuments(
+    summaries,
+    allExistingDocuments.map((document) => toIndexedSourceDocumentIdentity(document, type)),
+  )
+  const existingDocuments = allExistingDocuments.filter(isPrimaryIndexedDocument)
+  const existingDocumentIds = existingDocuments.map((document) => document.id)
+  const existingAssignments: Array<typeof generatedDocumentWeldJoints.$inferSelect> = []
+  for (const documentIdBatch of splitNumberBatches(existingDocumentIds, 1000)) {
+    existingAssignments.push(...await tx
+      .select()
+      .from(generatedDocumentWeldJoints)
+      .where(inArray(generatedDocumentWeldJoints.documentId, documentIdBatch)))
+  }
+  const assignedRowsByDocument = new Map<number, Set<number>>()
+  existingAssignments.forEach((assignment) => {
+    const rowIds = assignedRowsByDocument.get(assignment.documentId) ?? new Set<number>()
+    rowIds.add(assignment.weldJointId)
+    assignedRowsByDocument.set(assignment.documentId, rowIds)
+  })
+  const matchedDocumentIds = matchSystemDocumentIdentityIds({
+    documents: existingDocuments.map(toStoredSystemDocumentIdentity),
+    targets: effectiveSummaries.map(toSystemDocumentIdentityTarget),
+    assignedRowsByDocument,
+  })
+  const indexedSummaries = await persistSystemDocumentSummaryRecordsInTransaction({
+    tx,
+    summaries: effectiveSummaries,
+    matchedDocumentIds,
+  })
+  const targetDocumentIds = indexedSummaries.map((summary) => summary.documentId)
+  const currentDocumentIds = [...new Set([...existingDocumentIds, ...targetDocumentIds])]
+  await replaceGeneratedDocumentAssignmentsInTransaction(tx, currentDocumentIds, indexedSummaries)
+  const targetDocumentIdSet = new Set(targetDocumentIds)
+  const staleDocumentIds = existingDocumentIds.filter((documentId) => !targetDocumentIdSet.has(documentId))
+  for (const documentIdBatch of splitNumberBatches(staleDocumentIds, 1000)) {
+    await tx.delete(generatedDocuments).where(inArray(generatedDocuments.id, documentIdBatch))
+  }
 
-    for (const [summaryIndex, summary] of effectiveSummaries.entries()) {
-      const storageType = systemDocumentStorageType(getSystemDocumentTemplateId(summary))
-      let document = existingDocumentsById.get(matchedDocumentIds.get(summaryIndex) ?? -1)
-      if (!document) {
-        ;[document] = await tx
-          .insert(generatedDocuments)
-          .values({
-            type: storageType,
-            title: summary.title,
-            fileName: summary.fileName,
-            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            periodFrom: summary.date || null,
-            periodTo: summary.date || null,
-            rowCount: summary.rowCount,
-            sourceMetadata: serializeSystemDocumentSummary(summary),
-          })
-          .returning()
-        existingDocuments.push(document)
-      } else {
-        ;[document] = await tx
-          .update(generatedDocuments)
-          .set({
-            title: summary.title,
-            fileName: summary.fileName,
-            periodFrom: summary.date || null,
-            periodTo: summary.date || null,
-            rowCount: summary.rowCount,
-            sourceMetadata: serializeSystemDocumentSummary(summary),
-            updatedAt: summary.updatedAt ? new Date(summary.updatedAt) : new Date(),
-          })
-          .where(eq(generatedDocuments.id, document.id))
-          .returning()
-      }
-      targetDocumentIds.push(document.id)
-      indexedSummaries.push({
-        ...summary,
-        documentId: document.id,
-        id: `system-document:${document.id}`,
-      })
-    }
-
-    const currentDocumentIds = existingDocuments.map((document) => document.id)
-    if (currentDocumentIds.length > 0) {
-      await tx
-        .delete(generatedDocumentWeldJoints)
-        .where(inArray(generatedDocumentWeldJoints.documentId, currentDocumentIds))
-    }
-    const assignments = indexedSummaries.flatMap((summary) =>
-      summary.rowIds.map((weldJointId) => ({ documentId: summary.documentId, weldJointId })),
-    )
-    if (assignments.length > 0) {
-      await tx.insert(generatedDocumentWeldJoints).values(assignments).onConflictDoNothing()
-    }
-    if (currentDocumentIds.length > 0) {
-      const staleWhere = targetDocumentIds.length > 0
-        ? and(
-            inArray(generatedDocuments.id, currentDocumentIds),
-            notInArray(generatedDocuments.id, targetDocumentIds),
-          )
-        : inArray(generatedDocuments.id, currentDocumentIds)
-      await tx.delete(generatedDocuments).where(staleWhere)
-    }
-
-    return indexedSummaries
+  return indexedSummaries
 }
 
 async function syncAffectedSystemDocumentSummaries({
@@ -822,12 +1258,13 @@ async function syncAffectedSystemDocumentSummaries({
   )
   const existingDocuments = allCandidateDocuments.filter(isPrimaryIndexedDocument)
   const existingDocumentIds = existingDocuments.map((document) => document.id)
-  const existingAssignments = existingDocumentIds.length > 0
-    ? await tx
-        .select()
-        .from(generatedDocumentWeldJoints)
-        .where(inArray(generatedDocumentWeldJoints.documentId, existingDocumentIds))
-    : []
+  const existingAssignments: Array<typeof generatedDocumentWeldJoints.$inferSelect> = []
+  for (const documentIdBatch of splitNumberBatches(existingDocumentIds, 1000)) {
+    existingAssignments.push(...await tx
+      .select()
+      .from(generatedDocumentWeldJoints)
+      .where(inArray(generatedDocumentWeldJoints.documentId, documentIdBatch)))
+  }
   const assignedRowsByDocument = new Map<number, Set<number>>()
   for (const assignment of existingAssignments) {
     const ids = assignedRowsByDocument.get(assignment.documentId) ?? new Set<number>()
@@ -837,62 +1274,20 @@ async function syncAffectedSystemDocumentSummaries({
 
   const matchedDocumentIds = matchSystemDocumentIdentityIds({
     documents: existingDocuments.map(toStoredSystemDocumentIdentity),
-    targets: effectiveSummaries.map((summary) => ({
-      type: systemDocumentStorageType(getSystemDocumentTemplateId(summary)),
-      title: summary.title,
-      date: summary.date,
-      rowIds: summary.rowIds,
-      ...(getSystemDocumentIdentityScope(summary)
-        ? { identityScope: getSystemDocumentIdentityScope(summary) }
-        : {}),
-    })),
+    targets: effectiveSummaries.map(toSystemDocumentIdentityTarget),
     assignedRowsByDocument,
   })
-  const existingDocumentsById = new Map(existingDocuments.map((document) => [document.id, document]))
-  const usedDocumentIds = new Set<number>()
-  for (const [summaryIndex, summary] of effectiveSummaries.entries()) {
-    const storageType = systemDocumentStorageType(getSystemDocumentTemplateId(summary))
-    let document = existingDocumentsById.get(matchedDocumentIds.get(summaryIndex) ?? -1)
-    if (!document) {
-      ;[document] = await tx
-        .insert(generatedDocuments)
-        .values({
-          type: storageType,
-          title: summary.title,
-          fileName: summary.fileName,
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          periodFrom: summary.date || null,
-          periodTo: summary.date || null,
-          rowCount: summary.rowCount,
-          sourceMetadata: serializeSystemDocumentSummary(summary),
-        })
-        .returning()
-    } else {
-      ;[document] = await tx
-        .update(generatedDocuments)
-        .set({
-          title: summary.title,
-          fileName: summary.fileName,
-          periodFrom: summary.date || null,
-          periodTo: summary.date || null,
-          rowCount: summary.rowCount,
-          sourceMetadata: serializeSystemDocumentSummary(summary),
-          updatedAt: summary.updatedAt ? new Date(summary.updatedAt) : new Date(),
-        })
-        .where(eq(generatedDocuments.id, document.id))
-        .returning()
-    }
-    usedDocumentIds.add(document.id)
-    await tx
-      .delete(generatedDocumentWeldJoints)
-      .where(eq(generatedDocumentWeldJoints.documentId, document.id))
-    if (summary.rowIds.length > 0) {
-      await tx
-        .insert(generatedDocumentWeldJoints)
-        .values(summary.rowIds.map((weldJointId) => ({ documentId: document.id, weldJointId })))
-        .onConflictDoNothing()
-    }
-  }
+  const indexedSummaries = await persistSystemDocumentSummaryRecordsInTransaction({
+    tx,
+    summaries: effectiveSummaries,
+    matchedDocumentIds,
+  })
+  const usedDocumentIds = new Set(indexedSummaries.map((summary) => summary.documentId))
+  await replaceGeneratedDocumentAssignmentsInTransaction(
+    tx,
+    [...usedDocumentIds],
+    indexedSummaries,
+  )
 
   const previousKeys = new Set(previousReferences.map(getLogicalReferenceKey))
   const staleDocumentIds = existingDocuments
@@ -903,8 +1298,8 @@ async function syncAffectedSystemDocumentSummaries({
         .some((rowId) => affectedRowIds.has(rowId))
     })
     .map((document) => document.id)
-  if (staleDocumentIds.length > 0) {
-    await tx.delete(generatedDocuments).where(inArray(generatedDocuments.id, staleDocumentIds))
+  for (const documentIdBatch of splitNumberBatches(staleDocumentIds, 1000)) {
+    await tx.delete(generatedDocuments).where(inArray(generatedDocuments.id, documentIdBatch))
   }
 }
 
@@ -913,6 +1308,17 @@ function collectSystemDocumentReferences(
   type: SystemDocumentType,
 ) {
   return buildSystemDocumentSummaries(rows, type).map(toSystemDocumentReference)
+}
+
+function toSystemDocumentIdentityTarget(summary: SystemDocumentSummary) {
+  const identityScope = getSystemDocumentIdentityScope(summary)
+  return {
+    type: systemDocumentStorageType(getSystemDocumentTemplateId(summary)),
+    title: summary.title,
+    date: summary.date,
+    rowIds: summary.rowIds,
+    ...(identityScope ? { identityScope } : {}),
+  }
 }
 
 function uniqueSystemDocumentReferences(
@@ -1182,13 +1588,16 @@ export async function loadIndexedSystemDocumentSummaries(
     .where(inArray(generatedDocuments.type, storageTypes))
   if (documents.length === 0) return []
   const documentIds = documents.map((document) => document.id)
-  const assignments = await tx
-    .select({
-      documentId: generatedDocumentWeldJoints.documentId,
-      weldJointId: generatedDocumentWeldJoints.weldJointId,
-    })
-    .from(generatedDocumentWeldJoints)
-    .where(inArray(generatedDocumentWeldJoints.documentId, documentIds))
+  const assignments: Array<{ documentId: number; weldJointId: number }> = []
+  for (const documentIdBatch of splitNumberBatches(documentIds, 1000)) {
+    assignments.push(...await tx
+      .select({
+        documentId: generatedDocumentWeldJoints.documentId,
+        weldJointId: generatedDocumentWeldJoints.weldJointId,
+      })
+      .from(generatedDocumentWeldJoints)
+      .where(inArray(generatedDocumentWeldJoints.documentId, documentIdBatch)))
+  }
   const rowIdsByDocument = new Map<number, number[]>()
   for (const assignment of assignments) {
     const ids = rowIdsByDocument.get(assignment.documentId) ?? []
@@ -1410,41 +1819,33 @@ function includesCycleSequences(available: readonly unknown[] | undefined, reque
 }
 
 async function overlaySourcedSystemDocumentRows(
-  rows: Array<typeof weldJoints.$inferSelect>,
+  rows: Array<WeldRow & Pick<WeldRow, 'preHeatTreatmentControls'>>,
   metadata: SystemDocumentMetadata,
 ) {
-  const db = requireDb()
   if (metadata.sourceKind === 'beforeHeatTreatment') {
-    const relationIds = metadata.sourcePositions
+    const relationIds = new Set(metadata.sourcePositions
       .filter((position) => position.kind === 'beforeHeatTreatment')
-      .map((position) => position.relationId)
-    if (relationIds.length === 0) return rows
-    const relations = await db
-      .select()
-      .from(preHeatTreatmentControls)
-      .where(inArray(preHeatTreatmentControls.id, relationIds))
-    const relationsByWeldId = new Map<number, typeof relations>()
-    for (const relation of relations) {
-      const current = relationsByWeldId.get(relation.weldJointId) ?? []
-      current.push(relation)
-      relationsByWeldId.set(relation.weldJointId, current)
-    }
+      .map((position) => position.relationId))
+    if (relationIds.size === 0) return rows
     return rows.map((row) => buildPreHeatTreatmentSystemDocumentRow(
       row as unknown as WeldRow,
-      relationsByWeldId.get(row.id) ?? [],
+      (row.preHeatTreatmentControls ?? [])
+        .filter((relation) => relationIds.has(relation.id)),
     ))
   }
 
+  const db = requireDb()
   if (metadata.sourceKind === 'pstoCycle') {
     const repeatRelationIds = metadata.sourcePositions
       .filter((position) => position.kind === 'pstoCycle' && Number(position.sequence) >= 2)
       .map((position) => position.relationId)
-    const repeatRelations = repeatRelationIds.length > 0
-      ? await db
-          .select()
-          .from(pstoRepeatCycles)
-          .where(inArray(pstoRepeatCycles.id, repeatRelationIds))
-      : []
+    const repeatRelations: Array<typeof pstoRepeatCycles.$inferSelect> = []
+    for (const relationIdBatch of splitNumberBatches(repeatRelationIds, 1000)) {
+      repeatRelations.push(...await db
+        .select()
+        .from(pstoRepeatCycles)
+        .where(inArray(pstoRepeatCycles.id, relationIdBatch)))
+    }
     const rowsById = new Map(rows.map((row) => [row.id, row]))
     const repeatRelationsById = new Map(repeatRelations.map((relation) => [relation.id, relation]))
     const seenPositions = new Set<string>()
@@ -1469,10 +1870,13 @@ async function overlaySourcedSystemDocumentRows(
     .filter((position) => position.kind === 'pstoRepeat')
     .map((position) => position.relationId)
   if (relationIds.length === 0) return rows
-  const relations = await db
-    .select()
-    .from(pstoRepeatCycles)
-    .where(inArray(pstoRepeatCycles.id, relationIds))
+  const relations: Array<typeof pstoRepeatCycles.$inferSelect> = []
+  for (const relationIdBatch of splitNumberBatches(relationIds, 1000)) {
+    relations.push(...await db
+      .select()
+      .from(pstoRepeatCycles)
+      .where(inArray(pstoRepeatCycles.id, relationIdBatch)))
+  }
   const rowsById = new Map(rows.map((row) => [row.id, row]))
   const relationsById = new Map(relations.map((relation) => [relation.id, relation]))
   const seenRelationIds = new Set<number>()
@@ -1522,7 +1926,38 @@ export async function lockSystemDocumentIndex(
   tx: SystemDocumentSequenceTransaction,
   type: SystemDocumentType,
 ) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`system-document-index:${type}`}))`)
+  await lockSystemDocumentIndexes(tx, [type])
+}
+
+export async function lockSystemDocumentIndexes(
+  tx: SystemDocumentSequenceTransaction,
+  types: readonly SystemDocumentType[] = SYSTEM_DOCUMENT_INDEX_LOCK_ORDER,
+) {
+  const selectedTypes = [...new Set(types)]
+    .sort((left, right) => (
+      SYSTEM_DOCUMENT_INDEX_LOCK_ORDER.indexOf(left) - SYSTEM_DOCUMENT_INDEX_LOCK_ORDER.indexOf(right)
+    ))
+  if (selectedTypes.length === 0) return
+  const values = sql.join(
+    selectedTypes.map((type) => sql`(
+      ${SYSTEM_DOCUMENT_INDEX_LOCK_ORDER.indexOf(type)},
+      ${`system-document-index:${type}`}
+    )`),
+    sql`, `,
+  )
+  await tx.execute(sql`
+    with "system_document_lock_keys"("lock_order", "lock_key") as materialized (
+      values ${values}
+    ),
+    "ordered_system_document_lock_keys" as materialized (
+      select "lock_order", "lock_key"
+      from "system_document_lock_keys"
+      order by "lock_order"
+    )
+    select pg_advisory_xact_lock(hashtext("lock_key"))
+    from "ordered_system_document_lock_keys"
+    order by "lock_order"
+  `)
 }
 
 async function loadSystemDocumentHistoryRows(

@@ -16,6 +16,7 @@ import {
   type WeldFieldKey,
   type WeldInput,
 } from '@/lib/weld-fields'
+import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
 
 export function isLnkResultField(fieldKey: WeldFieldKey) {
   return LNK_METHODS.some((method) => method.resultKey === fieldKey)
@@ -38,8 +39,8 @@ export function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: We
     nextRecord[requestMethod.requestDateKey] = null
     nextRecord[requestMethod.conclusionDateKey] = null
     nextRecord[requestMethod.conclusionKey] = null
+    nextRecord[requestMethod.defectDescriptionKey] = null
     if (requestMethod.code === 'РК') {
-      nextRecord.lnkDefectDescription = null
       nextRecord.rkExposureConfirmedDiameter = null
     }
   }
@@ -81,10 +82,35 @@ export function restoreActiveLnkCancelledResults<T extends WeldInput>(row: T): T
     if (!isEnabledControlValue(row[method.enabledKey])) continue
 
     const restoredResult = getRestoredActiveLnkResult(row[method.resultKey])
-    if (restoredResult === undefined) continue
+    const nextResult = restoredResult === undefined ? row[method.resultKey] : restoredResult
+    const nextDescription = method.code === 'РК'
+      ? row[method.defectDescriptionKey]
+      : transitionLnkDefectDescription({
+          currentResult: row[method.resultKey],
+          nextResult,
+          currentDescription: row[method.defectDescriptionKey],
+        })
+    if (restoredResult === undefined && nextDescription === row[method.defectDescriptionKey]) continue
 
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
-    nextRow[method.resultKey] = restoredResult
+    if (restoredResult !== undefined) nextRow[method.resultKey] = restoredResult
+    if (method.code !== 'РК') nextRow[method.defectDescriptionKey] = nextDescription
+  }
+  return (nextRow ?? row) as T
+}
+
+export function normalizeActiveLnkDefectDescriptions<T extends WeldInput>(row: T): T {
+  let nextRow: (T & Record<string, unknown>) | null = null
+  for (const method of LNK_METHODS) {
+    if (method.code === 'РК' || isCancelledControlValue(row[method.enabledKey])) continue
+    const nextDescription = transitionLnkDefectDescription({
+      currentResult: row[method.resultKey],
+      nextResult: row[method.resultKey],
+      currentDescription: row[method.defectDescriptionKey],
+    })
+    if (nextDescription === row[method.defectDescriptionKey]) continue
+    nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
+    nextRow[method.defectDescriptionKey] = nextDescription
   }
   return (nextRow ?? row) as T
 }

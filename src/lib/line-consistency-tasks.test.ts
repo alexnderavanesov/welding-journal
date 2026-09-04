@@ -184,6 +184,21 @@ describe('line consistency tasks', () => {
     ).toHaveLength(0)
   })
 
+  it('creates a PSTO task when assigned, cancelled and unassigned states are mixed', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, pstoRequired: 'да' }),
+      row({ id: 2, pstoRequired: 'отменен' }),
+      row({ id: 3, pstoRequired: '' }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fieldKey: 'pstoPresence',
+        values: ['ПСТО назначена: 1', 'ПСТО отменена: 1', 'Без ПСТО: 1'],
+      }),
+    ]))
+  })
+
   it('treats legacy enabled PSTO values as assigned for line consistency', () => {
     expect(
       buildLineConsistencyTasks([
@@ -199,6 +214,15 @@ describe('line consistency tasks', () => {
       row({ id: 1, projectTitle: 'P1', subtitleCode: '400', line: 'LIN-1', pstoRequired: 'да' }),
       row({ id: 2, projectTitle: 'P2', subtitleCode: '400', line: 'LIN-1', pstoRequired: '' }),
       row({ id: 3, projectTitle: 'P1', subtitleCode: '500', line: 'LIN-1', pstoRequired: '' }),
+    ])
+
+    expect(tasks).toHaveLength(0)
+  })
+
+  it('does not merge different line identities that contain separator characters', () => {
+    const tasks = buildLineConsistencyTasks([
+      row({ id: 1, projectTitle: 'A:B', subtitleCode: 'C', line: 'LIN-1', category: 'I' }),
+      row({ id: 2, projectTitle: 'A', subtitleCode: 'B:C', line: 'LIN-1', category: 'II' }),
     ])
 
     expect(tasks).toHaveLength(0)

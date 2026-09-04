@@ -40,6 +40,7 @@ type StoredSecurityScope = {
 }
 
 type StoredSecuritySettings = {
+  revision: string
   scopes: Partial<Record<SecurityScope, StoredSecurityScope>>
 }
 
@@ -74,7 +75,10 @@ export async function saveRemoteSecuritySettingsOnServer(data: SecuritySettings)
   const current = await loadStoredSecuritySettings()
   await assertSecurityScope('settings', current)
 
-  const next: StoredSecuritySettings = { scopes: {} }
+  const next: StoredSecuritySettings = {
+    revision: randomBytes(12).toString('base64url'),
+    scopes: {},
+  }
   for (const scope of SECURITY_SCOPES) {
     const password = getScopePassword(data, scope)
     const currentScope = current.scopes[scope]
@@ -95,13 +99,22 @@ export async function saveRemoteSecuritySettingsOnServer(data: SecuritySettings)
   }
 
   const db = requireDb()
-  await db
-    .insert(appSettings)
-    .values({ key: SECURITY_SETTING_KEY, value: JSON.stringify(next) })
-    .onConflictDoUpdate({
-      target: appSettings.key,
-      set: { value: JSON.stringify(next), updatedAt: sql`now()` },
-    })
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('security-settings'))`)
+    const stored = await readStoredSecuritySettings(tx)
+    if (String(data.revision ?? '') !== stored.revision) {
+      throw new Error(
+        'Настройки доступа уже изменены другим пользователем. Ничего не сохранено. Обновите страницу настроек и повторите действие.',
+      )
+    }
+    await tx
+      .insert(appSettings)
+      .values({ key: SECURITY_SETTING_KEY, value: JSON.stringify(next) })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: JSON.stringify(next), updatedAt: sql`now()` },
+      })
+  })
   return toPublicSettings(next)
 }
 
@@ -136,19 +149,22 @@ async function loadStoredSecuritySettings(): Promise<StoredSecuritySettings> {
   }
 }
 
-async function readStoredSecuritySettings(): Promise<StoredSecuritySettings> {
-  const db = requireDb()
-  const [row] = await db
+async function readStoredSecuritySettings(
+  executor: Pick<ReturnType<typeof requireDb>, 'select'> = requireDb(),
+): Promise<StoredSecuritySettings> {
+  const [row] = await executor
     .select({ value: appSettings.value })
     .from(appSettings)
     .where(eq(appSettings.key, SECURITY_SETTING_KEY))
     .limit(1)
-  if (!row?.value) return { scopes: {} }
+  if (!row?.value) return { revision: '', scopes: {} }
   try {
     const parsed = JSON.parse(row.value) as StoredSecuritySettings
-    return parsed && typeof parsed === 'object' && parsed.scopes ? parsed : { scopes: {} }
+    return parsed && typeof parsed === 'object' && parsed.scopes
+      ? { revision: String(parsed.revision ?? ''), scopes: parsed.scopes }
+      : { revision: '', scopes: {} }
   } catch {
-    return { scopes: {} }
+    return { revision: '', scopes: {} }
   }
 }
 
@@ -255,6 +271,7 @@ function getSecurityCookieName(scope: SecurityScope) {
 
 function toPublicSettings(settings: StoredSecuritySettings): SecurityPublicSettings {
   return {
+    revision: settings.revision,
     configured: SECURITY_SCOPES.some((scope) => Boolean(settings.scopes[scope])),
     configuredScopes: Object.fromEntries(
       SECURITY_SCOPES.map((scope) => [scope, Boolean(settings.scopes[scope])]),

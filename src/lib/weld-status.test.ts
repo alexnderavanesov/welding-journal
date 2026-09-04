@@ -255,6 +255,32 @@ describe('calculateFinalStatusInRows', () => {
     expect(calculateFinalStatusInRows(pageRows[0], fullRows, fullContext)).toBe('ожидает ремонт')
   })
 
+  it('keeps same-name repair contexts separate when identity parts contain separators', () => {
+    const rows = [
+      {
+        id: 1,
+        projectTitle: 'A|B',
+        subtitleCode: 'C',
+        line: 'L',
+        joint: 'S1',
+        officiality: 'неофициальный',
+        weldDate: '2026-07-01',
+        hasRk: 'да',
+        rkResult: 'ремонт',
+      },
+      {
+        id: 2,
+        projectTitle: 'A',
+        subtitleCode: 'B|C',
+        line: 'L',
+        joint: 'S1',
+      },
+    ] satisfies WeldInput[]
+    const context = buildFinalStatusRowsContext(rows)
+
+    expect(calculateFinalStatusInRows(rows[1], rows, context)).toBe('ожидает сварку')
+  })
+
   it('carries a rejected pre-heat-treatment result into the same-name repair context', () => {
     const fullRows = [
       {

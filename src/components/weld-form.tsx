@@ -360,7 +360,10 @@ function getWeldSaveBlockReason({
 }) {
   return (
     externalSaveBlockReason ??
-    getWeldStampSaveBlockReason(draft, stampSelectOptions) ??
+    getWeldStampSaveBlockReason(draft, stampSelectOptions, {
+      initialValue,
+      saveCheckSettings,
+    }) ??
     (saveCheckSettings.requiredRootStampWithWeldDate
       ? formatRequiredRootStampMessage(getRequiredRootStampMessage(draft))
       : null) ??

@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWeldRowMutations } from '@/lib/use-weld-row-mutations'
 
 const mocks = vi.hoisted(() => ({
+  deleteWeldJoint: vi.fn(),
+  deleteWeldJoints: vi.fn(),
   invalidateWeldJoints: vi.fn(),
   prepareWeldSaveValue: vi.fn(),
   moveWeldJointChainOrThrow: vi.fn(),
@@ -27,8 +29,8 @@ vi.mock('@/lib/weld-save-utils', () => ({
 }))
 
 vi.mock('@/server/weld-mutations-api', () => ({
-  deleteWeldJoint: vi.fn(),
-  deleteWeldJoints: vi.fn(),
+  deleteWeldJoint: mocks.deleteWeldJoint,
+  deleteWeldJoints: mocks.deleteWeldJoints,
 }))
 
 describe('useWeldRowMutations', () => {
@@ -112,6 +114,7 @@ describe('useWeldRowMutations', () => {
         ...source,
         weldChainLineMovePlan: {
           expectedRowIds: [17, 18],
+          expectedVersions: [{ id: 17, version: '117' }, { id: 18, version: '118' }],
           decisions: [
             { rowId: 17, disposition: 'keepPrimary' },
             { rowId: 18, disposition: 'keepPrimary' },
@@ -122,5 +125,48 @@ describe('useWeldRowMutations', () => {
 
     expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(queryClient, { upsertRows: movedRows })
     expect(setMessage).toHaveBeenCalledWith('Цепочка стыка перенесена · записей: 2')
+  })
+
+  it('deletes using the version of the row shown to the user', async () => {
+    mocks.deleteWeldJoint.mockResolvedValue({ ok: true })
+    mocks.deleteWeldJoints.mockResolvedValue({ deleted: 2 })
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => useWeldRowMutations({
+      rows: [],
+      welderStamps: [],
+      welderStampSuspensions: [],
+      weldFormStampSelectOptions: {},
+      setEditing: vi.fn(),
+      setMessage: vi.fn(),
+      highlightChangedRows: vi.fn(),
+      dismissRepeatedJointTask: vi.fn(),
+    }), { wrapper })
+
+    await act(async () => {
+      await result.current.deleteMutation.mutateAsync({ id: 17, version: '117' })
+      await result.current.deleteManyMutation.mutateAsync([
+        { id: 18, version: '118' },
+        { id: 19, version: '119' },
+      ])
+    })
+
+    expect(mocks.deleteWeldJoint).toHaveBeenCalledWith({
+      data: { id: 17, version: '117' },
+    })
+    expect(mocks.deleteWeldJoints).toHaveBeenCalledWith({
+      data: {
+        targets: [
+          { id: 18, version: '118' },
+          { id: 19, version: '119' },
+        ],
+      },
+    })
+    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(queryClient, { deleteIds: [17] })
+    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(queryClient, { deleteIds: [18, 19] })
   })
 })

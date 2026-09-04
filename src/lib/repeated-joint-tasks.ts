@@ -30,6 +30,7 @@ import {
 import { buildDuplicateJointCheckTasks } from '@/lib/repeated-joint-duplicate-tasks'
 import { buildLineConsistencyTasks } from '@/lib/line-consistency-tasks'
 import { buildPercentageLineControlTasks } from '@/lib/percentage-line-tasks'
+import { REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON } from '@/lib/report-config'
 import {
   getExpectedRepeatedJointName,
   getExpectedRepeatedJointSuffix,
@@ -43,8 +44,8 @@ import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-
 import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import type { DataListSettings } from '@/lib/data-list-settings'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
@@ -64,7 +65,6 @@ type MatchingJointRowsIndex = Map<string, WeldRow[]>
 type BuildRepeatedJointTasksOptions = {
   earlyCoilDecisionSourceRowIds?: ReadonlySet<number>
   dataListSettings?: DataListSettings
-  saveCheckSettings?: SaveCheckSettings
   systemIndexSettings?: SystemIndexSettings
   includeControlHistoryChecks?: boolean
   includeIncompleteStampChecks?: boolean
@@ -124,7 +124,6 @@ export function buildRepeatedJointTasks(
           welderStampRecords,
           welderStampSuspensions,
           options.dataListSettings,
-          options.saveCheckSettings ?? DEFAULT_SAVE_CHECK_SETTINGS,
           systemIndexSettings,
         )
       : []),
@@ -133,12 +132,21 @@ export function buildRepeatedJointTasks(
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows, systemIndexSettings)
   const lineConsistencyTasks = includeLineConsistencyTasks ? buildLineConsistencyTasks(rows) : []
   const percentageLineControlTasks = includePercentageLineControlTasks
-    ? buildPercentageLineControlTasks(rows, welderStampSuspensions)
+    ? buildPercentageLineControlTasks(rows, welderStampSuspensions, systemIndexSettings)
     : []
   const matchingJointRowsIndex = buildMatchingJointRowsIndex(rows)
   const blockedChainKeys = new Set(
     [
       ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),
+      ...duplicateCheckTasks,
+    ].map((task) => getJointChainConsistencyKey(task.row, systemIndexSettings)).filter(Boolean) as string[],
+  )
+  const renameBlockedChainKeys = new Set(
+    [
+      ...chainCheckTasks.filter((task) => (
+        isBlockingRepeatedJointCheckTask(task) &&
+        task.reason !== REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON
+      )),
       ...duplicateCheckTasks,
     ].map((task) => getJointChainConsistencyKey(task.row, systemIndexSettings)).filter(Boolean) as string[],
   )
@@ -148,7 +156,7 @@ export function buildRepeatedJointTasks(
     if (repeated) obsoleteByRowId.set(row.id, repeated)
   }
   const renameTasks = buildObsoleteRepeatedJointRenameTasks({
-    blockedChainKeys,
+    blockedChainKeys: renameBlockedChainKeys,
     matchingJointRowsIndex,
     obsoleteInfos: [...obsoleteByRowId.values()],
     rows,
@@ -167,7 +175,7 @@ export function buildRepeatedJointTasks(
 
   for (const row of rows) {
     if (obsoleteByRowId.has(row.id)) continue
-    if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys, systemIndexSettings)) continue
+    if (isRowInBlockedRepeatedJointChain(row, renameBlockedChainKeys, systemIndexSettings)) continue
     const rejection = getPrimaryRejectedLnkResult(row)
     if (!rejection) continue
     const sourceJoint = String(row.joint ?? '').trim()
@@ -235,8 +243,13 @@ export function buildRepeatedJointTasks(
       const identity = getJointChainIdentity(row, systemIndexSettings)
       const baseJoint = parseRepeatedJointName(repeated.targetJoint, systemIndexSettings).base
       const chainKey = identity
-        ? `${identity.project}:${identity.subtitle}:${identity.line}:${identity.baseJoint}`
-        : `${normalizeSearchText(row.projectTitle)}:${normalizeSearchText(row.subtitleCode)}:${normalizeSearchText(row.line)}:${normalizeSearchText(baseJoint)}`
+        ? encodeIdentityKey([identity.project, identity.subtitle, identity.line, identity.baseJoint])
+        : encodeIdentityKey([
+            normalizeSearchText(row.projectTitle),
+            normalizeSearchText(row.subtitleCode),
+            normalizeSearchText(row.line),
+            normalizeSearchText(baseJoint),
+          ])
       if (checkTaskChainKeys.has(chainKey)) continue
       checkTaskChainKeys.add(chainKey)
       tasks.push({
@@ -266,8 +279,13 @@ export function buildRepeatedJointTasks(
       const identity = getJointChainIdentity(row, systemIndexSettings)
       const baseJoint = parseRepeatedJointName(repeated.targetJoint, systemIndexSettings).base
       const chainKey = identity
-        ? `${identity.project}:${identity.subtitle}:${identity.line}:${identity.baseJoint}`
-        : `${normalizeSearchText(row.projectTitle)}:${normalizeSearchText(row.subtitleCode)}:${normalizeSearchText(row.line)}:${normalizeSearchText(baseJoint)}`
+        ? encodeIdentityKey([identity.project, identity.subtitle, identity.line, identity.baseJoint])
+        : encodeIdentityKey([
+            normalizeSearchText(row.projectTitle),
+            normalizeSearchText(row.subtitleCode),
+            normalizeSearchText(row.line),
+            normalizeSearchText(baseJoint),
+          ])
       if (checkTaskChainKeys.has(chainKey)) continue
       checkTaskChainKeys.add(chainKey)
       tasks.push({
@@ -332,7 +350,12 @@ function buildOrphanGoodRepeatedJointRenameTasks(
 function getCreateTaskTargetKey(row: WeldInput, targetJoint: string) {
   const identity = getRepeatedJointIdentity(row, targetJoint)
   if (!identity) return null
-  return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
+  return encodeIdentityKey([
+    identity.project,
+    identity.subtitle,
+    identity.line,
+    identity.joint,
+  ])
 }
 
 function isRowInBlockedRepeatedJointChain(

@@ -1,14 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type PstoRequestManagerAction } from '@/lib/psto-field-updates'
-import { buildPstoRequestManagerRows } from '@/lib/psto-report-mutation-updates'
 import { PSTO_GENERATED_HIGHLIGHT_FIELDS } from '@/lib/psto-report-mutation-highlight-fields'
 import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
-import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
+import { managePstoRequestDocument } from '@/server/weld-mutations-api'
 
 export function usePstoRequestManagerMutation({
   heatTreatmentRows,
@@ -60,21 +59,26 @@ export function usePstoRequestManagerMutation({
         }
       }
 
-      const updatedRecords = buildPstoRequestManagerRows({
-        heatTreatmentRows,
-        requestName: currentName,
-        requestDate,
-        nextRequestName: renamedName,
-        action,
-      })
-
-      if (updatedRecords.length === 0) throw new Error('Заявка ПСТО не найдена')
-
-      const savedRows = await updateWeldRowsOrThrow(
-        updatedRecords,
-        'Не удалось изменить заявку ПСТО',
-        { mutationScope: 'psto' },
+      const requestRows = heatTreatmentRows.filter((row) =>
+        isSameRequestDocument(row.pstoRequest, row.pstoRequestDate, {
+          name: currentName,
+          date: requestDate,
+        }),
       )
+      if (requestRows.length === 0) throw new Error('Заявка ПСТО не найдена')
+
+      const savedRows = await managePstoRequestDocument({
+        data: {
+          requestName: currentName,
+          requestDate,
+          nextRequestName: renamedName,
+          action,
+          expectedVersions: requestRows.map((row) => ({
+            id: row.id,
+            version: String(row.rowVersion ?? ''),
+          })),
+        },
+      })
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {

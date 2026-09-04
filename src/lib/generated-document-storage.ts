@@ -56,8 +56,8 @@ export async function loadGeneratedDocument(id: number) {
   return getRemoteGeneratedDocument({ data: { id } })
 }
 
-export async function deleteGeneratedDocument(id: number) {
-  await deleteRemoteGeneratedDocument({ data: { id } })
+export async function deleteGeneratedDocument(id: number, expectedUpdatedAt: string) {
+  await deleteRemoteGeneratedDocument({ data: { id, expectedUpdatedAt } })
   notifyGeneratedDocumentStorageChanged()
 }
 

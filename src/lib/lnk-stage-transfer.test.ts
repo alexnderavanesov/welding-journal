@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
+import { getDispatcherLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   buildClearedPrimaryLnkStageRows,
   buildPreHeatTreatmentToPrimaryTransfer,
   buildPrimaryToPreHeatTreatmentTransfer,
+  findBlockingLnkStageTransferChronologyIssue,
 } from '@/lib/lnk-stage-transfer'
 
 describe('LNK stage transfer', () => {
@@ -25,6 +27,7 @@ describe('LNK stage transfer', () => {
       vikResult: 'годен',
       vikConclusionDate: '2026-08-02',
       vikConclusion: 'ЗНК-ВИК-1',
+      vikDefectDescription: 'ДНО',
       rkRequest: 'РК-1',
       rkResult: 'годен',
       duplicateControls,
@@ -41,11 +44,13 @@ describe('LNK stage transfer', () => {
       requestName: 'Заявка-1',
       result: 'годен',
       conclusionName: 'ЗНК-ВИК-1',
+      defectDescription: 'ДНО',
     }])
     expect(transfer.rows[0]).toMatchObject({
       vikRequest: null,
       vikResult: null,
       vikConclusion: null,
+      vikDefectDescription: null,
       rkRequest: 'РК-1',
       rkResult: 'годен',
     })
@@ -88,6 +93,23 @@ describe('LNK stage transfer', () => {
       rkExposureConfirmedDiameter: 57,
     })
     expect(next.duplicateControls).toBe(duplicateControls)
+  })
+
+  it('moves each simple defect description back to its own primary method', () => {
+    const [next] = buildPreHeatTreatmentToPrimaryTransfer({
+      rows: [makeRow()],
+      controls: [
+        { id: 10, weldJointId: 1, method: 'ВИК', result: 'ремонт', defectDescription: 'ВИК: пора' },
+        { id: 11, weldJointId: 1, method: 'УЗК', result: 'вырез', defectDescription: 'УЗК: трещина' },
+        { id: 12, weldJointId: 1, method: 'ПВК', result: 'годен', defectDescription: 'ДНО' },
+      ],
+    })
+
+    expect(next).toMatchObject({
+      vikDefectDescription: 'ВИК: пора',
+      uzkDefectDescription: 'УЗК: трещина',
+      pvkDefectDescription: 'ДНО',
+    })
   })
 
   it('keeps a request-only position visibly pending after moving it to pre-TO', () => {
@@ -181,6 +203,7 @@ describe('LNK stage transfer', () => {
         vikRequest: 'Заявка-1',
         vikResult: 'годен',
         vikConclusion: 'ЗНК-1',
+        vikDefectDescription: 'ДНО',
         vikBoq: 'BoQ-1',
         vikKs3: 'КС3-1',
         duplicateControls,
@@ -193,6 +216,7 @@ describe('LNK stage transfer', () => {
       vikRequest: null,
       vikResult: null,
       vikConclusion: null,
+      vikDefectDescription: null,
       vikBoq: 'BoQ-1',
       vikKs3: 'КС3-1',
     })
@@ -223,6 +247,137 @@ describe('LNK stage transfer', () => {
         requestName: 'Заявка до ТО',
       }],
     })).toThrow('основной комплект РК уже заполнен')
+  })
+
+  it('allows an explicit move to primary while cross-stage dates remain visible in DZ-20', () => {
+    const pendingCycleRow = makeRow({ weldDate: '2026-08-01' })
+    const pendingControl = {
+      id: 10,
+      weldJointId: 1,
+      method: 'ВИК',
+      requestName: 'Заявка ВИК до ТО',
+      requestDate: '2026-08-02',
+    }
+    const [pendingNext] = buildPreHeatTreatmentToPrimaryTransfer({
+      rows: [pendingCycleRow],
+      controls: [pendingControl],
+    })
+
+    expect(getDispatcherLnkChronologyIssues([pendingNext!])).toContainEqual(
+      expect.objectContaining({ kind: 'post-before-psto-cycle', methodCode: 'ВИК' }),
+    )
+    expect(findBlockingLnkStageTransferChronologyIssue({
+      previousRows: [{ ...pendingCycleRow, preHeatTreatmentControls: [pendingControl] }],
+      nextRows: [pendingNext!],
+      targetStage: 'primary',
+    })).toBeUndefined()
+
+    const completedCycleRow = makeRow({
+      weldDate: '2026-08-01',
+      pstoRequest: 'Заявка ПСТО',
+      pstoRequestDate: '2026-08-03',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-04',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtRequestDate: '2026-08-04',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-05',
+      tvmtConclusion: 'Заключение ТВМТ',
+    })
+    const [completedNext] = buildPreHeatTreatmentToPrimaryTransfer({
+      rows: [completedCycleRow],
+      controls: [pendingControl],
+    })
+    const crossStageKinds = getDispatcherLnkChronologyIssues([completedNext!])
+      .map((issue) => issue.kind)
+
+    expect(crossStageKinds).toContain('post-before-psto')
+    expect(crossStageKinds).toContain('post-before-tvmt')
+    expect(findBlockingLnkStageTransferChronologyIssue({
+      previousRows: [{ ...completedCycleRow, preHeatTreatmentControls: [pendingControl] }],
+      nextRows: [completedNext!],
+      targetStage: 'primary',
+    })).toBeUndefined()
+  })
+
+  it('still blocks ordinary date errors and invalid moves to pre-TO', () => {
+    const invalidControl = {
+      id: 10,
+      weldJointId: 1,
+      method: 'ВИК',
+      requestName: 'Заявка ВИК до ТО',
+      requestDate: '2026-07-31',
+    }
+    const row = makeRow({
+      weldDate: '2026-08-01',
+      preHeatTreatmentControls: [invalidControl],
+    })
+    const [invalidPrimary] = buildPreHeatTreatmentToPrimaryTransfer({
+      rows: [row],
+      controls: [invalidControl],
+    })
+    expect(findBlockingLnkStageTransferChronologyIssue({
+      previousRows: [row],
+      nextRows: [invalidPrimary!],
+      targetStage: 'primary',
+    })).toMatchObject({ kind: 'weld-after-request', methodCode: 'ВИК' })
+
+    const primaryRow = makeRow({
+      pstoDate: '2026-08-04',
+      vikRequest: 'Заявка ВИК основная',
+      vikRequestDate: '2026-08-05',
+    })
+    const transfer = buildPrimaryToPreHeatTreatmentTransfer({
+      rows: [primaryRow],
+      positions: [{ rowId: 1, methodCode: 'ВИК' }],
+    })
+    const previewControls = transfer.controls.map((control, index) => ({
+      ...control,
+      id: -(index + 1),
+    }))
+    expect(findBlockingLnkStageTransferChronologyIssue({
+      previousRows: [primaryRow],
+      nextRows: [{ ...transfer.rows[0]!, preHeatTreatmentControls: previewControls }],
+      targetStage: 'beforeHeatTreatment',
+    })).toMatchObject({ kind: 'pre-after-psto', methodCode: 'ВИК до ТО' })
+  })
+
+  it('does not move a too-early date into another LNK stage', () => {
+    const primaryRow = makeRow({
+      vikRequest: 'Заявка ВИК',
+      vikRequestDate: '2023-12-31',
+    })
+    const toPre = buildPrimaryToPreHeatTreatmentTransfer({
+      rows: [primaryRow],
+      positions: [{ rowId: 1, methodCode: 'ВИК' }],
+    })
+    const previewControls = toPre.controls.map((control, index) => ({
+      ...control,
+      id: -(index + 1),
+    }))
+    expect(findBlockingLnkStageTransferChronologyIssue({
+      previousRows: [primaryRow],
+      nextRows: [{ ...toPre.rows[0]!, preHeatTreatmentControls: previewControls }],
+      targetStage: 'beforeHeatTreatment',
+    })).toMatchObject({ kind: 'request-date-invalid', methodCode: 'ВИК до ТО' })
+
+    const preControl = {
+      id: 10,
+      weldJointId: 1,
+      method: 'ВИК',
+      requestName: 'Заявка ВИК до ТО',
+      requestDate: '2023-12-31',
+    }
+    const preRow = makeRow({ preHeatTreatmentControls: [preControl] })
+    const [toPrimary] = buildPreHeatTreatmentToPrimaryTransfer({
+      rows: [preRow],
+      controls: [preControl],
+    })
+    expect(findBlockingLnkStageTransferChronologyIssue({
+      previousRows: [preRow],
+      nextRows: [{ ...toPrimary!, preHeatTreatmentControls: [] }],
+      targetStage: 'primary',
+    })).toMatchObject({ kind: 'request-date-invalid', methodCode: 'ВИК' })
   })
 })
 

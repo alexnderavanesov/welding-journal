@@ -51,6 +51,7 @@ import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types
 import { WELD_FIELDS, isVirtualWeldField, type WeldInput } from '@/lib/weld-fields'
 import { STAMP_NAME_TEMPLATE_FIELDS } from '@/lib/welder-stamp-names'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
+import { PRE_HEAT_TREATMENT_DEFECT_DESCRIPTION_FIELD_KEYS } from '@/lib/pre-heat-treatment-report-fields'
 
 type DocumentTemplateBuilderProps = {
   template: StoredDocumentTemplate
@@ -97,7 +98,8 @@ const BASE_FIELD_OPTIONS: TemplateFieldOption[] = [
     (field) =>
       !isVirtualWeldField(field) ||
       isGeneratedDocumentFieldKey(field.key) ||
-      field.key === CONTROL_BASIS_SUMMARY_FIELD_KEY,
+      field.key === CONTROL_BASIS_SUMMARY_FIELD_KEY ||
+      PRE_HEAT_TREATMENT_DEFECT_DESCRIPTION_FIELD_KEYS.has(field.key),
   ).map((field) => ({
     key: field.key as DocumentTemplateFieldKey,
     label: field.label,

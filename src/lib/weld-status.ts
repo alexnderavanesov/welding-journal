@@ -7,6 +7,7 @@ import {
   getPreHeatTreatmentPendingFinalStatus,
   getRejectedPreHeatTreatmentControls,
 } from '@/lib/lnk-control-stage'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК', 'ожидает заявку'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
@@ -201,19 +202,19 @@ function isOfficialSameNameRepairAfterUnofficialRejected(record: WeldInput, rows
 function getSameNameRejectedRepairLookupKey(record: WeldInput) {
   const identity = getSameNameChainIdentity(record)
   const normalizedJoint = normalizeJointChainPart(record.joint)
-  return identity && normalizedJoint ? `${identity}\u0000${normalizedJoint}` : null
+  return identity && normalizedJoint ? encodeIdentityKey([identity, normalizedJoint]) : null
 }
 
 function getSameNameChainIdentity(record: WeldInput) {
   const joint = String(record.joint ?? '').trim()
   if (!joint) return null
   const parsed = parseJointChainName(joint)
-  return [
+  return encodeIdentityKey([
     normalizeJointChainPart(record.projectTitle),
     normalizeJointChainPart(record.subtitleCode),
     normalizeJointChainPart(record.line),
     normalizeJointChainPart(parsed.base),
-  ].join('|')
+  ])
 }
 
 function hasText(value: unknown) {

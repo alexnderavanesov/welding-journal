@@ -79,7 +79,7 @@ export function getPstoResultSaveBlockReason({
   if (draft.result !== 'проведено') return 'Выберите результат ПСТО.'
   if (saveCheckSettings.pstoResultDateRequired && !draft.pstoDate) return formatSaveCheckBlockReason('pstoResultDateRequired', 'Укажите дату ПСТО.')
 
-  if (saveCheckSettings.pstoResultDateFormat) {
+  {
     const dateReason = getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО')
     if (dateReason) return formatSaveCheckBlockReason('pstoResultDateFormat', dateReason)
   }

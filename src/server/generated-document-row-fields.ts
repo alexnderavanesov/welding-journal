@@ -6,6 +6,7 @@ import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { ensureLayeredControlDocumentsInitialized } from '@/server/layered-control-documents'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 export type GeneratedDocumentRowFields = {
   jsrDocument?: string | null
@@ -179,17 +180,20 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
   if (ids.length === 0) return rows
 
   const db = requireDb()
-  const assignments = await db
-    .select({
-      weldJointId: generatedDocumentWeldJoints.weldJointId,
-      documentId: generatedDocuments.id,
-      type: generatedDocuments.type,
-      title: generatedDocuments.title,
-      periodFrom: generatedDocuments.periodFrom,
-    })
-    .from(generatedDocumentWeldJoints)
-    .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
-    .where(inArray(generatedDocumentWeldJoints.weldJointId, ids))
+  const assignments: GeneratedDocumentRowAssignment[] = []
+  for (const idBatch of splitNumberBatches(ids, 1000)) {
+    assignments.push(...await db
+      .select({
+        weldJointId: generatedDocumentWeldJoints.weldJointId,
+        documentId: generatedDocuments.id,
+        type: generatedDocuments.type,
+        title: generatedDocuments.title,
+        periodFrom: generatedDocuments.periodFrom,
+      })
+      .from(generatedDocumentWeldJoints)
+      .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
+      .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch)))
+  }
 
   return applyGeneratedDocumentFields(rows, assignments)
 }

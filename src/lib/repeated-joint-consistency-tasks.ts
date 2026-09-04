@@ -1,4 +1,8 @@
-import { REPAIR_FORBIDDEN_BY_DIAMETER_REASON, UNOFFICIAL_REJECTED_WITH_COIL_REASON } from '@/lib/report-config'
+import {
+  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
+  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+  UNOFFICIAL_REJECTED_WITH_COIL_REASON,
+} from '@/lib/report-config'
 import {
   LNK_REQUEST_DATE_ORDER_REASON,
   LNK_VIK_DATE_ORDER_REASON,
@@ -427,6 +431,7 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
       isLnkChronologyReason(task.reason) ||
       task.reason === PSTO_REQUEST_DATE_ORDER_REASON ||
       task.reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON ||
+      task.reason === REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON ||
       task.reason === JOINT_CORE_DATA_REASON ||
       task.reason === LNK_RESULT_COMPLETENESS_REASON ||
       task.reason === PSTO_RESULT_COMPLETENESS_REASON ||

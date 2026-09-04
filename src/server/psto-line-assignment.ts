@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -8,6 +8,7 @@ import {
   preHeatTreatmentControls,
   pstoRepeatCycles,
   weldJoints,
+  type NewWeldJoint,
 } from '@/db/schema'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -15,6 +16,7 @@ import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
 import {
   assertPstoCancellationDateAfterHistory,
+  assertPstoLineAssignmentActionAllowed,
   blocksPstoLineActivation,
   buildPstoCancelledRow,
   buildPstoRemovedRow,
@@ -22,8 +24,10 @@ import {
   getPendingPreHeatTreatmentMethodCodes,
   getPreHeatTreatmentMethodCodes,
   getPrimaryStagedMethodCodes,
+  getPstoLineAssignmentState,
   getPstoLineActivationBlockReason,
   getPstoLineIdentityKey,
+  normalizePstoLineIdentityPart,
   hasPerformedPstoHistory,
   hasPstoLifecycleData,
   hasPrimaryPstoHistory,
@@ -40,6 +44,7 @@ import {
 } from '@/lib/psto-line-assignment'
 import {
   buildPrimaryToPreHeatTreatmentTransfer,
+  findBlockingLnkStageTransferChronologyIssue,
   type LnkStageTransferPosition,
 } from '@/lib/lnk-stage-transfer'
 import {
@@ -47,6 +52,7 @@ import {
   type PreHeatTreatmentControlRecord,
 } from '@/lib/lnk-control-stage'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
@@ -68,6 +74,12 @@ import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-con
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { assertSecurityScope } from '@/server/security-functions'
 import { loadPstoLineAssignmentSummaries } from '@/server/psto-line-assignment-summary'
+import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
+import { WELD_TABLE_COLUMNS, WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
+import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version'
+import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 import {
   removeSourcedSystemDocumentPositionsInTransaction,
   syncSystemDocumentsForWeldChangesInTransaction,
@@ -76,6 +88,7 @@ import {
 type PstoLineAssignmentPayload = {
   identity: PstoLineIdentity
   action: PstoLineAssignmentAction
+  expectedVersions: WeldRowVersionTarget[]
   cancellationDate?: string
   cancellationBasis?: string
   activationDecisions?: PstoLineActivationDecision[]
@@ -106,7 +119,7 @@ export const getPstoLineRemovalPreview = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<PstoLineRemovalPreview> => {
     await assertSecurityScope('entry')
     const db = requireDb()
-    const rows = await db.select().from(weldJoints).where(buildLineWhere(data))
+    const rows = await db.select(WELD_TABLE_RETURNING).from(weldJoints).where(buildLineWhere(data))
     if (rows.length === 0) throw new Error('Линия больше не найдена. Обновите программу ПСТО.')
     const hydratedRows = await attachHeatTreatmentControlRelations(rows as WeldRow[])
     return buildRemovalPreview(data, hydratedRows)
@@ -122,7 +135,7 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
     if (data.rowId <= 0) throw new Error('Стык для переноса не найден.')
     const db = requireDb()
     const [storedRow] = await db
-      .select()
+      .select(WELD_TABLE_RETURNING)
       .from(weldJoints)
       .where(eq(weldJoints.id, data.rowId))
       .limit(1)
@@ -158,7 +171,7 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
     }
 
     const sourceScopeRows = sourceIdentity.line
-      ? await db.select().from(weldJoints).where(buildLineWhere(sourceIdentity))
+      ? await db.select(WELD_TABLE_RETURNING).from(weldJoints).where(buildLineWhere(sourceIdentity))
       : [storedRow]
     const hydratedSourceScopeRows = await attachHeatTreatmentControlRelations(sourceScopeRows as WeldRow[])
     const chainRows = getJointChainRows(
@@ -248,6 +261,7 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
       rootJoint,
       isChainMove,
       expectedRowIds: chainRows.map((row) => row.id),
+      expectedVersions: preview.expectedVersions,
       requestOnlyCount: preview.requestOnlyCount,
       completedPstoCount: preview.completedPstoCount,
       preControlCount: preview.preControlCount,
@@ -266,30 +280,39 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
     const db = requireDb()
     return db.transaction(async (tx) => {
       const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+      await lockWeldLineMemberships(tx, [data.identity])
       const storedRows = await tx
-        .select()
+        .select(WELD_TABLE_RETURNING)
         .from(weldJoints)
         .where(buildLineWhere(data.identity))
         .orderBy(asc(weldJoints.id))
         .for('update')
       if (storedRows.length === 0) throw new Error('Линия больше не найдена. Обновите программу ПСТО.')
       const rowIds = storedRows.map((row) => row.id)
-      await tx
-        .select({ id: preHeatTreatmentControls.id })
-        .from(preHeatTreatmentControls)
-        .where(inArray(preHeatTreatmentControls.weldJointId, rowIds))
-        .for('update')
-      await tx
-        .select({ id: pstoRepeatCycles.id })
-        .from(pstoRepeatCycles)
-        .where(inArray(pstoRepeatCycles.weldJointId, rowIds))
-        .for('update')
+      assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
+      for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+        await tx
+          .select({ id: preHeatTreatmentControls.id })
+          .from(preHeatTreatmentControls)
+          .where(inArray(preHeatTreatmentControls.weldJointId, rowIdBatch))
+          .orderBy(asc(preHeatTreatmentControls.id))
+          .for('update')
+        await tx
+          .select({ id: pstoRepeatCycles.id })
+          .from(pstoRepeatCycles)
+          .where(inArray(pstoRepeatCycles.weldJointId, rowIdBatch))
+          .orderBy(asc(pstoRepeatCycles.id))
+          .for('update')
+      }
 
       const rowsWithRelations = await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx)
-      const duplicateRecords = await tx
-        .select()
-        .from(duplicateControls)
-        .where(inArray(duplicateControls.weldJointId, rowIds))
+      const duplicateRecords: Array<typeof duplicateControls.$inferSelect> = []
+      for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+        duplicateRecords.push(...await tx
+          .select()
+          .from(duplicateControls)
+          .where(inArray(duplicateControls.weldJointId, rowIdBatch)))
+      }
       const duplicatesByRowId = groupByRowId(duplicateRecords)
       const rows: WeldRow[] = rowsWithRelations.map((row) => ({
         ...row,
@@ -297,58 +320,59 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
       }))
       const previousRows = new Map<number, WeldRow>(rows.map((row) => [row.id, row]))
       const now = new Date()
+      assertPstoLineAssignmentActionAllowed(data.action, getPstoLineAssignmentState(rows))
 
       if (data.action === 'assign' || data.action === 'reactivate') {
-        if (data.action === 'reactivate' && !rows.every((row) => isPstoCancelledValue(row.pstoRequired))) {
-          throw new Error('Возобновление доступно только для полностью отмененной линии ПСТО.')
-        }
         const activationPositions = processSettings.preHeatTreatmentLnkEnabled
           ? validateActivationDecisions(rows, data.activationDecisions)
           : []
         const activationTransfer = activationPositions.length > 0
           ? buildPrimaryToPreHeatTreatmentTransfer({ rows, positions: activationPositions })
           : { rows, controls: [] }
-        const savedActivationControls = activationTransfer.controls.length > 0
-          ? await tx
-              .insert(preHeatTreatmentControls)
-              .values(activationTransfer.controls)
-              .returning()
-          : []
+        if (activationTransfer.controls.length > 0) {
+          const previewControls = activationTransfer.controls.map((control, index) => ({
+            ...control,
+            id: -(index + 1),
+          }))
+          const previewRows = attachSavedPreHeatTreatmentControls(
+            activationTransfer.rows,
+            previewControls,
+          ).map((row) => ({
+            ...row,
+            pstoRequired: 'да',
+            pstoControlBasis: null,
+            pstoCancellationDate: null,
+          } as WeldRow))
+          assertPstoLineActivationTransferAllowed(rows, previewRows)
+        }
+        const savedActivationControls: Array<typeof preHeatTreatmentControls.$inferSelect> = []
+        for (const batch of splitWeldImportInsertBatches(activationTransfer.controls)) {
+          savedActivationControls.push(...await tx
+            .insert(preHeatTreatmentControls)
+            .values(batch)
+            .returning())
+        }
         const activationRows = attachSavedPreHeatTreatmentControls(
           activationTransfer.rows,
           savedActivationControls,
         )
         const transferredRowIds = new Set(activationPositions.map((position) => position.rowId))
-        const updatedRows: WeldRow[] = []
-        for (const row of activationRows) {
+        const nextRows = activationRows.map((row) => {
           const next = {
             ...row,
             pstoRequired: 'да',
             pstoControlBasis: null,
             pstoCancellationDate: null,
           } as WeldRow
-          const [updated] = await tx
-            .update(weldJoints)
-            .set({
-              pstoRequired: 'да',
-              pstoControlBasis: null,
-              pstoCancellationDate: null,
-              ...(transferredRowIds.has(row.id) ? getPrimaryLnkPersistenceValues(next) : {}),
-              finalStatus: calculateFinalStatus(next),
-              pstoCreatedAt: sql`coalesce(${weldJoints.pstoCreatedAt}, ${now})`,
-              pstoUpdatedAt: now,
-              ...(transferredRowIds.has(row.id) ? { lnkUpdatedAt: now } : {}),
-              updatedAt: now,
-            })
-            .where(eq(weldJoints.id, row.id))
-            .returning()
-          updatedRows.push({
-            ...updated,
-            preHeatTreatmentControls: row.preHeatTreatmentControls ?? [],
-            pstoRepeatCycles: row.pstoRepeatCycles ?? [],
-            duplicateControls: row.duplicateControls ?? [],
-          } as WeldRow)
-        }
+          next.finalStatus = calculateFinalStatus(next)
+          return next
+        })
+        const updatedRows = await persistPstoLineAssignmentRows(
+          tx,
+          nextRows,
+          now,
+          transferredRowIds,
+        )
         if (savedActivationControls.length > 0) {
           await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
           await syncPreHeatTreatmentDocumentsInTransaction(
@@ -366,28 +390,16 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
         if (rows.some((row) => hasPstoLifecycleData(row))) {
           throw new Error('У линии уже есть история ПСТО или НК до ТО. Используйте официальную отмену ПСТО.')
         }
-        const updatedRows: WeldRow[] = []
-        for (const row of rows) {
+        const nextRows = rows.map((row) => {
           const next = buildPstoRemovedRow({ row, controls: [], disposition: 'keepPrimary' })
-          const [updated] = await tx
-            .update(weldJoints)
-            .set({
-              pstoRequired: null,
-              pstoControlBasis: null,
-              pstoCancellationDate: null,
-              finalStatus: calculateFinalStatus(next),
-              pstoUpdatedAt: now,
-              updatedAt: now,
-            })
-            .where(eq(weldJoints.id, row.id))
-            .returning()
-          updatedRows.push({
-            ...updated,
+          return {
+            ...next,
             preHeatTreatmentControls: [],
             pstoRepeatCycles: [],
-            duplicateControls: row.duplicateControls ?? [],
-          } as WeldRow)
-        }
+            finalStatus: calculateFinalStatus(next),
+          } as WeldRow
+        })
+        const updatedRows = await persistPstoLineAssignmentRows(tx, nextRows, now)
         await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
         await markDispatcherTaskIndexDirty(tx, { scopes: [data.identity] })
         return updatedRows
@@ -429,8 +441,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
         })
       }
 
-      const updatedRows: WeldRow[] = []
-      for (const row of rows) {
+      const nextRows = rows.map((row) => {
         const preservesPerformedHistory = hasPerformedPstoHistory(row)
         const next = buildPstoCancelledRow({
           row,
@@ -440,54 +451,25 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
           cancellationBasis: data.cancellationBasis,
         })
         next.preHeatTreatmentControls = preservesPerformedHistory ? row.preHeatTreatmentControls ?? [] : []
-        const [updated] = await tx
-          .update(weldJoints)
-          .set({
-            pstoRequired: 'отменен',
-            pstoControlBasis: textOrNull(next.pstoControlBasis),
-            pstoCancellationDate: data.cancellationDate,
-            ...getPrimaryPstoCyclePersistenceValues(next),
-            vikRequest: textOrNull(next.vikRequest),
-            vikRequestDate: textOrNull(next.vikRequestDate),
-            vikResult: textOrNull(next.vikResult),
-            vikConclusionDate: textOrNull(next.vikConclusionDate),
-            vikConclusion: textOrNull(next.vikConclusion),
-            rkRequest: textOrNull(next.rkRequest),
-            rkRequestDate: textOrNull(next.rkRequestDate),
-            rkResult: textOrNull(next.rkResult),
-            rkConclusionDate: textOrNull(next.rkConclusionDate),
-            rkConclusion: textOrNull(next.rkConclusion),
-            uzkRequest: textOrNull(next.uzkRequest),
-            uzkRequestDate: textOrNull(next.uzkRequestDate),
-            uzkResult: textOrNull(next.uzkResult),
-            uzkConclusionDate: textOrNull(next.uzkConclusionDate),
-            uzkConclusion: textOrNull(next.uzkConclusion),
-            pvkRequest: textOrNull(next.pvkRequest),
-            pvkRequestDate: textOrNull(next.pvkRequestDate),
-            pvkResult: textOrNull(next.pvkResult),
-            pvkConclusionDate: textOrNull(next.pvkConclusionDate),
-            pvkConclusion: textOrNull(next.pvkConclusion),
-            lnkDefectDescription: textOrNull(next.lnkDefectDescription),
-            rkExposureConfirmedDiameter: numberOrNull(next.rkExposureConfirmedDiameter),
-            finalStatus: calculateFinalStatus(next),
-            pstoUpdatedAt: now,
-            lnkUpdatedAt: now,
-            updatedAt: now,
-          })
-          .where(eq(weldJoints.id, row.id))
-          .returning()
-        updatedRows.push({
-          ...updated,
-          preHeatTreatmentControls: next.preHeatTreatmentControls,
-          pstoRepeatCycles: next.pstoRepeatCycles,
-          duplicateControls: row.duplicateControls ?? [],
-        } as WeldRow)
+        next.finalStatus = calculateFinalStatus(next)
+        return next
+      })
+      if ([...decisionsByRowId.values()].includes('promoteBeforeHeatTreatment')) {
+        assertPstoLineCancellationPromotionAllowed(rows, nextRows)
       }
+      const updatedRows = await persistPstoLineAssignmentRows(
+        tx,
+        nextRows,
+        now,
+        new Set(nextRows.map((row) => row.id)),
+      )
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
       if (preRelationIds.length > 0) {
-        await tx
-          .delete(preHeatTreatmentControls)
-          .where(inArray(preHeatTreatmentControls.id, preRelationIds))
+        for (const idBatch of splitNumberBatches(preRelationIds, 1000)) {
+          await tx
+            .delete(preHeatTreatmentControls)
+            .where(inArray(preHeatTreatmentControls.id, idBatch))
+        }
       }
       if (unstartedRepeatCycles.length > 0) {
         await deletePstoRepeatCyclesInTransaction(
@@ -532,6 +514,10 @@ function normalizePayload(value: PstoLineAssignmentPayload) {
   return {
     identity,
     action,
+    expectedVersions: (Array.isArray(value?.expectedVersions) ? value.expectedVersions : []).map((entry) => ({
+      id: Number(entry?.id),
+      version: String(entry?.version ?? '').trim(),
+    })),
     cancellationDate,
     cancellationBasis: String(value?.cancellationBasis ?? '').trim(),
     activationDecisions,
@@ -547,9 +533,9 @@ function requireLineIdentity(value: Partial<PstoLineIdentity> | undefined) {
 
 function buildLineWhere(identity: PstoLineIdentity) {
   return and(
-    sql`btrim(coalesce(${weldJoints.projectTitle}, '')) = ${identity.projectTitle}`,
-    sql`btrim(coalesce(${weldJoints.subtitleCode}, '')) = ${identity.subtitleCode}`,
-    sql`btrim(coalesce(${weldJoints.line}, '')) = ${identity.line}`,
+    sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = ${normalizePstoLineIdentityPart(identity.projectTitle)}`,
+    sql`lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = ${normalizePstoLineIdentityPart(identity.subtitleCode)}`,
+    sql`lower(btrim(coalesce(${weldJoints.line}, ''))) = ${normalizePstoLineIdentityPart(identity.line)}`,
   )
 }
 
@@ -583,6 +569,10 @@ function buildRemovalPreview(
   })
   return {
     identity,
+    expectedVersions: rows.map((row) => ({
+      id: row.id,
+      version: String(row.rowVersion ?? '').trim(),
+    })),
     rowCount: rows.length,
     assignedCount: rows.filter((row) => isControlEnabledValue(row.pstoRequired)).length,
     requestOnlyCount: rows.filter((row) => (
@@ -638,6 +628,34 @@ function validateActivationDecisions(
   return positions
 }
 
+export function assertPstoLineActivationTransferAllowed(
+  previousRows: WeldRow[],
+  nextRows: WeldRow[],
+) {
+  const issue = findBlockingLnkStageTransferChronologyIssue({
+    previousRows,
+    nextRows,
+    targetStage: 'beforeHeatTreatment',
+  })
+  if (issue) {
+    throw new Error(`Назначение ПСТО невозможно: перенос НК в «До ТО» нарушает данные. ${issue.message}`)
+  }
+}
+
+export function assertPstoLineCancellationPromotionAllowed(
+  previousRows: WeldRow[],
+  nextRows: WeldRow[],
+) {
+  const issue = findBlockingLnkStageTransferChronologyIssue({
+    previousRows,
+    nextRows,
+    targetStage: 'primary',
+  })
+  if (issue) {
+    throw new Error(`Отмена ПСТО невозможна: перенос НК в основной комплект нарушает данные. ${issue.message}`)
+  }
+}
+
 function validateRemovalDecisions(rows: WeldRow[], decisions: PstoLineRemovalDecision[]) {
   const validRowIds = new Set(rows.map((row) => row.id))
   const byRowId = new Map<number, PstoLineRemovalDisposition>()
@@ -680,6 +698,123 @@ function attachSavedPreHeatTreatmentControls(
   }))
 }
 
+const PSTO_LINE_ASSIGNMENT_UPDATE_FIELD_KEYS = [
+  'pstoRequired',
+  'pstoControlBasis',
+  'pstoCancellationDate',
+  'pstoRequest',
+  'pstoRequestDate',
+  'pstoDate',
+  'heatTreatmentDiagram',
+  'pstoResult',
+  'pstoNote',
+  'tvmtRequest',
+  'tvmtRequestDate',
+  'tvmtResult',
+  'tvmtConclusionDate',
+  'tvmtConclusion',
+  'vikRequest',
+  'vikRequestDate',
+  'vikResult',
+  'vikConclusionDate',
+  'vikConclusion',
+  'vikDefectDescription',
+  'rkRequest',
+  'rkRequestDate',
+  'rkResult',
+  'rkConclusionDate',
+  'rkConclusion',
+  'uzkRequest',
+  'uzkRequestDate',
+  'uzkResult',
+  'uzkConclusionDate',
+  'uzkConclusion',
+  'uzkDefectDescription',
+  'pvkRequest',
+  'pvkRequestDate',
+  'pvkResult',
+  'pvkConclusionDate',
+  'pvkConclusion',
+  'pvkDefectDescription',
+  'lnkDefectDescription',
+  'rkExposureConfirmedDiameter',
+  'finalStatus',
+  'pstoCreatedAt',
+  'pstoUpdatedAt',
+  'lnkUpdatedAt',
+  'updatedAt',
+] as const satisfies readonly (keyof NewWeldJoint)[]
+
+const PSTO_LINE_ASSIGNMENT_UPDATE_SET = Object.fromEntries(
+  PSTO_LINE_ASSIGNMENT_UPDATE_FIELD_KEYS.map((fieldKey) => [
+    fieldKey,
+    sql.raw(`excluded."${WELD_TABLE_COLUMNS[fieldKey].name}"`),
+  ]),
+) as Partial<Record<keyof NewWeldJoint, SQL>>
+
+export async function persistPstoLineAssignmentRows(
+  tx: SystemDocumentSequenceTransaction,
+  rows: WeldRow[],
+  now = new Date(),
+  lnkTouchedRowIds: ReadonlySet<number> = new Set(),
+) {
+  if (rows.length === 0) return []
+  const payloads = rows.map((row) => {
+    const values: Record<string, unknown> = {
+      id: row.id,
+      pstoRequired: textOrNull(row.pstoRequired),
+      pstoControlBasis: textOrNull(row.pstoControlBasis),
+      pstoCancellationDate: textOrNull(row.pstoCancellationDate),
+      ...getPrimaryPstoCyclePersistenceValues(row),
+      ...getPrimaryLnkPersistenceValues(row),
+      finalStatus: textOrNull(calculateFinalStatus(row)),
+      pstoCreatedAt: isControlEnabledValue(row.pstoRequired)
+        ? timestampOrNull(row.pstoCreatedAt) ?? now
+        : timestampOrNull(row.pstoCreatedAt),
+      pstoUpdatedAt: now,
+      lnkUpdatedAt: lnkTouchedRowIds.has(row.id)
+        ? now
+        : timestampOrNull(row.lnkUpdatedAt),
+      updatedAt: now,
+    }
+    return Object.fromEntries([
+      ['id', row.id],
+      ...PSTO_LINE_ASSIGNMENT_UPDATE_FIELD_KEYS.map((fieldKey) => [
+        fieldKey,
+        values[fieldKey] ?? null,
+      ]),
+    ]) as NewWeldJoint
+  })
+
+  const savedRows: WeldRow[] = []
+  for (const batch of splitWeldImportInsertBatches(payloads)) {
+    const saved = await tx
+      .insert(weldJoints)
+      .values(batch)
+      .onConflictDoUpdate({
+        target: weldJoints.id,
+        set: PSTO_LINE_ASSIGNMENT_UPDATE_SET,
+      })
+      .returning(WELD_TABLE_RETURNING)
+    if (saved.length !== batch.length) {
+      throw new Error('Не удалось сохранить всю линию ПСТО. Ничего не сохранено.')
+    }
+    savedRows.push(...saved as WeldRow[])
+  }
+
+  const savedRowsById = new Map(savedRows.map((row) => [row.id, row]))
+  return rows.map((row) => {
+    const saved = savedRowsById.get(row.id)
+    if (!saved) throw new Error(`Стык #${row.id} больше не существует. Обновите программу ПСТО.`)
+    return {
+      ...saved,
+      preHeatTreatmentControls: row.preHeatTreatmentControls ?? [],
+      pstoRepeatCycles: row.pstoRepeatCycles ?? [],
+      duplicateControls: row.duplicateControls ?? [],
+    } as WeldRow
+  })
+}
+
 function getPrimaryLnkPersistenceValues(row: WeldRow) {
   return {
     vikRequest: textOrNull(row.vikRequest),
@@ -687,6 +822,7 @@ function getPrimaryLnkPersistenceValues(row: WeldRow) {
     vikResult: textOrNull(row.vikResult),
     vikConclusionDate: textOrNull(row.vikConclusionDate),
     vikConclusion: textOrNull(row.vikConclusion),
+    vikDefectDescription: textOrNull(row.vikDefectDescription),
     rkRequest: textOrNull(row.rkRequest),
     rkRequestDate: textOrNull(row.rkRequestDate),
     rkResult: textOrNull(row.rkResult),
@@ -697,11 +833,13 @@ function getPrimaryLnkPersistenceValues(row: WeldRow) {
     uzkResult: textOrNull(row.uzkResult),
     uzkConclusionDate: textOrNull(row.uzkConclusionDate),
     uzkConclusion: textOrNull(row.uzkConclusion),
+    uzkDefectDescription: textOrNull(row.uzkDefectDescription),
     pvkRequest: textOrNull(row.pvkRequest),
     pvkRequestDate: textOrNull(row.pvkRequestDate),
     pvkResult: textOrNull(row.pvkResult),
     pvkConclusionDate: textOrNull(row.pvkConclusionDate),
     pvkConclusion: textOrNull(row.pvkConclusion),
+    pvkDefectDescription: textOrNull(row.pvkDefectDescription),
     lnkDefectDescription: textOrNull(row.lnkDefectDescription),
     rkExposureConfirmedDiameter: numberOrNull(row.rkExposureConfirmedDiameter),
   }
@@ -739,4 +877,12 @@ function numberOrNull(value: unknown) {
   if (value === null || value === undefined || value === '') return null
   const number = Number(value)
   return Number.isFinite(number) ? number : null
+}
+
+function timestampOrNull(value: unknown) {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : null
+  const text = String(value ?? '').trim()
+  if (!text) return null
+  const timestamp = new Date(text)
+  return Number.isFinite(timestamp.getTime()) ? timestamp : null
 }

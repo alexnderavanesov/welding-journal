@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
+import type { WeldRow } from './dispatcher-types'
 import { FIELD_BY_KEY, FULL_EXCEL_HEADERS, type WeldField } from './weld-fields'
 import { hasReservedJointSystemPart, parseJointName, validateManualJointName } from './joint-name'
 import {
@@ -330,6 +331,28 @@ describe('weld import/export', () => {
     expect(FULL_EXCEL_HEADERS).not.toContain(label('createdAt'))
     expect(headers).toContain(label('createdAt'))
     expect(headers).toContain(label('joint'))
+  })
+
+  it('exports computed DNO values for legacy good simple controls', () => {
+    const fields = [
+      FIELD_BY_KEY.get('vikDefectDescription'),
+      FIELD_BY_KEY.get('preVikDefectDescription'),
+    ].filter(Boolean) as WeldField[]
+    const [, row] = recordsToVisibleExportMatrix([{
+      id: 1,
+      hasVik: 'да',
+      vikResult: 'годен',
+      vikDefectDescription: null,
+      preHeatTreatmentControls: [{
+        id: 10,
+        weldJointId: 1,
+        method: 'ВИК',
+        result: 'годен',
+        defectDescription: null,
+      }],
+    } as WeldRow], fields)
+
+    expect(row).toEqual(['ДНО', 'ДНО'])
   })
 
   it('exports profile timestamps in full Moscow time', () => {

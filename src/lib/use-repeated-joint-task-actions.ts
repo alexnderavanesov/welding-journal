@@ -13,6 +13,7 @@ import { getCoilJointNames, parseRepeatedJointName } from '@/lib/joint-chain'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WeldJointChainEarlyCoilCandidate } from '@/server/weld-contracts'
+import { getWeldJointById } from '@/server/weld-read-api'
 
 type MutationLike<TValue> = {
   mutate: (value: TValue) => void
@@ -23,7 +24,11 @@ type UseRepeatedJointTaskActionsOptions = {
   loadTasks: () => Promise<RepeatedJointTask[]>
   systemIndexSettings: SystemIndexSettings
   repeatedJointMutation: MutationLike<RepeatedJointCreateTask | RepeatedJointCoilTask>
-  earlyCoilMutation: MutationLike<{ sourceRowId: number; task?: RepeatedJointCreateTask }>
+  earlyCoilMutation: MutationLike<{
+    sourceRowId: number
+    expectedVersion: string
+    task?: RepeatedJointCreateTask
+  }>
   obsoleteRepeatedJointMutation: MutationLike<RepeatedJointDeleteTask>
   renameRepeatedJointMutation: MutationLike<RepeatedJointRenameTask>
   setMessage: (value: string) => void
@@ -75,21 +80,43 @@ export function useRepeatedJointTaskActions({
       setMessage('Досрочная врезка катушки доступна только из сварочного журнала.')
       return
     }
-    if (isUnofficialJoint(task.row)) {
+    const currentTasks = await getCurrentTasks()
+    if (!currentTasks) return
+    const currentTask = currentTasks.find(
+      (candidate): candidate is RepeatedJointCreateTask =>
+        candidate.kind === 'create' && candidate.key === task.key,
+    )
+    if (!currentTask) {
+      setMessage('Задача уже не актуальна. Плашка обновлена по текущим данным.')
+      return
+    }
+
+    let sourceRow: WeldRow | null
+    try {
+      sourceRow = await getWeldJointById({ data: { id: currentTask.row.id } })
+    } catch {
+      setMessage('Не удалось обновить исходный стык перед созданием катушки. Повторите действие.')
+      return
+    }
+    if (!sourceRow) {
+      setMessage('Исходный стык больше не существует. Обновите отчет и повторите действие.')
+      return
+    }
+    if (isUnofficialJoint(sourceRow)) {
       setMessage('Досрочную катушку можно создать только после негодного официального стыка.')
       return
     }
 
     const targetJoints = getCoilJointNames(
-      parseRepeatedJointName(task.sourceJoint, systemIndexSettings).base,
+      parseRepeatedJointName(currentTask.sourceJoint, systemIndexSettings).base,
       systemIndexSettings,
     ) as [string, string]
     await confirmAndCreateEarlyCoil({
-      sourceRow: task.row,
-      sourceJoint: task.sourceJoint,
+      sourceRow,
+      sourceJoint: currentTask.sourceJoint,
       targetJoints,
-      replacementJoint: task.targetJoint,
-      task,
+      replacementJoint: currentTask.targetJoint,
+      task: currentTask,
     })
   }
 
@@ -138,7 +165,11 @@ export function useRepeatedJointTaskActions({
       tone: 'warning',
     })
     if (!confirmed) return
-    earlyCoilMutation.mutate({ sourceRowId: sourceRow.id, task })
+    earlyCoilMutation.mutate({
+      sourceRowId: sourceRow.id,
+      expectedVersion: String(sourceRow.rowVersion ?? '').trim(),
+      task,
+    })
   }
 
   async function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {

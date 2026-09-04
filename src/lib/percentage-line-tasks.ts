@@ -9,17 +9,20 @@ import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import { normalizeResultStatus } from '@/lib/weld-status'
 import { getSuspensionOverlapForStamp } from '@/lib/welder-stamp-suspensions'
+import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import type { PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
 
 export function buildPercentageLineControlTasks(
   rows: WeldRow[],
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
+  systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): PercentageLineControlTask[] {
   const tasks: PercentageLineControlTask[] = []
 
-  for (const lineSummary of buildPercentageLineSummaries(rows)) {
+  for (const lineSummary of buildPercentageLineSummaries(rows, systemIndexSettings)) {
     const firstStampSummaryKey = getFirstStampSummaryKey(lineSummary.rows, lineSummary.stamps)
     for (const stampSummary of lineSummary.stamps) {
       const sampleRow = findStampRow(lineSummary.rows, stampSummary.stamp) ?? lineSummary.rows[0]
@@ -123,6 +126,7 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
     coveredControls: summary.coveredControls,
     assignedControls: summary.assignedControls,
     count: summary.missingControls,
+    fullControlRequired: summary.fullControlRequired,
   }
 }
 
@@ -139,7 +143,7 @@ function buildExcessControlTask(row: WeldRow, summary: PercentageLineStampSummar
 
   return {
     kind: 'percentage-line-control',
-    key: `percentage-line-control:excess:${summary.key}:${summary.requiredControls}:${summary.assignedControls}:${toTaskKeyPart(summary.excessCandidateJointNames)}`,
+    key: `percentage-line-control:excess:${summary.key}:${summary.requiredControls}:${summary.normalAssignedControls}:${toTaskKeyPart(summary.excessCandidateRowIds)}`,
     row,
     issue: 'excess',
     projectTitle: summary.projectTitle,
@@ -196,7 +200,7 @@ function buildSuspendWelderTask(
     `По клейму найдено ${summary.rejectedPrimaryControls} первичных негодных стыков по процентному контролю, включая дубль: ${formatJointList(summary.rejectedPrimaryJointNames)}. На У-стыках сюда входит и ПВК.`,
     'По правилу процентной линии после четвертого первичного негодного результата сварщика нужно отстранить от официальной сварки до отдельного решения.',
     suspensionFrom
-      ? `Дату начала отстранения диспетчер предлагает взять по дате контроля четвертого негодного стыка: ${suspensionFrom}.`
+      ? `Дату начала отстранения диспетчер предлагает взять по дате контроля четвертого негодного стыка: ${formatDisplayDate(suspensionFrom)}.`
       : 'Дату начала отстранения нужно определить по дате контроля четвертого негодного стыка.',
   ]
 
@@ -284,27 +288,24 @@ function getRejectedControlEventDate(row: WeldRow) {
     return date ? [date] : []
   })
 
-  return [...rejectedDates, ...rejectedPreHeatTreatmentDates, ...rejectedDuplicateDates]
-    .sort(compareDateLike)[0] ?? String(row.weldDate ?? '').trim()
+  const validRejectedDates = [
+    ...rejectedDates,
+    ...rejectedPreHeatTreatmentDates,
+    ...rejectedDuplicateDates,
+  ].flatMap((value) => {
+    const date = parseDateLikeToIso(value)
+    return date ? [date] : []
+  })
+  return validRejectedDates.sort()[0] ?? parseDateLikeToIso(row.weldDate) ?? ''
 }
 
 function compareDateLike(left: unknown, right: unknown) {
-  const leftTime = parseDateLikeTime(left)
-  const rightTime = parseDateLikeTime(right)
-  return leftTime - rightTime
-}
-
-function parseDateLikeTime(value: unknown) {
-  const text = String(value ?? '').trim()
-  if (!text) return Number.MAX_SAFE_INTEGER
-  const parts = text.split('.')
-  if (parts.length === 3) {
-    const [day, month, year] = parts.map(Number)
-    const time = new Date(year, month - 1, day).getTime()
-    return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER
-  }
-  const time = new Date(text).getTime()
-  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER
+  const leftDate = parseDateLikeToIso(left)
+  const rightDate = parseDateLikeToIso(right)
+  if (!leftDate && !rightDate) return 0
+  if (!leftDate) return 1
+  if (!rightDate) return -1
+  return leftDate.localeCompare(rightDate)
 }
 
 function formatJointList(values: string[]) {

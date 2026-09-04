@@ -67,6 +67,7 @@ import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { savePstoRepeatWorkflow } from '@/server/psto-repeat-workflow'
 
 export type PstoRepeatWorkflowDialogProps = {
@@ -94,6 +95,7 @@ export function PstoRepeatWorkflowDialog({
 }: PstoRepeatWorkflowDialogProps) {
   const queryClient = useQueryClient()
   const settings = useRequestConclusionSettings()
+  const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const appliedInitialSelectionRef = useRef('')
   const [date, setDate] = useState(() => formatDateInputValue(new Date()))
@@ -187,20 +189,20 @@ export function PstoRepeatWorkflowDialog({
     naming,
     settings,
     nextNumber: mode === 'request' ? sequences?.pstoRequest : sequences?.pstoConclusion,
-  }), [date, mode, naming, selectedRows, sequences, settings])
-  const dateReason = getDateInputValidationReason(
-    date,
-    mode === 'request' ? 'Дата заявки ПСТО' : 'Дата ПСТО',
-  )
+    allowAllNamesEmpty: mode === 'result' && !saveCheckSettings.pstoResultDiagramRequired,
+  }), [date, mode, naming, saveCheckSettings.pstoResultDiagramRequired, selectedRows, sequences, settings])
+  const dateReason = mode === 'request'
+    ? getDateInputValidationReason(date, 'Дата заявки ПСТО')
+    : getOptionalPstoResultDateReason(date, saveCheckSettings, naming.mode === 'system')
   const domainReason = useMemo(() => {
     if (selectedRows.length === 0 || dateReason || creationPlan.error) return ''
     try {
       for (const group of creationPlan.groups) {
         for (const row of group.rows) {
           if (mode === 'request') {
-            validatePstoRequestRow(row, group.name, date)
+            validatePstoRequestRow(row, group.name, date, saveCheckSettings)
           } else {
-            validatePstoResultRow(row, date, group.name)
+            validatePstoResultRow(row, date, group.name, saveCheckSettings)
           }
         }
       }
@@ -208,7 +210,7 @@ export function PstoRepeatWorkflowDialog({
     } catch (error) {
       return (error as Error).message
     }
-  }, [creationPlan, date, dateReason, mode, selectedRows.length])
+  }, [creationPlan, date, dateReason, mode, saveCheckSettings, selectedRows.length])
   useEffect(() => {
     if (selectedIds.size === 0 && rowsViewMode === 'selected') setRowsViewMode('all')
   }, [rowsViewMode, selectedIds.size])
@@ -221,6 +223,10 @@ export function PstoRepeatWorkflowDialog({
         rowIds: group.rowIds,
         name: group.name,
         useSystemName: group.useSystemName,
+      })),
+      expectedVersions: selectedRows.map((row) => ({
+        id: row.id,
+        version: String(row.rowVersion ?? '').trim(),
       })),
     } }),
     onSuccess: async (savedRows) => {
@@ -496,17 +502,27 @@ function getInitialSelectedIds(
   }))
 }
 
-function validatePstoRequestRow(row: WeldRow, requestName: string, requestDate: string) {
+function validatePstoRequestRow(
+  row: WeldRow,
+  requestName: string,
+  requestDate: string,
+  saveCheckSettings: SaveCheckSettings,
+) {
   if (canCreateRepeatPstoCycle(row)) {
-    buildRepeatPstoRequestCycle({ row, requestName, requestDate })
+    buildRepeatPstoRequestCycle({ row, requestName, requestDate, saveCheckSettings })
     return
   }
-  buildPstoRequestRows({ records: [row], requestName, requestDate })
+  buildPstoRequestRows({ records: [row], requestName, requestDate, saveCheckSettings })
 }
 
-function validatePstoResultRow(row: WeldRow, pstoDate: string, diagramName: string) {
+function validatePstoResultRow(
+  row: WeldRow,
+  pstoDate: string,
+  diagramName: string,
+  saveCheckSettings: SaveCheckSettings,
+) {
   if (getCurrentPstoCycle(row)?.source === 'repeat') {
-    buildRepeatPstoResultCycle({ row, pstoDate, diagramName })
+    buildRepeatPstoResultCycle({ row, pstoDate, diagramName, saveCheckSettings })
     return
   }
   buildPstoResultRows({
@@ -515,7 +531,21 @@ function validatePstoResultRow(row: WeldRow, pstoDate: string, diagramName: stri
     result: 'проведено',
     diagramName,
     rows: [row],
+    saveCheckSettings,
   })
+}
+
+function getOptionalPstoResultDateReason(
+  date: string,
+  settings: SaveCheckSettings,
+  systemNameRequiresDate: boolean,
+) {
+  if (!date.trim()) {
+    return settings.pstoResultDateRequired || systemNameRequiresDate
+      ? getDateInputValidationReason(date, 'Дата ПСТО')
+      : null
+  }
+  return getDateInputValidationReason(date, 'Дата ПСТО')
 }
 
 function filterRows(rows: WeldRow[], search: string) {

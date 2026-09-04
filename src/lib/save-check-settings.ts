@@ -41,6 +41,16 @@ export type SaveCheckSettingId =
 
 export type SaveCheckSettings = Record<SaveCheckSettingId, boolean>
 
+export const REQUIRED_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set([
+  'dateFormat',
+  'lnkResultControlDateFormat',
+  'pstoResultDateFormat',
+])
+
+export function isRequiredSaveCheckSetting(id: SaveCheckSettingId) {
+  return REQUIRED_SAVE_CHECK_SETTING_IDS.has(id)
+}
+
 export type SaveCheckSettingItem = {
   id: SaveCheckSettingId
   label: string
@@ -176,7 +186,7 @@ const FORM_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   {
     id: 'dateFormat',
     label: 'Формат дат',
-    description: 'Все даты в форме должны быть реальными датами в понятном формате.',
+    description: 'Обязательная проверка: все заполненные даты должны быть реальными календарными датами.',
     example: '31.02.2026 или текст вместо даты не дадут сохранить стык.',
   },
   {
@@ -197,7 +207,7 @@ const LNK_RESULT_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   {
     id: 'lnkResultControlDateFormat',
     label: 'Формат даты контроля',
-    description: 'Дата контроля должна быть реальной датой в понятном формате.',
+    description: 'Обязательная проверка: заполненная дата контроля должна быть реальной календарной датой.',
     example: '31.02.2026 или произвольный текст в дате контроля будут заблокированы.',
   },
   {
@@ -248,7 +258,7 @@ const PSTO_RESULT_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   {
     id: 'pstoResultDateFormat',
     label: 'Формат даты ПСТО',
-    description: 'Дата ПСТО должна быть реальной датой в понятном формате.',
+    description: 'Обязательная проверка: заполненная дата ПСТО должна быть реальной календарной датой.',
     example: '31.02.2026 или произвольный текст в дате ПСТО будут заблокированы.',
   },
   {
@@ -259,9 +269,9 @@ const PSTO_RESULT_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
   },
   {
     id: 'pstoResultRequestDateOrder',
-    label: 'Даты сварки, заявки и результата ПСТО',
-    description: 'Проверяет порядок дат: дата сварки должна быть не позже даты заявки ПСТО, а дата заявки - не позже даты результата ПСТО.',
-    example: 'Заявка ПСТО от 08.07, а результат ПСТО от 05.07: сохранить такой результат нельзя.',
+    label: 'Порядок дат цикла ПСТО/ТВМТ',
+    description: 'Проверяет порядок дат основного и повторных циклов: сварка -> заявка ПСТО -> ПСТО -> заявка ТВМТ -> ТВМТ -> следующий цикл.',
+    example: 'Заявка ПСТО от 08.07, а результат от 05.07, или ТВМТ датирована раньше ПСТО: сохранить такой цикл нельзя.',
   },
   {
     id: 'pstoResultDiagramRequired',
@@ -311,14 +321,14 @@ export const SAVE_CHECK_SETTING_GROUPS: SaveCheckSettingGroup[] = [
     id: 'lnk-result-form',
     title: 'Результаты ЛНК',
     description:
-      'Эти проверки работают при вводе и редактировании результатов ЛНК. Если их отключить, данные можно сохранить, но диспетчер все равно сможет показать диагностическую задачу по уже сохраненной ошибке, если такой тип задач включен.',
+      'Эти проверки работают при вводе и редактировании результатов ЛНК. Отключаемые правила можно ослабить, но формат заполненной даты остается обязательным; диспетчер независимо проверяет уже сохраненные данные.',
     items: LNK_RESULT_SAVE_CHECK_ITEMS,
   },
   {
     id: 'psto-result-form',
     title: 'Результаты ПСТО',
     description:
-      'Эти проверки работают при создании заявки ПСТО и вводе результата ПСТО. Если их отключить, данные можно сохранить, но диспетчер сможет показать диагностическую задачу по уже сохраненной ошибке, если такой тип задач включен.',
+      'Эти проверки работают при создании заявки ПСТО и вводе результата ПСТО. Отключаемые правила можно ослабить, но формат заполненной даты остается обязательным; диспетчер независимо проверяет уже сохраненные данные.',
     items: PSTO_RESULT_SAVE_CHECK_ITEMS,
   },
   {
@@ -406,12 +416,18 @@ export function applyRemoteSaveCheckSettings(settings: unknown) {
   saveSaveCheckSettings(normalizeSaveCheckSettings(settings), { syncRemote: false })
 }
 
-export function normalizeSaveCheckSettings(value: unknown): SaveCheckSettings {
+export function normalizeSaveCheckSettings(
+  value: unknown,
+  options: { officialDlsFallback?: boolean } = {},
+): SaveCheckSettings {
   const source = typeof value === 'object' && value ? (value as Partial<Record<SaveCheckSettingId, unknown>>) : {}
   return Object.fromEntries(
     Object.entries(DEFAULT_SAVE_CHECK_SETTINGS).map(([id, defaultValue]) => {
       const key = id as SaveCheckSettingId
-      const fallback = key === 'officialDls' ? loadOtherSettings().requireDlsForOfficialStamps : defaultValue
+      if (isRequiredSaveCheckSetting(key)) return [key, true]
+      const fallback = key === 'officialDls'
+        ? options.officialDlsFallback ?? loadOtherSettings().requireDlsForOfficialStamps
+        : defaultValue
       return [key, typeof source[key] === 'boolean' ? source[key] : fallback]
     }),
   ) as SaveCheckSettings

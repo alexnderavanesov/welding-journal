@@ -71,6 +71,7 @@ describe('toLocalSecuritySettings', () => {
   it('keeps only server placeholders in browser storage', () => {
     expect(
       toLocalSecuritySettings({
+        revision: 'security-revision-7',
         configured: true,
         configuredScopes: {
           entry: false,
@@ -88,6 +89,7 @@ describe('toLocalSecuritySettings', () => {
         delete: true,
       }),
     ).toMatchObject({
+      revision: 'security-revision-7',
       entryPassword: '',
       settingsPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
       editPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,

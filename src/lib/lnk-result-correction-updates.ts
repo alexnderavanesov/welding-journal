@@ -13,6 +13,7 @@ import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
+import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
 
 export function buildLnkResultCorrectionRow({
   record,
@@ -46,7 +47,13 @@ export function buildLnkResultCorrectionRow({
           lnkDefectDescription: exposureRecord.lnkDefectDescription,
           rkExposureConfirmedDiameter: exposureRecord.rkExposureConfirmedDiameter,
         }
-      : {}),
+      : {
+          [method.defectDescriptionKey]: transitionLnkDefectDescription({
+            currentResult: record[method.resultKey],
+            nextResult: result,
+            currentDescription: record[method.defectDescriptionKey],
+          }),
+        }),
   } as RowWithId
   const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
   assertNoNewLnkChronologyIssues([nextRecord], [record], saveCheckSettings)
@@ -82,7 +89,13 @@ export function buildLnkResultReplacementRows({
             lnkDefectDescription: exposureRecord.lnkDefectDescription,
             rkExposureConfirmedDiameter: exposureRecord.rkExposureConfirmedDiameter,
           }
-        : {}),
+        : {
+            [method.defectDescriptionKey]: transitionLnkDefectDescription({
+              currentResult: currentRecord[method.resultKey],
+              nextResult: result,
+              currentDescription: currentRecord[method.defectDescriptionKey],
+            }),
+          }),
     } as RowWithId)
   }
   const proposedRecords = [...updatedById.values()].map((record) => withTouchedLnkFinalStatus(record))

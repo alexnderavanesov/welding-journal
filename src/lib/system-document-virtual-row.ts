@@ -18,9 +18,16 @@ export function buildPreHeatTreatmentSystemDocumentRow(
       [method.resultKey]: normalizeRelationValue(control.result),
       [method.conclusionDateKey]: normalizeRelationValue(control.conclusionDate),
       [method.conclusionKey]: normalizeRelationValue(control.conclusionName),
+      ...(method.defectDescriptionKey
+        ? {
+            [method.defectDescriptionKey]: normalizeRelationValue(control.defectDescription),
+            ...(method.preDefectDescriptionKey
+              ? { [method.preDefectDescriptionKey]: normalizeRelationValue(control.defectDescription) }
+              : {}),
+          }
+        : {}),
       ...(control.method === 'РК'
         ? {
-            lnkDefectDescription: normalizeRelationValue(control.defectDescription),
             rkExposureConfirmedDiameter: control.rkExposureConfirmedDiameter ?? undefined,
           }
         : {}),
@@ -76,8 +83,9 @@ function clearLnkDocumentFields(row: WeldRow): WeldRow {
     nextRow[method.resultKey] = undefined
     nextRow[method.conclusionDateKey] = undefined
     nextRow[method.conclusionKey] = undefined
+    if (method.defectDescriptionKey) nextRow[method.defectDescriptionKey] = undefined
+    if (method.preDefectDescriptionKey) nextRow[method.preDefectDescriptionKey] = undefined
   }
-  nextRow.lnkDefectDescription = undefined
   nextRow.rkExposureConfirmedDiameter = undefined
   return nextRow
 }

@@ -33,6 +33,7 @@ const assignedPreview: PstoWeldLineMovePreview = {
   rootJoint: 'F7',
   isChainMove: false,
   expectedRowIds: [7],
+  expectedVersions: [{ id: 7, version: '107' }],
   requestOnlyCount: 0,
   completedPstoCount: 0,
   preControlCount: 0,
@@ -156,6 +157,7 @@ describe('PstoWeldLineMoveDialog', () => {
           ...assignedPreview,
           isChainMove: true,
           expectedRowIds: [7, 8],
+          expectedVersions: [{ id: 7, version: '107' }, { id: 8, version: '108' }],
           rows: [assignedRow, coilRow],
         }}
         pending={false}

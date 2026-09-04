@@ -2,6 +2,7 @@ import type { LineConsistencyTask, WeldRow } from '@/lib/dispatcher-types'
 import { isControlAdditionalValue, isControlEnabledValue } from '@/lib/control-availability-values'
 import { isCancelledControlValue } from '@/lib/report-value-utils'
 import { isAngularConnectionType } from '@/lib/connection-type'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence' | 'pstoPresence'>
 
@@ -41,11 +42,11 @@ export function buildLineConsistencyTasks(rows: WeldRow[]): LineConsistencyTask[
   for (const row of rows) {
     const line = normalizeDisplayValue(row.line)
     if (!line) continue
-    const groupKey = [
+    const groupKey = encodeIdentityKey([
       normalizeKey(row.projectTitle),
       normalizeKey(row.subtitleCode),
       normalizeKey(line),
-    ].join(':')
+    ])
     const group = lineGroups.get(groupKey)
     if (group) {
       group.push(row)
@@ -73,7 +74,12 @@ export function buildLineConsistencyTasks(rows: WeldRow[]): LineConsistencyTask[
       const valuesText = values.join(', ')
       tasks.push({
         kind: 'line-consistency',
-        key: `line-consistency:${field.key}:${normalizeKey(projectTitle)}:${normalizeKey(subtitleCode)}:${normalizeKey(line)}:${values.map(normalizeKey).join('|')}`,
+        key: `line-consistency:${field.key}:${encodeIdentityKey([
+          normalizeKey(projectTitle),
+          normalizeKey(subtitleCode),
+          normalizeKey(line),
+          ...values.map(normalizeKey),
+        ])}`,
         row: representativeRow,
         line,
         projectTitle,
@@ -125,7 +131,13 @@ function buildControlPresenceTasksForLine(groupRows: WeldRow[], representativeRo
 
     tasks.push({
       kind: 'line-consistency',
-      key: `line-consistency:controlPresence:${normalizeKey(projectTitle)}:${normalizeKey(subtitleCode)}:${normalizeKey(line)}:${percentKey}:${values.map(normalizeKey).join('|')}`,
+      key: `line-consistency:controlPresence:${encodeIdentityKey([
+        normalizeKey(projectTitle),
+        normalizeKey(subtitleCode),
+        normalizeKey(line),
+        percentKey,
+        ...values.map(normalizeKey),
+      ])}`,
       row: representativeRow,
       line,
       projectTitle,
@@ -172,7 +184,14 @@ function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: 
   return [
     {
       kind: 'line-consistency',
-      key: `line-consistency:pstoPresence:${normalizeKey(projectTitle)}:${normalizeKey(subtitleCode)}:${normalizeKey(line)}:${rowsWithPsto.length}:${rowsCancelled.length}:${rowsWithoutPsto.length}`,
+      key: `line-consistency:pstoPresence:${encodeIdentityKey([
+        normalizeKey(projectTitle),
+        normalizeKey(subtitleCode),
+        normalizeKey(line),
+        rowsWithPsto.length,
+        rowsCancelled.length,
+        rowsWithoutPsto.length,
+      ])}`,
       row: representativeRow,
       line,
       projectTitle,

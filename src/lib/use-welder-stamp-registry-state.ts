@@ -80,8 +80,10 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   })
 
   const welderStampsMutation = useMutation({
-    mutationFn: async (records: WelderStampRecord[]) =>
-      saveWelderStampRecords({ data: { records, expectedRevision: registryRevisionRef.current || undefined } }),
+    mutationFn: async (records: WelderStampRecord[]) => {
+      const expectedRevision = requireLoadedRegistryRevision(registryRevisionRef.current)
+      return saveWelderStampRecords({ data: { records, expectedRevision } })
+    },
     onSuccess: async (snapshot) => {
       applyRegistrySnapshot(snapshot)
       await Promise.all([
@@ -94,8 +96,10 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   })
 
   const welderStampSuspensionsMutation = useMutation({
-    mutationFn: async (records: WelderStampSuspensionRecord[]) =>
-      saveWelderStampSuspensionRecords({ data: { records, expectedRevision: registryRevisionRef.current || undefined } }),
+    mutationFn: async (records: WelderStampSuspensionRecord[]) => {
+      const expectedRevision = requireLoadedRegistryRevision(registryRevisionRef.current)
+      return saveWelderStampSuspensionRecords({ data: { records, expectedRevision } })
+    },
     onSuccess: async (snapshot) => {
       applyRegistrySnapshot(snapshot)
       await Promise.all([
@@ -207,8 +211,8 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     const confirmed = await confirmAction({
       title: 'Удалить клеймо',
       itemName: stampName,
-      description: 'Запись будет удалена из справочника клейм сварщиков.',
-      warning: 'Это действие нельзя отменить.',
+      description: 'Удалить можно только карточку, обозначения которой еще не используются в стыках.',
+      warning: 'Для использованного клейма выберите архив: так история сварки и допуска останется связанной.',
     })
     if (!confirmed) return
     persistWelderStampRecords(removeWelderStampRecord(welderStamps, id))
@@ -283,4 +287,12 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
     editWelderStampSuspensionRecord,
     deleteWelderStampSuspensionRecord,
   }
+}
+
+function requireLoadedRegistryRevision(value: string) {
+  const revision = value.trim()
+  if (!revision) {
+    throw new Error('Справочник клейм еще загружается. Дождитесь завершения загрузки и повторите действие.')
+  }
+  return revision
 }

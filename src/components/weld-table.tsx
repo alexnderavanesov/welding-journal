@@ -385,6 +385,7 @@ export function WeldTable({
       x: rect.left,
       y: rect.bottom + 4,
       anchorRowId: firstRow.id,
+      closeOnScroll: false,
       ...getWeldContextMenuIdentity(firstRow, selectedRows),
       items,
     })

@@ -16,6 +16,28 @@ describe('createWeldTableProps joint history routing', () => {
     expect(pstoProps.onOpenJoint).toBe(onOpenJoint)
     expect(pstoProps.onOpenJointOverview).toBe(onOpenJointOverview)
   })
+
+  it('enables defect cells only for rejected results in the matching stage', () => {
+    const props = createWeldTableProps(createOptions('lnk', vi.fn(), vi.fn()))
+    const row = {
+      id: 1,
+      hasVik: 'да',
+      hasUzk: 'да',
+      vikResult: 'ремонт',
+      uzkResult: 'годен',
+      preHeatTreatmentControls: [{
+        id: 10,
+        weldJointId: 1,
+        method: 'ПВК',
+        result: 'вырез',
+      }],
+    }
+
+    expect(props.isCellEditable?.(row, 'vikDefectDescription')).toBe(true)
+    expect(props.isCellEditable?.(row, 'uzkDefectDescription')).toBe(false)
+    expect(props.isCellEditable?.(row, 'prePvkDefectDescription')).toBe(true)
+    expect(props.isCellEditable?.(row, 'preVikDefectDescription')).toBe(false)
+  })
 })
 
 function createOptions(

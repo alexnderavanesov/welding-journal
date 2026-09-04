@@ -1,9 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createEarlyCoilDecision, deleteWeldJoint } from '@/server/weld-mutations-api'
+import { createEarlyCoilDecision, deleteObsoleteRepeatedJoint } from '@/server/weld-mutations-api'
 import { getWeldJointById } from '@/server/weld-read-api'
-import {
-  buildRepeatedJointRows,
-} from '@/lib/weld-journal-mutation-updates'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import { createWeldRowsOrThrow, updateSystemWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type {
@@ -23,8 +20,14 @@ export function useRepeatedJointActionMutations({
   const queryClient = useQueryClient()
 
   const earlyCoilMutation = useMutation({
-    mutationFn: async ({ sourceRowId }: { sourceRowId: number; task?: RepeatedJointCreateTask }) =>
-      createEarlyCoilDecision({ data: { sourceRowId } }),
+    mutationFn: async ({
+      sourceRowId,
+      expectedVersion,
+    }: {
+      sourceRowId: number
+      expectedVersion: string
+      task?: RepeatedJointCreateTask
+    }) => createEarlyCoilDecision({ data: { sourceRowId, expectedVersion } }),
     onSuccess: async (result, variables) => {
       const createdRows = result.createdRows as WeldRow[]
       highlightChangedRows(createdRows, ['joint', 'weldDate', 'finalStatus'])
@@ -50,8 +53,12 @@ export function useRepeatedJointActionMutations({
     mutationFn: async (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => {
       const sourceRow = await getWeldJointById({ data: { id: task.row.id } })
       if (!sourceRow) throw new Error('Исходный стык не найден')
-      const drafts = buildRepeatedJointRows({ ...task, row: sourceRow as WeldRow })
-      const savedRows = await createWeldRowsOrThrow(drafts, 'Не удалось создать повторный стык')
+      const targetJoints = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
+      const savedRows = await createWeldRowsOrThrow(
+        sourceRow as WeldRow,
+        targetJoints,
+        'Не удалось создать повторный стык',
+      )
       return savedRows as WeldRow[]
     },
     onSuccess: async (createdRows, task) => {
@@ -71,7 +78,12 @@ export function useRepeatedJointActionMutations({
 
   const obsoleteRepeatedJointMutation = useMutation({
     mutationFn: async (task: RepeatedJointDeleteTask) => {
-      const result = await deleteWeldJoint({ data: { id: task.row.id } })
+      const result = await deleteObsoleteRepeatedJoint({
+        data: {
+          taskKey: task.key,
+          target: { id: task.row.id, version: String(task.row.rowVersion ?? '').trim() },
+        },
+      })
       if (!result) throw new Error('Запись не найдена')
       return result
     },

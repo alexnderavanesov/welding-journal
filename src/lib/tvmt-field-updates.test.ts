@@ -95,6 +95,44 @@ describe('primary TVMT updates', () => {
       tvmtConclusion: 'ЗНК-ТВМТ-001',
     }), 'request')).toContain('негодная ТВМТ завершила текущий цикл')
   })
+
+  it('rejects malformed request and conclusion dates', () => {
+    expect(() => buildPrimaryTvmtRequestRows({
+      records: [row()],
+      requestName: 'Заявка ТВМТ-001',
+      requestDate: 'не дата',
+    })).toThrow('корректную дату документа')
+
+    expect(() => buildPrimaryTvmtResultRows({
+      records: [row({
+        tvmtRequest: 'Заявка ТВМТ-001',
+        tvmtRequestDate: '2026-08-22',
+        tvmtResult: 'ожидает НК',
+      })],
+      controlDate: 'не дата',
+      result: 'годен',
+      conclusionName: 'ЗНК-ТВМТ-001',
+    })).toThrow('корректную дату документа')
+  })
+
+  it('rejects primary TVMT dates before the system minimum', () => {
+    expect(() => buildPrimaryTvmtRequestRows({
+      records: [row()],
+      requestName: 'Заявка ТВМТ-001',
+      requestDate: '2023-12-31',
+    })).toThrow('Дата заявки ТВМТ не может быть раньше 01.01.2024')
+
+    expect(() => buildPrimaryTvmtResultRows({
+      records: [row({
+        tvmtRequest: 'Заявка ТВМТ-001',
+        tvmtRequestDate: '2026-08-22',
+        tvmtResult: 'ожидает НК',
+      })],
+      controlDate: '2023-12-31',
+      result: 'годен',
+      conclusionName: 'ЗНК-ТВМТ-001',
+    })).toThrow('Дата ТВМТ не может быть раньше 01.01.2024')
+  })
 })
 
 function row(values: Partial<WeldRow> = {}): WeldRow {

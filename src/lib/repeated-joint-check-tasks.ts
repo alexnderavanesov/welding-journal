@@ -1,17 +1,30 @@
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
-import { LNK_METHODS, REPAIR_FORBIDDEN_BY_DIAMETER_REASON, WELD_STAMP_COMPLETION_GROUPS } from '@/lib/report-config'
+import {
+  LNK_METHODS,
+  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
+  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+  WELD_STAMP_COMPLETION_GROUPS,
+} from '@/lib/report-config'
 import { hasText } from '@/lib/report-value-utils'
-import { formatDisplayDate, getTodayIsoDate, parseDateLikeToIso } from '@/lib/date-format'
+import {
+  formatDisplayDate,
+  getDateInputValidationReason,
+  getTodayIsoDate,
+  parseDateLikeToIso,
+} from '@/lib/date-format'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { validateJointNameStructure } from '@/lib/joint-name'
 import { formatJointDiameterLabel, isUnofficialJoint } from '@/lib/joint-display'
-import { isLnkRepairForbiddenByDiameter } from '@/lib/lnk-result-rules'
+import {
+  isLnkRepairForbiddenByDiameter,
+  isLnkRepairForbiddenWithSettings,
+} from '@/lib/lnk-result-rules'
 import { getDispatcherLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getDispatcherPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import {
   CONTROL_HISTORY_REASON,
   JOINT_CORE_DATA_REASON,
@@ -28,6 +41,28 @@ import {
 } from '@/lib/lnk-control-stage'
 import { buildPstoCycleTimeline, type PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 import { normalizeTvmtResult } from '@/lib/tvmt-cycle'
+import { isFinalLnkResultValue } from '@/lib/lnk-status'
+import { getDuplicateControls } from '@/lib/duplicate-control-utils'
+
+const WELDER_STAMP_AUDIT_SAVE_CHECK_SETTINGS = {
+  ...DEFAULT_SAVE_CHECK_SETTINGS,
+  officialRegistry: true,
+  officialArchive: true,
+  officialNaksDate: true,
+  officialSuspension: true,
+  officialWeldingMethod: true,
+  officialMaterialGroup: true,
+  officialDiameter: true,
+  officialThickness: true,
+  officialDls: true,
+}
+
+const CORE_DATE_AUDIT_FIELDS = [
+  'weldDate',
+  'testDate',
+  'piDate',
+  'pstoCancellationDate',
+] as const satisfies readonly WeldFieldKey[]
 
 export function buildForbiddenRepairByDiameterCheckTasks(
   rows: WeldRow[],
@@ -35,31 +70,42 @@ export function buildForbiddenRepairByDiameterCheckTasks(
 ): RepeatedJointCheckTask[] {
   const tasks: RepeatedJointCheckTask[] = []
   for (const row of rows) {
-    if (!isLnkRepairForbiddenByDiameter(row)) continue
-
     const repairMethods = LNK_METHODS.filter(
       (method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт',
     )
     const preHeatTreatmentRepairs = getRejectedPreHeatTreatmentControls(row)
       .filter((control) => control.result === 'ремонт')
-    if (repairMethods.length === 0 && preHeatTreatmentRepairs.length === 0) continue
+    const duplicateRepairs = getDuplicateControls(row)
+      .filter((control) => String(control.result ?? '').trim().toLowerCase() === 'ремонт')
+    if (
+      (repairMethods.length === 0 && preHeatTreatmentRepairs.length === 0 && duplicateRepairs.length === 0) ||
+      !isLnkRepairForbiddenWithSettings(row, systemIndexSettings)
+    ) continue
 
     const joint = String(row.joint ?? '').trim() || '-'
     const methodCodes = [
       ...repairMethods.map((method) => method.code),
       ...preHeatTreatmentRepairs.map((control) => `${control.methodCode} до ТО`),
+      ...duplicateRepairs.map((control) => `${control.method} (дубль)`),
     ].join(', ')
     const repairResultKeys: string[] = [
       ...repairMethods.map((method) => method.resultKey),
       ...preHeatTreatmentRepairs.map((control) => `preHeatTreatment:${control.control.id}`),
+      ...duplicateRepairs.map((control) => `duplicate:${control.id}`),
     ]
-    const diameterText = formatJointDiameterLabel(row)
+    const forbiddenByDiameter = isLnkRepairForbiddenByDiameter(row)
+    const reason = forbiddenByDiameter
+      ? REPAIR_FORBIDDEN_BY_DIAMETER_REASON
+      : REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON
+    const details = forbiddenByDiameter
+      ? `Стык ${joint}: результат ${methodCodes} - ремонт указан при минимальном диаметре ${formatJointDiameterLabel(row)} мм. Ремонт на стыке с диаметром меньше 89 мм недопустим; для такого диаметра выбирается только "вырез". Проверь D1/D2 или результат контроля.`
+      : `Стык ${joint}: результат ${methodCodes} - ремонт указан после двух уже выполненных официальных ремонтов. На этом шаге доступен только "вырез". Проверь имя цепочки, официальность или результат контроля.`
     tasks.push(
       createJointChainCheckTask(
         row,
-        `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:repair-diameter:${row.id}:${repairResultKeys.join(',')}`,
-        REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
-        `Стык ${joint}: результат ${methodCodes} - ремонт указан при минимальном диаметре ${diameterText} мм. Ремонт на стыке с диаметром меньше 89 мм недопустим; для такого диаметра выбирается только "вырез". Проверь D1/D2 или результат контроля.`,
+        `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:repair-rule:${row.id}:${repairResultKeys.join(',')}`,
+        reason,
+        details,
         systemIndexSettings,
       ),
     )
@@ -107,6 +153,13 @@ export function buildJointCoreDataCheckTasks(
   return rows.flatMap((row) => {
     const issues: string[] = []
     const issueKeys: string[] = []
+    for (const fieldKey of CORE_DATE_AUDIT_FIELDS) {
+      const field = FIELD_BY_KEY.get(fieldKey)
+      const dateReason = getDateInputValidationReason(row[fieldKey], field?.label ?? 'Дата')
+      if (!dateReason) continue
+      issues.push(dateReason)
+      issueKeys.push(`invalid-date:${fieldKey}`)
+    }
     const weldDate = parseDateLikeToIso(row.weldDate)
     if (weldDate && weldDate > today) {
       issues.push(`дата сварки ${formatDisplayDate(weldDate)} позже сегодняшней даты ${formatDisplayDate(today)}`)
@@ -184,8 +237,7 @@ export function buildLnkResultCompletenessCheckTasks(
 ): RepeatedJointCheckTask[] {
   return rows.flatMap((row) => {
     const methodIssues: Array<{ code: string; missing: string[] }> = LNK_METHODS.flatMap((method) => {
-      const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
-      if (result !== 'годен' && result !== 'ремонт' && result !== 'вырез') return []
+      if (!isFinalLnkResultValue(row[method.resultKey])) return []
       const missing: string[] = []
       if (!hasText(row[method.conclusionDateKey])) missing.push('дата контроля')
       if (!hasText(row[method.conclusionKey])) missing.push('заключение')
@@ -280,17 +332,14 @@ export function buildWelderStampCompatibilityCheckTasks(
   welderStampRecords: WelderStampRecord[],
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
   dataListSettings?: DataListSettings,
-  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
-  if (welderStampRecords.length === 0 && welderStampSuspensions.length === 0) return []
-
   const tasks: RepeatedJointCheckTask[] = []
   for (const row of rows) {
     const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, {
       archiveValidationMode: 'audit',
       materialGroups: dataListSettings?.materialGroups,
-      saveCheckSettings,
+      saveCheckSettings: WELDER_STAMP_AUDIT_SAVE_CHECK_SETTINGS,
       suspensions: welderStampSuspensions,
       weldingTypes: dataListSettings?.weldingTypes,
     })
@@ -364,17 +413,21 @@ export function buildIncompleteWelderStampGroupTasks(
 
     for (const group of WELD_STAMP_COMPLETION_GROUPS) {
       const filledFields = group.fields.filter((fieldKey) => hasText(row[fieldKey]))
-      if (filledFields.length === 0 || filledFields.length === group.fields.length) continue
+      const emptyRequiredFirstGroup = hasWeldDate && group.index === 1 && filledFields.length === 0
+      if ((!emptyRequiredFirstGroup && filledFields.length === 0) || filledFields.length === group.fields.length) continue
 
       const missingFields = group.fields.filter((fieldKey) => !hasText(row[fieldKey]))
       const filledText = filledFields.map(formatWeldStampCompletionFieldLabel).join(', ')
       const missingText = missingFields.map(formatWeldStampCompletionFieldLabel).join(', ')
+      const details = emptyRequiredFirstGroup
+        ? `Стык ${joint}${officialityText}: дата сварки заполнена, но группа клейма_1 пустая. Нужно указать хотя бы корневое клеймо и дозаполнить группу.`
+        : `Стык ${joint}${officialityText}: в группе клейма_${group.index} заполнено ${filledText}, но не заполнено ${missingText}. Если в группе заполнено хотя бы одно клеймо, нужно дозаполнить остальные поля этой группы.`
       tasks.push(
         createJointChainCheckTask(
           row,
           `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:weld-stamp-completion-${group.index}:${row.id}:${missingFields.join(',')}`,
           group.reason,
-          `Стык ${joint}${officialityText}: в группе клейма_${group.index} заполнено ${filledText}, но не заполнено ${missingText}. Если в группе заполнено хотя бы одно клеймо, нужно дозаполнить остальные поля этой группы.`,
+          details,
           systemIndexSettings,
         ),
       )

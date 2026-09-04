@@ -12,7 +12,7 @@ import {
 } from '@/lib/system-index-settings'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-import { getDateInputValidationReason, getTodayIsoDate, parseDateLikeToIso } from '@/lib/date-format'
+import { getDateInputValidationReason } from '@/lib/date-format'
 import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
@@ -20,6 +20,7 @@ import {
   type SaveCheckSettingId,
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 export function validateManualJointNameForSave(
   value: WeldDraft,
@@ -31,7 +32,7 @@ export function validateManualJointNameForSave(
 
   if (saveCheckSettings.manualJointName) {
     const structureError = validateJointNameStructure(value.joint, systemIndexSettings)
-    if (structureError) throw new Error(structureError)
+    if (structureError) throw new Error(formatSaveCheckBlockReason('manualJointName', structureError))
   }
 
   const currentJoint = normalizeJointName(value.joint)
@@ -40,39 +41,36 @@ export function validateManualJointNameForSave(
   if (value.id && currentJoint === previousJoint) return
 
   if (saveCheckSettings.systemJointRenameProtection && previousRow && hasReservedJointSystemPart(previousRow.joint, systemIndexSettings)) {
-    throw new Error(`Стык с системными индексами ${getSystemIndexSummaryText(systemIndexSettings)} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`)
+    throw new Error(formatSaveCheckBlockReason(
+      'systemJointRenameProtection',
+      `Стык с системными индексами ${getSystemIndexSummaryText(systemIndexSettings)} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`,
+    ))
   }
 
   if (!saveCheckSettings.manualJointName) return
 
   const error = validateManualJointName(value.joint, systemIndexSettings)
-  if (error) throw new Error(error)
+  if (error) throw new Error(formatSaveCheckBlockReason('manualJointName', error))
 }
 
 export function validateWeldDateForSave(value: unknown) {
   const reason = getDateInputValidationReason(value, 'Дата сварки', { disallowFuture: true })
-  if (reason) throw new Error(reason)
+  if (reason) throw new Error(formatSaveCheckBlockReason(
+    reason.toLocaleLowerCase('ru-RU').includes('позже сегодняшней') ? 'weldDateNotFuture' : 'dateFormat',
+    reason,
+  ))
 }
 
 export function validateDateFieldsForSave(
   record: WeldInput,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
-  if (!saveCheckSettings.dateFormat && !saveCheckSettings.weldDateNotFuture) return
-
   for (const fieldKey of dateFieldKeys) {
     const field = FIELD_BY_KEY.get(fieldKey)
-    if (saveCheckSettings.dateFormat) {
-      const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
-        disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
-      })
-      if (reason) throw new Error(reason)
-      continue
-    }
-
-    if (fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture && isFutureDateLike(record[fieldKey])) {
-      throw new Error('Дата сварки не может быть позже сегодняшней.')
-    }
+    const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
+      disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
+    })
+    if (reason) throw new Error(formatSaveCheckBlockReason(getDateSaveCheckSettingId(fieldKey, reason), reason))
   }
 }
 
@@ -83,7 +81,9 @@ export function validateRequiredRootStampForSave(
   if (!saveCheckSettings.requiredRootStampWithWeldDate) return
 
   const message = getRequiredRootStampMessage(record)
-  if (message) throw new Error(`Сохранение невозможно: ${message}`)
+  if (message) {
+    throw new Error(`Сохранение невозможно: ${formatSaveCheckBlockReason('requiredRootStampWithWeldDate', message)}`)
+  }
 }
 
 export function getRequiredMaterialGroupMessage(record: WeldInput) {
@@ -233,56 +233,67 @@ export function validateManualJointNamesForImport(
 
   const rowNumber = invalidRecord.index + 2
   const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
-  throw new Error(`Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.error}`)
+  throw new Error(
+    `Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${formatSaveCheckBlockReason('manualJointName', invalidRecord.error ?? '')}`,
+  )
 }
 
 export function validateWeldDatesForImport(
   records: WeldInput[],
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
-  if (!saveCheckSettings.dateFormat && !saveCheckSettings.weldDateNotFuture) return
-
   const invalidRecord = records
-    .flatMap((record, index) =>
-      dateFieldKeys.map((fieldKey) => {
+    .map((record, index) => ({
+      record,
+      index,
+      issues: dateFieldKeys.flatMap((fieldKey) => {
         const field = FIELD_BY_KEY.get(fieldKey)
-        const reason = saveCheckSettings.dateFormat
-          ? getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
-              disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
-            })
-          : fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture && isFutureDateLike(record[fieldKey])
-            ? 'Дата сварки не может быть позже сегодняшней.'
-            : ''
-        return { record, index, fieldKey, reason }
+        const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
+          disallowFuture: fieldKey === 'weldDate' && saveCheckSettings.weldDateNotFuture,
+        })
+        return reason ? [{ fieldKey, reason }] : []
       }),
-    )
-    .find((item) => item.reason)
+    }))
+    .find((item) => item.issues.length > 0)
 
   if (!invalidRecord) return
 
   const rowNumber = invalidRecord.index + 2
   const joint = normalizeJointName(invalidRecord.record.joint) || 'пусто'
-  const settingId = getDateImportSaveCheckSettingId(invalidRecord.fieldKey, invalidRecord.reason)
   throw new Error(
-    `Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${formatSaveCheckBlockReason(settingId, invalidRecord.reason)}`,
+    `Импорт остановлен: строка ${rowNumber}, стык "${joint}". ${invalidRecord.issues
+      .map(({ fieldKey, reason }) => formatSaveCheckBlockReason(getDateSaveCheckSettingId(fieldKey, reason), reason))
+      .join(' ')}`,
   )
 }
 
-function getDateImportSaveCheckSettingId(fieldKey: WeldFieldKey, reason: string): SaveCheckSettingId {
+function getDateSaveCheckSettingId(fieldKey: WeldFieldKey, reason: string): SaveCheckSettingId {
   if (fieldKey === 'weldDate' && reason.toLowerCase().includes('позже сегодняшней')) {
     return 'weldDateNotFuture'
   }
+  if (LNK_CONCLUSION_DATE_FIELD_KEYS.has(fieldKey)) return 'lnkResultControlDateFormat'
+  if (LNK_REQUEST_DATE_FIELD_KEYS.has(fieldKey)) return 'lnkResultRequestDateOrder'
+  if (fieldKey === 'pstoDate') return 'pstoResultDateFormat'
+  if (PSTO_CYCLE_DATE_FIELD_KEYS.has(fieldKey)) return 'pstoResultRequestDateOrder'
   return 'dateFormat'
 }
+
+const LNK_REQUEST_DATE_FIELD_KEYS = new Set<WeldFieldKey>(
+  LNK_METHODS.map((method) => method.requestDateKey),
+)
+const LNK_CONCLUSION_DATE_FIELD_KEYS = new Set<WeldFieldKey>(
+  LNK_METHODS.map((method) => method.conclusionDateKey),
+)
+const PSTO_CYCLE_DATE_FIELD_KEYS = new Set<WeldFieldKey>([
+  'pstoRequestDate',
+  'tvmtRequestDate',
+  'tvmtConclusionDate',
+])
 
 const dateFieldKeys = [...FIELD_BY_KEY.entries()]
   .filter(([, field]) => field.kind === 'date')
   .map(([fieldKey]) => fieldKey as WeldFieldKey)
 
-function isFutureDateLike(value: unknown) {
-  const isoDate = parseDateLikeToIso(value)
-  return Boolean(isoDate && isoDate > getTodayIsoDate())
-}
 
 const legacyControlAvailabilityFieldKeys = [
   'pstoRequired',

@@ -5,10 +5,12 @@ import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
+  getControlAvailabilityReportHistoryIssues,
   getWeldFormAutoClearHint,
   getWeldFormCancellationResultHint,
   getWeldFormReactivationResultHint,
   getWeldFormSaveBlockReason,
+  getWeldStampSaveBlockReason,
 } from '@/lib/weld-form-save-reasons'
 
 describe('getWeldFormSaveBlockReason', () => {
@@ -130,6 +132,24 @@ describe('getWeldFormSaveBlockReason', () => {
     )
   })
 
+  it('keeps a legacy control-history issue visible to the dispatcher without blocking an unrelated edit', () => {
+    const legacyRow = {
+      id: 1,
+      joint: 'S1',
+      hasVik: null,
+      vikResult: 'годен',
+      responsible: '',
+    } as WeldInput
+
+    expect(getWeldFormSaveBlockReason(
+      { ...legacyRow, responsible: 'Иванов' },
+      legacyRow as WeldDraft,
+    )).toBeNull()
+    expect(getControlAvailabilityReportHistoryIssues(legacyRow)).toEqual([
+      expect.objectContaining({ code: 'ВИК', report: 'lnk' }),
+    ])
+  })
+
   it('keeps performed PSTO history valid after moving a weld to a line without PSTO', () => {
     const cycle = {
       id: 1,
@@ -220,12 +240,17 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
-  it('still blocks orphan PSTO financial history without execution or assignment', () => {
-    const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoBoq: 'Акт-1' } as WeldInput
+  it('does not treat PSTO financial references as execution history', () => {
+    const draft = {
+      id: 1,
+      joint: 'S1',
+      pstoRequired: null,
+      pstoBoq: 'Акт-1',
+      pstoKs3: 'КС-3-1',
+    } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-27 · ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.',
-    )
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
+    expect(getControlAvailabilityReportHistoryIssues(draft)).toEqual([])
   })
 
   it('explains cancelled positive PSTO result display', () => {
@@ -559,7 +584,7 @@ describe('getWeldFormSaveBlockReason', () => {
     })).toBeNull()
   })
 
-  it('allows disabling date format validation without disabling future weld date validation', () => {
+  it('keeps date format mandatory while future weld date validation remains configurable', () => {
     const malformedDraft = {
       id: 1,
       joint: 'S1',
@@ -582,11 +607,11 @@ describe('getWeldFormSaveBlockReason', () => {
       weldDateNotFuture: true,
     }
 
-    expect(getWeldFormSaveBlockReason(malformedDraft, initialValue, settings)).toBeNull()
+    expect(getWeldFormSaveBlockReason(malformedDraft, initialValue, settings)).toBe('ЗВ-11 · дата сварки: укажите дату в формате ДД.ММ.ГГГГ или ДД.ММ.ГГ.')
     expect(getWeldFormSaveBlockReason(futureDraft, initialValue, settings)).toBe('ЗВ-12 · дата сварки не может быть позже сегодняшней.')
   })
 
-  it('allows disabling all soft date checks', () => {
+  it('allows a valid future date when only the future-date rule is disabled', () => {
     const draft = {
       id: 1,
       joint: 'S1',
@@ -603,6 +628,44 @@ describe('getWeldFormSaveBlockReason', () => {
         weldDateNotFuture: false,
       }),
     ).toBeNull()
+  })
+
+  it('does not let a legacy stamp issue block an unrelated field edit in the form', () => {
+    const initialValue = { id: 1, joint: 'S1', stamp1K: 'OLD' } as WeldDraft
+    const draft = { ...initialValue, responsible: 'Иванов' } as WeldInput
+
+    expect(getWeldStampSaveBlockReason(draft, { stamp1K: [] }, {
+      initialValue,
+      saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
+    })).toBeNull()
+  })
+
+  it('rechecks the official stamp when a related field changes and respects a disabled registry check', () => {
+    const initialValue = { id: 1, joint: 'S1', stamp1K: 'OLD' } as WeldDraft
+    const draft = { ...initialValue, stamp1K: 'NEW' } as WeldInput
+
+    expect(getWeldStampSaveBlockReason(draft, { stamp1K: [] }, {
+      initialValue,
+      saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
+    })).toContain('ЗВ-01')
+    expect(getWeldStampSaveBlockReason(draft, { stamp1K: [] }, {
+      initialValue,
+      saveCheckSettings: {
+        ...DEFAULT_SAVE_CHECK_SETTINGS,
+        officialRegistry: false,
+      },
+    })).toBeNull()
+  })
+
+  it('keeps archive and DLS option failures on their own save-check codes', () => {
+    const draft = { joint: 'S1', stamp1K: 'ABC1' } as WeldInput
+
+    expect(getWeldStampSaveBlockReason(draft, {
+      stamp1K: [{ value: 'ABC1', disabled: true, reason: 'клеймо в архиве, дата архивации не указана' }],
+    })).toContain('ЗВ-02')
+    expect(getWeldStampSaveBlockReason(draft, {
+      stamp1K: [{ value: 'ABC1', disabled: true, reason: 'нет ДЛС на способ сварки РД' }],
+    })).toContain('ЗВ-09')
   })
 
   it('allows disabling system joint rename protection in dangerous form checks', () => {

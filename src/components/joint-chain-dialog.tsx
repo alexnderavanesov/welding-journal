@@ -168,13 +168,6 @@ export function JointChainDialog({
                     />
                   ))}
                 </div>
-                {relations.outgoing?.targetRowIds.some(Boolean) ? (
-                  <CoilContinuationPanel
-                    transition={relations.outgoing}
-                    rows={rows}
-                    onSelect={(row) => setSelectedRowId(row.id)}
-                  />
-                ) : null}
                 {(canCreateRepeatedJoint && repeatedJointCreateTasks.length > 0) ||
                 (canRenameRepeatedJoint && repeatedJointRenameTasks.length > 0) ||
                 (canCreateEarlyCoil && earlyCoilCandidate) ? (
@@ -192,10 +185,19 @@ export function JointChainDialog({
                   />
                 ) : null}
               </div>
-              <JointBranchRelations
-                relations={relations}
-                onSelect={(row) => setSelectedRowId(row.id)}
-              />
+              <div className="mt-auto">
+                {relations.outgoing?.targetRowIds.some(Boolean) ? (
+                  <CoilContinuationPanel
+                    transition={relations.outgoing}
+                    rows={rows}
+                    onSelect={(row) => setSelectedRowId(row.id)}
+                  />
+                ) : null}
+                <JointBranchRelations
+                  relations={relations}
+                  onSelect={(row) => setSelectedRowId(row.id)}
+                />
+              </div>
             </aside>
             <main className="min-h-0 overflow-y-auto px-5 py-4">
               <JointHistoryOverview
@@ -228,7 +230,7 @@ function CoilContinuationPanel({
     rowId ? rows.find((row) => row.id === rowId) ?? null : null,
   )
   return (
-    <section className="mt-4 border-t border-sky-200 pt-4" aria-label="Продолжение цепочки катушкой">
+    <section className={COIL_RELATION_PANEL_CLASS_NAME} aria-label="Продолжение цепочки катушкой">
       <div className="flex items-start gap-2.5">
         <GitFork className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
         <div className="min-w-0">
@@ -377,7 +379,7 @@ function JointBranchRelations({
   const siblingRow = relations.siblingRow
   const currentJoint = String(relations.currentBranchRoot?.joint ?? relations.branchJoint).trim()
   return (
-    <section className="mt-auto border-t border-sky-200 bg-sky-50/60 px-3.5 py-3" aria-label="Связи стыка катушки">
+    <section className={COIL_RELATION_PANEL_CLASS_NAME} aria-label="Связи стыка катушки">
       <div className="flex items-start gap-2.5">
         <GitFork className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
         <div className="min-w-0 flex-1">
@@ -399,6 +401,8 @@ function JointBranchRelations({
     </section>
   )
 }
+
+const COIL_RELATION_PANEL_CLASS_NAME = 'min-h-[132px] border-t border-sky-200 bg-sky-50/60 px-3.5 py-3'
 
 function RelationButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (

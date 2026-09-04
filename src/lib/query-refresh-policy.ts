@@ -1,4 +1,4 @@
-export const QUERY_WINDOW_FOCUS_REFRESH_AGE_MS = 10 * 60_000
+export const QUERY_WINDOW_FOCUS_REFRESH_AGE_MS = 30_000
 export const WELD_PAGE_ACTIVATION_REFRESH_AGE_MS = 60_000
 
 export function shouldRefetchQueryOnWindowFocus(

@@ -17,6 +17,7 @@ import {
 } from '@/lib/dispatcher-check-reasons'
 import {
   REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
+  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -51,7 +52,9 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
 
   const reason = task.reason ?? ''
   if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
-  if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON) return { joint: task.sourceJoint, type: 'Проверить ремонт по диаметру' }
+  if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON || reason === REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON) {
+    return { joint: task.sourceJoint, type: 'Проверить допустимость ремонта' }
+  }
   if (reason === 'проверить клеймо') return { joint: task.sourceJoint, type: 'Проверить клеймо' }
   if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
   if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
@@ -137,6 +140,9 @@ export function getRepeatedJointTaskDetails(task: DispatcherTask) {
   }
   if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON) {
     return `В стыке ${task.sourceJoint} указан результат "ремонт" при диаметре до 89 мм. По правилу для такого диаметра допустим только "вырез". Проверь D1/D2 или результат контроля.`
+  }
+  if (reason === REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON) {
+    return `В стыке ${task.sourceJoint} указан результат "ремонт" после двух официальных ремонтов. На этом шаге по правилам цепочки допустим только "вырез". Проверь имя цепочки, официальность или результат контроля.`
   }
   if (reason === 'проверить клеймо') {
     return `В стыке ${task.sourceJoint} найдено несоответствие официального клейма. Проверь реестр клейм, НАКС, ДЛС, историю отстранений, дату сварки, способ сварки, группу материалов, D1/D2 или T1/T2.`

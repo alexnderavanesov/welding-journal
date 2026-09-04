@@ -9,11 +9,22 @@ import {
 import { HEAT_TREATMENT_EDITABLE_FIELD_KEYS } from '@/lib/psto-report-config'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
+const LNK_DEFECT_FIELD_KEYS = [
+  'vikDefectDescription',
+  'uzkDefectDescription',
+  'pvkDefectDescription',
+  'preVikDefectDescription',
+  'preUzkDefectDescription',
+  'prePvkDefectDescription',
+] as const satisfies readonly WeldFieldKey[]
+
 const LNK_DOCUMENT_FIELD_KEYS = [
   ...LNK_REQUEST_FIELD_KEYS,
   ...LNK_REQUEST_DATE_FIELD_KEYS,
   ...[...LNK_CONCLUSION_FIELD_KEYS].filter(
-    (fieldKey) => fieldKey !== 'lnkNote' && fieldKey !== 'lnkDefectDescription',
+    (fieldKey) => fieldKey !== 'lnkNote' &&
+      fieldKey !== 'lnkDefectDescription' &&
+      !LNK_DEFECT_FIELD_KEYS.includes(fieldKey as never),
   ),
 ] as WeldFieldKey[]
 
@@ -30,6 +41,13 @@ describe('lnk report editable fields', () => {
   it('edits RK exposure details only through the LNK table dialog', () => {
     expect(LNK_EDITABLE_FIELD_KEYS.has('rkExposureScheme')).toBe(true)
     expect(LNK_EDITABLE_FIELD_KEYS.has('lnkDefectDescription')).toBe(true)
+  })
+
+  it('edits VIK, UZK and PVK defect descriptions only through their LNK cells', () => {
+    for (const fieldKey of LNK_DEFECT_FIELD_KEYS) {
+      expect(LNK_EDITABLE_FIELD_KEYS.has(fieldKey)).toBe(true)
+      expect(getReportImportCellKind('weldingJournal', fieldKey)).toBe('ignored')
+    }
   })
 
   it('keeps LNK requests, request dates and conclusions as system-managed fields', () => {

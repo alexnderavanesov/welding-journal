@@ -3,10 +3,12 @@ import { and, or, sql } from 'drizzle-orm'
 import { weldJoints, type WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
+import { encodeIdentityKey } from '@/lib/identity-key'
 import type {
   PstoWeldLineMoveDisposition,
   WeldChainLineMovePlan,
 } from '@/lib/psto-line-assignment'
+import { normalizePstoLineIdentityPart } from '@/lib/psto-line-assignment'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -25,9 +27,14 @@ export function normalizeWeldChainLineMovePlan(value: unknown): WeldChainLineMov
   if (!value || typeof value !== 'object') return null
   const candidate = value as {
     expectedRowIds?: unknown
+    expectedVersions?: unknown
     decisions?: unknown
   }
-  if (!Array.isArray(candidate.expectedRowIds) || !Array.isArray(candidate.decisions)) return null
+  if (
+    !Array.isArray(candidate.expectedRowIds) ||
+    !Array.isArray(candidate.expectedVersions) ||
+    !Array.isArray(candidate.decisions)
+  ) return null
   if (
     candidate.expectedRowIds.length === 0 ||
     candidate.expectedRowIds.length > MAX_CHAIN_LINE_MOVE_ROWS ||
@@ -39,6 +46,22 @@ export function normalizeWeldChainLineMovePlan(value: unknown): WeldChainLineMov
   if (
     expectedRowIdSet.size !== expectedRowIds.length ||
     expectedRowIds.some((rowId) => !Number.isInteger(rowId) || rowId <= 0)
+  ) return null
+  const expectedVersions = candidate.expectedVersions.map((entry) => {
+    if (!entry || typeof entry !== 'object') return null
+    const versionEntry = entry as { id?: unknown; version?: unknown }
+    return {
+      id: Number(versionEntry.id),
+      version: String(versionEntry.version ?? '').trim(),
+    }
+  })
+  if (
+    expectedVersions.some((entry) => !entry) ||
+    expectedVersions.length !== expectedRowIds.length ||
+    new Set(expectedVersions.map((entry) => entry!.id)).size !== expectedVersions.length ||
+    expectedVersions.some((entry) => (
+      !entry || !expectedRowIdSet.has(entry.id) || !entry.version
+    ))
   ) return null
 
   const decisions: WeldChainLineMovePlan['decisions'] = []
@@ -58,7 +81,11 @@ export function normalizeWeldChainLineMovePlan(value: unknown): WeldChainLineMov
     decisions.push({ rowId, disposition })
   }
 
-  return { expectedRowIds, decisions }
+  return {
+    expectedRowIds,
+    expectedVersions: expectedVersions as WeldChainLineMovePlan['expectedVersions'],
+    decisions,
+  }
 }
 
 export async function assertJointChainIdentityChangesUseDedicatedMove(
@@ -80,14 +107,16 @@ export async function assertJointChainIdentityChangesUseDedicatedMove(
     const key = getScopeKey(previous)
     if (!identities.has(key)) identities.set(key, previous as unknown as WeldInput)
   }
-  const conditions = [...identities.values()].map((row) => and(
-    sql`btrim(coalesce(${weldJoints.projectTitle}, '')) = ${String(row.projectTitle ?? '').trim()}`,
-    sql`btrim(coalesce(${weldJoints.subtitleCode}, '')) = ${String(row.subtitleCode ?? '').trim()}`,
-    sql`btrim(coalesce(${weldJoints.line}, '')) = ${String(row.line ?? '').trim()}`,
-  ))
-  const scopeRows = conditions.length > 0
-    ? await tx.select().from(weldJoints).where(or(...conditions))
-    : []
+  const scopeRows: WeldJoint[] = []
+  const identityRows = [...identities.values()]
+  for (let offset = 0; offset < identityRows.length; offset += 500) {
+    const conditions = identityRows.slice(offset, offset + 500).map((row) => and(
+      sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = ${normalizePstoLineIdentityPart(row.projectTitle)}`,
+      sql`lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = ${normalizePstoLineIdentityPart(row.subtitleCode)}`,
+      sql`lower(btrim(coalesce(${weldJoints.line}, ''))) = ${normalizePstoLineIdentityPart(row.line)}`,
+    ))
+    scopeRows.push(...await tx.select().from(weldJoints).where(or(...conditions)))
+  }
 
   for (const { record, previous } of changedRows) {
     const sourceRows = scopeRows.filter((row) => getScopeKey(row) === getScopeKey(previous)) as WeldRow[]
@@ -134,7 +163,7 @@ function hasChainIdentityChange(record: WeldInput, previous: WeldJoint) {
 }
 
 function getScopeKey(row: WeldInput) {
-  return [row.projectTitle, row.subtitleCode, row.line]
-    .map(normalizeJointChainPart)
-    .join('|')
+  return encodeIdentityKey(
+    [row.projectTitle, row.subtitleCode, row.line].map(normalizeJointChainPart),
+  )
 }

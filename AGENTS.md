@@ -13,6 +13,9 @@
 ## Database migrations
 
 - Never write migration SQL files manually.
+- Never run migrations from a non-main branch.
+- Before running any migration, ask the user exactly: "могу ли я запустить миграцию". Run the migration only after the user gives an affirmative answer.
+- Never run a migration without the user's direct permission.
 - Treat `src/db/schema.ts` as the source of truth for database shape.
 - For schema changes, update the Drizzle schema first, then generate migrations with `pnpm db:generate`.
 - Review generated migrations before running them, but do not hand-author migration files.

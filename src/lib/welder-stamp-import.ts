@@ -1,6 +1,10 @@
 import { FACTUAL_WELDER_STAMP_FIELD_KEY_SET } from '@/lib/report-config'
 import { loadDataListSettings } from '@/lib/data-list-settings'
-import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  DEFAULT_SAVE_CHECK_SETTINGS,
+  formatSaveCheckBlockReason,
+  type SaveCheckSettings,
+} from '@/lib/save-check-settings'
 import type { StampSelectOption } from '@/lib/weld-form-utils'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { formatWelderStampFieldKeyLabel } from '@/lib/welder-stamp-format'
@@ -19,6 +23,7 @@ export function validateWelderStampFieldsForImport(
   const allowedOfficialStampSet = new Set(allowedOfficialStampValues.map(normalizeStampSelectValue))
 
   records.forEach((record, index) => {
+    const errors: string[] = []
     for (const [fieldKey, options] of entries) {
       if (FACTUAL_WELDER_STAMP_FIELD_KEY_SET.has(fieldKey)) continue
       if (!saveCheckSettings.officialRegistry) continue
@@ -29,12 +34,16 @@ export function validateWelderStampFieldsForImport(
 
       const isValid = options.some((option) => normalizeStampSelectValue(option.value) === value)
       if (!isValid) {
-        const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
         const fieldLabel = formatWelderStampFieldKeyLabel(fieldKey)
-        throw new Error(
-          `Импорт остановлен: ${rowLabel}. Поле "${fieldLabel}" должно быть выбрано из активного реестра клейм. Значение "${value}" не найдено.`,
-        )
+        errors.push(formatSaveCheckBlockReason(
+          'officialRegistry',
+          `Поле "${fieldLabel}" должно быть выбрано из активного реестра клейм. Значение "${value}" не найдено.`,
+        ))
       }
+    }
+    if (errors.length > 0) {
+      const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
+      throw new Error(`Импорт остановлен: ${rowLabel}. ${errors.join(' ')}`)
     }
   })
 }

@@ -203,6 +203,7 @@ export function useHomeWeldEditorController() {
       return {
         weldChainLineMovePlan: {
           expectedRowIds: state.preview.expectedRowIds,
+          expectedVersions: state.preview.expectedVersions,
           decisions: state.decisions,
         },
       }

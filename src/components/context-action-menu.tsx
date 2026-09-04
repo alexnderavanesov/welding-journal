@@ -31,6 +31,7 @@ export type ContextActionMenuState = {
   x: number
   y: number
   anchorRowId?: number
+  closeOnScroll?: boolean
   heading?: string
   description?: string
   items: ContextActionMenuItem[]
@@ -117,6 +118,7 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
     }
     const handleWindowChange = () => onClose()
     const handleWindowScroll = (event: Event) => {
+      if (menu.closeOnScroll === false) return
       const target = event.target
       if (
         target instanceof Node

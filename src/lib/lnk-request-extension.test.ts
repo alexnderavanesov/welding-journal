@@ -166,4 +166,24 @@ describe('lnk request extension', () => {
       targets: [{ rowId: 1, methodKey: 'joint' }],
     })).toThrow('повторный или некорректный')
   })
+
+  it('does not copy a too-early date from an existing request', () => {
+    const [option] = getLnkRequestExtensionOptions([
+      weld({ vikRequest: 'Заявка-001', vikRequestDate: '2023-12-31' }),
+    ])
+    expect(option.disabledReason).toContain('отсутствует корректная дата')
+
+    expect(() => normalizeLnkRequestExtensionRequest({
+      requestName: 'Заявка-001',
+      requestDate: '2023-12-31',
+      targets: [{ rowId: 1, methodKey: 'vikRequest' }],
+    })).toThrow('Дата заявки ЛНК не может быть раньше 01.01.2024')
+
+    expect(() => buildLnkRequestExtensionRows({
+      rows: [weld()],
+      targets: [{ rowId: 1, methodKey: 'vikRequest' }],
+      requestName: 'Заявка-001',
+      requestDate: '2023-12-31',
+    })).toThrow('Дата заявки ЛНК не может быть раньше 01.01.2024')
+  })
 })

@@ -69,27 +69,31 @@ describe('PSTO cycle server state', () => {
       finalStatus: 'ожидает НК',
       pstoRepeatCycles: [],
     } as unknown as WeldRow
-    const updateReturning = vi
-      .fn()
-      .mockResolvedValueOnce([{ ...primary }])
-      .mockResolvedValueOnce([{ ...repeatOwner }])
+    let insertCall = 0
+    const insert = vi.fn(() => {
+      insertCall += 1
+      if (insertCall === 1) {
+        return {
+          values: vi.fn(() => ({
+            returning: vi.fn().mockResolvedValue([{
+              id: 21,
+              weldJointId: 2,
+              sequence: 2,
+              pstoRequest: 'Заявка ПСТО-2',
+              pstoRequestDate: '2026-08-21',
+            }]),
+          })),
+        }
+      }
+      const builder = {
+        onConflictDoUpdate: vi.fn(() => ({
+          returning: vi.fn().mockResolvedValue([{ ...primary }, { ...repeatOwner }]),
+        })),
+      }
+      return { values: vi.fn(() => builder) }
+    })
     const tx = {
-      insert: vi.fn(() => ({
-        values: vi.fn(() => ({
-          returning: vi.fn().mockResolvedValue([{
-            id: 21,
-            weldJointId: 2,
-            sequence: 2,
-            pstoRequest: 'Заявка ПСТО-2',
-            pstoRequestDate: '2026-08-21',
-          }]),
-        })),
-      })),
-      update: vi.fn(() => ({
-        set: vi.fn(() => ({
-          where: vi.fn(() => ({ returning: updateReturning })),
-        })),
-      })),
+      insert,
     }
 
     const saved = await persistPstoCycleWorkflowWrites({
@@ -111,7 +115,6 @@ describe('PSTO cycle server state', () => {
     })
 
     expect(saved.map((row) => row.id)).toEqual([1, 2])
-    expect(tx.insert).toHaveBeenCalledTimes(1)
-    expect(tx.update).toHaveBeenCalledTimes(2)
+    expect(tx.insert).toHaveBeenCalledTimes(2)
   })
 })

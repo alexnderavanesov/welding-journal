@@ -6,6 +6,7 @@ export type DuplicateControlResult = (typeof DUPLICATE_CONTROL_RESULTS)[number]
 
 export type DuplicateControlRecord = {
   id: number
+  version?: string
   weldJointId: number
   method: DuplicateControlMethod
   result: DuplicateControlResult
@@ -16,6 +17,7 @@ export type DuplicateControlRecord = {
 
 export type DuplicateControlDraft = {
   id?: number
+  expectedVersion?: string
   rowIds: Set<number>
   methods: Set<DuplicateControlMethod>
   result: DuplicateControlResult | ''

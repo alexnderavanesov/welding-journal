@@ -7,6 +7,8 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import { clearLnkRequestPosition } from '@/server/weld-mutations-api'
+import { getLnkDefectDescriptionDescriptor } from '@/lib/lnk-defect-description'
+import { updateLnkDefectDescription } from '@/server/weld-mutations-api'
 
 export function useLnkFieldMutation({
   lnkRequestOptions,
@@ -26,6 +28,18 @@ export function useLnkFieldMutation({
       fieldKey: WeldFieldKey
       value: string | null
     }) => {
+      const defectDescriptor = getLnkDefectDescriptionDescriptor(fieldKey)
+      if (defectDescriptor) {
+        return await updateLnkDefectDescription({
+          data: {
+            rowId: record.id,
+            expectedVersion: String(record.rowVersion ?? '').trim(),
+            methodCode: defectDescriptor.method.code,
+            stage: defectDescriptor.stage,
+            value,
+          },
+        }) as WeldRow
+      }
       const requestMethod = getLnkMethodByRequestKey(fieldKey)
       if (requestMethod && !value) {
         const requestName = String(record[requestMethod.requestKey] ?? '').trim()
@@ -33,6 +47,7 @@ export function useLnkFieldMutation({
         const saved = await clearLnkRequestPosition({
           data: {
             rowId: record.id,
+            expectedVersion: String(record.rowVersion ?? '').trim(),
             methodKey: fieldKey,
             requestName,
             requestDate: String(record[requestMethod.requestDateKey] ?? '').trim(),

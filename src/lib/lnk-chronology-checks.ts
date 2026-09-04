@@ -1,5 +1,5 @@
 import type { WeldInput } from '@/lib/weld-fields'
-import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
+import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import { LNK_METHODS } from '@/lib/report-config'
 import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -21,6 +21,7 @@ import {
   getPstoTvmtWorkflowState,
   requiresPostHeatTreatmentCompletion,
 } from '@/lib/tvmt-cycle'
+import { getDuplicateControls } from '@/lib/duplicate-control-utils'
 
 type LnkChronologyRow = WeldInput & { id?: number }
 
@@ -38,6 +39,9 @@ export function isLnkChronologyCheckReason(reason?: string) {
 
 export type LnkChronologyIssueKind =
   | 'request-date-missing'
+  | 'request-date-invalid'
+  | 'request-name-missing'
+  | 'conclusion-date-invalid'
   | 'weld-after-request'
   | 'weld-after-conclusion'
   | 'request-after-conclusion'
@@ -58,7 +62,8 @@ export type LnkChronologyIssue = {
 
 type LnkChronologyOptions = {
   includeConclusionBeforeWeldIssue?: boolean
-  includeMissingRequestDateIssue?: boolean
+  includeInvalidDateIssues?: boolean
+  includeRequestIntegrityIssues?: boolean
 }
 
 export function getLnkChronologyIssues(
@@ -73,6 +78,7 @@ export function getLnkChronologyIssues(
     issues.push(...getRowPostHeatTreatmentDateOrderIssues(row, settings))
     issues.push(...getRowVikOrderIssues(row, settings))
     issues.push(...getRowPreHeatTreatmentVikOrderIssues(row, settings))
+    if (options.includeInvalidDateIssues) issues.push(...getRowDuplicateDateIssues(row))
   }
   return issues
 }
@@ -82,7 +88,13 @@ function getRowPreHeatTreatmentDateOrderIssues(
   settings: SaveCheckSettings,
   options: LnkChronologyOptions,
 ) {
-  if (!settings.lnkResultRequestDateOrder) return []
+  if (
+    !settings.lnkResultRequestDateOrder &&
+    !settings.lnkResultDateAfterWeldDate &&
+    !options.includeConclusionBeforeWeldIssue &&
+    !options.includeInvalidDateIssues &&
+    !options.includeRequestIntegrityIssues
+  ) return []
   const issues: LnkChronologyIssue[] = []
   const weldDate = parseDateLikeToIso(row.weldDate)
   const pstoDate = parseDateLikeToIso(row.pstoDate)
@@ -91,20 +103,57 @@ function getRowPreHeatTreatmentDateOrderIssues(
   for (const control of getPreHeatTreatmentControls(row)) {
     if (!isPreHeatTreatmentLnkMethodCode(control.method)) continue
     const methodCode = `${control.method} до ТО`
+    const requestName = String(control.requestName ?? '').trim()
+    const rawRequestDate = String(control.requestDate ?? '').trim()
+    const hasRequestDate = hasDateInputValue(control.requestDate)
     const requestDate = parseDateLikeToIso(control.requestDate)
+    const rawConclusionDate = String(control.conclusionDate ?? '').trim()
+    const hasConclusionDate = hasDateInputValue(control.conclusionDate)
     const conclusionDate = parseDateLikeToIso(control.conclusionDate)
     const hasConclusion = isFinalResult(control.result)
+    const hasTrace = Boolean(
+      requestName || rawRequestDate || hasConclusion ||
+      String(control.conclusionDate ?? '').trim() || String(control.conclusionName ?? '').trim(),
+    )
 
-    if (options.includeMissingRequestDateIssue && hasConclusion && !requestDate) {
+    const requestDateReason = getDateInputValidationReason(control.requestDate, `Дата заявки ${methodCode}`)
+    const conclusionDateReason = getDateInputValidationReason(control.conclusionDate, `Дата заключения ${methodCode}`)
+    if (options.includeInvalidDateIssues && requestDateReason) {
+      issues.push({
+        kind: 'request-date-invalid',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: ${requestDateReason}`,
+      })
+    } else if (options.includeRequestIntegrityIssues && hasTrace && !hasRequestDate) {
       issues.push({
         kind: 'request-date-missing',
         methodCode,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
-        message: `Стык ${joint}: у ${methodCode} есть заключение, но нет даты заявки ЛНК.`,
+        message: `Стык ${joint}: у ${methodCode} есть данные контроля, но нет даты заявки ЛНК.`,
       })
     }
-    if (requestDate && weldDate && requestDate < weldDate) {
+    if (options.includeInvalidDateIssues && hasConclusionDate && conclusionDateReason) {
+      issues.push({
+        kind: 'conclusion-date-invalid',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: ${conclusionDateReason}`,
+      })
+    }
+    if (options.includeRequestIntegrityIssues && hasTrace && !requestName) {
+      issues.push({
+        kind: 'request-name-missing',
+        methodCode,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: у ${methodCode} есть данные контроля, но нет наименования заявки ЛНК.`,
+      })
+    }
+    if (settings.lnkResultRequestDateOrder && requestDate && weldDate && requestDate < weldDate) {
       issues.push({
         kind: 'weld-after-request',
         methodCode,
@@ -113,7 +162,13 @@ function getRowPreHeatTreatmentDateOrderIssues(
         message: `Стык ${joint}: дата заявки ${methodCode} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
       })
     }
-    if (conclusionDate && weldDate && conclusionDate < weldDate) {
+    if (
+      (settings.lnkResultDateAfterWeldDate || options.includeConclusionBeforeWeldIssue) &&
+      hasConclusion &&
+      conclusionDate &&
+      weldDate &&
+      conclusionDate < weldDate
+    ) {
       issues.push({
         kind: 'weld-after-conclusion',
         methodCode,
@@ -122,7 +177,7 @@ function getRowPreHeatTreatmentDateOrderIssues(
         message: `Стык ${joint}: дата заключения ${methodCode} ${formatDisplayDate(conclusionDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
       })
     }
-    if (requestDate && conclusionDate && conclusionDate < requestDate) {
+    if (settings.lnkResultRequestDateOrder && requestDate && conclusionDate && conclusionDate < requestDate) {
       issues.push({
         kind: 'request-after-conclusion',
         methodCode,
@@ -131,6 +186,7 @@ function getRowPreHeatTreatmentDateOrderIssues(
         message: `Стык ${joint}: дата заключения ${methodCode} ${formatDisplayDate(conclusionDate)} раньше даты заявки ${formatDisplayDate(requestDate)}.`,
       })
     }
+    if (!settings.lnkResultRequestDateOrder) continue
     for (const [label, date] of [['заявки', requestDate], ['заключения', conclusionDate]] as const) {
       if (!date || !pstoDate || date <= pstoDate) continue
       issues.push({
@@ -264,7 +320,7 @@ export function findFirstNewLnkChronologySaveBlockReason(
 }
 
 export function assertNoLnkChronologyIssues(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
-  const issue = findFirstLnkChronologyIssue(rows, settings)
+  const issue = findFirstLnkChronologySaveBlockReason(rows, settings)
   if (issue) throw new Error(issue)
 }
 
@@ -296,6 +352,7 @@ export function getLnkResultRemovalBlockReason(
 function getLnkChronologyIssueSaveCheckSettingId(issue: LnkChronologyIssue): SaveCheckSettingId {
   if (issue.reason === LNK_VIK_DATE_ORDER_REASON) return 'lnkResultVikDateBeforeOther'
   if (issue.reason === LNK_VIK_REQUIRED_REASON) return 'lnkResultVikRequiredBeforeOther'
+  if (issue.kind === 'weld-after-conclusion') return 'lnkResultDateAfterWeldDate'
   return 'lnkResultRequestDateOrder'
 }
 
@@ -315,7 +372,8 @@ export function getDispatcherLnkChronologyIssues(rows: LnkChronologyRow[]) {
     lnkResultVikRequiredBeforeOther: true,
   }, {
     includeConclusionBeforeWeldIssue: true,
-    includeMissingRequestDateIssue: true,
+    includeInvalidDateIssues: true,
+    includeRequestIntegrityIssues: true,
   })
 }
 
@@ -324,29 +382,70 @@ function getRowRequestDateOrderIssues(
   settings: SaveCheckSettings,
   options: LnkChronologyOptions,
 ) {
-  if (!settings.lnkResultRequestDateOrder) return []
+  if (
+    !settings.lnkResultRequestDateOrder &&
+    !settings.lnkResultDateAfterWeldDate &&
+    !options.includeConclusionBeforeWeldIssue &&
+    !options.includeInvalidDateIssues &&
+    !options.includeRequestIntegrityIssues
+  ) return []
   const issues: LnkChronologyIssue[] = []
   for (const method of LNK_METHODS) {
     const requestName = String(row[method.requestKey] ?? '').trim()
+    const rawRequestDate = String(row[method.requestDateKey] ?? '').trim()
+    const hasRequestDate = hasDateInputValue(row[method.requestDateKey])
     const requestDate = parseDateLikeToIso(row[method.requestDateKey])
     const weldDate = parseDateLikeToIso(row.weldDate)
+    const rawConclusionDate = String(row[method.conclusionDateKey] ?? '').trim()
+    const hasConclusionDate = hasDateInputValue(row[method.conclusionDateKey])
     const conclusionDate = parseDateLikeToIso(row[method.conclusionDateKey])
     const hasConclusion = hasFinalLnkResult(row, method)
-    const hasRequestTrace = Boolean(requestName || requestDate || hasConclusion)
+    const hasRequestTrace = Boolean(
+      requestName || rawRequestDate || hasConclusion ||
+      String(row[method.conclusionDateKey] ?? '').trim() || String(row[method.conclusionKey] ?? '').trim(),
+    )
     if (!hasRequestTrace) continue
 
     const joint = formatJoint(row)
-    if (options.includeMissingRequestDateIssue && hasConclusion && !requestDate) {
+    const requestDateReason = getDateInputValidationReason(row[method.requestDateKey], `Дата заявки ${method.code}`)
+    const conclusionDateReason = getDateInputValidationReason(row[method.conclusionDateKey], `Дата заключения ${method.code}`)
+    if (options.includeInvalidDateIssues && requestDateReason) {
+      issues.push({
+        kind: 'request-date-invalid',
+        methodCode: method.code,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: ${requestDateReason}`,
+      })
+    } else if (options.includeRequestIntegrityIssues && !hasRequestDate) {
       issues.push({
         kind: 'request-date-missing',
         methodCode: method.code,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
-        message: `Стык ${joint}: у ${method.code} есть заключение, но нет даты заявки ЛНК.`,
+        message: `Стык ${joint}: у ${method.code} есть данные контроля, но нет даты заявки ЛНК.`,
+      })
+    }
+    if (options.includeInvalidDateIssues && hasConclusionDate && conclusionDateReason) {
+      issues.push({
+        kind: 'conclusion-date-invalid',
+        methodCode: method.code,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: ${conclusionDateReason}`,
+      })
+    }
+    if (options.includeRequestIntegrityIssues && !requestName) {
+      issues.push({
+        kind: 'request-name-missing',
+        methodCode: method.code,
+        reason: LNK_REQUEST_DATE_ORDER_REASON,
+        row,
+        message: `Стык ${joint}: у ${method.code} есть данные контроля, но нет наименования заявки ЛНК.`,
       })
     }
 
-    if (requestDate && weldDate && requestDate < weldDate) {
+    if (settings.lnkResultRequestDateOrder && requestDate && weldDate && requestDate < weldDate) {
       issues.push({
         kind: 'weld-after-request',
         methodCode: method.code,
@@ -357,7 +456,7 @@ function getRowRequestDateOrderIssues(
     }
 
     if (
-      options.includeConclusionBeforeWeldIssue &&
+      (settings.lnkResultDateAfterWeldDate || options.includeConclusionBeforeWeldIssue) &&
       hasConclusion &&
       conclusionDate &&
       weldDate &&
@@ -372,7 +471,7 @@ function getRowRequestDateOrderIssues(
       })
     }
 
-    if (requestDate && conclusionDate && conclusionDate < requestDate) {
+    if (settings.lnkResultRequestDateOrder && requestDate && conclusionDate && conclusionDate < requestDate) {
       issues.push({
         kind: 'request-after-conclusion',
         methodCode: method.code,
@@ -383,6 +482,28 @@ function getRowRequestDateOrderIssues(
     }
   }
   return issues
+}
+
+function getRowDuplicateDateIssues(row: LnkChronologyRow): LnkChronologyIssue[] {
+  const joint = formatJoint(row)
+  return getDuplicateControls(row).flatMap((control) => {
+    const methodCode = `${control.method} (дубль)`
+    return [
+      { kind: 'request-date-invalid' as const, label: 'Дата контроля', value: control.controlDate },
+      { kind: 'conclusion-date-invalid' as const, label: 'Дата заключения', value: control.conclusionDate },
+    ].flatMap(({ kind, label, value }) => {
+      const dateReason = getDateInputValidationReason(value, `${label} ${methodCode}`)
+      return dateReason
+        ? [{
+            kind,
+            methodCode,
+            reason: LNK_REQUEST_DATE_ORDER_REASON,
+            row,
+            message: `Стык ${joint}: ${dateReason}`,
+          }]
+        : []
+    })
+  })
 }
 
 function getRowVikOrderIssues(row: LnkChronologyRow, settings: SaveCheckSettings) {
@@ -428,6 +549,11 @@ function hasFinalLnkResult(row: WeldInput, method: (typeof LNK_METHODS)[number])
 function isFinalResult(value: unknown) {
   const result = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
   return result === 'годен' || result === 'ремонт' || result === 'вырез'
+}
+
+function hasDateInputValue(value: unknown) {
+  const text = String(value ?? '').trim()
+  return Boolean(text && text !== '-')
 }
 
 function formatJoint(row: LnkChronologyRow) {

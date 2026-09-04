@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -74,5 +76,19 @@ describe('prepareDispatcherReportRows', () => {
     expect(preparedRows[0]?.pstoRepeatCycles).toEqual([repeatCycle])
     expect(preparedRows[0]?.duplicateControls).toHaveLength(1)
     expect(preparedRows[0]?.duplicateControls?.[0]?.conclusion).toBe('Дубль РК')
+  })
+})
+
+describe('dispatcher index concurrency', () => {
+  it('locks the welder registry before the dispatcher index', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/server/dispatcher-task-index.ts'), 'utf8')
+    const refreshStart = source.indexOf('async function ensureDispatcherTaskIndexFreshOnce()')
+    const stateReaderStart = source.indexOf('async function ensureAndReadDispatcherTaskIndexState()')
+    const refreshSource = source.slice(refreshStart, stateReaderStart)
+    const registryLockIndex = refreshSource.indexOf('await lockWelderStampRegistry(tx)')
+    const dispatcherLockIndex = refreshSource.indexOf('pg_advisory_xact_lock(${DISPATCHER_INDEX_LOCK_ID})')
+
+    expect(registryLockIndex).toBeGreaterThanOrEqual(0)
+    expect(dispatcherLockIndex).toBeGreaterThan(registryLockIndex)
   })
 })

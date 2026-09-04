@@ -12,6 +12,7 @@ import {
   type DocumentTemplateConstructorConfig,
   type StoredDocumentTemplate,
 } from '@/lib/document-template-storage'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
 
 describe('document template storage', () => {
@@ -455,6 +456,82 @@ describe('document template storage', () => {
 
     expect(worksheet.B2?.v).toBe('Пересогласование №13')
     expect(worksheet.C2?.v).toBe('ВИК: ТР №444; РК: Пересогласование №13')
+  })
+
+  it('fills all six VIK, UZK and PVK defect fields independently', async () => {
+    const template = createXlsxTemplate([
+      ['ВИК', 'УЗК', 'ПВК', 'ВИК до ТО', 'УЗК до ТО', 'ПВК до ТО'],
+      ['', '', '', '', '', ''],
+    ])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        { cell: 'A2', mode: 'row', field: 'vikDefectDescription' },
+        { cell: 'B2', mode: 'row', field: 'uzkDefectDescription' },
+        { cell: 'C2', mode: 'row', field: 'pvkDefectDescription' },
+        { cell: 'D2', mode: 'row', field: 'preVikDefectDescription' },
+        { cell: 'E2', mode: 'row', field: 'preUzkDefectDescription' },
+        { cell: 'F2', mode: 'row', field: 'prePvkDefectDescription' },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [{
+      vikResult: 'ремонт',
+      vikDefectDescription: 'ВИК основной',
+      uzkResult: 'вырез',
+      uzkDefectDescription: 'УЗК основной',
+      pvkResult: 'ремонт',
+      pvkDefectDescription: 'ПВК основной',
+      preVikDefectDescription: 'ВИК до ТО',
+      preUzkDefectDescription: 'УЗК до ТО',
+      prePvkDefectDescription: 'ПВК до ТО',
+    }])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+    const worksheet = workbook.Sheets.Шаблон
+
+    expect(['A2', 'B2', 'C2', 'D2', 'E2', 'F2'].map((cell) => worksheet[cell]?.v)).toEqual([
+      'ВИК основной',
+      'УЗК основной',
+      'ПВК основной',
+      'ВИК до ТО',
+      'УЗК до ТО',
+      'ПВК до ТО',
+    ])
+  })
+
+  it('writes DNO for legacy good defect fields even before their backfill', async () => {
+    const template = createXlsxTemplate([
+      ['ВИК', 'ВИК до ТО'],
+      ['', ''],
+    ])
+    template.constructorConfig = {
+      version: 1,
+      sheetName: 'Шаблон',
+      repeatRow: 2,
+      bindings: [
+        { cell: 'A2', mode: 'row', field: 'vikDefectDescription' },
+        { cell: 'B2', mode: 'row', field: 'preVikDefectDescription' },
+      ],
+    }
+
+    const blob = await createWeldingJournalBlobFromTemplate(template, [{
+      hasVik: 'да',
+      vikResult: 'годен',
+      vikDefectDescription: null,
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        result: 'годен',
+        defectDescription: null,
+      }],
+    } as WeldRow])
+    const workbook = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' })
+
+    expect(workbook.Sheets.Шаблон.A2?.v).toBe('ДНО')
+    expect(workbook.Sheets.Шаблон.B2?.v).toBe('ДНО')
   })
 
   it('expands RK exposures into rows and vertically merges the other joint fields', async () => {

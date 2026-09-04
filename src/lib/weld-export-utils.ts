@@ -2,13 +2,22 @@ import { DATE_TIME_WELD_FIELD_KEYS, VISIBLE_FIELDS, type WeldField, type WeldInp
 import { parseDate, parseNumber } from './weld-import-parsers'
 import { formatControlAvailabilityForExport } from './report-value-utils'
 import { formatDateTimeWithSeconds } from './weld-table-formatting'
+import {
+  getLnkDefectDescriptionDescriptor,
+  getLnkDefectDescriptionDisplayValue,
+} from './lnk-defect-description'
 
 export function recordsToVisibleExportMatrix(records: WeldInput[], fields: readonly WeldField[] = VISIBLE_FIELDS) {
   return [
     fields.map((field) => field.label),
     ...records.map((record) =>
       fields.map((field) => {
-        const value = record[field.key as keyof WeldInput]
+        const defectDescriptor = getLnkDefectDescriptionDescriptor(field.key as never)
+        const hasPreControls = (record as WeldInput & { preHeatTreatmentControls?: unknown[] })
+          .preHeatTreatmentControls !== undefined
+        const value = defectDescriptor && (defectDescriptor.stage === 'primary' || hasPreControls)
+          ? getLnkDefectDescriptionDisplayValue(record, defectDescriptor)
+          : record[field.key as keyof WeldInput]
         if (field.kind === 'boolean') return formatControlAvailabilityForExport(value)
         if (field.kind === 'date') return formatExportDate(value)
         if (DATE_TIME_WELD_FIELD_KEYS.has(field.key as never)) return formatDateTimeWithSeconds(value)

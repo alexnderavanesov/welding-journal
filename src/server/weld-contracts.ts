@@ -7,6 +7,12 @@ import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
 import type { JointCoilTransition } from '@/lib/joint-chain-transitions'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
+import type {
+  PercentageLineControlAction,
+  PercentageLineControlScope,
+} from '@/lib/percentage-line-control-update'
+import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 
 export type WeldFilters = {
   search?: string
@@ -126,6 +132,7 @@ export type WeldDataUsageSummary = {
 export type WeldMutationScope = 'welding' | 'lnk' | 'psto'
 
 export type WeldPayload = WeldDraft & {
+  expectedVersion?: string
   pstoLineMoveDisposition?: PstoWeldLineMoveDisposition
   weldChainLineMovePlan?: WeldChainLineMovePlan
   mutationScope?: WeldMutationScope
@@ -133,8 +140,39 @@ export type WeldPayload = WeldDraft & {
 
 export type WeldBatchUpdateData = {
   records: WeldPayload[]
+  expectedVersions: WeldRowVersionTarget[]
   mutationScope?: WeldMutationScope
   systemDocumentSequence?: SystemDocumentSequenceUpdate
   systemDocumentSequences?: SystemDocumentSequenceUpdate[]
   requireFullyAssignedPstoLines?: boolean
+}
+
+export type WeldDeleteData = WeldRowVersionTarget
+
+export type RepeatedJointDeleteData = {
+  taskKey: string
+  target: WeldRowVersionTarget
+}
+
+export type WeldDeleteManyData = {
+  targets: WeldRowVersionTarget[]
+}
+
+export type PercentageLineControlUpdateData = PercentageLineControlScope & {
+  action: PercentageLineControlAction
+  method?: PercentageControlMethod
+  targets: WeldRowVersionTarget[]
+}
+
+export type RepeatedJointCreateData = {
+  source: WeldRowVersionTarget
+  targetJoints: string[]
+}
+
+export type RequestDocumentManagerData = {
+  requestName: string
+  requestDate: string
+  nextRequestName?: string
+  action: 'rename' | 'delete'
+  expectedVersions: WeldRowVersionTarget[]
 }

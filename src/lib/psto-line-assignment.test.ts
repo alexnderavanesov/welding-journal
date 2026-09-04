@@ -4,11 +4,13 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   buildPstoAssignedKeepPrimaryValidationRow,
   assertPstoCancellationDateAfterHistory,
+  assertPstoLineAssignmentActionAllowed,
   blocksPstoLineActivation,
   buildPstoCancelledRow,
   buildPstoRemovedRow,
   getPrimaryStagedMethodCodes,
   getPstoLineActivationBlockReason,
+  getPstoLineAssignmentState,
   getPstoLineIdentityKey,
   hasPstoLifecycleData,
   hasPrimaryPstoHistory,
@@ -16,12 +18,54 @@ import {
 } from '@/lib/psto-line-assignment'
 
 describe('PSTO line assignment', () => {
+  it('rejects an impossible official cancellation date before persistence', () => {
+    expect(() => assertPstoCancellationDateAfterHistory([], '2026-02-31')).toThrow(
+      'Укажите корректную дату решения об отмене ПСТО.',
+    )
+    expect(() => assertPstoCancellationDateAfterHistory([], '2023-12-31')).toThrow(
+      'Дата решения об отмене ПСТО не может быть раньше 01.01.2024.',
+    )
+  })
+
   it('uses project, subtitle and line as one unambiguous identity', () => {
-    expect(getPstoLineIdentityKey({
+    const key = getPstoLineIdentityKey({
       projectTitle: ' Проект ',
       subtitleCode: ' 400 ',
-      line: ' L-1 ',
-    })).toBe(JSON.stringify(['Проект', '400', 'L-1']))
+      line: ' Lin123 ',
+    })
+
+    expect(key).toBe(JSON.stringify(['проект', '400', 'lin123']))
+    expect(getPstoLineIdentityKey({
+      projectTitle: 'проект',
+      subtitleCode: '400',
+      line: 'LIN123',
+    })).toBe(key)
+  })
+
+  it('classifies the current line state using canonical and legacy assignment values', () => {
+    expect(getPstoLineAssignmentState([
+      { pstoRequired: 'да' },
+      { pstoRequired: 'замена РК/УЗК' },
+    ])).toBe('assigned')
+    expect(getPstoLineAssignmentState([
+      { pstoRequired: 'отменен' },
+      { pstoRequired: 'отменен' },
+    ])).toBe('cancelled')
+    expect(getPstoLineAssignmentState([{ pstoRequired: null }])).toBe('unassigned')
+    expect(getPstoLineAssignmentState([
+      { pstoRequired: 'да' },
+      { pstoRequired: null },
+    ])).toBe('mixed')
+  })
+
+  it('rejects stale PSTO line actions that no longer match the stored state', () => {
+    expect(() => assertPstoLineAssignmentActionAllowed('assign', 'assigned')).toThrow('уже назначено')
+    expect(() => assertPstoLineAssignmentActionAllowed('assign', 'cancelled')).toThrow('Возобновить')
+    expect(() => assertPstoLineAssignmentActionAllowed('reactivate', 'unassigned')).toThrow('полностью отмененной')
+    expect(() => assertPstoLineAssignmentActionAllowed('remove', 'mixed')).toThrow('полностью назначенной')
+    expect(() => assertPstoLineAssignmentActionAllowed('cancel', 'unassigned')).toThrow('полностью назначенной')
+    expect(() => assertPstoLineAssignmentActionAllowed('assign', 'mixed')).not.toThrow()
+    expect(() => assertPstoLineAssignmentActionAllowed('cancel', 'assigned')).not.toThrow()
   })
 
   it('builds a validation baseline that preserves the main control while accepting assigned PSTO', () => {
@@ -211,6 +255,7 @@ describe('PSTO line assignment', () => {
       vikResult: 'ремонт',
       vikConclusionDate: '2026-08-03',
       vikConclusion: 'ЗНК до ТО',
+      vikDefectDescription: 'Дефект',
     })
     expect(getPrimaryStagedMethodCodes(next)).toEqual(['ВИК'])
   })
@@ -346,6 +391,27 @@ describe('PSTO line assignment', () => {
       vikConclusionDate: null,
       vikConclusion: null,
       lnkDefectDescription: '0-100: ДНО',
+    }))).toBe(true)
+  })
+
+  it('recognizes a simple defect description as primary-stage data', () => {
+    expect(requiresPrimaryStageResolutionForAssignedPstoLine(makeRow({
+      pstoRequired: null,
+      pstoRequest: null,
+      pstoRequestDate: null,
+      pstoDate: null,
+      pstoResult: null,
+      tvmtRequest: null,
+      tvmtRequestDate: null,
+      tvmtResult: null,
+      tvmtConclusionDate: null,
+      tvmtConclusion: null,
+      vikRequest: null,
+      vikRequestDate: null,
+      vikResult: null,
+      vikConclusionDate: null,
+      vikConclusion: null,
+      vikDefectDescription: 'Исторический дефект',
     }))).toBe(true)
   })
 

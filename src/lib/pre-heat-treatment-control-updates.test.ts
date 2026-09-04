@@ -12,6 +12,7 @@ import {
   getPreHeatTreatmentRequestRemovalBlockReason,
   getPreHeatTreatmentResultRemovalBlockReason,
 } from '@/lib/pre-heat-treatment-control-updates'
+import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('pre-heat-treatment control updates', () => {
   it('creates only assigned staged controls and keeps duplicates outside the stage', () => {
@@ -47,6 +48,32 @@ describe('pre-heat-treatment control updates', () => {
         conclusionDate: '2026-08-04',
       }],
     }), 'ВИК')).toBe(true)
+  })
+
+  it('clears stale simple-method defects when a pre-TO request is pending', () => {
+    const current = control({
+      requestName: null,
+      requestDate: null,
+      result: null,
+      conclusionDate: null,
+      conclusionName: null,
+      defectDescription: 'Старое описание',
+    })
+    const [created] = buildPreHeatTreatmentRequestWrites({
+      row: makeRow({ preHeatTreatmentControls: [current] }),
+      methodCodes: ['ВИК'],
+      requestName: 'Заявка до ТО-1',
+      requestDate: '2026-08-03',
+    })
+    const corrected = buildPreHeatTreatmentRequestCorrectionWrite({
+      row: makeRow(),
+      control: { ...current, result: 'ожидает НК' },
+      requestDate: '2026-08-03',
+      requestName: 'Заявка до ТО-2',
+    })
+
+    expect(created.defectDescription).toBeNull()
+    expect(corrected.defectDescription).toBeNull()
   })
 
   it('rejects unsupported methods and controls that are not assigned', () => {
@@ -151,7 +178,7 @@ describe('pre-heat-treatment control updates', () => {
     expect(canAddPreHeatTreatmentResult(row, 'ПВК')).toBe(false)
   })
 
-  it('builds a rejected result without changing the weld or duplicate records', () => {
+  it('builds a rejected result with an empty description for separate editing', () => {
     const row = makeRow({
       preHeatTreatmentControls: [control({ result: 'ожидает НК' })],
     })
@@ -168,7 +195,7 @@ describe('pre-heat-treatment control updates', () => {
       result: 'вырез',
       conclusionDate: '2026-08-05',
       conclusionName: 'ЗНК-ВИК-1',
-      defectDescription: 'Трещина',
+      defectDescription: null,
     }))
     expect(row.duplicateControls).toBeUndefined()
   })
@@ -219,7 +246,7 @@ describe('pre-heat-treatment control updates', () => {
 
   it('corrects an existing result while preserving its request identity', () => {
     const current = control()
-    const row = makeRow({ preHeatTreatmentControls: [current] })
+    const row = makeRow({ pstoDate: null, preHeatTreatmentControls: [current] })
 
     expect(buildPreHeatTreatmentResultCorrectionWrite({
       row,
@@ -234,7 +261,31 @@ describe('pre-heat-treatment control updates', () => {
       result: 'годен',
       conclusionDate: '2026-08-06',
       conclusionName: 'ЗНК-ВИК-исправлено',
+      defectDescription: 'ДНО',
     }))
+  })
+
+  it('preserves a manual defect between rejected pre-TO results and replaces it for a good result', () => {
+    const current = control({ result: 'ремонт', defectDescription: 'Несплошность 8 мм' })
+    const row = makeRow({ pstoDate: null, preHeatTreatmentControls: [current] })
+
+    const cut = buildPreHeatTreatmentResultCorrectionWrite({
+      row,
+      control: current,
+      controlDate: '2026-08-06',
+      result: 'вырез',
+      conclusionName: 'ЗНК-ВИК-вырез',
+    })
+    expect(cut.defectDescription).toBe('Несплошность 8 мм')
+
+    const good = buildPreHeatTreatmentResultCorrectionWrite({
+      row,
+      control: cut as typeof current,
+      controlDate: '2026-08-06',
+      result: 'годен',
+      conclusionName: 'ЗНК-ВИК-годен',
+    })
+    expect(good.defectDescription).toBe('ДНО')
   })
 
   it('corrects a request without merging it into the primary stage', () => {
@@ -310,6 +361,62 @@ describe('pre-heat-treatment control updates', () => {
       row,
       control({ result: 'ожидает НК', conclusionDate: null, conclusionName: null }),
     )).toBe('')
+  })
+
+  it('enforces ZВ-14 before heat treatment even when an old setting disabled it', () => {
+    const pending = control({ result: 'ожидает НК', conclusionDate: null, conclusionName: null })
+    const row = makeRow({ pstoDate: null, preHeatTreatmentControls: [pending] })
+    const settings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      lnkResultDateAfterWeldDate: false,
+      lnkResultRequestDateOrder: false,
+    }
+
+    expect(() => buildPreHeatTreatmentResultWrite({
+      row,
+      methodCode: 'ВИК',
+      controlDate: 'дата уточняется',
+      result: 'годен',
+      conclusionName: 'ЗНК-ВИК-1',
+      saveCheckSettings: settings,
+    })).toThrow('Дата контроля НК до ТО')
+
+    expect(() => buildPreHeatTreatmentResultWrite({
+      row,
+      methodCode: 'ВИК',
+      controlDate: 'дата уточняется',
+      result: 'годен',
+      conclusionName: 'ЗНК-ВИК-1',
+      saveCheckSettings: { ...settings, lnkResultControlDateFormat: false },
+    })).toThrow('Дата контроля НК до ТО')
+  })
+
+  it('rejects a malformed pre-TO request date', () => {
+    expect(() => buildPreHeatTreatmentRequestWrites({
+      row: makeRow(),
+      methodCodes: ['ВИК'],
+      requestName: 'Заявка до ТО-1',
+      requestDate: 'не дата',
+    })).toThrow('корректную дату документа')
+  })
+
+  it('rejects pre-TO request and result dates before the system minimum', () => {
+    expect(() => buildPreHeatTreatmentRequestWrites({
+      row: makeRow(),
+      methodCodes: ['ВИК'],
+      requestName: 'Заявка до ТО-1',
+      requestDate: '2023-12-31',
+    })).toThrow('Дата заявки НК до ТО не может быть раньше 01.01.2024')
+
+    expect(() => buildPreHeatTreatmentResultWrite({
+      row: makeRow({
+        preHeatTreatmentControls: [control({ result: 'ожидает НК' })],
+      }),
+      methodCode: 'ВИК',
+      controlDate: '2023-12-31',
+      result: 'годен',
+      conclusionName: 'ЗНК-ВИК-1',
+    })).toThrow('Дата контроля НК до ТО не может быть раньше 01.01.2024')
   })
 })
 

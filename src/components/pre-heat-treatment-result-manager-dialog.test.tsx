@@ -18,6 +18,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     }
     const row = {
       id: 7,
+      rowVersion: '107',
       projectTitle: 'Проект А',
       subtitleCode: '400',
       line: 'L-1',
@@ -53,6 +54,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить заявку' }))
     expect(onCorrect).toHaveBeenCalledWith({
       relationId: 11,
+      expectedVersion: '107',
       stage: 'request',
       action: 'update',
       requestDate: '2026-08-03',

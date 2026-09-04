@@ -1,6 +1,7 @@
 import { parseJointChainName } from '@/lib/joint-chain'
 import type { DispatcherTask, RepeatedJointTaskGroup, WeldRow } from '@/lib/dispatcher-types'
 import { formatWelderStampCompactLabel } from '@/lib/welder-stamp-format'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 export function groupRepeatedJointTasks(
   tasks: DispatcherTask[],
@@ -22,10 +23,19 @@ export function groupRepeatedJointTasks(
 function getRepeatedJointTaskGroupKey(task: DispatcherTask, getChainKey: (row: WeldRow) => string | null) {
   if (task.kind === 'welder-stamp-expiry') return `welder-stamp-expiry:${task.naksStamp.trim().toLowerCase()}`
   if (task.kind === 'line-consistency') {
-    return `line-consistency:${task.projectTitle.trim().toLowerCase()}:${task.subtitleCode.trim().toLowerCase()}:${task.line.trim().toLowerCase()}`
+    return `line-consistency:${encodeIdentityKey([
+      task.projectTitle.trim().toLowerCase(),
+      task.subtitleCode.trim().toLowerCase(),
+      task.line.trim().toLowerCase(),
+    ])}`
   }
   if (task.kind === 'percentage-line-control') {
-    return `percentage-line-control:${task.projectTitle.trim().toLowerCase()}:${task.subtitleCode.trim().toLowerCase()}:${task.line.trim().toLowerCase()}:${task.stamp.trim().toLowerCase()}`
+    return `percentage-line-control:${encodeIdentityKey([
+      task.projectTitle.trim().toLowerCase(),
+      task.subtitleCode.trim().toLowerCase(),
+      task.line.trim().toLowerCase(),
+      task.stamp.trim().toLowerCase(),
+    ])}`
   }
   return getChainKey(task.row) ?? getRepeatedJointTaskBaseJoint(task)
 }

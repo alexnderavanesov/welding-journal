@@ -37,10 +37,13 @@ describe('system document virtual rows', () => {
       result: 'годен',
       conclusionDate: '2026-08-02',
       conclusionName: 'ЗНК-ВИК-до-ТО',
+      defectDescription: 'ДНО',
     }])
 
     expect(row.vikRequest).toBe('До ТО')
     expect(row.vikConclusion).toBe('ЗНК-ВИК-до-ТО')
+    expect(row.vikDefectDescription).toBe('ДНО')
+    expect(row.preVikDefectDescription).toBe('ДНО')
     expect(row.rkRequest).toBeUndefined()
     expect(row.duplicateControls).toEqual([
       {

@@ -1,15 +1,21 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asc, sql } from 'drizzle-orm'
+import { asc, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import { requireDb } from '@/db'
 import {
   welderStampSuspensions,
   welderStamps,
+  weldJoints,
   type NewWelderStamp,
   type NewWelderStampSuspension,
   type WelderStamp,
   type WelderStampSuspension,
 } from '@/db/schema'
+import {
+  FACTUAL_WELDER_STAMP_FIELD_KEYS,
+  OFFICIAL_WELDER_STAMP_FIELD_KEYS,
+} from '@/lib/report-common-config'
+import { normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
@@ -17,6 +23,7 @@ import {
   prepareWelderStampRecordsForPersistence,
   prepareWelderStampSuspensionsForPersistence,
 } from '@/lib/welder-stamp-persistence-validation'
+import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
 
 export type WelderStampPayload = {
   id: number
@@ -133,35 +140,64 @@ const createRegistrySnapshot = (
   }
 }
 
-const assertRegistryRevision = (actualRevision: string, expectedRevision?: string) => {
-  if (expectedRevision && expectedRevision !== actualRevision) {
+export const assertRegistryRevision = (actualRevision: string, expectedRevision: string) => {
+  if (!expectedRevision || expectedRevision !== actualRevision) {
     throw new Error(
       'Справочник клейм уже изменён другим пользователем. Актуальные данные загружены заново; повторите изменение.',
     )
   }
 }
 
+type WelderStampAliasRecord = {
+  naksStamp?: string | null
+  internalStamp?: string | null
+}
+
+export function getRemovedWelderStampReferenceAliases(
+  currentRecords: readonly WelderStampAliasRecord[],
+  nextRecords: readonly WelderStampAliasRecord[],
+) {
+  const currentOfficial = getWelderStampAliasSet(currentRecords, ['naksStamp'])
+  const nextOfficial = getWelderStampAliasSet(nextRecords, ['naksStamp'])
+  const currentFactual = getWelderStampAliasSet(currentRecords, ['naksStamp', 'internalStamp'])
+  const nextFactual = getWelderStampAliasSet(nextRecords, ['naksStamp', 'internalStamp'])
+
+  return {
+    official: [...currentOfficial].filter((alias) => !nextOfficial.has(alias)).sort(),
+    factual: [...currentFactual].filter((alias) => !nextFactual.has(alias)).sort(),
+  }
+}
+
 export const loadWelderStampRegistrySnapshot = createServerFn({ method: 'GET' }).handler(async () => {
   await assertSecurityScope('entry')
   const db = requireDb()
-  const [stampRows, suspensionRows] = await Promise.all([
-    db.select().from(welderStamps).orderBy(asc(welderStamps.id)),
-    db.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id)),
-  ])
-  return createRegistrySnapshot(stampRows, suspensionRows)
+  return db.transaction(async (tx) => {
+    await lockWelderStampRegistry(tx)
+    const stampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
+    const suspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
+    return createRegistrySnapshot(stampRows, suspensionRows)
+  })
 })
 
 export const saveWelderStampRecords = createServerFn({ method: 'POST' })
-  .validator((data: { records: WelderStampPayload[]; expectedRevision?: string }) => data)
+  .validator((data: { records: WelderStampPayload[]; expectedRevision: string }) => ({
+    records: Array.isArray(data?.records) ? data.records : [],
+    expectedRevision: String(data?.expectedRevision ?? '').trim(),
+  }))
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
     const preparedRecords = prepareWelderStampRecordsForPersistence(data.records)
     const db = requireDb()
     return db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('welder_stamp_registry'))`)
+      await lockWelderStampRegistry(tx, 'exclusive')
       const currentStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
       const currentSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       assertRegistryRevision(createRegistrySnapshot(currentStampRows, currentSuspensionRows).revision, data.expectedRevision)
+      assertWelderStampSuspensionsReferenceRegistry(
+        currentSuspensionRows.map(suspensionToPayload),
+        preparedRecords,
+      )
+      await assertRemovedWelderStampAliasesAreUnused(tx, currentStampRows, preparedRecords)
 
       await tx.delete(welderStamps)
 
@@ -180,14 +216,67 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
     })
   })
 
+function getWelderStampAliasSet(
+  records: readonly WelderStampAliasRecord[],
+  fields: readonly (keyof WelderStampAliasRecord)[],
+) {
+  return new Set(records.flatMap((record) => fields
+    .map((field) => normalizeStampForCompare(record[field]))
+    .filter(Boolean)))
+}
+
+async function assertRemovedWelderStampAliasesAreUnused(
+  tx: Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0],
+  currentRecords: readonly WelderStampAliasRecord[],
+  nextRecords: readonly WelderStampAliasRecord[],
+) {
+  const removed = getRemovedWelderStampReferenceAliases(currentRecords, nextRecords)
+  const conditions: SQL[] = []
+
+  for (const fieldKey of OFFICIAL_WELDER_STAMP_FIELD_KEYS) {
+    if (removed.official.length === 0) break
+    conditions.push(inArray(
+      sql<string>`upper(btrim(coalesce(${weldJoints[fieldKey]}, '')))`,
+      removed.official,
+    ))
+  }
+  for (const fieldKey of FACTUAL_WELDER_STAMP_FIELD_KEYS) {
+    if (removed.factual.length === 0) break
+    conditions.push(inArray(
+      sql<string>`upper(btrim(coalesce(${weldJoints[fieldKey]}, '')))`,
+      removed.factual,
+    ))
+  }
+  if (conditions.length === 0) return
+
+  const references = await tx
+    .select({ id: weldJoints.id, joint: weldJoints.joint })
+    .from(weldJoints)
+    .where(or(...conditions))
+    .orderBy(asc(weldJoints.id))
+    .limit(4)
+  if (references.length === 0) return
+
+  const aliases = [...new Set([...removed.official, ...removed.factual])]
+  const joints = references.slice(0, 3).map((row) => String(row.joint ?? '').trim() || `#${row.id}`)
+  throw new Error(
+    `Нельзя удалить или переименовать клеймо ${aliases.slice(0, 3).join(', ')}: ` +
+    `оно уже используется в стыках ${joints.join(', ')}${references.length > 3 ? ' и других' : ''}. ` +
+    'Чтобы сохранить историю, отправьте карточку клейма в архив.',
+  )
+}
+
 export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' })
-  .validator((data: { records: WelderStampSuspensionPayload[]; expectedRevision?: string }) => data)
+  .validator((data: { records: WelderStampSuspensionPayload[]; expectedRevision: string }) => ({
+    records: Array.isArray(data?.records) ? data.records : [],
+    expectedRevision: String(data?.expectedRevision ?? '').trim(),
+  }))
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
     const preparedRecords = prepareWelderStampSuspensionsForPersistence(data.records)
     const db = requireDb()
     return db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('welder_stamp_registry'))`)
+      await lockWelderStampRegistry(tx, 'exclusive')
       const currentStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
       const currentSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       assertRegistryRevision(createRegistrySnapshot(currentStampRows, currentSuspensionRows).revision, data.expectedRevision)

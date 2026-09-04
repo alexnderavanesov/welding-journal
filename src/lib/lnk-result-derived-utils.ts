@@ -152,7 +152,7 @@ export function getLnkResultSaveBlockReason({
   if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyRows && !draft.controlDate) {
     return formatSaveCheckBlockReason('lnkResultControlDateRequired', 'Укажите дату контроля.')
   }
-  if (saveCheckSettings.lnkResultControlDateFormat && hasNonEmptyRows) {
+  if (hasNonEmptyRows) {
     const dateReason = getDateInputValidationReason(draft.controlDate, 'Дата контроля')
     if (dateReason) return formatSaveCheckBlockReason('lnkResultControlDateFormat', dateReason)
   }

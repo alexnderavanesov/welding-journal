@@ -15,7 +15,7 @@ import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 
-type RowWithId = Pick<WeldRow, 'id'> & Partial<WeldInput>
+type RowWithId = Pick<WeldRow, 'id'> & Partial<WeldInput> & Pick<Partial<WeldRow>, 'rowVersion'>
 
 export async function createWeldRowOrThrow<T extends WeldInput>(
   record: T,
@@ -26,12 +26,16 @@ export async function createWeldRowOrThrow<T extends WeldInput>(
   return saved
 }
 
-export async function createWeldRowsOrThrow<T extends WeldInput>(
-  records: T[],
+export async function createWeldRowsOrThrow(
+  sourceRow: RowWithId,
+  targetJoints: string[],
   errorMessage = 'Не удалось создать записи',
 ) {
   const savedRows = await createWeldJoints({
-    data: { records: records.map((record) => normalizeDateFieldsForSave(record)) },
+    data: {
+      source: { id: sourceRow.id, version: getExpectedWeldRowVersion(sourceRow) },
+      targetJoints,
+    },
   })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
   return savedRows
@@ -45,6 +49,7 @@ export async function updateWeldRowOrThrow<T extends RowWithId>(
   const saved = await updateWeldJoint({
     data: {
       ...normalizeDateFieldsForSave(record),
+      expectedVersion: getExpectedWeldRowVersion(record),
       mutationScope: options.mutationScope,
     },
   })
@@ -56,7 +61,12 @@ export async function moveWeldJointChainOrThrow<T extends RowWithId>(
   record: T,
   errorMessage = 'Не удалось перенести цепочку стыка',
 ) {
-  const saved = await moveWeldJointChain({ data: normalizeDateFieldsForSave(record) })
+  const saved = await moveWeldJointChain({
+    data: {
+      ...normalizeDateFieldsForSave(record),
+      expectedVersion: getExpectedWeldRowVersion(record),
+    },
+  })
   if (!saved.every(Boolean)) throw new Error(errorMessage)
   return saved
 }
@@ -80,6 +90,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
   const savedRows = await updateWeldJoints({
     data: {
       records: records.map((record) => normalizeDateFieldsForSave(record)),
+      expectedVersions: getExpectedWeldRowVersions(records),
       mutationScope: options.mutationScope,
       systemDocumentSequence: options.systemDocumentSequence,
       systemDocumentSequences: options.systemDocumentSequences,
@@ -92,10 +103,14 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
 
 export async function massFillWeldRowsOrThrow<T extends RowWithId>(
   records: T[],
+  expectedVersions: WeldRowVersionTarget[],
   errorMessage = 'Не удалось сохранить часть записей массового заполнения',
 ) {
   const savedRows = await massFillWeldJoints({
-    data: { records: records.map((record) => normalizeDateFieldsForSave(record)) },
+    data: {
+      records: records.map((record) => normalizeDateFieldsForSave(record)),
+      expectedVersions,
+    },
   })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
   return savedRows
@@ -133,3 +148,14 @@ function normalizeDateFieldsForSave<T extends WeldInput>(record: T): T {
 const dateFieldKeys = [...FIELD_BY_KEY.entries()]
   .filter(([, field]) => field.kind === 'date')
   .map(([fieldKey]) => fieldKey as WeldFieldKey)
+
+function getExpectedWeldRowVersions(records: readonly RowWithId[]): WeldRowVersionTarget[] {
+  return records.map((record) => ({
+    id: Number(record.id),
+    version: getExpectedWeldRowVersion(record),
+  }))
+}
+
+function getExpectedWeldRowVersion(record: Pick<Partial<WeldRow>, 'rowVersion'>) {
+  return String(record.rowVersion ?? '').trim()
+}

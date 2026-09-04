@@ -566,10 +566,7 @@ export function DocumentsPage({
 
   useEffect(() => {
     const handleGeneratedDocumentChange = () => {
-      void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
-      void queryClient.invalidateQueries({
-        queryKey: [...WELD_JOINTS_QUERY_KEY, 'document-generation'],
-      })
+      void invalidateWeldJoints(queryClient)
     }
 
     window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, handleGeneratedDocumentChange)
@@ -1435,7 +1432,7 @@ function GeneratedDocumentsPanel({
       description: `Документ «${documentLabel}» связан с ${documentRecord.rowCount} ${formatJointCount(documentRecord.rowCount)}. После удаления поле «${documentFieldLabel}» у этих стыков будет очищено.`,
       warning: 'Документ будет удален из истории сформированных документов. Это действие нельзя отменить.',
     })
-    if (confirmed) await deleteGeneratedDocument(documentRecord.id)
+    if (confirmed) await deleteGeneratedDocument(documentRecord.id, documentRecord.updatedAt)
   }
   const openDocumentRows = async (documentRecord: StoredGeneratedDocument) => {
     setOpeningRowsDocumentId(documentRecord.id)
@@ -1958,7 +1955,9 @@ function SystemDocumentsPanel({
         tone: 'warning',
       })
       if (!confirmed) return
-      await transferLnkDocumentStage({ data: documentRecord })
+      await transferLnkDocumentStage({
+        data: { ...documentRecord, expectedVersions: preview.expectedVersions },
+      })
       await onRenamed()
       setActionNotice(`Комплект «${documentRecord.title}» перенесен на этап «${targetLabel}».`)
     })

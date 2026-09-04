@@ -4,6 +4,7 @@ import {
   DEFAULT_DISPATCHER_SETTINGS,
   DISPATCHER_SETTING_CODES,
 } from '@/lib/dispatcher-settings'
+import { SAVE_CHECK_SETTING_CODES } from '@/lib/save-check-settings'
 import {
   SAVE_CHECK_DISPATCHER_LINKS,
   getDispatcherSettingIdsForSaveCheck,
@@ -33,10 +34,12 @@ describe('save check and dispatcher links', () => {
 
   it('maps regrouped chronology and data-quality checks exactly', () => {
     expect(getSaveCheckSettingIdsForDispatcher('check-lnk-request-date-order')).toEqual([
+      'lnkResultControlDateFormat',
       'lnkResultDateAfterWeldDate',
       'lnkResultRequestDateOrder',
     ])
     expect(getSaveCheckSettingIdsForDispatcher('check-psto-request-date-order')).toEqual([
+      'pstoResultDateFormat',
       'pstoResultDateAfterWeldDate',
       'pstoResultRequestDateOrder',
     ])
@@ -44,6 +47,7 @@ describe('save check and dispatcher links', () => {
       'requiredMaterialGroupWithWeldDate',
       'requiredConnectionTypeWithWeldDate',
       'requiredWeldingMethodWithWeldDate',
+      'dateFormat',
       'weldDateNotFuture',
       'manualJointName',
     ])
@@ -60,15 +64,22 @@ describe('save check and dispatcher links', () => {
     ])
   })
 
-  it('does not invent dispatcher counterparts for format-only and rename-operation checks', () => {
-    expect(getDispatcherSettingIdsForSaveCheck('dateFormat')).toEqual([])
-    expect(getDispatcherSettingIdsForSaveCheck('lnkResultControlDateFormat')).toEqual([])
-    expect(getDispatcherSettingIdsForSaveCheck('pstoResultDateFormat')).toEqual([])
+  it('links mandatory date formats to their stored-data audits but not operation-only rename checks', () => {
+    expect(getDispatcherSettingIdsForSaveCheck('dateFormat')).toEqual(['check-joint-core-data'])
+    expect(getDispatcherSettingIdsForSaveCheck('lnkResultControlDateFormat')).toEqual(['check-lnk-request-date-order'])
+    expect(getDispatcherSettingIdsForSaveCheck('pstoResultDateFormat')).toEqual(['check-psto-request-date-order'])
     expect(getDispatcherSettingIdsForSaveCheck('systemJointRenameProtection')).toEqual([])
   })
 
   it('contains no duplicate pairs', () => {
     const keys = SAVE_CHECK_DISPATCHER_LINKS.map(([saveCheckId, dispatcherId]) => `${saveCheckId}:${dispatcherId}`)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('links every stored-data save check and leaves only the operation-only rename guard unpaired', () => {
+    const unlinked = Object.keys(SAVE_CHECK_SETTING_CODES)
+      .filter((id) => getDispatcherSettingIdsForSaveCheck(id as keyof typeof SAVE_CHECK_SETTING_CODES).length === 0)
+
+    expect(unlinked).toEqual(['systemJointRenameProtection'])
   })
 })

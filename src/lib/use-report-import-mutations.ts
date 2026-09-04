@@ -18,7 +18,11 @@ export function useReportImportMutations({
   const queryClient = useQueryClient()
 
   const weldMassFillMutation = useMutation({
-    mutationFn: async ({ records, skippedRows }: { records: ReportImportRecord[]; skippedRows: number }) => {
+    mutationFn: async ({ records, skippedRows, expectedVersions }: {
+      records: ReportImportRecord[]
+      skippedRows: number
+      expectedVersions: WeldRowVersionTarget[]
+    }) => {
       assertWeldImportRowLimit(records.length)
       const { updatedRows, changedFieldKeys, invalidRecords } = buildExistingRowImportUpdates(records)
 
@@ -28,6 +32,7 @@ export function useReportImportMutations({
 
       const savedRows = await massFillWeldRowsOrThrow(
         updatedRows,
+        expectedVersions,
         'Не удалось сохранить часть записей массового заполнения',
       )
       return {

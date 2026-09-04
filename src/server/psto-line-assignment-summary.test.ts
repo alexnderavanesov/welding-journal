@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { loadPstoLineAssignmentSummaries } from '@/server/psto-line-assignment-summary'
+import { CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES } from '@/lib/control-availability-values'
+import { getPstoLineIdentityKey } from '@/lib/psto-line-assignment'
 
 describe('PSTO line assignment summary query', () => {
+  it('counts the legacy replacement value as an active assignment', () => {
+    expect(CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES).toContain('замена рк/узк')
+  })
+
   it('returns normalized line summaries from one database query', async () => {
     const execute = vi.fn().mockResolvedValue({
       rows: [{
@@ -32,7 +38,11 @@ describe('PSTO line assignment summary query', () => {
       projectTitle: 'Проект',
       subtitleCode: 'Шифр',
       line: 'Линия 1',
-      key: JSON.stringify(['Проект', 'Шифр', 'Линия 1']),
+      key: getPstoLineIdentityKey({
+        projectTitle: 'Проект',
+        subtitleCode: 'Шифр',
+        line: 'Линия 1',
+      }),
       rowCount: 102,
       assignedCount: 81,
       cancelledCount: 5,

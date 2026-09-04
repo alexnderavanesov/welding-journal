@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { eq, inArray } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { pstoRepeatCycles, weldJoints } from '@/db/schema'
@@ -39,10 +39,20 @@ import {
 } from '@/lib/tvmt-cycle'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
+import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import { DEFAULT_SAVE_CHECK_SETTINGS, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
-import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import {
+  getDispatcherDirtyScopes,
+  markDispatcherTaskIndexDirty,
+} from '@/server/dispatcher-task-index-dirty'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import {
+  haveSameWeldLineMemberships,
+  lockWeldLineMembershipsForWeldIds,
+} from '@/server/weld-line-membership-lock'
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
 import {
   deletePstoRepeatCyclesInTransaction,
@@ -56,13 +66,20 @@ import { assertSecurityScope } from '@/server/security-functions'
 import {
   removeSourcedSystemDocumentPositionsInTransaction,
   syncSystemDocumentsForWeldChangesInTransaction,
-  upsertSourcedSystemDocumentInTransaction,
+  upsertSourcedSystemDocumentsInTransaction,
 } from '@/server/system-document-index'
 import {
-  reserveSystemDocumentName,
+  lockSystemDocumentNumberCounter,
+  reserveSystemDocumentNames,
   type SystemDocumentSequenceUpdate,
   type SystemDocumentSequenceTransaction,
 } from '@/server/system-document-sequences'
+import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
+import {
+  assertExpectedInteractiveWeldVersions,
+  lockInteractiveWeldRows,
+} from '@/server/weld-row-version'
+import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
 
 export type PstoRepeatWorkflowAction = PstoCycleWorkflowAction
 
@@ -79,6 +96,7 @@ export type PstoRepeatWorkflowPayload = {
   date: string
   groups: PstoRepeatWorkflowGroup[]
   results?: Array<{ rowId: number; result: string }>
+  expectedVersions: WeldRowVersionTarget[]
 }
 
 export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
@@ -88,15 +106,32 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
     const db = requireDb()
     return db.transaction(async (tx) => {
       await loadControlProcessSettingsFromTransaction(tx)
+      const { saveCheckSettings } = await loadWeldWorkflowSettingsFromTransaction(tx)
       const rowIds = [...new Set(data.groups.flatMap((group) => group.rowIds))]
-      const storedRows = await tx
-        .select()
-        .from(weldJoints)
-        .where(inArray(weldJoints.id, rowIds))
-        .for('update')
+      const sequenceRequests = data.groups.map((group) => (
+        group.useSystemName
+          ? getSequenceRequest(data.action, data.date, group.name)
+          : null
+      ))
+      const sequenceIds = [...new Set(sequenceRequests
+        .filter((request): request is SystemDocumentSequenceUpdate => Boolean(request))
+        .map(getSystemDocumentTemplateId))]
+        .sort()
+      for (const sequenceId of sequenceIds) {
+        await lockSystemDocumentNumberCounter(tx, sequenceId)
+      }
+      const lineMembershipSnapshot = await lockWeldLineMembershipsForWeldIds(tx, rowIds)
+      if (lineMembershipSnapshot.length !== rowIds.length) {
+        throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет ПСТО.')
+      }
+      const storedRows = await lockInteractiveWeldRows(tx, rowIds)
       if (storedRows.length !== rowIds.length) {
         throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет ПСТО.')
       }
+      if (!haveSameWeldLineMemberships(lineMembershipSnapshot, storedRows)) {
+        throw new Error('Один или несколько выбранных стыков уже перенесены на другую линию. Обновите отчет ПСТО.')
+      }
+      assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
       await assertPstoWorkflowLinesFullyAssigned(tx, storedRows, { allowPerformedHistoryRows: true })
       const rows = await attachDuplicateControlRelations(
         await attachHeatTreatmentControlRelations(
@@ -107,18 +142,24 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
       )
       const rowsById = new Map(rows.map((row) => [row.id, row]))
       const resultByRowId = new Map(data.results.map((entry) => [entry.rowId, entry.result]))
-      const resolvedGroups = [] as PstoRepeatWorkflowGroup[]
-      for (const group of data.groups) {
-        const groupRows = group.rowIds.map((rowId) => rowsById.get(rowId)!)
-        const name = group.useSystemName
-          ? (await reserveSystemDocumentName(
-              tx,
-              getSequenceRequest(data.action, data.date, group.name),
-              groupRows,
-            )).name
-          : group.name
-        resolvedGroups.push({ ...group, name })
-      }
+      const systemNameGroups = data.groups.flatMap((group, index) => {
+        const request = sequenceRequests[index]
+        return request
+          ? [{ index, request, rows: group.rowIds.map((rowId) => rowsById.get(rowId)!) }]
+          : []
+      })
+      const reservations = await reserveSystemDocumentNames(
+        tx,
+        systemNameGroups,
+        { countersAlreadyLocked: true },
+      )
+      const systemNameByGroupIndex = new Map(
+        systemNameGroups.map((group, index) => [group.index, reservations[index]!.name]),
+      )
+      const resolvedGroups = data.groups.map((group, index) => ({
+        ...group,
+        name: systemNameByGroupIndex.get(index) ?? group.name,
+      }))
 
       const writes = resolvedGroups.flatMap((group) =>
         group.rowIds.map((rowId) => buildWorkflowWrite({
@@ -127,6 +168,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
           date: data.date,
           name: group.name,
           result: resultByRowId.get(rowId) ?? '',
+          saveCheckSettings,
         })),
       )
       const persistedRows = await persistPstoCycleWorkflowWrites({
@@ -143,13 +185,16 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
         tx,
       )
       await syncPstoCycleDocuments(tx, data.action, resolvedGroups, updatedRows)
-      await markDispatcherTaskIndexDirty(tx)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes(updatedRows, new Map()),
+      })
       return updatedRows
     })
   })
 
 export type CorrectPstoCycleStagePayload = {
   rowId: number
+  expectedVersion: string
   sequence: number
   cycleId?: number
   stage: PstoCycleStage
@@ -166,13 +211,19 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
     const db = requireDb()
     return db.transaction(async (tx) => {
       await loadControlProcessSettingsFromTransaction(tx)
+      const { saveCheckSettings } = await loadWeldWorkflowSettingsFromTransaction(tx)
       const [storedRow] = await tx
-        .select()
+        .select(WELD_TABLE_RETURNING)
         .from(weldJoints)
         .where(eq(weldJoints.id, data.rowId))
         .for('update')
         .limit(1)
       if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет ПСТО.')
+      assertExpectedInteractiveWeldVersions(
+        [data.rowId],
+        [{ id: data.rowId, version: data.expectedVersion }],
+        [storedRow],
+      )
       await tx
         .select({ id: pstoRepeatCycles.id })
         .from(pstoRepeatCycles)
@@ -183,7 +234,7 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
         await attachHeatTreatmentControlRelations([storedRow as WeldRow], tx),
         tx,
       )
-      const correction = applyPstoCycleCorrection(currentRow, data)
+      const correction = applyPstoCycleCorrection(currentRow, data, saveCheckSettings)
       const sourceRelationId = data.sequence === 1
         ? data.rowId
         : correction.repeatCycle?.id ?? correction.deletedRepeatCycleId
@@ -232,7 +283,9 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
         }
       }
 
-      await markDispatcherTaskIndexDirty(tx)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes([savedRow], new Map()),
+      })
       return (await attachDuplicateControlRelations(
         await attachHeatTreatmentControlRelations([savedRow], tx),
         tx,
@@ -242,6 +295,7 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
 
 export type CorrectPstoTvmtAndRemoveLaterCyclesPayload = {
   rowId: number
+  expectedVersion: string
   sequence: number
   cycleId?: number
   date?: string
@@ -256,13 +310,19 @@ export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POS
     const db = requireDb()
     return db.transaction(async (tx) => {
       await loadControlProcessSettingsFromTransaction(tx)
+      const { saveCheckSettings } = await loadWeldWorkflowSettingsFromTransaction(tx)
       const [storedRow] = await tx
-        .select()
+        .select(WELD_TABLE_RETURNING)
         .from(weldJoints)
         .where(eq(weldJoints.id, data.rowId))
         .for('update')
         .limit(1)
       if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет ПСТО.')
+      assertExpectedInteractiveWeldVersions(
+        [data.rowId],
+        [{ id: data.rowId, version: data.expectedVersion }],
+        [storedRow],
+      )
       await tx
         .select({ id: pstoRepeatCycles.id })
         .from(pstoRepeatCycles)
@@ -273,7 +333,7 @@ export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POS
         await attachHeatTreatmentControlRelations([storedRow as WeldRow], tx),
         tx,
       )
-      const correction = applyPstoTvmtCorrectionWithLaterCycleRemoval(currentRow, data)
+      const correction = applyPstoTvmtCorrectionWithLaterCycleRemoval(currentRow, data, saveCheckSettings)
       const currentRelationId = data.sequence === 1
         ? data.rowId
         : correction.repeatCycle?.id
@@ -345,7 +405,9 @@ export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POS
       }
       await syncAllPstoCycleDocuments(tx, savedRow, data.sequence)
 
-      await markDispatcherTaskIndexDirty(tx)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes([savedRow], new Map()),
+      })
       return (await attachDuplicateControlRelations(
         await attachHeatTreatmentControlRelations([savedRow], tx),
         tx,
@@ -371,6 +433,7 @@ export function normalizePstoCycleStageCorrectionPayload(
   if (action !== 'update' && action !== 'delete') throw new Error('Неизвестное изменение цикла ПСТО/ТВМТ.')
   return {
     rowId,
+    expectedVersion: String(value?.expectedVersion ?? '').trim(),
     sequence,
     cycleId,
     stage,
@@ -391,6 +454,7 @@ export function normalizePstoTvmtAndRemoveLaterCyclesPayload(
   })
   return {
     rowId: normalized.rowId,
+    expectedVersion: normalized.expectedVersion,
     sequence: normalized.sequence,
     cycleId: normalized.cycleId,
     date: normalized.date,
@@ -406,8 +470,11 @@ export function normalizePstoCycleWorkflowPayload(
   if (!['pstoRequest', 'pstoResult', 'tvmtRequest', 'tvmtResult'].includes(action)) {
     throw new Error('Неизвестное действие повторного цикла ПСТО/ТВМТ.')
   }
-  const date = String(value?.date ?? '').trim().slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Укажите дату документа.')
+  const rawDate = String(value?.date ?? '').trim()
+  const date = action === 'pstoResult' ? rawDate : rawDate.slice(0, 10)
+  if (action !== 'pstoResult' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error('Укажите дату документа.')
+  }
   const groups = (Array.isArray(value?.groups) ? value.groups : []).map((group) => ({
     rowIds: [...new Set((Array.isArray(group?.rowIds) ? group.rowIds : [])
       .map(Number)
@@ -416,7 +483,9 @@ export function normalizePstoCycleWorkflowPayload(
     useSystemName: Boolean(group?.useSystemName),
   })).filter((group) => group.rowIds.length > 0)
   if (groups.length === 0) throw new Error('Выберите хотя бы один стык.')
-  if (groups.some((group) => !group.name)) throw new Error('Укажите наименование документа.')
+  if (action !== 'pstoResult' && groups.some((group) => !group.name)) {
+    throw new Error('Укажите наименование документа.')
+  }
   const assigned = new Set<number>()
   for (const group of groups) {
     for (const rowId of group.rowIds) {
@@ -437,7 +506,11 @@ export function normalizePstoCycleWorkflowPayload(
   if (action === 'tvmtResult' && results.length !== assigned.size) {
     throw new Error('Укажите результат ТВМТ для каждого выбранного стыка.')
   }
-  return { action, date, groups, results }
+  const expectedVersions = (Array.isArray(value?.expectedVersions) ? value.expectedVersions : []).map((entry) => ({
+    id: Number(entry?.id),
+    version: String(entry?.version ?? '').trim(),
+  }))
+  return { action, date, groups, results, expectedVersions }
 }
 
 export function buildWorkflowWrite({
@@ -446,19 +519,26 @@ export function buildWorkflowWrite({
   date,
   name,
   result,
+  saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 }: {
   action: PstoRepeatWorkflowAction
   row: WeldRow
   date: string
   name: string
   result: string
+  saveCheckSettings?: SaveCheckSettings
 }) {
   const currentCycle = getCurrentPstoCycle(row)
   const workflowState = getPstoTvmtWorkflowState(row)
   if (action === 'pstoRequest' && canCreateRepeatPstoCycle(row)) {
     return {
       source: 'repeat' as const,
-      cycle: buildRepeatPstoRequestCycle({ row, requestName: name, requestDate: date }),
+      cycle: buildRepeatPstoRequestCycle({
+        row,
+        requestName: name,
+        requestDate: date,
+        saveCheckSettings,
+      }),
     }
   }
   if (action === 'pstoRequest') {
@@ -467,6 +547,7 @@ export function buildWorkflowWrite({
       records: [row],
       requestName: name,
       requestDate: date,
+      saveCheckSettings,
     })
     return {
       source: 'primary' as const,
@@ -481,6 +562,7 @@ export function buildWorkflowWrite({
       result: 'проведено',
       diagramName: name,
       rows: [row],
+      saveCheckSettings,
     })
     return {
       source: 'primary' as const,
@@ -489,25 +571,41 @@ export function buildWorkflowWrite({
   }
   if ((action === 'tvmtRequest' || action === 'tvmtResult') && currentCycle?.source === 'primary') {
     const [updatedRow] = action === 'tvmtRequest'
-      ? buildPrimaryTvmtRequestRows({ records: [row], requestName: name, requestDate: date })
+      ? buildPrimaryTvmtRequestRows({
+          records: [row],
+          requestName: name,
+          requestDate: date,
+          saveCheckSettings,
+        })
       : buildPrimaryTvmtResultRows({
           records: [row],
           controlDate: date,
           result,
           conclusionName: name,
+          saveCheckSettings,
         })
     return { source: 'primary' as const, row: updatedRow }
   }
   if (action === 'pstoResult') {
     return {
       source: 'repeat' as const,
-      cycle: buildRepeatPstoResultCycle({ row, pstoDate: date, diagramName: name }),
+      cycle: buildRepeatPstoResultCycle({
+        row,
+        pstoDate: date,
+        diagramName: name,
+        saveCheckSettings,
+      }),
     }
   }
   if (action === 'tvmtRequest') {
     return {
       source: 'repeat' as const,
-      cycle: buildRepeatTvmtRequestCycle({ row, requestName: name, requestDate: date }),
+      cycle: buildRepeatTvmtRequestCycle({
+        row,
+        requestName: name,
+        requestDate: date,
+        saveCheckSettings,
+      }),
     }
   }
   return {
@@ -517,6 +615,7 @@ export function buildWorkflowWrite({
       controlDate: date,
       result,
       conclusionName: name,
+      saveCheckSettings,
     }),
   }
 }
@@ -547,7 +646,9 @@ async function syncPstoCycleDocuments(
 ) {
   const rowsById = new Map(rows.map((row) => [row.id, row]))
   const type = getDocumentType(action)
+  const documents = [] as Parameters<typeof upsertSourcedSystemDocumentsInTransaction>[0]['documents'][number][]
   for (const group of groups) {
+    if (!text(group.name)) continue
     const groupRows = group.rowIds.map((rowId) => rowsById.get(rowId)).filter(Boolean) as WeldRow[]
     const virtualRows = groupRows.map((row) => {
       const cycle = getWorkflowCycle(row, targetSequences.get(row.id))
@@ -576,8 +677,7 @@ async function syncPstoCycleDocuments(
         ...((action === 'tvmtRequest' || action === 'tvmtResult') ? { methodCode: 'ТВМТ' } : {}),
       }
     })
-    await upsertSourcedSystemDocumentInTransaction({
-      tx,
+    documents.push({
       summary: {
         ...summary,
         ...((action === 'tvmtRequest' || action === 'tvmtResult') ? { methodCode: 'ТВМТ' } : {}),
@@ -587,6 +687,7 @@ async function syncPstoCycleDocuments(
       sourcePositions,
     })
   }
+  await upsertSourcedSystemDocumentsInTransaction({ tx, documents })
 }
 
 function getRepeatCycleRecord(row: WeldRow, cycleId: number | undefined) {
@@ -616,10 +717,10 @@ async function syncAllPstoCycleDocuments(
   if (!cycle) return
   const targetSequences = new Map([[row.id, sequence]])
   const documents: Array<{ action: PstoRepeatWorkflowAction; name: string }> = [
-    { action: 'pstoRequest', name: text(cycle.pstoRequest) },
-    { action: 'pstoResult', name: text(cycle.heatTreatmentDiagram) },
     { action: 'tvmtRequest', name: text(cycle.tvmtRequest) },
     { action: 'tvmtResult', name: text(cycle.tvmtConclusion) },
+    { action: 'pstoRequest', name: text(cycle.pstoRequest) },
+    { action: 'pstoResult', name: text(cycle.heatTreatmentDiagram) },
   ]
   for (const document of documents) {
     if (!document.name) continue

@@ -11,6 +11,11 @@ import {
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
+import {
+  getLnkDefectDescriptionDescriptor,
+  getLnkDefectDescriptionEditBlockReason,
+  getLnkDefectDescriptionValue,
+} from '@/lib/lnk-defect-description'
 
 type FieldMutationVariables = {
   record: WeldRow
@@ -77,6 +82,25 @@ export function useReportEditActions({
 
     if (activeReport === 'lnk') {
       if (focusField && LNK_EDITABLE_FIELD_KEYS.has(focusField)) {
+        const defectDescriptor = getLnkDefectDescriptionDescriptor(focusField)
+        if (defectDescriptor) {
+          const blockReason = getLnkDefectDescriptionEditBlockReason(record, defectDescriptor)
+          if (blockReason) {
+            setMessage(blockReason)
+            return
+          }
+          const field = FIELD_BY_KEY.get(focusField)
+          setHeatTreatmentFieldEditing({
+            record,
+            fieldKey: focusField,
+            label: field?.label ?? 'Описание дефектов',
+            kind: 'text',
+            value: String(getLnkDefectDescriptionValue(record, defectDescriptor) ?? ''),
+            report: 'lnk',
+            mode: 'text',
+          })
+          return
+        }
         if (focusField === 'preRkExposureScheme' || focusField === 'preRkDefectDescription') {
           const preRk = record.preHeatTreatmentControls?.find((control) => control.method === 'РК')
           const preRkResult = String(preRk?.result ?? '').trim().toLocaleLowerCase('ru')

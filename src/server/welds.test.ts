@@ -12,6 +12,7 @@ import {
   compactWeldRowsForTransport,
   getWeldImportSecurityScope,
   getControlMethodFilterColumnKey,
+  getCurrentRepeatedJointTargets,
   getProfileTimestampUpdates,
   getDerivedReportFilterSelectedFieldKeys,
   getReportContextSelect,
@@ -26,6 +27,7 @@ import {
   normalizeDocumentGenerationDataRequest,
   prepareWeldInputForPersistence,
   restrictWeldMutationRecord,
+  sameNormalizedTextSet,
   shouldEnsureDispatcherTaskIndexForColumnFilter,
 } from './welds'
 import { getReportOrderBy } from './weld-read'
@@ -43,6 +45,8 @@ import {
 } from '@/lib/dispatcher-task-row-codes'
 import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
+import { WELD_EFFECTIVE_OFFICIALITY } from '@/server/weld-server-shared'
 
 describe('weld server pagination helpers', () => {
   it('keeps staged-control relations in the final-status persistence calculation', () => {
@@ -126,6 +130,9 @@ describe('weld server pagination helpers', () => {
       hasRk: 'да',
       rkRequest: 'Заявка РК-2',
       rkResult: 'годен',
+      vikDefectDescription: 'ВИК из отчета ЛНК',
+      uzkDefectDescription: 'УЗК из отчета ЛНК',
+      pvkDefectDescription: 'ПВК из отчета ЛНК',
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО-1',
       tvmtResult: null,
@@ -138,6 +145,9 @@ describe('weld server pagination helpers', () => {
       id: staleClientRow.id,
       rkRequest: 'Заявка РК-2',
       rkResult: 'годен',
+      vikDefectDescription: 'ВИК из отчета ЛНК',
+      uzkDefectDescription: 'УЗК из отчета ЛНК',
+      pvkDefectDescription: 'ПВК из отчета ЛНК',
     })
     expect(lnkRecord).not.toHaveProperty('responsible')
     expect(lnkRecord).not.toHaveProperty('hasRk')
@@ -153,6 +163,9 @@ describe('weld server pagination helpers', () => {
     })
     expect(pstoRecord).not.toHaveProperty('pstoRequired')
     expect(pstoRecord).not.toHaveProperty('rkRequest')
+    expect(pstoRecord).not.toHaveProperty('vikDefectDescription')
+    expect(pstoRecord).not.toHaveProperty('uzkDefectDescription')
+    expect(pstoRecord).not.toHaveProperty('pvkDefectDescription')
     expect(pstoRecord).not.toHaveProperty('preHeatTreatmentLnkExempt')
 
     const weldingRecord = restrictWeldMutationRecord(staleClientRow, 'welding')
@@ -163,6 +176,9 @@ describe('weld server pagination helpers', () => {
     })
     expect(weldingRecord).not.toHaveProperty('rkRequest')
     expect(weldingRecord).not.toHaveProperty('pstoRequest')
+    expect(weldingRecord).not.toHaveProperty('vikDefectDescription')
+    expect(weldingRecord).not.toHaveProperty('uzkDefectDescription')
+    expect(weldingRecord).not.toHaveProperty('pvkDefectDescription')
     expect(weldingRecord).not.toHaveProperty('preHeatTreatmentLnkExempt')
 
     expect(prepareWeldInputForPersistence({
@@ -184,6 +200,69 @@ describe('weld server pagination helpers', () => {
       pstoCreatedAt: now,
       pstoUpdatedAt: now,
     })
+  })
+
+  it('derives a repeated-joint target from the current locked chain', () => {
+    const source = row({
+      id: 51,
+      projectTitle: 'Проект',
+      subtitleCode: 'Титул',
+      line: 'Линия 1',
+      joint: 'F1',
+      rkResult: 'ремонт',
+    }) as WeldRow
+    expect(getCurrentRepeatedJointTargets(
+      [source],
+      source,
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+    )).toEqual(['F1R1'])
+
+    const existingTarget = row({
+      id: 52,
+      projectTitle: 'Проект',
+      subtitleCode: 'Титул',
+      line: 'Линия 1',
+      joint: 'F1R1',
+      rkResult: null,
+    }) as WeldRow
+    expect(getCurrentRepeatedJointTargets(
+      [source, existingTarget],
+      source,
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+    )).toEqual([])
+
+    const firstCoilJoint = row({
+      id: 53,
+      projectTitle: 'Проект',
+      subtitleCode: 'Титул',
+      line: 'Линия 1',
+      joint: 'F1Y1',
+    }) as WeldRow
+    expect(getCurrentRepeatedJointTargets(
+      [source, firstCoilJoint],
+      source,
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+      true,
+    )).toEqual(['F1Y2'])
+
+    expect(getCurrentRepeatedJointTargets(
+      [{ ...source, d1: 57, d2: 57 }],
+      { ...source, d1: 57, d2: 57 },
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+    )).toEqual([])
+
+    const repairLimitSource = { ...source, joint: 'F1R2', d1: 159, d2: 159 }
+    expect(getCurrentRepeatedJointTargets(
+      [repairLimitSource],
+      repairLimitSource,
+      DEFAULT_SYSTEM_INDEX_SETTINGS,
+    )).toEqual([])
+  })
+
+  it('rejects repeated-joint targets duplicated only by letter case', () => {
+    expect(sameNormalizedTextSet(['F1R1'], ['F1R1'])).toBe(true)
+    expect(sameNormalizedTextSet(['F1R1', 'f1r1'], ['F1R1'])).toBe(false)
+    expect(sameNormalizedTextSet(['F1R1'], ['F1R1', 'f1r1'])).toBe(false)
   })
 
   it('records the PSTO entry only when the joint actually enters the report', () => {
@@ -259,6 +338,13 @@ describe('weld server pagination helpers', () => {
     expect(normalized).not.toHaveProperty('status')
     expect(normalized.columnFilters).toEqual({ officiality: 'неофициальный' })
     expect(normalized.sort).toEqual({ fieldKey: 'officiality', direction: 'asc' })
+  })
+
+  it('reads the production compatibility status before the renamed column', () => {
+    const compiled = new PgDialect().sqlToQuery(sql`select ${WELD_EFFECTIVE_OFFICIALITY}`)
+
+    expect(compiled.sql).toContain('coalesce')
+    expect(compiled.sql.indexOf('"status"')).toBeLessThan(compiled.sql.indexOf('"officiality"'))
   })
 
   it('checks the dispatcher index only for dispatcher-backed column options', () => {

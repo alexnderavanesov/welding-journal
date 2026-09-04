@@ -15,10 +15,14 @@ import {
 import {
   getPstoLineIdentityKey,
   normalizePstoLineIdentity,
+  normalizePstoLineIdentityPart,
 } from '@/lib/psto-line-assignment'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import type { WeldInput } from '@/lib/weld-fields'
-import { lockControlProcessSettings } from '@/server/control-process-settings-lock'
+import {
+  lockAllControlProcessSettings,
+  lockControlProcessSettings,
+} from '@/server/control-process-settings-lock'
 import { rebuildAllLayeredControlDocumentsInTransaction } from '@/server/layered-control-documents'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
 import { splitNumberBatches } from '@/server/weld-request-utils'
@@ -50,7 +54,7 @@ export type ControlProcessSettingsOverview = {
 export async function loadControlProcessSettingsFromTransaction(
   tx: Pick<GeneratedDocumentsTransaction, 'execute' | 'select'>,
 ) {
-  await lockControlProcessSettings(tx, 'preHeatTreatmentLnk')
+  await lockAllControlProcessSettings(tx)
   const [stored] = await tx
     .select({ value: appSettings.value })
     .from(appSettings)
@@ -67,9 +71,10 @@ export async function loadControlProcessSettingsFromTransaction(
 export async function getPreHeatTreatmentLnkExemptionsForNewRows(
   tx: Pick<GeneratedDocumentsTransaction, 'execute' | 'select'>,
   rows: readonly Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>[],
+  lockedSettings?: ControlProcessSettings,
 ) {
   if (rows.length === 0) return []
-  const settings = await loadControlProcessSettingsFromTransaction(tx)
+  const settings = lockedSettings ?? await loadControlProcessSettingsFromTransaction(tx)
   if (!settings.preHeatTreatmentLnkEnabled) return rows.map(() => true)
 
   const identitiesByKey = new Map(
@@ -83,7 +88,11 @@ export async function getPreHeatTreatmentLnkExemptionsForNewRows(
   for (let offset = 0; offset < identities.length; offset += 500) {
     const chunk = identities.slice(offset, offset + 500)
     const identityTuples = sql.join(
-      chunk.map((identity) => sql`(${identity.projectTitle}, ${identity.subtitleCode}, ${identity.line})`),
+      chunk.map((identity) => sql`(
+        ${normalizePstoLineIdentityPart(identity.projectTitle)},
+        ${normalizePstoLineIdentityPart(identity.subtitleCode)},
+        ${normalizePstoLineIdentityPart(identity.line)}
+      )`),
       sql`, `,
     )
     const exemptLines = await tx
@@ -96,9 +105,9 @@ export async function getPreHeatTreatmentLnkExemptionsForNewRows(
       .where(and(
         eq(weldJoints.preHeatTreatmentLnkExempt, true),
         sql`(
-          btrim(coalesce(${weldJoints.projectTitle}, '')),
-          btrim(coalesce(${weldJoints.subtitleCode}, '')),
-          btrim(coalesce(${weldJoints.line}, ''))
+          lower(btrim(coalesce(${weldJoints.projectTitle}, ''))),
+          lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))),
+          lower(btrim(coalesce(${weldJoints.line}, '')))
         ) in (${identityTuples})`,
       ))
       .groupBy(weldJoints.projectTitle, weldJoints.subtitleCode, weldJoints.line)
@@ -116,8 +125,9 @@ export async function getPreHeatTreatmentLnkExemptionsForNewRows(
 export async function getPreHeatTreatmentLnkExemptionForNewRow(
   tx: Pick<GeneratedDocumentsTransaction, 'execute' | 'select'>,
   row: Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>,
+  lockedSettings?: ControlProcessSettings,
 ) {
-  const [exempt = false] = await getPreHeatTreatmentLnkExemptionsForNewRows(tx, [row])
+  const [exempt = false] = await getPreHeatTreatmentLnkExemptionsForNewRows(tx, [row], lockedSettings)
   return exempt
 }
 
@@ -125,10 +135,12 @@ export async function prepareControlProcessSettingsChangeInTransaction({
   tx,
   currentValue,
   nextValue,
+  processLocksAlreadyHeld = false,
 }: {
   tx: GeneratedDocumentsTransaction
   currentValue: unknown
   nextValue: unknown
+  processLocksAlreadyHeld?: boolean
 }) {
   const current = normalizeControlProcessSettings(currentValue)
   const next = normalizeControlProcessSettings(nextValue)
@@ -138,10 +150,10 @@ export async function prepareControlProcessSettingsChangeInTransaction({
   const layeredControlChanged = current.layeredControlEnabled !== next.layeredControlEnabled
 
   // Keep this order aligned with weld mutations that can touch both processes.
-  if (preHeatTreatmentChanged) {
+  if (preHeatTreatmentChanged && !processLocksAlreadyHeld) {
     await lockControlProcessSettings(tx, 'preHeatTreatmentLnk', 'exclusive')
   }
-  if (layeredControlChanged) {
+  if (layeredControlChanged && !processLocksAlreadyHeld) {
     await lockControlProcessSettings(tx, 'layeredControl', 'exclusive')
   }
 
@@ -241,10 +253,13 @@ async function restorePreHeatTreatmentRequirementsForUnstartedLines(
   if (rows.length === 0) return
 
   const rowIds = rows.map((row) => row.id)
-  const repeatRows = await tx
-    .select({ weldJointId: pstoRepeatCycles.weldJointId })
-    .from(pstoRepeatCycles)
-    .where(inArray(pstoRepeatCycles.weldJointId, rowIds))
+  const repeatRows: Array<{ weldJointId: number }> = []
+  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+    repeatRows.push(...await tx
+      .select({ weldJointId: pstoRepeatCycles.weldJointId })
+      .from(pstoRepeatCycles)
+      .where(inArray(pstoRepeatCycles.weldJointId, rowIdBatch)))
+  }
   const retainIds = new Set(getPreHeatTreatmentExemptionIdsToRetain(
     rows,
     new Set(repeatRows.map((row) => row.weldJointId)),

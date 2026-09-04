@@ -1,4 +1,8 @@
-import { normalizeDateLikeForStorage, parseDateLikeToIso } from '@/lib/date-format'
+import {
+  getDateInputValidationReason,
+  normalizeDateLikeForStorage,
+  parseDateLikeToIso,
+} from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { hasRejectedLnkResult } from '@/lib/lnk-status'
@@ -59,7 +63,7 @@ export function normalizeLnkRequestExtensionRequest(value: LnkRequestExtensionRe
     : []
 
   if (!requestName) throw new Error('Выберите существующую заявку ЛНК.')
-  if (!parseDateLikeToIso(requestDate)) throw new Error('У существующей заявки не указана корректная дата.')
+  assertExistingRequestDate(requestDate)
   if (targets.length === 0) throw new Error('Нет позиций для добавления в существующую заявку ЛНК.')
 
   const knownMethodKeys = new Set<WeldFieldKey>(LNK_METHODS.map((method) => method.requestKey))
@@ -189,7 +193,7 @@ export function buildLnkRequestExtensionRows({
   const normalizedRequestName = requestName.trim()
   const normalizedRequestDate = normalizeDateLikeForStorage(requestDate) ?? ''
   if (!normalizedRequestName) throw new Error('Выберите существующую заявку ЛНК.')
-  if (!parseDateLikeToIso(normalizedRequestDate)) throw new Error('У существующей заявки не указана корректная дата.')
+  assertExistingRequestDate(normalizedRequestDate)
   if (targets.length === 0) throw new Error('Нет позиций для добавления в существующую заявку ЛНК.')
 
   const rowsById = new Map(rows.map((row) => [Number(row.id), row]))
@@ -225,6 +229,7 @@ export function buildLnkRequestExtensionRows({
       [method.requestKey]: normalizedRequestName,
       [method.requestDateKey]: normalizedRequestDate,
       [method.resultKey]: 'ожидает НК',
+      ...(method.code === 'РК' ? {} : { [method.defectDescriptionKey]: null }),
     })
   }
 
@@ -248,7 +253,7 @@ function getLnkRequestExtensionIdentityDisabledReason(
   identity: Pick<RequestDocumentIdentity, 'date'>,
   completedPosition?: ReturnType<typeof getLnkRequestPositions>[number],
 ) {
-  if (!parseDateLikeToIso(identity.date)) {
+  if (getDateInputValidationReason(identity.date, 'Дата заявки ЛНК')) {
     return 'У заявки отсутствует корректная дата, поэтому проверить хронологию добавляемых стыков нельзя.'
   }
   if (!completedPosition) return null
@@ -293,10 +298,20 @@ function getLnkRequestExtensionTargetReason(
   const weldDate = parseDateLikeToIso(row.weldDate)
   const normalizedRequestDate = parseDateLikeToIso(requestDate)
   if (!weldDate) return 'не указана корректная дата сварки.'
-  if (!normalizedRequestDate) return 'у выбранной заявки не указана корректная дата.'
+  if (
+    !normalizedRequestDate ||
+    getDateInputValidationReason(normalizedRequestDate, 'Дата заявки ЛНК')
+  ) return 'у выбранной заявки не указана корректная дата.'
   if (weldDate > normalizedRequestDate) {
     return 'дата сварки позднее даты выбранной заявки.'
   }
 
   return null
+}
+
+function assertExistingRequestDate(value: unknown) {
+  const normalizedDate = parseDateLikeToIso(value)
+  if (!normalizedDate) throw new Error('У существующей заявки не указана корректная дата.')
+  const reason = getDateInputValidationReason(normalizedDate, 'Дата заявки ЛНК')
+  if (reason) throw new Error(reason)
 }

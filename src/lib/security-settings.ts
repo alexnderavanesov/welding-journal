@@ -10,6 +10,7 @@ const SECURITY_SETTINGS_STORAGE_KEY = 'welding-security-settings'
 export const SERVER_SECURITY_PASSWORD_PLACEHOLDER = '__server__'
 
 export type SecuritySettings = {
+  revision: string
   entryPassword: string
   settingsPassword: string
   editPassword: string
@@ -27,11 +28,13 @@ export type SecuritySettings = {
 export type SecurityScope = 'entry' | 'settings' | 'edit' | 'importReplace' | 'documentGeneration' | 'delete'
 
 export type SecurityPublicSettings = Record<SecurityScope, boolean> & {
+  revision: string
   configured: boolean
   configuredScopes: Record<SecurityScope, boolean>
 }
 
 export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
+  revision: '',
   entryPassword: '',
   settingsPassword: '',
   editPassword: '',
@@ -172,6 +175,7 @@ export function normalizeSecuritySettings(value: unknown): SecuritySettings {
   const deletePassword = typeof source.deletePassword === 'string' ? source.deletePassword : legacyPassword
   const legacyProtectEditDelete = legacySource.protectEditDelete === true
   return {
+    revision: typeof source.revision === 'string' ? source.revision : '',
     entryPassword,
     settingsPassword,
     editPassword,
@@ -202,6 +206,7 @@ export function toLocalSecuritySettings(remote: SecurityPublicSettings): Securit
   const password = (scope: SecurityScope) =>
     remote.configuredScopes[scope] ? SERVER_SECURITY_PASSWORD_PLACEHOLDER : ''
   return {
+    revision: remote.revision,
     entryPassword: password('entry'),
     settingsPassword: password('settings'),
     editPassword: password('edit'),

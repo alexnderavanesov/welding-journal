@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, eq, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -54,6 +54,11 @@ export type SystemDocumentSequenceUpdate = {
 export type ReservedSystemDocumentName = {
   name: string
   request: SystemDocumentSequenceUpdate
+}
+
+export type SystemDocumentNameReservationInput = {
+  request: SystemDocumentSequenceUpdate
+  rows?: Array<Partial<Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>>>
 }
 
 type Db = ReturnType<typeof requireDb>
@@ -222,27 +227,241 @@ export async function reserveSystemDocumentName(
   rawRequest: SystemDocumentSequenceUpdate,
   rows: Array<Partial<Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>>> = [],
 ) {
-  const request = normalizeSystemDocumentSequenceUpdate(rawRequest)
-  const sequenceId = getSystemDocumentTemplateId(request)
-  await lockSystemDocumentNumberCounter(tx, sequenceId)
+  const [reservation] = await reserveSystemDocumentNames(tx, [{ request: rawRequest, rows }])
+  return reservation
+}
+
+export async function reserveSystemDocumentNames(
+  tx: SystemDocumentSequenceTransaction,
+  rawInputs: readonly SystemDocumentNameReservationInput[],
+  options: {
+    countersAlreadyLocked?: boolean
+    occupiedNumbersBySequence?: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<number>>
+  } = {},
+) {
+  if (rawInputs.length === 0) return []
+  const inputs = rawInputs.map((input) => ({
+    request: normalizeSystemDocumentSequenceUpdate(input.request),
+    rows: input.rows ?? [],
+  }))
+  const sequenceIds = [...new Set(inputs.map(({ request }) => getSystemDocumentTemplateId(request)))].sort()
+  if (!options.countersAlreadyLocked) {
+    for (const sequenceId of sequenceIds) {
+      await lockSystemDocumentNumberCounter(tx, sequenceId)
+    }
+  }
   const settings = await readRequestConclusionSettings(tx)
-  const pattern = settings[getRequestConclusionNamingKind(request)].systemPattern
-  if (!hasSystemDocumentNumberField(pattern)) {
-    throw new Error(
-      'В системном имени обязательно поле «Порядковый номер». Добавьте его в настройках заявок и заключений.',
-    )
+  const nextNumberBySequence = new Map<SystemDocumentTemplateId, number>()
+  for (const sequenceId of sequenceIds) {
+    nextNumberBySequence.set(sequenceId, await readSystemDocumentNextNumber(tx, sequenceId))
   }
-  const context = createNamingContext(request, rows)
-  let number = await readSystemDocumentNextNumber(tx, sequenceId)
-  let name = buildSystemNameWithNumber(pattern, context, number)
+  const occupiedNamesBySequence = await loadExistingSystemDocumentNameKeys(
+    tx,
+    inputs.map(({ request }) => request),
+  )
+  const occupiedNumbersBySequence = new Map(
+    [...(options.occupiedNumbersBySequence ?? new Map())].map(([sequenceId, numbers]) => [
+      sequenceId,
+      new Set(numbers),
+    ]),
+  )
+  const reservations: Array<ReservedSystemDocumentName & { number: number }> = []
 
-  while (number < 1_000_000 && await systemDocumentNameExists(tx, request, name)) {
-    number += 1
-    name = buildSystemNameWithNumber(pattern, context, number)
+  for (const { request, rows } of inputs) {
+    const sequenceId = getSystemDocumentTemplateId(request)
+    const pattern = settings[getRequestConclusionNamingKind(request)].systemPattern
+    if (!hasSystemDocumentNumberField(pattern)) {
+      throw new Error(
+        'В системном имени обязательно поле «Порядковый номер». Добавьте его в настройках заявок и заключений.',
+      )
+    }
+    const context = createNamingContext(request, rows)
+    const occupiedNames = occupiedNamesBySequence.get(sequenceId) ?? new Set<string>()
+    const occupiedNumbers = occupiedNumbersBySequence.get(sequenceId) ?? new Set<number>()
+    occupiedNamesBySequence.set(sequenceId, occupiedNames)
+    occupiedNumbersBySequence.set(sequenceId, occupiedNumbers)
+    let number = nextNumberBySequence.get(sequenceId) ?? 1
+    let name = buildSystemNameWithNumber(pattern, context, number)
+
+    while (
+      number < 1_000_000 &&
+      (occupiedNumbers.has(number) || occupiedNames.has(systemDocumentNameKey(request.date, name)))
+    ) {
+      number += 1
+      name = buildSystemNameWithNumber(pattern, context, number)
+    }
+    if (occupiedNumbers.has(number) || occupiedNames.has(systemDocumentNameKey(request.date, name))) {
+      throw new Error('Не удалось назначить уникальный порядковый номер системного документа.')
+    }
+    occupiedNames.add(systemDocumentNameKey(request.date, name))
+    occupiedNumbers.add(number)
+    nextNumberBySequence.set(sequenceId, number + 1)
+    reservations.push({ name, number, request })
   }
 
-  await writeSystemDocumentNextNumber(tx, sequenceId, number + 1)
-  return { name, number, request }
+  for (const sequenceId of sequenceIds) {
+    await writeSystemDocumentNextNumber(tx, sequenceId, nextNumberBySequence.get(sequenceId) ?? 1)
+  }
+  return reservations
+}
+
+type SystemDocumentNameSource = {
+  table: SQLWrapper
+  name: SQLWrapper
+  date: SQLWrapper
+  predicate?: SQL
+}
+
+const SYSTEM_DOCUMENT_NAME_DATE_BATCH_SIZE = 1_000
+const SYSTEM_DOCUMENT_NAME_QUERY_PARAMETER_BUDGET = 10_000
+
+export async function loadExistingSystemDocumentNameKeys(
+  db: Pick<SystemDocumentSequenceTransaction, 'execute'>,
+  requests: readonly SystemDocumentSequenceUpdate[],
+) {
+  const datesBySequence = new Map<SystemDocumentTemplateId, Set<string>>()
+  for (const request of requests) {
+    const sequenceId = getSystemDocumentTemplateId(request)
+    const dates = datesBySequence.get(sequenceId) ?? new Set<string>()
+    dates.add(request.date)
+    datesBySequence.set(sequenceId, dates)
+  }
+  const sourceQueryBatches: SQL[][] = []
+  let sourceQueries: SQL[] = []
+  let estimatedParameterCount = 0
+  const appendSourceQuery = (query: SQL, parameterCount: number) => {
+    if (
+      sourceQueries.length > 0 &&
+      estimatedParameterCount + parameterCount > SYSTEM_DOCUMENT_NAME_QUERY_PARAMETER_BUDGET
+    ) {
+      sourceQueryBatches.push(sourceQueries)
+      sourceQueries = []
+      estimatedParameterCount = 0
+    }
+    sourceQueries.push(query)
+    estimatedParameterCount += parameterCount
+  }
+  for (const [sequenceId, dates] of datesBySequence) {
+    const orderedDates = [...dates].sort()
+    for (let offset = 0; offset < orderedDates.length; offset += SYSTEM_DOCUMENT_NAME_DATE_BATCH_SIZE) {
+      const dateBatch = orderedDates.slice(offset, offset + SYSTEM_DOCUMENT_NAME_DATE_BATCH_SIZE)
+      for (const source of getSystemDocumentNameSources(sequenceId)) {
+        const dateValues = sql.join(dateBatch.map((date) => sql`${date}`), sql`, `)
+        appendSourceQuery(sql`
+          select
+            ${sequenceId}::text as "sequenceId",
+            coalesce(${source.date}::text, '') as "date",
+            btrim(coalesce(${source.name}, '')) as "name"
+          from ${source.table}
+          where ${source.date} in (${dateValues})
+            and nullif(btrim(${source.name}), '') is not null
+            ${source.predicate ? sql`and ${source.predicate}` : sql``}
+        `, dateBatch.length + 2)
+      }
+      const generatedDateValues = sql.join(dateBatch.map((date) => sql`${date}`), sql`, `)
+      appendSourceQuery(sql`
+        select
+          ${sequenceId}::text as "sequenceId",
+          coalesce(${generatedDocuments.periodFrom}::text, '') as "date",
+          btrim(coalesce(${generatedDocuments.title}, '')) as "name"
+        from ${generatedDocuments}
+        where ${generatedDocuments.type} = ${`system:${sequenceId}`}
+          and ${generatedDocuments.periodFrom} in (${generatedDateValues})
+          and nullif(btrim(${generatedDocuments.title}), '') is not null
+      `, dateBatch.length + 3)
+    }
+  }
+  if (sourceQueries.length > 0) sourceQueryBatches.push(sourceQueries)
+  const occupiedNames = new Map<SystemDocumentTemplateId, Set<string>>()
+  for (const queryBatch of sourceQueryBatches) {
+    const result = await db.execute(sql.join(queryBatch, sql` union all `))
+    for (const rawRow of result.rows) {
+      const row = rawRow as { sequenceId?: unknown; date?: unknown; name?: unknown }
+      const sequenceId = String(row.sequenceId ?? '') as SystemDocumentTemplateId
+      if (!isSystemDocumentTemplateId(sequenceId)) continue
+      const names = occupiedNames.get(sequenceId) ?? new Set<string>()
+      names.add(systemDocumentNameKey(String(row.date ?? ''), String(row.name ?? '')))
+      occupiedNames.set(sequenceId, names)
+    }
+  }
+  return occupiedNames
+}
+
+function getSystemDocumentNameSources(sequenceId: SystemDocumentTemplateId): SystemDocumentNameSource[] {
+  if (sequenceId === 'lnkRequest') {
+    return [
+      ...LNK_METHODS
+        .filter((method) => method.code !== 'ТВМТ')
+        .map((method) => ({
+          table: weldJoints,
+          name: weldJoints[method.requestKey],
+          date: weldJoints[method.requestDateKey],
+        })),
+      {
+        table: preHeatTreatmentControls,
+        name: preHeatTreatmentControls.requestName,
+        date: preHeatTreatmentControls.requestDate,
+      },
+    ]
+  }
+  if (sequenceId === 'tvmtRequest') {
+    return [
+      {
+        table: weldJoints,
+        name: weldJoints.tvmtRequest,
+        date: weldJoints.tvmtRequestDate,
+      },
+      {
+        table: pstoRepeatCycles,
+        name: pstoRepeatCycles.tvmtRequest,
+        date: pstoRepeatCycles.tvmtRequestDate,
+      },
+    ]
+  }
+  if (sequenceId === 'pstoRequest') {
+    return [
+      { table: weldJoints, name: weldJoints.pstoRequest, date: weldJoints.pstoRequestDate },
+      { table: pstoRepeatCycles, name: pstoRepeatCycles.pstoRequest, date: pstoRepeatCycles.pstoRequestDate },
+    ]
+  }
+  if (sequenceId === 'pstoConclusion') {
+    return [
+      { table: weldJoints, name: weldJoints.heatTreatmentDiagram, date: weldJoints.pstoDate },
+      { table: pstoRepeatCycles, name: pstoRepeatCycles.heatTreatmentDiagram, date: pstoRepeatCycles.pstoDate },
+    ]
+  }
+  if (sequenceId === 'tvmtConclusion') {
+    return [
+      { table: weldJoints, name: weldJoints.tvmtConclusion, date: weldJoints.tvmtConclusionDate },
+      {
+        table: pstoRepeatCycles,
+        name: pstoRepeatCycles.tvmtConclusion,
+        date: pstoRepeatCycles.tvmtConclusionDate,
+      },
+    ]
+  }
+  return LNK_METHODS
+    .filter((method) => getSystemDocumentTemplateId({
+      type: 'lnkConclusion',
+      methodCode: method.code,
+    }) === sequenceId)
+    .flatMap((method) => [
+      {
+        table: weldJoints,
+        name: weldJoints[method.conclusionKey],
+        date: weldJoints[method.conclusionDateKey],
+      },
+      {
+        table: preHeatTreatmentControls,
+        name: preHeatTreatmentControls.conclusionName,
+        date: preHeatTreatmentControls.conclusionDate,
+        predicate: sql`${preHeatTreatmentControls.method} = ${method.code}`,
+      },
+    ])
+}
+
+function systemDocumentNameKey(date: string, name: string) {
+  return `${date}\u0000${name}`
 }
 
 export async function readSystemDocumentNextNumber(
@@ -258,6 +477,20 @@ export async function readSystemDocumentNextNumber(
   if (stored) return stored
   const initial = await readInitialSequenceNumbers(db)
   return initial[sequenceId]
+}
+
+export async function readSystemDocumentNextNumbers<SequenceId extends SystemDocumentTemplateId>(
+  db: Pick<Db, 'select'>,
+  sequenceIds: readonly SequenceId[],
+): Promise<Record<SequenceId, number>> {
+  const requestedIds = [...new Set(sequenceIds)].sort()
+  const stored = await readStoredSequenceNumbers(db)
+  const missingIds = requestedIds.filter((sequenceId) => stored[sequenceId] == null)
+  const initial = missingIds.length > 0 ? await readInitialSequenceNumbers(db) : null
+  return Object.fromEntries(requestedIds.map((sequenceId) => [
+    sequenceId,
+    stored[sequenceId] ?? initial?.[sequenceId] ?? 1,
+  ])) as Record<SequenceId, number>
 }
 
 async function readStoredSequenceNumbers(db: Pick<Db, 'select'>) {
@@ -372,116 +605,6 @@ async function writeSystemDocumentNextNumber(
     })
 }
 
-async function systemDocumentNameExists(
-  db: Pick<Db, 'select'>,
-  request: SystemDocumentSequenceUpdate,
-  name: string,
-) {
-  const where = buildSystemDocumentNameWhere(request, name)
-  const [row] = await db.select({ id: weldJoints.id }).from(weldJoints).where(where).limit(1)
-  if (row) return true
-  const preControlWhere = buildPreHeatTreatmentSystemDocumentNameWhere(request, name)
-  if (preControlWhere) {
-    const [preControl] = await db
-      .select({ id: preHeatTreatmentControls.id })
-      .from(preHeatTreatmentControls)
-      .where(preControlWhere)
-      .limit(1)
-    if (preControl) return true
-  }
-  const repeatCycleWhere = buildPstoRepeatSystemDocumentNameWhere(request, name)
-  if (repeatCycleWhere) {
-    const [repeatCycle] = await db
-      .select({ id: pstoRepeatCycles.id })
-      .from(pstoRepeatCycles)
-      .where(repeatCycleWhere)
-      .limit(1)
-    if (repeatCycle) return true
-  }
-  const [indexedDocument] = await db
-    .select({ id: generatedDocuments.id })
-    .from(generatedDocuments)
-    .where(and(
-      eq(generatedDocuments.type, `system:${getSystemDocumentTemplateId(request)}`),
-      eq(generatedDocuments.title, name),
-      sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${request.date}`,
-    ))
-    .limit(1)
-  return Boolean(indexedDocument)
-}
-
-function buildSystemDocumentNameWhere(request: SystemDocumentSequenceUpdate, name: string): SQL {
-  if (request.type === 'lnkRequest') {
-    const requestMethods = request.methodCode === 'ТВМТ'
-      ? LNK_METHODS.filter((method) => method.code === 'ТВМТ')
-      : LNK_METHODS.filter((method) => method.code !== 'ТВМТ')
-    return or(...requestMethods.map((method) => {
-      return and(textEquals(weldJoints[method.requestKey], name), dateEquals(weldJoints[method.requestDateKey], request.date))!
-    })) ?? sql`false`
-  }
-  if (request.type === 'lnkConclusion') {
-    const method = LNK_METHODS.find((candidate) => candidate.code === request.methodCode)!
-    return and(textEquals(weldJoints[method.conclusionKey], name), dateEquals(weldJoints[method.conclusionDateKey], request.date)) ?? sql`false`
-  }
-  if (request.type === 'pstoRequest') {
-    return and(textEquals(weldJoints.pstoRequest, name), dateEquals(weldJoints.pstoRequestDate, request.date)) ?? sql`false`
-  }
-  return and(textEquals(weldJoints.heatTreatmentDiagram, name), dateEquals(weldJoints.pstoDate, request.date)) ?? sql`false`
-}
-
-function buildPreHeatTreatmentSystemDocumentNameWhere(
-  request: SystemDocumentSequenceUpdate,
-  name: string,
-): SQL | null {
-  if (request.type === 'lnkRequest' && request.methodCode !== 'ТВМТ') {
-    return and(
-      textEquals(preHeatTreatmentControls.requestName, name),
-      dateEquals(preHeatTreatmentControls.requestDate, request.date),
-    ) ?? sql`false`
-  }
-  if (request.type === 'lnkConclusion') {
-    const methodCode = request.methodCode
-    if (!methodCode || methodCode === 'ТВМТ') return null
-    return and(
-      eq(preHeatTreatmentControls.method, methodCode),
-      textEquals(preHeatTreatmentControls.conclusionName, name),
-      dateEquals(preHeatTreatmentControls.conclusionDate, request.date),
-    ) ?? sql`false`
-  }
-  return null
-}
-
-function buildPstoRepeatSystemDocumentNameWhere(
-  request: SystemDocumentSequenceUpdate,
-  name: string,
-): SQL | null {
-  if (request.type === 'lnkRequest' && request.methodCode === 'ТВМТ') {
-    return and(
-      textEquals(pstoRepeatCycles.tvmtRequest, name),
-      dateEquals(pstoRepeatCycles.tvmtRequestDate, request.date),
-    ) ?? sql`false`
-  }
-  if (request.type === 'lnkConclusion' && request.methodCode === 'ТВМТ') {
-    return and(
-      textEquals(pstoRepeatCycles.tvmtConclusion, name),
-      dateEquals(pstoRepeatCycles.tvmtConclusionDate, request.date),
-    ) ?? sql`false`
-  }
-  if (request.type === 'pstoRequest') {
-    return and(
-      textEquals(pstoRepeatCycles.pstoRequest, name),
-      dateEquals(pstoRepeatCycles.pstoRequestDate, request.date),
-    ) ?? sql`false`
-  }
-  if (request.type === 'pstoConclusion') {
-    return and(
-      textEquals(pstoRepeatCycles.heatTreatmentDiagram, name),
-      dateEquals(pstoRepeatCycles.pstoDate, request.date),
-    ) ?? sql`false`
-  }
-  return null
-}
-
 function createNamingContext(
   request: SystemDocumentSequenceUpdate,
   rows: Array<Partial<Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>>>,
@@ -493,14 +616,6 @@ function createNamingContext(
     date: new Date(`${request.date}T00:00:00`),
     ...(request.methodCode ? { methodCode: request.methodCode } : {}),
   }, rows)
-}
-
-function textEquals(column: SQLWrapper, value: string) {
-  return sql`btrim(coalesce(${column}, '')) = ${value}`
-}
-
-function dateEquals(column: SQLWrapper, value: string) {
-  return sql`coalesce(${column}::text, '') = ${value}`
 }
 
 function systemDocumentCounterKey(sequenceId: SystemDocumentTemplateId) {

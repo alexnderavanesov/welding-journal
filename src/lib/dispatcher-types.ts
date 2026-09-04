@@ -140,6 +140,7 @@ export type PercentageLineControlTask = {
   coveredControls: number
   assignedControls: number
   count: number
+  fullControlRequired?: boolean
 }
 
 export type RepeatedJointTask =

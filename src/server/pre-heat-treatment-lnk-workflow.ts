@@ -1,12 +1,12 @@
 import { createServerFn } from '@tanstack/react-start'
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
-  appSettings,
   preHeatTreatmentControls,
   weldJoints,
   type NewPreHeatTreatmentControl,
+  type NewWeldJoint,
 } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
@@ -28,30 +28,46 @@ import { mergePreHeatTreatmentControlsIntoRows } from '@/lib/heat-treatment-cont
 import { buildSystemDocumentSummaries, type SystemDocumentType } from '@/lib/system-document-types'
 import { buildPreHeatTreatmentSystemDocumentRow } from '@/lib/system-document-virtual-row'
 import {
-  DEFAULT_OTHER_SETTINGS,
-  normalizeOtherSettings,
   type RkExposureTableSettings,
 } from '@/lib/other-settings'
 import { serializeRkExposureLines, type RkExposureLine } from '@/lib/rk-exposure'
-import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
+import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import {
+  getDispatcherDirtyScopes,
+  markDispatcherTaskIndexDirty,
+} from '@/server/dispatcher-task-index-dirty'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
+import {
+  haveSameWeldLineMemberships,
+  lockWeldLineMembershipsForWeldIds,
+} from '@/server/weld-line-membership-lock'
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
 import { assertSecurityScope } from '@/server/security-functions'
+import { WELD_TABLE_COLUMNS, WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
+import {
+  assertExpectedInteractiveWeldVersions,
+  lockInteractiveWeldRows,
+} from '@/server/weld-row-version'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 import {
   removeSourcedSystemDocumentPositionsInTransaction,
-  upsertSourcedSystemDocumentInTransaction,
+  upsertSourcedSystemDocumentsInTransaction,
 } from '@/server/system-document-index'
 import {
-  reserveSystemDocumentName,
+  lockSystemDocumentNumberCounter,
+  reserveSystemDocumentNames,
   type SystemDocumentSequenceTransaction,
   type SystemDocumentSequenceUpdate,
 } from '@/server/system-document-sequences'
+import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
 
 export type PreHeatTreatmentLnkWorkflowAction = 'request' | 'result'
 
@@ -77,6 +93,7 @@ export type PreHeatTreatmentLnkWorkflowPayload = {
   date: string
   groups: PreHeatTreatmentLnkWorkflowGroup[]
   results?: PreHeatTreatmentLnkResultEntry[]
+  expectedVersions: WeldRowVersionTarget[]
 }
 
 type NormalizedPayload = {
@@ -84,6 +101,7 @@ type NormalizedPayload = {
   date: string
   groups: Array<PreHeatTreatmentLnkWorkflowGroup & { useSystemName: boolean }>
   results: PreHeatTreatmentLnkResultEntry[]
+  expectedVersions: WeldRowVersionTarget[]
 }
 
 export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' })
@@ -93,23 +111,47 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
     const db = requireDb()
     return db.transaction(async (tx) => {
       await assertPreHeatTreatmentLnkEnabled(tx)
+      const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
       const rowIds = [...new Set(data.groups.flatMap((group) =>
         group.positions.map((position) => position.rowId),
       ))]
-      const storedRows = await tx
-        .select()
-        .from(weldJoints)
-        .where(inArray(weldJoints.id, rowIds))
-        .for('update')
+      const sequenceRequests = data.groups.map((group) => {
+        const methodCodes = [...new Set(group.positions.map((position) => position.methodCode))]
+        if (data.action === 'result' && methodCodes.length !== 1) {
+          throw new Error('Заключения разных видов НК до ТО должны оформляться разными документами.')
+        }
+        return group.useSystemName
+          ? getSequenceRequest(data.action, data.date, group.name, methodCodes)
+          : null
+      })
+      const sequenceIds = [...new Set(sequenceRequests
+        .filter((request): request is SystemDocumentSequenceUpdate => Boolean(request))
+        .map(getSystemDocumentTemplateId))]
+        .sort()
+      for (const sequenceId of sequenceIds) {
+        await lockSystemDocumentNumberCounter(tx, sequenceId)
+      }
+      const lineMembershipSnapshot = await lockWeldLineMembershipsForWeldIds(tx, rowIds)
+      if (lineMembershipSnapshot.length !== rowIds.length) {
+        throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет ЛНК.')
+      }
+      const storedRows = await lockInteractiveWeldRows(tx, rowIds)
       if (storedRows.length !== rowIds.length) {
         throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет ЛНК.')
       }
+      if (!haveSameWeldLineMemberships(lineMembershipSnapshot, storedRows)) {
+        throw new Error('Один или несколько выбранных стыков уже перенесены на другую линию. Обновите отчет ЛНК.')
+      }
+      assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
       await assertPstoWorkflowLinesFullyAssigned(tx, storedRows, { allowPerformedHistoryRows: true })
-      await tx
-        .select({ id: preHeatTreatmentControls.id })
-        .from(preHeatTreatmentControls)
-        .where(inArray(preHeatTreatmentControls.weldJointId, rowIds))
-        .for('update')
+      for (const rowIdBatch of splitNumberBatches([...rowIds].sort((left, right) => left - right), 1000)) {
+        await tx
+          .select({ id: preHeatTreatmentControls.id })
+          .from(preHeatTreatmentControls)
+          .where(inArray(preHeatTreatmentControls.weldJointId, rowIdBatch))
+          .orderBy(asc(preHeatTreatmentControls.id))
+          .for('update')
+      }
 
       const rows = await attachDuplicateControlRelations(
         await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),
@@ -118,25 +160,30 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
       const rowsById = new Map(rows.map((row) => [row.id, row]))
       const resultByPosition = new Map(data.results.map((entry) => [positionKey(entry), entry]))
       const rkExposureTable = data.action === 'result'
-        ? await loadRkExposureTable(tx)
+        ? workflowSettings.otherSettings.rkExposureTable
         : null
-      const resolvedGroups: Array<PreHeatTreatmentLnkWorkflowGroup & { useSystemName: boolean }> = []
-      for (const group of data.groups) {
-        const groupRows = uniqueRows(group.positions.map((position) => rowsById.get(position.rowId)!))
-        const methodCodes = [...new Set(group.positions.map((position) => position.methodCode))]
-        if (data.action === 'result' && methodCodes.length !== 1) {
-          throw new Error('Заключения разных видов НК до ТО должны оформляться разными документами.')
-        }
-        const name = group.useSystemName
-          ? (await reserveSystemDocumentName(
-              tx,
-              getSequenceRequest(data.action, data.date, group.name, methodCodes),
-              groupRows,
-            )).name
-          : group.name
-        resolvedGroups.push({ ...group, name })
-      }
-
+      const systemNameGroups = data.groups.flatMap((group, index) => {
+        const request = sequenceRequests[index]
+        return request
+          ? [{
+              index,
+              request,
+              rows: uniqueRows(group.positions.map((position) => rowsById.get(position.rowId)!)),
+            }]
+          : []
+      })
+      const reservations = await reserveSystemDocumentNames(
+        tx,
+        systemNameGroups,
+        { countersAlreadyLocked: true },
+      )
+      const systemNameByGroupIndex = new Map(
+        systemNameGroups.map((group, index) => [group.index, reservations[index]!.name]),
+      )
+      const resolvedGroups = data.groups.map((group, index) => ({
+        ...group,
+        name: systemNameByGroupIndex.get(index) ?? group.name,
+      }))
       const writes = resolvedGroups.flatMap((group) => buildGroupWrites({
         action: data.action,
         date: data.date,
@@ -144,8 +191,10 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         rowsById,
         resultByPosition,
         rkExposureTable,
+        saveCheckSettings: workflowSettings.saveCheckSettings,
+        systemIndexSettings: workflowSettings.systemIndexSettings,
       }))
-      const savedControls = await saveControlWrites(tx, data.action, writes)
+      const savedControls = await savePreHeatTreatmentControlWrites(tx, data.action, writes)
       await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
       await syncPreHeatTreatmentDocuments({
         tx,
@@ -155,13 +204,16 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         controls: savedControls,
       })
       const touchedRows = await touchLnkRows(tx, rows, savedControls)
-      await markDispatcherTaskIndexDirty(tx)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes(touchedRows, new Map()),
+      })
       return attachHeatTreatmentControlRelations(touchedRows, tx)
     })
   })
 
 export type UpdatePreHeatTreatmentRkExposurePayload = {
   rowId: number
+  expectedVersion: string
   lines: RkExposureLine[]
   confirmedDiameter: number | null
 }
@@ -174,12 +226,17 @@ export const updatePreHeatTreatmentRkExposure = createServerFn({ method: 'POST' 
     return db.transaction(async (tx) => {
       await assertPreHeatTreatmentLnkEnabled(tx)
       const [storedRow] = await tx
-        .select()
+        .select(WELD_TABLE_RETURNING)
         .from(weldJoints)
         .where(eq(weldJoints.id, data.rowId))
         .for('update')
         .limit(1)
       if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет ЛНК.')
+      assertExpectedInteractiveWeldVersions(
+        [data.rowId],
+        [{ id: data.rowId, version: data.expectedVersion }],
+        [storedRow],
+      )
 
       const [control] = await tx
         .select()
@@ -205,8 +262,10 @@ export const updatePreHeatTreatmentRkExposure = createServerFn({ method: 'POST' 
         .update(weldJoints)
         .set({ lnkUpdatedAt: now, updatedAt: now })
         .where(eq(weldJoints.id, data.rowId))
-        .returning()
-      await markDispatcherTaskIndexDirty(tx)
+        .returning(WELD_TABLE_RETURNING)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes([savedRow], new Map()),
+      })
       const controls = (await tx
         .select()
         .from(preHeatTreatmentControls)
@@ -220,6 +279,7 @@ export const updatePreHeatTreatmentRkExposure = createServerFn({ method: 'POST' 
 
 export type CorrectPreHeatTreatmentLnkResultPayload = {
   relationId: number
+  expectedVersion: string
   stage?: 'request' | 'result'
   action: 'update' | 'delete'
   requestDate?: string
@@ -236,20 +296,35 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
     const db = requireDb()
     return db.transaction(async (tx) => {
       await assertPreHeatTreatmentLnkEnabled(tx)
-      const [storedControl] = await tx
-        .select()
+      const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
+      const [controlReference] = await tx
+        .select({ weldJointId: preHeatTreatmentControls.weldJointId })
         .from(preHeatTreatmentControls)
         .where(eq(preHeatTreatmentControls.id, data.relationId))
-        .for('update')
         .limit(1)
-      if (!storedControl) throw new Error('Позиция НК до ТО больше не существует. Обновите отчет.')
+      if (!controlReference) throw new Error('Позиция НК до ТО больше не существует. Обновите отчет.')
       const [storedRow] = await tx
-        .select()
+        .select(WELD_TABLE_RETURNING)
         .from(weldJoints)
-        .where(eq(weldJoints.id, storedControl.weldJointId))
+        .where(eq(weldJoints.id, controlReference.weldJointId))
         .for('update')
         .limit(1)
       if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет.')
+      assertExpectedInteractiveWeldVersions(
+        [storedRow.id],
+        [{ id: storedRow.id, version: data.expectedVersion }],
+        [storedRow],
+      )
+      const [storedControl] = await tx
+        .select()
+        .from(preHeatTreatmentControls)
+        .where(and(
+          eq(preHeatTreatmentControls.id, data.relationId),
+          eq(preHeatTreatmentControls.weldJointId, storedRow.id),
+        ))
+        .for('update')
+        .limit(1)
+      if (!storedControl) throw new Error('Позиция НК до ТО больше не существует. Обновите отчет.')
 
       const [row] = await attachDuplicateControlRelations(
         await attachHeatTreatmentControlRelations([storedRow as WeldRow], tx),
@@ -272,7 +347,9 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
           .where(eq(preHeatTreatmentControls.id, currentControl.id))
         await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, [row.id])
         const [updatedRow] = await touchLnkRows(tx, [row], [], [currentControl.id])
-        await markDispatcherTaskIndexDirty(tx)
+        await markDispatcherTaskIndexDirty(tx, {
+          scopes: getDispatcherDirtyScopes([updatedRow], new Map()),
+        })
         return (await attachDuplicateControlRelations(
           await attachHeatTreatmentControlRelations([updatedRow], tx),
           tx,
@@ -286,9 +363,14 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
           control: currentControl,
           requestDate: data.requestDate,
           requestName: data.requestName,
+          saveCheckSettings: workflowSettings.saveCheckSettings,
         })
       } else if (data.action === 'delete') {
-        const blockReason = getPreHeatTreatmentResultRemovalBlockReason(row, currentControl)
+        const blockReason = getPreHeatTreatmentResultRemovalBlockReason(
+          row,
+          currentControl,
+          workflowSettings.saveCheckSettings,
+        )
         if (blockReason) throw new Error(blockReason)
         nextControl = {
           ...currentControl,
@@ -305,7 +387,9 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
           controlDate: data.conclusionDate,
           result: data.result,
           conclusionName: data.conclusionName,
-          rkExposureTable: await loadRkExposureTable(tx),
+          rkExposureTable: workflowSettings.otherSettings.rkExposureTable,
+          saveCheckSettings: workflowSettings.saveCheckSettings,
+          systemIndexSettings: workflowSettings.systemIndexSettings,
         })
       }
 
@@ -340,7 +424,9 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
       }
 
       const [updatedRow] = await touchLnkRows(tx, [row], [savedControl])
-      await markDispatcherTaskIndexDirty(tx)
+      await markDispatcherTaskIndexDirty(tx, {
+        scopes: getDispatcherDirtyScopes([updatedRow], new Map()),
+      })
       return (await attachDuplicateControlRelations(
         await attachHeatTreatmentControlRelations([updatedRow], tx),
         tx,
@@ -359,6 +445,7 @@ export function normalizePreHeatTreatmentLnkResultCorrectionPayload(
   if (stage !== 'request' && stage !== 'result') throw new Error('Неизвестный этап НК до ТО.')
   return {
     relationId,
+    expectedVersion: String(value?.expectedVersion ?? '').trim(),
     stage,
     action,
     requestDate: String(value?.requestDate ?? '').trim(),
@@ -384,6 +471,7 @@ export function normalizePreHeatTreatmentRkExposurePayload(
   }
   return {
     rowId,
+    expectedVersion: String(value?.expectedVersion ?? '').trim(),
     lines,
     confirmedDiameter: normalizeNullableNumber(value?.confirmedDiameter),
   }
@@ -400,8 +488,11 @@ function normalizePayload(value: PreHeatTreatmentLnkWorkflowPayload): Normalized
   if (action !== 'request' && action !== 'result') {
     throw new Error('Неизвестное действие НК до ТО.')
   }
-  const date = String(value?.date ?? '').trim().slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Укажите дату документа НК до ТО.')
+  const rawDate = String(value?.date ?? '').trim()
+  const date = action === 'result' ? rawDate : rawDate.slice(0, 10)
+  if (action === 'request' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error('Укажите дату документа НК до ТО.')
+  }
 
   const groups = (Array.isArray(value?.groups) ? value.groups : []).map((group) => ({
     positions: normalizePositions(group?.positions),
@@ -409,7 +500,9 @@ function normalizePayload(value: PreHeatTreatmentLnkWorkflowPayload): Normalized
     useSystemName: Boolean(group?.useSystemName),
   })).filter((group) => group.positions.length > 0)
   if (groups.length === 0) throw new Error('Выберите хотя бы одну позицию НК до ТО.')
-  if (groups.some((group) => !group.name)) throw new Error('Укажите наименование документа НК до ТО.')
+  if (action === 'request' && groups.some((group) => !group.name)) {
+    throw new Error('Укажите наименование документа НК до ТО.')
+  }
 
   const assigned = new Set<string>()
   for (const group of groups) {
@@ -444,7 +537,11 @@ function normalizePayload(value: PreHeatTreatmentLnkWorkflowPayload): Normalized
   if (action === 'result' && results.length !== assigned.size) {
     throw new Error('Укажите результат для каждой выбранной позиции НК до ТО.')
   }
-  return { action, date, groups, results }
+  const expectedVersions = (Array.isArray(value?.expectedVersions) ? value.expectedVersions : []).map((entry) => ({
+    id: Number(entry?.id),
+    version: String(entry?.version ?? '').trim(),
+  }))
+  return { action, date, groups, results, expectedVersions }
 }
 
 function normalizePositions(value: unknown): PreHeatTreatmentLnkPosition[] {
@@ -469,6 +566,8 @@ function buildGroupWrites({
   rowsById,
   resultByPosition,
   rkExposureTable,
+  saveCheckSettings,
+  systemIndexSettings,
 }: {
   action: PreHeatTreatmentLnkWorkflowAction
   date: string
@@ -476,6 +575,8 @@ function buildGroupWrites({
   rowsById: ReadonlyMap<number, WeldRow>
   resultByPosition: ReadonlyMap<string, PreHeatTreatmentLnkResultEntry>
   rkExposureTable: RkExposureTableSettings | null
+  saveCheckSettings: SaveCheckSettings
+  systemIndexSettings: SystemIndexSettings
 }) {
   if (action === 'request') {
     const positionsByRowId = new Map<number, PreHeatTreatmentLnkMethodCode[]>()
@@ -490,6 +591,7 @@ function buildGroupWrites({
         methodCodes,
         requestName: group.name,
         requestDate: date,
+        saveCheckSettings,
       }),
     )
   }
@@ -505,23 +607,10 @@ function buildGroupWrites({
       defectDescription: result.defectDescription,
       rkExposureConfirmedDiameter: result.rkExposureConfirmedDiameter,
       rkExposureTable,
+      saveCheckSettings,
+      systemIndexSettings,
     })
   })
-}
-
-async function loadRkExposureTable(tx: SystemDocumentSequenceTransaction) {
-  const [storedSettings] = await tx
-    .select({ value: appSettings.value })
-    .from(appSettings)
-    .where(eq(appSettings.key, PROJECT_SETTING_KEYS.other))
-    .limit(1)
-  if (!storedSettings) return DEFAULT_OTHER_SETTINGS.rkExposureTable
-
-  try {
-    return normalizeOtherSettings(JSON.parse(storedSettings.value)).rkExposureTable
-  } catch {
-    return DEFAULT_OTHER_SETTINGS.rkExposureTable
-  }
 }
 
 async function assertPreHeatTreatmentLnkEnabled(tx: SystemDocumentSequenceTransaction) {
@@ -540,41 +629,105 @@ function normalizeNullableNumber(value: unknown) {
   return normalized
 }
 
-async function saveControlWrites(
+const PRE_HEAT_TREATMENT_WRITE_BATCH_SIZE = 500
+
+const PRE_HEAT_TREATMENT_REQUEST_UPDATE_FIELDS = [
+  'requestName',
+  'requestDate',
+  'result',
+  'defectDescription',
+  'updatedAt',
+] as const satisfies readonly (keyof NewPreHeatTreatmentControl)[]
+
+const PRE_HEAT_TREATMENT_RESULT_UPDATE_FIELDS = [
+  'requestName',
+  'requestDate',
+  'result',
+  'conclusionDate',
+  'conclusionName',
+  'defectDescription',
+  'rkExposureConfirmedDiameter',
+  'updatedAt',
+] as const satisfies readonly (keyof NewPreHeatTreatmentControl)[]
+
+const PRE_HEAT_TREATMENT_CONTROL_COLUMN_NAMES: Record<
+  (typeof PRE_HEAT_TREATMENT_RESULT_UPDATE_FIELDS)[number],
+  string
+> = {
+  requestName: 'request_name',
+  requestDate: 'request_date',
+  result: 'result',
+  conclusionDate: 'conclusion_date',
+  conclusionName: 'conclusion_name',
+  defectDescription: 'defect_description',
+  rkExposureConfirmedDiameter: 'rk_exposure_confirmed_diameter',
+  updatedAt: 'updated_at',
+}
+
+function getPreHeatTreatmentControlUpdateSet(
+  fields: readonly (keyof NewPreHeatTreatmentControl)[],
+) {
+  return Object.fromEntries(fields.map((field) => [
+    field,
+    sql.raw(`excluded."${PRE_HEAT_TREATMENT_CONTROL_COLUMN_NAMES[field as keyof typeof PRE_HEAT_TREATMENT_CONTROL_COLUMN_NAMES]}"`),
+  ]))
+}
+
+export async function savePreHeatTreatmentControlWrites(
   tx: SystemDocumentSequenceTransaction,
   action: PreHeatTreatmentLnkWorkflowAction,
   writes: PreHeatTreatmentControlWrite[],
 ) {
-  const saved: PreHeatTreatmentControlRecord[] = []
-  for (const write of writes) {
-    if (action === 'request') {
-      const [record] = await tx
-        .insert(preHeatTreatmentControls)
-        .values(toControlInsert(write))
-        .onConflictDoUpdate({
-          target: [preHeatTreatmentControls.weldJointId, preHeatTreatmentControls.method],
-          set: {
-            requestName: textOrNull(write.requestName),
-            requestDate: textOrNull(write.requestDate),
-            result: textOrNull(write.result),
-            updatedAt: new Date(),
-          },
-        })
-        .returning()
-      saved.push(record)
-      continue
-    }
-
-    if (!write.id) throw new Error('Позиция НК до ТО больше не существует. Обновите отчет ЛНК.')
-    const [record] = await tx
-      .update(preHeatTreatmentControls)
-      .set({ ...toControlInsert(write), updatedAt: new Date() })
-      .where(eq(preHeatTreatmentControls.id, write.id))
-      .returning()
-    if (!record) throw new Error('Позиция НК до ТО уже изменена. Обновите отчет ЛНК.')
-    saved.push(record)
+  if (action === 'result' && writes.some((write) => !write.id)) {
+    throw new Error('Позиция НК до ТО больше не существует. Обновите отчет ЛНК.')
   }
-  return saved
+
+  const saved: PreHeatTreatmentControlRecord[] = []
+  const now = new Date()
+  const updateFields = action === 'request'
+    ? PRE_HEAT_TREATMENT_REQUEST_UPDATE_FIELDS
+    : PRE_HEAT_TREATMENT_RESULT_UPDATE_FIELDS
+  for (const batch of splitPreHeatTreatmentWriteBatches(writes)) {
+    const records = await tx
+      .insert(preHeatTreatmentControls)
+      .values(batch.map((write) => ({ ...toControlInsert(write), updatedAt: now })))
+      .onConflictDoUpdate({
+        target: [preHeatTreatmentControls.weldJointId, preHeatTreatmentControls.method],
+        set: getPreHeatTreatmentControlUpdateSet(updateFields),
+      })
+      .returning()
+    if (records.length !== batch.length) {
+      throw new Error('Не удалось сохранить все позиции НК до ТО. Ничего не сохранено.')
+    }
+    saved.push(...records)
+  }
+
+  const savedByPosition = new Map(saved.map((record) => [
+    positionKey({
+      rowId: record.weldJointId,
+      methodCode: normalizeMethodCode(record.method) as PreHeatTreatmentLnkMethodCode,
+    }),
+    record,
+  ]))
+  return writes.map((write) => {
+    const record = savedByPosition.get(positionKey({
+      rowId: write.weldJointId,
+      methodCode: normalizeMethodCode(write.method) as PreHeatTreatmentLnkMethodCode,
+    }))
+    if (!record) throw new Error('Позиция НК до ТО уже изменена. Обновите отчет ЛНК.')
+    if (action === 'result' && record.id !== write.id) {
+      throw new Error('Позиция НК до ТО уже изменена. Обновите отчет ЛНК.')
+    }
+    return record
+  })
+}
+
+export function splitPreHeatTreatmentWriteBatches<T>(records: readonly T[]) {
+  const batches: T[][] = []
+  for (let start = 0; start < records.length; start += PRE_HEAT_TREATMENT_WRITE_BATCH_SIZE) {
+    batches.push(records.slice(start, start + PRE_HEAT_TREATMENT_WRITE_BATCH_SIZE))
+  }
+  return batches
 }
 
 function toControlInsert(write: PreHeatTreatmentControlWrite): NewPreHeatTreatmentControl {
@@ -609,8 +762,10 @@ async function syncPreHeatTreatmentDocuments({
     control,
   ]))
   const type: SystemDocumentType = action === 'request' ? 'lnkRequest' : 'lnkConclusion'
+  const documents = [] as Parameters<typeof upsertSourcedSystemDocumentsInTransaction>[0]['documents'][number][]
 
   for (const group of groups) {
+    if (!group.name.trim()) continue
     const groupControls = group.positions.map((position) => controlByPosition.get(positionKey(position))!)
     const controlsByRowId = new Map<number, PreHeatTreatmentControlRecord[]>()
     for (const control of groupControls) {
@@ -627,8 +782,7 @@ async function syncPreHeatTreatmentDocuments({
       throw new Error(`Не удалось сформировать индекс документа «${group.name}».`)
     }
     for (const summary of summaries) {
-      await upsertSourcedSystemDocumentInTransaction({
-        tx,
+      documents.push({
         summary: { ...summary, sourceKind: 'beforeHeatTreatment' },
         sourcePositions: groupControls
           .filter((control) => action === 'request' || control.method === summary.methodCode)
@@ -641,6 +795,7 @@ async function syncPreHeatTreatmentDocuments({
       })
     }
   }
+  await upsertSourcedSystemDocumentsInTransaction({ tx, documents })
 }
 
 async function touchLnkRows(
@@ -656,8 +811,7 @@ async function touchLnkRows(
     current.push(control)
     changedByRowId.set(control.weldJointId, current)
   }
-  const now = new Date()
-  const updatedRows: WeldRow[] = []
+  const nextRows: WeldRow[] = []
   for (const row of rows) {
     const changed = changedByRowId.get(row.id)
     const hasRemovedControl = (row.preHeatTreatmentControls ?? []).some((control) => removedIds.has(control.id))
@@ -669,19 +823,72 @@ async function touchLnkRows(
       ...(changed ?? []),
     ]
     const [nextRow] = mergePreHeatTreatmentControlsIntoRows([row], relations)
-    const [updated] = await tx
-      .update(weldJoints)
-      .set({
-        finalStatus: calculateFinalStatus(nextRow),
-        lnkCreatedAt: sql`coalesce(${weldJoints.lnkCreatedAt}, ${now})`,
-        lnkUpdatedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(weldJoints.id, row.id))
-      .returning()
-    updatedRows.push({ ...updated, preHeatTreatmentControls: relations } as WeldRow)
+    nextRows.push({ ...nextRow, preHeatTreatmentControls: relations } as WeldRow)
   }
-  return updatedRows
+  return persistPreHeatTreatmentTouchedRows(tx, nextRows)
+}
+
+const PRE_HEAT_TREATMENT_WELD_UPDATE_FIELDS = [
+  'finalStatus',
+  'lnkCreatedAt',
+  'lnkUpdatedAt',
+  'updatedAt',
+] as const satisfies readonly (keyof NewWeldJoint)[]
+
+const PRE_HEAT_TREATMENT_WELD_UPDATE_SET = Object.fromEntries(
+  PRE_HEAT_TREATMENT_WELD_UPDATE_FIELDS.map((field) => [
+    field,
+    sql.raw(`excluded."${WELD_TABLE_COLUMNS[field].name}"`),
+  ]),
+) as Partial<Record<keyof NewWeldJoint, SQL>>
+
+export async function persistPreHeatTreatmentTouchedRows(
+  tx: SystemDocumentSequenceTransaction,
+  rows: WeldRow[],
+  now = new Date(),
+) {
+  if (rows.length === 0) return []
+  const payloads = rows.map((row) => ({
+    id: row.id,
+    finalStatus: textOrNull(calculateFinalStatus(row)),
+    lnkCreatedAt: timestampOrNull(row.lnkCreatedAt) ?? now,
+    lnkUpdatedAt: now,
+    updatedAt: now,
+  })) satisfies NewWeldJoint[]
+  const savedRows: WeldRow[] = []
+  for (const batch of splitPreHeatTreatmentWriteBatches(payloads)) {
+    const saved = await tx
+      .insert(weldJoints)
+      .values(batch)
+      .onConflictDoUpdate({
+        target: weldJoints.id,
+        set: PRE_HEAT_TREATMENT_WELD_UPDATE_SET,
+      })
+      .returning(WELD_TABLE_RETURNING)
+    if (saved.length !== batch.length) {
+      throw new Error('Не удалось обновить все стыки НК до ТО. Ничего не сохранено.')
+    }
+    savedRows.push(...saved as WeldRow[])
+  }
+  const savedRowsById = new Map(savedRows.map((row) => [row.id, row]))
+  return rows.map((row) => {
+    const saved = savedRowsById.get(row.id)
+    if (!saved) throw new Error(`Стык #${row.id} больше не существует. Обновите отчет ЛНК.`)
+    return {
+      ...saved,
+      preHeatTreatmentControls: row.preHeatTreatmentControls ?? [],
+      duplicateControls: row.duplicateControls ?? [],
+      pstoRepeatCycles: row.pstoRepeatCycles ?? [],
+    } as WeldRow
+  })
+}
+
+function timestampOrNull(value: unknown) {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : null
+  const text = String(value ?? '').trim()
+  if (!text) return null
+  const timestamp = new Date(text)
+  return Number.isFinite(timestamp.getTime()) ? timestamp : null
 }
 
 function getSequenceRequest(

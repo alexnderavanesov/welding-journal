@@ -16,7 +16,7 @@ import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatDateBeforeWeldDateSaveReason, isDateBeforeWeldDate } from '@/lib/report-date-rules'
 import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import { hasText } from '@/lib/report-value-utils'
-import { loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/psto-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
@@ -27,12 +27,13 @@ export function buildPstoRequestRows({
   records,
   requestName,
   requestDate,
+  saveCheckSettings = loadSaveCheckSettings(),
 }: {
   records: RowWithId[]
   requestName: string
   requestDate: string
+  saveCheckSettings?: SaveCheckSettings
 }) {
-  const saveCheckSettings = loadSaveCheckSettings()
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ПСТО')
   if (requestDateReason) throw new Error(requestDateReason)
   assertPrimaryPstoReady(records)
@@ -65,17 +66,18 @@ export function buildPstoResultRows({
   result,
   diagramName,
   rows: _rows,
+  saveCheckSettings = loadSaveCheckSettings(),
 }: {
   records: RowWithId[]
   pstoDate: string
   result: string
   diagramName: string
   rows: RowWithId[]
+  saveCheckSettings?: SaveCheckSettings
 }) {
-  const saveCheckSettings = loadSaveCheckSettings()
   if (result !== 'проведено') throw new Error('Выберите результат ПСТО')
   if (saveCheckSettings.pstoResultDateRequired && !pstoDate) throw new Error('Укажите дату ПСТО')
-  if (saveCheckSettings.pstoResultDateFormat) {
+  {
     const pstoDateReason = getDateInputValidationReason(pstoDate, 'Дата ПСТО')
     if (pstoDateReason) throw new Error(pstoDateReason)
   }

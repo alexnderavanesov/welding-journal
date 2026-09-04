@@ -12,6 +12,7 @@ import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { isAngularConnectionType } from '@/lib/connection-type'
 import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 export type PercentageControlMethod = 'РК' | 'УЗК' | 'ПВК'
 
@@ -197,9 +198,10 @@ function buildStampEntries(group: LineGroup) {
 
   for (const row of group.rows) {
     for (const stamp of getOfficialStamps(row)) {
-      const current = stampRows.get(stamp) ?? { stamp, rows: [] }
+      const key = normalizeText(stamp)
+      const current = stampRows.get(key) ?? { stamp, rows: [] }
       current.rows.push(row)
-      stampRows.set(stamp, current)
+      stampRows.set(key, current)
     }
   }
 
@@ -237,7 +239,7 @@ function getPotentialControlReduction(
   let theoreticalRequiredControls = 0
 
   for (const entry of entries) {
-    const summaryKey = `${group.key}|${normalizeText(entry.stamp)}`
+    const summaryKey = encodeIdentityKey([group.key, normalizeText(entry.stamp)])
     const warningKey = getPercentageLineNewWelderWarningKey(summaryKey)
     if (acceptedDispatcherWarningKeys.has(warningKey)) {
       theoreticalRequiredControls += actualSummariesByKey.get(summaryKey)?.requiredControls ?? 0
@@ -326,7 +328,7 @@ function buildStampSummary(
   const excessCandidateRowIds = normalAssignedRows.slice(allowedNormalAssignedControls).map(getRowId)
 
   return {
-    key: `${group.key}|${normalizeText(entry.stamp)}`,
+    key: encodeIdentityKey([group.key, normalizeText(entry.stamp)]),
     stamp: entry.stamp,
     lineKey: group.key,
     projectTitle: group.projectTitle,
@@ -499,7 +501,11 @@ function hasCompletedResult(value: unknown) {
 }
 
 function getLineKey(row: WeldRow) {
-  return [normalizeText(row.projectTitle), normalizeText(row.subtitleCode), normalizeText(row.line)].join('|')
+  return encodeIdentityKey([
+    normalizeText(row.projectTitle),
+    normalizeText(row.subtitleCode),
+    normalizeText(row.line),
+  ])
 }
 
 function parsePercent(value: unknown) {

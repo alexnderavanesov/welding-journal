@@ -62,6 +62,7 @@ export function useLnkRequestCorrectionMutation({
         const saved = await clearLnkRequestPosition({
           data: {
             rowId: record.id,
+            expectedVersion: String(record.rowVersion ?? '').trim(),
             methodKey,
             requestName: currentRequestName,
             requestDate: String(record[method.requestDateKey] ?? '').trim(),

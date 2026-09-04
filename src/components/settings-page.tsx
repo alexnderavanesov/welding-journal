@@ -150,6 +150,7 @@ import {
 import {
   SAVE_CHECK_SETTING_GROUPS,
   getSaveCheckSettingCode,
+  isRequiredSaveCheckSetting,
   saveSaveCheckSettings,
   useSaveCheckSettings,
   type SaveCheckSettingId,
@@ -713,7 +714,10 @@ function SecuritySettingsPanel({ runProtectedSettingsChange }: { runProtectedSet
   async function resetSecurity() {
     const saved = await runProtectedSettingsChange(async () => {
       clearSecuritySettings()
-      await saveRemoteSecuritySettings({ data: DEFAULT_SECURITY_SETTINGS })
+      const remoteSettings = await saveRemoteSecuritySettings({
+        data: { ...DEFAULT_SECURITY_SETTINGS, revision: settings.revision },
+      })
+      saveSecuritySettings(toLocalSecuritySettings(remoteSettings))
     })
     if (!saved) return
     setPasswordDrafts({ entry: '', settings: '', edit: '', importReplace: '', documentGeneration: '', delete: '' })
@@ -2485,6 +2489,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
 
         const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate, {
           constructorConfig: analysis.constructorConfig,
+          expectedVersion: String(activeUpload.version ?? ''),
         })
         setUploads((currentUploads) => ({
           ...currentUploads,
@@ -2495,6 +2500,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
 
       const savedTemplate = await saveDocumentTemplate(activeTemplateId, parsedTemplate, {
         constructorConfig: null,
+        expectedVersion: null,
       })
       setUploads((currentUploads) => ({
         ...currentUploads,
@@ -2518,7 +2524,10 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
       const savedTemplate = await saveDocumentTemplate(
         pending.templateId,
         pending.parsedTemplate,
-        { constructorConfig },
+        {
+          constructorConfig,
+          expectedVersion: String(pending.currentTemplate.version ?? ''),
+        },
       )
       setUploads((currentUploads) => ({
         ...currentUploads,
@@ -2561,7 +2570,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
     await runProtectedSettingsChange(async () => {
       const savedTemplate = await updateDocumentTemplateOptions(activeTemplateId, {
         [activeTemplateId]: nextOptions,
-      })
+      }, String(activeUpload.version ?? ''))
       if (!savedTemplate) return
       setUploads((currentUploads) => ({
         ...currentUploads,
@@ -2603,7 +2612,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
 
     setUploadError(null)
     try {
-      await deleteDocumentTemplate(activeTemplateId)
+      await deleteDocumentTemplate(activeTemplateId, String(activeUpload.version ?? ''))
       setUploads((currentUploads) => {
         const nextUploads = { ...currentUploads }
         delete nextUploads[activeTemplateId]
@@ -3017,7 +3026,11 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
           onClose={() => setBuilderTemplate(null)}
           onSave={async (config: DocumentTemplateConstructorConfig) => {
             return runProtectedSettingsChange(async () => {
-              const savedTemplate = await updateDocumentTemplateConstructor(builderTemplate.id, config)
+              const savedTemplate = await updateDocumentTemplateConstructor(
+                builderTemplate.id,
+                config,
+                String(builderTemplate.version ?? ''),
+              )
               if (!savedTemplate) throw new Error('Шаблон больше не найден.')
               setUploads((currentUploads) => ({
                 ...currentUploads,
@@ -4688,6 +4701,7 @@ function SaveChecksSettingsPanel({
   }
 
   async function updateSetting(id: SaveCheckSettingId, enabled: boolean) {
+    if (isRequiredSaveCheckSetting(id)) return
     if (DANGEROUS_SAVE_CHECK_SETTING_IDS.has(id)) {
       const confirmed = await confirmDangerousSaveChecksChange(enabled)
       if (!confirmed) return
@@ -4704,7 +4718,9 @@ function SaveChecksSettingsPanel({
     }
 
     await runProtectedSettingsChange(() =>
-      saveSaveCheckSettings(Object.fromEntries(Object.keys(settings).map((id) => [id, enabled])) as SaveCheckSettings),
+      saveSaveCheckSettings(Object.fromEntries(
+        Object.keys(settings).map((id) => [id, isRequiredSaveCheckSetting(id as SaveCheckSettingId) || enabled]),
+      ) as SaveCheckSettings),
     )
   }
 
@@ -4719,7 +4735,7 @@ function SaveChecksSettingsPanel({
     await runProtectedSettingsChange(() => {
       saveSaveCheckSettings({
         ...settings,
-        ...Object.fromEntries(groupIds.map((id) => [id, enabled])),
+        ...Object.fromEntries(groupIds.map((id) => [id, isRequiredSaveCheckSetting(id) || enabled])),
       } as SaveCheckSettings)
     })
   }
@@ -4757,7 +4773,7 @@ function SaveChecksSettingsPanel({
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
               Эти правила блокируют некорректное сохранение в форме стыка, результатах ЛНК/ПСТО и соответствующих массовых операциях. Импорт,
               замена и массовое заполнение проверяют итоговую запись после объединения новых и сохраненных данных. Диспетчер настраивается
-              отдельно и независимо проверяет уже существующие строки.
+              отдельно и независимо проверяет уже существующие строки. Проверки формата дат обязательны и не отключаются.
             </p>
             <div className="mt-2 text-xs font-semibold text-slate-500">
               Включено: {enabledCount} из {totalCount}
@@ -4789,8 +4805,9 @@ function SaveChecksSettingsPanel({
       {SAVE_CHECK_SETTING_GROUPS.map((group) => {
         const collapsed = collapsedGroupIds.has(group.id)
         const groupEnabledCount = group.items.filter((item) => settings[item.id]).length
+        const configurableGroupItems = group.items.filter((item) => !isRequiredSaveCheckSetting(item.id))
         const isGroupFullyEnabled = groupEnabledCount === group.items.length
-        const isGroupFullyDisabled = groupEnabledCount === 0
+        const isGroupFullyDisabled = configurableGroupItems.every((item) => !settings[item.id])
 
         return (
           <section key={group.id} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
@@ -4839,6 +4856,7 @@ function SaveChecksSettingsPanel({
               <div className="divide-y divide-slate-100">
                 {group.items.map((item) => {
                   const enabled = settings[item.id]
+                  const required = isRequiredSaveCheckSetting(item.id)
                   const expanded = expandedItemIds.has(item.id)
                   const help = SAVE_CHECK_SETTING_HELP[item.id]
                   const linkedDispatcherIds = getDispatcherSettingIdsForSaveCheck(item.id)
@@ -4849,14 +4867,15 @@ function SaveChecksSettingsPanel({
                       className={`scroll-mt-24 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                        <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                        <label className={`flex min-w-0 flex-1 items-start gap-3 ${required ? 'cursor-default' : 'cursor-pointer'}`}>
                           <input
                             type="checkbox"
                             checked={enabled}
+                            disabled={required}
                             onChange={(event) => {
                               void updateSetting(item.id, event.currentTarget.checked)
                             }}
-                            className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
                           />
                           <span className="min-w-0 flex-1">
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -4864,12 +4883,17 @@ function SaveChecksSettingsPanel({
                               <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">
                                 {getSaveCheckSettingCode(item.id)}
                               </span>
+                              {required ? (
+                                <span className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-700">
+                                  Обязательная
+                                </span>
+                              ) : null}
                             </span>
                             <span className={`mt-1 block text-sm leading-5 ${enabled ? 'text-slate-600' : 'text-slate-400'}`}>{item.description}</span>
                             <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                               <span className={`inline-flex items-center gap-1.5 font-semibold ${enabled ? 'text-emerald-700' : 'text-slate-400'}`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                {enabled ? 'Включена' : 'Выключена'}
+                                {required ? 'Всегда включена' : enabled ? 'Включена' : 'Выключена'}
                               </span>
                               {linkedDispatcherIds.length > 0 ? (
                                 <span className={enabled ? 'text-violet-700' : 'text-slate-400'}>
@@ -4904,12 +4928,14 @@ function SaveChecksSettingsPanel({
                             <dd>{help.example}</dd>
                           </div>
                           <div className="mt-3 grid gap-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
-                            <dt className="font-semibold text-slate-800">Если выключить</dt>
+                            <dt className="font-semibold text-slate-800">{required ? 'Почему обязательна' : 'Если выключить'}</dt>
                             <dd>
-                              Эта причина перестанет блокировать сохранение в тех операциях, где применяется ЗВ.
-                              {linkedDispatcherIds.length > 0
-                                ? ` Связанные задачи ${linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')} продолжат независимо проверять уже сохраненные данные, пока они включены в диспетчере.`
-                                : ' Автоматические системные расчеты и остальные включенные проверки продолжат работать.'}
+                              {required
+                                ? 'База хранит это поле как календарную дату. Произвольный текст нельзя сохранить надежно, поэтому правило действует для формы, импорта и всех специальных операций.'
+                                : <>Эта причина перестанет блокировать сохранение в тех операциях, где применяется ЗВ.
+                                  {linkedDispatcherIds.length > 0
+                                    ? ` Связанные задачи ${linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')} продолжат независимо проверять уже сохраненные данные, пока они включены в диспетчере.`
+                                    : ' Автоматические системные расчеты и остальные включенные проверки продолжат работать.'}</>}
                             </dd>
                           </div>
                         </dl>

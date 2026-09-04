@@ -14,33 +14,14 @@ type RelationDb = Pick<ReturnType<typeof requireDb>, 'select'>
 export async function attachHeatTreatmentControlRelations<
   Row extends HeatTreatmentControlRelationsCarrier,
 >(rows: readonly Row[], db: RelationDb = requireDb()) {
-  if (rows.length === 0) return []
-  const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
-  if (ids.length === 0) return [...rows]
-
-  const idChunks = Array.from(
-    { length: Math.ceil(ids.length / RELATION_QUERY_CHUNK_SIZE) },
-    (_, index) => ids.slice(
-      index * RELATION_QUERY_CHUNK_SIZE,
-      (index + 1) * RELATION_QUERY_CHUNK_SIZE,
-    ),
-  )
+  const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
+  if (rows.length === 0) return rowsWithPreControls
+  const idChunks = getRelationIdChunks(rows)
+  if (idChunks.length === 0) return rowsWithPreControls
 
   // This helper is also used with a transaction-bound client. node-postgres
   // requires queries on one transaction connection to run sequentially.
-  const preHeatControls = [] as Array<typeof preHeatTreatmentControls.$inferSelect>
   const repeatCycles = [] as Array<typeof pstoRepeatCycles.$inferSelect>
-  for (const idChunk of idChunks) {
-    preHeatControls.push(...await db
-      .select()
-      .from(preHeatTreatmentControls)
-      .where(inArray(preHeatTreatmentControls.weldJointId, idChunk))
-      .orderBy(
-        asc(preHeatTreatmentControls.weldJointId),
-        asc(preHeatTreatmentControls.method),
-        asc(preHeatTreatmentControls.id),
-      ))
-  }
   for (const idChunk of idChunks) {
     repeatCycles.push(...await db
       .select()
@@ -53,8 +34,40 @@ export async function attachHeatTreatmentControlRelations<
       ))
   }
 
-  return mergePstoRepeatCyclesIntoRows(
-    mergePreHeatTreatmentControlsIntoRows(rows, preHeatControls),
-    repeatCycles,
+  return mergePstoRepeatCyclesIntoRows(rowsWithPreControls, repeatCycles)
+}
+
+export async function attachPreHeatTreatmentControlRelations<
+  Row extends HeatTreatmentControlRelationsCarrier,
+>(rows: readonly Row[], db: RelationDb = requireDb()) {
+  if (rows.length === 0) return []
+  const idChunks = getRelationIdChunks(rows)
+  if (idChunks.length === 0) return [...rows]
+
+  // This helper is also used with a transaction-bound client. node-postgres
+  // requires queries on one transaction connection to run sequentially.
+  const preHeatControls = [] as Array<typeof preHeatTreatmentControls.$inferSelect>
+  for (const idChunk of idChunks) {
+    preHeatControls.push(...await db
+      .select()
+      .from(preHeatTreatmentControls)
+      .where(inArray(preHeatTreatmentControls.weldJointId, idChunk))
+      .orderBy(
+        asc(preHeatTreatmentControls.weldJointId),
+        asc(preHeatTreatmentControls.method),
+        asc(preHeatTreatmentControls.id),
+      ))
+  }
+  return mergePreHeatTreatmentControlsIntoRows(rows, preHeatControls)
+}
+
+function getRelationIdChunks(rows: readonly HeatTreatmentControlRelationsCarrier[]) {
+  const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
+  return Array.from(
+    { length: Math.ceil(ids.length / RELATION_QUERY_CHUNK_SIZE) },
+    (_, index) => ids.slice(
+      index * RELATION_QUERY_CHUNK_SIZE,
+      (index + 1) * RELATION_QUERY_CHUNK_SIZE,
+    ),
   )
 }

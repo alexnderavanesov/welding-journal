@@ -5,6 +5,7 @@ import { getJointChainIdentity, isUnofficialJoint } from '@/lib/joint-display'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseDateLikeToIso } from '@/lib/date-format'
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 export function getRepeatedJointIdentity(row: WeldInput, jointOverride?: string) {
   const joint = String(jointOverride ?? row.joint ?? '').trim()
@@ -23,7 +24,7 @@ export function getDuplicateJointKey(row: WeldInput) {
     normalizeJointChainPart(row[fieldKey as WeldFieldKey]),
   )
   if (values.every((value) => value === '')) return null
-  return values.join('|')
+  return encodeIdentityKey(values)
 }
 
 export function getRepeatedJointBranchKey(
@@ -35,7 +36,12 @@ export function getRepeatedJointBranchKey(
   const branchJoint = parseRepeatedJointName(joint, settings).base
   const identity = getRepeatedJointIdentity(row, branchJoint)
   if (!identity) return null
-  return `${identity.project}:${identity.subtitle}:${identity.line}:${identity.joint}`
+  return encodeIdentityKey([
+    identity.project,
+    identity.subtitle,
+    identity.line,
+    identity.joint,
+  ])
 }
 
 export function compareJointChainRows(

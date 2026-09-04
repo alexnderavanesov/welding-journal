@@ -80,6 +80,16 @@ describe('buildLineSummary', () => {
     expect(summary.rows[0]).toMatchObject({ groupName: 'A', total: 2, completed: 1, remaining: 1, totalS: 2 })
     expect(summary.rows[1]).toMatchObject({ groupName: 'B', total: 1, completed: 1, remaining: 0, totalS: 1 })
   })
+
+  it('keeps line summary identities separate when values contain separators', () => {
+    const summary = buildLineSummary([
+      makeRow(1, { projectTitle: 'A|B', subtitleCode: 'C', line: 'LIN-1', weldDate: '2026-07-01' }),
+      makeRow(2, { projectTitle: 'A', subtitleCode: 'B|C', line: 'LIN-1', weldDate: '2026-07-01' }),
+    ], 'joints')
+
+    expect(summary.rows).toHaveLength(2)
+    expect(summary.rows.map((row) => row.total)).toEqual([1, 1])
+  })
 })
 
 function makeRow(id: number, row: Partial<WeldRow>): WeldRow {

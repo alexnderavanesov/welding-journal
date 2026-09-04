@@ -239,6 +239,20 @@
       "when": 1788457499365,
       "tag": "0033_mean_captain_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788462749257,
+      "tag": "0034_keen_yellowjacket",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788510632274,
+      "tag": "0035_natural_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

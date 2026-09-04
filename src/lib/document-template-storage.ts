@@ -1,5 +1,6 @@
 import type * as XLSXTypes from 'xlsx'
 import { formatBusinessDateTime } from '@/lib/business-date'
+import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   DOCUMENT_TEMPLATE_STORAGE_EVENT,
   GENERATED_DOCUMENT_STORAGE_EVENT,
@@ -7,6 +8,11 @@ import {
 import { FIELD_BY_KEY, FIELD_BY_LABEL, isVirtualWeldField, normalizeHeader, WELD_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { formatControlAvailabilityForExport } from '@/lib/report-value-utils'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY, formatControlBasisSummary } from '@/lib/control-assignment-basis'
+import {
+  getLnkDefectDescriptionDescriptor,
+  getLnkDefectDescriptionDisplayValue,
+} from '@/lib/lnk-defect-description'
+import { PRE_HEAT_TREATMENT_DEFECT_DESCRIPTION_FIELD_KEYS } from '@/lib/pre-heat-treatment-report-fields'
 import { formatExportDate, formatExportNumber } from '@/lib/weld-export-utils'
 import {
   STAMP_NAME_TEMPLATE_FIELDS,
@@ -315,6 +321,7 @@ export function convertDocumentTemplateBindingToJointRow(
 
 export type StoredDocumentTemplate = TemplateUploadInfo & {
   id: DocumentTemplateId
+  version?: string
   fileData: ArrayBuffer
   options?: DocumentTemplateOptions
   constructorConfig?: DocumentTemplateConstructorConfig
@@ -457,12 +464,20 @@ for (const field of STAMP_NAME_TEMPLATE_FIELDS) {
 }
 
 for (const field of WELD_FIELDS) {
-  if (isVirtualWeldField(field) && field.key !== CONTROL_BASIS_SUMMARY_FIELD_KEY) continue
+  if (
+    isVirtualWeldField(field) &&
+    field.key !== CONTROL_BASIS_SUMMARY_FIELD_KEY &&
+    !PRE_HEAT_TREATMENT_DEFECT_DESCRIPTION_FIELD_KEYS.has(field.key)
+  ) continue
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(field.label), field.key as keyof WeldInput)
 }
 
 for (const [label, field] of FIELD_BY_LABEL.entries()) {
-  if (isVirtualWeldField(field) && field.key !== CONTROL_BASIS_SUMMARY_FIELD_KEY) continue
+  if (
+    isVirtualWeldField(field) &&
+    field.key !== CONTROL_BASIS_SUMMARY_FIELD_KEY &&
+    !PRE_HEAT_TREATMENT_DEFECT_DESCRIPTION_FIELD_KEYS.has(field.key)
+  ) continue
   TEMPLATE_FIELD_ALIASES.set(normalizeTemplateFieldName(label), field.key as keyof WeldInput)
 }
 
@@ -515,6 +530,7 @@ export async function saveDocumentTemplate(
   parsedTemplate: TemplateUploadInfo & { fileData: ArrayBuffer },
   options: {
     constructorConfig?: DocumentTemplateConstructorConfig | null
+    expectedVersion?: string | null
   } = {},
 ) {
   const remote = await saveRemoteDocumentTemplate({
@@ -530,6 +546,7 @@ export async function saveDocumentTemplate(
       locations: parsedTemplate.locations,
       warnings: parsedTemplate.warnings,
       constructorConfig: options.constructorConfig,
+      expectedVersion: options.expectedVersion ?? null,
     },
   })
   const record = fromRemoteDocumentTemplate(remote)
@@ -1131,10 +1148,12 @@ function deduplicateDocumentTemplateReplacementIssues(
 export async function updateDocumentTemplateConstructor(
   templateId: DocumentTemplateId,
   constructorConfig: DocumentTemplateConstructorConfig,
+  expectedVersion: string,
 ) {
   const saved = await updateRemoteDocumentTemplate({
     data: {
       id: templateId,
+      expectedVersion,
       constructorConfig: normalizeDocumentTemplateConstructorConfig(constructorConfig),
     },
   })
@@ -1144,13 +1163,18 @@ export async function updateDocumentTemplateConstructor(
   return record
 }
 
-export async function updateDocumentTemplateOptions(templateId: DocumentTemplateId, options: DocumentTemplateOptions) {
+export async function updateDocumentTemplateOptions(
+  templateId: DocumentTemplateId,
+  options: DocumentTemplateOptions,
+  expectedVersion: string,
+) {
   const existingTemplate = await loadDocumentTemplate(templateId)
   if (!existingTemplate) return null
 
   await updateRemoteDocumentTemplate({
     data: {
       id: templateId,
+      expectedVersion,
       options: {
       ...existingTemplate.options,
       ...options,
@@ -1190,8 +1214,8 @@ export async function loadDocumentTemplates() {
   }, {})
 }
 
-export async function deleteDocumentTemplate(templateId: DocumentTemplateId) {
-  await deleteRemoteDocumentTemplate({ data: { id: templateId } })
+export async function deleteDocumentTemplate(templateId: DocumentTemplateId, expectedVersion: string) {
+  await deleteRemoteDocumentTemplate({ data: { id: templateId, expectedVersion } })
   notifyDocumentTemplateStorageChanged()
 }
 
@@ -2310,6 +2334,14 @@ function getTemplateFieldValueByKey(
       mappedKey.replace('__welderName:', '') as TemplateStampNameFieldKey,
       context.welderStamps ?? [],
     )
+  }
+
+  const defectDescriptor = getLnkDefectDescriptionDescriptor(mappedKey as keyof WeldInput)
+  if (
+    defectDescriptor &&
+    (defectDescriptor.stage === 'primary' || (record as WeldRow).preHeatTreatmentControls !== undefined)
+  ) {
+    return getLnkDefectDescriptionDisplayValue(record, defectDescriptor)
   }
 
   const field = WELD_FIELDS.find((candidate) => candidate.key === mappedKey)

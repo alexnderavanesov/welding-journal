@@ -29,6 +29,7 @@ export const PRE_HEAT_TREATMENT_REPORT_FIELDS = [
   { fieldKey: 'preVikResult', methodCode: 'ВИК', valueKey: 'result' },
   { fieldKey: 'preVikConclusionDate', methodCode: 'ВИК', valueKey: 'conclusionDate' },
   { fieldKey: 'preVikConclusion', methodCode: 'ВИК', valueKey: 'conclusionName' },
+  { fieldKey: 'preVikDefectDescription', methodCode: 'ВИК', valueKey: 'defectDescription' },
   { fieldKey: 'preRkRequest', methodCode: 'РК', valueKey: 'requestName' },
   { fieldKey: 'preRkRequestDate', methodCode: 'РК', valueKey: 'requestDate' },
   { fieldKey: 'preRkResult', methodCode: 'РК', valueKey: 'result' },
@@ -41,11 +42,13 @@ export const PRE_HEAT_TREATMENT_REPORT_FIELDS = [
   { fieldKey: 'preUzkResult', methodCode: 'УЗК', valueKey: 'result' },
   { fieldKey: 'preUzkConclusionDate', methodCode: 'УЗК', valueKey: 'conclusionDate' },
   { fieldKey: 'preUzkConclusion', methodCode: 'УЗК', valueKey: 'conclusionName' },
+  { fieldKey: 'preUzkDefectDescription', methodCode: 'УЗК', valueKey: 'defectDescription' },
   { fieldKey: 'prePvkRequest', methodCode: 'ПВК', valueKey: 'requestName' },
   { fieldKey: 'prePvkRequestDate', methodCode: 'ПВК', valueKey: 'requestDate' },
   { fieldKey: 'prePvkResult', methodCode: 'ПВК', valueKey: 'result' },
   { fieldKey: 'prePvkConclusionDate', methodCode: 'ПВК', valueKey: 'conclusionDate' },
   { fieldKey: 'prePvkConclusion', methodCode: 'ПВК', valueKey: 'conclusionName' },
+  { fieldKey: 'prePvkDefectDescription', methodCode: 'ПВК', valueKey: 'defectDescription' },
 ] as const satisfies readonly PreHeatTreatmentReportFieldDescriptor[]
 
 export const PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS = PRE_HEAT_TREATMENT_REPORT_FIELDS
@@ -60,6 +63,12 @@ export const PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS = new Set<WeldFieldKey>(
 export const PRE_HEAT_TREATMENT_CONCLUSION_FIELD_KEYS = new Set<WeldFieldKey>(
   PRE_HEAT_TREATMENT_REPORT_FIELDS
     .filter((field) => field.valueKey === 'conclusionName')
+    .map((field) => field.fieldKey),
+)
+
+export const PRE_HEAT_TREATMENT_DEFECT_DESCRIPTION_FIELD_KEYS = new Set<WeldFieldKey>(
+  PRE_HEAT_TREATMENT_REPORT_FIELDS
+    .filter((field) => field.valueKey === 'defectDescription')
     .map((field) => field.fieldKey),
 )
 
@@ -87,6 +96,7 @@ export function getPreHeatTreatmentReportValue(row: WeldInput, fieldKey: WeldFie
       : undefined
   }
   if (field.valueKey === 'defectDescription') {
+    if (field.methodCode !== 'РК') return control?.defectDescription
     return control
       ? parseRkExposureDescription(control.defectDescription)
           .map((line) => line.description)

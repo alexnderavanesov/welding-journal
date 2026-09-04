@@ -8,18 +8,27 @@ import {
   normalizePstoCycleWorkflowPayload,
   saveRepeatCycleWrites,
 } from '@/server/psto-repeat-workflow'
+import { deletePstoRepeatCyclesInTransaction } from '@/server/psto-cycle-state'
 
 describe('PSTO cycle workflow payload', () => {
   it('keeps welds from different cycles in one document group', () => {
     expect(normalizePstoCycleWorkflowPayload({
       action: 'pstoRequest',
       date: '2026-08-29',
+      expectedVersions: [
+        { id: 11, version: '101' },
+        { id: 22, version: '102' },
+      ],
       groups: [{ rowIds: [11, 22], name: 'Заявка ПСТО-021' }],
     })).toEqual({
       action: 'pstoRequest',
       date: '2026-08-29',
       groups: [{ rowIds: [11, 22], name: 'Заявка ПСТО-021', useSystemName: false }],
       results: [],
+      expectedVersions: [
+        { id: 11, version: '101' },
+        { id: 22, version: '102' },
+      ],
     })
   })
 
@@ -27,6 +36,10 @@ describe('PSTO cycle workflow payload', () => {
     expect(() => normalizePstoCycleWorkflowPayload({
       action: 'tvmtResult',
       date: '2026-08-29',
+      expectedVersions: [
+        { id: 11, version: '101' },
+        { id: 22, version: '102' },
+      ],
       groups: [{ rowIds: [11, 22], name: 'Заключение ТВМТ-021' }],
       results: [
         { rowId: 11, result: 'годен' },
@@ -41,6 +54,83 @@ describe('PSTO cycle workflow payload', () => {
       'pstoRequest',
       [],
     )).resolves.toEqual([])
+  })
+
+  it('creates a production-sized repeat-cycle selection in bounded batches', async () => {
+    const batchSizes: number[] = []
+    const tx = {
+      insert: () => ({
+        values: (records: Array<{ weldJointId: number; sequence: number }>) => ({
+          returning: async () => {
+            batchSizes.push(records.length)
+            return records.map((record) => ({ ...record, id: record.weldJointId }))
+          },
+        }),
+      }),
+    }
+    const writes = Array.from({ length: 201 }, (_, index) => ({
+      weldJointId: index + 1,
+      sequence: 2,
+    }))
+
+    const saved = await saveRepeatCycleWrites(tx as never, 'pstoRequest', writes)
+
+    expect(batchSizes).toEqual([100, 100, 1])
+    expect(saved.map((cycle) => cycle.weldJointId)).toEqual(writes.map((write) => write.weldJointId))
+  })
+
+  it('locks a production-sized repeat-cycle update in globally ordered chunks', async () => {
+    const lockedBatches = [
+      Array.from({ length: 1_000 }, (_, index) => ({ id: index + 1 })),
+      Array.from({ length: 1_000 }, (_, index) => ({ id: index + 1_001 })),
+      [{ id: 2_001 }],
+    ]
+    let lockQueryCount = 0
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              for: async () => lockedBatches[lockQueryCount++] ?? [],
+            }),
+          }),
+        }),
+      }),
+      insert: () => ({
+        values: (records: Array<{ id: number }>) => ({
+          onConflictDoUpdate: () => ({ returning: async () => records }),
+        }),
+      }),
+    }
+    const writes = Array.from({ length: 2_001 }, (_, index) => ({
+      id: index + 1,
+      weldJointId: index + 1,
+      sequence: 2,
+    }))
+
+    const saved = await saveRepeatCycleWrites(tx as never, 'pstoResult', writes)
+
+    expect(lockQueryCount).toBe(3)
+    expect(saved).toHaveLength(2_001)
+    expect(saved.at(-1)?.id).toBe(2_001)
+  })
+
+  it('deletes production-sized repeat-cycle selections in bounded chunks', async () => {
+    const batchSizes: number[] = []
+    const tx = {
+      delete: () => ({
+        where: async (condition: { queryChunks?: unknown[] }) => {
+          batchSizes.push(condition.queryChunks?.length ?? 0)
+        },
+      }),
+    }
+
+    await deletePstoRepeatCyclesInTransaction(
+      tx as never,
+      Array.from({ length: 2_001 }, (_, index) => index + 1),
+    )
+
+    expect(batchSizes).toHaveLength(3)
   })
 
   it('starts cycle 2 after a failed TVMT result in the primary cycle', () => {
@@ -248,6 +338,7 @@ describe('PSTO cycle correction payload', () => {
   it('normalizes the exact row, cycle and stage identity', () => {
     expect(normalizePstoCycleStageCorrectionPayload({
       rowId: 12.8,
+      expectedVersion: ' 101 ',
       sequence: 2.7,
       cycleId: 41.9,
       stage: 'tvmtResult',
@@ -257,6 +348,7 @@ describe('PSTO cycle correction payload', () => {
       result: ' не годен ',
     })).toEqual({
       rowId: 12,
+      expectedVersion: '101',
       sequence: 2,
       cycleId: 41,
       stage: 'tvmtResult',
@@ -270,30 +362,35 @@ describe('PSTO cycle correction payload', () => {
   it('rejects unknown rows, cycles, stages and actions', () => {
     expect(() => normalizePstoCycleStageCorrectionPayload({
       rowId: 0,
+      expectedVersion: '101',
       sequence: 1,
       stage: 'pstoRequest',
       action: 'delete',
     })).toThrow('Не указан стык')
     expect(() => normalizePstoCycleStageCorrectionPayload({
       rowId: 1,
+      expectedVersion: '101',
       sequence: 0,
       stage: 'pstoRequest',
       action: 'delete',
     })).toThrow('Не указан цикл')
     expect(() => normalizePstoCycleStageCorrectionPayload({
       rowId: 1,
+      expectedVersion: '101',
       sequence: 2,
       stage: 'pstoRequest',
       action: 'delete',
     })).toThrow('Не указан идентификатор повторного цикла')
     expect(() => normalizePstoCycleStageCorrectionPayload({
       rowId: 1,
+      expectedVersion: '101',
       sequence: 1,
       stage: 'other' as 'pstoRequest',
       action: 'delete',
     })).toThrow('Неизвестный этап')
     expect(() => normalizePstoCycleStageCorrectionPayload({
       rowId: 1,
+      expectedVersion: '101',
       sequence: 1,
       stage: 'pstoRequest',
       action: 'replace' as 'update',
@@ -303,12 +400,14 @@ describe('PSTO cycle correction payload', () => {
   it('normalizes an atomic TVMT correction without accepting a client-supplied stage or action', () => {
     expect(normalizePstoTvmtAndRemoveLaterCyclesPayload({
       rowId: 12.8,
+      expectedVersion: ' 101 ',
       sequence: 1.9,
       date: ' 2026-08-21 ',
       name: ' Заключение ТВМТ-1 ',
       result: ' годен ',
     })).toEqual({
       rowId: 12,
+      expectedVersion: '101',
       sequence: 1,
       cycleId: undefined,
       date: '2026-08-21',

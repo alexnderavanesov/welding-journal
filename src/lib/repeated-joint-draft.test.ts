@@ -11,6 +11,9 @@ describe('buildRepeatedJointDraft', () => {
       weldDate: '2026-08-20',
       pstoRequired: 'да',
       hasVik: 'да',
+      vikDefectDescription: 'Дефект исходного стыка',
+      uzkDefectDescription: 'УЗК исходного стыка',
+      pvkDefectDescription: 'ПВК исходного стыка',
       preHeatTreatmentControls: [{
         id: 21,
         weldJointId: 10,
@@ -31,6 +34,9 @@ describe('buildRepeatedJointDraft', () => {
     expect((draft as WeldRow).pstoRepeatCycles).toEqual([])
     expect(draft.pstoRequired).toBe('да')
     expect(draft.hasVik).toBe('да')
+    expect(draft.vikDefectDescription).toBeNull()
+    expect(draft.uzkDefectDescription).toBeNull()
+    expect(draft.pvkDefectDescription).toBeNull()
     expect(draft.finalStatus).toBe('ожидает ремонт')
   })
 

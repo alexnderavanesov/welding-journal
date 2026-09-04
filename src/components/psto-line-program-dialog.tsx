@@ -180,6 +180,7 @@ export function PstoLineProgramDialog({
       await saveMutation.mutateAsync({
         identity: toIdentity(view.line),
         action: reactivating ? 'reactivate' : 'assign',
+        expectedVersions: previewMutation.data.expectedVersions,
         activationDecisions,
       })
     })
@@ -199,6 +200,7 @@ export function PstoLineProgramDialog({
       await saveMutation.mutateAsync({
         identity: toIdentity(view.line),
         action: cancelling ? 'cancel' : 'remove',
+        expectedVersions: previewMutation.data.expectedVersions,
         cancellationDate: cancelling ? cancellationDate : undefined,
         cancellationBasis: cancelling ? cancellationBasis : undefined,
         decisions: payloadDecisions,

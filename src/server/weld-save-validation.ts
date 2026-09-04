@@ -21,6 +21,7 @@ import {
 } from '@/lib/other-settings'
 import { getRequiredRootStampMessage } from '@/lib/weld-import-export'
 import { validateJointNameStructure } from '@/lib/joint-name'
+import { getDateInputValidationReason } from '@/lib/date-format'
 import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -31,7 +32,10 @@ import {
   normalizeSaveCheckSettings,
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
-import { getOfficialStampCompatibilitySaveBlockReason } from '@/lib/welder-stamp-compatibility'
+import {
+  getOfficialStampCompatibilitySaveBlockReason,
+  shouldValidateOfficialStampCompatibilityForSave,
+} from '@/lib/welder-stamp-compatibility'
 import type {
   WelderStampDlsPermit,
   WelderStampNaksPermit,
@@ -50,11 +54,13 @@ import {
   getPstoLineIdentityKey,
   hasPstoLifecycleData,
   normalizePstoLineIdentity,
+  normalizePstoLineIdentityPart,
   requiresPrimaryStageResolutionForAssignedPstoLine,
 } from '@/lib/psto-line-assignment'
 import {
   isControlCancelledValue,
   isControlEnabledValue,
+  CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES,
 } from '@/lib/control-availability-values'
 import {
   getPreHeatTreatmentControl,
@@ -75,9 +81,19 @@ import {
 } from '@/lib/tvmt-cycle'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
+import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
+import { lockWeldValidationSettings } from '@/server/weld-validation-settings-lock'
+import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 type Db = ReturnType<typeof requireDb>
-type ValidationDb = Pick<Db, 'select'>
+type ValidationDb = Pick<Db, 'execute' | 'select'>
+
+const CONTROL_ENABLED_VALUES_SQL = sql.join(
+  CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES.map((value) => sql`${value}`),
+  sql`, `,
+)
+const PSTO_LINE_VALIDATION_SCOPE_BATCH_SIZE = 500
 
 export type ServerWeldValidationContext = {
   saveCheckSettings: SaveCheckSettings
@@ -98,29 +114,16 @@ export type PstoLineAssignmentState = {
   basis?: string
 }
 
-const OFFICIAL_VALIDATION_FIELDS = new Set<WeldFieldKey>([
-  'weldDate',
-  'weldingMethod',
-  'connectionType',
-  'materialGroup',
-  'd1',
-  'd2',
-  't1',
-  't2',
-  'stamp1K',
-  'stamp1Z',
-  'stamp1O',
-  'stamp2K',
-  'stamp2Z',
-  'stamp2O',
-])
-
-export async function loadServerWeldValidationContext(db: ValidationDb): Promise<ServerWeldValidationContext> {
-  const normalizedProjectTitle = sql<string>`btrim(coalesce(${weldJoints.projectTitle}, ''))`
-  const normalizedSubtitleCode = sql<string>`btrim(coalesce(${weldJoints.subtitleCode}, ''))`
-  const normalizedLine = sql<string>`btrim(coalesce(${weldJoints.line}, ''))`
+export async function loadServerWeldValidationContext(
+  db: ValidationDb,
+  lineScopeRows: readonly Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>[],
+): Promise<ServerWeldValidationContext> {
+  const normalizedProjectTitle = sql<string>`lower(btrim(coalesce(${weldJoints.projectTitle}, '')))`
+  const normalizedSubtitleCode = sql<string>`lower(btrim(coalesce(${weldJoints.subtitleCode}, '')))`
+  const normalizedLine = sql<string>`lower(btrim(coalesce(${weldJoints.line}, '')))`
   // This loader also runs on a transaction-bound client. Keep its queries sequential:
   // node-postgres no longer supports concurrent queries on the same transaction client.
+  await lockWeldValidationSettings(db)
   const settingRows = await db
     .select({ key: appSettings.key, value: appSettings.value })
     .from(appSettings)
@@ -130,33 +133,67 @@ export async function loadServerWeldValidationContext(db: ValidationDb): Promise
       PROJECT_SETTING_KEYS.other,
       PROJECT_SETTING_KEYS.systemIndex,
     ]))
+  await lockWelderStampRegistry(db)
   const stampRows = await db.select().from(welderStamps)
   const suspensionRows = await db.select().from(welderStampSuspensions)
-  const pstoLineRows = await db
-    .select({
-      projectTitle: normalizedProjectTitle,
-      subtitleCode: normalizedSubtitleCode,
-      line: normalizedLine,
-      rowCount: sql<number>`count(*)::int`,
-      assignedCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) in ('да', 'дополнительный', 'замена рк/узк'))::int`,
-      cancelledCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) = 'отменен')::int`,
-      cancellationDate: sql<string | null>`max(${weldJoints.pstoCancellationDate})`,
-      cancellationBasis: sql<string | null>`max(nullif(btrim(coalesce(${weldJoints.pstoControlBasis}, '')), '')) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) = 'отменен')`,
-    })
-    .from(weldJoints)
-    .where(sql`btrim(coalesce(${weldJoints.line}, '')) <> ''`)
-    .groupBy(normalizedProjectTitle, normalizedSubtitleCode, normalizedLine)
+  const scopedLineIdentities = getPstoLineValidationScopeIdentities(lineScopeRows)
+  const pstoLineRows: Array<{
+    projectTitle: string
+    subtitleCode: string
+    line: string
+    rowCount: number
+    assignedCount: number
+    cancelledCount: number
+    cancellationDate: string | null
+    cancellationBasis: string | null
+  }> = []
+  for (let offset = 0; offset < scopedLineIdentities.length; offset += PSTO_LINE_VALIDATION_SCOPE_BATCH_SIZE) {
+    const chunk = scopedLineIdentities.slice(offset, offset + PSTO_LINE_VALIDATION_SCOPE_BATCH_SIZE)
+    const identityTuples = sql.join(
+      chunk.map((identity) => sql`(
+        ${normalizePstoLineIdentityPart(identity.projectTitle)},
+        ${normalizePstoLineIdentityPart(identity.subtitleCode)},
+        ${normalizePstoLineIdentityPart(identity.line)}
+      )`),
+      sql`, `,
+    )
+    pstoLineRows.push(...await db
+      .select({
+        projectTitle: normalizedProjectTitle,
+        subtitleCode: normalizedSubtitleCode,
+        line: normalizedLine,
+        rowCount: sql<number>`count(*)::int`,
+        assignedCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) in (${CONTROL_ENABLED_VALUES_SQL}))::int`,
+        cancelledCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) = 'отменен')::int`,
+        cancellationDate: sql<string | null>`max(${weldJoints.pstoCancellationDate})`,
+        cancellationBasis: sql<string | null>`max(nullif(btrim(coalesce(${weldJoints.pstoControlBasis}, '')), '')) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) = 'отменен')`,
+      })
+      .from(weldJoints)
+      .where(sql`(
+        ${normalizedProjectTitle},
+        ${normalizedSubtitleCode},
+        ${normalizedLine}
+      ) in (${identityTuples})`)
+      .groupBy(normalizedProjectTitle, normalizedSubtitleCode, normalizedLine))
+  }
   const settingsByKey = new Map(settingRows.map((row) => [row.key, parseStoredValue(row.value)]))
+  const otherSettings = settingsByKey.has(PROJECT_SETTING_KEYS.other)
+    ? normalizeOtherSettings(settingsByKey.get(PROJECT_SETTING_KEYS.other))
+    : DEFAULT_OTHER_SETTINGS
   return {
     saveCheckSettings: settingsByKey.has(PROJECT_SETTING_KEYS.saveCheck)
-      ? normalizeSaveCheckSettings(settingsByKey.get(PROJECT_SETTING_KEYS.saveCheck))
-      : DEFAULT_SAVE_CHECK_SETTINGS,
+      ? normalizeSaveCheckSettings(
+          settingsByKey.get(PROJECT_SETTING_KEYS.saveCheck),
+          { officialDlsFallback: otherSettings.requireDlsForOfficialStamps },
+        )
+      : {
+          ...DEFAULT_SAVE_CHECK_SETTINGS,
+          officialDls: otherSettings.requireDlsForOfficialStamps,
+        },
     dataListSettings: settingsByKey.has(PROJECT_SETTING_KEYS.dataList)
       ? normalizeDataListSettings(settingsByKey.get(PROJECT_SETTING_KEYS.dataList))
       : DEFAULT_DATA_LIST_SETTINGS,
-    otherSettings: settingsByKey.has(PROJECT_SETTING_KEYS.other)
-      ? normalizeOtherSettings(settingsByKey.get(PROJECT_SETTING_KEYS.other))
-      : DEFAULT_OTHER_SETTINGS,
+    otherSettings,
     systemIndexSettings: settingsByKey.has(PROJECT_SETTING_KEYS.systemIndex)
       ? normalizeSystemIndexSettings(settingsByKey.get(PROJECT_SETTING_KEYS.systemIndex))
       : DEFAULT_SYSTEM_INDEX_SETTINGS,
@@ -178,6 +215,15 @@ export async function loadServerWeldValidationContext(db: ValidationDb): Promise
       },
     ])),
   }
+}
+
+export function getPstoLineValidationScopeIdentities(
+  rows: readonly Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>[],
+) {
+  return [...new Map(rows.flatMap((row) => {
+    const identity = normalizePstoLineIdentity(row)
+    return identity.line ? [[getPstoLineIdentityKey(identity), identity] as const] : []
+  })).values()]
 }
 
 export function prepareServerWeldRecords({
@@ -329,18 +375,23 @@ function buildPstoLineAssignmentError({
 }
 
 export async function loadPreviousWeldRows(db: ValidationDb, records: WeldInput[]) {
-  const ids = records
+  const ids = [...new Set(records
     .map((record) => Number(record.id))
-    .filter((id) => Number.isInteger(id) && id > 0)
+    .filter((id) => Number.isInteger(id) && id > 0))]
+    .sort((left, right) => left - right)
   if (ids.length === 0) return new Map<number, WeldJoint>()
+  const storedRows: WeldJoint[] = []
+  for (const idBatch of splitNumberBatches(ids, 1000)) {
+    storedRows.push(...await db
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(inArray(weldJoints.id, idBatch))
+      .orderBy(asc(weldJoints.id))
+      .for('update'))
+  }
   const rows = await attachDuplicateControlRelations(
     await attachHeatTreatmentControlRelations(
-      await db
-        .select()
-        .from(weldJoints)
-        .where(inArray(weldJoints.id, [...new Set(ids)]))
-        .orderBy(asc(weldJoints.id))
-        .for('update'),
+      storedRows,
       db,
     ),
     db,
@@ -386,7 +437,6 @@ export function validateServerWeldRecords({
 }) {
   records.forEach((record, index) => {
     const previous = record.id ? previousRows.get(Number(record.id)) : undefined
-    const isNew = !previous
     const prefix = importMode
       ? `Импорт остановлен: строка ${index + 2}, стык "${String(record.joint ?? '').trim() || 'пусто'}". `
       : 'Сохранение невозможно: '
@@ -408,6 +458,8 @@ export function validateServerWeldRecords({
     if (pstoLifecycleReason) throw new Error(`${prefix}${pstoLifecycleReason}`)
     const workflowStageReason = getSystemWorkflowStageTransitionReason(record, previous, context)
     if (workflowStageReason) throw new Error(`${prefix}${workflowStageReason}`)
+    const systemDocumentReason = getSystemDocumentIntegrityReason(record, previous)
+    if (systemDocumentReason) throw new Error(`${prefix}${systemDocumentReason}`)
     const formReason = getWeldFormSaveBlockReason(
       record,
       (previous ?? {}) as WeldInput,
@@ -418,8 +470,14 @@ export function validateServerWeldRecords({
       },
     )
     if (formReason) throw new Error(`${prefix}${formReason}`)
+    const resultCompletenessReason = getConfiguredResultCompletenessSaveBlockReason(
+      record,
+      previous,
+      context.saveCheckSettings,
+    )
+    if (resultCompletenessReason) throw new Error(`${prefix}${resultCompletenessReason}`)
 
-    if (isNew || hasAnyChangedField(record, previous, OFFICIAL_VALIDATION_FIELDS)) {
+    if (shouldValidateOfficialStampCompatibilityForSave(record, previous)) {
       const stampReason = getOfficialStampCompatibilitySaveBlockReason(record, context.welderStamps, {
         materialGroups: context.dataListSettings.materialGroups,
         saveCheckSettings: context.saveCheckSettings,
@@ -433,6 +491,160 @@ export function validateServerWeldRecords({
     validateConfiguredListValue(record, previous, context.dataListSettings, 'connectionType', 'Тип соединения', 'connectionTypes', prefix)
     validateConfiguredListValue(record, previous, context.dataListSettings, 'materialGroup', 'Группа материалов', 'materialGroups', prefix)
   })
+}
+
+export function getSystemDocumentIntegrityReason(
+  record: WeldInput,
+  previous: WeldJoint | undefined,
+) {
+  for (const method of LNK_METHODS) {
+    const reason = getRequestDocumentIntegrityReason({
+      record,
+      previous,
+      nameKey: method.requestKey,
+      dateKey: method.requestDateKey,
+      label: `заявки ${method.code}`,
+    })
+    if (reason) return reason
+  }
+
+  const pstoRequestReason = getRequestDocumentIntegrityReason({
+    record,
+    previous,
+    nameKey: 'pstoRequest',
+    dateKey: 'pstoRequestDate',
+    label: 'заявки ПСТО',
+  })
+  if (pstoRequestReason) return pstoRequestReason
+
+  const tvmtRequestReason = getRequestDocumentIntegrityReason({
+    record,
+    previous,
+    nameKey: 'tvmtRequest',
+    dateKey: 'tvmtRequestDate',
+    label: 'заявки ТВМТ',
+  })
+  if (tvmtRequestReason) return tvmtRequestReason
+
+  const hasTvmtResult = Boolean(normalizeTvmtResult(record.tvmtResult))
+  const hadTvmtResult = Boolean(normalizeTvmtResult(previous?.tvmtResult))
+  const tvmtDateChanged = hasChangedOptionalField(record, previous, 'tvmtConclusionDate')
+  const tvmtConclusionChanged = hasChangedOptionalField(record, previous, 'tvmtConclusion')
+  if (
+    !hasTvmtResult &&
+    (hasText(record.tvmtConclusionDate) || hasText(record.tvmtConclusion)) &&
+    (tvmtDateChanged || tvmtConclusionChanged || hadTvmtResult)
+  ) {
+    return 'Дату или заключение ТВМТ нельзя оставить без результата ТВМТ.'
+  }
+  if (hasTvmtResult && (!hadTvmtResult || tvmtDateChanged)) {
+    if (!hasText(record.tvmtConclusionDate)) return 'Для результата ТВМТ укажите дату ТВМТ.'
+    const dateReason = getDateInputValidationReason(record.tvmtConclusionDate, 'Дата ТВМТ')
+    if (dateReason) return dateReason
+  }
+  if (hasTvmtResult && (!hadTvmtResult || tvmtConclusionChanged)) {
+    if (!hasText(record.tvmtConclusion)) return 'Для результата ТВМТ укажите заключение ТВМТ.'
+  }
+
+  return ''
+}
+
+function getRequestDocumentIntegrityReason({
+  record,
+  previous,
+  nameKey,
+  dateKey,
+  label,
+}: {
+  record: WeldInput
+  previous: WeldJoint | undefined
+  nameKey: WeldFieldKey
+  dateKey: WeldFieldKey
+  label: string
+}) {
+  const hasName = hasText(record[nameKey])
+  const hadName = hasText(previous?.[nameKey as keyof WeldJoint])
+  const nameChanged = hasChangedOptionalField(record, previous, nameKey)
+  const dateChanged = hasChangedOptionalField(record, previous, dateKey)
+  if (hasText(record[dateKey]) && !hasName && (nameChanged || dateChanged)) {
+    return `Дату ${label} нельзя указать без наименования заявки.`
+  }
+  if (!hasName || (hadName && !dateChanged)) return ''
+  if (!hasText(record[dateKey])) return `Для ${label} укажите дату.`
+  return getDateInputValidationReason(record[dateKey], `Дата ${label}`)
+}
+
+function hasChangedOptionalField(
+  record: WeldInput,
+  previous: WeldJoint | undefined,
+  fieldKey: WeldFieldKey,
+) {
+  if (!previous) return hasText(record[fieldKey])
+  return normalizeComparable(record[fieldKey]) !== normalizeComparable(previous[fieldKey as keyof WeldJoint])
+}
+
+function getConfiguredResultCompletenessSaveBlockReason(
+  record: WeldInput,
+  previous: WeldJoint | undefined,
+  settings: SaveCheckSettings,
+) {
+  for (const method of LNK_METHODS) {
+    if (!isFinalLnkResultValue(record[method.resultKey])) continue
+    if (previous && !hasChangedField(record, previous, [
+      method.resultKey,
+      method.conclusionDateKey,
+      method.conclusionKey,
+    ])) continue
+
+    if (settings.lnkResultControlDateRequired && !hasText(record[method.conclusionDateKey])) {
+      return formatSaveCheckBlockReason(
+        'lnkResultControlDateRequired',
+        `для результата ${method.code} укажите дату контроля.`,
+      )
+    }
+    const reason = getDateInputValidationReason(record[method.conclusionDateKey], `Дата контроля ${method.code}`)
+    if (reason) return formatSaveCheckBlockReason('lnkResultControlDateFormat', lowerFirst(reason))
+    if (settings.lnkResultConclusionRequired && !hasText(record[method.conclusionKey])) {
+      return formatSaveCheckBlockReason(
+        'lnkResultConclusionRequired',
+        `для результата ${method.code} укажите заключение.`,
+      )
+    }
+  }
+
+  if (
+    isCompletedPstoValue(record.pstoResult) &&
+    (!previous || hasChangedField(record, previous, ['pstoResult', 'pstoDate', 'heatTreatmentDiagram']))
+  ) {
+    if (settings.pstoResultDateRequired && !hasText(record.pstoDate)) {
+      return formatSaveCheckBlockReason('pstoResultDateRequired', 'для результата ПСТО укажите дату ПСТО.')
+    }
+    const reason = getDateInputValidationReason(record.pstoDate, 'Дата ПСТО')
+    if (reason) return formatSaveCheckBlockReason('pstoResultDateFormat', lowerFirst(reason))
+    if (settings.pstoResultDiagramRequired && !hasText(record.heatTreatmentDiagram)) {
+      return formatSaveCheckBlockReason(
+        'pstoResultDiagramRequired',
+        'для результата ПСТО укажите диаграмму термообработки.',
+      )
+    }
+  }
+
+  return ''
+}
+
+function hasChangedField(
+  record: WeldInput,
+  previous: WeldJoint,
+  fieldKeys: readonly WeldFieldKey[],
+) {
+  const previousValues = previous as unknown as Record<string, unknown>
+  return fieldKeys.some(
+    (fieldKey) => normalizeComparable(record[fieldKey]) !== normalizeComparable(previousValues[fieldKey]),
+  )
+}
+
+function lowerFirst(value: string) {
+  return value ? `${value.charAt(0).toLocaleLowerCase('ru-RU')}${value.slice(1)}` : value
 }
 
 export function getSystemWorkflowStageTransitionReason(
@@ -589,18 +801,6 @@ function validateConfiguredListValue(
     : [normalizeDataListOption(rawValue)]
   if (allowed.length > 0 && values.every((value) => allowed.includes(value))) return
   throw new Error(`${prefix}${label} должен содержать значение из настроек: ${allowed.join(', ') || 'список не заполнен'}.`)
-}
-
-function hasAnyChangedField(
-  record: WeldInput,
-  previous: WeldJoint | undefined,
-  fieldKeys: ReadonlySet<WeldFieldKey>,
-) {
-  if (!previous) return true
-  const previousValues = previous as unknown as Record<string, unknown>
-  return [...fieldKeys].some(
-    (fieldKey) => normalizeComparable(record[fieldKey]) !== normalizeComparable(previousValues[fieldKey]),
-  )
 }
 
 function normalizeComparable(value: unknown) {

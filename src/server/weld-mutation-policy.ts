@@ -11,6 +11,7 @@ import {
   WELD_FIELDS,
   type WeldFieldKey,
 } from '@/lib/weld-fields'
+import { secondaryWeldFormFieldKeys } from '@/lib/weld-form-field-sets'
 import type {
   WeldMutationScope,
   WeldPayload,
@@ -46,13 +47,13 @@ export const LNK_PROFILE_FIELD_KEYS = new Set<WeldFieldKey>([
     method.resultKey,
     method.conclusionDateKey,
     method.conclusionKey,
+    method.defectDescriptionKey,
   ]),
   ...[...LNK_REPORT_FIELD_KEYS].filter((fieldKey) =>
     fieldKey !== 'lnkCreatedAt' &&
     fieldKey !== 'lnkUpdatedAt' &&
     fieldKey !== 'tvmtBoq' &&
     fieldKey !== 'tvmtKs3'),
-  'lnkDefectDescription',
   'rkExposureConfirmedDiameter',
   'lnkNote',
   'officiality',
@@ -89,6 +90,13 @@ for (const method of LNK_METHODS) NON_WELDING_LNK_FIELD_KEYS.delete(method.enabl
 for (const fieldKey of LNK_CONTROL_BASIS_FIELD_KEYS) NON_WELDING_LNK_FIELD_KEYS.delete(fieldKey)
 
 const NON_WELDING_PSTO_FIELD_KEYS = new Set(PSTO_PROFILE_FIELD_KEYS)
+
+// Work-code and closing fields are intentionally shared between the journal
+// form and the specialized reports. A journal save must not silently drop them.
+for (const fieldKey of secondaryWeldFormFieldKeys) {
+  NON_WELDING_LNK_FIELD_KEYS.delete(fieldKey)
+  NON_WELDING_PSTO_FIELD_KEYS.delete(fieldKey)
+}
 
 export const WELDING_PROFILE_FIELD_KEYS = WELD_FIELDS
   .map((field) => field.key)

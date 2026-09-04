@@ -243,6 +243,10 @@ export function TvmtWorkflowDialog({
           name: group.name,
           useSystemName: group.useSystemName,
         })),
+        expectedVersions: selectedRows.map((row) => ({
+          id: row.id,
+          version: String(row.rowVersion ?? '').trim(),
+        })),
         results: mode === 'result'
           ? selectedRows.map((row) => ({ rowId: row.id, result: rowResults[row.id] ?? '' }))
           : [],

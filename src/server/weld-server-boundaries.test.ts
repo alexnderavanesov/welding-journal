@@ -56,6 +56,11 @@ describe('weld server module boundaries', () => {
     )
   })
 
+  it('includes the optimistic-lock version in every full weld-row read sent to the client', () => {
+    expect(modules.read).not.toMatch(/\.select\(\)\s*\.from\(weldJoints\)/)
+    expect(modules.read).toContain('.select(WELD_TABLE_SELECT)')
+  })
+
   it('places public workflows in their owning modules', () => {
     expect(modules.read).toContain('export const listWeldingJournalPage')
     expect(modules.mutations).toContain('export const updateWeldJoint')
@@ -77,6 +82,42 @@ describe('weld server module boundaries', () => {
       )
 
     expect(directWriters).toEqual([])
+  })
+
+  it('coordinates every weld-line membership workflow with PSTO line assignment', () => {
+    for (const fileName of [
+      'early-coil-workflow.ts',
+      'psto-line-assignment.ts',
+      'weld-import.ts',
+      'weld-mutations.ts',
+    ]) {
+      expect(read(fileName), fileName).toContain('lockWeldLineMemberships')
+    }
+  })
+
+  it('revalidates dispatcher-driven writes inside line-scoped server workflows', () => {
+    const percentageWorkflow = read('percentage-line-control-workflow.ts')
+    const repeatedJointDeleteWorkflow = read('repeated-joint-delete-workflow.ts')
+
+    for (const source of [percentageWorkflow, repeatedJointDeleteWorkflow]) {
+      expect(source).toContain('lockWeldLineMemberships')
+      expect(source).toContain(".for('update')")
+    }
+    expect(percentageWorkflow).toContain('buildPercentageLineControlUpdateRows')
+    expect(percentageWorkflow).toContain('new Map(hydratedRows.map')
+    expect(repeatedJointDeleteWorkflow).toContain('findCurrentObsoleteRepeatedJointDeleteTask')
+    expect(repeatedJointDeleteWorkflow.indexOf('findCurrentObsoleteRepeatedJointDeleteTask({'))
+      .toBeLessThan(repeatedJointDeleteWorkflow.indexOf('deleteLockedWeldRowsInTransaction(tx'))
+  })
+
+  it('uses the shared LNK chronology barrier in every line move that changes a stage', () => {
+    const pstoLineAssignment = read('psto-line-assignment.ts')
+
+    expect(pstoLineAssignment).toContain('assertPstoLineActivationTransferAllowed(rows, previewRows)')
+    expect(pstoLineAssignment).toContain('assertPstoLineCancellationPromotionAllowed(rows, nextRows)')
+    expect(modules.mutations).toContain('assertChainLineMoveLnkStageTransfersAllowed(records, previousRows, decisions)')
+    expect(pstoLineAssignment).toContain('findBlockingLnkStageTransferChronologyIssue')
+    expect(modules.mutations).toContain('findBlockingLnkStageTransferChronologyIssue')
   })
 })
 

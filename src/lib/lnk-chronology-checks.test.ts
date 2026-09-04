@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { WeldInput } from '@/lib/weld-fields'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import {
+  findFirstLnkChronologySaveBlockReason,
   getDispatcherLnkChronologyIssues,
   getLnkChronologyIssues,
   getLnkResultRemovalBlockReason,
@@ -105,6 +106,39 @@ describe('getLnkChronologyIssues', () => {
     )
   })
 
+  it('reports every missing part of a pending LNK request before a result exists', () => {
+    const issues = getDispatcherLnkChronologyIssues([
+      {
+        joint: 'F2',
+        weldDate: '2026-07-01',
+        vikRequest: 'Заявка-ВИК',
+        rkRequestDate: '2026-07-02',
+      },
+    ] as WeldInput[])
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'request-date-missing', methodCode: 'ВИК' }),
+      expect.objectContaining({ kind: 'request-name-missing', methodCode: 'РК' }),
+    ]))
+  })
+
+  it('reports missing request name and date when a result exists without a request', () => {
+    const issues = getDispatcherLnkChronologyIssues([
+      {
+        joint: 'F2',
+        weldDate: '2026-07-01',
+        vikResult: 'годен',
+        vikConclusionDate: '2026-07-03',
+        vikConclusion: 'ЗВИК-1',
+      },
+    ] as WeldInput[])
+
+    expect(issues.map((issue) => issue.kind)).toEqual([
+      'request-date-missing',
+      'request-name-missing',
+    ])
+  })
+
   it('shows every independent LNK chronology problem in dispatcher diagnostics', () => {
     const issues = getDispatcherLnkChronologyIssues([
       {
@@ -120,6 +154,47 @@ describe('getLnkChronologyIssues', () => {
       'request-date-missing',
       'weld-after-conclusion',
     ])
+  })
+
+  it('reports invalid dates in primary, pre-TO and duplicate controls for dispatcher diagnostics', () => {
+    const issues = getDispatcherLnkChronologyIssues([{
+      id: 1,
+      joint: 'F2',
+      vikRequest: 'Заявка-ВИК',
+      vikRequestDate: '31.02.2026',
+      vikResult: 'годен',
+      vikConclusionDate: '2023-12-31',
+      vikConclusion: 'ВИК-1',
+      preHeatTreatmentControls: [{
+        id: 10,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: 'не дата',
+        result: 'годен',
+        conclusionDate: '32.07.2026',
+        conclusionName: 'ВИК до ТО-1',
+      }],
+      duplicateControls: [{
+        id: 20,
+        weldJointId: 1,
+        method: 'РК',
+        result: 'годен',
+        controlDate: '31.02.2026',
+        conclusion: 'РК-дубль-1',
+        conclusionDate: '2023-12-31',
+      }],
+    } as WeldInput])
+
+    expect(issues.filter((issue) => issue.kind.endsWith('-invalid'))).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'request-date-invalid', methodCode: 'ВИК' }),
+      expect.objectContaining({ kind: 'conclusion-date-invalid', methodCode: 'ВИК' }),
+      expect.objectContaining({ kind: 'request-date-invalid', methodCode: 'ВИК до ТО' }),
+      expect.objectContaining({ kind: 'conclusion-date-invalid', methodCode: 'ВИК до ТО' }),
+      expect.objectContaining({ kind: 'request-date-invalid', methodCode: 'РК (дубль)' }),
+      expect.objectContaining({ kind: 'conclusion-date-invalid', methodCode: 'РК (дубль)' }),
+    ]))
+    expect(issues.some((issue) => issue.kind === 'request-date-missing')).toBe(false)
   })
 
   it('blocks other NDT dates before the VIK date', () => {
@@ -158,6 +233,7 @@ describe('getLnkChronologyIssues', () => {
       ] as WeldInput[],
       {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
+        lnkResultDateAfterWeldDate: false,
         lnkResultRequestDateOrder: false,
         lnkResultVikDateBeforeOther: false,
         lnkResultVikRequiredBeforeOther: false,
@@ -165,6 +241,70 @@ describe('getLnkChronologyIssues', () => {
     )
 
     expect(issues).toEqual([])
+  })
+
+  it('enforces ZV-15 independently when ZV-16 is disabled', () => {
+    const settings = {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      lnkResultRequestDateOrder: false,
+      lnkResultVikRequiredBeforeOther: false,
+    }
+    const rows = [{
+      joint: 'F4',
+      weldDate: '2026-07-10',
+      rkRequest: 'Заявка-РК',
+      rkRequestDate: '2026-07-11',
+      rkResult: 'годен',
+      rkConclusionDate: '2026-07-09',
+    }] as WeldInput[]
+
+    expect(getLnkChronologyIssues(rows, settings)).toContainEqual(expect.objectContaining({
+      kind: 'weld-after-conclusion',
+      methodCode: 'РК',
+    }))
+    expect(findFirstLnkChronologySaveBlockReason(rows, settings)).toContain('ЗВ-15')
+  })
+
+  it('does not apply ZV-16 request ordering when only ZV-15 is enabled', () => {
+    const issues = getLnkChronologyIssues([{
+      joint: 'F4',
+      weldDate: '2026-07-10',
+      rkRequest: 'Заявка-РК',
+      rkRequestDate: '2026-07-09',
+      rkResult: 'годен',
+      rkConclusionDate: '2026-07-11',
+    }] as WeldInput[], {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      lnkResultRequestDateOrder: false,
+      lnkResultVikRequiredBeforeOther: false,
+    })
+
+    expect(issues).toEqual([])
+  })
+
+  it('enforces ZV-15 for pre-TO LNK independently from ZV-16', () => {
+    const issues = getLnkChronologyIssues([{
+      id: 4,
+      joint: 'F4',
+      weldDate: '2026-07-10',
+      preHeatTreatmentControls: [{
+        id: 40,
+        weldJointId: 4,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-07-11',
+        result: 'годен',
+        conclusionDate: '2026-07-09',
+      }],
+    } as WeldInput], {
+      ...DEFAULT_SAVE_CHECK_SETTINGS,
+      lnkResultRequestDateOrder: false,
+    })
+
+    expect(issues).toContainEqual(expect.objectContaining({
+      kind: 'weld-after-conclusion',
+      methodCode: 'ВИК до ТО',
+    }))
   })
 
   it('keeps pre-heat-treatment documents no later than the first PSTO', () => {

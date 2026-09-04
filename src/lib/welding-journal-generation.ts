@@ -142,6 +142,10 @@ export async function saveWeldingJournalGenerationPlan(plan: WeldingJournalGener
         fileName: ensureWeldingJournalXlsxFileName(title, plan.documentLabel),
         mimeType: WELDING_JOURNAL_DOCUMENT_MIME_TYPE,
         weldJointIds: groupRows.map((row) => row.id),
+        expectedVersions: groupRows.map((row) => ({
+          id: row.id,
+          version: String(row.rowVersion ?? ''),
+        })),
         periodFrom: plan.periodFrom,
         periodTo: plan.periodTo,
         rowCount: groupRows.length,

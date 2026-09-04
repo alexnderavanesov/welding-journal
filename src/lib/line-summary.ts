@@ -3,6 +3,7 @@ import { parseJointChainName } from '@/lib/joint-chain'
 import { getConfiguredBaseJointType, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, type FinalStatusRowsContext } from '@/lib/weld-status'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 export type LineSummaryRow = {
   key: string
@@ -175,24 +176,24 @@ function isStrictChainSuccessor(candidate: ChainRow, other: ChainRow) {
 }
 
 function getLineGroupKey(row: WeldRow) {
-  return [
+  return encodeIdentityKey([
     normalizeText(row.projectTitle),
     normalizeText(row.subtitleCode),
     normalizeText(row.line),
     normalizeText(row.groupName),
     normalizeText(row.category),
     normalizeText(row.weldControlPercent),
-  ].join('|')
+  ])
 }
 
 function getChainKey(row: WeldRow, systemIndexSettings?: SystemIndexSettings) {
   const parsed = parseJointChainName(String(row.joint ?? ''), systemIndexSettings)
-  return [
+  return encodeIdentityKey([
     normalizeText(row.projectTitle),
     normalizeText(row.subtitleCode),
     normalizeText(row.line),
     normalizeText(parsed.base),
-  ].join('|')
+  ])
 }
 
 function getJointType(row: WeldRow, systemIndexSettings?: SystemIndexSettings): 'f' | 's' | null {

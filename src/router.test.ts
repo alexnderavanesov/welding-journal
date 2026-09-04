@@ -5,17 +5,17 @@ import { shouldRefreshWeldPageOnActivation } from '@/lib/query-refresh-policy'
 describe('query refresh policy', () => {
   it('does not refetch fresh data after a short window switch', () => {
     const now = Date.parse('2026-08-13T12:00:00.000Z')
-    expect(shouldRefetchQueryOnWindowFocus(now - 60_000, 0, now)).toBe(false)
+    expect(shouldRefetchQueryOnWindowFocus(now - 20_000, 0, now)).toBe(false)
   })
 
   it('refreshes data after returning to a window with an old snapshot', () => {
     const now = Date.parse('2026-08-13T12:00:00.000Z')
-    expect(shouldRefetchQueryOnWindowFocus(now - 11 * 60_000, 0, now)).toBe(true)
+    expect(shouldRefetchQueryOnWindowFocus(now - 31_000, 0, now)).toBe(true)
   })
 
   it('does not retry a recent failed query on every window focus', () => {
     const now = Date.parse('2026-08-13T12:00:00.000Z')
-    expect(shouldRefetchQueryOnWindowFocus(0, now - 60_000, now)).toBe(false)
+    expect(shouldRefetchQueryOnWindowFocus(0, now - 20_000, now)).toBe(false)
   })
 
   it('allows only one retry for a failed read request', () => {

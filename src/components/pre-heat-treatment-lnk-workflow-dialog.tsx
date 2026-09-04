@@ -77,7 +77,7 @@ import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
-import { useSaveCheckSettings } from '@/lib/save-check-settings'
+import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import {
   savePreHeatTreatmentLnkWorkflow,
   type PreHeatTreatmentLnkPosition,
@@ -253,7 +253,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       if (!initialSelectedIds.has(row.id)) return []
       const control = getPreHeatTreatmentControl(row, resultMethod)
       const identity = createRequestDocumentIdentity(control?.requestName, control?.requestDate)
-      return identity && canAddPreHeatTreatmentResult(row, resultMethod) ? [identity.key] : []
+      return identity && canAddPreHeatTreatmentResult(row, resultMethod, saveCheckSettings) ? [identity.key] : []
     }))
     const nextKey = initialKeys.size === 1
       ? [...initialKeys][0] ?? ''
@@ -261,7 +261,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         ? requestOptions[0]?.key ?? ''
         : ''
     setRequestKey(nextKey)
-  }, [initialSelectedIds, mode, requestKey, requestOptions, resultMethod, rows])
+  }, [initialSelectedIds, mode, requestKey, requestOptions, resultMethod, rows, saveCheckSettings])
 
   useEffect(() => {
     if (
@@ -274,12 +274,12 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     setSelectedIds(new Set(rows.flatMap((row) => {
       const control = getPreHeatTreatmentControl(row, resultMethod)
       return initialSelectedIds.has(row.id) &&
-        canAddPreHeatTreatmentResult(row, resultMethod) &&
+        canAddPreHeatTreatmentResult(row, resultMethod, saveCheckSettings) &&
         isSameRequestDocument(control?.requestName, control?.requestDate, selectedRequest)
         ? [row.id]
         : []
     })))
-  }, [initialSelectedIds, mode, resultMethod, rows, selectedRequest])
+  }, [initialSelectedIds, mode, resultMethod, rows, saveCheckSettings, selectedRequest])
 
   const sourceRows = useMemo(() => {
     if (mode === 'request') return rows
@@ -298,8 +298,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     }
     if (!resultMethod) return 'Выберите вид НК до ТО.'
     if (!selectedRequest) return requestSelectionReason
-    return getPreHeatTreatmentResultBlockReason(row, resultMethod)
-  }, [mode, requestSelectionReason, resultMethod, selectedMethods, selectedRequest])
+    return getPreHeatTreatmentResultBlockReason(row, resultMethod, saveCheckSettings)
+  }, [mode, requestSelectionReason, resultMethod, saveCheckSettings, selectedMethods, selectedRequest])
   const availableRows = useMemo(
     () => sourceRows.filter((row) => !getRowBlockReason(row)),
     [getRowBlockReason, sourceRows],
@@ -352,7 +352,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     naming,
     settings,
     nextNumber,
-  }), [date, mode, naming, nextNumber, resultMethod, selectedRows, settings])
+    allowAllNamesEmpty: mode === 'result' && !saveCheckSettings.lnkResultConclusionRequired,
+  }), [date, mode, naming, nextNumber, resultMethod, saveCheckSettings.lnkResultConclusionRequired, selectedRows, settings])
   const effectiveDate = mode === 'request' && requestSubmitMode === 'extend'
     ? selectedExistingRequest?.date ?? ''
     : date
@@ -377,10 +378,13 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const creationPlanError = mode === 'request' && requestSubmitMode === 'extend'
     ? ''
     : creationPlan.error
-  const dateReason = getDateInputValidationReason(
-    effectiveDate,
-    mode === 'request' ? 'Дата заявки НК до ТО' : 'Дата контроля НК до ТО',
-  )
+  const dateReason = mode === 'request'
+    ? getDateInputValidationReason(effectiveDate, 'Дата заявки НК до ТО')
+    : getOptionalPreHeatTreatmentResultDateReason(
+        effectiveDate,
+        saveCheckSettings,
+        naming.mode === 'system',
+      )
   const domainReason = useMemo(() => {
     if (selectedRows.length === 0 || dateReason || creationPlanError) return ''
     try {
@@ -399,6 +403,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
               methodCodes,
               requestName: group.name,
               requestDate: effectiveDate,
+              saveCheckSettings,
             })
           }
           continue
@@ -412,6 +417,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
             controlDate: effectiveDate,
             result: rowResults[row.id] ?? '',
             conclusionName: group.name,
+            saveCheckSettings,
           })
         }
       }
@@ -419,7 +425,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     } catch (error) {
       return (error as Error).message
     }
-  }, [creationPlanError, dateReason, effectiveDate, mode, resultMethod, rowResults, selectedRows, workflowGroups])
+  }, [creationPlanError, dateReason, effectiveDate, mode, resultMethod, rowResults, saveCheckSettings, selectedRows, workflowGroups])
 
   const mutation = useMutation({
     mutationFn: async (): Promise<SaveResult> => {
@@ -427,6 +433,10 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         action: mode,
         date: effectiveDate,
         groups: workflowGroups,
+        expectedVersions: selectedRows.map((row) => ({
+          id: row.id,
+          version: String(row.rowVersion ?? '').trim(),
+        })),
         results: mode === 'result' && resultMethod
           ? selectedRows.map((row) => ({
               rowId: row.id,
@@ -967,6 +977,19 @@ function filterRows(rows: WeldRow[], search: string) {
       return [control?.requestName, control?.conclusionName]
     }),
   ].join(' ')).includes(query))
+}
+
+function getOptionalPreHeatTreatmentResultDateReason(
+  date: string,
+  settings: SaveCheckSettings,
+  systemNameRequiresDate: boolean,
+) {
+  if (!date.trim()) {
+    return settings.lnkResultControlDateRequired || systemNameRequiresDate
+      ? getDateInputValidationReason(date, 'Дата контроля НК до ТО')
+      : null
+  }
+  return getDateInputValidationReason(date, 'Дата контроля НК до ТО')
 }
 
 function getSaveBlockReason({

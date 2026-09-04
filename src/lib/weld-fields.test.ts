@@ -136,14 +136,17 @@ describe('weld field order', () => {
 
     expect(journalSections.some((group) => group.section === 'НК до ТО')).toBe(false)
     expect(pstoSections.some((group) => group.section === 'НК до ТО')).toBe(false)
-    expect(stagedSection?.fields).toHaveLength(22)
+    expect(stagedSection?.fields).toHaveLength(25)
     expect(stagedSection?.fields.map((field) => field.key)).toEqual(expect.arrayContaining([
       'preVikRequest',
       'preRkResult',
       'preRkExposureScheme',
       'preRkDefectDescription',
+      'preVikDefectDescription',
       'preUzkConclusion',
+      'preUzkDefectDescription',
       'prePvkConclusionDate',
+      'prePvkDefectDescription',
     ]))
     expect(stagedSection?.fields.every((field) => isWeldFormFieldHidden(field))).toBe(true)
     expect(stagedSection?.fields.every((field) => !EXCEL_FIELDS.includes(field))).toBe(true)
@@ -371,14 +374,17 @@ describe('weld field order', () => {
     expect(conclusions?.fields.map((field) => field.label)).toEqual([
       'Заключение ВИК',
       'Дата ВИК',
+      'Дефекты ВИК',
       'Заключение РК',
       'Дата РК',
       'Снимки (координаты мерного пояса)',
       'Описание дефектов РК',
       'Заключение УЗК',
       'Дата УЗК',
+      'Дефекты УЗК',
       'Заключение ПВК',
       'Дата ПВК',
+      'Дефекты ПВК',
       'Заключение ТВМТ',
       'Дата ТВМТ',
       'Примечание ЛНК',

@@ -1,8 +1,31 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { getPstoWorkflowLineAssignmentError } from '@/server/psto-workflow-line-guard'
+import {
+  assertPstoWorkflowLinesFullyAssigned,
+  getPstoWorkflowLineAssignmentError,
+} from '@/server/psto-workflow-line-guard'
 
 describe('PSTO workflow line guard', () => {
+  it('checks production-sized multi-line documents in bounded query batches', async () => {
+    const selected = Array.from({ length: 1_001 }, (_, index) => ({
+      id: index + 1,
+      joint: `J${index + 1}`,
+      projectTitle: 'Project',
+      subtitleCode: 'Code',
+      line: `Line ${index + 1}`,
+      pstoRequired: 'да',
+    }))
+    const batches = [selected.slice(0, 500), selected.slice(500, 1_000), selected.slice(1_000)]
+    let readIndex = 0
+    const where = vi.fn(async () => batches[readIndex++] ?? [])
+    const tx = {
+      select: () => ({ from: () => ({ where }) }),
+    }
+
+    await expect(assertPstoWorkflowLinesFullyAssigned(tx as never, selected)).resolves.toBeUndefined()
+    expect(where).toHaveBeenCalledTimes(3)
+  })
+
   it('allows a workflow only when every weld on the line has PSTO assigned', () => {
     const selected = [{
       id: 1,

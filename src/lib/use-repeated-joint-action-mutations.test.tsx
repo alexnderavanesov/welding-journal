@@ -7,7 +7,6 @@ import { useRepeatedJointActionMutations } from '@/lib/use-repeated-joint-action
 import type { RepeatedJointRenameTask } from '@/lib/dispatcher-types'
 
 const mocks = vi.hoisted(() => ({
-  buildRepeatedJointRows: vi.fn(),
   createEarlyCoilDecision: vi.fn(),
   createWeldRowsOrThrow: vi.fn(),
   getWeldJointById: vi.fn(),
@@ -22,10 +21,6 @@ vi.mock('@/server/weld-mutations-api', () => ({
 
 vi.mock('@/server/weld-read-api', () => ({
   getWeldJointById: mocks.getWeldJointById,
-}))
-
-vi.mock('@/lib/weld-journal-mutation-updates', () => ({
-  buildRepeatedJointRows: mocks.buildRepeatedJointRows,
 }))
 
 vi.mock('@/lib/weld-save-utils', () => ({
@@ -44,7 +39,7 @@ describe('useRepeatedJointActionMutations', () => {
   })
 
   it('loads the full weld row before creating a repeated joint', async () => {
-    const fullRow = { id: 17, line: 'LIN-1', joint: 'S1', material1: 'труба 57' }
+    const fullRow = { id: 17, rowVersion: '117', line: 'LIN-1', joint: 'S1', material1: 'труба 57' }
     const task = {
       kind: 'create',
       key: 'create:17',
@@ -56,7 +51,6 @@ describe('useRepeatedJointActionMutations', () => {
       suffix: 'R',
     } as const
     mocks.getWeldJointById.mockResolvedValue(fullRow)
-    mocks.buildRepeatedJointRows.mockReturnValue([{ ...fullRow, id: undefined, joint: 'S1R1' }])
     mocks.createWeldRowsOrThrow.mockResolvedValue([{ id: 18, joint: 'S1R1' }])
 
     const { result } = renderMutationHook()
@@ -65,7 +59,11 @@ describe('useRepeatedJointActionMutations', () => {
     })
 
     expect(mocks.getWeldJointById).toHaveBeenCalledWith({ data: { id: 17 } })
-    expect(mocks.buildRepeatedJointRows).toHaveBeenCalledWith(expect.objectContaining({ row: fullRow }))
+    expect(mocks.createWeldRowsOrThrow).toHaveBeenCalledWith(
+      fullRow,
+      ['S1R1'],
+      'Не удалось создать повторный стык',
+    )
   })
 
   it('sends the dispatcher rename task for authoritative server validation', async () => {
@@ -102,11 +100,16 @@ describe('useRepeatedJointActionMutations', () => {
 
     const { result } = renderMutationHook()
     await act(async () => {
-      await result.current.earlyCoilMutation.mutateAsync({ sourceRowId: 17 })
+      await result.current.earlyCoilMutation.mutateAsync({
+        sourceRowId: 17,
+        expectedVersion: '117',
+      })
     })
 
-    expect(mocks.createEarlyCoilDecision).toHaveBeenCalledWith({ data: { sourceRowId: 17 } })
-    expect(mocks.buildRepeatedJointRows).not.toHaveBeenCalled()
+    expect(mocks.createEarlyCoilDecision).toHaveBeenCalledWith({
+      data: { sourceRowId: 17, expectedVersion: '117' },
+    })
+    expect(mocks.createWeldRowsOrThrow).not.toHaveBeenCalled()
     expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ deleteIds: [30] }),

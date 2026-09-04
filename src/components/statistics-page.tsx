@@ -49,6 +49,7 @@ import {
   type PercentageLineSummary,
   type PercentageLineStampSummary,
 } from '@/lib/percentage-line-summary'
+import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
 import {
   type WelderStatisticsJointFilter,
   type WelderStatisticsRow,
@@ -83,8 +84,15 @@ import { calculateFinalStatus, CONTROL_RESULT_PAIRS, formatFinalStatusDisplay, n
 
 type StatisticsPageProps = {
   fixedTab?: StatisticsTab
-  onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
-  onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
+  onAssignPercentageLineMissingControls?: (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+    method: PercentageControlMethod,
+  ) => Promise<void> | void
+  onCancelPercentageLineMissingControls?: (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+  ) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
   onOpenReportRowIds?: (
@@ -2978,8 +2986,15 @@ function PercentageLinesPanel({
   search,
   onSearchChange,
 }: {
-  onAssignPercentageLineMissingControls?: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
-  onCancelPercentageLineMissingControls?: (rowIds: number[]) => Promise<void> | void
+  onAssignPercentageLineMissingControls?: (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+    method: PercentageControlMethod,
+  ) => Promise<void> | void
+  onCancelPercentageLineMissingControls?: (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+  ) => Promise<void> | void
   summary: PercentageLineSummary[]
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
@@ -3037,12 +3052,19 @@ function PercentageLinesPanel({
     setDetailDialog(null)
     setAssignMissingDialog(null)
   }
-  const assignMissingControls = async (rowIds: number[], method: PercentageControlMethod) => {
-    await onAssignPercentageLineMissingControls?.(rowIds, method)
+  const assignMissingControls = async (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+    method: PercentageControlMethod,
+  ) => {
+    await onAssignPercentageLineMissingControls?.(scope, rowIds, method)
     setAssignMissingDialog(null)
   }
-  const closeMissingControlsByCancellation = async (rowIds: number[]) => {
-    await onCancelPercentageLineMissingControls?.(rowIds)
+  const closeMissingControlsByCancellation = async (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+  ) => {
+    await onCancelPercentageLineMissingControls?.(scope, rowIds)
     setAssignMissingDialog(null)
   }
 
@@ -3230,7 +3252,7 @@ type PercentageLineJointDetailDialogState = {
   title: string
 }
 
-type PercentageLineAssignMissingDialogState = PercentageLineJointDetailDialogState & {
+type PercentageLineAssignMissingDialogState = PercentageLineJointDetailDialogState & PercentageLineControlScope & {
   cancellationRowIds: number[]
   missingControls: number
 }
@@ -3319,9 +3341,13 @@ function PercentageLineAssignMissingDialog({
   detail: PercentageLineAssignMissingDialogState
   loading: boolean
   onClose: () => void
-  onCancelSave: (rowIds: number[]) => Promise<void> | void
+  onCancelSave: (scope: PercentageLineControlScope, rowIds: number[]) => Promise<void> | void
   onOpenRows: (rowIds: number[], message?: string) => void
-  onSave: (rowIds: number[], method: PercentageControlMethod) => Promise<void> | void
+  onSave: (
+    scope: PercentageLineControlScope,
+    rowIds: number[],
+    method: PercentageControlMethod,
+  ) => Promise<void> | void
 }) {
   const selectableCount = Math.max(1, detail.missingControls)
   const [action, setAction] = useState<PercentageLineMissingControlAction>('РК')
@@ -3396,9 +3422,9 @@ function PercentageLineAssignMissingDialog({
     setSaveError('')
     try {
       if (action === 'отмена') {
-        await onCancelSave(Array.from(selectedIds))
+        await onCancelSave(detail, Array.from(selectedIds))
       } else {
-        await onSave(Array.from(selectedIds), action)
+        await onSave(detail, Array.from(selectedIds), action)
       }
     } catch (error) {
       setSaveError((error as Error).message || 'Не удалось сохранить назначение контроля')
@@ -3976,6 +4002,10 @@ function PercentageLineTableRow({
           }
           assignMissingDetail={{
             ...createDetail('Назначить расчетный контроль', stamp.assignmentCandidateRowIds),
+            projectTitle: stamp.projectTitle,
+            subtitleCode: stamp.subtitleCode,
+            line: stamp.line,
+            stamp: stamp.stamp,
             cancellationRowIds: stamp.missingCandidateRowIds,
             missingControls: stamp.missingControls,
           }}

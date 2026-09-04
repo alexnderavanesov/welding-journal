@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clearCancelledRejectedLnkGeneratedData,
   clearDisabledLnkRequests,
+  normalizeActiveLnkDefectDescriptions,
   restoreActiveLnkCancelledResults,
   withTouchedLnkTimestamp,
 } from './lnk-field-updates'
@@ -54,6 +55,19 @@ describe('clearCancelledRejectedLnkGeneratedData', () => {
     expect(row.rkConclusion).toBeNull()
     expect(row.lnkDefectDescription).toBe('0-250: дефект 12 мм\n250-0:')
     expect(row.rkExposureConfirmedDiameter).toBe(159)
+  })
+
+  it('keeps a simple defect description as read-only history when a rejected control is cancelled', () => {
+    const row = clearCancelledRejectedLnkGeneratedData({
+      hasUzk: 'отменен',
+      uzkRequest: 'Заявка-УЗК-001',
+      uzkResult: 'ремонт',
+      uzkConclusion: 'ЗНК-УЗК-001',
+      uzkDefectDescription: 'Несплошность',
+    } as WeldInput)
+
+    expect(row.uzkResult).toBeNull()
+    expect(row.uzkDefectDescription).toBe('Несплошность')
   })
 })
 
@@ -145,6 +159,46 @@ describe('restoreActiveLnkCancelledResults', () => {
     } as WeldInput)
 
     expect(row.rkResult).toBe('отменен')
+  })
+
+  it('clears preserved simple defect history when the control is restored without a result', () => {
+    const row = restoreActiveLnkCancelledResults({
+      hasUzk: 'да',
+      uzkResult: null,
+      uzkDefectDescription: 'Историческое описание',
+    } as WeldInput)
+
+    expect(row.uzkDefectDescription).toBeNull()
+  })
+})
+
+describe('normalizeActiveLnkDefectDescriptions', () => {
+  it('enforces DNO and empty pending descriptions while preserving rejected text', () => {
+    const row = normalizeActiveLnkDefectDescriptions({
+      hasVik: 'да',
+      vikResult: 'годен',
+      vikDefectDescription: null,
+      hasUzk: 'да',
+      uzkResult: 'ожидает НК',
+      uzkDefectDescription: 'Устаревшее описание',
+      hasPvk: 'да',
+      pvkResult: 'ремонт',
+      pvkDefectDescription: 'Трещина',
+    })
+
+    expect(row.vikDefectDescription).toBe('ДНО')
+    expect(row.uzkDefectDescription).toBeNull()
+    expect(row.pvkDefectDescription).toBe('Трещина')
+  })
+
+  it('keeps descriptions stored as cancelled history', () => {
+    const row = normalizeActiveLnkDefectDescriptions({
+      hasVik: 'отменен',
+      vikResult: null,
+      vikDefectDescription: 'Историческое описание',
+    })
+
+    expect(row.vikDefectDescription).toBe('Историческое описание')
   })
 })
 

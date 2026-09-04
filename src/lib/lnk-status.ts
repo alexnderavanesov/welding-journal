@@ -36,6 +36,10 @@ import {
   getPstoTvmtWorkflowState,
   normalizeTvmtResult,
 } from '@/lib/tvmt-cycle'
+import {
+  getLnkDefectDescriptionDescriptor,
+  getLnkDefectDescriptionDisplayValue,
+} from '@/lib/lnk-defect-description'
 
 export type LnkMethod = (typeof LNK_METHODS)[number]
 
@@ -125,6 +129,8 @@ export function getLnkRequestMethodBadgeClass(row: WeldInput, method: (typeof LN
 }
 
 export function getLnkDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
+  const defectDescriptor = getLnkDefectDescriptionDescriptor(fieldKey)
+  if (defectDescriptor) return getLnkDefectDescriptionDisplayValue(row, defectDescriptor)
   const preHeatTreatmentValue = getPreHeatTreatmentReportValue(row, fieldKey)
   if (preHeatTreatmentValue !== undefined) return preHeatTreatmentValue
   if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY) return formatControlBasisSummary(row, 'lnk')

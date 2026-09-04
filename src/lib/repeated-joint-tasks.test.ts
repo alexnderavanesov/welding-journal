@@ -4,6 +4,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import { REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON } from '@/lib/report-config'
 
 describe('buildRepeatedJointTasks', () => {
   it('creates one official same-name target task for multiple unofficial rejected source rows', () => {
@@ -338,6 +339,58 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
+  it('prioritizes a duplicate cut over a primary repair', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({
+        id: 1,
+        joint: 'S11A',
+        vikResult: 'ремонт',
+        duplicateControls: [{ id: 2, weldJointId: 1, method: 'РК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' }],
+      }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'create',
+        sourceJoint: 'S11A',
+        targetJoint: 'S11AW1',
+        methodCode: 'РК (дубль)',
+        result: 'вырез',
+      }),
+    ]))
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'create', targetJoint: 'S11AR1' }),
+    ]))
+  })
+
+  it('prioritizes a duplicate cut over a pre-heat-treatment repair', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({
+        id: 1,
+        joint: 'S11B',
+        pstoRequired: 'да',
+        hasVik: 'да',
+        preHeatTreatmentControls: [{
+          id: 11,
+          weldJointId: 1,
+          method: 'ВИК',
+          result: 'ремонт',
+        }],
+        duplicateControls: [{ id: 3, weldJointId: 1, method: 'УЗК', result: 'вырез', controlDate: '', conclusion: '', conclusionDate: '' }],
+      }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'create',
+        sourceJoint: 'S11B',
+        targetJoint: 'S11BW1',
+        methodCode: 'УЗК (дубль)',
+        result: 'вырез',
+      }),
+    ]))
+  })
+
   it('creates a repeated joint after a rejected pre-heat-treatment result', () => {
     const rows = [
       row({
@@ -530,18 +583,26 @@ describe('buildRepeatedJointTasks', () => {
   })
 
   it('rebuilds only the continuation after a result changes in the middle of a chain', () => {
-    const renameTasks = buildRepeatedJointTasks([
+    const tasks = buildRepeatedJointTasks([
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
       row({ id: 2, joint: 'S1R1', rkResult: 'вырез' }),
       row({ id: 3, joint: 'S1R2', rkResult: 'ремонт' }),
       row({ id: 4, joint: 'S1R3' }),
-    ]).filter((task) => task.kind === 'rename')
+    ])
+    const renameTasks = tasks.filter((task) => task.kind === 'rename')
 
     expect(renameTasks).toHaveLength(1)
     expect(renameTasks[0]?.changes).toEqual([
       { rowId: 3, currentJoint: 'S1R2', targetJoint: 'S1R1W1' },
       { rowId: 4, currentJoint: 'S1R3', targetJoint: 'S1R2W1' },
     ])
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'check',
+        reason: REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+        row: expect.objectContaining({ id: 3 }),
+      }),
+    ]))
   })
 
   it('replays every later result when several earlier links changed', () => {
@@ -623,6 +684,23 @@ describe('buildRepeatedJointTasks', () => {
         (task.kind === 'check' && task.key.startsWith('check-obsolete'))
       )
     ))).toEqual([])
+  })
+
+  it('keeps safe recovery creates visible beside a repair-limit warning', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'S1R2', rkResult: 'ремонт' }),
+    ])
+
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'check',
+        reason: REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+        row: expect.objectContaining({ id: 3 }),
+      }),
+      expect.objectContaining({ kind: 'create', row: expect.objectContaining({ id: 1 }), targetJoint: 'S1R1' }),
+      expect.objectContaining({ kind: 'create', row: expect.objectContaining({ id: 3 }), targetJoint: 'S1R2W1' }),
+    ]))
   })
 
   it('adds a dispatcher task when a percentage line stamp lacks RK/UZK coverage', () => {
@@ -884,6 +962,42 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
+  it('uses configured chain suffixes when counting primary percentage-line failures', () => {
+    const systemIndexSettings = {
+      ...DEFAULT_SYSTEM_INDEX_SETTINGS,
+      shopJoint: 'A',
+      fieldJoint: 'B',
+      repair: 'C',
+      cutout: 'D',
+      coil: 'E',
+    }
+    const rows = [
+      row({ id: 1, joint: 'B1', stamp1K: 'ABC1', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'B2', stamp1K: 'ABC1', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'B3', stamp1K: 'ABC1', rkResult: 'вырез' }),
+      row({ id: 4, joint: 'B1C1', stamp1K: 'ABC1', rkResult: 'вырез' }),
+      row({ id: 5, joint: 'B4', stamp1K: 'ABC1' }),
+    ]
+
+    const tasks = buildRepeatedJointTasks(rows, [], [], { systemIndexSettings })
+
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'percentage-line-control',
+        issue: 'suspend-welder',
+        stamp: 'ABC1',
+      }),
+    ]))
+    expect(tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'percentage-line-control',
+        issue: 'rejected-primary',
+        stamp: 'ABC1',
+        count: 3,
+      }),
+    ]))
+  })
+
   it('adds only one extra RK/UZK requirement after a rejected primary joint on a 1 percent line', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       row({
@@ -932,7 +1046,7 @@ describe('buildRepeatedJointTasks', () => {
           title: 'Отстранить сварщика от работы',
           stamp: 'ABC1',
           count: 4,
-          suspensionFrom: '04.07.2026',
+          suspensionFrom: '2026-07-04',
         }),
       ]),
     )

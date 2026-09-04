@@ -98,7 +98,10 @@ import {
 ensureDispatcherTaskIndexFresh,
 } from '@/server/dispatcher-task-index'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
-import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import {
+attachHeatTreatmentControlRelations,
+attachPreHeatTreatmentControlRelations,
+} from '@/server/heat-treatment-control-relations'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
 WELD_PAGE_ALL_SIZE,
@@ -123,6 +126,7 @@ type WeldSnapshotPageRequest
 } from '@/server/weld-contracts'
 import { createServerFn } from '@tanstack/react-start'
 import { and,asc,count,desc,eq,exists,gt,gte,inArray,lte,notExists,or,sql,type SQL,type SQLWrapper } from 'drizzle-orm'
+import { QueryBuilder } from 'drizzle-orm/pg-core'
 
 import {
 addBaseFilterClauses,
@@ -142,9 +146,13 @@ hasDispatcherTaskServerFilter,
 loadServerOtherSettings,
 normalizedTextEquals,
 WELD_TABLE_COLUMNS,
+WELD_EFFECTIVE_OFFICIALITY,
+WELD_TABLE_RETURNING,
 WELD_TABLE_SELECT,
 WELDING_JOURNAL_ORDER_BY,
 } from '@/server/weld-server-shared'
+
+const SQL_QUERY_BUILDER = new QueryBuilder()
 import {
   compactWeldRowsForTransport,
   splitNumberBatches,
@@ -199,7 +207,7 @@ export const REPORT_DERIVED_FILTER_SELECT = {
   wdi: weldJoints.wdi,
   spool: weldJoints.spool,
   joint: weldJoints.joint,
-  officiality: weldJoints.officiality,
+  officiality: WELD_EFFECTIVE_OFFICIALITY,
   finalStatus: weldJoints.finalStatus,
   pstoRequired: weldJoints.pstoRequired,
   pstoCancellationDate: weldJoints.pstoCancellationDate,
@@ -328,6 +336,9 @@ export const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'hasUzk',
   'hasPvk',
   'hasTvmt',
+  'vikDefectDescription',
+  'uzkDefectDescription',
+  'pvkDefectDescription',
   'pstoNote',
   'lnkNote',
   'testTypes',
@@ -354,7 +365,7 @@ export const listWeldJointSnapshotPage = createServerFn({ method: 'GET' })
     await assertSecurityScope('entry')
     const db = requireDb()
     const rows = await db
-      .select()
+      .select(WELD_TABLE_SELECT)
       .from(weldJoints)
       .where(data.afterId > 0 ? gt(weldJoints.id, data.afterId) : undefined)
       .orderBy(asc(weldJoints.id))
@@ -425,11 +436,15 @@ export const listWeldJointChain = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<WeldJointChainResult> => {
     await assertSecurityScope('entry')
     const db = requireDb()
-    const [record] = await db.select().from(weldJoints).where(eq(weldJoints.id, data.id)).limit(1)
+    const [record] = await db
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.id))
+      .limit(1)
     if (!record) return { record: null, rows: [], transitions: [], earlyCoilCandidates: [] }
 
     const candidates = await db
-      .select()
+      .select(WELD_TABLE_RETURNING)
       .from(weldJoints)
       .where(
         and(
@@ -457,12 +472,13 @@ export const listWeldJointChain = createServerFn({ method: 'GET' })
         .filter((row) => row.earlyCoilDecisionAccepted)
         .map((row) => row.id),
     )
-    const documentLinks = hydratedRows.length > 0
-      ? await db
-          .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
-          .from(generatedDocumentWeldJoints)
-          .where(inArray(generatedDocumentWeldJoints.weldJointId, hydratedRows.map((row) => row.id)))
-      : []
+    const documentLinks: Array<{ weldJointId: number }> = []
+    for (const idBatch of splitNumberBatches(hydratedRows.map((row) => row.id), 1000)) {
+      documentLinks.push(...await db
+        .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+        .from(generatedDocumentWeldJoints)
+        .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch)))
+    }
     const documentedRowIds = new Set(documentLinks.map((link) => link.weldJointId))
     const typedRows = hydratedRows as WeldRow[]
     const transitions = buildJointCoilTransitions(typedRows, {
@@ -500,7 +516,11 @@ export const getWeldJointById = createServerFn({ method: 'GET' })
     await assertSecurityScope('entry')
     if (!data.id) return null
     const db = requireDb()
-    const [record] = await db.select().from(weldJoints).where(eq(weldJoints.id, data.id)).limit(1)
+    const [record] = await db
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.id))
+      .limit(1)
     if (!record) return null
     const [recordWithDuplicateControls] = await attachGeneratedDocumentFields(
       await attachHeatTreatmentControlRelations(
@@ -567,7 +587,10 @@ export const getDocumentGenerationData = createServerFn({ method: 'POST' })
       rows: compactWeldRowsForTransport(
         await attachGeneratedDocumentFields(
           await attachDuplicateControlsToPage(
-            applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
+            await attachPreHeatTreatmentControlRelations(
+              applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
+              db,
+            ),
           ),
         ),
       ),
@@ -669,7 +692,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
     const where = and(buildReportKindWhere(report), buildReportSourceWhere(sourceFilterData)) ?? sql`true`
     if (canPaginateReportSource(data.columnFilters) && !hasCurrentSystemWdiFilter) {
       const query = db
-        .select()
+        .select(WELD_TABLE_SELECT)
         .from(weldJoints)
         .where(where)
         .orderBy(...getReportOrderBy(report, data.sort))
@@ -890,7 +913,7 @@ export function buildAvailableLnkRequestWhere() {
     }),
   ) ?? sql`true`
   const hasNoRejectedDuplicate = notExists(
-    requireDb()
+    SQL_QUERY_BUILDER
       .select({ value: sql`1` })
       .from(duplicateControls)
       .where(
@@ -901,7 +924,7 @@ export function buildAvailableLnkRequestWhere() {
       ),
   )
   const hasNoRejectedPreHeatTreatmentControl = notExists(
-    requireDb()
+    SQL_QUERY_BUILDER
       .select({ value: sql`1` })
       .from(preHeatTreatmentControls)
       .where(and(
@@ -942,7 +965,7 @@ export function buildPrimaryLnkStageReadyWhere(methodCode: string) {
         ENABLED_CONTROL_REPORT_VALUES,
       )
       const hasGoodResult = exists(
-        requireDb()
+        SQL_QUERY_BUILDER
           .select({ value: sql`1` })
           .from(preHeatTreatmentControls)
           .where(and(
@@ -958,7 +981,7 @@ export function buildPrimaryLnkStageReadyWhere(methodCode: string) {
     }),
   ) ?? sql`false`
   const hasRepeatCycle = exists(
-    requireDb()
+    SQL_QUERY_BUILDER
       .select({ value: sql`1` })
       .from(pstoRepeatCycles)
       .where(eq(pstoRepeatCycles.weldJointId, weldJoints.id)),
@@ -1008,20 +1031,14 @@ export async function attachDuplicateControlsToPage<Row extends DuplicateControl
   if (ids.length === 0) return rows
 
   const db = requireDb()
-  const idChunks = Array.from({ length: Math.ceil(ids.length / 1000) }, (_, index) =>
-    ids.slice(index * 1000, (index + 1) * 1000),
-  )
-  const controls = (
-    await Promise.all(
-      idChunks.map((idChunk) =>
-        db
-          .select()
-          .from(duplicateControls)
-          .where(inArray(duplicateControls.weldJointId, idChunk))
-          .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)),
-      ),
-    )
-  ).flat()
+  const controls: DuplicateControl[] = []
+  for (const idChunk of splitNumberBatches(ids, 1000)) {
+    controls.push(...await db
+      .select()
+      .from(duplicateControls)
+      .where(inArray(duplicateControls.weldJointId, idChunk))
+      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)))
+  }
 
   return mergeDuplicateControlsIntoRows(rows, controls.map(toDuplicateControlRecord))
 }
@@ -1168,6 +1185,7 @@ export function mergeDispatcherTaskCodesIntoRows<Row extends { id: number }>(
 export function toDuplicateControlRecord(row: DuplicateControl): DuplicateControlRecord {
   return {
     id: row.id,
+    version: row.updatedAt?.toISOString?.() ?? '',
     weldJointId: row.weldJointId,
     method: row.method as DuplicateControlRecord['method'],
     result: row.result as DuplicateControlRecord['result'],
@@ -1218,7 +1236,7 @@ export async function loadCurrentFinalStatusRowsContext() {
       subtitleCode: weldJoints.subtitleCode,
       line: weldJoints.line,
       joint: weldJoints.joint,
-      officiality: weldJoints.officiality,
+      officiality: WELD_EFFECTIVE_OFFICIALITY,
       vikResult: weldJoints.vikResult,
       rkResult: weldJoints.rkResult,
       uzkResult: weldJoints.uzkResult,
@@ -1234,7 +1252,7 @@ export async function loadCurrentFinalStatusRowsContext() {
       )`,
     })
     .from(weldJoints)
-    .where(eq(weldJoints.officiality, 'неофициальный'))
+    .where(eq(WELD_EFFECTIVE_OFFICIALITY, 'неофициальный'))
   const rowsWithDuplicates = rows.map(({ rejectedDuplicateMethod, ...row }) => rejectedDuplicateMethod
     ? {
         ...row,
@@ -1305,19 +1323,7 @@ export async function getFullReportRowsByIds(
 ) {
   if (ids.length === 0) return []
   const db = requireDb()
-  const chunks = Array.from({ length: Math.ceil(ids.length / 1000) }, (_, index) =>
-    ids.slice(index * 1000, (index + 1) * 1000),
-  )
-  const rows = (
-    await Promise.all(
-      chunks.map((idChunk) =>
-        db
-          .select()
-          .from(weldJoints)
-          .where(inArray(weldJoints.id, idChunk)),
-      ),
-    )
-  ).flat()
+  const rows = await loadWeldRowsByIdsInBatches(db, ids)
   const reportRows = buildServerReportRows(rows, report)
   const orderById = new Map(ids.map((id, index) => [id, index]))
   reportRows.sort(
@@ -1338,19 +1344,7 @@ export const listWeldJointRowsByIds = createServerFn({ method: 'POST' })
     await assertSecurityScope('entry')
     if (data.ids.length === 0) return []
     const db = requireDb()
-    const chunks = Array.from({ length: Math.ceil(data.ids.length / 1000) }, (_, index) =>
-      data.ids.slice(index * 1000, (index + 1) * 1000),
-    )
-    const rows = (
-      await Promise.all(
-        chunks.map((ids) =>
-          db
-            .select(WELD_TABLE_SELECT)
-            .from(weldJoints)
-            .where(inArray(weldJoints.id, ids)),
-        ),
-      )
-    ).flat()
+    const rows = await loadWeldRowsByIdsInBatches(db, data.ids)
     const orderById = new Map(data.ids.map((id, index) => [id, index]))
     rows.sort((left, right) => (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER))
     return compactWeldRowsForTransport(
@@ -1363,6 +1357,20 @@ export const listWeldJointRowsByIds = createServerFn({ method: 'POST' })
       ),
     )
   })
+
+export async function loadWeldRowsByIdsInBatches(
+  db: Pick<ReturnType<typeof requireDb>, 'select'>,
+  ids: readonly number[],
+) {
+  const rows: WeldRow[] = []
+  for (const idBatch of splitNumberBatches(ids, 1000)) {
+    rows.push(...await db
+      .select(WELD_TABLE_SELECT)
+      .from(weldJoints)
+      .where(inArray(weldJoints.id, idBatch)))
+  }
+  return rows
+}
 
 export function parseStoredJson(value: unknown) {
   if (typeof value !== 'string' || !value.trim()) return null
@@ -1879,7 +1887,7 @@ export function buildPstoExecutionHistoryWhere() {
     hasValue(weldJoints.tvmtConclusionDate),
     hasValue(weldJoints.tvmtConclusion),
     exists(
-      requireDb()
+      SQL_QUERY_BUILDER
         .select({ value: sql`1` })
         .from(pstoRepeatCycles)
         .where(eq(pstoRepeatCycles.weldJointId, weldJoints.id)),

@@ -11,15 +11,21 @@ import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 
 const confirmAction = vi.hoisted(() => vi.fn())
+const getWeldJointById = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/confirm-action-context', () => ({
   useConfirmAction: () => confirmAction,
+}))
+
+vi.mock('@/server/weld-read-api', () => ({
+  getWeldJointById,
 }))
 
 describe('useRepeatedJointTaskActions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     confirmAction.mockResolvedValue(true)
+    getWeldJointById.mockResolvedValue({ id: 1, joint: 'S1', rowVersion: 'fresh-101' })
   })
 
   it.each([
@@ -75,7 +81,7 @@ describe('useRepeatedJointTaskActions', () => {
   it('shows early-coil targets with the configured project suffix', async () => {
     const task = createTask()
     const options = {
-      ...createOptions(vi.fn().mockResolvedValue([])),
+      ...createOptions(vi.fn().mockResolvedValue([task])),
       systemIndexSettings: {
         ...DEFAULT_SYSTEM_INDEX_SETTINGS,
         coil: 'K',
@@ -92,8 +98,23 @@ describe('useRepeatedJointTaskActions', () => {
     }))
     expect(options.earlyCoilMutation.mutate).toHaveBeenCalledWith({
       sourceRowId: 1,
+      expectedVersion: 'fresh-101',
       task,
     })
+    expect(getWeldJointById).toHaveBeenCalledWith({ data: { id: 1 } })
+  })
+
+  it('does not offer an early coil when the refreshed dispatcher task disappeared', async () => {
+    const options = createOptions(vi.fn().mockResolvedValue([]))
+    const { result } = renderHook(() => useRepeatedJointTaskActions(options))
+
+    await act(async () => {
+      await result.current.createEarlyCoil(createTask())
+    })
+
+    expect(getWeldJointById).not.toHaveBeenCalled()
+    expect(confirmAction).not.toHaveBeenCalled()
+    expect(options.earlyCoilMutation.mutate).not.toHaveBeenCalled()
   })
 
   it('shows every atomic rename in the confirmation before mutating the chain', async () => {
@@ -132,7 +153,7 @@ function createTask(): RepeatedJointCreateTask {
   return {
     kind: 'create',
     key: 'create:1',
-    row: { id: 1, joint: 'S1' },
+    row: { id: 1, joint: 'S1', rowVersion: '101' },
     sourceJoint: 'S1',
     targetJoint: 'S1R1',
     result: 'ремонт',

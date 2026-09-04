@@ -19,6 +19,7 @@ import { getCoilParentBranchJoint } from '@/lib/joint-chain-transitions'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getPstoLineIdentityKey } from '@/lib/psto-line-assignment'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { assertSecurityScope } from '@/server/security-functions'
@@ -38,6 +39,11 @@ import {
   validateServerWeldRecords,
 } from '@/server/weld-save-validation'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
+import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
+import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
+import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version'
+import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 
 type EarlyCoilTransaction = SystemDocumentSequenceTransaction
 
@@ -55,8 +61,9 @@ export type RevokeEarlyCoilDecisionResult = {
 }
 
 export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
-  .validator((data: { sourceRowId: number }) => ({
+  .validator((data: { sourceRowId: number; expectedVersion: string }) => ({
     sourceRowId: Math.floor(Number(data?.sourceRowId) || 0),
+    expectedVersion: String(data?.expectedVersion ?? '').trim(),
   }))
   .handler(async ({ data }): Promise<CreateEarlyCoilDecisionResult> => {
     await assertSecurityScope('edit')
@@ -65,8 +72,25 @@ export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
     }
 
     return requireDb().transaction(async (tx) => {
-      const sourceRow = await lockWeldJoint(tx, data.sourceRowId)
+      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+      const [sourceReference] = await tx
+        .select()
+        .from(weldJoints)
+        .where(eq(weldJoints.id, data.sourceRowId))
+        .limit(1)
+      if (!sourceReference) throw new Error('Исходный стык больше не существует. Обновите журнал.')
+      await lockWeldLineMemberships(tx, [sourceReference])
+      const scopeRows = await lockWeldJointScope(tx, sourceReference)
+      const sourceRow = scopeRows.find((row) => row.id === data.sourceRowId) ?? null
       if (!sourceRow) throw new Error('Исходный стык больше не существует. Обновите журнал.')
+      assertExpectedInteractiveWeldVersions(
+        [sourceRow.id],
+        [{ id: sourceRow.id, version: data.expectedVersion }],
+        [sourceRow],
+      )
+      if (getPstoLineIdentityKey(sourceRow) !== getPstoLineIdentityKey(sourceReference)) {
+        throw new Error('Исходный стык уже перенесен на другую линию. Обновите журнал.')
+      }
 
       const decisionKey = getEarlyCoilDecisionKey(sourceRow.id)
       const [existingDecision] = await tx
@@ -79,9 +103,8 @@ export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
         throw new Error('Решение о досрочной врезке этой катушки уже принято. Обновите журнал.')
       }
 
-      const scopeRows = await lockWeldJointScope(tx, sourceRow)
       const hydratedScopeRows = await hydrateRows(tx, scopeRows)
-      const systemContext = await loadServerWeldValidationContext(tx)
+      const systemContext = await loadServerWeldValidationContext(tx, scopeRows)
       const chainRows = getJointChainRows(
         hydratedScopeRows,
         sourceRow,
@@ -118,7 +141,7 @@ export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
         context: systemContext,
         allowSystemJointNames: true,
       })
-      const createdRows = await insertWeldJointsInBatches(tx, drafts)
+      const createdRows = await insertWeldJointsInBatches(tx, drafts, processSettings)
       await syncSystemDocumentsForWeldChangesInTransaction(tx, createdRows, previousRows)
       if (deletedRowIds.length > 0) await deleteEmptyGeneratedDocuments(tx)
 
@@ -150,6 +173,25 @@ export async function revokeEarlyCoilDecisionInTransaction(
   const parsedDecision = parseEarlyCoilDecisionKey(key)
   if (!parsedDecision) return { handled: false, deletedRowIds: [] }
 
+  const [sourceReference] = await tx
+    .select()
+    .from(weldJoints)
+    .where(eq(weldJoints.id, parsedDecision.sourceRowId))
+    .limit(1)
+  if (sourceReference) await lockWeldLineMemberships(tx, [sourceReference])
+  const scopeRows = sourceReference ? await lockWeldJointScope(tx, sourceReference) : []
+  const sourceRow = scopeRows.find((row) => row.id === parsedDecision.sourceRowId) ?? null
+  if (sourceReference && !sourceRow) {
+    throw new Error('Исходный стык уже перенесен на другую линию. Обновите список принятых исключений.')
+  }
+  if (
+    sourceReference &&
+    sourceRow &&
+    getPstoLineIdentityKey(sourceRow) !== getPstoLineIdentityKey(sourceReference)
+  ) {
+    throw new Error('Исходный стык уже перенесен на другую линию. Обновите список принятых исключений.')
+  }
+
   const [storedDecision] = await tx
     .select({ key: dispatcherAcceptedWarnings.key })
     .from(dispatcherAcceptedWarnings)
@@ -158,16 +200,14 @@ export async function revokeEarlyCoilDecisionInTransaction(
     .limit(1)
   if (!storedDecision) return { handled: true, deletedRowIds: [] }
 
-  const sourceRow = await lockWeldJoint(tx, parsedDecision.sourceRowId)
   if (!sourceRow) {
     await tx.delete(dispatcherAcceptedWarnings).where(eq(dispatcherAcceptedWarnings.key, key))
     await markDispatcherTaskIndexDirty(tx)
     return { handled: true, deletedRowIds: [] }
   }
 
-  const scopeRows = await lockWeldJointScope(tx, sourceRow)
   const hydratedRows = await hydrateRows(tx, scopeRows)
-  const validationContext = await loadServerWeldValidationContext(tx)
+  const validationContext = await loadServerWeldValidationContext(tx, scopeRows)
   const chainRows = getJointChainRows(hydratedRows, sourceRow, validationContext.systemIndexSettings)
   const hydratedSource = chainRows.find((row) => row.id === sourceRow.id) ?? (sourceRow as WeldRow)
   const branchJoint = parseRepeatedJointName(
@@ -225,25 +265,16 @@ export async function revokeEarlyCoilDecisionInTransaction(
   return { handled: true, deletedRowIds }
 }
 
-async function lockWeldJoint(tx: EarlyCoilTransaction, id: number) {
-  const [row] = await tx
-    .select()
-    .from(weldJoints)
-    .where(eq(weldJoints.id, id))
-    .for('update')
-    .limit(1)
-  return row ?? null
-}
-
 async function lockWeldJointScope(tx: EarlyCoilTransaction, sourceRow: WeldJoint) {
   return tx
-    .select()
+    .select(WELD_TABLE_RETURNING)
     .from(weldJoints)
     .where(and(
       normalizedTextEquals(weldJoints.projectTitle, sourceRow.projectTitle),
       normalizedTextEquals(weldJoints.subtitleCode, sourceRow.subtitleCode),
       normalizedTextEquals(weldJoints.line, sourceRow.line),
     ))
+    .orderBy(weldJoints.id)
     .for('update')
 }
 
@@ -256,10 +287,13 @@ async function hydrateRows(tx: EarlyCoilTransaction, rows: WeldJoint[]) {
 
 async function loadDocumentedRowIds(tx: EarlyCoilTransaction, rowIds: number[]) {
   if (rowIds.length === 0) return new Set<number>()
-  const links = await tx
-    .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
-    .from(generatedDocumentWeldJoints)
-    .where(inArray(generatedDocumentWeldJoints.weldJointId, rowIds))
+  const links: Array<{ weldJointId: number }> = []
+  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
+    links.push(...await tx
+      .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+      .from(generatedDocumentWeldJoints)
+      .where(inArray(generatedDocumentWeldJoints.weldJointId, rowIdBatch)))
+  }
   return new Set(links.map((link) => link.weldJointId))
 }
 

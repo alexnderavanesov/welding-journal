@@ -37,10 +37,13 @@ const BASE_SECTIONS: Array<{ section: string; fieldKeys: WeldFieldKey[] }> = [
     section: 'НК до ТО',
     fieldKeys: [
       'preVikRequest', 'preVikRequestDate', 'preVikResult', 'preVikConclusionDate', 'preVikConclusion',
+      'preVikDefectDescription',
       'preRkRequest', 'preRkRequestDate', 'preRkResult', 'preRkExposureScheme', 'preRkDefectDescription',
       'preRkConclusionDate', 'preRkConclusion',
       'preUzkRequest', 'preUzkRequestDate', 'preUzkResult', 'preUzkConclusionDate', 'preUzkConclusion',
+      'preUzkDefectDescription',
       'prePvkRequest', 'prePvkRequestDate', 'prePvkResult', 'prePvkConclusionDate', 'prePvkConclusion',
+      'prePvkDefectDescription',
     ],
   },
 ]
@@ -54,6 +57,7 @@ const METHOD_SECTIONS: Array<{ section: string; fieldKeys: WeldFieldKey[] }> = L
     ...(method.code === 'РК' ? ['rkExposureScheme', 'lnkDefectDescription'] as WeldFieldKey[] : []),
     method.conclusionDateKey,
     method.conclusionKey,
+    ...(method.code === 'РК' ? [] : [method.defectDescriptionKey]),
   ],
 }))
 

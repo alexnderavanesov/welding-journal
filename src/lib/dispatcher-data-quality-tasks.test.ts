@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 import {
   buildControlHistoryCheckTasks,
+  buildForbiddenRepairByDiameterCheckTasks,
+  buildIncompleteWelderStampGroupTasks,
   buildJointCoreDataCheckTasks,
   buildLnkChronologyCheckTasks,
   buildLnkResultCompletenessCheckTasks,
   buildPstoChronologyCheckTasks,
   buildPstoResultCompletenessCheckTasks,
+  buildWelderStampCompatibilityCheckTasks,
 } from '@/lib/repeated-joint-check-tasks'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -130,6 +133,33 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks[0].details).not.toContain('. при заполненной')
   })
 
+  it('reports invalid general weld dates together through DЗ-31', () => {
+    const tasks = buildJointCoreDataCheckTasks([
+      row({ testDate: '31.02.2026', piDate: '2023-12-31' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-31')
+    expect(tasks[0].details).toContain('Дата ГИ: укажите дату')
+    expect(tasks[0].details).toContain('Дата ПИ не может быть раньше 01.01.2024')
+  })
+
+  it('routes invalid LNK and PSTO dates to the existing chronology tasks', () => {
+    const lnkTasks = buildLnkChronologyCheckTasks([
+      row({ vikRequest: 'ВИК-1', vikRequestDate: '31.02.2026' }),
+    ])
+    const pstoTasks = buildPstoChronologyCheckTasks([
+      row({ pstoRequest: 'ПСТО-1', pstoRequestDate: '31.02.2026' }),
+    ])
+
+    expect(lnkTasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(lnkTasks[0])).toBe('ДЗ-20')
+    expect(lnkTasks[0].details).toContain('укажите дату в формате')
+    expect(pstoTasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(pstoTasks[0])).toBe('ДЗ-23')
+    expect(pstoTasks[0].details).toContain('укажите дату в формате')
+  })
+
   it('does not require core weld fields before the weld date is filled', () => {
     expect(buildJointCoreDataCheckTasks([
       row({ weldDate: '', materialGroup: '', connectionType: '', weldingMethod: '' }),
@@ -162,6 +192,16 @@ describe('dispatcher data quality tasks', () => {
     expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-32')
     expect(tasks[0].details).toContain('ВИК: не заполнены дата контроля и заключение')
     expect(tasks[0].details).toContain('РК: не заполнено заключение')
+  })
+
+  it('keeps a cancelled good LNK result covered by DЗ-32', () => {
+    const tasks = buildLnkResultCompletenessCheckTasks([
+      row({ hasVik: 'отменен', vikResult: 'годен (отменен)', vikConclusionDate: '', vikConclusion: '' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-32')
+    expect(tasks[0].details).toContain('ВИК: не заполнены дата контроля и заключение')
   })
 
   it('aggregates missing PSTO result fields in one DЗ-33 task', () => {
@@ -241,7 +281,7 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks).toEqual([])
   })
 
-  it('matches ZВ-27 exactly for DЗ-34 and ignores a request without a result history', () => {
+  it('matches ZВ-27 exactly for DЗ-34 and ignores requests or accounting fields without physical history', () => {
     const tasks = buildControlHistoryCheckTasks([
       row({ id: 1, hasRk: '', rkResult: 'годен' }),
       row({ id: 2, joint: 'F2', hasRk: '', rkRequest: 'Заявка РК' }),
@@ -249,11 +289,105 @@ describe('dispatcher data quality tasks', () => {
       row({ id: 4, joint: 'F4', pstoRequired: '', pstoResult: '', pstoBoq: 'Учтено' }),
     ])
 
-    expect(tasks).toHaveLength(2)
-    expect(tasks.map(getDispatcherTaskCode)).toEqual(['ДЗ-34', 'ДЗ-34'])
-    expect(tasks.map((task) => task.row.id)).toEqual([1, 4])
+    expect(tasks).toHaveLength(1)
+    expect(tasks.map(getDispatcherTaskCode)).toEqual(['ДЗ-34'])
+    expect(tasks.map((task) => task.row.id)).toEqual([1])
     expect(tasks[0].details).toContain('РК')
-    expect(tasks[1].details).toContain('ПСТО')
+  })
+
+  it('keeps cancelled good LNK history covered by ZВ-27 and DЗ-34', () => {
+    const tasks = buildControlHistoryCheckTasks([
+      row({ id: 5, hasRk: '', rkResult: 'годен (отменен)', rkConclusionDate: '', rkConclusion: '' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-34')
+    expect(tasks[0].details).toContain('РК')
+  })
+
+  it('audits an unknown official stamp through DЗ-18 even when the registry is empty', () => {
+    const tasks = buildWelderStampCompatibilityCheckTasks([
+      row({ stamp1K: 'ABC1', stamp1Z: 'ABC1', stamp1O: 'ABC1' }),
+    ], [])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-18')
+    expect(tasks[0].details).toContain('ABC1')
+  })
+
+  it('requires the first stamp group through DЗ-19 when only the second group is filled', () => {
+    const tasks = buildIncompleteWelderStampGroupTasks([
+      row({
+        stamp1K: '',
+        stamp1Z: '',
+        stamp1O: '',
+        stamp2K: 'B2',
+        stamp2Z: 'B2',
+        stamp2O: 'B2',
+        stamp2KFact: 'B2',
+        stamp2ZFact: 'B2',
+        stamp2OFact: 'B2',
+      }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-19')
+    expect(tasks[0].details).toContain('группа клейма_1 пустая')
+  })
+
+  it('checks the official repair limit through DЗ-17', () => {
+    const tasks = buildForbiddenRepairByDiameterCheckTasks([
+      row({ joint: 'F1R2', d1: 159, d2: 159, rkResult: 'ремонт' }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-17')
+    expect(tasks[0].details).toContain('после двух уже выполненных официальных ремонтов')
+  })
+
+  it('checks a pre-TO repair against the same official repair limit through DЗ-17', () => {
+    const tasks = buildForbiddenRepairByDiameterCheckTasks([
+      row({
+        joint: 'F1R2',
+        d1: 159,
+        d2: 159,
+        pstoRequired: 'да',
+        hasRk: 'да',
+        preHeatTreatmentControls: [{
+          id: 10,
+          weldJointId: 1,
+          method: 'РК',
+          result: 'ремонт',
+        }],
+      }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-17')
+    expect(tasks[0].details).toContain('РК до ТО')
+  })
+
+  it('checks a duplicate-control repair against the same diameter rule through DЗ-17', () => {
+    const tasks = buildForbiddenRepairByDiameterCheckTasks([
+      row({
+        joint: 'F2',
+        d1: 57,
+        d2: 57,
+        duplicateControls: [{
+          id: 20,
+          weldJointId: 1,
+          method: 'РК',
+          result: 'ремонт',
+          controlDate: '',
+          conclusion: '',
+          conclusionDate: '',
+        }],
+      }),
+    ])
+
+    expect(tasks).toHaveLength(1)
+    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-17')
+    expect(tasks[0].details).toContain('РК (дубль)')
   })
 })
 

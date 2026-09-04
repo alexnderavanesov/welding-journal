@@ -6,8 +6,17 @@ import {
 import { mapHeadersToFields, normalizeImportHeaders } from './weld-import-headers'
 import { parseImportCell } from './weld-import-parsers'
 
+export type ImportCellError = {
+  recordIndex: number
+  rowNumber: number
+  message: string
+  fieldKeys: string[]
+}
+
 export type ImportResult = {
   records: WeldInput[]
+  recordRowNumbers: number[]
+  cellErrors: ImportCellError[]
   skippedRows: number
   headers: string[]
   missingHeaders: string[]
@@ -27,21 +36,27 @@ export function parseWorksheetRows(
 
   const fieldsByColumn = mapHeadersToFields(headers)
   const records: WeldInput[] = []
+  const recordRowNumbers: number[] = []
+  const cellErrors: ImportCellError[] = []
   let skippedRows = 0
 
   for (const [rowIndex, row] of dataRows.entries()) {
     const record: WeldInput = {}
-    try {
-      fieldsByColumn.forEach((field, index) => {
-        if (!field) return
+    const rowCellErrors: Array<{ message: string; fieldKey: string }> = []
+    fieldsByColumn.forEach((field, index) => {
+      if (!field) return
+      try {
         ;(record as Record<string, unknown>)[field.key] = parseImportCell(field, row[index])
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'значение не распознано'
-      throw new Error(`Строка ${rowIndex + 2}: ${message}`)
-    }
+      } catch (error) {
+        ;(record as Record<string, unknown>)[field.key] = null
+        rowCellErrors.push({
+          message: error instanceof Error ? error.message : 'Значение не распознано.',
+          fieldKey: field.key,
+        })
+      }
+    })
 
-    if (!isMeaningfulRecord(record)) {
+    if (!isMeaningfulRecord(record) && rowCellErrors.length === 0) {
       skippedRows += 1
       continue
     }
@@ -51,10 +66,18 @@ export function parseWorksheetRows(
     }
     record.officiality = null
     record.finalStatus = calculateFinalStatus(record)
+    const recordIndex = records.length
     records.push(record)
+    recordRowNumbers.push(rowIndex + 2)
+    rowCellErrors.forEach((error) => cellErrors.push({
+      recordIndex,
+      rowNumber: rowIndex + 2,
+      message: error.message,
+      fieldKeys: [error.fieldKey],
+    }))
   }
 
-  return { records, skippedRows, headers, missingHeaders }
+  return { records, recordRowNumbers, cellErrors, skippedRows, headers, missingHeaders }
 }
 
 export function isMeaningfulRecord(record: WeldInput) {

@@ -13,7 +13,7 @@ describe('LNK repair rule in imports', () => {
         welderStamps: [],
         welderStampSuspensions: [],
       }),
-    ).toThrow('ремонт')
+    ).toThrow(/ЗВ-20.*ремонт/)
   })
 
   it('checks existing row imports when D1 or D2 makes an existing repair forbidden', () => {

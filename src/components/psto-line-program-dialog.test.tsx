@@ -45,6 +45,10 @@ const removalPreview: PstoLineRemovalPreview = {
     subtitleCode: assignedLine.subtitleCode,
     line: assignedLine.line,
   },
+  expectedVersions: [
+    { id: 1, version: '101' },
+    { id: 2, version: '102' },
+  ],
   rowCount: 2,
   assignedCount: 2,
   requestOnlyCount: 2,
@@ -195,6 +199,7 @@ describe('PstoLineProgramDialog', () => {
     await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
       data: expect.objectContaining({
         action: 'assign',
+        expectedVersions: activationConflictPreview.expectedVersions,
         activationDecisions: [{
           rowId: 11,
           disposition: 'keepPrimary',

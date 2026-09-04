@@ -4,7 +4,7 @@ import { E2E_DATABASE_URL, recreateE2eDatabase, withE2eDatabase } from './databa
 
 export default async function globalSetup() {
   await recreateE2eDatabase()
-  const migration = spawnSync('pnpm', ['db:migrate'], {
+  const schemaPush = spawnSync('pnpm', ['exec', 'drizzle-kit', 'push', '--force'], {
     cwd: process.cwd(),
     env: {
       ...process.env,
@@ -13,8 +13,8 @@ export default async function globalSetup() {
     },
     encoding: 'utf8',
   })
-  if (migration.status !== 0) {
-    throw new Error(`E2E migration failed:\n${migration.stdout}\n${migration.stderr}`)
+  if (schemaPush.status !== 0) {
+    throw new Error(`E2E schema push failed:\n${schemaPush.stdout}\n${schemaPush.stderr}`)
   }
 
   await withE2eDatabase(async (client) => {

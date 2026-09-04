@@ -384,6 +384,60 @@ describe('WeldTableBodyCell LNK request link', () => {
     expect(onOpenDocument).not.toHaveBeenCalled()
   })
 
+  it('edits a rejected pre-TO defect description instead of opening the result card', () => {
+    const onEdit = vi.fn()
+    const onOpenLnkResult = vi.fn()
+    const row = {
+      id: 13,
+      joint: 'F13',
+      hasPvk: 'да',
+      preHeatTreatmentControls: [{
+        id: 130,
+        weldJointId: 13,
+        method: 'ПВК',
+        result: 'вырез',
+        defectDescription: 'Пора до ТО',
+      }],
+    } as WeldRow
+    const field = {
+      key: 'prePvkDefectDescription',
+      dbName: '__pre_pvk_defect_description',
+      label: 'Дефекты ПВК до ТО',
+      kind: 'text',
+      group: 'Контроль',
+      virtual: true,
+    } satisfies WeldField
+
+    render(
+      <table><tbody><tr>
+        <WeldTableBodyCell
+          row={row}
+          field={field}
+          displayValue="Пора до ТО"
+          isEditableCell
+          isBlockedEditableCell={false}
+          isHighlightedRow={false}
+          isSelectedRow={false}
+          hasDispatcherTask={false}
+          isHighlightedCell={false}
+          isResultField={false}
+          stickyLeft={0}
+          stickyIdentityLeadingWidth={0}
+          stickyIdentityColumns={false}
+          stickyBackgroundClassName="bg-white"
+          isSectionEnd={false}
+          onEdit={onEdit}
+          onOpenLnkResult={onOpenLnkResult}
+        />
+      </tr></tbody></table>,
+    )
+
+    fireEvent.click(screen.getByText('Пора до ТО'))
+
+    expect(onEdit).toHaveBeenCalledWith(row, 'prePvkDefectDescription')
+    expect(onOpenLnkResult).not.toHaveBeenCalled()
+  })
+
   it('shows two compact layered conclusions in one method cell and opens the exact document', () => {
     const onOpenDocument = vi.fn()
     const row = {

@@ -79,7 +79,25 @@ export const WELDING_JOURNAL_ORDER_BY = [
 
 export const WELD_TABLE_COLUMNS = getTableColumns(weldJoints)
 
-export const { updatedAt: OMITTED_UPDATED_AT_COLUMN, ...WELD_TABLE_SELECT } = WELD_TABLE_COLUMNS
+const { updatedAt: OMITTED_UPDATED_AT_COLUMN, ...WELD_TABLE_SELECT_COLUMNS } = WELD_TABLE_COLUMNS
+
+export const WELD_ROW_VERSION_SELECT = sql<string>`xmin::text`.as('row_version')
+export const WELD_EFFECTIVE_OFFICIALITY = sql<string | null>`coalesce(
+  nullif(btrim(${weldJoints.legacyStatus}), ''),
+  nullif(btrim(${weldJoints.officiality}), '')
+)`
+
+export const WELD_TABLE_SELECT = {
+  ...WELD_TABLE_SELECT_COLUMNS,
+  officiality: WELD_EFFECTIVE_OFFICIALITY.as('officiality'),
+  rowVersion: WELD_ROW_VERSION_SELECT,
+}
+
+export const WELD_TABLE_RETURNING = {
+  ...WELD_TABLE_COLUMNS,
+  officiality: WELD_EFFECTIVE_OFFICIALITY.as('officiality'),
+  rowVersion: WELD_ROW_VERSION_SELECT,
+}
 
 void OMITTED_UPDATED_AT_COLUMN
 
@@ -146,7 +164,8 @@ export function addBaseFilterClauses(clauses: SQL[], filters: WeldFilters) {
 
   for (const key of filterKeys) {
     const value = filters[key]
-    if (value) clauses.push(eq(weldJoints[key], value))
+    const column = getWeldColumn(key)
+    if (value && column) clauses.push(sql`${column} = ${value}`)
   }
 
   const controlColumnKey = getControlMethodFilterColumnKey(filters.controlMethod)
@@ -263,6 +282,7 @@ export function buildGeneratedDocumentColumnWhere(
 }
 
 export function getWeldColumn(fieldKey: WeldFieldKey) {
+  if (fieldKey === 'officiality') return WELD_EFFECTIVE_OFFICIALITY
   return WELD_TABLE_COLUMNS[fieldKey as keyof typeof WELD_TABLE_COLUMNS]
 }
 

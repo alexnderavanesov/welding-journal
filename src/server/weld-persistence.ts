@@ -8,6 +8,7 @@ type WeldJoint
 import {
 clearCancelledRejectedLnkGeneratedData,
 clearDisabledLnkRequests,
+normalizeActiveLnkDefectDescriptions,
 restoreActiveLnkCancelledResults,
 withLnkFinalStatus,
 } from '@/lib/lnk-field-updates'
@@ -32,11 +33,14 @@ import { calculateFinalStatus } from '@/lib/weld-status'
 import {
 type SystemDocumentSequenceTransaction
 } from '@/server/system-document-sequences'
+import { splitNumberBatches } from '@/server/weld-request-utils'
 import { inArray,sql,type SQL } from 'drizzle-orm'
 
 import {
 WELD_TABLE_COLUMNS,
+WELD_TABLE_RETURNING,
 } from '@/server/weld-server-shared'
+export { WELD_TABLE_RETURNING }
 import {
   LNK_PROFILE_FIELD_KEYS,
   PSTO_PROFILE_FIELD_KEYS,
@@ -57,6 +61,7 @@ export const WELD_BATCH_UPDATE_FIELD_KEYS = [
   ...WELD_FIELDS
     .filter((field) => !isVirtualWeldField(field) && !SYSTEM_FIELD_KEYS.has(field.key))
     .map((field) => field.key),
+  'legacyStatus',
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
@@ -91,6 +96,7 @@ export function toDbInsert(input: WeldInput, isCreate = false): NewWeldJoint {
     }
     data[field.key] = normalized[field.key] ?? null
   }
+  data.legacyStatus = normalized.officiality ?? null
   data.pstoRequired = normalized.pstoRequired ?? null
   data.pstoControlBasis = normalized.pstoControlBasis ?? null
   data.pstoCancellationDate = normalized.pstoCancellationDate ?? null
@@ -165,11 +171,15 @@ export async function updateWeldJointsInBatches(
   const now = new Date()
   const payloads = records.map((record) => buildWeldBatchUpdatePayload(record, previousRows, now))
   const ids = records.map((record) => Number(record.id))
-  const lockedRows = await tx
-    .select({ id: weldJoints.id })
-    .from(weldJoints)
-    .where(inArray(weldJoints.id, ids))
-    .for('update')
+  const lockedRows: Array<{ id: number }> = []
+  for (const idBatch of splitNumberBatches([...ids].sort((left, right) => left - right), 1000)) {
+    lockedRows.push(...await tx
+      .select({ id: weldJoints.id })
+      .from(weldJoints)
+      .where(inArray(weldJoints.id, idBatch))
+      .orderBy(weldJoints.id)
+      .for('update'))
+  }
   if (lockedRows.length !== ids.length) {
     throw new Error('Одна или несколько обновляемых записей больше не существуют.')
   }
@@ -180,7 +190,7 @@ export async function updateWeldJointsInBatches(
       .insert(weldJoints)
       .values(batch)
       .onConflictDoUpdate({ target: weldJoints.id, set: WELD_BATCH_UPDATE_SET })
-      .returning()
+      .returning(WELD_TABLE_RETURNING)
     if (rows.length !== batch.length) {
       throw new Error('Одна или несколько обновляемых записей больше не существуют.')
     }
@@ -226,11 +236,13 @@ export function buildWeldBatchUpdatePayload(
 
 export function prepareServerWeldInput<T extends WeldInput>(record: T): T {
   return withLnkFinalStatus(
-    withPendingPstoResultStatus(
-      withPendingLnkResults(
-        clearDisabledLnkRequests(
-          restoreActiveLnkCancelledResults(
-            restoreActivePstoCancelledResult(clearCancelledRejectedLnkGeneratedData(clearCancelledPstoRequestWithoutResult(record))),
+    normalizeActiveLnkDefectDescriptions(
+      withPendingPstoResultStatus(
+        withPendingLnkResults(
+          clearDisabledLnkRequests(
+            restoreActiveLnkCancelledResults(
+              restoreActivePstoCancelledResult(clearCancelledRejectedLnkGeneratedData(clearCancelledPstoRequestWithoutResult(record))),
+            ),
           ),
         ),
       ),

@@ -1,8 +1,9 @@
-import { normalizeDateLikeForStorage, parseDateLikeToIso } from '@/lib/date-format'
+import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { isCancelledControlValue } from '@/lib/report-value-utils'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import {
   getCurrentPstoCycle,
   getPstoTvmtWorkflowLabel,
@@ -65,21 +66,24 @@ export function buildPrimaryTvmtRequestRows({
   records,
   requestName,
   requestDate,
+  saveCheckSettings = loadSaveCheckSettings(),
 }: {
   records: WeldRow[]
   requestName: string
   requestDate: string
+  saveCheckSettings?: SaveCheckSettings
 }) {
   const name = requestName.trim()
   if (!name) throw new Error('Укажите наименование заявки ТВМТ.')
-  const date = normalizeDateLikeForStorage(requestDate)
-  if (!date) throw new Error('Укажите дату заявки ТВМТ.')
+  const date = requireDate(requestDate, 'Укажите дату заявки ТВМТ.', 'Дата заявки ТВМТ')
 
   return records.map((record) => {
     if (!canCreatePrimaryTvmtRequest(record)) {
       throw new Error(`Стык ${formatJoint(record)}: заявка ТВМТ сейчас недоступна.`)
     }
-    assertDateNotBeforePsto(record, date, 'Дата заявки ТВМТ')
+    if (saveCheckSettings.pstoResultRequestDateOrder) {
+      assertDateNotBeforePsto(record, date, 'Дата заявки ТВМТ')
+    }
     return withPstoStatus({
       ...record,
       tvmtRequest: name,
@@ -94,16 +98,17 @@ export function buildPrimaryTvmtResultRows({
   controlDate,
   result,
   conclusionName,
+  saveCheckSettings = loadSaveCheckSettings(),
 }: {
   records: WeldRow[]
   controlDate: string
   result: string
   conclusionName: string
+  saveCheckSettings?: SaveCheckSettings
 }) {
   const normalizedResult = normalizeTvmtResult(result)
   if (!normalizedResult) throw new Error('Выберите результат ТВМТ.')
-  const date = normalizeDateLikeForStorage(controlDate)
-  if (!date) throw new Error('Укажите дату ТВМТ.')
+  const date = requireDate(controlDate, 'Укажите дату ТВМТ.', 'Дата ТВМТ')
   const name = conclusionName.trim()
   if (!name) throw new Error('Укажите наименование заключения ТВМТ.')
 
@@ -111,12 +116,14 @@ export function buildPrimaryTvmtResultRows({
     if (!canAddPrimaryTvmtResult(record)) {
       throw new Error(`Стык ${formatJoint(record)}: результат ТВМТ сейчас недоступен.`)
     }
-    assertDateNotBeforePsto(record, date, 'Дата ТВМТ')
-    const requestDate = parseDateLikeToIso(record.tvmtRequestDate)
-    if (requestDate && date < requestDate) {
-      throw new Error(
-        `Стык ${formatJoint(record)}: дата ТВМТ не может быть раньше даты заявки ТВМТ.`,
-      )
+    if (saveCheckSettings.pstoResultRequestDateOrder) {
+      assertDateNotBeforePsto(record, date, 'Дата ТВМТ')
+      const requestDate = parseDateLikeToIso(record.tvmtRequestDate)
+      if (requestDate && date < requestDate) {
+        throw new Error(
+          `Стык ${formatJoint(record)}: дата ТВМТ не может быть раньше даты заявки ТВМТ.`,
+        )
+      }
     }
     return withPstoStatus({
       ...record,
@@ -125,7 +132,7 @@ export function buildPrimaryTvmtResultRows({
       tvmtConclusion: name,
     })
   })
-  assertNoNewLnkChronologyIssues(proposedRows, records)
+  assertNoNewLnkChronologyIssues(proposedRows, records, saveCheckSettings)
   return proposedRows
 }
 
@@ -148,4 +155,14 @@ function withPstoStatus<T extends WeldRow>(record: T): T {
 
 function formatJoint(row: WeldRow) {
   return String(row.joint ?? '').trim() || `ID ${row.id}`
+}
+
+function requireDate(value: string, message: string, label: string) {
+  const rawDate = String(value ?? '').trim()
+  if (!rawDate) throw new Error(message)
+  const date = parseDateLikeToIso(rawDate)
+  if (!date) throw new Error('Укажите корректную дату документа.')
+  const reason = getDateInputValidationReason(date, label)
+  if (reason) throw new Error(reason)
+  return date
 }

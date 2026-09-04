@@ -11,9 +11,11 @@ describe('normalizeWeldChainLineMovePlan', () => {
   it('normalizes a bounded plan received from the client', () => {
     expect(normalizeWeldChainLineMovePlan({
       expectedRowIds: ['1', 2],
+      expectedVersions: [{ id: '1', version: '101' }, { id: 2, version: '102' }],
       decisions: [{ rowId: '2', disposition: 'deletePrimary' }],
     })).toEqual({
       expectedRowIds: [1, 2],
+      expectedVersions: [{ id: 1, version: '101' }, { id: 2, version: '102' }],
       decisions: [{ rowId: 2, disposition: 'deletePrimary' }],
     })
   })
@@ -23,6 +25,9 @@ describe('normalizeWeldChainLineMovePlan', () => {
     {},
     { expectedRowIds: [], decisions: [] },
     { expectedRowIds: [1, 1], decisions: [] },
+    { expectedRowIds: [1], expectedVersions: [], decisions: [] },
+    { expectedRowIds: [1], expectedVersions: [{ id: 2, version: '101' }], decisions: [] },
+    { expectedRowIds: [1], expectedVersions: [{ id: 1, version: '' }], decisions: [] },
     { expectedRowIds: [1], decisions: [{ rowId: 2, disposition: 'deletePrimary' }] },
     { expectedRowIds: [1], decisions: [{ rowId: 1, disposition: 'unknown' }] },
     { expectedRowIds: Array.from({ length: 1_001 }, (_, index) => index + 1), decisions: [] },

@@ -86,6 +86,25 @@ describe('LNK visible field layout', () => {
     ])
   })
 
+  it.each([
+    ['ВИК', ['vikRequest', 'vikRequestDate', 'vikResult', 'vikConclusionDate', 'vikConclusion', 'vikDefectDescription']],
+    ['УЗК', ['uzkRequest', 'uzkRequestDate', 'uzkResult', 'uzkConclusionDate', 'uzkConclusion', 'uzkDefectDescription']],
+    ['ПВК', ['pvkRequest', 'pvkRequestDate', 'pvkResult', 'pvkConclusionDate', 'pvkConclusion', 'pvkDefectDescription']],
+  ])('places %s defects at the end of its method section', (section, fieldKeys) => {
+    expect(LNK_VISIBLE_FIELD_SECTIONS.find((candidate) => candidate.section === section)?.fields.map((field) => field.key))
+      .toEqual(fieldKeys)
+  })
+
+  it('places pre-TO defect fields after the matching method conclusions', () => {
+    const fieldKeys = LNK_VISIBLE_FIELD_SECTIONS
+      .find((section) => section.section === 'НК до ТО')
+      ?.fields.map((field) => field.key) ?? []
+
+    expect(fieldKeys.indexOf('preVikDefectDescription')).toBe(fieldKeys.indexOf('preVikConclusion') + 1)
+    expect(fieldKeys.indexOf('preUzkDefectDescription')).toBe(fieldKeys.indexOf('preUzkConclusion') + 1)
+    expect(fieldKeys.indexOf('prePvkDefectDescription')).toBe(fieldKeys.indexOf('prePvkConclusion') + 1)
+  })
+
   it('keeps officiality and revision actuality in the optional status section', () => {
     expect(LNK_VISIBLE_FIELD_SECTIONS.slice(0, 2).map((section) => section.section)).toEqual(['Проект', 'Статус'])
     expect(LNK_VISIBLE_FIELD_SECTIONS.find((section) => section.section === 'Статус')?.fields.map((field) => field.key)).toEqual([

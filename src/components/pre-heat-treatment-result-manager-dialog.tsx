@@ -29,6 +29,7 @@ import {
 import { PRE_HEAT_TREATMENT_REPORT_FIELDS } from '@/lib/pre-heat-treatment-report-fields'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { normalizeSearchText } from '@/lib/report-row-utils'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { CorrectPreHeatTreatmentLnkResultPayload } from '@/server/pre-heat-treatment-lnk-workflow'
@@ -82,6 +83,7 @@ export function PreHeatTreatmentResultManagerDialog({
   onCopyDocumentName,
   canOpenDocument,
 }: PreHeatTreatmentResultManagerDialogProps) {
+  const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const [methodFilter, setMethodFilter] = useState('')
@@ -153,7 +155,11 @@ export function PreHeatTreatmentResultManagerDialog({
     const deleteReason = readOnly
       ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.'
       : managesResult
-        ? getPreHeatTreatmentResultRemovalBlockReason(entry.row, entry.control)
+        ? getPreHeatTreatmentResultRemovalBlockReason(
+            entry.row,
+            entry.control,
+            saveCheckSettings,
+          )
         : getPreHeatTreatmentRequestRemovalBlockReason(entry.row, entry.control)
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
@@ -195,7 +201,11 @@ export function PreHeatTreatmentResultManagerDialog({
     ? getPreFieldKey(selectedEntry.methodCode, 'requestName')
     : null
   const resultDeleteReason = selectedEntry
-    ? getPreHeatTreatmentResultRemovalBlockReason(selectedEntry.row, selectedEntry.control)
+    ? getPreHeatTreatmentResultRemovalBlockReason(
+        selectedEntry.row,
+        selectedEntry.control,
+        saveCheckSettings,
+      )
     : ''
   const requestDeleteReason = selectedEntry
     ? getPreHeatTreatmentRequestRemovalBlockReason(selectedEntry.row, selectedEntry.control)
@@ -488,6 +498,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       disabled={isPending || readOnly || !hasRequestChanges || !requestDraft.date || !requestDraft.name}
                       onClick={() => onCorrect({
                         relationId: selectedEntry.control.id,
+                        expectedVersion: String(selectedEntry.row.rowVersion ?? '').trim(),
                         stage: 'request',
                         action: 'update',
                         requestDate: requestDraft.date,
@@ -550,9 +561,17 @@ export function PreHeatTreatmentResultManagerDialog({
                       </Button>
                       <Button
                         type="button"
-                        disabled={isPending || readOnly || !hasResultChanges || !resultDraft.date || !resultDraft.name || !resultDraft.result}
+                        disabled={
+                          isPending ||
+                          readOnly ||
+                          !hasResultChanges ||
+                          !resultDraft.result ||
+                          (saveCheckSettings.lnkResultControlDateRequired && !resultDraft.date) ||
+                          (saveCheckSettings.lnkResultConclusionRequired && !resultDraft.name)
+                        }
                         onClick={() => onCorrect({
                           relationId: selectedEntry.control.id,
+                          expectedVersion: String(selectedEntry.row.rowVersion ?? '').trim(),
                           stage: 'result',
                           action: 'update',
                           result: resultDraft.result,
