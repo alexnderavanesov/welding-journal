@@ -1,4 +1,5 @@
 import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 
 import { loadServerEnv } from '../src/server-env.ts'
 
@@ -80,7 +81,7 @@ console.log(JSON.stringify({
   ...result,
 }, null, 2))
 
-function needsPrimaryBackfill(resultColumn: typeof weldJoints.vikResult, defectColumn: typeof weldJoints.vikDefectDescription) {
+function needsPrimaryBackfill(resultColumn: AnyPgColumn, defectColumn: AnyPgColumn) {
   return and(
     inArray(sql<string>`lower(btrim(coalesce(${resultColumn}, '')))`, goodResults),
     eq(sql<string>`btrim(coalesce(${defectColumn}, ''))`, ''),

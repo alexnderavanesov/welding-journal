@@ -11,11 +11,12 @@
     "strictNullChecks": true,
     "baseUrl": ".",
     "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": ["./src/*"]
     },
     "allowJs": false,
     "noEmit": true
   },
-  "include": ["src", "drizzle.config.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "scripts", "drizzle.config.ts", "drizzle.remote.config.ts", "vite.config.ts", "vitest.config.ts"]
 }

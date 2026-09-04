@@ -5,7 +5,7 @@ const CONNECTION_STRING_SSL_OPTIONS = ['ssl', 'sslmode', 'sslcert', 'sslkey', 's
 export function getDatabaseConnectionConfig(
   connectionString: string,
   ca: string | undefined,
-): Pick<PoolConfig, 'connectionString' | 'ssl'> {
+): { connectionString: string; ssl?: PoolConfig['ssl'] } {
   if (!ca || isLoopbackConnection(connectionString)) return { connectionString }
 
   const url = new URL(connectionString)
@@ -19,5 +19,8 @@ export function getDatabaseConnectionConfig(
 
 function isLoopbackConnection(connectionString: string) {
   const hostname = new URL(connectionString).hostname.toLowerCase()
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+  return hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '::1'
+    || hostname === '[::1]'
 }

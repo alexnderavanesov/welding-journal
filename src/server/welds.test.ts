@@ -340,11 +340,12 @@ describe('weld server pagination helpers', () => {
     expect(normalized.sort).toEqual({ fieldKey: 'officiality', direction: 'asc' })
   })
 
-  it('reads the production compatibility status before the renamed column', () => {
+  it('reads officiality from its final database column', () => {
     const compiled = new PgDialect().sqlToQuery(sql`select ${WELD_EFFECTIVE_OFFICIALITY}`)
 
-    expect(compiled.sql).toContain('coalesce')
-    expect(compiled.sql.indexOf('"status"')).toBeLessThan(compiled.sql.indexOf('"officiality"'))
+    expect(compiled.sql).toContain('"officiality"')
+    expect(compiled.sql).not.toContain('"status"')
+    expect(compiled.sql).not.toContain('coalesce')
   })
 
   it('checks the dispatcher index only for dispatcher-backed column options', () => {

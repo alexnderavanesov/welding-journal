@@ -61,7 +61,6 @@ export const WELD_BATCH_UPDATE_FIELD_KEYS = [
   ...WELD_FIELDS
     .filter((field) => !isVirtualWeldField(field) && !SYSTEM_FIELD_KEYS.has(field.key))
     .map((field) => field.key),
-  'legacyStatus',
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
@@ -96,7 +95,6 @@ export function toDbInsert(input: WeldInput, isCreate = false): NewWeldJoint {
     }
     data[field.key] = normalized[field.key] ?? null
   }
-  data.legacyStatus = normalized.officiality ?? null
   data.pstoRequired = normalized.pstoRequired ?? null
   data.pstoControlBasis = normalized.pstoControlBasis ?? null
   data.pstoCancellationDate = normalized.pstoCancellationDate ?? null

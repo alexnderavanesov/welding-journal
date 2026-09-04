@@ -253,6 +253,13 @@
       "when": 1788510632274,
       "tag": "0035_natural_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788521378889,
+      "tag": "0036_careful_jack_murdock",
+      "breakpoints": true
     }
   ]
 }

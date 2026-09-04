@@ -5,15 +5,14 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildWeldBatchUpdatePayload, toDbInsert } from '@/server/weld-persistence'
 
 describe('weld persistence', () => {
-  it('writes officiality to both columns during the production compatibility period', () => {
-    expect(toDbInsert({ officiality: 'неофициальный' })).toMatchObject({
-      officiality: 'неофициальный',
-      legacyStatus: 'неофициальный',
-    })
-    expect(toDbInsert({ officiality: null })).toMatchObject({
-      officiality: null,
-      legacyStatus: null,
-    })
+  it('writes officiality only to its final database column', () => {
+    const populated = toDbInsert({ officiality: 'неофициальный' })
+    const empty = toDbInsert({ officiality: null })
+
+    expect(populated).toMatchObject({ officiality: 'неофициальный' })
+    expect(populated).not.toHaveProperty('legacyStatus')
+    expect(empty).toMatchObject({ officiality: null })
+    expect(empty).not.toHaveProperty('legacyStatus')
   })
 
   it('persists a server-inherited pre-TO exemption in batch updates', () => {
@@ -53,11 +52,10 @@ describe('weld persistence', () => {
     ).preHeatTreatmentLnkExempt).toBe(true)
   })
 
-  it('keeps the compatibility status synchronized in batch updates', () => {
+  it('persists officiality in batch updates without a compatibility column', () => {
     const previous = {
       id: 3,
       officiality: null,
-      legacyStatus: null,
       preHeatTreatmentLnkExempt: false,
     } as WeldJoint
     const record = {
@@ -65,13 +63,13 @@ describe('weld persistence', () => {
       officiality: 'неофициальный',
     } as unknown as WeldRow
 
-    expect(buildWeldBatchUpdatePayload(
+    const payload = buildWeldBatchUpdatePayload(
       record,
       new Map([[previous.id, previous]]),
       new Date('2026-09-02T00:00:00.000Z'),
-    )).toMatchObject({
-      officiality: 'неофициальный',
-      legacyStatus: 'неофициальный',
-    })
+    )
+
+    expect(payload).toMatchObject({ officiality: 'неофициальный' })
+    expect(payload).not.toHaveProperty('legacyStatus')
   })
 })
