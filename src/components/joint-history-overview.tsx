@@ -1,5 +1,9 @@
 import { ArrowRight, CheckCircle2, ExternalLink, FileText, ListTodo, TriangleAlert } from 'lucide-react'
 
+import {
+  JointDispatcherTasksPanel,
+  type JointDispatcherTaskActionHandler,
+} from '@/components/joint-dispatcher-tasks-panel'
 import { Button } from '@/components/ui/button'
 import { isControlCancelledValue } from '@/lib/control-availability-values'
 import { formatDisplayDate } from '@/lib/date-format'
@@ -7,6 +11,7 @@ import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-actions'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { getLnkDisplayValue, isPstoNoNeed } from '@/lib/lnk-status'
 import { PRE_HEAT_TREATMENT_REPORT_FIELDS } from '@/lib/pre-heat-treatment-report-fields'
 import { buildPstoCycleTimeline, type PstoCycleSnapshot } from '@/lib/psto-cycle'
 import { buildPstoRepeatSystemDocumentRow } from '@/lib/system-document-virtual-row'
@@ -20,6 +25,7 @@ type JointHistoryOverviewProps = {
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: ReportTarget) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
+  onRunDispatcherTaskAction?: JointDispatcherTaskActionHandler
 }
 
 export function JointHistoryOverview({
@@ -28,11 +34,12 @@ export function JointHistoryOverview({
   onOpenDocument,
   onOpenReport,
   onRunNextAction,
+  onRunDispatcherTaskAction,
 }: JointHistoryOverviewProps) {
   const preControls = getPreHeatTreatmentControls(row)
   const cycles = buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? [])
   const pstoCancelled = isControlCancelledValue(row.pstoRequired)
-  const nextActions = buildJointNextActions(row, dispatcherTasks)
+  const nextActions = buildJointNextActions(row, dispatcherTasks).slice(0, 1)
   const mainControls = LNK_METHODS.filter((method) => [
     row[method.enabledKey],
     row[method.requestKey],
@@ -79,13 +86,15 @@ export function JointHistoryOverview({
         <HistorySection title="НК до ТО" empty={preControls.length === 0}>
           {preControls.map((control) => {
             const requestField = getPreFieldKey(control.method, 'requestName')
+            const resultField = getPreFieldKey(control.method, 'result')
             const conclusionField = getPreFieldKey(control.method, 'conclusionName')
+            const result = resultField ? getLnkDisplayValue(row, resultField) : control.result
             return (
               <HistoryLine
                 key={control.id}
                 label={control.method}
                 date={control.conclusionDate || control.requestDate}
-                value={text(control.result) || (hasValue(control.requestName) ? 'ожидает НК' : 'ожидает заявку')}
+                value={text(result) || (hasValue(control.requestName) ? 'ожидает НК' : 'ожидает заявку')}
                 documents={[
                   createDocument(control.requestName, requestField, row),
                   createDocument(control.conclusionName, conclusionField, row),
@@ -109,13 +118,13 @@ export function JointHistoryOverview({
           ))}
         </HistorySection>
 
-        <HistorySection title="Основной НК" empty={mainControls.length === 0}>
+        <HistorySection title="Основной этап НК" empty={mainControls.length === 0}>
           {mainControls.map((method) => (
             <HistoryLine
               key={method.code}
               label={method.code}
               date={row[method.conclusionDateKey] || row[method.requestDateKey]}
-              value={text(row[method.resultKey]) || (hasValue(row[method.requestKey]) ? 'ожидает НК' : 'ожидает заявку')}
+              value={text(getLnkDisplayValue(row, method.resultKey)) || (hasValue(row[method.requestKey]) ? 'ожидает НК' : 'ожидает заявку')}
               documents={[
                 createDocument(row[method.requestKey], method.requestKey, row),
                 createDocument(row[method.conclusionKey], method.conclusionKey, row),
@@ -137,17 +146,13 @@ export function JointHistoryOverview({
           ))}
         </HistorySection>
 
-        <HistorySection title="Активные ДЗ и ЗВ" empty={!dispatcherTaskCodes}>
-          {dispatcherTaskCodes ? (
-            <div className="flex flex-wrap gap-1.5 py-2">
-              {dispatcherTaskCodes.split(/[,;]+/).map((task) => task.trim()).filter(Boolean).map((task) => (
-                <span key={task} className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
-                  {task}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </HistorySection>
+        <JointDispatcherTasksPanel
+          row={row}
+          tasks={dispatcherTasks}
+          fallbackCodes={dispatcherTaskCodes}
+          excludedTaskKeys={nextActions.flatMap((action) => action.taskKey ? [action.taskKey] : [])}
+          onRunAction={onRunDispatcherTaskAction}
+        />
       </div>
     </div>
   )
@@ -170,6 +175,9 @@ function NextActionsPanel({
       </div>
       <div className="divide-y divide-slate-100">
         {actions.map((action) => {
+          const buttonLabel = action.kind === 'dispatcherTask'
+            ? action.taskActionLabel ?? action.buttonLabel
+            : action.buttonLabel
           const Icon = action.tone === 'success'
             ? CheckCircle2
             : action.tone === 'warning'
@@ -184,7 +192,7 @@ function NextActionsPanel({
                   <p className="mt-0.5 text-xs leading-5 text-slate-600">{action.description}</p>
                 </div>
               </div>
-              {action.buttonLabel ? (
+              {buttonLabel ? (
                 <Button
                   type="button"
                   size="sm"
@@ -194,7 +202,7 @@ function NextActionsPanel({
                     : 'h-8 shrink-0 gap-1.5 text-xs'}
                   onClick={() => onRunNextAction(row, action)}
                 >
-                  {action.buttonLabel}
+                  {buttonLabel}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               ) : null}
@@ -225,7 +233,9 @@ function PstoCycleLine({
     ? row.pstoRepeatCycles?.find((candidate) => candidate.sequence === cycle.sequence)
     : null
   const documentRow = repeat ? buildPstoRepeatSystemDocumentRow(row, repeat) : row
-  const workflowValue = text(cycle.tvmtResult)
+  const workflowValue = isPstoNoNeed(row, cycle.pstoResult)
+    ? 'нет потребности'
+    : text(cycle.tvmtResult)
     ? `ТВМТ: ${text(cycle.tvmtResult)}`
     : text(cycle.pstoResult)
       ? `ПСТО: ${text(cycle.pstoResult)} · ТВМТ ожидается`
@@ -331,7 +341,7 @@ function createDocument(value: unknown, fieldKey: WeldFieldKey | null, row: Weld
   return name && fieldKey ? { name, fieldKey, row } : null
 }
 
-function getPreFieldKey(methodCode: string, valueKey: 'requestName' | 'conclusionName') {
+function getPreFieldKey(methodCode: string, valueKey: 'requestName' | 'result' | 'conclusionName') {
   return PRE_HEAT_TREATMENT_REPORT_FIELDS.find(
     (field) => field.methodCode === methodCode && field.valueKey === valueKey,
   )?.fieldKey ?? null

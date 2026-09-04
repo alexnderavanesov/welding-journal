@@ -81,6 +81,7 @@ buildWhere,
 getColumnFilterOptionFilters,
 hasDispatcherTaskServerFilter,
 loadServerOtherSettings,
+WELD_ROW_VERSION_SELECT,
 WELD_TABLE_SELECT,
 WELDING_JOURNAL_ORDER_BY,
 } from '@/server/weld-server-shared'
@@ -343,7 +344,7 @@ export async function lockAndAssertWeldRowVersions(
           id: weldJoints.id,
           line: weldJoints.line,
           joint: weldJoints.joint,
-          version: sql<string>`xmin::text`.as('row_version'),
+          version: WELD_ROW_VERSION_SELECT,
         })
         .from(weldJoints)
         .where(inArray(weldJoints.id, [...targetIds]))

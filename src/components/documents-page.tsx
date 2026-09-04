@@ -237,6 +237,12 @@ type DocumentHistoryColumnOption = {
   count: number
 }
 
+export function getDocumentActionErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error)) return fallback
+  const message = error.message.trim()
+  return message && !/Failed query:/i.test(message) ? message : fallback
+}
+
 function toInputDate(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -659,7 +665,10 @@ export function DocumentsPage({
       .catch((error) => {
         if (!isActive) return
         setTemplateDocumentPreview(null)
-        setTemplatePreviewError(error instanceof Error ? error.message : 'Не удалось сформировать предпросмотр документа.')
+        setTemplatePreviewError(getDocumentActionErrorMessage(
+          error,
+          'Не удалось сформировать предпросмотр документа.',
+        ))
       })
       .finally(() => {
         if (isActive) setIsTemplatePreviewLoading(false)
@@ -694,10 +703,10 @@ export function DocumentsPage({
     } catch (error) {
       setGenerationNotice({
         tone: 'error',
-        text:
-          error instanceof Error
-            ? error.message
-            : `Не удалось сформировать ${activeDocumentProfile.label}.`,
+        text: getDocumentActionErrorMessage(
+          error,
+          `Не удалось сформировать ${activeDocumentProfile.label}.`,
+        ),
       })
     } finally {
       setIsGenerating(false)
@@ -1365,12 +1374,9 @@ function GeneratedDocumentsPanel({
   ).length
   const allPageSelected = documents.length > 0 && selectedPageCount === documents.length
   const hasActiveFilters = hasDocumentHistoryFilters(columnFilters)
-  const historyError =
-    historyQuery.error instanceof Error
-      ? historyQuery.error.message
-      : historyQuery.error
-        ? 'Не удалось загрузить историю документов.'
-        : null
+  const historyError = historyQuery.error
+    ? getDocumentActionErrorMessage(historyQuery.error, 'Не удалось загрузить историю документов.')
+    : null
 
   useEffect(() => {
     if (!historyQuery.isSuccess || historyQuery.isPlaceholderData) return
@@ -1440,7 +1446,7 @@ function GeneratedDocumentsPanel({
     try {
       await onOpenRows(documentRecord)
     } catch (error) {
-      setOpenRowsError(error instanceof Error ? error.message : 'Не удалось открыть стыки документа.')
+      setOpenRowsError(getDocumentActionErrorMessage(error, 'Не удалось открыть стыки документа.'))
     } finally {
       setOpeningRowsDocumentId(null)
     }
@@ -1451,7 +1457,7 @@ function GeneratedDocumentsPanel({
     try {
       await onOpenJointHistory(documentRecord)
     } catch (error) {
-      setOpenRowsError(error instanceof Error ? error.message : 'Не удалось открыть картину стыка.')
+      setOpenRowsError(getDocumentActionErrorMessage(error, 'Не удалось открыть картину стыка.'))
     } finally {
       setOpeningRowsDocumentId(null)
     }
@@ -1475,7 +1481,7 @@ function GeneratedDocumentsPanel({
         makeDocumentsArchiveFileName(documentLabel),
       )
     } catch (error) {
-      setOpenRowsError(error instanceof Error ? error.message : 'Не удалось скачать архив документов.')
+      setOpenRowsError(getDocumentActionErrorMessage(error, 'Не удалось скачать архив документов.'))
     } finally {
       setIsDownloadingArchive(false)
     }
@@ -1852,12 +1858,9 @@ function SystemDocumentsPanel({
   const hasActiveHistoryScope = hasActiveFilters || (
     documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all'
   )
-  const historyError =
-    historyQuery.error instanceof Error
-      ? historyQuery.error.message
-      : historyQuery.error
-        ? 'Не удалось загрузить системные документы.'
-        : null
+  const historyError = historyQuery.error
+    ? getDocumentActionErrorMessage(historyQuery.error, 'Не удалось загрузить системные документы.')
+    : null
   const hasTemplateForDocument = (documentRecord: SystemDocumentSummary) =>
     availableTemplateIds.has(getSystemDocumentTemplateId(documentRecord))
 
@@ -1888,11 +1891,10 @@ function SystemDocumentsPanel({
     try {
       await action()
     } catch (actionFailure) {
-      setActionError(
-        actionFailure instanceof Error
-          ? actionFailure.message
-          : 'Не удалось сформировать актуальную версию документа.',
-      )
+      setActionError(getDocumentActionErrorMessage(
+        actionFailure,
+        'Не удалось выполнить действие с документом.',
+      ))
     }
   }
 

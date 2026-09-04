@@ -1,6 +1,7 @@
 import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 import {
   getCurrentPstoCycle,
   getNextPstoCycleSequence,
@@ -31,6 +32,7 @@ export function buildRepeatPstoRequestCycle({
     'Укажите дату повторной заявки ПСТО.',
     'Дата повторной заявки ПСТО',
   )
+  assertPreHeatTreatmentAllowsCycle(row)
   if (getPstoTvmtWorkflowState(row) !== 'repeat-psto-required') {
     throw new Error(`Стык ${formatJoint(row)}: повторная ПСТО сейчас не требуется.`)
   }
@@ -170,6 +172,7 @@ function requireCurrentRepeatCycle(
   row: WeldRow,
   expectedState: 'waiting-psto' | 'waiting-tvmt-request' | 'waiting-tvmt',
 ) {
+  assertPreHeatTreatmentAllowsCycle(row)
   const cycle = getCurrentPstoCycle(row)
   if (cycle?.source !== 'repeat' || !cycle.id || getPstoTvmtWorkflowState(row) !== expectedState) {
     throw new Error(`Стык ${formatJoint(row)}: действие не соответствует текущему циклу ПСТО/ТВМТ.`)
@@ -179,6 +182,15 @@ function requireCurrentRepeatCycle(
     id: cycle.id,
     weldJointId: row.id,
   } satisfies PstoRepeatCycleWrite & { id: number }
+}
+
+function assertPreHeatTreatmentAllowsCycle(row: WeldRow) {
+  const rejected = getRejectedPreHeatTreatmentControls(row)
+  if (rejected.length === 0) return
+  throw new Error(
+    `Стык ${formatJoint(row)}: НК до ТО не годен (${rejected.map(({ methodCode }) => methodCode).join(', ')}); ` +
+    'ПСТО и ТВМТ для этого стыка не требуются.',
+  )
 }
 
 function requireDate(value: string, message: string, label: string) {

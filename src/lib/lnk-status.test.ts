@@ -34,6 +34,52 @@ describe('getWeldingJournalDisplayValue', () => {
     expect(getPstoDisplayValue(row, 'pstoResult')).toBe('нет потребности')
   })
 
+  it('shows no need for the whole pending PSTO cycle after rejected pre-TO control', () => {
+    const row = {
+      pstoRequired: 'да',
+      pstoResult: 'ожидает заявку',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 7,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'вырез',
+      }],
+      finalStatus: 'не годен',
+    } as unknown as WeldInput
+
+    expect(getPstoDisplayValue(row, 'pstoResult')).toBe('нет потребности')
+    expect(getPstoDisplayValue(row, 'pstoCycleSummary')).toBe('нет потребности')
+    expect(getJointChainResultItems(row).map(({ stage, label, value }) => ({ stage, label, value }))).toEqual([
+      { stage: 'pstoTvmt', label: 'Цикл 1', value: 'нет потребности' },
+      { stage: 'mainLnk', label: 'ВИК', value: 'нет потребности' },
+    ])
+  })
+
+  it('restores the normal PSTO sequence after the rejected pre-TO result is corrected', () => {
+    const row = {
+      pstoRequired: 'да',
+      pstoResult: 'ожидает заявку',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 7,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'годен',
+      }],
+      finalStatus: 'ожидает заявку',
+    } as unknown as WeldInput
+
+    expect(getPstoDisplayValue(row, 'pstoResult')).toBe('ожидает заявку')
+    expect(getPstoDisplayValue(row, 'pstoCycleSummary')).toBe('Основной · ожидает заявку ПСТО')
+    expect(getJointChainResultItems(row).map(({ label, value }) => ({ label, value }))).toContainEqual({
+      label: 'Цикл 1',
+      value: 'ожидает заявку ПСТО',
+    })
+  })
+
   it('shows the latest repeat PSTO and TVMT cycle instead of the primary cycle', () => {
     const row = {
       pstoRequired: 'да',

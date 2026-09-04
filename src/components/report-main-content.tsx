@@ -5,6 +5,10 @@ import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { ActiveReport } from '@/lib/home-state'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
+import type {
+  PercentageLineNavigationOutcome,
+  PercentageLineNavigationRequest,
+} from '@/lib/percentage-line-navigation'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { SystemDocumentNavigationRequest } from '@/lib/system-document-types'
@@ -33,6 +37,11 @@ type ReportMainContentProps = {
   ) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
+  percentageLineNavigationRequest?: PercentageLineNavigationRequest | null
+  onPercentageLineNavigationRequestHandled?: (
+    requestId: number,
+    outcome: PercentageLineNavigationOutcome,
+  ) => void
   onOpenReportRowIds?: (
     rowIds: number[],
     targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment',
@@ -61,6 +70,8 @@ export function ReportMainContent({
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
+  percentageLineNavigationRequest,
+  onPercentageLineNavigationRequestHandled,
   onOpenDocumentRows,
   onOpenDocumentJointHistory,
   documentsPageType,
@@ -80,6 +91,8 @@ export function ReportMainContent({
           onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
           onOpenReportRowIds={onOpenReportRowIds}
           onOpenWeldRowIds={onOpenWeldRowIds}
+          percentageLineNavigationRequest={percentageLineNavigationRequest}
+          onPercentageLineNavigationRequestHandled={onPercentageLineNavigationRequestHandled}
         />
       </Suspense>
     )

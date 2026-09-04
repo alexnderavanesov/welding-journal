@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { DocumentHistoryColumnFilter } from '@/components/documents-page'
+import {
+  DocumentHistoryColumnFilter,
+  getDocumentActionErrorMessage,
+} from '@/components/documents-page'
 
 describe('DocumentHistoryColumnFilter', () => {
   afterEach(() => {
@@ -58,5 +61,21 @@ describe('DocumentHistoryColumnFilter', () => {
     fireEvent.pointerDown(document.body)
 
     expect(screen.queryByRole('dialog', { name: 'Фильтр: Этап' })).not.toBeInTheDocument()
+  })
+})
+
+describe('getDocumentActionErrorMessage', () => {
+  it('does not expose database queries in document errors', () => {
+    expect(getDocumentActionErrorMessage(
+      new Error('Server error: Failed query: select * from "weld_joints"'),
+      'Не удалось выполнить действие с документом.',
+    )).toBe('Не удалось выполнить действие с документом.')
+  })
+
+  it('preserves user-facing validation messages', () => {
+    expect(getDocumentActionErrorMessage(
+      new Error('Название документа уже занято.'),
+      'Не удалось выполнить действие с документом.',
+    )).toBe('Название документа уже занято.')
   })
 })

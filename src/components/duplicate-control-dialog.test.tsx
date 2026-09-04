@@ -59,8 +59,9 @@ describe('DuplicateControlDialog', () => {
     )
 
     expect(screen.getByText('F1')).toBeInTheDocument()
-    expect(screen.getByText('F100')).toBeInTheDocument()
+    expect(screen.queryByText('F100')).not.toBeInTheDocument()
     expect(screen.queryByText('F101')).not.toBeInTheDocument()
+    expect(screen.getAllByText(/^F\d+$/)).toHaveLength(12)
     expect(screen.getByText(/1-100/)).toBeInTheDocument()
     expect(screen.getByText(/из 120 строк/)).toBeInTheDocument()
 

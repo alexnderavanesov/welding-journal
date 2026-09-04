@@ -67,6 +67,43 @@ describe('buildPstoResultRows', () => {
     })).toThrow('создайте заявки НК до ТО: ВИК')
   })
 
+  it('refuses a primary PSTO request or result after rejected pre-TO control', () => {
+    const rejected = {
+      id: 1,
+      joint: 'F1',
+      weldDate: '2026-08-20',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 11,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-21',
+        result: 'вырез',
+        conclusionDate: '2026-08-22',
+      }],
+    } as RowWithId
+
+    expect(() => buildPstoRequestRows({
+      records: [rejected],
+      requestName: 'ПСТО-25.08.26-002',
+      requestDate: '2026-08-23',
+    })).toThrow('ПСТО и ТВМТ для этого стыка не требуются')
+
+    expect(() => buildPstoResultRows({
+      records: [{
+        ...rejected,
+        pstoRequest: 'ПСТО-25.08.26-001',
+        pstoRequestDate: '2026-08-23',
+      }],
+      rows: [rejected],
+      pstoDate: '2026-08-25',
+      result: 'проведено',
+      diagramName: 'Диаграмма-1',
+    })).toThrow('ПСТО и ТВМТ для этого стыка не требуются')
+  })
+
   it('refuses a PSTO result dated before an existing pre-TO conclusion', () => {
     const row = {
       id: 1,

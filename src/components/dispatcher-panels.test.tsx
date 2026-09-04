@@ -41,6 +41,38 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.queryByRole('button', { name: 'Катушка досрочно' })).not.toBeInTheDocument()
   })
 
+  it('opens the same officiality workflow from an active chain task', () => {
+    const onOpenTaskOfficiality = vi.fn()
+    const task = {
+      kind: 'create',
+      key: 'create:unofficial',
+      row: {
+        id: 51,
+        projectTitle: 'Проект',
+        subtitleCode: 'Шифр',
+        line: 'Линия',
+        joint: 'F51',
+        rkResult: 'ремонт',
+      } as WeldRow,
+      sourceJoint: 'F51',
+      targetJoint: 'F51R1',
+      result: 'ремонт',
+      suffix: 'R',
+      methodCode: 'РК',
+    } as const
+
+    render(
+      <DispatcherTaskCard
+        task={task}
+        {...createHandlers(vi.fn())}
+        onOpenTaskOfficiality={onOpenTaskOfficiality}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сделать F51 неофициальным' }))
+    expect(onOpenTaskOfficiality).toHaveBeenCalledWith(task)
+  })
+
   it('keeps quick filters available while the task list is collapsed', () => {
     const { task, group } = createTaskGroup()
     const onShowTask = vi.fn()
@@ -282,6 +314,23 @@ describe('DispatcherTaskPanel', () => {
     expect(onShowTask).toHaveBeenCalledWith(task)
   })
 
+  it('opens the percentage-control assignment workflow from a missing-control task', () => {
+    const task = createPercentageTask('missing', 'Назначить контроль', 2)
+    const onRunTaskAction = vi.fn()
+
+    render(
+      <DispatcherTaskCard
+        task={task}
+        {...createHandlers(vi.fn())}
+        onRunTaskAction={onRunTaskAction}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить контроль' }))
+
+    expect(onRunTaskAction).toHaveBeenCalledWith(task, 'assign-percentage-controls')
+  })
+
   it('shows structured percentage-line indicators in expanded details', () => {
     const task: PercentageLineControlTask = {
       kind: 'percentage-line-control',
@@ -395,6 +444,7 @@ function createHandlers(onShowTask: DispatcherTaskCardHandlers['onShowTask']): D
     onEditPercentageLineTaskStamp: vi.fn(),
     onSuspendPercentageLineWelder: vi.fn(),
     onSkipPercentageLineWelderSuspension: vi.fn(),
+    onRunTaskAction: vi.fn(),
     canRunDispatcherMutation: true,
     canCreateEarlyCoil: true,
     isCreatePending: false,

@@ -1,4 +1,4 @@
-import { hasRejectedLnkResult } from '@/lib/lnk-status'
+import { getPstoCycleDisplaySummary, hasRejectedLnkResult } from '@/lib/lnk-status'
 import {
   LNK_GENERATED_FIELD_KEYS,
   LNK_METHODS,
@@ -14,8 +14,8 @@ import {
   isYesText,
 } from '@/lib/report-value-utils'
 import type { WeldInput } from '@/lib/weld-fields'
-import { getPstoCycleSummary, requiresPostHeatTreatmentCompletion } from '@/lib/tvmt-cycle'
-import { getPrimaryPstoStartStatusLabel, isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
+import { requiresPostHeatTreatmentCompletion } from '@/lib/tvmt-cycle'
+import { isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
 
 export function hasAnyLnkControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
@@ -78,7 +78,7 @@ export function toHeatTreatmentReportRow<T extends WeldInput>(row: T): T {
     ...reportRow,
     pstoCancellationDate: isCancelledPstoControl(reportRow) ? reportRow.pstoCancellationDate : null,
     pstoControlBasis: isCancelledPstoControl(reportRow) ? reportRow.pstoControlBasis : null,
-    pstoCycleSummary: getPstoCycleSummary(reportRow, getPrimaryPstoStartStatusLabel(reportRow)),
+    pstoCycleSummary: getPstoCycleDisplaySummary(reportRow),
   } as T
 }
 

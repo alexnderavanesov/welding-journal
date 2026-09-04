@@ -71,6 +71,7 @@ export type WeldTableProps = {
   editableFieldKeys?: ReadonlySet<WeldFieldKey>
   blockedFieldKeys?: ReadonlySet<WeldFieldKey>
   isCellEditable?: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
+  showBlockedEditableCellBackground?: boolean
   getDisplayValue?: (row: WeldRow, fieldKey: WeldFieldKey) => unknown
   onOpenChain?: (row: WeldRow) => void
   onFilterLine?: (row: WeldRow) => void
@@ -127,6 +128,7 @@ export function WeldTable({
   editableFieldKeys = EMPTY_FIELD_KEY_SET,
   blockedFieldKeys = EMPTY_FIELD_KEY_SET,
   isCellEditable = DEFAULT_CELL_EDITABLE,
+  showBlockedEditableCellBackground = true,
   getDisplayValue = DEFAULT_DISPLAY_VALUE,
   onOpenChain,
   onFilterLine,
@@ -588,6 +590,7 @@ export function WeldTable({
                 contextMenuAnchorRowId={contextMenu?.anchorRowId}
                 canEditField={canEditField}
                 canEditCell={canEditCell}
+                showBlockedEditableCellBackground={showBlockedEditableCellBackground}
                 stickyLeft={stickyIdentityColumns ? stickyLeft : 0}
                 stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
                 stickyIdentityColumns={stickyIdentityColumns}

@@ -103,6 +103,41 @@ describe('repeat PSTO and TVMT cycle updates', () => {
     }).sequence).toBe(2)
   })
 
+  it('does not start or continue a repeat cycle after rejected pre-TO control', () => {
+    const rejectedPreControl = {
+      ...failedPrimary,
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 10,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'ремонт',
+      }],
+    }
+
+    expect(() => buildRepeatPstoRequestCycle({
+      row: rejectedPreControl,
+      requestName: 'ПСТО-2',
+      requestDate: '2026-08-04',
+    })).toThrow('ПСТО и ТВМТ для этого стыка не требуются')
+
+    expect(() => buildRepeatPstoResultCycle({
+      row: {
+        ...rejectedPreControl,
+        pstoRepeatCycles: [{
+          id: 21,
+          weldJointId: 10,
+          sequence: 2,
+          pstoRequest: 'ПСТО-2',
+          pstoRequestDate: '2026-08-04',
+        }],
+      },
+      pstoDate: '2026-08-05',
+      diagramName: 'Диаграмма-2',
+    })).toThrow('ПСТО и ТВМТ для этого стыка не требуются')
+  })
+
   it('does not finish a repeat cycle after an already stored primary LNK set', () => {
     const waitingTvmt = {
       ...failedPrimary,

@@ -19,6 +19,7 @@ import type {
   RepeatedJointRenameTask,
   RepeatedJointTaskGroup,
 } from '@/lib/dispatcher-types'
+import type { DispatcherTaskActionId } from '@/lib/dispatcher-task-actions-model'
 
 export type DispatcherTaskCardHandlers = {
   isTaskExpanded: (task: DispatcherTask) => boolean
@@ -33,6 +34,7 @@ export type DispatcherTaskCardHandlers = {
   onEditPercentageLineTaskStamp: (task: PercentageLineControlTask) => void
   onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
   onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
+  onRunTaskAction: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>, actionId: DispatcherTaskActionId) => void
   canRunDispatcherMutation: boolean
   canCreateEarlyCoil: boolean
   isEarlyCoilPending: boolean

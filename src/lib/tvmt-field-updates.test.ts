@@ -96,6 +96,42 @@ describe('primary TVMT updates', () => {
     }), 'request')).toContain('негодная ТВМТ завершила текущий цикл')
   })
 
+  it('does not offer TVMT after rejected pre-TO control', () => {
+    const rejectedPreControl = {
+      ...row(),
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'вырез',
+      }],
+      finalStatus: 'не годен',
+    }
+
+    expect(canCreatePrimaryTvmtRequest(rejectedPreControl)).toBe(false)
+    expect(getTvmtWorkflowBlockReason(rejectedPreControl, 'request')).toContain('ТВМТ для этого стыка не требуется')
+    expect(() => buildPrimaryTvmtRequestRows({
+      records: [rejectedPreControl],
+      requestName: 'Заявка ТВМТ-002',
+      requestDate: '2026-08-22',
+    })).toThrow('заявка ТВМТ сейчас недоступна')
+
+    const awaitingResult = {
+      ...rejectedPreControl,
+      tvmtRequest: 'Заявка ТВМТ-002',
+      tvmtRequestDate: '2026-08-22',
+      tvmtResult: 'ожидает НК',
+    }
+    expect(canAddPrimaryTvmtResult(awaitingResult)).toBe(false)
+    expect(() => buildPrimaryTvmtResultRows({
+      records: [awaitingResult],
+      controlDate: '2026-08-23',
+      result: 'годен',
+      conclusionName: 'ЗНК-ТВМТ-002',
+    })).toThrow('результат ТВМТ сейчас недоступен')
+  })
+
   it('rejects malformed request and conclusion dates', () => {
     expect(() => buildPrimaryTvmtRequestRows({
       records: [row()],

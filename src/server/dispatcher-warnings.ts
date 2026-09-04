@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, ilike, notInArray, or, sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   dispatcherAcceptedWarnings,
@@ -30,6 +30,12 @@ import {
   parseDispatcherTaskIndexPayload,
 } from '@/lib/dispatcher-task-index-payload'
 import type { DispatcherTask, WelderStampExpiryTask } from '@/lib/dispatcher-types'
+import {
+  clampDispatcherAcceptedWarningPage,
+  getDispatcherAcceptedWarningPeriodStart,
+  normalizeDispatcherAcceptedWarningsRequest,
+  type DispatcherAcceptedWarningsRequest,
+} from '@/lib/dispatcher-accepted-warning-query'
 
 export type DispatcherAcceptedWarningPayload = {
   key: string
@@ -38,6 +44,14 @@ export type DispatcherAcceptedWarningPayload = {
   title: string
   context: string
   acceptedAt: string
+}
+
+export type DispatcherAcceptedWarningsPage = {
+  items: DispatcherAcceptedWarningPayload[]
+  total: number
+  overallTotal: number
+  page: number
+  pageSize: number
 }
 
 type AcceptDispatcherWarningInput = {
@@ -127,14 +141,63 @@ function parseJsonArray<T>(value: unknown): T[] {
   }
 }
 
-export const listDispatcherAcceptedWarnings = createServerFn({ method: 'GET' }).handler(async () => {
-  await assertSecurityScope('entry')
-  const rows = await requireDb()
-    .select()
-    .from(dispatcherAcceptedWarnings)
-    .orderBy(desc(dispatcherAcceptedWarnings.acceptedAt))
-  return rows.map(toPayload)
-})
+export const listDispatcherAcceptedWarnings = createServerFn({ method: 'GET' })
+  .validator((data: DispatcherAcceptedWarningsRequest | undefined) => normalizeDispatcherAcceptedWarningsRequest(data))
+  .handler(async ({ data }): Promise<DispatcherAcceptedWarningsPage> => {
+    await assertSecurityScope('entry')
+    const db = requireDb()
+    return db.transaction(async (tx) => {
+      const clauses: SQL[] = []
+
+      if (data.search) {
+        const search = `%${data.search}%`
+        const searchWhere = or(
+          ilike(dispatcherAcceptedWarnings.key, search),
+          ilike(dispatcherAcceptedWarnings.code, search),
+          ilike(dispatcherAcceptedWarnings.title, search),
+          ilike(dispatcherAcceptedWarnings.context, search),
+        )
+        if (searchWhere) clauses.push(searchWhere)
+      }
+
+      if (data.category === 'percentage-line-control' || data.category === 'early-coil') {
+        clauses.push(eq(dispatcherAcceptedWarnings.kind, data.category))
+      } else if (data.category === 'other') {
+        clauses.push(notInArray(dispatcherAcceptedWarnings.kind, ['percentage-line-control', 'early-coil']))
+      }
+
+      const periodStart = getDispatcherAcceptedWarningPeriodStart(data.period)
+      if (periodStart) clauses.push(gte(dispatcherAcceptedWarnings.acceptedAt, periodStart))
+
+      const where = clauses.length > 0 ? and(...clauses) : undefined
+      const orderBy = data.sort === 'oldest'
+        ? [asc(dispatcherAcceptedWarnings.acceptedAt), asc(dispatcherAcceptedWarnings.key)]
+        : [desc(dispatcherAcceptedWarnings.acceptedAt), desc(dispatcherAcceptedWarnings.key)]
+      const [countRow] = await tx
+        .select({
+          overallTotal: count(),
+          total: where ? sql<number>`count(*) filter (where ${where})` : count(),
+        })
+        .from(dispatcherAcceptedWarnings)
+      const total = Number(countRow?.total) || 0
+      const page = clampDispatcherAcceptedWarningPage(data.page, total, data.pageSize)
+      const rows = await tx
+        .select()
+        .from(dispatcherAcceptedWarnings)
+        .where(where)
+        .orderBy(...orderBy)
+        .limit(data.pageSize)
+        .offset((page - 1) * data.pageSize)
+
+      return {
+        items: rows.map(toPayload),
+        total,
+        overallTotal: Number(countRow?.overallTotal) || 0,
+        page,
+        pageSize: data.pageSize,
+      }
+    }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+  })
 
 export const revokeDispatcherAcceptedWarning = createServerFn({ method: 'POST' })
   .validator((data: { key: string }) => ({ key: String(data?.key ?? '').trim() }))

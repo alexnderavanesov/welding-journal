@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LnkResultManagerDialog } from '@/components/lnk-result-manager-dialog'
@@ -95,14 +95,16 @@ describe('LnkResultManagerDialog', () => {
     expect(actions.onOpenDocument).toHaveBeenCalledWith(vikRow, 'vikConclusion')
   })
 
-  it('searches the registry by line and conclusion', () => {
+  it('searches the registry by line and conclusion', async () => {
     renderDialog({ initialEntryKey: '' })
 
     fireEvent.change(screen.getByPlaceholderText('Стык, линия, заявка или заключение'), {
       target: { value: 'РК-24' },
     })
 
-    expect(screen.queryByRole('button', { name: /Линия-1/ })).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Линия-1/ })).not.toBeInTheDocument()
+    })
     fireEvent.click(screen.getByRole('button', { name: /Линия-2/ }))
     expect(screen.getByRole('heading', { name: 'Линия-2 · F2' })).toBeInTheDocument()
   })
@@ -116,6 +118,29 @@ describe('LnkResultManagerDialog', () => {
     expect(screen.getByRole('heading', { name: 'Линия-2 · F2' })).toBeInTheDocument()
     expect(screen.queryByText('Выберите результат слева, чтобы открыть его карточку.')).not.toBeInTheDocument()
     expect(screen.getByRole('dialog')).toHaveClass('h-[calc(100dvh-1rem)]')
+  })
+
+  it('renders only the visible entries of a large result registry', () => {
+    const rows = Array.from({ length: 120 }, (_, index) => ({
+      ...vikRow,
+      id: index + 1,
+      line: 'Линия',
+      joint: `F${index + 1}`,
+      vikConclusion: `ВИК-${index + 1}`,
+    })) as WeldRow[]
+    const entries = rows.map((row) => ({
+      row,
+      method: vikMethod,
+      changeKey: `${row.id}:vikRequest`,
+    }))
+
+    renderDialog({ rows, entries, initialEntryKey: entries[0].changeKey })
+
+    const registryButtons = screen.getAllByRole('button').filter((button) =>
+      /^Линия · F\d+/.test(button.textContent ?? ''),
+    )
+    expect(registryButtons).toHaveLength(12)
+    expect(screen.queryByRole('button', { name: /Линия · F100/ })).not.toBeInTheDocument()
   })
 
   it('opens the exact result in the welding journal from its context menu', () => {

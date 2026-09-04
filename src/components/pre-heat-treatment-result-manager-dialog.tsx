@@ -4,9 +4,11 @@ import { FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
+import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
+import { BufferedFilterInput } from '@/components/result-filters'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -121,9 +123,12 @@ export function PreHeatTreatmentResultManagerDialog({
     resetKeys: [methodFilter, registryMode, requestFilter, resultFilter, search],
   })
   const [selectedRelationId, setSelectedRelationId] = useState<number | null>(initialRelationId ?? null)
-  const selectedEntry = filteredEntries.find((entry) => entry.control.id === selectedRelationId)
-    ?? filteredEntries[0]
-    ?? null
+  const selectedEntry = useMemo(
+    () => filteredEntries.find((entry) => entry.control.id === selectedRelationId)
+      ?? filteredEntries[0]
+      ?? null,
+    [filteredEntries, selectedRelationId],
+  )
   const [requestDraft, setRequestDraft] = useState(() => createRequestDraft(selectedEntry?.control))
   const [resultDraft, setResultDraft] = useState(() => createResultDraft(selectedEntry?.control))
 
@@ -247,13 +252,13 @@ export function PreHeatTreatmentResultManagerDialog({
             </Button>
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
+              <BufferedFilterInput
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onValueChange={setSearch}
                 placeholder={registryMode === 'request'
                   ? 'Название, дата, стык или линия'
                   : 'Стык, линия, заявка или заключение'}
-                className="pl-9"
+                className="h-10 bg-white pl-9"
               />
             </label>
             <Select
@@ -308,10 +313,13 @@ export function PreHeatTreatmentResultManagerDialog({
               <span>Стыков в области: {rows.length}</span>
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="flex min-h-0 flex-1 flex-col p-2">
             {pagination.pageItems.length > 0 ? (
-              <div className="space-y-1">
-                {pagination.pageItems.map((entry) => {
+              <DialogVirtualizedRows
+                items={pagination.pageItems}
+                estimateRowHeight={112}
+                getItemKey={(entry) => entry.control.id}
+                renderItem={(entry) => {
                   const selected = entry.control.id === selectedEntry?.control.id
                   return (
                     <button
@@ -319,7 +327,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       type="button"
                       onClick={() => setSelectedRelationId(entry.control.id)}
                       onContextMenu={(event) => openContextMenu(event, entry)}
-                      className={`w-full rounded-md border px-3 py-3 text-left transition ${selected
+                      className={`mb-1 w-full rounded-md border px-3 py-3 text-left transition ${selected
                         ? 'border-sky-300 bg-white shadow-sm ring-1 ring-sky-100'
                         : 'border-transparent hover:border-slate-200 hover:bg-white'}`}
                     >
@@ -364,8 +372,9 @@ export function PreHeatTreatmentResultManagerDialog({
                       </span>
                     </button>
                   )
-                })}
-              </div>
+                }}
+                footer={null}
+              />
             ) : (
               <RequestManagerEmptyState>
                 {entries.length === 0

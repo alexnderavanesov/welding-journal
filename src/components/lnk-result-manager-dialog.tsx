@@ -3,6 +3,7 @@ import { CheckSquare2, ClipboardCheck, FileSpreadsheet, ListFilter, Pencil, Plus
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
+import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkResultManagerActions } from '@/components/lnk-result-manager-actions'
@@ -14,9 +15,9 @@ import {
 import { LnkResultManagerFooter } from '@/components/lnk-result-manager-footer'
 import { LnkResultManagerSummary } from '@/components/lnk-result-manager-summary'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
+import { BufferedFilterInput } from '@/components/result-filters'
 import { ResultManagerDocumentEditor } from '@/components/result-manager-document-editor'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -141,10 +142,11 @@ export function LnkResultManagerDialog({
     setSelectedEntryKey(filteredEntries[0]?.changeKey ?? '')
   }, [filteredEntries, selectedEntryKey])
 
-  const activeSelectedEntryKey = selectedEntryKey && filteredEntries.some((entry) => entry.changeKey === selectedEntryKey)
-    ? selectedEntryKey
-    : filteredEntries[0]?.changeKey ?? ''
-  const selectedEntry = filteredEntries.find((entry) => entry.changeKey === activeSelectedEntryKey)
+  const selectedEntry = useMemo(
+    () => filteredEntries.find((entry) => entry.changeKey === selectedEntryKey) ?? filteredEntries[0],
+    [filteredEntries, selectedEntryKey],
+  )
+  const activeSelectedEntryKey = selectedEntry?.changeKey ?? ''
   const selectedRow = selectedEntry?.row
   const selectedMethod = selectedEntry?.method
   const selectedResult = selectedEntry
@@ -254,9 +256,9 @@ export function LnkResultManagerDialog({
             </Button>
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
+              <BufferedFilterInput
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onValueChange={setSearch}
                 placeholder="Стык, линия, заявка или заключение"
                 className="h-10 bg-white pl-9"
               />
@@ -299,7 +301,7 @@ export function LnkResultManagerDialog({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-2 lg:max-h-none">
+          <div className="flex min-h-0 flex-1 flex-col p-2 lg:max-h-none">
             {!isContextReady ? (
               <div className="px-3 py-10 text-center text-sm text-slate-500">
                 Загружаю результаты ЛНК...
@@ -309,8 +311,11 @@ export function LnkResultManagerDialog({
                 {entries.length === 0 ? 'В выбранной области нет внесенных результатов.' : 'По заданным условиям результаты не найдены.'}
               </div>
             ) : (
-              <div className="space-y-1">
-                {filteredEntries.map((entry) => {
+              <DialogVirtualizedRows
+                items={filteredEntries}
+                estimateRowHeight={112}
+                getItemKey={(entry) => entry.changeKey}
+                renderItem={(entry) => {
                   const { row, method, changeKey } = entry
                   const currentResult = String(row[method.resultKey] ?? '').trim()
                   const pendingResult = pendingResultChanges[changeKey]
@@ -319,11 +324,10 @@ export function LnkResultManagerDialog({
                   const selected = changeKey === activeSelectedEntryKey
                   return (
                     <button
-                      key={changeKey}
                       type="button"
                       onClick={() => setSelectedEntryKey(changeKey)}
                       onContextMenu={(event) => openResultContextMenu(event, entry)}
-                      className={`w-full rounded-md border px-3 py-3 text-left transition ${
+                      className={`mb-1 w-full rounded-md border px-3 py-3 text-left transition ${
                         selected
                           ? 'border-sky-300 bg-white shadow-sm ring-1 ring-sky-100'
                           : 'border-transparent hover:border-slate-200 hover:bg-white'
@@ -348,8 +352,9 @@ export function LnkResultManagerDialog({
                       </span>
                     </button>
                   )
-                })}
-              </div>
+                }}
+                footer={null}
+              />
             )}
           </div>
         </aside>

@@ -5,6 +5,7 @@ import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogInlineEmptyState } from '@/components/dialog-inline-empty-state'
 import { JointChainCard } from '@/components/joint-chain-card'
 import { JointHistoryOverview } from '@/components/joint-history-overview'
+import type { JointDispatcherTaskActionHandler } from '@/components/joint-dispatcher-tasks-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
 import type {
@@ -13,7 +14,8 @@ import type {
   RepeatedJointTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
-import { getJointChainSubtitle } from '@/lib/joint-display'
+import { getJointChainSubtitle, isUnofficialJoint } from '@/lib/joint-display'
+import { hasRejectedLnkResult } from '@/lib/lnk-status'
 import {
   getJointBranchRows,
   getJointCoilRelations,
@@ -37,6 +39,7 @@ type JointChainDialogProps = {
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
+  onRunDispatcherTaskAction: JointDispatcherTaskActionHandler
   canCreateRepeatedJoint: boolean
   isRepeatedJointPending: boolean
   onCreateRepeatedJoint: (task: RepeatedJointCreateTask) => void
@@ -46,6 +49,7 @@ type JointChainDialogProps = {
   canCreateEarlyCoil: boolean
   isEarlyCoilPending: boolean
   onCreateEarlyCoil: (row: WeldRow, candidate: WeldJointChainEarlyCoilCandidate) => void
+  onOpenOfficiality: (row: WeldRow, officiality: 'official' | 'unofficial') => void
   onRetry: () => void
 }
 
@@ -63,6 +67,7 @@ export function JointChainDialog({
   onOpenDocument,
   onOpenReport,
   onRunNextAction,
+  onRunDispatcherTaskAction,
   canCreateRepeatedJoint,
   isRepeatedJointPending,
   onCreateRepeatedJoint,
@@ -72,6 +77,7 @@ export function JointChainDialog({
   canCreateEarlyCoil,
   isEarlyCoilPending,
   onCreateEarlyCoil,
+  onOpenOfficiality,
   onRetry,
 }: JointChainDialogProps) {
   const [selectedRowId, setSelectedRowId] = useState(record.id)
@@ -91,6 +97,14 @@ export function JointChainDialog({
   const earlyCoilCandidate = earlyCoilCandidates.find((candidate) =>
     branchRowIds.has(candidate.sourceRowId),
   ) ?? null
+  const hasSelectedRowContinuationAction = repeatedJointCreateTasks.some(
+    (task) => task.row.id === selectedRow.id,
+  ) || dispatcherTasks.some(
+    (task) => task.kind === 'coil' && task.row.id === selectedRow.id,
+  )
+  const hasOfficialityAction = hasSelectedRowContinuationAction && (
+    isUnofficialJoint(selectedRow) || hasRejectedLnkResult(selectedRow)
+  )
 
   useEffect(() => {
     setSelectedRowId(record.id)
@@ -170,11 +184,14 @@ export function JointChainDialog({
                 </div>
                 {(canCreateRepeatedJoint && repeatedJointCreateTasks.length > 0) ||
                 (canRenameRepeatedJoint && repeatedJointRenameTasks.length > 0) ||
-                (canCreateEarlyCoil && earlyCoilCandidate) ? (
+                (canCreateEarlyCoil && earlyCoilCandidate) ||
+                hasOfficialityAction ? (
                   <ChainContinuationActionsPanel
+                    selectedRow={selectedRow}
                     repeatedJointTasks={canCreateRepeatedJoint ? repeatedJointCreateTasks : []}
                     repeatedJointRenameTasks={canRenameRepeatedJoint ? repeatedJointRenameTasks : []}
                     earlyCoilCandidate={canCreateEarlyCoil ? earlyCoilCandidate : null}
+                    showOfficialityAction={hasOfficialityAction}
                     rows={rows}
                     isRepeatedJointPending={isRepeatedJointPending}
                     isRenameRepeatedJointPending={isRenameRepeatedJointPending}
@@ -182,6 +199,7 @@ export function JointChainDialog({
                     onCreateRepeatedJoint={onCreateRepeatedJoint}
                     onRenameRepeatedJoint={onRenameRepeatedJoint}
                     onCreateEarlyCoil={onCreateEarlyCoil}
+                    onOpenOfficiality={onOpenOfficiality}
                   />
                 ) : null}
               </div>
@@ -206,6 +224,7 @@ export function JointChainDialog({
                 onOpenDocument={onOpenDocument}
                 onOpenReport={onOpenReport}
                 onRunNextAction={onRunNextAction}
+                onRunDispatcherTaskAction={onRunDispatcherTaskAction}
               />
             </main>
           </div>
@@ -264,9 +283,11 @@ function CoilContinuationPanel({
 }
 
 function ChainContinuationActionsPanel({
+  selectedRow,
   repeatedJointTasks,
   repeatedJointRenameTasks,
   earlyCoilCandidate,
+  showOfficialityAction,
   rows,
   isRepeatedJointPending,
   isRenameRepeatedJointPending,
@@ -274,10 +295,13 @@ function ChainContinuationActionsPanel({
   onCreateRepeatedJoint,
   onRenameRepeatedJoint,
   onCreateEarlyCoil,
+  onOpenOfficiality,
 }: {
+  selectedRow: WeldRow
   repeatedJointTasks: RepeatedJointCreateTask[]
   repeatedJointRenameTasks: RepeatedJointRenameTask[]
   earlyCoilCandidate: WeldJointChainEarlyCoilCandidate | null
+  showOfficialityAction: boolean
   rows: WeldRow[]
   isRepeatedJointPending: boolean
   isRenameRepeatedJointPending: boolean
@@ -285,6 +309,7 @@ function ChainContinuationActionsPanel({
   onCreateRepeatedJoint: (task: RepeatedJointCreateTask) => void
   onRenameRepeatedJoint: (task: RepeatedJointRenameTask) => void
   onCreateEarlyCoil: (row: WeldRow, candidate: WeldJointChainEarlyCoilCandidate) => void
+  onOpenOfficiality: (row: WeldRow, officiality: 'official' | 'unofficial') => void
 }) {
   const earlyCoilSourceRow = earlyCoilCandidate
     ? rows.find((row) => row.id === earlyCoilCandidate.sourceRowId) ?? null
@@ -292,17 +317,26 @@ function ChainContinuationActionsPanel({
   const hasRepeatedJointAction = repeatedJointTasks.length > 0
   const hasRenameAction = repeatedJointRenameTasks.length > 0
   const hasEarlyCoilAction = Boolean(earlyCoilCandidate && earlyCoilSourceRow)
+  const officialityAction = showOfficialityAction
+    ? isUnofficialJoint(selectedRow)
+      ? { value: 'official' as const, label: `Сделать ${String(selectedRow.joint ?? '-')} официальным` }
+      : hasRejectedLnkResult(selectedRow)
+        ? { value: 'unofficial' as const, label: `Сделать ${String(selectedRow.joint ?? '-')} неофициальным` }
+        : null
+    : null
   const replacementJoint = earlyCoilCandidate?.replacementJoint ?? null
-  if (!hasRepeatedJointAction && !hasRenameAction && !hasEarlyCoilAction) return null
+  if (!hasRepeatedJointAction && !hasRenameAction && !hasEarlyCoilAction && !officialityAction) return null
   const title = hasRenameAction
     ? 'Исправить имена цепочки'
     : hasRepeatedJointAction && hasEarlyCoilAction
-    ? 'Выберите продолжение цепочки'
-    : hasRepeatedJointAction
-      ? 'Продолжить цепочку'
-      : replacementJoint
-        ? `Заменить пустой ${replacementJoint} на катушку`
-        : 'Нужна катушка до лимита ремонтов'
+      ? 'Выберите продолжение цепочки'
+      : hasRepeatedJointAction
+        ? 'Продолжить цепочку'
+        : replacementJoint
+          ? `Заменить пустой ${replacementJoint} на катушку`
+          : officialityAction
+            ? 'Управление цепочкой'
+            : 'Нужна катушка до лимита ремонтов'
   return (
     <section className="mt-4 border-t border-amber-200 pt-4" aria-label="Продолжение цепочки стыка">
       <div className="flex items-start gap-2.5">
@@ -313,12 +347,18 @@ function ChainContinuationActionsPanel({
             {hasRenameAction
               ? 'Диспетчер повторно прошел фактические результаты: порядок R/W отражает их историю, а номера каждого вида пересчитаны заново.'
               : hasRepeatedJointAction && hasEarlyCoilAction
-              ? `Можно продолжить цепочку по счетчику либо завершить ветку ${earlyCoilCandidate!.sourceJoint} катушкой.`
+              ? officialityAction
+                  ? `Можно продолжить цепочку по счетчику, сменить официальность выбранного стыка либо завершить ветку ${earlyCoilCandidate!.sourceJoint} катушкой.`
+                  : `Можно продолжить цепочку по счетчику либо завершить ветку ${earlyCoilCandidate!.sourceJoint} катушкой.`
               : hasRepeatedJointAction
-                ? 'Диспетчер подтвердил допустимое продолжение цепочки.'
+                ? officialityAction
+                  ? 'Можно продолжить цепочку по счетчику либо сменить официальность выбранного стыка.'
+                  : 'Диспетчер подтвердил допустимое продолжение цепочки.'
                 : replacementJoint
                   ? `Будут созданы ${earlyCoilCandidate!.targetJoints.join(' и ')} по негодному результату ${earlyCoilCandidate!.sourceJoint}.`
-                  : `Можно завершить ветку ${earlyCoilCandidate!.sourceJoint} и создать ${earlyCoilCandidate!.targetJoints.join(' + ')}.`}
+                  : hasEarlyCoilAction
+                    ? `Можно завершить ветку ${earlyCoilCandidate!.sourceJoint} и создать ${earlyCoilCandidate!.targetJoints.join(' + ')}.`
+                    : 'Официальность выбранного стыка можно изменить с предварительной проверкой всей цепочки.'}
           </p>
         </div>
       </div>
@@ -338,18 +378,31 @@ function ChainContinuationActionsPanel({
           </Button>
         ))}
         {repeatedJointTasks.map((task) => (
+          <div key={task.key} className="space-y-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-full border-sky-300 bg-sky-50 text-xs font-semibold text-sky-900 hover:bg-sky-100"
+              disabled={isRepeatedJointPending}
+              onClick={() => onCreateRepeatedJoint(task)}
+            >
+              Создать {task.targetJoint}
+            </Button>
+          </div>
+        ))}
+        {officialityAction ? (
           <Button
-            key={task.key}
             type="button"
             size="sm"
             variant="outline"
-            className="h-8 w-full border-sky-300 bg-sky-50 text-xs font-semibold text-sky-900 hover:bg-sky-100"
-            disabled={isRepeatedJointPending}
-            onClick={() => onCreateRepeatedJoint(task)}
+            className="h-auto min-h-8 w-full whitespace-normal border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+            disabled={isRepeatedJointPending || isRenameRepeatedJointPending || isEarlyCoilPending}
+            onClick={() => onOpenOfficiality(selectedRow, officialityAction.value)}
           >
-            Создать {task.targetJoint}
+            {officialityAction.label}
           </Button>
-        ))}
+        ) : null}
         {earlyCoilCandidate && earlyCoilSourceRow ? (
           <Button
             type="button"

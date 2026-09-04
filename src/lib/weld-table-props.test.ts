@@ -15,6 +15,8 @@ describe('createWeldTableProps joint history routing', () => {
     expect(lnkProps.onOpenJointOverview).toBe(onOpenJointOverview)
     expect(pstoProps.onOpenJoint).toBe(onOpenJoint)
     expect(pstoProps.onOpenJointOverview).toBe(onOpenJointOverview)
+    expect(lnkProps.showBlockedEditableCellBackground).toBe(false)
+    expect(pstoProps.showBlockedEditableCellBackground).toBe(true)
   })
 
   it('enables defect cells only for rejected results in the matching stage', () => {

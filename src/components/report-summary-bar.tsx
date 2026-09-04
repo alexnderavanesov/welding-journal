@@ -46,10 +46,10 @@ export function ReportSummaryBar({
 
   return (
     <div
-      className="sticky z-20 flex min-h-8 items-center bg-[#f4f7f9]/95 text-sm text-muted-foreground backdrop-blur-sm"
+      className="sticky isolate z-20 flex h-8 min-h-8 items-center overflow-hidden bg-[#f4f7f9] text-sm leading-5 text-muted-foreground"
       style={{ left, width: `calc(100vw - ${left + 24}px)` }}
     >
-      <span className="min-w-0 truncate">{summaryText}</span>
+      <span className="block min-w-0 truncate leading-5">{summaryText}</span>
     </div>
   )
 }

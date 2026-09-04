@@ -1,7 +1,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
-import type { DispatcherTask, PercentageLineControlTask, WeldDraft, WeldRow } from '@/lib/dispatcher-types'
+import type { DispatcherTask, PercentageLineControlTask, RepeatedJointTask, WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import type { ActiveReport } from '@/lib/home-state'
 import {
@@ -34,6 +34,8 @@ import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-de
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { useJointChainActions } from '@/lib/use-joint-chain-actions'
 import type { JointNextAction } from '@/lib/joint-next-actions'
+import type { DispatcherTaskActionId } from '@/lib/dispatcher-task-actions-model'
+import { isUnofficialJoint } from '@/lib/joint-display'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
@@ -104,7 +106,10 @@ import {
   createDefaultLnkResultDraft,
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
-import { canCreatePstoRequest } from '@/lib/psto-status'
+import {
+  canAddPstoWorkflowResult,
+  canCreatePstoWorkflowRequest,
+} from '@/lib/psto-status'
 import { canAddTvmtResult, canCreateTvmtRequest } from '@/lib/tvmt-field-updates'
 import {
   canAddPreHeatTreatmentResult,
@@ -140,9 +145,7 @@ import {
 } from '@/lib/use-psto-cycle-correction-mutation'
 import { getPstoCycleStageLabel } from '@/lib/psto-cycle-corrections'
 import {
-  canCreateRepeatPstoCycle,
   getCurrentPstoCycle,
-  getPstoTvmtWorkflowState,
 } from '@/lib/tvmt-cycle'
 import { withOfficialJoint } from '@/lib/report-control-state'
 import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
@@ -163,6 +166,7 @@ import { useSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-i
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 import {
   buildLineFilters,
+  buildExactJointFilters,
   buildPercentageLineStampFilters,
   buildRowIdListFilters,
   type PercentageLineStampFilter,
@@ -177,6 +181,15 @@ import {
   type PercentageControlMethod,
 } from '@/lib/percentage-line-summary'
 import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
+import type {
+  PercentageLineNavigationOutcome,
+  PercentageLineNavigationRequest,
+} from '@/lib/percentage-line-navigation'
+import { createEmptyWelderStampFilters } from '@/lib/welder-stamp-filters'
+import {
+  findOfficialWeldRowStampField,
+  getOfficialWeldRowStamps,
+} from '@/lib/weld-row-stamps'
 import {
   createEmptyDuplicateControlDraft,
   type DuplicateControlDraft,
@@ -208,6 +221,7 @@ type DeferredJointNextAction = {
   targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment'
   row: WeldRow
   action: JointNextAction
+  runDispatcherAction?: boolean
 }
 
 export function useHomePageController(options: UseHomePageControllerOptions = {}) {
@@ -221,6 +235,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [controlProcessSettings.layeredControlEnabled, controlProcessSettings.preHeatTreatmentLnkEnabled],
   )
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [percentageLineNavigationRequest, setPercentageLineNavigationRequest] =
+    useState<PercentageLineNavigationRequest | null>(null)
+  const percentageLineNavigationRequestIdRef = useRef(0)
   const lnkController = useHomeLnkController()
   const pstoController = useHomePstoController()
   const weldEditorController = useHomeWeldEditorController()
@@ -690,8 +707,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }),
     [finalStatusContextQuery.data],
   )
-  const isRemoteFinalStatusContextReady =
-    finalStatusContextQuery.data !== undefined && !finalStatusContextQuery.isFetching
+  const isRemoteFinalStatusContextReady = finalStatusContextQuery.data !== undefined
   const {
     duplicateControls,
     saveDuplicateControlMutation,
@@ -727,16 +743,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     otherSettings,
   )
   const isLnkRowsContextReady = shouldLoadFullWeldRows
-    ? weldsQuery.data !== undefined && !weldsQuery.isFetching
+    ? weldsQuery.data !== undefined
     : shouldLoadLnkContext &&
       lnkContextQuery.data !== undefined &&
-      !lnkContextQuery.isFetching &&
       isRemoteFinalStatusContextReady
   const isPstoRowsContextReady = shouldLoadFullWeldRows
-    ? weldsQuery.data !== undefined && !weldsQuery.isFetching
+    ? weldsQuery.data !== undefined
     : shouldLoadPstoContext &&
       pstoContextQuery.data !== undefined &&
-      !pstoContextQuery.isFetching &&
       isRemoteFinalStatusContextReady
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
@@ -894,6 +908,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     lnkRequestManagerMutation,
     lnkResultMutation,
     lnkOfficialityMutation,
+    lnkOfficialityPreviewMutation,
     lnkResultCorrectionMutation,
     lnkResultReplacementMutation,
     lnkConclusionCorrectionMutation,
@@ -1368,7 +1383,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   } = useLnkOfficialityDerivedState({
     lnkRows,
     lnkOfficialityDraft,
-    isLnkOfficialitySaving: lnkOfficialityMutation.isPending,
+    isLnkOfficialitySaving: lnkOfficialityMutation.isPending || lnkOfficialityPreviewMutation.isPending,
   })
   const {
     openLnkOfficialityModal,
@@ -1382,12 +1397,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     selectedRows: selectedLnkOfficialityRows,
     isSaveDisabled: isLnkOfficialitySaveDisabled,
     mutation: lnkOfficialityMutation,
+    previewMutation: lnkOfficialityPreviewMutation,
     setDraft: setLnkOfficialityDraft,
     setIsOpen: setIsLnkOfficialityModalOpen,
+    setMessage,
   })
   const filteredDuplicateControlRows = useMemo(
-    () => filterDuplicateControlRows(rows, duplicateControlDraft.search, duplicateControlDraft.rowIds),
-    [duplicateControlDraft.search, duplicateControlDraft.rowIds, rows],
+    () => filterDuplicateControlRows(rows, duplicateControlDraft.search),
+    [duplicateControlDraft.search, rows],
   )
   const selectedDuplicateControlRows = useMemo(
     () => rows.filter((row) => duplicateControlDraft.rowIds.has(row.id)),
@@ -2102,7 +2119,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isTaskExpanded: isRepeatedJointTaskExpanded,
     onToggleDetails: toggleRepeatedJointTaskDetails,
     onShowTask: showRepeatedJointTask,
-    onOpenTaskOfficiality: openPercentageLineTaskOfficiality,
+    onOpenTaskOfficiality: openDispatcherTaskOfficiality,
     onCreateTask: createRepeatedJoint,
     onCreateEarlyCoil: (task) => runProtectedEdit('досрочная врезка катушки', () => createEarlyCoil(task)),
     onDeleteTask: (task) => runProtectedDelete('удаление повторного стыка', () => deleteObsoleteRepeatedJoint(task)),
@@ -2112,6 +2129,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onSuspendPercentageLineWelder: (task) =>
       runProtectedEdit('добавление отстранения сварщика', () => openWelderSuspensionFromPercentageLineTask(task)),
     onSkipPercentageLineWelderSuspension: skipWelderSuspensionFromPercentageLineTask,
+    onRunTaskAction: (task, actionId) => {
+      void runDispatcherTaskAction(task.row, task, actionId)
+    },
     isCreatePending: repeatedJointMutation.isPending,
     isEarlyCoilPending: earlyCoilMutation.isPending,
     isDeletePending: obsoleteRepeatedJointMutation.isPending,
@@ -2131,13 +2151,29 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openAddLnkResultModalForRow: openAddLnkWorkflowResultForRow,
   })
 
-  const openLnkOfficialityModalForRow = (row: WeldRow) => {
+  const openLnkOfficialityModalForRow = (
+    row: WeldRow,
+    officiality: 'official' | 'unofficial' | '' = '',
+  ) => {
     setLnkOfficialityDraft({
       rowIds: new Set([row.id]),
       search: String(row.joint ?? row.line ?? ''),
-      officiality: '',
+      officiality,
     })
     setIsLnkOfficialityModalOpen(true)
+  }
+
+  const openLnkOfficialityWorkflowForRow = (
+    row: WeldRow,
+    officiality: 'official' | 'unofficial',
+  ) => {
+    captureReportContext('lnk')
+    setChainRecord(null)
+    setActiveReport('lnk')
+    openLnkOfficialityModalForRow(row, officiality)
+    setMessage(
+      `Стык ${String(row.joint ?? '-')} выбран в окне официальности ЛНК.`,
+    )
   }
 
   const getCommonLnkRequests = (selectedRows: WeldRow[]) => {
@@ -2728,10 +2764,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
     if (activeReport === 'heatTreatment') {
       const hasPstoRequestCandidate = contextRows.some((candidate) => (
-        canCreatePstoRequest(candidate) || canCreateRepeatPstoCycle(candidate)
+        canCreatePstoWorkflowRequest(candidate)
       ))
       const hasPstoResultCandidate = contextRows.some((candidate) => (
-        getPstoTvmtWorkflowState(candidate) === 'waiting-psto'
+        canAddPstoWorkflowResult(candidate)
       ))
       const hasTvmtRequestCandidate = contextRows.some(canCreateTvmtRequest)
       const hasTvmtResultCandidate = contextRows.some(canAddTvmtResult)
@@ -2945,11 +2981,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [heatTreatmentRows],
   )
   const hasAvailablePstoWorkflowRequestRows = useMemo(
-    () => heatTreatmentRows.some((row) => canCreatePstoRequest(row) || canCreateRepeatPstoCycle(row)),
+    () => heatTreatmentRows.some(canCreatePstoWorkflowRequest),
     [heatTreatmentRows],
   )
   const hasAvailablePstoWorkflowResultRows = useMemo(
-    () => heatTreatmentRows.some((row) => getPstoTvmtWorkflowState(row) === 'waiting-psto'),
+    () => heatTreatmentRows.some(canAddPstoWorkflowResult),
     [heatTreatmentRows],
   )
   const preHeatTreatmentResultRegistryRows = useMemo(() => {
@@ -3134,7 +3170,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }),
   }
 
-  function openPercentageLineTaskOfficiality(task: DispatcherTask) {
+  function openDispatcherTaskOfficiality(task: DispatcherTask) {
+    if (task.kind === 'create' || task.kind === 'coil') {
+      openLnkOfficialityWorkflowForRow(
+        task.row,
+        isUnofficialJoint(task.row) ? 'official' : 'unofficial',
+      )
+      return
+    }
     if (task.kind !== 'percentage-line-control' || task.issue !== 'rejected-primary') return
 
     const rowIds = task.targetRowIds && task.targetRowIds.length > 0 ? task.targetRowIds : [task.row.id]
@@ -3190,7 +3233,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setActiveReport('weldingJournal')
     setChainRecord(null)
     setColumnFilters(buildPercentageLineStampFilters(task))
-    setEditing({ record: record as WeldRow, focusField: 'stamp1K' })
+    setEditing({
+      record: record as WeldRow,
+      focusField: findOfficialWeldRowStampField(record as WeldRow, task.stamp) ?? 'stamp1K',
+    })
     setMessage(`Открыто редактирование стыка ${String(task.row.joint ?? '-')}: проверь официальное клеймо ${task.stamp}`)
   }
 
@@ -3223,6 +3269,126 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     await acceptDispatcherTaskWarning(task)
     dismissRepeatedJointTask(task)
     setMessage(`Предупреждение об отстранении клейма ${task.stamp} скрыто`)
+  }
+
+  async function runDispatcherTaskAction(
+    _selectedRow: WeldRow,
+    task: RepeatedJointTask,
+    actionId: DispatcherTaskActionId,
+  ) {
+    if (actionId === 'create-joint' && (task.kind === 'create' || task.kind === 'coil')) {
+      await createRepeatedJoint(task, { fromChain: true })
+      return
+    }
+    if (actionId === 'create-early-coil' && task.kind === 'create') {
+      await runProtectedEdit('досрочная врезка катушки', () => createEarlyCoil(task, { fromChain: true }))
+      return
+    }
+    if (actionId === 'delete-joint' && task.kind === 'delete') {
+      await runProtectedDelete(
+        'удаление повторного стыка',
+        () => deleteObsoleteRepeatedJoint(task, { fromChain: true }),
+      )
+      return
+    }
+    if (actionId === 'rename-joint' && task.kind === 'rename') {
+      await runProtectedEdit(
+        'переименование стыка',
+        () => renameObsoleteRepeatedJoint(task, { fromChain: true }),
+      )
+      return
+    }
+    if (actionId === 'toggle-officiality') {
+      openDispatcherTaskOfficiality(task)
+      return
+    }
+    if (actionId === 'accept-warning' && task.kind === 'percentage-line-control') {
+      await acceptPercentageLineTask(task)
+      return
+    }
+    if (actionId === 'edit-stamp' && task.kind === 'percentage-line-control') {
+      await runProtectedEdit('редактирование клейма стыка', () => editPercentageLineTaskStamp(task))
+      return
+    }
+    if (actionId === 'suspend-welder' && task.kind === 'percentage-line-control') {
+      await runProtectedEdit(
+        'добавление отстранения сварщика',
+        () => openWelderSuspensionFromPercentageLineTask(task),
+      )
+      return
+    }
+    if (actionId === 'skip-suspension' && task.kind === 'percentage-line-control') {
+      await skipWelderSuspensionFromPercentageLineTask(task)
+      return
+    }
+    if (actionId === 'assign-percentage-controls' && task.kind === 'percentage-line-control') {
+      percentageLineNavigationRequestIdRef.current += 1
+      setPercentageLineNavigationRequest({
+        id: percentageLineNavigationRequestIdRef.current,
+        action: 'assign-missing-controls',
+        projectTitle: task.projectTitle,
+        subtitleCode: task.subtitleCode,
+        line: task.line,
+        stamp: task.stamp,
+      })
+      captureReportContext('percentageLines')
+      setChainRecord(null)
+      setActiveReport('percentageLines')
+      setMessage(`Открываем назначение контроля по линии ${task.line}, клеймо ${task.stamp}.`)
+      return
+    }
+    if (actionId === 'open-psto-program' && task.kind === 'line-consistency') {
+      captureReportContext('heatTreatment')
+      setChainRecord(null)
+      setHeatTreatmentFilters(buildLineFilters(task.row))
+      setActiveReport('heatTreatment')
+      openPstoLineProgram()
+      setMessage(`Открыта программа ПСТО для проверки линии ${task.line}.`)
+      return
+    }
+    if (actionId === 'open-lnk') {
+      openRowsInReport([task.row], 'lnk')
+      return
+    }
+    if (actionId === 'open-psto') {
+      openRowsInReport([task.row], 'heatTreatment')
+      return
+    }
+    if (actionId === 'open-stamp-registry') {
+      const stamps = task.kind === 'percentage-line-control'
+        ? [task.stamp]
+        : getOfficialWeldRowStamps(task.row)
+      const stamp = stamps.length === 1 ? stamps[0] : ''
+      captureReportContext('welderStamps')
+      setChainRecord(null)
+      setWelderStampFilters(createEmptyWelderStampFilters())
+      setWelderStampSearch(stamp)
+      setActiveReport('welderStamps')
+      setMessage(
+        stamp
+          ? `Открыт реестр клейм: ${stamp}.`
+          : stamps.length > 1
+            ? `Открыт реестр клейм. На стыке несколько клейм: ${stamps.join(', ')}.`
+            : 'Открыт реестр клейм.',
+      )
+      return
+    }
+    if (actionId === 'edit-weld') {
+      await runProtectedEdit('редактирование стыка', async () => {
+        const currentRow = await getWeldJointById({ data: { id: task.row.id } })
+        if (!currentRow) {
+          setMessage('Стык больше не найден. Обновите картину стыка и повторите действие.')
+          return
+        }
+        captureReportContext('weldingJournal')
+        setChainRecord(null)
+        setColumnFilters(buildExactJointFilters(currentRow))
+        setActiveReport('weldingJournal')
+        setEditing({ record: currentRow })
+      })
+      return
+    }
+    if (actionId === 'show-task') showRepeatedJointTask(task)
   }
 
   const reportLoadError = isServerPagedTab ? weldPageQuery.error : weldsQuery.error
@@ -3274,8 +3440,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     columnFilters: activeColumnFilters,
     onColumnFiltersChange: activeFiltersSetter,
   })
-  function runJointNextAction(row: WeldRow, action: JointNextAction) {
-    const targetReport = action.kind === 'editWeld' || action.kind === 'dispatcherTask'
+  function runJointNextAction(
+    row: WeldRow,
+    action: JointNextAction,
+    options: { runDispatcherAction?: boolean } = {},
+  ) {
+    const targetReport = action.kind === 'editWeld' || (action.kind === 'dispatcherTask' && !options.runDispatcherAction)
       ? 'weldingJournal'
       : action.kind === 'pstoRequest' || action.kind === 'pstoResult' || action.kind === 'tvmtRequest' || action.kind === 'tvmtResult'
         ? 'heatTreatment'
@@ -3285,14 +3455,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (targetReport) captureReportContext(targetReport)
     setChainRecord(null)
     if (targetReport && targetReport !== activeReport) {
-      deferredJointNextActionRef.current = { targetReport, row, action }
+      deferredJointNextActionRef.current = { targetReport, row, action, ...options }
       setActiveReport(targetReport)
       return
     }
-    openJointNextAction(row, action)
+    openJointNextAction(row, action, options)
   }
 
-  function openJointNextAction(row: WeldRow, action: JointNextAction) {
+  function openJointNextAction(
+    row: WeldRow,
+    action: JointNextAction,
+    options: { runDispatcherAction?: boolean } = {},
+  ) {
     if (action.kind === 'editWeld') {
       setEditing({ record: row })
       return
@@ -3330,6 +3504,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }
     if (action.kind === 'dispatcherTask') {
       const task = adviceRepeatedJointTasks.find((candidate) => candidate.key === action.taskKey)
+      if (options.runDispatcherAction && task && action.taskActionId) {
+        void runDispatcherTaskAction(row, task, action.taskActionId)
+        return
+      }
       openRowsInReport([task?.row ?? row], 'weldingJournal')
       if (task) {
         restoreDismissedRepeatedJointTask(task)
@@ -3346,7 +3524,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const deferred = deferredJointNextActionRef.current
     if (!deferred || deferred.targetReport !== activeReport) return
     deferredJointNextActionRef.current = null
-    openJointNextAction(deferred.row, deferred.action)
+    openJointNextAction(deferred.row, deferred.action, {
+      runDispatcherAction: deferred.runDispatcherAction,
+    })
   }, [activeReport])
   const reportChainDialogProps = createReportChainDialogProps({
     chainRecord,
@@ -3361,18 +3541,20 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenRow: openChainRowInCurrentReport,
     onOpenDocument: openReportDocument,
     onOpenReport: (row, report) => openRowsInReport([row], report),
-    onRunNextAction: runJointNextAction,
-    canCreateRepeatedJoint: activeReport === 'weldingJournal',
+    onRunNextAction: (row, action) => runJointNextAction(row, action, { runDispatcherAction: true }),
+    onRunDispatcherTaskAction: runDispatcherTaskAction,
+    canCreateRepeatedJoint: true,
     isRepeatedJointPending: repeatedJointMutation.isPending,
-    onCreateRepeatedJoint: createRepeatedJoint,
-    canRenameRepeatedJoint: activeReport === 'weldingJournal',
+    onCreateRepeatedJoint: (task) => createRepeatedJoint(task, { fromChain: true }),
+    canRenameRepeatedJoint: true,
     isRenameRepeatedJointPending: renameRepeatedJointMutation.isPending,
     onRenameRepeatedJoint: (task) =>
-      runProtectedEdit('переименование стыка', () => renameObsoleteRepeatedJoint(task)),
-    canCreateEarlyCoil: activeReport === 'weldingJournal',
+      runProtectedEdit('переименование стыка', () => renameObsoleteRepeatedJoint(task, { fromChain: true })),
+    canCreateEarlyCoil: true,
     isEarlyCoilPending: earlyCoilMutation.isPending,
     onCreateEarlyCoil: (row, candidate) =>
       runProtectedEdit('досрочная врезка катушки', () => createEarlyCoilFromChain(row, candidate)),
+    onOpenOfficiality: openLnkOfficialityWorkflowForRow,
     onRetry: retryChainRows,
   })
   const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
@@ -4033,6 +4215,19 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenReportRowIds: openReportRowIds,
     onOpenWeldRowIds: openWeldRowIds,
+    percentageLineNavigationRequest,
+    onPercentageLineNavigationRequestHandled: (
+      requestId: number,
+      outcome: PercentageLineNavigationOutcome,
+    ) => {
+      if (percentageLineNavigationRequest?.id !== requestId) return
+      setPercentageLineNavigationRequest((current) => current?.id === requestId ? null : current)
+      setMessage(
+        outcome === 'opened'
+          ? `Открыто назначение контроля по линии ${percentageLineNavigationRequest.line}, клеймо ${percentageLineNavigationRequest.stamp}.`
+          : 'Задача уже не актуальна: данные изменились или другой пользователь уже назначил контроль.',
+      )
+    },
     onDocumentGenerationRequestHandled: handleDocumentGenerationRequest,
     onDocumentGenerated: setMessage,
     onOpenDocumentRows: openGeneratedDocumentRows,
@@ -4051,7 +4246,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 }
 
-function filterDuplicateControlRows(rows: WeldRow[], search: string, _selectedIds: Set<number>) {
+function filterDuplicateControlRows(rows: WeldRow[], search: string) {
   const query = search.trim().toLowerCase()
   return query
     ? rows.filter((row) =>

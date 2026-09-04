@@ -1,5 +1,10 @@
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
+import {
+  getDispatcherTaskActionSpecs,
+  type DispatcherTaskActionId,
+} from '@/lib/dispatcher-task-actions-model'
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
+import { isDispatcherTaskRelatedToRow } from '@/lib/dispatcher-task-row-codes'
 import {
   getRepeatedJointTaskDetails,
   getRepeatedJointTaskTitle,
@@ -10,6 +15,7 @@ import {
   getAvailablePreHeatTreatmentResultMethods,
 } from '@/lib/lnk-workflow-routing'
 import {
+  getRejectedPreHeatTreatmentControls,
   getPrimaryLnkStageBlockReason,
   isPrimaryLnkStageReady,
 } from '@/lib/lnk-control-stage'
@@ -51,6 +57,8 @@ export type JointNextAction = {
   buttonLabel?: string
   methodCode?: string
   taskKey?: string
+  taskActionId?: DispatcherTaskActionId
+  taskActionLabel?: string
   tone: 'default' | 'warning' | 'success'
 }
 
@@ -59,7 +67,7 @@ export function buildJointNextActions(
   dispatcherTasks: readonly RepeatedJointTask[] = [],
 ): JointNextAction[] {
   const rowTasks = dispatcherTasks
-    .filter((task) => isTaskForRow(task, row))
+    .filter((task) => isDispatcherTaskRelatedToRow(task, row))
     .sort(compareTasks)
   const taskActions = rowTasks.map(buildDispatcherAction)
   const chainStructureActions = rowTasks
@@ -109,6 +117,21 @@ export function buildJointNextActions(
   }
 
   if (status === 'не годен' || status === 'не годен по дублю') {
+    const rejectedPreControls = getRejectedPreHeatTreatmentControls(row)
+    if (rejectedPreControls.length > 0) {
+      const results = rejectedPreControls
+        .map(({ methodCode, result }) => `${methodCode} (${result})`)
+        .join(', ')
+      return [{
+        key: `rejected-pre-lnk:${row.id}`,
+        kind: 'blocked',
+        title: 'НК до ТО не годен',
+        description:
+          `Негодный результат: ${results}. ПСТО, ТВМТ и основной этап НК для этого стыка не требуются. ` +
+          'Дальнейшая работа ведется по новому официальному или R/W-стыку.',
+        tone: 'warning',
+      }]
+    }
     return [{
       key: `rejected:${row.id}`,
       kind: 'blocked',
@@ -160,6 +183,8 @@ function buildChainContinuationAction(row: WeldRow): JointNextAction {
 }
 
 function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) return null
+
   const pstoState = getPstoTvmtWorkflowState(row)
   const currentCycle = getCurrentPstoCycle(row)
   const activePhysicalCycleAction = buildActivePhysicalCycleAction(row, pstoState, currentCycle?.sequence ?? 1)
@@ -336,6 +361,7 @@ function buildControlAction({
 function buildDispatcherAction(task: RepeatedJointTask): JointNextAction {
   const code = getDispatcherTaskCode(task)
   const title = getRepeatedJointTaskTitle(task)
+  const primaryAction = getDispatcherTaskActionSpecs(task)[0]
   const actionTitle = task.kind === 'create'
     ? `Создать ${task.targetJoint}`
     : task.kind === 'coil'
@@ -348,14 +374,10 @@ function buildDispatcherAction(task: RepeatedJointTask): JointNextAction {
     description: getRepeatedJointTaskDetails(task),
     buttonLabel: task.kind === 'create' || task.kind === 'coil' ? 'Перейти к созданию' : 'Открыть задачу',
     taskKey: task.key,
+    taskActionId: primaryAction?.id,
+    taskActionLabel: primaryAction?.label,
     tone: 'warning',
   }
-}
-
-function isTaskForRow(task: RepeatedJointTask, row: WeldRow) {
-  if (task.row.id === row.id) return true
-  if ('sourceRow' in task && task.sourceRow.id === row.id) return true
-  return false
 }
 
 function compareTasks(left: RepeatedJointTask, right: RepeatedJointTask) {

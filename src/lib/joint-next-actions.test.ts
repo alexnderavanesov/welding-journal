@@ -27,6 +27,8 @@ describe('joint next actions', () => {
       title: 'Создать F3R1',
       buttonLabel: 'Перейти к созданию',
       taskKey: task.key,
+      taskActionId: 'create-joint',
+      taskActionLabel: 'Создать F3R1',
     })
   })
 
@@ -193,6 +195,30 @@ describe('joint next actions', () => {
       kind: 'pstoRequest',
       title: 'Создать заявку ПСТО',
     })
+  })
+
+  it('ends this joint workflow after rejected pre-TO control instead of requesting PSTO', () => {
+    const current = row({
+      pstoRequired: 'да',
+      pstoResult: 'ожидает заявку',
+      hasVik: 'да',
+      finalStatus: 'не годен',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'вырез',
+      }],
+    })
+
+    expect(buildJointNextActions(current)).toEqual([
+      expect.objectContaining({
+        kind: 'blocked',
+        title: 'НК до ТО не годен',
+        description: expect.stringContaining('ПСТО, ТВМТ и основной этап НК для этого стыка не требуются'),
+      }),
+    ])
   })
 
   it('skips pre-TO control but preserves the PSTO to TVMT to primary LNK order for an exempt line', () => {

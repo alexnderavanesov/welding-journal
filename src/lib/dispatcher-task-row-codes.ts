@@ -1,5 +1,5 @@
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
-import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
+import type { DispatcherTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 
 export const DISPATCHER_TASKS_FIELD_KEY = 'dispatcherTasks' as const
@@ -45,6 +45,26 @@ export function buildDispatcherTaskIndexRows(tasks: DispatcherTask[], rows: Weld
       compareDispatcherTaskCodes(left.code, right.code) ||
       left.taskKey.localeCompare(right.taskKey, 'ru'),
   )
+}
+
+export function isDispatcherTaskRelatedToRow(task: RepeatedJointTask, row: WeldRow) {
+  if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
+    return hasSameLineIdentity(task, row)
+  }
+  if (task.kind === 'rename') {
+    return task.sourceRow.id === row.id || task.changes.some((change) => change.rowId === row.id)
+  }
+  if (task.kind === 'delete' || task.kind === 'check') {
+    return task.row.id === row.id || task.sourceRow.id === row.id
+  }
+  if (task.kind === 'duplicate-check') {
+    return hasSameJointIdentity(task.row, row)
+  }
+  return task.row.id === row.id
+}
+
+export function getDispatcherTasksForRow(tasks: readonly RepeatedJointTask[], row: WeldRow) {
+  return tasks.filter((task) => isDispatcherTaskRelatedToRow(task, row))
 }
 
 export function formatDispatcherTaskCodes(codes: readonly string[] | undefined) {
@@ -138,8 +158,31 @@ function getDispatcherTaskTargetRowIds(task: Exclude<DispatcherTask, { kind: 'we
       .map((row) => row.id)
   }
   if (task.kind === 'rename') return task.changes.map((change) => change.rowId)
+  if (task.kind === 'duplicate-check') {
+    return rows.filter((row) => hasSameJointIdentity(task.row, row)).map((row) => row.id)
+  }
 
   return [task.row.id]
+}
+
+function hasSameLineIdentity(
+  task: Pick<Extract<RepeatedJointTask, { kind: 'line-consistency' | 'percentage-line-control' }>, 'projectTitle' | 'subtitleCode' | 'line'>,
+  row: WeldRow,
+) {
+  return (
+    normalizeLinePart(row.projectTitle) === normalizeLinePart(task.projectTitle) &&
+    normalizeLinePart(row.subtitleCode) === normalizeLinePart(task.subtitleCode) &&
+    normalizeLinePart(row.line) === normalizeLinePart(task.line)
+  )
+}
+
+function hasSameJointIdentity(left: WeldRow, right: WeldRow) {
+  return (
+    normalizeLinePart(left.projectTitle) === normalizeLinePart(right.projectTitle) &&
+    normalizeLinePart(left.subtitleCode) === normalizeLinePart(right.subtitleCode) &&
+    normalizeLinePart(left.line) === normalizeLinePart(right.line) &&
+    normalizeLinePart(left.joint) === normalizeLinePart(right.joint)
+  )
 }
 
 function normalizeLinePart(value: unknown) {

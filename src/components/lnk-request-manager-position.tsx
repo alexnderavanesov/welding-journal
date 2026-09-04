@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Trash2 } from 'lucide-react'
 
 import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
@@ -14,7 +15,7 @@ type LnkRequestManagerPositionProps = {
   onClearPosition: (row: WeldRow, requestKey: LnkRequestMethod['requestKey']) => void
 }
 
-export function LnkRequestManagerPosition({
+function LnkRequestManagerPositionComponent({
   row,
   methods,
   isCorrectionPending,
@@ -46,3 +47,10 @@ export function LnkRequestManagerPosition({
     </div>
   )
 }
+
+export const LnkRequestManagerPosition = memo(LnkRequestManagerPositionComponent, (previous, next) => (
+  previous.row === next.row &&
+  previous.methods === next.methods &&
+  previous.isCorrectionPending === next.isCorrectionPending &&
+  previous.onClearPosition === next.onClearPosition
+))

@@ -7,7 +7,6 @@ export {
 export {
   buildLnkConclusionCorrectionRows,
   buildLnkFieldRow,
-  buildLnkOfficialityRows,
   buildLnkResultCorrectionRow,
   buildLnkResultReplacementRows,
   buildLnkResultRows,

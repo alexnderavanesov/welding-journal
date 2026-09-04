@@ -10,6 +10,7 @@ import type {
   LnkRequestExtensionTarget,
 } from '@/lib/lnk-request-extension'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
+import type { LnkOfficialityChainPlan } from '@/lib/lnk-officiality-chain-plan'
 
 export type LnkRequestMutation = {
   isPending: boolean
@@ -76,7 +77,16 @@ export type LnkOfficialityMutation = {
   mutate: (value: {
     records: WeldRow[]
     officiality: 'official' | 'unofficial'
+    plan: LnkOfficialityChainPlan
   }) => void
+}
+
+export type LnkOfficialityPreviewMutation = {
+  isPending: boolean
+  mutateAsync: (value: {
+    records: WeldRow[]
+    officiality: 'official' | 'unofficial'
+  }) => Promise<LnkOfficialityChainPlan>
 }
 
 export type UseLnkOfficialityActionsOptions = {
@@ -85,6 +95,8 @@ export type UseLnkOfficialityActionsOptions = {
   selectedRows: WeldRow[]
   isSaveDisabled: boolean
   mutation: LnkOfficialityMutation
+  previewMutation: LnkOfficialityPreviewMutation
   setDraft: Dispatch<SetStateAction<LnkOfficialityDraftState>>
   setIsOpen: (value: boolean) => void
+  setMessage: (value: string | null) => void
 }

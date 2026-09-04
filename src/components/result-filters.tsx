@@ -93,7 +93,7 @@ export function ResultFilters({
   )
 }
 
-function BufferedFilterInput({
+export function BufferedFilterInput({
   value,
   onValueChange,
   ...inputProps

@@ -220,6 +220,7 @@ type WeldTableBodyCellProps = {
   displayValue: unknown
   isEditableCell: boolean
   isBlockedEditableCell: boolean
+  showBlockedEditableCellBackground?: boolean
   isHighlightedRow: boolean
   isSelectedRow: boolean
   hasDispatcherTask: boolean
@@ -246,6 +247,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   displayValue,
   isEditableCell,
   isBlockedEditableCell,
+  showBlockedEditableCellBackground = true,
   isHighlightedRow,
   isSelectedRow,
   hasDispatcherTask,
@@ -312,7 +314,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
         isSelectedRow,
         hasDispatcherTask,
         isHighlightedCell,
-        isBlockedEditableCell,
+        isBlockedEditableCell && showBlockedEditableCellBackground,
         isSectionEnd,
       )} ${
         isStickyCell
@@ -321,7 +323,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
               isSelectedRow,
               hasDispatcherTask,
               isHighlightedCell,
-              isBlockedEditableCell,
+              isBlockedEditableCell: isBlockedEditableCell && showBlockedEditableCellBackground,
               stickyBackgroundClassName,
             })
           : ''

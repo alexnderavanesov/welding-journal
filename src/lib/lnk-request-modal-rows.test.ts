@@ -13,4 +13,24 @@ describe('filterLnkRequestRows', () => {
     expect(filterLnkRequestRows(rows, 'риформ').map((row) => row.id)).toEqual([1])
     expect(filterLnkRequestRows(rows, 'ткм5').map((row) => row.id)).toEqual([1])
   })
+
+  it('filters a large source before calculating availability and sorting matches', () => {
+    const nonMatchingRows = Array.from({ length: 5_000 }, (_, index) => ({
+      id: index + 10,
+      projectTitle: 'Другой проект',
+      line: `L${index}`,
+      get hasVik() {
+        throw new Error('availability must not be calculated for rows rejected by search')
+      },
+    })) as WeldRow[]
+    const matchingRow = {
+      id: 3,
+      projectTitle: 'Нужный проект',
+      line: 'L3',
+      hasVik: 'да',
+      vikRequest: '',
+    } as WeldRow
+
+    expect(filterLnkRequestRows([...nonMatchingRows, matchingRow], 'нужный').map((row) => row.id)).toEqual([3])
+  })
 })

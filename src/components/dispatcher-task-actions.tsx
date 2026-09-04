@@ -15,9 +15,12 @@ import type {
   RepeatedJointDeleteTask,
   RepeatedJointRenameTask,
 } from '@/lib/dispatcher-types'
-import { isLnkChronologyCheckReason } from '@/lib/lnk-chronology-checks'
-import { isPstoChronologyCheckReason } from '@/lib/psto-chronology-checks'
 import { isUnofficialJoint } from '@/lib/joint-display'
+import {
+  getDispatcherTaskActionSpecs,
+  type DispatcherTaskActionId,
+  type DispatcherTaskActionSpec,
+} from '@/lib/dispatcher-task-actions-model'
 
 export type RepeatedJointTaskActionsProps = {
   task: DispatcherTask
@@ -33,6 +36,10 @@ export type RepeatedJointTaskActionsProps = {
   onEditPercentageLineTaskStamp: (task: PercentageLineControlTask) => void
   onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
   onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
+  onRunTaskAction: (
+    task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>,
+    actionId: DispatcherTaskActionId,
+  ) => void
   canRunDispatcherMutation: boolean
   canCreateEarlyCoil: boolean
   isEarlyCoilPending: boolean
@@ -55,6 +62,7 @@ export function RepeatedJointTaskActions({
   onEditPercentageLineTaskStamp,
   onSuspendPercentageLineWelder,
   onSkipPercentageLineWelderSuspension,
+  onRunTaskAction,
   canRunDispatcherMutation,
   canCreateEarlyCoil,
   isEarlyCoilPending,
@@ -88,6 +96,18 @@ export function RepeatedJointTaskActions({
         <>
           <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
             {task.kind === 'coil' ? 'Катушка' : 'Создать'}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => onOpenTaskOfficiality(task)}
+            className={dispatcherActionButtonClass}
+            aria-label={isUnofficialJoint(task.row)
+              ? `Сделать ${String(task.row.joint ?? '-')} официальным`
+              : `Сделать ${String(task.row.joint ?? '-')} неофициальным`}
+          >
+            {isUnofficialJoint(task.row) ? 'Официальный' : 'Неофициальный'}
           </Button>
           {task.kind === 'create' && canCreateEarlyCoil && !isUnofficialJoint(task.row) ? (
             <Button
@@ -191,9 +211,28 @@ export function RepeatedJointTaskActions({
             Показать
           </Button>
         </>
-      ) : task.kind === 'line-consistency' ||
-        task.kind === 'percentage-line-control' ||
-        (task.kind === 'check' && (isLnkChronologyCheckReason(task.reason) || isPstoChronologyCheckReason(task.reason))) ? (
+      ) : task.kind === 'percentage-line-control' && task.issue === 'missing' ? (
+        <ModeledDispatcherActions
+          task={task}
+          actions={getDispatcherTaskActionSpecs(task)}
+          onRunTaskAction={onRunTaskAction}
+          onShowTask={onShowTask}
+        />
+      ) : task.kind === 'line-consistency' && task.fieldKey === 'pstoPresence' ? (
+        <ModeledDispatcherActions
+          task={task}
+          actions={getDispatcherTaskActionSpecs(task)}
+          onRunTaskAction={onRunTaskAction}
+          onShowTask={onShowTask}
+        />
+      ) : task.kind === 'check' ? (
+        <ModeledDispatcherActions
+          task={task}
+          actions={getDispatcherTaskActionSpecs(task)}
+          onRunTaskAction={onRunTaskAction}
+          onShowTask={onShowTask}
+        />
+      ) : task.kind === 'line-consistency' || task.kind === 'percentage-line-control' ? (
         <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
           Показать
         </Button>
@@ -214,6 +253,49 @@ export function RepeatedJointTaskActions({
         <Info className="h-4 w-4" />
       </Button>
     </div>
+  )
+}
+
+function ModeledDispatcherActions({
+  task,
+  actions,
+  onRunTaskAction,
+  onShowTask,
+}: {
+  task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>
+  actions: DispatcherTaskActionSpec[]
+  onRunTaskAction: RepeatedJointTaskActionsProps['onRunTaskAction']
+  onShowTask: RepeatedJointTaskActionsProps['onShowTask']
+}) {
+  const [primaryAction, ...secondaryActions] = actions
+  if (!primaryAction) return null
+  const run = (action: DispatcherTaskActionSpec) => {
+    if (action.id === 'show-task') onShowTask(task)
+    else onRunTaskAction(task, action.id)
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant={primaryAction.tone === 'primary' ? 'default' : 'outline'}
+        onClick={() => run(primaryAction)}
+        className={primaryAction.tone === 'primary'
+          ? dispatcherPrimaryActionButtonClass
+          : dispatcherStandaloneActionButtonClass}
+      >
+        {primaryAction.label}
+      </Button>
+      {secondaryActions.length > 0 ? (
+        <DispatcherActionMenu
+          items={secondaryActions.map((action) => ({
+            label: action.label,
+            onClick: () => run(action),
+          }))}
+        />
+      ) : null}
+    </>
   )
 }
 

@@ -72,10 +72,18 @@ type RequestPositionPanelProps = {
   description: string
   hasRows: boolean
   emptyText: string
+  virtualized?: boolean
   children: ReactNode
 }
 
-export function RequestPositionPanel({ title, description, hasRows, emptyText, children }: RequestPositionPanelProps) {
+export function RequestPositionPanel({
+  title,
+  description,
+  hasRows,
+  emptyText,
+  virtualized = false,
+  children,
+}: RequestPositionPanelProps) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-3">
       <div className="mb-3">
@@ -83,8 +91,8 @@ export function RequestPositionPanel({ title, description, hasRows, emptyText, c
         <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
       </div>
       {hasRows ? (
-        <div className="max-h-72 overflow-auto rounded-md border border-slate-200">
-          <div className="divide-y divide-slate-100">{children}</div>
+        <div className={`${virtualized ? 'flex h-72 flex-col overflow-hidden' : 'max-h-72 overflow-auto'} rounded-md border border-slate-200`}>
+          {virtualized ? children : <div className="divide-y divide-slate-100">{children}</div>}
         </div>
       ) : (
         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">

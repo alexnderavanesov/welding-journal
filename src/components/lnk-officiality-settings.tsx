@@ -55,6 +55,7 @@ export function LnkOfficialitySettings({
               <button
                 key={option.value}
                 type="button"
+                aria-pressed={selected}
                 disabled={unavailable}
                 onClick={() => onOfficialityChange(option.value)}
                 className={`w-full rounded-md border p-3 text-left transition-colors ${
@@ -83,8 +84,9 @@ export function LnkOfficialitySettings({
       <section className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">
         <h3 className="mb-2 text-sm font-semibold text-slate-900">2. Что изменится</h3>
         <p className="leading-6">
-          Изменяется только поле <span className="font-semibold text-slate-800">Официальность</span>. Заявки, результаты,
-          заключения и даты не затрагиваются.
+          У выбранного стыка изменится <span className="font-semibold text-slate-800">Официальность</span>. Перед сохранением
+          система проверит всю ремонтную цепочку и при необходимости предложит переименовать ее продолжение. Заявки,
+          результаты, заключения и даты останутся привязаны к тем же стыкам.
         </p>
       </section>
 

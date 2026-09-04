@@ -16,6 +16,7 @@ type CreateReportChainDialogPropsOptions = {
   onOpenDocument: ChainDialogProps['onOpenDocument']
   onOpenReport: ChainDialogProps['onOpenReport']
   onRunNextAction: ChainDialogProps['onRunNextAction']
+  onRunDispatcherTaskAction: ChainDialogProps['onRunDispatcherTaskAction']
   canCreateRepeatedJoint: ChainDialogProps['canCreateRepeatedJoint']
   isRepeatedJointPending: ChainDialogProps['isRepeatedJointPending']
   onCreateRepeatedJoint: ChainDialogProps['onCreateRepeatedJoint']
@@ -25,6 +26,7 @@ type CreateReportChainDialogPropsOptions = {
   canCreateEarlyCoil: ChainDialogProps['canCreateEarlyCoil']
   isEarlyCoilPending: ChainDialogProps['isEarlyCoilPending']
   onCreateEarlyCoil: ChainDialogProps['onCreateEarlyCoil']
+  onOpenOfficiality: ChainDialogProps['onOpenOfficiality']
   onRetry: ChainDialogProps['onRetry']
 }
 
@@ -42,6 +44,7 @@ export function createReportChainDialogProps({
   onOpenDocument,
   onOpenReport,
   onRunNextAction,
+  onRunDispatcherTaskAction,
   canCreateRepeatedJoint,
   isRepeatedJointPending,
   onCreateRepeatedJoint,
@@ -51,6 +54,7 @@ export function createReportChainDialogProps({
   canCreateEarlyCoil,
   isEarlyCoilPending,
   onCreateEarlyCoil,
+  onOpenOfficiality,
   onRetry,
 }: CreateReportChainDialogPropsOptions): ReportChainDialogProps {
   return {
@@ -69,6 +73,7 @@ export function createReportChainDialogProps({
           onOpenDocument,
           onOpenReport,
           onRunNextAction,
+          onRunDispatcherTaskAction,
           canCreateRepeatedJoint,
           isRepeatedJointPending,
           onCreateRepeatedJoint,
@@ -78,6 +83,7 @@ export function createReportChainDialogProps({
           canCreateEarlyCoil,
           isEarlyCoilPending,
           onCreateEarlyCoil,
+          onOpenOfficiality,
           onRetry,
         }
       : null,

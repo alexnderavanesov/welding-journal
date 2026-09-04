@@ -11,6 +11,7 @@ import type {
   WeldRow,
 } from '@/lib/dispatcher-types'
 import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation-types'
+import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 
 export function useRepeatedJointActionMutations({
   setMessage,
@@ -40,7 +41,7 @@ export function useRepeatedJointActionMutations({
           deleteIds: result.deletedRowIds,
           upsertRows: createdRows,
         }),
-        queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
       ])
     },

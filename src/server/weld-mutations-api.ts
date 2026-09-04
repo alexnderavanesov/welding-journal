@@ -13,6 +13,7 @@ import type {
   PercentageLineControlUpdateData,
 } from '@/server/weld-contracts'
 import type { LnkDefectDescriptionUpdate } from '@/lib/lnk-defect-description'
+import type { LnkOfficialityChangeRequest } from '@/lib/lnk-officiality-chain-plan'
 
 export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
   .validator((data: { sourceRowId: number; expectedVersion: string }) => data)
@@ -33,6 +34,20 @@ export const updateWeldJoint = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const server = await import('@/server/weld-mutations')
     return server.updateWeldJoint({ data })
+  })
+
+export const previewLnkOfficialityChange = createServerFn({ method: 'POST' })
+  .validator((data: LnkOfficialityChangeRequest) => data)
+  .handler(async ({ data }) => {
+    const server = await import('@/server/lnk-officiality-workflow')
+    return server.previewLnkOfficialityChange({ data })
+  })
+
+export const applyLnkOfficialityChange = createServerFn({ method: 'POST' })
+  .validator((data: LnkOfficialityChangeRequest) => data)
+  .handler(async ({ data }) => {
+    const server = await import('@/server/lnk-officiality-workflow')
+    return server.applyLnkOfficialityChange({ data })
   })
 
 export const moveWeldJointChain = createServerFn({ method: 'POST' })

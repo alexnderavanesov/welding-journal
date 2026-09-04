@@ -9,6 +9,14 @@ const LINE = 'E2E-COIL-L1'
 const SOURCE_JOINT = 'S951'
 const EXPECTED_REPAIR = 'S951R1'
 const COIL_JOINTS = ['S951Y1', 'S951Y2'] as const
+const UNOFFICIALITY_PROJECT = 'E2E неофициальный стык'
+const UNOFFICIALITY_LINE = 'E2E-UNOFFICIAL-L1'
+const UNOFFICIALITY_JOINT = 'S955'
+const UNOFFICIALITY_EXPECTED_REPAIR = 'S955R1'
+const CHAIN_REBUILD_PROJECT = 'E2E перестройка официальности'
+const CHAIN_REBUILD_LINE = 'E2E-REBUILD-L1'
+const CHAIN_REBUILD_JOINTS = ['S956', 'S956R1', 'S956R1W1'] as const
+const CHAIN_REBUILD_DOCUMENT_TITLE = 'E2E документ перестройки цепочки'
 const SECURITY_SETTINGS_KEY = 'security'
 const SETTINGS_PASSWORD = 'e2e-early-coil-settings'
 const DELETE_PASSWORD = 'e2e-early-coil-delete'
@@ -53,6 +61,9 @@ test.afterEach(async () => {
       )
     `, [MOVE_PROJECT])
     await client.query('delete from weld_joints where project_title = $1', [MOVE_PROJECT])
+    await client.query('delete from weld_joints where project_title = $1', [UNOFFICIALITY_PROJECT])
+    await client.query('delete from generated_documents where title = $1', [CHAIN_REBUILD_DOCUMENT_TITLE])
+    await client.query('delete from weld_joints where project_title = $1', [CHAIN_REBUILD_PROJECT])
     await client.query('delete from welder_stamps where naks_stamp = $1', [MOVE_WELDER_STAMP])
     await client.query('delete from app_settings where key = $1', [SECURITY_SETTINGS_KEY])
     if (securitySettingSnapshot) {
@@ -154,6 +165,200 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
     accepted: true,
     expectedRepairExists: false,
     coilJoints: [...COIL_JOINTS],
+  })
+})
+
+test('opens the selected rejected joint in LNK officiality and changes it only after save', async ({ page }) => {
+  const sourceRowId = await seedUnofficialityChoice()
+
+  const taskGroup = await openDispatcherObjectGroup(page, UNOFFICIALITY_JOINT)
+  const target = taskGroup.getByText(UNOFFICIALITY_EXPECTED_REPAIR, { exact: true })
+  const taskCard = target.locator('xpath=ancestor::div[contains(@class,"grid")][1]')
+  await taskCard
+    .getByRole('button', { name: `Сделать ${UNOFFICIALITY_JOINT} неофициальным`, exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/lnk$/)
+  let officialityDialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Официальность стыков', exact: true }),
+  })
+  await expect(officialityDialog).toBeVisible()
+  await expect(officialityDialog.getByRole('button', { name: /^Неофициальный/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await officialityDialog.getByRole('button', { name: 'Отмена', exact: true }).click()
+  await expect.poll(loadUnofficialityChoice).toBe('действующий')
+
+  await page.goto('/journal')
+  const sourceRow = page.locator(`tr[data-weld-row-id="${sourceRowId}"]`)
+  await expect(sourceRow).toBeVisible()
+  await sourceRow.getByRole('button', { name: UNOFFICIALITY_JOINT, exact: true }).click()
+
+  const continuationPanel = page.getByRole('region', { name: 'Продолжение цепочки стыка' })
+  await expect(continuationPanel.getByRole('button')).toHaveText([
+    `Создать ${UNOFFICIALITY_EXPECTED_REPAIR}`,
+    `Сделать ${UNOFFICIALITY_JOINT} неофициальным`,
+    'Врезать катушку досрочно',
+  ])
+  await continuationPanel
+    .getByRole('button', { name: `Сделать ${UNOFFICIALITY_JOINT} неофициальным`, exact: true })
+    .click()
+
+  await expect(page).toHaveURL(/\/lnk$/)
+  officialityDialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Официальность стыков', exact: true }),
+  })
+  await expect(officialityDialog).toBeVisible()
+  await expect(officialityDialog.getByRole('button', { name: /^Неофициальный/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(
+    officialityDialog.getByRole('button').filter({
+      hasText: `${UNOFFICIALITY_LINE} · ${UNOFFICIALITY_JOINT}`,
+    }),
+  ).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(loadUnofficialityChoice).toBe('действующий')
+
+  await officialityDialog.getByRole('button', { name: 'Сохранить официальность', exact: true }).click()
+  await expect(officialityDialog).toBeHidden()
+  await expect.poll(loadUnofficialityChoice).toBe('неофициальный')
+})
+
+test('rebuilds the later chain while preserving row data and document assignments', async ({ page }) => {
+  const seeded = await seedOfficialityChainRebuild()
+
+  await page.goto('/lnk')
+  await page.getByRole('button', { name: 'Официальность', exact: true }).click()
+
+  const officialityDialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Официальность стыков', exact: true }),
+  })
+  await expect(officialityDialog).toBeVisible()
+  await officialityDialog
+    .getByPlaceholder('Проект, шифр, линия, спул или стык')
+    .fill(CHAIN_REBUILD_JOINTS[1])
+  const middleRowButton = officialityDialog.getByRole('button').filter({
+    hasText: `${CHAIN_REBUILD_LINE} · ${CHAIN_REBUILD_JOINTS[1]}`,
+  })
+  await expect(middleRowButton).toBeVisible()
+  await middleRowButton.click()
+  await officialityDialog.getByRole('button', { name: /^Неофициальный/ }).click()
+  await officialityDialog.getByRole('button', { name: 'Сохранить официальность', exact: true }).click()
+
+  const rebuildDialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Изменить официальность и перестроить цепочку', exact: true }),
+  })
+  await expect(rebuildDialog).toContainText(
+    `${CHAIN_REBUILD_JOINTS[2]} -> ${CHAIN_REBUILD_JOINTS[1]}`,
+  )
+  await expect.poll(loadOfficialityChainRebuildState).toEqual({
+    rows: [
+      {
+        id: seeded.rootRowId,
+        joint: CHAIN_REBUILD_JOINTS[0],
+        officiality: 'действующий',
+        lnkNote: 'E2E корневой стык',
+        rkConclusion: 'E2E заключение ремонт',
+      },
+      {
+        id: seeded.middleRowId,
+        joint: CHAIN_REBUILD_JOINTS[1],
+        officiality: 'действующий',
+        lnkNote: 'E2E история вырезанного стыка',
+        rkConclusion: 'E2E заключение вырез',
+      },
+      {
+        id: seeded.continuationRowId,
+        joint: CHAIN_REBUILD_JOINTS[2],
+        officiality: 'действующий',
+        lnkNote: 'E2E данные продолжения',
+        rkConclusion: 'E2E заключение годен',
+      },
+    ],
+    documentAssignmentRowId: seeded.continuationRowId,
+  })
+
+  await rebuildDialog.getByRole('button', { name: 'Сохранить и перестроить', exact: true }).click()
+  await expect(officialityDialog).toBeHidden()
+  await expect.poll(loadOfficialityChainRebuildState).toEqual({
+    rows: [
+      {
+        id: seeded.rootRowId,
+        joint: CHAIN_REBUILD_JOINTS[0],
+        officiality: 'действующий',
+        lnkNote: 'E2E корневой стык',
+        rkConclusion: 'E2E заключение ремонт',
+      },
+      {
+        id: seeded.middleRowId,
+        joint: CHAIN_REBUILD_JOINTS[1],
+        officiality: 'неофициальный',
+        lnkNote: 'E2E история вырезанного стыка',
+        rkConclusion: 'E2E заключение вырез',
+      },
+      {
+        id: seeded.continuationRowId,
+        joint: CHAIN_REBUILD_JOINTS[1],
+        officiality: null,
+        lnkNote: 'E2E данные продолжения',
+        rkConclusion: 'E2E заключение годен',
+      },
+    ],
+    documentAssignmentRowId: seeded.continuationRowId,
+  })
+})
+
+test('stops the whole officiality rebuild when another user changes the selected joint', async ({ page }) => {
+  const seeded = await seedOfficialityChainRebuild()
+
+  await page.goto('/lnk')
+  await page.getByRole('button', { name: 'Официальность', exact: true }).click()
+  const officialityDialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Официальность стыков', exact: true }),
+  })
+  await officialityDialog
+    .getByPlaceholder('Проект, шифр, линия, спул или стык')
+    .fill(CHAIN_REBUILD_JOINTS[1])
+  await officialityDialog.getByRole('button').filter({
+    hasText: `${CHAIN_REBUILD_LINE} · ${CHAIN_REBUILD_JOINTS[1]}`,
+  }).click()
+  await officialityDialog.getByRole('button', { name: /^Неофициальный/ }).click()
+  await officialityDialog.getByRole('button', { name: 'Сохранить официальность', exact: true }).click()
+
+  const rebuildDialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Изменить официальность и перестроить цепочку', exact: true }),
+  })
+  await expect(rebuildDialog).toBeVisible()
+  await simulateConcurrentOfficialityEdit(seeded.middleRowId)
+  await rebuildDialog.getByRole('button', { name: 'Сохранить и перестроить', exact: true }).click()
+
+  await expect(page.getByText(/уже изменен другим пользователем или в другом окне/)).toBeVisible()
+  await expect.poll(loadOfficialityChainRebuildState).toEqual({
+    rows: [
+      {
+        id: seeded.rootRowId,
+        joint: CHAIN_REBUILD_JOINTS[0],
+        officiality: 'действующий',
+        lnkNote: 'E2E корневой стык',
+        rkConclusion: 'E2E заключение ремонт',
+      },
+      {
+        id: seeded.middleRowId,
+        joint: CHAIN_REBUILD_JOINTS[1],
+        officiality: 'действующий',
+        lnkNote: 'E2E параллельная правка',
+        rkConclusion: 'E2E заключение вырез',
+      },
+      {
+        id: seeded.continuationRowId,
+        joint: CHAIN_REBUILD_JOINTS[2],
+        officiality: 'действующий',
+        lnkNote: 'E2E данные продолжения',
+        rkConclusion: 'E2E заключение годен',
+      },
+    ],
+    documentAssignmentRowId: seeded.continuationRowId,
   })
 })
 
@@ -311,7 +516,7 @@ async function confirmEarlyCoil(page: Page) {
 
 async function openAcceptedDecisions(page: Page) {
   await page.goto('/settings')
-  await page.getByRole('button', { name: 'Диспетчер задач и напоминаний', exact: true }).click()
+  await page.getByRole('button', { name: 'Принятые исключения', exact: true }).click()
   await expect(page.getByText(`Досрочная врезка катушки ${COIL_JOINTS.join(' + ')}`)).toBeVisible()
 }
 
@@ -405,6 +610,170 @@ async function seedEarlyCoilChain() {
       )
     `, [PROJECT, LINE, EXPECTED_REPAIR])
     return source.rows[0]!.id
+  })
+}
+
+async function seedUnofficialityChoice() {
+  return withE2eDatabase(async (client) => {
+    const source = await client.query<{ id: number }>(`
+      insert into weld_joints (
+        weld_date, project_title, subtitle_code, line, isometry, joint, spool,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
+        d1, d2, t1, t2, wdi,
+        stamp_1_k, stamp_1_k_fact,
+        has_vik, vik_control_basis, vik_request, vik_request_date,
+        vik_result, vik_conclusion_date, vik_conclusion, final_status,
+        welding_updated_at, lnk_created_at, lnk_updated_at
+      ) values (
+        '2026-09-01', $1, 'E2E-UNOFFICIAL', $2, 'ISO-E2E-UNOFFICIAL', $3, 'E2E-UNOFFICIAL-S1',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42,
+        'E2E-K1', 'E2E-K1',
+        'да', 'проект', 'Заявка ВИК E2E', '2026-09-01',
+        'ремонт', '2026-09-01', 'Заключение ВИК E2E', 'ремонт',
+        now(), now(), now()
+      )
+      returning id
+    `, [UNOFFICIALITY_PROJECT, UNOFFICIALITY_LINE, UNOFFICIALITY_JOINT])
+    await client.query(`
+      insert into dispatcher_task_index_state
+        (id, source_revision, computed_revision, full_rebuild, updated_at)
+      values (1, 1, -1, true, now())
+      on conflict (id) do update
+      set source_revision = dispatcher_task_index_state.source_revision + 1,
+          full_rebuild = true,
+          updated_at = now()
+    `)
+    return source.rows[0]!.id
+  })
+}
+
+async function loadUnofficialityChoice() {
+  return withE2eDatabase(async (client) => {
+    const result = await client.query<{ officiality: string | null }>(`
+      select officiality
+      from weld_joints
+      where project_title = $1 and line = $2 and joint = $3
+      limit 1
+    `, [UNOFFICIALITY_PROJECT, UNOFFICIALITY_LINE, UNOFFICIALITY_JOINT])
+    return result.rows[0]?.officiality ?? null
+  })
+}
+
+async function seedOfficialityChainRebuild() {
+  return withE2eDatabase(async (client) => {
+    const rows = await client.query<{ id: number; joint: string }>(`
+      insert into weld_joints (
+        weld_date, project_title, subtitle_code, line, isometry, joint, spool,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
+        d1, d2, t1, t2, wdi,
+        stamp_1_k, stamp_1_k_fact,
+        has_rk, rk_control_basis, rk_request, rk_request_date,
+        rk_result, rk_conclusion_date, rk_conclusion, lnk_note, final_status,
+        welding_updated_at, lnk_created_at, lnk_updated_at
+      ) values (
+        '2026-09-01', $1, 'E2E-REBUILD', $2, 'ISO-E2E-REBUILD', $3, 'E2E-REBUILD-S1',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42,
+        'E2E-K1', 'E2E-K1',
+        'да', 'проект', 'E2E заявка ремонт', '2026-09-01',
+        'ремонт', '2026-09-01', 'E2E заключение ремонт', 'E2E корневой стык', 'ремонт',
+        now(), now(), now()
+      ), (
+        '2026-09-02', $1, 'E2E-REBUILD', $2, 'ISO-E2E-REBUILD', $4, 'E2E-REBUILD-S1',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42,
+        'E2E-K1', 'E2E-K1',
+        'да', 'проект', 'E2E заявка вырез', '2026-09-02',
+        'вырез', '2026-09-02', 'E2E заключение вырез', 'E2E история вырезанного стыка', 'вырез',
+        now(), now(), now()
+      ), (
+        '2026-09-03', $1, 'E2E-REBUILD', $2, 'ISO-E2E-REBUILD', $5, 'E2E-REBUILD-S1',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42,
+        'E2E-K1', 'E2E-K1',
+        'да', 'проект', 'E2E заявка годен', '2026-09-03',
+        'годен', '2026-09-03', 'E2E заключение годен', 'E2E данные продолжения', 'годен',
+        now(), now(), now()
+      )
+      returning id, joint
+    `, [
+      CHAIN_REBUILD_PROJECT,
+      CHAIN_REBUILD_LINE,
+      CHAIN_REBUILD_JOINTS[0],
+      CHAIN_REBUILD_JOINTS[1],
+      CHAIN_REBUILD_JOINTS[2],
+    ])
+    const rowIds = new Map(rows.rows.map((row) => [row.joint, row.id]))
+    const rootRowId = rowIds.get(CHAIN_REBUILD_JOINTS[0])!
+    const middleRowId = rowIds.get(CHAIN_REBUILD_JOINTS[1])!
+    const continuationRowId = rowIds.get(CHAIN_REBUILD_JOINTS[2])!
+    const document = await client.query<{ id: number }>(`
+      insert into generated_documents (
+        type, title, file_name, mime_type, row_count, source_metadata
+      ) values (
+        'e2e-chain-rebuild', $1, 'e2e-chain-rebuild.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 1, '{}'
+      )
+      returning id
+    `, [CHAIN_REBUILD_DOCUMENT_TITLE])
+    await client.query(`
+      insert into generated_document_weld_joints (document_id, weld_joint_id)
+      values ($1, $2)
+    `, [document.rows[0]!.id, continuationRowId])
+    await client.query(`
+      insert into dispatcher_task_index_state
+        (id, source_revision, computed_revision, full_rebuild, updated_at)
+      values (1, 1, -1, true, now())
+      on conflict (id) do update
+      set source_revision = dispatcher_task_index_state.source_revision + 1,
+          full_rebuild = true,
+          updated_at = now()
+    `)
+    return { rootRowId, middleRowId, continuationRowId }
+  })
+}
+
+async function loadOfficialityChainRebuildState() {
+  return withE2eDatabase(async (client) => {
+    const rows = await client.query<{
+      id: number
+      joint: string
+      officiality: string | null
+      lnk_note: string | null
+      rk_conclusion: string | null
+    }>(`
+      select id, joint, officiality, lnk_note, rk_conclusion
+      from weld_joints
+      where project_title = $1 and line = $2
+      order by id
+    `, [CHAIN_REBUILD_PROJECT, CHAIN_REBUILD_LINE])
+    const assignment = await client.query<{ weld_joint_id: number }>(`
+      select assignment.weld_joint_id
+      from generated_document_weld_joints assignment
+      inner join generated_documents document on document.id = assignment.document_id
+      where document.title = $1
+    `, [CHAIN_REBUILD_DOCUMENT_TITLE])
+    return {
+      rows: rows.rows.map((row) => ({
+        id: row.id,
+        joint: row.joint,
+        officiality: row.officiality,
+        lnkNote: row.lnk_note,
+        rkConclusion: row.rk_conclusion,
+      })),
+      documentAssignmentRowId: assignment.rows[0]?.weld_joint_id ?? null,
+    }
+  })
+}
+
+async function simulateConcurrentOfficialityEdit(rowId: number) {
+  await withE2eDatabase(async (client) => {
+    await client.query(`
+      update weld_joints
+      set lnk_note = 'E2E параллельная правка', updated_at = now()
+      where id = $1
+    `, [rowId])
   })
 }
 

@@ -407,7 +407,9 @@ function getObsoleteRepeatedJointInfo(
   if (parsed.segments.length === 0) return null
   const obsoleteCandidates: ObsoleteRepeatedJointInfo[] = []
   for (const candidate of getRepeatedJointSourceCandidates(parsed, systemIndexSettings)) {
-    const sourceRows = findMatchingJointRowsInIndex(index, row, candidate.sourceJoint)
+    const matchingSourceRows = findMatchingJointRowsInIndex(index, row, candidate.sourceJoint)
+    const officialSourceRows = matchingSourceRows.filter((sourceRow) => !isUnofficialJoint(sourceRow))
+    const sourceRows = officialSourceRows.length > 0 ? officialSourceRows : matchingSourceRows
     if (sourceRows.length === 0) continue
     const validSource = sourceRows.find((sourceRow) => {
       const rejection = getPrimaryRejectedLnkResult(sourceRow)
@@ -462,7 +464,14 @@ function buildObsoleteRepeatedJointRenameTasks({
     const parsed = parseRepeatedJointName(childJoint, systemIndexSettings)
     if (parsed.segments.length === 0) continue
     for (const candidate of getRepeatedJointSourceCandidates(parsed, systemIndexSettings)) {
-      for (const sourceRow of findMatchingJointRowsInIndex(matchingJointRowsIndex, childRow, candidate.sourceJoint)) {
+      const matchingSourceRows = findMatchingJointRowsInIndex(
+        matchingJointRowsIndex,
+        childRow,
+        candidate.sourceJoint,
+      )
+      const officialSourceRows = matchingSourceRows.filter((sourceRow) => !isUnofficialJoint(sourceRow))
+      const preferredSourceRows = officialSourceRows.length > 0 ? officialSourceRows : matchingSourceRows
+      for (const sourceRow of preferredSourceRows) {
         const children = potentialChildrenBySourceRowId.get(sourceRow.id) ?? []
         if (!children.some((row) => row.id === childRow.id)) children.push(childRow)
         potentialChildrenBySourceRowId.set(sourceRow.id, children)
@@ -541,7 +550,7 @@ function buildObsoleteRepeatedJointRenameTasks({
     if (uniqueTargets.size !== changes.length) continue
     const hasCollision = changes.some((change) =>
       findMatchingJointRowsInIndex(matchingJointRowsIndex, info.row, change.targetJoint)
-        .some((row) => !planRowIds.has(row.id)),
+        .some((row) => !planRowIds.has(row.id) && !isUnofficialJoint(row)),
     )
     if (hasCollision) continue
 

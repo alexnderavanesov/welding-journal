@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PreHeatTreatmentResultManagerDialog } from '@/components/pre-heat-treatment-result-manager-dialog'
@@ -117,5 +117,50 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     expect(screen.getByText('Заключение ВИК до ТО-002')).toBeInTheDocument()
     expect(screen.queryByText('Заявка РК до ТО-002')).not.toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Фильтр результатов' })).toBeInTheDocument()
+  })
+
+  it('keeps a large registry bounded and applies search after buffered input', async () => {
+    const rows = Array.from({ length: 120 }, (_, index) => ({
+      id: index + 1,
+      projectTitle: 'Проект А',
+      subtitleCode: '400',
+      line: `L-${index + 1}`,
+      joint: `F${index + 1}`,
+      preHeatTreatmentControls: [{
+        id: index + 1000,
+        weldJointId: index + 1,
+        method: 'ВИК',
+        requestName: `Заявка до ТО-${index + 1}`,
+        requestDate: '2026-08-03',
+        result: 'ожидает НК',
+      }],
+    })) as WeldRow[]
+
+    render(
+      <PreHeatTreatmentResultManagerDialog
+        rows={rows}
+        registryMode="request"
+        isPending={false}
+        onClose={vi.fn()}
+        onOpenWorkflow={vi.fn()}
+        onCorrect={vi.fn()}
+        onDeleteRequest={vi.fn()}
+        onDeleteResult={vi.fn()}
+        onOpenDocument={vi.fn()}
+        onOpenJournalRows={vi.fn()}
+        onCopyDocumentName={vi.fn()}
+        canOpenDocument={() => true}
+      />,
+    )
+
+    expect(screen.getAllByRole('button', { name: /Заявка до ТО-/ })).toHaveLength(12)
+    expect(screen.queryByText('Заявка до ТО-120')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('Название, дата, стык или линия'), {
+      target: { value: 'Заявка до ТО-120' },
+    })
+
+    await waitFor(() => expect(screen.getByText('Найдено: 1')).toBeInTheDocument())
+    expect(screen.getAllByText('Заявка до ТО-120').length).toBeGreaterThan(0)
   })
 })

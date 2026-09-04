@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   FileSpreadsheet,
   ListFilter,
@@ -12,8 +12,10 @@ import {
 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
+import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestManagerPosition } from '@/components/lnk-request-manager-position'
+import { BufferedFilterInput } from '@/components/result-filters'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
@@ -23,7 +25,6 @@ import {
   RequestRenamePanel,
 } from '@/components/request-manager-panels'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -40,6 +41,7 @@ import {
   isSameRequestDocument,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 
 type LnkRequestMethod = (typeof LNK_METHODS)[number]
 type RegistryFilter = 'all' | 'open' | 'fixed'
@@ -105,37 +107,45 @@ export function LnkRequestManagerDialog({
   const [filter, setFilter] = useState<RegistryFilter>('all')
   const [showRequestSettings, setShowRequestSettings] = useState(false)
   const requestConclusionSettings = useRequestConclusionSettings()
-  const selectedIdentity = createRequestDocumentIdentity(requestName, requestDate)
-  const selectedOption = selectedIdentity
-    ? requestOptions.find((request) => request.key === selectedIdentity.key)
-    : undefined
-  const isSystemRequest = isSystemDocumentNameForRows(
-    requestRows,
-    'lnkRequest',
-    requestName,
-    requestConclusionSettings,
+  const stableOnClearPosition = useStableEventCallback(onClearPosition)
+  const selectedIdentity = useMemo(
+    () => createRequestDocumentIdentity(requestName, requestDate),
+    [requestDate, requestName],
   )
-  const positionCount = LNK_METHODS.reduce(
-    (count, method) =>
-      count +
-      requestRows.filter((row) =>
-        isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
-          name: requestName,
-          date: requestDate,
-        }),
-      ).length,
-    0,
+  const selectedOption = useMemo(
+    () => selectedIdentity
+      ? requestOptions.find((request) => request.key === selectedIdentity.key)
+      : undefined,
+    [requestOptions, selectedIdentity],
   )
-  const completedPosition = requestRows.flatMap((row) =>
-    LNK_METHODS.flatMap((method) =>
-      isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
-        name: requestName,
-        date: requestDate,
-      }) && hasCompletedLnkRequestPosition(row, method)
-        ? [{ row, method }]
-        : [],
+  const isSystemRequest = useMemo(
+    () => isSystemDocumentNameForRows(
+      requestRows,
+      'lnkRequest',
+      requestName,
+      requestConclusionSettings,
     ),
-  )[0]
+    [requestConclusionSettings, requestName, requestRows],
+  )
+  const requestPositionEntries = useMemo(
+    () => requestRows.map((row) => ({
+      row,
+      methods: getLnkRowRequestMethods(row, requestName, requestDate),
+    })),
+    [requestDate, requestName, requestRows],
+  )
+  const positionCount = useMemo(
+    () => requestPositionEntries.reduce((count, entry) => count + entry.methods.length, 0),
+    [requestPositionEntries],
+  )
+  const completedPosition = useMemo(
+    () => requestPositionEntries.flatMap(({ row, methods }) =>
+      methods
+        .filter((method) => hasCompletedLnkRequestPosition(row, method))
+        .map((method) => ({ row, method })),
+    )[0],
+    [requestPositionEntries],
+  )
   const deleteBlockReason = completedPosition
     ? `Удаление недоступно: по стыку ${String(completedPosition.row.joint ?? '').trim() || `№${completedPosition.row.id}`}, ${completedPosition.method.code} уже внесен результат или заключение.`
     : null
@@ -151,7 +161,7 @@ export function LnkRequestManagerDialog({
         .includes(query)
     })
   }, [filter, methodFilter, requestOptions, search])
-  const getRequestContext = (request: RequestDocumentIdentity) => {
+  const getRequestContext = useCallback((request: RequestDocumentIdentity) => {
     const rows = allRows.filter((row) =>
       LNK_METHODS.some((method) =>
         isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], request),
@@ -164,7 +174,7 @@ export function LnkRequestManagerDialog({
       ? rows.find((candidate) => isSameRequestDocument(candidate[method.requestKey], candidate[method.requestDateKey], request))
       : undefined
     return { rows, row, method }
-  }
+  }, [allRows])
   const openRequestContextMenu = (event: MouseEvent<HTMLElement>, request: LnkRequestExtensionOption) => {
     const point = getDialogMenuPoint(event)
     const context = getRequestContext(request)
@@ -240,9 +250,11 @@ export function LnkRequestManagerDialog({
     }))
   }
 
-  const selectedDocumentMethod = selectedIdentity
-    ? getRequestContext(selectedIdentity).method
-    : undefined
+  const selectedRequestContext = useMemo(
+    () => selectedIdentity ? getRequestContext(selectedIdentity) : undefined,
+    [getRequestContext, selectedIdentity],
+  )
+  const selectedDocumentMethod = selectedRequestContext?.method
   const canOpenSelectedDocument = Boolean(
     selectedDocumentMethod && canOpenDocument(selectedDocumentMethod.requestKey),
   )
@@ -267,9 +279,9 @@ export function LnkRequestManagerDialog({
             </Button>
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
+              <BufferedFilterInput
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onValueChange={setSearch}
                 placeholder="Название, дата, стык или линия"
                 className="h-10 bg-white pl-9"
               />
@@ -309,25 +321,27 @@ export function LnkRequestManagerDialog({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-2 lg:max-h-none">
+          <div className="flex min-h-0 flex-1 flex-col p-2 lg:max-h-none">
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-10 text-center text-sm text-slate-500">
                 {requestOptions.length === 0 ? 'Заявок ЛНК пока нет.' : 'По заданным условиям заявки не найдены.'}
               </div>
             ) : (
-              <div className="space-y-1">
-                {filteredOptions.map((request) => {
+              <DialogVirtualizedRows
+                items={filteredOptions}
+                estimateRowHeight={92}
+                getItemKey={(request) => request.key}
+                renderItem={(request) => {
                   const selected = request.key === selectedIdentity?.key
                   return (
                     <button
-                      key={request.key}
                       type="button"
                       onClick={() => {
                         setShowRequestSettings(false)
                         onChangeRequest(request)
                       }}
                       onContextMenu={(event) => openRequestContextMenu(event, request)}
-                      className={`w-full rounded-md border px-3 py-3 text-left transition ${
+                      className={`mb-1 w-full rounded-md border px-3 py-3 text-left transition ${
                         selected
                           ? 'border-sky-300 bg-white shadow-sm ring-1 ring-sky-100'
                           : 'border-transparent hover:border-slate-200 hover:bg-white'
@@ -349,8 +363,9 @@ export function LnkRequestManagerDialog({
                       </span>
                     </button>
                   )
-                })}
-              </div>
+                }}
+                footer={null}
+              />
             )}
           </div>
         </aside>
@@ -478,19 +493,22 @@ export function LnkRequestManagerDialog({
                 description="Кнопка вида НК исключает только эту позицию стыка. Другие виды НК и остальные стыки заявки не меняются; выполненный контроль исключить нельзя."
                 hasRows={Boolean(requestName && requestRows.length > 0)}
                 emptyText="В заявке больше нет позиций."
+                virtualized
               >
-                {requestRows.map((row) => {
-                  const methods = getLnkRowRequestMethods(row, requestName, requestDate)
-                  return (
+                <DialogVirtualizedRows
+                  items={requestPositionEntries}
+                  estimateRowHeight={66}
+                  getItemKey={({ row }) => row.id}
+                  renderItem={({ row, methods }) => (
                     <LnkRequestManagerPosition
-                      key={row.id}
                       row={row}
                       methods={methods}
                       isCorrectionPending={isCorrectionPending}
-                      onClearPosition={onClearPosition}
+                      onClearPosition={stableOnClearPosition}
                     />
-                  )
-                })}
+                  )}
+                  footer={null}
+                />
               </RequestPositionPanel>
             </div>
           )}

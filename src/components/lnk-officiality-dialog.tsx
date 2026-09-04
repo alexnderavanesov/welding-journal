@@ -4,17 +4,20 @@ import { Check } from 'lucide-react'
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
+import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LnkOfficialitySettings } from '@/components/lnk-officiality-settings'
 import { LnkOfficialityRow } from '@/components/lnk-officiality-row'
 import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
 import { PaginationBar } from '@/components/pagination-bar'
+import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
 import type { LnkOfficialityDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import type { LnkOfficialityCounters } from '@/lib/lnk-officiality-derived-utils'
 import { usePagination } from '@/lib/use-pagination'
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 
 export type LnkOfficialityDialogProps = {
   draft: LnkOfficialityDraftState
@@ -44,6 +47,7 @@ export function LnkOfficialityDialog({
   onSetVisibleRowsSelected,
 }: LnkOfficialityDialogProps) {
   const [showSelectedPreview, setShowSelectedPreview] = useState(false)
+  const stableOnToggleRow = useStableEventCallback(onToggleRow)
   const paginationResetKeys = useMemo(() => [draft.search, filteredRows], [draft.search, filteredRows])
   const rowsPagination = usePagination({
     items: filteredRows,
@@ -55,7 +59,7 @@ export function LnkOfficialityDialog({
     <LargeDialogShell
       maxWidthClassName="max-w-[1180px]"
       maxHeightClassName="h-[86vh]"
-      overlayClassName="z-50 bg-slate-950/20"
+      overlayClassName="z-[90] bg-slate-950/25"
       panelShadowClassName="shadow-slate-950/10"
     >
       <DialogHeader title="Официальность стыков" subtitle={`Выбрано: ${draft.rowIds.size}`} onClose={onClose} />
@@ -84,40 +88,44 @@ export function LnkOfficialityDialog({
             </div>
           </div>
 
-          <div className="mb-3 flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-            <input
+          <div className="mb-3">
+            <RequestRowsSearch
               value={draft.search}
-              onChange={(event) => onDraftChange((current) => ({ ...current, search: event.target.value }))}
               placeholder="Проект, шифр, линия, спул или стык"
-              className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              filteredCount={filteredRows.length}
+              availableCount={filteredRows.length}
+              statsLabel={<>Найдено: {filteredRows.length} · Выбрано: {draft.rowIds.size}</>}
+              onChange={(search) => onDraftChange((current) => ({ ...current, search }))}
             />
-            <span className="shrink-0 text-xs text-slate-500">
-              Найдено: {filteredRows.length} · Выбрано: {draft.rowIds.size}
-            </span>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-slate-200">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
             {filteredRows.length === 0 ? (
               <DialogEmptyState minHeightClassName="min-h-60">
                 По фильтру ничего не найдено.
               </DialogEmptyState>
             ) : (
-              <>
-                {rowsPagination.pageItems.map((row) => (
-                  <LnkOfficialityRow key={row.id} row={row} selected={draft.rowIds.has(row.id)} onToggle={onToggleRow} />
-                ))}
-                <div className="p-3">
-                  <PaginationBar
-                    totalCount={rowsPagination.totalCount}
-                    firstItemNumber={rowsPagination.firstItemNumber}
-                    lastItemNumber={rowsPagination.lastItemNumber}
-                    pageSize={rowsPagination.pageSize}
-                    hasMore={rowsPagination.hasMore}
-                    onLoadMore={rowsPagination.loadMore}
-                    onPageSizeChange={rowsPagination.setPageSize}
-                  />
-                </div>
-              </>
+              <DialogVirtualizedRows
+                items={rowsPagination.pageItems}
+                estimateRowHeight={62}
+                getItemKey={(row) => row.id}
+                renderItem={(row) => (
+                  <LnkOfficialityRow row={row} selected={draft.rowIds.has(row.id)} onToggle={stableOnToggleRow} />
+                )}
+                footer={(
+                  <div className="p-3">
+                    <PaginationBar
+                      totalCount={rowsPagination.totalCount}
+                      firstItemNumber={rowsPagination.firstItemNumber}
+                      lastItemNumber={rowsPagination.lastItemNumber}
+                      pageSize={rowsPagination.pageSize}
+                      hasMore={rowsPagination.hasMore}
+                      onLoadMore={rowsPagination.loadMore}
+                      onPageSizeChange={rowsPagination.setPageSize}
+                    />
+                  </div>
+                )}
+              />
             )}
           </div>
         </section>
@@ -161,12 +169,13 @@ function LnkOfficialityPreviewDialog({
   onClose: () => void
 }) {
   const officialityLabel = officiality === 'official' ? 'официальный' : 'неофициальный'
+  const rowsPagination = usePagination({ items: rows, defaultPageSize: 100, resetKeys: [rows] })
 
   return (
     <LargeDialogShell
       maxWidthClassName="max-w-4xl"
       maxHeightClassName="max-h-[86vh]"
-      overlayClassName="z-[65] bg-slate-950/25"
+      overlayClassName="z-[110] bg-slate-950/30"
     >
       <DialogHeader
         title="Предпросмотр выбранных стыков"
@@ -174,30 +183,48 @@ function LnkOfficialityPreviewDialog({
         onClose={onClose}
         closeLabel="Закрыть предпросмотр"
       />
-      <div className="min-h-0 flex-1 overflow-auto p-5">
+      <div className="flex min-h-0 flex-1 flex-col p-5">
         {rows.length === 0 ? (
           <DialogEmptyState minHeightClassName="min-h-40">Нет выбранных стыков.</DialogEmptyState>
         ) : (
-          <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
-            {rows.map((row) => (
-              <div key={row.id} className="flex items-start justify-between gap-3 bg-white px-4 py-3">
-                <div className="min-w-0">
-                  <ManagerRowJointHeading
-                    row={row}
-                    titleClassName="text-sm font-semibold text-slate-900"
-                    metaClassName="mt-1 text-xs text-slate-500"
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
+            <DialogVirtualizedRows
+              items={rowsPagination.pageItems}
+              estimateRowHeight={64}
+              getItemKey={(row) => row.id}
+              renderItem={(row) => (
+                <div className="flex items-start justify-between gap-3 bg-white px-4 py-3">
+                  <div className="min-w-0">
+                    <ManagerRowJointHeading
+                      row={row}
+                      titleClassName="text-sm font-semibold text-slate-900"
+                      metaClassName="mt-1 text-xs text-slate-500"
+                    />
+                  </div>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    <span className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">
+                      станет: {officialityLabel}
+                    </span>
+                    <span className={`rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+                      {getJointStatusLabel(row)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              footer={(
+                <div className="p-3">
+                  <PaginationBar
+                    totalCount={rowsPagination.totalCount}
+                    firstItemNumber={rowsPagination.firstItemNumber}
+                    lastItemNumber={rowsPagination.lastItemNumber}
+                    pageSize={rowsPagination.pageSize}
+                    hasMore={rowsPagination.hasMore}
+                    onLoadMore={rowsPagination.loadMore}
+                    onPageSizeChange={rowsPagination.setPageSize}
                   />
                 </div>
-                <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                  <span className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">
-                    станет: {officialityLabel}
-                  </span>
-                  <span className={`rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
-                    {getJointStatusLabel(row)}
-                  </span>
-                </div>
-              </div>
-            ))}
+              )}
+            />
           </div>
         )}
       </div>

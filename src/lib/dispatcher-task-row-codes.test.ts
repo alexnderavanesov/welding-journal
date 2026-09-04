@@ -3,6 +3,7 @@ import type {
   DispatcherTask,
   RepeatedJointCheckTask,
   RepeatedJointCoilTask,
+  RepeatedJointDuplicateCheckTask,
   RepeatedJointRenameTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
@@ -15,6 +16,7 @@ import {
   buildMergedDispatcherTaskCodes,
   buildDispatcherTaskServerFilters,
   buildWeldColumnFilterOptionsRequestFilters,
+  isDispatcherTaskRelatedToRow,
   parseDispatcherTaskServerFilter,
 } from '@/lib/dispatcher-task-row-codes'
 import { ROW_ID_LIST_FILTER_KEY, buildRowIdListFilters, parseRowIdListFilter } from '@/lib/report-hidden-filters'
@@ -191,6 +193,54 @@ describe('dispatcher task row codes', () => {
       { rowId: 1, taskKey: 'line-percent', code: 'ДЗ-24' },
       { rowId: 2, taskKey: 'line-percent', code: 'ДЗ-24' },
     ])
+  })
+
+  it('relates a line task to every row of the same line without case sensitivity', () => {
+    const source = row(1, { projectTitle: 'Project', subtitleCode: 'S1', line: 'Lin123' })
+    const task = lineTask(source) as Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>
+
+    expect(isDispatcherTaskRelatedToRow(task, row(2, {
+      projectTitle: ' project ',
+      subtitleCode: 's1',
+      line: 'LIN123',
+    }))).toBe(true)
+    expect(isDispatcherTaskRelatedToRow(task, row(3, { line: 'LIN124' }))).toBe(false)
+  })
+
+  it('indexes a duplicate task on every matching joint in the same line', () => {
+    const rows = [
+      row(1, { projectTitle: 'Project', subtitleCode: 'S1', line: 'Lin123', joint: 'S1' }),
+      row(2, { projectTitle: ' project ', subtitleCode: 's1', line: 'LIN123', joint: 's1' }),
+      row(3, { projectTitle: 'Project', subtitleCode: 'S1', line: 'Lin124', joint: 'S1' }),
+    ]
+    const task: RepeatedJointDuplicateCheckTask = {
+      kind: 'duplicate-check',
+      key: 'duplicate-check:project:s1:lin123:s1',
+      row: rows[0],
+      sourceJoint: 'S1',
+      baseJoint: 'S1',
+      count: 2,
+    }
+
+    expect(buildDispatcherTaskIndexRows([task], rows)).toEqual([
+      { rowId: 1, taskKey: task.key, code: 'ДЗ-14' },
+      { rowId: 2, taskKey: task.key, code: 'ДЗ-14' },
+    ])
+  })
+
+  it('relates chain repair tasks to both sides of the affected chain step', () => {
+    const source = row(1, { joint: 'S1' })
+    const target = row(2, { joint: 'S1R1' })
+    const task: RepeatedJointCheckTask = {
+      ...stampTask(target),
+      sourceRow: source,
+      sourceJoint: 'S1',
+      targetJoint: 'S1R1',
+      baseJoint: 'S1',
+    }
+
+    expect(isDispatcherTaskRelatedToRow(task, source)).toBe(true)
+    expect(isDispatcherTaskRelatedToRow(task, target)).toBe(true)
   })
 
   it('indexes new grouped dispatcher codes for the virtual field', () => {

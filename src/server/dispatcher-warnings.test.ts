@@ -3,6 +3,20 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('dispatcher warning concurrency', () => {
+  it('reads a bounded registry page and its counters from one repeatable snapshot', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/server/dispatcher-warnings.ts'), 'utf8')
+    const listStart = source.indexOf('export const listDispatcherAcceptedWarnings')
+    const revokeStart = source.indexOf('export const revokeDispatcherAcceptedWarning')
+    const listSource = source.slice(listStart, revokeStart)
+
+    expect(listSource).toContain('.limit(data.pageSize)')
+    expect(listSource).toContain('clampDispatcherAcceptedWarningPage(data.page, total, data.pageSize)')
+    expect(listSource).toContain('.offset((page - 1) * data.pageSize)')
+    expect(listSource).toContain('count(*) filter (where ${where})')
+    expect(listSource).not.toContain('Promise.all')
+    expect(listSource).toContain("{ isolationLevel: 'repeatable read', accessMode: 'read only' }")
+  })
+
   it('locks control-process settings before revoking an early-coil decision', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/server/dispatcher-warnings.ts'), 'utf8')
     const handlerStart = source.indexOf('export const revokeDispatcherAcceptedWarning')

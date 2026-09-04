@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LnkRequestManagerDialog } from '@/components/lnk-request-manager-dialog'
@@ -100,14 +100,16 @@ describe('LnkRequestManagerDialog', () => {
     expect(onChangeRequest).toHaveBeenCalledWith(fixedRequest)
   })
 
-  it('searches by a joint or line included in the request', () => {
+  it('searches by a joint or line included in the request', async () => {
     renderDialog()
 
     fireEvent.change(screen.getByPlaceholderText('Название, дата, стык или линия'), {
       target: { value: 'линия-2' },
     })
 
-    expect(screen.queryByRole('button', { name: /Заявка-001/ })).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Заявка-001/ })).not.toBeInTheDocument()
+    })
     expect(screen.getByRole('button', { name: /Заявка-002/ })).toBeInTheDocument()
   })
 
@@ -151,6 +153,26 @@ describe('LnkRequestManagerDialog', () => {
       expect.objectContaining({ id: 1 }),
       'vikRequest',
     )
+  })
+
+  it('renders only the visible positions of a large request', () => {
+    const rows = Array.from({ length: 120 }, (_, index) => ({
+      id: index + 1,
+      joint: `F${index + 1}`,
+      line: 'Линия',
+      vikRequest: openRequest.name,
+      vikRequestDate: openRequest.date,
+    })) as WeldRow[]
+
+    renderDialog({
+      allRows: rows,
+      requestRows: rows,
+      requestOptions: [{ ...openRequest, rowCount: rows.length, positionCount: rows.length }],
+    })
+
+    expect(screen.getByText('Линия · F1')).toBeInTheDocument()
+    expect(screen.queryByText('Линия · F100')).not.toBeInTheDocument()
+    expect(screen.getAllByText(/^Линия · F\d+$/)).toHaveLength(12)
   })
 
   it('opens the selected request actions from its context menu', () => {

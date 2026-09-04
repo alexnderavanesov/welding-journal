@@ -11,6 +11,7 @@ const modules = {
   mutations: read('weld-mutations.ts'),
   importApi: read('weld-import-api.ts'),
   imports: read('weld-import.ts'),
+  lnkOfficiality: read('lnk-officiality-workflow.ts'),
   persistence: read('weld-persistence.ts'),
   shared: read('weld-server-shared.ts'),
 }
@@ -87,6 +88,7 @@ describe('weld server module boundaries', () => {
   it('coordinates every weld-line membership workflow with PSTO line assignment', () => {
     for (const fileName of [
       'early-coil-workflow.ts',
+      'lnk-officiality-workflow.ts',
       'psto-line-assignment.ts',
       'weld-import.ts',
       'weld-mutations.ts',
@@ -99,7 +101,7 @@ describe('weld server module boundaries', () => {
     const percentageWorkflow = read('percentage-line-control-workflow.ts')
     const repeatedJointDeleteWorkflow = read('repeated-joint-delete-workflow.ts')
 
-    for (const source of [percentageWorkflow, repeatedJointDeleteWorkflow]) {
+    for (const source of [percentageWorkflow, repeatedJointDeleteWorkflow, modules.lnkOfficiality]) {
       expect(source).toContain('lockWeldLineMemberships')
       expect(source).toContain(".for('update')")
     }
@@ -108,6 +110,9 @@ describe('weld server module boundaries', () => {
     expect(repeatedJointDeleteWorkflow).toContain('findCurrentObsoleteRepeatedJointDeleteTask')
     expect(repeatedJointDeleteWorkflow.indexOf('findCurrentObsoleteRepeatedJointDeleteTask({'))
       .toBeLessThan(repeatedJointDeleteWorkflow.indexOf('deleteLockedWeldRowsInTransaction(tx'))
+    expect(modules.lnkOfficiality).toContain('buildLnkOfficialityChainPlan')
+    expect(modules.lnkOfficiality.indexOf('plan.planKey !== data.expectedPlanKey'))
+      .toBeLessThan(modules.lnkOfficiality.indexOf('updateWeldJointsInBatches(tx'))
   })
 
   it('uses the shared LNK chronology barrier in every line move that changes a stage', () => {

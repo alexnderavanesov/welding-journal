@@ -28,22 +28,23 @@ export function getLnkInputMethodsForRows(rows: WeldInput[], requestName: string
 
 export function filterLnkRequestRows(rows: WeldRow[], search: string) {
   const query = search.trim().toLowerCase()
-  const sortedRows = sortLnkRequestRows(rows)
-  if (!query) return sortedRows
+  if (!query) return sortLnkRequestRows(rows)
 
-  return sortedRows.filter((row) => {
+  const filteredRows = rows.filter((row) => {
     const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
     return values.some((value) => String(value ?? '').toLowerCase().includes(query))
   })
+  return sortLnkRequestRows(filteredRows)
 }
 
 export function sortLnkRequestRows(rows: WeldRow[]) {
-  return [...rows].sort((left, right) => {
-    const leftAvailable = canCreateLnkRequest(left)
-    const rightAvailable = canCreateLnkRequest(right)
-    if (leftAvailable !== rightAvailable) return leftAvailable ? -1 : 1
-    return compareLnkRequestRows(left, right)
-  })
+  return rows
+    .map((row, index) => ({ row, index, available: canCreateLnkRequest(row) }))
+    .sort((left, right) => {
+      if (left.available !== right.available) return left.available ? -1 : 1
+      return compareLnkRequestRows(left.row, right.row) || left.index - right.index
+    })
+    .map(({ row }) => row)
 }
 
 export function isEveryFilteredLnkRequestRowSelected(selectedIds: ReadonlySet<number>, rows: WeldRow[]) {

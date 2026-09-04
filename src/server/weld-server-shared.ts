@@ -81,7 +81,7 @@ export const WELD_TABLE_COLUMNS = getTableColumns(weldJoints)
 
 const { updatedAt: OMITTED_UPDATED_AT_COLUMN, ...WELD_TABLE_SELECT_COLUMNS } = WELD_TABLE_COLUMNS
 
-export const WELD_ROW_VERSION_SELECT = sql<string>`xmin::text`.as('row_version')
+export const WELD_ROW_VERSION_SELECT = sql<string>`${weldJoints}.xmin::text`.as('row_version')
 export const WELD_EFFECTIVE_OFFICIALITY = sql<string | null>`${weldJoints.officiality}`
 
 export const WELD_TABLE_SELECT = {

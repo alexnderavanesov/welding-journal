@@ -4,7 +4,10 @@ import { getPstoResultValue } from '@/lib/report-import'
 import { hasText, isCancelledControlValue, isYesText } from '@/lib/report-value-utils'
 import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldInput } from '@/lib/weld-fields'
-import { getPrimaryPstoStartBlockReason } from '@/lib/lnk-control-stage'
+import {
+  getPrimaryPstoStartBlockReason,
+  getRejectedPreHeatTreatmentControls,
+} from '@/lib/lnk-control-stage'
 import {
   canCreateRepeatPstoCycle,
   getCurrentPstoCycle,
@@ -14,6 +17,9 @@ import {
 
 export function getPstoRequestBlockReason(row: WeldInput) {
   if (!isYesText(row.pstoRequired)) return 'ПСТО не назначена.'
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) {
+    return getPrimaryPstoStartBlockReason(row)
+  }
   const requestName = String(row.pstoRequest ?? '').trim()
   if (requestName) return `Заявка ПСТО уже создана: ${requestName}.`
   return getPrimaryPstoStartBlockReason(row)
@@ -24,6 +30,9 @@ export function canCreatePstoRequest(row: WeldInput) {
 }
 
 export function getPstoWorkflowRequestBlockReason(row: WeldInput) {
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) {
+    return getPrimaryPstoStartBlockReason(row)
+  }
   if (canCreatePstoRequest(row) || canCreateRepeatPstoCycle(row)) return ''
 
   const state = getPstoTvmtWorkflowState(row)
@@ -50,6 +59,9 @@ export function canCreatePstoWorkflowRequest(row: WeldInput) {
 }
 
 export function getPstoWorkflowResultBlockReason(row: WeldInput) {
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) {
+    return getPrimaryPstoStartBlockReason(row)
+  }
   const state = getPstoTvmtWorkflowState(row)
   if (state === 'waiting-psto') return ''
   if (state === 'waiting-psto-request') {

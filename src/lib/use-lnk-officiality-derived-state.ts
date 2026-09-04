@@ -21,7 +21,7 @@ export function useLnkOfficialityDerivedState({
 }: LnkOfficialityDerivedStateParams) {
   const filteredLnkOfficialityRows = useMemo(
     () => getFilteredLnkOfficialityRows(lnkRows, lnkOfficialityDraft),
-    [lnkOfficialityDraft.rowIds, lnkOfficialityDraft.search, lnkRows],
+    [lnkOfficialityDraft.search, lnkRows],
   )
 
   const selectedLnkOfficialityRows = useMemo(

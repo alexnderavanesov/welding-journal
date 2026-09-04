@@ -152,6 +152,7 @@ export function createWeldTableProps({
             return !isLnkRequestField(fieldKey) || isLnkRequestAllowedForRow(row, fieldKey)
           }
         : undefined,
+    showBlockedEditableCellBackground: activeReport !== 'lnk',
     getDisplayValue:
       activeReport === 'lnk'
         ? getLnkDisplayValue

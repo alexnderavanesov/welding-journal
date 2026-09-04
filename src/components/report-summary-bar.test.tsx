@@ -15,6 +15,9 @@ describe('ReportSummaryBar', () => {
     const summary = screen.getByText(/Стыков на ЛНК: 9/)
 
     expect(summary.parentElement).toHaveStyle({ left: '288px', width: 'calc(100vw - 312px)' })
+    expect(summary.parentElement).toHaveClass('h-8', 'overflow-hidden', 'bg-[#f4f7f9]', 'isolate')
+    expect(summary.parentElement).not.toHaveClass('backdrop-blur-sm')
+    expect(summary).toHaveClass('block', 'leading-5')
   })
 
   it('contains only stable report counters and no notification block', () => {

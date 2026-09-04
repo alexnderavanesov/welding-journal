@@ -34,7 +34,7 @@ describe('SystemDocumentNamesPanel', () => {
     const naming = { mode: 'system' as const, customName: '' }
     const plan = createPstoPlan(naming)
 
-    render(
+    const { container } = render(
       <SystemDocumentNamesPanel
         plan={plan}
         naming={naming}
@@ -49,6 +49,11 @@ describe('SystemDocumentNamesPanel', () => {
     expect(screen.getByText('Наименование диаграммы')).toBeInTheDocument()
     expect(screen.getByText(plan.groups[0].name)).toBeInTheDocument()
     expect(screen.getByText(plan.groups[1].name)).toBeInTheDocument()
+
+    const groupsList = screen.getByText(plan.groups[0].name).closest('.overflow-y-auto')
+    expect(groupsList).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto')
+    expect(groupsList?.parentElement).toHaveClass('min-h-0', 'flex-1', 'overflow-hidden')
+    expect(container.firstElementChild).toHaveClass('min-h-0', 'flex-1')
   })
 
   it('keeps an arbitrary custom diagram name for each split group', () => {

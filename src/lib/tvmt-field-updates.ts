@@ -1,6 +1,7 @@
 import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 import { isCancelledControlValue } from '@/lib/report-value-utils'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
@@ -12,26 +13,34 @@ import {
 } from '@/lib/tvmt-cycle'
 
 export function canCreatePrimaryTvmtRequest(row: WeldRow) {
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) return false
   const cycle = getCurrentPstoCycle(row)
   return Boolean(cycle?.source === 'primary' && getPstoTvmtWorkflowState(row) === 'waiting-tvmt-request')
 }
 
 export function canCreateTvmtRequest(row: WeldRow) {
-  return getPstoTvmtWorkflowState(row) === 'waiting-tvmt-request'
+  return getRejectedPreHeatTreatmentControls(row).length === 0 &&
+    getPstoTvmtWorkflowState(row) === 'waiting-tvmt-request'
 }
 
 export function canAddPrimaryTvmtResult(row: WeldRow) {
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) return false
   const cycle = getCurrentPstoCycle(row)
   return Boolean(cycle?.source === 'primary' && getPstoTvmtWorkflowState(row) === 'waiting-tvmt')
 }
 
 export function canAddTvmtResult(row: WeldRow) {
-  return getPstoTvmtWorkflowState(row) === 'waiting-tvmt'
+  return getRejectedPreHeatTreatmentControls(row).length === 0 &&
+    getPstoTvmtWorkflowState(row) === 'waiting-tvmt'
 }
 
 export function getTvmtWorkflowBlockReason(row: WeldRow, mode: 'request' | 'result') {
   const available = mode === 'request' ? canCreateTvmtRequest(row) : canAddTvmtResult(row)
   if (available) return ''
+  const rejectedPreControls = getRejectedPreHeatTreatmentControls(row)
+  if (rejectedPreControls.length > 0) {
+    return `Недоступно: НК до ТО не годен (${rejectedPreControls.map(({ methodCode }) => methodCode).join(', ')}); ТВМТ для этого стыка не требуется.`
+  }
   const state = getPstoTvmtWorkflowState(row)
   if (state === 'not-required') {
     return isCancelledControlValue(row.pstoRequired)

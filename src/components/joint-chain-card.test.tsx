@@ -58,4 +58,37 @@ describe('JointChainCard', () => {
     expect(content.indexOf('ПСТО и ТВМТ')).toBeLessThan(content.indexOf('Основной этап НК'))
     expect(content.indexOf('Основной этап НК')).toBeLessThan(content.indexOf('Итог по стыку'))
   })
+
+  it('marks every downstream stage as not needed after rejected pre-TO control', () => {
+    render(
+      <JointChainCard
+        row={{
+          id: 14,
+          projectTitle: 'Риформинг',
+          subtitleCode: '73281024/4152-330-ТКМ5',
+          line: '2',
+          joint: 'F9Y1',
+          weldDate: '2026-09-02',
+          pstoRequired: 'да',
+          pstoResult: 'ожидает заявку',
+          hasVik: 'да',
+          preHeatTreatmentControls: [{
+            id: 23,
+            weldJointId: 14,
+            method: 'ВИК',
+            requestName: 'Заявка ВИК до ТО',
+            result: 'вырез',
+          }],
+          finalStatus: 'не годен',
+        } as WeldRow}
+        index={0}
+        isCurrent
+        onOpenRow={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Цикл 1: нет потребности')).toBeInTheDocument()
+    expect(screen.getByText('ВИК: нет потребности')).toBeInTheDocument()
+    expect(screen.queryByText(/ожидает заявку ПСТО/)).not.toBeInTheDocument()
+  })
 })

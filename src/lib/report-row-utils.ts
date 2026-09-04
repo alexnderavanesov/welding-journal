@@ -6,6 +6,8 @@ import {
   toLnkReportRow,
 } from '@/lib/report-control-state'
 
+const REPORT_ROW_COLLATOR = new Intl.Collator('ru', { numeric: true })
+
 export function sumAcceptedWdi(rows: WeldDraft[]) {
   return rows.reduce((total, row) => {
     if (String(row.finalStatus ?? '').trim().toLowerCase() !== 'годен') return total
@@ -101,7 +103,7 @@ export function compareLnkRequestRows(left: WeldRow, right: WeldRow) {
 export function compareReportRows(left: WeldRow, right: WeldRow) {
   const leftValue = [left.line, left.spool, left.joint].map((value) => String(value ?? '')).join(' ')
   const rightValue = [right.line, right.spool, right.joint].map((value) => String(value ?? '')).join(' ')
-  return leftValue.localeCompare(rightValue, 'ru', { numeric: true })
+  return REPORT_ROW_COLLATOR.compare(leftValue, rightValue)
 }
 
 export function parseReportTimestamp(value: unknown) {

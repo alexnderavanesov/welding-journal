@@ -35,6 +35,8 @@ type HomePageViewProps = {
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   onOpenReportRowIds: ComponentProps<typeof ReportMainContent>['onOpenReportRowIds']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
+  percentageLineNavigationRequest: ComponentProps<typeof ReportMainContent>['percentageLineNavigationRequest']
+  onPercentageLineNavigationRequestHandled: ComponentProps<typeof ReportMainContent>['onPercentageLineNavigationRequestHandled']
   onDocumentGenerationRequestHandled: (requestId: number) => void
   onDocumentGenerated: (message: string) => void
   onOpenDocumentRows: ComponentProps<typeof ReportMainContent>['onOpenDocumentRows']
@@ -76,6 +78,8 @@ export function HomePageView({
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
+  percentageLineNavigationRequest,
+  onPercentageLineNavigationRequestHandled,
   onDocumentGenerationRequestHandled,
   onDocumentGenerated,
   onOpenDocumentRows,
@@ -108,6 +112,8 @@ export function HomePageView({
     onOpenPercentageLineStampRows,
     onOpenReportRowIds,
     onOpenWeldRowIds,
+    percentageLineNavigationRequest,
+    onPercentageLineNavigationRequestHandled,
     onOpenDocumentRows,
     onOpenDocumentJointHistory,
     documentsPageType,
@@ -169,6 +175,8 @@ type ReportBackgroundProps = Pick<
   | 'onOpenPercentageLineStampRows'
   | 'onOpenReportRowIds'
   | 'onOpenWeldRowIds'
+  | 'percentageLineNavigationRequest'
+  | 'onPercentageLineNavigationRequestHandled'
   | 'onOpenDocumentRows'
   | 'onOpenDocumentJointHistory'
   | 'documentsPageType'
@@ -195,6 +203,8 @@ function ReportBackground({
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
+  percentageLineNavigationRequest,
+  onPercentageLineNavigationRequestHandled,
   onOpenDocumentRows,
   onOpenDocumentJointHistory,
   documentsPageType,
@@ -235,6 +245,8 @@ function ReportBackground({
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenReportRowIds={onOpenReportRowIds}
         onOpenWeldRowIds={onOpenWeldRowIds}
+        percentageLineNavigationRequest={percentageLineNavigationRequest}
+        onPercentageLineNavigationRequestHandled={onPercentageLineNavigationRequestHandled}
         onOpenDocumentRows={onOpenDocumentRows}
         onOpenDocumentJointHistory={onOpenDocumentJointHistory}
         documentsPageType={documentsPageType}

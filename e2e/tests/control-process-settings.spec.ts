@@ -60,6 +60,7 @@ test('shows the protected process tab before locking and keeps RK exposures ther
     'Данные',
     'Системные индексы',
     'Диспетчер задач и напоминаний',
+    'Принятые исключения',
     'Проверки при сохранении',
     'Прочее',
     'Процессы контроля',

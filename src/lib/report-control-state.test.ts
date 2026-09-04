@@ -98,6 +98,30 @@ describe('cancelled report controls', () => {
     expect(getPstoRequestBlockReason(ready)).toBe('')
   })
 
+  it('keeps PSTO and its report cycle unavailable after rejected pre-TO control', () => {
+    const rejected = {
+      id: 1,
+      pstoRequired: 'да',
+      pstoRequest: 'Старая заявка ПСТО',
+      pstoResult: 'ожидает ПСТО',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'ремонт',
+      }],
+      finalStatus: 'не годен',
+    } as unknown as WeldInput
+
+    expect(canCreatePstoRequest(rejected)).toBe(false)
+    expect(canAddPstoWorkflowResult(rejected)).toBe(false)
+    expect(getPstoWorkflowRequestBlockReason(rejected)).toContain('ПСТО и ТВМТ для этого стыка не требуются')
+    expect(getPstoWorkflowResultBlockReason(rejected)).toContain('ПСТО и ТВМТ для этого стыка не требуются')
+    expect(toHeatTreatmentReportRow(rejected).pstoCycleSummary).toBe('нет потребности')
+  })
+
   it('enables a PSTO result only for the current cycle with an existing request', () => {
     const waitingResult = {
       pstoRequired: 'да',

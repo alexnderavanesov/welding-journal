@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JointChainDialog } from '@/components/joint-chain-dialog'
@@ -113,12 +113,119 @@ describe('JointChainDialog', () => {
       onCreateRepeatedJoint,
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Создать F51R1' }))
+    const actions = screen.getByRole('region', { name: 'Продолжение цепочки стыка' })
+    fireEvent.click(within(actions).getByRole('button', { name: 'Создать F51R1' }))
     expect(onCreateRepeatedJoint).toHaveBeenCalledWith(task)
     expect(screen.queryByRole('button', { name: 'Создать S9W1' })).not.toBeInTheDocument()
   })
 
-  it('keeps R/W creation read-only outside the welding journal', () => {
+  it('opens officiality for the rejected source between repeated-joint and early-coil actions', () => {
+    const rows = [row({ id: 1, joint: 'F51', rkResult: 'ремонт' })]
+    const task: RepeatedJointCreateTask = {
+      kind: 'create',
+      key: 'create:F51R1',
+      row: rows[0]!,
+      sourceJoint: 'F51',
+      targetJoint: 'F51R1',
+      result: 'ремонт',
+      suffix: 'R',
+      methodCode: 'РК',
+    }
+    const onOpenOfficiality = vi.fn()
+
+    renderDialog({
+      rows,
+      dispatcherTasks: [task],
+      earlyCoilCandidates: [{
+        replacementJoint: null,
+        replacementRowId: null,
+        sourceJoint: 'F51',
+        sourceRowId: 1,
+        targetJoints: ['F51Y1', 'F51Y2'],
+      }],
+      onOpenOfficiality,
+    })
+
+    const panel = screen.getByRole('region', { name: 'Продолжение цепочки стыка' })
+    expect(within(panel).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Создать F51R1',
+      'Сделать F51 неофициальным',
+      'Врезать катушку досрочно',
+    ])
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Сделать F51 неофициальным' }))
+    expect(onOpenOfficiality).toHaveBeenCalledWith(rows[0], 'unofficial')
+  })
+
+  it('does not offer changing an already unofficial source to unofficial again', () => {
+    const rows = [row({ id: 1, joint: 'F51', officiality: 'неофициальный', rkResult: 'ремонт' })]
+    const task: RepeatedJointCreateTask = {
+      kind: 'create',
+      key: 'create:F51',
+      row: rows[0]!,
+      sourceJoint: 'F51',
+      targetJoint: 'F51',
+      result: 'ремонт',
+      suffix: 'R',
+      methodCode: 'РК',
+    }
+
+    renderDialog({ rows, dispatcherTasks: [task] })
+
+    expect(screen.queryByRole('button', { name: 'Сделать F51 неофициальным' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Сделать F51 официальным' })).toBeInTheDocument()
+  })
+
+  it('keeps officiality management hidden without an active continuation action', () => {
+    const rows = [row({ id: 1, joint: 'F51', rkResult: 'ремонт' })]
+
+    renderDialog({ rows })
+
+    expect(screen.queryByRole('button', { name: 'Сделать F51 неофициальным' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Продолжение цепочки стыка' })).not.toBeInTheDocument()
+  })
+
+  it('does not use an early-coil candidate alone as an officiality task', () => {
+    const rows = [row({ id: 1, joint: 'F51', rkResult: 'ремонт' })]
+
+    renderDialog({
+      rows,
+      earlyCoilCandidates: [{
+        replacementJoint: null,
+        replacementRowId: null,
+        sourceJoint: 'F51',
+        sourceRowId: 1,
+        targetJoints: ['F51Y1', 'F51Y2'],
+      }],
+    })
+
+    expect(screen.queryByRole('button', { name: 'Сделать F51 неофициальным' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Врезать катушку досрочно' })).toBeInTheDocument()
+  })
+
+  it('does not offer officiality for a historical row when another row has the active task', () => {
+    const rows = [
+      row({ id: 1, joint: 'F51', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'F51R1', rkResult: 'ремонт' }),
+    ]
+    const task: RepeatedJointCreateTask = {
+      kind: 'create',
+      key: 'create:F51R2',
+      row: rows[1]!,
+      sourceJoint: 'F51R1',
+      targetJoint: 'F51R2',
+      result: 'ремонт',
+      suffix: 'R',
+      methodCode: 'РК',
+    }
+
+    renderDialog({ rows, record: rows[0], dispatcherTasks: [task] })
+
+    expect(screen.queryByRole('button', { name: 'Сделать F51 неофициальным' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Создать F51R2' })).toBeInTheDocument()
+  })
+
+  it('respects a disabled R/W creation capability', () => {
     const rows = [row({ id: 1, joint: 'F51', rkResult: 'ремонт' })]
     const task: RepeatedJointCreateTask = {
       kind: 'create',
@@ -133,7 +240,8 @@ describe('JointChainDialog', () => {
 
     renderDialog({ rows, dispatcherTasks: [task], canCreateRepeatedJoint: false })
 
-    expect(screen.queryByRole('button', { name: 'Создать F51R1' })).not.toBeInTheDocument()
+    const actions = screen.getByRole('region', { name: 'Продолжение цепочки стыка' })
+    expect(within(actions).queryByRole('button', { name: 'Создать F51R1' })).not.toBeInTheDocument()
   })
 
   it('offers the dispatcher-confirmed chain rename in the left chain panel', () => {
@@ -195,6 +303,7 @@ function renderDialog({
   onCreateRepeatedJoint = vi.fn(),
   onRenameRepeatedJoint = vi.fn(),
   onCreateEarlyCoil = vi.fn(),
+  onOpenOfficiality = vi.fn(),
 }: {
   record?: WeldRow
   rows: WeldRow[]
@@ -218,6 +327,7 @@ function renderDialog({
     sourceRowId: number
     targetJoints: [string, string]
   }) => void
+  onOpenOfficiality?: (row: WeldRow, officiality: 'official' | 'unofficial') => void
 }) {
   return render(
     <JointChainDialog
@@ -240,9 +350,11 @@ function renderDialog({
       onOpenDocument={vi.fn()}
       onOpenReport={vi.fn()}
       onRunNextAction={vi.fn()}
+      onRunDispatcherTaskAction={vi.fn()}
       onCreateRepeatedJoint={onCreateRepeatedJoint}
       onRenameRepeatedJoint={onRenameRepeatedJoint}
       onCreateEarlyCoil={onCreateEarlyCoil}
+      onOpenOfficiality={onOpenOfficiality}
       onRetry={vi.fn()}
     />,
   )

@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
+import { AcceptedWarningsSettingsPanel } from '@/components/accepted-warnings-settings-panel'
 import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -181,23 +182,16 @@ import type { WdiRecalculationPreview } from '@/lib/wdi-recalculation'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { saveRemoteSecuritySettings } from '@/server/security-functions'
 import {
-  listDispatcherAcceptedWarnings,
-  revokeDispatcherAcceptedWarning,
-} from '@/server/dispatcher-warnings'
-import {
   DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   invalidateWeldJoints,
   invalidateWeldPageQueries,
-  STATISTICS_SERVER_QUERY_KEY,
   WELD_DATA_USAGE_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import {
   getDispatcherBackgroundStatus,
   refreshDispatcherBackgroundNow,
 } from '@/server/dispatcher-background-task-functions'
-import { getAcceptedWarningContextParts } from '@/lib/dispatcher-accepted-warning-display'
-import { parseEarlyCoilDecisionKey } from '@/lib/early-coil-decision'
 import {
   getControlProcessSettingsOverview,
   type ControlProcessSettingsOverview,
@@ -232,7 +226,13 @@ const SETTINGS_TABS = [
     id: 'dispatcher',
     label: 'Диспетчер задач и напоминаний',
     icon: Bell,
-    searchKeywords: 'ДЗ задачи уведомления предупреждения фоновой пересчет принятые отклонения',
+    searchKeywords: 'ДЗ задачи уведомления предупреждения фоновой пересчет',
+  },
+  {
+    id: 'acceptedWarnings',
+    label: 'Принятые исключения',
+    icon: CheckCircle2,
+    searchKeywords: 'принятые отклонения решения процентные линии досрочные катушки отменить поиск',
   },
   {
     id: 'saveChecks',
@@ -505,6 +505,8 @@ export function SettingsPage() {
               runProtectedSettingsChange={runProtectedSettingsChange}
               focusTargetId={pendingScrollTarget}
             />
+          ) : activeTab === 'acceptedWarnings' ? (
+            <AcceptedWarningsSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'saveChecks' ? (
             <SaveChecksSettingsPanel
               runProtectedSettingsChange={runProtectedSettingsChange}
@@ -4089,20 +4091,9 @@ function DispatcherSettingsPanel({
   const settings = useDispatcherSettings()
   const reminderSettings = useDispatcherReminderSettings()
   const backgroundSettings = useDispatcherBackgroundSettings()
-  const [acceptedWarningsExpanded, setAcceptedWarningsExpanded] = useState(true)
-  const [acceptedWarningsMessage, setAcceptedWarningsMessage] = useState<{
-    text: string
-    tone: 'error' | 'success'
-  } | null>(null)
   const disabledCount = Object.values(settings).filter((enabled) => !enabled).length
   const totalCount = Object.values(settings).length
-  const confirmAction = useConfirmAction()
-  const { requireDeletePassword } = useSecurityGuard()
   const queryClient = useQueryClient()
-  const acceptedWarningsQuery = useQuery({
-    queryKey: ['dispatcher-accepted-warnings'],
-    queryFn: () => listDispatcherAcceptedWarnings(),
-  })
   const backgroundStatusQuery = useQuery({
     queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
     queryFn: () => getDispatcherBackgroundStatus(),
@@ -4119,31 +4110,6 @@ function DispatcherSettingsPanel({
       ])
     },
   })
-  const revokeAcceptedWarningMutation = useMutation({
-    mutationFn: (key: string) => revokeDispatcherAcceptedWarning({ data: { key } }),
-    onSuccess: async (result, key) => {
-      setAcceptedWarningsMessage({
-        text: parseEarlyCoilDecisionKey(key)
-          ? `Решение о досрочной катушке отменено${result.deletedRowIds.length > 0 ? `; удалено пустых стыков: ${result.deletedRowIds.length}` : ''}.`
-          : 'Принятое исключение отменено.',
-        tone: 'success',
-      })
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dispatcher-accepted-warnings'] }),
-        queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
-        invalidateWeldPageQueries(queryClient),
-        queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
-      ])
-    },
-    onError: (error) => {
-      setAcceptedWarningsMessage({
-        text: getErrorMessage(error, 'Не удалось отменить принятое исключение.'),
-        tone: 'error',
-      })
-    },
-  })
-
   const updateSetting = (id: DispatcherSettingId, enabled: boolean) => {
     runProtectedSettingsChange(() => saveDispatcherSettings({ ...settings, [id]: enabled }))
   }
@@ -4169,35 +4135,6 @@ function DispatcherSettingsPanel({
     void runProtectedSettingsChange(async () => {
       await refreshBackgroundMutation.mutateAsync()
     })
-  }
-
-  const revokeAcceptedWarning = async (key: string, label: string) => {
-    const isEarlyCoilDecision = Boolean(parseEarlyCoilDecisionKey(key))
-    const confirmed = await confirmAction({
-      title: isEarlyCoilDecision ? 'Отменить досрочную врезку катушки' : 'Отменить принятое исключение',
-      itemName: label,
-      description: isEarlyCoilDecision
-        ? 'Система удалит созданные стыки катушки только если они остались полностью пустыми и нетронутыми. После отмены диспетчер снова предложит обычный следующий ремонт или вырез.'
-        : 'Если нарушение все еще существует, после пересчета оно снова появится в диспетчере.',
-      warning: isEarlyCoilDecision
-        ? 'Если у стыков катушки уже появились изменения, сварка, контроль, документы или продолжение цепочки, отмена будет заблокирована без удаления данных.'
-        : undefined,
-      confirmLabel: isEarlyCoilDecision ? 'Отменить решение' : 'Отменить исключение',
-      tone: 'warning',
-    })
-    if (!confirmed) return
-    setAcceptedWarningsMessage(null)
-    try {
-      await runProtectedSettingsChange(async () => {
-        if (
-          isEarlyCoilDecision &&
-          !(await requireDeletePassword('отмену досрочной врезки катушки'))
-        ) return
-        await revokeAcceptedWarningMutation.mutateAsync(key)
-      })
-    } catch {
-      // The mutation displays the authoritative server reason in this panel.
-    }
   }
 
   return (
@@ -4322,114 +4259,8 @@ function DispatcherSettingsPanel({
         ) : null}
       </section>
 
-      <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
-        <div className={`flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 ${acceptedWarningsExpanded ? 'border-b border-slate-200' : ''}`}>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="text-sm font-semibold text-slate-900">Принятые исключения</h4>
-              <span className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
-                {acceptedWarningsQuery.data?.length ?? 0}
-              </span>
-            </div>
-            <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
-              Здесь хранятся ситуации, которые пользователь осознанно разрешил кнопкой «Принять». Диспетчер продолжает показывать все остальные
-              задачи. Обычное исключение можно отменить в любой момент. Решение о досрочной катушке отменяется только пока оба созданных стыка
-              остаются полностью нетронутыми.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-            onClick={() => setAcceptedWarningsExpanded((current) => !current)}
-            aria-expanded={acceptedWarningsExpanded}
-          >
-            {acceptedWarningsExpanded ? 'Свернуть' : 'Развернуть'}
-            <ChevronDown className={`h-4 w-4 transition-transform ${acceptedWarningsExpanded ? 'rotate-180' : ''}`} />
-          </button>
-        </div>
-        {acceptedWarningsExpanded ? (
-          <>
-            {acceptedWarningsMessage ? (
-              <div className={`border-b px-4 py-2.5 text-xs font-medium ${
-                acceptedWarningsMessage.tone === 'error'
-                  ? 'border-red-200 bg-red-50 text-red-700'
-                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              }`}>
-                {acceptedWarningsMessage.text}
-              </div>
-            ) : null}
-            {acceptedWarningsQuery.isLoading ? (
-            <div className="px-4 py-5 text-sm text-slate-500">Загружаем исключения...</div>
-          ) : acceptedWarningsQuery.data?.length ? (
-            <div className="divide-y divide-slate-100">
-              {acceptedWarningsQuery.data.map((warning) => {
-                const category = getAcceptedWarningCategory(warning.kind)
-                const label = warning.title || category
-                const contextParts = getAcceptedWarningContextParts(warning)
-                return (
-                  <div key={warning.key} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
-                      {warning.code || category}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-slate-900">{label}</div>
-                      {contextParts.length > 0 ? (
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-slate-600">
-                          {contextParts.map((part, index) => (
-                            <span key={`${part.label}:${part.value}:${index}`}>
-                              <span className="font-semibold text-slate-500">{part.label}:</span> {part.value}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div className="mt-0.5 text-xs text-slate-500">
-                        Принято: {formatSettingsTimestamp(warning.acceptedAt)}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
-                      onClick={() => void revokeAcceptedWarning(warning.key, warning.context || label)}
-                      disabled={revokeAcceptedWarningMutation.isPending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Отменить
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="px-4 py-5 text-sm text-slate-500">Принятых исключений пока нет.</div>
-          )}
-          </>
-        ) : null}
-      </section>
     </div>
   )
-}
-
-function getAcceptedWarningCategory(kind: string) {
-  switch (kind) {
-    case 'create':
-    case 'coil':
-    case 'delete':
-    case 'rename':
-      return 'Цепочка стыков'
-    case 'early-coil':
-      return 'Досрочная катушка'
-    case 'check':
-    case 'duplicate-check':
-      return 'Проверка стыка'
-    case 'line-consistency':
-      return 'Проверка линии'
-    case 'percentage-line-control':
-      return 'Процентная линия'
-    case 'welder-stamp-expiry':
-      return 'Клеймо и допуски'
-    default:
-      return 'Исключение'
-  }
 }
 
 function formatSettingsTimestamp(value: string) {

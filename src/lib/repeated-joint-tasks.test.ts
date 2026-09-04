@@ -20,6 +20,65 @@ describe('buildRepeatedJointTasks', () => {
     expect(createTasks[0]).toEqual(expect.objectContaining({ sourceJoint: 'S2', targetJoint: 'S2' }))
   })
 
+  it('replaces the R/W continuation with an official same-name continuation after officiality changes', () => {
+    const officialSource = row({
+      id: 1,
+      joint: 'S2',
+      officiality: 'действующий',
+      rkResult: 'ремонт',
+    })
+
+    const officialTasks = buildRepeatedJointTasks([officialSource]).filter((task) => task.kind === 'create')
+    const unofficialTasks = buildRepeatedJointTasks([
+      { ...officialSource, officiality: 'неофициальный' },
+    ]).filter((task) => task.kind === 'create')
+
+    expect(officialTasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceJoint: 'S2', targetJoint: 'S2R1' }),
+    ]))
+    expect(unofficialTasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceJoint: 'S2', targetJoint: 'S2' }),
+    ]))
+    expect(unofficialTasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ targetJoint: 'S2R1' }),
+    ]))
+  })
+
+  it('renames an existing continuation to the official same-name joint after its source becomes unofficial', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1R1', officiality: 'неофициальный', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'S1R1W1', finalStatus: 'годен' }),
+    ])
+
+    expect(tasks.filter((task) => task.kind === 'rename')).toEqual([
+      expect.objectContaining({
+        currentJoint: 'S1R1W1',
+        targetJoint: 'S1R1',
+        changes: [{ rowId: 3, currentJoint: 'S1R1W1', targetJoint: 'S1R1' }],
+      }),
+    ])
+    expect(tasks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'check', reason: 'проверить целостность цепочки' }),
+    ]))
+  })
+
+  it('uses the official same-name row as the source of later chain corrections', () => {
+    const tasks = buildRepeatedJointTasks([
+      row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1R1', officiality: 'неофициальный', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'S1R1', rkResult: 'вырез' }),
+      row({ id: 4, joint: 'S1R2' }),
+    ])
+
+    expect(tasks.filter((task) => task.kind === 'rename')).toEqual([
+      expect.objectContaining({
+        sourceRow: expect.objectContaining({ id: 3 }),
+        changes: [{ rowId: 4, currentJoint: 'S1R2', targetJoint: 'S1R1W1' }],
+      }),
+    ])
+  })
+
   it('keeps the next repeated joint create task when a premature coil needs integrity check', () => {
     const rows = [
       row({ id: 1, joint: 'S2', pvkResult: 'вырез' }),

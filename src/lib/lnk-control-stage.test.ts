@@ -197,6 +197,23 @@ describe('LNK control stages', () => {
     } as unknown as Parameters<typeof getPrimaryPstoStartBlockReason>[0])).toBe('')
   })
 
+  it('describes rejected pre-TO control as no need for downstream stages', () => {
+    const rejected = {
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'вырез',
+      }],
+    }
+
+    expect(getPrimaryPstoStartBlockReason(rejected)).toContain('ПСТО и ТВМТ для этого стыка не требуются')
+    expect(getPrimaryLnkStageBlockReason(rejected, 'ВИК')).toContain('Основной этап НК для этого стыка не требуется')
+  })
+
   it('distinguishes a missing pre-TO request from an existing PSTO request', () => {
     expect(getPrimaryPstoStartStatusLabel({
       pstoRequired: 'да',

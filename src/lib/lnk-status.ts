@@ -158,7 +158,7 @@ export function getPstoDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
     return isCancelledControlValue(row.pstoRequired) ? row[fieldKey] : ''
   }
   if (fieldKey === 'pstoCycleSummary') {
-    return getPstoCycleSummary(row, getPrimaryPstoStartStatusLabel(row))
+    return getPstoCycleDisplaySummary(row)
   }
   const currentCycle = getCurrentPstoCycle(row)
   const cycleValue = currentCycle && PSTO_CYCLE_REPORT_FIELD_KEYS.has(fieldKey)
@@ -243,9 +243,15 @@ type PstoCycleReportFieldKey =
   | 'tvmtConclusionDate'
   | 'tvmtConclusion'
 
-function isPstoNoNeed(row: WeldInput, resultValue: unknown = row.pstoResult) {
+export function getPstoCycleDisplaySummary(row: WeldInput) {
+  const currentCycle = getCurrentPstoCycle(row)
+  if (isPstoNoNeed(row, currentCycle?.pstoResult)) return 'нет потребности'
+  return getPstoCycleSummary(row, getPrimaryPstoStartStatusLabel(row))
+}
+
+export function isPstoNoNeed(row: WeldInput, resultValue: unknown = row.pstoResult) {
   if (!isYesText(row.pstoRequired)) return false
-  if (!isRejectedJoint(row)) return false
+  if (!hasRejectedLnkResult(row) && !isRejectedJoint(row)) return false
   const result = String(resultValue ?? '').trim().toLowerCase()
   return result !== 'проведено' && result !== 'проведено (отменен)' && result !== 'отменен'
 }
@@ -340,10 +346,10 @@ function getJointChainPstoTvmtItems(row: WeldInput): JointChainResultItem[] {
     ]
   }
 
-  if (isRejectedJoint(row) && !hasText(row.pstoResult)) {
+  if (isPstoNoNeed(row, currentCycle?.pstoResult)) {
     return [{
       stage: 'pstoTvmt',
-      label: 'ПСТО',
+      label: `Цикл ${sequence}`,
       value: 'нет потребности',
       className: getInactiveLnkRequestBadgeClass(),
     }]

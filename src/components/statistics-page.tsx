@@ -51,6 +51,12 @@ import {
 } from '@/lib/percentage-line-summary'
 import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
 import {
+  findPercentageLineNavigationTarget,
+  isPercentageLineNavigationViewReady,
+  type PercentageLineNavigationOutcome,
+  type PercentageLineNavigationRequest,
+} from '@/lib/percentage-line-navigation'
+import {
   type WelderStatisticsJointFilter,
   type WelderStatisticsRow,
   type WelderStatisticsSummary,
@@ -99,6 +105,11 @@ type StatisticsPageProps = {
     rowIds: number[],
     targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment',
     message?: string,
+  ) => void
+  percentageLineNavigationRequest?: PercentageLineNavigationRequest | null
+  onPercentageLineNavigationRequestHandled?: (
+    requestId: number,
+    outcome: PercentageLineNavigationOutcome,
   ) => void
 }
 
@@ -261,20 +272,27 @@ function createDefaultStatisticsTimeSettings(): Record<StatisticsTab, Statistics
     allPeriod: false,
     periodPreset: 'currentMonth',
   })
-  const allPeriodSettings = (): StatisticsTimeSettings => ({
-    period: { from: '', to: '' },
-    allPeriod: true,
-    periodPreset: 'all',
-  })
 
   return {
     general: currentPeriodSettings(),
-    lnk: allPeriodSettings(),
-    psto: allPeriodSettings(),
+    lnk: createAllPeriodStatisticsTimeSettings(),
+    psto: createAllPeriodStatisticsTimeSettings(),
     welders: currentPeriodSettings(),
     lineSummary: currentPeriodSettings(),
     percentageLines: currentPeriodSettings(),
   }
+}
+
+function createAllPeriodStatisticsTimeSettings(): StatisticsTimeSettings {
+  return {
+    period: { from: '', to: '' },
+    allPeriod: true,
+    periodPreset: 'all',
+  }
+}
+
+function normalizeStatisticsFilterValue(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
 }
 
 export function StatisticsPage({
@@ -284,13 +302,19 @@ export function StatisticsPage({
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
+  percentageLineNavigationRequest,
+  onPercentageLineNavigationRequestHandled,
 }: StatisticsPageProps) {
   const [selectedTab, setSelectedTab] = useState<StatisticsTab>(fixedTab ?? 'general')
   const activeTab = fixedTab ?? selectedTab
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [timeSettingsByTab, setTimeSettingsByTab] = useState<Record<StatisticsTab, StatisticsTimeSettings>>(
-    createDefaultStatisticsTimeSettings,
-  )
+  const [timeSettingsByTab, setTimeSettingsByTab] = useState<Record<StatisticsTab, StatisticsTimeSettings>>(() => {
+    const settings = createDefaultStatisticsTimeSettings()
+    if (percentageLineNavigationRequest) {
+      settings.percentageLines = createAllPeriodStatisticsTimeSettings()
+    }
+    return settings
+  })
   const { period, allPeriod, periodPreset } = timeSettingsByTab[activeTab]
   const [generalUnit, setGeneralUnit] = useState<StatisticsUnit>('wdi')
   const [lnkUnit, setLnkUnit] = useState<StatisticsUnit>('joints')
@@ -301,9 +325,40 @@ export function StatisticsPage({
   const [weldingDynamicsScaleSetting, setWeldingDynamicsScaleSetting] = useState<WeldingDynamicsScaleSetting>('auto')
   const [weldingDynamicsTableGrouping, setWeldingDynamicsTableGrouping] = useState<WeldingDynamicsTableGrouping>('projects')
   const [welderJointFilter, setWelderJointFilter] = useState<WelderStatisticsJointFilter>('all')
-  const [projectFilter, setProjectFilter] = useState('')
-  const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>([])
-  const [percentageLineSearch, setPercentageLineSearch] = useState('')
+  const [projectFilter, setProjectFilter] = useState(() => (
+    normalizeStatisticsFilterValue(percentageLineNavigationRequest?.projectTitle)
+  ))
+  const [selectedSubtitles, setSelectedSubtitles] = useState<string[]>(() => (
+    percentageLineNavigationRequest?.subtitleCode?.trim()
+      ? [normalizeStatisticsFilterValue(percentageLineNavigationRequest.subtitleCode)]
+      : []
+  ))
+  const [percentageLineSearch, setPercentageLineSearch] = useState(
+    () => percentageLineNavigationRequest?.stamp ?? '',
+  )
+  useEffect(() => {
+    if (!percentageLineNavigationRequest) return
+    setTimeSettingsByTab((current) => ({
+      ...current,
+      percentageLines: createAllPeriodStatisticsTimeSettings(),
+    }))
+    setProjectFilter(normalizeStatisticsFilterValue(percentageLineNavigationRequest.projectTitle))
+    setSelectedSubtitles(
+      percentageLineNavigationRequest.subtitleCode.trim()
+        ? [normalizeStatisticsFilterValue(percentageLineNavigationRequest.subtitleCode)]
+        : [],
+    )
+    setPercentageLineSearch(percentageLineNavigationRequest.stamp)
+  }, [
+    percentageLineNavigationRequest?.id,
+    percentageLineNavigationRequest?.projectTitle,
+    percentageLineNavigationRequest?.stamp,
+    percentageLineNavigationRequest?.subtitleCode,
+  ])
+  const percentageLineNavigationViewReady = isPercentageLineNavigationViewReady(
+    percentageLineNavigationRequest,
+    { allPeriod, projectFilter, search: percentageLineSearch, selectedSubtitles },
+  )
   const [controlDynamicsScaleByTab, setControlDynamicsScaleByTab] = useState<{
     lnk: StatisticsControlDynamicsScaleSetting
     psto: StatisticsControlDynamicsScaleSetting
@@ -864,6 +919,13 @@ export function StatisticsPage({
           onOpenWeldRowIds={onOpenWeldRowIds}
           search={percentageLineSearch}
           onSearchChange={setPercentageLineSearch}
+          navigationRequest={percentageLineNavigationRequest}
+          navigationLoading={
+            statisticsQuery.isLoading ||
+            statisticsQuery.isFetching ||
+            !percentageLineNavigationViewReady
+          }
+          onNavigationRequestHandled={onPercentageLineNavigationRequestHandled}
         />
       ) : (
         <LineSummaryPanel onOpenRows={onOpenWeldRowIds} summary={lineSummary} unit={lineSummaryUnit} />
@@ -2985,6 +3047,9 @@ function PercentageLinesPanel({
   onOpenWeldRowIds,
   search,
   onSearchChange,
+  navigationRequest,
+  navigationLoading,
+  onNavigationRequestHandled,
 }: {
   onAssignPercentageLineMissingControls?: (
     scope: PercentageLineControlScope,
@@ -3000,10 +3065,35 @@ function PercentageLinesPanel({
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
   search: string
   onSearchChange: (value: string) => void
+  navigationRequest?: PercentageLineNavigationRequest | null
+  navigationLoading?: boolean
+  onNavigationRequestHandled?: (
+    requestId: number,
+    outcome: PercentageLineNavigationOutcome,
+  ) => void
 }) {
   const [collapsedLineKeys, setCollapsedLineKeys] = useState<Set<string>>(() => new Set())
   const [detailDialog, setDetailDialog] = useState<PercentageLineJointDetailDialogState | null>(null)
   const [assignMissingDialog, setAssignMissingDialog] = useState<PercentageLineAssignMissingDialogState | null>(null)
+  useEffect(() => {
+    if (!navigationRequest || navigationLoading) return
+    const target = findPercentageLineNavigationTarget(summary, navigationRequest)
+    const canOpen = Boolean(target && target.stamp.missingControls > 0)
+    if (target && canOpen) {
+      setAssignMissingDialog({
+        rowIds: target.stamp.assignmentCandidateRowIds,
+        cancellationRowIds: target.stamp.missingCandidateRowIds,
+        missingControls: target.stamp.missingControls,
+        projectTitle: target.stamp.projectTitle,
+        subtitleCode: target.stamp.subtitleCode,
+        line: target.stamp.line,
+        stamp: target.stamp.stamp,
+        subtitle: `${target.line.line} · клеймо ${target.stamp.stamp}`,
+        title: 'Назначить расчетный контроль',
+      })
+    }
+    onNavigationRequestHandled?.(navigationRequest.id, canOpen ? 'opened' : 'stale')
+  }, [navigationLoading, navigationRequest, onNavigationRequestHandled, summary])
   const requestedRowIds = useMemo(
     () =>
       detailDialog?.rowIds ??

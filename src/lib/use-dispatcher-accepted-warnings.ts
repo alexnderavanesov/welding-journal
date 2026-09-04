@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { acceptDispatcherWarning } from '@/server/dispatcher-warnings'
 import type { DispatcherTask } from '@/lib/dispatcher-types'
+import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   invalidateWeldPageQueries,
@@ -21,6 +22,7 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
       }),
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
         invalidateWeldPageQueries(queryClient),

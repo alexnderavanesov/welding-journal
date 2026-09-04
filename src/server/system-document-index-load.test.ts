@@ -1,14 +1,46 @@
 import { describe, expect, it, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/node-postgres'
 import { PgDialect } from 'drizzle-orm/pg-core'
 
+import {
+  generatedDocuments,
+  generatedDocumentWeldJoints,
+  weldJoints,
+} from '@/db/schema'
 import type { SystemDocumentSummary } from '@/lib/system-document-types'
 import {
   persistSourcedSystemDocumentChangesInTransaction,
   persistSourcedSystemDocumentUpsertPlans,
   persistSystemDocumentSummaryRecordsInTransaction,
 } from '@/server/system-document-index'
+import { WELD_ROW_VERSION_SELECT } from '@/server/weld-server-shared'
 
 describe('sourced system document database load', () => {
+  it('qualifies the weld row version in joined document queries', () => {
+    const compiled = drizzle.mock()
+      .select({ rowVersion: WELD_ROW_VERSION_SELECT })
+      .from(generatedDocumentWeldJoints)
+      .innerJoin(
+        generatedDocuments,
+        eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
+      )
+      .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
+      .toSQL()
+
+    expect(compiled.sql).toContain('"weld_joints".xmin::text as "row_version"')
+  })
+
+  it('keeps the qualified weld row version valid in mutation returning clauses', () => {
+    const compiled = drizzle.mock()
+      .update(weldJoints)
+      .set({ updatedAt: new Date('2026-09-04T10:00:00.000Z') })
+      .returning({ rowVersion: WELD_ROW_VERSION_SELECT })
+      .toSQL()
+
+    expect(compiled.sql).toContain('returning "weld_joints".xmin::text as "row_version"')
+  })
+
   it.each([2, 100])('persists %i document changes with a bounded query count', async (documentCount) => {
     const changes = Array.from({ length: documentCount }, (_, index) => ({
       documentId: index + 1,

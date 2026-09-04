@@ -69,14 +69,22 @@ export function getLnkRowRequestMethods(row: WeldInput, requestName: string, req
 export function filterLnkResultRows(rows: WeldRow[], search: string, methodKey: WeldFieldKey | '' = '') {
   const query = normalizeSearchText(search)
   const compactQuery = compactSearchText(query)
-  return rows
-    .filter((row) => {
-      if (!query) return true
-      const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
-      const haystack = normalizeSearchText(values.map((value) => String(value ?? '')).join(' '))
-      return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
+  return rows.filter((row) => {
+    if (!query) return true
+    const values = [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
+    const haystack = normalizeSearchText(values.map((value) => String(value ?? '')).join(' '))
+    return haystack.includes(query) || compactSearchText(haystack).includes(compactQuery)
+  })
+    .map((row, index) => ({
+      row,
+      index,
+      priority: getLnkResultEntryPriority(row, methodKey),
+    }))
+    .sort((left, right) => {
+      if (left.priority !== right.priority) return left.priority - right.priority
+      return compareLnkRequestRows(left.row, right.row) || left.index - right.index
     })
-    .sort((left, right) => compareLnkResultEntryRows(left, right, methodKey))
+    .map(({ row }) => row)
 }
 
 export function compareLnkResultEntryRows(left: WeldRow, right: WeldRow, methodKey: WeldFieldKey | '') {

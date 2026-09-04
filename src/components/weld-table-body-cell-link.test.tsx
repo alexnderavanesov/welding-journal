@@ -5,6 +5,45 @@ import { getWeldTableBodyCellTooltip, WeldTableBodyCell } from '@/components/wel
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldField } from '@/lib/weld-fields'
 
+describe('WeldTableBodyCell background', () => {
+  it('keeps a blocked LNK field neutral when its background is disabled', () => {
+    const field = {
+      key: 'prePvkDefectDescription',
+      dbName: '__pre_pvk_defect_description',
+      label: 'Дефекты ПВК до ТО',
+      kind: 'text',
+      group: 'Контроль',
+      virtual: true,
+    } satisfies WeldField
+    const { container } = render(
+      <table><tbody><tr>
+        <WeldTableBodyCell
+          row={{ id: 1 } as WeldRow}
+          field={field}
+          displayValue=""
+          isEditableCell={false}
+          isBlockedEditableCell
+          showBlockedEditableCellBackground={false}
+          isHighlightedRow={false}
+          isSelectedRow={false}
+          hasDispatcherTask={false}
+          isHighlightedCell={false}
+          isResultField={false}
+          stickyLeft={0}
+          stickyIdentityLeadingWidth={0}
+          stickyIdentityColumns={false}
+          stickyBackgroundClassName="bg-white"
+          isSectionEnd={false}
+        />
+      </tr></tbody></table>,
+    )
+
+    const cell = container.querySelector('td[data-weld-field-key="prePvkDefectDescription"]')
+    expect(cell).not.toHaveClass('bg-amber-50/70')
+    expect(cell?.className).not.toContain('rgba(251,191,36')
+  })
+})
+
 describe('WeldTableBodyCell LNK request link', () => {
   it('opens PSTO history from the joint cell when the report enables that transition', () => {
     const onOpenJoint = vi.fn()

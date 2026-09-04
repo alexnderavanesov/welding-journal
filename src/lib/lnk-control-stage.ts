@@ -161,7 +161,8 @@ export function getPreHeatTreatmentPendingFinalStatus(row: WeldInput) {
 export function getPrimaryPstoStartBlockReason(row: WeldInput) {
   const { rejected, missingRequests, pendingResults } = getPrimaryPstoStartPrerequisites(row)
   if (rejected.length > 0) {
-    return `НК до ТО имеет негодный результат: ${rejected.join(', ')}. Сначала обработайте повторный стык.`
+    return `ПСТО и ТВМТ для этого стыка не требуются: НК до ТО имеет негодный результат: ${rejected.join(', ')}. ` +
+      'Продолжите цепочку новым официальным или R/W-стыком.'
   }
   if (missingRequests.length > 0) {
     return `Сначала создайте заявки НК до ТО: ${missingRequests.join(', ')}.`
@@ -215,6 +216,10 @@ export function getPrimaryLnkStageBlockReason(
   if (!requiresHeatTreatmentStagedLnk(row)) return ''
 
   if (requiresPreHeatTreatmentLnk(row)) {
+    const rejectedMethods = getRejectedPreHeatTreatmentControls(row).map(({ methodCode }) => methodCode)
+    if (rejectedMethods.length > 0) {
+      return `Основной этап НК для этого стыка не требуется: НК до ТО имеет негодный результат: ${rejectedMethods.join(', ')}.`
+    }
     const incompleteMethods = PRE_HEAT_TREATMENT_LNK_METHODS.flatMap((method) => {
       if (!isControlEnabledValue(row[method.enabledKey])) return []
       const control = getPreHeatTreatmentControl(row, method.code)

@@ -55,8 +55,11 @@ export function useRepeatedJointTaskActions({
     }
   }
 
-  async function createRepeatedJoint(task: RepeatedJointCreateTask | RepeatedJointCoilTask) {
-    if (activeReport === 'lnk') {
+  async function createRepeatedJoint(
+    task: RepeatedJointCreateTask | RepeatedJointCoilTask,
+    options: { fromChain?: boolean } = {},
+  ) {
+    if (activeReport === 'lnk' && !options.fromChain) {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Создание стыков доступно из сварочного журнала.')
       return
     }
@@ -75,8 +78,11 @@ export function useRepeatedJointTaskActions({
     repeatedJointMutation.mutate(currentTask)
   }
 
-  async function createEarlyCoil(task: RepeatedJointCreateTask) {
-    if (activeReport !== 'weldingJournal') {
+  async function createEarlyCoil(
+    task: RepeatedJointCreateTask,
+    options: { fromChain?: boolean } = {},
+  ) {
+    if (activeReport !== 'weldingJournal' && !options.fromChain) {
       setMessage('Досрочная врезка катушки доступна только из сварочного журнала.')
       return
     }
@@ -124,10 +130,6 @@ export function useRepeatedJointTaskActions({
     sourceRow: WeldRow,
     candidate: WeldJointChainEarlyCoilCandidate,
   ) {
-    if (activeReport !== 'weldingJournal') {
-      setMessage('Досрочная врезка катушки доступна только из сварочного журнала.')
-      return
-    }
     await confirmAndCreateEarlyCoil({
       sourceRow,
       sourceJoint: candidate.sourceJoint,
@@ -172,8 +174,11 @@ export function useRepeatedJointTaskActions({
     })
   }
 
-  async function deleteObsoleteRepeatedJoint(task: RepeatedJointDeleteTask) {
-    if (activeReport === 'lnk') {
+  async function deleteObsoleteRepeatedJoint(
+    task: RepeatedJointDeleteTask,
+    options: { fromChain?: boolean } = {},
+  ) {
+    if (activeReport === 'lnk' && !options.fromChain) {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Удаление стыков доступно из сварочного журнала.')
       return
     }
@@ -202,8 +207,11 @@ export function useRepeatedJointTaskActions({
     obsoleteRepeatedJointMutation.mutate(currentTask)
   }
 
-  async function renameObsoleteRepeatedJoint(task: RepeatedJointRenameTask) {
-    if (activeReport === 'lnk') {
+  async function renameObsoleteRepeatedJoint(
+    task: RepeatedJointRenameTask,
+    options: { fromChain?: boolean } = {},
+  ) {
+    if (activeReport === 'lnk' && !options.fromChain) {
       setMessage('В отчете ЛНК диспетчер только показывает цепочку. Переименование стыков доступно из сварочного журнала.')
       return
     }

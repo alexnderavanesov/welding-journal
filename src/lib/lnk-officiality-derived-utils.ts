@@ -14,7 +14,7 @@ export function getFilteredLnkOfficialityRows(
   lnkOfficialityDraft: LnkOfficialityDraftState,
 ) {
   return sortLnkOfficialityRows(
-    filterLnkOfficialityRows(getActionableLnkOfficialityRows(lnkRows), lnkOfficialityDraft.search, lnkOfficialityDraft.rowIds),
+    filterLnkOfficialityRows(getActionableLnkOfficialityRows(lnkRows), lnkOfficialityDraft.search),
   )
 }
 
@@ -22,7 +22,9 @@ export function getSelectedLnkOfficialityRows(
   lnkRows: WeldRow[],
   lnkOfficialityDraft: LnkOfficialityDraftState,
 ) {
-  return getActionableLnkOfficialityRows(lnkRows).filter((row) => lnkOfficialityDraft.rowIds.has(row.id))
+  return lnkRows.filter(
+    (row) => lnkOfficialityDraft.rowIds.has(row.id) && isActionableLnkOfficialityRow(row),
+  )
 }
 
 export function getLnkOfficialityCounters(rows: WeldRow[]): LnkOfficialityCounters {
@@ -55,19 +57,22 @@ export function getLnkOfficialitySaveBlockReason({
 }
 
 function getActionableLnkOfficialityRows(rows: WeldRow[]) {
-  return rows.filter((row) => {
-    if (getJointStatusLabel(row) === 'ожидает НК') return false
-    return isRejectedOfficialLnkOfficialityRow(row) || isUnofficialLnkOfficialityRow(row)
-  })
+  return rows.filter(isActionableLnkOfficialityRow)
+}
+
+function isActionableLnkOfficialityRow(row: WeldRow) {
+  if (getJointStatusLabel(row) === 'ожидает НК') return false
+  return isRejectedOfficialLnkOfficialityRow(row) || isUnofficialLnkOfficialityRow(row)
 }
 
 function sortLnkOfficialityRows(rows: WeldRow[]) {
-  return [...rows].sort((left, right) => {
-    const leftGroup = getLnkOfficialitySortGroup(left)
-    const rightGroup = getLnkOfficialitySortGroup(right)
-    if (leftGroup !== rightGroup) return leftGroup - rightGroup
-    return compareLnkRequestRows(left, right)
-  })
+  return rows
+    .map((row, index) => ({ row, index, group: getLnkOfficialitySortGroup(row) }))
+    .sort((left, right) => {
+      if (left.group !== right.group) return left.group - right.group
+      return compareLnkRequestRows(left.row, right.row) || left.index - right.index
+    })
+    .map(({ row }) => row)
 }
 
 function getLnkOfficialitySortGroup(row: WeldRow) {

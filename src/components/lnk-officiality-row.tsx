@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Check } from 'lucide-react'
 
 import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
@@ -10,12 +11,13 @@ export type LnkOfficialityRowProps = {
   onToggle: (rowId: number) => void
 }
 
-export function LnkOfficialityRow({ row, selected, onToggle }: LnkOfficialityRowProps) {
+function LnkOfficialityRowComponent({ row, selected, onToggle }: LnkOfficialityRowProps) {
   return (
     <button
       type="button"
+      aria-pressed={selected}
       onClick={() => onToggle(row.id)}
-      className={`flex w-full items-start gap-3 border-b border-slate-100 px-4 py-3 text-left transition-colors last:border-b-0 ${
+      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
         selected ? 'bg-sky-50 ring-1 ring-inset ring-sky-200' : 'bg-white hover:bg-slate-50'
       }`}
     >
@@ -40,3 +42,9 @@ export function LnkOfficialityRow({ row, selected, onToggle }: LnkOfficialityRow
     </button>
   )
 }
+
+export const LnkOfficialityRow = memo(LnkOfficialityRowComponent, (previous, next) => (
+  previous.row === next.row &&
+  previous.selected === next.selected &&
+  previous.onToggle === next.onToggle
+))

@@ -43,6 +43,7 @@ type WeldTableBodyRowsProps = {
   contextMenuAnchorRowId?: number
   canEditField: (fieldKey: WeldFieldKey) => boolean
   canEditCell: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
+  showBlockedEditableCellBackground: boolean
   stickyLeft: number
   stickyIdentityLeadingWidth: number
   stickyIdentityColumns: boolean
@@ -83,6 +84,7 @@ export function WeldTableBodyRows({
   contextMenuAnchorRowId,
   canEditField,
   canEditCell,
+  showBlockedEditableCellBackground,
   stickyLeft,
   stickyIdentityLeadingWidth,
   stickyIdentityColumns,
@@ -144,6 +146,7 @@ export function WeldTableBodyRows({
             highlightedCellKeys={highlightedCellKeys}
             canEditField={canEditField}
             canEditCell={canEditCell}
+            showBlockedEditableCellBackground={showBlockedEditableCellBackground}
             stickyLeft={stickyLeft}
             stickyIdentityLeadingWidth={stickyIdentityLeadingWidth}
             stickyIdentityColumns={stickyIdentityColumns}
@@ -186,6 +189,7 @@ type WeldTableBodyRowProps = {
   highlightedCellKeys: ReadonlySet<string>
   canEditField: (fieldKey: WeldFieldKey) => boolean
   canEditCell: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
+  showBlockedEditableCellBackground: boolean
   stickyLeft: number
   stickyIdentityLeadingWidth: number
   stickyIdentityColumns: boolean
@@ -223,6 +227,7 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
   highlightedCellKeys,
   canEditField,
   canEditCell,
+  showBlockedEditableCellBackground,
   stickyLeft,
   stickyIdentityLeadingWidth,
   stickyIdentityColumns,
@@ -292,6 +297,7 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
             displayValue={displayValue}
             isEditableCell={isEditableCell}
             isBlockedEditableCell={isBlockedEditableCell}
+            showBlockedEditableCellBackground={showBlockedEditableCellBackground}
             isHighlightedRow={isHighlighted}
             isSelectedRow={isSelected}
             hasDispatcherTask={hasDispatcherTask}

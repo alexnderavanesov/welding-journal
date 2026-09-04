@@ -150,7 +150,7 @@ export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
         kind: EARLY_COIL_DECISION_KIND,
         code: 'ДЗ-09',
         title: `Досрочная врезка катушки ${candidate.targetJoints.join(' + ')}`,
-        context: buildDecisionContext(candidate.sourceRow, candidate.sourceJoint, candidate.targetJoints),
+        context: buildEarlyCoilDecisionContext(candidate.sourceRow, candidate.sourceJoint, candidate.targetJoints),
       })
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(drafts, previousRows),
@@ -304,7 +304,7 @@ function normalizedTextEquals(
   return sql`lower(btrim(coalesce(${column}, ''))) = ${String(value ?? '').trim().toLocaleLowerCase('ru-RU')}`
 }
 
-function buildDecisionContext(
+export function buildEarlyCoilDecisionContext(
   row: WeldRow,
   sourceJoint: string,
   targetJoints: readonly string[],

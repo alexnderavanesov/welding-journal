@@ -4,8 +4,10 @@ import { Check, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react'
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
+import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PaginationBar } from '@/components/pagination-bar'
+import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
 import { ResultBadge } from '@/lib/weld-table-badges'
 import { getDuplicateControls } from '@/lib/duplicate-control-utils'
@@ -20,6 +22,7 @@ import {
 } from '@/lib/duplicate-control-types'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { usePagination } from '@/lib/use-pagination'
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { calculateFinalStatus, formatFinalStatusDisplay } from '@/lib/weld-status'
 
 export type DuplicateControlDialogProps = {
@@ -60,7 +63,11 @@ export function DuplicateControlDialog({
   const isEditing = typeof draft.id === 'number'
   const [showExistingControls, setShowExistingControls] = useState(false)
   const [showSelectedPreview, setShowSelectedPreview] = useState(false)
-  const rowsById = new Map([...allRows, ...filteredRows, ...selectedRows].map((row) => [row.id, row]))
+  const stableOnToggleRow = useStableEventCallback(onToggleRow)
+  const rowsById = useMemo(
+    () => new Map([...allRows, ...filteredRows, ...selectedRows].map((row) => [row.id, row])),
+    [allRows, filteredRows, selectedRows],
+  )
   const existingControls = useMemo(
     () => getUniqueDuplicateControls([...controls, ...allRows.flatMap((row) => getDuplicateControls(row))]),
     [allRows, controls],
@@ -203,44 +210,47 @@ export function DuplicateControlDialog({
             </div>
           </div>
 
-          <div className="mb-3 flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-            <input
+          <div className="mb-3">
+            <RequestRowsSearch
               value={draft.search}
-              onChange={(event) => onDraftChange((current) => ({ ...current, search: event.target.value }))}
               placeholder="Проект, шифр, линия, спул или стык"
-              className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              filteredCount={filteredRows.length}
+              availableCount={filteredRows.length}
+              statsLabel={<>Найдено: {filteredRows.length} · Выбрано: {draft.rowIds.size}</>}
+              onChange={(search) => onDraftChange((current) => ({ ...current, search }))}
             />
-            <span className="shrink-0 text-xs text-slate-500">
-              Найдено: {filteredRows.length} · Выбрано: {draft.rowIds.size}
-            </span>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-slate-200">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
             {filteredRows.length === 0 ? (
               <DialogEmptyState minHeightClassName="min-h-60">По фильтру ничего не найдено.</DialogEmptyState>
             ) : (
-              <div className="divide-y divide-slate-100">
-                {rowsPagination.pageItems.map((row) => (
+              <DialogVirtualizedRows
+                items={rowsPagination.pageItems}
+                estimateRowHeight={74}
+                getItemKey={(row) => row.id}
+                renderItem={(row) => (
                   <DuplicateControlRow
-                    key={row.id}
                     row={row}
                     selected={draft.rowIds.has(row.id)}
                     disabled={isEditing && !draft.rowIds.has(row.id)}
-                    onToggleRow={onToggleRow}
+                    onToggleRow={stableOnToggleRow}
                   />
-                ))}
-                <div className="p-3">
-                  <PaginationBar
-                    totalCount={rowsPagination.totalCount}
-                    firstItemNumber={rowsPagination.firstItemNumber}
-                    lastItemNumber={rowsPagination.lastItemNumber}
-                    pageSize={rowsPagination.pageSize}
-                    hasMore={rowsPagination.hasMore}
-                    onLoadMore={rowsPagination.loadMore}
-                    onPageSizeChange={rowsPagination.setPageSize}
-                  />
-                </div>
-              </div>
+                )}
+                footer={(
+                  <div className="p-3">
+                    <PaginationBar
+                      totalCount={rowsPagination.totalCount}
+                      firstItemNumber={rowsPagination.firstItemNumber}
+                      lastItemNumber={rowsPagination.lastItemNumber}
+                      pageSize={rowsPagination.pageSize}
+                      hasMore={rowsPagination.hasMore}
+                      onLoadMore={rowsPagination.loadMore}
+                      onPageSizeChange={rowsPagination.setPageSize}
+                    />
+                  </div>
+                )}
+              />
             )}
           </div>
         </section>
@@ -400,67 +410,74 @@ function DuplicateControlPreviewDialog({
         onClose={onClose}
         closeLabel="Закрыть предпросмотр"
       />
-      <div className="min-h-0 flex-1 overflow-auto p-5">
+      <div className="flex min-h-0 flex-1 flex-col p-5">
         {rows.length === 0 ? (
           <DialogEmptyState minHeightClassName="min-h-40">Нет выбранных стыков.</DialogEmptyState>
         ) : (
-          <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
-            {rowsPagination.pageItems.map((row) => {
-              const finalStatus = calculateFinalStatus(row)
-              const finalStatusDisplay = formatFinalStatusDisplay(row, finalStatus)
-              const isUnofficial = isUnofficialJoint(row)
-              return (
-                <div key={row.id} className="flex items-start justify-between gap-3 bg-white px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-900">{String(row.joint ?? '-')}</span>
-                      <span
-                        className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
-                          isUnofficial
-                            ? 'border-slate-300 bg-slate-100 text-slate-700'
-                            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        }`}
-                      >
-                        {isUnofficial ? 'неофициальный' : 'официальный'}
-                      </span>
-                      <ResultBadge value={finalStatusDisplay} />
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} · {String(row.line ?? '-')} · D:{' '}
-                      {String(row.d1 ?? '-') || '-'} · WDI: {String(row.wdi ?? '-') || '-'} · дата сварки:{' '}
-                      {String(row.weldDate ?? '-') || '-'}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                    {methods.length > 0 ? (
-                      methods.map((method) => (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
+            <DialogVirtualizedRows
+              items={rowsPagination.pageItems}
+              estimateRowHeight={76}
+              getItemKey={(row) => row.id}
+              renderItem={(row) => {
+                const finalStatus = calculateFinalStatus(row)
+                const finalStatusDisplay = formatFinalStatusDisplay(row, finalStatus)
+                const isUnofficial = isUnofficialJoint(row)
+                return (
+                  <div className="flex items-start justify-between gap-3 bg-white px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{String(row.joint ?? '-')}</span>
                         <span
-                          key={method}
-                          className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-800"
+                          className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
+                            isUnofficial
+                              ? 'border-slate-300 bg-slate-100 text-slate-700'
+                              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          }`}
                         >
-                          <span className="font-semibold">{method}</span>
-                          <span>дубль</span>
-                          {draft.result ? <ResultBadge value={draft.result} /> : null}
+                          {isUnofficial ? 'неофициальный' : 'официальный'}
                         </span>
-                      ))
-                    ) : (
-                      <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">метод не выбран</span>
-                    )}
+                        <ResultBadge value={finalStatusDisplay} />
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} · {String(row.line ?? '-')} · D:{' '}
+                        {String(row.d1 ?? '-') || '-'} · WDI: {String(row.wdi ?? '-') || '-'} · дата сварки:{' '}
+                        {String(row.weldDate ?? '-') || '-'}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                      {methods.length > 0 ? (
+                        methods.map((method) => (
+                          <span
+                            key={method}
+                            className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-800"
+                          >
+                            <span className="font-semibold">{method}</span>
+                            <span>дубль</span>
+                            {draft.result ? <ResultBadge value={draft.result} /> : null}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">метод не выбран</span>
+                      )}
+                    </div>
                   </div>
+                )
+              }}
+              footer={(
+                <div className="p-3">
+                  <PaginationBar
+                    totalCount={rowsPagination.totalCount}
+                    firstItemNumber={rowsPagination.firstItemNumber}
+                    lastItemNumber={rowsPagination.lastItemNumber}
+                    pageSize={rowsPagination.pageSize}
+                    hasMore={rowsPagination.hasMore}
+                    onLoadMore={rowsPagination.loadMore}
+                    onPageSizeChange={rowsPagination.setPageSize}
+                  />
                 </div>
-              )
-            })}
-            <div className="p-3">
-              <PaginationBar
-                totalCount={rowsPagination.totalCount}
-                firstItemNumber={rowsPagination.firstItemNumber}
-                lastItemNumber={rowsPagination.lastItemNumber}
-                pageSize={rowsPagination.pageSize}
-                hasMore={rowsPagination.hasMore}
-                onLoadMore={rowsPagination.loadMore}
-                onPageSizeChange={rowsPagination.setPageSize}
-              />
-            </div>
+              )}
+            />
           </div>
         )}
       </div>
