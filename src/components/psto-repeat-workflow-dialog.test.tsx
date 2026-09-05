@@ -32,6 +32,7 @@ function renderDialog(
   rowOrRows: WeldRow | WeldRow[],
   initialSelectedIds?: ReadonlySet<number>,
   onOpenResultManager = vi.fn(),
+  onRunRootCauseAction: React.ComponentProps<typeof PstoRepeatWorkflowDialog>['onRunRootCauseAction'] = vi.fn(),
 ) {
   let currentRows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
   let currentSelectedIds = initialSelectedIds ?? new Set(currentRows.map((row) => row.id))
@@ -51,6 +52,7 @@ function renderDialog(
         onSaved={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onOpenResultManager={onOpenResultManager}
+        onRunRootCauseAction={onRunRootCauseAction}
       />
     </QueryClientProvider>
   )
@@ -79,6 +81,30 @@ describe('PstoRepeatWorkflowDialog', () => {
     expect(screen.queryByText('Циклы')).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
     expect(screen.getByRole('button', { name: 'Создать заявку' })).toBeEnabled()
+  })
+
+  it('focuses the repeat draft date and routes the previous-cycle alternative precisely', () => {
+    const onRunRootCauseAction = vi.fn()
+    renderDialog('request', makeFailedTvmtRow(), undefined, vi.fn(), onRunRootCauseAction)
+    const dateInput = screen.getByLabelText('Дата заявки')
+
+    fireEvent.change(dateInput, { target: { value: '2026-08-21' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить дату заявки ПСТО цикла №2' }))
+    expect(dateInput).toHaveFocus()
+    expect(onRunRootCauseAction).not.toHaveBeenCalled()
+    expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить дату заключения ТВМТ' }))
+    expect(onRunRootCauseAction).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.objectContaining({
+        kind: 'psto-cycle',
+        rowId: 1,
+        sequence: 1,
+        stage: 'tvmtResult',
+        documentDate: '2026-08-22',
+      }),
+    }))
   })
 
   it('opens result entry for the current repeat request', () => {

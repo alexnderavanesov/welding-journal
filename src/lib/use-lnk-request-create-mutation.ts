@@ -19,6 +19,7 @@ export function useLnkRequestCreateMutation({
   setLnkRequestNaming,
   setIsLnkRequestModalOpen,
   defaultLnkRequestNaming,
+  onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -98,6 +99,7 @@ export function useLnkRequestCreateMutation({
       setIsLnkRequestModalOpen(false)
       await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

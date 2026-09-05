@@ -79,6 +79,11 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
 import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import {
+  getWorkflowDraftRootCauseState,
+  type WorkflowDraftUpdate,
+} from '@/lib/workflow-root-cause-preview'
+import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
+import {
   savePreHeatTreatmentLnkWorkflow,
   type PreHeatTreatmentLnkPosition,
 } from '@/server/pre-heat-treatment-lnk-workflow'
@@ -95,6 +100,7 @@ export type PreHeatTreatmentLnkWorkflowDialogProps = {
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onOpenResultRegistry?: () => void
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
   onStageChange?: (
     stage: LnkControlStage,
     selectedRowIds: number[],
@@ -147,12 +153,14 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   onOpenJournalRows,
   onOpenPstoHistory,
   onOpenResultRegistry,
+  onRunRootCauseAction,
   onStageChange,
 }: PreHeatTreatmentLnkWorkflowDialogProps) {
   const queryClient = useQueryClient()
   const settings = useRequestConclusionSettings()
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
   const appliedInitialSelectionRef = useRef('')
   const didApplyInitialResultSelectionRef = useRef(false)
   const [date, setDate] = useState(() => formatDateInputValue(new Date()))
@@ -426,6 +434,35 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       return (error as Error).message
     }
   }, [creationPlanError, dateReason, effectiveDate, mode, resultMethod, rowResults, saveCheckSettings, selectedRows, workflowGroups])
+  const rootCauseState = useMemo(() => {
+    if (selectedRows.length === 0 || dateReason || creationPlanError) {
+      return { message: null, actions: [] }
+    }
+    const updates: WorkflowDraftUpdate[] = workflowGroups.flatMap((group) =>
+      group.positions.flatMap((position): WorkflowDraftUpdate[] => {
+        if (mode === 'request') {
+          return [{
+            kind: 'pre-lnk-request' as const,
+            rowId: position.rowId,
+            methodCode: position.methodCode,
+            documentName: group.name,
+            date: effectiveDate,
+          }]
+        }
+        if (!resultMethod) return []
+        return [{
+          kind: 'pre-lnk-result' as const,
+          rowId: position.rowId,
+          methodCode: resultMethod,
+          documentName: group.name,
+          date: effectiveDate,
+          result: rowResults[position.rowId] ?? '',
+        }]
+      }),
+    )
+    return getWorkflowDraftRootCauseState({ rows: selectedRows, updates, settings: saveCheckSettings })
+  }, [creationPlanError, dateReason, effectiveDate, mode, resultMethod, rowResults, saveCheckSettings, selectedRows, workflowGroups])
+  const effectiveDomainReason = domainReason || rootCauseState.message || ''
 
   const mutation = useMutation({
     mutationFn: async (): Promise<SaveResult> => {
@@ -482,8 +519,29 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     selectedRowsCount: selectedRows.length,
     dateReason,
     creationPlanError,
-    domainReason,
+    domainReason: effectiveDomainReason,
   })
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    const editsCurrentMethod = target.kind === 'lnk-control' &&
+      PRE_HEAT_TREATMENT_LNK_METHODS.some((method) =>
+        method.code === target.methodCode &&
+        (mode === 'request' ? selectedMethods.has(method.code) : resultMethod === method.code),
+      )
+    const editsCurrentDraft = target.kind === 'lnk-control' &&
+      target.stage === 'beforeHeatTreatment' &&
+      target.focus === 'date' &&
+      editsCurrentMethod &&
+      selectedIds.has(target.rowId) &&
+      target.documentDate === effectiveDate &&
+      ((mode === 'request' && requestSubmitMode === 'create' && target.documentPart === 'request') ||
+        (mode === 'result' && target.documentPart === 'conclusion'))
+    if (editsCurrentDraft) {
+      dateInputRef.current?.focus()
+      return
+    }
+    onRunRootCauseAction?.(action)
+  }
   const setSelectedRows = useStableEventCallback((rowIds: number[]) => {
     const allowedIds = new Set(availableRows.map((row) => row.id))
     const next = new Set(rowIds.filter((rowId) => allowedIds.has(rowId)))
@@ -674,6 +732,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
           selectedMethodKeys={[...selectedMethods]}
           selectedMethods={selectedMethods}
           requestDate={requestSubmitMode === 'create' ? date : undefined}
+          requestDateInputRef={requestSubmitMode === 'create' ? dateInputRef : undefined}
           onRequestDateChange={requestSubmitMode === 'create' ? setDate : undefined}
           onToggleMethod={toggleMethod}
         />
@@ -691,7 +750,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
           dateControl={(
             <label className="block space-y-1.5 text-sm">
               <span className="text-[13px] font-medium leading-none text-slate-700">Дата контроля</span>
-              <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-9 bg-white" />
+              <Input ref={dateInputRef} type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-9 bg-white" />
             </label>
           )}
           resultControl={(
@@ -831,6 +890,13 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         isPending={mutation.isPending}
         isCreateDisabled={Boolean(saveBlockReason)}
         disabledReason={saveBlockReason}
+        disabledReasonActions={saveBlockReason === effectiveDomainReason
+          ? rootCauseState.actions.map((action) => ({
+              key: action.key,
+              label: action.label,
+              onAction: () => runRootCauseAction(action),
+            }))
+          : undefined}
         disabledReasonActionLabel={creationPlanError && workspaceTab !== 'documents'
           ? `Открыть ${mode === 'request' ? 'заявки' : 'заключения'} и имена`
           : undefined}

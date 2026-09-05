@@ -15,6 +15,8 @@ type CreateReportWeldEditorPropsOptions = {
   onCancel: WeldFormProps['onCancel']
   onSave: WeldFormProps['onSave']
   moveDialogProps?: ReportWeldEditorProps['moveDialogProps']
+  elevated?: boolean
+  onRunRootCauseAction?: WeldFormProps['onRunRootCauseAction']
 }
 
 export function createReportWeldEditorProps({
@@ -28,6 +30,8 @@ export function createReportWeldEditorProps({
   onCancel,
   onSave,
   moveDialogProps,
+  elevated,
+  onRunRootCauseAction,
 }: CreateReportWeldEditorPropsOptions): ReportWeldEditorProps {
   return {
     formKey: editing ? `${editing.record.id ?? 'new'}:${editing.focusField ?? 'form'}` : null,
@@ -44,6 +48,8 @@ export function createReportWeldEditorProps({
           busy: isSaving,
           onCancel,
           onSave,
+          elevated,
+          onRunRootCauseAction,
         }
       : null,
     moveDialogProps: editing ? moveDialogProps ?? null : null,

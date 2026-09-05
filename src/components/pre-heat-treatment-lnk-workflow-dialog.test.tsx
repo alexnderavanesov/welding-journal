@@ -37,6 +37,7 @@ function renderDialogRows(
       selectedRowIds: number[],
       submitMode: 'create' | 'extend',
     ) => void
+    onRunRootCauseAction?: React.ComponentProps<typeof PreHeatTreatmentLnkWorkflowDialog>['onRunRootCauseAction']
   } = {},
 ) {
   let rows = initialRows
@@ -59,6 +60,7 @@ function renderDialogRows(
         onSaved={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onStageChange={options.onStageChange}
+        onRunRootCauseAction={options.onRunRootCauseAction}
       />
     </QueryClientProvider>
   )
@@ -185,6 +187,32 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
 
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Создать заявку до ТО' })).toBeDisabled()
+  })
+
+  it('keeps the draft local and routes the alternative exact correction for a pre-TO conflict', () => {
+    const onRunRootCauseAction = vi.fn()
+    renderDialogRows('request', [makeRow()], new Set([1]), 'ВИК', { onRunRootCauseAction })
+    const dateInput = screen.getByLabelText('Дата заявки')
+
+    fireEvent.change(dateInput, { target: { value: '2026-09-11' } })
+
+    const localAction = screen.getByRole('button', { name: 'Исправить дату заявки ВИК до ТО' })
+    const externalAction = screen.getByRole('button', { name: 'Исправить дату ПСТО' })
+    expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
+    fireEvent.click(localAction)
+    expect(dateInput).toHaveFocus()
+    expect(onRunRootCauseAction).not.toHaveBeenCalled()
+
+    fireEvent.click(externalAction)
+    expect(onRunRootCauseAction).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.objectContaining({
+        kind: 'psto-cycle',
+        rowId: 1,
+        sequence: 1,
+        stage: 'pstoResult',
+        documentDate: '2026-09-10',
+      }),
+    }))
   })
 
   it('labels the footer as adding positions when an existing request is selected', () => {

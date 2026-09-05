@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
+  CalendarClock,
   FileSpreadsheet,
   ListFilter,
   LoaderCircle,
@@ -17,6 +18,7 @@ import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestManagerPosition } from '@/components/lnk-request-manager-position'
 import { BufferedFilterInput } from '@/components/result-filters'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
+import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
   RequestDeletePanel,
@@ -33,7 +35,10 @@ import { LNK_METHODS } from '@/lib/report-config'
 import { hasCompletedLnkRequestPosition } from '@/lib/report-control-state'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
 import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
-import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
+import {
+  getSystemDocumentReferenceForField,
+  isSystemDocumentNameForRows,
+} from '@/lib/system-document-types'
 import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
 import { buildManagerContextMenu } from '@/lib/manager-context-menu-items'
 import {
@@ -42,12 +47,17 @@ import {
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
+import type {
+  WorkflowRootCauseAction,
+  WorkflowRootCauseTarget,
+} from '@/lib/workflow-root-cause-actions'
 
 type LnkRequestMethod = (typeof LNK_METHODS)[number]
 type RegistryFilter = 'all' | 'open' | 'fixed'
 
 export type LnkRequestManagerDialogProps = {
   embedded?: boolean
+  elevated?: boolean
   requestName: string
   requestDate: string
   requestOptions: LnkRequestExtensionOption[]
@@ -72,10 +82,15 @@ export type LnkRequestManagerDialogProps = {
   onRenameRequest: () => void
   onClearPosition: (row: WeldRow, requestKey: LnkRequestMethod['requestKey']) => void
   onDeleteRequest: (request?: RequestDocumentIdentity) => void
+  rootCauseTarget?: Extract<WorkflowRootCauseTarget, { kind: 'lnk-control' }>
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
+  onDocumentDateSaved?: () => void
+  onMessage?: (message: string) => void
 }
 
 export function LnkRequestManagerDialog({
   embedded = false,
+  elevated = false,
   requestName,
   requestDate,
   requestOptions,
@@ -100,6 +115,10 @@ export function LnkRequestManagerDialog({
   onRenameRequest,
   onClearPosition,
   onDeleteRequest,
+  rootCauseTarget,
+  onRunRootCauseAction,
+  onDocumentDateSaved,
+  onMessage,
 }: LnkRequestManagerDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
@@ -220,6 +239,16 @@ export function LnkRequestManagerDialog({
           onSelect: () => onAddPositions(request),
         },
         {
+          id: 'change-request-date',
+          label: 'Изменить дату заявки',
+          icon: CalendarClock,
+          disabled: !context.row || !context.method || isManagerPending || isCorrectionPending,
+          onSelect: () => {
+            onChangeRequest(request)
+            setShowRequestSettings(true)
+          },
+        },
+        {
           id: 'rename-request',
           label: 'Переименовать заявку',
           icon: Pencil,
@@ -255,9 +284,25 @@ export function LnkRequestManagerDialog({
     [getRequestContext, selectedIdentity],
   )
   const selectedDocumentMethod = selectedRequestContext?.method
+  const selectedDocumentReference = useMemo(
+    () => selectedRequestContext?.row && selectedDocumentMethod
+      ? getSystemDocumentReferenceForField(selectedRequestContext.row, selectedDocumentMethod.requestKey)
+      : null,
+    [selectedDocumentMethod, selectedRequestContext?.row],
+  )
   const canOpenSelectedDocument = Boolean(
     selectedDocumentMethod && canOpenDocument(selectedDocumentMethod.requestKey),
   )
+
+  useEffect(() => {
+    if (
+      rootCauseTarget?.stage === 'primary' &&
+      rootCauseTarget.documentPart === 'request' &&
+      rootCauseTarget.focus === 'date'
+    ) {
+      setShowRequestSettings(true)
+    }
+  }, [rootCauseTarget])
 
   const content = (
     <>
@@ -462,6 +507,21 @@ export function LnkRequestManagerDialog({
                     <h3 className="text-sm font-semibold text-slate-900">Дополнительные действия</h3>
                     <p className="mt-1 text-xs text-slate-500">Переименование и удаление не меняют правила проверки заявки.</p>
                   </div>
+                  {selectedDocumentReference ? (
+                    <SystemDocumentDateEditor
+                      reference={selectedDocumentReference}
+                      label="Дата заявки ЛНК"
+                      disabled={isManagerPending || isCorrectionPending}
+                      autoFocus={rootCauseTarget?.focus === 'date'}
+                      onMessage={onMessage}
+                      onRunRootCauseAction={onRunRootCauseAction}
+                      onSaved={(result) => {
+                        const nextIdentity = createRequestDocumentIdentity(result.nextTitle, result.nextDate)
+                        if (nextIdentity) onChangeRequest(nextIdentity)
+                        onDocumentDateSaved?.()
+                      }}
+                    />
+                  ) : null}
                   <RequestRenamePanel
                     value={requestNameDraft}
                     placeholder="Новое наименование заявки"
@@ -477,7 +537,7 @@ export function LnkRequestManagerDialog({
                     onRename={onRenameRequest}
                   >
                     <p className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600">
-                      Дата заявки фиксируется при создании. Системную заявку переименовать нельзя; пользовательскую можно переименовать без изменения состава.
+                      Изменение даты применяется ко всем позициям заявки. Системное имя пересчитывается с тем же номером; пользовательское имя сохраняется.
                     </p>
                   </RequestRenamePanel>
                   <RequestDeletePanel
@@ -519,7 +579,7 @@ export function LnkRequestManagerDialog({
     </>
   )
 
-  return embedded ? content : <WorkflowDialogShell variant="manager">{content}</WorkflowDialogShell>
+  return embedded ? content : <WorkflowDialogShell variant="manager" elevated={elevated}>{content}</WorkflowDialogShell>
 }
 
 function RequestStatusBadge({ isFixed, compact = false }: { isFixed: boolean | null; compact?: boolean }) {

@@ -56,13 +56,79 @@ import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-
 const MAX_OFFICIALITY_TARGETS = 1_000
 const LINE_QUERY_BATCH_SIZE = 200
 
+export const LNK_OFFICIALITY_CHAIN_SELECT = {
+  id: weldJoints.id,
+  rowVersion: sql<string>`${weldJoints}.xmin::text`.as('row_version'),
+  weldDate: weldJoints.weldDate,
+  projectTitle: weldJoints.projectTitle,
+  subtitleCode: weldJoints.subtitleCode,
+  line: weldJoints.line,
+  spool: weldJoints.spool,
+  pstoRequired: weldJoints.pstoRequired,
+  pstoControlBasis: weldJoints.pstoControlBasis,
+  pstoCancellationDate: weldJoints.pstoCancellationDate,
+  preHeatTreatmentLnkExempt: weldJoints.preHeatTreatmentLnkExempt,
+  joint: weldJoints.joint,
+  officiality: weldJoints.officiality,
+  finalStatus: weldJoints.finalStatus,
+  d1: weldJoints.d1,
+  d2: weldJoints.d2,
+  hasVik: weldJoints.hasVik,
+  hasRk: weldJoints.hasRk,
+  hasPvk: weldJoints.hasPvk,
+  hasUzk: weldJoints.hasUzk,
+  vikRequest: weldJoints.vikRequest,
+  vikRequestDate: weldJoints.vikRequestDate,
+  rkRequest: weldJoints.rkRequest,
+  rkRequestDate: weldJoints.rkRequestDate,
+  pvkRequest: weldJoints.pvkRequest,
+  pvkRequestDate: weldJoints.pvkRequestDate,
+  uzkRequest: weldJoints.uzkRequest,
+  uzkRequestDate: weldJoints.uzkRequestDate,
+  pstoRequest: weldJoints.pstoRequest,
+  pstoRequestDate: weldJoints.pstoRequestDate,
+  tvmtRequest: weldJoints.tvmtRequest,
+  tvmtRequestDate: weldJoints.tvmtRequestDate,
+  pstoDate: weldJoints.pstoDate,
+  heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
+  pstoResult: weldJoints.pstoResult,
+  vikResult: weldJoints.vikResult,
+  rkResult: weldJoints.rkResult,
+  pvkResult: weldJoints.pvkResult,
+  uzkResult: weldJoints.uzkResult,
+  tvmtResult: weldJoints.tvmtResult,
+  vikConclusionDate: weldJoints.vikConclusionDate,
+  vikConclusion: weldJoints.vikConclusion,
+  rkConclusionDate: weldJoints.rkConclusionDate,
+  rkConclusion: weldJoints.rkConclusion,
+  pvkConclusionDate: weldJoints.pvkConclusionDate,
+  pvkConclusion: weldJoints.pvkConclusion,
+  uzkConclusionDate: weldJoints.uzkConclusionDate,
+  uzkConclusion: weldJoints.uzkConclusion,
+  tvmtConclusionDate: weldJoints.tvmtConclusionDate,
+  tvmtConclusion: weldJoints.tvmtConclusion,
+  vikDefectDescription: weldJoints.vikDefectDescription,
+  lnkDefectDescription: weldJoints.lnkDefectDescription,
+  uzkDefectDescription: weldJoints.uzkDefectDescription,
+  pvkDefectDescription: weldJoints.pvkDefectDescription,
+  rkExposureConfirmedDiameter: weldJoints.rkExposureConfirmedDiameter,
+  lnkNote: weldJoints.lnkNote,
+} as const
+
+export type LnkOfficialityChainRow = Partial<WeldRow> & {
+  id: number
+  rowVersion?: string
+}
+
+type HydratedWeldJoint = WeldJoint & WeldRow
+
 export const previewLnkOfficialityChange = createServerFn({ method: 'POST' })
   .validator(normalizeRequest)
   .handler(async ({ data }): Promise<LnkOfficialityChainPlan> => {
     await assertSecurityScope('edit')
     return requireDb().transaction(async (tx) => {
       const targetRows = await loadTargetRows(tx, data)
-      const scopeRows = await loadLineRows(tx, targetRows, false)
+      const scopeRows = await loadLineChainRows(tx, targetRows, false)
       assertTargetsRemainInScope(targetRows, scopeRows)
       assertExpectedInteractiveWeldVersions(
         targetRows.map((row) => row.id),
@@ -95,7 +161,7 @@ export const applyLnkOfficialityChange = createServerFn({ method: 'POST' })
     return requireDb().transaction(async (tx) => {
       const targetReferences = await loadTargetRows(tx, data)
       await lockWeldLineMemberships(tx, targetReferences)
-      const scopeRows = await loadLineRows(tx, targetReferences, true)
+      const scopeRows = await loadLineChainRows(tx, targetReferences, true)
       assertTargetsRemainInScope(targetReferences, scopeRows)
       const scopeRowsById = new Map(scopeRows.map((row) => [row.id, row]))
       const targetRows = data.targets.map((target) => scopeRowsById.get(target.id)!)
@@ -125,12 +191,13 @@ export const applyLnkOfficialityChange = createServerFn({ method: 'POST' })
 
       const previousRows = new Map<number, WeldJoint>()
       const recordsById = new Map<number, WeldRow>()
-      const hydratedRowsById = new Map(hydratedRows.map((row) => [row.id, row]))
+      const fullAffectedRows = await loadFullRowsByIds(tx, plan.affectedRowIds, true)
+      const fullAffectedRowsById = new Map(fullAffectedRows.map((row) => [row.id, row]))
       const officialityById = new Map(plan.officialityChanges.map((change) => [change.rowId, change.nextOfficiality]))
       const renameById = new Map(plan.renames.map((change) => [change.rowId, change.targetJoint]))
       for (const rowId of plan.affectedRowIds) {
-        const previous = scopeRowsById.get(rowId)
-        const hydrated = hydratedRowsById.get(rowId)
+        const previous = fullAffectedRowsById.get(rowId)
+        const hydrated = fullAffectedRowsById.get(rowId)
         if (!previous || !hydrated) {
           throw new Error('Один из затронутых стыков уже недоступен. Ничего не сохранено.')
         }
@@ -163,7 +230,7 @@ export const applyLnkOfficialityChange = createServerFn({ method: 'POST' })
 
       const savedRows = await updateWeldJointsInBatches(tx, records, previousRows)
       await syncSystemDocumentsForWeldChangesInTransaction(tx, savedRows, previousRows)
-      await insertEarlyCoilDecisions(tx, plan, recordsById, hydratedRowsById)
+      await insertEarlyCoilDecisions(tx, plan, recordsById, fullAffectedRowsById)
       await refreshEarlyCoilDecisionContextsInTransaction(
         tx,
         savedRows,
@@ -209,11 +276,11 @@ async function loadTargetRows(
   tx: SystemDocumentSequenceTransaction,
   data: LnkOfficialityChangeRequest,
 ) {
-  const rows: WeldJoint[] = []
+  const rows: LnkOfficialityChainRow[] = []
   const ids = data.targets.map((target) => target.id).sort((left, right) => left - right)
   for (const batch of splitNumberBatches(ids, 1_000)) {
     rows.push(...await tx
-      .select(WELD_TABLE_RETURNING)
+      .select(LNK_OFFICIALITY_CHAIN_SELECT)
       .from(weldJoints)
       .where(inArray(weldJoints.id, batch))
       .orderBy(asc(weldJoints.id)))
@@ -225,16 +292,28 @@ async function loadTargetRows(
   return data.targets.map((target) => byId.get(target.id)!)
 }
 
-async function loadLineRows(
+export function getLnkOfficialityChainSelectFieldKeysForTest() {
+  return Object.keys(LNK_OFFICIALITY_CHAIN_SELECT)
+}
+
+export async function loadLnkOfficialityLineChainRowsForTest(
   tx: SystemDocumentSequenceTransaction,
-  targetRows: readonly WeldJoint[],
+  targetRows: readonly LnkOfficialityChainRow[],
+  lock: boolean,
+) {
+  return loadLineChainRows(tx, targetRows, lock)
+}
+
+async function loadLineChainRows(
+  tx: SystemDocumentSequenceTransaction,
+  targetRows: readonly LnkOfficialityChainRow[],
   lock: boolean,
 ) {
   const identities = [...new Map(targetRows.map((row) => {
     const identity = normalizePstoLineIdentity(row)
     return [getPstoLineIdentityKey(identity), identity] as const
   })).values()]
-  const rowsById = new Map<number, WeldJoint>()
+  const rowsById = new Map<number, LnkOfficialityChainRow>()
   for (let offset = 0; offset < identities.length; offset += LINE_QUERY_BATCH_SIZE) {
     const clauses = identities.slice(offset, offset + LINE_QUERY_BATCH_SIZE).map((identity) => and(
       normalizedTextEquals(weldJoints.projectTitle, identity.projectTitle),
@@ -242,7 +321,7 @@ async function loadLineRows(
       normalizedTextEquals(weldJoints.line, identity.line),
     ))
     const query = tx
-      .select(WELD_TABLE_RETURNING)
+      .select(LNK_OFFICIALITY_CHAIN_SELECT)
       .from(weldJoints)
       .where(or(...clauses))
       .orderBy(asc(weldJoints.id))
@@ -253,8 +332,8 @@ async function loadLineRows(
 }
 
 function assertTargetsRemainInScope(
-  targetRows: readonly WeldJoint[],
-  scopeRows: readonly WeldJoint[],
+  targetRows: readonly LnkOfficialityChainRow[],
+  scopeRows: readonly LnkOfficialityChainRow[],
 ) {
   const scopeById = new Map(scopeRows.map((row) => [row.id, row]))
   const unchanged = targetRows.every((target) => {
@@ -268,16 +347,36 @@ function assertTargetsRemainInScope(
   }
 }
 
-async function hydrateRows(tx: SystemDocumentSequenceTransaction, rows: WeldJoint[]) {
+async function hydrateRows(tx: SystemDocumentSequenceTransaction, rows: LnkOfficialityChainRow[]) {
   return attachDuplicateControlRelations(
     await attachHeatTreatmentControlRelations(rows as WeldRow[], tx),
     tx,
   ) as Promise<WeldRow[]>
 }
 
+async function loadFullRowsByIds(
+  tx: SystemDocumentSequenceTransaction,
+  rowIds: readonly number[],
+  lock: boolean,
+): Promise<HydratedWeldJoint[]> {
+  const rows: WeldJoint[] = []
+  for (const idBatch of splitNumberBatches([...rowIds].sort((left, right) => left - right), 1_000)) {
+    const query = tx
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(inArray(weldJoints.id, idBatch))
+      .orderBy(asc(weldJoints.id))
+    rows.push(...(lock ? await query.for('update') : await query))
+  }
+  return attachDuplicateControlRelations(
+    await attachHeatTreatmentControlRelations(rows as WeldRow[], tx),
+    tx,
+  ) as Promise<HydratedWeldJoint[]>
+}
+
 async function loadEarlyCoilDecisionSourceRowIds(
   tx: SystemDocumentSequenceTransaction,
-  rows: readonly WeldJoint[],
+  rows: readonly { id: number }[],
   lock = false,
 ) {
   const keys = rows.map((row) => getEarlyCoilDecisionKey(row.id))

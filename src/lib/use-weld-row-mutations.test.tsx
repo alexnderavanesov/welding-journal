@@ -86,9 +86,11 @@ describe('useWeldRowMutations', () => {
   })
 
   it('refreshes every returned row after an atomic chain move', async () => {
+    const editingRecord = { id: 17, line: 'LIN-1', joint: 'S1' }
     const source = { id: 17, line: 'LIN-2', joint: 'S1' }
     const movedRows = [source, { id: 18, line: 'LIN-2', joint: 'S1Y1' }]
     const setMessage = vi.fn()
+    const onWeldRowSaved = vi.fn()
     mocks.prepareWeldSaveValue.mockReturnValue(source)
     mocks.moveWeldJointChainOrThrow.mockResolvedValue(movedRows)
 
@@ -100,11 +102,13 @@ describe('useWeldRowMutations', () => {
     )
     const { result } = renderHook(() => useWeldRowMutations({
       rows: [],
+      editingRecord,
       welderStamps: [],
       welderStampSuspensions: [],
       weldFormStampSelectOptions: {},
       setEditing: vi.fn(),
       setMessage,
+      onWeldRowSaved,
       highlightChangedRows: vi.fn(),
       dismissRepeatedJointTask: vi.fn(),
     }), { wrapper })
@@ -124,6 +128,7 @@ describe('useWeldRowMutations', () => {
     })
 
     expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(queryClient, { upsertRows: movedRows })
+    expect(onWeldRowSaved).toHaveBeenCalledWith(editingRecord, source)
     expect(setMessage).toHaveBeenCalledWith('Цепочка стыка перенесена · записей: 2')
   })
 

@@ -163,4 +163,69 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     await waitFor(() => expect(screen.getByText('Найдено: 1')).toBeInTheDocument())
     expect(screen.getAllByText('Заявка до ТО-120').length).toBeGreaterThan(0)
   })
+
+  it('repairs a request with no document identity through the local date and name fields', () => {
+    const onCorrect = vi.fn()
+    const control = {
+      id: 31,
+      weldJointId: 9,
+      method: 'ВИК',
+      requestName: '',
+      requestDate: null,
+      result: 'годен',
+      conclusionDate: '2026-08-05',
+      conclusionName: 'Заключение ВИК до ТО-009',
+    }
+    const row = {
+      id: 9,
+      rowVersion: '109',
+      projectTitle: 'Проект А',
+      subtitleCode: '400',
+      line: 'L-1',
+      joint: 'F9',
+      preHeatTreatmentControls: [control],
+    } as WeldRow
+
+    render(
+      <PreHeatTreatmentResultManagerDialog
+        rows={[row]}
+        registryMode="request"
+        initialRelationId={control.id}
+        rootCauseTarget={{
+          kind: 'lnk-control',
+          rowId: row.id,
+          stage: 'beforeHeatTreatment',
+          methodCode: 'ВИК',
+          documentPart: 'request',
+          focus: 'name',
+          relationId: control.id,
+        }}
+        isPending={false}
+        onClose={vi.fn()}
+        onOpenWorkflow={vi.fn()}
+        onCorrect={onCorrect}
+        onDeleteRequest={vi.fn()}
+        onDeleteResult={vi.fn()}
+        onOpenDocument={vi.fn()}
+        onOpenJournalRows={vi.fn()}
+        onCopyDocumentName={vi.fn()}
+        canOpenDocument={() => true}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('Дата заявки'), { target: { value: '2026-08-03' } })
+    fireEvent.change(screen.getByLabelText('Наименование заявки'), {
+      target: { value: 'Заявка ВИК до ТО-009' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить заявку' }))
+
+    expect(onCorrect).toHaveBeenCalledWith({
+      relationId: 31,
+      expectedVersion: '109',
+      stage: 'request',
+      action: 'update',
+      requestDate: '2026-08-03',
+      requestName: 'Заявка ВИК до ТО-009',
+    })
+  })
 })

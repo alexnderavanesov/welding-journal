@@ -65,6 +65,12 @@ import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { useSaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  getWorkflowDraftRootCauseState,
+  type WorkflowDraftUpdate,
+} from '@/lib/workflow-root-cause-preview'
+import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 import { savePstoRepeatWorkflow } from '@/server/psto-repeat-workflow'
 
 export type TvmtWorkflowDialogProps = {
@@ -77,6 +83,7 @@ export type TvmtWorkflowDialogProps = {
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onOpenResultManager?: (rows: readonly WeldRow[]) => void
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
 }
 
 type SaveResult = {
@@ -103,10 +110,13 @@ export function TvmtWorkflowDialog({
   onOpenJournalRows,
   onOpenPstoHistory,
   onOpenResultManager,
+  onRunRootCauseAction,
 }: TvmtWorkflowDialogProps) {
   const queryClient = useQueryClient()
   const settings = useRequestConclusionSettings()
+  const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
   const appliedInitialSelectionRef = useRef('')
   const [date, setDate] = useState(() => formatDateInputValue(new Date()))
   const [search, setSearch] = useState('')
@@ -217,18 +227,36 @@ export function TvmtWorkflowDialog({
     try {
       for (const group of creationPlan.groups) {
         if (mode === 'request') {
-          for (const row of group.rows) validateTvmtRequestRow(row, group.name, date)
+          for (const row of group.rows) validateTvmtRequestRow(row, group.name, date, saveCheckSettings)
           continue
         }
         for (const row of group.rows) {
-          validateTvmtResultRow(row, date, rowResults[row.id] ?? '', group.name)
+          validateTvmtResultRow(row, date, rowResults[row.id] ?? '', group.name, saveCheckSettings)
         }
       }
       return ''
     } catch (error) {
       return (error as Error).message
     }
-  }, [creationPlan, date, dateReason, mode, rowResults, selectedRows.length])
+  }, [creationPlan, date, dateReason, mode, rowResults, saveCheckSettings, selectedRows.length])
+  const rootCauseState = useMemo(() => {
+    if (selectedRows.length === 0 || dateReason || creationPlan.error) {
+      return { message: null, actions: [] }
+    }
+    const updates: WorkflowDraftUpdate[] = creationPlan.groups.flatMap((group) =>
+      group.rows.map((row) => ({
+        kind: 'psto-stage' as const,
+        rowId: row.id,
+        sequence: getCurrentPstoCycle(row)?.sequence ?? 1,
+        stage: mode === 'request' ? 'tvmtRequest' as const : 'tvmtResult' as const,
+        documentName: group.name,
+        date,
+        ...(mode === 'result' ? { result: rowResults[row.id] ?? '' } : {}),
+      })),
+    )
+    return getWorkflowDraftRootCauseState({ rows: selectedRows, updates, settings: saveCheckSettings })
+  }, [creationPlan, date, dateReason, mode, rowResults, saveCheckSettings, selectedRows])
+  const effectiveDomainReason = domainReason || rootCauseState.message || ''
   useEffect(() => {
     if (selectedIds.size === 0 && rowsViewMode === 'selected') setRowsViewMode('all')
   }, [rowsViewMode, selectedIds.size])
@@ -278,8 +306,26 @@ export function TvmtWorkflowDialog({
     requestSelected: Boolean(selectedRequest),
     dateReason,
     creationPlanError: creationPlan.error,
-    domainReason,
+    domainReason: effectiveDomainReason,
   })
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    const currentStage = mode === 'request' ? 'tvmtRequest' : 'tvmtResult'
+    const targetRow = target.kind === 'psto-cycle'
+      ? rows.find((row) => row.id === target.rowId)
+      : undefined
+    const editsCurrentDraft = target.kind === 'psto-cycle' &&
+      target.stage === currentStage &&
+      target.sequence === (targetRow ? getCurrentPstoCycle(targetRow)?.sequence ?? 1 : 0) &&
+      target.focus === 'date' &&
+      selectedIds.has(target.rowId) &&
+      target.documentDate === date
+    if (editsCurrentDraft) {
+      dateInputRef.current?.focus()
+      return
+    }
+    onRunRootCauseAction?.(action)
+  }
   const setSelectedRows = useStableEventCallback((rowIds: number[]) => {
     const allowedIds = new Set(requestRows.filter(canSelectRow).map((row) => row.id))
     const nextIds = new Set(rowIds.filter((id) => allowedIds.has(id)))
@@ -402,6 +448,7 @@ export function TvmtWorkflowDialog({
             {mode === 'request' ? 'Дата заявки' : 'Дата ТВМТ'}
           </span>
           <Input
+            ref={dateInputRef}
             type="date"
             value={date}
             onChange={(event) => setDate(event.target.value)}
@@ -527,6 +574,13 @@ export function TvmtWorkflowDialog({
         isPending={mutation.isPending}
         isCreateDisabled={Boolean(effectiveSaveBlockReason)}
         disabledReason={effectiveSaveBlockReason}
+        disabledReasonActions={effectiveSaveBlockReason === effectiveDomainReason
+          ? rootCauseState.actions.map((action) => ({
+              key: action.key,
+              label: action.label,
+              onAction: () => runRootCauseAction(action),
+            }))
+          : undefined}
         disabledReasonActionLabel={creationPlan.error && workspaceTab !== 'documents'
           ? `Открыть ${mode === 'request' ? 'заявки' : 'заключения'} и имена`
           : undefined}
@@ -602,12 +656,17 @@ function filterTvmtRows(rows: WeldRow[], search: string) {
   ].join(' ')).includes(query))
 }
 
-function validateTvmtRequestRow(row: WeldRow, requestName: string, requestDate: string) {
+function validateTvmtRequestRow(
+  row: WeldRow,
+  requestName: string,
+  requestDate: string,
+  saveCheckSettings: ReturnType<typeof useSaveCheckSettings>,
+) {
   if (getCurrentPstoCycle(row)?.source === 'repeat') {
-    buildRepeatTvmtRequestCycle({ row, requestName, requestDate })
+    buildRepeatTvmtRequestCycle({ row, requestName, requestDate, saveCheckSettings })
     return
   }
-  buildPrimaryTvmtRequestRows({ records: [row], requestName, requestDate })
+  buildPrimaryTvmtRequestRows({ records: [row], requestName, requestDate, saveCheckSettings })
 }
 
 function validateTvmtResultRow(
@@ -615,12 +674,13 @@ function validateTvmtResultRow(
   controlDate: string,
   result: string,
   conclusionName: string,
+  saveCheckSettings: ReturnType<typeof useSaveCheckSettings>,
 ) {
   if (getCurrentPstoCycle(row)?.source === 'repeat') {
-    buildRepeatTvmtResultCycle({ row, controlDate, result, conclusionName })
+    buildRepeatTvmtResultCycle({ row, controlDate, result, conclusionName, saveCheckSettings })
     return
   }
-  buildPrimaryTvmtResultRows({ records: [row], controlDate, result, conclusionName })
+  buildPrimaryTvmtResultRows({ records: [row], controlDate, result, conclusionName, saveCheckSettings })
 }
 
 function getSaveBlockReason({

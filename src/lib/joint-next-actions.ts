@@ -2,6 +2,7 @@ import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   getDispatcherTaskActionSpecs,
   type DispatcherTaskActionId,
+  type DispatcherTaskActionSpec,
 } from '@/lib/dispatcher-task-actions-model'
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 import { isDispatcherTaskRelatedToRow } from '@/lib/dispatcher-task-row-codes'
@@ -59,6 +60,7 @@ export type JointNextAction = {
   taskKey?: string
   taskActionId?: DispatcherTaskActionId
   taskActionLabel?: string
+  taskAction?: DispatcherTaskActionSpec
   tone: 'default' | 'warning' | 'success'
 }
 
@@ -376,6 +378,7 @@ function buildDispatcherAction(task: RepeatedJointTask): JointNextAction {
     taskKey: task.key,
     taskActionId: primaryAction?.id,
     taskActionLabel: primaryAction?.label,
+    taskAction: primaryAction,
     tone: 'warning',
   }
 }

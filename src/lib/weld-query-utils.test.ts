@@ -6,6 +6,8 @@ import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
   invalidateWeldJoints,
+  LNK_WORKFLOW_QUERY_KEY,
+  LNK_WORKFLOW_ROWS_QUERY_KEY,
   STATISTICS_SERVER_QUERY_KEY,
   WELD_COMPLETE_SNAPSHOT_QUERY_KEY,
   WELD_DATA_USAGE_QUERY_KEY,
@@ -46,6 +48,10 @@ describe('weld query cache updates', () => {
       expect.objectContaining({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
     )
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: LNK_WORKFLOW_QUERY_KEY,
+      refetchType: 'none',
+    })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: STATISTICS_SERVER_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_DOCUMENT_GENERATION_QUERY_KEY })
@@ -125,6 +131,56 @@ describe('weld query cache updates', () => {
       id: 1,
       preHeatTreatmentControls: [{ id: 10, result: null }],
     }))
+  })
+
+  it('patches only rows already loaded by scoped LNK workflows', () => {
+    const queryClient = createQueryClient()
+    const requestRegistryKey = [
+      ...LNK_WORKFLOW_ROWS_QUERY_KEY,
+      { scope: 'requestRegistry', rowIds: null },
+    ]
+    const resultRegistryKey = [
+      ...LNK_WORKFLOW_ROWS_QUERY_KEY,
+      { scope: 'resultRegistry', rowIds: null },
+    ]
+    queryClient.setQueryData<WeldRow[]>(requestRegistryKey, [
+      { id: 1, joint: 'F1', rkRequest: 'Заявка 1' },
+      { id: 2, joint: 'F2', rkRequest: 'Заявка 2' },
+    ] as WeldRow[])
+    queryClient.setQueryData<WeldRow[]>(resultRegistryKey, [
+      { id: 1, joint: 'F1', rkResult: 'годен' },
+    ] as WeldRow[])
+
+    invalidateWeldJoints(queryClient, {
+      upsertRows: [
+        { id: 1, joint: 'F1R1' },
+        { id: 3, joint: 'F3' },
+      ],
+      deleteIds: [2],
+    })
+
+    expect(queryClient.getQueryData<WeldRow[]>(requestRegistryKey)).toEqual([
+      expect.objectContaining({ id: 1, joint: 'F1R1', rkRequest: 'Заявка 1' }),
+    ])
+    expect(queryClient.getQueryData<WeldRow[]>(resultRegistryKey)).toEqual([
+      expect.objectContaining({ id: 1, joint: 'F1R1', rkResult: 'годен' }),
+    ])
+  })
+
+  it('can explicitly refresh an active LNK manager after a correction', () => {
+    const queryClient = createQueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    invalidateWeldJoints(
+      queryClient,
+      { upsertRows: [{ id: 1, joint: 'F1' }] },
+      { refetchLnkWorkflow: true },
+    )
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: LNK_WORKFLOW_QUERY_KEY,
+      refetchType: 'active',
+    })
   })
 
   it('marks an unpatched snapshot stale without starting an active refetch', async () => {

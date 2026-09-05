@@ -27,7 +27,7 @@ describe('JointNextActionTableCell', () => {
     expect(onRun).toHaveBeenCalledWith(row, expect.objectContaining({ kind: 'editWeld' }))
   })
 
-  it('opens the joint history from the dedicated info button without running the action', () => {
+  it('opens the joint picture from the dedicated info button without running the action', () => {
     const row = { id: 12, line: '330-D01', joint: 'F12', weldDate: '' } as WeldRow
     const onRun = vi.fn()
     const onOpenOverview = vi.fn()
@@ -40,7 +40,9 @@ describe('JointNextActionTableCell', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть историю и цепочку стыка F12' }))
+    const pictureButton = screen.getByRole('button', { name: 'Открыть картину стыка F12' })
+    expect(pictureButton).toHaveAttribute('title', 'Картина стыка')
+    fireEvent.click(pictureButton)
 
     expect(onOpenOverview).toHaveBeenCalledWith(row)
     expect(onRun).not.toHaveBeenCalled()

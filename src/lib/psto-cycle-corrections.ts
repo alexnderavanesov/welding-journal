@@ -67,7 +67,11 @@ export function applyPstoCycleCorrection(
   const current = timeline[index]
   if (!current) throw new Error('Цикл ПСТО/ТВМТ больше не существует. Обновите отчет.')
   assertRepeatCycleIdentity(current, input.cycleId)
-  assertStageExists(current, input.stage)
+  if (input.action === 'delete') {
+    assertStageExists(current, input.stage)
+  } else {
+    assertStageCanBeUpdated(current, input.stage)
+  }
 
   const nextCycle = { ...current }
   if (input.action === 'delete') {
@@ -269,6 +273,11 @@ export function getPstoCycleStageLabel(stage: PstoCycleStage) {
   return getStageLabel(stage)
 }
 
+export function getPstoCycleStageInlineLabel(stage: PstoCycleStage) {
+  const label = getStageLabel(stage)
+  return `${label.charAt(0).toLocaleLowerCase('ru-RU')}${label.slice(1)}`
+}
+
 function updateStage(
   cycle: PstoCycleSnapshot,
   input: PstoCycleCorrectionInput,
@@ -285,9 +294,9 @@ function updateStage(
     return
   }
 
-  const date = requireDate(input.date, `Дата: ${getStageLabel(input.stage).toLocaleLowerCase('ru-RU')}`)
+  const date = requireDate(input.date, `Дата: ${getPstoCycleStageInlineLabel(input.stage)}`)
   const name = String(input.name ?? '').trim()
-  if (!name) throw new Error(`Укажите наименование: ${getStageLabel(input.stage).toLocaleLowerCase('ru-RU')}.`)
+  if (!name) throw new Error(`Укажите наименование: ${getPstoCycleStageInlineLabel(input.stage)}.`)
 
   if (input.stage === 'pstoRequest') {
     cycle.pstoRequest = name
@@ -414,6 +423,13 @@ function validateTimeline(
 function assertStageExists(cycle: PstoCycleSnapshot, stage: PstoCycleStage) {
   const exists = getPopulatedStages(cycle).includes(stage)
   if (!exists) throw new Error(`Этап «${getStageLabel(stage)}» еще не создан.`)
+}
+
+function assertStageCanBeUpdated(cycle: PstoCycleSnapshot, stage: PstoCycleStage) {
+  const populatedStages = getPopulatedStages(cycle)
+  if (populatedStages.includes(stage)) return
+  if (populatedStages.some((candidate) => stageIndex(candidate) > stageIndex(stage))) return
+  throw new Error(`Этап «${getStageLabel(stage)}» еще не создан.`)
 }
 
 function getPopulatedStages(cycle: PstoCycleSnapshot): PstoCycleStage[] {

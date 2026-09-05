@@ -5,9 +5,15 @@ import {
   applyPstoCycleCorrection,
   applyPstoTvmtCorrectionWithLaterCycleRemoval,
   getPstoCycleStageDeleteBlockReason,
+  getPstoCycleStageInlineLabel,
 } from '@/lib/psto-cycle-corrections'
 
 describe('PSTO cycle corrections', () => {
+  it('keeps PSTO and TVMT abbreviations uppercase in inline stage labels', () => {
+    expect(getPstoCycleStageInlineLabel('pstoResult')).toBe('результат ПСТО')
+    expect(getPstoCycleStageInlineLabel('tvmtResult')).toBe('заключение ТВМТ')
+  })
+
   it('updates names and dates only when the complete timeline stays chronological', () => {
     const result = applyPstoCycleCorrection(makeRow(), {
       sequence: 1,
@@ -31,6 +37,41 @@ describe('PSTO cycle corrections', () => {
       date: '2026-08-07',
       name: 'Диаграмма-2',
     })).toThrow('не может быть раньше ПСТО')
+  })
+
+  it('repairs a missing earlier stage only when a later stage proves that it existed', () => {
+    const malformedRow = makeRow({
+      pstoRequest: null,
+      pstoRequestDate: null,
+    })
+
+    const repaired = applyPstoCycleCorrection(malformedRow, {
+      sequence: 1,
+      stage: 'pstoRequest',
+      action: 'update',
+      date: '2026-08-02',
+      name: 'Заявка ПСТО восстановлена',
+    }).row
+
+    expect(repaired).toEqual(expect.objectContaining({
+      pstoRequest: 'Заявка ПСТО восстановлена',
+      pstoRequestDate: '2026-08-02',
+      pstoResult: 'проведено',
+    }))
+
+    expect(() => applyPstoCycleCorrection(makeRow({
+      tvmtRequest: null,
+      tvmtRequestDate: null,
+      tvmtResult: null,
+      tvmtConclusionDate: null,
+      tvmtConclusion: null,
+    }), {
+      sequence: 1,
+      stage: 'tvmtRequest',
+      action: 'update',
+      date: '2026-08-06',
+      name: 'Новая заявка ТВМТ',
+    })).toThrow('еще не создан')
   })
 
   it('keeps PSTO date format mandatory when other date rules are disabled', () => {

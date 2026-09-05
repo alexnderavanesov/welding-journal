@@ -8,6 +8,10 @@ import type { ReportWeldEditorProps } from '@/components/report-weld-editor'
 import type { WeldingJournalGenerationDialogProps } from '@/components/welding-journal-generation-dialog'
 import type { RkExposureEditDialogProps } from '@/components/rk-exposure-edit-dialog'
 import { hasOpenReportDialogProps } from '@/lib/report-modal-open-state'
+import {
+  WorkflowRootCauseNavigation,
+  type WorkflowRootCauseNavigationProps,
+} from '@/components/workflow-root-cause-navigation'
 
 const ReportChainDialog = lazy(() => import('@/components/report-chain-dialog').then((module) => ({ default: module.ReportChainDialog })))
 const ReportWeldEditor = lazy(() => import('@/components/report-weld-editor').then((module) => ({ default: module.ReportWeldEditor })))
@@ -33,6 +37,7 @@ type ReportDialogsProps = {
   importDialogProps: ReportImportDialogProps
   generationDialogProps?: WeldingJournalGenerationDialogProps | null
   rkExposureDialogProps?: RkExposureEditDialogProps | null
+  rootCauseNavigationProps?: WorkflowRootCauseNavigationProps | null
 }
 
 export function ReportDialogs({
@@ -44,6 +49,7 @@ export function ReportDialogs({
   importDialogProps,
   generationDialogProps,
   rkExposureDialogProps,
+  rootCauseNavigationProps,
 }: ReportDialogsProps) {
   return (
     <>
@@ -87,6 +93,7 @@ export function ReportDialogs({
           <RkExposureEditDialog {...rkExposureDialogProps} />
         </Suspense>
       ) : null}
+      {rootCauseNavigationProps ? <WorkflowRootCauseNavigation {...rootCauseNavigationProps} /> : null}
     </>
   )
 }

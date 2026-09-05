@@ -39,6 +39,8 @@ describe('ContextActionMenu', () => {
 
     expect(generateButton).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('menu')).toHaveClass('fixed')
+    expect(generateButton.closest('.fixed.inset-0')).toHaveClass('z-[155]')
+    expect(screen.getByRole('menu')).toHaveClass('z-[156]')
     expect(screen.getByRole('menu').parentElement).toBe(document.body)
     expect(onGenerate).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()

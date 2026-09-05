@@ -78,10 +78,12 @@ export function buildLnkRequestCorrectionRow({
   record,
   methodKey,
   requestName,
+  requestDate,
 }: {
   record: RowWithId
   methodKey: WeldFieldKey
   requestName: string | null
+  requestDate?: string
 }) {
   const saveCheckSettings = loadSaveCheckSettings()
   const method = getLnkMethodByRequestKey(methodKey)
@@ -93,6 +95,11 @@ export function buildLnkRequestCorrectionRow({
   if (requestName) {
     const proposedRecord = { ...record } as RowWithId
     proposedRecord[method.requestKey] = requestName
+    if (requestDate !== undefined) {
+      const requestDateReason = getDateInputValidationReason(requestDate, `Дата заявки ${method.code}`)
+      if (requestDateReason) throw new Error(requestDateReason)
+      proposedRecord[method.requestDateKey] = normalizeDateLikeForStorage(requestDate)
+    }
     if (!hasText(proposedRecord[method.resultKey])) {
       proposedRecord[method.resultKey] = 'ожидает НК'
       if (method.code !== 'РК') proposedRecord[method.defectDescriptionKey] = null

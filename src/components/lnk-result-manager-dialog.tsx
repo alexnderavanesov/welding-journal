@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { CheckSquare2, ClipboardCheck, FileSpreadsheet, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { CalendarClock, CheckSquare2, ClipboardCheck, FileSpreadsheet, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
@@ -17,9 +17,11 @@ import { LnkResultManagerSummary } from '@/components/lnk-result-manager-summary
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
 import { BufferedFilterInput } from '@/components/result-filters'
 import { ResultManagerDocumentEditor } from '@/components/result-manager-document-editor'
+import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { formatDisplayDate } from '@/lib/date-format'
+import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
 import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
@@ -30,11 +32,17 @@ import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
+import type {
+  WorkflowRootCauseAction,
+  WorkflowRootCauseTarget,
+} from '@/lib/workflow-root-cause-actions'
 
 type ResultFilter = 'all' | 'годен' | 'ремонт' | 'вырез'
 
 export type LnkResultManagerDialogProps = {
   embedded?: boolean
+  elevated?: boolean
   rows: WeldRow[]
   methods: LnkResultMethod[]
   entries: LnkResultManagerEntryData[]
@@ -48,6 +56,7 @@ export type LnkResultManagerDialogProps = {
   isResultCorrectionPending: boolean
   isResultReplacementPending: boolean
   isConclusionCorrectionPending: boolean
+  isRequestCorrectionPending?: boolean
   onClose: () => void
   onStageChange?: () => void
   onOpenAddResult: () => void
@@ -60,14 +69,20 @@ export type LnkResultManagerDialogProps = {
   onMethodChange: (methodKey: WeldFieldKey | '') => void
   onConclusionDraftChange: (changeKey: string, value: string) => void
   onRenameConclusion: (row: WeldRow, methodKey: WeldFieldKey, conclusionName: string) => void
+  onRepairRequest?: (row: WeldRow, methodKey: WeldFieldKey, requestName: string, requestDate: string) => void
   onReplaceResult: (row: WeldRow, methodKey: WeldFieldKey, result: string) => void
   onClearResult: (row: WeldRow, methodKey: WeldFieldKey) => void
   onResetPendingChanges: () => void
   onSaveChanges: () => void
+  rootCauseTarget?: Extract<WorkflowRootCauseTarget, { kind: 'lnk-control' }>
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
+  onDocumentDateSaved?: () => void
+  onMessage?: (message: string) => void
 }
 
 export function LnkResultManagerDialog({
   embedded = false,
+  elevated = false,
   rows,
   methods,
   entries,
@@ -81,6 +96,7 @@ export function LnkResultManagerDialog({
   isResultCorrectionPending,
   isResultReplacementPending,
   isConclusionCorrectionPending,
+  isRequestCorrectionPending = false,
   onClose,
   onStageChange,
   onOpenAddResult,
@@ -93,14 +109,20 @@ export function LnkResultManagerDialog({
   onMethodChange,
   onConclusionDraftChange,
   onRenameConclusion,
+  onRepairRequest,
   onReplaceResult,
   onClearResult,
   onResetPendingChanges,
   onSaveChanges,
+  rootCauseTarget,
+  onRunRootCauseAction,
+  onDocumentDateSaved,
+  onMessage,
 }: LnkResultManagerDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
+  const [dateEditorTarget, setDateEditorTarget] = useState<{ entryKey: string; token: number } | null>(null)
   const [selectedEntryKey, setSelectedEntryKey] = useState(
     () => initialEntryKey || entries[0]?.changeKey || '',
   )
@@ -164,6 +186,29 @@ export function LnkResultManagerDialog({
   const selectedRequestDate = selectedEntry
     ? String(selectedEntry.row[selectedEntry.method.requestDateKey] ?? '').trim()
     : ''
+  const isRequestIntegrityRepair = Boolean(
+    selectedEntry &&
+    rootCauseTarget?.documentPart === 'request' &&
+    rootCauseTarget.rowId === selectedEntry.row.id &&
+    rootCauseTarget.methodCode === selectedEntry.method.code &&
+    !selectedRequest,
+  )
+  const [requestRepairDraft, setRequestRepairDraft] = useState(() => ({
+    name: selectedRequest,
+    date: parseDateLikeToIso(selectedRequestDate) ?? '',
+  }))
+  useEffect(() => {
+    setRequestRepairDraft({
+      name: selectedRequest,
+      date: parseDateLikeToIso(selectedRequestDate) ?? '',
+    })
+  }, [activeSelectedEntryKey, selectedRequest, selectedRequestDate])
+  const selectedDocumentReference = useMemo(
+    () => selectedRow && selectedMethod
+      ? getSystemDocumentReferenceForField(selectedRow, selectedMethod.conclusionKey)
+      : null,
+    [selectedMethod, selectedRow],
+  )
   const openResultContextMenu = (event: MouseEvent<HTMLElement>, entry: LnkResultManagerEntryData) => {
     const point = getDialogMenuPoint(event)
     const { row, method, changeKey } = entry
@@ -207,6 +252,16 @@ export function LnkResultManagerDialog({
               onSelect: () => onReplaceResult(row, method.requestKey, option),
             }
           }),
+        },
+        {
+          id: 'change-conclusion-date',
+          label: 'Изменить дату заключения',
+          icon: CalendarClock,
+          disabled: !conclusionName || isConclusionCorrectionPending,
+          onSelect: () => setDateEditorTarget((current) => ({
+            entryKey: changeKey,
+            token: (current?.token ?? 0) + 1,
+          })),
         },
         {
           id: 'rename-conclusion',
@@ -424,6 +479,62 @@ export function LnkResultManagerDialog({
                 </div>
               </section>
 
+              {isRequestIntegrityRepair ? (
+                <section className="rounded-md border border-amber-200 bg-amber-50/60 p-4">
+                  <h3 className="text-sm font-semibold text-slate-900">Восстановление заявки</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    У этой позиции есть результат НК, но реквизиты заявки неполные. Заполните оба поля одновременно.
+                  </p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-[180px_minmax(260px,1fr)]">
+                    <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                      <span>Дата заявки</span>
+                      <Input
+                        type="date"
+                        value={requestRepairDraft.date}
+                        autoFocus={rootCauseTarget?.focus === 'date'}
+                        disabled={isRequestCorrectionPending}
+                        onChange={(event) => setRequestRepairDraft((current) => ({
+                          ...current,
+                          date: event.target.value,
+                        }))}
+                      />
+                    </label>
+                    <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                      <span>Наименование заявки</span>
+                      <Input
+                        value={requestRepairDraft.name}
+                        autoFocus={rootCauseTarget?.focus === 'name'}
+                        disabled={isRequestCorrectionPending}
+                        onChange={(event) => setRequestRepairDraft((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-4 flex justify-end border-t border-amber-200 pt-4">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={
+                        isRequestCorrectionPending ||
+                        !requestRepairDraft.name.trim() ||
+                        !requestRepairDraft.date ||
+                        !onRepairRequest
+                      }
+                      onClick={() => onRepairRequest?.(
+                        selectedEntry.row,
+                        selectedEntry.method.requestKey,
+                        requestRepairDraft.name.trim(),
+                        requestRepairDraft.date,
+                      )}
+                    >
+                      Восстановить заявку
+                    </Button>
+                  </div>
+                </section>
+              ) : null}
+
               <section className="space-y-4">
                 <div>
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
@@ -450,11 +561,34 @@ export function LnkResultManagerDialog({
                     conclusionName={selectedConclusion}
                     conclusionDate={selectedConclusionDate}
                   />
+                  {selectedDocumentReference && (
+                    dateEditorTarget?.entryKey === selectedEntry.changeKey ||
+                    (rootCauseTarget?.focus === 'date' &&
+                      rootCauseTarget.rowId === selectedRow.id &&
+                      rootCauseTarget.methodCode === selectedMethod.code &&
+                      rootCauseTarget.documentPart === 'conclusion')
+                  ) ? (
+                    <div className="mt-4">
+                      <SystemDocumentDateEditor
+                        key={`${selectedEntry.changeKey}:${dateEditorTarget?.token ?? 0}`}
+                        reference={selectedDocumentReference}
+                        label={`Дата заключения ${selectedMethod.code}`}
+                        disabled={isConclusionCorrectionPending || isResultCorrectionPending}
+                        autoFocus
+                        onMessage={onMessage}
+                        onRunRootCauseAction={onRunRootCauseAction}
+                        onSaved={() => {
+                          setDateEditorTarget(null)
+                          onDocumentDateSaved?.()
+                        }}
+                      />
+                    </div>
+                  ) : null}
                   <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <ResultManagerDocumentEditor
                       value={conclusionDrafts[selectedEntry.changeKey] ?? selectedConclusion}
                       placeholder="Наименование заключения для этого стыка"
-                      hint="Дата заключения фиксируется отдельно и не меняется через название."
+                      hint="Название меняется отдельно от даты документа."
                       disabled={isConclusionCorrectionPending}
                       canRename={Boolean(
                         !isConclusionCorrectionPending &&
@@ -492,7 +626,7 @@ export function LnkResultManagerDialog({
     </>
   )
 
-  return embedded ? content : <WorkflowDialogShell variant="manager">{content}</WorkflowDialogShell>
+  return embedded ? content : <WorkflowDialogShell variant="manager" elevated={elevated}>{content}</WorkflowDialogShell>
 }
 
 function ResultMetric({ label, value }: { label: string; value: string }) {

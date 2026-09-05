@@ -21,6 +21,7 @@ export function useLnkResultManagerMutations({
   highlightChangedRows,
   setManagedLnkPendingResultChanges,
   setManagedLnkResultChangeHint,
+  onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -46,6 +47,7 @@ export function useLnkResultManagerMutations({
       highlightChangedRows(saved ? [saved] : [], getLnkResultHighlightFields(variables.methodKey))
       setMessage(variables.result ? 'Результат ЛНК изменен' : 'Результат ЛНК удален')
       await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -76,6 +78,7 @@ export function useLnkResultManagerMutations({
       setManagedLnkResultChangeHint(null)
       setMessage(`Результат ЛНК изменен для стыков: ${savedRows.length}`)
       await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -107,6 +110,7 @@ export function useLnkResultManagerMutations({
       highlightChangedRows(savedRows, getLnkConclusionHighlightFields(variables.methodKey))
       setMessage(`Заключение переименовано для позиций: ${savedRows.length}`)
       await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

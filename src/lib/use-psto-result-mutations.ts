@@ -28,6 +28,7 @@ export function usePstoResultMutations({
   setPstoResultDraft,
   setHeatTreatmentFieldEditing,
   defaultPstoConclusionNaming,
+  onWorkflowCorrectionSaved,
 }: UsePstoReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -92,6 +93,7 @@ export function usePstoResultMutations({
       setPstoResultDraft(createDefaultPstoResultDraft(defaultPstoConclusionNaming))
       await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -121,6 +123,7 @@ export function usePstoResultMutations({
       highlightChangedRows(saved ? [saved] : [], [...PSTO_RESULT_HIGHLIGHT_FIELDS])
       setMessage(variables.action === 'deleteResult' ? 'Результат ПСТО удален' : 'Диаграмма ПСТО переименована')
       await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

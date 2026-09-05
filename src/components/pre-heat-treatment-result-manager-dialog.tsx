@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
+import { CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
+import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
 import { BufferedFilterInput } from '@/components/result-filters'
@@ -34,6 +35,11 @@ import { normalizeSearchText } from '@/lib/report-row-utils'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
+import type {
+  WorkflowRootCauseAction,
+  WorkflowRootCauseTarget,
+} from '@/lib/workflow-root-cause-actions'
 import type { CorrectPreHeatTreatmentLnkResultPayload } from '@/server/pre-heat-treatment-lnk-workflow'
 
 type PreResultEntry = {
@@ -48,6 +54,7 @@ type ResultFilter = 'all' | 'годен' | 'ремонт' | 'вырез'
 
 export type PreHeatTreatmentResultManagerDialogProps = {
   embedded?: boolean
+  elevated?: boolean
   rows: WeldRow[]
   registryMode: PreHeatTreatmentRegistryMode
   readOnly?: boolean
@@ -64,10 +71,15 @@ export type PreHeatTreatmentResultManagerDialogProps = {
   onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
   canOpenDocument: (fieldKey: WeldFieldKey) => boolean
+  rootCauseTarget?: Extract<WorkflowRootCauseTarget, { kind: 'lnk-control' }>
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
+  onDocumentDateSaved?: () => void
+  onMessage?: (message: string) => void
 }
 
 export function PreHeatTreatmentResultManagerDialog({
   embedded = false,
+  elevated = false,
   rows,
   registryMode,
   readOnly = false,
@@ -84,6 +96,10 @@ export function PreHeatTreatmentResultManagerDialog({
   onOpenPstoHistory,
   onCopyDocumentName,
   canOpenDocument,
+  rootCauseTarget,
+  onRunRootCauseAction,
+  onDocumentDateSaved,
+  onMessage,
 }: PreHeatTreatmentResultManagerDialogProps) {
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
@@ -91,6 +107,7 @@ export function PreHeatTreatmentResultManagerDialog({
   const [methodFilter, setMethodFilter] = useState('')
   const [requestFilter, setRequestFilter] = useState<RequestFilter>('all')
   const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
+  const [dateEditorTarget, setDateEditorTarget] = useState<{ relationId: number; token: number } | null>(null)
   const entries = useMemo(() => buildEntries(rows, registryMode), [registryMode, rows])
   const filteredEntries = useMemo(() => {
     const query = normalizeSearchText(search)
@@ -174,6 +191,19 @@ export function PreHeatTreatmentResultManagerDialog({
       documentLabel: managesResult ? 'заключение до ТО' : 'заявку до ТО',
       rows: [entry.row],
       sourceLabel: `НК ${entry.methodCode} до ТО · стык ${text(entry.row.joint) || entry.row.id}`,
+      actions: [{
+        id: 'change-document-date',
+        label: managesResult ? 'Изменить дату заключения' : 'Изменить дату заявки',
+        icon: CalendarClock,
+        disabled: !documentField || isPending || readOnly,
+        onSelect: () => {
+          setSelectedRelationId(entry.control.id)
+          setDateEditorTarget((current) => ({
+            relationId: entry.control.id,
+            token: (current?.token ?? 0) + 1,
+          }))
+        },
+      }],
       dangerActions: [{
         id: managesResult ? 'delete-pre-result' : 'delete-pre-request',
         label: managesResult ? 'Удалить результат' : 'Удалить заявку',
@@ -205,6 +235,10 @@ export function PreHeatTreatmentResultManagerDialog({
   const selectedRequestField = selectedEntry
     ? getPreFieldKey(selectedEntry.methodCode, 'requestName')
     : null
+  const selectedDocumentField = registryMode === 'request' ? selectedRequestField : selectedConclusionField
+  const selectedDocumentReference = selectedEntry && selectedDocumentField
+    ? getSystemDocumentReferenceForField(selectedEntry.row, selectedDocumentField)
+    : null
   const resultDeleteReason = selectedEntry
     ? getPreHeatTreatmentResultRemovalBlockReason(
         selectedEntry.row,
@@ -216,12 +250,12 @@ export function PreHeatTreatmentResultManagerDialog({
     ? getPreHeatTreatmentRequestRemovalBlockReason(selectedEntry.row, selectedEntry.control)
     : ''
   const hasRequestChanges = Boolean(selectedEntry) && (
-    requestDraft.date !== (parseDateLikeToIso(selectedEntry.control.requestDate) ?? '') ||
+    (!selectedDocumentReference && requestDraft.date !== (parseDateLikeToIso(selectedEntry.control.requestDate) ?? '')) ||
     requestDraft.name !== text(selectedEntry.control.requestName)
   )
   const hasResultChanges = Boolean(selectedEntry) && (
     resultDraft.result !== text(selectedEntry.control.result) ||
-    resultDraft.date !== (parseDateLikeToIso(selectedEntry.control.conclusionDate) ?? '') ||
+    (!selectedDocumentReference && resultDraft.date !== (parseDateLikeToIso(selectedEntry.control.conclusionDate) ?? '')) ||
     resultDraft.name !== text(selectedEntry.control.conclusionName)
   )
 
@@ -467,16 +501,43 @@ export function PreHeatTreatmentResultManagerDialog({
               {registryMode === 'request' ? (
                 <section className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
                 <h3 className="text-sm font-semibold text-slate-900">Заявка</h3>
-                <div className="mt-4 grid gap-3 md:grid-cols-[180px_minmax(280px,1fr)]">
-                  <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                    <span>Дата заявки</span>
-                    <Input
-                      type="date"
-                      value={requestDraft.date}
+                {selectedDocumentReference && (
+                  dateEditorTarget?.relationId === selectedEntry.control.id ||
+                  (rootCauseTarget?.focus === 'date' &&
+                    rootCauseTarget.rowId === selectedEntry.row.id &&
+                    rootCauseTarget.methodCode === selectedEntry.methodCode &&
+                    rootCauseTarget.documentPart === 'request' &&
+                    (!rootCauseTarget.relationId || rootCauseTarget.relationId === selectedEntry.control.id))
+                ) ? (
+                  <div className="mt-4">
+                    <SystemDocumentDateEditor
+                      key={`${selectedEntry.control.id}:${dateEditorTarget?.token ?? 0}`}
+                      reference={selectedDocumentReference}
+                      label="Дата заявки ЛНК до ТО"
                       disabled={isPending || readOnly}
-                      onChange={(event) => setRequestDraft((current) => ({ ...current, date: event.target.value }))}
+                      autoFocus
+                      onMessage={onMessage}
+                      onRunRootCauseAction={onRunRootCauseAction}
+                      onSaved={() => {
+                        setDateEditorTarget(null)
+                        onDocumentDateSaved?.()
+                      }}
                     />
-                  </label>
+                  </div>
+                ) : null}
+                <div className={`mt-4 grid gap-3 ${selectedDocumentReference ? '' : 'md:grid-cols-[180px_minmax(280px,1fr)]'}`}>
+                  {!selectedDocumentReference ? (
+                    <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                      <span>Дата заявки</span>
+                      <Input
+                        type="date"
+                        value={requestDraft.date}
+                        autoFocus={rootCauseTarget?.focus === 'date'}
+                        disabled={isPending || readOnly}
+                        onChange={(event) => setRequestDraft((current) => ({ ...current, date: event.target.value }))}
+                      />
+                    </label>
+                  ) : null}
                   <label className="space-y-1.5 text-xs font-medium text-slate-600">
                     <span>Наименование заявки</span>
                     <Input
@@ -523,7 +584,33 @@ export function PreHeatTreatmentResultManagerDialog({
               {registryMode === 'result' ? (
                 <section className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
                   <h3 className="text-sm font-semibold text-slate-900">Результат и заключение</h3>
-                  <div className="mt-4 grid gap-3 md:grid-cols-[180px_180px_minmax(260px,1fr)]">
+                  {selectedDocumentReference && (
+                    dateEditorTarget?.relationId === selectedEntry.control.id ||
+                    (rootCauseTarget?.focus === 'date' &&
+                      rootCauseTarget.rowId === selectedEntry.row.id &&
+                      rootCauseTarget.methodCode === selectedEntry.methodCode &&
+                      rootCauseTarget.documentPart === 'conclusion' &&
+                      (!rootCauseTarget.relationId || rootCauseTarget.relationId === selectedEntry.control.id))
+                  ) ? (
+                    <div className="mt-4">
+                      <SystemDocumentDateEditor
+                        key={`${selectedEntry.control.id}:${dateEditorTarget?.token ?? 0}`}
+                        reference={selectedDocumentReference}
+                        label={`Дата заключения ${selectedEntry.methodCode} до ТО`}
+                        disabled={isPending || readOnly}
+                        autoFocus
+                        onMessage={onMessage}
+                        onRunRootCauseAction={onRunRootCauseAction}
+                        onSaved={() => {
+                          setDateEditorTarget(null)
+                          onDocumentDateSaved?.()
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <div className={`mt-4 grid gap-3 ${selectedDocumentReference
+                    ? 'md:grid-cols-[180px_minmax(260px,1fr)]'
+                    : 'md:grid-cols-[180px_180px_minmax(260px,1fr)]'}`}>
                     <label className="space-y-1.5 text-xs font-medium text-slate-600">
                       <span>Результат</span>
                       <Select
@@ -534,15 +621,18 @@ export function PreHeatTreatmentResultManagerDialog({
                         {PRE_HEAT_TREATMENT_RESULT_OPTIONS.map((result) => <option key={result}>{result}</option>)}
                       </Select>
                     </label>
-                    <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                      <span>Дата контроля</span>
-                      <Input
-                        type="date"
-                        value={resultDraft.date}
-                        disabled={isPending || readOnly}
-                        onChange={(event) => setResultDraft((current) => ({ ...current, date: event.target.value }))}
-                      />
-                    </label>
+                    {!selectedDocumentReference ? (
+                      <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                        <span>Дата контроля</span>
+                        <Input
+                          type="date"
+                          value={resultDraft.date}
+                          autoFocus={rootCauseTarget?.focus === 'date'}
+                          disabled={isPending || readOnly}
+                          onChange={(event) => setResultDraft((current) => ({ ...current, date: event.target.value }))}
+                        />
+                      </label>
+                    ) : null}
                     <label className="space-y-1.5 text-xs font-medium text-slate-600">
                       <span>Наименование заключения</span>
                       <Input
@@ -602,14 +692,20 @@ export function PreHeatTreatmentResultManagerDialog({
     </>
   )
 
-  return embedded ? content : <WorkflowDialogShell variant="manager">{content}</WorkflowDialogShell>
+  return embedded ? content : <WorkflowDialogShell variant="manager" elevated={elevated}>{content}</WorkflowDialogShell>
 }
 
 function buildEntries(rows: WeldRow[], registryMode: PreHeatTreatmentRegistryMode): PreResultEntry[] {
   return rows.flatMap((row) => getPreHeatTreatmentControls(row).flatMap((control) => {
     const methodCode = text(control.method).toLocaleUpperCase('ru-RU')
     const belongsToRegistry = registryMode === 'request'
-      ? Boolean(text(control.requestName))
+      ? Boolean(
+          text(control.requestName) ||
+          text(control.requestDate) ||
+          text(control.result) ||
+          text(control.conclusionDate) ||
+          text(control.conclusionName),
+        )
       : isFinalResult(control.result)
     return isPreHeatTreatmentLnkMethodCode(methodCode) && belongsToRegistry
       ? [{ row, control, methodCode }]

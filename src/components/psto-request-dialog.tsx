@@ -33,6 +33,10 @@ import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { buildSystemDocumentCreationPlan, type SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
+import {
+  getPstoChronologyRootCauseActions,
+  type WorkflowRootCauseAction,
+} from '@/lib/workflow-root-cause-actions'
 
 export type PstoRequestDialogProps = {
   nextRequestName: string
@@ -64,6 +68,7 @@ export type PstoRequestDialogProps = {
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onSubmit: () => void
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
 }
 
 export function PstoRequestDialog({
@@ -96,9 +101,11 @@ export function PstoRequestDialog({
   onOpenJournalRows,
   onOpenPstoHistory,
   onSubmit,
+  onRunRootCauseAction,
 }: PstoRequestDialogProps) {
   const requestConclusionSettings = useRequestConclusionSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const requestDateInputRef = useRef<HTMLInputElement>(null)
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
@@ -133,12 +140,31 @@ export function PstoRequestDialog({
   }), [nextRequestNumber, requestConclusionSettings, requestDate, requestNaming, selectedRows])
   const effectiveRequestName = creationPlan.groups[0]?.name ?? requestName
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ПСТО')
-  const chronologyReason = useMemo(() => {
-    if (selectedRows.length === 0 || !effectiveRequestName || requestDateReason) return ''
+  const chronologyIssues = useMemo(() => {
+    if (selectedRows.length === 0 || !effectiveRequestName || requestDateReason) return []
     const proposedRows = buildPstoRequestDraftRows({ records: selectedRows, requestName: effectiveRequestName, requestDate })
-    const issue = getPstoChronologyIssues(proposedRows, saveCheckSettings)[0]
-    return issue ? formatSaveCheckBlockReason('pstoResultRequestDateOrder', issue.message) : ''
+    return getPstoChronologyIssues(proposedRows, saveCheckSettings)
   }, [effectiveRequestName, requestDate, requestDateReason, saveCheckSettings, selectedRows])
+  const chronologyReason = chronologyIssues[0]
+    ? formatSaveCheckBlockReason('pstoResultRequestDateOrder', chronologyIssues[0].message)
+    : ''
+  const rootCauseActions = useMemo(
+    () => getPstoChronologyRootCauseActions(chronologyIssues),
+    [chronologyIssues],
+  )
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    const editsCurrentDraft = target.kind === 'psto-cycle' &&
+      target.sequence === 1 &&
+      target.stage === 'pstoRequest' &&
+      target.documentName === effectiveRequestName &&
+      target.documentDate === requestDate
+    if (editsCurrentDraft) {
+      requestDateInputRef.current?.focus()
+      return
+    }
+    onRunRootCauseAction?.(action)
+  }
   const createDisabledReason = getPstoRequestCreateDisabledReason({
     selectedRowsCount: selectedRows.length,
     requestName: effectiveRequestName,
@@ -201,6 +227,7 @@ export function PstoRequestDialog({
         <label className="block w-[190px] space-y-1.5 text-sm">
           <span className="text-[13px] font-medium leading-none text-slate-700">Дата заявки</span>
           <Input
+            ref={requestDateInputRef}
             type="date"
             value={requestDate}
             onChange={(event) => onRequestDateChange(event.target.value)}
@@ -318,6 +345,13 @@ export function PstoRequestDialog({
         isPending={isPending}
         isCreateDisabled={Boolean(createDisabledReason)}
         disabledReason={feedbackMessage}
+        disabledReasonActions={chronologyReason
+          ? rootCauseActions.map((action) => ({
+              key: action.key,
+              label: action.label,
+              onAction: () => runRootCauseAction(action),
+            }))
+          : undefined}
         disabledReasonActionLabel={creationPlan.error && workspaceTab !== 'documents'
           ? 'Открыть заявки и имена'
           : undefined}

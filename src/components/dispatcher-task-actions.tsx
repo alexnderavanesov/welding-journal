@@ -17,8 +17,8 @@ import type {
 } from '@/lib/dispatcher-types'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import {
+  canOpenDispatcherTaskPicture,
   getDispatcherTaskActionSpecs,
-  type DispatcherTaskActionId,
   type DispatcherTaskActionSpec,
 } from '@/lib/dispatcher-task-actions-model'
 
@@ -27,6 +27,7 @@ export type RepeatedJointTaskActionsProps = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
   onShowTask: (task: DispatcherTask) => void
+  onOpenTaskPicture: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>) => void
   onOpenTaskOfficiality: (task: DispatcherTask) => void
   onCreateTask: (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => void
   onCreateEarlyCoil: (task: RepeatedJointCreateTask) => void
@@ -38,7 +39,7 @@ export type RepeatedJointTaskActionsProps = {
   onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
   onRunTaskAction: (
     task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>,
-    actionId: DispatcherTaskActionId,
+    action: DispatcherTaskActionSpec,
   ) => void
   canRunDispatcherMutation: boolean
   canCreateEarlyCoil: boolean
@@ -53,6 +54,7 @@ export function RepeatedJointTaskActions({
   isTaskExpanded,
   onToggleDetails,
   onShowTask,
+  onOpenTaskPicture,
   onOpenTaskOfficiality,
   onCreateTask,
   onCreateEarlyCoil,
@@ -121,17 +123,11 @@ export function RepeatedJointTaskActions({
               Катушка досрочно
             </Button>
           ) : null}
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Цепочка
-          </Button>
         </>
       ) : task.kind === 'delete' && canRunDispatcherMutation ? (
         <>
           <Button type="button" size="sm" variant="outline" onClick={() => onDeleteTask(task)} disabled={isDeletePending} className={dispatcherDangerActionButtonClass}>
             Удалить
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Цепочка
           </Button>
         </>
       ) : task.kind === 'rename' && canRunDispatcherMutation ? (
@@ -139,78 +135,55 @@ export function RepeatedJointTaskActions({
           <Button type="button" size="sm" onClick={() => onRenameTask(task)} disabled={isRenamePending} className={dispatcherPrimaryActionButtonClass}>
             Переименовать
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Цепочка
-          </Button>
         </>
       ) : task.kind === 'percentage-line-control' && task.issue === 'rejected-primary' ? (
-        <>
-          <DispatcherActionMenu
-            items={[
-              {
-                label: 'Принять',
-                onClick: () => onAcceptPercentageLineTask(task),
-              },
-              {
-                label: 'Сменить официальность',
-                onClick: () => onOpenTaskOfficiality(task),
-              },
-            ]}
-          />
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Показать
-          </Button>
-        </>
+        <DispatcherActionMenu
+          items={[
+            {
+              label: 'Принять',
+              onClick: () => onAcceptPercentageLineTask(task),
+            },
+            {
+              label: 'Сменить официальность',
+              onClick: () => onOpenTaskOfficiality(task),
+            },
+          ]}
+        />
       ) : task.kind === 'percentage-line-control' && task.issue === 'excess' ? (
-        <>
-          <DispatcherActionMenu
-            items={[
-              {
-                label: 'Принять',
-                onClick: () => onAcceptPercentageLineTask(task),
-              },
-            ]}
-          />
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Показать
-          </Button>
-        </>
+        <DispatcherActionMenu
+          items={[
+            {
+              label: 'Принять',
+              onClick: () => onAcceptPercentageLineTask(task),
+            },
+          ]}
+        />
       ) : task.kind === 'percentage-line-control' && task.issue === 'new-welder' ? (
-        <>
-          <DispatcherActionMenu
-            items={[
-              {
-                label: 'Изменить клеймо',
-                onClick: () => onEditPercentageLineTaskStamp(task),
-              },
-              {
-                label: 'Принять',
-                onClick: () => onAcceptPercentageLineTask(task),
-              },
-            ]}
-          />
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Показать
-          </Button>
-        </>
+        <DispatcherActionMenu
+          items={[
+            {
+              label: 'Изменить клеймо',
+              onClick: () => onEditPercentageLineTaskStamp(task),
+            },
+            {
+              label: 'Принять',
+              onClick: () => onAcceptPercentageLineTask(task),
+            },
+          ]}
+        />
       ) : task.kind === 'percentage-line-control' && task.issue === 'suspend-welder' ? (
-        <>
-          <DispatcherActionMenu
-            items={[
-              {
-                label: 'Отстранить',
-                onClick: () => onSuspendPercentageLineWelder(task),
-              },
-              {
-                label: 'Не отстранять',
-                onClick: () => onSkipPercentageLineWelderSuspension(task),
-              },
-            ]}
-          />
-          <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherActionButtonClass}>
-            Показать
-          </Button>
-        </>
+        <DispatcherActionMenu
+          items={[
+            {
+              label: 'Отстранить',
+              onClick: () => onSuspendPercentageLineWelder(task),
+            },
+            {
+              label: 'Не отстранять',
+              onClick: () => onSkipPercentageLineWelderSuspension(task),
+            },
+          ]}
+        />
       ) : task.kind === 'percentage-line-control' && task.issue === 'missing' ? (
         <ModeledDispatcherActions
           task={task}
@@ -232,15 +205,29 @@ export function RepeatedJointTaskActions({
           onRunTaskAction={onRunTaskAction}
           onShowTask={onShowTask}
         />
-      ) : task.kind === 'line-consistency' || task.kind === 'percentage-line-control' ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
-          Показать
+      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => onShowTask(task)}
+        className={dispatcherActionButtonClass}
+        title="Показать связанные строки в текущем отчете"
+      >
+        Показать
+      </Button>
+      {canOpenDispatcherTaskPicture(task) ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onOpenTaskPicture(task)}
+          className={dispatcherActionButtonClass}
+          title={`Открыть картину стыка ${String(task.row.joint ?? '-').trim() || '-'}`}
+        >
+          Картина
         </Button>
-      ) : (
-        <Button type="button" size="sm" variant="outline" onClick={() => onShowTask(task)} className={dispatcherStandaloneActionButtonClass}>
-          Цепочка
-        </Button>
-      )}
+      ) : null}
       <Button
         type="button"
         variant="ghost"
@@ -267,11 +254,12 @@ function ModeledDispatcherActions({
   onRunTaskAction: RepeatedJointTaskActionsProps['onRunTaskAction']
   onShowTask: RepeatedJointTaskActionsProps['onShowTask']
 }) {
-  const [primaryAction, ...secondaryActions] = actions
+  const workflowActions = actions.filter((action) => action.id !== 'show-task')
+  const [primaryAction, ...secondaryActions] = workflowActions
   if (!primaryAction) return null
   const run = (action: DispatcherTaskActionSpec) => {
     if (action.id === 'show-task') onShowTask(task)
-    else onRunTaskAction(task, action.id)
+    else onRunTaskAction(task, action)
   }
 
   return (

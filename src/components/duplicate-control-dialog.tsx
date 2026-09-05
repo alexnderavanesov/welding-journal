@@ -26,6 +26,7 @@ import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { calculateFinalStatus, formatFinalStatusDisplay } from '@/lib/weld-status'
 
 export type DuplicateControlDialogProps = {
+  elevated?: boolean
   draft: DuplicateControlDraft
   filteredRows: WeldRow[]
   selectedRows: WeldRow[]
@@ -44,6 +45,7 @@ export type DuplicateControlDialogProps = {
 }
 
 export function DuplicateControlDialog({
+  elevated = false,
   draft,
   filteredRows,
   selectedRows,
@@ -88,7 +90,7 @@ export function DuplicateControlDialog({
     <LargeDialogShell
       maxWidthClassName="max-w-[1240px]"
       maxHeightClassName="h-[88vh]"
-      overlayClassName="z-[75] bg-slate-950/25"
+      overlayClassName={elevated ? 'z-[110] bg-slate-950/30' : 'z-[75] bg-slate-950/25'}
       panelShadowClassName="shadow-slate-950/10"
     >
       <DialogHeader
@@ -300,7 +302,12 @@ export function DuplicateControlDialog({
         </div>
       </div>
       {showSelectedPreview ? (
-        <DuplicateControlPreviewDialog rows={selectedRows} draft={draft} onClose={() => setShowSelectedPreview(false)} />
+        <DuplicateControlPreviewDialog
+          rows={selectedRows}
+          draft={draft}
+          elevated={elevated}
+          onClose={() => setShowSelectedPreview(false)}
+        />
       ) : null}
     </LargeDialogShell>
   )
@@ -388,10 +395,12 @@ function getUniqueDuplicateControls(controls: DuplicateControlRecord[]) {
 function DuplicateControlPreviewDialog({
   rows,
   draft,
+  elevated,
   onClose,
 }: {
   rows: WeldRow[]
   draft: DuplicateControlDraft
+  elevated: boolean
   onClose: () => void
 }) {
   const methods = Array.from(draft.methods)
@@ -402,7 +411,7 @@ function DuplicateControlPreviewDialog({
     <LargeDialogShell
       maxWidthClassName="max-w-4xl"
       maxHeightClassName="max-h-[86vh]"
-      overlayClassName="z-[85] bg-slate-950/25"
+      overlayClassName={elevated ? 'z-[120] bg-slate-950/30' : 'z-[85] bg-slate-950/25'}
     >
       <DialogHeader
         title="Предпросмотр выбранных стыков"

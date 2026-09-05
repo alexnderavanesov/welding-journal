@@ -8,6 +8,7 @@ import {
   getManagedPstoResultRows,
   getPstoResultAvailableRequestOptions,
   getPstoResultSaveBlockReason,
+  getPstoResultRootCauseActions,
   getPstoResultSearchRows,
   getSelectedPstoResultRows,
 } from '@/lib/psto-result-derived-utils'
@@ -112,6 +113,24 @@ export function usePstoResultDerivedState({
     () => getManagedPstoResultRows(heatTreatmentRows, pstoResultDraft.rowIds),
     [heatTreatmentRows, pstoResultDraft.rowIds],
   )
+  const pstoResultRootCauseActions = useMemo(
+    () => getPstoResultRootCauseActions({
+      draft: pstoResultDraft,
+      nextDiagramName: nextPstoDiagramName,
+      saveBlockReason: pstoResultSaveBlockReason,
+      saveCheckSettings,
+      selectedRows: selectedPstoResultRows,
+      systemDocumentCreationPlan,
+    }),
+    [
+      nextPstoDiagramName,
+      pstoResultDraft,
+      pstoResultSaveBlockReason,
+      saveCheckSettings,
+      selectedPstoResultRows,
+      systemDocumentCreationPlan,
+    ],
+  )
 
   return {
     pstoResultAvailableRequestOptions,
@@ -121,6 +140,7 @@ export function usePstoResultDerivedState({
     selectedPstoResultRows,
     systemDocumentCreationPlan,
     pstoResultSaveBlockReason,
+    pstoResultRootCauseActions,
     managedPstoResultRows,
   }
 }

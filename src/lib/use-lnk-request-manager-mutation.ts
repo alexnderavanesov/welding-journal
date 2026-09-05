@@ -19,6 +19,7 @@ export function useLnkRequestManagerMutation({
   setManagedLnkRequestName,
   setManagedLnkRequestNameDraft,
   setIsLnkRequestManagerOpen,
+  onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -111,7 +112,12 @@ export function useLnkRequestManagerMutation({
         setManagedLnkRequestNameDraft('')
         setIsLnkRequestManagerOpen(false)
       }
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      await invalidateWeldJoints(
+        queryClient,
+        { upsertRows: savedRows },
+        { refetchLnkWorkflow: variables.action === 'rename' },
+      )
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

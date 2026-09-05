@@ -15,6 +15,7 @@ type CreateReportChainDialogPropsOptions = {
   onOpenRow: ChainDialogProps['onOpenRow']
   onOpenDocument: ChainDialogProps['onOpenDocument']
   onOpenReport: ChainDialogProps['onOpenReport']
+  onEditRow: ChainDialogProps['onEditRow']
   onRunNextAction: ChainDialogProps['onRunNextAction']
   onRunDispatcherTaskAction: ChainDialogProps['onRunDispatcherTaskAction']
   canCreateRepeatedJoint: ChainDialogProps['canCreateRepeatedJoint']
@@ -43,6 +44,7 @@ export function createReportChainDialogProps({
   onOpenRow,
   onOpenDocument,
   onOpenReport,
+  onEditRow,
   onRunNextAction,
   onRunDispatcherTaskAction,
   canCreateRepeatedJoint,
@@ -72,6 +74,7 @@ export function createReportChainDialogProps({
           onOpenRow,
           onOpenDocument,
           onOpenReport,
+          onEditRow,
           onRunNextAction,
           onRunDispatcherTaskAction,
           canCreateRepeatedJoint,

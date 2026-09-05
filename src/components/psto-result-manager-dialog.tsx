@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { ArrowRight, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
+import { ArrowRight, CalendarClock, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
+import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,10 +22,14 @@ import {
   applyPstoCycleCorrection,
   applyPstoTvmtCorrectionWithLaterCycleRemoval,
   getPstoCycleStageDeleteBlockReason,
+  getPstoCycleStageInlineLabel,
   getPstoCycleStageLabel,
   type PstoCycleStage,
 } from '@/lib/psto-cycle-corrections'
-import { buildPstoRepeatSystemDocumentRow } from '@/lib/system-document-virtual-row'
+import {
+  buildPrimaryPstoSystemDocumentRow,
+  buildPstoRepeatSystemDocumentRow,
+} from '@/lib/system-document-virtual-row'
 import {
   getPstoTvmtWorkflowLabel,
   getPstoTvmtWorkflowState,
@@ -34,6 +39,11 @@ import {
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
+import type {
+  WorkflowRootCauseAction,
+  WorkflowRootCauseTarget,
+} from '@/lib/workflow-root-cause-actions'
 import type {
   CorrectPstoCycleStagePayload,
   CorrectPstoTvmtAndRemoveLaterCyclesPayload,
@@ -46,6 +56,7 @@ type StageDraft = {
 }
 
 export type PstoResultManagerDialogProps = {
+  elevated?: boolean
   rows: WeldRow[]
   diagramDrafts: Record<number, string>
   isPending: boolean
@@ -65,9 +76,17 @@ export type PstoResultManagerDialogProps = {
   onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
   canOpenDocumentForField?: (fieldKey: WeldFieldKey) => boolean
+  initialRowId?: number
+  initialSequence?: number
+  initialStage?: PstoCycleStage
+  rootCauseTarget?: Extract<WorkflowRootCauseTarget, { kind: 'psto-cycle' }>
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
+  onDocumentDateSaved?: () => void
+  onMessage?: (message: string) => void
 }
 
 export function PstoResultManagerDialog({
+  elevated = false,
   rows,
   isPending,
   canOpenDocument,
@@ -82,6 +101,13 @@ export function PstoResultManagerDialog({
   onOpenPstoHistory,
   onCopyDocumentName,
   canOpenDocumentForField,
+  initialRowId,
+  initialSequence,
+  initialStage,
+  rootCauseTarget,
+  onRunRootCauseAction,
+  onDocumentDateSaved,
+  onMessage,
 }: PstoResultManagerDialogProps) {
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
@@ -108,23 +134,63 @@ export function PstoResultManagerDialog({
     ].join(' ')).includes(query))
   }, [rows, search])
   const pagination = usePagePagination({ items: filteredRows, defaultPageSize: 50, resetKeys: [search] })
-  const [selectedRowId, setSelectedRowId] = useState<number | null>(rows[0]?.id ?? null)
+  const [selectedRowId, setSelectedRowId] = useState<number | null>(initialRowId ?? rows[0]?.id ?? null)
+  const [dateEditorTarget, setDateEditorTarget] = useState<{
+    rowId: number
+    sequence: number
+    stage: PstoCycleStage
+    token: number
+  } | null>(null)
   const selectedRow = filteredRows.find((row) => row.id === selectedRowId) ?? filteredRows[0] ?? null
   const timeline = useMemo(
     () => selectedRow ? buildPstoCycleTimeline(selectedRow, selectedRow.pstoRepeatCycles ?? []) : [],
     [selectedRow],
   )
-  const [selectedSequence, setSelectedSequence] = useState(1)
+  const [selectedSequence, setSelectedSequence] = useState(
+    () => initialSequence ?? timeline.at(-1)?.sequence ?? 1,
+  )
+  const selectionBeforeRootCauseRef = useRef<{ rowId: number | null; sequence: number } | null>(null)
   const selectedCycle = timeline.find((cycle) => cycle.sequence === selectedSequence)
     ?? timeline.at(-1)
     ?? null
 
   useEffect(() => {
-    if (selectedRow && selectedRow.id !== selectedRowId) setSelectedRowId(selectedRow.id)
-  }, [selectedRow, selectedRowId])
+    if (selectedRow && selectedRow.id !== selectedRowId) {
+      setSelectedRowId(selectedRow.id)
+      setSelectedSequence(timeline.at(-1)?.sequence ?? 1)
+    }
+  }, [selectedRow, selectedRowId, timeline])
   useEffect(() => {
-    setSelectedSequence(timeline.at(-1)?.sequence ?? 1)
-  }, [selectedRow?.id, timeline.length])
+    setSelectedSequence((current) => {
+      if (initialRowId === selectedRow?.id && initialSequence && timeline.some((cycle) => cycle.sequence === initialSequence)) {
+        return initialSequence
+      }
+      return timeline.some((cycle) => cycle.sequence === current)
+        ? current
+        : timeline.at(-1)?.sequence ?? 1
+    })
+  }, [initialRowId, initialSequence, selectedRow?.id, timeline])
+  useEffect(() => {
+    if (initialRowId && rows.some((row) => row.id === initialRowId)) setSelectedRowId(initialRowId)
+  }, [initialRowId, rows])
+  const rootCauseTargetKey = rootCauseTarget
+    ? `${rootCauseTarget.rowId}:${rootCauseTarget.sequence}:${rootCauseTarget.stage}:${rootCauseTarget.focus}`
+    : ''
+  useEffect(() => {
+    if (rootCauseTarget) {
+      if (!selectionBeforeRootCauseRef.current) {
+        selectionBeforeRootCauseRef.current = { rowId: selectedRowId, sequence: selectedSequence }
+      }
+      setSelectedRowId(rootCauseTarget.rowId)
+      setSelectedSequence(rootCauseTarget.sequence)
+      return
+    }
+    const previous = selectionBeforeRootCauseRef.current
+    if (!previous) return
+    selectionBeforeRootCauseRef.current = null
+    setSelectedRowId(previous.rowId)
+    setSelectedSequence(previous.sequence)
+  }, [rootCauseTargetKey])
 
   const openStageContextMenu = (
     event: MouseEvent<HTMLElement>,
@@ -146,9 +212,25 @@ export function PstoResultManagerDialog({
       documentLabel: getDocumentLabel(stage),
       rows: [row],
       sourceLabel: `цикл ПСТО/ТВМТ · стык ${text(row.joint) || row.id}`,
+      actions: [{
+        id: 'change-stage-date',
+        label: `Изменить дату: ${getPstoCycleStageInlineLabel(stage)}`,
+        icon: CalendarClock,
+        disabled: isPending || !stageData.name,
+        onSelect: () => {
+          setSelectedRowId(row.id)
+          setSelectedSequence(cycle.sequence)
+          setDateEditorTarget((current) => ({
+            rowId: row.id,
+            sequence: cycle.sequence,
+            stage,
+            token: (current?.token ?? 0) + 1,
+          }))
+        },
+      }],
       dangerActions: [{
         id: 'delete-cycle-stage',
-        label: `Удалить: ${getPstoCycleStageLabel(stage).toLocaleLowerCase('ru-RU')}`,
+        label: `Удалить: ${getPstoCycleStageInlineLabel(stage)}`,
         icon: Trash2,
         danger: true,
         disabled: isPending || Boolean(deleteReason),
@@ -178,7 +260,7 @@ export function PstoResultManagerDialog({
     canOpenDocumentForField ? canOpenDocumentForField(fieldKey) : canOpenDocument
 
   return (
-    <WorkflowDialogShell variant="manager">
+    <WorkflowDialogShell variant="manager" elevated={elevated}>
       <DialogHeader
         title="История ПСТО и ТВМТ"
         subtitle="Основной и повторные циклы одного стыка показаны в хронологическом порядке. Удаление выполняется только с конца цепочки."
@@ -211,7 +293,10 @@ export function PstoResultManagerDialog({
                     <button
                       key={row.id}
                       type="button"
-                      onClick={() => setSelectedRowId(row.id)}
+                      onClick={() => {
+                        setSelectedRowId(row.id)
+                        setSelectedSequence(cycles.at(-1)?.sequence ?? 1)
+                      }}
                       className={`w-full rounded-md border px-3 py-3 text-left transition ${selected
                         ? 'border-sky-300 bg-white shadow-sm ring-1 ring-sky-100'
                         : 'border-transparent hover:border-slate-200 hover:bg-white'}`}
@@ -287,7 +372,13 @@ export function PstoResultManagerDialog({
                 </div>
               </section>
               <section className="grid min-w-0 gap-3 xl:grid-cols-2">
-                {getExistingStages(selectedCycle).map((stage) => (
+                {getDisplayedStages(
+                  selectedCycle,
+                  rootCauseTarget?.rowId === selectedRow.id &&
+                    rootCauseTarget.sequence === selectedCycle.sequence
+                    ? rootCauseTarget.stage
+                    : initialSequence === selectedCycle.sequence ? initialStage : undefined,
+                ).map((stage) => (
                   <CycleStageEditor
                     key={`${cycleKey(selectedCycle)}:${stage}`}
                     row={selectedRow}
@@ -326,6 +417,21 @@ export function PstoResultManagerDialog({
                         })
                       : undefined}
                     onOpenContextMenu={(event) => openStageContextMenu(event, selectedRow, selectedCycle, stage)}
+                    dateEditorFocusKey={dateEditorTarget?.rowId === selectedRow.id &&
+                      dateEditorTarget.sequence === selectedCycle.sequence &&
+                      dateEditorTarget.stage === stage
+                      ? dateEditorTarget.token
+                      : 0}
+                    rootCauseFocus={rootCauseTarget?.rowId === selectedRow.id &&
+                      rootCauseTarget.sequence === selectedCycle.sequence &&
+                      rootCauseTarget.stage === stage
+                      ? rootCauseTarget.focus
+                      : initialStage === stage && initialSequence === selectedCycle.sequence
+                        ? rootCauseTarget?.focus ?? 'date'
+                        : undefined}
+                    onRunRootCauseAction={onRunRootCauseAction}
+                    onDocumentDateSaved={onDocumentDateSaved}
+                    onMessage={onMessage}
                   />
                 ))}
               </section>
@@ -351,6 +457,11 @@ function CycleStageEditor({
   onOpenCycle,
   onCorrectTvmtAndRemoveLaterCycles,
   onOpenContextMenu,
+  dateEditorFocusKey,
+  rootCauseFocus,
+  onRunRootCauseAction,
+  onDocumentDateSaved,
+  onMessage,
 }: {
   row: WeldRow
   cycle: PstoCycleSnapshot
@@ -364,12 +475,24 @@ function CycleStageEditor({
   onOpenCycle: (sequence: number) => void
   onCorrectTvmtAndRemoveLaterCycles?: (draft: StageDraft) => void
   onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void
+  dateEditorFocusKey: number
+  rootCauseFocus?: 'date' | 'name' | 'result'
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
+  onDocumentDateSaved?: () => void
+  onMessage?: (message: string) => void
 }) {
   const stageData = getStageData(cycle, stage)
+  const documentField = getStageDocumentField(stage)
+  const documentReference = getSystemDocumentReferenceForField(getCycleDocumentRow(row, cycle), documentField)
+  const usesWholeDocumentDateEditor = Boolean(documentReference)
   const [draft, setDraft] = useState<StageDraft>(stageData)
   useEffect(() => setDraft(stageData), [stageData.date, stageData.name, stageData.result])
   const deleteReason = getPstoCycleStageDeleteBlockReason(row, cycle.sequence, stage)
-  const hasChanges = draft.date !== stageData.date || draft.name !== stageData.name || draft.result !== stageData.result
+  const hasChanges = (
+    (!usesWholeDocumentDateEditor && draft.date !== stageData.date) ||
+    draft.name !== stageData.name ||
+    draft.result !== stageData.result
+  )
   const draftComplete = stage === 'pstoResult'
     ? Boolean(
         (!saveCheckSettings.pstoResultDateRequired || draft.date) &&
@@ -407,13 +530,14 @@ function CycleStageEditor({
       </div>
       <div className={`mt-4 grid min-w-0 gap-3 ${stage === 'tvmtResult'
         ? 'sm:grid-cols-2'
-        : 'sm:grid-cols-[minmax(145px,0.8fr)_minmax(0,1.6fr)]'}`}>
+        : !usesWholeDocumentDateEditor ? 'sm:grid-cols-[minmax(145px,0.8fr)_minmax(0,1.6fr)]' : ''}`}>
         {stage === 'tvmtResult' ? (
           <label className="min-w-0 space-y-1.5 text-xs font-medium text-slate-600">
             <span>Результат</span>
             <Select
               className="min-w-0"
               value={draft.result}
+              autoFocus={rootCauseFocus === 'result'}
               disabled={isPending}
               onChange={(event) => setDraft((current) => ({ ...current, result: event.target.value }))}
             >
@@ -423,26 +547,44 @@ function CycleStageEditor({
             </Select>
           </label>
         ) : null}
-        <label className="min-w-0 space-y-1.5 text-xs font-medium text-slate-600">
-          <span>Дата</span>
-          <Input
-            className="min-w-0"
-            type="date"
-            value={draft.date}
-            disabled={isPending}
-            onChange={(event) => setDraft((current) => ({ ...current, date: event.target.value }))}
-          />
-        </label>
+        {!usesWholeDocumentDateEditor ? (
+          <label className="min-w-0 space-y-1.5 text-xs font-medium text-slate-600">
+            <span>Дата</span>
+            <Input
+              className="min-w-0"
+              type="date"
+              value={draft.date}
+              autoFocus={rootCauseFocus === 'date'}
+              disabled={isPending}
+              onChange={(event) => setDraft((current) => ({ ...current, date: event.target.value }))}
+            />
+          </label>
+        ) : null}
         <label className={`min-w-0 space-y-1.5 text-xs font-medium text-slate-600 ${stage === 'tvmtResult' ? 'sm:col-span-2' : ''}`}>
           <span>{getNameLabel(stage)}</span>
           <Input
             className="min-w-0"
             value={draft.name}
+            autoFocus={rootCauseFocus === 'name'}
             disabled={isPending}
             onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
           />
         </label>
       </div>
+      {documentReference && (rootCauseFocus === 'date' || dateEditorFocusKey > 0) ? (
+        <div className="mt-4">
+          <SystemDocumentDateEditor
+            key={`${cycleKey(cycle)}:${stage}:${dateEditorFocusKey}`}
+            reference={documentReference}
+            label={`Дата: ${getPstoCycleStageInlineLabel(stage)}`}
+            disabled={isPending}
+            autoFocus
+            onMessage={onMessage}
+            onRunRootCauseAction={onRunRootCauseAction}
+            onSaved={onDocumentDateSaved}
+          />
+        </div>
+      ) : null}
       <div className="mt-4 grid min-w-0 gap-3 border-t border-slate-200 pt-4">
         <div className="min-w-0 space-y-2 break-words text-xs leading-5">
           <p className="text-slate-500">
@@ -569,6 +711,13 @@ function getExistingStages(cycle: PstoCycleSnapshot): PstoCycleStage[] {
   ].filter((stage): stage is PstoCycleStage => Boolean(stage))
 }
 
+function getDisplayedStages(cycle: PstoCycleSnapshot, requestedStage?: PstoCycleStage) {
+  const stages = new Set(getExistingStages(cycle))
+  if (requestedStage) stages.add(requestedStage)
+  return (['pstoRequest', 'pstoResult', 'tvmtRequest', 'tvmtResult'] as const)
+    .filter((stage) => stages.has(stage))
+}
+
 function getStageData(cycle: PstoCycleSnapshot, stage: PstoCycleStage): StageDraft {
   if (stage === 'pstoRequest') {
     return { date: parseDateLikeToIso(cycle.pstoRequestDate) ?? '', name: cycle.pstoRequest, result: '' }
@@ -604,7 +753,7 @@ function createPayload(
 }
 
 function getCycleDocumentRow(row: WeldRow, cycle: PstoCycleSnapshot) {
-  if (cycle.source === 'primary') return row
+  if (cycle.source === 'primary') return buildPrimaryPstoSystemDocumentRow(row)
   const relation = row.pstoRepeatCycles?.find((candidate) => candidate.id === cycle.id)
   return relation ? buildPstoRepeatSystemDocumentRow(row, relation) : row
 }

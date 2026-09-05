@@ -50,8 +50,14 @@ export function useJointChainActions({
       setActiveReport('weldingJournal')
       setColumnFilters(filters)
     }
-    setChainRecord(row)
+    setChainRecord(null)
     setMessage(messageText)
+  }
+
+  function openRepeatedJointTaskPicture(task: DispatcherTask) {
+    if (task.kind === 'welder-stamp-expiry') return
+    setChainRecord(task.row)
+    setMessage(`Открыта картина стыка ${String(task.row.joint ?? '-').trim() || '-'}`)
   }
 
   function showRepeatedJointTask(task: DispatcherTask) {
@@ -203,6 +209,7 @@ export function useJointChainActions({
     openLinkedReportRow,
     openRowInReport,
     openRowsInReport,
+    openRepeatedJointTaskPicture,
     showRepeatedJointTask,
     showRepeatedJointTaskChain,
   }

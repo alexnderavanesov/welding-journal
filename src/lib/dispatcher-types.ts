@@ -3,6 +3,7 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
 import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
+import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 
 export type JointChainContinuation = {
   kind: 'repeated-joint' | 'official-joint' | 'coil'
@@ -98,6 +99,7 @@ export type RepeatedJointCheckTask = {
   suffix: 'R' | 'W'
   reason?: string
   details?: string
+  rootCauseActions?: WorkflowRootCauseAction[]
 }
 
 export type RepeatedJointDuplicateCheckTask = {

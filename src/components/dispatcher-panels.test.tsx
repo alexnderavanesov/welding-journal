@@ -6,6 +6,7 @@ import { DispatcherTaskCard, type DispatcherTaskCardHandlers } from '@/component
 import type {
   LineConsistencyTask,
   PercentageLineControlTask,
+  RepeatedJointCheckTask,
   RepeatedJointTaskGroup,
   WeldRow,
 } from '@/lib/dispatcher-types'
@@ -36,9 +37,17 @@ describe('DispatcherTaskPanel', () => {
     const { rerender } = render(<DispatcherTaskCard task={task} {...handlers} />)
     fireEvent.click(screen.getByRole('button', { name: 'Катушка досрочно' }))
     expect(onCreateEarlyCoil).toHaveBeenCalledWith(task)
+    expect(screen.getByRole('button', { name: 'Показать' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Картина' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Цепочка' })).not.toBeInTheDocument()
 
     rerender(<DispatcherTaskCard task={task} {...handlers} canCreateEarlyCoil={false} />)
     expect(screen.queryByRole('button', { name: 'Катушка досрочно' })).not.toBeInTheDocument()
+
+    rerender(<DispatcherTaskCard task={task} {...handlers} canRunDispatcherMutation={false} />)
+    expect(screen.queryByRole('button', { name: 'Создать' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Показать' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Картина' })).toBeInTheDocument()
   })
 
   it('opens the same officiality workflow from an active chain task', () => {
@@ -312,6 +321,63 @@ describe('DispatcherTaskPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
     expect(onShowTask).toHaveBeenCalledWith(task)
+    expect(screen.queryByRole('button', { name: 'Картина' })).not.toBeInTheDocument()
+  })
+
+  it('shows report rows and the joint picture as separate direct actions for a joint task', () => {
+    const row = {
+      id: 44,
+      projectTitle: 'Проект 1',
+      subtitleCode: 'Шифр 1',
+      line: '330-ROOT-01-000',
+      joint: 'F44',
+    } as WeldRow
+    const task: RepeatedJointCheckTask = {
+      kind: 'check',
+      key: 'check:lnk-date:F44',
+      row,
+      sourceRow: row,
+      sourceJoint: 'F44',
+      targetJoint: 'F44',
+      baseJoint: 'F44',
+      suffix: 'R',
+      reason: 'проверить даты ЛНК',
+      rootCauseActions: [{
+        key: 'lnk:44:primary:ВИК:request:date:0',
+        label: 'Исправить дату заявки ВИК',
+        tone: 'primary',
+        target: {
+          kind: 'lnk-control',
+          rowId: 44,
+          stage: 'primary',
+          methodCode: 'ВИК',
+          documentPart: 'request',
+          focus: 'date',
+          documentName: 'Заявка ВИК',
+          documentDate: '2026-08-09',
+        },
+      }],
+    }
+    const onShowTask = vi.fn()
+    const onOpenTaskPicture = vi.fn()
+
+    render(
+      <DispatcherTaskCard
+        task={task}
+        {...createHandlers(onShowTask)}
+        onOpenTaskPicture={onOpenTaskPicture}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Исправить дату заявки ВИК' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Цепочка' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
+    expect(onShowTask).toHaveBeenCalledWith(task)
+    expect(onOpenTaskPicture).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Картина' }))
+    expect(onOpenTaskPicture).toHaveBeenCalledWith(task)
   })
 
   it('opens the percentage-control assignment workflow from a missing-control task', () => {
@@ -328,7 +394,10 @@ describe('DispatcherTaskPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Назначить контроль' }))
 
-    expect(onRunTaskAction).toHaveBeenCalledWith(task, 'assign-percentage-controls')
+    expect(onRunTaskAction).toHaveBeenCalledWith(task, expect.objectContaining({
+      id: 'assign-percentage-controls',
+      label: 'Назначить контроль',
+    }))
   })
 
   it('shows structured percentage-line indicators in expanded details', () => {
@@ -435,6 +504,7 @@ function createHandlers(onShowTask: DispatcherTaskCardHandlers['onShowTask']): D
     isTaskExpanded: () => false,
     onToggleDetails: vi.fn(),
     onShowTask,
+    onOpenTaskPicture: vi.fn(),
     onOpenTaskOfficiality: vi.fn(),
     onCreateTask: vi.fn(),
     onCreateEarlyCoil: vi.fn(),

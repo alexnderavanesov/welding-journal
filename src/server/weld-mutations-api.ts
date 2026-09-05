@@ -11,6 +11,7 @@ import type {
   WeldDeleteManyData,
   WeldPayload,
   PercentageLineControlUpdateData,
+  SystemDocumentDateChangeData,
 } from '@/server/weld-contracts'
 import type { LnkDefectDescriptionUpdate } from '@/lib/lnk-defect-description'
 import type { LnkOfficialityChangeRequest } from '@/lib/lnk-officiality-chain-plan'
@@ -126,6 +127,13 @@ export const managePstoRequestDocument = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const server = await import('@/server/weld-mutations')
     return server.managePstoRequestDocument({ data })
+  })
+
+export const changeSystemDocumentDate = createServerFn({ method: 'POST' })
+  .validator((data: SystemDocumentDateChangeData) => data)
+  .handler(async ({ data }) => {
+    const server = await import('@/server/system-document-date-workflow')
+    return server.changeSystemDocumentDate({ data })
   })
 
 export const deleteWeldJoint = createServerFn({ method: 'POST' })

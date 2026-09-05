@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest'
 
 import { weldJoints } from '@/db/schema'
 import { buildNullableControlEnabledWhere } from '@/server/control-availability-sql'
-import { buildPrimaryLnkStageReadyWhere } from '@/server/weld-read'
+import {
+  buildAvailableLnkRequestWhere,
+  buildPrimaryLnkStageReadyWhere,
+} from '@/server/weld-read'
 
 describe('LNK availability SQL', () => {
   it('treats an empty control assignment as false instead of NULL', () => {
@@ -27,5 +30,13 @@ describe('LNK availability SQL', () => {
     expect(compiled.sql).toContain('"weld_joints"."pre_heat_treatment_lnk_exempt"')
     expect(compiled.sql).toContain("in ('не годен', 'негоден', 'ремонт', 'вырез')")
     expect(compiled.sql).toContain('"psto_repeat_cycles"."weld_joint_id" = "weld_joints"."id"')
+  })
+
+  it('shares the staged readiness check across all requestable methods', () => {
+    const compiled = new PgDialect().sqlToQuery(sql`
+      select 1 where ${buildAvailableLnkRequestWhere()}
+    `)
+
+    expect(compiled.sql.match(/"weld_joints"\."pre_heat_treatment_lnk_exempt"/g)).toHaveLength(1)
   })
 })

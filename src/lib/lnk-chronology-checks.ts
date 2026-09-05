@@ -55,6 +55,9 @@ export type LnkChronologyIssueKind =
 export type LnkChronologyIssue = {
   kind: LnkChronologyIssueKind
   methodCode: string
+  controlStage: 'primary' | 'beforeHeatTreatment' | 'duplicate'
+  documentPart: 'request' | 'conclusion' | 'result'
+  relationId?: number
   reason: string
   message: string
   row: LnkChronologyRow
@@ -122,6 +125,9 @@ function getRowPreHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'request-date-invalid',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'request',
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: ${requestDateReason}`,
@@ -130,6 +136,9 @@ function getRowPreHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'request-date-missing',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'request',
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: у ${methodCode} есть данные контроля, но нет даты заявки ЛНК.`,
@@ -139,6 +148,9 @@ function getRowPreHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'conclusion-date-invalid',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'conclusion',
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: ${conclusionDateReason}`,
@@ -148,6 +160,9 @@ function getRowPreHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'request-name-missing',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'request',
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: у ${methodCode} есть данные контроля, но нет наименования заявки ЛНК.`,
@@ -157,6 +172,9 @@ function getRowPreHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'weld-after-request',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'request',
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заявки ${methodCode} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
@@ -172,6 +190,9 @@ function getRowPreHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'weld-after-conclusion',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'conclusion',
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заключения ${methodCode} ${formatDisplayDate(conclusionDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
@@ -181,17 +202,26 @@ function getRowPreHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'request-after-conclusion',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'conclusion',
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заключения ${methodCode} ${formatDisplayDate(conclusionDate)} раньше даты заявки ${formatDisplayDate(requestDate)}.`,
       })
     }
     if (!settings.lnkResultRequestDateOrder) continue
-    for (const [label, date] of [['заявки', requestDate], ['заключения', conclusionDate]] as const) {
+    for (const [label, documentPart, date] of [
+      ['заявки', 'request', requestDate],
+      ['заключения', 'conclusion', conclusionDate],
+    ] as const) {
       if (!date || !pstoDate || date <= pstoDate) continue
       issues.push({
         kind: 'pre-after-psto',
         methodCode,
+        controlStage: 'beforeHeatTreatment',
+        documentPart,
+        relationId: control.id,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата ${label} ${methodCode} ${formatDisplayDate(date)} позже даты ПСТО ${formatDisplayDate(pstoDate)}.`,
@@ -228,30 +258,39 @@ function getRowPostHeatTreatmentDateOrderIssues(
       issues.push({
         kind: 'post-before-psto-cycle',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'request',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: ${method.code} после ТО оформлен до завершения цикла ПСТО и ТВМТ.`,
       })
       continue
     }
-    for (const [kind, label, date] of [
-      ['post-before-psto', 'заявки', requestDate],
-      ['post-before-psto', 'заключения', conclusionDate],
+    for (const [kind, label, documentPart, date] of [
+      ['post-before-psto', 'заявки', 'request', requestDate],
+      ['post-before-psto', 'заключения', 'conclusion', conclusionDate],
     ] as const) {
       if (!date || !pstoDate || date >= pstoDate) continue
       issues.push({
         kind,
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата ${label} ${method.code} после ТО ${formatDisplayDate(date)} раньше даты ПСТО ${formatDisplayDate(pstoDate)}.`,
       })
     }
-    for (const [label, date] of [['заявки', requestDate], ['заключения', conclusionDate]] as const) {
+    for (const [label, documentPart, date] of [
+      ['заявки', 'request', requestDate],
+      ['заключения', 'conclusion', conclusionDate],
+    ] as const) {
       if (!date || !tvmtDate || date >= tvmtDate) continue
       issues.push({
         kind: 'post-before-tvmt',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart,
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата ${label} ${method.code} после ТО ${formatDisplayDate(date)} раньше ТВМТ, завершившей цикл, ${formatDisplayDate(tvmtDate)}.`,
@@ -277,6 +316,9 @@ function getRowPreHeatTreatmentVikOrderIssues(
       issues.push({
         kind: 'vik-missing-before-other',
         methodCode: `${method.code} до ТО`,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'result',
+        relationId: control.id,
         reason: LNK_VIK_REQUIRED_REASON,
         row,
         message: `Стык ${joint}: нельзя сохранять результат ${method.code} до ТО, пока нет годного результата ВИК до ТО.`,
@@ -288,6 +330,9 @@ function getRowPreHeatTreatmentVikOrderIssues(
       issues.push({
         kind: 'vik-after-other',
         methodCode: `${method.code} до ТО`,
+        controlStage: 'beforeHeatTreatment',
+        documentPart: 'conclusion',
+        relationId: control.id,
         reason: LNK_VIK_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата ${method.code} до ТО ${formatDisplayDate(conclusionDate)} раньше даты ВИК до ТО ${formatDisplayDate(vikDate)}.`,
@@ -413,6 +458,8 @@ function getRowRequestDateOrderIssues(
       issues.push({
         kind: 'request-date-invalid',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'request',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: ${requestDateReason}`,
@@ -421,6 +468,8 @@ function getRowRequestDateOrderIssues(
       issues.push({
         kind: 'request-date-missing',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'request',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: у ${method.code} есть данные контроля, но нет даты заявки ЛНК.`,
@@ -430,6 +479,8 @@ function getRowRequestDateOrderIssues(
       issues.push({
         kind: 'conclusion-date-invalid',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'conclusion',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: ${conclusionDateReason}`,
@@ -439,6 +490,8 @@ function getRowRequestDateOrderIssues(
       issues.push({
         kind: 'request-name-missing',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'request',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: у ${method.code} есть данные контроля, но нет наименования заявки ЛНК.`,
@@ -449,6 +502,8 @@ function getRowRequestDateOrderIssues(
       issues.push({
         kind: 'weld-after-request',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'request',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заявки ${method.code} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
@@ -465,6 +520,8 @@ function getRowRequestDateOrderIssues(
       issues.push({
         kind: 'weld-after-conclusion',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'conclusion',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заключения ${method.code} ${formatDisplayDate(conclusionDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
@@ -475,6 +532,8 @@ function getRowRequestDateOrderIssues(
       issues.push({
         kind: 'request-after-conclusion',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'conclusion',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата заключения ${method.code} ${formatDisplayDate(conclusionDate)} раньше даты заявки ${formatDisplayDate(requestDate)}.`,
@@ -489,14 +548,17 @@ function getRowDuplicateDateIssues(row: LnkChronologyRow): LnkChronologyIssue[] 
   return getDuplicateControls(row).flatMap((control) => {
     const methodCode = `${control.method} (дубль)`
     return [
-      { kind: 'request-date-invalid' as const, label: 'Дата контроля', value: control.controlDate },
-      { kind: 'conclusion-date-invalid' as const, label: 'Дата заключения', value: control.conclusionDate },
-    ].flatMap(({ kind, label, value }) => {
+      { kind: 'request-date-invalid' as const, documentPart: 'request' as const, label: 'Дата контроля', value: control.controlDate },
+      { kind: 'conclusion-date-invalid' as const, documentPart: 'conclusion' as const, label: 'Дата заключения', value: control.conclusionDate },
+    ].flatMap(({ kind, documentPart, label, value }) => {
       const dateReason = getDateInputValidationReason(value, `${label} ${methodCode}`)
       return dateReason
         ? [{
             kind,
             methodCode,
+            controlStage: 'duplicate' as const,
+            documentPart,
+            relationId: control.id,
             reason: LNK_REQUEST_DATE_ORDER_REASON,
             row,
             message: `Стык ${joint}: ${dateReason}`,
@@ -521,6 +583,8 @@ function getRowVikOrderIssues(row: LnkChronologyRow, settings: SaveCheckSettings
       issues.push({
         kind: 'vik-missing-before-other',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'result',
         reason: LNK_VIK_REQUIRED_REASON,
         row,
         message: `Стык ${joint}: нельзя сохранять результат ${method.code}, пока нет результата ВИК.`,
@@ -533,6 +597,8 @@ function getRowVikOrderIssues(row: LnkChronologyRow, settings: SaveCheckSettings
       issues.push({
         kind: 'vik-after-other',
         methodCode: method.code,
+        controlStage: 'primary',
+        documentPart: 'conclusion',
         reason: LNK_VIK_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: дата ${method.code} ${formatDisplayDate(conclusionDate)} раньше даты ВИК ${formatDisplayDate(vikConclusionDate)}.`,

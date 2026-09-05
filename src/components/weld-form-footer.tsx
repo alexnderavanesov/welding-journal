@@ -1,10 +1,12 @@
 import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { BlockedActionHint, type BlockedActionHintAction } from '@/components/blocked-action-hint'
 
 type WeldFormFooterProps = {
   busy?: boolean
   autoClearHint?: string | null
   saveBlockReason?: string | null
+  saveBlockActions?: BlockedActionHintAction[]
   fieldStatusCount?: number
   fieldStatusLabel?: string
   onCancel: () => void
@@ -15,6 +17,7 @@ export function WeldFormFooter({
   busy = false,
   autoClearHint,
   saveBlockReason,
+  saveBlockActions,
   fieldStatusCount = 0,
   fieldStatusLabel = 'Изменено',
   onCancel,
@@ -31,9 +34,11 @@ export function WeldFormFooter({
           {fieldStatusCount > 0 ? `${fieldStatusLabel}: ${fieldStatusCount}` : 'Без изменений'}
         </span>
         {saveBlockReason ? (
-          <span className="inline-flex max-h-24 max-w-full overflow-y-auto rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-800 shadow-sm">
-            <span className="whitespace-normal break-words leading-5">{saveBlockReason}</span>
-          </span>
+          <BlockedActionHint
+            reason={saveBlockReason}
+            tone="danger"
+            actions={saveBlockActions}
+          />
         ) : autoClearHint ? (
           <span className="inline-flex max-h-24 max-w-full overflow-y-auto rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-sky-800 shadow-sm">
             <span className="whitespace-normal break-words leading-5">При сохранении: {autoClearHint}</span>

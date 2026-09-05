@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, ExternalLink, FileText, ListTodo, TriangleAlert } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ExternalLink, FileText, ListTodo, Pencil, TriangleAlert } from 'lucide-react'
 
 import {
   JointDispatcherTasksPanel,
@@ -14,7 +14,10 @@ import { getPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 import { getLnkDisplayValue, isPstoNoNeed } from '@/lib/lnk-status'
 import { PRE_HEAT_TREATMENT_REPORT_FIELDS } from '@/lib/pre-heat-treatment-report-fields'
 import { buildPstoCycleTimeline, type PstoCycleSnapshot } from '@/lib/psto-cycle'
-import { buildPstoRepeatSystemDocumentRow } from '@/lib/system-document-virtual-row'
+import {
+  buildPrimaryPstoSystemDocumentRow,
+  buildPstoRepeatSystemDocumentRow,
+} from '@/lib/system-document-virtual-row'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type ReportTarget = 'weldingJournal' | 'lnk' | 'heatTreatment'
@@ -24,6 +27,7 @@ type JointHistoryOverviewProps = {
   dispatcherTasks?: readonly RepeatedJointTask[]
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: ReportTarget) => void
+  onEditRow: (row: WeldRow) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
   onRunDispatcherTaskAction?: JointDispatcherTaskActionHandler
 }
@@ -33,6 +37,7 @@ export function JointHistoryOverview({
   dispatcherTasks = [],
   onOpenDocument,
   onOpenReport,
+  onEditRow,
   onRunNextAction,
   onRunDispatcherTaskAction,
 }: JointHistoryOverviewProps) {
@@ -60,10 +65,22 @@ export function JointHistoryOverview({
             Проект: {text(row.projectTitle) || '-'} · Шифр: {text(row.subtitleCode) || '-'}
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-nowrap gap-1.5">
           <ReportButton label="Журнал" onClick={() => onOpenReport(row, 'weldingJournal')} />
           <ReportButton label="ЛНК" onClick={() => onOpenReport(row, 'lnk')} />
-          <ReportButton label="Термообработка" onClick={() => onOpenReport(row, 'heatTreatment')} />
+          <ReportButton label="ПСТО" onClick={() => onOpenReport(row, 'heatTreatment')} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 w-8 gap-1.5 bg-white px-0 text-xs sm:w-auto sm:px-3"
+            onClick={() => onEditRow(row)}
+            aria-label="Редактировать"
+            title="Редактировать стык"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Редактировать</span>
+          </Button>
         </div>
       </div>
 
@@ -232,7 +249,9 @@ function PstoCycleLine({
   const repeat = cycle.source === 'repeat'
     ? row.pstoRepeatCycles?.find((candidate) => candidate.sequence === cycle.sequence)
     : null
-  const documentRow = repeat ? buildPstoRepeatSystemDocumentRow(row, repeat) : row
+  const documentRow = repeat
+    ? buildPstoRepeatSystemDocumentRow(row, repeat)
+    : buildPrimaryPstoSystemDocumentRow(row)
   const workflowValue = isPstoNoNeed(row, cycle.pstoResult)
     ? 'нет потребности'
     : text(cycle.tvmtResult)

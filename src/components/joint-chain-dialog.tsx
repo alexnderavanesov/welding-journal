@@ -38,6 +38,7 @@ type JointChainDialogProps = {
   onOpenRow: (row: WeldRow) => void
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') => void
+  onEditRow: (row: WeldRow) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
   onRunDispatcherTaskAction: JointDispatcherTaskActionHandler
   canCreateRepeatedJoint: boolean
@@ -66,6 +67,7 @@ export function JointChainDialog({
   onOpenRow,
   onOpenDocument,
   onOpenReport,
+  onEditRow,
   onRunNextAction,
   onRunDispatcherTaskAction,
   canCreateRepeatedJoint,
@@ -130,7 +132,7 @@ export function JointChainDialog({
               onClick={() => onOpenBase(selectedRow)}
               className="h-7 border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
             >
-              Показать цепочку в отчете
+              Показать в отчете
             </Button>
           </div>
           <p className="mt-1 text-sm text-slate-500">{getJointChainSubtitle(selectedRow)}</p>
@@ -223,6 +225,7 @@ export function JointChainDialog({
                 dispatcherTasks={dispatcherTasks}
                 onOpenDocument={onOpenDocument}
                 onOpenReport={onOpenReport}
+                onEditRow={onEditRow}
                 onRunNextAction={onRunNextAction}
                 onRunDispatcherTaskAction={onRunDispatcherTaskAction}
               />

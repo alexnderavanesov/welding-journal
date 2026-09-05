@@ -1,6 +1,7 @@
 import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
 import type { RepeatedJointTask } from '@/lib/dispatcher-types'
 import { isUnofficialJoint } from '@/lib/joint-display'
+import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 
 export type DispatcherTaskActionId =
   | 'accept-warning'
@@ -13,6 +14,7 @@ export type DispatcherTaskActionId =
   | 'open-lnk'
   | 'open-psto'
   | 'open-psto-program'
+  | 'open-root-cause'
   | 'open-stamp-registry'
   | 'rename-joint'
   | 'show-task'
@@ -24,6 +26,8 @@ export type DispatcherTaskActionSpec = {
   id: DispatcherTaskActionId
   label: string
   tone?: 'default' | 'danger' | 'primary'
+  key?: string
+  rootCauseAction?: WorkflowRootCauseAction
 }
 
 type DispatcherTaskActionOptions = {
@@ -44,7 +48,7 @@ export function getDispatcherTaskActionSpecs(
       options.canCreateEarlyCoil && !isUnofficialJoint(task.row)
         ? action('create-early-coil', 'Врезать катушку досрочно')
         : null,
-      action('show-task', 'Показать цепочку'),
+      action('show-task', 'Показать в отчете'),
     ])
   }
 
@@ -55,21 +59,21 @@ export function getDispatcherTaskActionSpecs(
         'toggle-officiality',
         isUnofficialJoint(task.row) ? 'Сделать официальным' : 'Сделать неофициальным',
       ),
-      action('show-task', 'Показать цепочку'),
+      action('show-task', 'Показать в отчете'),
     ]
   }
 
   if (task.kind === 'delete') {
     return [
       action('delete-joint', `Удалить ${task.targetJoint}`, 'danger'),
-      action('show-task', 'Показать цепочку'),
+      action('show-task', 'Показать в отчете'),
     ]
   }
 
   if (task.kind === 'rename') {
     return [
       action('rename-joint', `Переименовать в ${task.targetJoint}`, 'primary'),
-      action('show-task', 'Показать цепочку'),
+      action('show-task', 'Показать в отчете'),
     ]
   }
 
@@ -117,7 +121,20 @@ export function getDispatcherTaskActionSpecs(
   }
 
   if (task.kind === 'duplicate-check') {
-    return [action('show-task', 'Показать цепочку', 'primary')]
+    return [action('show-task', 'Показать в отчете', 'primary')]
+  }
+
+  if (task.kind === 'check' && task.rootCauseActions?.length) {
+    return [
+      ...task.rootCauseActions.map((rootCauseAction) => ({
+        id: 'open-root-cause' as const,
+        key: rootCauseAction.key,
+        label: rootCauseAction.label,
+        tone: rootCauseAction.tone,
+        rootCauseAction,
+      })),
+      action('show-task', 'Показать в отчете'),
+    ]
   }
 
   const settingId = getDispatcherTaskSettingId(task)
@@ -127,16 +144,16 @@ export function getDispatcherTaskActionSpecs(
     settingId === 'check-lnk-vik-required' ||
     settingId === 'check-lnk-result-completeness'
   ) {
-    return [action('open-lnk', 'Исправить в ЛНК', 'primary'), action('show-task', 'Показать цепочку')]
+    return [action('open-lnk', 'Исправить в ЛНК', 'primary'), action('show-task', 'Показать в отчете')]
   }
   if (settingId === 'check-psto-request-date-order' || settingId === 'check-psto-result-completeness') {
-    return [action('open-psto', 'Исправить в ПСТО', 'primary'), action('show-task', 'Показать цепочку')]
+    return [action('open-psto', 'Исправить в ПСТО', 'primary'), action('show-task', 'Показать в отчете')]
   }
   if (settingId === 'check-welder-stamp') {
     return [
       action('edit-weld', 'Исправить стык', 'primary'),
       action('open-stamp-registry', 'Открыть реестр клейм'),
-      action('show-task', 'Показать цепочку'),
+      action('show-task', 'Показать в отчете'),
     ]
   }
   if (settingId === 'check-control-history') {
@@ -152,10 +169,10 @@ export function getDispatcherTaskActionSpecs(
     settingId === 'check-joint-core-data' ||
     settingId === 'chain-date-order'
   ) {
-    return [action('edit-weld', 'Исправить стык', 'primary'), action('show-task', 'Показать цепочку')]
+    return [action('edit-weld', 'Исправить стык', 'primary'), action('show-task', 'Показать в отчете')]
   }
 
-  return [action('show-task', 'Показать цепочку', 'primary')]
+  return [action('show-task', 'Показать в отчете', 'primary')]
 }
 
 export function getDispatcherTaskScopeLabel(task: RepeatedJointTask) {
@@ -166,6 +183,10 @@ export function getDispatcherTaskScopeLabel(task: RepeatedJointTask) {
     return 'Цепочка стыка'
   }
   return 'Этот стык'
+}
+
+export function canOpenDispatcherTaskPicture(task: RepeatedJointTask) {
+  return task.kind !== 'line-consistency' && task.kind !== 'percentage-line-control'
 }
 
 function action(

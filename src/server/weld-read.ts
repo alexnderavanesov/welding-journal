@@ -892,17 +892,26 @@ export async function countAvailableLnkRequestRowsByIds(ids: number[]) {
 }
 
 export function buildAvailableLnkRequestWhere() {
+  const buildAvailableMethodWhere = (method: (typeof LNK_METHODS)[number]) => {
+    const enabledColumn = getWeldColumn(method.enabledKey)
+    const requestColumn = getWeldColumn(method.requestKey)
+    if (!enabledColumn || !requestColumn) return sql`false`
+    return and(
+      buildEnabledControlValueWhere(enabledColumn),
+      sql`btrim(coalesce(${requestColumn}::text, '')) = ''`,
+    ) ?? sql`false`
+  }
+  const stagedMethods = LNK_METHODS.filter((method) => isPreHeatTreatmentLnkMethodCode(method.code))
+  const immediateMethods = LNK_METHODS.filter((method) => !isPreHeatTreatmentLnkMethodCode(method.code))
+  const hasAvailableStagedMethod = or(
+    ...stagedMethods.map(buildAvailableMethodWhere),
+  ) ?? sql`false`
+  const hasAvailableImmediateMethod = or(
+    ...immediateMethods.map(buildAvailableMethodWhere),
+  ) ?? sql`false`
   const hasAvailableMethod = or(
-    ...LNK_METHODS.map((method) => {
-      const enabledColumn = getWeldColumn(method.enabledKey)
-      const requestColumn = getWeldColumn(method.requestKey)
-      if (!enabledColumn || !requestColumn) return sql`false`
-      return and(
-        buildEnabledControlValueWhere(enabledColumn),
-        sql`btrim(coalesce(${requestColumn}::text, '')) = ''`,
-        buildPrimaryLnkStageReadyWhere(method.code),
-      ) ?? sql`false`
-    }),
+    hasAvailableImmediateMethod,
+    and(hasAvailableStagedMethod, buildHeatTreatmentStagedLnkReadyWhere()),
   ) ?? sql`false`
   const hasNoRejectedResult = and(
     ...LNK_METHODS.map((method) => {
@@ -943,6 +952,10 @@ export function buildAvailableLnkRequestWhere() {
 export function buildPrimaryLnkStageReadyWhere(methodCode: string) {
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) return sql`true`
 
+  return buildHeatTreatmentStagedLnkReadyWhere()
+}
+
+function buildHeatTreatmentStagedLnkReadyWhere() {
   const pstoRequired = buildNullableControlEnabledWhere(
     weldJoints.pstoRequired,
     ENABLED_CONTROL_REPORT_VALUES,

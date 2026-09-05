@@ -4,6 +4,7 @@ import {
   getFilteredLnkResultRows,
   getLnkResultMethodRequestOptions,
   getLnkResultMethodRows,
+  getLnkResultRootCauseActions,
   getLnkResultSaveBlockReason,
   getLnkResultSearchRows,
   getSelectableVisibleLnkResultRows,
@@ -182,6 +183,24 @@ export function useLnkResultDerivedState({
   )
 
   const isLnkResultSaveDisabled = Boolean(lnkResultSaveBlockReason)
+  const lnkResultRootCauseActions = useMemo(
+    () => getLnkResultRootCauseActions({
+      draft: lnkResultDraft,
+      nextConclusionName: nextLnkConclusionName,
+      saveBlockReason: lnkResultSaveBlockReason,
+      saveCheckSettings,
+      selectedRows: selectedLnkResultRows,
+      systemDocumentCreationPlan,
+    }),
+    [
+      lnkResultDraft,
+      lnkResultSaveBlockReason,
+      nextLnkConclusionName,
+      saveCheckSettings,
+      selectedLnkResultRows,
+      systemDocumentCreationPlan,
+    ],
+  )
 
   return {
     lnkResultAvailableRequestOptions,
@@ -195,6 +214,7 @@ export function useLnkResultDerivedState({
     selectedLnkResultRows,
     systemDocumentCreationPlan,
     lnkResultSaveBlockReason,
+    lnkResultRootCauseActions,
     isLnkResultSaveDisabled,
   }
 }

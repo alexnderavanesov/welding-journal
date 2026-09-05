@@ -76,6 +76,43 @@ describe('dispatcher data quality tasks', () => {
     expect(completedTasks).toEqual([])
   })
 
+  it('persists exact F5 chronology correction targets on the DZ-20 task', () => {
+    const [task] = buildLnkChronologyCheckTasks([row({
+      id: 5,
+      joint: 'F5',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      pstoRequest: 'Заявка ПСТО',
+      pstoRequestDate: '2026-08-20',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-29',
+      heatTreatmentDiagram: 'Диаграмма ПСТО',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtRequestDate: '2026-08-29',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-30',
+      tvmtConclusion: 'Заключение ТВМТ',
+      hasVik: 'да',
+      vikRequest: 'Заявка ВИК',
+      vikRequestDate: '2026-08-09',
+    })])
+
+    expect(getDispatcherTaskCode(task)).toBe('ДЗ-20')
+    expect(task.rootCauseActions?.map((action) => action.label)).toEqual([
+      'Исправить дату заявки ВИК',
+      'Исправить дату ПСТО',
+      'Исправить дату заключения ТВМТ',
+    ])
+    expect(task.rootCauseActions?.[0].target).toMatchObject({
+      kind: 'lnk-control',
+      rowId: 5,
+      stage: 'primary',
+      methodCode: 'ВИК',
+      documentPart: 'request',
+      focus: 'date',
+    })
+  })
+
   it('moves PSTO result-before-weld chronology into DЗ-23', () => {
     const tasks = buildPstoChronologyCheckTasks([
       row({

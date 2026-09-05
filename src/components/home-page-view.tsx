@@ -52,6 +52,7 @@ type HomePageViewProps = {
   reportFieldEditorProps: ComponentProps<typeof ReportDialogs>['fieldEditorProps']
   reportImportDialogProps: ComponentProps<typeof ReportDialogs>['importDialogProps']
   reportRkExposureDialogProps: ComponentProps<typeof ReportDialogs>['rkExposureDialogProps']
+  rootCauseNavigationProps: ComponentProps<typeof ReportDialogs>['rootCauseNavigationProps']
 }
 
 export function HomePageView({
@@ -95,6 +96,7 @@ export function HomePageView({
   reportFieldEditorProps,
   reportImportDialogProps,
   reportRkExposureDialogProps,
+  rootCauseNavigationProps,
 }: HomePageViewProps) {
   const reportBackgroundProps = useFrozenValue<ReportBackgroundProps>({
     activeReport,
@@ -142,6 +144,7 @@ export function HomePageView({
         fieldEditorProps={reportFieldEditorProps}
         importDialogProps={reportImportDialogProps}
         rkExposureDialogProps={reportRkExposureDialogProps}
+        rootCauseNavigationProps={rootCauseNavigationProps}
         generationDialogProps={
           documentGenerationRequest
             ? {

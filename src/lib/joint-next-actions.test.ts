@@ -77,6 +77,48 @@ describe('joint next actions', () => {
     ])
   })
 
+  it('keeps the full exact root-cause action for the joint picture', () => {
+    const source = row({ joint: 'F5' })
+    const rootCauseAction = {
+      key: 'lnk:1:primary:ВИК:request:date:0',
+      label: 'Исправить дату заявки ВИК',
+      tone: 'primary' as const,
+      target: {
+        kind: 'lnk-control' as const,
+        rowId: 1,
+        stage: 'primary' as const,
+        methodCode: 'ВИК',
+        documentPart: 'request' as const,
+        focus: 'date' as const,
+        documentName: 'Заявка ВИК',
+        documentDate: '2026-08-09',
+      },
+    }
+    const task: RepeatedJointCheckTask = {
+      kind: 'check',
+      key: 'check:F5:chronology',
+      row: source,
+      sourceRow: source,
+      sourceJoint: 'F5',
+      targetJoint: 'F5',
+      baseJoint: 'F5',
+      suffix: 'R',
+      reason: 'проверить даты ЛНК',
+      rootCauseActions: [rootCauseAction],
+    }
+
+    expect(buildJointNextActions(source, [task])[0]).toMatchObject({
+      kind: 'dispatcherTask',
+      title: 'ДЗ-20 · Проверить даты ЛНК',
+      taskKey: task.key,
+      taskActionId: 'open-root-cause',
+      taskAction: {
+        id: 'open-root-cause',
+        rootCauseAction,
+      },
+    })
+  })
+
   it('shows an existing repeated joint as a resolved decision on the rejected predecessor', () => {
     const source = row({
       joint: 'SB43',

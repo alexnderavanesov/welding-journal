@@ -49,6 +49,11 @@ export type SystemDocumentReference = {
   cycleSequences?: number[]
 }
 
+export type SystemDocumentDateContext = {
+  rows: WeldRow[]
+  sourcePositions: SystemDocumentSourcePosition[]
+}
+
 export type SystemDocumentNavigationRequest = SystemDocumentReference & {
   requestId: number
 }

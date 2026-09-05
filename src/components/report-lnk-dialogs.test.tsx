@@ -1,12 +1,26 @@
-import { render, screen } from '@testing-library/react'
+import { useState } from 'react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ReportLnkDialogs, type ReportLnkDialogsProps } from '@/components/report-lnk-dialogs'
 
 vi.mock('@/components/lnk-request-manager-dialog', () => ({
-  LnkRequestManagerDialog: ({ embedded }: { embedded?: boolean }) => (
-    <div data-embedded={String(Boolean(embedded))}>Основной реестр заявок</div>
-  ),
+  LnkRequestManagerDialog: ({ embedded }: { embedded?: boolean }) => {
+    const [draft, setDraft] = useState('')
+    const [selected, setSelected] = useState(false)
+    return (
+      <div data-embedded={String(Boolean(embedded))}>
+        <span data-embedded={String(Boolean(embedded))}>Основной реестр заявок</span>
+        <input aria-label="Черновик исходного реестра" value={draft} onChange={(event) => setDraft(event.target.value)} />
+        <input
+          aria-label="Выбор исходной строки"
+          type="checkbox"
+          checked={selected}
+          onChange={(event) => setSelected(event.target.checked)}
+        />
+      </div>
+    )
+  },
 }))
 
 vi.mock('@/components/lnk-result-manager-dialog', () => ({
@@ -36,24 +50,38 @@ function createProps(overrides: Partial<ReportLnkDialogsProps> = {}): ReportLnkD
 }
 
 describe('ReportLnkDialogs', () => {
-  it('keeps one manager shell mounted while the LNK stage changes', async () => {
+  it('keeps the source manager mounted while an exact correction manager is stacked above it', async () => {
     const { rerender } = render(
       <ReportLnkDialogs {...createProps({ requestManagerDialogProps: {} as never })} />,
     )
 
-    expect(await screen.findByText('Основной реестр заявок')).toHaveAttribute('data-embedded', 'true')
-    const dialog = screen.getByRole('dialog')
+    const sourceManager = await screen.findByText('Основной реестр заявок')
+    expect(sourceManager).toHaveAttribute('data-embedded', 'true')
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Черновик исходного реестра' }), {
+      target: { value: 'несохраненный текст' },
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбор исходной строки' }))
 
     rerender(
-      <ReportLnkDialogs {...createProps({ preHeatTreatmentResultManagerDialogProps: {} as never })} />,
-    )
-    expect(await screen.findByText('Реестр до ТО')).toHaveAttribute('data-embedded', 'true')
-    expect(screen.getByRole('dialog')).toBe(dialog)
-
-    rerender(
-      <ReportLnkDialogs {...createProps({ resultManagerDialogProps: {} as never })} />,
+      <ReportLnkDialogs {...createProps({
+        requestManagerDialogProps: {} as never,
+        resultManagerDialogProps: { elevated: true } as never,
+      })} />,
     )
     expect(await screen.findByText('Основной реестр результатов')).toHaveAttribute('data-embedded', 'true')
-    expect(screen.getByRole('dialog')).toBe(dialog)
+    expect(screen.getByText('Основной реестр заявок')).toBe(sourceManager)
+    expect(screen.getAllByRole('dialog')).toHaveLength(2)
+    expect(screen.getByRole('textbox', { name: 'Черновик исходного реестра' })).toHaveValue('несохраненный текст')
+    expect(screen.getByRole('checkbox', { name: 'Выбор исходной строки' })).toBeChecked()
+
+    rerender(
+      <ReportLnkDialogs {...createProps({ requestManagerDialogProps: {} as never })} />,
+    )
+    expect(screen.getByText('Основной реестр заявок')).toBe(sourceManager)
+    expect(screen.queryByText('Основной реестр результатов')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('textbox', { name: 'Черновик исходного реестра' })).toHaveValue('несохраненный текст')
+    expect(screen.getByRole('checkbox', { name: 'Выбор исходной строки' })).toBeChecked()
   })
 })

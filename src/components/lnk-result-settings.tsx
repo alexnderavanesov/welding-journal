@@ -21,6 +21,7 @@ import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { Ref } from 'react'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -32,6 +33,7 @@ type LnkResultSettingsProps = {
   requestOptions: RequestDocumentIdentity[]
   requestLabel?: string
   saveCheckSettings: SaveCheckSettings
+  controlDateInputRef?: Ref<HTMLInputElement>
   onMethodChange: (methodKey: WeldFieldKey | '') => void
   onControlDateChange: (controlDate: string) => void
   onDefaultResultChange: (result: string) => void
@@ -46,6 +48,7 @@ export function LnkResultSettings({
   requestOptions,
   requestLabel = 'Заявка ЛНК',
   saveCheckSettings,
+  controlDateInputRef,
   onMethodChange,
   onControlDateChange,
   onDefaultResultChange,
@@ -80,6 +83,7 @@ export function LnkResultSettings({
         <label className="block space-y-1.5 text-sm">
           <span className="text-[13px] font-medium leading-none text-slate-700">Дата контроля</span>
           <Input
+            ref={controlDateInputRef}
             type="date"
             min={MIN_ALLOWED_DATE_ISO}
             value={draft.controlDate}

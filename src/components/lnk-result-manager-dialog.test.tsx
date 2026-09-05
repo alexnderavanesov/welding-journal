@@ -165,4 +165,44 @@ describe('LnkResultManagerDialog', () => {
 
     expect(onReplaceResult).toHaveBeenCalledWith(rkRow, 'rkRequest', 'вырез')
   })
+
+  it('repairs missing request details from the exact completed result card', () => {
+    const malformedRow = {
+      ...vikRow,
+      vikRequest: null,
+      vikRequestDate: null,
+    } as WeldRow
+    const onRepairRequest = vi.fn()
+
+    renderDialog({
+      rows: [malformedRow],
+      entries: [{ row: malformedRow, method: vikMethod, changeKey: '1:vikRequest' }],
+      initialEntryKey: '1:vikRequest',
+      rootCauseTarget: {
+        kind: 'lnk-control',
+        rowId: 1,
+        stage: 'primary',
+        methodCode: 'ВИК',
+        documentPart: 'request',
+        focus: 'date',
+      },
+      onRepairRequest,
+    })
+
+    fireEvent.change(screen.getByLabelText('Дата заявки'), {
+      target: { value: '2026-08-14' },
+    })
+    fireEvent.change(screen.getByLabelText('Наименование заявки'), {
+      target: { value: 'Заявка-001 восстановлена' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Восстановить заявку' }))
+
+    expect(onRepairRequest).toHaveBeenCalledWith(
+      malformedRow,
+      'vikRequest',
+      'Заявка-001 восстановлена',
+      '2026-08-14',
+    )
+  })
+
 })

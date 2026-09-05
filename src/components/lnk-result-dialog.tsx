@@ -35,6 +35,7 @@ import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { LnkControlStage } from '@/lib/lnk-control-stage'
+import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
@@ -42,6 +43,7 @@ import {
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 export type LnkResultDialogProps = {
+  elevated?: boolean
   draft: LnkResultDraftState
   selectedMethods: LnkResultMethod[]
   selectedRows: WeldRow[]
@@ -51,6 +53,8 @@ export type LnkResultDialogProps = {
   systemDocumentCreationPlan: SystemDocumentCreationPlan | null
   saveCheckSettings: SaveCheckSettings
   saveBlockReason: string | null
+  rootCauseActions?: WorkflowRootCauseAction[]
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
   isSaveDisabled: boolean
   contextReady: boolean
   canBulkToggleRows: boolean
@@ -76,6 +80,7 @@ export type LnkResultDialogProps = {
 }
 
 export function LnkResultDialog({
+  elevated = false,
   draft,
   selectedMethods,
   selectedRows,
@@ -85,6 +90,8 @@ export function LnkResultDialog({
   systemDocumentCreationPlan,
   saveCheckSettings,
   saveBlockReason,
+  rootCauseActions = [],
+  onRunRootCauseAction,
   isSaveDisabled,
   contextReady,
   canBulkToggleRows,
@@ -109,6 +116,7 @@ export function LnkResultDialog({
   onSave,
 }: LnkResultDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const controlDateInputRef = useRef<HTMLInputElement>(null)
   const [initiallySelectedIds] = useState(() => new Set(draft.rowIds))
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
@@ -219,9 +227,26 @@ export function LnkResultDialog({
       onOpenJournalRows,
     }))
   })
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    const editsCurrentDraft = target.kind === 'lnk-control' &&
+      target.stage === 'primary' &&
+      target.documentPart === 'conclusion' &&
+      target.focus === 'date' &&
+      LNK_METHODS.some((method) =>
+        method.code === target.methodCode && method.requestKey === draft.methodKey,
+      ) &&
+      draft.rowIds.has(target.rowId) &&
+      target.documentDate === draft.controlDate
+    if (editsCurrentDraft) {
+      controlDateInputRef.current?.focus()
+      return
+    }
+    onRunRootCauseAction?.(action)
+  }
 
   return (
-    <WorkflowDialogShell>
+    <WorkflowDialogShell elevated={elevated}>
       <ResultDialogHeader
         title="Внесение результатов ЛНК"
         requestName={draft.requestName}
@@ -244,6 +269,7 @@ export function LnkResultDialog({
         requestKey={selectedRequest?.key ?? ''}
         requestOptions={availableRequestOptions}
         saveCheckSettings={saveCheckSettings}
+        controlDateInputRef={controlDateInputRef}
         onMethodChange={onMethodChange}
         onControlDateChange={onControlDateChange}
         onDefaultResultChange={onDefaultResultChange}
@@ -336,6 +362,11 @@ export function LnkResultDialog({
 
       <ResultDialogFooter
         saveBlockReason={saveBlockReason}
+        blockReasonActions={rootCauseActions.map((action) => ({
+          key: action.key,
+          label: action.label,
+          onAction: () => runRootCauseAction(action),
+        }))}
         isSaveDisabled={isSaveDisabled}
         saveBlockReasonVariant="danger"
         blockReasonActionLabel={systemDocumentCreationPlan?.error && workspaceTab !== 'documents' ? 'Открыть заключения и имена' : undefined}

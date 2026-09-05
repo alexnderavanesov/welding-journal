@@ -52,8 +52,8 @@ export function JointNextActionTableCell({
       <button
         type="button"
         onClick={handleOverviewClick}
-        aria-label={`Открыть историю и цепочку стыка ${String(row.joint ?? '').trim() || row.id}`}
-        title="История и цепочка стыка"
+        aria-label={`Открыть картину стыка ${String(row.joint ?? '').trim() || row.id}`}
+        title="Картина стыка"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-white/80 text-slate-500 hover:border-sky-300 hover:bg-white hover:text-sky-800"
       >
         <Info className="h-3.5 w-3.5" />

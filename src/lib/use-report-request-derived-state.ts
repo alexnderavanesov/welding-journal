@@ -30,6 +30,7 @@ import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
   loadSystemDocumentSequences,
 } from '@/lib/system-document-sequence-storage'
+import type { LnkWorkflowSummary } from '@/server/weld-contracts'
 
 interface ReportRequestDerivedStateOptions {
   enableLnkRequestState?: boolean
@@ -52,6 +53,7 @@ interface ReportRequestDerivedStateOptions {
   managedLnkRequestName: string
   managedLnkRequestDate: string
   requestConclusionSettings: RequestConclusionSettings
+  lnkWorkflowSummary?: LnkWorkflowSummary
 }
 
 export function useReportRequestDerivedState({
@@ -75,6 +77,7 @@ export function useReportRequestDerivedState({
   managedLnkRequestName,
   managedLnkRequestDate,
   requestConclusionSettings,
+  lnkWorkflowSummary,
 }: ReportRequestDerivedStateOptions) {
   const shouldLoadSystemDocumentSequences =
     enableLnkRequestState || enableLnkResultState || enablePstoRequestState || enablePstoResultState
@@ -131,18 +134,23 @@ export function useReportRequestDerivedState({
     () => (enablePstoResultState ? getPstoResultRequestOptions(heatTreatmentRows) : []),
     [enablePstoResultState, heatTreatmentRows],
   )
-  const lnkRequestOptions = useMemo(() => (enableLnkRequestState || enableLnkResultState ? getLnkRequestOptions(rows) : []), [
-    enableLnkRequestState,
-    enableLnkResultState,
-    rows,
-  ])
+  const lnkRequestOptions = useMemo(
+    () => (enableLnkRequestState || enableLnkResultState
+      ? lnkWorkflowSummary?.requestNames ?? getLnkRequestOptions(rows)
+      : []),
+    [enableLnkRequestState, enableLnkResultState, lnkWorkflowSummary?.requestNames, rows],
+  )
   const lnkRequestManagerOptions = useMemo(
-    () => (enableLnkRequestState ? getLnkRequestManagerOptions(lnkRows) : []),
-    [enableLnkRequestState, lnkRows],
+    () => (enableLnkRequestState
+      ? lnkWorkflowSummary?.requestOptions ?? getLnkRequestManagerOptions(lnkRows)
+      : []),
+    [enableLnkRequestState, lnkRows, lnkWorkflowSummary?.requestOptions],
   )
   const lnkRequestExtensionOptions = useMemo(
-    () => (enableLnkRequestState ? getLnkRequestExtensionOptions(lnkRows) : []),
-    [enableLnkRequestState, lnkRows],
+    () => (enableLnkRequestState
+      ? lnkWorkflowSummary?.requestOptions ?? getLnkRequestExtensionOptions(lnkRows)
+      : []),
+    [enableLnkRequestState, lnkRows, lnkWorkflowSummary?.requestOptions],
   )
   const lnkResultRequestOptions = useMemo(() => (enableLnkResultState ? getLnkResultRequestOptions(lnkRows) : []), [
     enableLnkResultState,

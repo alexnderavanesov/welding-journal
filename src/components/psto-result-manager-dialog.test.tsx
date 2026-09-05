@@ -223,4 +223,70 @@ describe('PstoResultManagerDialog', () => {
     expect(repeatTab).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Наименование заключения')).toHaveValue('ЗНК-ТВМТ-29.08.2026-002')
   })
+
+  it('shows the missing requested stage and repairs its date and name together', () => {
+    const onCorrectStage = vi.fn()
+    const row = {
+      id: 10,
+      rowVersion: '110',
+      projectTitle: 'Проект А',
+      subtitleCode: '400',
+      line: 'L-1',
+      joint: 'F10',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-04',
+      heatTreatmentDiagram: 'Диаграмма-10',
+    } as WeldRow
+
+    render(
+      <PstoResultManagerDialog
+        rows={[row]}
+        diagramDrafts={{}}
+        isPending={false}
+        canOpenDocument={false}
+        initialRowId={row.id}
+        initialSequence={1}
+        initialStage="pstoRequest"
+        rootCauseTarget={{
+          kind: 'psto-cycle',
+          rowId: row.id,
+          sequence: 1,
+          stage: 'pstoRequest',
+          focus: 'name',
+        }}
+        onClose={vi.fn()}
+        onDiagramDraftChange={vi.fn()}
+        onRenameDiagram={vi.fn()}
+        onDeleteResult={vi.fn()}
+        onCorrectStage={onCorrectStage}
+        onOpenDocument={vi.fn()}
+        onOpenJournalRows={vi.fn()}
+        onCopyDocumentName={vi.fn()}
+      />,
+    )
+
+    const requestCard = screen.getByRole('heading', { name: 'Заявка ПСТО' }).closest('article')
+    expect(requestCard).not.toBeNull()
+    fireEvent.change(within(requestCard!).getByLabelText('Дата'), {
+      target: { value: '2026-08-02' },
+    })
+    fireEvent.change(within(requestCard!).getByLabelText('Наименование заявки'), {
+      target: { value: 'ПСТО-10' },
+    })
+    fireEvent.click(within(requestCard!).getByRole('button', { name: 'Сохранить' }))
+
+    expect(onCorrectStage).toHaveBeenCalledWith({
+      rowId: 10,
+      expectedVersion: '110',
+      sequence: 1,
+      cycleId: undefined,
+      stage: 'pstoRequest',
+      action: 'update',
+      date: '2026-08-02',
+      name: 'ПСТО-10',
+      result: '',
+    })
+  })
 })

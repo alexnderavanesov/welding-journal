@@ -2,7 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
-import { findFirstLnkChronologySaveBlockReason } from '@/lib/lnk-chronology-checks'
+import { findFirstLnkChronologySaveBlockReason, getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   areLnkResultDraftRowsReady,
   findFirstLnkResultDateBeforeWeldDateIssue,
@@ -24,6 +24,7 @@ import {
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
 import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { getLnkChronologyRootCauseActions } from '@/lib/workflow-root-cause-actions'
 
 export function getLnkResultMethodRequestOptions(
   lnkRows: WeldRow[],
@@ -188,6 +189,32 @@ export function getLnkResultSaveBlockReason({
   if (chronologyIssue) return chronologyIssue
 
   return ''
+}
+
+export function getLnkResultRootCauseActions({
+  draft,
+  nextConclusionName,
+  saveBlockReason,
+  saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  selectedRows,
+  systemDocumentCreationPlan,
+}: {
+  draft: LnkResultDraftState
+  nextConclusionName: string
+  saveBlockReason: string | null
+  saveCheckSettings?: SaveCheckSettings
+  selectedRows: WeldRow[]
+  systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
+}) {
+  if (!saveBlockReason || !draft.methodKey || selectedRows.length === 0) return []
+  const issues = getLnkChronologyIssues(
+    buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName, systemDocumentCreationPlan),
+    saveCheckSettings,
+  )
+  if (issues.length === 0) return []
+  const firstIssue = issues[0]!
+  if (!saveBlockReason.includes(firstIssue.message) && !saveBlockReason.includes('ВИК')) return []
+  return getLnkChronologyRootCauseActions(issues)
 }
 
 function findFirstLnkResultVikBeforeOtherDraftIssue(

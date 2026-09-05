@@ -20,6 +20,7 @@ export function useLnkResultEntryMutations({
   setIsLnkResultModalOpen,
   setLnkResultDraft,
   defaultLnkConclusionNaming,
+  onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -101,6 +102,7 @@ export function useLnkResultEntryMutations({
       setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
       await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

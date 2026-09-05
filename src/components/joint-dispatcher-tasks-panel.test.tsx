@@ -22,7 +22,10 @@ describe('JointDispatcherTasksPanel', () => {
     expect(screen.getByText('Этот стык')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Исправить в ЛНК' }))
 
-    expect(onRunAction).toHaveBeenCalledWith(current, task, 'open-lnk')
+    expect(onRunAction).toHaveBeenCalledWith(current, task, expect.objectContaining({
+      id: 'open-lnk',
+      label: 'Исправить в ЛНК',
+    }))
   })
 
   it('shows a line-wide task on another row of the same line regardless of letter case', () => {
@@ -45,7 +48,10 @@ describe('JointDispatcherTasksPanel', () => {
 
     expect(screen.getByText('Вся линия')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Открыть программу ПСТО' }))
-    expect(onRunAction).toHaveBeenCalledWith(current, task, 'open-psto-program')
+    expect(onRunAction).toHaveBeenCalledWith(current, task, expect.objectContaining({
+      id: 'open-psto-program',
+      label: 'Открыть программу ПСТО',
+    }))
   })
 
   it('does not repeat a task that is already shown as the primary next action', () => {

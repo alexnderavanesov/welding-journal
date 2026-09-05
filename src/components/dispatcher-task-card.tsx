@@ -19,12 +19,13 @@ import type {
   RepeatedJointRenameTask,
   RepeatedJointTaskGroup,
 } from '@/lib/dispatcher-types'
-import type { DispatcherTaskActionId } from '@/lib/dispatcher-task-actions-model'
+import type { DispatcherTaskActionSpec } from '@/lib/dispatcher-task-actions-model'
 
 export type DispatcherTaskCardHandlers = {
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
   onShowTask: (task: DispatcherTask) => void
+  onOpenTaskPicture: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>) => void
   onOpenTaskOfficiality: (task: DispatcherTask) => void
   onCreateTask: (task: RepeatedJointCreateTask | RepeatedJointCoilTask) => void
   onCreateEarlyCoil: (task: RepeatedJointCreateTask) => void
@@ -34,7 +35,7 @@ export type DispatcherTaskCardHandlers = {
   onEditPercentageLineTaskStamp: (task: PercentageLineControlTask) => void
   onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
   onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
-  onRunTaskAction: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>, actionId: DispatcherTaskActionId) => void
+  onRunTaskAction: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>, action: DispatcherTaskActionSpec) => void
   canRunDispatcherMutation: boolean
   canCreateEarlyCoil: boolean
   isEarlyCoilPending: boolean

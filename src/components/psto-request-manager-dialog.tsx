@@ -1,8 +1,9 @@
-import { useRef, type MouseEvent } from 'react'
-import { Pencil, Trash2 } from 'lucide-react'
+import { useMemo, useRef, useState, type MouseEvent } from 'react'
+import { CalendarClock, Pencil, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
+import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { PstoRequestManagerPosition } from '@/components/psto-request-manager-position'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
@@ -20,13 +21,22 @@ import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
 import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
 import { getPstoCycleStageDeleteBlockReason } from '@/lib/psto-cycle-corrections'
 import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
-import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
+import {
+  getSystemDocumentReferenceForField,
+  isSystemDocumentNameForRows,
+} from '@/lib/system-document-types'
+import { buildPrimaryPstoSystemDocumentRow } from '@/lib/system-document-virtual-row'
 import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
+import type {
+  WorkflowRootCauseAction,
+  WorkflowRootCauseTarget,
+} from '@/lib/workflow-root-cause-actions'
 
 export type PstoRequestManagerDialogProps = {
+  elevated?: boolean
   requestName: string
   requestDate: string
   requestOptions: RequestDocumentIdentity[]
@@ -45,9 +55,14 @@ export type PstoRequestManagerDialogProps = {
   onCopyDocumentName: (documentName: string) => void
   onClearPosition: (row: WeldRow) => void
   onDeleteRequest: (request?: RequestDocumentIdentity) => void
+  rootCauseTarget?: Extract<WorkflowRootCauseTarget, { kind: 'psto-cycle' }>
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
+  onDocumentDateSaved?: () => void
+  onMessage?: (message: string) => void
 }
 
 export function PstoRequestManagerDialog({
+  elevated = false,
   requestName,
   requestDate,
   requestOptions,
@@ -66,8 +81,13 @@ export function PstoRequestManagerDialog({
   onCopyDocumentName,
   onClearPosition,
   onDeleteRequest,
+  rootCauseTarget,
+  onRunRootCauseAction,
+  onDocumentDateSaved,
+  onMessage,
 }: PstoRequestManagerDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const [dateEditorFocusKey, setDateEditorFocusKey] = useState(0)
   const rowsWithLaterStages = requestRows.filter((row) => (
     getPstoCycleStageDeleteBlockReason(row, 1, 'pstoRequest')
   )).length
@@ -82,6 +102,12 @@ export function PstoRequestManagerDialog({
     requestConclusionSettings,
   )
   const selectedIdentity = createRequestDocumentIdentity(requestName, requestDate)
+  const documentReference = useMemo(
+    () => requestRows[0]
+      ? getSystemDocumentReferenceForField(buildPrimaryPstoSystemDocumentRow(requestRows[0]), 'pstoRequest')
+      : null,
+    [requestRows],
+  )
   const canRename = Boolean(
     requestName &&
     !isSystemRequest &&
@@ -107,16 +133,25 @@ export function PstoRequestManagerDialog({
       documentLabel: 'заявку',
       rows: requestRows,
       sourceLabel: `заявка ПСТО «${requestName}»`,
-      actions: [{
-        id: 'rename-request',
-        label: 'Переименовать заявку',
-        icon: Pencil,
-        disabled: !canRename,
-        title: isSystemRequest
-          ? 'Системную заявку переименовать нельзя'
-          : 'Сначала введите новое название в поле переименования',
-        onSelect: onRenameRequest,
-      }],
+      actions: [
+        {
+          id: 'change-request-date',
+          label: 'Изменить дату заявки',
+          icon: CalendarClock,
+          disabled: !documentReference || isManagerPending || isCorrectionPending,
+          onSelect: () => setDateEditorFocusKey((current) => current + 1),
+        },
+        {
+          id: 'rename-request',
+          label: 'Переименовать заявку',
+          icon: Pencil,
+          disabled: !canRename,
+          title: isSystemRequest
+            ? 'Системную заявку переименовать нельзя'
+            : 'Сначала введите новое название в поле переименования',
+          onSelect: onRenameRequest,
+        },
+      ],
       dangerActions: [{
         id: 'delete-request',
         label: 'Удалить заявку',
@@ -137,7 +172,7 @@ export function PstoRequestManagerDialog({
   }
 
   return (
-    <WorkflowDialogShell variant="manager">
+    <WorkflowDialogShell variant="manager" elevated={elevated}>
       <RequestDialogHeader
         title="Редактирование заявок ПСТО"
         subtitle="Найдите заявку, проверьте ее состав или выполните доступное действие."
@@ -167,6 +202,29 @@ export function PstoRequestManagerDialog({
           <RequestManagerEmptyState>Созданных заявок ПСТО пока нет.</RequestManagerEmptyState>
         )}
 
+        {documentReference && (dateEditorFocusKey > 0 || (
+          rootCauseTarget?.focus === 'date' &&
+          requestRows.some((row) => row.id === rootCauseTarget.rowId) &&
+          rootCauseTarget.sequence === 1 &&
+          rootCauseTarget.stage === 'pstoRequest'
+        )) ? (
+          <SystemDocumentDateEditor
+            key={`${documentReference.documentId ?? documentReference.title}:${dateEditorFocusKey}`}
+            reference={documentReference}
+            label="Дата заявки ПСТО"
+            disabled={isManagerPending || isCorrectionPending}
+            autoFocus
+            onMessage={onMessage}
+            onRunRootCauseAction={onRunRootCauseAction}
+            onSaved={(result) => {
+              const nextIdentity = createRequestDocumentIdentity(result.nextTitle, result.nextDate)
+              if (nextIdentity) onChangeRequest(nextIdentity)
+              setDateEditorFocusKey(0)
+              onDocumentDateSaved?.()
+            }}
+          />
+        ) : null}
+
         <RequestRenamePanel
           value={requestNameDraft}
           placeholder="Новое наименование заявки"
@@ -176,8 +234,8 @@ export function PstoRequestManagerDialog({
           onRename={onRenameRequest}
         >
           <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-            Дата заявки ПСТО фиксируется при создании и не редактируется в управлении заявками. Системную
-            заявку переименовать нельзя; пользовательскую можно только переименовать.
+            Дата меняется сразу у всех позиций заявки. Системное имя сохраняет номер и пересчитывается;
+            пользовательское имя остается прежним.
           </p>
         </RequestRenamePanel>
 

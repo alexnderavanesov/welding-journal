@@ -501,8 +501,8 @@ const ACTION_SHOW: DispatcherSettingActionHelp = {
 }
 
 const ACTION_CHAIN: DispatcherSettingActionHelp = {
-  label: 'Цепочка',
-  description: 'Открывает связанную цепочку стыков, чтобы увидеть исходный стык, ремонты, вырезы, катушку и соседние шаги.',
+  label: 'Картина',
+  description: 'Открывает картину конкретного стыка: хронологию, документы, ремонты, вырезы, катушку и следующий шаг.',
 }
 
 const ACTION_MENU_ACCEPT: DispatcherSettingActionHelp = {

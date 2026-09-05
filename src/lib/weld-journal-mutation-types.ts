@@ -15,6 +15,8 @@ export type UseWeldJournalMutationsOptions = {
   editingFocusField?: WeldFieldKey
   setEditing: (value: null) => void
   setMessage: (value: string) => void
+  onWeldRowSaved?: (previousRow: WeldRow, savedRow: WeldRow) => void
+  onWorkflowCorrectionSaved?: () => void
   highlightChangedRows: (rows: Array<{ id?: number }> | undefined, fieldKeys?: WeldFieldKey[]) => void
   dismissRepeatedJointTask: (task: RepeatedJointTask) => void
 }

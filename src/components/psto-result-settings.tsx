@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, Ref, SetStateAction } from 'react'
 
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -8,15 +8,17 @@ import type { PstoResultDraftState } from '@/lib/report-draft-state'
 type PstoResultSettingsProps = {
   draft: PstoResultDraftState
   onDraftChange: Dispatch<SetStateAction<PstoResultDraftState>>
+  dateInputRef?: Ref<HTMLInputElement>
 }
 
-export function PstoResultSettings({ draft, onDraftChange }: PstoResultSettingsProps) {
+export function PstoResultSettings({ draft, onDraftChange, dateInputRef }: PstoResultSettingsProps) {
   return (
     <section className="shrink-0 border-b border-slate-200 bg-slate-50/40 px-5 py-2.5">
       <div className="grid gap-3 xl:grid-cols-[190px_minmax(260px,420px)] xl:items-start">
         <label className="block space-y-1.5 text-sm">
           <span className="text-[13px] font-medium leading-none text-slate-700">Дата ПСТО</span>
           <Input
+            ref={dateInputRef}
             type="date"
             min={MIN_ALLOWED_DATE_ISO}
             value={draft.pstoDate}

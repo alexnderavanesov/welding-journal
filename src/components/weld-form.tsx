@@ -12,7 +12,7 @@ import {
   calculateFinalStatus,
 } from '@/lib/weld-fields'
 import { getRequiredRootStampMessage, withAutoVikForWeldDate } from '@/lib/weld-import-export'
-import type { WeldDraft } from '@/lib/dispatcher-types'
+import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import type { PageScrollPosition } from '@/lib/page-scroll-position'
 import { useOtherSettings } from '@/lib/other-settings'
 import { formatSaveCheckBlockReason, useSaveCheckSettings } from '@/lib/save-check-settings'
@@ -20,6 +20,10 @@ import { useSystemIndexSettings } from '@/lib/system-index-settings'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
+import {
+  getNewChronologyRootCauseState,
+  type WorkflowRootCauseAction,
+} from '@/lib/workflow-root-cause-actions'
 import {
   getWeldFormAutoClearHint,
   getWeldFormCancellationResultHint,
@@ -48,6 +52,8 @@ type WeldFormProps = {
   onSave: (value: WeldInput) => void
   onCancel: () => void
   busy?: boolean
+  elevated?: boolean
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
 }
 
 export type WeldFormLineIdentity = Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>
@@ -71,6 +77,8 @@ export function WeldForm({
   onSave,
   onCancel,
   busy,
+  elevated = false,
+  onRunRootCauseAction,
 }: WeldFormProps) {
   const [draft, setDraft] = useState<WeldInput>(value)
   const otherSettings = useOtherSettings()
@@ -124,6 +132,16 @@ export function WeldForm({
     [externalSaveBlockReason, resolvedStampSelectOptions, saveCheckSettings, systemIndexSettings, validationDraft, value],
   )
   const saveBlockReason = immediateSaveBlockReason ?? deferredSaveBlockReason
+  const chronologyRootCauseState = useMemo(
+    () => value.id
+      ? getNewChronologyRootCauseState({
+          previousRows: [value as WeldRow],
+          proposedRows: [validationDraft as WeldRow],
+          settings: saveCheckSettings,
+        })
+      : { message: null, actions: [] },
+    [saveCheckSettings, validationDraft, value],
+  )
   const autoClearHint = saveBlockReason ? null : getWeldFormAutoClearHint(validationDraft, value)
   const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(validationDraft, value)
   const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(validationDraft, value)
@@ -213,6 +231,27 @@ export function WeldForm({
     })
   }, [fieldsByGroup, focusField])
 
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    if (target.kind !== 'weld-field' || target.rowId !== value.id) {
+      onRunRootCauseAction?.(action)
+      return
+    }
+    setActiveTab(getWeldFormTabForField(target.fieldKey))
+    const focusedSection = fieldsByGroup.find((group) =>
+      group.fields.some((field) => field.key === target.fieldKey),
+    )?.section
+    if (focusedSection) {
+      setCollapsedSections((current) => {
+        if (!current.has(focusedSection)) return current
+        const next = new Set(current)
+        next.delete(focusedSection)
+        return next
+      })
+    }
+    window.requestAnimationFrame(() => fieldRefs.current[target.fieldKey]?.focus())
+  }
+
   useEffect(() => {
     setDraft((current) => {
       const nextDraft = systemWdiEnabled ? withSystemWdi(withAutoVikForWeldDate(current), otherSettings) : withAutoVikForWeldDate(current)
@@ -242,7 +281,7 @@ export function WeldForm({
     <LargeDialogShell
       maxWidthClassName="max-w-[min(1500px,96vw)]"
       maxHeightClassName="h-[calc(100dvh-2rem)] max-h-[96vh]"
-      overlayClassName="z-40 bg-slate-950/20 py-4"
+      overlayClassName={elevated ? 'z-[110] bg-slate-950/30 py-4' : 'z-40 bg-slate-950/20 py-4'}
       panelShadowClassName="shadow-slate-950/10"
       panelClassName="bg-slate-50"
       returnPageScrollPosition={returnPageScrollPosition}
@@ -291,6 +330,13 @@ export function WeldForm({
         busy={busy}
         autoClearHint={saveHint}
         saveBlockReason={saveBlockReason}
+        saveBlockActions={chronologyRootCauseState.message && saveBlockReason?.includes(chronologyRootCauseState.message)
+          ? chronologyRootCauseState.actions.map((action) => ({
+              key: action.key,
+              label: action.label,
+              onAction: () => runRootCauseAction(action),
+            }))
+          : undefined}
         fieldStatusCount={fieldStatusKeys.size}
         fieldStatusLabel={fieldStatusLabel}
         onCancel={onCancel}

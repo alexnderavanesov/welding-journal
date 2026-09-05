@@ -155,6 +155,21 @@ export async function saveRepeatCycleWrites(
       return cycle
     })
   }
+  return updateExistingRepeatCycleWrites(tx, writes)
+}
+
+export async function updatePstoRepeatCycleRecords(
+  tx: SystemDocumentSequenceTransaction,
+  cycles: PstoRepeatCycleRecord[],
+) {
+  return updateExistingRepeatCycleWrites(tx, cycles)
+}
+
+async function updateExistingRepeatCycleWrites(
+  tx: SystemDocumentSequenceTransaction,
+  writes: PstoRepeatCycleWrite[],
+) {
+  if (writes.length === 0) return []
   const ids = writes.map((write) => {
     if (!write.id) throw new Error('Не найден текущий повторный цикл ПСТО.')
     return write.id

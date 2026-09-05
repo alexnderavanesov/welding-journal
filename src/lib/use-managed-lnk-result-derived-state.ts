@@ -5,6 +5,7 @@ import {
   getManagedLnkResultMethodRows,
   getManagedLnkResultMethods,
   getManagedLnkResultRows,
+  type ForcedLnkResultEntry,
 } from '@/lib/managed-lnk-result-derived-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -15,6 +16,7 @@ type ManagedLnkResultDerivedStateParams = {
   managedLnkResultOrderIds: number[] | null
   managedLnkResultMethodKey: WeldFieldKey | ''
   managedLnkPendingResultChanges: Record<string, string>
+  forcedEntry?: ForcedLnkResultEntry
 }
 
 export function useManagedLnkResultDerivedState({
@@ -23,6 +25,7 @@ export function useManagedLnkResultDerivedState({
   managedLnkResultOrderIds,
   managedLnkResultMethodKey,
   managedLnkPendingResultChanges,
+  forcedEntry,
 }: ManagedLnkResultDerivedStateParams) {
   const managedLnkResultRows = useMemo(
     () =>
@@ -34,8 +37,8 @@ export function useManagedLnkResultDerivedState({
   )
 
   const managedLnkResultMethods = useMemo(
-    () => getManagedLnkResultMethods(managedLnkResultRows),
-    [managedLnkResultRows],
+    () => getManagedLnkResultMethods(managedLnkResultRows, forcedEntry),
+    [forcedEntry, managedLnkResultRows],
   )
 
   const managedLnkResultMethodRows = useMemo(
@@ -43,8 +46,9 @@ export function useManagedLnkResultDerivedState({
       getManagedLnkResultMethodRows({
         managedLnkResultRows,
         managedLnkResultMethodKey,
+        forcedEntry,
       }),
-    [managedLnkResultMethodKey, managedLnkResultRows],
+    [forcedEntry, managedLnkResultMethodKey, managedLnkResultRows],
   )
 
   const managedLnkResultEntries = useMemo(
@@ -53,8 +57,9 @@ export function useManagedLnkResultDerivedState({
         managedLnkResultRows,
         managedLnkResultMethodRows,
         managedLnkResultMethodKey,
+        forcedEntry,
       }),
-    [managedLnkResultMethodKey, managedLnkResultMethodRows, managedLnkResultRows],
+    [forcedEntry, managedLnkResultMethodKey, managedLnkResultMethodRows, managedLnkResultRows],
   )
 
   const managedLnkPendingResultRows = useMemo(

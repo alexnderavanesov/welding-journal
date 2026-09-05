@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import {
   getDispatcherTaskActionSpecs,
   getDispatcherTaskScopeLabel,
-  type DispatcherTaskActionId,
   type DispatcherTaskActionSpec,
 } from '@/lib/dispatcher-task-actions-model'
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
@@ -17,7 +16,7 @@ import { cn } from '@/lib/utils'
 export type JointDispatcherTaskActionHandler = (
   row: WeldRow,
   task: RepeatedJointTask,
-  actionId: DispatcherTaskActionId,
+  action: DispatcherTaskActionSpec,
 ) => Promise<unknown> | unknown
 
 type JointDispatcherTasksPanelProps = {
@@ -97,7 +96,7 @@ function JointDispatcherTaskRow({
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [pendingAction, setPendingAction] = useState<DispatcherTaskActionId | null>(null)
+  const [pendingAction, setPendingAction] = useState<string | null>(null)
   const actions = getDispatcherTaskActionSpecs(task, { canCreateEarlyCoil: true })
   const primaryAction = actions[0]
   const secondaryActions = actions.slice(1)
@@ -107,9 +106,9 @@ function JointDispatcherTaskRow({
   const runAction = async (action: DispatcherTaskActionSpec) => {
     if (!onRunAction || pendingAction) return
     setMenuOpen(false)
-    setPendingAction(action.id)
+    setPendingAction(action.key ?? action.id)
     try {
-      await onRunAction(row, task, action.id)
+      await onRunAction(row, task, action)
     } finally {
       setPendingAction(null)
     }
@@ -175,7 +174,7 @@ function JointDispatcherTaskRow({
                 <div className="absolute right-0 top-full z-30 mt-1 min-w-56 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
                   {secondaryActions.map((action) => (
                     <button
-                      key={action.id}
+                      key={action.key ?? action.id}
                       type="button"
                       className={cn(
                         'block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50',

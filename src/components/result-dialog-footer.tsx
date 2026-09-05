@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react'
-import { BlockedActionHint } from '@/components/blocked-action-hint'
+import { BlockedActionHint, type BlockedActionHintAction } from '@/components/blocked-action-hint'
 import { Button } from '@/components/ui/button'
 
 export type ResultDialogFooterProps = {
@@ -8,6 +8,7 @@ export type ResultDialogFooterProps = {
   saveBlockReasonVariant?: 'plain' | 'danger'
   blockReasonActionLabel?: string
   onBlockReasonAction?: () => void
+  blockReasonActions?: BlockedActionHintAction[]
   onClose: () => void
   onSave: () => void
 }
@@ -18,6 +19,7 @@ export function ResultDialogFooter({
   saveBlockReasonVariant = 'plain',
   blockReasonActionLabel,
   onBlockReasonAction,
+  blockReasonActions,
   onClose,
   onSave,
 }: ResultDialogFooterProps) {
@@ -31,6 +33,7 @@ export function ResultDialogFooter({
             reason={showDangerReason ? `Сохранение заблокировано: ${saveBlockReason}` : saveBlockReason}
             actionLabel={blockReasonActionLabel}
             onAction={onBlockReasonAction}
+            actions={blockReasonActions}
             tone={showDangerReason ? 'danger' : 'warning'}
           />
         ) : null}

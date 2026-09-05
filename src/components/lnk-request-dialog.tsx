@@ -48,8 +48,13 @@ import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 import type { LnkControlStage } from '@/lib/lnk-control-stage'
+import {
+  getLnkChronologyRootCauseActions,
+  type WorkflowRootCauseAction,
+} from '@/lib/workflow-root-cause-actions'
 
 export type LnkRequestDialogProps = {
+  elevated?: boolean
   nextRequestName: string
   nextRequestNumber?: number
   selectedRowsCount: number
@@ -87,9 +92,11 @@ export type LnkRequestDialogProps = {
   ) => void
   onSubmit: (methodKeys: WeldFieldKey[]) => void
   onExtendRequest: (methodKeys: WeldFieldKey[], request: LnkRequestExtensionOption) => void
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
 }
 
 export function LnkRequestDialog({
+  elevated = false,
   nextRequestName,
   nextRequestNumber,
   selectedRowsCount,
@@ -123,9 +130,11 @@ export function LnkRequestDialog({
   onStageChange,
   onSubmit,
   onExtendRequest,
+  onRunRootCauseAction,
 }: LnkRequestDialogProps) {
   const requestConclusionSettings = useRequestConclusionSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const requestDateInputRef = useRef<HTMLInputElement>(null)
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
   const [submitMode, setSubmitMode] = useState<LnkRequestComposerMode>(initialMode)
   const [existingRequestKey, setExistingRequestKey] = useState(initialRequestKey)
@@ -221,17 +230,39 @@ export function LnkRequestDialog({
   }, [nextRequestNumber, requestConclusionSettings, requestDate, requestNaming, selectedMethodKeys, selectedRows])
   const effectiveRequestName = creationPlan.groups[0]?.name ?? requestName
   const requestDateReason = submitMode === 'create' ? getDateInputValidationReason(requestDate, 'Дата заявки ЛНК') : null
-  const chronologyReason = useMemo(() => {
-    if (selectedRows.length === 0 || selectedMethodKeys.length === 0 || !effectiveRequestName || requestDateReason) return ''
+  const chronologyIssues = useMemo(() => {
+    if (selectedRows.length === 0 || selectedMethodKeys.length === 0 || !effectiveRequestName || requestDateReason) return []
     const proposedRows = buildLnkRequestDraftRows({
       records: selectedRows,
       methodKeys: [...selectedMethodKeys],
       requestName: effectiveRequestName,
       requestDate,
     })
-    const issue = getLnkChronologyIssues(proposedRows, saveCheckSettings)[0]
-    return issue ? formatSaveCheckBlockReason('lnkResultRequestDateOrder', issue.message) : ''
+    return getLnkChronologyIssues(proposedRows, saveCheckSettings)
   }, [effectiveRequestName, requestDate, requestDateReason, saveCheckSettings, selectedMethodKeys, selectedRows])
+  const chronologyReason = chronologyIssues[0]
+    ? formatSaveCheckBlockReason('lnkResultRequestDateOrder', chronologyIssues[0].message)
+    : ''
+  const rootCauseActions = useMemo(
+    () => getLnkChronologyRootCauseActions(chronologyIssues),
+    [chronologyIssues],
+  )
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    const editsCurrentDraft = target.kind === 'lnk-control' &&
+      target.stage === 'primary' &&
+      target.documentPart === 'request' &&
+      LNK_METHODS.some((method) =>
+        method.code === target.methodCode && selectedMethods.has(method.requestKey),
+      ) &&
+      target.documentName === effectiveRequestName &&
+      target.documentDate === requestDate
+    if (editsCurrentDraft) {
+      requestDateInputRef.current?.focus()
+      return
+    }
+    onRunRootCauseAction?.(action)
+  }
   const createDisabledReason = submitMode === 'create'
     ? getLnkRequestCreateDisabledReason({
         selectedRowsCount,
@@ -297,7 +328,7 @@ export function LnkRequestDialog({
     }))
   })
   return (
-    <WorkflowDialogShell>
+    <WorkflowDialogShell elevated={elevated}>
       <RequestDialogHeader
         title="Заявка ЛНК"
         subtitle={`${submitMode === 'create' ? headerDocumentLabel : selectedExistingRequest?.label ?? 'Выберите заявку'} · Стыков: ${selectedRowsCount} · Добавится позиций: ${selectedTargetCount}`}
@@ -324,6 +355,7 @@ export function LnkRequestDialog({
           selectedMethodKeys={selectedMethodKeys}
           selectedMethods={selectedMethods}
           requestDate={requestDate}
+          requestDateInputRef={requestDateInputRef}
           onRequestDateChange={onRequestDateChange}
           onToggleMethod={toggleMethod}
         />
@@ -505,6 +537,13 @@ export function LnkRequestDialog({
           : undefined}
         onDisabledReasonAction={submitMode === 'create' && creationPlan.error && workspaceTab !== 'documents'
           ? () => setWorkspaceTab('documents')
+          : undefined}
+        disabledReasonActions={chronologyReason
+          ? rootCauseActions.map((action) => ({
+              key: action.key,
+              label: action.label,
+              onAction: () => runRootCauseAction(action),
+            }))
           : undefined}
         onClose={onClose}
         submitLabel={submitMode === 'create' ? 'Создать заявку' : 'Добавить в заявку'}

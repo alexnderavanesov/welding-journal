@@ -68,6 +68,11 @@ import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  getWorkflowDraftRootCauseState,
+  type WorkflowDraftUpdate,
+} from '@/lib/workflow-root-cause-preview'
+import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 import { savePstoRepeatWorkflow } from '@/server/psto-repeat-workflow'
 
 export type PstoRepeatWorkflowDialogProps = {
@@ -80,6 +85,7 @@ export type PstoRepeatWorkflowDialogProps = {
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onOpenResultManager?: (rows: readonly WeldRow[]) => void
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
 }
 
 export function PstoRepeatWorkflowDialog({
@@ -92,11 +98,13 @@ export function PstoRepeatWorkflowDialog({
   onOpenJournalRows,
   onOpenPstoHistory,
   onOpenResultManager,
+  onRunRootCauseAction,
 }: PstoRepeatWorkflowDialogProps) {
   const queryClient = useQueryClient()
   const settings = useRequestConclusionSettings()
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
   const appliedInitialSelectionRef = useRef('')
   const [date, setDate] = useState(() => formatDateInputValue(new Date()))
   const [search, setSearch] = useState('')
@@ -211,6 +219,23 @@ export function PstoRepeatWorkflowDialog({
       return (error as Error).message
     }
   }, [creationPlan, date, dateReason, mode, saveCheckSettings, selectedRows.length])
+  const rootCauseState = useMemo(() => {
+    if (selectedRows.length === 0 || dateReason || creationPlan.error) {
+      return { message: null, actions: [] }
+    }
+    const updates: WorkflowDraftUpdate[] = creationPlan.groups.flatMap((group) =>
+      group.rows.map((row) => ({
+        kind: 'psto-stage' as const,
+        rowId: row.id,
+        sequence: getPstoWorkflowCycleSequence(row, mode === 'request' ? 'pstoRequest' : 'pstoResult'),
+        stage: mode === 'request' ? 'pstoRequest' as const : 'pstoResult' as const,
+        documentName: group.name,
+        date,
+      })),
+    )
+    return getWorkflowDraftRootCauseState({ rows: selectedRows, updates, settings: saveCheckSettings })
+  }, [creationPlan, date, dateReason, mode, saveCheckSettings, selectedRows])
+  const effectiveDomainReason = domainReason || rootCauseState.message || ''
   useEffect(() => {
     if (selectedIds.size === 0 && rowsViewMode === 'selected') setRowsViewMode('all')
   }, [rowsViewMode, selectedIds.size])
@@ -252,7 +277,26 @@ export function PstoRepeatWorkflowDialog({
       ? 'Выберите заявку ПСТО.'
       : selectedRows.length === 0
         ? 'Выберите хотя бы один доступный стык.'
-        : dateReason || creationPlan.error || domainReason
+        : dateReason || creationPlan.error || effectiveDomainReason
+
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    const currentStage = mode === 'request' ? 'pstoRequest' : 'pstoResult'
+    const targetRow = target.kind === 'psto-cycle'
+      ? rows.find((row) => row.id === target.rowId)
+      : undefined
+    const editsCurrentDraft = target.kind === 'psto-cycle' &&
+      target.stage === currentStage &&
+      target.sequence === (targetRow ? getPstoWorkflowCycleSequence(targetRow, currentStage) : 0) &&
+      target.focus === 'date' &&
+      selectedIds.has(target.rowId) &&
+      target.documentDate === date
+    if (editsCurrentDraft) {
+      dateInputRef.current?.focus()
+      return
+    }
+    onRunRootCauseAction?.(action)
+  }
 
   const setSelectedRows = useStableEventCallback((rowIds: number[]) => {
     const allowedIds = new Set(requestRows.filter(canSelectRow).map((row) => row.id))
@@ -338,7 +382,7 @@ export function PstoRepeatWorkflowDialog({
           <span className="text-[13px] font-medium leading-none text-slate-700">
             {mode === 'request' ? 'Дата заявки' : 'Дата ПСТО'}
           </span>
-          <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-9 bg-white" />
+          <Input ref={dateInputRef} type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-9 bg-white" />
         </label>
         {mode === 'result' ? (
           <label className="block min-w-0 space-y-1.5 text-sm">
@@ -442,6 +486,13 @@ export function PstoRepeatWorkflowDialog({
         isPending={mutation.isPending}
         isCreateDisabled={Boolean(saveBlockReason)}
         disabledReason={saveBlockReason}
+        disabledReasonActions={saveBlockReason === effectiveDomainReason
+          ? rootCauseState.actions.map((action) => ({
+              key: action.key,
+              label: action.label,
+              onAction: () => runRootCauseAction(action),
+            }))
+          : undefined}
         disabledReasonActionLabel={creationPlan.error && workspaceTab !== 'documents'
           ? `Открыть ${mode === 'request' ? 'заявки' : 'диаграммы'} и имена`
           : undefined}

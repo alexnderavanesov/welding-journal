@@ -93,8 +93,7 @@ export function useReportModalEscapeKey({
 
     function handleReportModalKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
-      if (document.querySelector('[data-confirm-action-dialog="true"]')) return
-      if (isContextActionMenuOpen()) return
+      if (shouldDeferModalEscape()) return
       event.preventDefault()
       event.stopImmediatePropagation()
 
@@ -212,4 +211,11 @@ export function useReportModalEscapeKey({
     onCloseLnkRequestModal,
     onCloseReportImportModal,
   ])
+}
+
+export function shouldDeferModalEscape() {
+  return Boolean(
+    document.querySelector('[data-confirm-action-dialog="true"]') ||
+    isContextActionMenuOpen(),
+  )
 }

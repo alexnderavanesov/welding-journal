@@ -1,7 +1,7 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
-import { findFirstPstoChronologySaveBlockReason } from '@/lib/psto-chronology-checks'
+import { findFirstPstoChronologySaveBlockReason, getPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { findFirstDateBeforeWeldDateIssue } from '@/lib/report-date-rules'
 import {
   getRequestNameFromNaming,
@@ -12,6 +12,7 @@ import { hasText } from '@/lib/report-value-utils'
 import { hasAnyPstoCycle } from '@/lib/psto-cycle'
 import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { getPstoChronologyRootCauseActions } from '@/lib/workflow-root-cause-actions'
 import {
   filterRequestDocumentIdentitiesBySearch,
   getPstoRequestDocumentIdentities,
@@ -109,6 +110,30 @@ export function getPstoResultSaveBlockReason({
   if (chronologyIssue) return chronologyIssue
 
   return ''
+}
+
+export function getPstoResultRootCauseActions({
+  draft,
+  nextDiagramName,
+  saveBlockReason,
+  saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  selectedRows,
+  systemDocumentCreationPlan,
+}: {
+  draft: PstoResultDraftState
+  nextDiagramName: string
+  saveBlockReason: string | null
+  saveCheckSettings?: SaveCheckSettings
+  selectedRows: WeldRow[]
+  systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
+}) {
+  if (!saveBlockReason || selectedRows.length === 0) return []
+  const issues = getPstoChronologyIssues(
+    buildProposedPstoResultRowsForChecks(selectedRows, draft, nextDiagramName, systemDocumentCreationPlan),
+    saveCheckSettings,
+  )
+  if (issues.length === 0 || !saveBlockReason.includes(issues[0]!.message)) return []
+  return getPstoChronologyRootCauseActions(issues)
 }
 
 function buildProposedPstoResultRowsForChecks(

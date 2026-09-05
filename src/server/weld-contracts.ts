@@ -13,6 +13,8 @@ import type {
   PercentageLineControlScope,
 } from '@/lib/percentage-line-control-update'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
+import type { LnkRequestExtensionOption } from '@/lib/lnk-request-extension'
+import type { SystemDocumentReference } from '@/lib/system-document-types'
 
 export type WeldFilters = {
   search?: string
@@ -35,6 +37,54 @@ export const WELD_SNAPSHOT_BATCH_SIZE = 1000
 export type WeldPageSize = (typeof WELD_PAGE_SIZE_OPTIONS)[number] | typeof WELD_PAGE_ALL_SIZE
 export type WeldReportKind = 'weldingJournal' | 'lnk' | 'heatTreatment'
 export type WeldReportContextKind = Exclude<WeldReportKind, 'weldingJournal'>
+
+export const LNK_WORKFLOW_ROW_SCOPES = [
+  'requestCandidates',
+  'requestRegistry',
+  'resultCandidates',
+  'resultRegistry',
+  'officialityCandidates',
+  'preHeatTreatmentRequestCandidates',
+  'preHeatTreatmentResultCandidates',
+  'preHeatTreatmentRequestRegistry',
+  'preHeatTreatmentResultRegistry',
+] as const
+
+export type LnkWorkflowRowScope = (typeof LNK_WORKFLOW_ROW_SCOPES)[number]
+
+export type LnkWorkflowRowsRequest = {
+  scope: LnkWorkflowRowScope
+  rowIds?: number[] | null
+}
+
+export type LnkWorkflowSummary = {
+  requestNames: string[]
+  requestOptions: LnkRequestExtensionOption[]
+  pendingPrimaryResultRowCount: number
+  primaryResultRowCount: number
+  preHeatTreatmentRequestRowCount: number
+  preHeatTreatmentResultRowCount: number
+}
+
+export function normalizeLnkWorkflowRowsRequest(
+  value: LnkWorkflowRowsRequest,
+): Required<LnkWorkflowRowsRequest> {
+  const scope = LNK_WORKFLOW_ROW_SCOPES.includes(value?.scope as LnkWorkflowRowScope)
+    ? value.scope
+    : null
+  if (!scope) throw new Error('Неизвестный режим загрузки данных ЛНК.')
+
+  if (value?.rowIds != null && !Array.isArray(value.rowIds)) {
+    throw new Error('Передан некорректный список стыков ЛНК.')
+  }
+  const rowIds = value?.rowIds == null
+    ? null
+    : [...new Set(value.rowIds.map(Number))].sort((left, right) => left - right)
+  if (rowIds?.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new Error('Передан некорректный список стыков ЛНК.')
+  }
+  return { scope, rowIds }
+}
 export type WeldSortDirection = 'asc' | 'desc'
 export type WeldSort = {
   fieldKey: WeldFieldKey
@@ -174,5 +224,11 @@ export type RequestDocumentManagerData = {
   requestDate: string
   nextRequestName?: string
   action: 'rename' | 'delete'
+  expectedVersions: WeldRowVersionTarget[]
+}
+
+export type SystemDocumentDateChangeData = {
+  reference: SystemDocumentReference
+  nextDate: string
   expectedVersions: WeldRowVersionTarget[]
 }

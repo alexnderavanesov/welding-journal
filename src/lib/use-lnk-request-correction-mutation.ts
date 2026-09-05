@@ -41,6 +41,7 @@ export function useLnkRequestCorrectionMutation({
   highlightChangedRows,
   setManagedLnkRequestName,
   setManagedLnkRequestNameDraft,
+  onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -49,10 +50,12 @@ export function useLnkRequestCorrectionMutation({
       record,
       methodKey,
       requestName,
+      requestDate,
     }: {
       record: RowWithId
       methodKey: WeldFieldKey
       requestName: string | null
+      requestDate?: string
     }) => {
       const method = getLnkMethodByRequestKey(methodKey)
       if (!requestName) {
@@ -70,7 +73,7 @@ export function useLnkRequestCorrectionMutation({
         })
         return saved as unknown as WeldRow
       }
-      const updatedRecord = buildLnkRequestCorrectionRow({ record, methodKey, requestName })
+      const updatedRecord = buildLnkRequestCorrectionRow({ record, methodKey, requestName, requestDate })
       const saved = await updateWeldRowOrThrow(
         updatedRecord,
         'Не удалось изменить заявку ЛНК',
@@ -80,7 +83,9 @@ export function useLnkRequestCorrectionMutation({
     },
     onSuccess: async (saved, variables) => {
       const method = getLnkMethodByRequestKey(variables.methodKey)
-      highlightChangedRows(saved ? [saved] : [], getLnkRequestPositionHighlightFields(variables.methodKey))
+      const highlightFields = getLnkRequestPositionHighlightFields(variables.methodKey)
+      if (variables.requestDate !== undefined && method) highlightFields.push(method.requestDateKey)
+      highlightChangedRows(saved ? [saved] : [], highlightFields)
       if (!variables.requestName && method) {
         const removedRequestName = String(variables.record[method.requestKey] ?? '').trim()
         const removedRequestDate = String(variables.record[method.requestDateKey] ?? '').trim()
@@ -99,9 +104,16 @@ export function useLnkRequestCorrectionMutation({
           setMessage('Позиция заявки ЛНК удалена')
         }
       } else {
-        setMessage(variables.requestName ? 'Заявка ЛНК заменена' : 'Заявка ЛНК удалена')
+        setMessage(variables.requestDate !== undefined
+          ? 'Реквизиты заявки ЛНК исправлены'
+          : variables.requestName ? 'Заявка ЛНК заменена' : 'Заявка ЛНК удалена')
       }
-      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      await invalidateWeldJoints(
+        queryClient,
+        { upsertRows: [saved] },
+        { refetchLnkWorkflow: true },
+      )
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

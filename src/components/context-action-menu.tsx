@@ -157,7 +157,7 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
   const menuTop = Math.min(Math.max(viewportPadding, preferredTop), window.innerHeight - viewportPadding - Math.min(menuHeight, maxMenuHeight))
 
   return createPortal(
-    <div className="fixed inset-0 z-[100]" onMouseDown={onClose} onContextMenu={(event) => event.preventDefault()}>
+    <div className="fixed inset-0 z-[155]" onMouseDown={onClose} onContextMenu={(event) => event.preventDefault()}>
       <div
         ref={menuPanelRef}
         className="absolute min-w-0 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12"
@@ -202,7 +202,7 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
               className={`${
                 stackSubmenus
                   ? 'relative mx-2 mb-1 w-[calc(100%-1rem)] border-l-2 border-sky-100 bg-slate-50 py-1'
-                  : 'fixed z-[101] overflow-y-auto rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 transition-opacity'
+                  : 'fixed z-[156] overflow-y-auto rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 transition-opacity'
               } ${
                 isSubmenuOpen
                   ? 'visible opacity-100'

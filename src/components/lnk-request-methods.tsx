@@ -1,4 +1,5 @@
 import { Input } from '@/components/ui/input'
+import type { Ref } from 'react'
 
 type LnkRequestMethodOption<MethodKey extends string> = {
   code: string
@@ -11,6 +12,7 @@ type LnkRequestMethodsProps<MethodKey extends string> = {
   selectedMethods: ReadonlySet<MethodKey>
   requestDate?: string
   onRequestDateChange?: (value: string) => void
+  requestDateInputRef?: Ref<HTMLInputElement>
   onToggleMethod: (methodKey: MethodKey) => void
 }
 
@@ -20,6 +22,7 @@ export function LnkRequestMethods<MethodKey extends string>({
   selectedMethods,
   requestDate,
   onRequestDateChange,
+  requestDateInputRef,
   onToggleMethod,
 }: LnkRequestMethodsProps<MethodKey>) {
   const showRequestDate = requestDate !== undefined && onRequestDateChange
@@ -53,6 +56,7 @@ export function LnkRequestMethods<MethodKey extends string>({
           <label className="ml-auto flex shrink-0 items-center gap-2 text-sm">
             <span className="text-[13px] font-medium text-slate-700">Дата заявки</span>
             <Input
+              ref={requestDateInputRef}
               type="date"
               value={requestDate}
               onChange={(event) => onRequestDateChange(event.target.value)}

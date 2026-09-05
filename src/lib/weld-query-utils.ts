@@ -10,6 +10,9 @@ import {
 export const WELD_JOINTS_QUERY_KEY = ['weld-joints'] as const
 export { invalidateWeldPageQueries, WELD_JOINT_PAGES_QUERY_KEY }
 export const WELD_REPORT_CONTEXT_QUERY_KEY = ['weld-report-context'] as const
+export const LNK_WORKFLOW_QUERY_KEY = [...WELD_JOINTS_QUERY_KEY, 'lnk-workflow'] as const
+export const LNK_WORKFLOW_SUMMARY_QUERY_KEY = [...LNK_WORKFLOW_QUERY_KEY, 'summary'] as const
+export const LNK_WORKFLOW_ROWS_QUERY_KEY = [...LNK_WORKFLOW_QUERY_KEY, 'rows'] as const
 export const DISPATCHER_TASK_SNAPSHOT_QUERY_KEY = ['dispatcher-task-snapshot'] as const
 export const DISPATCHER_BACKGROUND_STATUS_QUERY_KEY = ['dispatcher-background-status'] as const
 export const STATISTICS_SERVER_QUERY_KEY = ['statistics-server'] as const
@@ -27,11 +30,20 @@ type WeldCacheChange = {
   deleteIds?: readonly number[]
 }
 
-export function invalidateWeldJoints(queryClient: QueryClient, change?: WeldCacheChange) {
+type WeldInvalidationOptions = {
+  refetchLnkWorkflow?: boolean
+}
+
+export function invalidateWeldJoints(
+  queryClient: QueryClient,
+  change?: WeldCacheChange,
+  options: WeldInvalidationOptions = {},
+) {
   if (change) {
     updateCompleteWeldSnapshot(queryClient, change)
     updateLoadedWeldPages(queryClient, change)
     updateLoadedWeldReportContexts(queryClient, change)
+    updateLoadedLnkWorkflowRows(queryClient, change)
   } else {
     void queryClient.invalidateQueries({
       queryKey: WELD_COMPLETE_SNAPSHOT_QUERY_KEY,
@@ -48,11 +60,27 @@ export function invalidateWeldJoints(queryClient: QueryClient, change?: WeldCach
   void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
   void invalidateWeldPageQueries(queryClient, { deferActiveRefresh: Boolean(change) })
   void queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
+  void queryClient.invalidateQueries({
+    queryKey: LNK_WORKFLOW_QUERY_KEY,
+    refetchType: options.refetchLnkWorkflow ? 'active' : 'none',
+  })
   void queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
 }
 
 export function updateLoadedWeldReportContexts(queryClient: QueryClient, change: WeldCacheChange) {
+  updateLoadedWeldRowLists(queryClient, WELD_REPORT_CONTEXT_QUERY_KEY, change)
+}
+
+export function updateLoadedLnkWorkflowRows(queryClient: QueryClient, change: WeldCacheChange) {
+  updateLoadedWeldRowLists(queryClient, LNK_WORKFLOW_ROWS_QUERY_KEY, change)
+}
+
+function updateLoadedWeldRowLists(
+  queryClient: QueryClient,
+  queryKey: readonly unknown[],
+  change: WeldCacheChange,
+) {
   const deleteIds = new Set((change.deleteIds ?? []).map(Number))
   const upsertRows = new Map(
     (change.upsertRows ?? [])
@@ -61,7 +89,7 @@ export function updateLoadedWeldReportContexts(queryClient: QueryClient, change:
   )
 
   queryClient.setQueriesData<WeldRow[]>(
-    { queryKey: WELD_REPORT_CONTEXT_QUERY_KEY },
+    { queryKey },
     (current) => {
       if (!current) return current
       let changed = false

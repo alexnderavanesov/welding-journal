@@ -31,6 +31,7 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import {
+  getSystemDocumentDateContext,
   getSystemDocumentRows,
   listSystemDocumentHistory,
   listSystemDocuments,
@@ -50,6 +51,10 @@ export function loadSystemDocumentHistory(request: RemoteSystemDocumentHistoryRe
 
 export function loadSystemDocumentRows(reference: SystemDocumentReference) {
   return getSystemDocumentRows({ data: reference })
+}
+
+export function loadSystemDocumentDateContext(reference: SystemDocumentReference) {
+  return getSystemDocumentDateContext({ data: reference })
 }
 
 export async function renameSystemDocumentToCurrentName(

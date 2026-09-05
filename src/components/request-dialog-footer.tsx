@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
 
-import { BlockedActionHint } from '@/components/blocked-action-hint'
+import { BlockedActionHint, type BlockedActionHintAction } from '@/components/blocked-action-hint'
 import { Button } from '@/components/ui/button'
 
 type RequestDialogFooterProps = {
@@ -10,6 +10,7 @@ type RequestDialogFooterProps = {
   disabledReasonActionLabel?: string
   submitLabel?: string
   onDisabledReasonAction?: () => void
+  disabledReasonActions?: BlockedActionHintAction[]
   onClose: () => void
   onSubmit: () => void
 }
@@ -21,6 +22,7 @@ export function RequestDialogFooter({
   disabledReasonActionLabel,
   submitLabel = 'Создать заявку',
   onDisabledReasonAction,
+  disabledReasonActions,
   onClose,
   onSubmit,
 }: RequestDialogFooterProps) {
@@ -32,6 +34,7 @@ export function RequestDialogFooter({
             reason={disabledReason}
             actionLabel={disabledReasonActionLabel}
             onAction={onDisabledReasonAction}
+            actions={disabledReasonActions}
           />
         ) : null}
       </div>

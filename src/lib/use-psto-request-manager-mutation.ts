@@ -16,6 +16,7 @@ export function usePstoRequestManagerMutation({
   setManagedPstoRequestName,
   setManagedPstoRequestNameDraft,
   setIsPstoRequestManagerOpen,
+  onWorkflowCorrectionSaved,
 }: UsePstoReportMutationsOptions) {
   const queryClient = useQueryClient()
 
@@ -97,6 +98,7 @@ export function usePstoRequestManagerMutation({
         setIsPstoRequestManagerOpen(false)
       }
       await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

@@ -9,6 +9,8 @@ import type {
   WeldDataUsageSummary,
   WeldFormSuggestionsRequest,
   WeldJointChainResult,
+  LnkWorkflowRowsRequest,
+  LnkWorkflowSummary,
   WeldPageRequest,
   WeldPageResult,
   WeldReportContextKind,
@@ -18,6 +20,20 @@ import type {
   WeldSnapshotPageRequest,
   WeldSnapshotPageResult,
 } from '@/server/weld-contracts'
+import { normalizeLnkWorkflowRowsRequest } from '@/server/weld-contracts'
+
+export const getLnkWorkflowSummary = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<LnkWorkflowSummary> => {
+    const server = await import('@/server/lnk-workflow-context')
+    return server.getLnkWorkflowSummary()
+  })
+
+export const listLnkWorkflowRows = createServerFn({ method: 'POST' })
+  .validator((data: LnkWorkflowRowsRequest) => normalizeLnkWorkflowRowsRequest(data))
+  .handler(async ({ data }): Promise<WeldRow[]> => {
+    const server = await import('@/server/lnk-workflow-context')
+    return server.listLnkWorkflowRows(data)
+  })
 
 export const listWeldJointSnapshotPage = createServerFn({ method: 'GET' })
   .validator((data: WeldSnapshotPageRequest | undefined) => data)
@@ -122,6 +138,9 @@ export type {
   WeldFilters,
   WeldFormSuggestionsRequest,
   WeldJointChainResult,
+  LnkWorkflowRowsRequest,
+  LnkWorkflowRowScope,
+  LnkWorkflowSummary,
   WeldPageRequest,
   WeldPageResult,
   WeldPageSize,

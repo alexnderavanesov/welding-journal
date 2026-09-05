@@ -17,6 +17,7 @@ import { buildSourcedSystemDocumentMetadataSummary } from '@/lib/system-document
 import {
   buildSystemDocumentSummaries,
   type SystemDocumentReference,
+  type SystemDocumentDateContext,
   type SystemDocumentSourceKind,
   type SystemDocumentSourcePosition,
   type SystemDocumentSummary,
@@ -36,7 +37,11 @@ import {
   normalizeSqlDocumentHistoryResult,
   type SqlDocumentHistoryResult,
 } from '@/server/document-history-sql'
-import { attachPreHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
+import {
+  attachHeatTreatmentControlRelations,
+  attachPreHeatTreatmentControlRelations,
+} from '@/server/heat-treatment-control-relations'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import {
   lockLayeredControlDocumentsForWeldChange,
@@ -186,6 +191,36 @@ export async function loadIndexedSystemDocumentHistory({
 }
 
 export async function loadSystemDocumentRows(data: SystemDocumentReference): Promise<WeldRow[]> {
+  const { db, rows, metadata } = await loadSystemDocumentRowSource(data)
+
+  if (metadata?.sourceKind === 'beforeHeatTreatment') {
+    const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
+    return (await overlaySourcedSystemDocumentRows(rowsWithPreControls, metadata))
+      .map(compactSystemDocumentRow)
+  }
+
+  const hydratedRows = metadata?.sourceKind
+    ? await overlaySourcedSystemDocumentRows(rows, metadata)
+    : rows
+  return (await attachPreHeatTreatmentControlRelations(hydratedRows, db))
+    .map(compactSystemDocumentRow)
+}
+
+export async function loadSystemDocumentDateContext(
+  data: SystemDocumentReference,
+): Promise<SystemDocumentDateContext> {
+  const { db, rows, metadata } = await loadSystemDocumentRowSource(data)
+  const hydratedRows = await attachDuplicateControlRelations(
+    await attachHeatTreatmentControlRelations(rows, db),
+    db,
+  )
+  return {
+    rows: hydratedRows.map(compactSystemDocumentRow),
+    sourcePositions: metadata?.sourcePositions ?? [],
+  }
+}
+
+async function loadSystemDocumentRowSource(data: SystemDocumentReference) {
   const db = requireDb()
   const expectedStorageType = systemDocumentStorageType(getSystemDocumentTemplateId(data))
   let sourceMetadata: unknown = null
@@ -193,7 +228,9 @@ export async function loadSystemDocumentRows(data: SystemDocumentReference): Pro
     ? await findSourcedSystemDocumentId(db, data, expectedStorageType)
     : undefined
   const documentId = data.documentId ?? sourcedDocumentId
-  if (data.sourceKind && !documentId && data.sourceKind !== 'pstoCycle') return []
+  if (data.sourceKind && !documentId && data.sourceKind !== 'pstoCycle') {
+    return { db, rows: [] as WeldRow[], metadata: null }
+  }
   const rows = documentId
     ? await db
         .select({ ...WELD_TABLE_SELECT, sourceMetadata: generatedDocuments.sourceMetadata })
@@ -228,18 +265,11 @@ export async function loadSystemDocumentRows(data: SystemDocumentReference): Pro
           asc(weldJoints.joint),
         )
 
-  const metadata = parseSystemDocumentMetadata(sourceMetadata)
-  if (metadata?.sourceKind === 'beforeHeatTreatment') {
-    const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
-    return (await overlaySourcedSystemDocumentRows(rowsWithPreControls, metadata))
-      .map(compactSystemDocumentRow)
+  return {
+    db,
+    rows: rows as WeldRow[],
+    metadata: parseSystemDocumentMetadata(sourceMetadata),
   }
-
-  const hydratedRows = metadata?.sourceKind
-    ? await overlaySourcedSystemDocumentRows(rows, metadata)
-    : rows
-  return (await attachPreHeatTreatmentControlRelations(hydratedRows, db))
-    .map(compactSystemDocumentRow)
 }
 
 async function findSourcedSystemDocumentId(
@@ -1638,7 +1668,7 @@ export async function loadIndexedSystemDocumentSummaries(
     })
 }
 
-type SystemDocumentMetadata = Pick<
+export type SystemDocumentMetadata = Pick<
   SystemDocumentSummary,
   | 'label'
   | 'methodCode'
@@ -1675,7 +1705,7 @@ function serializeSystemDocumentSummary(
   } satisfies SystemDocumentMetadata)
 }
 
-function parseSystemDocumentMetadata(value: unknown): SystemDocumentMetadata | null {
+export function parseSystemDocumentMetadata(value: unknown): SystemDocumentMetadata | null {
   try {
     const parsed = (
       typeof value === 'string'

@@ -5,6 +5,7 @@ import { buildLnkResultDraftById } from '@/lib/lnk-result-draft'
 import { buildLnkConclusionCorrectionRows, buildLnkResultCorrectionRow } from '@/lib/lnk-result-correction-updates'
 import { buildLnkResultRows } from '@/lib/lnk-result-create-updates'
 import {
+  getLnkResultRootCauseActions,
   getLnkResultSaveBlockReason,
   getSelectedLnkResultMethods,
   getSelectedLnkResultRows,
@@ -223,6 +224,53 @@ describe('getLnkResultSaveBlockReason', () => {
         selectedRows: [row],
       }),
     ).toContain('пока нет результата ВИК')
+  })
+
+  it('returns the same exact root action for a blocked result modal', () => {
+    const currentRow = {
+      ...baseRow,
+      vikResult: 'ожидает НК',
+      vikConclusionDate: '',
+      vikConclusion: '',
+      hasUzk: 'да',
+      uzkRequest: 'Заявка-УЗК',
+      uzkRequestDate: '2026-07-03',
+      uzkResult: 'ожидает НК',
+    } as WeldRow
+    const draft = {
+      ...baseDraft,
+      controlDate: '2026-07-04',
+      methodKey: 'uzkRequest' as const,
+      requestName: 'Заявка-УЗК',
+      requestDate: '2026-07-03',
+      rowResults: { 1: 'годен' },
+      result: LNK_CUSTOM_RESULT_VALUE,
+    }
+    const saveBlockReason = getLnkResultSaveBlockReason({
+      draft,
+      isSaving: false,
+      nextConclusionName: 'Заключение-УЗК',
+      selectedRows: [currentRow],
+    })
+
+    expect(getLnkResultRootCauseActions({
+      draft,
+      nextConclusionName: 'Заключение-УЗК',
+      saveBlockReason,
+      selectedRows: [currentRow],
+    })).toEqual([
+      expect.objectContaining({
+        label: 'Исправить результат ВИК',
+        target: expect.objectContaining({
+          kind: 'lnk-control',
+          rowId: 1,
+          stage: 'primary',
+          methodCode: 'ВИК',
+          documentPart: 'result',
+          focus: 'result',
+        }),
+      }),
+    ])
   })
 
   it('keeps the same VIK-before-other guard in the save update builder', () => {

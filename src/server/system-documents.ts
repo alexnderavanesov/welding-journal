@@ -15,6 +15,7 @@ import {
   type RemoteDocumentHistoryFilterOption,
 } from '@/server/generated-documents'
 import {
+  loadSystemDocumentDateContext,
   loadIndexedSystemDocumentHistory,
   loadSystemDocumentRows,
   loadSystemDocumentSummaries,
@@ -62,6 +63,13 @@ export const getSystemDocumentRows = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<WeldRow[]> => {
     await assertSecurityScope('entry')
     return loadSystemDocumentRows(data)
+  })
+
+export const getSystemDocumentDateContext = createServerFn({ method: 'GET' })
+  .validator(normalizeSystemDocumentReference)
+  .handler(async ({ data }) => {
+    await assertSecurityScope('entry')
+    return loadSystemDocumentDateContext(data)
   })
 
 function requireSystemDocumentType(value: unknown): SystemDocumentType {

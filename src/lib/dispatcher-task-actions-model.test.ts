@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  canOpenDispatcherTaskPicture,
   getDispatcherTaskActionSpecs,
   getDispatcherTaskScopeLabel,
 } from '@/lib/dispatcher-task-actions-model'
@@ -52,6 +53,40 @@ describe('dispatcher task action model', () => {
       'show-task',
     ])
     expect(getDispatcherTaskScopeLabel(task)).toBe('Вся линия')
+    expect(canOpenDispatcherTaskPicture(task)).toBe(false)
+  })
+
+  it('uses the task root-cause registry without losing its exact target', () => {
+    const task = checkTask('проверить даты ЛНК')
+    const rootCauseAction = {
+      key: 'lnk:1:primary:ВИК:request:date:0',
+      label: 'Исправить дату заявки ВИК',
+      tone: 'primary' as const,
+      target: {
+        kind: 'lnk-control' as const,
+        rowId: 1,
+        stage: 'primary' as const,
+        methodCode: 'ВИК',
+        documentPart: 'request' as const,
+        focus: 'date' as const,
+        documentName: 'Заявка ВИК',
+        documentDate: '2026-08-09',
+      },
+    }
+    task.rootCauseActions = [rootCauseAction]
+
+    expect(canOpenDispatcherTaskPicture(task)).toBe(true)
+
+    expect(getDispatcherTaskActionSpecs(task)).toEqual([
+      {
+        id: 'open-root-cause',
+        key: rootCauseAction.key,
+        label: rootCauseAction.label,
+        tone: 'primary',
+        rootCauseAction,
+      },
+      expect.objectContaining({ id: 'show-task', label: 'Показать в отчете' }),
+    ])
   })
 })
 

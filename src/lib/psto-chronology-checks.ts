@@ -32,6 +32,10 @@ export type PstoChronologyIssueKind =
 
 export type PstoChronologyIssue = {
   kind: PstoChronologyIssueKind
+  sequence: number
+  cycleId?: number
+  cycleSource: 'primary' | 'repeat'
+  documentStage: 'pstoRequest' | 'pstoResult' | 'tvmtRequest' | 'tvmtResult'
   reason: string
   message: string
   row: PstoChronologyRow
@@ -109,6 +113,15 @@ export function findFirstNewPstoChronologySaveBlockReason(
   const issue = getPstoChronologyIssues(rows, settings)
     .find((candidate) => !previousIssueKeys.has(getPstoChronologyIssueIdentity(candidate)))
   return issue ? formatPstoChronologyIssueSaveBlockReason(issue) : ''
+}
+
+export function assertNoNewPstoChronologyIssues(
+  rows: WeldInput[],
+  previousRows: WeldInput[],
+  settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+) {
+  const issue = findFirstNewPstoChronologySaveBlockReason(rows, previousRows, settings)
+  if (issue) throw new Error(issue)
 }
 
 export function assertNoPstoChronologyIssues(
@@ -189,6 +202,7 @@ function getCycleIssues({
   ) {
     issues.push(createIssue(
       row,
+      cycle,
       'repeat-without-failed-tvmt',
       `Стык ${joint}: цикл #${cycle.sequence} создан без негодной ТВМТ предыдущего цикла.`,
     ))
@@ -201,12 +215,14 @@ function getCycleIssues({
   if (options.includeInvalidDateIssues && requestDateReason) {
     issues.push(createIssue(
       row,
+      cycle,
       'request-date-invalid',
       `Стык ${joint}: ${requestDateReason}`,
     ))
   } else if (options.includeRequestIntegrityIssues && hasPstoTrace && !hasPstoRequestDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'request-date-missing',
       `Стык ${joint}: у ${pstoLabel} есть данные цикла, но нет даты заявки ПСТО.`,
     ))
@@ -214,6 +230,7 @@ function getCycleIssues({
   if (options.includeInvalidDateIssues && resultDateReason) {
     issues.push(createIssue(
       row,
+      cycle,
       'result-date-invalid',
       `Стык ${joint}: ${resultDateReason}`,
     ))
@@ -221,6 +238,7 @@ function getCycleIssues({
   if (options.includeRequestIntegrityIssues && hasPstoTrace && !pstoRequestName) {
     issues.push(createIssue(
       row,
+      cycle,
       'request-name-missing',
       `Стык ${joint}: у ${pstoLabel} есть данные цикла, но нет наименования заявки ПСТО.`,
     ))
@@ -228,12 +246,14 @@ function getCycleIssues({
   if (options.includeInvalidDateIssues && tvmtRequestDateReason) {
     issues.push(createIssue(
       row,
+      cycle,
       'tvmt-request-date-invalid',
       `Стык ${joint}: ${tvmtRequestDateReason}`,
     ))
   } else if (options.includeRequestIntegrityIssues && hasTvmtTrace && !hasTvmtRequestDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'tvmt-request-date-missing',
       `Стык ${joint}: у ${tvmtLabel} есть данные контроля, но нет даты заявки ТВМТ.`,
     ))
@@ -241,6 +261,7 @@ function getCycleIssues({
   if (options.includeInvalidDateIssues && tvmtResultDateReason) {
     issues.push(createIssue(
       row,
+      cycle,
       'tvmt-result-date-invalid',
       `Стык ${joint}: ${tvmtResultDateReason}`,
     ))
@@ -248,6 +269,7 @@ function getCycleIssues({
   if (options.includeRequestIntegrityIssues && hasTvmtTrace && !tvmtRequestName) {
     issues.push(createIssue(
       row,
+      cycle,
       'tvmt-request-name-missing',
       `Стык ${joint}: у ${tvmtLabel} есть данные контроля, но нет наименования заявки ТВМТ.`,
     ))
@@ -255,6 +277,7 @@ function getCycleIssues({
   if (settings.pstoResultRequestDateOrder && requestDate && weldDate && requestDate < weldDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'weld-after-request',
       `Стык ${joint}: дата заявки ${pstoLabel} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
     ))
@@ -268,6 +291,7 @@ function getCycleIssues({
   ) {
     issues.push(createIssue(
       row,
+      cycle,
       'weld-after-result',
       `Стык ${joint}: дата результата ${pstoLabel} ${formatDisplayDate(resultDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
     ))
@@ -275,6 +299,7 @@ function getCycleIssues({
   if (settings.pstoResultRequestDateOrder && requestDate && resultDate && resultDate < requestDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'request-after-result',
       `Стык ${joint}: дата результата ${pstoLabel} ${formatDisplayDate(resultDate)} раньше даты заявки ПСТО ${formatDisplayDate(requestDate)}.`,
     ))
@@ -282,6 +307,7 @@ function getCycleIssues({
   if (settings.pstoResultRequestDateOrder && requestDate && previousTvmtDate && requestDate < previousTvmtDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'previous-tvmt-after-repeat-request',
       `Стык ${joint}: дата заявки ${pstoLabel} ${formatDisplayDate(requestDate)} раньше результата предыдущей ТВМТ ${formatDisplayDate(previousTvmtDate)}.`,
     ))
@@ -289,6 +315,7 @@ function getCycleIssues({
   if (settings.pstoResultRequestDateOrder && tvmtRequestDate && resultDate && tvmtRequestDate < resultDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'psto-after-tvmt-request',
       `Стык ${joint}: дата заявки ${tvmtLabel} ${formatDisplayDate(tvmtRequestDate)} раньше даты ${pstoLabel} ${formatDisplayDate(resultDate)}.`,
     ))
@@ -296,6 +323,7 @@ function getCycleIssues({
   if (settings.pstoResultRequestDateOrder && tvmtResultDate && resultDate && tvmtResultDate < resultDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'psto-after-tvmt-result',
       `Стык ${joint}: дата результата ${tvmtLabel} ${formatDisplayDate(tvmtResultDate)} раньше даты ${pstoLabel} ${formatDisplayDate(resultDate)}.`,
     ))
@@ -303,6 +331,7 @@ function getCycleIssues({
   if (settings.pstoResultRequestDateOrder && tvmtRequestDate && tvmtResultDate && tvmtResultDate < tvmtRequestDate) {
     issues.push(createIssue(
       row,
+      cycle,
       'tvmt-request-after-result',
       `Стык ${joint}: дата результата ${tvmtLabel} ${formatDisplayDate(tvmtResultDate)} раньше даты заявки ТВМТ ${formatDisplayDate(tvmtRequestDate)}.`,
     ))
@@ -312,10 +341,41 @@ function getCycleIssues({
 
 function createIssue(
   row: PstoChronologyRow,
+  cycle: PstoCycleSnapshot,
   kind: PstoChronologyIssueKind,
   message: string,
 ): PstoChronologyIssue {
-  return { kind, reason: PSTO_REQUEST_DATE_ORDER_REASON, row, message }
+  return {
+    kind,
+    sequence: cycle.sequence,
+    ...(cycle.id ? { cycleId: cycle.id } : {}),
+    cycleSource: cycle.source,
+    documentStage: getIssueDocumentStage(kind),
+    reason: PSTO_REQUEST_DATE_ORDER_REASON,
+    row,
+    message,
+  }
+}
+
+function getIssueDocumentStage(kind: PstoChronologyIssueKind): PstoChronologyIssue['documentStage'] {
+  if (
+    kind === 'tvmt-request-date-missing' ||
+    kind === 'tvmt-request-date-invalid' ||
+    kind === 'tvmt-request-name-missing' ||
+    kind === 'psto-after-tvmt-request'
+  ) return 'tvmtRequest'
+  if (
+    kind === 'tvmt-result-date-invalid' ||
+    kind === 'tvmt-request-after-result' ||
+    kind === 'psto-after-tvmt-result' ||
+    kind === 'repeat-without-failed-tvmt'
+  ) return 'tvmtResult'
+  if (
+    kind === 'result-date-invalid' ||
+    kind === 'weld-after-result' ||
+    kind === 'request-after-result'
+  ) return 'pstoResult'
+  return 'pstoRequest'
 }
 
 function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {

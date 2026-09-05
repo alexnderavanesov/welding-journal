@@ -165,6 +165,33 @@ describe('lnk request mutation updates', () => {
     expect(updated.rkResult).toBe('ожидает НК')
   })
 
+  it('repairs missing request name and date atomically without clearing a completed result', () => {
+    const record = {
+      id: 1,
+      joint: 'F7',
+      weldDate: '2026-07-20',
+      hasVik: 'да',
+      vikRequest: null,
+      vikRequestDate: null,
+      vikResult: 'годен',
+      vikConclusion: 'ВИК-17',
+      vikConclusionDate: '2026-07-22',
+    } as RowWithId
+
+    const updated = buildLnkRequestCorrectionRow({
+      record,
+      methodKey: 'vikRequest',
+      requestName: 'Заявка-001',
+      requestDate: '2026-07-21',
+    })
+
+    expect(updated.vikRequest).toBe('Заявка-001')
+    expect(updated.vikRequestDate).toBe('2026-07-21')
+    expect(updated.vikResult).toBe('годен')
+    expect(updated.vikConclusion).toBe('ВИК-17')
+    expect(updated.vikConclusionDate).toBe('2026-07-22')
+  })
+
   it('blocks removing one position when it already has a result or conclusion', () => {
     const withResult = {
       id: 1,

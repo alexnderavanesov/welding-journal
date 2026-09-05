@@ -11,6 +11,22 @@ import type {
 import { buildJointCoilTransitions, type JointCoilTransition } from '@/lib/joint-chain-transitions'
 
 describe('JointChainDialog', () => {
+  it('opens editing for the joint currently selected in the picture', () => {
+    const rows = [
+      row({ id: 1, joint: 'S1' }),
+      row({ id: 2, joint: 'S1R1' }),
+    ]
+    const onEditRow = vi.fn()
+    renderDialog({ rows, onEditRow })
+
+    expect(screen.getByRole('button', { name: 'Показать в отчете' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Показать цепочку в отчете' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('S1R1'))
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+
+    expect(onEditRow).toHaveBeenCalledWith(rows[1])
+  })
+
   it('navigates from a completed branch to both coil joints and back through their relations', () => {
     const rows = [
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
@@ -304,6 +320,7 @@ function renderDialog({
   onRenameRepeatedJoint = vi.fn(),
   onCreateEarlyCoil = vi.fn(),
   onOpenOfficiality = vi.fn(),
+  onEditRow = vi.fn(),
 }: {
   record?: WeldRow
   rows: WeldRow[]
@@ -328,6 +345,7 @@ function renderDialog({
     targetJoints: [string, string]
   }) => void
   onOpenOfficiality?: (row: WeldRow, officiality: 'official' | 'unofficial') => void
+  onEditRow?: (row: WeldRow) => void
 }) {
   return render(
     <JointChainDialog
@@ -349,6 +367,7 @@ function renderDialog({
       onOpenRow={vi.fn()}
       onOpenDocument={vi.fn()}
       onOpenReport={vi.fn()}
+      onEditRow={onEditRow}
       onRunNextAction={vi.fn()}
       onRunDispatcherTaskAction={vi.fn()}
       onCreateRepeatedJoint={onCreateRepeatedJoint}

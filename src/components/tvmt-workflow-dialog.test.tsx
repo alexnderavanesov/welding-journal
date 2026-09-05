@@ -27,6 +27,7 @@ function renderDialog(
   rowOrRows: WeldRow | WeldRow[],
   initialSelectedIds?: ReadonlySet<number>,
   onOpenResultManager = vi.fn(),
+  onRunRootCauseAction: React.ComponentProps<typeof TvmtWorkflowDialog>['onRunRootCauseAction'] = vi.fn(),
 ) {
   let currentRows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
   let currentSelectedIds = initialSelectedIds ?? new Set(currentRows.map((row) => row.id))
@@ -48,6 +49,7 @@ function renderDialog(
         onSaved={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onOpenResultManager={onOpenResultManager}
+        onRunRootCauseAction={onRunRootCauseAction}
       />
     </QueryClientProvider>
   )
@@ -70,6 +72,30 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
     expect(screen.getByText('ожидает заявку ТВМТ')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Создать заявку' })).toBeEnabled()
+  })
+
+  it('offers both exact date corrections and keeps the current TVMT draft in place', () => {
+    const onRunRootCauseAction = vi.fn()
+    renderDialog('request', makeRow(), undefined, vi.fn(), onRunRootCauseAction)
+    const dateInput = screen.getByLabelText('Дата заявки')
+
+    fireEvent.change(dateInput, { target: { value: '2026-08-27' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить дату заявки ТВМТ' }))
+    expect(dateInput).toHaveFocus()
+    expect(onRunRootCauseAction).not.toHaveBeenCalled()
+    expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить дату ПСТО' }))
+    expect(onRunRootCauseAction).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.objectContaining({
+        kind: 'psto-cycle',
+        rowId: 1,
+        sequence: 1,
+        stage: 'pstoResult',
+        documentDate: '2026-08-28',
+      }),
+    }))
   })
 
   it('restores the selected TVMT row when report data loads after the dialog opens', async () => {

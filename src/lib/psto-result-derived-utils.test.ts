@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getManagedPstoResultRows,
+  getPstoResultRootCauseActions,
   getPstoResultSaveBlockReason,
   getSelectedPstoResultRows,
   hasPstoResultData,
@@ -185,5 +186,41 @@ describe('PSTO result request identity', () => {
 
     expect(result.current.filteredPstoResultRows.map((row) => row.id)).toEqual([2])
     expect(result.current.selectedPstoResultRows.map((row) => row.id)).toEqual([1, 2])
+  })
+
+  it('returns separate exact corrections for a blocked PSTO result modal', () => {
+    const currentRow = {
+      id: 6,
+      joint: 'F6',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      pstoRequest: 'ПСТО-006',
+      pstoRequestDate: '2026-08-20',
+      pstoResult: 'ожидает ПСТО',
+    } as WeldRow
+    const draft = {
+      ...createDefaultPstoResultDraft(),
+      requestName: 'ПСТО-006',
+      requestDate: '2026-08-20',
+      rowIds: new Set([6]),
+      result: 'проведено',
+      pstoDate: '2026-08-19',
+    }
+    const saveBlockReason = getPstoResultSaveBlockReason({
+      draft,
+      isSaving: false,
+      nextDiagramName: 'Диаграмма ПСТО',
+      selectedRows: [currentRow],
+    })
+
+    expect(getPstoResultRootCauseActions({
+      draft,
+      nextDiagramName: 'Диаграмма ПСТО',
+      saveBlockReason,
+      selectedRows: [currentRow],
+    }).map((action) => action.label)).toEqual([
+      'Исправить дату заявки ПСТО',
+      'Исправить дату ПСТО',
+    ])
   })
 })

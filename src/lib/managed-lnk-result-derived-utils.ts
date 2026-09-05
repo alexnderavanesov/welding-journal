@@ -9,6 +9,11 @@ import { sortRowsByPreservedOrder } from '@/lib/report-row-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
+export type ForcedLnkResultEntry = {
+  rowId: number
+  methodKey: WeldFieldKey
+}
+
 export function getManagedLnkResultRows({
   lnkRows,
   managedLnkResultOrderIds,
@@ -26,23 +31,37 @@ export function getManagedLnkResultRows({
   return lnkRows
 }
 
-export function getManagedLnkResultMethods(managedLnkResultRows: WeldRow[]) {
-  return getLnkResultMethodsForRows(managedLnkResultRows, '')
+export function getManagedLnkResultMethods(
+  managedLnkResultRows: WeldRow[],
+  forcedEntry?: ForcedLnkResultEntry,
+) {
+  const methods = getLnkResultMethodsForRows(managedLnkResultRows, '')
+  const forcedMethod = forcedEntry && managedLnkResultRows.some((row) => row.id === forcedEntry.rowId)
+    ? getLnkMethodByRequestKey(forcedEntry.methodKey)
+    : undefined
+  return forcedMethod && !methods.some((method) => method.requestKey === forcedMethod.requestKey)
+    ? [forcedMethod, ...methods]
+    : methods
 }
 
 export function getManagedLnkResultMethodRows({
   managedLnkResultRows,
   managedLnkResultMethodKey,
+  forcedEntry,
 }: {
   managedLnkResultRows: WeldRow[]
   managedLnkResultMethodKey: WeldFieldKey | ''
+  forcedEntry?: ForcedLnkResultEntry
 }) {
   return managedLnkResultRows.filter((row) => {
     const method = getLnkMethodByRequestKey(managedLnkResultMethodKey)
     return Boolean(
       method &&
-        isLnkResultRowApplicable(row, '', managedLnkResultMethodKey) &&
-        isFinalLnkResultValue(row[method.resultKey]),
+        isFinalLnkResultValue(row[method.resultKey]) &&
+        (
+          isLnkResultRowApplicable(row, '', managedLnkResultMethodKey) ||
+          (forcedEntry?.rowId === row.id && forcedEntry.methodKey === managedLnkResultMethodKey)
+        ),
     )
   })
 }
@@ -51,10 +70,12 @@ export function getManagedLnkResultEntries({
   managedLnkResultRows,
   managedLnkResultMethodRows,
   managedLnkResultMethodKey,
+  forcedEntry,
 }: {
   managedLnkResultRows: WeldRow[]
   managedLnkResultMethodRows: WeldRow[]
   managedLnkResultMethodKey: WeldFieldKey | ''
+  forcedEntry?: ForcedLnkResultEntry
 }) {
   if (managedLnkResultMethodKey) {
     return managedLnkResultMethodRows.flatMap((row) => {
@@ -63,7 +84,7 @@ export function getManagedLnkResultEntries({
     })
   }
 
-  return managedLnkResultRows.flatMap((row) =>
+  const entries = managedLnkResultRows.flatMap((row) =>
     LNK_METHODS.flatMap((method) =>
       isLnkResultRowApplicable(row, '', method.requestKey) &&
       isFinalLnkResultValue(row[method.resultKey])
@@ -71,6 +92,15 @@ export function getManagedLnkResultEntries({
         : [],
     ),
   )
+  if (!forcedEntry || entries.some((entry) => entry.changeKey === getManagedLnkResultChangeKey(
+    forcedEntry.rowId,
+    forcedEntry.methodKey,
+  ))) return entries
+  const row = managedLnkResultRows.find((candidate) => candidate.id === forcedEntry.rowId)
+  const method = getLnkMethodByRequestKey(forcedEntry.methodKey)
+  return row && method && isFinalLnkResultValue(row[method.resultKey])
+    ? [{ row, method, changeKey: getManagedLnkResultChangeKey(row.id, method.requestKey) }, ...entries]
+    : entries
 }
 
 export function getManagedLnkPendingResultRows<

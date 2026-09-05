@@ -39,14 +39,6 @@ export function ReportLnkDialogs({
   preHeatTreatmentWorkflowDialogProps,
   preHeatTreatmentResultManagerDialogProps,
 }: ReportLnkDialogsProps) {
-  const managerDialog = requestManagerDialogProps ? (
-    <LnkRequestManagerDialog {...requestManagerDialogProps} embedded />
-  ) : resultManagerDialogProps ? (
-    <LnkResultManagerDialog {...resultManagerDialogProps} embedded />
-  ) : preHeatTreatmentResultManagerDialogProps ? (
-    <PreHeatTreatmentResultManagerDialog {...preHeatTreatmentResultManagerDialogProps} embedded />
-  ) : null
-
   return (
     <>
       <Suspense fallback={null}>
@@ -58,9 +50,25 @@ export function ReportLnkDialogs({
           <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentWorkflowDialogProps} />
         ) : null}
       </Suspense>
-      {managerDialog ? (
-        <WorkflowDialogShell variant="manager">
-          <Suspense fallback={null}>{managerDialog}</Suspense>
+      {requestManagerDialogProps ? (
+        <WorkflowDialogShell variant="manager" elevated={requestManagerDialogProps.elevated}>
+          <Suspense fallback={null}>
+            <LnkRequestManagerDialog {...requestManagerDialogProps} embedded />
+          </Suspense>
+        </WorkflowDialogShell>
+      ) : null}
+      {resultManagerDialogProps ? (
+        <WorkflowDialogShell variant="manager" elevated={resultManagerDialogProps.elevated}>
+          <Suspense fallback={null}>
+            <LnkResultManagerDialog {...resultManagerDialogProps} embedded />
+          </Suspense>
+        </WorkflowDialogShell>
+      ) : null}
+      {preHeatTreatmentResultManagerDialogProps ? (
+        <WorkflowDialogShell variant="manager" elevated={preHeatTreatmentResultManagerDialogProps.elevated}>
+          <Suspense fallback={null}>
+            <PreHeatTreatmentResultManagerDialog {...preHeatTreatmentResultManagerDialogProps} embedded />
+          </Suspense>
         </WorkflowDialogShell>
       ) : null}
     </>

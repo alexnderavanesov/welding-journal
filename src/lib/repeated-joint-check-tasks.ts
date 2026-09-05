@@ -43,6 +43,11 @@ import { buildPstoCycleTimeline, type PstoRepeatCycleRecord } from '@/lib/psto-c
 import { normalizeTvmtResult } from '@/lib/tvmt-cycle'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { getDuplicateControls } from '@/lib/duplicate-control-utils'
+import {
+  getLnkChronologyRootCauseActions,
+  getPstoChronologyRootCauseActions,
+  type WorkflowRootCauseAction,
+} from '@/lib/workflow-root-cause-actions'
 
 const WELDER_STAMP_AUDIT_SAVE_CHECK_SETTINGS = {
   ...DEFAULT_SAVE_CHECK_SETTINGS,
@@ -125,6 +130,7 @@ export function buildLnkChronologyCheckTasks(
       group.reason,
       group.messages.join(' '),
       systemIndexSettings,
+      getLnkChronologyRootCauseActions(group.issues),
     )
   })
 }
@@ -141,6 +147,7 @@ export function buildPstoChronologyCheckTasks(
       group.reason,
       group.messages.join(' '),
       systemIndexSettings,
+      getPstoChronologyRootCauseActions(group.issues),
     )
   })
 }
@@ -446,6 +453,7 @@ export function createJointChainCheckTask(
   reason: string,
   details?: string,
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
+  rootCauseActions: WorkflowRootCauseAction[] = [],
 ): RepeatedJointCheckTask {
   const sourceJoint = String(row.joint ?? '').trim()
   const baseJoint = parseJointChainName(sourceJoint, systemIndexSettings).base || sourceJoint
@@ -460,6 +468,7 @@ export function createJointChainCheckTask(
     suffix: 'R',
     reason,
     details,
+    ...(rootCauseActions.length > 0 ? { rootCauseActions } : {}),
   }
 }
 
@@ -470,13 +479,20 @@ function formatWeldStampCompletionFieldLabel(fieldKey: WeldFieldKey) {
 function groupIssuesByRowAndReason<T extends { kind: string; reason: string; message: string; row: { id?: number }; methodCode?: string }>(
   issues: T[],
 ) {
-  const groups = new Map<string, { issueKeys: string[]; messages: string[]; reason: string; row: WeldRow }>()
+  const groups = new Map<string, {
+    issueKeys: string[]
+    messages: string[]
+    reason: string
+    row: WeldRow
+    issues: T[]
+  }>()
   for (const issue of issues) {
     const row = issue.row as WeldRow
     const groupKey = `${row.id}:${issue.reason}`
-    const group = groups.get(groupKey) ?? { issueKeys: [], messages: [], reason: issue.reason, row }
+    const group = groups.get(groupKey) ?? { issueKeys: [], messages: [], reason: issue.reason, row, issues: [] }
     group.issueKeys.push(`${issue.kind}:${issue.methodCode ?? ''}`)
     group.messages.push(issue.message)
+    group.issues.push(issue)
     groups.set(groupKey, group)
   }
   return [...groups.values()]

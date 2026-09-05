@@ -13,6 +13,7 @@ import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import { useReportHighlights } from '@/lib/use-report-highlights'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
+import { useWorkflowRootCauseEscapeKey } from '@/lib/use-workflow-root-cause-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
 import { useDispatcherTaskSnapshot } from '@/lib/use-dispatcher-task-snapshot'
@@ -34,7 +35,10 @@ import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-de
 import { useLnkOfficialityDerivedState } from '@/lib/use-lnk-officiality-derived-state'
 import { useJointChainActions } from '@/lib/use-joint-chain-actions'
 import type { JointNextAction } from '@/lib/joint-next-actions'
-import type { DispatcherTaskActionId } from '@/lib/dispatcher-task-actions-model'
+import type {
+  DispatcherTaskActionId,
+  DispatcherTaskActionSpec,
+} from '@/lib/dispatcher-task-actions-model'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { useLnkOfficialityActions } from '@/lib/use-lnk-officiality-actions'
 import { useLnkRequestActions } from '@/lib/use-lnk-request-actions'
@@ -80,6 +84,15 @@ import {
   useWeldReportContextQuery,
   useWeldsQuery,
 } from '@/lib/use-welds-query'
+import {
+  useLnkWorkflowRowsQuery,
+  useLnkWorkflowSummaryQuery,
+} from '@/lib/use-lnk-workflow-context-query'
+import {
+  getLnkWorkflowRowsRequest as buildLnkWorkflowRowsRequest,
+  shouldLoadFullLnkReportContext,
+  shouldLoadLnkWorkflowSummary,
+} from '@/lib/lnk-workflow-context'
 import { useDuplicateControls } from '@/lib/use-duplicate-controls'
 import type { ContextActionMenuItem } from '@/components/context-action-menu'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
@@ -95,6 +108,17 @@ import {
   getLnkResultNavigationEntryForField,
   getPendingLnkResultMethods,
 } from '@/lib/lnk-result-navigation'
+import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
+import { LNK_METHODS } from '@/lib/report-config'
+import type {
+  WorkflowRootCauseAction,
+  WorkflowRootCauseTarget,
+} from '@/lib/workflow-root-cause-actions'
+import {
+  getCurrentWorkflowRequestIdentity,
+  getWorkflowRootCauseDestination,
+  type WorkflowRootCauseDestination,
+} from '@/lib/workflow-root-cause-navigation'
 import { getLnkRepairResultSaveReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
@@ -103,6 +127,7 @@ import type { ReportImportRecord } from '@/lib/report-import-preview'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import { buildFinalStatusRowsContext, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import {
+  createDefaultLnkRequestDraft,
   createDefaultLnkResultDraft,
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
@@ -143,7 +168,10 @@ import {
   usePstoCycleCorrectionMutation,
   usePstoTvmtCorrectionWithLaterCycleRemovalMutation,
 } from '@/lib/use-psto-cycle-correction-mutation'
-import { getPstoCycleStageLabel } from '@/lib/psto-cycle-corrections'
+import {
+  getPstoCycleStageInlineLabel,
+  getPstoCycleStageLabel,
+} from '@/lib/psto-cycle-corrections'
 import {
   getCurrentPstoCycle,
 } from '@/lib/tvmt-cycle'
@@ -169,6 +197,7 @@ import {
   buildExactJointFilters,
   buildPercentageLineStampFilters,
   buildRowIdListFilters,
+  followUpdatedWeldRowFilters,
   type PercentageLineStampFilter,
 } from '@/lib/report-navigation'
 import {
@@ -222,6 +251,12 @@ type DeferredJointNextAction = {
   row: WeldRow
   action: JointNextAction
   runDispatcherAction?: boolean
+}
+
+type WorkflowRootCauseNavigationFrame = {
+  action: WorkflowRootCauseAction
+  destination: WorkflowRootCauseDestination
+  restore: () => void
 }
 
 export function useHomePageController(options: UseHomePageControllerOptions = {}) {
@@ -365,39 +400,48 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const preHeatTreatmentResultCorrectionMutation = usePreHeatTreatmentResultCorrectionMutation({
     setMessage,
-    onSaved: (row) => highlightChangedRows([row], PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS),
+    onSaved: (row) => {
+      highlightChangedRows([row], PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS)
+      completeWorkflowRootCause('pre-lnk-manager')
+    },
   })
   const pstoCycleCorrectionMutation = usePstoCycleCorrectionMutation({
     setMessage,
-    onSaved: (row) => highlightChangedRows([row], [
-      'pstoRequest',
-      'pstoRequestDate',
-      'pstoDate',
-      'pstoResult',
-      'heatTreatmentDiagram',
-      'tvmtRequest',
-      'tvmtRequestDate',
-      'tvmtResult',
-      'tvmtConclusionDate',
-      'tvmtConclusion',
-      'finalStatus',
-    ]),
+    onSaved: (row) => {
+      highlightChangedRows([row], [
+        'pstoRequest',
+        'pstoRequestDate',
+        'pstoDate',
+        'pstoResult',
+        'heatTreatmentDiagram',
+        'tvmtRequest',
+        'tvmtRequestDate',
+        'tvmtResult',
+        'tvmtConclusionDate',
+        'tvmtConclusion',
+        'finalStatus',
+      ])
+      completeWorkflowRootCause('psto-result-manager')
+    },
   })
   const pstoTvmtCorrectionWithLaterCycleRemovalMutation = usePstoTvmtCorrectionWithLaterCycleRemovalMutation({
     setMessage,
-    onSaved: (row) => highlightChangedRows([row], [
-      'pstoRequest',
-      'pstoRequestDate',
-      'pstoDate',
-      'pstoResult',
-      'heatTreatmentDiagram',
-      'tvmtRequest',
-      'tvmtRequestDate',
-      'tvmtResult',
-      'tvmtConclusionDate',
-      'tvmtConclusion',
-      'finalStatus',
-    ]),
+    onSaved: (row) => {
+      highlightChangedRows([row], [
+        'pstoRequest',
+        'pstoRequestDate',
+        'pstoDate',
+        'pstoResult',
+        'heatTreatmentDiagram',
+        'tvmtRequest',
+        'tvmtRequestDate',
+        'tvmtResult',
+        'tvmtConclusionDate',
+        'tvmtConclusion',
+        'finalStatus',
+      ])
+      completeWorkflowRootCause('psto-result-manager')
+    },
   })
   const {
     selectedHeatTreatmentIds,
@@ -408,6 +452,30 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setSelectedWeldingJournalIds,
   } = useReportSelectionState()
   const deferredJointNextActionRef = useRef<DeferredJointNextAction | null>(null)
+  const workflowRootCauseStackRef = useRef<WorkflowRootCauseNavigationFrame[]>([])
+  const [currentWorkflowRootCauseAction, setCurrentWorkflowRootCauseAction] =
+    useState<WorkflowRootCauseAction | null>(null)
+  const [currentWorkflowRootCauseDestination, setCurrentWorkflowRootCauseDestination] =
+    useState<WorkflowRootCauseDestination | null>(null)
+  const returnFromWorkflowRootCause = useCallback(() => {
+    const frame = workflowRootCauseStackRef.current.pop()
+    if (!frame) return
+    frame.restore()
+    setCurrentWorkflowRootCauseAction(
+      workflowRootCauseStackRef.current.at(-1)?.action ?? null,
+    )
+    setCurrentWorkflowRootCauseDestination(
+      workflowRootCauseStackRef.current.at(-1)?.destination ?? null,
+    )
+  }, [])
+  function completeWorkflowRootCause(destination: WorkflowRootCauseDestination) {
+    if (workflowRootCauseStackRef.current.at(-1)?.destination !== destination) return
+    returnFromWorkflowRootCause()
+  }
+  useWorkflowRootCauseEscapeKey({
+    active: Boolean(currentWorkflowRootCauseAction),
+    onReturn: returnFromWorkflowRootCause,
+  })
   const consumedJournalSelectionTokenRef = useRef('')
   useEffect(() => {
     const token = options.journalSelectionToken?.trim() ?? ''
@@ -604,14 +672,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isPstoResultManagerOpen ||
     Boolean(tvmtWorkflowMode) ||
     Boolean(pstoRepeatWorkflowMode)
-  const isLnkDataModalOpen =
-    isLnkRequestModalOpen ||
-    isLnkRequestManagerOpen ||
-    isLnkResultModalOpen ||
-    isLnkResultManagerOpen ||
-    isLnkOfficialityModalOpen ||
-    Boolean(preHeatTreatmentLnkWorkflowMode) ||
-    isPreHeatTreatmentResultManagerOpen
   const isReportModalOpen =
     isImportDialogOpen || Boolean(rkExposureEditing) || isReportDataModalOpen || isPstoLineProgramOpen
 
@@ -684,9 +744,62 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isWeldingJournalGenerateMenuOpen ||
     isWeldingJournalShowMenuOpen
   const weldsQuery = useWeldsQuery({ enabled: shouldLoadFullWeldRows })
-  const shouldLoadLnkContext =
-    !shouldLoadFullWeldRows &&
-    (isLnkDataModalOpen || isLnkShowMenuOpen || isLnkWorkflowMenuOpen || heatTreatmentFieldEditing?.report === 'lnk')
+  const shouldLoadLnkContext = shouldLoadFullLnkReportContext({
+    shouldLoadFullWeldRows,
+    isLnkShowMenuOpen,
+    isLnkFieldEditing: heatTreatmentFieldEditing?.report === 'lnk',
+  })
+  const rootCauseLnkRowsRequest = useMemo(() => {
+    const target = currentWorkflowRootCauseAction?.target
+    if (!target || target.kind !== 'lnk-control') return null
+    if (target.stage === 'beforeHeatTreatment') {
+      return {
+        scope: target.documentPart === 'request'
+          ? 'preHeatTreatmentRequestRegistry' as const
+          : 'preHeatTreatmentResultRegistry' as const,
+        rowIds: [target.rowId],
+      }
+    }
+    if (currentWorkflowRootCauseDestination === 'lnk-request-manager') {
+      return { scope: 'requestRegistry' as const, rowIds: null }
+    }
+    if (currentWorkflowRootCauseDestination === 'lnk-request-dialog') {
+      return { scope: 'requestCandidates' as const, rowIds: null }
+    }
+    if (currentWorkflowRootCauseDestination === 'lnk-result-dialog') {
+      return { scope: 'resultCandidates' as const, rowIds: null }
+    }
+    return { scope: 'resultRegistry' as const, rowIds: [target.rowId] }
+  }, [currentWorkflowRootCauseAction, currentWorkflowRootCauseDestination])
+  const lnkWorkflowRowsRequest = useMemo(
+    () => rootCauseLnkRowsRequest ?? buildLnkWorkflowRowsRequest({
+      shouldLoadFullWeldRows,
+      isLnkRequestModalOpen,
+      isLnkRequestManagerOpen,
+      isLnkResultModalOpen,
+      isLnkResultManagerOpen,
+      isLnkOfficialityModalOpen,
+      preHeatTreatmentLnkWorkflowMode,
+      isPreHeatTreatmentResultManagerOpen,
+      preHeatTreatmentResultManagerMode,
+      managedLnkResultOrderIds,
+      preHeatTreatmentResultManagerRowIds,
+    }),
+    [
+      isLnkOfficialityModalOpen,
+      isLnkRequestManagerOpen,
+      isLnkRequestModalOpen,
+      isLnkResultManagerOpen,
+      isLnkResultModalOpen,
+      isPreHeatTreatmentResultManagerOpen,
+      managedLnkResultOrderIds,
+      preHeatTreatmentLnkWorkflowMode,
+      preHeatTreatmentResultManagerMode,
+      preHeatTreatmentResultManagerRowIds,
+      rootCauseLnkRowsRequest,
+      shouldLoadFullWeldRows,
+    ],
+  )
   const shouldLoadPstoContext =
     !shouldLoadFullWeldRows &&
     (isPstoDataModalOpen || isPstoShowMenuOpen || isPstoWorkflowMenuOpen || Boolean(heatTreatmentFieldEditing && heatTreatmentFieldEditing.report !== 'lnk'))
@@ -694,6 +807,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     enabled: shouldLoadLnkContext,
     report: 'lnk',
   })
+  const lnkWorkflowSummaryQuery = useLnkWorkflowSummaryQuery({
+    enabled: shouldLoadLnkWorkflowSummary({
+      isLnkReportActive: activeReport === 'lnk',
+      shouldLoadFullWeldRows,
+      isLnkWorkflowMenuOpen,
+      isLnkRequestModalOpen,
+      isLnkRequestManagerOpen,
+    }),
+  })
+  const lnkWorkflowRowsQuery = useLnkWorkflowRowsQuery({ request: lnkWorkflowRowsRequest })
   const pstoContextQuery = useWeldReportContextQuery({
     enabled: shouldLoadPstoContext,
     report: 'heatTreatment',
@@ -721,6 +844,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const rowsById = new Map<number, WeldRow>()
     const contextRows = [
       ...(shouldLoadLnkContext ? lnkContextQuery.data ?? [] : []),
+      ...(lnkWorkflowRowsRequest ? lnkWorkflowRowsQuery.data ?? [] : []),
       ...(shouldLoadPstoContext ? pstoContextQuery.data ?? [] : []),
     ]
     for (const row of contextRows) {
@@ -729,6 +853,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     return [...rowsById.values()]
   }, [
     lnkContextQuery.data,
+    lnkWorkflowRowsQuery.data,
+    lnkWorkflowRowsRequest,
     pstoContextQuery.data,
     shouldLoadFullWeldRows,
     shouldLoadLnkContext,
@@ -744,9 +870,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   )
   const isLnkRowsContextReady = shouldLoadFullWeldRows
     ? weldsQuery.data !== undefined
-    : shouldLoadLnkContext &&
-      lnkContextQuery.data !== undefined &&
-      isRemoteFinalStatusContextReady
+    : isRemoteFinalStatusContextReady && (
+      (shouldLoadLnkContext && lnkContextQuery.data !== undefined) ||
+      (lnkWorkflowRowsRequest !== null && lnkWorkflowRowsQuery.data !== undefined)
+    )
   const isPstoRowsContextReady = shouldLoadFullWeldRows
     ? weldsQuery.data !== undefined
     : shouldLoadPstoContext &&
@@ -900,6 +1027,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     managedLnkRequestName,
     managedLnkRequestDate,
     requestConclusionSettings,
+    lnkWorkflowSummary: lnkWorkflowSummaryQuery.data,
   })
   const {
     lnkRequestMutation,
@@ -918,6 +1046,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     lnkRequestOptions,
     setMessage,
     setLnkNotice,
+    onWorkflowCorrectionSaved: () => {
+      const destination = workflowRootCauseStackRef.current.at(-1)?.destination
+      if (
+        destination === 'lnk-request-dialog' ||
+        destination === 'lnk-request-manager' ||
+        destination === 'lnk-result-manager' ||
+        destination === 'lnk-result-dialog'
+      ) completeWorkflowRootCause(destination)
+    },
     highlightChangedRows,
     setSelectedLnkIds,
     setLnkRequestDraft,
@@ -937,6 +1074,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     defaultLnkRequestNaming,
     defaultLnkConclusionNaming,
   })
+  const forcedLnkResultEntry = useMemo(() => {
+    const target = currentWorkflowRootCauseAction?.target
+    if (
+      currentWorkflowRootCauseDestination !== 'lnk-result-manager' ||
+      target?.kind !== 'lnk-control' ||
+      target.documentPart !== 'request'
+    ) return undefined
+    const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
+    return method ? { rowId: target.rowId, methodKey: method.requestKey } : undefined
+  }, [currentWorkflowRootCauseAction, currentWorkflowRootCauseDestination])
   const {
     closeCreateLnkRequestModal,
     handleCreateLnkRequest,
@@ -999,6 +1146,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsLnkRequestManagerOpen(false)
     openCreateLnkRequestModal()
   }
+  function followSavedWeldRowInActiveReport(previousRow: WeldRow, savedRow: WeldRow) {
+    const updateFilters = (filters: Record<string, string>) =>
+      followUpdatedWeldRowFilters(filters, previousRow, savedRow)
+
+    if (activeReport === 'lnk') setLnkFilters(updateFilters)
+    else if (activeReport === 'heatTreatment') setHeatTreatmentFilters(updateFilters)
+    else if (activeReport === 'weldingJournal') setColumnFilters(updateFilters)
+  }
   const {
     deleteManyMutation,
     deleteMutation,
@@ -1017,6 +1172,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     editingFocusField: editing?.focusField,
     setEditing,
     setMessage,
+    onWeldRowSaved: followSavedWeldRowInActiveReport,
+    onWorkflowCorrectionSaved: () => completeWorkflowRootCause('weld-form'),
     highlightChangedRows,
     dismissRepeatedJointTask,
   })
@@ -1058,6 +1215,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     heatTreatmentRows,
     pstoRequestOptions,
     setMessage,
+    onWorkflowCorrectionSaved: () => {
+      const destination = workflowRootCauseStackRef.current.at(-1)?.destination
+      if (destination === 'psto-request-manager') completeWorkflowRootCause(destination)
+    },
     highlightChangedRows,
     setSelectedHeatTreatmentIds,
     setPstoRequestNaming,
@@ -1096,6 +1257,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     selectedPstoResultRows,
     systemDocumentCreationPlan: pstoResultSystemDocumentCreationPlan,
     pstoResultSaveBlockReason,
+    pstoResultRootCauseActions,
     managedPstoResultRows,
   } = usePstoResultDerivedState({
     heatTreatmentRows,
@@ -1122,6 +1284,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     selectedLnkResultRows,
     systemDocumentCreationPlan: lnkResultSystemDocumentCreationPlan,
     lnkResultSaveBlockReason,
+    lnkResultRootCauseActions,
     isLnkResultSaveDisabled,
   } = useLnkResultDerivedState({
     lnkRows,
@@ -1183,6 +1346,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     managedLnkResultOrderIds,
     managedLnkResultMethodKey,
     managedLnkPendingResultChanges,
+    forcedEntry: forcedLnkResultEntry,
   })
   const {
     changeManagedLnkConclusionDraft,
@@ -1320,7 +1484,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openAddLnkResultModalForRow(row)
   }
   const openAddLnkWorkflowResultFromHeader = () => {
-    const selectedRows = lnkRows.filter((row) => selectedLnkIds.has(row.id))
+    const selectedRows = tableActionRows.filter((row) => selectedLnkIds.has(row.id))
     if (
       selectedRows.length > 0 &&
       getCommonLnkResultStage(selectedRows) === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
@@ -1486,6 +1650,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const refreshDocumentAssignments = () => {
       if (shouldLoadFullWeldRows) void weldsQuery.refetch()
       if (lnkContextQuery.isEnabled) void lnkContextQuery.refetch()
+      if (lnkWorkflowRowsQuery.isEnabled) void lnkWorkflowRowsQuery.refetch()
       if (pstoContextQuery.isEnabled) void pstoContextQuery.refetch()
       if (isServerPagedTab) void weldPageQuery.refetch()
     }
@@ -1495,6 +1660,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isServerPagedTab,
     lnkContextQuery.isEnabled,
     lnkContextQuery.refetch,
+    lnkWorkflowRowsQuery.isEnabled,
+    lnkWorkflowRowsQuery.refetch,
     pstoContextQuery.isEnabled,
     pstoContextQuery.refetch,
     shouldLoadFullWeldRows,
@@ -1677,6 +1844,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openChainBaseInCurrentReport,
     openChainRowInCurrentReport,
     openLinkedReportRow,
+    openRepeatedJointTaskPicture,
     openRowsInReport,
     showRepeatedJointTask,
   } = useJointChainActions({
@@ -1792,7 +1960,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     )
 
     await saveDuplicateControlMutation.mutateAsync(payloads)
-    closeDuplicateControlModal()
+    if (workflowRootCauseStackRef.current.at(-1)?.destination === 'duplicate-control') {
+      completeWorkflowRootCause('duplicate-control')
+    } else {
+      closeDuplicateControlModal()
+    }
     setMessage(duplicateControlDraft.id ? 'Дубль-контроль обновлен' : `Дубль-контроль внесен: ${payloads.length}`)
   }
 
@@ -1811,6 +1983,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       id: control.id,
       expectedVersion: String(control.version ?? ''),
     })
+    if (workflowRootCauseStackRef.current.at(-1)?.destination === 'duplicate-control') {
+      completeWorkflowRootCause('duplicate-control')
+    }
     setMessage('Дубль-контроль удален')
   }
 
@@ -1839,6 +2014,21 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         return
       }
       handleEditRecord(fullRecord, fieldKey, returnPageScrollPosition)
+    })
+  }
+
+  async function openWeldEditorFromJointPicture(row: WeldRow) {
+    await runProtectedEdit('редактирование стыка', async () => {
+      const fullRecord = await getWeldJointById({ data: { id: row.id } })
+      if (!fullRecord) {
+        setMessage('Стык больше не найден. Обновите картину стыка и повторите действие.')
+        return
+      }
+      captureReportContext('weldingJournal')
+      setChainRecord(null)
+      setColumnFilters(buildExactJointFilters(fullRecord))
+      setActiveReport('weldingJournal')
+      setEditing({ record: fullRecord })
     })
   }
 
@@ -2119,6 +2309,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isTaskExpanded: isRepeatedJointTaskExpanded,
     onToggleDetails: toggleRepeatedJointTaskDetails,
     onShowTask: showRepeatedJointTask,
+    onOpenTaskPicture: openRepeatedJointTaskPicture,
     onOpenTaskOfficiality: openDispatcherTaskOfficiality,
     onCreateTask: createRepeatedJoint,
     onCreateEarlyCoil: (task) => runProtectedEdit('досрочная врезка катушки', () => createEarlyCoil(task)),
@@ -2579,9 +2770,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       const canCreateContextRequest = exactPreHeatTreatmentField
         ? canCreateExactPreRequest
         : contextRows.every(canCreateLnkWorkflowRequest) && Boolean(contextRequestStage)
-      const hasPreHeatTreatmentRequestOption = lnkRows.some((candidate) => (
-        getPreHeatTreatmentControls(candidate).some((control) => Boolean(String(control.requestName ?? '').trim()))
-      ))
+      const hasPreHeatTreatmentRequestOption = lnkWorkflowSummaryQuery.data
+        ? lnkWorkflowSummaryQuery.data.preHeatTreatmentRequestRowCount > 0
+        : lnkRows.some((candidate) => (
+            getPreHeatTreatmentControls(candidate).some((control) => Boolean(String(control.requestName ?? '').trim()))
+          ))
       const hasContextRequestExtensionOption = contextRequestStage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
         ? hasPreHeatTreatmentRequestOption
         : lnkRequestExtensionOptions.length > 0
@@ -2997,16 +3190,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       getPreHeatTreatmentControls(row).some((control) => Boolean(String(control.requestName ?? '').trim()))
     ))
   }, [lnkRows, preHeatTreatmentResultManagerRowIds])
-  const hasPreHeatTreatmentResultRegistryRows = useMemo(
-    () => lnkRows.some((row) => getPreHeatTreatmentControls(row).some((control) =>
-      isFinalLnkResultValue(control.result),
-    )),
-    [lnkRows],
-  )
-  const hasPrimaryLnkResultRegistryRows = useMemo(
-    () => lnkRows.some((row) => getLnkResultNavigationEntries(row).length > 0),
-    [lnkRows],
-  )
+  const hasPreHeatTreatmentResultRegistryRows = lnkWorkflowSummaryQuery.data
+    ? lnkWorkflowSummaryQuery.data.preHeatTreatmentResultRowCount > 0
+    : lnkRows.some((row) => getPreHeatTreatmentControls(row).some((control) =>
+        isFinalLnkResultValue(control.result),
+      ))
+  const hasPrimaryLnkResultRegistryRows = lnkWorkflowSummaryQuery.data
+    ? lnkWorkflowSummaryQuery.data.primaryResultRowCount > 0
+    : lnkRows.some((row) => getLnkResultNavigationEntries(row).length > 0)
   useEffect(() => {
     if (!isPstoRequestManagerOpen || managedPstoRequestName || pstoRequestManagerOptions.length === 0) return
     const request = pstoRequestManagerOptions[0]
@@ -3020,6 +3211,20 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setManagedPstoRequestDate,
     setManagedPstoRequestName,
     setManagedPstoRequestNameDraft,
+  ])
+  useEffect(() => {
+    if (!isLnkRequestManagerOpen || managedLnkRequestName || lnkRequestManagerOptions.length === 0) return
+    const request = lnkRequestManagerOptions[0]
+    setManagedLnkRequestName(request.name)
+    setManagedLnkRequestDate(request.date)
+    setManagedLnkRequestNameDraft(request.name)
+  }, [
+    isLnkRequestManagerOpen,
+    lnkRequestManagerOptions,
+    managedLnkRequestName,
+    setManagedLnkRequestDate,
+    setManagedLnkRequestName,
+    setManagedLnkRequestNameDraft,
   ])
   useEffect(() => {
     if (!isPstoResultManagerOpen || !isPstoResultRegistryAll) {
@@ -3097,7 +3302,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenPstoResultsReport: openPstoResultsReport,
     onPstoWorkflowMenuOpenChange: setIsPstoWorkflowMenuOpen,
     onCreateLnkRequest: () => {
-      const selectedRows = lnkRows.filter((row) => selectedLnkIds.has(row.id))
+      const selectedRows = tableActionRows.filter((row) => selectedLnkIds.has(row.id))
       openCreateLnkWorkflowRequestForRows(selectedRows)
     },
     onExtendLnkRequest: () => openExtendLnkRequestModal(),
@@ -3106,8 +3311,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onAddLnkResult: openAddLnkWorkflowResultFromHeader,
     lnkResultDisabled:
       lnkResultMutation.isPending ||
-      !isLnkRowsContextReady ||
-      selectedLnkResultMethods.length === 0,
+      (lnkWorkflowSummaryQuery.data
+        ? lnkWorkflowSummaryQuery.data.pendingPrimaryResultRowCount === 0
+        : !isLnkRowsContextReady || selectedLnkResultMethods.length === 0),
     onEditSelectedLnkResults: openSelectedLnkResultRegistry,
     editSelectedLnkResultsDisabled:
       selectedLnkIds.size === 0 ||
@@ -3120,7 +3326,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       openAllLnkResultRegistry()
     },
     lnkResultRegistryDisabled:
-      isLnkRowsContextReady &&
+      (lnkWorkflowSummaryQuery.data !== undefined || isLnkRowsContextReady) &&
       !hasPrimaryLnkResultRegistryRows &&
       !hasPreHeatTreatmentResultRegistryRows,
     onOpenLnkOfficiality: openLnkOfficialityModal,
@@ -3222,6 +3428,252 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     return 'Диспетчер скроет текущее предупреждение о негодном первичном стыке процентной линии. Используй это только если стык должен остаться официальным, а увеличение объема контроля принято осознанно.'
   }
 
+  function captureWorkflowRootCauseRestore(destination: WorkflowRootCauseDestination) {
+    if (destination === 'weld-form') {
+      const previous = editing
+      return () => setEditing(previous)
+    }
+    if (destination === 'lnk-request-manager') {
+      const previous = {
+        open: isLnkRequestManagerOpen,
+        name: managedLnkRequestName,
+        date: managedLnkRequestDate,
+        nameDraft: managedLnkRequestNameDraft,
+      }
+      return () => {
+        setManagedLnkRequestName(previous.name)
+        setManagedLnkRequestDate(previous.date)
+        setManagedLnkRequestNameDraft(previous.nameDraft)
+        setIsLnkRequestManagerOpen(previous.open)
+      }
+    }
+    if (destination === 'lnk-request-dialog') {
+      const previous = {
+        open: isLnkRequestModalOpen,
+        draft: lnkRequestDraft,
+        naming: lnkRequestNaming,
+        search: lnkRequestSearch,
+        composerMode: lnkRequestComposerMode,
+        targetKey: lnkRequestTargetKey,
+        selectedIds: selectedLnkIds,
+        orderIds: preservedLnkOrderIds,
+      }
+      return () => {
+        setLnkRequestDraft(previous.draft)
+        setLnkRequestNaming(previous.naming)
+        setLnkRequestSearch(previous.search)
+        setLnkRequestComposerMode(previous.composerMode)
+        setLnkRequestTargetKey(previous.targetKey)
+        setSelectedLnkIds(previous.selectedIds)
+        setPreservedLnkOrderIds(previous.orderIds)
+        setIsLnkRequestModalOpen(previous.open)
+      }
+    }
+    if (destination === 'lnk-result-manager') {
+      const previous = {
+        open: isLnkResultManagerOpen,
+        methodKey: managedLnkResultMethodKey,
+        conclusionDrafts: managedLnkConclusionDrafts,
+        orderIds: managedLnkResultOrderIds,
+        targetKey: managedLnkResultTargetKey,
+        changeHint: managedLnkResultChangeHint,
+        pendingChanges: managedLnkPendingResultChanges,
+      }
+      return () => {
+        setManagedLnkResultMethodKey(previous.methodKey)
+        setManagedLnkConclusionDrafts(previous.conclusionDrafts)
+        setManagedLnkResultOrderIds(previous.orderIds)
+        setManagedLnkResultTargetKey(previous.targetKey)
+        setManagedLnkResultChangeHint(previous.changeHint)
+        setManagedLnkPendingResultChanges(previous.pendingChanges)
+        setIsLnkResultManagerOpen(previous.open)
+      }
+    }
+    if (destination === 'lnk-result-dialog') {
+      const previous = {
+        open: isLnkResultModalOpen,
+        draft: lnkResultDraft,
+        orderIds: preservedLnkOrderIds,
+      }
+      return () => {
+        setLnkResultDraft(previous.draft)
+        setPreservedLnkOrderIds(previous.orderIds)
+        setIsLnkResultModalOpen(previous.open)
+      }
+    }
+    if (destination === 'pre-lnk-manager') {
+      const previous = {
+        open: isPreHeatTreatmentResultManagerOpen,
+        rowIds: preHeatTreatmentResultManagerRowIds,
+        relationId: preHeatTreatmentResultManagerInitialRelationId,
+        mode: preHeatTreatmentResultManagerMode,
+      }
+      return () => {
+        setPreHeatTreatmentResultManagerRowIds(previous.rowIds)
+        setPreHeatTreatmentResultManagerInitialRelationId(previous.relationId)
+        setPreHeatTreatmentResultManagerMode(previous.mode)
+        setIsPreHeatTreatmentResultManagerOpen(previous.open)
+      }
+    }
+    if (destination === 'psto-request-manager') {
+      const previous = {
+        open: isPstoRequestManagerOpen,
+        name: managedPstoRequestName,
+        date: managedPstoRequestDate,
+        nameDraft: managedPstoRequestNameDraft,
+      }
+      return () => {
+        setManagedPstoRequestName(previous.name)
+        setManagedPstoRequestDate(previous.date)
+        setManagedPstoRequestNameDraft(previous.nameDraft)
+        setIsPstoRequestManagerOpen(previous.open)
+      }
+    }
+    if (destination === 'psto-result-manager') {
+      const previous = {
+        open: isPstoResultManagerOpen,
+        registryAll: isPstoResultRegistryAll,
+        resultDraft: pstoResultDraft,
+        diagramDrafts: managedPstoDiagramDrafts,
+      }
+      return () => {
+        setIsPstoResultRegistryAll(previous.registryAll)
+        setPstoResultDraft(previous.resultDraft)
+        setManagedPstoDiagramDrafts(previous.diagramDrafts)
+        setIsPstoResultManagerOpen(previous.open)
+      }
+    }
+    const previous = {
+      open: isDuplicateControlModalOpen,
+      draft: duplicateControlDraft,
+    }
+    return () => {
+      setDuplicateControlDraft(previous.draft)
+      setIsDuplicateControlModalOpen(previous.open)
+    }
+  }
+
+  async function openWorkflowRootCauseAction(action: WorkflowRootCauseAction) {
+    const target = action.target
+    let currentRow: Awaited<ReturnType<typeof getWeldJointById>>
+    try {
+      currentRow = await getWeldJointById({ data: { id: target.rowId } })
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить стык для исправления.')
+      return
+    }
+    if (!currentRow) {
+      setMessage('Стык для исправления больше не найден. Обновите расчет и повторите действие.')
+      return
+    }
+    const row = currentRow as WeldRow
+    const destination = getWorkflowRootCauseDestination(target, row)
+    const restore = captureWorkflowRootCauseRestore(destination)
+    workflowRootCauseStackRef.current.push({ action, destination, restore })
+    setCurrentWorkflowRootCauseAction(action)
+    setCurrentWorkflowRootCauseDestination(destination)
+
+    try {
+      if (destination === 'weld-form' && target.kind === 'weld-field') {
+        setEditing({ record: row, focusField: target.fieldKey })
+      } else if (destination === 'lnk-request-dialog' && target.kind === 'lnk-control') {
+        const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
+        if (!method) throw new Error('Вид контроля для исправления не найден.')
+        const defaultDraft = createDefaultLnkRequestDraft()
+        const currentDate = String(row[method.requestDateKey] ?? '').trim().slice(0, 10)
+        setPreservedLnkOrderIds([...new Set([...lnkRows.map((candidate) => candidate.id), row.id])])
+        setSelectedLnkIds(new Set([row.id]))
+        setLnkRequestDraft({
+          ...defaultDraft,
+          requestDate: currentDate || defaultDraft.requestDate,
+          methods: new Set([method.requestKey]),
+        })
+        setLnkRequestNaming(defaultLnkRequestNaming)
+        setLnkRequestSearch(String(row.joint ?? row.line ?? ''))
+        setLnkRequestComposerMode('create')
+        setLnkRequestTargetKey('')
+        setIsLnkRequestModalOpen(true)
+      } else if (destination === 'lnk-request-manager' && target.kind === 'lnk-control') {
+        const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
+        const identity = getCurrentWorkflowRequestIdentity(target, row)
+        if (!method || !identity?.name) throw new Error('Заявка ЛНК для исправления уже изменилась.')
+        setManagedLnkRequestName(identity.name)
+        setManagedLnkRequestDate(identity.date)
+        setManagedLnkRequestNameDraft(identity.name)
+        setIsLnkRequestManagerOpen(true)
+      } else if (destination === 'lnk-result-manager' && target.kind === 'lnk-control') {
+        const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
+        if (!method) throw new Error('Вид контроля для исправления не найден.')
+        setManagedLnkResultMethodKey(method.requestKey)
+        setManagedLnkConclusionDrafts({})
+        setManagedLnkResultOrderIds([row.id])
+        setManagedLnkResultTargetKey(getManagedLnkResultChangeKey(row.id, method.requestKey))
+        setManagedLnkResultChangeHint(null)
+        setManagedLnkPendingResultChanges({})
+        setIsLnkResultManagerOpen(true)
+      } else if (destination === 'lnk-result-dialog' && target.kind === 'lnk-control') {
+        const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
+        if (!method) throw new Error('Вид контроля для исправления не найден.')
+        const requestName = String(row[method.requestKey] ?? '').trim()
+        const requestDate = String(row[method.requestDateKey] ?? '').trim()
+        if (!requestName) throw new Error(`Для ${method.code} сначала нужна заявка.`)
+        setPreservedLnkOrderIds([...new Set([...lnkRows.map((candidate) => candidate.id), row.id])])
+        setLnkResultDraft({
+          ...createDefaultLnkResultDraft(defaultLnkConclusionNaming),
+          requestName,
+          requestDate,
+          methodKey: method.requestKey,
+          rowIds: new Set([row.id]),
+          search: String(row.joint ?? row.line ?? ''),
+        })
+        setIsLnkResultModalOpen(true)
+      } else if (destination === 'pre-lnk-manager' && target.kind === 'lnk-control') {
+        setPreHeatTreatmentResultManagerRowIds([row.id])
+        setPreHeatTreatmentResultManagerInitialRelationId(target.relationId ?? null)
+        setPreHeatTreatmentResultManagerMode(target.documentPart === 'request' ? 'request' : 'result')
+        setIsPreHeatTreatmentResultManagerOpen(true)
+      } else if (destination === 'psto-request-manager' && target.kind === 'psto-cycle') {
+        const identity = getCurrentWorkflowRequestIdentity(target, row)
+        if (!identity?.name) throw new Error('Заявка ПСТО для исправления уже изменилась.')
+        setManagedPstoRequestName(identity.name)
+        setManagedPstoRequestDate(identity.date)
+        setManagedPstoRequestNameDraft(identity.name)
+        setIsPstoRequestManagerOpen(true)
+      } else if (destination === 'psto-result-manager' && target.kind === 'psto-cycle') {
+        setPstoResultDraft((current) => ({ ...current, rowIds: new Set([row.id]) }))
+        setManagedPstoDiagramDrafts({})
+        setIsPstoResultRegistryAll(false)
+        setIsPstoResultManagerOpen(true)
+      } else if (destination === 'duplicate-control' && target.kind === 'duplicate-control') {
+        const control = row.duplicateControls?.find((candidate) => candidate.id === target.relationId)
+          ?? duplicateControls.find((candidate) => candidate.id === target.relationId)
+        setDuplicateControlDraft(control ? {
+          id: control.id,
+          expectedVersion: String(control.version ?? ''),
+          rowIds: new Set([control.weldJointId]),
+          methods: new Set([control.method]),
+          result: control.result,
+          controlDate: control.controlDate,
+          conclusion: control.conclusion,
+          conclusionDate: control.conclusionDate,
+          search: String(row.joint ?? ''),
+        } : {
+          ...createEmptyDuplicateControlDraft(),
+          rowIds: new Set([row.id]),
+          search: String(row.joint ?? ''),
+        })
+        setIsDuplicateControlModalOpen(true)
+      }
+      setMessage(`${action.label}. После исправления вы вернетесь в исходное окно.`)
+    } catch (error) {
+      workflowRootCauseStackRef.current.pop()
+      restore()
+      setCurrentWorkflowRootCauseAction(workflowRootCauseStackRef.current.at(-1)?.action ?? null)
+      setCurrentWorkflowRootCauseDestination(workflowRootCauseStackRef.current.at(-1)?.destination ?? null)
+      setMessage(error instanceof Error ? error.message : 'Не удалось открыть место исправления.')
+    }
+  }
+
   async function editPercentageLineTaskStamp(task: PercentageLineControlTask) {
     if (task.issue !== 'new-welder') return
     const record = await getWeldJointById({ data: { id: task.row.id } })
@@ -3274,8 +3726,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   async function runDispatcherTaskAction(
     _selectedRow: WeldRow,
     task: RepeatedJointTask,
-    actionId: DispatcherTaskActionId,
+    action: DispatcherTaskActionId | DispatcherTaskActionSpec,
   ) {
+    const actionId = typeof action === 'string' ? action : action.id
+    if (actionId === 'open-root-cause' && typeof action !== 'string' && action.rootCauseAction) {
+      await openWorkflowRootCauseAction(action.rootCauseAction)
+      return
+    }
     if (actionId === 'create-joint' && (task.kind === 'create' || task.kind === 'coil')) {
       await createRepeatedJoint(task, { fromChain: true })
       return
@@ -3391,7 +3848,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (actionId === 'show-task') showRepeatedJointTask(task)
   }
 
-  const reportLoadError = isServerPagedTab ? weldPageQuery.error : weldsQuery.error
+  const reportContextLoadError =
+    (lnkWorkflowRowsQuery.isEnabled ? lnkWorkflowRowsQuery.error : null) ??
+    (lnkWorkflowSummaryQuery.isEnabled ? lnkWorkflowSummaryQuery.error : null) ??
+    (lnkContextQuery.isEnabled ? lnkContextQuery.error : null) ??
+    (pstoContextQuery.isEnabled ? pstoContextQuery.error : null) ??
+    (finalStatusContextQuery.isEnabled ? finalStatusContextQuery.error : null)
+  const reportLoadError = reportContextLoadError ?? (isServerPagedTab ? weldPageQuery.error : weldsQuery.error)
   const reportLoadErrorMessage = reportLoadError instanceof Error ? reportLoadError.message : null
   const reportSummaryBarProps = createReportSummaryBarProps({
     activeReport,
@@ -3505,7 +3968,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (action.kind === 'dispatcherTask') {
       const task = adviceRepeatedJointTasks.find((candidate) => candidate.key === action.taskKey)
       if (options.runDispatcherAction && task && action.taskActionId) {
-        void runDispatcherTaskAction(row, task, action.taskActionId)
+        void runDispatcherTaskAction(row, task, action.taskAction ?? action.taskActionId)
         return
       }
       openRowsInReport([task?.row ?? row], 'weldingJournal')
@@ -3541,6 +4004,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenRow: openChainRowInCurrentReport,
     onOpenDocument: openReportDocument,
     onOpenReport: (row, report) => openRowsInReport([row], report),
+    onEditRow: openWeldEditorFromJointPicture,
     onRunNextAction: (row, action) => runJointNextAction(row, action, { runDispatcherAction: true }),
     onRunDispatcherTaskAction: runDispatcherTaskAction,
     canCreateRepeatedJoint: true,
@@ -3558,6 +4022,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onRetry: retryChainRows,
   })
   const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
+  const activeRootCauseTarget = currentWorkflowRootCauseAction?.target
   const saveEditedWeld = (value: WeldInput) => {
     if (!editing) return
     const saveValue: WeldDraft = {
@@ -3611,6 +4076,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           onConfirm: confirmPstoLineMove,
         }
       : null,
+    elevated: currentWorkflowRootCauseDestination === 'weld-form',
+    onRunRootCauseAction: openWorkflowRootCauseAction,
   })
   const reportFieldEditorProps = createReportFieldEditorProps({
     editing: heatTreatmentFieldEditing,
@@ -3715,10 +4182,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onToggleAllRows: toggleAllPstoRequestRows,
       onToggleRow: togglePstoRequestRow,
       onSubmit: () => runProtectedEdit('создание заявки ПСТО', submitCreatePstoRequest),
+      onRunRootCauseAction: openWorkflowRootCauseAction,
     },
     filteredAvailableRequestRows: filteredAvailablePstoRequestRows,
     requestManagerOpen: isPstoRequestManagerOpen,
     requestManager: {
+      elevated: currentWorkflowRootCauseDestination === 'psto-request-manager',
       requestName: managedPstoRequestName,
       requestDate: managedPstoRequestDate,
       requestOptions: pstoRequestManagerOptions,
@@ -3727,7 +4196,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isManagerPending: pstoRequestManagerMutation.isPending,
       isCorrectionPending: pstoRequestCorrectionMutation.isPending,
       canOpenDocument: availableSystemDocumentTypes.has('pstoRequest'),
-      onClose: () => setIsPstoRequestManagerOpen(false),
+      onClose: currentWorkflowRootCauseDestination === 'psto-request-manager'
+        ? returnFromWorkflowRootCause
+        : () => setIsPstoRequestManagerOpen(false),
       onChangeRequest: changeManagedPstoRequest,
       onRequestNameDraftChange: setManagedPstoRequestNameDraft,
       onRenameRequest: () => runProtectedEdit('переименование заявки ПСТО', renameManagedPstoRequest),
@@ -3737,6 +4208,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onCopyDocumentName: copyManagerDocumentName,
       onClearPosition: (row) => runProtectedDelete('очистку позиции заявки ПСТО', () => clearManagedPstoRequestPosition(row)),
       onDeleteRequest: (request) => runProtectedDelete('удаление заявки ПСТО', () => deleteManagedPstoRequest(request)),
+      rootCauseTarget: activeRootCauseTarget?.kind === 'psto-cycle' ? activeRootCauseTarget : undefined,
+      onRunRootCauseAction: openWorkflowRootCauseAction,
+      onDocumentDateSaved: returnFromWorkflowRootCause,
+      onMessage: setMessage,
     },
     resultModalOpen: isPstoResultModalOpen,
     result: {
@@ -3750,6 +4225,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       filteredRequestOptions: filteredPstoResultRequestOptions,
       availableRequestOptions: pstoResultAvailableRequestOptions,
       saveBlockReason: pstoResultSaveBlockReason,
+      rootCauseActions: pstoResultRootCauseActions,
+      onRunRootCauseAction: openWorkflowRootCauseAction,
       requestRows: pstoResultSearchRows,
       onDraftChange: setPstoResultDraft,
       onRequestSearchChange: setPstoResultRequestSearch,
@@ -3784,6 +4261,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     },
     resultManagerOpen: isPstoResultManagerOpen,
     resultManager: {
+      elevated: currentWorkflowRootCauseDestination === 'psto-result-manager',
       rows: managedPstoResultRows,
       diagramDrafts: managedPstoDiagramDrafts,
       isPending:
@@ -3791,7 +4269,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         pstoCycleCorrectionMutation.isPending ||
         pstoTvmtCorrectionWithLaterCycleRemovalMutation.isPending,
       canOpenDocument: availableSystemDocumentTypes.has('pstoConclusion'),
-      onClose: closePstoResultManager,
+      onClose: currentWorkflowRootCauseDestination === 'psto-result-manager'
+        ? returnFromWorkflowRootCause
+        : closePstoResultManager,
       onDiagramDraftChange: (rowId, value) =>
         setManagedPstoDiagramDrafts((current) => ({ ...current, [rowId]: value })),
       onRenameDiagram: (row, diagramName) =>
@@ -3804,7 +4284,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       },
       onDeleteStage: async (row, payload) => {
         const confirmed = await confirmAction({
-          title: `Удалить: ${getPstoCycleStageLabel(payload.stage).toLocaleLowerCase('ru-RU')}`,
+          title: `Удалить: ${getPstoCycleStageInlineLabel(payload.stage)}`,
           itemName: String(row.joint ?? '-').trim() || '-',
           description: 'Будет удален только выбранный последний этап. Предыдущие заявки, результаты и документы сохранятся.',
           warning: 'Документы основного ЛНК не удаляются. Если от этапа зависят последующие документы или возникнет новое нарушение хронологии, удаление будет заблокировано.',
@@ -3853,6 +4333,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         const templateId = getSystemDocumentTemplateIdForField(fieldKey)
         return Boolean(templateId && availableSystemDocumentTypes.has(templateId))
       },
+      initialRowId: activeRootCauseTarget?.kind === 'psto-cycle' ? activeRootCauseTarget.rowId : undefined,
+      initialSequence: activeRootCauseTarget?.kind === 'psto-cycle' ? activeRootCauseTarget.sequence : undefined,
+      initialStage: activeRootCauseTarget?.kind === 'psto-cycle' ? activeRootCauseTarget.stage : undefined,
+      rootCauseTarget: activeRootCauseTarget?.kind === 'psto-cycle' ? activeRootCauseTarget : undefined,
+      onRunRootCauseAction: openWorkflowRootCauseAction,
+      onDocumentDateSaved: returnFromWorkflowRootCause,
+      onMessage: setMessage,
     },
     tvmtWorkflow: tvmtWorkflowMode
       ? {
@@ -3868,6 +4355,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           onOpenJournalRows: openModalRowsInWeldingJournal,
           onOpenPstoHistory: openPstoHistoryFromDialog,
           onOpenResultManager: openPstoHistoryRowsFromDialog,
+          onRunRootCauseAction: openWorkflowRootCauseAction,
         }
       : null,
     repeatWorkflow: pstoRepeatWorkflowMode
@@ -3884,6 +4372,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           onOpenJournalRows: openModalRowsInWeldingJournal,
           onOpenPstoHistory: openPstoHistoryFromDialog,
           onOpenResultManager: openPstoHistoryRowsFromDialog,
+          onRunRootCauseAction: openWorkflowRootCauseAction,
         }
       : null,
     lineProgram: isPstoLineProgramOpen
@@ -3902,6 +4391,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const reportLnkDialogsProps = createReportLnkDialogsProps({
     requestModalOpen: isLnkRequestModalOpen,
     request: {
+      elevated: currentWorkflowRootCauseDestination === 'lnk-request-dialog',
       nextRequestName: nextLnkRequestName,
       nextRequestNumber: nextLnkRequestNumber,
       selectedRowsCount: selectedLnkRows.length,
@@ -3921,7 +4411,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       selectedIds: selectedLnkIds,
       isPending: lnkRequestMutation.isPending || lnkRequestExtensionMutation.isPending,
       saveCheckSettings,
-      onClose: closeCreateLnkRequestModal,
+      onClose: currentWorkflowRootCauseDestination === 'lnk-request-dialog'
+        ? returnFromWorkflowRootCause
+        : closeCreateLnkRequestModal,
       onOpenRequestRegistry: () => openLnkRequestRegistry(),
       onRequestNamingChange: setLnkRequestNaming,
       onRequestDateChange: (requestDate) => setLnkRequestDraft((current) => ({ ...current, requestDate })),
@@ -3949,9 +4441,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onSubmit: (methodKeys) => runProtectedEdit('создание заявки ЛНК', () => handleCreateLnkRequest(methodKeys)),
       onExtendRequest: (methodKeys, request) =>
         runProtectedEdit('добавление позиций в заявку ЛНК', () => handleExtendLnkRequest(methodKeys, request)),
+      onRunRootCauseAction: openWorkflowRootCauseAction,
     },
     requestManagerOpen: isLnkRequestManagerOpen,
     requestManager: {
+      elevated: currentWorkflowRootCauseDestination === 'lnk-request-manager',
       requestName: managedLnkRequestName,
       requestDate: managedLnkRequestDate,
       requestOptions: lnkRequestExtensionOptions,
@@ -3965,7 +4459,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         const templateId = getSystemDocumentTemplateIdForField(fieldKey)
         return Boolean(templateId && availableSystemDocumentTypes.has(templateId))
       },
-      onClose: closeLnkRequestManager,
+      onClose: currentWorkflowRootCauseDestination === 'lnk-request-manager'
+        ? returnFromWorkflowRootCause
+        : closeLnkRequestManager,
       onStageChange: controlProcessSettings.preHeatTreatmentLnkEnabled
         ? () => openPreHeatTreatmentResultRegistry({
             rowIds: managedLnkRequestRows.map((row) => row.id),
@@ -3995,9 +4491,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onClearPosition: (row, methodKey) =>
         runProtectedDelete('очистку позиции заявки ЛНК', () => clearManagedLnkRequestPosition(row, methodKey)),
       onDeleteRequest: (request) => runProtectedDelete('удаление заявки ЛНК', () => deleteManagedLnkRequest(request)),
+      rootCauseTarget: activeRootCauseTarget?.kind === 'lnk-control' ? activeRootCauseTarget : undefined,
+      onRunRootCauseAction: openWorkflowRootCauseAction,
+      onDocumentDateSaved: returnFromWorkflowRootCause,
+      onMessage: setMessage,
     },
     resultManagerOpen: isLnkResultManagerOpen,
     resultManager: {
+      elevated: currentWorkflowRootCauseDestination === 'lnk-result-manager',
       rows: managedLnkResultRows,
       methods: managedLnkResultMethods,
       entries: managedLnkResultEntries,
@@ -4011,7 +4512,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isResultCorrectionPending: lnkResultCorrectionMutation.isPending,
       isResultReplacementPending: lnkResultReplacementMutation.isPending,
       isConclusionCorrectionPending: lnkConclusionCorrectionMutation.isPending,
-      onClose: closeLnkResultManager,
+      isRequestCorrectionPending: lnkRequestCorrectionMutation.isPending,
+      onClose: currentWorkflowRootCauseDestination === 'lnk-result-manager'
+        ? returnFromWorkflowRootCause
+        : closeLnkResultManager,
       onStageChange: controlProcessSettings.preHeatTreatmentLnkEnabled
         ? () => openPreHeatTreatmentResultRegistry({
             rowIds: managedLnkResultRows.map((row) => row.id),
@@ -4038,11 +4542,25 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           'переименование заключения ЛНК',
           () => renameManagedLnkConclusionForRow(row, methodKey, conclusionName),
         ),
+      onRepairRequest: (row, methodKey, requestName, requestDate) =>
+        runProtectedEdit(
+          'восстановление заявки ЛНК',
+          () => lnkRequestCorrectionMutation.mutateAsync({
+            record: row,
+            methodKey,
+            requestName,
+            requestDate,
+          }),
+        ),
       onReplaceResult: (row, methodKey, result) =>
         runProtectedEdit('изменение результата ЛНК', () => replaceLnkResult(row, methodKey, result)),
       onClearResult: (row, methodKey) => runProtectedDelete('очистку результата ЛНК', () => clearLnkResult(row, methodKey)),
       onResetPendingChanges: resetManagedLnkResultChanges,
       onSaveChanges: () => runProtectedEdit('сохранение изменений результатов ЛНК', saveManagedLnkResultChanges),
+      rootCauseTarget: activeRootCauseTarget?.kind === 'lnk-control' ? activeRootCauseTarget : undefined,
+      onRunRootCauseAction: openWorkflowRootCauseAction,
+      onDocumentDateSaved: returnFromWorkflowRootCause,
+      onMessage: setMessage,
     },
     officialityModalOpen: isLnkOfficialityModalOpen,
     officiality: {
@@ -4060,6 +4578,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     },
     duplicateControlModalOpen: isDuplicateControlModalOpen,
     duplicateControl: {
+      elevated: currentWorkflowRootCauseDestination === 'duplicate-control',
       draft: duplicateControlDraft,
       filteredRows: filteredDuplicateControlRows,
       selectedRows: selectedDuplicateControlRows,
@@ -4067,7 +4586,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       controls: duplicateControlDialogControls,
       saveBlockReason: duplicateControlSaveBlockReason,
       isSaving: saveDuplicateControlMutation.isPending || deleteDuplicateControlMutation.isPending,
-      onClose: closeDuplicateControlModal,
+      onClose: currentWorkflowRootCauseDestination === 'duplicate-control'
+        ? returnFromWorkflowRootCause
+        : closeDuplicateControlModal,
       onSave: saveDuplicateControl,
       onDelete: deleteDuplicateControlRecord,
       onEdit: editDuplicateControl,
@@ -4078,6 +4599,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     },
     resultModalOpen: isLnkResultModalOpen,
     result: {
+      elevated: currentWorkflowRootCauseDestination === 'lnk-result-dialog',
       draft: lnkResultDraft,
       selectedMethods: selectedLnkResultMethods,
       requestRows: lnkResultSearchRows,
@@ -4087,10 +4609,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       systemDocumentCreationPlan: lnkResultSystemDocumentCreationPlan,
       saveCheckSettings,
       saveBlockReason: lnkResultSaveBlockReason,
+      rootCauseActions: lnkResultRootCauseActions,
+      onRunRootCauseAction: openWorkflowRootCauseAction,
       isSaveDisabled: isLnkResultSaveDisabled,
       contextReady: lnkResultContextReady,
       canBulkToggleRows: canBulkToggleLnkResultRows,
-      onClose: closeAddLnkResultModal,
+      onClose: currentWorkflowRootCauseDestination === 'lnk-result-dialog'
+        ? returnFromWorkflowRootCause
+        : closeAddLnkResultModal,
       onOpenManager: openAllLnkResultRegistry,
       onMethodChange: changeLnkResultMethod,
       onControlDateChange: (controlDate) => setLnkResultDraft((current) => ({ ...current, controlDate })),
@@ -4160,16 +4686,20 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
             rowIds,
             requestSubmitMode,
           ),
+          onRunRootCauseAction: openWorkflowRootCauseAction,
         }
       : null,
     preHeatTreatmentResultManager: isPreHeatTreatmentResultManagerOpen
       ? {
+          elevated: currentWorkflowRootCauseDestination === 'pre-lnk-manager',
           readOnly: !controlProcessSettings.preHeatTreatmentLnkEnabled,
           rows: preHeatTreatmentResultRegistryRows,
           registryMode: preHeatTreatmentResultManagerMode,
           initialRelationId: preHeatTreatmentResultManagerInitialRelationId,
           isPending: preHeatTreatmentResultCorrectionMutation.isPending,
-          onClose: closePreHeatTreatmentResultRegistry,
+          onClose: currentWorkflowRootCauseDestination === 'pre-lnk-manager'
+            ? returnFromWorkflowRootCause
+            : closePreHeatTreatmentResultRegistry,
           onStageChange: openPrimaryLnkRegistryFromPreHeatTreatment,
           onOpenWorkflow: () => openPreHeatTreatmentLnkWorkflow(preHeatTreatmentResultManagerMode),
           onCorrect: (payload) => {
@@ -4187,6 +4717,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
             const templateId = getSystemDocumentTemplateIdForField(fieldKey)
             return Boolean(templateId && availableSystemDocumentTypes.has(templateId))
           },
+          rootCauseTarget: activeRootCauseTarget?.kind === 'lnk-control' ? activeRootCauseTarget : undefined,
+          onRunRootCauseAction: openWorkflowRootCauseAction,
+          onDocumentDateSaved: returnFromWorkflowRootCause,
+          onMessage: setMessage,
         }
       : null,
   })
@@ -4243,6 +4777,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     reportFieldEditorProps,
     reportRkExposureDialogProps,
     reportImportDialogProps,
+    rootCauseNavigationProps: currentWorkflowRootCauseAction
+      ? {
+          actionLabel: currentWorkflowRootCauseAction.label,
+          depth: workflowRootCauseStackRef.current.length,
+          onReturn: returnFromWorkflowRootCause,
+        }
+      : null,
   }
 }
 

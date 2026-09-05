@@ -12,6 +12,7 @@ export type UsePstoReportMutationsOptions = {
   pstoRequestOptions: string[]
   setPstoRequestDate: (value: string) => void
   setMessage: (value: string) => void
+  onWorkflowCorrectionSaved?: () => void
   highlightChangedRows: (rows: WeldRow[], fieldKeys?: WeldFieldKey[]) => void
   setSelectedHeatTreatmentIds: (value: Set<number>) => void
   setPstoRequestNaming: (value: RequestNamingState) => void

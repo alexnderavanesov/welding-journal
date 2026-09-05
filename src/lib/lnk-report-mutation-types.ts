@@ -24,6 +24,7 @@ export type UseLnkReportMutationsOptions = {
   lnkRequestOptions: string[]
   setMessage: (value: string) => void
   setLnkNotice: (value: string) => void
+  onWorkflowCorrectionSaved?: () => void
   highlightChangedRows: (rows: WeldRow[], fieldKeys?: WeldFieldKey[]) => void
   setSelectedLnkIds: (value: Set<number>) => void
   setLnkRequestDraft: Dispatch<SetStateAction<LnkRequestDraftState>>

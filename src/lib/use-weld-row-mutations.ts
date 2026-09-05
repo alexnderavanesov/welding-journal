@@ -23,6 +23,8 @@ export function useWeldRowMutations({
   editingFocusField,
   setEditing,
   setMessage,
+  onWeldRowSaved,
+  onWorkflowCorrectionSaved,
   highlightChangedRows,
 }: UseWeldJournalMutationsOptions) {
   const queryClient = useQueryClient()
@@ -59,7 +61,14 @@ export function useWeldRowMutations({
         ? `Цепочка стыка перенесена · записей: ${savedRows.length}`
         : 'Запись сохранена')
       invalidateWeldJoints(queryClient, { upsertRows: savedRows as WeldRow[] })
+      const savedEditedRow = variables.id
+        ? savedRows.find((row) => Number(row.id) === Number(variables.id))
+        : undefined
+      if (editingRecord && savedEditedRow) {
+        onWeldRowSaved?.(editingRecord, savedEditedRow as WeldRow)
+      }
       setEditing(null)
+      onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
       setMessage((error as Error).message)

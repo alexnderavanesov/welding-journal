@@ -30,6 +30,7 @@ import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
+import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 
 export type PstoResultDialogProps = {
   draft: PstoResultDraftState
@@ -43,6 +44,8 @@ export type PstoResultDialogProps = {
   filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptions: RequestDocumentIdentity[]
   saveBlockReason: string | null
+  rootCauseActions?: WorkflowRootCauseAction[]
+  onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
   allFilteredSelectableRowsSelected: boolean
   canSelectRow: (row: WeldRow, requestName: string, requestDate?: string) => boolean
   onDraftChange: Dispatch<SetStateAction<PstoResultDraftState>>
@@ -70,6 +73,8 @@ export function PstoResultDialog({
   filteredRequestOptions,
   availableRequestOptions,
   saveBlockReason,
+  rootCauseActions = [],
+  onRunRootCauseAction,
   allFilteredSelectableRowsSelected,
   canSelectRow,
   onDraftChange,
@@ -87,6 +92,7 @@ export function PstoResultDialog({
   onSave,
 }: PstoResultDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
@@ -162,6 +168,20 @@ export function PstoResultDialog({
       onOpenJournalRows,
     }))
   })
+  const runRootCauseAction = (action: WorkflowRootCauseAction) => {
+    const target = action.target
+    const editsCurrentDraft = target.kind === 'psto-cycle' &&
+      target.sequence === 1 &&
+      target.stage === 'pstoResult' &&
+      target.focus === 'date' &&
+      draft.rowIds.has(target.rowId) &&
+      target.documentDate === draft.pstoDate
+    if (editsCurrentDraft) {
+      dateInputRef.current?.focus()
+      return
+    }
+    onRunRootCauseAction?.(action)
+  }
 
   return (
     <WorkflowDialogShell>
@@ -175,7 +195,7 @@ export function PstoResultDialog({
         onClose={onClose}
       />
 
-      <PstoResultSettings draft={draft} onDraftChange={onDraftChange} />
+      <PstoResultSettings draft={draft} onDraftChange={onDraftChange} dateInputRef={dateInputRef} />
 
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
@@ -278,6 +298,11 @@ export function PstoResultDialog({
 
       <ResultDialogFooter
         saveBlockReason={saveBlockReason}
+        blockReasonActions={rootCauseActions.map((action) => ({
+          key: action.key,
+          label: action.label,
+          onAction: () => runRootCauseAction(action),
+        }))}
         isSaveDisabled={Boolean(saveBlockReason)}
         saveBlockReasonVariant="danger"
         blockReasonActionLabel={systemDocumentCreationPlan.error && workspaceTab !== 'documents' ? 'Открыть диаграммы и имена' : undefined}
