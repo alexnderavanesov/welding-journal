@@ -27,6 +27,6 @@ minimumReleaseAgeExclude:
 overrides:
   'esbuild@>=0.27.3 <0.28.1': '0.28.1'
   'image-size@<=2.0.2': 'file:vendor/image-size-2.0.3-security.0.tgz'
-  'js-yaml@>=4.0.0 <4.3.1': '4.3.1'
+  'js-yaml@>=4.0.0 <4.3.2': '4.3.2'
   'nanoid@>=3.0.0 <3.3.17': '3.3.17'
   'postcss@<=8.5.22': '8.5.26'

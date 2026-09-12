@@ -1,4 +1,3 @@
-import { createServerFn } from '@tanstack/react-start'
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -66,91 +65,94 @@ export type SystemDocumentDateChangeResult = Pick<
   rows: WeldRow[]
 }
 
-export const changeSystemDocumentDate = createServerFn({ method: 'POST' })
-  .validator(normalizeSystemDocumentDateChangeData)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    const db = requireDb()
-    return db.transaction(async (tx) => {
-      await loadControlProcessSettingsFromTransaction(tx)
-      const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
-      const requestConclusionSettings = await readRequestConclusionSettings(tx)
-      const document = await lockSystemDocument(tx, data.reference)
-      const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
-      const assignments = await tx
-        .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
-        .from(generatedDocumentWeldJoints)
-        .where(eq(generatedDocumentWeldJoints.documentId, document.id))
-        .orderBy(asc(generatedDocumentWeldJoints.weldJointId))
-        .for('update')
-      const rowIds = [...new Set(assignments.map((assignment) => assignment.weldJointId))]
-      if (rowIds.length === 0) throw new Error('В документе больше нет позиций. Обновите данные.')
+export async function changeSystemDocumentDate({
+  data: input,
+}: {
+  data: SystemDocumentDateChangeData
+}) {
+  const data = normalizeSystemDocumentDateChangeData(input)
+  await assertSecurityScope('edit')
+  const db = requireDb()
+  return db.transaction(async (tx) => {
+    await loadControlProcessSettingsFromTransaction(tx)
+    const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
+    const requestConclusionSettings = await readRequestConclusionSettings(tx)
+    const document = await lockSystemDocument(tx, data.reference)
+    const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
+    const assignments = await tx
+      .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+      .from(generatedDocumentWeldJoints)
+      .where(eq(generatedDocumentWeldJoints.documentId, document.id))
+      .orderBy(asc(generatedDocumentWeldJoints.weldJointId))
+      .for('update')
+    const rowIds = [...new Set(assignments.map((assignment) => assignment.weldJointId))]
+    if (rowIds.length === 0) throw new Error('В документе больше нет позиций. Обновите данные.')
 
-      const storedRows = await lockInteractiveWeldRows(tx, rowIds)
-      if (storedRows.length !== rowIds.length) {
-        throw new Error('Один или несколько стыков документа больше не существуют. Ничего не сохранено.')
-      }
-      assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
-      await lockSourceRelations(tx, metadata?.sourcePositions ?? [])
+    const storedRows = await lockInteractiveWeldRows(tx, rowIds)
+    if (storedRows.length !== rowIds.length) {
+      throw new Error('Один или несколько стыков документа больше не существуют. Ничего не сохранено.')
+    }
+    assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
+    await lockSourceRelations(tx, metadata?.sourcePositions ?? [])
 
-      const currentRows = await attachDuplicateControlRelations(
-        await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),
-        tx,
-      )
-      const plan = buildSystemDocumentDateChangePlan({
-        reference: toStoredReference(data.reference, document.id),
-        nextDate: data.nextDate,
-        rows: currentRows,
-        sourcePositions: metadata?.sourcePositions ?? [],
-        settings: requestConclusionSettings,
-      })
-      assertSystemDocumentDatePlanCoversAssignments(rowIds, plan.touchedRowIds)
-      assertNoNewLnkChronologyIssues(
-        plan.rows,
-        currentRows,
-        workflowSettings.saveCheckSettings,
-      )
-      assertNoNewPstoChronologyIssues(
-        plan.rows,
-        currentRows,
-        workflowSettings.saveCheckSettings,
-      )
-
-      await assertNoDocumentIdentityConflict(tx, document.id, document.type, plan.nextReference)
-      await persistDateChangePlan(tx, plan, storedRows)
-      await tx
-        .update(generatedDocuments)
-        .set({
-          title: plan.nextTitle,
-          fileName: `${sanitizeFileName(plan.nextTitle)}.xlsx`,
-          periodFrom: plan.nextDate,
-          periodTo: plan.nextDate,
-          updatedAt: new Date(),
-        })
-        .where(eq(generatedDocuments.id, document.id))
-
-      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, plan.touchedRowIds)
-      const touchedRowIds = new Set(plan.touchedRowIds)
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes(
-          plan.rows.filter((row) => touchedRowIds.has(row.id)),
-          new Map(storedRows.map((row) => [row.id, row])),
-        ),
-      })
-      const savedRows = await loadSavedRows(tx, plan.touchedRowIds)
-      return {
-        nextReference: plan.nextReference,
-        previousTitle: plan.previousTitle,
-        nextTitle: plan.nextTitle,
-        previousDate: plan.previousDate,
-        nextDate: plan.nextDate,
-        isSystemName: plan.isSystemName,
-        rowCount: plan.rowCount,
-        positionCount: plan.positionCount,
-        rows: savedRows,
-      } satisfies SystemDocumentDateChangeResult
+    const currentRows = await attachDuplicateControlRelations(
+      await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),
+      tx,
+    )
+    const plan = buildSystemDocumentDateChangePlan({
+      reference: toStoredReference(data.reference, document.id),
+      nextDate: data.nextDate,
+      rows: currentRows,
+      sourcePositions: metadata?.sourcePositions ?? [],
+      settings: requestConclusionSettings,
     })
+    assertSystemDocumentDatePlanCoversAssignments(rowIds, plan.touchedRowIds)
+    assertNoNewLnkChronologyIssues(
+      plan.rows,
+      currentRows,
+      workflowSettings.saveCheckSettings,
+    )
+    assertNoNewPstoChronologyIssues(
+      plan.rows,
+      currentRows,
+      workflowSettings.saveCheckSettings,
+    )
+
+    await assertNoDocumentIdentityConflict(tx, document.id, document.type, plan.nextReference)
+    await persistDateChangePlan(tx, plan, storedRows)
+    await tx
+      .update(generatedDocuments)
+      .set({
+        title: plan.nextTitle,
+        fileName: `${sanitizeFileName(plan.nextTitle)}.xlsx`,
+        periodFrom: plan.nextDate,
+        periodTo: plan.nextDate,
+        updatedAt: new Date(),
+      })
+      .where(eq(generatedDocuments.id, document.id))
+
+    await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, plan.touchedRowIds)
+    const touchedRowIds = new Set(plan.touchedRowIds)
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes(
+        plan.rows.filter((row) => touchedRowIds.has(row.id)),
+        new Map(storedRows.map((row) => [row.id, row])),
+      ),
+    })
+    const savedRows = await loadSavedRows(tx, plan.touchedRowIds)
+    return {
+      nextReference: plan.nextReference,
+      previousTitle: plan.previousTitle,
+      nextTitle: plan.nextTitle,
+      previousDate: plan.previousDate,
+      nextDate: plan.nextDate,
+      isSystemName: plan.isSystemName,
+      rowCount: plan.rowCount,
+      positionCount: plan.positionCount,
+      rows: savedRows,
+    } satisfies SystemDocumentDateChangeResult
   })
+}
 
 export function normalizeSystemDocumentDateChangeData(
   value: SystemDocumentDateChangeData,

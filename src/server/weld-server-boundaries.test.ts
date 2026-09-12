@@ -45,6 +45,27 @@ describe('weld server module boundaries', () => {
     }
   })
 
+  it('keeps dynamically loaded API implementations free of nested server functions', () => {
+    const serverDirectory = resolve(process.cwd(), 'src/server')
+    const apiFiles = readdirSync(serverDirectory)
+      .filter((fileName) => fileName.endsWith('-api.ts') || fileName === 'security-functions.ts')
+
+    for (const apiFile of apiFiles) {
+      const apiSource = read(apiFile)
+      const implementationModules = Array.from(
+        apiSource.matchAll(/await import\('@\/server\/([^']+)'\)/g),
+        (match) => match[1],
+      )
+
+      for (const implementationModule of implementationModules) {
+        expect(
+          read(`${implementationModule}.ts`),
+          `${apiFile} dynamically loads ${implementationModule}.ts`,
+        ).not.toContain('createServerFn')
+      }
+    }
+  })
+
   it('keeps client code on the browser-safe weld API boundary', () => {
     const clientSources = collectTypeScriptSources(resolve(process.cwd(), 'src'))
       .filter((filePath) => !filePath.includes(`${resolve(process.cwd(), 'src/server')}/`))
@@ -63,9 +84,9 @@ describe('weld server module boundaries', () => {
   })
 
   it('places public workflows in their owning modules', () => {
-    expect(modules.read).toContain('export const listWeldingJournalPage')
-    expect(modules.mutations).toContain('export const updateWeldJoint')
-    expect(modules.imports).toContain('export const importWeldJoints')
+    expect(modules.read).toContain('export async function listWeldingJournalPage')
+    expect(modules.mutations).toContain('export async function updateWeldJoint')
+    expect(modules.imports).toContain('export async function importWeldJoints')
     expect(modules.line).toContain('export const getWeldLineAutofill')
     expect(modules.persistence).toContain('export async function updateWeldJointsInBatches')
   })

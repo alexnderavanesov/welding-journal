@@ -1,4 +1,3 @@
-import { createServerFn } from '@tanstack/react-start'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -60,111 +59,114 @@ export type RevokeEarlyCoilDecisionResult = {
   deletedRowIds: number[]
 }
 
-export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
-  .validator((data: { sourceRowId: number; expectedVersion: string }) => ({
-    sourceRowId: Math.floor(Number(data?.sourceRowId) || 0),
-    expectedVersion: String(data?.expectedVersion ?? '').trim(),
-  }))
-  .handler(async ({ data }): Promise<CreateEarlyCoilDecisionResult> => {
-    await assertSecurityScope('edit')
-    if (!Number.isInteger(data.sourceRowId) || data.sourceRowId <= 0) {
-      throw new Error('Не передан исходный стык для досрочной катушки.')
+export async function createEarlyCoilDecision({
+  data: input,
+}: {
+  data: { sourceRowId: number; expectedVersion: string }
+}): Promise<CreateEarlyCoilDecisionResult> {
+  const data = {
+    sourceRowId: Math.floor(Number(input?.sourceRowId) || 0),
+    expectedVersion: String(input?.expectedVersion ?? '').trim(),
+  }
+  await assertSecurityScope('edit')
+  if (!Number.isInteger(data.sourceRowId) || data.sourceRowId <= 0) {
+    throw new Error('Не передан исходный стык для досрочной катушки.')
+  }
+
+  return requireDb().transaction(async (tx) => {
+    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+    const [sourceReference] = await tx
+      .select()
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.sourceRowId))
+      .limit(1)
+    if (!sourceReference) throw new Error('Исходный стык больше не существует. Обновите журнал.')
+    await lockWeldLineMemberships(tx, [sourceReference])
+    const scopeRows = await lockWeldJointScope(tx, sourceReference)
+    const sourceRow = scopeRows.find((row) => row.id === data.sourceRowId) ?? null
+    if (!sourceRow) throw new Error('Исходный стык больше не существует. Обновите журнал.')
+    assertExpectedInteractiveWeldVersions(
+      [sourceRow.id],
+      [{ id: sourceRow.id, version: data.expectedVersion }],
+      [sourceRow],
+    )
+    if (getPstoLineIdentityKey(sourceRow) !== getPstoLineIdentityKey(sourceReference)) {
+      throw new Error('Исходный стык уже перенесен на другую линию. Обновите журнал.')
     }
 
-    return requireDb().transaction(async (tx) => {
-      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
-      const [sourceReference] = await tx
-        .select()
-        .from(weldJoints)
-        .where(eq(weldJoints.id, data.sourceRowId))
-        .limit(1)
-      if (!sourceReference) throw new Error('Исходный стык больше не существует. Обновите журнал.')
-      await lockWeldLineMemberships(tx, [sourceReference])
-      const scopeRows = await lockWeldJointScope(tx, sourceReference)
-      const sourceRow = scopeRows.find((row) => row.id === data.sourceRowId) ?? null
-      if (!sourceRow) throw new Error('Исходный стык больше не существует. Обновите журнал.')
-      assertExpectedInteractiveWeldVersions(
-        [sourceRow.id],
-        [{ id: sourceRow.id, version: data.expectedVersion }],
-        [sourceRow],
-      )
-      if (getPstoLineIdentityKey(sourceRow) !== getPstoLineIdentityKey(sourceReference)) {
-        throw new Error('Исходный стык уже перенесен на другую линию. Обновите журнал.')
-      }
+    const decisionKey = getEarlyCoilDecisionKey(sourceRow.id)
+    const [existingDecision] = await tx
+      .select({ key: dispatcherAcceptedWarnings.key })
+      .from(dispatcherAcceptedWarnings)
+      .where(eq(dispatcherAcceptedWarnings.key, decisionKey))
+      .for('update')
+      .limit(1)
+    if (existingDecision) {
+      throw new Error('Решение о досрочной врезке этой катушки уже принято. Обновите журнал.')
+    }
 
-      const decisionKey = getEarlyCoilDecisionKey(sourceRow.id)
-      const [existingDecision] = await tx
-        .select({ key: dispatcherAcceptedWarnings.key })
-        .from(dispatcherAcceptedWarnings)
-        .where(eq(dispatcherAcceptedWarnings.key, decisionKey))
-        .for('update')
-        .limit(1)
-      if (existingDecision) {
-        throw new Error('Решение о досрочной врезке этой катушки уже принято. Обновите журнал.')
-      }
+    const hydratedScopeRows = await hydrateRows(tx, scopeRows)
+    const systemContext = await loadServerWeldValidationContext(tx, scopeRows)
+    const chainRows = getJointChainRows(
+      hydratedScopeRows,
+      sourceRow,
+      systemContext.systemIndexSettings,
+    )
+    const documentedRowIds = await loadDocumentedRowIds(tx, chainRows.map((row) => row.id))
+    const hydratedSource = chainRows.find((row) => row.id === sourceRow.id)
+    if (!hydratedSource) throw new Error('Не удалось определить цепочку исходного стыка.')
 
-      const hydratedScopeRows = await hydrateRows(tx, scopeRows)
-      const systemContext = await loadServerWeldValidationContext(tx, scopeRows)
-      const chainRows = getJointChainRows(
-        hydratedScopeRows,
-        sourceRow,
-        systemContext.systemIndexSettings,
-      )
-      const documentedRowIds = await loadDocumentedRowIds(tx, chainRows.map((row) => row.id))
-      const hydratedSource = chainRows.find((row) => row.id === sourceRow.id)
-      if (!hydratedSource) throw new Error('Не удалось определить цепочку исходного стыка.')
-
-      const evaluation = evaluateEarlyCoilCandidate(chainRows, hydratedSource, {
-        documentedRowIds,
-        systemIndexSettings: systemContext.systemIndexSettings,
-      })
-      if (!evaluation.candidate) throw new Error(evaluation.reason)
-      const candidate = evaluation.candidate
-      const deletedRowIds = candidate.replacementRow ? [candidate.replacementRow.id] : []
-      const previousRows = new Map<number, WeldJoint>()
-      if (candidate.replacementRow) {
-        previousRows.set(candidate.replacementRow.id, candidate.replacementRow as unknown as WeldJoint)
-        await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
-          tx,
-          weldJointIds: deletedRowIds,
-        })
-        await tx.delete(weldJoints).where(eq(weldJoints.id, candidate.replacementRow.id))
-      }
-
-      const drafts = candidate.targetJoints.map((targetJoint) =>
-        buildRepeatedJointDraft(candidate.sourceRow, targetJoint),
-      )
-      prepareServerWeldRecords({ records: drafts, previousRows: new Map(), context: systemContext })
-      validateServerWeldRecords({
-        records: drafts,
-        previousRows: new Map(),
-        context: systemContext,
-        allowSystemJointNames: true,
-      })
-      const createdRows = await insertWeldJointsInBatches(tx, drafts, processSettings)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, createdRows, previousRows)
-      if (deletedRowIds.length > 0) await deleteEmptyGeneratedDocuments(tx)
-
-      await tx.insert(dispatcherAcceptedWarnings).values({
-        key: decisionKey,
-        kind: EARLY_COIL_DECISION_KIND,
-        code: 'ДЗ-09',
-        title: `Досрочная врезка катушки ${candidate.targetJoints.join(' + ')}`,
-        context: buildEarlyCoilDecisionContext(candidate.sourceRow, candidate.sourceJoint, candidate.targetJoints),
-      })
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes(drafts, previousRows),
-      })
-
-      return {
-        createdRows,
-        deletedRowIds,
-        decisionKey,
-        sourceJoint: candidate.sourceJoint,
-        targetJoints: candidate.targetJoints,
-      }
+    const evaluation = evaluateEarlyCoilCandidate(chainRows, hydratedSource, {
+      documentedRowIds,
+      systemIndexSettings: systemContext.systemIndexSettings,
     })
+    if (!evaluation.candidate) throw new Error(evaluation.reason)
+    const candidate = evaluation.candidate
+    const deletedRowIds = candidate.replacementRow ? [candidate.replacementRow.id] : []
+    const previousRows = new Map<number, WeldJoint>()
+    if (candidate.replacementRow) {
+      previousRows.set(candidate.replacementRow.id, candidate.replacementRow as unknown as WeldJoint)
+      await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
+        tx,
+        weldJointIds: deletedRowIds,
+      })
+      await tx.delete(weldJoints).where(eq(weldJoints.id, candidate.replacementRow.id))
+    }
+
+    const drafts = candidate.targetJoints.map((targetJoint) =>
+      buildRepeatedJointDraft(candidate.sourceRow, targetJoint),
+    )
+    prepareServerWeldRecords({ records: drafts, previousRows: new Map(), context: systemContext })
+    validateServerWeldRecords({
+      records: drafts,
+      previousRows: new Map(),
+      context: systemContext,
+      allowSystemJointNames: true,
+    })
+    const createdRows = await insertWeldJointsInBatches(tx, drafts, processSettings)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, createdRows, previousRows)
+    if (deletedRowIds.length > 0) await deleteEmptyGeneratedDocuments(tx)
+
+    await tx.insert(dispatcherAcceptedWarnings).values({
+      key: decisionKey,
+      kind: EARLY_COIL_DECISION_KIND,
+      code: 'ДЗ-09',
+      title: `Досрочная врезка катушки ${candidate.targetJoints.join(' + ')}`,
+      context: buildEarlyCoilDecisionContext(candidate.sourceRow, candidate.sourceJoint, candidate.targetJoints),
+    })
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes(drafts, previousRows),
+    })
+
+    return {
+      createdRows,
+      deletedRowIds,
+      decisionKey,
+      sourceJoint: candidate.sourceJoint,
+      targetJoints: candidate.targetJoints,
+    }
   })
+}
 
 export async function revokeEarlyCoilDecisionInTransaction(
   tx: EarlyCoilTransaction,

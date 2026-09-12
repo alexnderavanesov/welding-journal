@@ -1,4 +1,3 @@
-import { createServerFn } from '@tanstack/react-start'
 import { eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -68,191 +67,203 @@ type UpdateDocumentTemplateInput = {
   constructorConfig?: DocumentTemplateConstructorConfig
 }
 
-export const listRemoteDocumentTemplates = createServerFn({ method: 'GET' }).handler(async () => {
+export async function listRemoteDocumentTemplates() {
   await assertSecurityScope('entry')
   const db = requireDb()
   const rows = await db.select().from(documentTemplates)
   return rows.map(toTemplateSummary)
-})
+}
 
-export const listRemoteDocumentTemplateIds = createServerFn({ method: 'GET' }).handler(async () => {
+export async function listRemoteDocumentTemplateIds() {
   await assertSecurityScope('entry')
   const db = requireDb()
   return db
     .select({ id: documentTemplates.id })
     .from(documentTemplates)
     .then((rows) => rows.map((row) => row.id))
-})
+}
 
-export const getRemoteDocumentTemplate = createServerFn({ method: 'GET' })
-  .validator((data: { id: DocumentTemplateId }) => ({ id: requireTemplateId(data?.id) }))
-  .handler(async ({ data }): Promise<RemoteDocumentTemplate | null> => {
-    await assertSecurityScope('entry')
-    const db = requireDb()
-    const [record] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
-    if (!record) return null
+export async function getRemoteDocumentTemplate({
+  data: input,
+}: {
+  data: { id: DocumentTemplateId }
+}): Promise<RemoteDocumentTemplate | null> {
+  const data = { id: requireTemplateId(input?.id) }
+  await assertSecurityScope('entry')
+  const db = requireDb()
+  const [record] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
+  if (!record) return null
 
-    const fileData = await templateStore.get(record.blobKey)
-    if (!fileData) throw new Error('Файл шаблона не найден в общем хранилище.')
+  const fileData = await templateStore.get(record.blobKey)
+  if (!fileData) throw new Error('Файл шаблона не найден в общем хранилище.')
 
-    return {
-      ...toTemplateSummary(record),
-      fileDataBase64: Buffer.from(fileData).toString('base64'),
+  return {
+    ...toTemplateSummary(record),
+    fileDataBase64: Buffer.from(fileData).toString('base64'),
+  }
+}
+
+export async function saveRemoteDocumentTemplate({
+  data: input,
+}: {
+  data: SaveDocumentTemplateInput
+}): Promise<RemoteDocumentTemplate> {
+  const data = normalizeSaveTemplateInput(input)
+  await assertSecurityScope('settings')
+  const db = requireDb()
+  const fileKey = createDocumentTemplateFileKey(data.id, data.fileType)
+  const fileData = Buffer.from(data.fileDataBase64, 'base64')
+  if (fileData.byteLength === 0) throw new Error('Файл шаблона пуст.')
+
+  const metadata: DocumentTemplateMetadata = {
+    sheetNames: data.sheetNames,
+    fields: data.fields,
+    markerCount: data.markerCount,
+    locations: data.locations,
+    warnings: data.warnings,
+  }
+  const saved = await db.transaction(async (tx) => {
+    const isLayeredTemplate = isLayeredControlDocumentType(data.id)
+    if (isLayeredTemplate) await lockControlProcessSettings(tx, 'layeredControl')
+    await lockDocumentTemplate(tx, data.id)
+    const [existing] = await tx
+      .select()
+      .from(documentTemplates)
+      .where(eq(documentTemplates.id, data.id))
+      .for('update')
+      .limit(1)
+    assertExpectedDocumentTemplateVersion(existing, data.expectedVersion)
+    const now = existing ? getNextTimestampVersion(existing.updatedAt) : new Date()
+
+    await templateStore.set(
+      fileKey,
+      fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength),
+    )
+    const storedFile = await templateStore.get(fileKey)
+    if (!storedFile || storedFile.byteLength !== fileData.byteLength) {
+      await templateStore.delete(fileKey).catch(() => undefined)
+      throw new Error('Не удалось проверить сохраненный файл шаблона в общем хранилище.')
     }
-  })
-
-export const saveRemoteDocumentTemplate = createServerFn({ method: 'POST' })
-  .validator(normalizeSaveTemplateInput)
-  .handler(async ({ data }): Promise<RemoteDocumentTemplate> => {
-    await assertSecurityScope('settings')
-    const db = requireDb()
-    const fileKey = createDocumentTemplateFileKey(data.id, data.fileType)
-    const fileData = Buffer.from(data.fileDataBase64, 'base64')
-    if (fileData.byteLength === 0) throw new Error('Файл шаблона пуст.')
-
-    const metadata: DocumentTemplateMetadata = {
-      sheetNames: data.sheetNames,
-      fields: data.fields,
-      markerCount: data.markerCount,
-      locations: data.locations,
-      warnings: data.warnings,
-    }
-    const saved = await db.transaction(async (tx) => {
-      const isLayeredTemplate = isLayeredControlDocumentType(data.id)
-      if (isLayeredTemplate) await lockControlProcessSettings(tx, 'layeredControl')
-      await lockDocumentTemplate(tx, data.id)
-      const [existing] = await tx
-        .select()
-        .from(documentTemplates)
-        .where(eq(documentTemplates.id, data.id))
-        .for('update')
-        .limit(1)
-      assertExpectedDocumentTemplateVersion(existing, data.expectedVersion)
-      const now = existing ? getNextTimestampVersion(existing.updatedAt) : new Date()
-
-      await templateStore.set(
-        fileKey,
-        fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength),
-      )
-      const storedFile = await templateStore.get(fileKey)
-      if (!storedFile || storedFile.byteLength !== fileData.byteLength) {
-        await templateStore.delete(fileKey).catch(() => undefined)
-        throw new Error('Не удалось проверить сохраненный файл шаблона в общем хранилище.')
-      }
-      const constructorConfig =
-        data.constructorConfig === undefined
-          ? existing?.constructorConfig ?? null
-          : data.constructorConfig === null
-            ? null
-            : JSON.stringify(data.constructorConfig)
-      const [savedRecord] = await tx
-        .insert(documentTemplates)
-        .values({
-          id: data.id,
+    const constructorConfig =
+      data.constructorConfig === undefined
+        ? existing?.constructorConfig ?? null
+        : data.constructorConfig === null
+          ? null
+          : JSON.stringify(data.constructorConfig)
+    const [savedRecord] = await tx
+      .insert(documentTemplates)
+      .values({
+        id: data.id,
+        blobKey: fileKey,
+        fileName: data.fileName,
+        fileType: data.fileType,
+        fileSize: fileData.byteLength,
+        metadata: JSON.stringify(metadata),
+        options: existing?.options ?? null,
+        constructorConfig,
+        uploadedAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: documentTemplates.id,
+        set: {
           blobKey: fileKey,
           fileName: data.fileName,
           fileType: data.fileType,
           fileSize: fileData.byteLength,
           metadata: JSON.stringify(metadata),
-          options: existing?.options ?? null,
           constructorConfig,
           uploadedAt: now,
           updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: documentTemplates.id,
-          set: {
-            blobKey: fileKey,
-            fileName: data.fileName,
-            fileType: data.fileType,
-            fileSize: fileData.byteLength,
-            metadata: JSON.stringify(metadata),
-            constructorConfig,
-            uploadedAt: now,
-            updatedAt: now,
-          },
-        })
-        .returning()
-      if (!savedRecord) throw new Error('Не удалось сохранить шаблон документа.')
-      if (isLayeredTemplate) {
-        await rebuildLayeredControlDocumentsInTransaction(tx, { processSettingsLocked: true })
-      }
-      return savedRecord
-    })
+        },
+      })
+      .returning()
+    if (!savedRecord) throw new Error('Не удалось сохранить шаблон документа.')
+    if (isLayeredTemplate) {
+      await rebuildLayeredControlDocumentsInTransaction(tx, { processSettingsLocked: true })
+    }
+    return savedRecord
+  })
 
-    await cleanupDocumentTemplateFileVersions(db, data.id)
-    return {
-      ...toTemplateSummary(saved),
-      fileDataBase64: data.fileDataBase64,
+  await cleanupDocumentTemplateFileVersions(db, data.id)
+  return {
+    ...toTemplateSummary(saved),
+    fileDataBase64: data.fileDataBase64,
+  }
+}
+
+export async function updateRemoteDocumentTemplate({
+  data: input,
+}: {
+  data: UpdateDocumentTemplateInput
+}) {
+  const data = normalizeUpdateTemplateInput(input)
+  await assertSecurityScope('settings')
+  const db = requireDb()
+
+  const saved = await db.transaction(async (tx) => {
+    const isLayeredTemplate = isLayeredControlDocumentType(data.id)
+    if (isLayeredTemplate) await lockControlProcessSettings(tx, 'layeredControl')
+    await lockDocumentTemplate(tx, data.id)
+    const [current] = await tx
+      .select()
+      .from(documentTemplates)
+      .where(eq(documentTemplates.id, data.id))
+      .for('update')
+      .limit(1)
+    if (!current) return null
+    assertExpectedDocumentTemplateVersion(current, data.expectedVersion)
+    const update: Partial<typeof documentTemplates.$inferInsert> = {
+      updatedAt: getNextTimestampVersion(current.updatedAt),
+    }
+    if (data.options !== undefined) update.options = JSON.stringify(data.options)
+    if (data.constructorConfig !== undefined) update.constructorConfig = JSON.stringify(data.constructorConfig)
+    const [savedRecord] = await tx
+      .update(documentTemplates)
+      .set(update)
+      .where(eq(documentTemplates.id, data.id))
+      .returning()
+    if (savedRecord && isLayeredTemplate) {
+      await rebuildLayeredControlDocumentsInTransaction(tx, { processSettingsLocked: true })
+    }
+    return savedRecord
+  })
+  return saved ? toTemplateSummary(saved) : null
+}
+
+export async function deleteRemoteDocumentTemplate({
+  data: input,
+}: {
+  data: { id: DocumentTemplateId; expectedVersion: string }
+}) {
+  const data = {
+    id: requireTemplateId(input?.id),
+    expectedVersion: String(input?.expectedVersion ?? '').trim(),
+  }
+  await assertSecurityScope('delete')
+  const db = requireDb()
+  await db.transaction(async (tx) => {
+    const isLayeredTemplate = isLayeredControlDocumentType(data.id)
+    if (isLayeredTemplate) await lockControlProcessSettings(tx, 'layeredControl')
+    await lockDocumentTemplate(tx, data.id)
+    const [record] = await tx
+      .select()
+      .from(documentTemplates)
+      .where(eq(documentTemplates.id, data.id))
+      .for('update')
+      .limit(1)
+    if (!record) throw new Error('Шаблон больше не существует. Обновите страницу настроек.')
+    assertExpectedDocumentTemplateVersion(record, data.expectedVersion)
+    await tx.delete(documentTemplates).where(eq(documentTemplates.id, data.id))
+    if (isLayeredTemplate) {
+      await rebuildLayeredControlDocumentsInTransaction(tx, { processSettingsLocked: true })
     }
   })
 
-export const updateRemoteDocumentTemplate = createServerFn({ method: 'POST' })
-  .validator(normalizeUpdateTemplateInput)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('settings')
-    const db = requireDb()
+  const deletedFileKeys = await cleanupDocumentTemplateFileVersions(db, data.id)
 
-    const saved = await db.transaction(async (tx) => {
-      const isLayeredTemplate = isLayeredControlDocumentType(data.id)
-      if (isLayeredTemplate) await lockControlProcessSettings(tx, 'layeredControl')
-      await lockDocumentTemplate(tx, data.id)
-      const [current] = await tx
-        .select()
-        .from(documentTemplates)
-        .where(eq(documentTemplates.id, data.id))
-        .for('update')
-        .limit(1)
-      if (!current) return null
-      assertExpectedDocumentTemplateVersion(current, data.expectedVersion)
-      const update: Partial<typeof documentTemplates.$inferInsert> = {
-        updatedAt: getNextTimestampVersion(current.updatedAt),
-      }
-      if (data.options !== undefined) update.options = JSON.stringify(data.options)
-      if (data.constructorConfig !== undefined) update.constructorConfig = JSON.stringify(data.constructorConfig)
-      const [savedRecord] = await tx
-        .update(documentTemplates)
-        .set(update)
-        .where(eq(documentTemplates.id, data.id))
-        .returning()
-      if (savedRecord && isLayeredTemplate) {
-        await rebuildLayeredControlDocumentsInTransaction(tx, { processSettingsLocked: true })
-      }
-      return savedRecord
-    })
-    return saved ? toTemplateSummary(saved) : null
-  })
-
-export const deleteRemoteDocumentTemplate = createServerFn({ method: 'POST' })
-  .validator((data: { id: DocumentTemplateId; expectedVersion: string }) => ({
-    id: requireTemplateId(data?.id),
-    expectedVersion: String(data?.expectedVersion ?? '').trim(),
-  }))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('delete')
-    const db = requireDb()
-    await db.transaction(async (tx) => {
-      const isLayeredTemplate = isLayeredControlDocumentType(data.id)
-      if (isLayeredTemplate) await lockControlProcessSettings(tx, 'layeredControl')
-      await lockDocumentTemplate(tx, data.id)
-      const [record] = await tx
-        .select()
-        .from(documentTemplates)
-        .where(eq(documentTemplates.id, data.id))
-        .for('update')
-        .limit(1)
-      if (!record) throw new Error('Шаблон больше не существует. Обновите страницу настроек.')
-      assertExpectedDocumentTemplateVersion(record, data.expectedVersion)
-      await tx.delete(documentTemplates).where(eq(documentTemplates.id, data.id))
-      if (isLayeredTemplate) {
-        await rebuildLayeredControlDocumentsInTransaction(tx, { processSettingsLocked: true })
-      }
-    })
-
-    const deletedFileKeys = await cleanupDocumentTemplateFileVersions(db, data.id)
-
-    return { ok: true, deletedFileCount: deletedFileKeys.length }
-  })
+  return { ok: true, deletedFileCount: deletedFileKeys.length }
+}
 
 function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocumentTemplateInput {
   const fileType = String(data?.fileType ?? '').trim().toLowerCase()

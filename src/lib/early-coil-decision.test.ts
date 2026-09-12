@@ -24,4 +24,3 @@ describe('early coil decision keys', () => {
     ])).toEqual(new Set([12]))
   })
 })
-

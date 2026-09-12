@@ -25,4 +25,3 @@ export function getEarlyCoilDecisionSourceRowIds(keys: Iterable<unknown>) {
   }
   return sourceRowIds
 }
-

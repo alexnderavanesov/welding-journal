@@ -124,7 +124,6 @@ type WeldSort,
 type WeldRowsByIdsRequest,
 type WeldSnapshotPageRequest
 } from '@/server/weld-contracts'
-import { createServerFn } from '@tanstack/react-start'
 import { and,asc,count,desc,eq,exists,gt,gte,inArray,lte,notExists,or,sql,type SQL,type SQLWrapper } from 'drizzle-orm'
 import { QueryBuilder } from 'drizzle-orm/pg-core'
 
@@ -359,277 +358,304 @@ export const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'lnkUpdatedAt',
 ])
 
-export const listWeldJointSnapshotPage = createServerFn({ method: 'GET' })
-  .validator((data: WeldSnapshotPageRequest | undefined) => normalizeWeldSnapshotPageRequest(data))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('entry')
-    const db = requireDb()
-    const rows = await db
-      .select(WELD_TABLE_SELECT)
-      .from(weldJoints)
-      .where(data.afterId > 0 ? gt(weldJoints.id, data.afterId) : undefined)
-      .orderBy(asc(weldJoints.id))
-      .limit(data.batchSize)
-    const lastId = rows.length > 0 ? Number(rows[rows.length - 1].id) : data.afterId
+export async function listWeldJointSnapshotPage({
+  data: input,
+}: {
+  data?: WeldSnapshotPageRequest
+}) {
+  const data = normalizeWeldSnapshotPageRequest(input)
+  await assertSecurityScope('entry')
+  const db = requireDb()
+  const rows = await db
+    .select(WELD_TABLE_SELECT)
+    .from(weldJoints)
+    .where(data.afterId > 0 ? gt(weldJoints.id, data.afterId) : undefined)
+    .orderBy(asc(weldJoints.id))
+    .limit(data.batchSize)
+  const lastId = rows.length > 0 ? Number(rows[rows.length - 1].id) : data.afterId
 
-    return {
-      rows: compactWeldRowsForTransport(await attachHeatTreatmentControlRelations(rows)),
-      nextAfterId: rows.length === data.batchSize ? lastId : null,
-      hasMore: rows.length === data.batchSize,
-    }
+  return {
+    rows: compactWeldRowsForTransport(await attachHeatTreatmentControlRelations(rows)),
+    nextAfterId: rows.length === data.batchSize ? lastId : null,
+    hasMore: rows.length === data.batchSize,
+  }
+}
+
+export async function listWeldReportContextRows({
+  data: input,
+}: {
+  data: { report: WeldReportContextKind }
+}): Promise<WeldRow[]> {
+  const data = {
+    report: input?.report === 'heatTreatment' ? 'heatTreatment' : 'lnk',
+  } as const
+  await assertSecurityScope('entry')
+  const rows = await requireDb()
+    .select(getReportContextSelect(data.report))
+    .from(weldJoints)
+    .where(buildReportKindWhere(data.report))
+    .orderBy(...getReportOrderBy(data.report))
+  const reportRows = applyCurrentSystemWdi(
+    buildServerReportRows(rows as unknown as WeldJoint[], data.report),
+    await loadServerOtherSettings(),
+  )
+  return compactWeldRowsForTransport(
+    await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(reportRows)),
+  )
+}
+
+export async function listWeldFinalStatusContextKeys(): Promise<string[]> {
+  await assertSecurityScope('entry')
+  const context = await loadCurrentFinalStatusRowsContext()
+  return [...context.rejectedUnofficialSameNameRepairKeys]
+}
+
+export async function listWeldFormSuggestions({
+  data: input,
+}: {
+  data: WeldFormSuggestionsRequest
+}): Promise<WeldFormSuggestion[]> {
+  const data = {
+    fieldKey: input?.fieldKey,
+    draft: input?.draft ?? {},
+  }
+  await assertSecurityScope('entry')
+  if (!FIELD_BY_KEY.has(data.fieldKey) || !canSuggestWeldFormField(data.fieldKey)) return []
+  const selectedColumns = Object.fromEntries(
+    getWeldFormSuggestionQueryFieldKeys(data.fieldKey)
+      .map((fieldKey) => [fieldKey, getWeldColumn(fieldKey)] as const)
+      .filter((entry): entry is [WeldFieldKey, NonNullable<ReturnType<typeof getWeldColumn>>] => Boolean(entry[1])),
+  )
+  const rows = await requireDb()
+    .select(selectedColumns)
+    .from(weldJoints)
+    .orderBy(desc(weldJoints.createdAt))
+  return getWeldFormSuggestions({
+    fieldKey: data.fieldKey,
+    value: data.draft[data.fieldKey],
+    draft: data.draft,
+    rows: rows as WeldInput[],
   })
+}
 
-export const listWeldReportContextRows = createServerFn({ method: 'GET' })
-  .validator((data: { report: WeldReportContextKind }) => ({
-    report: data?.report === 'heatTreatment' ? 'heatTreatment' : 'lnk',
-  } as const))
-  .handler(async ({ data }): Promise<WeldRow[]> => {
-    await assertSecurityScope('entry')
-    const rows = await requireDb()
-      .select(getReportContextSelect(data.report))
-      .from(weldJoints)
-      .where(buildReportKindWhere(data.report))
-      .orderBy(...getReportOrderBy(data.report))
-    const reportRows = applyCurrentSystemWdi(
-      buildServerReportRows(rows as unknown as WeldJoint[], data.report),
-      await loadServerOtherSettings(),
+export async function listWeldJointChain({
+  data,
+}: {
+  data: { id: number }
+}): Promise<WeldJointChainResult> {
+  await assertSecurityScope('entry')
+  const db = requireDb()
+  const [record] = await db
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(eq(weldJoints.id, data.id))
+    .limit(1)
+  if (!record) return { record: null, rows: [], transitions: [], earlyCoilCandidates: [] }
+
+  const candidates = await db
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(
+      and(
+        normalizedTextEquals(weldJoints.projectTitle, record.projectTitle),
+        normalizedTextEquals(weldJoints.subtitleCode, record.subtitleCode),
+        normalizedTextEquals(weldJoints.line, record.line),
+      ),
     )
-    return compactWeldRowsForTransport(
-      await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(reportRows)),
-    )
+  const otherSettings = await loadServerOtherSettings()
+  const [weldRecord] = applyCurrentSystemWdi([record as unknown as WeldRow], otherSettings)
+  const weldCandidates = applyCurrentSystemWdi(candidates as unknown as WeldRow[], otherSettings)
+  const [systemIndexRow] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex))
+    .limit(1)
+  const systemIndexSettings = normalizeSystemIndexSettings(
+    parseStoredJson(systemIndexRow?.value) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
+  )
+
+  const chainRows = getJointChainRows(weldCandidates, weldRecord, systemIndexSettings)
+  const hydratedRows = await attachReportPageMetadata(chainRows)
+  const earlyCoilDecisionSourceRowIds = new Set(
+    hydratedRows
+      .filter((row) => row.earlyCoilDecisionAccepted)
+      .map((row) => row.id),
+  )
+  const documentLinks: Array<{ weldJointId: number }> = []
+  for (const idBatch of splitNumberBatches(hydratedRows.map((row) => row.id), 1000)) {
+    documentLinks.push(...await db
+      .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+      .from(generatedDocumentWeldJoints)
+      .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch)))
+  }
+  const documentedRowIds = new Set(documentLinks.map((link) => link.weldJointId))
+  const typedRows = hydratedRows as WeldRow[]
+  const transitions = buildJointCoilTransitions(typedRows, {
+    earlyCoilDecisionSourceRowIds,
+    systemIndexSettings,
   })
-
-export const listWeldFinalStatusContextKeys = createServerFn({ method: 'GET' })
-  .handler(async (): Promise<string[]> => {
-    await assertSecurityScope('entry')
-    const context = await loadCurrentFinalStatusRowsContext()
-    return [...context.rejectedUnofficialSameNameRepairKeys]
-  })
-
-export const listWeldFormSuggestions = createServerFn({ method: 'POST' })
-  .validator((data: WeldFormSuggestionsRequest) => ({
-    fieldKey: data?.fieldKey,
-    draft: data?.draft ?? {},
-  }))
-  .handler(async ({ data }): Promise<WeldFormSuggestion[]> => {
-    await assertSecurityScope('entry')
-    if (!FIELD_BY_KEY.has(data.fieldKey) || !canSuggestWeldFormField(data.fieldKey)) return []
-    const selectedColumns = Object.fromEntries(
-      getWeldFormSuggestionQueryFieldKeys(data.fieldKey)
-        .map((fieldKey) => [fieldKey, getWeldColumn(fieldKey)] as const)
-        .filter((entry): entry is [WeldFieldKey, NonNullable<ReturnType<typeof getWeldColumn>>] => Boolean(entry[1])),
-    )
-    const rows = await requireDb()
-      .select(selectedColumns)
-      .from(weldJoints)
-      .orderBy(desc(weldJoints.createdAt))
-    return getWeldFormSuggestions({
-      fieldKey: data.fieldKey,
-      value: data.draft[data.fieldKey],
-      draft: data.draft,
-      rows: rows as WeldInput[],
-    })
-  })
-
-export const listWeldJointChain = createServerFn({ method: 'GET' })
-  .validator((data: { id: number }) => data)
-  .handler(async ({ data }): Promise<WeldJointChainResult> => {
-    await assertSecurityScope('entry')
-    const db = requireDb()
-    const [record] = await db
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(eq(weldJoints.id, data.id))
-      .limit(1)
-    if (!record) return { record: null, rows: [], transitions: [], earlyCoilCandidates: [] }
-
-    const candidates = await db
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(
-        and(
-          normalizedTextEquals(weldJoints.projectTitle, record.projectTitle),
-          normalizedTextEquals(weldJoints.subtitleCode, record.subtitleCode),
-          normalizedTextEquals(weldJoints.line, record.line),
-        ),
-      )
-    const otherSettings = await loadServerOtherSettings()
-    const [weldRecord] = applyCurrentSystemWdi([record as unknown as WeldRow], otherSettings)
-    const weldCandidates = applyCurrentSystemWdi(candidates as unknown as WeldRow[], otherSettings)
-    const [systemIndexRow] = await db
-      .select({ value: appSettings.value })
-      .from(appSettings)
-      .where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex))
-      .limit(1)
-    const systemIndexSettings = normalizeSystemIndexSettings(
-      parseStoredJson(systemIndexRow?.value) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
-    )
-
-    const chainRows = getJointChainRows(weldCandidates, weldRecord, systemIndexSettings)
-    const hydratedRows = await attachReportPageMetadata(chainRows)
-    const earlyCoilDecisionSourceRowIds = new Set(
-      hydratedRows
-        .filter((row) => row.earlyCoilDecisionAccepted)
-        .map((row) => row.id),
-    )
-    const documentLinks: Array<{ weldJointId: number }> = []
-    for (const idBatch of splitNumberBatches(hydratedRows.map((row) => row.id), 1000)) {
-      documentLinks.push(...await db
-        .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
-        .from(generatedDocumentWeldJoints)
-        .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch)))
-    }
-    const documentedRowIds = new Set(documentLinks.map((link) => link.weldJointId))
-    const typedRows = hydratedRows as WeldRow[]
-    const transitions = buildJointCoilTransitions(typedRows, {
+  const earlyCoilCandidates = typedRows.flatMap((row) => {
+    const evaluation = evaluateEarlyCoilCandidate(typedRows, row, {
+      documentedRowIds,
       earlyCoilDecisionSourceRowIds,
       systemIndexSettings,
     })
-    const earlyCoilCandidates = typedRows.flatMap((row) => {
-      const evaluation = evaluateEarlyCoilCandidate(typedRows, row, {
-        documentedRowIds,
-        earlyCoilDecisionSourceRowIds,
-        systemIndexSettings,
-      })
-      return evaluation.candidate
-        ? [{
-            replacementJoint: String(evaluation.candidate.replacementRow?.joint ?? '').trim() || null,
-            replacementRowId: evaluation.candidate.replacementRow?.id ?? null,
-            sourceJoint: evaluation.candidate.sourceJoint,
-            sourceRowId: evaluation.candidate.sourceRow.id,
-            targetJoints: evaluation.candidate.targetJoints,
-          }]
-        : []
-    })
-
-    return {
-      record: hydratedRows.find((row) => row.id === weldRecord.id) ?? weldRecord,
-      rows: typedRows,
-      transitions,
-      earlyCoilCandidates,
-    }
+    return evaluation.candidate
+      ? [{
+          replacementJoint: String(evaluation.candidate.replacementRow?.joint ?? '').trim() || null,
+          replacementRowId: evaluation.candidate.replacementRow?.id ?? null,
+          sourceJoint: evaluation.candidate.sourceJoint,
+          sourceRowId: evaluation.candidate.sourceRow.id,
+          targetJoints: evaluation.candidate.targetJoints,
+        }]
+      : []
   })
 
-export const getWeldJointById = createServerFn({ method: 'GET' })
-  .validator((data: { id: number }) => ({ id: Math.max(0, Math.floor(Number(data?.id) || 0)) }))
-  .handler(async ({ data }): Promise<WeldRow | null> => {
-    await assertSecurityScope('entry')
-    if (!data.id) return null
-    const db = requireDb()
-    const [record] = await db
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(eq(weldJoints.id, data.id))
-      .limit(1)
-    if (!record) return null
-    const [recordWithDuplicateControls] = await attachGeneratedDocumentFields(
-      await attachHeatTreatmentControlRelations(
-        await attachDuplicateControlsToPage(
-          applyCurrentSystemWdi([record], await loadServerOtherSettings()),
-        ),
+  return {
+    record: hydratedRows.find((row) => row.id === weldRecord.id) ?? weldRecord,
+    rows: typedRows,
+    transitions,
+    earlyCoilCandidates,
+  }
+}
+
+export async function getWeldJointById({
+  data: input,
+}: {
+  data: { id: number }
+}): Promise<WeldRow | null> {
+  const data = { id: Math.max(0, Math.floor(Number(input?.id) || 0)) }
+  await assertSecurityScope('entry')
+  if (!data.id) return null
+  const db = requireDb()
+  const [record] = await db
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(eq(weldJoints.id, data.id))
+    .limit(1)
+  if (!record) return null
+  const [recordWithDuplicateControls] = await attachGeneratedDocumentFields(
+    await attachHeatTreatmentControlRelations(
+      await attachDuplicateControlsToPage(
+        applyCurrentSystemWdi([record], await loadServerOtherSettings()),
       ),
-    )
-    return recordWithDuplicateControls as unknown as WeldRow
-  })
+    ),
+  )
+  return recordWithDuplicateControls as unknown as WeldRow
+}
 
-export const listWeldingJournalPage = createServerFn({ method: 'GET' })
-  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
-  .handler(async ({ data }): Promise<WeldPageResult> => {
-    await assertSecurityScope('entry')
-    return listReportPage('weldingJournal', data)
-  })
+export async function listWeldingJournalPage({
+  data: input,
+}: {
+  data?: WeldPageRequest
+}): Promise<WeldPageResult> {
+  const data = normalizeWeldPageRequest(input)
+  await assertSecurityScope('entry')
+  return listReportPage('weldingJournal', data)
+}
 
-export const listLnkReportPage = createServerFn({ method: 'GET' })
-  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
-  .handler(async ({ data }): Promise<WeldPageResult> => {
-    await assertSecurityScope('entry')
-    return listReportPage('lnk', data)
-  })
+export async function listLnkReportPage({
+  data: input,
+}: {
+  data?: WeldPageRequest
+}): Promise<WeldPageResult> {
+  const data = normalizeWeldPageRequest(input)
+  await assertSecurityScope('entry')
+  return listReportPage('lnk', data)
+}
 
-export const listHeatTreatmentReportPage = createServerFn({ method: 'GET' })
-  .validator((data: WeldPageRequest | undefined) => normalizeWeldPageRequest(data))
-  .handler(async ({ data }): Promise<WeldPageResult> => {
-    await assertSecurityScope('entry')
-    return listReportPage('heatTreatment', data)
-  })
+export async function listHeatTreatmentReportPage({
+  data: input,
+}: {
+  data?: WeldPageRequest
+}): Promise<WeldPageResult> {
+  const data = normalizeWeldPageRequest(input)
+  await assertSecurityScope('entry')
+  return listReportPage('heatTreatment', data)
+}
 
-export const listWeldColumnFilterOptions = createServerFn({ method: 'GET' })
-  .validator((data: WeldColumnFilterOptionsRequest | undefined) => normalizeWeldColumnFilterOptionsRequest(data))
-  .handler(async ({ data }): Promise<WeldColumnFilterOption[]> => {
-    await assertSecurityScope('entry')
-    return listColumnFilterOptions(data)
-  })
+export async function listWeldColumnFilterOptions({
+  data: input,
+}: {
+  data?: WeldColumnFilterOptionsRequest
+}): Promise<WeldColumnFilterOption[]> {
+  const data = normalizeWeldColumnFilterOptionsRequest(input)
+  await assertSecurityScope('entry')
+  return listColumnFilterOptions(data)
+}
 
-export const getDocumentGenerationData = createServerFn({ method: 'POST' })
-  .validator((data: DocumentGenerationDataRequest | undefined) => normalizeDocumentGenerationDataRequest(data))
-  .handler(async ({ data }): Promise<DocumentGenerationDataResult> => {
-    await assertSecurityScope('entry')
-    const db = requireDb()
-    const clauses: SQL[] = [sql`${weldJoints.weldDate} is not null`]
-    if (data.periodFrom) clauses.push(gte(weldJoints.weldDate, data.periodFrom))
-    if (data.periodTo) clauses.push(lte(weldJoints.weldDate, data.periodTo))
-    if (data.projects.length > 0) clauses.push(inArray(weldJoints.projectTitle, data.projects))
-    if (data.subtitles.length > 0) clauses.push(inArray(weldJoints.subtitleCode, data.subtitles))
-    if (data.lines.length > 0) clauses.push(inArray(weldJoints.line, data.lines))
+export async function getDocumentGenerationData({
+  data: input,
+}: {
+  data?: DocumentGenerationDataRequest
+}): Promise<DocumentGenerationDataResult> {
+  const data = normalizeDocumentGenerationDataRequest(input)
+  await assertSecurityScope('entry')
+  const db = requireDb()
+  const clauses: SQL[] = [sql`${weldJoints.weldDate} is not null`]
+  if (data.periodFrom) clauses.push(gte(weldJoints.weldDate, data.periodFrom))
+  if (data.periodTo) clauses.push(lte(weldJoints.weldDate, data.periodTo))
+  if (data.projects.length > 0) clauses.push(inArray(weldJoints.projectTitle, data.projects))
+  if (data.subtitles.length > 0) clauses.push(inArray(weldJoints.subtitleCode, data.subtitles))
+  if (data.lines.length > 0) clauses.push(inArray(weldJoints.line, data.lines))
 
-    const [rows, projectRows, subtitleRows, lineRows] = await Promise.all([
-      db
-        .select(WELD_TABLE_SELECT)
-        .from(weldJoints)
-        .where(and(...clauses))
-        .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)),
-      db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints),
-      db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints),
-      db.selectDistinct({ value: weldJoints.line }).from(weldJoints),
-    ])
+  const [rows, projectRows, subtitleRows, lineRows] = await Promise.all([
+    db
+      .select(WELD_TABLE_SELECT)
+      .from(weldJoints)
+      .where(and(...clauses))
+      .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)),
+    db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints),
+    db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints),
+    db.selectDistinct({ value: weldJoints.line }).from(weldJoints),
+  ])
 
-    return {
-      rows: compactWeldRowsForTransport(
-        await attachGeneratedDocumentFields(
-          await attachDuplicateControlsToPage(
-            await attachPreHeatTreatmentControlRelations(
-              applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
-              db,
-            ),
+  return {
+    rows: compactWeldRowsForTransport(
+      await attachGeneratedDocumentFields(
+        await attachDuplicateControlsToPage(
+          await attachPreHeatTreatmentControlRelations(
+            applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
+            db,
           ),
         ),
       ),
-      scopeOptions: {
-        projects: getUniqueSortedTexts(projectRows.map((row) => row.value)),
-        subtitles: getUniqueSortedTexts(subtitleRows.map((row) => row.value)),
-        lines: getUniqueSortedTexts(lineRows.map((row) => row.value)),
-      },
-    }
-  })
+    ),
+    scopeOptions: {
+      projects: getUniqueSortedTexts(projectRows.map((row) => row.value)),
+      subtitles: getUniqueSortedTexts(subtitleRows.map((row) => row.value)),
+      lines: getUniqueSortedTexts(lineRows.map((row) => row.value)),
+    },
+  }
+}
 
-export const getWeldDataUsageSummary = createServerFn({ method: 'GET' })
-  .handler(async (): Promise<WeldDataUsageSummary> => {
-    await assertSecurityScope('entry')
-    const db = requireDb()
-    const [[{ total, leadingLetterIndexedRowsCount }], weldingTypes, connectionTypes, materialGroups, testTypes] = await Promise.all([
-      db
-        .select({
-          total: count(),
-          leadingLetterIndexedRowsCount: sql<number>`count(*) filter (
-            where regexp_replace(coalesce(${weldJoints.joint}, ''), '[[:space:]]+', '', 'g') ~* '^[A-Z][A-Z][0-9]'
-          )`,
-        })
-        .from(weldJoints),
-      listMultiValueUsage(weldJoints.weldingMethod, '[+,;]+'),
-      listSingleValueUsage(weldJoints.connectionType),
-      listSingleValueUsage(weldJoints.materialGroup),
-      listMultiValueUsage(weldJoints.testTypes, '[,;+]+'),
-    ])
+export async function getWeldDataUsageSummary(): Promise<WeldDataUsageSummary> {
+  await assertSecurityScope('entry')
+  const db = requireDb()
+  const [[{ total, leadingLetterIndexedRowsCount }], weldingTypes, connectionTypes, materialGroups, testTypes] = await Promise.all([
+    db
+      .select({
+        total: count(),
+        leadingLetterIndexedRowsCount: sql<number>`count(*) filter (
+          where regexp_replace(coalesce(${weldJoints.joint}, ''), '[[:space:]]+', '', 'g') ~* '^[A-Z][A-Z][0-9]'
+        )`,
+      })
+      .from(weldJoints),
+    listMultiValueUsage(weldJoints.weldingMethod, '[+,;]+'),
+    listSingleValueUsage(weldJoints.connectionType),
+    listSingleValueUsage(weldJoints.materialGroup),
+    listMultiValueUsage(weldJoints.testTypes, '[,;+]+'),
+  ])
 
-    return {
-      rowsCount: Number(total) || 0,
-      leadingLetterIndexedRowsCount: Number(leadingLetterIndexedRowsCount) || 0,
-      weldingTypes,
-      connectionTypes,
-      materialGroups,
-      testTypes,
-    }
-  })
+  return {
+    rowsCount: Number(total) || 0,
+    leadingLetterIndexedRowsCount: Number(leadingLetterIndexedRowsCount) || 0,
+    weldingTypes,
+    connectionTypes,
+    materialGroups,
+    testTypes,
+  }
+}
 
 export type UsageAggregateRow = {
   value: string
@@ -1349,27 +1375,30 @@ export async function getFullReportRowsByIds(
   )
 }
 
-export const listWeldJointRowsByIds = createServerFn({ method: 'POST' })
-  .validator((data: WeldRowsByIdsRequest) => ({
-    ids: Array.from(new Set((data?.ids ?? []).map(Number).filter(Number.isFinite))),
-  }))
-  .handler(async ({ data }): Promise<WeldRow[]> => {
-    await assertSecurityScope('entry')
-    if (data.ids.length === 0) return []
-    const db = requireDb()
-    const rows = await loadWeldRowsByIdsInBatches(db, data.ids)
-    const orderById = new Map(data.ids.map((id, index) => [id, index]))
-    rows.sort((left, right) => (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER))
-    return compactWeldRowsForTransport(
-      await attachGeneratedDocumentFields(
-        await attachHeatTreatmentControlRelations(
-          await attachDuplicateControlsToPage(
-            applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
-          ),
+export async function listWeldJointRowsByIds({
+  data: input,
+}: {
+  data: WeldRowsByIdsRequest
+}): Promise<WeldRow[]> {
+  const data = {
+    ids: Array.from(new Set((input?.ids ?? []).map(Number).filter(Number.isFinite))),
+  }
+  await assertSecurityScope('entry')
+  if (data.ids.length === 0) return []
+  const db = requireDb()
+  const rows = await loadWeldRowsByIdsInBatches(db, data.ids)
+  const orderById = new Map(data.ids.map((id, index) => [id, index]))
+  rows.sort((left, right) => (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER))
+  return compactWeldRowsForTransport(
+    await attachGeneratedDocumentFields(
+      await attachHeatTreatmentControlRelations(
+        await attachDuplicateControlsToPage(
+          applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
         ),
       ),
-    )
-  })
+    ),
+  )
+}
 
 export async function loadWeldRowsByIdsInBatches(
   db: Pick<ReturnType<typeof requireDb>, 'select'>,

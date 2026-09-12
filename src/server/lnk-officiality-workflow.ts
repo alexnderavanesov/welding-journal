@@ -1,5 +1,4 @@
 import { and, asc, inArray, or, sql } from 'drizzle-orm'
-import { createServerFn } from '@tanstack/react-start'
 
 import { requireDb } from '@/db'
 import {
@@ -122,127 +121,133 @@ export type LnkOfficialityChainRow = Partial<WeldRow> & {
 
 type HydratedWeldJoint = WeldJoint & WeldRow
 
-export const previewLnkOfficialityChange = createServerFn({ method: 'POST' })
-  .validator(normalizeRequest)
-  .handler(async ({ data }): Promise<LnkOfficialityChainPlan> => {
-    await assertSecurityScope('edit')
-    return requireDb().transaction(async (tx) => {
-      const targetRows = await loadTargetRows(tx, data)
-      const scopeRows = await loadLineChainRows(tx, targetRows, false)
-      assertTargetsRemainInScope(targetRows, scopeRows)
-      assertExpectedInteractiveWeldVersions(
-        targetRows.map((row) => row.id),
-        data.targets,
-        targetRows,
-      )
-      const hydratedRows = await hydrateRows(tx, scopeRows)
-      const settings = await loadWeldWorkflowSettingsFromTransaction(tx)
-      const earlyCoilDecisionSourceRowIds = await loadEarlyCoilDecisionSourceRowIds(tx, scopeRows)
-      return buildLnkOfficialityChainPlan(
-        hydratedRows,
-        data.targets.map((target) => target.id),
-        data.officiality,
-        {
-          earlyCoilDecisionSourceRowIds,
-          systemIndexSettings: settings.systemIndexSettings,
-        },
-      )
-    })
+export async function previewLnkOfficialityChange({
+  data: input,
+}: {
+  data: LnkOfficialityChangeRequest
+}): Promise<LnkOfficialityChainPlan> {
+  const data = normalizeRequest(input)
+  await assertSecurityScope('edit')
+  return requireDb().transaction(async (tx) => {
+    const targetRows = await loadTargetRows(tx, data)
+    const scopeRows = await loadLineChainRows(tx, targetRows, false)
+    assertTargetsRemainInScope(targetRows, scopeRows)
+    assertExpectedInteractiveWeldVersions(
+      targetRows.map((row) => row.id),
+      data.targets,
+      targetRows,
+    )
+    const hydratedRows = await hydrateRows(tx, scopeRows)
+    const settings = await loadWeldWorkflowSettingsFromTransaction(tx)
+    const earlyCoilDecisionSourceRowIds = await loadEarlyCoilDecisionSourceRowIds(tx, scopeRows)
+    return buildLnkOfficialityChainPlan(
+      hydratedRows,
+      data.targets.map((target) => target.id),
+      data.officiality,
+      {
+        earlyCoilDecisionSourceRowIds,
+        systemIndexSettings: settings.systemIndexSettings,
+      },
+    )
   })
+}
 
-export const applyLnkOfficialityChange = createServerFn({ method: 'POST' })
-  .validator(normalizeRequest)
-  .handler(async ({ data }): Promise<LnkOfficialityChangeResult> => {
-    await assertSecurityScope('edit')
-    if (!data.expectedPlanKey) {
-      throw new Error('Сначала необходимо проверить последствия изменения официальности.')
+export async function applyLnkOfficialityChange({
+  data: input,
+}: {
+  data: LnkOfficialityChangeRequest
+}): Promise<LnkOfficialityChangeResult> {
+  const data = normalizeRequest(input)
+  await assertSecurityScope('edit')
+  if (!data.expectedPlanKey) {
+    throw new Error('Сначала необходимо проверить последствия изменения официальности.')
+  }
+
+  return requireDb().transaction(async (tx) => {
+    const targetReferences = await loadTargetRows(tx, data)
+    await lockWeldLineMemberships(tx, targetReferences)
+    const scopeRows = await loadLineChainRows(tx, targetReferences, true)
+    assertTargetsRemainInScope(targetReferences, scopeRows)
+    const scopeRowsById = new Map(scopeRows.map((row) => [row.id, row]))
+    const targetRows = data.targets.map((target) => scopeRowsById.get(target.id)!)
+    assertExpectedInteractiveWeldVersions(
+      targetRows.map((row) => row.id),
+      data.targets,
+      targetRows,
+    )
+
+    const hydratedRows = await hydrateRows(tx, scopeRows)
+    const validationContext = await loadServerWeldValidationContext(tx, scopeRows)
+    const earlyCoilDecisionSourceRowIds = await loadEarlyCoilDecisionSourceRowIds(tx, scopeRows, true)
+    const plan = buildLnkOfficialityChainPlan(
+      hydratedRows,
+      data.targets.map((target) => target.id),
+      data.officiality,
+      {
+        earlyCoilDecisionSourceRowIds,
+        systemIndexSettings: validationContext.systemIndexSettings,
+      },
+    )
+    if (plan.planKey !== data.expectedPlanKey) {
+      throw new Error(
+        'Последствия изменения официальности уже изменились. Ничего не сохранено. Проверьте свежую картину стыка.',
+      )
     }
 
-    return requireDb().transaction(async (tx) => {
-      const targetReferences = await loadTargetRows(tx, data)
-      await lockWeldLineMemberships(tx, targetReferences)
-      const scopeRows = await loadLineChainRows(tx, targetReferences, true)
-      assertTargetsRemainInScope(targetReferences, scopeRows)
-      const scopeRowsById = new Map(scopeRows.map((row) => [row.id, row]))
-      const targetRows = data.targets.map((target) => scopeRowsById.get(target.id)!)
-      assertExpectedInteractiveWeldVersions(
-        targetRows.map((row) => row.id),
-        data.targets,
-        targetRows,
-      )
-
-      const hydratedRows = await hydrateRows(tx, scopeRows)
-      const validationContext = await loadServerWeldValidationContext(tx, scopeRows)
-      const earlyCoilDecisionSourceRowIds = await loadEarlyCoilDecisionSourceRowIds(tx, scopeRows, true)
-      const plan = buildLnkOfficialityChainPlan(
-        hydratedRows,
-        data.targets.map((target) => target.id),
-        data.officiality,
-        {
-          earlyCoilDecisionSourceRowIds,
-          systemIndexSettings: validationContext.systemIndexSettings,
-        },
-      )
-      if (plan.planKey !== data.expectedPlanKey) {
-        throw new Error(
-          'Последствия изменения официальности уже изменились. Ничего не сохранено. Проверьте свежую картину стыка.',
-        )
+    const previousRows = new Map<number, WeldJoint>()
+    const recordsById = new Map<number, WeldRow>()
+    const fullAffectedRows = await loadFullRowsByIds(tx, plan.affectedRowIds, true)
+    const fullAffectedRowsById = new Map(fullAffectedRows.map((row) => [row.id, row]))
+    const officialityById = new Map(plan.officialityChanges.map((change) => [change.rowId, change.nextOfficiality]))
+    const renameById = new Map(plan.renames.map((change) => [change.rowId, change.targetJoint]))
+    for (const rowId of plan.affectedRowIds) {
+      const previous = fullAffectedRowsById.get(rowId)
+      const hydrated = fullAffectedRowsById.get(rowId)
+      if (!previous || !hydrated) {
+        throw new Error('Один из затронутых стыков уже недоступен. Ничего не сохранено.')
       }
-
-      const previousRows = new Map<number, WeldJoint>()
-      const recordsById = new Map<number, WeldRow>()
-      const fullAffectedRows = await loadFullRowsByIds(tx, plan.affectedRowIds, true)
-      const fullAffectedRowsById = new Map(fullAffectedRows.map((row) => [row.id, row]))
-      const officialityById = new Map(plan.officialityChanges.map((change) => [change.rowId, change.nextOfficiality]))
-      const renameById = new Map(plan.renames.map((change) => [change.rowId, change.targetJoint]))
-      for (const rowId of plan.affectedRowIds) {
-        const previous = fullAffectedRowsById.get(rowId)
-        const hydrated = fullAffectedRowsById.get(rowId)
-        if (!previous || !hydrated) {
-          throw new Error('Один из затронутых стыков уже недоступен. Ничего не сохранено.')
-        }
-        previousRows.set(rowId, previous)
-        const nextOfficiality = officialityById.get(rowId)
-        recordsById.set(rowId, {
-          ...hydrated,
-          ...(nextOfficiality
-            ? { officiality: nextOfficiality === 'unofficial' ? 'неофициальный' : null }
-            : {}),
-          ...(renameById.has(rowId) ? { joint: renameById.get(rowId)! } : {}),
-        })
-      }
-      const records = [...recordsById.values()]
-      const allowedJointRenameRowIds = new Set(plan.renames.map((change) => change.rowId))
-      await assertEarlyCoilDecisionSourcesRemainValid(tx, records, previousRows, {
-        allowedJointRenameRowIds,
+      previousRows.set(rowId, previous)
+      const nextOfficiality = officialityById.get(rowId)
+      recordsById.set(rowId, {
+        ...hydrated,
+        ...(nextOfficiality
+          ? { officiality: nextOfficiality === 'unofficial' ? 'неофициальный' : null }
+          : {}),
+        ...(renameById.has(rowId) ? { joint: renameById.get(rowId)! } : {}),
       })
-      prepareServerWeldRecords({
-        records,
-        previousRows,
-        context: validationContext,
-      })
-      validateServerWeldRecords({
-        records,
-        previousRows,
-        context: validationContext,
-        allowSystemJointNames: true,
-      })
-
-      const savedRows = await updateWeldJointsInBatches(tx, records, previousRows)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, savedRows, previousRows)
-      await insertEarlyCoilDecisions(tx, plan, recordsById, fullAffectedRowsById)
-      await refreshEarlyCoilDecisionContextsInTransaction(
-        tx,
-        savedRows,
-        validationContext.systemIndexSettings,
-      )
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes(records, previousRows),
-      })
-
-      return { plan, savedRows: savedRows as WeldRow[] }
+    }
+    const records = [...recordsById.values()]
+    const allowedJointRenameRowIds = new Set(plan.renames.map((change) => change.rowId))
+    await assertEarlyCoilDecisionSourcesRemainValid(tx, records, previousRows, {
+      allowedJointRenameRowIds,
     })
+    prepareServerWeldRecords({
+      records,
+      previousRows,
+      context: validationContext,
+    })
+    validateServerWeldRecords({
+      records,
+      previousRows,
+      context: validationContext,
+      allowSystemJointNames: true,
+    })
+
+    const savedRows = await updateWeldJointsInBatches(tx, records, previousRows)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, savedRows, previousRows)
+    await insertEarlyCoilDecisions(tx, plan, recordsById, fullAffectedRowsById)
+    await refreshEarlyCoilDecisionContextsInTransaction(
+      tx,
+      savedRows,
+      validationContext.systemIndexSettings,
+    )
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes(records, previousRows),
+    })
+
+    return { plan, savedRows: savedRows as WeldRow[] }
   })
+}
 
 function normalizeRequest(data: LnkOfficialityChangeRequest): LnkOfficialityChangeRequest {
   const targets = Array.isArray(data?.targets)

@@ -128,7 +128,6 @@ mergeWeldRecordsWithPrevious,
 prepareServerWeldRecords,
 validateServerWeldRecords,
 } from '@/server/weld-save-validation'
-import { createServerFn } from '@tanstack/react-start'
 import { and,asc,eq,inArray,isNull,notExists,or,sql } from 'drizzle-orm'
 
 import {
@@ -238,138 +237,139 @@ export async function lockRequestDocumentAdvisoryKeys(
   }
 }
 
-export const createWeldJoint = createServerFn({ method: 'POST' })
-  .validator((data: WeldPayload) => data)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    const db = requireDb()
-    return db.transaction(async (tx) => {
-      const record = restrictWeldMutationRecord(data, 'welding')
-      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
-      await lockWeldLineMemberships(tx, [record])
-      const validationContext = await loadServerWeldValidationContext(tx, [record])
-      prepareServerWeldRecords({ records: [record], previousRows: new Map(), context: validationContext })
-      validateServerWeldRecords({
-        records: [record],
-        previousRows: new Map(),
-        context: validationContext,
-      })
-      const preHeatTreatmentLnkExempt = await getPreHeatTreatmentLnkExemptionForNewRow(
-        tx,
-        record,
-        processSettings,
-      )
-      const [created] = await tx
-        .insert(weldJoints)
-        .values({ ...toDbInsert(record, true), preHeatTreatmentLnkExempt })
-        .returning(WELD_TABLE_RETURNING)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, [created], new Map())
-      await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], new Map()) })
-      return created
+export async function createWeldJoint({ data }: { data: WeldPayload }) {
+  await assertSecurityScope('edit')
+  const db = requireDb()
+  return db.transaction(async (tx) => {
+    const record = restrictWeldMutationRecord(data, 'welding')
+    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+    await lockWeldLineMemberships(tx, [record])
+    const validationContext = await loadServerWeldValidationContext(tx, [record])
+    prepareServerWeldRecords({ records: [record], previousRows: new Map(), context: validationContext })
+    validateServerWeldRecords({
+      records: [record],
+      previousRows: new Map(),
+      context: validationContext,
     })
+    const preHeatTreatmentLnkExempt = await getPreHeatTreatmentLnkExemptionForNewRow(
+      tx,
+      record,
+      processSettings,
+    )
+    const [created] = await tx
+      .insert(weldJoints)
+      .values({ ...toDbInsert(record, true), preHeatTreatmentLnkExempt })
+      .returning(WELD_TABLE_RETURNING)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, [created], new Map())
+    await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], new Map()) })
+    return created
   })
+}
 
-export const updateWeldJoint = createServerFn({ method: 'POST' })
-  .validator((data: WeldPayload) => data)
-  .handler(async ({ data }) => updateWeldJointRecord(data, false))
+export async function updateWeldJoint({ data }: { data: WeldPayload }) {
+  return updateWeldJointRecord(data, false)
+}
 
-export const updateSystemWeldJoint = createServerFn({ method: 'POST' })
-  .validator((data: SystemRepeatedJointRenameRequest) => ({
-    changes: Array.isArray(data.changes)
-      ? data.changes.map((change) => ({
+export async function updateSystemWeldJoint({
+  data: input,
+}: {
+  data: SystemRepeatedJointRenameRequest
+}) {
+  const data = {
+    changes: Array.isArray(input.changes)
+      ? input.changes.map((change) => ({
           rowId: Number(change?.rowId),
           currentJoint: String(change?.currentJoint ?? '').trim(),
           targetJoint: String(change?.targetJoint ?? '').trim(),
         }))
       : [],
-  }))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    if (
-      data.changes.length === 0 ||
-      data.changes.length > 1_000 ||
-      data.changes.some((change) => (
-        !Number.isInteger(change.rowId) ||
-        change.rowId <= 0 ||
-        !change.currentJoint ||
-        !change.targetJoint ||
-        change.currentJoint.toUpperCase() === change.targetJoint.toUpperCase()
-      )) ||
-      new Set(data.changes.map((change) => change.rowId)).size !== data.changes.length
-    ) {
-      throw new Error('Некорректные данные системного переименования стыка.')
+  }
+  await assertSecurityScope('edit')
+  if (
+    data.changes.length === 0 ||
+    data.changes.length > 1_000 ||
+    data.changes.some((change) => (
+      !Number.isInteger(change.rowId) ||
+      change.rowId <= 0 ||
+      !change.currentJoint ||
+      !change.targetJoint ||
+      change.currentJoint.toUpperCase() === change.targetJoint.toUpperCase()
+    )) ||
+    new Set(data.changes.map((change) => change.rowId)).size !== data.changes.length
+  ) {
+    throw new Error('Некорректные данные системного переименования стыка.')
+  }
+  const db = requireDb()
+  return db.transaction(async (tx) => {
+    await loadControlProcessSettingsFromTransaction(tx)
+    const firstChange = data.changes[0]!
+    const [anchor] = await tx.select().from(weldJoints).where(eq(weldJoints.id, firstChange.rowId)).limit(1)
+    if (!anchor) throw new Error('Стык для переименования не найден.')
+    const anchorIdentity = normalizePstoLineIdentity(anchor)
+    await lockWeldLineMemberships(tx, [anchorIdentity])
+
+    const storedRows = await tx
+      .select()
+      .from(weldJoints)
+      .where(buildWeldLineIdentityWhere(anchorIdentity))
+      .orderBy(asc(weldJoints.id))
+      .for('update')
+    const rows = await attachDuplicateControlRelations(
+      await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),
+      tx,
+    )
+    const previousRows = new Map(rows.map((row) => [row.id, row as unknown as WeldJoint]))
+    for (const change of data.changes) {
+      const previous = previousRows.get(change.rowId)
+      if (!previous) throw new Error('Состав цепочки уже изменился. Обновите диспетчер задач.')
+      if (String(previous.joint ?? '').trim().toUpperCase() !== change.currentJoint.toUpperCase()) {
+        throw new Error('Название одного из стыков уже изменилось. Обновите диспетчер задач.')
+      }
     }
-    const db = requireDb()
-    return db.transaction(async (tx) => {
-      await loadControlProcessSettingsFromTransaction(tx)
-      const firstChange = data.changes[0]!
-      const [anchor] = await tx.select().from(weldJoints).where(eq(weldJoints.id, firstChange.rowId)).limit(1)
-      if (!anchor) throw new Error('Стык для переименования не найден.')
-      const anchorIdentity = normalizePstoLineIdentity(anchor)
-      await lockWeldLineMemberships(tx, [anchorIdentity])
 
-      const storedRows = await tx
-        .select()
-        .from(weldJoints)
-        .where(buildWeldLineIdentityWhere(anchorIdentity))
-        .orderBy(asc(weldJoints.id))
-        .for('update')
-      const rows = await attachDuplicateControlRelations(
-        await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),
-        tx,
-      )
-      const previousRows = new Map(rows.map((row) => [row.id, row as unknown as WeldJoint]))
-      for (const change of data.changes) {
-        const previous = previousRows.get(change.rowId)
-        if (!previous) throw new Error('Состав цепочки уже изменился. Обновите диспетчер задач.')
-        if (String(previous.joint ?? '').trim().toUpperCase() !== change.currentJoint.toUpperCase()) {
-          throw new Error('Название одного из стыков уже изменилось. Обновите диспетчер задач.')
-        }
-      }
+    const validationContext = await loadServerWeldValidationContext(tx, rows)
+    if (!isAuthorizedSystemRepeatedJointRename(
+      rows as WeldRow[],
+      data,
+      validationContext.systemIndexSettings,
+    )) {
+      throw new Error('Системное переименование больше не соответствует текущим правилам цепочки.')
+    }
 
-      const validationContext = await loadServerWeldValidationContext(tx, rows)
-      if (!isAuthorizedSystemRepeatedJointRename(
-        rows as WeldRow[],
-        data,
-        validationContext.systemIndexSettings,
-      )) {
-        throw new Error('Системное переименование больше не соответствует текущим правилам цепочки.')
-      }
-
-      const records = data.changes.map((change) => ({
-        ...previousRows.get(change.rowId)!,
-        joint: change.targetJoint,
-      }))
-      const allowedJointRenameRowIds = new Set(data.changes.map((change) => change.rowId))
-      await assertEarlyCoilDecisionSourcesRemainValid(
-        tx,
-        records,
-        previousRows,
-        { allowedJointRenameRowIds },
-      )
-      validateServerWeldRecords({
-        records,
-        previousRows,
-        context: validationContext,
-        allowSystemJointNames: true,
-      })
-      const updatedRows = await updateWeldJointsInBatches(tx, records, previousRows)
-      await syncSystemDocumentsForWeldChangesInTransaction(
-        tx,
-        updatedRows,
-        previousRows,
-      )
-      await refreshEarlyCoilDecisionContextsInTransaction(
-        tx,
-        updatedRows,
-        validationContext.systemIndexSettings,
-      )
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes(records, previousRows),
-      })
-      return updatedRows
+    const records = data.changes.map((change) => ({
+      ...previousRows.get(change.rowId)!,
+      joint: change.targetJoint,
+    }))
+    const allowedJointRenameRowIds = new Set(data.changes.map((change) => change.rowId))
+    await assertEarlyCoilDecisionSourcesRemainValid(
+      tx,
+      records,
+      previousRows,
+      { allowedJointRenameRowIds },
+    )
+    validateServerWeldRecords({
+      records,
+      previousRows,
+      context: validationContext,
+      allowSystemJointNames: true,
     })
+    const updatedRows = await updateWeldJointsInBatches(tx, records, previousRows)
+    await syncSystemDocumentsForWeldChangesInTransaction(
+      tx,
+      updatedRows,
+      previousRows,
+    )
+    await refreshEarlyCoilDecisionContextsInTransaction(
+      tx,
+      updatedRows,
+      validationContext.systemIndexSettings,
+    )
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes(records, previousRows),
+    })
+    return updatedRows
   })
+}
 
 export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointNames: boolean) {
   await assertSecurityScope('edit')
@@ -482,9 +482,9 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
   })
 }
 
-export const moveWeldJointChain = createServerFn({ method: 'POST' })
-  .validator((data: WeldPayload) => data)
-  .handler(async ({ data }) => moveWeldJointChainRecord(data))
+export async function moveWeldJointChain({ data }: { data: WeldPayload }) {
+  return moveWeldJointChainRecord(data)
+}
 
 export async function moveWeldJointChainRecord(data: WeldPayload) {
   await assertSecurityScope('edit')
@@ -1074,121 +1074,124 @@ function buildWeldLineIdentityWhere(identity: ReturnType<typeof normalizePstoLin
   )
 }
 
-export const createWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: RepeatedJointCreateData) => ({
+export async function createWeldJoints({
+  data: input,
+}: {
+  data: RepeatedJointCreateData
+}) {
+  const data = {
     source: {
-      id: Number(data?.source?.id),
-      version: String(data?.source?.version ?? '').trim(),
+      id: Number(input?.source?.id),
+      version: String(input?.source?.version ?? '').trim(),
     },
-    targetJoints: [...new Set((Array.isArray(data?.targetJoints) ? data.targetJoints : [])
+    targetJoints: [...new Set((Array.isArray(input?.targetJoints) ? input.targetJoints : [])
       .map((joint) => String(joint ?? '').trim())
       .filter(Boolean))],
-  }))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    if (!Number.isInteger(data.source.id) || data.source.id <= 0) {
-      throw new Error('Не передан исходный стык для продолжения цепочки.')
+  }
+  await assertSecurityScope('edit')
+  if (!Number.isInteger(data.source.id) || data.source.id <= 0) {
+    throw new Error('Не передан исходный стык для продолжения цепочки.')
+  }
+  if (data.targetJoints.length === 0 || data.targetJoints.length > 2) {
+    throw new Error('Некорректный состав продолжения цепочки стыка.')
+  }
+  const db = requireDb()
+  return db.transaction(async (tx) => {
+    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+    const [sourceReference] = await tx
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.source.id))
+      .limit(1)
+    if (!sourceReference) throw new Error('Исходный стык больше не существует. Обновите диспетчер задач.')
+    const sourceIdentity = normalizePstoLineIdentity(sourceReference)
+    await lockWeldLineMemberships(tx, [sourceIdentity])
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`repeated-joint-source:${data.source.id}`}))`)
+    const scopeRows = await tx
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(buildWeldLineIdentityWhere(sourceIdentity))
+      .orderBy(asc(weldJoints.id))
+      .for('update')
+    const sourceRow = scopeRows.find((row) => row.id === data.source.id)
+    if (!sourceRow) {
+      throw new Error('Исходный стык уже перенесен на другую линию. Обновите диспетчер задач.')
     }
-    if (data.targetJoints.length === 0 || data.targetJoints.length > 2) {
-      throw new Error('Некорректный состав продолжения цепочки стыка.')
+    assertExpectedInteractiveWeldVersions(
+      [sourceRow.id],
+      [data.source],
+      [sourceRow],
+    )
+    const hydratedScopeRows = await attachDuplicateControlRelations(
+      await attachHeatTreatmentControlRelations(scopeRows as WeldRow[], tx),
+      tx,
+    )
+    const hydratedSource = hydratedScopeRows.find((row) => row.id === sourceRow.id)
+    if (!hydratedSource) throw new Error('Не удалось проверить исходный стык. Обновите диспетчер задач.')
+    const validationContext = await loadServerWeldValidationContext(tx, scopeRows)
+    const hasEarlyCoilDecision = await hasActiveEarlyCoilDecisionForSource(tx, sourceRow.id)
+    const expectedTargets = getCurrentRepeatedJointTargets(
+      hydratedScopeRows,
+      hydratedSource,
+      validationContext.systemIndexSettings,
+      hasEarlyCoilDecision,
+    )
+    if (!sameNormalizedTextSet(data.targetJoints, expectedTargets)) {
+      throw new Error(
+        'Продолжение цепочки уже изменилось или больше не требуется. Обновите диспетчер задач.',
+      )
     }
-    const db = requireDb()
-    return db.transaction(async (tx) => {
-      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
-      const [sourceReference] = await tx
-        .select(WELD_TABLE_RETURNING)
-        .from(weldJoints)
-        .where(eq(weldJoints.id, data.source.id))
-        .limit(1)
-      if (!sourceReference) throw new Error('Исходный стык больше не существует. Обновите диспетчер задач.')
-      const sourceIdentity = normalizePstoLineIdentity(sourceReference)
-      await lockWeldLineMemberships(tx, [sourceIdentity])
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`repeated-joint-source:${data.source.id}`}))`)
-      const scopeRows = await tx
-        .select(WELD_TABLE_RETURNING)
-        .from(weldJoints)
-        .where(buildWeldLineIdentityWhere(sourceIdentity))
-        .orderBy(asc(weldJoints.id))
-        .for('update')
-      const sourceRow = scopeRows.find((row) => row.id === data.source.id)
-      if (!sourceRow) {
-        throw new Error('Исходный стык уже перенесен на другую линию. Обновите диспетчер задач.')
-      }
-      assertExpectedInteractiveWeldVersions(
-        [sourceRow.id],
-        [data.source],
-        [sourceRow],
-      )
-      const hydratedScopeRows = await attachDuplicateControlRelations(
-        await attachHeatTreatmentControlRelations(scopeRows as WeldRow[], tx),
-        tx,
-      )
-      const hydratedSource = hydratedScopeRows.find((row) => row.id === sourceRow.id)
-      if (!hydratedSource) throw new Error('Не удалось проверить исходный стык. Обновите диспетчер задач.')
-      const validationContext = await loadServerWeldValidationContext(tx, scopeRows)
-      const hasEarlyCoilDecision = await hasActiveEarlyCoilDecisionForSource(tx, sourceRow.id)
-      const expectedTargets = getCurrentRepeatedJointTargets(
-        hydratedScopeRows,
-        hydratedSource,
-        validationContext.systemIndexSettings,
-        hasEarlyCoilDecision,
-      )
-      if (!sameNormalizedTextSet(data.targetJoints, expectedTargets)) {
-        throw new Error(
-          'Продолжение цепочки уже изменилось или больше не требуется. Обновите диспетчер задач.',
-        )
-      }
-      const currentCreationTask = buildRepeatedJointTasks(
-        hydratedScopeRows,
-        validationContext.welderStamps,
-        validationContext.welderStampSuspensions,
-        {
-          dataListSettings: validationContext.dataListSettings,
-          earlyCoilDecisionSourceRowIds: hasEarlyCoilDecision
-            ? new Set([sourceRow.id])
-            : new Set(),
-          systemIndexSettings: validationContext.systemIndexSettings,
-        },
-      ).find((task) => {
-        if (task.row.id !== sourceRow.id || (task.kind !== 'create' && task.kind !== 'coil')) return false
-        const taskTargets = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
-        return sameNormalizedTextSet(data.targetJoints, taskTargets)
-      })
-      if (!currentCreationTask) {
-        throw new Error(
-          'Создание продолжения сейчас заблокировано проверкой цепочки. Обновите диспетчер задач и исправьте указанное несоответствие.',
-        )
-      }
-      const records = data.targetJoints.map((targetJoint) =>
-        buildRepeatedJointDraft(hydratedSource, targetJoint),
-      )
-      const targetKeys = new Set(records.map(getDuplicateJointKey).filter((key): key is string => Boolean(key)))
-      const duplicate = scopeRows.find((row) => {
-        const key = getDuplicateJointKey(row)
-        return Boolean(key) && targetKeys.has(key!)
-      })
-      if (duplicate) {
-        throw new Error(
-          `Стык ${String(duplicate.joint ?? '').trim() || duplicate.id} уже создан. Обновите диспетчер задач.`,
-        )
-      }
-      prepareServerWeldRecords({
-        records,
-        previousRows: new Map(),
-        context: validationContext,
-      })
-      validateServerWeldRecords({
-        records,
-        previousRows: new Map(),
-        context: validationContext,
-        allowSystemJointNames: true,
-      })
-      const created = await insertWeldJointsInBatches(tx, records, processSettings)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, created, new Map())
-      await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, new Map()) })
-      return created
+    const currentCreationTask = buildRepeatedJointTasks(
+      hydratedScopeRows,
+      validationContext.welderStamps,
+      validationContext.welderStampSuspensions,
+      {
+        dataListSettings: validationContext.dataListSettings,
+        earlyCoilDecisionSourceRowIds: hasEarlyCoilDecision
+          ? new Set([sourceRow.id])
+          : new Set(),
+        systemIndexSettings: validationContext.systemIndexSettings,
+      },
+    ).find((task) => {
+      if (task.row.id !== sourceRow.id || (task.kind !== 'create' && task.kind !== 'coil')) return false
+      const taskTargets = task.kind === 'coil' ? task.targetJoints : [task.targetJoint]
+      return sameNormalizedTextSet(data.targetJoints, taskTargets)
     })
+    if (!currentCreationTask) {
+      throw new Error(
+        'Создание продолжения сейчас заблокировано проверкой цепочки. Обновите диспетчер задач и исправьте указанное несоответствие.',
+      )
+    }
+    const records = data.targetJoints.map((targetJoint) =>
+      buildRepeatedJointDraft(hydratedSource, targetJoint),
+    )
+    const targetKeys = new Set(records.map(getDuplicateJointKey).filter((key): key is string => Boolean(key)))
+    const duplicate = scopeRows.find((row) => {
+      const key = getDuplicateJointKey(row)
+      return Boolean(key) && targetKeys.has(key!)
+    })
+    if (duplicate) {
+      throw new Error(
+        `Стык ${String(duplicate.joint ?? '').trim() || duplicate.id} уже создан. Обновите диспетчер задач.`,
+      )
+    }
+    prepareServerWeldRecords({
+      records,
+      previousRows: new Map(),
+      context: validationContext,
+    })
+    validateServerWeldRecords({
+      records,
+      previousRows: new Map(),
+      context: validationContext,
+      allowSystemJointNames: true,
+    })
+    const created = await insertWeldJointsInBatches(tx, records, processSettings)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, created, new Map())
+    await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, new Map()) })
+    return created
   })
+}
 
 export function getCurrentRepeatedJointTargets(
   rows: WeldRow[],
@@ -1346,266 +1349,276 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
     })
 }
 
-export const updateWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: WeldBatchUpdateData) => data)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    return updateWeldJointRows(data)
-  })
+export async function updateWeldJoints({ data }: { data: WeldBatchUpdateData }) {
+  await assertSecurityScope('edit')
+  return updateWeldJointRows(data)
+}
 
-export const extendLnkRequest = createServerFn({ method: 'POST' })
-  .validator((data: LnkRequestExtensionRequest) => normalizeLnkRequestExtensionRequest(data))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    const db = requireDb()
+export async function extendLnkRequest({
+  data: input,
+}: {
+  data: LnkRequestExtensionRequest
+}) {
+  const data = normalizeLnkRequestExtensionRequest(input)
+  await assertSecurityScope('edit')
+  const db = requireDb()
 
-    return db.transaction(async (tx) => {
-      await lockRequestDocumentIdentities(tx, [{
-        kind: 'lnk',
-        name: data.requestName,
-        date: data.requestDate,
-      }])
-      await loadControlProcessSettingsFromTransaction(tx)
-      const targetIds = [...new Set(data.targets.map((target) => target.rowId))]
-      const lockedRows = await tx
-        .select()
-        .from(weldJoints)
-        .where(or(
-          inArray(weldJoints.id, targetIds),
-          buildLnkRequestIdentityWhere(data.requestName, data.requestDate),
-        ))
-        .orderBy(asc(weldJoints.id))
-        .for('update')
+  return db.transaction(async (tx) => {
+    await lockRequestDocumentIdentities(tx, [{
+      kind: 'lnk',
+      name: data.requestName,
+      date: data.requestDate,
+    }])
+    await loadControlProcessSettingsFromTransaction(tx)
+    const targetIds = [...new Set(data.targets.map((target) => target.rowId))]
+    const lockedRows = await tx
+      .select()
+      .from(weldJoints)
+      .where(or(
+        inArray(weldJoints.id, targetIds),
+        buildLnkRequestIdentityWhere(data.requestName, data.requestDate),
+      ))
+      .orderBy(asc(weldJoints.id))
+      .for('update')
 
-      const requestDisabledReason = getLnkRequestExtensionDisabledReason(lockedRows, {
-        name: data.requestName,
-        date: data.requestDate,
-      })
-      if (requestDisabledReason) throw new Error(requestDisabledReason)
-
-      const targetIdSet = new Set(targetIds)
-      const targetRows = lockedRows.filter((row) => targetIdSet.has(row.id))
-      if (targetRows.length !== targetIds.length) {
-        throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет ЛНК.')
-      }
-
-      let records = buildLnkRequestExtensionRows({
-        rows: targetRows,
-        targets: data.targets,
-        requestName: data.requestName,
-        requestDate: data.requestDate,
-      })
-      const previousRows = new Map(targetRows.map((row) => [row.id, row]))
-      const validationContext = await loadServerWeldValidationContext(tx, lockedRows)
-      records = mergeWeldRecordsWithPrevious(records, previousRows)
-      prepareServerWeldRecords({ records, previousRows, context: validationContext })
-      validateServerWeldRecords({ records, previousRows, context: validationContext })
-
-      const updated = await updateWeldJointsInBatches(tx, records, previousRows)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes(records, previousRows),
-      })
-      return updated
+    const requestDisabledReason = getLnkRequestExtensionDisabledReason(lockedRows, {
+      name: data.requestName,
+      date: data.requestDate,
     })
-  })
+    if (requestDisabledReason) throw new Error(requestDisabledReason)
 
-export const clearLnkRequestPosition = createServerFn({ method: 'POST' })
-  .validator((data: {
+    const targetIdSet = new Set(targetIds)
+    const targetRows = lockedRows.filter((row) => targetIdSet.has(row.id))
+    if (targetRows.length !== targetIds.length) {
+      throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет ЛНК.')
+    }
+
+    let records = buildLnkRequestExtensionRows({
+      rows: targetRows,
+      targets: data.targets,
+      requestName: data.requestName,
+      requestDate: data.requestDate,
+    })
+    const previousRows = new Map(targetRows.map((row) => [row.id, row]))
+    const validationContext = await loadServerWeldValidationContext(tx, lockedRows)
+    records = mergeWeldRecordsWithPrevious(records, previousRows)
+    prepareServerWeldRecords({ records, previousRows, context: validationContext })
+    validateServerWeldRecords({ records, previousRows, context: validationContext })
+
+    const updated = await updateWeldJointsInBatches(tx, records, previousRows)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes(records, previousRows),
+    })
+    return updated
+  })
+}
+
+export async function clearLnkRequestPosition({
+  data: input,
+}: {
+  data: {
     rowId: number
     expectedVersion: string
     methodKey: WeldFieldKey
     requestName: string
     requestDate: string
-  }) => ({
-    rowId: Number(data?.rowId),
-    expectedVersion: String(data?.expectedVersion ?? '').trim(),
-    methodKey: String(data?.methodKey ?? '') as WeldFieldKey,
-    requestName: String(data?.requestName ?? '').trim(),
-    requestDate: normalizeDateLikeForStorage(data?.requestDate) ?? String(data?.requestDate ?? '').trim(),
-  }))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    if (!Number.isInteger(data.rowId) || data.rowId <= 0 || !data.requestName) {
-      throw new Error('Некорректная позиция заявки ЛНК.')
+  }
+}) {
+  const data = {
+    rowId: Number(input?.rowId),
+    expectedVersion: String(input?.expectedVersion ?? '').trim(),
+    methodKey: String(input?.methodKey ?? '') as WeldFieldKey,
+    requestName: String(input?.requestName ?? '').trim(),
+    requestDate: normalizeDateLikeForStorage(input?.requestDate) ?? String(input?.requestDate ?? '').trim(),
+  }
+  await assertSecurityScope('edit')
+  if (!Number.isInteger(data.rowId) || data.rowId <= 0 || !data.requestName) {
+    throw new Error('Некорректная позиция заявки ЛНК.')
+  }
+  const method = getLnkMethodByRequestKey(data.methodKey)
+  if (!method) throw new Error('Выберите вид контроля')
+
+  const db = requireDb()
+  return db.transaction(async (tx) => {
+    await lockRequestDocumentIdentities(tx, [{
+      kind: 'lnk',
+      name: data.requestName,
+      date: data.requestDate,
+    }])
+    await loadControlProcessSettingsFromTransaction(tx)
+    const [row] = await tx
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.rowId))
+      .limit(1)
+      .for('update')
+    if (!row) throw new Error('Стык больше не существует. Обновите отчет ЛНК.')
+    assertExpectedInteractiveWeldVersions(
+      [row.id],
+      [{ id: row.id, version: data.expectedVersion }],
+      [row],
+    )
+    if (!isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
+      name: data.requestName,
+      date: data.requestDate,
+    })) {
+      throw new Error('Позиция заявки уже изменилась. Обновите отчет ЛНК и повторите действие.')
     }
-    const method = getLnkMethodByRequestKey(data.methodKey)
-    if (!method) throw new Error('Выберите вид контроля')
 
-    const db = requireDb()
-    return db.transaction(async (tx) => {
-      await lockRequestDocumentIdentities(tx, [{
-        kind: 'lnk',
-        name: data.requestName,
-        date: data.requestDate,
-      }])
-      await loadControlProcessSettingsFromTransaction(tx)
-      const [row] = await tx
-        .select(WELD_TABLE_RETURNING)
+    const record = buildLnkRequestPositionRemovalRow(row as WeldRow, method.requestKey)
+    const previousRows = new Map([[row.id, row]])
+    const validationContext = await loadServerWeldValidationContext(tx, [row])
+    prepareServerWeldRecords({ records: [record], previousRows, context: validationContext })
+    validateServerWeldRecords({ records: [record], previousRows, context: validationContext })
+    const [updated] = await updateWeldJointsInBatches(tx, [record], previousRows)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, [updated], previousRows)
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes([record], previousRows),
+    })
+    return updated
+  })
+}
+
+export async function manageLnkRequestDocument({
+  data: input,
+}: {
+  data: RequestDocumentManagerData
+}) {
+  const data = normalizeRequestDocumentManagerData(input)
+  await assertSecurityScope('edit')
+  if (!data.requestName) throw new Error('Выберите заявку ЛНК')
+  const db = requireDb()
+
+  return db.transaction(async (tx) => {
+    await lockRequestDocumentIdentities(tx, [
+      { kind: 'lnk', name: data.requestName, date: data.requestDate },
+      ...(data.action === 'rename'
+        ? [{ kind: 'lnk' as const, name: data.nextRequestName, date: data.requestDate }]
+        : []),
+    ])
+    await loadControlProcessSettingsFromTransaction(tx)
+    const rows = await tx
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(buildLnkRequestIdentityWhere(data.requestName, data.requestDate))
+      .orderBy(asc(weldJoints.id))
+      .for('update')
+    if (rows.length === 0) throw new Error('Заявка ЛНК не найдена')
+    assertExpectedInteractiveWeldVersions(
+      rows.map((row) => row.id),
+      data.expectedVersions,
+      rows,
+    )
+
+    if (data.action === 'rename') {
+      assertRequestDocumentRenameValues(data, 'ЛНК')
+      const settings = await readRequestConclusionSettings(tx)
+      if (isSystemDocumentNameForRows(rows as WeldRow[], 'lnkRequest', data.requestName, settings)) {
+        throw new Error('Системную заявку ЛНК нельзя переименовать')
+      }
+      const [duplicate] = await tx
+        .select({ id: weldJoints.id })
         .from(weldJoints)
-        .where(eq(weldJoints.id, data.rowId))
+        .where(buildLnkRequestIdentityWhere(data.nextRequestName, data.requestDate))
         .limit(1)
-        .for('update')
-      if (!row) throw new Error('Стык больше не существует. Обновите отчет ЛНК.')
-      assertExpectedInteractiveWeldVersions(
-        [row.id],
-        [{ id: row.id, version: data.expectedVersion }],
-        [row],
-      )
-      if (!isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
-        name: data.requestName,
-        date: data.requestDate,
-      })) {
-        throw new Error('Позиция заявки уже изменилась. Обновите отчет ЛНК и повторите действие.')
-      }
+      if (duplicate) throw new Error('Заявка с таким наименованием и датой уже существует')
+    }
 
-      const record = buildLnkRequestPositionRemovalRow(row as WeldRow, method.requestKey)
-      const previousRows = new Map([[row.id, row]])
-      const validationContext = await loadServerWeldValidationContext(tx, [row])
-      prepareServerWeldRecords({ records: [record], previousRows, context: validationContext })
-      validateServerWeldRecords({ records: [record], previousRows, context: validationContext })
-      const [updated] = await updateWeldJointsInBatches(tx, [record], previousRows)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, [updated], previousRows)
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes([record], previousRows),
-      })
-      return updated
+    const records = buildLnkRequestManagerRows({
+      records: rows as WeldRow[],
+      requestName: data.requestName,
+      requestDate: data.requestDate,
+      nextRequestName: data.nextRequestName,
+      action: data.action,
     })
-  })
-
-export const manageLnkRequestDocument = createServerFn({ method: 'POST' })
-  .validator(normalizeRequestDocumentManagerData)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    if (!data.requestName) throw new Error('Выберите заявку ЛНК')
-    const db = requireDb()
-
-    return db.transaction(async (tx) => {
-      await lockRequestDocumentIdentities(tx, [
-        { kind: 'lnk', name: data.requestName, date: data.requestDate },
-        ...(data.action === 'rename'
-          ? [{ kind: 'lnk' as const, name: data.nextRequestName, date: data.requestDate }]
-          : []),
-      ])
-      await loadControlProcessSettingsFromTransaction(tx)
-      const rows = await tx
-        .select(WELD_TABLE_RETURNING)
-        .from(weldJoints)
-        .where(buildLnkRequestIdentityWhere(data.requestName, data.requestDate))
-        .orderBy(asc(weldJoints.id))
-        .for('update')
-      if (rows.length === 0) throw new Error('Заявка ЛНК не найдена')
-      assertExpectedInteractiveWeldVersions(
-        rows.map((row) => row.id),
-        data.expectedVersions,
-        rows,
-      )
-
-      if (data.action === 'rename') {
-        assertRequestDocumentRenameValues(data, 'ЛНК')
-        const settings = await readRequestConclusionSettings(tx)
-        if (isSystemDocumentNameForRows(rows as WeldRow[], 'lnkRequest', data.requestName, settings)) {
-          throw new Error('Системную заявку ЛНК нельзя переименовать')
-        }
-        const [duplicate] = await tx
-          .select({ id: weldJoints.id })
-          .from(weldJoints)
-          .where(buildLnkRequestIdentityWhere(data.nextRequestName, data.requestDate))
-          .limit(1)
-        if (duplicate) throw new Error('Заявка с таким наименованием и датой уже существует')
-      }
-
-      const records = buildLnkRequestManagerRows({
-        records: rows as WeldRow[],
-        requestName: data.requestName,
-        requestDate: data.requestDate,
-        nextRequestName: data.nextRequestName,
-        action: data.action,
-      })
-      const previousRows = new Map(rows.map((row) => [row.id, row]))
-      const validationContext = await loadServerWeldValidationContext(tx, rows)
-      prepareServerWeldRecords({ records, previousRows, context: validationContext })
-      validateServerWeldRecords({ records, previousRows, context: validationContext })
-      const updated = await updateWeldJointsInBatches(tx, records, previousRows)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes(records, previousRows),
-      })
-      return updated
+    const previousRows = new Map(rows.map((row) => [row.id, row]))
+    const validationContext = await loadServerWeldValidationContext(tx, rows)
+    prepareServerWeldRecords({ records, previousRows, context: validationContext })
+    validateServerWeldRecords({ records, previousRows, context: validationContext })
+    const updated = await updateWeldJointsInBatches(tx, records, previousRows)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes(records, previousRows),
     })
+    return updated
   })
+}
 
-export const managePstoRequestDocument = createServerFn({ method: 'POST' })
-  .validator(normalizeRequestDocumentManagerData)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    if (!data.requestName) throw new Error('Выберите заявку ПСТО')
-    const db = requireDb()
+export async function managePstoRequestDocument({
+  data: input,
+}: {
+  data: RequestDocumentManagerData
+}) {
+  const data = normalizeRequestDocumentManagerData(input)
+  await assertSecurityScope('edit')
+  if (!data.requestName) throw new Error('Выберите заявку ПСТО')
+  const db = requireDb()
 
-    return db.transaction(async (tx) => {
-      await lockRequestDocumentIdentities(tx, [
-        { kind: 'psto', name: data.requestName, date: data.requestDate },
-        ...(data.action === 'rename'
-          ? [{ kind: 'psto' as const, name: data.nextRequestName, date: data.requestDate }]
-          : []),
-      ])
-      await loadControlProcessSettingsFromTransaction(tx)
-      const rows = await tx
-        .select(WELD_TABLE_RETURNING)
+  return db.transaction(async (tx) => {
+    await lockRequestDocumentIdentities(tx, [
+      { kind: 'psto', name: data.requestName, date: data.requestDate },
+      ...(data.action === 'rename'
+        ? [{ kind: 'psto' as const, name: data.nextRequestName, date: data.requestDate }]
+        : []),
+    ])
+    await loadControlProcessSettingsFromTransaction(tx)
+    const rows = await tx
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(and(
+        sql`trim(coalesce(${weldJoints.pstoRequest}, '')) = ${data.requestName}`,
+        data.requestDate
+          ? eq(weldJoints.pstoRequestDate, data.requestDate)
+          : isNull(weldJoints.pstoRequestDate),
+      ))
+      .orderBy(asc(weldJoints.id))
+      .for('update')
+    if (rows.length === 0) throw new Error('Заявка ПСТО не найдена')
+    assertExpectedInteractiveWeldVersions(
+      rows.map((row) => row.id),
+      data.expectedVersions,
+      rows,
+    )
+
+    if (data.action === 'rename') {
+      assertRequestDocumentRenameValues(data, 'ПСТО')
+      const settings = await readRequestConclusionSettings(tx)
+      if (isSystemDocumentNameForRows(rows as WeldRow[], 'pstoRequest', data.requestName, settings)) {
+        throw new Error('Системную заявку ПСТО нельзя переименовать')
+      }
+      const [duplicate] = await tx
+        .select({ id: weldJoints.id })
         .from(weldJoints)
         .where(and(
-          sql`trim(coalesce(${weldJoints.pstoRequest}, '')) = ${data.requestName}`,
+          sql`trim(coalesce(${weldJoints.pstoRequest}, '')) = ${data.nextRequestName}`,
           data.requestDate
             ? eq(weldJoints.pstoRequestDate, data.requestDate)
             : isNull(weldJoints.pstoRequestDate),
         ))
-        .orderBy(asc(weldJoints.id))
-        .for('update')
-      if (rows.length === 0) throw new Error('Заявка ПСТО не найдена')
-      assertExpectedInteractiveWeldVersions(
-        rows.map((row) => row.id),
-        data.expectedVersions,
-        rows,
-      )
+        .limit(1)
+      if (duplicate) throw new Error('Заявка с таким наименованием и датой уже существует')
+    }
 
-      if (data.action === 'rename') {
-        assertRequestDocumentRenameValues(data, 'ПСТО')
-        const settings = await readRequestConclusionSettings(tx)
-        if (isSystemDocumentNameForRows(rows as WeldRow[], 'pstoRequest', data.requestName, settings)) {
-          throw new Error('Системную заявку ПСТО нельзя переименовать')
-        }
-        const [duplicate] = await tx
-          .select({ id: weldJoints.id })
-          .from(weldJoints)
-          .where(and(
-            sql`trim(coalesce(${weldJoints.pstoRequest}, '')) = ${data.nextRequestName}`,
-            data.requestDate
-              ? eq(weldJoints.pstoRequestDate, data.requestDate)
-              : isNull(weldJoints.pstoRequestDate),
-          ))
-          .limit(1)
-        if (duplicate) throw new Error('Заявка с таким наименованием и датой уже существует')
-      }
-
-      const records = buildPstoRequestManagerRows({
-        heatTreatmentRows: rows as WeldRow[],
-        requestName: data.requestName,
-        requestDate: data.requestDate,
-        nextRequestName: data.nextRequestName,
-        action: data.action,
-      })
-      const previousRows = new Map(rows.map((row) => [row.id, row]))
-      const validationContext = await loadServerWeldValidationContext(tx, rows)
-      prepareServerWeldRecords({ records, previousRows, context: validationContext })
-      validateServerWeldRecords({ records, previousRows, context: validationContext })
-      const updated = await updateWeldJointsInBatches(tx, records, previousRows)
-      await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
-      await markDispatcherTaskIndexDirty(tx, {
-        scopes: getDispatcherDirtyScopes(records, previousRows),
-      })
-      return updated
+    const records = buildPstoRequestManagerRows({
+      heatTreatmentRows: rows as WeldRow[],
+      requestName: data.requestName,
+      requestDate: data.requestDate,
+      nextRequestName: data.nextRequestName,
+      action: data.action,
     })
+    const previousRows = new Map(rows.map((row) => [row.id, row]))
+    const validationContext = await loadServerWeldValidationContext(tx, rows)
+    prepareServerWeldRecords({ records, previousRows, context: validationContext })
+    validateServerWeldRecords({ records, previousRows, context: validationContext })
+    const updated = await updateWeldJointsInBatches(tx, records, previousRows)
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
+    await markDispatcherTaskIndexDirty(tx, {
+      scopes: getDispatcherDirtyScopes(records, previousRows),
+    })
+    return updated
   })
+}
 
 export function normalizeRequestDocumentManagerData(
   data: RequestDocumentManagerData,
@@ -1645,60 +1658,66 @@ export function buildLnkRequestIdentityWhere(requestName: string, requestDate: s
   ) ?? sql`false`
 }
 
-export const deleteWeldJoint = createServerFn({ method: 'POST' })
-  .validator((data: WeldDeleteData) => ({
-    id: Number(data?.id),
-    version: String(data?.version ?? '').trim(),
-  }))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('delete')
-    const db = requireDb()
+export async function deleteWeldJoint({
+  data: input,
+}: {
+  data: WeldDeleteData
+}) {
+  const data = {
+    id: Number(input?.id),
+    version: String(input?.version ?? '').trim(),
+  }
+  await assertSecurityScope('delete')
+  const db = requireDb()
 
-    await db.transaction(async (tx) => {
-      await loadControlProcessSettingsFromTransaction(tx)
-      const identityRows = await loadWeldLineIdentityRows(tx, [data.id])
-      await lockWeldLineMemberships(tx, identityRows)
-      const previousRows = await lockInteractiveWeldRows(tx, [data.id])
-      if (!haveSameWeldLineMemberships(identityRows, previousRows)) {
-        throw new Error(
-          'Стык был перенесен на другую линию другим пользователем. Ничего не удалено. Обновите отчет и повторите действие.',
-        )
-      }
-      assertExpectedInteractiveWeldVersions([data.id], [data], previousRows)
-      await deleteLockedWeldRowsInTransaction(tx, previousRows)
-    })
-    return { ok: true }
+  await db.transaction(async (tx) => {
+    await loadControlProcessSettingsFromTransaction(tx)
+    const identityRows = await loadWeldLineIdentityRows(tx, [data.id])
+    await lockWeldLineMemberships(tx, identityRows)
+    const previousRows = await lockInteractiveWeldRows(tx, [data.id])
+    if (!haveSameWeldLineMemberships(identityRows, previousRows)) {
+      throw new Error(
+        'Стык был перенесен на другую линию другим пользователем. Ничего не удалено. Обновите отчет и повторите действие.',
+      )
+    }
+    assertExpectedInteractiveWeldVersions([data.id], [data], previousRows)
+    await deleteLockedWeldRowsInTransaction(tx, previousRows)
   })
+  return { ok: true }
+}
 
-export const deleteWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: WeldDeleteManyData) => ({
-    targets: Array.isArray(data?.targets)
-      ? data.targets.map((target) => ({
+export async function deleteWeldJoints({
+  data: input,
+}: {
+  data: WeldDeleteManyData
+}) {
+  const data = {
+    targets: Array.isArray(input?.targets)
+      ? input.targets.map((target) => ({
           id: Number(target?.id),
           version: String(target?.version ?? '').trim(),
         }))
       : [],
-  }))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('delete')
-    if (data.targets.length === 0) return { deleted: 0 }
-    const ids = data.targets.map((target) => target.id)
-    const db = requireDb()
-    return db.transaction(async (tx) => {
-      await loadControlProcessSettingsFromTransaction(tx)
-      const identityRows = await loadWeldLineIdentityRows(tx, ids)
-      await lockWeldLineMemberships(tx, identityRows)
-      const previousRows = await lockInteractiveWeldRows(tx, ids)
-      if (!haveSameWeldLineMemberships(identityRows, previousRows)) {
-        throw new Error(
-          'Один или несколько стыков были перенесены на другую линию другим пользователем. Ничего не удалено. Обновите отчет и повторите действие.',
-        )
-      }
-      assertExpectedInteractiveWeldVersions(ids, data.targets, previousRows)
-      await deleteLockedWeldRowsInTransaction(tx, previousRows)
-      return { deleted: previousRows.length }
-    })
+  }
+  await assertSecurityScope('delete')
+  if (data.targets.length === 0) return { deleted: 0 }
+  const ids = data.targets.map((target) => target.id)
+  const db = requireDb()
+  return db.transaction(async (tx) => {
+    await loadControlProcessSettingsFromTransaction(tx)
+    const identityRows = await loadWeldLineIdentityRows(tx, ids)
+    await lockWeldLineMemberships(tx, identityRows)
+    const previousRows = await lockInteractiveWeldRows(tx, ids)
+    if (!haveSameWeldLineMemberships(identityRows, previousRows)) {
+      throw new Error(
+        'Один или несколько стыков были перенесены на другую линию другим пользователем. Ничего не удалено. Обновите отчет и повторите действие.',
+      )
+    }
+    assertExpectedInteractiveWeldVersions(ids, data.targets, previousRows)
+    await deleteLockedWeldRowsInTransaction(tx, previousRows)
+    return { deleted: previousRows.length }
   })
+}
 
 export async function deleteLockedWeldRowsInTransaction(
   tx: Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0],

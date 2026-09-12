@@ -16,7 +16,7 @@ function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
     joint: 'F1',
     weldDate: '2026-08-01',
     pstoRequired: 'да',
-    pstoDate: '2026-09-10',
+    pstoDate: null,
     hasVik: 'да',
     hasRk: 'да',
     hasUzk: '',
@@ -191,7 +191,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
 
   it('keeps the draft local and routes the alternative exact correction for a pre-TO conflict', () => {
     const onRunRootCauseAction = vi.fn()
-    renderDialogRows('request', [makeRow()], new Set([1]), 'ВИК', { onRunRootCauseAction })
+    renderDialogRows('request', [makeRow({ pstoDate: '2026-09-10' })], new Set([1]), 'ВИК', { onRunRootCauseAction })
     const dateInput = screen.getByLabelText('Дата заявки')
 
     fireEvent.change(dateInput, { target: { value: '2026-09-11' } })

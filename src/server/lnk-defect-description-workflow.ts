@@ -1,4 +1,3 @@
-import { createServerFn } from '@tanstack/react-start'
 import { and, eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -19,91 +18,94 @@ import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 const MAX_DEFECT_DESCRIPTION_LENGTH = 4000
 const SIMPLE_METHOD_CODES = new Set(['ВИК', 'УЗК', 'ПВК'])
 
-export const updateLnkDefectDescription = createServerFn({ method: 'POST' })
-  .validator(normalizeLnkDefectDescriptionUpdate)
-  .handler(async ({ data }) => {
-    await assertSecurityScope('edit')
-    const db = requireDb()
-    return db.transaction(async (tx) => {
-      if (data.stage === 'beforeHeatTreatment') {
-        const settings = await loadControlProcessSettingsFromTransaction(tx)
-        if (!settings.preHeatTreatmentLnkEnabled) {
-          throw new Error('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.')
-        }
+export async function updateLnkDefectDescription({
+  data: input,
+}: {
+  data: LnkDefectDescriptionUpdate
+}) {
+  const data = normalizeLnkDefectDescriptionUpdate(input)
+  await assertSecurityScope('edit')
+  const db = requireDb()
+  return db.transaction(async (tx) => {
+    if (data.stage === 'beforeHeatTreatment') {
+      const settings = await loadControlProcessSettingsFromTransaction(tx)
+      if (!settings.preHeatTreatmentLnkEnabled) {
+        throw new Error('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.')
       }
-      const [storedRow] = await tx
-        .select(WELD_TABLE_RETURNING)
-        .from(weldJoints)
-        .where(eq(weldJoints.id, data.rowId))
-        .limit(1)
-        .for('update')
-      if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет ЛНК.')
-      assertCurrentInteractiveWeldRowVersions({
-        targetIds: [data.rowId],
-        expectedVersions: [{ id: data.rowId, version: data.expectedVersion }],
-        currentVersions: [{
-          id: storedRow.id,
-          line: storedRow.line,
-          joint: storedRow.joint,
-          version: storedRow.rowVersion,
-        }],
-      })
+    }
+    const [storedRow] = await tx
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.rowId))
+      .limit(1)
+      .for('update')
+    if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет ЛНК.')
+    assertCurrentInteractiveWeldRowVersions({
+      targetIds: [data.rowId],
+      expectedVersions: [{ id: data.rowId, version: data.expectedVersion }],
+      currentVersions: [{
+        id: storedRow.id,
+        line: storedRow.line,
+        joint: storedRow.joint,
+        version: storedRow.rowVersion,
+      }],
+    })
 
-      const method = LNK_METHODS.find((candidate) => candidate.code === data.methodCode)
-      if (!method || method.code === 'РК') throw new Error('Выбранный вид контроля не поддерживает это поле.')
-      if (isCancelledControlValue(storedRow[method.enabledKey])) {
-        throw new Error('Контроль отменен. Описание сохранено как история и доступно только для просмотра.')
-      }
+    const method = LNK_METHODS.find((candidate) => candidate.code === data.methodCode)
+    if (!method || method.code === 'РК') throw new Error('Выбранный вид контроля не поддерживает это поле.')
+    if (isCancelledControlValue(storedRow[method.enabledKey])) {
+      throw new Error('Контроль отменен. Описание сохранено как история и доступно только для просмотра.')
+    }
 
-      const now = new Date()
-      if (data.stage === 'primary') {
-        if (!isRejectedLnkDefectResult(storedRow[method.resultKey])) {
-          throw new Error('Описание дефектов можно менять только при результате «ремонт» или «вырез».')
-        }
-        const [updatedRow] = await tx
-          .update(weldJoints)
-          .set({
-            ...getPrimaryDefectUpdate(data.methodCode, data.value),
-            lnkCreatedAt: sql`coalesce(${weldJoints.lnkCreatedAt}, ${now})`,
-            lnkUpdatedAt: now,
-            updatedAt: now,
-          })
-          .where(eq(weldJoints.id, data.rowId))
-          .returning(WELD_TABLE_RETURNING)
-        return updatedRow as WeldRow
-      }
-
-      const [control] = await tx
-        .select()
-        .from(preHeatTreatmentControls)
-        .where(and(
-          eq(preHeatTreatmentControls.weldJointId, data.rowId),
-          eq(preHeatTreatmentControls.method, data.methodCode),
-        ))
-        .limit(1)
-        .for('update')
-      if (!control) throw new Error('Позиция НК до ТО больше не существует. Обновите отчет ЛНК.')
-      if (!isRejectedLnkDefectResult(control.result)) {
+    const now = new Date()
+    if (data.stage === 'primary') {
+      if (!isRejectedLnkDefectResult(storedRow[method.resultKey])) {
         throw new Error('Описание дефектов можно менять только при результате «ремонт» или «вырез».')
       }
-
-      await tx
-        .update(preHeatTreatmentControls)
-        .set({ defectDescription: data.value, updatedAt: now })
-        .where(eq(preHeatTreatmentControls.id, control.id))
       const [updatedRow] = await tx
         .update(weldJoints)
         .set({
+          ...getPrimaryDefectUpdate(data.methodCode, data.value),
           lnkCreatedAt: sql`coalesce(${weldJoints.lnkCreatedAt}, ${now})`,
           lnkUpdatedAt: now,
           updatedAt: now,
         })
         .where(eq(weldJoints.id, data.rowId))
         .returning(WELD_TABLE_RETURNING)
-      const [result] = await attachPreHeatTreatmentControlRelations([updatedRow as WeldRow], tx)
-      return result
-    })
+      return updatedRow as WeldRow
+    }
+
+    const [control] = await tx
+      .select()
+      .from(preHeatTreatmentControls)
+      .where(and(
+        eq(preHeatTreatmentControls.weldJointId, data.rowId),
+        eq(preHeatTreatmentControls.method, data.methodCode),
+      ))
+      .limit(1)
+      .for('update')
+    if (!control) throw new Error('Позиция НК до ТО больше не существует. Обновите отчет ЛНК.')
+    if (!isRejectedLnkDefectResult(control.result)) {
+      throw new Error('Описание дефектов можно менять только при результате «ремонт» или «вырез».')
+    }
+
+    await tx
+      .update(preHeatTreatmentControls)
+      .set({ defectDescription: data.value, updatedAt: now })
+      .where(eq(preHeatTreatmentControls.id, control.id))
+    const [updatedRow] = await tx
+      .update(weldJoints)
+      .set({
+        lnkCreatedAt: sql`coalesce(${weldJoints.lnkCreatedAt}, ${now})`,
+        lnkUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(weldJoints.id, data.rowId))
+      .returning(WELD_TABLE_RETURNING)
+    const [result] = await attachPreHeatTreatmentControlRelations([updatedRow as WeldRow], tx)
+    return result
   })
+}
 
 export function normalizeLnkDefectDescriptionUpdate(
   value: LnkDefectDescriptionUpdate,

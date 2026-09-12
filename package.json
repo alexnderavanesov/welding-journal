@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite dev --host 127.0.0.1 --port 3000",
     "dev:local": "vite dev --host 127.0.0.1 --port 3000",
-    "build": "vite build",
+    "build": "vite build && node scripts/verify-server-function-manifest.mjs",
     "start": "node .output/server/index.mjs",
     "maintenance:dispatcher": "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/maintenance/dispatcher-refresh',{method:'POST',headers:{authorization:'Bearer '+process.env.MAINTENANCE_TOKEN}}).then(async r=>{console.log(await r.text());if(!r.ok)process.exit(1)})\"",
     "benchmark:lnk-load": "tsx scripts/benchmark-lnk-load.ts",
@@ -67,6 +67,6 @@
     "tsx": "^4.22.4",
     "typescript": "^5.7.2",
     "vite": "^8.2.1",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
